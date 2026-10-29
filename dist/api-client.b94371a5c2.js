@@ -1027,6 +1027,14 @@
       studyPlan:         () => request('/member/curriculum.php' + qs({ view: 'study' })),
       studyStart:        (itemId, topic, exam) => request('/member/curriculum.php', { body: { action: 'drill', itemId, topic: topic || '', exam: exam || '' }, timeout: 60000 }),
       studyMark:         (drillId, answers) => request('/member/curriculum.php', { body: { action: 'drill', drillId, answers } }),
+      /* Everything the Learn app's first screen needs, in ONE request:
+         lessons, the school plan and where the courses lead. Three separate
+         calls meant three PHP bootstraps before a child saw a lesson. */
+      learnBoot:         () => request('/member/curriculum.php' + qs({ view: 'boot' })),
+      /* Where their courses lead: the recognised credentials at the end of
+         the work, and the ones they already hold. */
+      providersMine:     () => request('/member/curriculum.php' + qs({ view: 'providers' })),
+      providerAim:       (awardId, remove) => request('/member/curriculum.php', { body: { action: 'aim', awardId, remove: !!remove } }),
       /* Whether the term question is open, which session it is about, and
          what they already said — one call, because the screen needs all
          three before it draws anything. */
@@ -1585,6 +1593,20 @@
       companion: {
         board:  (rating) => request('/admin/companion.php' + qs({ rating: rating || '' })),
         assess: (memberIds) => request('/admin/companion.php', { body: { action: 'assess', memberIds } }),
+      },
+      /* Where a course leads: the awarding bodies outside NGG, what each
+         awards, and who holds one (domain/providers.php). */
+      providers: {
+        list:          (withRetired) => request('/admin/providers.php' + qs({ view: 'list', withRetired: withRetired ? 1 : '' })),
+        board:         () => request('/admin/providers.php' + qs({ view: 'board' })),
+        member:        (memberId) => request('/admin/providers.php' + qs({ view: 'member', memberId })),
+        save:          (data) => request('/admin/providers.php', { body: { action: 'save', data } }),
+        remove:        (providerId, o) => request('/admin/providers.php', { body: Object.assign({ action: 'delete', providerId }, o || {}) }),
+        awardSave:     (data) => request('/admin/providers.php', { body: { action: 'award', data } }),
+        awardRemove:   (awardId, o) => request('/admin/providers.php', { body: Object.assign({ action: 'awardDelete', awardId }, o || {}) }),
+        credentialSet: (memberId, data) => request('/admin/providers.php', { body: { action: 'credential', memberId, data } }),
+        credentialClear: (credId) => request('/admin/providers.php', { body: { action: 'credentialClear', credId } }),
+        seed:          () => request('/admin/providers.php', { body: { action: 'seed' } }),
       },
       curriculum: {
         // The Club's own course list (not Summer School's academy catalogue).

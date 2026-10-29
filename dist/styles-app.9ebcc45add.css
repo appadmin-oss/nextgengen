@@ -8446,7 +8446,12 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-note-text > span:first-child { font-size: 14px; line-height: 1.45; color: var(--cr-text); text-wrap: pretty; }
 .cr-note.is-quote .cr-note-text > span:first-child { font-size: 18px; }
 .cr-note-sub { font-size: 12.5px; color: var(--cr-muted-3); }
-.cr-note-act { align-self: flex-start; margin-top: 4px; }
+/* A note's action is a real tap target — the one control in the block, and
+   often the way out of an empty or failed state. `is-sm` draws it at 30px,
+   which is under this codebase's 44px floor (CLAUDE.md §9); the sweep never
+   caught it because these notes only appear in states its fixture does not
+   reach. Height only: the small type is what makes it read as secondary. */
+.cr-note-act { align-self: flex-start; margin-top: 4px; min-height: 44px; }
 
 .cr-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .cr-card { border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); padding: 16px 18px; background: var(--cr-bg); display: flex; flex-direction: column; gap: 12px; text-align: left; color: var(--cr-ink); }
@@ -11648,26 +11653,12 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-52e59f8{margin:0;font-size:17px;font-weight:600;flex:1;line-height:1.3}
 .m9-5c720e5{width:44px;height:44px;border:0;border-radius:12px;background:#f4f4f2;cursor:pointer;font-size:18px}
 .m9-1685ff9{padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px}
-.m9-7acfe4c{height:24px;align-self:flex-start;padding:0 10px;border-radius:999px;background:#f4f4f2;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center}
-.m9-7b0c4e2{padding:12px 14px;border-radius:12px;background:#f4f4f2;display:flex;flex-direction:column;gap:6px}
-.m9-5bee6fc{font-size:12.5px;font-weight:600;color:#4a4a50}
-.m9-d203d28{font-size:14px;display:flex;gap:8px}
-.m9-12692bc{display:flex;align-items:center;gap:12px;min-height:48px;border-top:1px solid #f0efea}
-.m9-699d0f5{flex:1;font-size:15px;font-weight:var(--dc-font-weight, unset)}
-.m9-d64edc2{align-self:flex-start;min-height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
-.m9-1598ab5{border-radius:14px;background:#fafaf8;border:1px solid #e8e5dd;padding:14px 16px;font-size:16px;line-height:1.65;color:#1f1f23;white-space:pre-wrap;overflow-wrap:anywhere}
-.m9-f5d2df1{display:flex;align-items:center;gap:8px;min-height:44px;font-size:14px;font-weight:600;color:#0b0b0c}
-.m9-2a49a63{height:52px;border-radius:14px;border:0;background:#0b0b0c;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
-.m9-4e9159f{min-height:44px;padding:0 12px;border-radius:12px;border:var(--dc-border, unset);background:#fff;font-size:14.5px;cursor:pointer;text-align:left;font-family:'Geist Mono',monospace}
-.m9-49cf2c0{font-size:13px;color:var(--dc-color, unset)}
-.m9-7f00199{height:52px;border-radius:14px;border:0;background:#1d6b30;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
-.m9-3ff56cb{height:52px;border-radius:14px;border:1px solid #0b0b0c;background:#fff;font-size:15px;font-weight:600;cursor:pointer}
-.m9-8f98890{display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:12px;background:#f3faf4;font-size:15px}
 .m9-0318e93{margin:0;font-size:15.5px;line-height:1.55}
 .m9-af0b204{height:28px;padding:0 10px;border-radius:999px;background:#fdf6e3;color:#7a5600;font-size:12.5px;display:inline-flex;align-items:center;gap:5px}
 .m9-b733d92{font-size:14.5px;font-weight:500}
 .m9-6db54bb{border-radius:12px;border:1px solid #d6d4cc;padding:12px;font-size:16px;line-height:1.45;resize:vertical;outline:0;background:#fff}
 .m9-ca481b8{position:relative;min-height:48px;border-radius:12px;border:1.5px dashed #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+.m9-8f98890{display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:12px;background:#f3faf4;font-size:15px}
 .m9-058dfef{min-height:48px;padding:0 14px;border-radius:12px;border:var(--dc-border, unset);background:#fff;font-size:15px;cursor:pointer;text-align:left}
 .m9-aae81ec{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .m9-a0c991e{min-height:64px;padding:6px 2px;border-radius:12px;border:var(--dc-border, unset);background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12.5px;color:#0b0b0c}
@@ -16679,6 +16670,33 @@ button.m9x-ev-sum { cursor: pointer; }
 .lrn-card-meta { font-size: 13px; color: var(--lrn-ink-3); }
 .lrn-card-late { font-size: 12.5px; font-weight: 650; color: var(--lrn-late); }
 
+/* Where the work leads: credentials awarded outside NGG. On the Learn app's
+   own token set — no new colours, no new radii (CLAUDE.md §8). */
+.lrn-card-chip.ok { background: #e7f3ea; color: var(--lrn-ok); }
+.lrn-card-chip.warn { background: #fdeeea; color: var(--lrn-late); }
+.lrn-earned { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+  border-radius: 14px; background: #f3faf4; border: 1px solid #cfe6d5; }
+.lrn-earned i { font-size: 22px; color: var(--lrn-ok); flex: none; }
+.lrn-earned p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--lrn-ink-2); }
+.lrn-note-retry { font: inherit; font-weight: 650; color: var(--lrn-accent); background: none;
+  border: 0; padding: 0; cursor: pointer; text-decoration: underline; min-height: 44px; }
+.lrn-award { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid var(--lrn-line);
+  border-radius: 14px; background: var(--lrn-s1); }
+.lrn-award.is-held { border-left: 4px solid var(--lrn-ok); }
+.lrn-award-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.lrn-award-by { font-size: 12px; font-weight: 600; color: var(--lrn-ink-3); }
+.lrn-award-title { font-size: 16px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; }
+.lrn-award-meta { font-size: 13px; color: var(--lrn-ink-3); line-height: 1.5; }
+.lrn-award-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+.lrn-award-link { font-size: 13.5px; font-weight: 600; color: var(--lrn-accent);
+  min-height: 44px; display: inline-flex; align-items: center; }
+.lrn-award-aim { min-height: 44px; padding: 0 14px; border-radius: 99px; cursor: pointer;
+  border: 1px solid var(--lrn-line); background: var(--lrn-s2); color: var(--lrn-ink);
+  font: inherit; font-size: 13.5px; font-weight: 650; }
+.lrn-award-aim:hover { border-color: var(--lrn-ink-3); }
+.lrn-award-aim.is-on { background: var(--lrn-accent); border-color: var(--lrn-accent); color: #fff; }
+.lrn-award-aim[disabled] { opacity: .6; cursor: default; }
+
 .lrn-course { display: grid; gap: 6px; padding: 16px; text-decoration: none; color: inherit;
   background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
 .lrn-course:hover { border-color: var(--lrn-ink-3); }
@@ -16840,8 +16858,13 @@ button.m9x-ev-sum { cursor: pointer; }
 /* ── Wider than a phone: a rail, and room to breathe ─────────────────────── */
 @container (min-width: 720px) {
   .lrn-shell { grid-template-areas: "top top" "rail main"; grid-template-columns: 216px 1fr; grid-template-rows: auto 1fr; }
+  /* `min-height` is what carries the dividing rule the full height of the
+     page. Without `align-content: start` it also stretches the five rows to
+     fill it, which spread the nav down the whole screen and drew the active
+     item as a tall empty box. The rule runs; the items sit together. */
   .lrn-rail { position: sticky; top: 56px; align-self: start; display: grid; grid-auto-flow: row; grid-auto-columns: auto;
-    gap: 2px; padding: 14px 12px; border-top: 0; border-right: 1px solid var(--lrn-line); background: transparent; min-height: calc(100dvh - 56px); }
+    align-content: start; gap: 2px; padding: 14px 12px; border-top: 0; border-right: 1px solid var(--lrn-line);
+    background: transparent; min-height: calc(100dvh - 56px); }
   .lrn-rail-item { grid-auto-flow: column; justify-items: start; justify-content: start; align-items: center; gap: 11px;
     min-height: var(--lrn-tap); padding: 0 12px; border-radius: var(--lrn-r-sm); font-size: 14.5px; }
   .lrn-rail-item.is-on { background: var(--lrn-s1); box-shadow: 0 0 0 1px var(--lrn-line); }

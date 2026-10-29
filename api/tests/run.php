@@ -32811,7 +32811,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi · a big list is paged under 64,512 bytes, every page ending #end, nobody lost', (int)$pm[1] > 1 && $okLen && $all === 3000);
     // Hours are kept by NGG: outside the window, people are left off.
     chk('wifi · hours: inside and outside a window', wifi_in_hours('08:00-18:00', '09:30') && !wifi_in_hours('08:00-18:00', '18:00') && wifi_in_hours('', '03:00'));
-    $set2 = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-summer' => ['down' => 5, 'up' => 2, 'devices' => 1, 'hours' => wifi_local_clock(time() - 7200) . '-' . wifi_local_clock(time() - 3600)]]]);
+    /* A one-hour window that does not hold the time of the run, and never wraps
+       past midnight (windows are within a day): an hour ago, or after 00:00–02:00 an hour ahead. */
+    $offWin = (int)substr(wifi_local_clock(), 0, 2) >= 2 ? wifi_local_clock(time() - 7200) . '-' . wifi_local_clock(time() - 3600) : wifi_local_clock(time() + 3600) . '-' . wifi_local_clock(time() + 7200);
+    $set2 = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-summer' => ['down' => 5, 'up' => 2, 'devices' => 1, 'hours' => $offWin]]]);
     $hl = wifi_centre_lines($C);
     chk('wifi · somebody outside their profile’s hours is not on the list', !isset($hl['WF-26-001']) && isset($hl['026-503']));
     backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-summer' => ['down' => 5, 'up' => 2, 'devices' => 1, 'hours' => '']]]);
@@ -33412,6 +33415,232 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     db_exec('DELETE FROM volunteers WHERE memberId = ?', [$mid]);
     db_exec('DELETE FROM members WHERE memberId IN (?, ?)', [$mid, $plain]);
+})();
+
+/* ── Where a course leads: providers, awards and who holds one ───────────── */
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Prv ' . $id,
+        'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => $role,
+        'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-PRV-ADM', 'club_admin');                       // holds `curriculum`
+    $mk('NGG-PRV-ED', 'editor');                            // does not
+    $mk('NGG-PRV-M1', 'member', ['track' => 'Piano', 'centre' => 'Egbeda']);
+    $mk('NGG-PRV-M2', 'member', ['track' => 'Guitar', 'centre' => 'Egbeda']);
+    $A = 'NGG-PRV-ADM';
+
+    chk('providers: writing the registry is the curriculum cap, not an editor\'s',
+        (backend_dispatch('admin.providers.save', ['requesterId' => 'NGG-PRV-ED', 'data' => ['name' => 'x']])['error'] ?? '') === 'forbidden');
+
+    chk('providers: a body needs a name',
+        (backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => ['name' => '  ']])['error'] ?? '') === 'name_required');
+
+    $p1 = backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => [
+        'name' => 'Testwood Examinations Board', 'country' => 'United Kingdom',
+        'url' => 'https://www.trinitycollege.com/', 'free' => false, 'costNote' => 'Entry fee per grade']]);
+    $p2 = backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => [
+        'name' => 'Testwood Free Academy', 'url' => 'https://www.freecodecamp.org/', 'free' => true]]);
+    chk('providers: a body is added and reads back', !empty($p1['ok']) && !empty($p2['ok'])
+        && ($p1['provider']['slug'] ?? '') === 'testwood-examinations-board' && ($p2['provider']['free'] ?? false) === true);
+    $P1 = (string)$p1['providerId']; $P2 = (string)$p2['providerId'];
+
+    chk('providers: a url that is not http(s) is dropped rather than stored',
+        ($p1['provider']['url'] ?? '') === 'https://www.trinitycollege.com/'
+        && (backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => ['name' => 'Bad', 'url' => 'javascript:alert(1)']])['provider']['url'] ?? 'x') === '');
+
+    $a1 = backend_dispatch('admin.providers.award.save', ['requesterId' => $A, 'data' => [
+        'providerId' => $P1, 'title' => 'Graded Examination in Music', 'kind' => 'graded_exam',
+        'level' => 'Grade 3', 'courses' => ['Piano', 'Piano', ' Guitar '], 'validMonths' => 0]]);
+    $a2 = backend_dispatch('admin.providers.award.save', ['requesterId' => $A, 'data' => [
+        'providerId' => $P2, 'title' => 'Responsive Web Design', 'kind' => 'certificate',
+        'courses' => ['Practical Coding'], 'free' => true]]);
+    chk('providers: an award is added under its body, its courses deduped and trimmed',
+        !empty($a1['ok']) && ($a1['award']['courses'] ?? []) === ['Piano', 'Guitar']
+        && ($a1['award']['provider'] ?? '') === 'Testwood Examinations Board');
+    $AW1 = (string)$a1['awardId']; $AW2 = (string)$a2['awardId'];
+
+    chk('providers: an award must name a body that exists',
+        (backend_dispatch('admin.providers.award.save', ['requesterId' => $A, 'data' => ['providerId' => 'PRV-NOPE', 'title' => 'x']])['error'] ?? '') === 'provider_not_found');
+
+    /* Rule 2 — `earned` requires the date every count is built on. */
+    $noDate = backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1',
+        'data' => ['awardId' => $AW1, 'state' => 'earned']]);
+    chk('providers: "holds it" is refused without the date it was awarded',
+        ($noDate['error'] ?? '') === 'awarded_on_required');
+
+    /* Rule 3 — an award belongs to its body, and a mismatch is refused. */
+    $cross = backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1',
+        'data' => ['awardId' => $AW1, 'providerId' => $P2, 'state' => 'aiming']]);
+    chk('providers: an award claimed under the wrong body is refused, never re-pointed',
+        ($cross['error'] ?? '') === 'award_not_of_provider');
+
+    $ok1 = backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1',
+        'data' => ['awardId' => $AW1, 'state' => 'earned', 'awardedOn' => '2026-03-14', 'grade' => 'Merit']]);
+    chk('providers: a result is recorded against the member, with their centre',
+        !empty($ok1['ok']) && (string)(db_row("SELECT centre FROM member_credentials WHERE memberId = 'NGG-PRV-M1'")['centre'] ?? '') === 'Egbeda');
+
+    /* Rule 1 — one row per member per award; recording again corrects it. */
+    backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1',
+        'data' => ['awardId' => $AW1, 'state' => 'earned', 'awardedOn' => '2026-03-14', 'grade' => 'Distinction']]);
+    chk('providers: recording it again is a correction, not a second credential',
+        (int)db_row("SELECT COUNT(*) c FROM member_credentials WHERE memberId = 'NGG-PRV-M1' AND awardId = '$AW1'")['c'] === 1
+        && (string)db_row("SELECT grade FROM member_credentials WHERE memberId = 'NGG-PRV-M1'")['grade'] === 'Distinction');
+
+    /* A member's own aim, and the line they may not cross. */
+    $aim = backend_dispatch('member.providers.aim', ['memberId' => 'NGG-PRV-M2', 'awardId' => $AW1]);
+    chk('providers: a member can say they are working towards one', !empty($aim['ok'])
+        && (string)db_row("SELECT state FROM member_credentials WHERE memberId = 'NGG-PRV-M2'")['state'] === 'aiming');
+    chk('providers: a member cannot assert they hold one — their centre records that',
+        (prv_credential_write(db_row("SELECT * FROM members WHERE memberId = 'NGG-PRV-M2'"),
+            ['awardId' => $AW1, 'state' => 'earned', 'awardedOn' => '2026-01-01'], false, 'NGG-PRV-M2')['error'] ?? '') === 'staff_records_this');
+    backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M2',
+        'data' => ['awardId' => $AW1, 'state' => 'registered']]);
+    chk('providers: once the centre has recorded a result, the member cannot take it back',
+        (backend_dispatch('member.providers.aim', ['memberId' => 'NGG-PRV-M2', 'awardId' => $AW1, 'remove' => true])['error'] ?? '') === 'staff_records_this');
+
+    /* Rule 6 — lapsed is derived from the date, never written by a job. */
+    $lapsing = backend_dispatch('admin.providers.award.save', ['requesterId' => $A, 'data' => [
+        'providerId' => $P2, 'title' => 'Expiring thing', 'validMonths' => 12, 'courses' => ['Piano']]]);
+    backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1',
+        'data' => ['awardId' => (string)$lapsing['awardId'], 'state' => 'earned', 'awardedOn' => '2020-01-01']]);
+    $old = db_row("SELECT * FROM member_credentials WHERE memberId = 'NGG-PRV-M1' AND awardId = '" . (string)$lapsing['awardId'] . "'");
+    chk('providers: an award with a validity gets an expiry from the date it was given',
+        (string)$old['expiresOn'] === '2021-01-01');
+    chk('providers: and it reads as lapsed without any job having run',
+        prv_is_lapsed($old) === true && prv_shown_state($old) === 'lapsed'
+        && prv_shown_state(['state' => 'earned', 'expiresOn' => '']) === 'earned');
+
+    /* The member's own screen: where their courses lead. */
+    $mine = backend_dispatch('member.providers.mine', ['memberId' => 'NGG-PRV-M1']);
+    $titles = array_map(static fn($r) => $r['title'], $mine['held'] ?? []);
+    chk('providers: a member sees what they hold', !empty($mine['ok']) && in_array('Graded Examination in Music', $titles, true));
+    $routeTitles = array_map(static fn($r) => $r['title'], $mine['routes'] ?? []);
+    chk('providers: and a route they do NOT hold only when one of their own courses leads to it',
+        !in_array('Responsive Web Design', $routeTitles, true));
+    chk('providers: a credential they hold still shows after they leave the course that led to it',
+        count(array_filter($mine['held'] ?? [], static fn($h) => $h['state'] === 'lapsed')) === 1);
+
+    /* Rule 5 — a body in use is not deleted silently, and retire is the answer. */
+    $del = backend_dispatch('admin.providers.delete', ['requesterId' => $A, 'providerId' => $P1]);
+    chk('providers: a body members hold awards from is not deleted silently',
+        ($del['error'] ?? '') === 'provider_in_use' && (int)($del['uses']['credentials'] ?? 0) >= 2);
+    $ret = backend_dispatch('admin.providers.delete', ['requesterId' => $A, 'providerId' => $P1, 'retire' => true]);
+    chk('providers: retiring it keeps every record resolving (rule 4)',
+        !empty($ret['retired'])
+        && (int)db_row("SELECT COUNT(*) c FROM member_credentials WHERE providerId = '$P1'")['c'] >= 2
+        && (string)db_row("SELECT status FROM providers WHERE providerId = '$P1'")['status'] === 'retired');
+
+    /* The board: what the programme can actually claim. */
+    $b = backend_dispatch('admin.providers.board', ['requesterId' => $A]);
+    $row = null; foreach ($b['awards'] ?? [] as $r) if ($r['awardId'] === $AW1) $row = $r;
+    chk('providers: the board counts holders per award, biggest first, and names them',
+        !empty($b['ok']) && $row && (int)$row['earned'] === 1 && (int)$row['registered'] === 1
+        && ($row['holders'][0]['memberId'] ?? '') === 'NGG-PRV-M1');
+    chk('providers: and counts the people, not the rows', (int)($b['people'] ?? 0) === 2);
+
+    /* One person's record. */
+    $one = backend_dispatch('admin.providers.member', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1']);
+    chk('providers: one member\'s credentials read back with the body that awarded them',
+        !empty($one['ok']) && count($one['credentials']) === 2
+        && in_array('Testwood Examinations Board', array_map(static fn($c) => $c['provider'], $one['credentials']), true));
+
+    /* An award nobody holds goes; one people hold does not. */
+    chk('providers: an award people hold is not deleted silently',
+        (backend_dispatch('admin.providers.award.delete', ['requesterId' => $A, 'awardId' => $AW1])['error'] ?? '') === 'award_in_use');
+    chk('providers: an award nobody holds is deleted',
+        !empty(backend_dispatch('admin.providers.award.delete', ['requesterId' => $A, 'awardId' => $AW2])['deleted']));
+
+    /* The starter registry. Every line of it is supposed to be traceable to
+       a material link in this repository's own curriculum — so the test that
+       matters is not "it inserted rows" but "the courses it names are real
+       courses, and pressing it twice changes nothing". */
+    $seed = backend_dispatch('admin.providers.seed', ['requesterId' => $A]);
+    chk('providers: the starter registry seeds the bodies our own curriculum points at',
+        !empty($seed['ok']) && (int)$seed['added']['providers'] >= 7 && (int)$seed['added']['awards'] >= 9);
+    chk('providers: …including the free routes, marked free',
+        (int)(db_row("SELECT COUNT(*) c FROM providers WHERE free = 1 AND status = 'active'")['c'] ?? 0) >= 3
+        && (int)(db_row("SELECT COUNT(*) c FROM provider_awards WHERE free = 1")['c'] ?? 0) >= 5);
+
+    /* A certificate we tell a child to aim for has to exist, and a route that
+       names a course nobody teaches reaches nobody. Both are checked against
+       the bundled curriculum rather than trusted. */
+    $known = [];
+    foreach (db_all("SELECT DISTINCT course FROM curriculum_units") as $r) $known[mb_strtolower((string)$r['course'])] = true;
+    $orphans = [];
+    foreach (prv_seed_data() as $b) foreach ($b['awards'] as $a) foreach ($a['courses'] as $c) {
+        if ($known && !isset($known[mb_strtolower($c)])) $orphans[$c] = true;
+    }
+    chk('providers: every course the starter registry names is a course we actually teach'
+        . ($orphans ? ' — ' . implode(', ', array_slice(array_keys($orphans), 0, 4)) : ''),
+        !$orphans);
+    chk('providers: every seeded body has a real https address and at least one award',
+        !array_filter(prv_seed_data(), static fn($b) => !preg_match('~^https://~', (string)$b['url']) || !$b['awards']));
+
+    $again = backend_dispatch('admin.providers.seed', ['requesterId' => $A]);
+    chk('providers: seeding twice adds nothing and keeps every edit the programme made',
+        !empty($again['ok']) && (int)$again['added']['providers'] === 0 && (int)$again['added']['awards'] === 0
+        && (int)$again['kept']['providers'] >= 7);
+
+    db_exec("DELETE FROM provider_awards WHERE providerId IN (SELECT providerId FROM providers WHERE slug IN ('freecodecamp','cisco-networking-academy','elements-of-ai','google','nbte','trinity-college-london','abrsm'))");
+    db_exec("DELETE FROM providers WHERE slug IN ('freecodecamp','cisco-networking-academy','elements-of-ai','google','nbte','trinity-college-london','abrsm')");
+    db_exec("DELETE FROM member_credentials WHERE memberId LIKE 'NGG-PRV-%'");
+    db_exec("DELETE FROM provider_awards WHERE providerId IN ('$P1', '$P2')");
+    db_exec("DELETE FROM providers WHERE providerId IN ('$P1', '$P2')");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-PRV-%'");
+})();
+
+
+/* ── A model id in a config file is a pin nobody revisits ────────────────── */
+(function () {
+    $save = $GLOBALS['CONFIG']['ai'] ?? null;
+
+    /* Blank, or absent, or whitespace: all three mean "whatever this release
+       considers current". Only `??` used to do this, which caught the absent
+       case alone — and a deployment that copied config.example.php has the key
+       PRESENT, so it stayed on a model a generation behind for as long as the
+       file sat there. */
+    chk('ai models: a blank model means this release\'s current default, not an empty model',
+        ai_model_for('anthropic', '') === AI_DEFAULT_MODEL['anthropic']
+        && ai_model_for('anthropic', null) === AI_DEFAULT_MODEL['anthropic']
+        && ai_model_for('anthropic', '   ') === AI_DEFAULT_MODEL['anthropic']);
+    chk('ai models: …and a model that IS set is still honoured, so a pin stays a pin',
+        ai_model_for('anthropic', 'claude-haiku-4-5-20251001') === 'claude-haiku-4-5-20251001');
+    /* Gemini falls out unchanged: its default IS '', which already means
+       "ask Google for the best model this key can use". */
+    chk('ai models: gemini keeps its blank, which means "ask Google"',
+        ai_model_for('gemini', '') === '' && AI_DEFAULT_MODEL['gemini'] === '');
+
+    $GLOBALS['CONFIG']['ai'] = ['provider' => 'anthropic', 'anthropic_api_key' => 'test-key', 'anthropic_model' => ''];
+    $cands = ai_default_candidates();
+    chk('ai models: a configured key with a blank model resolves through to the call',
+        count($cands) === 1 && $cands[0]['model'] === AI_DEFAULT_MODEL['anthropic'] && $cands[0]['model'] !== '');
+
+    $GLOBALS['CONFIG']['ai'] = ['profiles' => ['marking' => ['provider' => 'anthropic', 'api_key' => 'k', 'model' => '']]];
+    $chain = ai_profile_chain('marking');
+    chk('ai models: a profile with a blank model resolves too, and stays capable enough to mark',
+        !empty($chain) && $chain[0]['model'] === AI_DEFAULT_MODEL['anthropic']
+        && ai_model_is_capable($chain[0]['model']));
+
+    /* The example config must not re-state what ai.php already decides. Two
+       lists of defaults is the drift CLAUDE.md §11 names, and here the drift
+       cost real money: the pinned small model priced ten times the current
+       one per token. */
+    $ex = file_get_contents(__DIR__ . '/../config.example.php');
+    chk('ai models: the shipped example pins no model at all',
+        preg_match("/'model'\s*=>\s*'[^']/", $ex) !== 1
+        && preg_match("/_model'\s*=>\s*'[^']/", $ex) !== 1);
+
+    /* The claim the comment in config.example.php makes, checked rather than
+       asserted: the generation it used to pin really is the dearer one. */
+    $oldP = ai_price_for(['provider' => 'anthropic', 'model' => 'claude-haiku-4-5-20251001', 'tier' => 'paid']);
+    $newP = ai_price_for(['provider' => 'anthropic', 'model' => AI_DEFAULT_MODEL['anthropic'], 'tier' => 'paid']);
+    chk('ai models: every model the example used to pin is priced in the table (no "unknown, assume dear")',
+        $oldP !== AI_PRICE_UNKNOWN_PAID && $newP !== AI_PRICE_UNKNOWN_PAID);
+    $small = ai_price_for(['provider' => 'anthropic', 'model' => 'claude-haiku-5', 'tier' => 'paid']);
+    chk('ai models: …and the small model it pinned costs about ten times the current one',
+        $oldP[0] >= $small[0] * 9 && $oldP[1] >= $small[1] * 9);
+
+    if ($save === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $save;
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

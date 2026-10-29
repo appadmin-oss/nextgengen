@@ -290,6 +290,22 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.study.drill.start' => 'member_study_drill_start',
             'member.study.drill.mark'  => 'member_study_drill_mark',
             'member.study.plan'        => 'member_study_plan',
+
+            /* Where a course leads: the awarding bodies outside NGG, what
+               each awards, and who holds one (domain/providers.php). */
+            'admin.providers.list'              => 'admin_providers_list',
+            'admin.providers.save'              => 'admin_providers_save',
+            'admin.providers.delete'            => 'admin_providers_delete',
+            'admin.providers.award.save'        => 'admin_provider_award_save',
+            'admin.providers.award.delete'      => 'admin_provider_award_delete',
+            'admin.providers.credential.set'    => 'admin_provider_credential_set',
+            'admin.providers.credential.clear'  => 'admin_provider_credential_clear',
+            'admin.providers.board'             => 'admin_providers_board',
+            'admin.providers.seed'              => 'admin_providers_seed',
+            'admin.providers.member'            => 'admin_provider_member',
+            'member.providers.mine'             => 'member_providers_mine',
+            'member.learn.boot'                 => 'member_learn_boot',
+            'member.providers.aim'              => 'member_provider_aim',
             'member.lesson.feedback'   => 'member_lesson_feedback_give',
             'member.lesson.feedback.mine' => 'member_lesson_feedback_mine',
             'staff.curriculum.feedback' => 'staff_lesson_feedback',

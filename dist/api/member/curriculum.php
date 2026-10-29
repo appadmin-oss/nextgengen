@@ -4,7 +4,7 @@
  *   GET               their lessons, with progress
  *   GET ?unit=ID      one lesson (starts it)
  *   GET ?view=staff   an instructor's or mentor's view; &memberId= one member's
- *   POST action=submit | ask | mark | year | material | lesson | note | save   (multipart `file` → an instructor's upload)
+ *   POST action=submit | ask | aim | mark | year | material | lesson | note | save   (multipart `file` → an instructor's upload)
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_session();
@@ -18,6 +18,14 @@ if ($method === 'GET') {
             : gs_call('staff.curriculum', ['requesterId' => $mid]);
     } elseif (($_GET['view'] ?? '') === 'study') {
         $res = gs_call('member.study.plan', ['memberId' => $mid]);
+    } elseif (($_GET['view'] ?? '') === 'boot') {
+        /* Everything the Learn app's first screen needs, in one request
+           instead of three (domain/providers.php). */
+        $res = gs_call('member.learn.boot', ['memberId' => $mid]);
+    } elseif (($_GET['view'] ?? '') === 'providers') {
+        /* Where their own courses lead: the recognised credentials at the end
+           of the work, and the ones they already hold (domain/providers.php). */
+        $res = gs_call('member.providers.mine', ['memberId' => $mid]);
     } elseif (($_GET['view'] ?? '') === 'testimonial') {
         /* Whether the term question is open at all, which session it is
            about, and what they already said (domain/testimonials.php). */
@@ -70,6 +78,12 @@ if ($method === 'GET') {
            the staff who teach them (domain/lesson-feedback.php). */
         $res = gs_call('member.lesson.feedback', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''),
             'signal' => (string)($b['signal'] ?? ''), 'body' => (string)($b['body'] ?? '')]);
+    } elseif ($action === 'aim') {
+        /* "I'm going for this": the member's own aim at an outside credential.
+           A RESULT is recorded by their centre, never asserted here
+           (domain/providers.php). */
+        $res = gs_call('member.providers.aim', ['memberId' => $mid, 'awardId' => (string)($b['awardId'] ?? ''),
+            'remove' => !empty($b['remove'])]);
     } elseif ($action === 'ask') {
         rate_limit_check_actor('member.curriculum.ask', (string)$mid);
         $res = gs_call('member.curriculum.ask', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''),

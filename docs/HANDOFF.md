@@ -4196,3 +4196,130 @@ The course card says "· not confirmed yet" while a child is unplaced (`member_t
 ### Tests
 - PHP 5290/0.
 - `course-placement.test.js` 7/0 (added to `test:all`, script `test:cplace`).
+
+### The lesson sheet is gone, not just unreachable
+
+`openLesson()` navigated to `/learn/lesson/<id>`, which left the member
+portal's whole lesson sheet — markup, check questions, marking, part
+tracking, read-aloud — sitting in the tree with nothing able to open it. Dead
+is not harmless: it was a SECOND renderer for a lesson, and a second renderer
+is what CLAUDE.md §11 forbids, because the two drift and what you see stops
+being what the member gets. Removed from both halves — the `shLesson` block in
+`member-portal-v9.dc.html` (recompiled to `mp9-view.jsx`) and the values in
+`mp9-more.jsx`. `speak()`, `canSpeak()` and the PDF reader stay: the mentor
+thread and the journal prompt use them.
+
+**The sheet knew something the shared component did not.** A PDF on the image
+cloud is not delivered to a browser, so its own address opens an error page;
+the sheet fetched it through `api/member/lesson-file.php` instead, and the
+Learn app, built on `CurriculumMaterials`, did not. That fix now lives in the
+shared component where every surface gets it — but it is passed IN
+(`fileUrl={curMemberFile}`), because the route is gated on a member session
+and the same component draws an instructor's preview. The caller names its own
+gate; neither surface has to know about the other's. "Open ↗" follows the same
+address as the reader, or the one control meant to rescue an unreadable file
+is the one that opens the error page.
+
+**A pre-existing failure, reported rather than hidden:** `no-important.test.js`
+was already red on this branch from `3a8e3d2` — `curriculum-ui.test.js`
+injects `display: none !important` into the page it drives, to hide a toast
+over a control it must click. That is the harness overriding the product for
+one assertion, not the product shipping an override, so it is an ALLOW entry.
+`npm run test:all` had been failing at that step before any of this work.
+
+### Where a course leads: the provider registry
+
+The curriculum named its routes out from the day it was written —
+`curriculum-studio-trades` sends a learner to Trinity Drama and the NBTE
+National Skills Qualification, practical coding to freeCodeCamp, tech
+foundations to Cisco NetAcad and Google — and all of it lived in lesson prose
+and material links. Two things were wrong at once: a child finished
+twenty-four weeks and nothing told them there was a recognised certificate at
+the end of it, and nobody could answer how many members hold one.
+
+Three tables, because the domain has three things: the organisation
+(`providers`), the thing it awards (`provider_awards`), and the person who
+holds it (`member_credentials`). Merging any two loses something real — one
+body awards many different things, and "Trinity Grade 1" is not "Trinity".
+
+The rules, each with a test:
+
+1. **One row per member per award.** Recording it again is a correction, not a
+   second credential. Grade 1 and Grade 2 are different awards, so a ladder
+   still works.
+2. **`earned` requires the date it was awarded.** Every count is built on it;
+   a credential without one is a claim, not a record.
+3. **An award belongs to its body.** A credential naming an award that is not
+   under that provider is refused, never quietly re-pointed.
+4. **Retiring a body takes nothing away.** A certificate already earned is in
+   somebody's hand — same rule as retiring a centre.
+5. **A body in use is not deleted silently.** It reports `uses` and refuses
+   with `provider_in_use` unless `retire` (checked FIRST) or `force`.
+6. **Lapsed is derived, never stored.** An expiry is a date and a date passes
+   without any job running. Computed on read it cannot go stale; written by a
+   nightly job it can, and then the record lies.
+
+**A member can only ever say "I'm going for this."** A result is the
+programme's record of them, so `prv_credential_write($m, $in, $byStaff, ...)`
+refuses any state but `aiming` from the member themselves, and refuses to let
+them edit a row once their centre has recorded against it. One writer behind
+both callers, so a credential cannot be recorded two different ways.
+
+Two bugs worth naming, both mine, both caught by tests rather than review:
+
+- **`in_array((string)($d['status'] ?? 'active'), …) ? (string)$d['status'] : 'active'`**
+  reads the default in the test and the RAW value in the result, so an omitted
+  status stored `''` — and a row with an empty status is invisible to every
+  read in the file. `prv_status()` defaults it once.
+- **`held` meant "has a row", not "holds it".** The moment a member pressed
+  "I'm going for this" the award jumped out of `routes` into `held`, where no
+  button is drawn — so their own control vanished under them. An aim and an
+  exam entry are routes in progress; only `earned` and `lapsed` are held.
+
+**A third centre guard exists that is easy to miss:** a table carrying a
+`centre` NAME must also have a `centreId` column, because `db_insert` mirrors
+one into the other — the insert fails on the missing column, and the failure
+surfaces as every later assertion in the block going wrong at once.
+
+### The starter registry, and why it is read from our own lessons
+
+A registry that ships empty is a feature nobody turns on. But this data goes
+in front of children — a certificate we tell a child to aim for had better
+exist — so none of it is remembered or guessed. `prv_seed_data()` is read out
+of `api/_lib/seeds/curriculum-*.json`: the bodies, the award names, which of
+our courses lead to each, and whether it is free are all taken from material
+links our own lessons already carry. A test checks the part that actually
+matters, which is not "it inserted rows" but **every course the starter
+registry names is a course we actually teach**, against the bundled
+curriculum.
+
+What it deliberately does not carry is fees, grade names and exam dates.
+Those change yearly and by country, and a stale price in front of a family is
+worse than none. Seeding is explicit (`admin.providers.seed`), never
+automatic, and idempotent by name — a body already there keeps every edit the
+programme made to it, and only missing awards are added.
+
+### The Learn app boots in one request, not three
+
+Lessons, the school plan and where-the-work-leads were three separate calls to
+the same route file: three HTTP round trips, three PHP bootstraps and three
+session verifications before a child on a phone sees a lesson. On shared
+hosting over a mobile connection that is the slowest part of opening the app,
+and none of it is work.
+
+`member.learn.boot` returns all three. What it must not do is couple their
+failures — school results and the registry each had their own silence on
+purpose — so each part is caught and comes back `null` rather than taking the
+lessons down with it. The lessons are the exception: if those fail there is
+nothing to draw, which the caller already handles.
+
+`tests/learn-app.test.js` counts the requests the screen makes for its own
+data and fails if it is not exactly one, so this cannot quietly go back to
+three the next time a panel needs something.
+
+**`null` must mean something.** `LearnAwards` returned nothing both when a
+course genuinely has no route and when the load failed — the silent empty that
+hides an outage (CLAUDE.md §9). An empty registry comes back as a real answer
+with empty lists, so `null` means only "failed", and that case now says so and
+offers the retry. Quietly, at the bottom of a course page: nothing there
+blocks the work.

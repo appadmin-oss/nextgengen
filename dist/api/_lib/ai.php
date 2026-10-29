@@ -53,6 +53,27 @@ const AI_DEFAULT_MODEL = [
     'custom'     => '',
 ];
 
+/**
+ * The model a candidate actually calls: what the deployment configured, or —
+ * when it configured nothing — THIS FILE'S current default for that provider.
+ *
+ * `??` was not enough. It falls back only when the key is ABSENT, and a
+ * deployment that copied config.example.php has the key PRESENT with a model
+ * id written into it. That id is a pin nobody ever revisits: the site keeps
+ * calling a model a generation behind long after a better and cheaper one
+ * exists, and by this file's own price table that was costing ten times more
+ * per token than the current small model. A blank model now means "whatever
+ * this release considers current", so upgrading the code upgrades the
+ * deployment.
+ *
+ * Gemini falls out of this unchanged: its default IS '', which already means
+ * "ask Google for the best model this key can use" (gemini_pick_model).
+ */
+function ai_model_for(string $provider, $configured): string {
+    $m = trim((string)($configured ?? ''));
+    return $m !== '' ? $m : (string)(AI_DEFAULT_MODEL[$provider] ?? '');
+}
+
 /* ── The OpenAI-shaped providers ─────────────────────────────────────────────
  *
  * Chat Completions is the shape most of the industry settled on, so these all
@@ -110,7 +131,7 @@ function ai_default_candidates(): array {
         $key = (string)($c[$prov . '_api_key'] ?? '');
         if ($key === '') continue;
         $byName[$prov] = ['provider' => $prov, 'api_key' => $key,
-                          'model' => (string)($c[$prov . '_model'] ?? AI_DEFAULT_MODEL[$prov]),
+                          'model' => ai_model_for($prov, $c[$prov . '_model'] ?? null),
                           'base_url' => (string)($c[$prov . '_base_url'] ?? '')];
     }
     if ($pref !== '' && isset($byName[$pref])) { $out[] = $byName[$pref]; unset($byName[$pref]); }
@@ -140,7 +161,7 @@ function ai_profile_chain(string $profile = 'default'): array {
             $out[] = [
                 'provider' => (string)$p['provider'],
                 'api_key' => (string)($p['api_key'] ?? ''),
-                'model' => (string)($p['model'] ?? (AI_DEFAULT_MODEL[$p['provider']] ?? '')),
+                'model' => ai_model_for((string)$p['provider'], $p['model'] ?? null),
                 // Only `custom` (and a proxy standing in for a known provider) needs one.
                 'base_url' => (string)($p['base_url'] ?? ''),
             ];

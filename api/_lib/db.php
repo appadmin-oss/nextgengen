@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 196;
+const NGG_SCHEMA_TARGET = 197;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5703,6 +5703,76 @@ function db_migrate(PDO $db): void {
             ALTER TABLE members ADD COLUMN coursesConfirmedAt TEXT NOT NULL DEFAULT '';
             ALTER TABLE members ADD COLUMN coursesConfirmedBy TEXT NOT NULL DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_members_courses_flag ON members(coursesFlag);
+        ",
+        197 => "
+            /* WHERE A COURSE LEADS. The curriculum already names its routes
+               out — freeCodeCamp, Trinity, ABRSM, NBTE, Cisco, Google — but
+               only in lesson prose and loose links, so a child finished a
+               course and nothing told them there was a recognised credential
+               at the end of it, and the programme could not say how many of
+               its members hold one. Three tables, because the domain has
+               three things: the organisation, the thing it awards, and the
+               person who holds it. */
+            CREATE TABLE IF NOT EXISTS providers (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              providerId TEXT UNIQUE NOT NULL,
+              name TEXT NOT NULL DEFAULT '',
+              slug TEXT NOT NULL DEFAULT '',
+              country TEXT NOT NULL DEFAULT '',
+              url TEXT NOT NULL DEFAULT '',
+              free INTEGER NOT NULL DEFAULT 0,
+              costNote TEXT NOT NULL DEFAULT '',
+              notes TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'active',
+              position INTEGER NOT NULL DEFAULT 0,
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_prv_status ON providers(status, position);
+            CREATE TABLE IF NOT EXISTS provider_awards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              awardId TEXT UNIQUE NOT NULL,
+              providerId TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL DEFAULT '',
+              kind TEXT NOT NULL DEFAULT 'certificate',
+              level TEXT NOT NULL DEFAULT '',
+              courses TEXT NOT NULL DEFAULT '[]',
+              url TEXT NOT NULL DEFAULT '',
+              examNote TEXT NOT NULL DEFAULT '',
+              costNote TEXT NOT NULL DEFAULT '',
+              free INTEGER NOT NULL DEFAULT 0,
+              validMonths INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'active',
+              position INTEGER NOT NULL DEFAULT 0,
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_paw_provider ON provider_awards(providerId, status, position);
+            CREATE TABLE IF NOT EXISTS member_credentials (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              credId TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL DEFAULT '',
+              providerId TEXT NOT NULL DEFAULT '',
+              awardId TEXT NOT NULL DEFAULT '',
+              state TEXT NOT NULL DEFAULT 'aiming',
+              grade TEXT NOT NULL DEFAULT '',
+              credentialRef TEXT NOT NULL DEFAULT '',
+              evidenceUrl TEXT NOT NULL DEFAULT '',
+              awardedOn TEXT NOT NULL DEFAULT '',
+              expiresOn TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              recordedBy TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            /* One row per member per award: re-recording is a correction, not
+               a second credential. */
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_mcr_one ON member_credentials(memberId, awardId);
+            CREATE INDEX IF NOT EXISTS idx_mcr_state ON member_credentials(state, awardedOn);
+            CREATE INDEX IF NOT EXISTS idx_mcr_centre ON member_credentials(centre, state);
+            CREATE INDEX IF NOT EXISTS idx_mcr_centreid ON member_credentials(centreId);
         ",
     ];
 

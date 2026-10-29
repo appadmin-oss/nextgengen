@@ -3735,10 +3735,22 @@ function CurriculumText({ text }) {
 /* Materials open IN the lesson — a PDF, a video, a recording, a picture or a
    YouTube/Vimeo link plays or reads in place — with "Open" beside it for a new
    tab or a download. Anything else (a document, slides, a zip) opens as before. */
-function curMaterialViewer(m) {
+/* `fileUrl` is how THIS surface fetches a lesson file from our own origin, or
+   null when it has no such route. A PDF on the image cloud is not delivered
+   to a browser, so its own address opens an error page rather than the file —
+   but the route that solves that is gated on a MEMBER session, and this same
+   component draws an instructor's preview. So the caller names it: the
+   member surfaces pass `curMemberFile`, staff passes nothing and links out,
+   and neither has to know about the other's gate. */
+/** A lesson file served from this origin (api/member/lesson-file.php). */
+function curMemberFile(materialId) { return "/api/member/lesson-file.php?id=" + encodeURIComponent(materialId || ""); }
+
+function curMaterialViewer(m, fileUrl) {
   const u = String(m.url || ""), k = m.kind;
   const v = curVideoEmbed(u);
   if (v) return { type: "frame", src: v.src, title: v.title };
+  const ours = k === "pdf" && m.materialId && fileUrl ? fileUrl(m.materialId) : "";
+  if (ours) return { type: "frame", src: ours, title: m.title || "PDF", at: ours };
   if (!CUR_SAFE_URL.test(u)) return null;
   if (k === "pdf") return { type: "frame", src: u, title: m.title || "PDF" };
   if (k === "video" && /\.(mp4|webm|mov)(\?|$)/i.test(u)) return { type: "video", src: u };
@@ -3746,14 +3758,18 @@ function curMaterialViewer(m) {
   if (k === "image") return { type: "image", src: u };
   return null;
 }
-function CurriculumMaterials({ materials }) {
+function CurriculumMaterials({ materials, fileUrl }) {
   const [open, setOpen] = React.useState("");
   if (!materials || !materials.length) return null;
   return (
     <ul className="cur-mats" aria-label="Materials">
       {materials.map((m, i) => {
         const id = m.materialId || String(i);
-        const viewer = curMaterialViewer(m);
+        const viewer = curMaterialViewer(m, fileUrl);
+        /* Open ↗ has to go to the same place the reader does, or the one
+           control that is meant to rescue a file nobody can read is the one
+           that opens the error page. */
+        const away = (viewer && viewer.at) || m.url;
         const isOpen = open === id && viewer;
         return (
           <li key={id} className={isOpen ? "is-open" : ""}>
@@ -3764,12 +3780,12 @@ function CurriculumMaterials({ materials }) {
                     <span className="cur-mat-title">{m.title || m.url}</span>
                     <span className="cur-mat-kind">{isOpen ? "Close" : (m.kind === "audio" ? "Listen" : m.kind === "image" ? "View" : m.kind === "pdf" ? "Read here" : "Watch")}</span>
                   </button>
-                : <a className="cur-mat" href={m.url} target="_blank" rel="noopener noreferrer">
+                : <a className="cur-mat" href={away} target="_blank" rel="noopener noreferrer">
                     <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
                     <span className="cur-mat-title">{m.title || m.url}</span>
                     <span className="cur-mat-kind">{m.kind}</span>
                   </a>}
-              {viewer && <a className="cur-mat-open" href={m.url} target="_blank" rel="noopener noreferrer" aria-label={"Open " + (m.title || "material") + " in a new tab"}>Open ↗</a>}
+              {viewer && <a className="cur-mat-open" href={away} target="_blank" rel="noopener noreferrer" aria-label={"Open " + (m.title || "material") + " in a new tab"}>Open ↗</a>}
             </div>
             {isOpen && (
               <div className={"cur-viewer is-" + viewer.type}>

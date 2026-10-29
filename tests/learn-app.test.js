@@ -79,6 +79,9 @@ function cleanup() {
     const now = 'now_iso()';
     php(`db_migrate(db_conn());`
       + `db_insert('members', ['memberId'=>'NGG-LRN-M1','fullName'=>'Ada Learner','email'=>'lrn-m1@example.org','type'=>'NGG','status'=>'active','role'=>'member','track'=>'Piano','courses'=>json_encode(['Piano']),'centre'=>'Egbeda','createdAt'=>${now},'updatedAt'=>${now}]);`
+      /* A club admin holds `curriculum`, which is what writes the provider
+         registry and records a result against a member. */
+      + `db_insert('members', ['memberId'=>'NGG-LRN-ADM','fullName'=>'Lrn Admin','email'=>'lrn-adm@example.org','type'=>'NGG','status'=>'active','role'=>'club_admin','createdAt'=>${now},'updatedAt'=>${now}]);`
       /* Two lessons in one course, so "this week" has something to order and
          the course page has more than one row. */
       + `db_insert('curriculum_units', ['unitId'=>'LRN-U1','course'=>'Piano','level'=>'Year 1 · Foundation','week'=>1,'position'=>1,'title'=>'Finding middle C','summary'=>'Where the hands go.','status'=>'published','passMark'=>50,'version'=>1,'objectives'=>json_encode(['Find middle C']),'body'=>"## Warm-up\\n\\nSit tall. Press **middle C**.\\n",'durationMins'=>30,'createdAt'=>${now},'updatedAt'=>${now},'publishedAt'=>${now}]);`
@@ -94,26 +97,44 @@ function cleanup() {
     browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(fs) } : {});
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = 'NGG-LRN-M1'"), false);`, ['session']);
     const errs = [];
-    const open = async (at, w) => {
+    const open = async (at, w, watch) => {
       const ctx = await browser.newContext({ viewport: { width: w || 1280, height: 900 } });
       await ctx.addCookies([{ name: 'ngg_sess', value: token, domain: '127.0.0.1', path: '/', httpOnly: true },
                             { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
       const p = await ctx.newPage();
+      if (watch) watch(p);
       p.on('pageerror', e => errs.push(String(e).slice(0, 200)));
       p.on('console', m => { if (m.type() === 'error' && !/favicon|Failed to load resource|\[BABEL\]/.test(m.text())) errs.push('console: ' + m.text().slice(0, 200)); });
       await p.goto(BASE + at, { waitUntil: 'domcontentloaded' });
       await waitForBoot(p);
-      await p.waitForSelector('.lrn-app', { timeout: 30000 });
+      await p.waitForSelector('.lrn-app', { timeout: 60000 });
+      /* The shell is up; its DATA is still in flight. Everything below waits
+         on a round trip through a cold `php -S`, so it gets the same generous
+         budget the boot does — a tight one passes on an idle machine and
+         flakes the moment this suite runs after the others (CLAUDE.md §1). */
       return p;
     };
 
     console.log('the app has a place of its own');
-    const P = await open('/learn');
-    await P.waitForSelector('.lrn-card', { timeout: 20000 });
+    /* The first screen must cost ONE request. It asked for lessons, school
+       and where-the-work-leads separately, which is three PHP bootstraps and
+       three round trips before a child on a phone sees a lesson — on shared
+       hosting that is the slowest part of opening the app. */
+    const bootCalls = [];
+    const P = await open('/learn', null, p => p.on('request', r => {
+      const u = new URL(r.url());
+      /* Only the Learn app's OWN data. The page boots a session like every
+         other page; the claim here is about the three calls this screen used
+         to make for itself. */
+      if (u.pathname === '/api/member/curriculum.php') bootCalls.push('view=' + (u.searchParams.get('view') || ''));
+    }));
+    await P.waitForSelector('.lrn-card', { timeout: 60000 });
     /* LRN_SHOTS=<dir> saves what a member sees, for design review. */
     const shot = async (pg, n) => { if (process.env.LRN_SHOTS) await pg.screenshot({ path: process.env.LRN_SHOTS + '/' + n + '.png', fullPage: true }); };
     await shot(P, 'learn-week');
     chk('/learn opens This week, with the lesson to start', /Finding middle C/.test(await P.innerText('.lrn-main')));
+    chk('…in ONE request, not one per thing the screen shows (was three) — got ' + JSON.stringify(bootCalls),
+      bootCalls.length === 1 && bootCalls[0] === 'view=boot');
     /* Pin the promise — every area of the app is reachable from its own rail —
        rather than a count, which goes stale the moment an area is added. */
     const rail = (await P.$$eval('.lrn-rail-item', ns => ns.map(n => n.innerText.trim()))).join('|');
@@ -129,7 +150,7 @@ function cleanup() {
     await P.waitForFunction(() => /^\/learn\/course\//.test(location.pathname));
     /* The address changes on the push; the screen changes on the render after
        it. Wait for the screen, or this reads the previous one. */
-    await P.waitForSelector('.lrn-course-title', { timeout: 10000 });
+    await P.waitForSelector('.lrn-course-title', { timeout: 60000 });
     /* Case-insensitively: the week headings are `text-transform: uppercase`
        and innerText reflects that (CLAUDE.md §9). */
     chk('a course has its own address too, with its weeks in order',
@@ -137,7 +158,7 @@ function cleanup() {
     await shot(P, 'learn-course');
 
     await P.click('.lrn-card:has-text("Finding middle C")');
-    await P.waitForSelector('.lrn-lesson', { timeout: 15000 });
+    await P.waitForSelector('.lrn-lesson', { timeout: 60000 });
     await shot(P, 'learn-lesson');
     const lessonUrl = new URL(P.url()).pathname;
     chk('a LESSON has an address — the thing it could never have as a sheet', lessonUrl === '/learn/lesson/LRN-U1');
@@ -149,7 +170,7 @@ function cleanup() {
 
     console.log('the address survives a cold load');
     const Q = await open('/learn/lesson/LRN-U2');
-    await Q.waitForSelector('.lrn-lesson', { timeout: 20000 });
+    await Q.waitForSelector('.lrn-lesson', { timeout: 60000 });
     chk('a lesson link opens that lesson, loaded cold — so it can be sent to somebody',
       /The C major scale/.test(await Q.innerText('.lrn-lesson-title')));
     chk('…and the router leaves the address alone rather than rewriting it to /learn',
@@ -162,10 +183,10 @@ function cleanup() {
     chk('a lesson opens with the PREVIOUS one\'s review, before today\'s teaching', !!(await Q.$('.cur-review')) || !!(await Q.$('[aria-label*="review" i]')));
     const skip = await Q.$('.lrn-lesson button:has-text("Skip"), .lrn-lesson button:has-text("skip")');
     if (skip) await skip.click();
-    await Q.waitForSelector('.lrn-checks', { timeout: 15000 });
+    await Q.waitForSelector('.lrn-checks', { timeout: 60000 });
     await Q.click('.lrn-checks .cur-opt:has-text("Thumb")');
     await Q.click('.lrn-checks button[type="submit"]');
-    await Q.waitForFunction(() => /Score:|complete/i.test(document.querySelector('.lrn-checks').innerText), { timeout: 15000 });
+    await Q.waitForFunction(() => /Score:|complete/i.test(document.querySelector('.lrn-checks').innerText), { timeout: 60000 });
     chk('answering in the app marks it and completes the lesson',
       php(`echo (string)db_row("SELECT status FROM curriculum_progress WHERE unitId='LRN-U2' AND memberId='NGG-LRN-M1'")['status'];`, ['bootstrap']) === 'completed');
     chk('…and the lesson asks how it went, which is never published',
@@ -243,7 +264,7 @@ function cleanup() {
     const R = await ctx.newPage();
     await R.goto(BASE + '/learn/lesson/LRN-U1', { waitUntil: 'domcontentloaded' });
     await waitForBoot(R);
-    await R.waitForSelector('.lrn-app', { timeout: 30000 });
+    await R.waitForSelector('.lrn-app', { timeout: 60000 });
     chk('signed out, /learn is still a real page that says what it is and offers the way in',
       /Sign in to open your lessons/.test(await R.innerText('.lrn-main')));
     chk('…and the lesson address is kept, so signing in lands on the lesson',
@@ -252,7 +273,7 @@ function cleanup() {
 
     console.log('on a phone');
     const M = await open('/learn', 390);
-    await M.waitForSelector('.lrn-card', { timeout: 20000 });
+    await M.waitForSelector('.lrn-card', { timeout: 60000 });
     const bar = await M.evaluate(() => { const r = document.querySelector('.lrn-rail').getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height), w: Math.round(r.width) }; });
     chk('the phone gets a bottom bar, not a rail squeezed sideways', bar.w > 300 && bar.top > 400);
     const tap = await M.evaluate(() => Math.min.apply(null, [...document.querySelectorAll('.lrn-rail-item')].map(e => Math.round(e.getBoundingClientRect().height))));
@@ -270,7 +291,7 @@ function cleanup() {
           'method'=>'retrieval','what'=>'Past questions, out loud.','whenWhere'=>'After supper.','sessionsPerWeek'=>3,'helper'=>'self','position'=>0]);`, ['bootstrap']);
 
     const S = await open('/learn/plan');
-    await S.waitForSelector('.lrn-plan', { timeout: 20000 });
+    await S.waitForSelector('.lrn-plan', { timeout: 60000 });
     chk('School shows the subjects their own results chose, with the week so far',
       /Mathematics/.test(await S.innerText('.lrn-main')) && /62% now/.test(await S.innerText('.lrn-plan'))
       && /0 of 3 this week/i.test(await S.innerText('.lrn-plan')));
@@ -282,7 +303,7 @@ function cleanup() {
        words rather than hand a child a blank paper. That is the state a
        deployment without a key is actually in. */
     await S.click('.lrn-sec button:has-text("Start")');
-    await S.waitForSelector('.lrn-plan-err', { timeout: 20000 });
+    await S.waitForSelector('.lrn-plan-err', { timeout: 60000 });
     chk('with no question source it says so plainly, and points somewhere real',
       /flashcards|questions right now/i.test(await S.innerText('.lrn-plan-err')));
     await S.goBack();
@@ -290,9 +311,54 @@ function cleanup() {
     chk('Back goes back from a subject, like everywhere else in the app', !!(await S.$('.lrn-plan')));
 
     const W = await open('/learn');
-    await W.waitForSelector('.lrn-card', { timeout: 20000 });
+    await W.waitForSelector('.lrn-card', { timeout: 60000 });
     chk('…and the week shows school WITH the Club lessons, not behind another tab',
       /school this week/i.test(await W.innerText('.lrn-main')) && /Mathematics/.test(await W.innerText('.lrn-main')));
+
+    /* ── Where the work leads ──────────────────────────────────────────────
+       A child who finishes a course should be able to see there is a
+       recognised certificate at the end of it, and say they are going for
+       it. What they must NOT be able to do is claim they hold one — that is
+       the centre's record of them (domain/providers.php). */
+    console.log('where the work leads');
+    php(`$p = backend_dispatch('admin.providers.save', ['requesterId' => 'NGG-LRN-ADM',
+            'data' => ['name' => 'Trinity College London', 'url' => 'https://www.trinitycollege.com/']]);
+         $a = backend_dispatch('admin.providers.award.save', ['requesterId' => 'NGG-LRN-ADM',
+            'data' => ['providerId' => $p['providerId'], 'title' => 'Graded Examination in Music',
+                       'kind' => 'graded_exam', 'level' => 'Grade 3', 'courses' => ['Piano']]]);
+         file_put_contents('${TMP.replace(/\\/g, '/')}/award.txt', $a['awardId']);`, ['bootstrap']);
+
+    const C = await open('/learn/course/piano');
+    await C.waitForSelector('.lrn-award', { timeout: 60000 });
+    chk('a course says where it leads, and names the body that awards it',
+      /Where this leads/i.test(await C.innerText('.lrn-main'))
+      && /Graded Examination in Music/.test(await C.innerText('.lrn-award'))
+      && /Trinity College London/.test(await C.innerText('.lrn-award')));
+    chk('…and offers no way to claim they hold it — their centre records that',
+      (await C.$$('.lrn-award-aim')).length === 1
+      && !/I (hold|have) (it|this)/i.test(await C.innerText('.lrn-main')));
+
+    await C.click('.lrn-award-aim');
+    await C.waitForFunction(() => {
+      const b = document.querySelector('.lrn-award-aim');
+      return b && /You're going for this/.test(b.innerText);
+    }, null, { timeout: 30000 });
+    chk('"I\'m going for this" is the member\'s own aim, recorded against them',
+      php(`echo (string)(db_row("SELECT state FROM member_credentials WHERE memberId = 'NGG-LRN-M1'")['state'] ?? '');`, ['bootstrap']) === 'aiming');
+
+    /* A result the CENTRE records shows as held, and on the week page —
+       a credential does not belong to the course it came from. */
+    php(`$aw = trim(file_get_contents('${TMP.replace(/\\/g, '/')}/award.txt'));
+         backend_dispatch('admin.providers.credential.set', ['requesterId' => 'NGG-LRN-ADM',
+            'memberId' => 'NGG-LRN-M1', 'data' => ['awardId' => $aw, 'state' => 'earned',
+            'awardedOn' => '2026-03-14', 'grade' => 'Merit']]);`, ['bootstrap']);
+    const H = await open('/learn');
+    await H.waitForSelector('.lrn-earned', { timeout: 60000 });
+    chk('a credential their centre recorded shows on the week, wherever it came from',
+      /1 credential/i.test(await H.innerText('.lrn-earned'))
+      && /Graded Examination in Music/.test(await H.innerText('.lrn-earned')));
+    await H.context().close();
+    await C.context().close();
     await W.context().close();
     await S.context().close();
     await P.context().close();

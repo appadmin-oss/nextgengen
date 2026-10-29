@@ -101,6 +101,7 @@ const CR_PAGES = {
     { id: "curriculum", label: "Curriculum", desc: "What the Club teaches, lesson by lesson, and the exam that ends each one.", cap: "curriculum" },
     { id: "feedback", label: "How lessons land", desc: "What members tapped after each lesson — the ones most of a class could not follow, worst first.", cap: ["curriculum", "club"] },
     { id: "course-health", label: "Course health", desc: "Whether each course can be taught: children, instructors, lessons, class times, a channel, and what is missing.", cap: ["curriculum", "club", "people"] },
+    { id: "providers", label: "Where courses lead", desc: "The awarding bodies outside NGG — freeCodeCamp, Trinity, NBTE — what each awards, and which members hold one.", cap: ["curriculum", "club"] },
     { id: "sessions", label: "Sessions", desc: "Each session is 12 weeks.", cap: "content" },
     { id: "missions", label: "Missions", desc: "Anchor missions members complete and mentors verify.", cap: "content" },
     { id: "assignments", label: "Assignments", desc: "Coursework submitted for grading.", cap: "content" },

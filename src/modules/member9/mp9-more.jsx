@@ -563,14 +563,8 @@ Object.assign(Mp9Portal.prototype, {
     const A = sh.k === "assign" ? (d.assignments || []).find(a => a.assignmentId === sh.id) : null;
     // Done means it cannot be handed in (again): marked, closed. Returned work, and work not yet marked, can be.
     const aDone = !!(A && !A.canSubmit);
-    const L = sh.k === "lesson" ? s.lesson : null, U = L && L.unit;
-    const parts = U ? ["Read the lesson"].concat((U.materials || []).length ? ["Open the materials"] : []).concat((U.checks || []).length ? ["Check your understanding"] : []) : [];
-    const prog = L && L.progress;
-    const lDone = !!(prog && prog.status === "completed");
-    const lPart = lDone ? parts.length : Math.min(s.lPart || 0, parts.length);
-    const checkAt = parts.indexOf("Check your understanding");
     const P = this.st("mp9.project", null);
-    const titles = { lesson: U ? U.title : s.lessonErr ? "Lesson" : "Loading the lesson…", assign: A ? A.title : "Assignment", idea: "Tell us what you think", request: "New request to the desk", change: "Ask for a change", gate: "Gate pass",
+    const titles = { assign: A ? A.title : "Assignment", idea: "Tell us what you think", request: "New request to the desk", change: "Ask for a change", gate: "Gate pass",
       team: P ? "Update for your team" : "Start a team project", portfolio: "Add to my portfolio", profile: "Edit profile", proof: "Add proof", password: s.pwCode ? "Set a new password" : (this.dd("sec") || {}).hasPassword ? "Change your password" : "Set a password" };
     const proofText = s.sPick === "text", proofLink = s.sPick === "link";
     const sendable = !s.sBusy && { proof: !!s.sPick && (proofText ? txt.length > 5 : proofLink ? /^https?:\/\//i.test(txt) : !!s.sFile), idea: !!s.sPick && (MP9_IDEA_TOPICS[s.sPick] === "experience" ? !!s.sRate : txt.trim().length >= 6), request: !!s.sPick, change: !!s.sPick,
@@ -610,17 +604,10 @@ Object.assign(Mp9Portal.prototype, {
     const upload = (file, kind) => { set({ sBusy: true }); (/^image\//.test(file.type || "") ? NGGApi.uploadOrInline(file, kind) : NGGApi.uploadFile(file, kind))
       .then(u => set({ sBusy: false, sFile: { name: file.name, url: mp9Abs(u.url) } })).catch(e => { set({ sBusy: false }); this.toast(mp9Err(e)); }); };
     const acct = d.member || {}, hasPw = !!(this.dd("sec") || {}).hasPassword, pwId = acct.memberId || this.me().id;
-    const lcQs = U ? (U.checks || []).map(q => { const res = s.lqRes && (s.lqRes.marks || {})[q.checkId];
-      const opts = q.options || [];
-      return { q: q.prompt, why: res ? (res.correct ? "Correct" : res.feedback || "Not quite.") : "", hasWhy: !!res, wFg: res && res.correct ? "#1d6b30" : "#b0361c",
-        isText: !opts.length, text: (s.lqText || {})[q.checkId] || "", onText: e => set({ lqText: { ...(this.state.lqText || {}), [q.checkId]: e.target.value } }),
-        opts: opts.map((o, oi) => { const on = s.lq[q.checkId] === oi; return { o, on: on ? "true" : "false", ring: on ? "#0b0b0c" : "#d6d4cc", bw: on ? "2px" : "1px", pick: () => { if (!s.lqRes) set({ lq: { ...this.state.lq, [q.checkId]: oi } }); } }; }) }; }) : [];
-    const allAns = U && (U.checks || []).every(q => (q.options || []).length ? s.lq[q.checkId] !== undefined : ((s.lqText || {})[q.checkId] || "").trim().length > 0);
-    const res = s.lqRes;
     const qr = sh.k === "gate" ? this.gateQr() : "";
     return {
       sheetOn: !!s.sheet, closeSheet: () => this.closeSheet(), sheetTitle: titles[sh.k] || "", sendSheet: send, cantSend: !sendable, sendOp: sendable ? 1 : 0.4,
-      shLesson: sh.k === "lesson", shAssign: sh.k === "assign", shIdea: sh.k === "idea", shRequest: sh.k === "request", shChange: sh.k === "change", shGate: sh.k === "gate", shTeam: sh.k === "team", shPortfolio: sh.k === "portfolio", shProfile: sh.k === "profile", shPassword: sh.k === "password", shProof: sh.k === "proof",
+      shAssign: sh.k === "assign", shIdea: sh.k === "idea", shRequest: sh.k === "request", shChange: sh.k === "change", shGate: sh.k === "gate", shTeam: sh.k === "team", shPortfolio: sh.k === "portfolio", shProfile: sh.k === "profile", shPassword: sh.k === "password", shProof: sh.k === "proof",
       openGate: () => this.openSheet({ k: "gate" }), openRequest: () => this.openSheet({ k: "request" }), openIdea: () => this.openSheet({ k: "idea" }), openTeam: () => this.openSheet({ k: "team" }), openPortfolio: () => this.openSheet({ k: "portfolio" }), openChange: () => this.openSheet({ k: "change" }),
       proofMission: sh.k === "proof" ? sh.t || "" : "",
       proofTypes: [["photo", "Upload a photo", "ph ph-camera"], ["audio", "Upload an audio clip", "ph ph-microphone"], ["video", "Upload a video", "ph ph-video-camera"], ["file", "Upload a file", "ph ph-file"], ["link", "Paste a link", "ph ph-link"], ["text", "Describe what you did", "ph ph-pencil-simple-line"]]
@@ -660,28 +647,6 @@ Object.assign(Mp9Portal.prototype, {
       ph: mp9PhotoAsk(this, me, s, set),
       shForm: ["proof", "assign", "idea", "request", "change", "team", "portfolio"].includes(sh.k) && !(sh.k === "assign" && aDone),
       sText: s.sText, onSText: e => set({ sText: e.target.value }), sAnon: s.sAnon ? "true" : "false", toggleAnon: () => set({ sAnon: !s.sAnon }), anonIcon: s.sAnon ? "ph-fill ph-check-square" : "ph ph-square",
-      lRead: () => this.speak(U ? [U.title, (U.objectives || []).join(". "), U.body || ""].filter(Boolean).join(". ") : "", "lesson"),
-      lReadL: this.state.speaking === "lesson" ? "Stop reading" : "Read the lesson aloud", canReadL: !!U && this.canSpeak(),
-      sLesson: U ? { div: U.course + " · week " + U.week + (U.durationMins ? " · about " + U.durationMins + " min" : ""),
-        parts: parts.map((p, pi) => ({ p, n: pi + 1, done: pi < lPart, now: pi === lPart, icon: pi < lPart ? "ph-fill ph-check-circle" : pi === lPart ? "ph-fill ph-circle-half" : "ph ph-circle", ic: pi < lPart ? "#1d6b30" : pi === lPart ? "#a07400" : "#c9c6bc", fw: pi === lPart ? 600 : 400 })),
-        finished: lPart >= parts.length, notFinished: lPart < parts.length && lPart !== checkAt, nowPart: (parts[lPart] || "").toLowerCase(),
-        body: String(U.body || U.summary || "This lesson has no written part. Open its materials.").replace(/[#*_>`]/g, "").slice(0, 1800),
-        /* A PDF opens in the reader here, fetched through this site
-           (lesson-file.php): a PDF on the image cloud is not delivered to a
-           browser, so its link opened an error page. Other links stay links. */
-        mats: (U.materials || []).map(m => { const isPdf = m.kind === "pdf" || /\.pdf(\?|$)/i.test(m.url || ""); const via = isPdf && m.materialId ? mp9LessonFile(m.materialId) : "";
-          return { t: m.title || m.kind, url: via || m.url, icon: m.kind === "video" ? "ph ph-video" : isPdf ? "ph ph-file-pdf" : "ph ph-link",
-            open: e => { if (!via) return; e.preventDefault(); set({ pdfView: { src: via, name: m.title || "Lesson file" } }); } }; }) }
-        : { div: s.lessonErr || "", parts: [], finished: false, notFinished: false, nowPart: "", body: s.lessonErr || "Loading…", mats: [] },
-      lLearn: U ? (U.objectives || []).slice(0, 5) : [],
-      lcShow: !!U && checkAt >= 0 && lPart >= checkAt && !lDone, lcDone: lDone, lcPass: U ? U.passMark || 0 : 0, lcScore: res ? (res.pct !== undefined ? res.pct : res.bestPct || 0) + "%" : "",
-      lcPassed: !!res && !!res.passed, lcFailed: !!res && !res.passed && !res.pending, lcChecked: !!res, lcCanCheck: !res && !!allAns, lcQs,
-      lcCheck: () => { const answers = {}; (U.checks || []).forEach(q => { answers[q.checkId] = (q.options || []).length ? s.lq[q.checkId] : ((s.lqText || {})[q.checkId] || ""); });
-        set({ sBusy: true }); NGGApi.member.curriculumSubmit(U.unitId, answers).then(r => set({ sBusy: false, lqRes: { pct: r.pct !== undefined ? r.pct : r.progress && r.progress.bestPct, passed: !!(r.passed || (r.progress && r.progress.status === "completed")), pending: !!(r.pending || (r.progress && r.progress.pending)), marks: r.marks || (r.progress && r.progress.marks) || {} } }))
-          .catch(e => { set({ sBusy: false }); this.toast(mp9Err(e)); }); },
-      lcRetry: () => set({ lq: {}, lqText: {}, lqRes: null }),
-      lcFinish: () => { this.refresh(["cur", "today"]); this.closeSheet(); this.toast("Lesson complete · " + (res ? res.pct : "") + "%"); },
-      doPart: () => { const n = lPart + 1; set({ lPart: n }); if (n === checkAt) this.toast("Now check your understanding"); },
       sAssign: A ? { div: (A.track || me.track || "Club") + (A.points ? " · " + A.points + " points" : ""), due: A.dueAt ? mp9Date(A.dueAt, { weekday: "short", day: "numeric", month: "short" }) : "no date", s: mp9AsgState(A),
         brief: A.instructions || A.brief || "", tips: mp9AsgTips(A), hasTips: mp9AsgTips(A).length > 0, done: aDone, open: !aDone } : {},
       ideaChips: chips(Object.keys(MP9_IDEA_TOPICS)),
@@ -1030,7 +995,6 @@ Object.assign(Mp9Portal.prototype, {
 });
 
 /** A lesson file, from this site (api/member/lesson-file.php). */
-function mp9LessonFile(id) { return "/api/member/lesson-file.php?id=" + encodeURIComponent(id || ""); }
 
 function mp9Greeting() { const h = new Date().getHours(); return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening"; }
 

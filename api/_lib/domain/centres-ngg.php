@@ -116,6 +116,7 @@ const CENTRE_NAME_TABLES = [
     'summer_students',
     'testimonials',
     'lesson_feedback',
+    'member_credentials',
     'v3_scores',
     'wifi_gateways',
     'wifi_speed_tests',
