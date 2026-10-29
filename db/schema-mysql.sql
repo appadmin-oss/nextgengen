@@ -3125,3 +3125,45 @@ CREATE INDEX idx_centres_cac ON centres (cacLocationId);
 ALTER TABLE attendance ADD COLUMN centre VARCHAR(80) NOT NULL DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (137) ON DUPLICATE KEY UPDATE version = version;
+
+-- 138: the processes that wait on a person (domain/make.php) — the question
+-- asked about each absence and the guardian's answer, each safeguarding flag
+-- and who took it, and which Summer School dates have been announced.
+CREATE TABLE IF NOT EXISTS absence_asks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  ref VARCHAR(24) NOT NULL UNIQUE,
+  infractionId INT NOT NULL,
+  personId VARCHAR(64) NOT NULL,
+  personType VARCHAR(16) NOT NULL DEFAULT 'student',
+  date VARCHAR(10) NOT NULL,
+  centre VARCHAR(80) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'asked',
+  reason VARCHAR(16) NOT NULL DEFAULT '',
+  note VARCHAR(300) NOT NULL DEFAULT '',
+  channel VARCHAR(24) NOT NULL DEFAULT '',
+  messageId VARCHAR(120) NOT NULL DEFAULT '',
+  askedAt VARCHAR(32) NOT NULL DEFAULT '',
+  answeredAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE INDEX uq_absask_infraction (infractionId),
+  INDEX idx_absask_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS safeguarding_flags (
+  ref VARCHAR(64) NOT NULL PRIMARY KEY,
+  source VARCHAR(40) NOT NULL DEFAULT '',
+  category VARCHAR(24) NOT NULL DEFAULT '',
+  severity VARCHAR(16) NOT NULL DEFAULT '',
+  centre VARCHAR(80) NOT NULL DEFAULT '',
+  flaggedAt VARCHAR(32) NOT NULL DEFAULT '',
+  ackAt VARCHAR(32) NOT NULL DEFAULT '',
+  ackBy VARCHAR(80) NOT NULL DEFAULT '',
+  ackChannel VARCHAR(24) NOT NULL DEFAULT '',
+  ackMessageId VARCHAR(120) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS edition_milestones (
+  cohortId VARCHAR(64) NOT NULL,
+  milestone VARCHAR(24) NOT NULL,
+  firedAt VARCHAR(32) NOT NULL DEFAULT '',
+  PRIMARY KEY (cohortId, milestone)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO schema_version (version) VALUES (138) ON DUPLICATE KEY UPDATE version = version;

@@ -8410,7 +8410,7 @@ function MemberRecordPanel({ memberId, tab }) {
       <Kv items={[["Standing", c.state + (c.until ? " until " + c.until : "")], ["Lates (term)", c.lates], ["Absences", c.absences + (c.absenceLimit ? " / " + c.absenceLimit : "")], ["Fines owed", fmtMoney(c.finesOwed)]]}/>
       {c.awaitingReview && <div className="admin-hint mr-warn">A sanction is waiting for review.</div>}
       <div className="admin-detail-h">Infractions</div>
-      {c.infractions.length === 0 ? none("None recorded.") : c.infractions.map(x => <div className="admin-detail-row" key={x.id}><span className={x.voidedAt ? "mr-void" : ""}><span className="mono">{x.date}</span> · {x.kind}{x.note ? " — " + x.note : ""}</span>{x.voidedAt && <span className="chip">voided</span>}</div>)}
+      {c.infractions.length === 0 ? none("None recorded.") : c.infractions.map(x => <div className="admin-detail-row" key={x.id}><span className={x.voidedAt ? "mr-void" : ""}><span className="mono">{x.date}</span> · {x.kind}{x.note ? " — " + x.note : ""}{x.guardianReason ? " · " + guardianReasonText(x.guardianReason) : ""}</span>{x.voidedAt && <span className="chip">voided</span>}</div>)}
       <div className="admin-detail-h">Sanctions</div>
       {c.sanctions.length === 0 ? none("None.") : c.sanctions.map(x => <div className="admin-detail-row" key={x.id}><span><span className="mono">{String(x.issuedAt || "").slice(0, 10)}</span> · {x.kind}{x.amount ? " · " + fmtMoney(x.amount) : ""}{x.reason ? " — " + x.reason : ""}</span><span className="chip">{x.status}</span></div>)}
     </div>;

@@ -798,7 +798,7 @@ function crMbRecBlocks(d, ctx) {
     return out.concat([
       { type: "kpis", span: 6, items: [{ l: "Standing", v: c.state + (c.until ? " until " + crDate(c.until) : "") }, { l: "Lates this term", v: crNum(c.lates) }, { l: "Absences", v: crNum(c.absences) + (c.absenceLimit ? " / " + c.absenceLimit : "") }, { l: "Fines owed", v: fmtMoney(c.finesOwed) }] },
       c.awaitingReview ? { type: "note", span: 6, icon: "gavel", tone: "warn", text: "A sanction is waiting for review.", act: { l: "Open Conduct & fines", run: () => ctx.go("money", "conduct") } } : null,
-      { type: "list", span: 3, title: "Infractions", empty: "None recorded.", rows: (c.infractions || []).map(x => ({ icon: x.voidedAt ? "prohibit" : "warning", t: x.kind + (x.note ? " — " + x.note : ""), s: crDate(x.date) + (x.voidedAt ? " · voided" : "") })) },
+      { type: "list", span: 3, title: "Infractions", empty: "None recorded.", rows: (c.infractions || []).map(x => ({ icon: x.voidedAt ? "prohibit" : "warning", t: x.kind + (x.note ? " — " + x.note : "") + (x.guardianReason ? " · " + guardianReasonText(x.guardianReason) : ""), s: crDate(x.date) + (x.voidedAt ? " · voided" : "") })) },
       { type: "list", span: 3, title: "Sanctions", empty: "None.", rows: (c.sanctions || []).map(x => ({ icon: "gavel", t: x.kind + (x.amount ? " · " + fmtMoney(x.amount) : ""), s: crDate(x.issuedAt) + (x.reason ? " · " + x.reason : ""), m: x.status })) },
     ].filter(Boolean));
   }

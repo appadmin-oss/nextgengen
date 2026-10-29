@@ -265,6 +265,9 @@ return [
     // -----------------------------------------------------------------------
     'hooks' => [
         'attendance_secret' => '',
+        // Make.com scenarios (docs/make.md): absence reasons, safeguarding
+        // acknowledgements, and the read actions — editions, impact, jobs.
+        'make_secret' => '',
     ],
 
     // -----------------------------------------------------------------------

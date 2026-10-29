@@ -432,7 +432,7 @@ function community_raise_safeguarding(string $authorId, string $surface, string 
         ]);
     } catch (\Throwable $e) { /* never let bookkeeping swallow the alert below */ }
     if (function_exists('event_emit')) {
-        event_emit('behaviour.flagged', [
+        behaviour_flag_emit([
             'ref' => $caseId, 'subject' => $name, 'subjectId' => $authorId,
             'category' => 'wellbeing', 'severity' => 'urgent',
             'source' => 'community.' . ($surface === 'comment' ? 'comment' : 'post'),

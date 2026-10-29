@@ -871,3 +871,24 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   `tests/integration/gate-e2e.php` drives a rename from CACENTRE through the
   real gate into NGG and the portal.
 
+## 2026-10-29 — Make.com: the processes that wait on a person
+
+- `domain/make.php`, one signed door `api/hooks/make.php`
+  (`hooks.make_secret`, same HMAC as the attendance hook; empty = 404), op
+  `hooks.make`, `action`: `absence.reason`, `safeguarding.ack`,
+  `safeguarding.status`, `registration.status`, `editions`, `impact`, `jobs`.
+- Out: `private.attendance.absences` (hourly after the sweep, one per centre
+  per day; built only when a destination names it; each absence asked once —
+  `absence_asks.infractionId` unique; no number → `no_contact`),
+  `private.registration.stalled` (guardian number + the same verify link),
+  `safeguarding.flag` (every `behaviour.flagged` now goes through
+  `behaviour_flag_emit()`, which also records `safeguarding_flags` and emits
+  the nameless twin), `edition.milestone` (`edition_milestones`, once each,
+  an overtaken one skipped).
+- A guardian's reason sits beside the absence (`absence_reasons_attach`, the
+  conduct screens show it); it never voids it. Acknowledgements show in the
+  Behaviour drawer; a log marked reviewed counts as acknowledged.
+- Migration 138. Tests: `api/tests/run.php` "make:" block;
+  `tests/make-hook.test.js` (signature, staleness, actions over real HTTP).
+- Why: shared hosting cannot keep time on a quiet weekend, hear a reply, or
+  wait days for a person. Make does those; every rule stays here.

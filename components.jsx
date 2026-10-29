@@ -3089,6 +3089,15 @@ function fmtMoney(n) {
   return "₦" + (isFinite(v) ? v.toLocaleString(NGG_LOCALE, { maximumFractionDigits: 0 }) : "0");
 }
 
+/** A guardian's answer to "why were they away?" (domain/make.php), as one
+ *  line beside the absence. It explains the absence; it does not void it. */
+const GUARDIAN_REASON_LABELS = { sick: "Sick", travelled: "Travelled", family: "Family matter", other: "Other" };
+function guardianReasonText(g) {
+  if (!g || !g.reason) return "";
+  return "Guardian says: " + (GUARDIAN_REASON_LABELS[g.reason] || g.reason) + (g.note ? " — " + g.note : "")
+    + (g.channel ? " (" + g.channel + ")" : "");
+}
+
 function nggFmtTime(s) {
   if (!isFinite(s) || s < 0) s = 0;
   const m = Math.floor(s / 60), sec = Math.floor(s % 60);

@@ -49,7 +49,7 @@ function admin_member_record(array $p): array {
         $st = policy_state($id, 'member');
         $out['conduct'] = ['state' => (string)$st['state'], 'until' => (string)($st['until'] ?? ''), 'lates' => (int)$st['lates'], 'absences' => (int)$st['absences'],
             'absenceLimit' => (int)$st['absenceLimit'], 'finesOwed' => (int)$st['finesOwed'], 'awaitingReview' => !empty($st['awaitingReview']),
-            'infractions' => db_all("SELECT id, kind, date, note, voidedAt FROM infractions WHERE personId = ? ORDER BY date DESC, id DESC LIMIT 15", [$id]),
+            'infractions' => absence_reasons_attach(db_all("SELECT id, kind, date, note, voidedAt FROM infractions WHERE personId = ? ORDER BY date DESC, id DESC LIMIT 15", [$id])),
             'sanctions' => db_all('SELECT id, kind, status, amount, reason, issuedAt, endsAt FROM sanctions WHERE personId = ? ORDER BY issuedAt DESC LIMIT 10', [$id])];
     }
 

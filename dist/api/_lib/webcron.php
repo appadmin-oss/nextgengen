@@ -308,6 +308,7 @@ function web_cron_reminders(): void {
             if (!$already) {
                 audit('registration.stalled', null, (string)$s['studentId'], ['hours' => (int)$ageH], '');
                 event_emit('registration.stalled', ['ref' => (string)$s['studentId'], 'name' => (string)$s['fullName'], 'hoursPending' => (int)$ageH]);
+                if (function_exists('make_registration_stalled_emit')) make_registration_stalled_emit($s, (int)$ageH);
             }
         }
     }
@@ -366,6 +367,10 @@ function web_cron_maintenance(): void {
     // (person, kind, date) means a double run cannot become a double strike.
     if (function_exists('policy_sweep_absences')) policy_sweep_absences();
     if (function_exists('policy_sweep_member_absences')) policy_sweep_member_absences();
+    // Then ask guardians about the absences just logged, and announce any
+    // Summer School date that has arrived (domain/make.php). No-ops unless an
+    // integration subscribes; guarded inside so a fault costs nothing else.
+    if (function_exists('make_run')) make_run();
     /* Locally-held images nothing references any more — a rejected application,
      * a duplicate registration, an original replaced by a retake. The store is
      * write-on-intake and an intake can be refused after the bytes have landed,

@@ -675,7 +675,7 @@ function mentor_bulk_award(array $p): array {
         // must do so per child even when thirty were logged in one action —
         // a batch is not a reason for a safeguarding flag to go unseen.
         if ((in_array($category, BEHAVIOUR_CATEGORIES, true) && $category === 'wellbeing') || $severity === 'urgent') {
-            event_emit('behaviour.flagged', ['ref' => $logId, 'subject' => (string)$s['fullName'], 'subjectId' => $sid,
+            behaviour_flag_emit(['ref' => $logId, 'subject' => (string)$s['fullName'], 'subjectId' => $sid,
                 'category' => $category, 'severity' => $severity, 'by' => (string)$g['mentor']['fullName']]);
         }
     }

@@ -315,6 +315,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'hooks.gate.resolve'          => 'hooks_gate_resolve',
             'hooks.gate.search'           => 'hooks_gate_search',
             'hooks.gate.locations'        => 'hooks_gate_locations',
+            'hooks.make'                  => 'hooks_make',
             'admin.behaviour.log'         => 'admin_behaviour_log',
             'admin.behaviour.list'        => 'admin_behaviour_list',
             'admin.behaviour.review'      => 'admin_behaviour_review',

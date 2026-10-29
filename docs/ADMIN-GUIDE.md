@@ -305,7 +305,10 @@ one read, so moving between them costs nothing:
 - **Attendance**: the last 60 days, with lates (and by how many minutes) and
   the absences the nightly sweep recorded.
 - **Conduct**: their standing, lates, absences against the limit, fines owed,
-  infractions and sanctions.
+  infractions and sanctions. When a guardian has answered "why were they
+  away?" on WhatsApp, their answer is beside the absence — "Guardian says:
+  Sick (whatsapp)". It explains the absence; it does not remove it. Void the
+  absence yourself if the reason excuses it.
 - **Fees**: balance, payable now and recent ledger entries. Only for `fees`.
 - **Curriculum**: how far through their course they are, what is overdue and
   what comes next.
@@ -1429,6 +1432,18 @@ Change, Test and Remove act on that one service.
 - **Gemini** keys from Google AI Studio now start `AQ.`; older ones start
   `AIza`. Both work. Leave the model blank: the key uses the newest Gemini
   model Google lets it use, and moves on by itself when one is retired.
+
+### Make.com
+
+If the programme runs Make.com scenarios (`docs/make.md`), three things show up
+in the Control Room:
+
+- guardians' answers about absences, beside each absence on the Conduct tab;
+- on the Behaviour monitor, who acknowledged a safeguarding flag, when, and
+  through what — the escalation stops as soon as somebody does, or as soon as
+  the log is marked reviewed here;
+- nothing else. Make never consents for a parent, never voids an absence and
+  never issues or lifts a sanction.
 
 The **Photo framing** keys (two Gemini keys: one measures every headshot, the
 other checks photos and backs it up) and the table of which provider answers

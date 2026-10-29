@@ -1303,7 +1303,7 @@ function admin_policy_person(array $p): array {
     return ['ok' => true,
         'personId' => $id, 'personType' => $type,
         'state' => policy_state($id, $type),
-        'infractions' => db_all('SELECT * FROM infractions WHERE personId = ? ORDER BY date DESC, id DESC LIMIT 200', [$id]),
+        'infractions' => absence_reasons_attach(db_all('SELECT * FROM infractions WHERE personId = ? ORDER BY date DESC, id DESC LIMIT 200', [$id])),
         'sanctions' => db_all('SELECT * FROM sanctions WHERE personId = ? ORDER BY issuedAt DESC LIMIT 100', [$id]),
     ];
 }

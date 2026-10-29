@@ -4855,7 +4855,7 @@ function PolicyPersonModal({ data, onClose, onChange }) {
             <tr key={i.id} style={i.voidedAt ? { opacity: .5 } : undefined}>
               <td className="mono">{i.date}</td>
               <td>{String(i.kind).replace(/_/g, " ")}</td>
-              <td style={{ fontSize: 12 }}>{i.voidedAt ? <em>Voided — {i.voidReason}</em> : i.note}</td>
+              <td style={{ fontSize: 12 }}>{i.voidedAt ? <em>Voided — {i.voidReason}</em> : i.note}{i.guardianReason && <div className="admin-cell-sub">{guardianReasonText(i.guardianReason)}</div>}</td>
               <td>{!i.voidedAt && <button className="btn btn-ghost btn-sm" disabled={busy === String(i.id)} onClick={() => voidOne(i)}>Void</button>}</td>
             </tr>
           ))}</tbody>

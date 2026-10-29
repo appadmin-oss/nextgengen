@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 137;
+const NGG_SCHEMA_TARGET = 138;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -4050,6 +4050,34 @@ function db_migrate(PDO $db): void {
                 ALTER TABLE centres ADD COLUMN cacSyncedAt TEXT NOT NULL DEFAULT '';
                 ALTER TABLE attendance ADD COLUMN centre TEXT NOT NULL DEFAULT '';
                 CREATE INDEX IF NOT EXISTS idx_centres_cac ON centres(cacLocationId);",
+        /* 138 — the processes that wait on a person (domain/make.php): the
+         * question asked about each absence and the guardian's answer, each
+         * safeguarding flag and who took it, and which Summer School dates
+         * have already been announced. */
+        138 => "CREATE TABLE IF NOT EXISTS absence_asks (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ref TEXT UNIQUE NOT NULL,
+                  infractionId INTEGER NOT NULL,
+                  personId TEXT NOT NULL, personType TEXT NOT NULL DEFAULT 'student',
+                  date TEXT NOT NULL, centre TEXT NOT NULL DEFAULT '',
+                  status TEXT NOT NULL DEFAULT 'asked',
+                  reason TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+                  channel TEXT NOT NULL DEFAULT '', messageId TEXT NOT NULL DEFAULT '',
+                  askedAt TEXT NOT NULL DEFAULT '', answeredAt TEXT NOT NULL DEFAULT ''
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_absask_infraction ON absence_asks(infractionId);
+                CREATE INDEX IF NOT EXISTS idx_absask_date ON absence_asks(date);
+                CREATE TABLE IF NOT EXISTS safeguarding_flags (
+                  ref TEXT PRIMARY KEY,
+                  source TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', severity TEXT NOT NULL DEFAULT '',
+                  centre TEXT NOT NULL DEFAULT '', flaggedAt TEXT NOT NULL DEFAULT '',
+                  ackAt TEXT NOT NULL DEFAULT '', ackBy TEXT NOT NULL DEFAULT '',
+                  ackChannel TEXT NOT NULL DEFAULT '', ackMessageId TEXT NOT NULL DEFAULT ''
+                );
+                CREATE TABLE IF NOT EXISTS edition_milestones (
+                  cohortId TEXT NOT NULL, milestone TEXT NOT NULL, firedAt TEXT NOT NULL DEFAULT '',
+                  PRIMARY KEY (cohortId, milestone)
+                );",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

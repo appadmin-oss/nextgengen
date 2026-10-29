@@ -25391,5 +25391,128 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if (is_array($keep['att'])) setting_set('attendance', $keep['att'], 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'attendance'");
 })();
 
+// ── Make.com: the processes that wait on a person (domain/make.php) ──
+(function () {
+    $now = now_iso(); $today = attendance_today();
+    $yday = gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') - 86400);
+    db_insert('members', ['memberId' => 'NGG-MK-1', 'fullName' => 'Kemi Adeyemi', 'type' => 'NGG', 'status' => 'active', 'centre' => 'Make Centre', 'parentName' => 'Mrs Adeyemi', 'parentPhone' => '08031234567']);
+    db_insert('members', ['memberId' => 'NGG-MK-2', 'fullName' => 'Tunde Bello', 'type' => 'NGG', 'status' => 'active', 'centre' => 'Make Centre', 'parentPhone' => '']);
+    db_insert('infractions', ['personId' => 'NGG-MK-1', 'personType' => 'member', 'kind' => 'absence', 'date' => $yday, 'note' => 'No check-in.', 'createdAt' => $now]);
+    db_insert('infractions', ['personId' => 'NGG-MK-2', 'personType' => 'member', 'kind' => 'absence', 'date' => $yday, 'note' => 'No check-in.', 'createdAt' => $now]);
+    db_insert('infractions', ['personId' => 'NGG-MK-1', 'personType' => 'member', 'kind' => 'absence', 'date' => '2020-01-06', 'note' => 'Old.', 'createdAt' => $now]);
+
+    chk('make: no subscriber, nothing built — the private list is not even assembled', (make_absences_run()['skipped'] ?? '') === 'no_subscriber'
+        && !db_row("SELECT id FROM absence_asks WHERE personId = 'NGG-MK-1' LIMIT 1"));
+
+    db_insert('integrations', ['integrationId' => 'INT-MAKE-1', 'kind' => 'webhook', 'name' => 'Make', 'config' => '{"url":"https://hook.eu1.make.com/x","secret":"s"}',
+        'events' => json_encode(['private.attendance.absences', 'private.registration.stalled', 'safeguarding.*', 'edition.milestone']), 'status' => 'active', 'createdAt' => $now]);
+    db_insert('integrations', ['integrationId' => 'INT-MAKE-ALL', 'kind' => 'gchat', 'name' => 'Everything room', 'config' => '{"url":"https://chat.googleapis.com/x"}',
+        'events' => json_encode(['*']), 'status' => 'active', 'createdAt' => $now]);
+
+    $r = make_absences_run();
+    // The suite's own earlier absences are asked about too; read this centre's.
+    $ev = db_row("SELECT eventId, payload FROM outbox WHERE kind = 'private.attendance.absences' AND payload LIKE '%\"centre\":\"Make Centre\"%' ORDER BY id DESC LIMIT 1");
+    $pl = json_decode((string)($ev['payload'] ?? '{}'), true);
+    $item = $pl['items'][0] ?? [];
+    chk('make: an absence becomes one question per centre-day, to the guardian, first name only', ($r['asked'] ?? 0) >= 1 && count($pl['items'] ?? []) === 1
+        && ($pl['centre'] ?? '') === 'Make Centre' && ($pl['date'] ?? '') === $yday && ($item['firstName'] ?? '') === 'Kemi'
+        && ($item['guardianPhone'] ?? '') === '+2348031234567' && strpos((string)$ev['payload'], 'Kemi Adeyemi') === false
+        && ($pl['reasons'] ?? []) === MAKE_ABSENCE_REASONS);
+    chk('make: no number is recorded as no_contact, so it is not reconsidered every hour', ($r['noContact'] ?? 0) >= 1
+        && db_row("SELECT status FROM absence_asks WHERE personId = 'NGG-MK-2'")['status'] === 'no_contact');
+    chk('make: an old absence is not dragged up', !db_row("SELECT id FROM absence_asks WHERE date = '2020-01-06'"));
+    chk('make: asked once — a second run asks nobody', (make_absences_run()['asked'] ?? -1) === 0);
+    chk('make: the private list reaches the destination that names it, never the "*" room',
+        (int)db_row("SELECT COUNT(*) c FROM deliveries WHERE eventId = ? AND integrationId = 'INT-MAKE-1'", [$ev['eventId']])['c'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM deliveries WHERE eventId = ? AND integrationId = 'INT-MAKE-ALL'", [$ev['eventId']])['c'] === 0);
+
+    $ref = (string)$item['ref'];
+    chk('make: an unknown answer is refused, and says what is accepted', (function () use ($ref) {
+        $x = backend_dispatch('hooks.make', ['action' => 'absence.reason', 'ref' => $ref, 'reason' => 'bored']);
+        return $x['error'] === 'bad_reason' && $x['reasons'] === MAKE_ABSENCE_REASONS;
+    })());
+    $a = backend_dispatch('hooks.make', ['action' => 'absence.reason', 'ref' => $ref, 'reason' => 'Sick', 'note' => 'Fever since Monday', 'channel' => 'whatsapp', 'messageId' => 'wamid.1']);
+    $row = db_row("SELECT * FROM absence_asks WHERE ref = ?", [$ref]);
+    chk('make: the guardian’s answer is stored beside the absence, with where it came from', !empty($a['ok']) && $a['replaced'] === false
+        && $row['status'] === 'answered' && $row['reason'] === 'sick' && $row['channel'] === 'whatsapp' && $row['messageId'] === 'wamid.1');
+    chk('make: …and it explains the absence without voiding it — that stays a person’s call',
+        db_row("SELECT voidedAt FROM infractions WHERE personId = 'NGG-MK-1' AND date = ?", [$yday])['voidedAt'] === '');
+    $pp = backend_dispatch('admin.policy.person', ['requesterId' => 'NGG-2025-0099', 'personId' => 'NGG-MK-1']);
+    $abs = array_values(array_filter($pp['infractions'] ?? [], fn($i) => $i['date'] === $yday))[0] ?? [];
+    chk('make: the conduct screen shows what the guardian said', ($abs['guardianReason']['reason'] ?? '') === 'sick' && ($abs['guardianReason']['channel'] ?? '') === 'whatsapp');
+    chk('make: a corrected answer replaces the first', backend_dispatch('hooks.make', ['action' => 'absence.reason', 'ref' => $ref, 'reason' => 'family'])['replaced'] === true
+        && db_row("SELECT reason FROM absence_asks WHERE ref = ?", [$ref])['reason'] === 'family');
+    db_exec("UPDATE absence_asks SET askedAt = ? WHERE ref = ?", [gmdate('Y-m-d\TH:i:s\Z', time() - 20 * 86400), $ref]);
+    chk('make: an answer weeks late is refused', backend_dispatch('hooks.make', ['action' => 'absence.reason', 'ref' => $ref, 'reason' => 'sick'])['error'] === 'too_late');
+    $nc = (string)db_row("SELECT ref FROM absence_asks WHERE personId = 'NGG-MK-2'")['ref'];
+    chk('make: nobody was asked about a no-contact absence, so nobody can answer it', backend_dispatch('hooks.make', ['action' => 'absence.reason', 'ref' => $nc, 'reason' => 'sick'])['error'] === 'not_found');
+    chk('make: an unknown action names the ones there are', in_array('impact', backend_dispatch('hooks.make', ['action' => 'drop.tables'])['actions'] ?? [], true));
+
+    /* Safeguarding: the name stays in NGG. */
+    behaviour_flag_emit(['ref' => 'BL-MAKE1', 'subject' => 'Kemi Adeyemi', 'subjectId' => 'NGG-MK-1', 'category' => 'wellbeing', 'severity' => 'urgent', 'by' => 'Mentor M']);
+    $sf = db_row("SELECT payload FROM outbox WHERE kind = 'safeguarding.flag' ORDER BY id DESC LIMIT 1");
+    $sp = json_decode((string)$sf['payload'], true);
+    chk('make: a flag goes out twice — named to staff, and as a bare reference for the escalation ladder',
+        (bool)db_row("SELECT id FROM outbox WHERE kind = 'behaviour.flagged' AND payload LIKE '%BL-MAKE1%'")
+        && ($sp['ref'] ?? '') === 'BL-MAKE1' && ($sp['centre'] ?? '') === 'Make Centre' && ($sp['severity'] ?? '') === 'urgent'
+        && strpos((string)$sf['payload'], 'Kemi') === false && strpos((string)$sf['payload'], 'NGG-MK-1') === false
+        && str_ends_with((string)($sp['adminUrl'] ?? ''), '/nextadmin?s=behaviour'));
+    chk('make: nobody has it yet', backend_dispatch('hooks.make', ['action' => 'safeguarding.status', 'ref' => 'BL-MAKE1'])['acknowledged'] === false);
+    chk('make: an acknowledgement needs a name', backend_dispatch('hooks.make', ['action' => 'safeguarding.ack', 'ref' => 'BL-MAKE1'])['error'] === 'by_required');
+    $k = backend_dispatch('hooks.make', ['action' => 'safeguarding.ack', 'ref' => 'BL-MAKE1', 'by' => 'Safeguarding lead', 'channel' => 'whatsapp']);
+    $k2 = backend_dispatch('hooks.make', ['action' => 'safeguarding.ack', 'ref' => 'BL-MAKE1', 'by' => 'Deputy']);
+    chk('make: the first acknowledgement stands; the second is told who has it', $k['already'] === false && $k2['already'] === true && $k2['ackBy'] === 'Safeguarding lead'
+        && backend_dispatch('hooks.make', ['action' => 'safeguarding.status', 'ref' => 'BL-MAKE1'])['acknowledged'] === true
+        && (bool)db_row("SELECT id FROM outbox WHERE kind = 'safeguarding.acknowledged' AND payload LIKE '%BL-MAKE1%'"));
+    behaviour_flag_emit(['ref' => 'BL-MAKE2', 'subject' => 'Kemi Adeyemi', 'subjectId' => 'NGG-MK-1', 'category' => 'wellbeing', 'severity' => 'concern']);
+    db_insert('behaviour_logs', ['logId' => 'BL-MAKE2', 'subjectId' => 'NGG-MK-1', 'subjectName' => 'Kemi Adeyemi', 'note' => 'x', 'category' => 'wellbeing', 'severity' => 'concern', 'status' => 'reviewed', 'reviewedAt' => $now, 'createdAt' => $now]);
+    chk('make: reviewed on the Behaviour screen counts as taken — the ladder stops', backend_dispatch('hooks.make', ['action' => 'safeguarding.status', 'ref' => 'BL-MAKE2'])['acknowledged'] === true);
+    db_insert('behaviour_logs', ['logId' => 'BL-MAKE1', 'subjectId' => 'NGG-MK-1', 'subjectName' => 'Kemi Adeyemi', 'note' => 'x', 'category' => 'wellbeing', 'severity' => 'urgent', 'status' => 'open', 'createdAt' => $now]);
+    $bl = backend_dispatch('admin.behaviour.list', ['requesterId' => 'NGG-2025-0099']);
+    $one = array_values(array_filter($bl['logs'] ?? [], fn($l) => $l['logId'] === 'BL-MAKE1'))[0] ?? [];
+    chk('make: the Behaviour screen says who took the flag, and how', ($one['ackBy'] ?? '') === 'Safeguarding lead' && ($one['ackChannel'] ?? '') === 'whatsapp');
+
+    /* Stalled consent, and its status. */
+    db_insert('summer_students', ['studentId' => 'SS-MAKE-1', 'fullName' => 'Ada Obi', 'centre' => 'Make Centre', 'guardianName' => 'Mr Obi', 'guardianPhone' => '0803 765 4321',
+        'regStatus' => 'parent_pending', 'verifyToken' => 'vtok123', 'enrolledAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 50 * 3600)]);
+    make_registration_stalled_emit(db_row("SELECT * FROM summer_students WHERE studentId = 'SS-MAKE-1'"), 50);
+    $st = json_decode((string)db_row("SELECT payload FROM outbox WHERE kind = 'private.registration.stalled' ORDER BY id DESC LIMIT 1")['payload'], true);
+    chk('make: a stalled consent carries the guardian’s number and the same link — consent is still given on NGG’s form',
+        ($st['guardianPhone'] ?? '') === '+2348037654321' && str_ends_with((string)($st['verifyUrl'] ?? ''), '/verify?t=vtok123') && ($st['firstName'] ?? '') === 'Ada');
+    $rs = backend_dispatch('hooks.make', ['action' => 'registration.status', 'ref' => 'SS-MAKE-1']);
+    chk('make: the ladder can ask whether it is done yet', $rs['verified'] === false && $rs['status'] === 'parent_pending' && $rs['hoursPending'] >= 49);
+
+    /* Edition milestones, from the edition's own dates. */
+    $d = fn(int $n) => gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') + $n * 86400);
+    db_insert('summer_cohorts', ['cohortId' => 'ED-MK-A', 'name' => 'Summer A', 'startDate' => $d(20), 'endDate' => $d(60), 'status' => 'planning']);
+    db_insert('summer_cohorts', ['cohortId' => 'ED-MK-B', 'name' => 'Summer B', 'startDate' => $d(10), 'endDate' => $d(50), 'status' => 'planning']);
+    make_edition_milestones_run(); make_edition_milestones_run();
+    $ms = array_column(db_all("SELECT cohortId, milestone FROM edition_milestones WHERE cohortId LIKE 'ED-MK-%' ORDER BY cohortId"), 'milestone', 'cohortId');
+    chk('make: each edition announces the date it has reached, once — and an overtaken one is skipped, not sent late',
+        $ms === ['ED-MK-A' => 'starts_in_42', 'ED-MK-B' => 'starts_in_14']
+        && (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'edition.milestone' AND payload LIKE '%ED-MK-%'")['c'] === 2);
+    $eds = backend_dispatch('hooks.make', ['action' => 'editions']);
+    $a2 = array_values(array_filter($eds['editions'] ?? [], fn($e) => $e['editionId'] === 'ED-MK-A'))[0] ?? [];
+    chk('make: the season’s dates are read live from NGG', ($a2['startDate'] ?? '') === $d(20) && !array_key_exists('notes', $a2));
+
+    /* Impact: numbers only. */
+    db_insert('attendance', ['studentId' => 'NGG-MK-1', 'date' => $today, 'checkInAt' => $now, 'method' => 'qr', 'centre' => '']);
+    $im = backend_dispatch('hooks.make', ['action' => 'impact', 'month' => substr($today, 0, 7)]);
+    $mc = array_values(array_filter($im['centres'] ?? [], fn($c) => $c['centre'] === 'Make Centre'))[0] ?? [];
+    $js = json_encode($im);
+    chk('make: impact is counts per centre — a check-in finds its centre through the person', ($mc['checkIns'] ?? 0) >= 1 && array_key_exists('attendanceRate', $im['totals'] ?? [])
+        && strpos($js, 'Kemi') === false && strpos($js, 'NGG-MK-1') === false && strpos($js, '0803') === false);
+    chk('make: a bad month falls back to last month rather than erroring', backend_dispatch('hooks.make', ['action' => 'impact', 'month' => "2024-13' OR 1"])['month'] === gmdate('Y-m', (int)strtotime('first day of last month')));
+    $jb = backend_dispatch('hooks.make', ['action' => 'jobs']);
+    chk('make: the watchdog can read every job’s age', count($jb['jobs'] ?? []) === count(MAKE_JOBS) && is_bool($jb['healthy'] ?? null));
+
+    // Put things back.
+    foreach (["DELETE FROM members WHERE memberId IN ('NGG-MK-1','NGG-MK-2')", "DELETE FROM infractions WHERE personId IN ('NGG-MK-1','NGG-MK-2')",
+              "DELETE FROM absence_asks", "DELETE FROM safeguarding_flags", "DELETE FROM behaviour_logs WHERE logId LIKE 'BL-MAKE%'",
+              "DELETE FROM summer_students WHERE studentId = 'SS-MAKE-1'", "DELETE FROM summer_cohorts WHERE cohortId LIKE 'ED-MK-%'",
+              "DELETE FROM edition_milestones", "DELETE FROM attendance WHERE studentId = 'NGG-MK-1'",
+              "DELETE FROM deliveries WHERE integrationId IN ('INT-MAKE-1','INT-MAKE-ALL')", "DELETE FROM integrations WHERE integrationId IN ('INT-MAKE-1','INT-MAKE-ALL')"] as $sql) db_exec($sql);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
