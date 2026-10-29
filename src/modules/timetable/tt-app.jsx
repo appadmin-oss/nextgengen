@@ -70,6 +70,9 @@ function ttSlotsToEntries(res, member) {
   })).filter(e => e.title && e.days[0] >= 1 && e.days[0] <= 7 && ttMin(e.start) !== null && ttMin(e.end) > ttMin(e.start));
 }
 
+/** One centre session's identity in the import dialog's choice: course, day and start. */
+function ttSlotKey(e) { return e.title.toLowerCase() + "|" + e.days[0] + "|" + e.start; }
+
 /** A centre's official entries against what it publishes now: what was added, changed or removed, by course and day. */
 function ttOfficialDiff(local, fresh) {
   const key = e => e.title.toLowerCase() + "|" + e.days[0];
@@ -181,6 +184,7 @@ function TimetableMakerPage({ setPage }) {
 function TtMaker({ setPage }) {
   const auth = useAuth() || {};
   const member = auth.member || null;
+  const firstName = member ? String(member.fullName || "").trim().split(/\s+/)[0] : "";
 
   /* ── Where the page starts (§7.11): #t= link, ?k= link, the account (below), this browser, a blank week ── */
   const boot = React.useMemo(() => {
@@ -299,28 +303,39 @@ function TtMaker({ setPage }) {
   }, [member]);
 
   /* ── A centre's sessions in, the visitor's own kept (§7.7) ── */
-  const addCentre = React.useCallback(async (slug, quiet) => {
-    /* A member's own centre comes from their record, which marks the classes
-       that are theirs (member_timetable `mine`), not a guess from the track. */
+  /* A member's own centre comes from their record, which marks the classes
+     that are theirs (member_timetable `mine`), not a guess from the track. */
+  const fetchCentre = React.useCallback(async slug => {
     let r = null;
     if (member) { try { const own = await NGGApi.member.timetable(); if (own && own.slug === slug) r = own; } catch (_) {} }
     if (!r) r = await NGGApi.public.timetable(slug);
-    const fresh = ttSlotsToEntries(r, member);
-    if (!fresh.length) throw new Error("no_sessions");
+    const entries = ttSlotsToEntries(r, member);
+    if (!entries.length) throw new Error("no_sessions");
+    return { centre: r.centre, slug, entries, marked: entries.some(e => e.mine) };
+  }, [member]);
+  /* A child's week holds THEIR classes, not the whole centre's Saturday: a
+     member's marked ones go in and the rest are offered (owner, 2026-10-29:
+     four courses in one child's week read as clashes they do not have).
+     `pick` is the keys chosen in the import dialog; without it, a member gets
+     their own and anyone else gets everything. */
+  const addCentre = React.useCallback(async (slug, quiet, pick) => {
+    const got = await fetchCentre(slug);
+    const chosen = pick ? got.entries.filter(e => pick.includes(ttSlotKey(e))) : got.marked ? got.entries.filter(e => e.mine) : got.entries;
+    if (!chosen.length) throw new Error("none_chosen");
     commit(d => {
       const own = d.entries.filter(x => !x.official);
-      const s2 = d.entries.length ? d.s : Object.assign({}, d.s, { title: r.centre + " timetable" });
-      return Object.assign({}, d, { entries: own.concat(fresh.map((e, i) => Object.assign(e, { color: (own.length + i) % 8 }))), s: Object.assign({}, s2, { mode: s2.mode || "school" }) });
-    }, quiet ? null : "Added " + fresh.length + " sessions from " + r.centre, !quiet);
+      const s2 = d.entries.length ? d.s : Object.assign({}, d.s, { title: member && firstName ? firstName + "’s week" : got.centre + " timetable" });
+      return Object.assign({}, d, { entries: own.concat(chosen.map((e, i) => Object.assign(e, { color: (own.length + i) % 8 }))), s: Object.assign({}, s2, { mode: s2.mode || "school" }) });
+    }, quiet ? null : "Added " + chosen.length + " class" + (chosen.length === 1 ? "" : "es") + " from " + got.centre, !quiet);
     setDay(null);
-    return r.centre;
-  }, [commit, member]);
+    return { centre: got.centre, slug, added: chosen, others: got.entries.length - chosen.length };
+  }, [commit, member, firstName, fetchCentre]);
   const centreBooted = React.useRef(false);
   React.useEffect(() => {
     // After sign-in has settled, so a member's own classes are marked.
     if (!boot.centre || auth.loading || centreBooted.current) return;
     centreBooted.current = true;
-    addCentre(boot.centre, true).then(name => setNote({ kind: "centre", centre: name }))
+    addCentre(boot.centre, true).then(r => setNote({ kind: "centre", centre: r.centre, slug: r.slug, mine: member ? r.added.map(e => e.title) : null, others: r.others }))
       .catch(() => setLayers(l => Object.assign({}, l, { import: { tab: "centre", slug: boot.centre, failed: true } })));
     // Once, for the centre in the address.
     // eslint-disable-next-line
@@ -338,7 +353,10 @@ function TtMaker({ setPage }) {
         const c = (list.centres || []).find(x => x.name.toLowerCase() === src.toLowerCase());
         if (!c) continue;
         const r = await NGGApi.public.timetable(c.slug);
-        const changes = ttOfficialDiff(docRef.current.entries.filter(e => e.official && e.source === src), ttSlotsToEntries(r, member));
+        const local = docRef.current.entries.filter(e => e.official && e.source === src);
+        // Only the courses kept from this centre, and a member's own: a class they left out is not a change to them.
+        const kept = new Set(local.map(e => e.title.toLowerCase()));
+        const changes = ttOfficialDiff(local, ttSlotsToEntries(r, member).filter(e => kept.has(e.title.toLowerCase()) || e.mine));
         const sig = JSON.stringify(changes.map(x => [x.kind, (x.fresh || x.local).title, (x.fresh || x.local).days[0], x.fresh ? x.fresh.start + x.fresh.end + x.fresh.place : ""]));
         let seen = null;
         try { seen = localStorage.getItem("ngg.timetable.sync." + c.slug); } catch (_) {}
@@ -407,7 +425,6 @@ function TtMaker({ setPage }) {
     setSave(p => Object.assign({}, p, { status: "idle", error: "" }));
   }, [save, saveNow]);
 
-  const firstName = member ? String(member.fullName || "").trim().split(/\s+/)[0] : "";
   const saveInfo = (() => {
     const owner = firstName ? firstName + "’s" : "your";
     if (keep && save.status === "error") return { state: "failed", status: "Couldn’t save. Changes are kept here.", label: "Retry", icon: "warning-circle", tone: "error" };
@@ -615,7 +632,7 @@ function TtMaker({ setPage }) {
     layers, open, close, swap, popover, setPopover, openForm, addEntry, saveForm, removeEntry, toggleSkip, runFix,
     qaRef, qaFocus, setQaFocus, suggOff, setSuggOff, hadAmPm, setHadAmPm, term, note, dismissNote: () => setNote(null), online,
     sync, dismissSync: () => settleSync([]), applySync: accepted => { settleSync(accepted); close("sync"); },
-    saveInfo, addCentre, exportFile, shareLink, fileName, refreshAuth: () => auth.refresh ? auth.refresh() : Promise.resolve(),
+    saveInfo, addCentre, fetchCentre, exportFile, shareLink, fileName, refreshAuth: () => auth.refresh ? auth.refresh() : Promise.resolve(),
     startSave: () => {
       if (saveInfo.state === "failed") retrySave();
       else if (keep) say(saveInfo.status);

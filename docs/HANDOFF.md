@@ -4355,3 +4355,39 @@ Fixes made during the audit:
 Not merged (owner's call):
 - **`claude/vibrant-cray-3gmdum`** ("Centres follow CACENTRE's locations"): it makes CACENTRE the only list of centres, so centres can no longer be added, renamed or retired here. It is built on an old base (its migration is 137) and conflicts in 8 files, CLAUDE.md included.
 - **`gate-lookup`** (588 commits): a separate line of work (Afrovanguard and CACENTRE sync, NGV promotion consent, reset-code hardening, suspension reaching open sessions). It shares no history with this branch in this clone. It needs a deliberate port, not a merge.
+
+## The timetable maker: a child's own week (2026-10-29)
+
+The owner, after the Learn rebuild: "I meant the timetablemaker." Looked at as
+a child (Tobi, Coding at Egbeda) through *Make my week*:
+
+- **Was:** every Egbeda class went into the child's week (Chess, Coding, Piano,
+  Media Lab: "4 classes a week", Piano drawn as a clash with Coding), titled
+  "Egbeda timetable"; every block stamped YOUR COURSE with a gold ring; one
+  Saturday drawn as a single row filling the A4 sheet; the three-step guide
+  stayed full height above the week; the phone's day strip had only Saturday,
+  so there was no Monday to tap to add school; "Today · 0 on".
+- **Now** (`tt-app.jsx`, `tt-layers.jsx`, `tt-views.jsx`, `tt-ui.jsx`,
+  `tt-poster.jsx`):
+  - `addCentre(slug, quiet, pick)` puts in a member's **marked** classes
+    (`member_timetable` `mine`), or the keys ticked in the import dialog, or —
+    for someone whose classes are unknown — all of them. `fetchCentre` is the
+    one read; `ttSlotKey` (course|day|start) is a session's identity.
+  - Import → **Which classes are yours?** (`.tt-pick`): every session at the
+    centre, what is already in the week (else the member's own) ticked.
+  - The centre note names the classes put in and how many more run there,
+    with *Choose classes*. Title "<first name>’s week" for a member.
+  - Official sync compares only the courses kept (and a member's own), so a
+    class left out never appears as "changed 1 session".
+  - "Your course" (pill, ring, poster tag) only where it distinguishes:
+    `ttMarksMine` — some centre class in the week is not theirs.
+  - Poster: days run down the page (`rows`) only from four days; fewer use
+    the time-down grid, and a block the size of a door sign gets larger words.
+  - The guide steps aside once the week has something: *Next steps*, done
+    steps as one line, placed after the week (`TtStartSteps at="end"`).
+  - Phone and list: the days to build on are Mon–Fri plus any weekend day in
+    use (`ttEditFrame`); the poster still prints only the days in use.
+- Tests: `timetable-maker.test.js` (member link: own classes only, the note,
+  the title, no YOUR COURSE everywhere, no false change after reload, the
+  picker's ticks, ticking Piano adds it); `timetable-ui.test.js` updated for
+  *Next steps* and own-class-only.

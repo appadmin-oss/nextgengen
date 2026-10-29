@@ -577,8 +577,15 @@ stays in that browser.
 - **Layout**: which days, which hours (they widen by themselves to fit an
   early or late class), 12- or 24-hour clock, A4 or US Letter, landscape or
   portrait.
-- **Start from**: a centre's official week (its classes come in and can be
-  changed — instructors are never named), the sample school week, or blank.
+- **Start from**: a centre's official week, the sample school week, or blank.
+  A centre's classes come in **ticked, one by one** (*Import → Which classes
+  are yours?*): only what is ticked goes in the week, and instructors are never
+  named. A signed-in member opening their centre (*Make my week*) gets **their
+  own classes only** (their courses, and Chess), titled "<name>’s week", with
+  a note saying how many more run there and a *Choose classes* button to add
+  any of them. Someone else's centre link starts with everything ticked.
+- A centre that moves a class the visitor **kept** is reported for them to
+  accept; a class they left out is never reported as a change.
 - **Undo and redo** (buttons, or Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z): every
   change can be taken back, including a cleared timetable.
 - **Quick add**: the NGG Club's courses and common school subjects, one tap to

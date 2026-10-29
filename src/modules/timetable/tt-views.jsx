@@ -42,8 +42,17 @@ function ttSuggView(C) {
 }
 
 /** The selected day: null means today when it is in the frame and this week, else the week (§5.1). */
+/* The days to build on: the school week, and a weekend day once it has
+   something. The poster keeps only the days in use (ttFrame); the editor must
+   not, or a child whose only classes are on Saturday has no Monday to tap. */
+function ttEditFrame(entries, weekStart) {
+  const used = new Set([1, 2, 3, 4, 5]);
+  entries.forEach(e => e.days.forEach(d => used.add(d)));
+  return { days: ttDayOrder(weekStart).filter(d => used.has(d[0])) };
+}
+
 function ttSelDay(C) {
-  const fr = ttFrame(C.entries, C.s.weekStart);
+  const fr = ttEditFrame(C.entries, C.s.weekStart);
   const order = fr.days.map(d => d[0]);
   const sel = C.day === null ? (order.includes(C.T.day) && C.week === 0 ? C.T.day : "week") : C.day;
   const qDay = typeof sel === "number" ? sel : (C.week === 0 ? C.T.day : 1);
@@ -74,22 +83,31 @@ function TtNote({ icon, text, onDismiss, action }) {
   return (
     <div className="tt-note" role="status">
       <TtIcon name={icon} className="tt-note-icon"/>
-      <span className="tt-note-text">{text}</span>
-      {action}
+      <span className="tt-note-main"><span className="tt-note-text">{text}</span>{action}</span>
       <button type="button" className="tt-note-x" onClick={onDismiss} aria-label="Dismiss"><TtIcon name="x"/></button>
     </div>
   );
 }
 
+/** Whether "Your course" tells anyone anything: only beside a centre class that is not theirs. */
+function ttMarksMine(entries) { return entries.some(e => e.official && !e.mine) && entries.some(e => e.mine); }
+
+/** "A", "A and B", "A, B and C". */
+function ttAnd(list) { return list.length < 2 ? list.join("") : list.slice(0, -1).join(", ") + " and " + list[list.length - 1]; }
+
 /** The notes above a list (§5.1.1, §7.9): the context note and a centre that moved a session. */
 function TtNotes({ C }) {
   const n = C.note;
+  const more = n && n.kind === "centre" && n.others > 0 ? n.others : 0;
   const ctx = !n ? null : n.kind === "shared"
     ? { icon: "link-simple", text: n.by ? "Shared by " + n.by + ". This is your own copy; changes won’t reach them." : "This is your own copy" }
-    : { icon: "seal-check", text: n.centre + "’s official sessions are in. Add your school classes around them." };
+    : n.mine && n.mine.length
+      ? { icon: "seal-check", text: ttAnd(n.mine) + (n.mine.length === 1 ? ", your class at " : ", your classes at ") + n.centre + ", " + (n.mine.length === 1 ? "is" : "are") + " in." + (more ? " " + more + (more === 1 ? " more runs there." : " more run there.") : "") }
+      : { icon: "seal-check", text: n.centre + "’s official sessions are in. Add your school classes around them." };
   const k = C.sync ? C.sync.changes.length : 0;
   return <>
-    {ctx && <TtNote icon={ctx.icon} text={ctx.text} onDismiss={C.dismissNote}/>}
+    {ctx && <TtNote icon={ctx.icon} text={ctx.text} onDismiss={C.dismissNote}
+      action={more ? <button type="button" className="tt-textbtn tt-note-act" onClick={() => C.open("import", { tab: "centre", slug: n.slug })}>Choose classes</button> : null}/>}
     {C.sync && <TtNote icon="arrows-clockwise" text={C.sync.source + " changed " + k + " session" + (k === 1 ? "" : "s") + "."}
       action={<button type="button" className="tt-textbtn tt-note-act" onClick={() => C.open("sync")}>Review</button>} onDismiss={C.dismissSync}/>}
   </>;
@@ -228,8 +246,9 @@ function TtPhone({ C }) {
               options={[{ value: "day", label: "Day" }, { value: "week", label: "Week" }]}/>
           </div>
         )}
-        <TtStartSteps C={C}/>
+        <TtStartSteps C={C} at="top"/>
         {started && (isDay ? [sel] : order).map(d => <TtPhoneDay key={d + ":" + off} C={C} d={d} titled={!isDay}/>)}
+        <TtStartSteps C={C} at="end"/>
         {sugg.show && (
           <button type="button" className="tt-sugg tt-sugg--phone" onClick={() => C.open("plan")}>
             <TtIcon name="lightbulb" className="tt-sugg-icon"/>
@@ -283,7 +302,7 @@ function TtPhoneDay({ C, d, titled }) {
                   <span className="tt-prow-line">
                     <TtIcon name={TT_KINDS[ttKindOf(r.e)][1]} className="tt-prow-kind"/>
                     <b className="tt-prow-title">{r.e.title}</b>
-                    <TtPills now={r.isNow} mine={r.e.mine} skipped={r.skipped} once={r.e.once}/>
+                    <TtPills now={r.isNow} mine={r.e.mine && ttMarksMine(C.entries)} skipped={r.skipped} once={r.e.once}/>
                   </span>
                   {sub && <span className="tt-prow-sub">{sub}</span>}
                   {r.warn && !r.fix && <span className="tt-prow-warn"><TtIcon name="warning"/>{r.warn}</span>}
@@ -392,7 +411,7 @@ function TtListPane({ C }) {
             )}
           </form>
         )}
-        <TtStartSteps C={C}/>
+        <TtStartSteps C={C} at="top"/>
         {sugg.show && C.bp !== "desk3" && (
           <button type="button" className="tt-sugg tt-sugg--slim" onClick={() => C.open("plan")}>
             <TtIcon name="lightbulb" className="tt-sugg-icon"/>
@@ -406,13 +425,13 @@ function TtListPane({ C }) {
               <React.Fragment key={bi}>
                 {b.head && <div className={"tt-grouphead" + (bi ? " has-line" : "")}><TtIcon name={b.head.icon}/>{b.head.label}</div>}
                 {b.rows.map(r => (
-                  <div key={r.key} className={"tt-lrow-wrap" + (r.e.mine ? " is-mine" : "")}>
+                  <div key={r.key} className={"tt-lrow-wrap" + (r.e.mine && ttMarksMine(C.entries) ? " is-mine" : "")}>
                     <button type="button" className={"tt-lrow" + (r.skipped ? " is-skipped" : "")} aria-label={r.aria} onClick={r.onClick}>
                       <span className="tt-swatch" style={{ background: r.bg, boxShadow: "inset 0 0 0 1px " + r.edge }}/>
                       <span className="tt-lrow-body">
                         <span className="tt-lrow-line">
                           <b className="tt-lrow-title">{r.e.title}</b>
-                          <TtPills mine={r.e.mine} skipped={r.skipped} once={r.once}/>
+                          <TtPills mine={r.e.mine && ttMarksMine(C.entries)} skipped={r.skipped} once={r.once}/>
                           {r.warn && !r.fix && <span className="tt-lrow-warn" title={r.warn} role="img" aria-label={r.warn}><TtIcon name="warning"/></span>}
                         </span>
                         <span className="tt-lrow-sub">{r.sub}</span>
@@ -426,6 +445,7 @@ function TtListPane({ C }) {
             ))}
           </div>
         )}
+        <TtStartSteps C={C} at="end"/>
         <div className="tt-btnrow">
           <button type="button" className="tt-btn tt-btn--outline tt-btn--grow" onClick={() => C.openForm()}><TtIcon name="sliders-horizontal"/>Add with all options</button>
           <button type="button" className="tt-btn tt-btn--outline" onClick={() => C.open("import", { tab: "centre" })}><TtIcon name="tray-arrow-down"/>Import</button>
@@ -465,7 +485,7 @@ function TtPreviewPane({ C }) {
   const model = React.useMemo(() => ttPosterModel(C.doc, { kind: "poster", orient: C.s.orient, paper: "a4", today: true, live: true, now: C.now }), [C.doc, C.now]);
   const fr = ttFrame(C.entries, C.s.weekStart), ori = ttOrientFor(C.s.orient, C.entries, C.s.weekStart);
   const caption = "A4 " + ori + (C.s.orient === "auto" ? " (picked for " + fr.days.length + " days)" : "") + " · "
-    + (C.s.layout === "timeline" ? (ori === "portrait" ? "days run down, time runs across" : "time runs down the page") : (ori === "portrait" ? "a card for each day" : "a list under each day"))
+    + (C.s.layout === "timeline" ? (ori === "portrait" && fr.days.length >= 4 ? "days run down, time runs across" : "time runs down the page") : (ori === "portrait" ? "a card for each day" : "a list under each day"))
     + " · today is highlighted here, not in downloads";
   const nv = ttNowView(C);
   React.useEffect(() => {
@@ -511,7 +531,7 @@ function TtRail({ C }) {
     <aside className="tt-rail" aria-label="Today and print options">
       <div className="tt-col tt-col--16">
         <section className="tt-card tt-today" aria-labelledby="tt-today-h">
-          <div className="tt-today-head"><h2 id="tt-today-h">Today · {ttDshort(ttDateFor(d0, 0, C.now))}</h2><span>{todays.length} on</span></div>
+          <div className="tt-today-head"><h2 id="tt-today-h">Today · {ttDshort(ttDateFor(d0, 0, C.now))}</h2><span>{todays.length ? todays.length + " on" : ""}</span></div>
           {nv.tone !== "none" && (
             <div className={"tt-nowcard is-" + nv.tone}>
               <span className={"tt-dot tt-dot--halo tt-dot--" + nv.tone}/>

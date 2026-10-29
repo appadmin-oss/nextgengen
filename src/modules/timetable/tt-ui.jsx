@@ -204,39 +204,50 @@ function TtPrintOptions({ C, variant }) {
    freely. The kinds of week (§7.1) are presets that only change the
    suggestions. The steps stay until the week has lessons and study time in
    it, and can be hidden. */
-function TtStartSteps({ C }) {
+function TtStartSteps({ C, at }) {
   const [hidden, setHidden] = React.useState(false);
   const own = C.entries.filter(e => !e.official);
   const done = { ngg: C.entries.some(e => e.official), school: own.some(e => ttKindOf(e) === "class" || ttKindOf(e) === "activity"), study: own.some(e => ttKindOf(e) === "study") };
   if (hidden || (done.school && done.study)) return null;
+  /* Once the week has something in it the guide steps aside: what is done is
+     one line, and only what is left keeps its explanation — the week itself
+     is what the page is for, and the full guide pushed it off the screen. */
+  const compact = C.entries.length > 0;
+  // Before the week (`top`) while it is empty; after it (`end`) once it is not.
+  if ((at === "end") !== compact) return null;
   const typeIn = () => setTimeout(() => C.qaRef.current && C.qaRef.current.focus(), 60);
   const steps = [
-    ["ngg", "Your NGG classes", done.ngg ? "In your week, and kept in step with your centre." : "Your centre’s Saturday classes, with your own course marked.",
-      <button type="button" className="tt-btn tt-btn--outline tt-btn--ctl" onClick={() => C.open("import", { tab: "centre" })}>{done.ngg ? "Change centre" : "Add my centre’s classes"}</button>],
+    ["ngg", "Your NGG classes", done.ngg ? "In your week, and kept in step with your centre." : "Your centre’s Saturday classes. You choose which are yours.",
+      done.ngg ? <button type="button" className="tt-textbtn" onClick={() => C.open("import", { tab: "centre" })}>Choose classes</button>
+        : <button type="button" className="tt-btn tt-btn--outline tt-btn--ctl" onClick={() => C.open("import", { tab: "centre" })}>Add my centre’s classes</button>],
     ["school", "Your school lessons", done.school ? "Added. Add more any time in the add box." : "Type one at a time, like “Maths Mon Wed 8–8:40”, or paste the list from WhatsApp.",
       done.school ? null : <span className="tt-row8"><button type="button" className="tt-btn tt-btn--primary tt-btn--ctl" onClick={typeIn}>Type a lesson</button><button type="button" className="tt-btn tt-btn--outline tt-btn--ctl" onClick={() => C.open("import", { tab: "paste" })}>Paste a list</button></span>],
     ["study", "Your study time", done.study ? "Planned." : "We fit study sessions into the free time around everything else.",
       done.study ? null : <button type="button" className="tt-btn tt-btn--outline tt-btn--ctl" disabled={!C.entries.length} onClick={() => C.open("plan")}>Plan my study time</button>],
   ];
   return (
-    <section className="tt-steps" aria-labelledby="tt-steps-h">
+    <section className={"tt-steps" + (compact ? " is-compact" : "")} aria-labelledby="tt-steps-h">
       <div className="tt-modes-head">
-        <h3 className="tt-modes-title" id="tt-steps-h">Not sure where to start?</h3>
-        <span>Type anything into the add box, in your own words, or follow these steps. It saves as you go.</span>
+        <h3 className="tt-modes-title" id="tt-steps-h">{compact ? "Next steps" : "Not sure where to start?"}</h3>
+        {!compact && <span>Type anything into the add box, in your own words, or follow these steps. It saves as you go.</span>}
       </div>
       <ol className="tt-steps-list">
         {steps.map(([k, title, sub, act], i) => (
           <li key={k} className={"tt-step" + (done[k] ? " is-done" : "")}>
             <span className="tt-step-n" aria-hidden="true">{done[k] ? <TtIcon name="check"/> : i + 1}</span>
-            <span className="tt-step-body"><b>{title}{done[k] ? <span className="tt-sr"> (done)</span> : null}</b><span>{sub}</span>{act}</span>
+            {compact && done[k]
+              ? <span className="tt-step-body tt-step-body--line"><b>{title}<span className="tt-sr"> (done)</span></b>{act}</span>
+              : <span className="tt-step-body"><b>{title}{done[k] ? <span className="tt-sr"> (done)</span> : null}</b><span>{sub}</span>{act}</span>}
           </li>
         ))}
       </ol>
-      <div className="tt-steps-other" role="group" aria-label="Suggestions for">
-        <span>Suggestions for:</span>
-        {TT_MODE_IDS.map(k => <button key={k} type="button" aria-pressed={C.s.mode === k} className={"tt-chip tt-chip--36" + (C.s.mode === k ? " is-on" : "")} onClick={() => C.setMode(k)}>{TT_MODES[k].label}</button>)}
-      </div>
-      {C.entries.length > 0 && <button type="button" className="tt-linkbtn" onClick={() => setHidden(true)}>Hide these steps</button>}
+      {!compact && (
+        <div className="tt-steps-other" role="group" aria-label="Suggestions for">
+          <span>Suggestions for:</span>
+          {TT_MODE_IDS.map(k => <button key={k} type="button" aria-pressed={C.s.mode === k} className={"tt-chip tt-chip--36" + (C.s.mode === k ? " is-on" : "")} onClick={() => C.setMode(k)}>{TT_MODES[k].label}</button>)}
+        </div>
+      )}
+      {compact && <button type="button" className="tt-linkbtn" onClick={() => setHidden(true)}>Hide these steps</button>}
     </section>
   );
 }

@@ -146,11 +146,14 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await mp.click('button:has-text("Make my week")');
     await mp.waitForURL(/\/timetable\/me/, { timeout: 20000 });
     await waitForBoot(mp);
-    await mp.waitForFunction(() => /Not sure where to start\?/.test(document.body.innerText), null, { timeout: 40000 });
-    await mp.waitForFunction(() => /Your NGG classes \(done\)/.test(document.body.innerText) || /Change centre/.test(document.body.innerText), null, { timeout: 20000 });
+    await mp.waitForFunction(() => /Next steps/.test(document.body.innerText) && /Choose classes/.test(document.body.innerText), null, { timeout: 40000 });
     const tx = await mp.innerText('body');
-    chk('"Make my week" opens the maker with their centre\'s classes already in, and three optional steps instead of six choices', /Change centre/.test(tx) && /Type a lesson/.test(tx) && /Plan my study time/.test(tx) && !/What’s your week like\?/.test(tx));
-    chk('…their own class is marked in the maker too', await mp.evaluate(() => /Music[\s\S]{0,40}Your course/i.test(document.body.innerText)));
+    chk('"Make my week" opens the maker with their class already in, and the steps that are left after it', /Type a lesson/.test(tx) && /Plan my study time/.test(tx) && !/What’s your week like\?/.test(tx) && !/Not sure where to start\?/.test(tx));
+    await mp.waitForFunction(() => /"official":true/.test(localStorage.getItem('ngg.timetable.maker.v2') || ''), null, { timeout: 8000 }).catch(() => {});
+    const mine = await mp.evaluate(() => (JSON.parse(localStorage.getItem('ngg.timetable.maker.v2') || '{}').entries || []).filter(e => e.official).map(e => e.title));
+    const noteTx = await mp.innerText('.tt-note').catch(() => '(no note)');
+    chk('…only their own class goes into their week; the centre\'s other class is offered, not added', mine.join() === 'Music' && /Music, your class at Egbeda, is in\. 1 more runs there\./.test(noteTx));
+    if (mine.join() !== 'Music' || !/1 more runs there/.test(noteTx)) console.log('    week holds: ' + mine.join() + ' | note: ' + noteTx);
     await mp.screenshot({ path: path.join(SHOTS, 'maker-steps-phone.png'), fullPage: false });
     await mp.click('button:has-text("Type a lesson")');
     await mp.waitForTimeout(400);

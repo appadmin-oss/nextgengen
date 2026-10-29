@@ -7007,6 +7007,16 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 .tt-linkfield { height: 48px; background: var(--tt-points); font: 400 13px var(--font-mono); }
 .tt-help { font-size: 12.5px; color: var(--tt-soft); }
 .tt-help--ink { font-size: 13px; color: var(--tt-ink-2); }
+/* The import dialog's "which classes are yours?" — one row per centre session. */
+.tt-pick { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 0; padding: 0; border: 0; min-width: 0; }
+.tt-pick-h { font-size: 13px; font-weight: 600; color: var(--tt-ink-2); }
+.tt-pick-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 12px; border: 1px solid var(--tt-line-strong); border-radius: 12px; background: var(--tt-surface); cursor: pointer; }
+.tt-pick-row.is-on { border-color: var(--tt-info-ink); background: var(--tt-mine-row); }
+.tt-pick-row input { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--tt-info-ink); }
+.tt-pick-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tt-pick-body b { font-size: 15px; color: var(--tt-ink); }
+.tt-pick-body span { font-size: 13px; color: var(--tt-ink-2); }
+.tt-pick > .tt-btn { margin-top: 6px; align-self: flex-start; }
 .tt-err { display: flex; align-items: flex-start; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--tt-error); }
 .tt-err .ph { margin-top: 2px; }
 .tt-err--inline { align-items: center; font-weight: 500; }
@@ -7017,8 +7027,9 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 /* ── Notes, offline ── */
 .tt-note { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--tt-gold-tint); color: var(--tt-note-ink); font-size: 14px; }
 .tt-note-icon { flex-shrink: 0; margin-top: 1px; font-size: 18px; }
-.tt-note-text { flex: 1; text-wrap: pretty; }
-.tt-note-act { margin: -12px 0; color: var(--tt-note-ink); text-decoration: underline; text-underline-offset: 3px; }
+.tt-note-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.tt-note-text { text-wrap: pretty; }
+.tt-note-act { margin: -6px -6px -12px; color: var(--tt-note-ink); text-decoration: underline; text-underline-offset: 3px; }
 .tt-note-x { flex-shrink: 0; width: 44px; height: 44px; margin: -12px -12px -12px 0; border: 0; background: transparent; color: inherit; }
 .tt-listpane .tt-note { padding: 10px 12px; border-radius: 12px; font-size: 13px; }
 .tt-listpane .tt-note-icon { font-size: 16px; }
@@ -7037,6 +7048,9 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 .tt-step-body b { font-size: 15px; font-weight: 600; }
 .tt-step-body > span:not(.tt-row8) { font-size: 13.5px; color: var(--tt-ink-2); }
 .tt-step.is-done .tt-step-body b { color: var(--tt-ink-2); }
+.tt-steps.is-compact .tt-step { padding: 10px 14px; }
+.tt-steps.is-compact .tt-step.is-done .tt-step-n { flex-basis: 24px; height: 24px; font-size: 12px; }
+.tt-step-body--line { flex: 1; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; }
 .tt-steps-other { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; color: var(--tt-ink-2); }
 .tt-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .tt-modes-head { display: flex; flex-direction: column; gap: 4px; color: var(--tt-ink-2); }

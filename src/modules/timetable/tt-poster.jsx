@@ -47,7 +47,9 @@ function ttPosterModel(doc, opts) {
   const ratio = opts.paper === "letter" ? 279.4 / 215.9 : 297 / 210;
   const [W, H] = kind === "phone" ? [1080, 2340] : kind === "share" ? [1080, 1350] : orient === "portrait" ? [Math.round(1600 / ratio), 1600] : [1600, Math.round(1600 / ratio)];
   const portrait = kind === "poster" && orient === "portrait", tl = s.layout === "timeline";
-  const layout = kind === "phone" ? "wallpaper" : kind === "share" ? "cards" : portrait ? (tl ? "rows" : "cards") : (tl ? "grid" : "agenda");
+  /* Days down the page (rows) only when there are enough of them: one
+     Saturday drawn as a single row filled the sheet with blocks a page tall. */
+  const layout = kind === "phone" ? "wallpaper" : kind === "share" ? "cards" : portrait ? (tl ? (n >= 4 ? "rows" : "grid") : "cards") : (tl ? "grid" : "agenda");
   const now = opts.now ? new Date(opts.now) : new Date();
   const today = now.getDay() || 7, nowMins = now.getHours() * 60 + now.getMinutes();
   const L = s.large ? 1.2 : 1;
@@ -55,6 +57,9 @@ function ttPosterModel(doc, opts) {
   const dark = s.theme === "navy" || s.theme === "chalk";
   const fmt = m => ttFmt(m, s.clock);
 
+  /* "Your course" marks one class among others; when every class from the
+     centre is the visitor's, marking all of them says nothing. */
+  const marks = ttMarksMine(entries);
   const fm = ttFoldMap(entries, fr, s.fold !== false && kind === "poster" && tl);
   const pct = q => fm.pos(q) / fm.span * 100;
   const pLen = (a, b) => (fm.pos(b) - fm.pos(a)) / fm.span * 100;
@@ -82,14 +87,17 @@ function ttPosterModel(doc, opts) {
     const isToday = !!opts.today && d === today;
     const items = entries.filter(e => e.days.includes(d)).map(e => ({ src: e, s: ttMin(e.start), e: ttMin(e.end) })).sort((a, b) => a.s - b.s);
     const laid = ttLanes(items.map(x => Object.assign({}, x)));
-    const ring = e => e.mine ? "0 0 0 3px " + th.accent : "none";
+    const ring = e => e.mine && marks ? "0 0 0 3px " + th.accent : "none";
     const blocks = layout !== "grid" ? [] : laid.map(x => {
       const c = colour(x.src), hpx = (x.e - x.s) * pxMinV, wpx = colW / x.n, tiny = hpx < 34, short = hpx < 62 || wpx < 110;
+      /* A week of one or two days gives each class a block the size of a
+         door sign; its words grow with it, or the sheet is coloured space. */
+      const big = wpx >= 300 && hpx >= 120 ? 1.7 : wpx >= 200 && hpx >= 96 ? 1.3 : 1;
       return Object.assign(edges(c, "left"), {
         key: x.src.id + d, top: pct(x.s), height: pLen(x.s, x.e), lane: x.lane, n: x.n, ring: ring(x.src), edge: c.edge,
         title: x.src.title, time: fmt(x.s) + "–" + fmt(x.e), place: x.src.place,
-        showTime: !tiny, showPlace: s.showPlace && !!x.src.place && !short, showMine: !!x.src.mine && hpx > 96 && wpx > 150,
-        shape: tiny ? "tiny" : short ? "short" : "full", tSize: Math.round((tiny ? 13 : short ? 15 : (x.n > 1 ? 15 : 17)) * L), mSize: Math.round(13 * L),
+        showTime: !tiny, showPlace: s.showPlace && !!x.src.place && !short, showMine: !!x.src.mine && marks && hpx > 96 && wpx > 150,
+        shape: tiny ? "tiny" : short ? "short" : "full", tSize: Math.round((tiny ? 13 : short ? 15 : (x.n > 1 ? 15 : 17) * big) * L), mSize: Math.round(13 * (tiny || short ? 1 : big) * L),
       });
     });
     const hblocks = layout !== "rows" ? [] : laid.map(x => {

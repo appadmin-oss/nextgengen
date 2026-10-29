@@ -94,6 +94,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const now = 'now_iso()';
     php(`db_migrate(db_conn());`
       + `db_insert('members', ['memberId'=>'NGG-TM-1','fullName'=>'Tobi Adeyemi','email'=>'tm-1@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','track'=>'Coding','createdAt'=>${now},'updatedAt'=>${now}]);`
+      + `db_insert('members', ['memberId'=>'NGG-TM-2','fullName'=>'Kemi Bello','email'=>'tm-2@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','track'=>'Coding','courses'=>'Coding','createdAt'=>${now},'updatedAt'=>${now}]);`
       + `db_insert('centres', ['centreId'=>'CEN-TM-1','name'=>'Egbeda','code'=>'EG','status'=>'active','meetDays'=>'Saturdays','meetTime'=>'10am - 2pm','slug'=>'egbeda','createdAt'=>${now}]);`
       + `foreach ([['Chess','10:00','11:00','Main hall'],['Coding','11:00','12:30','ICT room']] as $i => $s) db_insert('timetable_slots', ['slotId'=>'SL-TM-'.$i,'centreId'=>'CEN-TM-1','course'=>$s[0],'level'=>'','weekday'=>6,'startTime'=>$s[1],'endTime'=>$s[2],'room'=>$s[3],'instructorId'=>'VOL-SECRET','note'=>'','status'=>'active','createdAt'=>${now},'updatedAt'=>${now}]);`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -342,6 +343,33 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const coding = (await stored(M)).entries.find(e => e.title === 'Coding' && e.official);
     chk('accepting applies the centre\'s change', coding.start === '11:30' && coding.end === '13:00' && !(await M.$('.tt-note-act')));
     await M.context().close();
+
+    /* A child's week holds THEIR classes. Egbeda also runs Piano; Kemi takes
+       Coding (and Chess, which everyone takes). */
+    php(`db_insert('timetable_slots', ['slotId'=>'SL-TM-9','centreId'=>'CEN-TM-1','course'=>'Piano','level'=>'','weekday'=>6,'startTime'=>'12:30','endTime'=>'13:30','room'=>'Music room','instructorId'=>'','note'=>'','status'=>'active','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`);
+    const K = await open({ w: 1280, h: 800, mid: 'NGG-TM-2', at: '/timetable/me?centre=egbeda' });
+    await K.waitForFunction(() => /your classes at Egbeda, are in/.test((document.querySelector('.tt-note') || {}).innerText || ''), null, { timeout: 30000 });
+    const kOff = async () => (await stored(K)).entries.filter(e => e.official).map(e => e.title).sort().join();
+    chk('a member\'s centre link puts only their own classes in, and says how many more run there', await kOff() === 'Chess,Coding'
+      && /Chess and Coding, your classes at Egbeda, are in\. 1 more runs there\./.test(await K.innerText('.tt-note')) && (await K.inputValue('.tt-head-title')) === 'Kemi’s week');
+    chk('…and "Your course" is not stamped on every class when every class is theirs', !/Your course/.test(await K.innerText('.tt-listpane')));
+    await K.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(K);
+    await K.waitForSelector('.tt-listpane', { timeout: 30000 });
+    await K.waitForTimeout(2500);
+    chk('a class left out at the centre is never reported as a change', !/changed \d+ session/.test(await K.innerText('.tt-listpane')));
+    await K.click('.tt-steps .tt-textbtn:has-text("Choose classes")');
+    await K.waitForSelector('.tt-pick-row', { timeout: 15000 });
+    const rows = await K.$$eval('.tt-pick-row', r => r.map(x => x.innerText.split('\n')[0] + ':' + x.querySelector('input').checked));
+    chk('"Choose classes" lists every class at the centre, theirs ticked', rows.join() === 'Chess:true,Coding:true,Piano:false');
+    await K.click('.tt-pick-row:has-text("Piano")');
+    await K.click('.tt-pick .tt-btn--primary');
+    await K.waitForFunction(() => !document.querySelector('.tt-pick'), null, { timeout: 10000 });
+    await K.waitForFunction(() => /Piano/.test(localStorage.getItem('ngg.timetable.maker.v2') || ''), null, { timeout: 5000 }).catch(() => {});
+    const kAfter = await kOff();
+    chk('…ticking another puts it in the week too', kAfter === 'Chess,Coding,Piano');
+    if (kAfter !== 'Chess,Coding,Piano') console.log('    week holds: ' + kAfter);
+    await K.context().close();
 
     /* ── Links that open a copy ── */
     console.log('links');

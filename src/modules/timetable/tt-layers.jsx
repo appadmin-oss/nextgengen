@@ -146,6 +146,9 @@ function TtImport({ C, init }) {
   const [busy, setBusy] = React.useState(false);
   const [failed, setFailed] = React.useState(init.failed ? init.slug : "");
   const [paste, setPaste] = React.useState("");
+  /* The centre's sessions, to choose from: { slug, list, picked } | null while loading. */
+  const [sess, setSess] = React.useState(null);
+  const [tries, setTries] = React.useState(0);
   const loadList = () => {
     setListFailed(false);
     NGGApi.public.timetable("").then(r => {
@@ -157,14 +160,33 @@ function TtImport({ C, init }) {
     }).catch(() => setListFailed(true));
   };
   React.useEffect(loadList, []);
+  /* What is ticked to begin with: what is already in the week from this
+     centre; else a member's own classes; else everything (a visitor's
+     classes are not known here, and one press keeps the old behaviour). */
+  React.useEffect(() => {
+    if (!slug) return undefined;
+    let live = true;
+    setSess(null); setFailed("");
+    C.fetchCentre(slug).then(got => {
+      if (!live) return;
+      const have = new Set(C.entries.filter(e => e.official && e.source === got.centre).map(ttSlotKey));
+      const picked = got.entries.filter(e => have.size ? have.has(ttSlotKey(e)) : got.marked ? e.mine : true).map(ttSlotKey);
+      setSess({ slug, centre: got.centre, list: got.entries, picked });
+    }).catch(() => { if (live) setFailed(slug); });
+    return () => { live = false; };
+    // eslint-disable-next-line
+  }, [slug, tries]);
   const nameOf = sl => ((centres || []).find(c => c.slug === sl) || {}).name || "the centre";
+  const toggle = k => setSess(x => Object.assign({}, x, { picked: x.picked.includes(k) ? x.picked.filter(y => y !== k) : x.picked.concat([k]) }));
+  const nPick = sess ? sess.picked.length : 0;
   const add = async () => {
-    if (!slug) return;
+    if (!slug || !nPick) return;
     setBusy(true); setFailed("");
-    try { await C.addCentre(slug); C.close("import"); }
+    try { await C.addCentre(slug, false, sess.picked); C.close("import"); }
     catch (_) { setFailed(slug); }
     finally { setBusy(false); }
   };
+  const fmt = e => TT_DAYS[e.days[0] - 1][1] + " " + ttFmt(ttMin(e.start), C.s.clock) + "–" + ttFmt(ttMin(e.end), C.s.clock) + (e.place ? " · " + e.place : "");
   const pr = paste.trim() ? ttParseRows(paste, C.entries.length) : null;
   const n = pr ? pr.rows.length : 0, classes = n + " class" + (n === 1 ? "" : "es");
   return (
@@ -179,12 +201,31 @@ function TtImport({ C, init }) {
                 {!centres && <option value="">{listFailed ? "Couldn’t load the centres" : "Loading centres…"}</option>}
                 {(centres || []).map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
               </select>
-              <button type="button" className="tt-btn tt-btn--primary tt-btn--ctl" disabled={!slug || busy} onClick={add}>{busy ? "Adding…" : "Add"}</button>
             </div>
+            {sess && sess.slug === slug && (
+              <fieldset className="tt-pick">
+                <legend className="tt-sr">Which of {sess.centre}’s classes are yours?</legend>
+                <span className="tt-pick-h" aria-hidden="true">Which classes are yours?</span>
+                {sess.list.map(e => {
+                  const k = ttSlotKey(e), on = sess.picked.includes(k);
+                  return (
+                    <label key={k} className={"tt-pick-row" + (on ? " is-on" : "")}>
+                      <input type="checkbox" checked={on} onChange={() => toggle(k)}/>
+                      <span className="tt-pick-body"><b>{e.title}</b><span>{fmt(e)}</span></span>
+                      {e.mine && <TtPill tone="mine">Your course</TtPill>}
+                    </label>
+                  );
+                })}
+                <button type="button" className="tt-btn tt-btn--primary tt-btn--ctl" disabled={!nPick || busy} onClick={add}>
+                  {busy ? "Adding…" : nPick ? "Put " + nPick + " class" + (nPick === 1 ? "" : "es") + " in my week" : "Tick at least one class"}
+                </button>
+              </fieldset>
+            )}
+            {slug && !sess && !failed && <span className="tt-help" role="status">Loading {nameOf(slug)}’s classes…</span>}
             {failed && (
               <span role="alert" className="tt-err tt-err--inline">
                 <TtIcon name="warning-circle"/><span className="tt-grow">Couldn’t load {nameOf(failed)}’s sessions. Check your connection and try again.</span>
-                <button type="button" className="tt-textbtn" onClick={add}>Try again</button>
+                <button type="button" className="tt-textbtn" onClick={() => sess && sess.slug === slug ? add() : setTries(t => t + 1)}>Try again</button>
               </span>
             )}
             {listFailed && (
@@ -193,7 +234,7 @@ function TtImport({ C, init }) {
                 <button type="button" className="tt-textbtn" onClick={loadList}>Try again</button>
               </span>
             )}
-            <span className="tt-help">They stay in step with the centre. If it changes a session, you’re asked first.</span>
+            <span className="tt-help">Only the classes you tick go in your week. They stay in step with the centre: if it moves one, you’re asked first.</span>
           </div>
           <div className="tt-col tt-col--8">
             <label className="tt-field-label" htmlFor="tt-paste">Paste from a spreadsheet or WhatsApp</label>
