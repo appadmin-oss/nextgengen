@@ -23,28 +23,33 @@
       "materials": [
         {
           "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
+          "title": "Elements of AI",
+          "kind": "link",
+          "guide": "For the whole course: a free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         },
         {
           "url": "https://teachablemachine.withgoogle.com/",
           "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "For the whole course: try it in your browser: train it, test it, and notice where it gets things wrong."
         },
         {
           "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
           "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "For the whole course: do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://code.org/ai",
-          "title": "How AI works (Code.org)",
-          "kind": "link"
+          "title": "How AI works",
+          "kind": "interactive",
+          "guide": "Try it in your browser: train it, test it, and notice where it gets things wrong."
         },
         {
           "url": "https://www.unicef.org/innocenti/reports/policy-guidance-ai-children",
-          "title": "Policy guidance on AI for children (UNICEF)",
-          "kind": "link"
+          "title": "Policy guidance on AI for children",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
         }
       ],
       "checks": [
@@ -85,29 +90,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
-        },
-        {
           "url": "https://proceedings.mlr.press/v81/buolamwini18a.html",
-          "title": "Gender Shades: the research paper (Proceedings of Machine Learning Research)",
-          "kind": "link"
+          "title": "Gender Shades: intersectional accuracy disparities (the research paper)",
+          "kind": "link",
+          "guide": "Read about how systems are checked for fairness and who they can fail."
         },
         {
           "url": "https://www.ajl.org/",
-          "title": "Algorithmic Justice League (Algorithmic Justice League)",
-          "kind": "link"
+          "title": "Algorithmic Justice League",
+          "kind": "link",
+          "guide": "Read about how systems are checked for fairness and who they can fail."
         }
       ],
       "checks": [
@@ -148,24 +140,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
-        },
-        {
           "url": "https://hapgood.us/2019/06/19/sift-the-four-moves/",
-          "title": "SIFT: checking information (Mike Caulfield)",
-          "kind": "link"
+          "title": "SIFT: checking information",
+          "kind": "link",
+          "guide": "Methods for checking whether something is true — use them on one claim you saw this week."
+        },
+        {
+          "url": "https://www.elementsofai.com/",
+          "title": "Elements of AI",
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         }
       ],
       "checks": [
@@ -206,29 +190,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
-        },
-        {
           "url": "https://fullfact.org/toolkit/",
-          "title": "How to fact check (Full Fact)",
-          "kind": "link"
+          "title": "How to fact check",
+          "kind": "link",
+          "guide": "Methods for checking whether something is true — use them on one claim you saw this week."
         },
         {
           "url": "https://newslit.org/",
-          "title": "News Literacy Project (News Literacy Project)",
-          "kind": "link"
+          "title": "News Literacy Project",
+          "kind": "link",
+          "guide": "Methods for checking whether something is true — use them on one claim you saw this week."
         }
       ],
       "checks": [
@@ -270,18 +241,15 @@
       "materials": [
         {
           "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
+          "title": "Elements of AI",
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         },
         {
           "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
+          "title": "Teachable Machine",
+          "kind": "interactive",
+          "guide": "Try it in your browser: train it, test it, and notice where it gets things wrong."
         }
       ],
       "checks": [
@@ -322,24 +290,16 @@
       "passMark": 60,
       "materials": [
         {
+          "url": "https://newslit.org/",
+          "title": "News Literacy Project",
+          "kind": "link",
+          "guide": "Methods for checking whether something is true — use them on one claim you saw this week."
+        },
+        {
           "url": "https://www.elementsofai.com/",
           "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://newslit.org/",
-          "title": "News Literacy Project (News Literacy Project)",
-          "kind": "link"
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         }
       ],
       "checks": [
@@ -380,29 +340,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
-        },
-        {
           "url": "https://proceedings.mlr.press/v81/buolamwini18a.html",
-          "title": "Gender Shades: the research paper (Proceedings of Machine Learning Research)",
-          "kind": "link"
+          "title": "Gender Shades: intersectional accuracy disparities (the research paper)",
+          "kind": "link",
+          "guide": "Read about how systems are checked for fairness and who they can fail."
         },
         {
           "url": "https://www.ajl.org/",
-          "title": "Algorithmic Justice League (Algorithmic Justice League)",
-          "kind": "link"
+          "title": "Algorithmic Justice League",
+          "kind": "link",
+          "guide": "Read about how systems are checked for fairness and who they can fail."
         }
       ],
       "checks": [
@@ -443,29 +390,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
-        },
-        {
           "url": "https://ndpc.gov.ng/",
-          "title": "Nigeria Data Protection Commission (Nigeria Data Protection Commission)",
-          "kind": "link"
+          "title": "Nigeria Data Protection Commission",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online",
-          "title": "Top tips for staying secure online (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Top tips for staying secure online",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         }
       ],
       "checks": [
@@ -506,24 +440,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
-        },
-        {
           "url": "https://www.unicef.org/innocenti/reports/policy-guidance-ai-children",
-          "title": "Guidance for generative AI in education (UNICEF)",
-          "kind": "link"
+          "title": "Guidance for generative AI in education",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
+        },
+        {
+          "url": "https://www.elementsofai.com/",
+          "title": "Elements of AI",
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         }
       ],
       "checks": [
@@ -564,24 +490,16 @@
       "passMark": 60,
       "materials": [
         {
+          "url": "https://code.org/ai",
+          "title": "AI for Oceans and lessons",
+          "kind": "interactive",
+          "guide": "Try it in your browser: train it, test it, and notice where it gets things wrong."
+        },
+        {
           "url": "https://www.elementsofai.com/",
           "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://code.org/ai",
-          "title": "AI for Oceans and lessons (Code.org)",
-          "kind": "link"
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         }
       ],
       "checks": [
@@ -622,24 +540,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
-        },
-        {
           "url": "https://www.unesco.org/en/digital-education/artificial-intelligence",
-          "title": "AI in education (UNESCO)",
-          "kind": "link"
+          "title": "AI in education",
+          "kind": "link",
+          "guide": "Read about how systems are checked for fairness and who they can fail."
+        },
+        {
+          "url": "https://www.elementsofai.com/",
+          "title": "Elements of AI",
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         }
       ],
       "checks": [
@@ -680,24 +590,16 @@
       "passMark": 60,
       "materials": [
         {
+          "url": "https://modelcards.withgoogle.com/about",
+          "title": "Model cards",
+          "kind": "link",
+          "guide": "Read about how systems are checked for fairness and who they can fail."
+        },
+        {
           "url": "https://www.elementsofai.com/",
           "title": "Elements of AI — free course, University of Helsinki, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://teachablemachine.withgoogle.com/",
-          "title": "Teachable Machine — train a model in the browser, no code",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/machine-learning-with-python/",
-          "title": "freeCodeCamp: Machine Learning with Python — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://modelcards.withgoogle.com/about",
-          "title": "Model cards (Google)",
-          "kind": "link"
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         }
       ],
       "checks": [
@@ -733,32 +635,38 @@
         {
           "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
           "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.freecodecamp.org/learn/information-security/",
           "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "For the whole course: do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://haveibeenpwned.com/",
           "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: check your own email address (and only yours) to see if it appeared in a known breach."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online",
-          "title": "Top tips for staying secure online (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Top tips for staying secure online",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://ssd.eff.org/",
-          "title": "Surveillance Self-Defense (Electronic Frontier Foundation)",
-          "kind": "link"
+          "title": "Surveillance Self-Defense",
+          "kind": "link",
+          "guide": "Practical guides to protecting yourself online — read the one on today’s topic."
         },
         {
           "url": "https://beinternetawesome.withgoogle.com/",
-          "title": "Be Internet Awesome (Google)",
-          "kind": "link"
+          "title": "Be Internet Awesome",
+          "kind": "link",
+          "guide": "Online-safety advice for young people — read it and talk about it with someone you trust."
         }
       ],
       "checks": [
@@ -799,29 +707,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/information-security/",
-          "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/use-a-strong-and-separate-password-for-email",
-          "title": "Three random words (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Three random words",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://bitwarden.com/",
-          "title": "Bitwarden password manager (Bitwarden)",
-          "kind": "link"
+          "title": "Bitwarden password manager",
+          "kind": "link",
+          "guide": "Official guidance — follow the steps on your own account."
         }
       ],
       "checks": [
@@ -862,29 +757,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/information-security/",
-          "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/activate-2-step-verification-on-your-email",
-          "title": "Turn on two-step verification (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Turn on two-step verification",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://faq.whatsapp.com/1920866721452534",
-          "title": "WhatsApp two-step verification (WhatsApp Help Center)",
-          "kind": "link"
+          "title": "WhatsApp two-step verification",
+          "kind": "link",
+          "guide": "Official guidance — follow the steps on your own account."
         }
       ],
       "checks": [
@@ -925,29 +807,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/information-security/",
-          "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
           "url": "https://www.ncsc.gov.uk/guidance/suspicious-email-actions",
-          "title": "Spotting suspicious messages (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Spotting suspicious messages",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://www.ncsc.gov.uk/guidance/phishing",
-          "title": "Phishing: defending your organisation (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Phishing: defending your organisation",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         }
       ],
       "checks": [
@@ -988,29 +857,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/information-security/",
-          "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
           "url": "https://www.efcc.gov.ng/",
-          "title": "Economic and Financial Crimes Commission (EFCC Nigeria)",
-          "kind": "link"
+          "title": "Economic and Financial Crimes Commission",
+          "kind": "link",
+          "guide": "Official guidance — follow the steps on your own account."
         },
         {
           "url": "https://www.ncsc.gov.uk/guidance/suspicious-email-actions",
-          "title": "Spotting suspicious messages (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Spotting suspicious messages",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         }
       ],
       "checks": [
@@ -1051,29 +907,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/information-security/",
-          "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/install-the-latest-software-and-app-updates",
-          "title": "Device security guidance (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Device security guidance",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/always-back-up-your-most-important-data",
-          "title": "Back up your data (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Back up your data",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         }
       ],
       "checks": [
@@ -1114,24 +957,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
+          "url": "https://www.ncsc.gov.uk/guidance/phishing",
+          "title": "Phishing attacks: defending your organisation",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://www.freecodecamp.org/learn/information-security/",
           "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.ncsc.gov.uk/guidance/phishing",
-          "title": "Phishing attacks: defending your organisation (UK National Cyber Security Centre)",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         }
       ],
       "checks": [
@@ -1172,24 +1007,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
+          "url": "https://www.childnet.com/young-people/",
+          "title": "Online safety for young people",
+          "kind": "link",
+          "guide": "Online-safety advice for young people — read it and talk about it with someone you trust."
         },
         {
           "url": "https://www.freecodecamp.org/learn/information-security/",
           "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.childnet.com/young-people/",
-          "title": "Online safety for young people (Childnet International)",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         }
       ],
       "checks": [
@@ -1230,24 +1057,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
+          "url": "https://ssd.eff.org/",
+          "title": "Surveillance Self-Defense",
+          "kind": "link",
+          "guide": "Practical guides to protecting yourself online — read the one on today’s topic."
         },
         {
           "url": "https://www.freecodecamp.org/learn/information-security/",
           "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
-          "url": "https://ssd.eff.org/",
-          "title": "Surveillance Self-Defense (Electronic Frontier Foundation)",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         }
       ],
       "checks": [
@@ -1288,29 +1107,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/information-security/",
-          "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
           "url": "https://www.ncsc.gov.uk/guidance/recovering-a-hacked-account",
-          "title": "Recovering a hacked account (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Recovering a hacked account",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://faq.whatsapp.com/1131652977717250",
-          "title": "WhatsApp: stolen account (WhatsApp Help Center)",
-          "kind": "link"
+          "title": "WhatsApp: stolen account",
+          "kind": "link",
+          "guide": "Official guidance — follow the steps on your own account."
         }
       ],
       "checks": [
@@ -1351,29 +1157,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/information-security/",
-          "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
           "url": "https://picoctf.org/",
-          "title": "picoCTF (Carnegie Mellon University)",
-          "kind": "link"
+          "title": "picoCTF",
+          "kind": "interactive",
+          "guide": "Practice security puzzles, free — start with the easiest category."
         },
         {
           "url": "https://owasp.org/",
-          "title": "OWASP Foundation (OWASP Foundation)",
-          "kind": "link"
+          "title": "OWASP Foundation",
+          "kind": "link",
+          "guide": "The security community’s reference — check your code against it."
         }
       ],
       "checks": [
@@ -1414,29 +1207,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.netacad.com/courses/introduction-to-cybersecurity",
-          "title": "Cisco Networking Academy: Introduction to Cybersecurity — free, with a certificate and a Credly badge",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.freecodecamp.org/learn/information-security/",
-          "title": "freeCodeCamp: Information Security — free certification",
-          "kind": "link"
-        },
-        {
-          "url": "https://haveibeenpwned.com/",
-          "title": "Have I Been Pwned — check whether an address is in a known breach",
-          "kind": "link"
-        },
-        {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online",
-          "title": "Top tips for staying secure online (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Top tips for staying secure online",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://myaccount.google.com/security-checkup",
-          "title": "Google Security Checkup (Google)",
-          "kind": "link"
+          "title": "Google Security Checkup",
+          "kind": "link",
+          "guide": "Official guidance — follow the steps on your own account."
         }
       ],
       "checks": [
@@ -1472,27 +1252,32 @@
         {
           "url": "https://www.freecodecamp.org/learn/",
           "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "For the whole course: do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/",
           "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: the reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://git-scm.com/book/en/v2",
           "title": "Pro Git — free and complete",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: follow the guide and try each step in your own project."
         },
         {
           "url": "https://git-scm.com/book/en/v2/Getting-Started-About-Version-Control",
-          "title": "Pro Git: about version control (Pro Git book (git-scm.com))",
-          "kind": "link"
+          "title": "Pro Git: about version control",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://www.makeareadme.com/",
-          "title": "Make a README (makeareadme.com)",
-          "kind": "link"
+          "title": "Make a README",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         }
       ],
       "checks": [
@@ -1533,34 +1318,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://git-scm.com/book/en/v2/Git-Branching-Branches-in-a-Nutshell",
-          "title": "Branches in a nutshell (Pro Git book (git-scm.com))",
-          "kind": "link"
+          "title": "Branches in a nutshell",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://www.freecodecamp.org/news/git-and-github-for-beginners/",
-          "title": "Git and GitHub for beginners (freeCodeCamp)",
-          "kind": "link"
+          "title": "Git and GitHub for beginners",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://docs.github.com/en/get-started/start-your-journey/hello-world",
-          "title": "Hello World on GitHub (GitHub Docs)",
-          "kind": "link"
+          "title": "Hello World on GitHub",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         }
       ],
       "checks": [
@@ -1601,29 +1374,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://code.visualstudio.com/docs/getstarted/getting-started",
-          "title": "Getting started with VS Code (Visual Studio Code (Microsoft))",
-          "kind": "link"
+          "title": "Getting started with VS Code",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://www.makeareadme.com/",
-          "title": "Make a README (makeareadme.com)",
-          "kind": "link"
+          "title": "Make a README",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         }
       ],
       "checks": [
@@ -1664,29 +1424,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://www.freecodecamp.org/news/how-to-debug-javascript-with-your-browsers-devtools/",
-          "title": "How to debug JavaScript with your browser's devtools (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to debug JavaScript with your browser's devtools",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://developer.chrome.com/docs/devtools/javascript",
-          "title": "Debug JavaScript (Chrome for Developers (Google))",
-          "kind": "link"
+          "title": "Debug JavaScript",
+          "kind": "link",
+          "guide": "Open DevTools and follow along on a real page."
         }
       ],
       "checks": [
@@ -1727,29 +1474,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://jestjs.io/docs/getting-started",
-          "title": "Getting started with Jest (Jest)",
-          "kind": "link"
+          "title": "Getting started with Jest",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://docs.pytest.org/en/stable/getting-started.html",
-          "title": "Getting started with pytest (pytest)",
-          "kind": "link"
+          "title": "Getting started with pytest",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -1790,29 +1524,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests",
-          "title": "About pull requests (GitHub Docs)",
-          "kind": "link"
+          "title": "About pull requests",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://docs.github.com/en/issues/tracking-your-work-with-issues/about-issues",
-          "title": "About issues (GitHub Docs)",
-          "kind": "link"
+          "title": "About issues",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         }
       ],
       "checks": [
@@ -1853,29 +1574,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://jestjs.io/docs/getting-started",
-          "title": "Getting started with Jest (Jest)",
-          "kind": "link"
+          "title": "Getting started with Jest",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://docs.pytest.org/en/stable/getting-started.html",
-          "title": "Getting started with pytest (pytest)",
-          "kind": "link"
+          "title": "Getting started with pytest",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -1916,34 +1624,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://sqlbolt.com/",
-          "title": "SQLBolt: interactive SQL lessons (SQLBolt)",
-          "kind": "link"
+          "title": "SQLBolt: interactive SQL lessons",
+          "kind": "interactive",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://www.sqlite.org/about.html",
-          "title": "About SQLite (SQLite)",
-          "kind": "link"
+          "title": "About SQLite",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://www.freecodecamp.org/learn/relational-database/",
-          "title": "Relational Database certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Relational Database certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         }
       ],
       "checks": [
@@ -1984,34 +1680,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
-          "title": "Using the Fetch API (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Using the Fetch API",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.freecodecamp.org/news/how-to-use-fetch-api/",
-          "title": "How to use the Fetch API (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to use the Fetch API",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview",
-          "title": "An overview of HTTP (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "An overview of HTTP",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -2052,29 +1736,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site",
-          "title": "Creating a GitHub Pages site (GitHub Docs)",
-          "kind": "link"
+          "title": "Creating a GitHub Pages site",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Server-side/Express_Nodejs/deployment",
-          "title": "Deploying an Express app (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Deploying an Express app",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -2115,34 +1786,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://cbea.ms/git-commit/",
-          "title": "How to write a Git commit message (Chris Beams)",
-          "kind": "link"
+          "title": "How to write a Git commit message",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://www.makeareadme.com/",
-          "title": "Make a README (makeareadme.com)",
-          "kind": "link"
+          "title": "Make a README",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://www.freecodecamp.org/news/how-to-write-a-good-readme-file/",
-          "title": "How to write a good README file (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to write a good README file",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         }
       ],
       "checks": [
@@ -2183,29 +1842,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — the certifications this course builds towards; each one needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
-          "url": "https://git-scm.com/book/en/v2",
-          "title": "Pro Git — free and complete",
-          "kind": "link"
-        },
-        {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
-          "title": "Full Stack Developer curriculum (freeCodeCamp)",
-          "kind": "link"
+          "title": "Full Stack Developer curriculum",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes",
-          "title": "About READMEs (GitHub Docs)",
-          "kind": "link"
+          "title": "About READMEs",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         }
       ],
       "checks": [
@@ -2239,24 +1885,28 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
+          "title": "Arduino: learn",
+          "kind": "link",
+          "guide": "For the whole course: follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://www.tinkercad.com/circuits",
           "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "For the whole course: build and test the circuit in your browser first — no parts needed, nothing can break."
         },
         {
           "url": "https://www.khanacademy.org/science/electrical-engineering",
-          "title": "Electrical engineering (Khan Academy)",
-          "kind": "link"
+          "title": "Electrical engineering",
+          "kind": "link",
+          "guide": "Watch the short videos and try the practice questions."
         }
       ],
       "checks": [
@@ -2297,29 +1947,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.sparkfun.com/tutorials/voltage-current-resistance-and-ohms-law",
-          "title": "Voltage, current, resistance and Ohm's law (SparkFun Electronics)",
-          "kind": "link"
+          "title": "Voltage, current, resistance and Ohm's law",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.sparkfun.com/tutorials/what-is-a-circuit",
-          "title": "What is a circuit? (SparkFun Electronics)",
-          "kind": "link"
+          "title": "What is a circuit?",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         }
       ],
       "checks": [
@@ -2360,34 +2003,28 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.sparkfun.com/tutorials/how-to-use-a-breadboard",
-          "title": "How to use a breadboard (SparkFun Electronics)",
-          "kind": "link"
+          "title": "How to use a breadboard",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.sparkfun.com/tutorials/light-emitting-diodes-leds",
-          "title": "Light-emitting diodes (SparkFun Electronics)",
-          "kind": "link"
+          "title": "Light-emitting diodes",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://www.tinkercad.com/learn/circuits",
-          "title": "Circuits in the browser (Autodesk Tinkercad)",
-          "kind": "link"
+          "title": "Circuits in the browser",
+          "kind": "interactive",
+          "guide": "Build and test the circuit in your browser first — no parts needed, nothing can break."
         }
       ],
       "checks": [
@@ -2428,34 +2065,28 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://docs.arduino.cc/built-in-examples/basics/Blink/",
-          "title": "Blink (Arduino)",
-          "kind": "link"
+          "title": "Blink",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://wokwi.com/",
-          "title": "Wokwi Arduino simulator (Wokwi)",
-          "kind": "link"
+          "title": "Wokwi Arduino simulator",
+          "kind": "interactive",
+          "guide": "Simulate the circuit and code in your browser before touching real parts."
         },
         {
           "url": "https://www.tinkercad.com/learn/circuits",
-          "title": "Circuits in the browser (Autodesk Tinkercad)",
-          "kind": "link"
+          "title": "Circuits in the browser",
+          "kind": "interactive",
+          "guide": "Build and test the circuit in your browser first — no parts needed, nothing can break."
         }
       ],
       "checks": [
@@ -2496,24 +2127,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://docs.arduino.cc/built-in-examples/digital/Button/",
-          "title": "Button (Arduino)",
-          "kind": "link"
+          "title": "Button",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         }
       ],
       "checks": [
@@ -2554,29 +2177,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://docs.arduino.cc/learn/electronics/servo-motors/",
-          "title": "Servo motor basics (Arduino)",
-          "kind": "link"
+          "title": "Servo motor basics",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.sparkfun.com/tutorials/motors-and-selecting-the-right-one",
-          "title": "Motors and choosing the right one (SparkFun Electronics)",
-          "kind": "link"
+          "title": "Motors and choosing the right one",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         }
       ],
       "checks": [
@@ -2617,29 +2233,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.sparkfun.com/tutorials/how-to-use-a-multimeter",
-          "title": "How to use a multimeter (SparkFun Electronics)",
-          "kind": "link"
+          "title": "How to use a multimeter",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.sparkfun.com/tutorials/voltage-current-resistance-and-ohms-law",
-          "title": "Voltage, current, resistance and Ohm's law (SparkFun Electronics)",
-          "kind": "link"
+          "title": "Voltage, current, resistance and Ohm's law",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         }
       ],
       "checks": [
@@ -2680,24 +2289,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://wokwi.com/",
-          "title": "Wokwi Arduino simulator (Wokwi)",
-          "kind": "link"
+          "title": "Wokwi Arduino simulator",
+          "kind": "interactive",
+          "guide": "Simulate the circuit and code in your browser before touching real parts."
         }
       ],
       "checks": [
@@ -2738,24 +2339,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://projects.raspberrypi.org/en",
-          "title": "Raspberry Pi Foundation projects (Raspberry Pi Foundation)",
-          "kind": "link"
+          "title": "Raspberry Pi Foundation projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         }
       ],
       "checks": [
@@ -2796,29 +2389,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.sparkfun.com/tutorials/motors-and-selecting-the-right-one",
-          "title": "Motors and choosing the right one (SparkFun Electronics)",
-          "kind": "link"
+          "title": "Motors and choosing the right one",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.adafruit.com/",
-          "title": "Adafruit Learning System (Adafruit)",
-          "kind": "link"
+          "title": "Adafruit Learning System",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         }
       ],
       "checks": [
@@ -2859,24 +2445,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.sparkfun.com/tutorials/how-to-use-a-multimeter",
-          "title": "How to use a multimeter (SparkFun Electronics)",
-          "kind": "link"
+          "title": "How to use a multimeter",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         }
       ],
       "checks": [
@@ -2917,29 +2495,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://microbit.org/projects/",
-          "title": "micro:bit projects — free, works from a phone",
-          "kind": "link"
-        },
-        {
-          "url": "https://docs.arduino.cc/learn/",
-          "title": "Arduino documentation and tutorials",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.tinkercad.com/circuits",
-          "title": "Tinkercad Circuits — build and test a circuit in the browser, free, no parts needed",
-          "kind": "link"
+          "url": "https://microbit.org/projects/make-it-code-it/",
+          "title": "micro:bit — make it: code it projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://projects.raspberrypi.org/en",
-          "title": "Raspberry Pi Foundation projects (Raspberry Pi Foundation)",
-          "kind": "link"
+          "title": "Raspberry Pi Foundation projects",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.adafruit.com/",
-          "title": "Adafruit Learning System (Adafruit)",
-          "kind": "link"
+          "title": "Adafruit Learning System",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         }
       ],
       "checks": [
@@ -2975,27 +2546,32 @@
         {
           "url": "https://support.google.com/docs/table/25273",
           "title": "Google Sheets function list",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: the tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://zapier.com/learn/",
           "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: short guides to automating everyday work — read the one closest to your task."
         },
         {
           "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
           "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://zapier.com/blog/what-is-automation/",
-          "title": "What is automation? (Zapier)",
-          "kind": "link"
+          "title": "What is automation?",
+          "kind": "link",
+          "guide": "Short guides to automating everyday work — read the one closest to your task."
         },
         {
           "url": "https://developers.google.com/apps-script/overview",
-          "title": "Apps Script overview (Google for Developers)",
-          "kind": "link"
+          "title": "Apps Script overview",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -3036,29 +2612,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/work-management/project-management/process-mapping",
-          "title": "Flowcharts and process mapping (Atlassian)",
-          "kind": "link"
+          "title": "Flowcharts and process mapping",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://zapier.com/blog/what-is-automation/",
-          "title": "What is automation? (Zapier)",
-          "kind": "link"
+          "title": "What is automation?",
+          "kind": "link",
+          "guide": "Short guides to automating everyday work — read the one closest to your task."
         }
       ],
       "checks": [
@@ -3099,29 +2662,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://support.google.com/docs/answer/46977",
-          "title": "Google Sheets function list (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Google Sheets function list",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/186103",
-          "title": "Data validation (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Data validation",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -3162,29 +2712,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://support.google.com/docs/answer/2917686",
-          "title": "Choose where to save form responses (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Choose where to save form responses",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/6281888",
-          "title": "Create a form (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Create a form",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -3225,34 +2762,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://zapier.com/learn",
-          "title": "Zapier learning centre (Zapier)",
-          "kind": "link"
+          "title": "Zapier learning centre",
+          "kind": "link",
+          "guide": "Short guides to automating everyday work — read the one closest to your task."
         },
         {
           "url": "https://help.make.com/",
-          "title": "Make help centre (Make)",
-          "kind": "link"
+          "title": "Make help centre",
+          "kind": "link",
+          "guide": "Make’s own courses — do the first one before building your scenario."
         },
         {
           "url": "https://developers.google.com/apps-script/overview",
-          "title": "Apps Script overview (Google for Developers)",
-          "kind": "link"
+          "title": "Apps Script overview",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -3293,29 +2818,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://developers.google.com/apps-script/guides/triggers/installable",
-          "title": "Installable triggers (Google for Developers)",
-          "kind": "link"
+          "title": "Installable triggers",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://zapier.com/learn",
-          "title": "Zapier learning centre (Zapier)",
-          "kind": "link"
+          "title": "Zapier learning centre",
+          "kind": "link",
+          "guide": "Short guides to automating everyday work — read the one closest to your task."
         }
       ],
       "checks": [
@@ -3356,29 +2868,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://developers.google.com/apps-script/overview",
-          "title": "Apps Script overview (Google for Developers)",
-          "kind": "link"
+          "title": "Apps Script overview",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://developers.google.com/apps-script/guides/triggers/installable",
-          "title": "Installable triggers (Google for Developers)",
-          "kind": "link"
+          "title": "Installable triggers",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -3419,29 +2918,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://ndpc.gov.ng/",
-          "title": "Nigeria Data Protection Commission (Nigeria Data Protection Commission)",
-          "kind": "link"
+          "title": "Nigeria Data Protection Commission",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         },
         {
           "url": "https://zapier.com/learn",
-          "title": "Zapier learning centre (Zapier)",
-          "kind": "link"
+          "title": "Zapier learning centre",
+          "kind": "link",
+          "guide": "Short guides to automating everyday work — read the one closest to your task."
         }
       ],
       "checks": [
@@ -3482,29 +2968,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://developers.google.com/apps-script/guides/support/troubleshooting",
-          "title": "Apps Script: troubleshooting (Google for Developers)",
-          "kind": "link"
+          "title": "Apps Script: troubleshooting",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://help.make.com/",
-          "title": "Make help centre (Make)",
-          "kind": "link"
+          "title": "Make help centre",
+          "kind": "link",
+          "guide": "Make’s own courses — do the first one before building your scenario."
         }
       ],
       "checks": [
@@ -3545,29 +3018,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://www.makeareadme.com/",
-          "title": "Make a README (makeareadme.com)",
-          "kind": "link"
+          "title": "Make a README",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://www.gov.uk/service-manual",
-          "title": "GOV.UK Service Manual (UK Government Digital Service)",
-          "kind": "link"
+          "title": "GOV.UK Service Manual",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -3608,29 +3068,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://www.gov.uk/service-manual",
-          "title": "GOV.UK Service Manual (UK Government Digital Service)",
-          "kind": "link"
+          "title": "GOV.UK Service Manual",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         },
         {
           "url": "https://ndpc.gov.ng/",
-          "title": "Nigeria Data Protection Commission (Nigeria Data Protection Commission)",
-          "kind": "link"
+          "title": "Nigeria Data Protection Commission",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -3671,29 +3118,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://support.google.com/docs/table/25273",
-          "title": "Google Sheets function list",
-          "kind": "link"
-        },
-        {
-          "url": "https://zapier.com/learn/",
-          "title": "Zapier learning resources — free tier is enough for this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learn.microsoft.com/en-us/training/powerplatform/",
-          "title": "Microsoft Power Platform training — free, leads to the PL-900 certification",
-          "kind": "link"
-        },
-        {
           "url": "https://zapier.com/learn",
-          "title": "Zapier learning centre (Zapier)",
-          "kind": "link"
+          "title": "Zapier learning centre",
+          "kind": "link",
+          "guide": "Short guides to automating everyday work — read the one closest to your task."
         },
         {
           "url": "https://developers.google.com/apps-script/overview",
-          "title": "Apps Script overview (Google for Developers)",
-          "kind": "link"
+          "title": "Apps Script overview",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -3729,27 +3163,32 @@
         {
           "url": "https://www.figma.com/education/",
           "title": "Figma for Education — free",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: figma’s own guides — follow along in your own file."
         },
         {
           "url": "https://www.w3.org/WAI/WCAG22/quickref/",
           "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: the accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://grow.google/certificates/ux-design/",
           "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/design-thinking",
-          "title": "Design thinking (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Design thinking",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.gov.uk/service-manual",
-          "title": "GOV.UK Service Manual (UK Government Digital Service)",
-          "kind": "link"
+          "title": "GOV.UK Service Manual",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -3790,29 +3229,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/user-interviews/",
-          "title": "User interviews (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "User interviews",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.gov.uk/service-manual/user-research",
-          "title": "User research (UK Government Digital Service)",
-          "kind": "link"
+          "title": "User research",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -3853,29 +3279,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/agile/product-management/prioritization-framework",
-          "title": "Prioritisation frameworks (Atlassian)",
-          "kind": "link"
+          "title": "Prioritisation frameworks",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.gov.uk/service-manual",
-          "title": "GOV.UK Service Manual (UK Government Digital Service)",
-          "kind": "link"
+          "title": "GOV.UK Service Manual",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -3916,29 +3329,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/design-thinking",
-          "title": "Design thinking (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Design thinking",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://dschool.stanford.edu/resources",
-          "title": "Design thinking resources (Stanford d.school)",
-          "kind": "link"
+          "title": "Design thinking resources",
+          "kind": "link",
+          "guide": "Design-thinking methods with step-by-step guides — pick one that fits today’s task."
         }
       ],
       "checks": [
@@ -3979,29 +3379,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/visual-hierarchy",
-          "title": "Visual hierarchy (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Visual hierarchy",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.nngroup.com/articles/empty-state-interface-design/",
-          "title": "Empty state design (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Empty state design",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -4042,29 +3429,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/design-systems-101/",
-          "title": "Design systems 101 (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Design systems 101",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://design-system.service.gov.uk/",
-          "title": "GOV.UK Design System (UK Government Digital Service)",
-          "kind": "link"
+          "title": "GOV.UK Design System",
+          "kind": "link",
+          "guide": "Tested patterns for forms and pages — copy how they do it before inventing your own."
         }
       ],
       "checks": [
@@ -4105,29 +3479,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/design-systems-101/",
-          "title": "Design systems 101 (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Design systems 101",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/gestalt-principles",
-          "title": "Gestalt principles (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Gestalt principles",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         }
       ],
       "checks": [
@@ -4168,29 +3529,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/ux-prototype-hi-lo-fidelity/",
-          "title": "Prototyping: high or low fidelity? (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Prototyping: high or low fidelity?",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://help.figma.com/hc/en-us/articles/360040314193-Guide-to-prototyping-in-Figma",
-          "title": "Guide to prototyping in Figma (Figma)",
-          "kind": "link"
+          "title": "Guide to prototyping in Figma",
+          "kind": "link",
+          "guide": "Figma’s own guides — follow along in your own file."
         }
       ],
       "checks": [
@@ -4231,29 +3579,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/why-you-only-need-to-test-with-5-users/",
-          "title": "Why you only need to test with 5 users (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Why you only need to test with 5 users",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.nngroup.com/articles/usability-testing-101/",
-          "title": "Usability testing 101 (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Usability testing 101",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -4294,34 +3629,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.w3.org/WAI/tips/designing/",
-          "title": "Accessible design: understanding the basics (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Accessible design: understanding the basics",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://www.gov.uk/service-manual/helping-people-to-use-your-service/making-your-service-accessible-an-introduction",
-          "title": "Making your service accessible (UK Government Digital Service)",
-          "kind": "link"
+          "title": "Making your service accessible",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         },
         {
           "url": "https://webaim.org/resources/contrastchecker/",
-          "title": "Contrast checker (WebAIM (Utah State University))",
-          "kind": "link"
+          "title": "Contrast checker",
+          "kind": "interactive",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         }
       ],
       "checks": [
@@ -4362,29 +3685,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://design-system.service.gov.uk/",
-          "title": "GOV.UK Design System (UK Government Digital Service)",
-          "kind": "link"
+          "title": "GOV.UK Design System",
+          "kind": "link",
+          "guide": "Tested patterns for forms and pages — copy how they do it before inventing your own."
         },
         {
           "url": "https://www.figma.com/resource-library/",
-          "title": "Figma resource library (Figma)",
-          "kind": "link"
+          "title": "Figma resource library",
+          "kind": "link",
+          "guide": "Figma’s own guides — follow along in your own file."
         }
       ],
       "checks": [
@@ -4425,29 +3735,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.figma.com/education/",
-          "title": "Figma for Education — free",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.w3.org/WAI/WCAG22/quickref/",
-          "title": "WCAG 2.2 quick reference — the accessibility standard",
-          "kind": "link"
-        },
-        {
-          "url": "https://grow.google/certificates/ux-design/",
-          "title": "Google UX Design Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/design-thinking",
-          "title": "Design thinking (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Design thinking",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.ted.com/playlists/574/how_to_make_a_great_presentation",
-          "title": "How to make a great presentation (TED)",
-          "kind": "link"
+          "title": "How to make a great presentation",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         }
       ],
       "checks": [
@@ -4483,22 +3780,26 @@
         {
           "url": "https://grow.google/certificates/project-management/",
           "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.atlassian.com/agile",
           "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.atlassian.com/agile/product-management",
-          "title": "What is product management? (Atlassian)",
-          "kind": "link"
+          "title": "What is product management?",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.mindtheproduct.com/",
-          "title": "Mind the Product (Mind the Product)",
-          "kind": "link"
+          "title": "Mind the Product",
+          "kind": "link",
+          "guide": "Articles by working product managers — read one and note an idea to try."
         }
       ],
       "checks": [
@@ -4539,24 +3840,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/user-interviews/",
-          "title": "User interviews (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "User interviews",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.svpg.com/articles/",
-          "title": "SVPG articles on product discovery (Silicon Valley Product Group)",
-          "kind": "link"
+          "title": "SVPG articles on product discovery",
+          "kind": "link",
+          "guide": "Articles by working product managers — read one and note an idea to try."
         }
       ],
       "checks": [
@@ -4597,24 +3890,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/agile/product-management",
-          "title": "What is product management? (Atlassian)",
-          "kind": "link"
+          "title": "What is product management?",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/design-thinking",
-          "title": "Design thinking (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Design thinking",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         }
       ],
       "checks": [
@@ -4655,24 +3940,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/",
-          "title": "RICE: simple prioritisation for product managers (Intercom)",
-          "kind": "link"
+          "title": "RICE: simple prioritisation for product managers",
+          "kind": "link",
+          "guide": "Articles by working product managers — read one and note an idea to try."
         },
         {
           "url": "https://www.atlassian.com/agile/product-management/prioritization-framework",
-          "title": "Prioritisation frameworks (Atlassian)",
-          "kind": "link"
+          "title": "Prioritisation frameworks",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [
@@ -4713,24 +3990,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/agile/product-management/product-roadmaps",
-          "title": "Product roadmaps (Atlassian)",
-          "kind": "link"
+          "title": "Product roadmaps",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.productplan.com/learn/",
-          "title": "ProductPlan learning centre (ProductPlan)",
-          "kind": "link"
+          "title": "ProductPlan learning centre",
+          "kind": "link",
+          "guide": "Articles by working product managers — read one and note an idea to try."
         }
       ],
       "checks": [
@@ -4771,24 +4040,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.svpg.com/articles/",
-          "title": "SVPG articles on product teams (Silicon Valley Product Group)",
-          "kind": "link"
+          "title": "SVPG articles on product teams",
+          "kind": "link",
+          "guide": "Articles by working product managers — read one and note an idea to try."
         },
         {
           "url": "https://www.mindtheproduct.com/",
-          "title": "Mind the Product (Mind the Product)",
-          "kind": "link"
+          "title": "Mind the Product",
+          "kind": "link",
+          "guide": "Articles by working product managers — read one and note an idea to try."
         }
       ],
       "checks": [
@@ -4829,24 +4090,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/agile/product-management",
-          "title": "What is product management? (Atlassian)",
-          "kind": "link"
+          "title": "What is product management?",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.svpg.com/articles/",
-          "title": "SVPG articles (Silicon Valley Product Group)",
-          "kind": "link"
+          "title": "SVPG articles",
+          "kind": "link",
+          "guide": "Articles by working product managers — read one and note an idea to try."
         }
       ],
       "checks": [
@@ -4887,24 +4140,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.gov.uk/service-manual/measuring-success",
-          "title": "Measuring success (UK Government Digital Service)",
-          "kind": "link"
+          "title": "Measuring success",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         },
         {
           "url": "https://www.productplan.com/learn/",
-          "title": "ProductPlan learning centre (ProductPlan)",
-          "kind": "link"
+          "title": "ProductPlan learning centre",
+          "kind": "link",
+          "guide": "Articles by working product managers — read one and note an idea to try."
         }
       ],
       "checks": [
@@ -4945,24 +4190,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/agile/product-management",
-          "title": "What is product management? (Atlassian)",
-          "kind": "link"
+          "title": "What is product management?",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.gov.uk/service-manual",
-          "title": "GOV.UK Service Manual (UK Government Digital Service)",
-          "kind": "link"
+          "title": "GOV.UK Service Manual",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -5003,24 +4240,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/usability-testing-101/",
-          "title": "Usability testing 101 (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Usability testing 101",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.mindtheproduct.com/",
-          "title": "Mind the Product (Mind the Product)",
-          "kind": "link"
+          "title": "Mind the Product",
+          "kind": "link",
+          "guide": "Articles by working product managers — read one and note an idea to try."
         }
       ],
       "checks": [
@@ -5061,24 +4290,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.mindtools.com/a2az7e1/how-to-say-no",
-          "title": "How to say no (Mind Tools)",
-          "kind": "link"
+          "title": "How to say no",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.atlassian.com/agile/product-management/prioritization-framework",
-          "title": "Prioritisation frameworks (Atlassian)",
-          "kind": "link"
+          "title": "Prioritisation frameworks",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [
@@ -5119,24 +4340,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.atlassian.com/agile",
-          "title": "Atlassian agile guides — free and practical",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/agile/product-management",
-          "title": "What is product management? (Atlassian)",
-          "kind": "link"
+          "title": "What is product management?",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.ted.com/playlists/574/how_to_make_a_great_presentation",
-          "title": "How to make a great presentation (TED)",
-          "kind": "link"
+          "title": "How to make a great presentation",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         }
       ],
       "checks": [

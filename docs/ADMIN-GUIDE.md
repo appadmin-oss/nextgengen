@@ -3625,3 +3625,23 @@ Every link was checked to load before it shipped. Sites update existing
 lessons automatically on the next page load, **unless an instructor has
 edited that lesson** — an edited lesson is never overwritten. To take the new
 text into an edited lesson, open the bundled course and copy the section in.
+
+### Lesson materials say what to do with them
+
+Each material on a lesson now shows three things to the learner: its title, a
+**one-line instruction** ("Choose the drill for today's topic and do ten in a
+row", "Official safety guidance — read the key points before the practical")
+and the site it comes from, with an action word — **Practise**, **Read**,
+**Watch**, **Listen** — instead of the file type. In the lesson editor, each
+material has a third box, *What to do with it* (up to 240 characters). Write
+it as an instruction to the child, not a description of the site. Practice
+sites (exercises that mark themselves, sandboxes, interactive lessons) are
+recognised automatically.
+
+The bundled courses were cleaned at the same time: dead and blocked links
+removed (four Trinity pages, ABRSM, Canva, JustinGuitar, MuseScore's sheet
+music, the British Museum search, a Google search posing as a metronome);
+exam and certificate pages that were repeated on every lesson now appear once,
+on the first lesson of each level, marked *For the whole course* (the
+qualifications themselves live in Credentials); and every lesson keeps at
+least two materials. An edited lesson keeps its own materials.

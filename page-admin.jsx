@@ -2500,6 +2500,7 @@ function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnab
               <div key={i} className="led-mat">
                 <input className="admin-input" value={m.title} onChange={e => setMat(i, "title", e.target.value)} aria-label={"Material " + (i + 1) + " title"} placeholder="What it is" disabled={ro}/>
                 <input className="admin-input" value={m.url} onChange={e => setMat(i, "url", e.target.value)} aria-label={"Material " + (i + 1) + " link"} placeholder="https://…" disabled={ro}/>
+                <input className="admin-input led-mat-guide" value={m.guide || ""} maxLength={240} onChange={e => setMat(i, "guide", e.target.value)} aria-label={"Material " + (i + 1) + ": what the learner should do with it"} placeholder="What to do with it — e.g. “Do the first three exercises, then check yourself”" disabled={ro}/>
                 <span className="chip">{m.kind || "link"}</span>
                 {!ro && <button type="button" className="led-x" aria-label={"Remove " + (m.title || "material " + (i + 1))}
                   onClick={() => setF(x => ({ ...x, materials: x.materials.filter((_, j) => j !== i) }))}><LedIcon name="x"/></button>}

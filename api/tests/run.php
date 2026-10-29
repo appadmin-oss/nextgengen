@@ -33678,6 +33678,62 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 })();
 
 
+/* What to do with a material (2026-10-29: "improve the quality of learning
+   materials"). A material carries one line for the learner, stored, served,
+   compared on re-import and refreshed from a revised seed; practice sites
+   are recognised as practice; and every shipped lesson has at least two
+   materials, each with its line, none of them a dead or walled link. */
+(function () {
+    chk('materials · a practice site is recognised as practice',
+        curriculum_material_kind('', 'https://www.musictheory.net/exercises') === 'interactive'
+        && curriculum_material_kind('', 'https://www.freecodecamp.org/learn/relational-database/') === 'interactive'
+        && curriculum_material_kind('', 'https://www.bbc.co.uk/bitesize/subjects/zpf3cdm') === 'link');
+    $base = ['course' => 'Piano', 'level' => 'Year 9 · Guidetest', 'week' => 1, 'position' => 1, 'title' => 'Guide test',
+        'summary' => 'S', 'objectives' => ['O'], 'body' => 'B', 'durationMins' => 30, 'passMark' => 50,
+        'checks' => [['kind' => 'mcq', 'prompt' => 'Pick one', 'options' => ['a', 'b'], 'answer' => '0', 'points' => 1],
+                     ['kind' => 'task', 'prompt' => 'Show what you did', 'rubric' => 'Did it', 'points' => 2]]];
+    $v = curriculum_validate($base + ['materials' => [['url' => 'https://example.org/a', 'title' => 'A', 'guide' => str_repeat('x', 400)]]], true);
+    chk('materials · a guide is kept, and clipped to its limit', ($v['ok'] ?? false) && mb_strlen($v['materials'][0]['guide']) === CURR_MATERIAL_GUIDE_MAX);
+    $saveCfg = $GLOBALS['CONFIG']['seed_bundled_curriculum'] ?? null;
+    unset($GLOBALS['CONFIG']['seed_bundled_curriculum']);
+    $file = static fn($g) => ['guidetest' => ['key' => 'guidetest', 'allowNewCourse' => true,
+        'lessons' => [$base + ['materials' => [['url' => 'https://example.org/a', 'title' => 'A', 'guide' => $g]]]]]];
+    $GLOBALS['__curriculum_seed_files'] = $file('Do the first three.');
+    db_exec("DELETE FROM settings WHERE settingKey = 'seed_curriculum_guidetest'");
+    curriculum_seed_bundled_once();
+    $unit = static fn() => db_row("SELECT * FROM curriculum_units WHERE level = 'Year 9 · Guidetest'");
+    chk('materials · a shipped lesson with a guide is seeded', (bool)$unit());
+    $pub = static function () use ($unit) { if (!$unit()) return ['materials' => []]; $b = curriculum_load('unitId = ?', [$unit()['unitId']]); $x = reset($b); return curriculum_unit_public($x['unit'], $x['materials'], $x['checks'], false); };
+    chk('materials · the learner is served the guide', ($pub()['materials'][0]['guide'] ?? '') === 'Do the first three.');
+    $b = $unit() ? curriculum_load('unitId = ?', [$unit()['unitId']]) : []; $x = reset($b) ?: ['unit' => [], 'materials' => [], 'checks' => []];
+    $again = curriculum_validate($base + ['materials' => [['url' => 'https://example.org/a', 'title' => 'A', 'guide' => 'Do the first three.']]], true);
+    chk('materials · the same guide re-imported reads as unchanged', curriculum_fingerprint($again) === curriculum_fingerprint_stored($x));
+    $GLOBALS['__curriculum_seed_files'] = $file('Now do all five.');
+    curriculum_seed_bundled_once();
+    chk('materials · a revised guide reaches a lesson still as shipped', ($pub()['materials'][0]['guide'] ?? '') === 'Now do all five.');
+    unset($GLOBALS['__curriculum_seed_files']);
+    $x = $unit(); if ($x) { db_exec('DELETE FROM curriculum_checks WHERE unitId = ?', [$x['unitId']]); db_exec('DELETE FROM curriculum_materials WHERE unitId = ?', [$x['unitId']]); db_exec('DELETE FROM curriculum_units WHERE unitId = ?', [$x['unitId']]); }
+    db_exec("DELETE FROM settings WHERE settingKey = 'seed_curriculum_guidetest'");
+    if ($saveCfg !== null) $GLOBALS['CONFIG']['seed_bundled_curriculum'] = $saveCfg;
+
+    // The shipped courses themselves.
+    $walled = ['abrsm.org', 'canva.com', 'justinguitar.com', 'musescore.com/sheetmusic', 'britishmuseum.org', '://www.google.com/search', 'help.openai.com', 'adobe.com/express'];
+    $thin = []; $unguided = []; $bad = []; $n = 0;
+    foreach (glob(__DIR__ . '/../_lib/seeds/curriculum-*.json') as $f) {
+        foreach ((json_decode((string)file_get_contents($f), true)['lessons'] ?? []) as $L) {
+            $ms = $L['materials'] ?? []; $n++;
+            if (count($ms) < 2) $thin[] = $L['course'] . ' wk' . $L['week'];
+            foreach ($ms as $m) {
+                if (trim((string)($m['guide'] ?? '')) === '') $unguided[] = $m['url'];
+                foreach ($walled as $w) if (str_contains((string)$m['url'], $w)) $bad[] = $m['url'];
+            }
+        }
+    }
+    chk('materials · every shipped lesson has at least two materials (' . $n . ' lessons)' . ($thin ? ': ' . implode(', ', array_slice($thin, 0, 5)) : ''), $n > 500 && !$thin);
+    chk('materials · every shipped material says what to do with it' . ($unguided ? ': ' . implode(', ', array_slice($unguided, 0, 5)) : ''), !$unguided);
+    chk('materials · no shipped material is a dead, walled or search-page link' . ($bad ? ': ' . implode(', ', array_slice(array_unique($bad), 0, 5)) : ''), !$bad);
+})();
+
 /* Lesson files survive a deploy (2026-10-29: "all of the diagrams and
    illustrations and gifs are no longer there"). Uploads went only to
    api/storage/curriculum, inside the folder a deploy replaces. Now: a file in

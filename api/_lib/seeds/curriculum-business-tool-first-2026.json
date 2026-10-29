@@ -23,18 +23,21 @@
       "materials": [
         {
           "url": "https://support.google.com/drive/answer/2424384",
-          "title": "Google Drive — getting started",
-          "kind": "link"
+          "title": "How to use Google Drive",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/drive/answer/2375091",
-          "title": "Organise your files in Google Drive (Google Drive Help)",
-          "kind": "link"
+          "title": "Organise your files in Google Drive",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://datamanagement.hms.harvard.edu/plan-design/file-naming-conventions",
-          "title": "File naming conventions (Harvard Medical School Data Management)",
-          "kind": "link"
+          "title": "File naming conventions",
+          "kind": "link",
+          "guide": "Rules for naming files so anyone can find them — apply them to your folder."
         }
       ],
       "checks": [
@@ -76,18 +79,21 @@
       "materials": [
         {
           "url": "https://support.google.com/docs/answer/7068618",
-          "title": "Google Docs — getting started",
-          "kind": "link"
+          "title": "How to use Google Docs",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/116338",
-          "title": "Add a title, heading or table of contents (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Add a title, heading or table of contents",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.plainlanguage.gov/guidelines/",
-          "title": "Plain language guidelines (plainlanguage.gov)",
-          "kind": "link"
+          "title": "Plain language guidelines",
+          "kind": "link",
+          "guide": "Rules for clear writing — check one piece of your writing against them."
         }
       ],
       "checks": [
@@ -130,22 +136,26 @@
         {
           "url": "https://support.google.com/docs/answer/7068618",
           "title": "Google Docs — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/86629",
-          "title": "Use headers, footers, page numbers and footnotes (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Use headers, footers, page numbers and footnotes",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/1696711",
-          "title": "Add and edit tables (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Add and edit tables",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.plainlanguage.gov/guidelines/",
-          "title": "Plain language guidelines (plainlanguage.gov)",
-          "kind": "link"
+          "title": "Plain language guidelines",
+          "kind": "link",
+          "guide": "Rules for clear writing — check one piece of your writing against them."
         }
       ],
       "checks": [
@@ -187,18 +197,21 @@
       "materials": [
         {
           "url": "https://support.google.com/docs/answer/6000292",
-          "title": "Google Sheets — getting started",
-          "kind": "link"
+          "title": "How to use Google Sheets",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093669",
-          "title": "SUM function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "SUM function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/186103",
-          "title": "Data validation (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Data validation",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -241,22 +254,26 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093615",
-          "title": "AVERAGE function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "AVERAGE function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3094013",
-          "title": "MAX function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "MAX function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3094017",
-          "title": "MIN function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "MIN function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -299,22 +316,26 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093583",
-          "title": "SUMIF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "SUMIF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/186103",
-          "title": "Data validation (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Data validation",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -356,18 +377,21 @@
       "materials": [
         {
           "url": "https://support.google.com/docs/answer/6281888",
-          "title": "Google Forms — getting started",
-          "kind": "link"
+          "title": "Create a form",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/7322334",
-          "title": "Choose a type of question for your form (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Choose a type of question for your form",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/2839588",
-          "title": "Publish and share your form (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Publish and share your form",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -410,22 +434,26 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3540681",
-          "title": "Sort and filter your data (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Sort and filter your data",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093480",
-          "title": "COUNTIF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "COUNTIF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/1272900",
-          "title": "Create and use pivot tables (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Create and use pivot tables",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -468,22 +496,26 @@
         {
           "url": "https://support.google.com/docs/answer/2763168",
           "title": "Google Slides — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/1694830",
-          "title": "Add, delete and organise slides (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Add, delete and organise slides",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.ted.com/playlists/574/how_to_make_a_great_presentation",
-          "title": "How to make a great presentation (TED)",
-          "kind": "link"
+          "title": "How to make a great presentation",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         },
         {
           "url": "https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html",
-          "title": "Understanding minimum contrast (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Understanding minimum contrast",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         }
       ],
       "checks": [
@@ -525,18 +557,21 @@
       "materials": [
         {
           "url": "https://support.google.com/calendar/answer/2465776",
-          "title": "Google Calendar — getting started",
-          "kind": "link"
+          "title": "Get started with Google Calendar",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/calendar/answer/72143",
-          "title": "Create an event (Google Calendar Help)",
-          "kind": "link"
+          "title": "Create an event",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/calendar/answer/37161",
-          "title": "Invite people to your event (Google Calendar Help)",
-          "kind": "link"
+          "title": "Invite people to your event",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -579,22 +614,26 @@
         {
           "url": "https://support.google.com/drive/answer/2424384",
           "title": "Google Drive — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/drive/answer/2494822",
-          "title": "Share and manage access to files (Google Drive Help)",
-          "kind": "link"
+          "title": "Share and manage access to files",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/65129",
-          "title": "Use comments and action items (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Use comments and action items",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/190843",
-          "title": "Find what's changed in a file (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Find what's changed in a file",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -636,13 +675,15 @@
       "materials": [
         {
           "url": "https://support.google.com/drive/answer/2375091",
-          "title": "Organise your files in Google Drive (Google Drive Help)",
-          "kind": "link"
+          "title": "Organise your files in Google Drive",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/a/users/answer/9282664",
-          "title": "Google Docs training and help (Google Workspace Learning Center)",
-          "kind": "link"
+          "title": "Google Docs training and help",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -684,22 +725,26 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/186103",
-          "title": "Data validation (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Data validation",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/1218656",
-          "title": "Protect, hide and edit sheets (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Protect, hide and edit sheets",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/78413",
-          "title": "Conditional formatting rules (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Conditional formatting rules",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -742,17 +787,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://support.google.com/docs/answer/3093669",
-          "title": "SUM function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "SUM function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -795,22 +843,26 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093364",
-          "title": "IF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "IF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093480",
-          "title": "COUNTIF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "COUNTIF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093583",
-          "title": "SUMIF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "SUMIF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -853,17 +905,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093583",
-          "title": "SUMIF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "SUMIF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/78413",
-          "title": "Conditional formatting rules (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Conditional formatting rules",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -906,22 +961,26 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093364",
-          "title": "IF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "IF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/78413",
-          "title": "Conditional formatting rules (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Conditional formatting rules",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -964,17 +1023,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/7684717",
-          "title": "Add and use checkboxes (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Add and use checkboxes",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -1017,17 +1079,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/190718",
-          "title": "Types of charts and graphs in Sheets (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Types of charts and graphs in Sheets",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.nngroup.com/articles/color-enhance-design/",
-          "title": "Using colour to enhance design (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Using colour to enhance design",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -1070,22 +1135,26 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.gov.uk/service-manual/measuring-success",
-          "title": "Measuring success (UK Government Digital Service)",
-          "kind": "link"
+          "title": "Measuring success",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         },
         {
           "url": "https://support.google.com/docs/answer/3093480",
-          "title": "COUNTIF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "COUNTIF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/78413",
-          "title": "Conditional formatting rules (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Conditional formatting rules",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -1128,17 +1197,20 @@
         {
           "url": "https://support.google.com/looker-studio/answer/9171315",
           "title": "Looker Studio — quick start",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://docs.cloud.google.com/looker/docs/studio",
-          "title": "Data Studio documentation (Google Cloud)",
-          "kind": "link"
+          "title": "Data Studio documentation",
+          "kind": "link",
+          "guide": "Google’s reporting tool and its documentation — connect a sample sheet and build one chart."
         },
         {
           "url": "https://lookerstudio.google.com/",
-          "title": "Data Studio overview (Google)",
-          "kind": "link"
+          "title": "Data Studio overview",
+          "kind": "link",
+          "guide": "Google’s reporting tool and its documentation — connect a sample sheet and build one chart."
         }
       ],
       "checks": [
@@ -1181,17 +1253,20 @@
         {
           "url": "https://www.manager.io/guides",
           "title": "Manager.io — free accounting guides",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The free accounting software used in this lesson — practise only with sample data."
         },
         {
           "url": "https://www.manager.io/",
-          "title": "Manager.io accounting software (Manager.io)",
-          "kind": "link"
+          "title": "Manager.io accounting software",
+          "kind": "link",
+          "guide": "The free accounting software used in this lesson — practise only with sample data."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -1234,17 +1309,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://support.google.com/docs/answer/190718",
-          "title": "Types of charts and graphs in Sheets (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Types of charts and graphs in Sheets",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -1286,13 +1364,15 @@
       "materials": [
         {
           "url": "https://www.gov.uk/service-manual/measuring-success",
-          "title": "Measuring success (UK Government Digital Service)",
-          "kind": "link"
+          "title": "Measuring success",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         },
         {
           "url": "https://www.ted.com/playlists/574/how_to_make_a_great_presentation",
-          "title": "How to make a great presentation (TED)",
-          "kind": "link"
+          "title": "How to make a great presentation",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         }
       ],
       "checks": [
@@ -1333,18 +1413,21 @@
       "materials": [
         {
           "url": "https://support.google.com/docs/answer/6281888",
-          "title": "Google Forms — getting started",
-          "kind": "link"
+          "title": "Create a form",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.gov.uk/service-manual/user-research",
-          "title": "User research (UK Government Digital Service)",
-          "kind": "link"
+          "title": "User research",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         },
         {
           "url": "https://www.nngroup.com/articles/user-interviews/",
-          "title": "User interviews (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "User interviews",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -1387,22 +1470,26 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/1272900",
-          "title": "Create and use pivot tables (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Create and use pivot tables",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3540681",
-          "title": "Sort and filter your data (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Sort and filter your data",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.gov.uk/service-manual/user-research",
-          "title": "User research (UK Government Digital Service)",
-          "kind": "link"
+          "title": "User research",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -1443,24 +1530,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://help.openai.com/en/articles/6783457-what-is-chatgpt",
-          "title": "ChatGPT — what it is and how to use it",
-          "kind": "link"
-        },
-        {
           "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI (University of Helsinki)",
-          "kind": "link"
+          "title": "Elements of AI",
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         },
         {
           "url": "https://hapgood.us/2019/06/19/sift-the-four-moves/",
-          "title": "SIFT: the four moves (Mike Caulfield)",
-          "kind": "link"
+          "title": "SIFT: the four moves",
+          "kind": "link",
+          "guide": "Methods for checking whether something is true — use them on one claim you saw this week."
         },
         {
           "url": "https://dschool.stanford.edu/resources",
-          "title": "Design thinking resources (Stanford d.school)",
-          "kind": "link"
+          "title": "Design thinking resources",
+          "kind": "link",
+          "guide": "Design-thinking methods with step-by-step guides — pick one that fits today’s task."
         }
       ],
       "checks": [
@@ -1503,17 +1588,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://support.google.com/docs/answer/78413",
-          "title": "Conditional formatting rules (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Conditional formatting rules",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -1554,29 +1642,28 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/branding",
-          "title": "Branding (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Branding",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/color-theory",
-          "title": "Colour theory (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Colour theory",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://webaim.org/resources/contrastchecker/",
-          "title": "Contrast checker (WebAIM (Utah State University))",
-          "kind": "link"
+          "title": "Contrast checker",
+          "kind": "interactive",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://fonts.google.com/knowledge/choosing_type",
-          "title": "Choosing type (Google Fonts)",
-          "kind": "link"
+          "title": "Choosing type",
+          "kind": "link",
+          "guide": "How to choose and pair type — apply one rule to your design."
         }
       ],
       "checks": [
@@ -1617,19 +1704,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.strategyzer.com/library/the-business-model-canvas",
           "title": "The Business Model Canvas",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Download the official canvas and fill it in for your idea."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/design-thinking",
-          "title": "Design thinking (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Design thinking",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         }
       ],
       "checks": [
@@ -1672,22 +1756,26 @@
         {
           "url": "https://support.google.com/docs/answer/7068618",
           "title": "Google Docs — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/116338",
-          "title": "Add a title, heading or table of contents (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Add a title, heading or table of contents",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         },
         {
           "url": "https://www.cac.gov.ng/",
-          "title": "Business registration (Corporate Affairs Commission, Nigeria)",
-          "kind": "link"
+          "title": "Business registration",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -1730,17 +1818,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://support.google.com/docs/answer/3093669",
-          "title": "SUM function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "SUM function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -1781,24 +1872,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/visual-hierarchy",
-          "title": "Visual hierarchy (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Visual hierarchy",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.nngroup.com/articles/principles-visual-design/",
-          "title": "Principles of visual design (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Principles of visual design",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://webaim.org/resources/contrastchecker/",
-          "title": "Contrast checker (WebAIM (Utah State University))",
-          "kind": "link"
+          "title": "Contrast checker",
+          "kind": "interactive",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         }
       ],
       "checks": [
@@ -1841,17 +1930,20 @@
         {
           "url": "https://support.google.com/docs/answer/2763168",
           "title": "Google Slides — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/1694830",
-          "title": "Add, delete and organise slides (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Add, delete and organise slides",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.ted.com/playlists/574/how_to_make_a_great_presentation",
-          "title": "How to make a great presentation (TED)",
-          "kind": "link"
+          "title": "How to make a great presentation",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         }
       ],
       "checks": [
@@ -1894,17 +1986,20 @@
         {
           "url": "https://support.google.com/docs/answer/6281888",
           "title": "Google Forms — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/139706",
-          "title": "View and manage form responses (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "View and manage form responses",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.nngroup.com/articles/usability-testing-101/",
-          "title": "Usability testing 101 (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Usability testing 101",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -1946,13 +2041,15 @@
       "materials": [
         {
           "url": "https://www.strategyzer.com/library/the-business-model-canvas",
-          "title": "The Business Model Canvas (Strategyzer)",
-          "kind": "link"
+          "title": "The Business Model Canvas",
+          "kind": "link",
+          "guide": "Download the official canvas and fill it in for your idea."
         },
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -1994,22 +2091,26 @@
         {
           "url": "https://trello.com/guide",
           "title": "Trello — the getting-started guide",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Trello’s own guide — follow it in your own board."
         },
         {
           "url": "https://trello.com/guide/trello-101",
-          "title": "Trello 101 (Trello)",
-          "kind": "link"
+          "title": "Trello 101",
+          "kind": "link",
+          "guide": "Trello’s own guide — follow it in your own board."
         },
         {
           "url": "https://www.atlassian.com/agile/kanban/boards",
-          "title": "What is a Kanban board? (Atlassian)",
-          "kind": "link"
+          "title": "What is a Kanban board?",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://trello.com/guide/create-a-board",
-          "title": "Create your first project (Trello)",
-          "kind": "link"
+          "title": "Create your first project",
+          "kind": "link",
+          "guide": "Trello’s own guide — follow it in your own board."
         }
       ],
       "checks": [
@@ -2052,17 +2153,20 @@
         {
           "url": "https://trello.com/guide",
           "title": "Trello — the getting-started guide",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Trello’s own guide — follow it in your own board."
         },
         {
           "url": "https://trello.com/guide/trello-101",
-          "title": "Trello 101 (Trello)",
-          "kind": "link"
+          "title": "Trello 101",
+          "kind": "link",
+          "guide": "Trello’s own guide — follow it in your own board."
         },
         {
           "url": "https://www.atlassian.com/work-management/project-management/project-scope",
-          "title": "What is project scope? (Atlassian)",
-          "kind": "link"
+          "title": "What is project scope?",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [
@@ -2105,17 +2209,20 @@
         {
           "url": "https://support.google.com/calendar/answer/2465776",
           "title": "Google Calendar — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/calendar/answer/72143",
-          "title": "Create an event (Google Calendar Help)",
-          "kind": "link"
+          "title": "Create an event",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/calendar/answer/37161",
-          "title": "Invite people to your event (Google Calendar Help)",
-          "kind": "link"
+          "title": "Invite people to your event",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -2158,17 +2265,20 @@
         {
           "url": "https://support.google.com/docs/answer/7068618",
           "title": "Google Docs — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/65129",
-          "title": "Use comments and action items (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Use comments and action items",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.atlassian.com/agile/scrum/standups",
-          "title": "How to run a stand-up (Atlassian)",
-          "kind": "link"
+          "title": "How to run a stand-up",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [
@@ -2211,22 +2321,26 @@
         {
           "url": "https://support.google.com/drive/answer/2424384",
           "title": "Google Drive — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/drive/answer/2494822",
-          "title": "Share and manage access to files (Google Drive Help)",
-          "kind": "link"
+          "title": "Share and manage access to files",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/190843",
-          "title": "Find what's changed in a file (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Find what's changed in a file",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://ndpc.gov.ng/",
-          "title": "Nigeria Data Protection Commission (Nigeria Data Protection Commission)",
-          "kind": "link"
+          "title": "Nigeria Data Protection Commission",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -2269,22 +2383,26 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093364",
-          "title": "IF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "IF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/78413",
-          "title": "Conditional formatting rules (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Conditional formatting rules",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.atlassian.com/agile/project-management/metrics",
-          "title": "Five agile metrics you won't hate (Atlassian)",
-          "kind": "link"
+          "title": "Five agile metrics you won't hate",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [
@@ -2325,19 +2443,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.drawio.com/doc/getting-started-basic-flow-chart",
-          "title": "draw.io — your first flowchart",
-          "kind": "link"
+          "url": "https://www.drawio.com/docs",
+          "title": "draw.io documentation",
+          "kind": "link",
+          "guide": "The diagramming tool’s documentation — look up a shape or feature when you need it."
         },
         {
           "url": "https://www.atlassian.com/work-management/project-management/process-mapping",
-          "title": "Flowcharts and process mapping (Atlassian)",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.drawio.com/docs",
-          "title": "draw.io documentation (draw.io)",
-          "kind": "link"
+          "title": "Flowcharts and process mapping",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [
@@ -2380,17 +2495,20 @@
         {
           "url": "https://support.google.com/docs/answer/7068618",
           "title": "Google Docs — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.atlassian.com/work-management/knowledge-sharing/documentation/standard-operating-procedures",
-          "title": "SOP: what it is and how to create one (Atlassian)",
-          "kind": "link"
+          "title": "SOP: what it is and how to create one",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.plainlanguage.gov/guidelines/",
-          "title": "Plain language guidelines (plainlanguage.gov)",
-          "kind": "link"
+          "title": "Plain language guidelines",
+          "kind": "link",
+          "guide": "Rules for clear writing — check one piece of your writing against them."
         }
       ],
       "checks": [
@@ -2433,17 +2551,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093583",
-          "title": "SUMIF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "SUMIF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/small-business-guide",
-          "title": "Small organisations guide to cyber security (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Small organisations guide to cyber security",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         }
       ],
       "checks": [
@@ -2486,17 +2607,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.atlassian.com/team-playbook/plays/pre-mortem",
-          "title": "How to run a pre-mortem (Atlassian)",
-          "kind": "link"
+          "title": "How to run a pre-mortem",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         },
         {
           "url": "https://support.google.com/docs/answer/78413",
-          "title": "Conditional formatting rules (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Conditional formatting rules",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -2539,17 +2663,20 @@
         {
           "url": "https://support.google.com/docs/answer/6281888",
           "title": "Google Forms — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/139706",
-          "title": "View and manage form responses (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "View and manage form responses",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.gov.uk/service-manual/measuring-success",
-          "title": "Measuring success (UK Government Digital Service)",
-          "kind": "link"
+          "title": "Measuring success",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -2591,18 +2718,21 @@
       "materials": [
         {
           "url": "https://www.atlassian.com/work-management/project-management/project-scope",
-          "title": "What is project scope? (Atlassian)",
-          "kind": "link"
+          "title": "What is project scope?",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.atlassian.com/incident-management/postmortem",
-          "title": "Incident postmortem: process and best practices (Atlassian)",
-          "kind": "link"
+          "title": "Incident postmortem: process and best practices",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://trello.com/guide/trello-101",
-          "title": "Trello 101 (Trello)",
-          "kind": "link"
+          "title": "Trello 101",
+          "kind": "link",
+          "guide": "Trello’s own guide — follow it in your own board."
         }
       ],
       "checks": [
@@ -2644,22 +2774,26 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/186103",
-          "title": "Data validation (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Data validation",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/78413",
-          "title": "Conditional formatting rules (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Conditional formatting rules",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093480",
-          "title": "COUNTIF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "COUNTIF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -2702,17 +2836,20 @@
         {
           "url": "https://support.google.com/docs/answer/7068618",
           "title": "Google Docs — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.atlassian.com/team-playbook/plays/roles-and-responsibilities",
-          "title": "How to define roles and responsibilities (Atlassian)",
-          "kind": "link"
+          "title": "How to define roles and responsibilities",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         },
         {
           "url": "https://support.google.com/docs/answer/1696711",
-          "title": "Add and edit tables (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Add and edit tables",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -2755,17 +2892,20 @@
         {
           "url": "https://support.google.com/docs/answer/6281888",
           "title": "Google Forms — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/7322334",
-          "title": "Choose a type of question for your form (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Choose a type of question for your form",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -2808,17 +2948,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/1272900",
-          "title": "Create and use pivot tables (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Create and use pivot tables",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/78413",
-          "title": "Conditional formatting rules (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Conditional formatting rules",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -2861,17 +3004,20 @@
         {
           "url": "https://www.manager.io/guides",
           "title": "Manager.io — free accounting guides",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The free accounting software used in this lesson — practise only with sample data."
         },
         {
           "url": "https://www.manager.io/",
-          "title": "Manager.io accounting software (Manager.io)",
-          "kind": "link"
+          "title": "Manager.io accounting software",
+          "kind": "link",
+          "guide": "The free accounting software used in this lesson — practise only with sample data."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -2914,17 +3060,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/78413",
-          "title": "Conditional formatting rules (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Conditional formatting rules",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -2966,13 +3115,15 @@
       "materials": [
         {
           "url": "https://support.airtable.com/docs/getting-started-with-airtable",
-          "title": "Airtable — getting started",
-          "kind": "link"
+          "title": "Getting started with Airtable",
+          "kind": "link",
+          "guide": "Airtable’s own guide — follow it in a practice base."
         },
         {
           "url": "https://sqlbolt.com/",
-          "title": "SQLBolt: interactive SQL lessons (SQLBolt)",
-          "kind": "link"
+          "title": "SQLBolt: interactive SQL lessons",
+          "kind": "interactive",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -3013,19 +3164,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.make.com/en/help/getting-started",
-          "title": "Make — getting started",
-          "kind": "link"
-        },
-        {
           "url": "https://academy.make.com/",
-          "title": "Make Academy (Make)",
-          "kind": "link"
+          "title": "Make Academy",
+          "kind": "link",
+          "guide": "Make’s own courses — do the first one before building your scenario."
         },
         {
           "url": "https://help.make.com/",
-          "title": "Make help centre (Make)",
-          "kind": "link"
+          "title": "Make help centre",
+          "kind": "link",
+          "guide": "Make’s own courses — do the first one before building your scenario."
         }
       ],
       "checks": [
@@ -3068,22 +3216,26 @@
         {
           "url": "https://support.google.com/docs/answer/6281888",
           "title": "Google Forms — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/139706",
-          "title": "View and manage form responses (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "View and manage form responses",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3540681",
-          "title": "Sort and filter your data (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Sort and filter your data",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093364",
-          "title": "IF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "IF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -3124,19 +3276,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://help.openai.com/en/articles/6783457-what-is-chatgpt",
-          "title": "ChatGPT — what it is and how to use it",
-          "kind": "link"
-        },
-        {
           "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI (University of Helsinki)",
-          "kind": "link"
+          "title": "Elements of AI",
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         },
         {
           "url": "https://www.atlassian.com/work-management/project-management/process-mapping",
-          "title": "Flowcharts and process mapping (Atlassian)",
-          "kind": "link"
+          "title": "Flowcharts and process mapping",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [
@@ -3179,27 +3328,32 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://trello.com/guide",
           "title": "Trello — the getting-started guide",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Trello’s own guide — follow it in your own board."
         },
         {
           "url": "https://trello.com/guide/trello-101",
-          "title": "Trello 101 (Trello)",
-          "kind": "link"
+          "title": "Trello 101",
+          "kind": "link",
+          "guide": "Trello’s own guide — follow it in your own board."
         },
         {
           "url": "https://www.atlassian.com/agile/scrum/standups",
-          "title": "How to run a stand-up (Atlassian)",
-          "kind": "link"
+          "title": "How to run a stand-up",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://help.make.com/",
-          "title": "Make help centre (Make)",
-          "kind": "link"
+          "title": "Make help centre",
+          "kind": "link",
+          "guide": "Make’s own courses — do the first one before building your scenario."
         }
       ],
       "checks": [
@@ -3241,13 +3395,15 @@
       "materials": [
         {
           "url": "https://www.atlassian.com/work-management/knowledge-sharing/documentation/standard-operating-procedures",
-          "title": "SOP: what it is and how to create one (Atlassian)",
-          "kind": "link"
+          "title": "SOP: what it is and how to create one",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/small-business-guide",
-          "title": "Small organisations guide to cyber security (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Small organisations guide to cyber security",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         }
       ],
       "checks": [
@@ -3289,17 +3445,20 @@
         {
           "url": "https://support.google.com/docs/answer/7068618",
           "title": "Google Docs — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.mindtools.com/a4wo118/smart-goals",
-          "title": "SMART goals (Mind Tools)",
-          "kind": "link"
+          "title": "SMART goals",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.atlassian.com/work-management/project-management/project-scope",
-          "title": "What is project scope? (Atlassian)",
-          "kind": "link"
+          "title": "What is project scope?",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [
@@ -3342,22 +3501,26 @@
         {
           "url": "https://support.google.com/docs/answer/6281888",
           "title": "Google Forms — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.gov.uk/service-manual/user-research",
-          "title": "User research (UK Government Digital Service)",
-          "kind": "link"
+          "title": "User research",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         },
         {
           "url": "https://support.google.com/docs/answer/1272900",
-          "title": "Create and use pivot tables (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Create and use pivot tables",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.nngroup.com/articles/user-interviews/",
-          "title": "User interviews (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "User interviews",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -3398,19 +3561,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.strategyzer.com/library/the-business-model-canvas",
           "title": "The Business Model Canvas",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Download the official canvas and fill it in for your idea."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/design-thinking",
-          "title": "Design thinking (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Design thinking",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         }
       ],
       "checks": [
@@ -3453,17 +3613,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/docs/answer/3093583",
-          "title": "SUMIF function (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "SUMIF function",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -3506,22 +3669,26 @@
         {
           "url": "https://trello.com/guide",
           "title": "Trello — the getting-started guide",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Trello’s own guide — follow it in your own board."
         },
         {
           "url": "https://trello.com/guide/trello-101",
-          "title": "Trello 101 (Trello)",
-          "kind": "link"
+          "title": "Trello 101",
+          "kind": "link",
+          "guide": "Trello’s own guide — follow it in your own board."
         },
         {
           "url": "https://www.atlassian.com/agile/scrum/standups",
-          "title": "How to run a stand-up (Atlassian)",
-          "kind": "link"
+          "title": "How to run a stand-up",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.atlassian.com/team-playbook/plays/roles-and-responsibilities",
-          "title": "How to define roles and responsibilities (Atlassian)",
-          "kind": "link"
+          "title": "How to define roles and responsibilities",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         }
       ],
       "checks": [
@@ -3564,22 +3731,26 @@
         {
           "url": "https://support.google.com/drive/answer/2424384",
           "title": "Google Drive — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/drive/answer/2375091",
-          "title": "Organise your files in Google Drive (Google Drive Help)",
-          "kind": "link"
+          "title": "Organise your files in Google Drive",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://datamanagement.hms.harvard.edu/plan-design/file-naming-conventions",
-          "title": "File naming conventions (Harvard Medical School Data Management)",
-          "kind": "link"
+          "title": "File naming conventions",
+          "kind": "link",
+          "guide": "Rules for naming files so anyone can find them — apply them to your folder."
         },
         {
           "url": "https://ndpc.gov.ng/",
-          "title": "Nigeria Data Protection Commission (Nigeria Data Protection Commission)",
-          "kind": "link"
+          "title": "Nigeria Data Protection Commission",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -3620,24 +3791,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/ux-prototype-hi-lo-fidelity/",
-          "title": "Prototyping: high or low fidelity? (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Prototyping: high or low fidelity?",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/storyboards",
-          "title": "Storyboards (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Storyboards",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://webaim.org/resources/contrastchecker/",
-          "title": "Contrast checker (WebAIM (Utah State University))",
-          "kind": "link"
+          "title": "Contrast checker",
+          "kind": "interactive",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         }
       ],
       "checks": [
@@ -3680,22 +3849,26 @@
         {
           "url": "https://support.google.com/docs/answer/6281888",
           "title": "Google Forms — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.nngroup.com/articles/why-you-only-need-to-test-with-5-users/",
-          "title": "Why you only need to test with 5 users (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Why you only need to test with 5 users",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.nngroup.com/articles/usability-testing-101/",
-          "title": "Usability testing 101 (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Usability testing 101",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://support.google.com/docs/answer/139706",
-          "title": "View and manage form responses (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "View and manage form responses",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -3737,13 +3910,15 @@
       "materials": [
         {
           "url": "https://www.atlassian.com/team-playbook/plays/pre-mortem",
-          "title": "How to run a pre-mortem (Atlassian)",
-          "kind": "link"
+          "title": "How to run a pre-mortem",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         },
         {
           "url": "https://www.gov.uk/service-manual/measuring-success",
-          "title": "Measuring success (UK Government Digital Service)",
-          "kind": "link"
+          "title": "Measuring success",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -3786,17 +3961,20 @@
         {
           "url": "https://support.google.com/docs/answer/6000292",
           "title": "Google Sheets — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.gov.uk/service-manual/measuring-success",
-          "title": "Measuring success (UK Government Digital Service)",
-          "kind": "link"
+          "title": "Measuring success",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         },
         {
           "url": "https://support.google.com/docs/answer/190718",
-          "title": "Types of charts and graphs in Sheets (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Types of charts and graphs in Sheets",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -3839,17 +4017,20 @@
         {
           "url": "https://support.google.com/docs/answer/2763168",
           "title": "Google Slides — getting started",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.ted.com/playlists/574/how_to_make_a_great_presentation",
-          "title": "How to make a great presentation (TED)",
-          "kind": "link"
+          "title": "How to make a great presentation",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         },
         {
           "url": "https://support.google.com/docs/answer/1694830",
-          "title": "Add, delete and organise slides (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Add, delete and organise slides",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -3891,13 +4072,15 @@
       "materials": [
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.atlassian.com/incident-management/postmortem",
-          "title": "Incident postmortem: process and best practices (Atlassian)",
-          "kind": "link"
+          "title": "Incident postmortem: process and best practices",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [

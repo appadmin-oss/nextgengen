@@ -24,22 +24,20 @@
         {
           "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
           "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: graded exams you can take after this course, with centres in Nigeria."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/drums/",
-          "title": "Drum: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Drum: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://vicfirth.zildjian.com/education",
-          "title": "Drumming education (Vic Firth)",
-          "kind": "link"
+          "title": "Drumming education",
+          "kind": "link",
+          "guide": "Pick one rudiment or video and practise it slowly with a metronome before you speed up."
         }
       ],
       "checks": [
@@ -80,24 +78,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -138,24 +128,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/drums/",
-          "title": "Drum: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Drum: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -196,24 +178,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         }
       ],
       "checks": [
@@ -254,24 +228,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://pas.org/rudiments/",
-          "title": "International drum rudiments (Percussive Arts Society)",
-          "kind": "link"
+          "title": "International drum rudiments",
+          "kind": "link",
+          "guide": "Pick one rudiment or video and practise it slowly with a metronome before you speed up."
         },
         {
           "url": "https://vicfirth.zildjian.com/education",
-          "title": "Drumming education (Vic Firth)",
-          "kind": "link"
+          "title": "Drumming education",
+          "kind": "link",
+          "guide": "Pick one rudiment or video and practise it slowly with a metronome before you speed up."
         }
       ],
       "checks": [
@@ -312,24 +278,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://artsandculture.google.com/search?q=tony%20allen",
-          "title": "Search: Tony Allen (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: Tony Allen",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         },
         {
           "url": "https://artsandculture.google.com/search?q=fela%20kuti",
-          "title": "Search: Fela Kuti (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: Fela Kuti",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         }
       ],
       "checks": [
@@ -370,24 +328,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://vicfirth.zildjian.com/education",
-          "title": "Drumming education (Vic Firth)",
-          "kind": "link"
+          "title": "Drumming education",
+          "kind": "link",
+          "guide": "Pick one rudiment or video and practise it slowly with a metronome before you speed up."
         },
         {
           "url": "https://pas.org/rudiments/",
-          "title": "International drum rudiments (Percussive Arts Society)",
-          "kind": "link"
+          "title": "International drum rudiments",
+          "kind": "link",
+          "guide": "Pick one rudiment or video and practise it slowly with a metronome before you speed up."
         }
       ],
       "checks": [
@@ -428,24 +378,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://artsandculture.google.com/search?q=talking%20drum",
-          "title": "Search: talking drum (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: talking drum",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         },
         {
           "url": "https://www.khanacademy.org/humanities/art-africa",
-          "title": "Art of Africa (Khan Academy)",
-          "kind": "link"
+          "title": "Art of Africa",
+          "kind": "link",
+          "guide": "Watch the short videos and try the practice questions."
         }
       ],
       "checks": [
@@ -486,24 +428,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://vicfirth.zildjian.com/education",
-          "title": "Drumming education (Vic Firth)",
-          "kind": "link"
+          "title": "Drumming education",
+          "kind": "link",
+          "guide": "Pick one rudiment or video and practise it slowly with a metronome before you speed up."
         }
       ],
       "checks": [
@@ -544,24 +478,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://vicfirth.zildjian.com/education",
-          "title": "Drumming education (Vic Firth)",
-          "kind": "link"
+          "title": "Drumming education",
+          "kind": "link",
+          "guide": "Pick one rudiment or video and practise it slowly with a metronome before you speed up."
         }
       ],
       "checks": [
@@ -602,24 +528,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -660,24 +578,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
-          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
-          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
-          "kind": "link"
-        },
-        {
           "url": "https://vicfirth.zildjian.com/education",
-          "title": "Drumming education (Vic Firth)",
-          "kind": "link"
+          "title": "Drumming education",
+          "kind": "link",
+          "guide": "Pick one rudiment or video and practise it slowly with a metronome before you speed up."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -711,24 +621,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/violin/",
-          "title": "Violin: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Violin: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -769,24 +671,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/violin/",
-          "title": "Violin: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Violin: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -827,24 +721,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/violin/",
-          "title": "Violin: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Violin: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -885,29 +771,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Note-reading exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Note-reading exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zmsvr82",
-          "title": "KS3 Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "KS3 Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -948,24 +827,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zmsvr82",
-          "title": "KS3 Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "KS3 Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -1006,24 +877,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://artsandculture.google.com/search?q=highlife",
-          "title": "Search: highlife (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: highlife",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         }
       ],
       "checks": [
@@ -1064,24 +927,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/violin/",
-          "title": "Violin: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Violin: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -1122,24 +977,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/violin/",
-          "title": "Violin: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Violin: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         }
       ],
       "checks": [
@@ -1180,24 +1027,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/violin/",
-          "title": "Violin: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Violin: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1238,24 +1077,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/violin/",
-          "title": "Violin: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Violin: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -1296,24 +1127,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -1354,24 +1177,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/violin/",
-          "title": "Violin: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Violin: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1405,24 +1220,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/saxophone/",
-          "title": "Saxophone: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Saxophone: musical instrument guide",
+          "kind": "link",
+          "guide": "For the whole course: how the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -1463,24 +1270,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
+          "url": "https://www.musictheory.net/lessons",
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/saxophone/",
-          "title": "Saxophone: musical instrument guide (Yamaha)",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Saxophone: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1521,24 +1320,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
+          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/saxophone/",
-          "title": "Saxophone: musical instrument guide (Yamaha)",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "Saxophone: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1579,24 +1370,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/saxophone/",
-          "title": "Saxophone: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Saxophone: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1637,24 +1420,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
+          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/saxophone/",
-          "title": "Saxophone: musical instrument guide (Yamaha)",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "Saxophone: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1695,24 +1470,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         }
       ],
       "checks": [
@@ -1753,19 +1520,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/saxophone/",
-          "title": "Saxophone: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Saxophone: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -1806,24 +1570,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
+          "url": "https://www.musictheory.net/lessons",
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/saxophone/",
-          "title": "Saxophone: musical instrument guide (Yamaha)",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Saxophone: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1864,24 +1620,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://artsandculture.google.com/search?q=highlife",
-          "title": "Search: highlife (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: highlife",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         },
         {
           "url": "https://artsandculture.google.com/search?q=fela%20kuti",
-          "title": "Search: Fela Kuti (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: Fela Kuti",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         }
       ],
       "checks": [
@@ -1922,24 +1670,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/saxophone/",
-          "title": "Saxophone: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Saxophone: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1980,24 +1720,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
+          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/saxophone/",
-          "title": "Saxophone: musical instrument guide (Yamaha)",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "Saxophone: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -2038,24 +1770,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/classical",
-          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
+          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/saxophone/",
-          "title": "Saxophone: musical instrument guide (Yamaha)",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "Saxophone: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -2089,24 +1813,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
-          "title": "Taking care of your voice (US National Institute on Deafness and Other Communication Disorders)",
-          "kind": "link"
+          "title": "Taking care of your voice",
+          "kind": "link",
+          "guide": "Health advice for your voice — read it once and follow it every day."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -2147,19 +1863,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
-          "title": "Taking care of your voice (US National Institute on Deafness and Other Communication Disorders)",
-          "kind": "link"
+          "title": "Taking care of your voice",
+          "kind": "link",
+          "guide": "Health advice for your voice — read it once and follow it every day."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -2200,24 +1913,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Ear training exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Ear training exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -2258,24 +1963,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
-          "title": "Taking care of your voice (US National Institute on Deafness and Other Communication Disorders)",
-          "kind": "link"
+          "title": "Taking care of your voice",
+          "kind": "link",
+          "guide": "Health advice for your voice — read it once and follow it every day."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -2316,24 +2013,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
-          "title": "Taking care of your voice (US National Institute on Deafness and Other Communication Disorders)",
-          "kind": "link"
+          "title": "Taking care of your voice",
+          "kind": "link",
+          "guide": "Health advice for your voice — read it once and follow it every day."
         }
       ],
       "checks": [
@@ -2374,19 +2063,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
-          "title": "Taking care of your voice (US National Institute on Deafness and Other Communication Disorders)",
-          "kind": "link"
+          "title": "Taking care of your voice",
+          "kind": "link",
+          "guide": "Health advice for your voice — read it once and follow it every day."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -2427,24 +2113,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Ear training exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Ear training exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -2485,24 +2163,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -2543,24 +2213,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.shure.com/en-US/insights",
-          "title": "Audio insights and guides (Shure)",
-          "kind": "link"
+          "title": "Audio insights and guides",
+          "kind": "link",
+          "guide": "Practical microphone and sound guides from a microphone maker — read the one on today’s topic."
         },
         {
           "url": "https://www.theatrecrafts.com/pages/home/topics/sound/",
-          "title": "Sound (Theatrecrafts.com)",
-          "kind": "link"
+          "title": "Sound",
+          "kind": "link",
+          "guide": "Look up today’s topic in the backstage guide; its glossary explains every term you will hear."
         }
       ],
       "checks": [
@@ -2601,24 +2263,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -2659,24 +2313,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
-          "title": "Taking care of your voice (US National Institute on Deafness and Other Communication Disorders)",
-          "kind": "link"
+          "title": "Taking care of your voice",
+          "kind": "link",
+          "guide": "Health advice for your voice — read it once and follow it every day."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -2717,24 +2363,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications/music/singing",
-          "title": "Trinity Singing — graded syllabus",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
-          "title": "ABRSM syllabuses — the alternative graded route",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
-          "title": "Taking care of your voice (US National Institute on Deafness and Other Communication Disorders)",
-          "kind": "link"
+          "title": "Taking care of your voice",
+          "kind": "link",
+          "guide": "Health advice for your voice — read it once and follow it every day."
         },
         {
           "url": "https://www.shure.com/en-US/insights",
-          "title": "Audio insights and guides (Shure)",
-          "kind": "link"
+          "title": "Audio insights and guides",
+          "kind": "link",
+          "guide": "Practical microphone and sound guides from a microphone maker — read the one on today’s topic."
         }
       ],
       "checks": [
@@ -2770,27 +2408,32 @@
         {
           "url": "https://www.bandlab.com/",
           "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: the free software this course uses — install it before the session."
         },
         {
           "url": "https://www.cakewalk.com/",
           "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: the free software this course uses — install it before the session."
         },
         {
           "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
+          "title": "Learning Music: get started",
+          "kind": "interactive",
+          "guide": "For the whole course: interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.bandlab.com/products/cakewalk",
-          "title": "Cakewalk by BandLab (BandLab)",
-          "kind": "link"
+          "title": "Cakewalk by BandLab",
+          "kind": "link",
+          "guide": "The free software this course uses — install it before the session."
         },
         {
           "url": "https://www.who.int/news-room/fact-sheets/detail/deafness-and-hearing-loss",
-          "title": "Deafness and hearing loss: safe listening (World Health Organization)",
-          "kind": "link"
+          "title": "Deafness and hearing loss: safe listening",
+          "kind": "link",
+          "guide": "The World Health Organization’s fact sheet — read the key facts."
         }
       ],
       "checks": [
@@ -2831,29 +2474,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bandlab.com/",
-          "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://learningmusic.ableton.com/make-beats/tempo-and-genre.html",
-          "title": "Tempo and genre (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Tempo and genre",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -2894,29 +2524,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bandlab.com/",
-          "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://artsandculture.google.com/search?q=talking%20drum",
-          "title": "Search: talking drum (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: talking drum",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         }
       ],
       "checks": [
@@ -2957,29 +2574,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bandlab.com/",
-          "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         }
       ],
       "checks": [
@@ -3020,29 +2624,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bandlab.com/",
-          "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
           "url": "https://www.shure.com/en-US/insights",
-          "title": "Audio insights and guides (Shure)",
-          "kind": "link"
+          "title": "Audio insights and guides",
+          "kind": "link",
+          "guide": "Practical microphone and sound guides from a microphone maker — read the one on today’s topic."
         },
         {
           "url": "https://www.soundonsound.com/techniques",
-          "title": "Recording techniques (Sound On Sound)",
-          "kind": "link"
+          "title": "Recording techniques",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         }
       ],
       "checks": [
@@ -3083,29 +2674,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bandlab.com/",
-          "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.soundonsound.com/techniques",
-          "title": "Production techniques (Sound On Sound)",
-          "kind": "link"
+          "title": "Production techniques",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         }
       ],
       "checks": [
@@ -3146,29 +2724,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bandlab.com/",
-          "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.izotope.com/en/learn.html",
-          "title": "Production tips and tutorials (iZotope)",
-          "kind": "link"
+          "title": "Production tips and tutorials",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         }
       ],
       "checks": [
@@ -3209,29 +2774,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bandlab.com/",
-          "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
           "url": "https://www.soundonsound.com/techniques",
-          "title": "Mixing techniques (Sound On Sound)",
-          "kind": "link"
+          "title": "Mixing techniques",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         },
         {
           "url": "https://www.izotope.com/en/learn.html",
-          "title": "Production tips and tutorials (iZotope)",
-          "kind": "link"
+          "title": "Production tips and tutorials",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         }
       ],
       "checks": [
@@ -3272,34 +2824,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bandlab.com/",
-          "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
           "url": "https://www.soundonsound.com/techniques",
-          "title": "Mixing techniques (Sound On Sound)",
-          "kind": "link"
+          "title": "Mixing techniques",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         },
         {
           "url": "https://www.izotope.com/en/learn.html",
-          "title": "Production tips and tutorials (iZotope)",
-          "kind": "link"
+          "title": "Production tips and tutorials",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         },
         {
           "url": "https://learningsynths.ableton.com/",
-          "title": "Learning Synths: filters and sound (Ableton)",
-          "kind": "link"
+          "title": "Learning Synths: filters and sound",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -3340,29 +2880,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bandlab.com/",
-          "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
           "url": "https://www.izotope.com/en/learn.html",
-          "title": "Production tips and tutorials (iZotope)",
-          "kind": "link"
+          "title": "Production tips and tutorials",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         },
         {
           "url": "https://www.soundonsound.com/techniques",
-          "title": "Recording and mixing techniques (Sound On Sound)",
-          "kind": "link"
+          "title": "Recording and mixing techniques",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         }
       ],
       "checks": [
@@ -3403,29 +2930,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bandlab.com/",
-          "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
           "url": "https://musicbrainz.org/doc/About",
-          "title": "About MusicBrainz (open music metadata) (MusicBrainz)",
-          "kind": "link"
+          "title": "About MusicBrainz (open music metadata)",
+          "kind": "link",
+          "guide": "How music is credited and catalogued — check how one of your favourite songs is listed."
         },
         {
           "url": "https://www.izotope.com/en/learn.html",
-          "title": "Production tips and tutorials (iZotope)",
-          "kind": "link"
+          "title": "Production tips and tutorials",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         }
       ],
       "checks": [
@@ -3466,24 +2980,16 @@
       "passMark": 60,
       "materials": [
         {
+          "url": "https://www.who.int/news-room/fact-sheets/detail/deafness-and-hearing-loss",
+          "title": "Deafness and hearing loss: safe listening",
+          "kind": "link",
+          "guide": "The World Health Organization’s fact sheet — read the key facts."
+        },
+        {
           "url": "https://www.bandlab.com/",
           "title": "BandLab — free DAW, phone or browser",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.cakewalk.com/",
-          "title": "Cakewalk by BandLab — free DAW for Windows",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/",
-          "title": "Ableton Learning Music — free and interactive",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.who.int/news-room/fact-sheets/detail/deafness-and-hearing-loss",
-          "title": "Deafness and hearing loss: safe listening (World Health Organization)",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The free software this course uses — install it before the session."
         }
       ],
       "checks": [

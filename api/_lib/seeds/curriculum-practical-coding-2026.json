@@ -22,33 +22,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/how-the-web-works-a-primer-for-newcomers-to-web-development-or-anyone-really-b4584e63585c/",
-          "title": "How the Web Works: A Primer for Newcomers to Web Development (or anyone, really) (freeCodeCamp)",
-          "kind": "link"
+          "title": "How the Web Works: A Primer for Newcomers to Web Development (or anyone, really)",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview",
           "title": "MDN: An overview of HTTP",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Getting_started_with_the_web/How_the_Web_works",
-          "title": "How the web works (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "How the web works",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.chrome.com/docs/devtools/overview",
-          "title": "Chrome DevTools overview (Chrome for Developers (Google))",
-          "kind": "link"
+          "title": "Chrome DevTools overview",
+          "kind": "link",
+          "guide": "Open DevTools and follow along on a real page."
         },
         {
           "url": "https://code.visualstudio.com/docs/getstarted/getting-started",
-          "title": "Getting started with VS Code (Visual Studio Code (Microsoft))",
-          "kind": "link"
+          "title": "Getting started with VS Code",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -103,33 +109,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/html-for-beginners/",
-          "title": "HTML for Beginners – How to Get Started with Web Development Basics (freeCodeCamp)",
-          "kind": "link"
+          "title": "HTML for Beginners – How to Get Started with Web Development Basics",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Basic HTML",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Getting_started_with_the_web/HTML_basics",
-          "title": "HTML basics (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "HTML basics",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Element/a",
-          "title": "The anchor element <a> (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "The anchor element <a>",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/html",
-          "title": "Learn HTML (web.dev (Google))",
-          "kind": "link"
+          "title": "Learn HTML",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -184,33 +196,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/what-is-html-definition-and-meaning/",
-          "title": "What is HTML – Definition and Meaning of Hypertext Markup Language (freeCodeCamp)",
-          "kind": "link"
+          "title": "What is HTML – Definition and Meaning of Hypertext Markup Language",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Basic HTML",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Element/img",
-          "title": "The image element <img> (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "The image element <img>",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.w3.org/WAI/tutorials/images/decision-tree/",
-          "title": "An alt decision tree (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "An alt decision tree",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://web.dev/learn/html/lists",
-          "title": "Lists (web.dev (Google))",
-          "kind": "link"
+          "title": "Lists",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -265,28 +283,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/html-for-beginners/",
-          "title": "HTML for Beginners – How to Get Started with Web Development Basics (freeCodeCamp)",
-          "kind": "link"
+          "title": "HTML for Beginners – How to Get Started with Web Development Basics",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Basic HTML",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/HTML/Introduction_to_HTML/The_head_metadata_in_HTML",
-          "title": "What's in the head? (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "What's in the head?",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/html/document-structure",
-          "title": "Document structure (web.dev (Google))",
-          "kind": "link"
+          "title": "Document structure",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -329,33 +352,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/semantic-html5-elements/",
-          "title": "Semantic HTML5 Elements Explained (freeCodeCamp)",
-          "kind": "link"
+          "title": "Semantic HTML5 Elements Explained",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Semantic HTML",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://web.dev/learn/html/semantic-html",
-          "title": "Semantic HTML (web.dev (Google))",
-          "kind": "link"
+          "title": "Semantic HTML",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Element",
-          "title": "HTML elements reference (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "HTML elements reference",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.w3.org/WAI/tutorials/page-structure/",
-          "title": "Page structure tutorial (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Page structure tutorial",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         }
       ],
       "checks": [
@@ -410,28 +439,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/git-and-github-for-beginners/",
-          "title": "Git and GitHub Tutorial – Version Control for Beginners (freeCodeCamp)",
-          "kind": "link"
+          "title": "Git and GitHub Tutorial – Version Control for Beginners",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://docs.github.com/en/get-started/start-your-journey/hello-world",
-          "title": "GitHub Docs: Hello World",
-          "kind": "link"
+          "title": "Hello World on GitHub",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://git-scm.com/book/en/v2/Getting-Started-About-Version-Control",
-          "title": "About version control (Pro Git book (git-scm.com))",
-          "kind": "link"
+          "title": "About version control",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://skills.github.com/",
-          "title": "GitHub Skills: introduction to GitHub (GitHub)",
-          "kind": "link"
+          "title": "GitHub Skills: introduction to GitHub",
+          "kind": "interactive",
+          "guide": "Follow the guide and try each step in your own project."
         }
       ],
       "checks": [
@@ -474,33 +508,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/html-form-input-type-and-submit-button-example/",
-          "title": "HTML Form – Input Type and Submit Button Example (freeCodeCamp)",
-          "kind": "link"
+          "title": "HTML Form – Input Type and Submit Button Example",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Forms and Tables",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Forms/Your_first_form",
-          "title": "Your first form (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Your first form",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.w3.org/WAI/tutorials/forms/",
-          "title": "Forms tutorial (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Forms tutorial",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://web.dev/learn/forms",
-          "title": "Learn Forms (web.dev (Google))",
-          "kind": "link"
+          "title": "Learn Forms",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -555,33 +595,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/html-tables-table-tutorial-with-css-example-code/",
-          "title": "HTML Tables – Table Tutorial with Example Code (freeCodeCamp)",
-          "kind": "link"
+          "title": "HTML Tables – Table Tutorial with Example Code",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Forms and Tables",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/HTML/Tables/Basics",
-          "title": "HTML table basics (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "HTML table basics",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.w3.org/WAI/tutorials/tables/",
-          "title": "Tables tutorial (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Tables tutorial",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Forms/Form_validation",
-          "title": "Client-side form validation (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Client-side form validation",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -636,33 +682,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/web-accessibility-for-devs/",
-          "title": "Web Accessibility Tips for Developers – A11y Principles Explained (freeCodeCamp)",
-          "kind": "link"
+          "title": "Web Accessibility Tips for Developers – A11y Principles Explained",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Accessibility",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.w3.org/WAI/fundamentals/accessibility-intro/",
-          "title": "Introduction to web accessibility (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Introduction to web accessibility",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility",
-          "title": "Accessibility (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Accessibility",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.w3.org/WAI/test-evaluate/preliminary/",
-          "title": "Easy checks: a first review (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Easy checks: a first review",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         }
       ],
       "checks": [
@@ -717,28 +769,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/git-and-github-for-beginners/",
-          "title": "Git and GitHub Tutorial – Version Control for Beginners (freeCodeCamp)",
-          "kind": "link"
+          "title": "Git and GitHub Tutorial – Version Control for Beginners",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://pages.github.com/",
           "title": "GitHub Pages",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site",
-          "title": "Creating a GitHub Pages site (GitHub Docs)",
-          "kind": "link"
+          "title": "Creating a GitHub Pages site",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Getting_started_with_the_web/Publishing_your_website",
-          "title": "Publishing your website (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Publishing your website",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -769,28 +826,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Basic CSS",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Getting_started_with_the_web/CSS_basics",
-          "title": "CSS basics (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "CSS basics",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_selectors",
-          "title": "CSS selectors (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "CSS selectors",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/css",
-          "title": "Learn CSS (web.dev (Google))",
-          "kind": "link"
+          "title": "Learn CSS",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -845,33 +907,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/css-units-when-to-use-each-one/",
-          "title": "CSS Units – When to Use rem, em, px, and More (freeCodeCamp)",
-          "kind": "link"
+          "title": "CSS Units – When to Use rem, em, px, and More",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Basic CSS",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Values_and_units",
-          "title": "CSS values and units (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "CSS values and units",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Backgrounds_and_borders",
-          "title": "Backgrounds and borders (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Backgrounds and borders",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/css/sizing",
-          "title": "Sizing units (web.dev (Google))",
-          "kind": "link"
+          "title": "Sizing units",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -914,23 +982,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Basic CSS",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Cascade_and_inheritance",
-          "title": "Cascade, specificity and inheritance (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Cascade, specificity and inheritance",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/css/specificity",
-          "title": "Specificity (web.dev (Google))",
-          "kind": "link"
+          "title": "Specificity",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -985,23 +1057,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Box Model",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/The_box_model",
-          "title": "The box model (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "The box model",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/css/box-model",
-          "title": "Box model (web.dev (Google))",
-          "kind": "link"
+          "title": "Box model",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -1056,28 +1132,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Colors",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html",
-          "title": "Understanding minimum contrast (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Understanding minimum contrast",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://webaim.org/resources/contrastchecker/",
-          "title": "Contrast checker (WebAIM (Utah State University))",
-          "kind": "link"
+          "title": "Contrast checker",
+          "kind": "interactive",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://web.dev/learn/css/color",
-          "title": "Color (web.dev (Google))",
-          "kind": "link"
+          "title": "Color",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -1132,33 +1213,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/responsive-web-design-how-to-make-a-website-look-good-on-phones-and-tablets/",
-          "title": "Responsive Web Design – How to Make a Website Look Good on Phones and Tablets (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design – How to Make a Website Look Good on Phones and Tablets",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Responsive Design",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/CSS/CSS_layout/Responsive_Design",
-          "title": "Responsive design (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Responsive design",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/design",
-          "title": "Learn responsive design (web.dev (Google))",
-          "kind": "link"
+          "title": "Learn responsive design",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_media_queries/Using_media_queries",
-          "title": "Using media queries (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Using media queries",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -1201,28 +1288,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/css-flexbox-tutorial-with-cheatsheet/",
-          "title": "CSS Flexbox Tutorial with Flexbox Properties Cheat Sheet (freeCodeCamp)",
-          "kind": "link"
+          "title": "CSS Flexbox Tutorial with Flexbox Properties Cheat Sheet",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Flexbox",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_flexible_box_layout/Basic_concepts_of_flexbox",
-          "title": "Basic concepts of flexbox (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Basic concepts of flexbox",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/css/flexbox",
-          "title": "Flexbox (web.dev (Google))",
-          "kind": "link"
+          "title": "Flexbox",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -1277,23 +1369,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Typography",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/CSS/Styling_text/Fundamentals",
-          "title": "Fundamental text and font styling (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Fundamental text and font styling",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/design/typography",
-          "title": "Typography (web.dev (Google))",
-          "kind": "link"
+          "title": "Typography",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -1348,23 +1444,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Styling Forms",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Forms/Styling_web_forms",
-          "title": "Styling web forms (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Styling web forms",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/forms/accessibility",
-          "title": "Form design and accessibility (web.dev (Google))",
-          "kind": "link"
+          "title": "Form design and accessibility",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -1419,28 +1519,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/css-position-property-explained/",
-          "title": "How the CSS Position Property Works – Explained with Code Examples (freeCodeCamp)",
-          "kind": "link"
+          "title": "How the CSS Position Property Works – Explained with Code Examples",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Positioning",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/CSS/CSS_layout/Positioning",
-          "title": "Positioning (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Positioning",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/css/z-index",
-          "title": "Z-index and stacking contexts (web.dev (Google))",
-          "kind": "link"
+          "title": "Z-index and stacking contexts",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -1495,28 +1600,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Pseudo-classes and pseudo-elements",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/Pseudo-classes",
-          "title": "Pseudo-classes (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Pseudo-classes",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/Pseudo-elements",
-          "title": "Pseudo-elements (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Pseudo-elements",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/Attribute_selectors",
-          "title": "Attribute selectors (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Attribute selectors",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -1571,23 +1681,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: CSS Variables",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties",
-          "title": "Using CSS custom properties (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Using CSS custom properties",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/css/custom-properties",
-          "title": "Custom properties (web.dev (Google))",
-          "kind": "link"
+          "title": "Custom properties",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -1630,28 +1744,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/learn-css-grid-by-building-5-layouts/",
-          "title": "Learn CSS Grid by Building 5 Layouts in 17 minutes (freeCodeCamp)",
-          "kind": "link"
+          "title": "Learn CSS Grid by Building 5 Layouts in 17 minutes",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: CSS Grid",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout/Basic_concepts_of_grid_layout",
-          "title": "Basic concepts of grid layout (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Basic concepts of grid layout",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/css/grid",
-          "title": "Grid (web.dev (Google))",
-          "kind": "link"
+          "title": "Grid",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -1706,28 +1825,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/learn-css-grid-by-building-5-layouts/",
-          "title": "Learn CSS Grid by Building 5 Layouts in 17 minutes (freeCodeCamp)",
-          "kind": "link"
+          "title": "Learn CSS Grid by Building 5 Layouts in 17 minutes",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: CSS Grid",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout/Grid_template_areas",
-          "title": "Grid template areas (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Grid template areas",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout/Relationship_of_grid_layout_with_other_layout_methods",
-          "title": "Relationship of grid layout to other methods (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Relationship of grid layout to other methods",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -1770,33 +1894,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/web-accessibility-for-devs/",
-          "title": "Web Accessibility Tips for Developers – A11y Principles Explained (freeCodeCamp)",
-          "kind": "link"
+          "title": "Web Accessibility Tips for Developers – A11y Principles Explained",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Design",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.w3.org/WAI/tips/designing/",
-          "title": "Accessible design: understanding the basics (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Accessible design: understanding the basics",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion",
-          "title": "prefers-reduced-motion (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "prefers-reduced-motion",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/accessibility",
-          "title": "Learn accessibility (web.dev (Google))",
-          "kind": "link"
+          "title": "Learn accessibility",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -1839,28 +1969,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Animations",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_transitions/Using_CSS_transitions",
-          "title": "Using CSS transitions (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Using CSS transitions",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_animations/Using_CSS_animations",
-          "title": "Using CSS animations (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Using CSS animations",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/learn/css/animations",
-          "title": "Animations (web.dev (Google))",
-          "kind": "link"
+          "title": "Animations",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -1915,23 +2050,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Animations",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/animation",
-          "title": "The animation property (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "The animation property",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/transform",
-          "title": "The transform property (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "The transform property",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -1963,17 +2102,20 @@
         {
           "url": "https://pages.github.com/",
           "title": "GitHub Pages",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Getting_started_with_the_web/What_will_your_website_look_like",
-          "title": "What will your website look like? (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "What will your website look like?",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive web design certification projects (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive web design certification projects",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         }
       ],
       "checks": [
@@ -2004,23 +2146,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://pages.github.com/",
           "title": "GitHub Pages",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://validator.w3.org/",
-          "title": "The W3C Markup Validation Service (W3C)",
-          "kind": "link"
+          "title": "The W3C Markup Validation Service",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://web.dev/learn/performance/image-performance",
-          "title": "Image performance (web.dev (Google))",
-          "kind": "link"
+          "title": "Image performance",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         }
       ],
       "checks": [
@@ -2050,23 +2196,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/",
-          "title": "Responsive Web Design certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "Responsive Web Design certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Full Stack Developer curriculum",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-color-scheme",
-          "title": "prefers-color-scheme (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "prefers-color-scheme",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://web.dev/articles/building/a-color-scheme",
-          "title": "Building a color scheme (web.dev (Google))",
-          "kind": "link"
+          "title": "Building a color scheme",
+          "kind": "link",
+          "guide": "A worked example of building a colour scheme — follow it for your own design."
         }
       ],
       "checks": [
@@ -2097,33 +2247,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/javascript-variables-beginners-guide/",
-          "title": "JavaScript Variables – A Beginner's Guide to var, const, and let (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Variables – A Beginner's Guide to var, const, and let",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: JavaScript Variables and Strings",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/First_steps",
-          "title": "JavaScript first steps (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "JavaScript first steps",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/First_steps/Variables",
-          "title": "Storing the information you need — variables (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Storing the information you need — variables",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://javascript.info/",
-          "title": "The Modern JavaScript Tutorial (javascript.info)",
-          "kind": "link"
+          "title": "The Modern JavaScript Tutorial",
+          "kind": "link",
+          "guide": "Read the chapter and do the tasks at the end — each has a solution to check against."
         }
       ],
       "checks": [
@@ -2166,28 +2322,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/javascript-if-else-and-if-then-js-conditional-statements/",
-          "title": "JavaScript If-Else and If-Then – JS Conditional Statements (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript If-Else and If-Then – JS Conditional Statements",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: JavaScript Booleans and Numbers",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/First_steps/Math",
-          "title": "Basic math in JavaScript (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Basic math in JavaScript",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Building_blocks/Conditionals",
-          "title": "Making decisions in your code — conditionals (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Making decisions in your code — conditionals",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -2242,28 +2403,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/what-are-functions-in-javascript-a-beginners-guide/",
-          "title": "What are Functions in JavaScript? A Beginner's Guide (freeCodeCamp)",
-          "kind": "link"
+          "title": "What are Functions in JavaScript? A Beginner's Guide",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: JavaScript Functions",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Building_blocks/Functions",
-          "title": "Functions — reusable blocks of code (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Functions — reusable blocks of code",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://javascript.info/function-basics",
-          "title": "Functions (javascript.info)",
-          "kind": "link"
+          "title": "Functions",
+          "kind": "link",
+          "guide": "Read the chapter and do the tasks at the end — each has a solution to check against."
         }
       ],
       "checks": [
@@ -2306,23 +2472,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: JavaScript Arrays",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/First_steps/Arrays",
-          "title": "Arrays (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Arrays",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://javascript.info/array-methods",
-          "title": "Array methods (javascript.info)",
-          "kind": "link"
+          "title": "Array methods",
+          "kind": "link",
+          "guide": "Read the chapter and do the tasks at the end — each has a solution to check against."
         }
       ],
       "checks": [
@@ -2377,28 +2547,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/objects-in-javascript-for-beginners/",
-          "title": "Objects in JavaScript – A Beginner's Guide (freeCodeCamp)",
-          "kind": "link"
+          "title": "Objects in JavaScript – A Beginner's Guide",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: JavaScript Objects",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Objects/Basics",
-          "title": "JavaScript object basics (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "JavaScript object basics",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://javascript.info/object",
-          "title": "Objects (javascript.info)",
-          "kind": "link"
+          "title": "Objects",
+          "kind": "link",
+          "guide": "Read the chapter and do the tasks at the end — each has a solution to check against."
         }
       ],
       "checks": [
@@ -2429,28 +2604,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/javascript-loops-explained-for-loop-for/",
-          "title": "JavaScript Loops Explained: For Loop, While Loop, Do...while Loop, and More (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Loops Explained: For Loop, While Loop, Do...while Loop, and More",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: JavaScript Loops",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Building_blocks/Looping_code",
-          "title": "Looping code (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Looping code",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://javascript.info/while-for",
-          "title": "Loops: while and for (javascript.info)",
-          "kind": "link"
+          "title": "Loops: while and for",
+          "kind": "link",
+          "guide": "Read the chapter and do the tasks at the end — each has a solution to check against."
         }
       ],
       "checks": [
@@ -2493,33 +2673,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/javascript-map-reduce-and-filter-explained-with-examples/",
-          "title": "JavaScript Map, Reduce, and Filter - JS Array Functions Explained with Code Examples (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Map, Reduce, and Filter - JS Array Functions Explained with Code Examples",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Higher Order Functions",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map",
-          "title": "Array.prototype.map() (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Array.prototype.map()",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/reduce",
-          "title": "Array.prototype.reduce() (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Array.prototype.reduce()",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://javascript.info/array-methods",
-          "title": "Array methods (javascript.info)",
-          "kind": "link"
+          "title": "Array methods",
+          "kind": "link",
+          "guide": "Read the chapter and do the tasks at the end — each has a solution to check against."
         }
       ],
       "checks": [
@@ -2562,28 +2748,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/dom-manipulation-in-javascript/",
-          "title": "DOM Manipulation in JavaScript – A Comprehensive Guide for Beginners (freeCodeCamp)",
-          "kind": "link"
+          "title": "DOM Manipulation in JavaScript – A Comprehensive Guide for Beginners",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: DOM Manipulation",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Client-side_web_APIs/Manipulating_documents",
-          "title": "Manipulating documents (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Manipulating documents",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/API/Document/querySelector",
-          "title": "Document.querySelector() (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Document.querySelector()",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -2638,28 +2829,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/javascript-addeventlistener-example-code/",
-          "title": "The addEventListener() Method – JavaScript Event Listener Example Code (freeCodeCamp)",
-          "kind": "link"
+          "title": "The addEventListener() Method – JavaScript Event Listener Example Code",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: DOM Manipulation and Events",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Building_blocks/Events",
-          "title": "Introduction to events (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Introduction to events",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener",
-          "title": "EventTarget.addEventListener() (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "EventTarget.addEventListener()",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -2702,28 +2898,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/how-to-debug-javascript-with-your-browsers-devtools/",
-          "title": "How to Debug JavaScript with your Browser's Devtools (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to Debug JavaScript with your Browser's Devtools",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Debugging",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/First_steps/What_went_wrong",
-          "title": "What went wrong? Troubleshooting JavaScript (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "What went wrong? Troubleshooting JavaScript",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.chrome.com/docs/devtools/javascript",
-          "title": "Debug JavaScript (Chrome for Developers (Google))",
-          "kind": "link"
+          "title": "Debug JavaScript",
+          "kind": "link",
+          "guide": "Open DevTools and follow along on a real page."
         }
       ],
       "checks": [
@@ -2766,28 +2967,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/regular-expressions-for-beginners/",
-          "title": "How to Use Regular Expressions in JavaScript – Tutorial for Beginners (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to Use Regular Expressions in JavaScript – Tutorial for Beginners",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Regular Expressions",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions",
-          "title": "Regular expressions guide (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Regular expressions guide",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://regex101.com/",
-          "title": "regex101: build and test regular expressions (regex101)",
-          "kind": "link"
+          "title": "regex101: build and test regular expressions",
+          "kind": "interactive",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -2842,28 +3048,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/form-validation-with-html5-and-javascript/",
-          "title": "Data Validation – How to Check User Input on HTML Forms with Example JavaScript Code (freeCodeCamp)",
-          "kind": "link"
+          "title": "Data Validation – How to Check User Input on HTML Forms with Example JavaScript Code",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Form Validation",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Forms/Form_validation",
-          "title": "Client-side form validation (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Client-side form validation",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.w3.org/WAI/tutorials/forms/validation/",
-          "title": "Validate input (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Validate input",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         }
       ],
       "checks": [
@@ -2906,28 +3117,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/form-validation-with-html5-and-javascript/",
-          "title": "Data Validation – How to Check User Input on HTML Forms with Example JavaScript Code (freeCodeCamp)",
-          "kind": "link"
+          "title": "Data Validation – How to Check User Input on HTML Forms with Example JavaScript Code",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Form Validation",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Constraint_validation",
-          "title": "Constraint validation (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Constraint validation",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Server-side/First_steps/Website_security",
-          "title": "Website security (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Website security",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -2970,28 +3186,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/the-ultimate-guide-to-javascript-date-and-moment-js/",
-          "title": "The Ultimate Guide to JavaScript Date and Moment.js (freeCodeCamp)",
-          "kind": "link"
+          "title": "The Ultimate Guide to JavaScript Date and Moment.js",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Dates",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date",
-          "title": "Date (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Date",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://javascript.info/date",
-          "title": "Date and time (javascript.info)",
-          "kind": "link"
+          "title": "Date and time",
+          "kind": "link",
+          "guide": "Read the chapter and do the tasks at the end — each has a solution to check against."
         }
       ],
       "checks": [
@@ -3034,23 +3255,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Audio and Video",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/HTML/Multimedia_and_embedding/Video_and_audio_content",
-          "title": "Video and audio content (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Video and audio content",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement",
-          "title": "HTMLMediaElement (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "HTMLMediaElement",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -3093,28 +3318,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/javascript-maps-and-sets-explained/",
-          "title": "Let's learn about Set and its unique functionality in JavaScript ? (freeCodeCamp)",
-          "kind": "link"
+          "title": "Let's learn about Set and its unique functionality in JavaScript ?",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Maps and Sets",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Keyed_collections",
-          "title": "Keyed collections (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Keyed collections",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://javascript.info/map-set",
-          "title": "Map and Set (javascript.info)",
-          "kind": "link"
+          "title": "Map and Set",
+          "kind": "link",
+          "guide": "Read the chapter and do the tasks at the end — each has a solution to check against."
         }
       ],
       "checks": [
@@ -3157,23 +3387,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Local Storage and CRUD",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage",
-          "title": "Window.localStorage (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Window.localStorage",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Objects/JSON",
-          "title": "Working with JSON (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Working with JSON",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -3228,28 +3462,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/javascript-classes-how-they-work-with-use-case/",
-          "title": "JavaScript Classes – How They Work with Use Case Example (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Classes – How They Work with Use Case Example",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Classes",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Objects/Classes_in_JavaScript",
-          "title": "Classes in JavaScript (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Classes in JavaScript",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://javascript.info/class",
-          "title": "Class basic syntax (javascript.info)",
-          "kind": "link"
+          "title": "Class basic syntax",
+          "kind": "link",
+          "guide": "Read the chapter and do the tasks at the end — each has a solution to check against."
         }
       ],
       "checks": [
@@ -3281,17 +3520,20 @@
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Functional Programming",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures/#functional-programming",
-          "title": "Functional programming in JavaScript (freeCodeCamp)",
-          "kind": "link"
+          "title": "Functional programming in JavaScript",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax",
-          "title": "Spread syntax (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Spread syntax",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -3334,28 +3576,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/what-is-recursion-in-javascript/",
-          "title": "What is Recursion? A Recursive Function Explained with JavaScript Code Examples (freeCodeCamp)",
-          "kind": "link"
+          "title": "What is Recursion? A Recursive Function Explained with JavaScript Code Examples",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Recursion",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Glossary/Recursion",
-          "title": "Recursion (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Recursion",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://javascript.info/recursion",
-          "title": "Recursion and stack (javascript.info)",
-          "kind": "link"
+          "title": "Recursion and stack",
+          "kind": "link",
+          "guide": "Read the chapter and do the tasks at the end — each has a solution to check against."
         }
       ],
       "checks": [
@@ -3398,33 +3645,39 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/how-to-use-fetch-api/",
-          "title": "How to Use Fetch to Make AJAX Calls in JavaScript (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to Use Fetch to Make AJAX Calls in JavaScript",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Asynchronous JavaScript",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Asynchronous/Promises",
-          "title": "How to use promises (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "How to use promises",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
-          "title": "Using the Fetch API (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Using the Fetch API",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://github.com/public-apis/public-apis",
-          "title": "A list of free public APIs (public-apis (GitHub))",
-          "kind": "link"
+          "title": "A list of free public APIs",
+          "kind": "link",
+          "guide": "Browse the list and pick one free source to use in your project."
         }
       ],
       "checks": [
@@ -3468,17 +3721,20 @@
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Full Stack Developer curriculum",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Building_blocks",
-          "title": "JavaScript building blocks (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "JavaScript building blocks",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript algorithms and data structures (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript algorithms and data structures",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         }
       ],
       "checks": [
@@ -3509,23 +3765,27 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://pages.github.com/",
           "title": "GitHub Pages",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage",
-          "title": "Window.localStorage (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Window.localStorage",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.nngroup.com/articles/usability-testing-101/",
-          "title": "Usability testing 101 (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Usability testing 101",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -3555,28 +3815,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures-v8/",
-          "title": "JavaScript Algorithms and Data Structures certification (freeCodeCamp)",
-          "kind": "link"
+          "title": "JavaScript Algorithms and Data Structures certification",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/how-to-use-fetch-api/",
-          "title": "How to Use Fetch to Make AJAX Calls in JavaScript (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to Use Fetch to Make AJAX Calls in JavaScript",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Full Stack Developer curriculum",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/Client-side_web_APIs/Introduction",
-          "title": "Introduction to web APIs (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Introduction to web APIs",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://github.com/public-apis/public-apis",
-          "title": "A list of free public APIs (public-apis (GitHub))",
-          "kind": "link"
+          "title": "A list of free public APIs",
+          "kind": "link",
+          "guide": "Browse the list and pick one free source to use in your project."
         }
       ],
       "checks": [
@@ -3606,29 +3871,28 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://www.freecodecamp.org/news/what-is-http/",
-          "title": "What is HTTP? Protocol Overview for Beginners (freeCodeCamp)",
-          "kind": "link"
+          "title": "What is HTTP? Protocol Overview for Beginners",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview",
-          "title": "MDN: An overview of HTTP",
-          "kind": "link"
+          "title": "An overview of HTTP",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status",
-          "title": "HTTP response status codes (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "HTTP response status codes",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.chrome.com/docs/devtools/network",
-          "title": "Inspect network activity (Chrome for Developers (Google))",
-          "kind": "link"
+          "title": "Inspect network activity",
+          "kind": "link",
+          "guide": "Open DevTools and follow along on a real page."
         }
       ],
       "checks": [
@@ -3682,19 +3946,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://nodejs.org/en/learn/getting-started/introduction-to-nodejs",
-          "title": "Node.js: Introduction",
-          "kind": "link"
+          "title": "Introduction to Node.js",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://nodejs.org/en/learn/getting-started/an-introduction-to-the-npm-package-manager",
-          "title": "An introduction to the npm package manager (Node.js)",
-          "kind": "link"
+          "title": "An introduction to the npm package manager",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -3736,29 +3997,28 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://www.freecodecamp.org/news/express-explained-with-examples-installation-routing-middleware-and-more/",
-          "title": "Express Explained with Examples - Installation, Routing, Middleware, and More (freeCodeCamp)",
-          "kind": "link"
+          "title": "Express Explained with Examples - Installation, Routing, Middleware, and More",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://expressjs.com/en/starter/hello-world.html",
           "title": "Express: Hello world",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://expressjs.com/en/guide/routing.html",
-          "title": "Express routing (Express (OpenJS Foundation))",
-          "kind": "link"
+          "title": "Express routing",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Server-side/Express_Nodejs/Introduction",
-          "title": "Express/Node introduction (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Express/Node introduction",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -3788,24 +4048,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://www.freecodecamp.org/news/express-explained-with-examples-installation-routing-middleware-and-more/",
-          "title": "Express Explained with Examples - Installation, Routing, Middleware, and More (freeCodeCamp)",
-          "kind": "link"
+          "title": "Express Explained with Examples - Installation, Routing, Middleware, and More",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://expressjs.com/en/guide/using-middleware.html",
-          "title": "Express: Using middleware",
-          "kind": "link"
+          "title": "Using middleware",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://expressjs.com/en/starter/static-files.html",
-          "title": "Serving static files in Express (Express (OpenJS Foundation))",
-          "kind": "link"
+          "title": "Serving static files in Express",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -3847,19 +4105,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://expressjs.com/en/guide/routing.html",
-          "title": "Express: Routing",
-          "kind": "link"
+          "title": "Express routing",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods",
-          "title": "HTTP request methods (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "HTTP request methods",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -3913,19 +4168,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://expressjs.com/en/guide/error-handling.html",
-          "title": "Express: Error handling",
-          "kind": "link"
+          "title": "Error handling",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://curl.se/docs/tutorial.html",
-          "title": "curl tutorial (curl)",
-          "kind": "link"
+          "title": "curl tutorial",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -3955,19 +4207,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://www.mongodb.com/docs/manual/introduction/",
-          "title": "MongoDB: Introduction",
-          "kind": "link"
+          "title": "What is MongoDB?",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://www.mongodb.com/docs/atlas/getting-started/",
-          "title": "Get started with Atlas (MongoDB Documentation)",
-          "kind": "link"
+          "title": "Get started with Atlas",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -4009,24 +4258,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://www.freecodecamp.org/news/introduction-to-mongoose-for-mongodb-d2a7aa593c57/",
-          "title": "Introduction to Mongoose for MongoDB (freeCodeCamp)",
-          "kind": "link"
+          "title": "Introduction to Mongoose for MongoDB",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://mongoosejs.com/docs/index.html",
-          "title": "Mongoose: Getting started",
-          "kind": "link"
+          "title": "Mongoose quick start",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://mongoosejs.com/docs/guide.html",
-          "title": "Schemas (Mongoose)",
-          "kind": "link"
+          "title": "Schemas",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -4056,24 +4303,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://www.freecodecamp.org/news/introduction-to-mongoose-for-mongodb-d2a7aa593c57/",
-          "title": "Introduction to Mongoose for MongoDB (freeCodeCamp)",
-          "kind": "link"
+          "title": "Introduction to Mongoose for MongoDB",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://mongoosejs.com/docs/connections.html",
-          "title": "Mongoose: Connections",
-          "kind": "link"
+          "title": "Connecting to MongoDB",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Server-side/Express_Nodejs/mongoose",
-          "title": "Express tutorial part 3: using a database (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Express tutorial part 3: using a database",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -4115,34 +4360,34 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://www.freecodecamp.org/news/how-to-use-node-environment-variables-with-a-dotenv-file-for-node-js-and-npm/",
-          "title": "How to Use Node Environment Variables with a DotEnv File for Node.js and npm (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to Use Node Environment Variables with a DotEnv File for Node.js and npm",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://cheatsheetseries.owasp.org/cheatsheets/Nodejs_Security_Cheat_Sheet.html",
           "title": "OWASP: Node.js security cheat sheet",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The security community’s reference — check your code against it."
         },
         {
           "url": "https://owasp.org/www-project-top-ten/",
-          "title": "OWASP Top Ten (OWASP Foundation)",
-          "kind": "link"
+          "title": "OWASP Top Ten",
+          "kind": "link",
+          "guide": "The security community’s reference — check your code against it."
         },
         {
           "url": "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html",
-          "title": "Password storage cheat sheet (OWASP Foundation)",
-          "kind": "link"
+          "title": "Password storage cheat sheet",
+          "kind": "link",
+          "guide": "The security community’s reference — check your code against it."
         },
         {
           "url": "https://expressjs.com/en/advanced/best-practice-security.html",
-          "title": "Production best practices: security (Express (OpenJS Foundation))",
-          "kind": "link"
+          "title": "Production best practices: security",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -4196,24 +4441,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://render.com/docs/deploy-node-express-app",
-          "title": "Render: Deploy a Node Express app",
-          "kind": "link"
+          "title": "Deploy a Node Express app on Render",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Server-side/Express_Nodejs/deployment",
-          "title": "Deploying to production (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Deploying to production",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS",
-          "title": "Cross-Origin Resource Sharing (CORS) (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Cross-Origin Resource Sharing (CORS)",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -4242,24 +4485,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/back-end-development-and-apis/",
-          "title": "Back End Development and APIs certification (freeCodeCamp)",
-          "kind": "link"
-        },
-        {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
           "title": "freeCodeCamp: Full Stack Developer curriculum",
-          "kind": "interactive"
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.mongodb.com/docs/manual/text-search/",
-          "title": "Text search (MongoDB Documentation)",
-          "kind": "link"
+          "title": "Text search",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://expressjs.com/en/api.html#req.query",
-          "title": "Express: req.query (Express (OpenJS Foundation))",
-          "kind": "link"
+          "title": "Express: req.query",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -4290,18 +4531,21 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
-          "title": "freeCodeCamp: Full Stack Developer curriculum",
-          "kind": "interactive"
+          "title": "Full Stack Developer curriculum",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.atlassian.com/agile/project-management/user-stories",
-          "title": "How to write a user story (Atlassian)",
-          "kind": "link"
+          "title": "How to write a user story",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/Server-side/Express_Nodejs",
-          "title": "Building a full stack app (Express) (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Building a full stack app (Express)",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         }
       ],
       "checks": [
@@ -4331,18 +4575,21 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
-          "title": "freeCodeCamp: Full Stack Developer curriculum",
-          "kind": "interactive"
+          "title": "Full Stack Developer curriculum",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://mongoosejs.com/docs/guide.html",
-          "title": "Mongoose guide (Mongoose)",
-          "kind": "link"
+          "title": "Mongoose guide",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://expressjs.com/en/guide/routing.html",
-          "title": "Express routing (Express (OpenJS Foundation))",
-          "kind": "link"
+          "title": "Express routing",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -4372,18 +4619,21 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
-          "title": "freeCodeCamp: Full Stack Developer curriculum",
-          "kind": "interactive"
+          "title": "Full Stack Developer curriculum",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
-          "title": "Using the Fetch API (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "Using the Fetch API",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.nngroup.com/articles/empty-state-interface-design/",
-          "title": "Empty state design (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Empty state design",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -4413,28 +4663,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
-          "title": "Full Stack Developer curriculum (freeCodeCamp)",
-          "kind": "link"
+          "title": "Full Stack Developer curriculum",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/how-to-write-a-good-readme-file/",
-          "title": "How to Write a Good README File for Your GitHub Project (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to Write a Good README File for Your GitHub Project",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://pages.github.com/",
           "title": "GitHub Pages",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes",
-          "title": "About READMEs (GitHub Docs)",
-          "kind": "link"
+          "title": "About READMEs",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax",
-          "title": "Basic writing and formatting syntax (GitHub Docs)",
-          "kind": "link"
+          "title": "Basic writing and formatting syntax",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         }
       ],
       "checks": [
@@ -4464,28 +4719,33 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
-          "title": "Full Stack Developer curriculum (freeCodeCamp)",
-          "kind": "link"
+          "title": "Full Stack Developer curriculum",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.freecodecamp.org/news/how-to-build-a-developer-portfolio-website/",
-          "title": "How to Build Your Own Developer Portfolio Website with HTML, CSS, and JavaScript (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to Build Your Own Developer Portfolio Website with HTML, CSS, and JavaScript",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         },
         {
           "url": "https://pages.github.com/",
           "title": "GitHub Pages",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://docs.github.com/en/account-and-profile/setting-up-and-managing-your-github-profile/customizing-your-profile/about-your-profile",
-          "title": "About your profile (GitHub Docs)",
-          "kind": "link"
+          "title": "About your profile",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site",
-          "title": "Creating a GitHub Pages site (GitHub Docs)",
-          "kind": "link"
+          "title": "Creating a GitHub Pages site",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         }
       ],
       "checks": [
@@ -4515,18 +4775,21 @@
       "materials": [
         {
           "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
-          "title": "freeCodeCamp: Full Stack Developer curriculum",
-          "kind": "interactive"
+          "title": "Full Stack Developer curriculum",
+          "kind": "interactive",
+          "guide": "Do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.ted.com/playlists/574/how_to_make_a_great_presentation",
-          "title": "Public speaking tips (TED)",
-          "kind": "link"
+          "title": "Public speaking tips",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         },
         {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [

@@ -4477,3 +4477,30 @@ mobile typed here carried in the address (`apfNgvHref` in page-apply.jsx); the
 form pre-fills and saves nothing until it is sent. The Afrovanguard side of the
 same change (the form, accounts made at enrolment, a guardian's own consent) is
 in that repo's `docs/HANDOFF.md`, 29 Oct 2026.
+
+## 2026-10-29 — Learning materials: what to do with them, and only good ones
+
+- **Migration 198**: `curriculum_materials.guide` — one line for the learner.
+  Validated (`CURR_MATERIAL_GUIDE_MAX` 240), written, served by
+  `curriculum_unit_public`, and part of both fingerprints, so a re-import of
+  the same guide is "unchanged" and a revised seed guide refreshes a lesson
+  still as shipped. Editor: a *What to do with it* box per material.
+- **Learner view** (`CurriculumMaterials` → `CurMaterialFace`): title, guide,
+  source host (`curMaterialSource`; "Lesson file" for ours) and an action verb
+  (`CUR_MATERIAL_VERB`) in place of the kind's name. Dark staff variant styled.
+- **Practice sites are `interactive`**: musictheory exercises, teoria, SQLBolt,
+  regex101, freeCodeCamp learn, Ableton Learning Music/Synths, Chrome Music
+  Lab, picoCTF, Teachable Machine, GitHub Skills, WebAIM contrast checker.
+- **Seed clean-up** (scratchpad `matfix.py`, all 515 links fetched first):
+  dropped the walled/dead/search-page links; repaired draw.io, Make and
+  micro:bit links; a link with one title on 10+ lessons of a course is kept
+  on the first lesson of each level only ("For the whole course:"); titles
+  lost the "(Source)" suffix the host now shows; a floor of two materials per
+  lesson, refilled from the course's own learning links (never exam or
+  certificate pages) or a short verified list per course; a real metronome
+  replaced the Google search. Totals: 2239 → 1624 materials, all guided.
+- Tests: PHP 5937/0 (materials ×9, including "every shipped lesson has two
+  guided materials and no walled link"); curriculum-ui 66/0; learn 46/0 (one
+  unrepeated failure on the first run, clean on the rerun); build OK;
+  no-important OK. Theatrecrafts.com timed out today though it loaded earlier;
+  left in, worth rechecking.

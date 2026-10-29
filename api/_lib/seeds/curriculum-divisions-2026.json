@@ -24,22 +24,26 @@
         {
           "url": "https://www.trinitycollege.com/qualifications",
           "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: graded exams you can take after this course, with centres in Nigeria."
         },
         {
           "url": "https://nbte.gov.ng/",
           "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: the recognised Nigerian route to a skills certificate after this course."
         },
         {
           "url": "https://www.ted.com/talks/chimamanda_ngozi_adichie_the_danger_of_a_single_story",
-          "title": "The danger of a single story (Chimamanda Ngozi Adichie (TED))",
-          "kind": "link"
+          "title": "The danger of a single story",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         },
         {
           "url": "https://www.khanacademy.org/computing/pixar",
-          "title": "Pixar in a Box (Khan Academy with Pixar)",
-          "kind": "link"
+          "title": "Pixar in a Box",
+          "kind": "link",
+          "guide": "Watch the short videos and try the practice questions."
         }
       ],
       "checks": [
@@ -80,24 +84,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://www.ted.com/talks/angela_lee_duckworth_grit_the_power_of_passion_and_perseverance",
-          "title": "Grit: the power of passion and perseverance (Angela Lee Duckworth (TED))",
-          "kind": "link"
+          "title": "Grit: the power of passion and perseverance",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -138,24 +134,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zbckjxs",
-          "title": "GCSE Drama (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Drama",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -196,29 +184,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://www.ted.com/talks/chimamanda_ngozi_adichie_the_danger_of_a_single_story",
-          "title": "The danger of a single story (Chimamanda Ngozi Adichie (TED))",
-          "kind": "link"
+          "title": "The danger of a single story",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         },
         {
           "url": "https://www.khanacademy.org/humanities/art-africa",
-          "title": "Art of Africa (Khan Academy)",
-          "kind": "link"
+          "title": "Art of Africa",
+          "kind": "link",
+          "guide": "Watch the short videos and try the practice questions."
         },
         {
           "url": "https://www.nobelprize.org/prizes/literature/1986/soyinka/facts/",
-          "title": "Wole Soyinka: Nobel Prize facts (The Nobel Prize)",
-          "kind": "link"
+          "title": "Wole Soyinka: Nobel Prize facts",
+          "kind": "link",
+          "guide": "Read about the writer’s life and work; note one play you would like to read or perform."
         }
       ],
       "checks": [
@@ -259,24 +240,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/design-thinking",
-          "title": "Design thinking (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Design thinking",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://dschool.stanford.edu/resources",
-          "title": "Design thinking resources (Stanford d.school)",
-          "kind": "link"
+          "title": "Design thinking resources",
+          "kind": "link",
+          "guide": "Design-thinking methods with step-by-step guides — pick one that fits today’s task."
         }
       ],
       "checks": [
@@ -317,24 +290,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zbckjxs",
-          "title": "GCSE Drama (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Drama",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.rsc.org.uk/education",
-          "title": "RSC education resources (Royal Shakespeare Company)",
-          "kind": "link"
+          "title": "RSC education resources",
+          "kind": "link",
+          "guide": "Free teaching resources from a working theatre company — try one rehearsal exercise."
         }
       ],
       "checks": [
@@ -375,24 +340,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/design-thinking",
-          "title": "Design thinking (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Design thinking",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         }
       ],
       "checks": [
@@ -433,24 +390,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://www.ted.com/talks/julian_treasure_how_to_speak_so_that_people_want_to_listen",
-          "title": "How to speak so that people want to listen (Julian Treasure (TED))",
-          "kind": "link"
+          "title": "How to speak so that people want to listen",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         },
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -491,29 +440,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://creativecommons.org/licenses/",
-          "title": "About Creative Commons licences (Creative Commons)",
-          "kind": "link"
+          "title": "About Creative Commons licences",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         },
         {
           "url": "https://www.wipo.int/copyright/en/",
-          "title": "Copyright (World Intellectual Property Organization)",
-          "kind": "link"
+          "title": "Copyright",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         },
         {
           "url": "https://www.atlassian.com/team-playbook/plays/roles-and-responsibilities",
-          "title": "How to define roles and responsibilities (Atlassian)",
-          "kind": "link"
+          "title": "How to define roles and responsibilities",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         }
       ],
       "checks": [
@@ -554,29 +496,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://datamanagement.hms.harvard.edu/plan-design/file-naming-conventions",
-          "title": "File naming conventions (Harvard Medical School Data Management)",
-          "kind": "link"
+          "title": "File naming conventions",
+          "kind": "link",
+          "guide": "Rules for naming files so anyone can find them — apply them to your folder."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/always-back-up-your-most-important-data",
-          "title": "Back up your data (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Back up your data",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://www.nikonusa.com/learn-and-explore",
-          "title": "Learn and explore (photography) (Nikon)",
-          "kind": "link"
+          "title": "Learn and explore (photography)",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         }
       ],
       "checks": [
@@ -617,24 +552,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         },
         {
           "url": "https://www.cac.gov.ng/",
-          "title": "Business registration (Corporate Affairs Commission, Nigeria)",
-          "kind": "link"
+          "title": "Business registration",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -675,24 +602,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.trinitycollege.com/qualifications",
-          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
-          "kind": "link"
-        },
-        {
-          "url": "https://nbte.gov.ng/",
-          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
-          "kind": "link"
-        },
-        {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://creativecommons.org/licenses/",
-          "title": "About Creative Commons licences (Creative Commons)",
-          "kind": "link"
+          "title": "About Creative Commons licences",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         }
       ],
       "checks": [
@@ -728,22 +647,20 @@
         {
           "url": "https://learndigital.withgoogle.com/digitalgarage",
           "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.nngroup.com/articles/content-strategy/",
-          "title": "Content strategy (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Content strategy",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.gov.uk/service-manual/user-research",
-          "title": "User research (UK Government Digital Service)",
-          "kind": "link"
+          "title": "User research",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -784,24 +701,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.khanacademy.org/computing/pixar/storytelling",
-          "title": "Pixar in a Box: storytelling (Khan Academy with Pixar)",
-          "kind": "link"
+          "title": "Pixar in a Box: storytelling",
+          "kind": "link",
+          "guide": "Watch the short videos and try the practice questions."
         },
         {
           "url": "https://www.ted.com/talks/chimamanda_ngozi_adichie_the_danger_of_a_single_story",
-          "title": "The danger of a single story (Chimamanda Ngozi Adichie (TED))",
-          "kind": "link"
+          "title": "The danger of a single story",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         }
       ],
       "checks": [
@@ -842,29 +751,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/rule-of-thirds",
-          "title": "Rule of thirds (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Rule of thirds",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/visual-hierarchy",
-          "title": "Visual hierarchy (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Visual hierarchy",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.digitalcameraworld.com/tutorials",
-          "title": "Photography tutorials (Digital Camera World)",
-          "kind": "link"
+          "title": "Photography tutorials",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         }
       ],
       "checks": [
@@ -905,29 +807,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://support.google.com/pixelphone/answer/7158570",
-          "title": "Phone photography tips (Google)",
-          "kind": "link"
+          "title": "Phone photography tips",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.nikonusa.com/learn-and-explore",
-          "title": "Learn and explore (photography) (Nikon)",
-          "kind": "link"
+          "title": "Learn and explore (photography)",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         },
         {
           "url": "https://www.digitalcameraworld.com/tutorials",
-          "title": "Photography tutorials (Digital Camera World)",
-          "kind": "link"
+          "title": "Photography tutorials",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         }
       ],
       "checks": [
@@ -968,24 +863,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.shure.com/en-US/insights",
-          "title": "Audio insights and guides (Shure)",
-          "kind": "link"
+          "title": "Audio insights and guides",
+          "kind": "link",
+          "guide": "Practical microphone and sound guides from a microphone maker — read the one on today’s topic."
         },
         {
           "url": "https://www.w3.org/WAI/media/av/",
-          "title": "Making audio and video accessible (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Making audio and video accessible",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         }
       ],
       "checks": [
@@ -1026,29 +913,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/how-users-read-on-the-web/",
-          "title": "How people read online (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "How people read online",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.nngroup.com/articles/inverted-pyramid/",
-          "title": "Inverted pyramid (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Inverted pyramid",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.plainlanguage.gov/guidelines/",
-          "title": "Plain language guidelines (plainlanguage.gov)",
-          "kind": "link"
+          "title": "Plain language guidelines",
+          "kind": "link",
+          "guide": "Rules for clear writing — check one piece of your writing against them."
         }
       ],
       "checks": [
@@ -1089,24 +969,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.khanacademy.org/computing/pixar/storytelling",
-          "title": "Pixar in a Box: storytelling (Khan Academy with Pixar)",
-          "kind": "link"
+          "title": "Pixar in a Box: storytelling",
+          "kind": "link",
+          "guide": "Watch the short videos and try the practice questions."
         },
         {
           "url": "https://www.plainlanguage.gov/guidelines/",
-          "title": "Plain language guidelines (plainlanguage.gov)",
-          "kind": "link"
+          "title": "Plain language guidelines",
+          "kind": "link",
+          "guide": "Rules for clear writing — check one piece of your writing against them."
         }
       ],
       "checks": [
@@ -1147,29 +1019,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.unicef.org/media/reporting-guidelines",
-          "title": "Reporting guidelines on children (UNICEF)",
-          "kind": "link"
+          "title": "Reporting guidelines on children",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
         },
         {
           "url": "https://ndpc.gov.ng/",
-          "title": "Nigeria Data Protection Commission (Nigeria Data Protection Commission)",
-          "kind": "link"
+          "title": "Nigeria Data Protection Commission",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         },
         {
           "url": "https://nppa.org/resources/code-ethics",
-          "title": "NPPA code of ethics (National Press Photographers Association)",
-          "kind": "link"
+          "title": "NPPA code of ethics",
+          "kind": "link",
+          "guide": "A photographer’s code of ethics — read it before you photograph people."
         }
       ],
       "checks": [
@@ -1210,29 +1075,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.w3.org/WAI/media/av/captions/",
-          "title": "Captions and subtitles (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Captions and subtitles",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://creators.instagram.com/",
-          "title": "Instagram for creators (Instagram (Meta))",
-          "kind": "link"
+          "title": "Instagram for creators",
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         },
         {
           "url": "https://www.capcut.com/resource",
-          "title": "CapCut resources (CapCut)",
-          "kind": "link"
+          "title": "CapCut resources",
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         }
       ],
       "checks": [
@@ -1273,24 +1131,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/vanity-metrics/",
-          "title": "Vanity metrics: add context to add meaning (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Vanity metrics: add context to add meaning",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.gov.uk/service-manual/measuring-success",
-          "title": "Measuring success (UK Government Digital Service)",
-          "kind": "link"
+          "title": "Measuring success",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -1331,24 +1181,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/content-strategy/",
-          "title": "Content strategy (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Content strategy",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -1389,24 +1231,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School — free, with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://fullfact.org/toolkit/",
-          "title": "How to fact check (Full Fact)",
-          "kind": "link"
+          "title": "How to fact check",
+          "kind": "link",
+          "guide": "Methods for checking whether something is true — use them on one claim you saw this week."
         },
         {
           "url": "https://www.gov.uk/service-manual/measuring-success",
-          "title": "Measuring success (UK Government Digital Service)",
-          "kind": "link"
+          "title": "Measuring success",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -1442,27 +1276,32 @@
         {
           "url": "https://www.freecodecamp.org/learn/",
           "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "For the whole course: do the matching steps of this free course — it checks your code as you go and saves progress if you sign in."
         },
         {
           "url": "https://www.netacad.com/",
           "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://developer.mozilla.org/",
           "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: the reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/guides/zp92mp3/revision/1",
-          "title": "What is computational thinking? (BBC Bitesize)",
-          "kind": "link"
+          "title": "What is computational thinking?",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/topics/z7tp34j",
-          "title": "Computational thinking (KS3) (BBC Bitesize)",
-          "kind": "link"
+          "title": "Computational thinking (KS3)",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -1503,29 +1342,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://support.google.com/docs/answer/186103",
-          "title": "Data validation in Sheets (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Data validation in Sheets",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://sqlbolt.com/",
-          "title": "SQLBolt: interactive SQL lessons (SQLBolt)",
-          "kind": "link"
+          "title": "SQLBolt: interactive SQL lessons",
+          "kind": "interactive",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -1566,29 +1392,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/work-management/project-management/process-mapping",
-          "title": "Flowcharts and process mapping (Atlassian)",
-          "kind": "link"
+          "title": "Flowcharts and process mapping",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/topics/z7tp34j",
-          "title": "Computational thinking (KS3) (BBC Bitesize)",
-          "kind": "link"
+          "title": "Computational thinking (KS3)",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -1629,29 +1442,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://developer.mozilla.org/en-US/docs/Learn/JavaScript/First_steps/What_went_wrong",
-          "title": "What went wrong? Troubleshooting JavaScript (MDN Web Docs (Mozilla))",
-          "kind": "link"
+          "title": "What went wrong? Troubleshooting JavaScript",
+          "kind": "link",
+          "guide": "The reference: read the explanation, then run the examples and change one thing to see what happens."
         },
         {
           "url": "https://www.freecodecamp.org/news/how-to-debug-javascript-with-your-browsers-devtools/",
-          "title": "How to debug JavaScript with your browser's devtools (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to debug JavaScript with your browser's devtools",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         }
       ],
       "checks": [
@@ -1692,29 +1492,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://jestjs.io/docs/getting-started",
-          "title": "Getting started with Jest (Jest)",
-          "kind": "link"
+          "title": "Getting started with Jest",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         },
         {
           "url": "https://docs.pytest.org/en/stable/getting-started.html",
-          "title": "Getting started with pytest (pytest)",
-          "kind": "link"
+          "title": "Getting started with pytest",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -1755,34 +1542,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://ndpc.gov.ng/",
-          "title": "Nigeria Data Protection Commission (Nigeria Data Protection Commission)",
-          "kind": "link"
+          "title": "Nigeria Data Protection Commission",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/small-business-guide",
-          "title": "Small organisations guide to cyber security (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Small organisations guide to cyber security",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://owasp.org/www-project-top-ten/",
-          "title": "OWASP Top Ten (OWASP Foundation)",
-          "kind": "link"
+          "title": "OWASP Top Ten",
+          "kind": "link",
+          "guide": "The security community’s reference — check your code against it."
         }
       ],
       "checks": [
@@ -1823,29 +1598,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://learn.sparkfun.com/tutorials/how-to-use-a-multimeter",
-          "title": "How to use a multimeter (SparkFun Electronics)",
-          "kind": "link"
+          "title": "How to use a multimeter",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         },
         {
           "url": "https://learn.sparkfun.com/tutorials/what-is-a-circuit",
-          "title": "What is a circuit? (SparkFun Electronics)",
-          "kind": "link"
+          "title": "What is a circuit?",
+          "kind": "link",
+          "guide": "Follow the tutorial step by step and build it yourself."
         }
       ],
       "checks": [
@@ -1886,29 +1648,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://www.elementsofai.com/",
-          "title": "Elements of AI (University of Helsinki)",
-          "kind": "link"
+          "title": "Elements of AI",
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         },
         {
           "url": "https://owasp.org/www-project-top-ten/",
-          "title": "OWASP Top Ten (OWASP Foundation)",
-          "kind": "link"
+          "title": "OWASP Top Ten",
+          "kind": "link",
+          "guide": "The security community’s reference — check your code against it."
         }
       ],
       "checks": [
@@ -1949,34 +1698,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://www.makeareadme.com/",
-          "title": "Make a README (makeareadme.com)",
-          "kind": "link"
+          "title": "Make a README",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes",
-          "title": "About READMEs (GitHub Docs)",
-          "kind": "link"
+          "title": "About READMEs",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://www.freecodecamp.org/news/how-to-write-a-good-readme-file/",
-          "title": "How to write a good README file (freeCodeCamp)",
-          "kind": "link"
+          "title": "How to write a good README file",
+          "kind": "link",
+          "guide": "A step-by-step article: read it once, then rebuild the example yourself without copying."
         }
       ],
       "checks": [
@@ -2017,34 +1754,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://git-scm.com/book/en/v2/Getting-Started-About-Version-Control",
-          "title": "About version control (Pro Git book (git-scm.com))",
-          "kind": "link"
+          "title": "About version control",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://cbea.ms/git-commit/",
-          "title": "How to write a Git commit message (Chris Beams)",
-          "kind": "link"
+          "title": "How to write a Git commit message",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://docs.github.com/en/issues/tracking-your-work-with-issues/about-issues",
-          "title": "About issues (GitHub Docs)",
-          "kind": "link"
+          "title": "About issues",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         }
       ],
       "checks": [
@@ -2085,34 +1810,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://www.w3.org/WAI/fundamentals/accessibility-intro/",
-          "title": "Introduction to web accessibility (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Introduction to web accessibility",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://www.ajl.org/",
-          "title": "Algorithmic Justice League (Algorithmic Justice League)",
-          "kind": "link"
+          "title": "Algorithmic Justice League",
+          "kind": "link",
+          "guide": "Read about how systems are checked for fairness and who they can fail."
         },
         {
           "url": "https://ndpc.gov.ng/",
-          "title": "Nigeria Data Protection Commission (Nigeria Data Protection Commission)",
-          "kind": "link"
+          "title": "Nigeria Data Protection Commission",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -2153,29 +1866,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.freecodecamp.org/learn/",
-          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.netacad.com/",
-          "title": "Cisco Networking Academy — free courses with certificates",
-          "kind": "link"
-        },
-        {
-          "url": "https://developer.mozilla.org/",
-          "title": "MDN Web Docs — the reference to check an answer against",
-          "kind": "link"
-        },
-        {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://jestjs.io/docs/getting-started",
-          "title": "Getting started with Jest (Jest)",
-          "kind": "link"
+          "title": "Getting started with Jest",
+          "kind": "link",
+          "guide": "The official documentation — read the section for today and run its example."
         }
       ],
       "checks": [
@@ -2211,22 +1911,26 @@
         {
           "url": "https://grow.google/certificates/project-management/",
           "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://learndigital.withgoogle.com/digitalgarage",
           "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -2267,24 +1971,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/user-interviews/",
-          "title": "User interviews (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "User interviews",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.gov.uk/service-manual/user-research",
-          "title": "User research (UK Government Digital Service)",
-          "kind": "link"
+          "title": "User research",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         }
       ],
       "checks": [
@@ -2325,24 +2021,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -2383,29 +2071,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://datamanagement.hms.harvard.edu/plan-design/file-naming-conventions",
-          "title": "File naming conventions (Harvard Medical School Data Management)",
-          "kind": "link"
+          "title": "File naming conventions",
+          "kind": "link",
+          "guide": "Rules for naming files so anyone can find them — apply them to your folder."
         },
         {
           "url": "https://support.google.com/docs/answer/46977",
-          "title": "Google Sheets function list (Google Docs Editors Help)",
-          "kind": "link"
+          "title": "Google Sheets function list",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -2446,24 +2127,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/work-management/project-management/process-mapping",
-          "title": "Flowcharts and process mapping (Atlassian)",
-          "kind": "link"
+          "title": "Flowcharts and process mapping",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.atlassian.com/team-playbook/plays/roles-and-responsibilities",
-          "title": "How to define roles and responsibilities (Atlassian)",
-          "kind": "link"
+          "title": "How to define roles and responsibilities",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         }
       ],
       "checks": [
@@ -2504,24 +2177,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/inverted-pyramid/",
-          "title": "Inverted pyramid (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Inverted pyramid",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.plainlanguage.gov/guidelines/",
-          "title": "Plain language guidelines (plainlanguage.gov)",
-          "kind": "link"
+          "title": "Plain language guidelines",
+          "kind": "link",
+          "guide": "Rules for clear writing — check one piece of your writing against them."
         }
       ],
       "checks": [
@@ -2562,24 +2227,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpsvr82",
-          "title": "GCSE Business (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Business",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [
@@ -2620,29 +2277,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/agile/product-management/prioritization-framework",
-          "title": "Prioritisation frameworks (Atlassian)",
-          "kind": "link"
+          "title": "Prioritisation frameworks",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/",
-          "title": "RICE: simple prioritisation (Intercom)",
-          "kind": "link"
+          "title": "RICE: simple prioritisation",
+          "kind": "link",
+          "guide": "Articles by working product managers — read one and note an idea to try."
         },
         {
           "url": "https://www.mindtools.com/a2az7e1/how-to-say-no",
-          "title": "How to say no (Mind Tools)",
-          "kind": "link"
+          "title": "How to say no",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -2683,24 +2333,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/team-playbook/plays/roles-and-responsibilities",
-          "title": "How to define roles and responsibilities (Atlassian)",
-          "kind": "link"
+          "title": "How to define roles and responsibilities",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         },
         {
           "url": "https://www.skillsyouneed.com/ips/team-working.html",
-          "title": "Team working skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Team working skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -2741,29 +2383,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.gov.uk/service-manual/measuring-success",
-          "title": "Measuring success (UK Government Digital Service)",
-          "kind": "link"
+          "title": "Measuring success",
+          "kind": "link",
+          "guide": "How a government digital team does it — read the summary and use the checklist."
         },
         {
           "url": "https://www.nngroup.com/articles/vanity-metrics/",
-          "title": "Vanity metrics: add context to add meaning (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Vanity metrics: add context to add meaning",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.mindtools.com/a4wo118/smart-goals",
-          "title": "SMART goals (Mind Tools)",
-          "kind": "link"
+          "title": "SMART goals",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -2804,24 +2439,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.atlassian.com/team-playbook/plays/pre-mortem",
-          "title": "How to run a pre-mortem (Atlassian)",
-          "kind": "link"
+          "title": "How to run a pre-mortem",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/small-business-guide",
-          "title": "Small organisations guide to cyber security (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Small organisations guide to cyber security",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         }
       ],
       "checks": [
@@ -2862,29 +2489,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://grow.google/certificates/project-management/",
-          "title": "Google Project Management Certificate — the professional route after this course",
-          "kind": "link"
-        },
-        {
-          "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage — free business and marketing courses with certificates",
-          "kind": "link"
-        },
-        {
           "url": "https://www.ted.com/playlists/574/how_to_make_a_great_presentation",
-          "title": "How to make a great presentation (TED)",
-          "kind": "link"
+          "title": "How to make a great presentation",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         },
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.smedan.gov.ng/",
-          "title": "Small business support (SMEDAN (Small and Medium Enterprises Development Agency of Nigeria))",
-          "kind": "link"
+          "title": "Small business support",
+          "kind": "link",
+          "guide": "The Nigerian official body for this — see what they do and how they help young businesses."
         }
       ],
       "checks": [

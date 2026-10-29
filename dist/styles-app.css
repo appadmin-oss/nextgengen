@@ -7300,8 +7300,12 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 .cur-mat { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-height: 44px; border-radius: var(--r-sm);
   background: var(--cream-50); border: 1px solid var(--line-cool-soft); color: var(--ink-900); text-decoration: none; }
 .cur-mat:hover { border-color: var(--line-cool); }
-.cur-mat-title { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
-.cur-mat-kind { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--ink-500); }
+.cur-mat-body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.cur-mat-title { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.cur-mat-guide { color: var(--ink-700); font-size: 14px; line-height: 1.45; }
+.cur-mat-src { font-family: var(--font-mono); font-size: 11px; color: var(--ink-500); overflow-wrap: anywhere; }
+.cur-mat-icon { align-self: flex-start; padding-top: 2px; }
+.cur-mat-kind { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--ink-500); white-space: nowrap; align-self: center; }
 .cur-checks { display: grid; gap: 14px; }
 .cur-check { border: 1px solid var(--line-cool-soft); border-radius: var(--r-md); padding: 12px 14px; margin: 0; display: grid; gap: 8px; }
 .cur-check legend { font-weight: 600; color: var(--ink-900); padding: 0 4px; }
@@ -7336,6 +7340,8 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 .cur-staff-detail { padding: 12px 14px; display: grid; gap: 8px; }
 .cur-staff-detail .cur-text, .cur-staff-detail .cur-objectives { color: rgba(230, 238, 255, .85); }
 .cur-staff-detail .cur-mat { background: rgba(255, 255, 255, .06); color: inherit; border-color: rgba(255, 255, 255, .15); }
+.cur-staff-detail .cur-mat-guide { color: rgba(230, 238, 255, .85); }
+.cur-staff-detail .cur-mat-src, .cur-staff-detail .cur-mat-kind { color: rgba(230, 238, 255, .7); }
 /* Control Room */
 .cur-admin-filters { grid-template-columns: 2fr repeat(2, minmax(0, 1fr)) auto; }
 .cur-admin-title { font-weight: 650; text-align: left; }
@@ -14551,7 +14557,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .led-more[open] > summary { margin-bottom: 10px; }
 
 .led-mat { display: grid; grid-template-columns: 1fr; gap: 8px; align-items: center; }
-@container (min-width: 34rem) { .led-mat { grid-template-columns: 1fr 1.6fr auto auto; } }
+@container (min-width: 34rem) { .led-mat { grid-template-columns: 1fr 1.6fr auto auto; } .led-mat-guide { grid-column: 1 / 3; grid-row: 2; } }
 .led-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .led-upload { cursor: pointer; }
 .led-x {

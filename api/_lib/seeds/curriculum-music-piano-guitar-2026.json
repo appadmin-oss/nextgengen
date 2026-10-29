@@ -24,17 +24,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/piano/",
-          "title": "Piano: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Piano: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://learningmusic.ableton.com/notes-and-scales/notes-and-scales.html",
-          "title": "Explore pitch (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Explore pitch",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -76,18 +79,21 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: steps and scales",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
           "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://learningmusic.ableton.com/notes-and-scales/notes-and-scales.html",
-          "title": "Explore pitch (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Explore pitch",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -129,13 +135,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: triads",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -176,19 +184,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons: articulation (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons: articulation",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -229,24 +234,28 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.classicfm.com/discover-music/instruments/piano/",
-          "title": "Piano (Classic FM)",
-          "kind": "link"
+          "title": "Piano",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -287,19 +296,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/advanced-topics/inversions.html",
-          "title": "Inversions (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Inversions",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -340,19 +352,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://musescore.com/sheetmusic",
-          "title": "MuseScore — free sheet music to sight-read",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://musescore.org/en/handbook",
-          "title": "MuseScore handbook (MuseScore)",
-          "kind": "link"
+          "title": "MuseScore handbook",
+          "kind": "link",
+          "guide": "The free notation program’s manual — look up exactly what you need to write, then do it."
         }
       ],
       "checks": [
@@ -394,18 +403,21 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/notes-and-scales/minor-scales.html",
-          "title": "Minor scales (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Minor scales",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -447,13 +459,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -495,13 +509,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Music theory exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web: ear training (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web: ear training",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -542,19 +558,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://musescore.com/sheetmusic",
-          "title": "MuseScore — free sheet music to sight-read",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: note duration and measures",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Rhythm exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Rhythm exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         }
       ],
       "checks": [
@@ -595,14 +608,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "url": "https://www.classicfm.com/discover-music/instruments/piano/",
+          "title": "Piano",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         },
         {
-          "url": "https://www.classicfm.com/discover-music/instruments/piano/",
-          "title": "Piano (Classic FM)",
-          "kind": "link"
+          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -643,13 +658,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: key signatures",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Key signature exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         }
       ],
       "checks": [
@@ -691,13 +708,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/notes-and-scales/minor-scales.html",
-          "title": "Minor scales (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Minor scales",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -739,13 +758,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/inversions.html",
-          "title": "Inversions (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Inversions",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -786,19 +807,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -840,13 +864,15 @@
       "materials": [
         {
           "url": "https://artsandculture.google.com/search?q=highlife",
-          "title": "Search: highlife (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: highlife",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -888,13 +914,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Ear training exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web: ear training (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web: ear training",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -935,19 +963,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/make-melodies/make-melodies.html",
-          "title": "Make melodies (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make melodies",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -988,14 +1019,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
+          "title": "Taking care of your voice (for singers you accompany)",
+          "kind": "link",
+          "guide": "Health advice for your voice — read it once and follow it every day."
         },
         {
-          "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
-          "title": "Taking care of your voice (for singers you accompany) (US National Institute on Deafness and Other Communication Disorders)",
-          "kind": "link"
+          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -1037,13 +1070,15 @@
       "materials": [
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -1084,19 +1119,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://musescore.com/sheetmusic",
-          "title": "MuseScore — free sheet music to sight-read",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/make-melodies/make-melodies.html",
-          "title": "Make melodies (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make melodies",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://musescore.org/en/handbook",
-          "title": "MuseScore handbook (MuseScore)",
-          "kind": "link"
+          "title": "MuseScore handbook",
+          "kind": "link",
+          "guide": "The free notation program’s manual — look up exactly what you need to write, then do it."
         }
       ],
       "checks": [
@@ -1137,13 +1169,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -1185,13 +1219,15 @@
       "materials": [
         {
           "url": "https://www.classicfm.com/discover-music/instruments/piano/",
-          "title": "Piano (Classic FM)",
-          "kind": "link"
+          "title": "Piano",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         },
         {
           "url": "https://musescore.org/en/handbook",
-          "title": "MuseScore handbook (MuseScore)",
-          "kind": "link"
+          "title": "MuseScore handbook",
+          "kind": "link",
+          "guide": "The free notation program’s manual — look up exactly what you need to write, then do it."
         }
       ],
       "checks": [
@@ -1231,19 +1267,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
-          "title": "Acoustic guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Acoustic guitar: instrument guide",
+          "kind": "link",
+          "guide": "For the whole course: how the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         }
       ],
       "checks": [
@@ -1284,19 +1317,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
-          "title": "Acoustic guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Acoustic guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1337,24 +1367,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -1395,19 +1423,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/notes-and-scales/minor-scales.html",
-          "title": "Minor scales (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Minor scales",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -1448,19 +1479,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
-          "title": "Acoustic guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Acoustic guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1501,24 +1529,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/make-melodies/make-melodies.html",
-          "title": "Make melodies (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make melodies",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -1559,19 +1585,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://musescore.com/sheetmusic",
-          "title": "MuseScore — free sheet music to sight-read",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://musescore.org/en/handbook",
-          "title": "MuseScore handbook (MuseScore)",
-          "kind": "link"
+          "title": "MuseScore handbook",
+          "kind": "link",
+          "guide": "The free notation program’s manual — look up exactly what you need to write, then do it."
         }
       ],
       "checks": [
@@ -1613,13 +1636,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/notes-and-scales/minor-scales.html",
-          "title": "Minor scales (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Minor scales",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -1661,13 +1686,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -1709,13 +1736,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Music theory exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -1756,19 +1785,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons: rhythm and meter (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons: rhythm and meter",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -1810,13 +1842,15 @@
       "materials": [
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
-          "title": "Acoustic guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Acoustic guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -1856,19 +1890,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/electric_guitar/",
-          "title": "Electric guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Electric guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -1909,19 +1940,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/classical_guitar/",
-          "title": "Classical guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Classical guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.classical-guitar-school.com/",
-          "title": "The Guitar School (Classical Guitar School)",
-          "kind": "link"
+          "title": "The Guitar School",
+          "kind": "link",
+          "guide": "Free classical-guitar studies and lessons — choose one at your level and learn it slowly."
         }
       ],
       "checks": [
@@ -1962,19 +1990,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://artsandculture.google.com/search?q=juju%20music",
-          "title": "Search: jùjú music (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: jùjú music",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -2016,13 +2047,15 @@
       "materials": [
         {
           "url": "https://artsandculture.google.com/search?q=highlife",
-          "title": "Search: highlife (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: highlife",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         },
         {
           "url": "https://artsandculture.google.com/search?q=king%20sunny%20ade",
-          "title": "Search: King Sunny Adé (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: King Sunny Adé",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         }
       ],
       "checks": [
@@ -2064,13 +2097,15 @@
       "materials": [
         {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
-          "title": "Acoustic guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Acoustic guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -2112,13 +2147,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Ear training exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web: ear training (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web: ear training",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -2159,19 +2196,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/electric_guitar/",
-          "title": "Electric guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Electric guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://learningmusic.ableton.com/make-melodies/make-melodies.html",
-          "title": "Make melodies (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make melodies",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -2213,13 +2247,15 @@
       "materials": [
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
-          "title": "Taking care of your voice (for singers you accompany) (US National Institute on Deafness and Other Communication Disorders)",
-          "kind": "link"
+          "title": "Taking care of your voice (for singers you accompany)",
+          "kind": "link",
+          "guide": "Health advice for your voice — read it once and follow it every day."
         }
       ],
       "checks": [
@@ -2261,13 +2297,15 @@
       "materials": [
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/electric_guitar/",
-          "title": "Electric guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Electric guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -2309,13 +2347,15 @@
       "materials": [
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://learningmusic.ableton.com/make-melodies/make-melodies.html",
-          "title": "Make melodies (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make melodies",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -2357,13 +2397,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
-          "title": "Acoustic guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Acoustic guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -2404,14 +2446,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
-          "title": "Acoustic guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
+          "title": "Acoustic guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -2453,17 +2497,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/piano/",
-          "title": "Piano: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Piano: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.mindtools.com/a4wo118/smart-goals",
-          "title": "SMART goals (Mind Tools)",
-          "kind": "link"
+          "title": "SMART goals",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -2505,13 +2552,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: scales",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.classicfm.com/discover-music/instruments/piano/",
-          "title": "Piano (Classic FM)",
-          "kind": "link"
+          "title": "Piano",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         }
       ],
       "checks": [
@@ -2553,13 +2602,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.classicfm.com/discover-music/instruments/piano/",
-          "title": "Piano (Classic FM)",
-          "kind": "link"
+          "title": "Piano",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         }
       ],
       "checks": [
@@ -2600,19 +2651,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://musescore.com/sheetmusic",
-          "title": "MuseScore — free sheet music to sight-read",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Note identification exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons: clefs and the staff (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons: clefs and the staff",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         }
       ],
       "checks": [
@@ -2654,13 +2702,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: diatonic triads",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -2703,17 +2753,14 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.classicfm.com/discover-music/instruments/piano/",
-          "title": "Piano (Classic FM)",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "Piano",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         }
       ],
       "checks": [
@@ -2755,13 +2802,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: time signatures",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Rhythm exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Rhythm exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         }
       ],
       "checks": [
@@ -2803,13 +2852,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -2851,13 +2902,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: seventh chords",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -2900,17 +2953,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/piano/",
-          "title": "Piano: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Piano: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.classicfm.com/discover-music/instruments/piano/",
-          "title": "Piano (Classic FM)",
-          "kind": "link"
+          "title": "Piano",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         }
       ],
       "checks": [
@@ -2952,13 +3008,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -2999,14 +3057,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "url": "https://www.musictheory.net/exercises",
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
-          "url": "https://www.musictheory.net/exercises",
-          "title": "Music theory exercises (musictheory.net)",
-          "kind": "link"
+          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -3048,17 +3108,14 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/notes-and-scales/minor-scales.html",
-          "title": "Minor scales (Ableton Learning Music)",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Minor scales",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -3101,17 +3158,14 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/inversions.html",
-          "title": "Inversions (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Inversions",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -3152,19 +3206,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
-          "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -3207,17 +3258,14 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://imslp.org/",
-          "title": "IMSLP: free scores (International Music Score Library Project)",
-          "kind": "link"
+          "title": "IMSLP: free scores",
+          "kind": "link",
+          "guide": "Free, legal sheet music: search for the composer or piece you are learning and download the score."
         }
       ],
       "checks": [
@@ -3258,19 +3306,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://musescore.com/sheetmusic",
-          "title": "MuseScore — free sheet music to sight-read",
-          "kind": "link"
-        },
-        {
           "url": "https://imslp.org/",
-          "title": "IMSLP: free scores (International Music Score Library Project)",
-          "kind": "link"
+          "title": "IMSLP: free scores",
+          "kind": "link",
+          "guide": "Free, legal sheet music: search for the composer or piece you are learning and download the score."
         },
         {
           "url": "https://www.classicfm.com/discover-music/",
-          "title": "Discover music (Classic FM)",
-          "kind": "link"
+          "title": "Discover music",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         }
       ],
       "checks": [
@@ -3311,19 +3356,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/advanced-topics/modes.html",
-          "title": "Modes (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Modes",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -3366,17 +3414,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://musescore.org/en/handbook",
-          "title": "MuseScore handbook (MuseScore)",
-          "kind": "link"
+          "title": "MuseScore handbook",
+          "kind": "link",
+          "guide": "The free notation program’s manual — look up exactly what you need to write, then do it."
         }
       ],
       "checks": [
@@ -3418,18 +3469,21 @@
       "materials": [
         {
           "url": "https://learningmusic.ableton.com/",
-          "title": "Learning Music: get started (Ableton)",
-          "kind": "link"
+          "title": "Learning Music: get started",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://learningsynths.ableton.com/",
-          "title": "Learning Synths (Ableton)",
-          "kind": "link"
+          "title": "Learning Synths",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.bandlab.com/products/cakewalk",
-          "title": "Cakewalk by BandLab (BandLab)",
-          "kind": "link"
+          "title": "Cakewalk by BandLab",
+          "kind": "link",
+          "guide": "The free software this course uses — install it before the session."
         }
       ],
       "checks": [
@@ -3471,13 +3525,15 @@
       "materials": [
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -3518,19 +3574,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://musescore.com/sheetmusic",
-          "title": "MuseScore — free sheet music to sight-read",
-          "kind": "link"
-        },
-        {
           "url": "https://musescore.org/en/handbook",
-          "title": "MuseScore handbook (MuseScore)",
-          "kind": "link"
+          "title": "MuseScore handbook",
+          "kind": "link",
+          "guide": "The free notation program’s manual — look up exactly what you need to write, then do it."
         },
         {
           "url": "https://learningmusic.ableton.com/make-melodies/make-melodies.html",
-          "title": "Make melodies (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make melodies",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -3572,13 +3625,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -3620,13 +3675,15 @@
       "materials": [
         {
           "url": "https://www.classicfm.com/discover-music/instruments/piano/",
-          "title": "Piano (Classic FM)",
-          "kind": "link"
+          "title": "Piano",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         },
         {
           "url": "https://musescore.org/en/handbook",
-          "title": "MuseScore handbook (MuseScore)",
-          "kind": "link"
+          "title": "MuseScore handbook",
+          "kind": "link",
+          "guide": "The free notation program’s manual — look up exactly what you need to write, then do it."
         }
       ],
       "checks": [
@@ -3668,17 +3725,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
-          "title": "Acoustic guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Acoustic guitar: instrument guide",
+          "kind": "link",
+          "guide": "For the whole course: how the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.mindtools.com/a4wo118/smart-goals",
-          "title": "SMART goals (Mind Tools)",
-          "kind": "link"
+          "title": "SMART goals",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -3721,17 +3781,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/notes-and-scales/notes-and-scales.html",
-          "title": "Explore pitch (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Explore pitch",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Fretboard note exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Fretboard note exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         }
       ],
       "checks": [
@@ -3772,19 +3835,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons: scales (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons: scales",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/electric_guitar/",
-          "title": "Electric guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Electric guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -3825,24 +3885,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://musescore.com/sheetmusic",
-          "title": "MuseScore — free sheet music to sight-read",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/exercises",
           "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://musescore.org/en/handbook/4/tablature",
-          "title": "Customising a tablature staff (MuseScore)",
-          "kind": "link"
+          "title": "Customising a tablature staff",
+          "kind": "link",
+          "guide": "The free notation program’s manual — look up exactly what you need to write, then do it."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons: the staff and note values (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons: the staff and note values",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         }
       ],
       "checks": [
@@ -3884,13 +3942,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: diatonic triads",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/chords/play-with-chords.html",
-          "title": "Play with chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -3933,17 +3993,14 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
-          "title": "Acoustic guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -3985,13 +4042,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: time signatures",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Rhythm exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Rhythm exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         }
       ],
       "checks": [
@@ -4034,17 +4093,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/electric_guitar/",
-          "title": "Electric guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Electric guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -4086,13 +4148,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons: seventh chords",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -4133,19 +4197,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/classical_guitar/",
-          "title": "Classical guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Classical guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://musescore.org/en/handbook/4/tablature",
-          "title": "Customising a tablature staff (MuseScore)",
-          "kind": "link"
+          "title": "Customising a tablature staff",
+          "kind": "link",
+          "guide": "The free notation program’s manual — look up exactly what you need to write, then do it."
         }
       ],
       "checks": [
@@ -4187,13 +4248,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -4235,13 +4298,15 @@
       "materials": [
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Music theory exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         }
       ],
       "checks": [
@@ -4283,17 +4348,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/notes-and-scales/minor-scales.html",
-          "title": "Minor scales (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Minor scales",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -4336,17 +4404,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/electric_guitar/",
-          "title": "Electric guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Electric guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -4387,24 +4458,28 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://artsandculture.google.com/search?q=king%20sunny%20ade",
-          "title": "Search: King Sunny Adé (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: King Sunny Adé",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         },
         {
           "url": "https://artsandculture.google.com/search?q=juju%20music",
-          "title": "Search: jùjú music (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: jùjú music",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
         },
         {
           "url": "https://artsandculture.google.com/search?q=highlife",
-          "title": "Search: highlife (Google Arts & Culture)",
-          "kind": "link"
+          "title": "Search: highlife",
+          "kind": "link",
+          "guide": "Browse the photographs and choose one piece to describe: what it is, how it was made, what it means."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -4445,19 +4520,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/electric_guitar/",
-          "title": "Electric guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Electric guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://learningmusic.ableton.com/make-melodies/make-melodies.html",
-          "title": "Make melodies (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make melodies",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -4498,24 +4570,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://musescore.com/sheetmusic",
-          "title": "MuseScore — free sheet music to sight-read",
-          "kind": "link"
-        },
-        {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/classical_guitar/",
-          "title": "Classical guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Classical guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://imslp.org/",
-          "title": "IMSLP: free scores (International Music Score Library Project)",
-          "kind": "link"
+          "title": "IMSLP: free scores",
+          "kind": "link",
+          "guide": "Free, legal sheet music: search for the composer or piece you are learning and download the score."
         },
         {
           "url": "https://www.classical-guitar-school.com/",
-          "title": "The Guitar School (Classical Guitar School)",
-          "kind": "link"
+          "title": "The Guitar School",
+          "kind": "link",
+          "guide": "Free classical-guitar studies and lessons — choose one at your level and learn it slowly."
         }
       ],
       "checks": [
@@ -4556,19 +4626,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.google.com/search?q=metronome",
-          "title": "A free online metronome",
-          "kind": "link"
-        },
-        {
           "url": "https://learningmusic.ableton.com/advanced-topics/modes.html",
-          "title": "Modes (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Modes",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "Music theory lessons (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
+        },
+        {
+          "url": "https://www.metronomeonline.com/",
+          "title": "Free online metronome",
+          "kind": "interactive",
+          "guide": "Set the tempo the lesson asks for and practise with it running — speed up only when it is clean."
         }
       ],
       "checks": [
@@ -4611,17 +4684,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://musescore.org/en/handbook/4/tablature",
-          "title": "Customising a tablature staff (MuseScore)",
-          "kind": "link"
+          "title": "Customising a tablature staff",
+          "kind": "link",
+          "guide": "The free notation program’s manual — look up exactly what you need to write, then do it."
         }
       ],
       "checks": [
@@ -4663,18 +4739,21 @@
       "materials": [
         {
           "url": "https://www.soundonsound.com/techniques",
-          "title": "Recording and mixing techniques (Sound On Sound)",
-          "kind": "link"
+          "title": "Recording and mixing techniques",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         },
         {
           "url": "https://www.shure.com/en-US/insights",
-          "title": "Audio insights and guides (Shure)",
-          "kind": "link"
+          "title": "Audio insights and guides",
+          "kind": "link",
+          "guide": "Practical microphone and sound guides from a microphone maker — read the one on today’s topic."
         },
         {
           "url": "https://www.who.int/news-room/fact-sheets/detail/deafness-and-hearing-loss",
-          "title": "Deafness and hearing loss: safe listening (World Health Organization)",
-          "kind": "link"
+          "title": "Deafness and hearing loss: safe listening",
+          "kind": "link",
+          "guide": "The World Health Organization’s fact sheet — read the key facts."
         }
       ],
       "checks": [
@@ -4716,13 +4795,15 @@
       "materials": [
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -4765,17 +4846,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://learningmusic.ableton.com/make-melodies/make-melodies.html",
-          "title": "Make melodies (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make melodies",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -4817,13 +4901,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "musictheory.net — note, key and interval trainers",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -4864,14 +4950,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
-          "title": "Acoustic guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         },
         {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "url": "https://www.yamaha.com/en/musical_instrument_guide/acoustic_guitar/",
+          "title": "Acoustic guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         }
       ],
       "checks": [
@@ -4913,17 +5001,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.mindtools.com/a4wo118/smart-goals",
-          "title": "SMART goals (Mind Tools)",
-          "kind": "link"
+          "title": "SMART goals",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.classicfm.com/discover-music/",
-          "title": "Discover music (Classic FM)",
-          "kind": "link"
+          "title": "Discover music",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         }
       ],
       "checks": [
@@ -4966,17 +5057,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (tempo and timing) (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats (tempo and timing)",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Music theory exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         }
       ],
       "checks": [
@@ -5018,13 +5112,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -5066,13 +5162,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/calculators",
-          "title": "Music theory tools (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory tools",
+          "kind": "link",
+          "guide": "Tools that build any scale, chord or key signature for you — use them to check your own answers."
         }
       ],
       "checks": [
@@ -5115,17 +5213,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.skillsyouneed.com/ips/team-working.html",
-          "title": "Team working skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Team working skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -5168,17 +5269,14 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -5220,13 +5318,15 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -5269,17 +5369,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.soundonsound.com/techniques",
-          "title": "Recording and mixing techniques (Sound On Sound)",
-          "kind": "link"
+          "title": "Recording and mixing techniques",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         },
         {
           "url": "https://www.izotope.com/en/learn.html",
-          "title": "Production tips and tutorials (iZotope)",
-          "kind": "link"
+          "title": "Production tips and tutorials",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         }
       ],
       "checks": [
@@ -5322,17 +5425,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.childnet.com/young-people/",
-          "title": "Online safety for young people (Childnet International)",
-          "kind": "link"
+          "title": "Online safety for young people",
+          "kind": "link",
+          "guide": "Online-safety advice for young people — read it and talk about it with someone you trust."
         }
       ],
       "checks": [
@@ -5375,17 +5481,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Music theory exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.atlassian.com/team-playbook/plays/pre-mortem",
-          "title": "How to run a pre-mortem (Atlassian)",
-          "kind": "link"
+          "title": "How to run a pre-mortem",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         }
       ],
       "checks": [
@@ -5428,17 +5537,14 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -5481,17 +5587,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -5533,17 +5642,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/piano/",
-          "title": "Piano: musical instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Piano: musical instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://www.classicfm.com/discover-music/instruments/piano/",
-          "title": "Piano (Classic FM)",
-          "kind": "link"
+          "title": "Piano",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         }
       ],
       "checks": [
@@ -5586,17 +5698,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Ear training exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Ear training exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -5639,17 +5754,14 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
-        },
-        {
-          "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/inversions.html",
-          "title": "Inversions (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Inversions",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -5692,22 +5804,26 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.wipo.int/copyright/en/",
-          "title": "Copyright (World Intellectual Property Organization)",
-          "kind": "link"
+          "title": "Copyright",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         },
         {
           "url": "https://creativecommons.org/licenses/",
-          "title": "About Creative Commons licences (Creative Commons)",
-          "kind": "link"
+          "title": "About Creative Commons licences",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         },
         {
           "url": "https://musicbrainz.org/doc/About",
-          "title": "About MusicBrainz (open music metadata) (MusicBrainz)",
-          "kind": "link"
+          "title": "About MusicBrainz (open music metadata)",
+          "kind": "link",
+          "guide": "How music is credited and catalogued — check how one of your favourite songs is listed."
         }
       ],
       "checks": [
@@ -5750,17 +5866,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.wipo.int/copyright/en/",
-          "title": "Copyright (World Intellectual Property Organization)",
-          "kind": "link"
+          "title": "Copyright",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         }
       ],
       "checks": [
@@ -5803,17 +5922,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.skillsyouneed.com/ips/team-working.html",
-          "title": "Team working skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Team working skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -5856,17 +5978,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.mindtools.com/a4wo118/smart-goals",
-          "title": "SMART goals (Mind Tools)",
-          "kind": "link"
+          "title": "SMART goals",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.soundonsound.com/techniques",
-          "title": "Recording and mixing techniques (Sound On Sound)",
-          "kind": "link"
+          "title": "Recording and mixing techniques",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         }
       ],
       "checks": [
@@ -5909,17 +6034,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -5961,18 +6089,21 @@
       "materials": [
         {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Music theory exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -6015,17 +6146,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.skillsyouneed.com/ips/team-working.html",
-          "title": "Team working skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Team working skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -6068,17 +6202,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.atlassian.com/team-playbook/plays/pre-mortem",
-          "title": "How to run a pre-mortem (Atlassian)",
-          "kind": "link"
+          "title": "How to run a pre-mortem",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         }
       ],
       "checks": [
@@ -6121,17 +6258,20 @@
         {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://datamanagement.hms.harvard.edu/plan-design/file-naming-conventions",
-          "title": "File naming conventions (Harvard Medical School Data Management)",
-          "kind": "link"
+          "title": "File naming conventions",
+          "kind": "link",
+          "guide": "Rules for naming files so anyone can find them — apply them to your folder."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/always-back-up-your-most-important-data",
-          "title": "Back up your data (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Back up your data",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         }
       ],
       "checks": [
@@ -6171,24 +6311,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.mindtools.com/a4wo118/smart-goals",
-          "title": "SMART goals (Mind Tools)",
-          "kind": "link"
+          "title": "SMART goals",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.classicfm.com/discover-music/",
-          "title": "Discover music (Classic FM)",
-          "kind": "link"
+          "title": "Discover music",
+          "kind": "link",
+          "guide": "Background listening: read about the music, then listen to one piece it recommends."
         }
       ],
       "checks": [
@@ -6229,24 +6367,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (tempo and timing) (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats (tempo and timing)",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Music theory exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         }
       ],
       "checks": [
@@ -6287,19 +6423,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -6340,19 +6473,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/calculators",
-          "title": "Music theory tools (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory tools",
+          "kind": "link",
+          "guide": "Tools that build any scale, chord or key signature for you — use them to check your own answers."
         }
       ],
       "checks": [
@@ -6393,24 +6523,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.skillsyouneed.com/ips/team-working.html",
-          "title": "Team working skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Team working skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -6451,24 +6579,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://learningmusic.ableton.com/make-beats/make-beats.html",
-          "title": "Make beats (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make beats",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -6509,19 +6635,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -6562,24 +6685,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.soundonsound.com/techniques",
-          "title": "Recording and mixing techniques (Sound On Sound)",
-          "kind": "link"
+          "title": "Recording and mixing techniques",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         },
         {
           "url": "https://www.izotope.com/en/learn.html",
-          "title": "Production tips and tutorials (iZotope)",
-          "kind": "link"
+          "title": "Production tips and tutorials",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         }
       ],
       "checks": [
@@ -6620,24 +6741,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.childnet.com/young-people/",
-          "title": "Online safety for young people (Childnet International)",
-          "kind": "link"
+          "title": "Online safety for young people",
+          "kind": "link",
+          "guide": "Online-safety advice for young people — read it and talk about it with someone you trust."
         }
       ],
       "checks": [
@@ -6678,24 +6797,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Music theory exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.atlassian.com/team-playbook/plays/pre-mortem",
-          "title": "How to run a pre-mortem (Atlassian)",
-          "kind": "link"
+          "title": "How to run a pre-mortem",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         }
       ],
       "checks": [
@@ -6736,24 +6853,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         },
         {
           "url": "https://www.bbc.co.uk/bitesize/subjects/zpf3cdm",
-          "title": "GCSE Music (BBC Bitesize)",
-          "kind": "link"
+          "title": "GCSE Music",
+          "kind": "link",
+          "guide": "Read the guide on today’s topic and take its short quiz to check yourself."
         }
       ],
       "checks": [
@@ -6794,24 +6909,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -6851,24 +6964,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.yamaha.com/en/musical_instrument_guide/electric_guitar/",
-          "title": "Electric guitar: instrument guide (Yamaha)",
-          "kind": "link"
+          "title": "Electric guitar: instrument guide",
+          "kind": "link",
+          "guide": "How the instrument works and how to look after it — read it once, come back when something sounds wrong."
         },
         {
           "url": "https://learningmusic.ableton.com/make-melodies/make-melodies.html",
-          "title": "Make melodies (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Make melodies",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -6909,24 +7020,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Ear training exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Ear training exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -6967,24 +7076,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/seventh-chords.html",
-          "title": "Seventh chords (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Seventh chords",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://learningmusic.ableton.com/advanced-topics/inversions.html",
-          "title": "Inversions (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Inversions",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -7025,29 +7132,28 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.wipo.int/copyright/en/",
-          "title": "Copyright (World Intellectual Property Organization)",
-          "kind": "link"
+          "title": "Copyright",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         },
         {
           "url": "https://creativecommons.org/licenses/",
-          "title": "About Creative Commons licences (Creative Commons)",
-          "kind": "link"
+          "title": "About Creative Commons licences",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         },
         {
           "url": "https://musicbrainz.org/doc/About",
-          "title": "About MusicBrainz (open music metadata) (MusicBrainz)",
-          "kind": "link"
+          "title": "About MusicBrainz (open music metadata)",
+          "kind": "link",
+          "guide": "How music is credited and catalogued — check how one of your favourite songs is listed."
         }
       ],
       "checks": [
@@ -7088,24 +7194,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         },
         {
           "url": "https://www.wipo.int/copyright/en/",
-          "title": "Copyright (World Intellectual Property Organization)",
-          "kind": "link"
+          "title": "Copyright",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         }
       ],
       "checks": [
@@ -7146,24 +7250,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.skillsyouneed.com/ips/team-working.html",
-          "title": "Team working skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Team working skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://learningmusic.ableton.com/song-structure/song-structure.html",
-          "title": "Play with song structures (Ableton Learning Music)",
-          "kind": "link"
+          "title": "Play with song structures",
+          "kind": "interactive",
+          "guide": "Interactive: play with the examples in your browser, then try the same idea on your instrument."
         }
       ],
       "checks": [
@@ -7204,24 +7306,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.mindtools.com/a4wo118/smart-goals",
-          "title": "SMART goals (Mind Tools)",
-          "kind": "link"
+          "title": "SMART goals",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.soundonsound.com/techniques",
-          "title": "Recording and mixing techniques (Sound On Sound)",
-          "kind": "link"
+          "title": "Recording and mixing techniques",
+          "kind": "link",
+          "guide": "Articles on recording and mixing — pick one on today’s topic and try its technique."
         }
       ],
       "checks": [
@@ -7262,24 +7362,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -7320,24 +7418,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
-          "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "title": "Music theory lessons",
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.musictheory.net/exercises",
-          "title": "Music theory exercises (musictheory.net)",
-          "kind": "link"
+          "title": "Music theory exercises",
+          "kind": "interactive",
+          "guide": "Choose the drill for today’s topic (notes, keys, intervals or chords) and do ten in a row without a mistake."
         },
         {
           "url": "https://www.teoria.com/",
-          "title": "Music theory web (teoria.com)",
-          "kind": "link"
+          "title": "Music theory web",
+          "kind": "interactive",
+          "guide": "Use the ear-training section: five minutes a day of intervals or chords trains your ear faster than an hour once a week."
         }
       ],
       "checks": [
@@ -7378,24 +7474,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.skillsyouneed.com/ips/team-working.html",
-          "title": "Team working skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Team working skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -7436,24 +7530,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.atlassian.com/team-playbook/plays/pre-mortem",
-          "title": "How to run a pre-mortem (Atlassian)",
-          "kind": "link"
+          "title": "How to run a pre-mortem",
+          "kind": "link",
+          "guide": "A ready-made team exercise with a template — run it with your group."
         }
       ],
       "checks": [
@@ -7494,24 +7586,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.justinguitar.com/",
-          "title": "JustinGuitar — free beginner guitar course",
-          "kind": "link"
-        },
-        {
           "url": "https://www.musictheory.net/lessons",
           "title": "musictheory.net — free theory lessons",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Find the lesson on today’s topic in the list and step through it — each takes a few minutes, with sound."
         },
         {
           "url": "https://datamanagement.hms.harvard.edu/plan-design/file-naming-conventions",
-          "title": "File naming conventions (Harvard Medical School Data Management)",
-          "kind": "link"
+          "title": "File naming conventions",
+          "kind": "link",
+          "guide": "Rules for naming files so anyone can find them — apply them to your folder."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/always-back-up-your-most-important-data",
-          "title": "Back up your data (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Back up your data",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         }
       ],
       "checks": [

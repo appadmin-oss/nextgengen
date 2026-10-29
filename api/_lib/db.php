@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 197;
+const NGG_SCHEMA_TARGET = 198;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5773,6 +5773,14 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_mcr_state ON member_credentials(state, awardedOn);
             CREATE INDEX IF NOT EXISTS idx_mcr_centre ON member_credentials(centre, state);
             CREATE INDEX IF NOT EXISTS idx_mcr_centreid ON member_credentials(centreId);
+        ",
+        198 => "
+            /* WHAT TO DO WITH A MATERIAL. A lesson's links reached a learner
+               as a title and the word LINK, so nothing said whether to read
+               it now, practise on it, or keep it for later. One line per
+               material, written by whoever attaches it, shown under its
+               title. */
+            ALTER TABLE curriculum_materials ADD COLUMN guide TEXT DEFAULT '';
         ",
     ];
 

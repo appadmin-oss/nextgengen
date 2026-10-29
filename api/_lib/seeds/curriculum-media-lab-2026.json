@@ -24,17 +24,20 @@
         {
           "url": "https://applieddigitalskills.withgoogle.com/",
           "title": "Google: Applied Digital Skills",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/always-back-up-your-most-important-data",
-          "title": "Back up your data (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Back up your data",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://datamanagement.hms.harvard.edu/plan-design/file-naming-conventions",
-          "title": "File naming conventions (Harvard Medical School Data Management)",
-          "kind": "link"
+          "title": "File naming conventions",
+          "kind": "link",
+          "guide": "Rules for naming files so anyone can find them — apply them to your folder."
         }
       ],
       "checks": [
@@ -77,23 +80,27 @@
       "materials": [
         {
           "url": "https://beinternetawesome.withgoogle.com/",
-          "title": "Google: Be Internet Awesome",
-          "kind": "link"
+          "title": "Be Internet Awesome",
+          "kind": "link",
+          "guide": "Online-safety advice for young people — read it and talk about it with someone you trust."
         },
         {
           "url": "https://www.commonsense.org/education/digital-citizenship",
           "title": "Common Sense: Digital citizenship",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Online-safety advice for young people — read it and talk about it with someone you trust."
         },
         {
           "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online",
-          "title": "Top tips for staying secure online (UK National Cyber Security Centre)",
-          "kind": "link"
+          "title": "Top tips for staying secure online",
+          "kind": "link",
+          "guide": "Official, plain-English security advice — follow the steps on your own accounts today."
         },
         {
           "url": "https://www.childnet.com/young-people/",
-          "title": "Online safety advice for young people (Childnet International)",
-          "kind": "link"
+          "title": "Online safety advice for young people",
+          "kind": "link",
+          "guide": "Online-safety advice for young people — read it and talk about it with someone you trust."
         }
       ],
       "checks": [
@@ -137,22 +144,26 @@
         {
           "url": "https://applieddigitalskills.withgoogle.com/",
           "title": "Google: Applied Digital Skills",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://hapgood.us/2019/06/19/sift-the-four-moves/",
-          "title": "SIFT: the four moves (Mike Caulfield)",
-          "kind": "link"
+          "title": "SIFT: the four moves",
+          "kind": "link",
+          "guide": "Methods for checking whether something is true — use them on one claim you saw this week."
         },
         {
           "url": "https://newslit.org/",
-          "title": "News Literacy Project (News Literacy Project)",
-          "kind": "link"
+          "title": "News Literacy Project",
+          "kind": "link",
+          "guide": "Methods for checking whether something is true — use them on one claim you saw this week."
         },
         {
           "url": "https://fullfact.org/toolkit/",
-          "title": "How to fact check (Full Fact)",
-          "kind": "link"
+          "title": "How to fact check",
+          "kind": "link",
+          "guide": "Methods for checking whether something is true — use them on one claim you saw this week."
         }
       ],
       "checks": [
@@ -196,17 +207,20 @@
         {
           "url": "https://www.elementsofai.com/",
           "title": "Elements of AI",
-          "kind": "link"
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         },
         {
           "url": "https://code.org/ai",
-          "title": "AI for Oceans and AI lessons (Code.org)",
-          "kind": "link"
+          "title": "AI for Oceans and AI lessons",
+          "kind": "interactive",
+          "guide": "Try it in your browser: train it, test it, and notice where it gets things wrong."
         },
         {
           "url": "https://www.unicef.org/innocenti/reports/policy-guidance-ai-children",
-          "title": "Policy guidance on AI for children (UNICEF)",
-          "kind": "link"
+          "title": "Policy guidance on AI for children",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
         }
       ],
       "checks": [
@@ -248,19 +262,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/design-thinking",
-          "title": "Design thinking (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Design thinking",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://dschool.stanford.edu/resources",
-          "title": "Design thinking resources (Stanford d.school)",
-          "kind": "link"
+          "title": "Design thinking resources",
+          "kind": "link",
+          "guide": "Design-thinking methods with step-by-step guides — pick one that fits today’s task."
         }
       ],
       "checks": [
@@ -303,13 +314,15 @@
       "materials": [
         {
           "url": "https://www.skillsyouneed.com/ips/team-working.html",
-          "title": "Team working skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Team working skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.atlassian.com/agile/scrum/standups",
-          "title": "How to run a stand-up (Atlassian)",
-          "kind": "link"
+          "title": "How to run a stand-up",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [
@@ -339,19 +352,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/visual-hierarchy",
-          "title": "Visual hierarchy (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Visual hierarchy",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.nngroup.com/articles/visual-hierarchy-ux-definition/",
-          "title": "Visual hierarchy in UX (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Visual hierarchy in UX",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -393,24 +403,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://ourworldindata.org/plastic-pollution",
-          "title": "Plastic pollution: the data (Our World in Data (University of Oxford))",
-          "kind": "link"
+          "title": "Plastic pollution: the data",
+          "kind": "link",
+          "guide": "Charts built from real data — read one chart and say what it shows."
         },
         {
           "url": "https://creativecommons.org/licenses/",
-          "title": "About Creative Commons licences (Creative Commons)",
-          "kind": "link"
+          "title": "About Creative Commons licences",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         },
         {
           "url": "https://www.nngroup.com/articles/principles-visual-design/",
-          "title": "Principles of visual design (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Principles of visual design",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -447,29 +455,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.adobe.com/express/learn",
-          "title": "Adobe Express: Learn",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/color-theory",
-          "title": "Colour theory (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Colour theory",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://webaim.org/resources/contrastchecker/",
-          "title": "Contrast checker (WebAIM (Utah State University))",
-          "kind": "link"
+          "title": "Contrast checker",
+          "kind": "interactive",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://www.nngroup.com/articles/color-enhance-design/",
-          "title": "Using colour to enhance design (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Using colour to enhance design",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -511,24 +512,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://fonts.google.com/knowledge/choosing_type",
-          "title": "Choosing type (Google Fonts)",
-          "kind": "link"
+          "title": "Choosing type",
+          "kind": "link",
+          "guide": "How to choose and pair type — apply one rule to your design."
         },
         {
           "url": "https://web.dev/learn/design/typography",
-          "title": "Typography (web.dev (Google))",
-          "kind": "link"
+          "title": "Typography",
+          "kind": "link",
+          "guide": "A short module with live examples — read it and try one example in your own page."
         },
         {
           "url": "https://fonts.google.com/knowledge",
-          "title": "Google Fonts knowledge (Google Fonts)",
-          "kind": "link"
+          "title": "Google Fonts knowledge",
+          "kind": "link",
+          "guide": "How to choose and pair type — apply one rule to your design."
         }
       ],
       "checks": [
@@ -558,19 +557,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/grid-systems",
-          "title": "Grid systems (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Grid systems",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.nngroup.com/articles/using-grids-in-interface-designs/",
-          "title": "Using grids in design (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Using grids in design",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -611,14 +607,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
+          "url": "https://creators.instagram.com/",
+          "title": "Instagram for creators",
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         },
         {
-          "url": "https://creators.instagram.com/",
-          "title": "Instagram for creators (Instagram (Meta))",
-          "kind": "link"
+          "url": "https://www.interaction-design.org/literature/topics/visual-hierarchy",
+          "title": "Visual hierarchy",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         }
       ],
       "checks": [
@@ -648,24 +646,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.adobe.com/express/learn",
-          "title": "Adobe Express: Learn",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/branding",
-          "title": "Branding (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Branding",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.wipo.int/trademarks/en/",
-          "title": "What is a trademark? (World Intellectual Property Organization)",
-          "kind": "link"
+          "title": "What is a trademark?",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         }
       ],
       "checks": [
@@ -694,19 +684,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nngroup.com/articles/principles-visual-design/",
-          "title": "Principles of visual design (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Principles of visual design",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/gestalt-principles",
-          "title": "Gestalt principles (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Gestalt principles",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         }
       ],
       "checks": [
@@ -736,13 +723,15 @@
       "materials": [
         {
           "url": "https://www.interaction-design.org/literature/topics/moodboards",
-          "title": "Mood boards (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Mood boards",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/branding",
-          "title": "Branding (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Branding",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         }
       ],
       "checks": [
@@ -771,19 +760,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/branding",
-          "title": "Branding (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Branding",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://design.google/library",
-          "title": "Branding resources (Google Design)",
-          "kind": "link"
+          "title": "Branding resources",
+          "kind": "link",
+          "guide": "Articles from Google’s designers — read one on today’s topic."
         }
       ],
       "checks": [
@@ -820,24 +806,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.adobe.com/express/learn",
-          "title": "Adobe Express: Learn",
-          "kind": "link"
-        },
-        {
           "url": "https://www.interaction-design.org/literature/topics/rule-of-thirds",
-          "title": "Rule of thirds (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Rule of thirds",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.nationalgeographic.com/photography",
-          "title": "National Geographic photography (National Geographic)",
-          "kind": "link"
+          "title": "National Geographic photography",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         },
         {
           "url": "https://support.google.com/pixelphone/answer/7158570",
-          "title": "Phone photography tips (Google)",
-          "kind": "link"
+          "title": "Phone photography tips",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         }
       ],
       "checks": [
@@ -878,19 +862,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.adobe.com/express/learn",
-          "title": "Adobe Express: Learn",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nikonusa.com/learn-and-explore",
-          "title": "Learn and explore photography (Nikon)",
-          "kind": "link"
+          "title": "Learn and explore photography",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         },
         {
           "url": "https://www.digitalcameraworld.com/tutorials",
-          "title": "Photography tutorials (Digital Camera World)",
-          "kind": "link"
+          "title": "Photography tutorials",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         }
       ],
       "checks": [
@@ -922,17 +903,20 @@
         {
           "url": "https://www.commonsense.org/education/digital-citizenship",
           "title": "Common Sense: Digital citizenship",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Online-safety advice for young people — read it and talk about it with someone you trust."
         },
         {
           "url": "https://www.nikonusa.com/learn-and-explore",
-          "title": "Learn and explore photography (Nikon)",
-          "kind": "link"
+          "title": "Learn and explore photography",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         },
         {
           "url": "https://www.unicef.org/media/reporting-guidelines",
-          "title": "Children's privacy and consent (UNICEF)",
-          "kind": "link"
+          "title": "Children's privacy and consent",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
         }
       ],
       "checks": [
@@ -974,29 +958,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.adobe.com/express/learn",
-          "title": "Adobe Express: Learn",
-          "kind": "link"
-        },
-        {
           "url": "https://support.google.com/snapseed/",
-          "title": "Snapseed help (Google)",
-          "kind": "link"
+          "title": "Snapseed help",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://support.google.com/photos/answer/6128850",
-          "title": "Edit photos in Google Photos (Google)",
-          "kind": "link"
+          "title": "Edit photos in Google Photos",
+          "kind": "link",
+          "guide": "The tool’s own help page — keep it open while you do today’s task."
         },
         {
           "url": "https://nppa.org/resources/code-ethics",
-          "title": "NPPA code of ethics (National Press Photographers Association)",
-          "kind": "link"
+          "title": "NPPA code of ethics",
+          "kind": "link",
+          "guide": "A photographer’s code of ethics — read it before you photograph people."
         }
       ],
       "checks": [
@@ -1028,22 +1005,26 @@
         {
           "url": "https://applieddigitalskills.withgoogle.com/",
           "title": "Google: Applied Digital Skills",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.nngroup.com/articles/how-users-read-on-the-web/",
-          "title": "Writing for the web (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Writing for the web",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.plainlanguage.gov/guidelines/",
-          "title": "Plain language guidelines (plainlanguage.gov)",
-          "kind": "link"
+          "title": "Plain language guidelines",
+          "kind": "link",
+          "guide": "Rules for clear writing — check one piece of your writing against them."
         },
         {
           "url": "https://www.bbc.co.uk/academy/en",
-          "title": "BBC Academy (BBC)",
-          "kind": "link"
+          "title": "BBC Academy",
+          "kind": "link",
+          "guide": "How BBC journalists and producers learn the craft — read the guide on today’s skill."
         }
       ],
       "checks": [
@@ -1073,13 +1054,15 @@
       "materials": [
         {
           "url": "https://www.khanacademy.org/computing/pixar/storytelling",
-          "title": "Pixar in a Box: the art of storytelling (Khan Academy with Pixar)",
-          "kind": "link"
+          "title": "Pixar in a Box: the art of storytelling",
+          "kind": "link",
+          "guide": "Watch the short videos and try the practice questions."
         },
         {
           "url": "https://www.ted.com/talks/chimamanda_ngozi_adichie_the_danger_of_a_single_story",
-          "title": "The danger of a single story (Chimamanda Ngozi Adichie (TED))",
-          "kind": "link"
+          "title": "The danger of a single story",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         }
       ],
       "checks": [
@@ -1109,13 +1092,15 @@
       "materials": [
         {
           "url": "https://www.nationalgeographic.com/photography",
-          "title": "National Geographic photography (National Geographic)",
-          "kind": "link"
+          "title": "National Geographic photography",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         },
         {
           "url": "https://www.unicef.org/media/reporting-guidelines",
-          "title": "Ethical storytelling (UNICEF)",
-          "kind": "link"
+          "title": "Ethical storytelling",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
         }
       ],
       "checks": [
@@ -1144,19 +1129,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.adobe.com/express/learn",
-          "title": "Adobe Express: Learn",
-          "kind": "link"
-        },
-        {
           "url": "https://www.nationalgeographic.com/photography",
-          "title": "Photo essay examples (National Geographic)",
-          "kind": "link"
+          "title": "Photo essay examples",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         },
         {
           "url": "https://www.unicef.org/media/reporting-guidelines",
-          "title": "Ethical storytelling (UNICEF)",
-          "kind": "link"
+          "title": "Ethical storytelling",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
         }
       ],
       "checks": [
@@ -1194,17 +1176,20 @@
         {
           "url": "https://www.youtube.com/creators/",
           "title": "YouTube Creators",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/storyboards",
-          "title": "Storyboards (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Storyboards",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.khanacademy.org/computing/pixar/storytelling",
-          "title": "Pixar in a Box: storyboarding (Khan Academy with Pixar)",
-          "kind": "link"
+          "title": "Pixar in a Box: storyboarding",
+          "kind": "link",
+          "guide": "Watch the short videos and try the practice questions."
         }
       ],
       "checks": [
@@ -1248,17 +1233,20 @@
         {
           "url": "https://www.youtube.com/creators/",
           "title": "YouTube Creators",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         },
         {
           "url": "https://www.w3.org/WAI/media/av/",
-          "title": "Video accessibility: planning (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Video accessibility: planning",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://www.nikonusa.com/learn-and-explore",
-          "title": "Learn and explore (Nikon)",
-          "kind": "link"
+          "title": "Learn and explore",
+          "kind": "link",
+          "guide": "Photography lessons and examples — study one photo and say why it works."
         }
       ],
       "checks": [
@@ -1290,17 +1278,20 @@
         {
           "url": "https://www.capcut.com/",
           "title": "CapCut",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://www.blackmagicdesign.com/products/davinciresolve/training",
           "title": "DaVinci Resolve training",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://www.capcut.com/resource",
-          "title": "CapCut resources (CapCut)",
-          "kind": "link"
+          "title": "CapCut resources",
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         }
       ],
       "checks": [
@@ -1344,22 +1335,26 @@
         {
           "url": "https://www.capcut.com/",
           "title": "CapCut",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://www.youtube.com/audiolibrary",
-          "title": "YouTube Audio Library (YouTube)",
-          "kind": "link"
+          "title": "YouTube Audio Library",
+          "kind": "link",
+          "guide": "Free music and sound effects you may use in videos — check each track’s licence terms."
         },
         {
           "url": "https://www.w3.org/WAI/media/av/captions/",
-          "title": "Captions and subtitles (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Captions and subtitles",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://creativecommons.org/licenses/",
-          "title": "About Creative Commons licences (Creative Commons)",
-          "kind": "link"
+          "title": "About Creative Commons licences",
+          "kind": "link",
+          "guide": "Explains who owns creative work and how you may use it — read before you use anyone else’s."
         }
       ],
       "checks": [
@@ -1403,17 +1398,20 @@
         {
           "url": "https://www.youtube.com/creators/",
           "title": "YouTube Creators",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         },
         {
           "url": "https://www.bbc.co.uk/academy/en",
-          "title": "Interviewing guide (BBC Academy)",
-          "kind": "link"
+          "title": "Interviewing guide",
+          "kind": "link",
+          "guide": "How BBC journalists and producers learn the craft — read the guide on today’s skill."
         },
         {
           "url": "https://www.unicef.org/media/reporting-guidelines",
-          "title": "Reporting on children: ethical guidelines (UNICEF)",
-          "kind": "link"
+          "title": "Reporting on children: ethical guidelines",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
         }
       ],
       "checks": [
@@ -1443,13 +1441,15 @@
       "materials": [
         {
           "url": "https://www.interaction-design.org/literature/topics/storyboards",
-          "title": "Storyboards (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Storyboards",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         },
         {
           "url": "https://www.ted.com/talks/chimamanda_ngozi_adichie_the_danger_of_a_single_story",
-          "title": "The danger of a single story (Chimamanda Ngozi Adichie (TED))",
-          "kind": "link"
+          "title": "The danger of a single story",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         }
       ],
       "checks": [
@@ -1480,17 +1480,20 @@
         {
           "url": "https://www.capcut.com/",
           "title": "CapCut",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://www.blackmagicdesign.com/products/davinciresolve/training",
           "title": "DaVinci Resolve training",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://nppa.org/resources/code-ethics",
-          "title": "NPPA code of ethics (National Press Photographers Association)",
-          "kind": "link"
+          "title": "NPPA code of ethics",
+          "kind": "link",
+          "guide": "A photographer’s code of ethics — read it before you photograph people."
         }
       ],
       "checks": [
@@ -1521,22 +1524,26 @@
         {
           "url": "https://www.capcut.com/",
           "title": "CapCut",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://www.blackmagicdesign.com/products/davinciresolve/training",
           "title": "DaVinci Resolve training",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://www.w3.org/WAI/media/av/",
-          "title": "Making audio and video accessible (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Making audio and video accessible",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://www.capcut.com/resource",
-          "title": "CapCut resources (CapCut)",
-          "kind": "link"
+          "title": "CapCut resources",
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         }
       ],
       "checks": [
@@ -1575,22 +1582,26 @@
         {
           "url": "https://www.commonsense.org/education/digital-citizenship",
           "title": "Common Sense: Digital citizenship",
-          "kind": "link"
+          "kind": "link",
+          "guide": "Online-safety advice for young people — read it and talk about it with someone you trust."
         },
         {
           "url": "https://creators.instagram.com/",
-          "title": "Instagram for creators (Instagram (Meta))",
-          "kind": "link"
+          "title": "Instagram for creators",
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         },
         {
           "url": "https://www.youtube.com/creators/",
-          "title": "YouTube Creators (YouTube)",
-          "kind": "link"
+          "title": "YouTube Creators",
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         },
         {
           "url": "https://beinternetawesome.withgoogle.com/",
-          "title": "Be Internet Awesome (Google)",
-          "kind": "link"
+          "title": "Be Internet Awesome",
+          "kind": "link",
+          "guide": "Online-safety advice for young people — read it and talk about it with someone you trust."
         }
       ],
       "checks": [
@@ -1632,13 +1643,15 @@
       "materials": [
         {
           "url": "https://www.nngroup.com/articles/content-strategy/",
-          "title": "Content strategy (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Content strategy",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         },
         {
           "url": "https://www.youtube.com/creators/",
-          "title": "YouTube Creators (YouTube)",
-          "kind": "link"
+          "title": "YouTube Creators",
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         }
       ],
       "checks": [
@@ -1670,17 +1683,20 @@
         {
           "url": "https://applieddigitalskills.withgoogle.com/",
           "title": "Google: Applied Digital Skills",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage (Google)",
-          "kind": "link"
+          "title": "Google Digital Garage",
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.nngroup.com/articles/how-users-read-on-the-web/",
-          "title": "How people read online (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "How people read online",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -1724,12 +1740,14 @@
         {
           "url": "https://www.elementsofai.com/",
           "title": "Elements of AI",
-          "kind": "link"
+          "kind": "link",
+          "guide": "A free online course from the University of Helsinki — do one chapter a week alongside these lessons."
         },
         {
           "url": "https://www.unicef.org/innocenti/reports/policy-guidance-ai-children",
-          "title": "Policy guidance on AI for children (UNICEF)",
-          "kind": "link"
+          "title": "Policy guidance on AI for children",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
         }
       ],
       "checks": [
@@ -1760,17 +1778,20 @@
         {
           "url": "https://www.capcut.com/",
           "title": "CapCut",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://www.youtube.com/creators/",
-          "title": "YouTube Creators (YouTube)",
-          "kind": "link"
+          "title": "YouTube Creators",
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         },
         {
           "url": "https://www.capcut.com/resource",
-          "title": "CapCut resources (CapCut)",
-          "kind": "link"
+          "title": "CapCut resources",
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         }
       ],
       "checks": [
@@ -1799,13 +1820,15 @@
       "materials": [
         {
           "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage (Google)",
-          "kind": "link"
+          "title": "Google Digital Garage",
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.nngroup.com/articles/content-strategy/",
-          "title": "Content strategy (Nielsen Norman Group)",
-          "kind": "link"
+          "title": "Content strategy",
+          "kind": "link",
+          "guide": "A short, research-based article — read it and write down one thing you will apply."
         }
       ],
       "checks": [
@@ -1833,24 +1856,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.capcut.com/",
           "title": "CapCut",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://www.w3.org/WAI/tutorials/images/decision-tree/",
-          "title": "Alt text decision tree (W3C Web Accessibility Initiative)",
-          "kind": "link"
+          "title": "Alt text decision tree",
+          "kind": "link",
+          "guide": "The accessibility standard’s own guidance — check today’s work against it."
         },
         {
           "url": "https://creators.instagram.com/",
-          "title": "Instagram for creators (Instagram (Meta))",
-          "kind": "link"
+          "title": "Instagram for creators",
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         }
       ],
       "checks": [
@@ -1879,24 +1900,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.capcut.com/",
           "title": "CapCut",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage (Google)",
-          "kind": "link"
+          "title": "Google Digital Garage",
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.youtube.com/creators/",
-          "title": "YouTube Creators (YouTube)",
-          "kind": "link"
+          "title": "YouTube Creators",
+          "kind": "link",
+          "guide": "The platform’s own advice to creators — read what it says about today’s topic."
         }
       ],
       "checks": [
@@ -1934,17 +1953,20 @@
         {
           "url": "https://applieddigitalskills.withgoogle.com/",
           "title": "Google: Applied Digital Skills",
-          "kind": "link"
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         },
         {
           "url": "https://www.atlassian.com/agile/kanban/boards",
-          "title": "What is a Kanban board? (Atlassian)",
-          "kind": "link"
+          "title": "What is a Kanban board?",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         },
         {
           "url": "https://www.atlassian.com/agile/scrum/standups",
-          "title": "How to run a stand-up (Atlassian)",
-          "kind": "link"
+          "title": "How to run a stand-up",
+          "kind": "link",
+          "guide": "A practical guide with templates — use one for your task."
         }
       ],
       "checks": [
@@ -1986,13 +2008,15 @@
       "materials": [
         {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://www.skillsyouneed.com/ips/team-working.html",
-          "title": "Team working skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Team working skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -2022,24 +2046,16 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
-          "url": "https://www.adobe.com/express/learn",
-          "title": "Adobe Express: Learn",
-          "kind": "link"
-        },
-        {
           "url": "https://docs.github.com/en/account-and-profile/setting-up-and-managing-your-github-profile/customizing-your-profile/about-your-profile",
-          "title": "About your profile and portfolio (GitHub Docs)",
-          "kind": "link"
+          "title": "About your profile and portfolio",
+          "kind": "link",
+          "guide": "Follow the guide and try each step in your own project."
         },
         {
           "url": "https://www.interaction-design.org/literature/topics/design-thinking",
-          "title": "Design thinking (Interaction Design Foundation)",
-          "kind": "link"
+          "title": "Design thinking",
+          "kind": "link",
+          "guide": "A clear explanation with examples — read it before you start designing."
         }
       ],
       "checks": [
@@ -2068,13 +2084,15 @@
       "materials": [
         {
           "url": "https://www.ted.com/talks/chimamanda_ngozi_adichie_the_danger_of_a_single_story",
-          "title": "The danger of a single story (Chimamanda Ngozi Adichie (TED))",
-          "kind": "link"
+          "title": "The danger of a single story",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         },
         {
           "url": "https://www.unicef.org/media/reporting-guidelines",
-          "title": "Reporting on children: ethical guidelines (UNICEF)",
-          "kind": "link"
+          "title": "Reporting on children: ethical guidelines",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
         }
       ],
       "checks": [
@@ -2103,24 +2121,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.capcut.com/",
           "title": "CapCut",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://www.mindtools.com/a0edu3n/giving-feedback",
-          "title": "Giving feedback (Mind Tools)",
-          "kind": "link"
+          "title": "Giving feedback",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://nppa.org/resources/code-ethics",
-          "title": "NPPA code of ethics (National Press Photographers Association)",
-          "kind": "link"
+          "title": "NPPA code of ethics",
+          "kind": "link",
+          "guide": "A photographer’s code of ethics — read it before you photograph people."
         }
       ],
       "checks": [
@@ -2150,13 +2166,15 @@
       "materials": [
         {
           "url": "https://www.ted.com/playlists/574/how_to_make_a_great_presentation",
-          "title": "How to make a great presentation (TED)",
-          "kind": "link"
+          "title": "How to make a great presentation",
+          "kind": "link",
+          "guide": "Watch the talk (subtitles available) and note one idea you will use."
         },
         {
           "url": "https://www.skillsyouneed.com/presentation-skills.html",
-          "title": "Presentation skills (SkillsYouNeed)",
-          "kind": "link"
+          "title": "Presentation skills",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         }
       ],
       "checks": [
@@ -2184,24 +2202,22 @@
       "passMark": 60,
       "materials": [
         {
-          "url": "https://www.canva.com/designschool/",
-          "title": "Canva Design School",
-          "kind": "link"
-        },
-        {
           "url": "https://www.capcut.com/",
           "title": "CapCut",
-          "kind": "link"
+          "kind": "link",
+          "guide": "The editing app’s own tutorials — follow one for the edit you are making today."
         },
         {
           "url": "https://www.unicef.org/media/reporting-guidelines",
-          "title": "Ethical storytelling (UNICEF)",
-          "kind": "link"
+          "title": "Ethical storytelling",
+          "kind": "link",
+          "guide": "Guidance on protecting children in stories, media and technology — read the key principles."
         },
         {
           "url": "https://www.khanacademy.org/computing/pixar",
-          "title": "Pixar in a Box (Khan Academy with Pixar)",
-          "kind": "link"
+          "title": "Pixar in a Box",
+          "kind": "link",
+          "guide": "Watch the short videos and try the practice questions."
         }
       ],
       "checks": [
@@ -2231,13 +2247,15 @@
       "materials": [
         {
           "url": "https://www.mindtools.com/a4wo118/smart-goals",
-          "title": "SMART goals (Mind Tools)",
-          "kind": "link"
+          "title": "SMART goals",
+          "kind": "link",
+          "guide": "A short how-to — read it and practise one technique this week."
         },
         {
           "url": "https://learndigital.withgoogle.com/digitalgarage",
-          "title": "Google Digital Garage (Google)",
-          "kind": "link"
+          "title": "Google Digital Garage",
+          "kind": "link",
+          "guide": "For the whole course: a free or low-cost certificate route to take once you finish."
         }
       ],
       "checks": [

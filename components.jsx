@@ -3766,6 +3766,15 @@ function curMaterialViewer(m, fileUrl) {
   if (k === "image") return { type: "image", src: u };
   return null;
 }
+/* What a learner DOES with each kind — the verb on the row, not a file type. */
+const CUR_MATERIAL_VERB = { pdf: "Read", slides: "Slides", doc: "Document", sheet: "Spreadsheet", video: "Watch", audio: "Listen",
+  image: "Look", ebook: "Book", code: "Code", archive: "Download", interactive: "Practise", link: "Read" };
+/** Where a material comes from, in words: the site's name, or "Lesson file" for one of ours. */
+function curMaterialSource(url) {
+  const u = String(url || "");
+  if (u.indexOf("/api/") === 0 || /\/curriculum-file\.php|\/lesson-file\.php/.test(u)) return "Lesson file";
+  try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return ""; }
+}
 function CurriculumMaterials({ materials, fileUrl }) {
   const [open, setOpen] = React.useState("");
   if (!materials || !materials.length) return null;
@@ -3784,14 +3793,11 @@ function CurriculumMaterials({ materials, fileUrl }) {
             <div className="cur-mat-row">
               {viewer
                 ? <button type="button" className="cur-mat" aria-expanded={!!isOpen} onClick={() => setOpen(isOpen ? "" : id)}>
-                    <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
-                    <span className="cur-mat-title">{m.title || m.url}</span>
-                    <span className="cur-mat-kind">{isOpen ? "Close" : (m.kind === "audio" ? "Listen" : m.kind === "image" ? "View" : m.kind === "pdf" ? "Read here" : "Watch")}</span>
+                    <CurMaterialFace m={m} verb={isOpen ? "Close" : (m.kind === "audio" ? "Listen" : m.kind === "image" ? "View" : m.kind === "pdf" ? "Read here" : "Watch")}/>
                   </button>
                 : <a className="cur-mat" href={away} target="_blank" rel="noopener noreferrer">
-                    <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
-                    <span className="cur-mat-title">{m.title || m.url}</span>
-                    <span className="cur-mat-kind">{m.kind}</span>
+                    <CurMaterialFace m={m} verb={(CUR_MATERIAL_VERB[m.kind] || "Open") + " ↗"}/>
+                    <span className="sr-only"> (opens in a new tab)</span>
                   </a>}
               {viewer && <a className="cur-mat-open" href={away} target="_blank" rel="noopener noreferrer" aria-label={"Open " + (m.title || "material") + " in a new tab"}>Open ↗</a>}
             </div>
@@ -3807,6 +3813,24 @@ function CurriculumMaterials({ materials, fileUrl }) {
         );
       })}
     </ul>
+  );
+}
+
+/* One material's face: what it is, what to do with it, and where it is from.
+   The guide line is the point — a title and the word LINK told a child
+   nothing about whether to read it now, practise on it or keep it. */
+function CurMaterialFace({ m, verb }) {
+  const src = curMaterialSource(m.url);
+  return (
+    <>
+      <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
+      <span className="cur-mat-body">
+        <span className="cur-mat-title">{m.title || m.url}</span>
+        {m.guide && <span className="cur-mat-guide">{m.guide}</span>}
+        {src && <span className="cur-mat-src">{src}</span>}
+      </span>
+      <span className="cur-mat-kind">{verb}</span>
+    </>
   );
 }
 

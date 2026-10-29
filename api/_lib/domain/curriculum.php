@@ -68,6 +68,7 @@ const CURR_MARKING_GUIDE = [
 const CURR_IMPORT_MAX     = 1000;
 const CURR_BULK_MAX       = 500;
 const CURR_MAX_MATERIALS  = 20;
+const CURR_MATERIAL_GUIDE_MAX = 240;
 const CURR_MAX_CHECKS     = 30;
 
 /* ══ Shapes ═══════════════════════════════════════════════════════════════ */
@@ -109,6 +110,9 @@ function curriculum_material_kind(string $kind, string $url): string {
         (bool)preg_match('/\.(py|ino|js|sb3|md)$/', $path) => 'code',
         (bool)preg_match('/\.zip$/', $path) => 'archive',
         (bool)preg_match('~(scratch\.mit\.edu|replit\.com|codepen\.io|phet\.colorado\.edu|geogebra\.org|desmos\.com|tinkercad\.com|wokwi\.com|code\.org)~', $url) => 'interactive',
+        /* Places a learner practises rather than reads: exercises that mark
+           themselves, sandboxes, interactive lessons. */
+        (bool)preg_match('~(musictheory\.net/exercises|teoria\.com|sqlbolt\.com|regex101\.com|freecodecamp\.org/learn|learningmusic\.ableton\.com|learningsynths\.ableton\.com|musiclab\.chromeexperiments\.com|picoctf\.org|teachablemachine\.withgoogle\.com|skills\.github\.com|webaim\.org/resources/contrastchecker)~', $url) => 'interactive',
         default => 'link',
     };
 }
@@ -176,7 +180,7 @@ function curriculum_unit_public(array $u, array $materials, array $checks, bool 
             $url = curriculum_media_url((string)$m['url']);
             if ($url === '') return null;
             return ['materialId' => (string)$m['materialId'], 'kind' => (string)$m['kind'],
-                    'title' => (string)$m['title'], 'url' => $url];
+                    'title' => (string)$m['title'], 'url' => $url, 'guide' => (string)($m['guide'] ?? '')];
         }, $materials))),
         'checks' => array_map(static function ($c) use ($withAnswers) {
             $o = ['checkId' => (string)$c['checkId'], 'kind' => (string)$c['kind'], 'prompt' => (string)$c['prompt'],
@@ -598,7 +602,9 @@ function curriculum_validate(array $d, bool $allowNewCourse = false): array {
         $url = curriculum_material_url((string)($m['url'] ?? ''));
         if ($url === '') return ['ok' => false, 'error' => 'bad_material_url', 'detail' => 'material ' . ($i + 1) . ' needs an https link or an uploaded file'];
         $materials[] = ['url' => $url, 'kind' => curriculum_material_kind((string)($m['kind'] ?? ''), $url),
-                        'title' => curriculum_clean_text($m['title'] ?? '', 200) ?: basename((string)parse_url($url, PHP_URL_PATH)) ?: 'Material'];
+                        'title' => curriculum_clean_text($m['title'] ?? '', 200) ?: basename((string)parse_url($url, PHP_URL_PATH)) ?: 'Material',
+                        /* One line for the learner: what to do with it. */
+                        'guide' => curriculum_clean_text($m['guide'] ?? '', CURR_MATERIAL_GUIDE_MAX)];
         if (count($materials) > CURR_MAX_MATERIALS) return ['ok' => false, 'error' => 'too_many_materials', 'max' => CURR_MAX_MATERIALS];
     }
 
@@ -692,7 +698,7 @@ function curriculum_fingerprint_stored(array $bundle): string {
     $unit = ['course' => (string)$u['course'], 'level' => (string)$u['level'], 'week' => (int)$u['week'], 'position' => (int)$u['position'],
         'title' => (string)$u['title'], 'summary' => (string)$u['summary'], 'objectives' => (string)$u['objectives'], 'body' => (string)$u['body'],
         'durationMins' => (int)$u['durationMins'], 'passMark' => (int)$u['passMark']];
-    $mats = array_map(static fn($m) => ['url' => (string)$m['url'], 'kind' => (string)$m['kind'], 'title' => (string)$m['title']], $bundle['materials']);
+    $mats = array_map(static fn($m) => ['url' => (string)$m['url'], 'kind' => (string)$m['kind'], 'title' => (string)$m['title'], 'guide' => (string)($m['guide'] ?? '')], $bundle['materials']);
     /* Every field the validated shape carries has to appear here too, in the
        same order: these two hashes are compared to decide "unchanged", so a
        field on one side and not the other makes every row look edited —
@@ -733,7 +739,7 @@ function curriculum_write(array $v, ?array $existing, string $by, string $source
         db_exec("DELETE FROM curriculum_materials WHERE unitId = ? AND COALESCE(status,'approved') = 'approved'", [$unitId]);
         foreach ($v['materials'] as $i => $m) {
             db_insert('curriculum_materials', ['materialId' => 'MAT-' . strtoupper(rand_hex(5)), 'unitId' => $unitId, 'kind' => $m['kind'],
-                'title' => $m['title'], 'url' => $m['url'], 'position' => $i + 1, 'createdAt' => $now, 'status' => 'approved', 'submittedBy' => $by]);
+                'title' => $m['title'], 'url' => $m['url'], 'guide' => $m['guide'] ?? '', 'position' => $i + 1, 'createdAt' => $now, 'status' => 'approved', 'submittedBy' => $by]);
         }
         /* Checks keep their ids where the editor sent them back, so a progress
            row's answers still point at the question they answered. */

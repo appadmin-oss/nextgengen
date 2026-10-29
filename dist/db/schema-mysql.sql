@@ -4656,3 +4656,7 @@ CREATE TABLE IF NOT EXISTS member_credentials (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (197) ON DUPLICATE KEY UPDATE version = version;
+
+-- 198: one line telling the learner what to do with a lesson material
+ALTER TABLE curriculum_materials ADD COLUMN guide TEXT;
+INSERT INTO schema_version (version) VALUES (198) ON DUPLICATE KEY UPDATE version = version;
