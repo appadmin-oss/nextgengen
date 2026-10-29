@@ -33643,5 +33643,39 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($save === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $save;
 })();
 
+
+/* A revised shipped curriculum reaches a deployment seeded from an older one
+   (2026-10-29: the fuller lessons). Only a lesson still exactly as shipped
+   takes the new text; one an instructor saved stays theirs; an answer already
+   given keeps pointing at its unchanged question. */
+(function () {
+    $saveCfg = $GLOBALS['CONFIG']['seed_bundled_curriculum'] ?? null;
+    unset($GLOBALS['CONFIG']['seed_bundled_curriculum']);
+    $row = static fn($w, $body) => ['course' => 'Piano', 'level' => 'Year 9 · Seedtest', 'week' => $w, 'position' => 1, 'title' => 'Seed test ' . $w,
+        'summary' => 'S', 'objectives' => ['O'], 'body' => $body, 'durationMins' => 30, 'passMark' => 50, 'materials' => [],
+        'checks' => [['kind' => 'mcq', 'prompt' => 'Pick one', 'options' => ['a', 'b'], 'answer' => '0', 'points' => 1],
+                     ['kind' => 'task', 'prompt' => 'Show what you did', 'rubric' => 'Did it', 'points' => 2]]];
+    $file = static fn($a, $b) => ['seedtest' => ['key' => 'seedtest', 'allowNewCourse' => true, 'lessons' => [$row(1, $a), $row(2, $b)]]];
+    $GLOBALS['__curriculum_seed_files'] = $file('Short one.', 'Short two.');
+    db_exec("DELETE FROM settings WHERE settingKey = 'seed_curriculum_seedtest'");
+    curriculum_seed_bundled_once();
+    $u = static fn($w) => db_row("SELECT * FROM curriculum_units WHERE level = 'Year 9 · Seedtest' AND week = ?", [$w]);
+    chk('seed refresh · the first file seeds both lessons', $u(1) && $u(2) && $u(1)['body'] === 'Short one.');
+    $chk1 = db_row('SELECT checkId FROM curriculum_checks WHERE unitId = ? ORDER BY position LIMIT 1', [$u(1)['unitId']])['checkId'];
+    // An instructor edits lesson 2 through the editor's path.
+    db_update('curriculum_units', ['body' => 'Mine now.', 'updatedBy' => 'NGG-INSTR'], ['unitId' => $u(2)['unitId']]);
+    curriculum_seed_bundled_once();
+    chk('seed refresh · the same file again changes nothing', $u(1)['body'] === 'Short one.');
+    $GLOBALS['__curriculum_seed_files'] = $file("Short one.\n\n## Understand it\n\nMuch more.", "Short two, fuller.");
+    curriculum_seed_bundled_once();
+    chk('seed refresh · a revised file updates a lesson still as shipped', str_contains($u(1)['body'], 'Much more.'));
+    chk('seed refresh · …and leaves a lesson an instructor saved alone', $u(2)['body'] === 'Mine now.');
+    chk('seed refresh · …and an unchanged question keeps its id', (bool)db_row('SELECT 1 FROM curriculum_checks WHERE checkId = ? AND unitId = ?', [$chk1, $u(1)['unitId']]));
+    unset($GLOBALS['__curriculum_seed_files']);
+    foreach ([1, 2] as $w) { $x = $u($w); if ($x) { db_exec('DELETE FROM curriculum_checks WHERE unitId = ?', [$x['unitId']]); db_exec('DELETE FROM curriculum_materials WHERE unitId = ?', [$x['unitId']]); db_exec('DELETE FROM curriculum_units WHERE unitId = ?', [$x['unitId']]); } }
+    db_exec("DELETE FROM settings WHERE settingKey = 'seed_curriculum_seedtest'");
+    if ($saveCfg !== null) $GLOBALS['CONFIG']['seed_bundled_curriculum'] = $saveCfg;
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

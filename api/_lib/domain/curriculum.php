@@ -986,6 +986,7 @@ function admin_curriculum_import(array $p): array {
  * admin.curriculum.seed — with no key, the list; with a key, that course's rows.
  */
 function curriculum_seed_files(): array {
+    if (isset($GLOBALS['__curriculum_seed_files'])) return $GLOBALS['__curriculum_seed_files'];   // test seam
     $out = [];
     foreach (glob(__DIR__ . '/../seeds/curriculum-*.json') ?: [] as $f) {
         $j = json_decode((string)file_get_contents($f), true);
@@ -1037,7 +1038,11 @@ function curriculum_seed_bundled_once(): int {
     $written = 0;
     foreach (curriculum_seed_files() as $key => $j) {
         $flag = 'seed_curriculum_' . preg_replace('/[^a-z0-9]+/', '_', strtolower($key));
-        if ((string)setting_raw($flag) === '1') continue;
+        /* The flag holds the shipped file's revision, so a revised file (the
+           fuller lessons of 2026-10-29) reaches a deployment seeded from an
+           older one. The old flag value '1' is simply an older revision. */
+        $rev = curriculum_seed_revision($j);
+        if ((string)setting_raw($flag) === $rev) continue;
         foreach (($j['lessons'] ?? []) as $row) {
             if (!is_array($row)) continue;
             $row['status'] = 'published';
@@ -1046,15 +1051,37 @@ function curriculum_seed_bundled_once(): int {
             $u = $v['unit'];
             $existing = db_row('SELECT * FROM curriculum_units WHERE course = ? AND level = ? AND week = ? AND position = ? LIMIT 1',
                                [$u['course'], $u['level'], $u['week'], $u['position']]);
-            if ($existing) continue;                       // somebody else's lesson stays theirs
+            if ($existing) {
+                /* Somebody else's lesson stays theirs: only a lesson that is
+                   still exactly as shipped (seeded, never saved by a person)
+                   takes the new text, and its status stays what staff set. */
+                if ((string)$existing['source'] !== 'seed' || (string)$existing['updatedBy'] !== 'system') continue;
+                $b = curriculum_load('unitId = ?', [(string)$existing['unitId']]);
+                $have = reset($b);
+                if (!$have || curriculum_fingerprint_stored($have) === curriculum_fingerprint($v)) continue;
+                $v['unit']['status'] = (string)$existing['status'];
+                // A question that has not changed keeps its id, so an answer already given still points at it.
+                foreach ($v['checks'] as $i => $c) {
+                    $old = $have['checks'][$i] ?? null;
+                    if ($old && (string)$old['prompt'] === (string)$c['prompt'] && (string)$old['kind'] === (string)$c['kind']) $v['checks'][$i]['checkId'] = (string)$old['checkId'];
+                }
+                curriculum_write($v, $existing, 'system', 'seed');
+                $written++;
+                continue;
+            }
             curriculum_write($v, null, 'system', 'seed');
             $written++;
         }
-        setting_set($flag, '1', 'system');
+        setting_set($flag, $rev, 'system');
         if (function_exists('audit')) audit('curriculum.seed', null, $key, ['written' => $written], '');
         break;                                             // one file per request
     }
     return $written;
+}
+
+/** A shipped curriculum file's revision: its lessons, hashed. */
+function curriculum_seed_revision(array $j): string {
+    return 'r' . substr(hash('sha256', json_encode($j['lessons'] ?? [], JSON_UNESCAPED_UNICODE)), 0, 16);
 }
 
 function admin_curriculum_seed(array $p): array {
