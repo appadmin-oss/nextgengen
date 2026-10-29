@@ -3683,6 +3683,14 @@ function curInline(text, keyBase) {
   if (last < s.length) out.push(s.slice(last));
   return out;
 }
+/* A picture in a lesson. One that cannot be loaded (its file lost with a
+   server folder, or its host gone) says so in words instead of showing a
+   broken-image icon, and names what it was, so a learner can ask for it. */
+function CurFigure({ src, alt }) {
+  const [gone, setGone] = React.useState(false);
+  if (gone) return <p className="cur-figure-gone" role="note">{"The picture" + (alt ? " “" + alt + "”" : "") + " could not be loaded. Tell your instructor so they can add it again."}</p>;
+  return <figure className="cur-figure"><img src={src} alt={alt} loading="lazy" onError={() => setGone(true)}/>{alt && <figcaption>{alt}</figcaption>}</figure>;
+}
 function CurriculumText({ text }) {
   const src = String(text || "").replace(/\r\n?/g, "\n");
   if (!src.trim()) return null;
@@ -3722,7 +3730,7 @@ function CurriculumText({ text }) {
           if (/^###\s+/.test(one)) return <h4 key={i} className="cur-text-h4">{curInline(one.replace(/^###\s+/, ""), i)}</h4>;
           if (/^#{1,2}\s+/.test(one)) return <h3 key={i} className="cur-text-h">{curInline(one.replace(/^#{1,2}\s+/, ""), i)}</h3>;
           const img = one.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/);
-          if (img && CUR_SAFE_URL.test(img[2])) return <figure key={i} className="cur-figure"><img src={img[2]} alt={img[1]} loading="lazy"/>{img[1] && <figcaption>{img[1]}</figcaption>}</figure>;
+          if (img && CUR_SAFE_URL.test(img[2])) return <CurFigure key={i} src={img[2]} alt={img[1]}/>;
           const vid = curVideoEmbed(one);
           if (vid) return <div key={i} className="cur-embed"><iframe src={vid.src} title={vid.title} loading="lazy" allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin"/></div>;
         }
@@ -3792,7 +3800,7 @@ function CurriculumMaterials({ materials, fileUrl }) {
                 {viewer.type === "frame" && <iframe src={viewer.src} title={viewer.title} loading="lazy" allow="encrypted-media; picture-in-picture; fullscreen" allowFullScreen/>}
                 {viewer.type === "video" && <video src={viewer.src} controls preload="metadata"/>}
                 {viewer.type === "audio" && <audio src={viewer.src} controls preload="metadata"/>}
-                {viewer.type === "image" && <img src={viewer.src} alt={m.title || ""}/>}
+                {viewer.type === "image" && <CurFigure src={viewer.src} alt={m.title || ""}/>}
               </div>
             )}
           </li>

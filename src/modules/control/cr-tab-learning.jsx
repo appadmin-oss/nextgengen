@@ -712,13 +712,15 @@ function crFormationEdit(ctx, b) {
    lessons, class times, a channel; a course failing children first, each gap
    with what to do and where. */
 const CR_CH_GO = { no_lessons: ["Write lessons", "learning", "curriculum"], no_instructor: ["Give it an instructor", "mentors", "volunteers"],
-  no_class_time: ["Put it on the timetable", "learning", "timetable"], unconfirmed: ["Confirm placements", "members", "courses"] };
+  no_class_time: ["Put it on the timetable", "learning", "timetable"], unconfirmed: ["Confirm placements", "members", "courses"],
+  missing_files: ["Upload the files again", "learning", "curriculum"] };
 function crChOpen(ctx, c) {
   ctx.drawer({
     title: c.course, sub: c.division,
     stats: [["Children", crNum(c.placed) + (c.proposed ? " + " + crNum(c.proposed) + " proposed" : "")], ["Instructors", crNum(c.instructors)], ["Lessons", crNum(c.lessons) + (c.lessonsFromParts ? " (+" + crNum(c.lessonsFromParts) + " under its parts)" : "")]],
     fields: [["Class times", crNum(c.classTimes)], ["Channel", c.channel ? "Yes" : "None yet"]],
-    sections: [{ h: "What is missing", text: (c.gaps || []).map(g => "• " + g.say).join("\n"), empty: "Nothing: it can be taught." }],
+    sections: [{ h: "What is missing", text: (c.gaps || []).map(g => "• " + g.say).join("\n"), empty: "Nothing: it can be taught." }]
+      .concat((c.missingFiles || []).length ? [{ h: "Lesson files to upload again", text: c.missingFiles.map(x => "• " + x).join("\n") }] : []),
     actions: (c.gaps || []).map(g => CR_CH_GO[g.code]).filter(Boolean).map((a, i) => ({ l: a[0], primary: i === 0, run: () => { ctx.closeDrawer(); ctx.go(a[1], a[2]); } })),
   });
 }

@@ -575,6 +575,17 @@ return [
      * and moved across as they are read. */
     'photo_dir' => '',
 
+    /* Where a lesson's uploaded files live — the diagrams, pictures, GIFs,
+     * recordings and documents instructors attach. Same danger as photos: left
+     * empty, they go to a folder beside the web root when the host allows it
+     * (ngg-data/curriculum), else api/storage/curriculum INSIDE the deployed
+     * folder, where replacing the folder deletes them all while the lessons
+     * keep pointing at them. Set a folder outside the web root and back it up.
+     * Files still in the old place are found and moved across as they are
+     * read; with 'storage' (below) configured, each upload is also copied to
+     * the bucket and fetched back from it if the disk copy is ever lost. */
+    'curriculum_dir' => '',
+
     /* File storage on an S3-compatible bucket — Cloudflare R2 (recommended:
      * 10 GB free, no download charges) or Backblaze B2. When every field below
      * is set, EVERY new upload goes here instead of Cloudinary; what Cloudinary

@@ -1632,6 +1632,7 @@
         upsert:  (data, allowNewCourse) => request('/admin/curriculum.php', { body: { action: 'upsert', data, allowNewCourse: !!allowNewCourse } }),
         status:  (status, unitIds) => request('/admin/curriculum.php', { body: { action: 'status', status, unitIds } }),
         seed:    (key) => request('/admin/curriculum.php' + qs({ view: 'seed', key: key || '' })),
+        files:   () => request('/admin/curriculum.php' + qs({ view: 'files' })),
         /* The lessons travel as ONE string value first (`rowsJson`): the host's
            firewall refuses a body with thousands of JSON values before PHP sees
            it, and a bundled course is exactly that. If something in front of PHP

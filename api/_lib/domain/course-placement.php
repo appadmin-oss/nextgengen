@@ -217,6 +217,12 @@ function admin_courses_health(array $p): array {
     $chan = [];
     foreach (db_all("SELECT lower(name) c FROM community_channels WHERE kind = 'course' AND status = 'active'") as $r) $chan[(string)$r['c']] = true;
 
+    // Lesson files a lost folder took (curriculum_missing_files): per course, to upload again.
+    $lost = []; $lostList = [];
+    if (function_exists('curriculum_missing_files')) foreach (curriculum_missing_files() as $x) {
+        $k = mb_strtolower($x['course']); $lost[$k] = ($lost[$k] ?? 0) + 1;
+        if (count($lostList[$k] ?? []) < 30) $lostList[$k][] = 'Week ' . $x['week'] . ' · ' . $x['title'] . ' — ' . $x['label'];
+    }
     $ctx = curriculum_course_ctx(); $out = []; $seen = [];
     $divs = function_exists('nggc_divisions') ? nggc_divisions() : [];
     foreach ($divs as $d) foreach (curriculum_division_courses($d['id'], $ctx) as $c) {
@@ -230,8 +236,9 @@ function admin_courses_health(array $p): array {
         if ($n && !($slots[$k] ?? 0)) $gaps[] = ['no_class_time', 'No class time on the timetable, so children cannot see when it meets.'];
         if ($proposed) $gaps[] = ['unconfirmed', $proposed . ' child' . ($proposed === 1 ? ' is' : 'ren are') . ' only proposed. Confirm them in Members → Courses.'];
         if (!$n && ($own || ($teach[$k] ?? 0))) $gaps[] = ['no_children', 'Nobody is placed in it yet.'];
+        if ($lost[$k] ?? 0) $gaps[] = ['missing_files', $lost[$k] . ' lesson file' . ($lost[$k] === 1 ? ' is' : 's are') . ' missing from the server (a diagram, picture, GIF or recording). Upload ' . ($lost[$k] === 1 ? 'it' : 'them') . ' again in Curriculum.'];
         $out[] = ['course' => $c, 'division' => $d['name'], 'placed' => $placed, 'proposed' => $proposed, 'instructors' => $teach[$k] ?? 0,
-                  'lessons' => $own, 'lessonsFromParts' => $fam, 'classTimes' => $slots[$k] ?? 0, 'channel' => isset($chan[$k]), 'gaps' => array_map(static fn($x) => ['code' => $x[0], 'say' => $x[1]], $gaps)];
+                  'lessons' => $own, 'lessonsFromParts' => $fam, 'classTimes' => $slots[$k] ?? 0, 'channel' => isset($chan[$k]), 'missingFiles' => $lostList[$k] ?? [], 'gaps' => array_map(static fn($x) => ['code' => $x[0], 'say' => $x[1]], $gaps)];
     }
     // The courses with children and gaps first: those are the ones that are failing someone.
     usort($out, static fn($a, $b) => [-(($a['placed'] + $a['proposed']) > 0 && $a['gaps'] ? 1 : 0), -($a['placed'] + $a['proposed']), $a['course']]

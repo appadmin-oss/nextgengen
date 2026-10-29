@@ -12,6 +12,7 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'list');
     if ($view === 'get') $res = gs_call('admin.curriculum.get', ['requesterId' => $mid, 'unitId' => (string)($_GET['unitId'] ?? '')]);
     elseif ($view === 'seed') $res = gs_call('admin.curriculum.seed', ['requesterId' => $mid, 'key' => (string)($_GET['key'] ?? '')]);
+    elseif ($view === 'files') $res = gs_call('admin.curriculum.files', ['requesterId' => $mid]);
     elseif ($view === 'courses') $res = gs_call('admin.club.catalogue.get', ['requesterId' => $mid]);
     elseif ($view === 'coverage') $res = gs_call('admin.curriculum.coverage', ['requesterId' => $mid]);
     elseif ($view === 'divisions') $res = gs_call('admin.curriculum.divisions', ['requesterId' => $mid]);

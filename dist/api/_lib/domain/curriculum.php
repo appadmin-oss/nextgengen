@@ -986,6 +986,7 @@ function admin_curriculum_import(array $p): array {
  * admin.curriculum.seed — with no key, the list; with a key, that course's rows.
  */
 function curriculum_seed_files(): array {
+    if (isset($GLOBALS['__curriculum_seed_files'])) return $GLOBALS['__curriculum_seed_files'];   // test seam
     $out = [];
     foreach (glob(__DIR__ . '/../seeds/curriculum-*.json') ?: [] as $f) {
         $j = json_decode((string)file_get_contents($f), true);
@@ -1037,7 +1038,11 @@ function curriculum_seed_bundled_once(): int {
     $written = 0;
     foreach (curriculum_seed_files() as $key => $j) {
         $flag = 'seed_curriculum_' . preg_replace('/[^a-z0-9]+/', '_', strtolower($key));
-        if ((string)setting_raw($flag) === '1') continue;
+        /* The flag holds the shipped file's revision, so a revised file (the
+           fuller lessons of 2026-10-29) reaches a deployment seeded from an
+           older one. The old flag value '1' is simply an older revision. */
+        $rev = curriculum_seed_revision($j);
+        if ((string)setting_raw($flag) === $rev) continue;
         foreach (($j['lessons'] ?? []) as $row) {
             if (!is_array($row)) continue;
             $row['status'] = 'published';
@@ -1046,15 +1051,37 @@ function curriculum_seed_bundled_once(): int {
             $u = $v['unit'];
             $existing = db_row('SELECT * FROM curriculum_units WHERE course = ? AND level = ? AND week = ? AND position = ? LIMIT 1',
                                [$u['course'], $u['level'], $u['week'], $u['position']]);
-            if ($existing) continue;                       // somebody else's lesson stays theirs
+            if ($existing) {
+                /* Somebody else's lesson stays theirs: only a lesson that is
+                   still exactly as shipped (seeded, never saved by a person)
+                   takes the new text, and its status stays what staff set. */
+                if ((string)$existing['source'] !== 'seed' || (string)$existing['updatedBy'] !== 'system') continue;
+                $b = curriculum_load('unitId = ?', [(string)$existing['unitId']]);
+                $have = reset($b);
+                if (!$have || curriculum_fingerprint_stored($have) === curriculum_fingerprint($v)) continue;
+                $v['unit']['status'] = (string)$existing['status'];
+                // A question that has not changed keeps its id, so an answer already given still points at it.
+                foreach ($v['checks'] as $i => $c) {
+                    $old = $have['checks'][$i] ?? null;
+                    if ($old && (string)$old['prompt'] === (string)$c['prompt'] && (string)$old['kind'] === (string)$c['kind']) $v['checks'][$i]['checkId'] = (string)$old['checkId'];
+                }
+                curriculum_write($v, $existing, 'system', 'seed');
+                $written++;
+                continue;
+            }
             curriculum_write($v, null, 'system', 'seed');
             $written++;
         }
-        setting_set($flag, '1', 'system');
+        setting_set($flag, $rev, 'system');
         if (function_exists('audit')) audit('curriculum.seed', null, $key, ['written' => $written], '');
         break;                                             // one file per request
     }
     return $written;
+}
+
+/** A shipped curriculum file's revision: its lessons, hashed. */
+function curriculum_seed_revision(array $j): string {
+    return 'r' . substr(hash('sha256', json_encode($j['lessons'] ?? [], JSON_UNESCAPED_UNICODE)), 0, 16);
 }
 
 function admin_curriculum_seed(array $p): array {
@@ -3092,16 +3119,57 @@ const CURR_FILE_TYPES = [
     'mov'  => ['video/quicktime'],
 ];
 
-function curriculum_file_dir(): string {
+/* Where a lesson's own files live.
+ *
+ * They were kept only in api/storage/curriculum — inside the website folder —
+ * and a deploy that deletes the folder before uploading the new build took
+ * every uploaded diagram, picture, GIF and recording with it, while the
+ * lessons, in the database, kept pointing at them (owner, 2026-10-29: "all of
+ * the diagrams and illustrations and gifs are no longer there"). Photos had
+ * the same failure and the same fix (domain/photos.php, photo_dir):
+ *
+ *  · `curriculum_dir` in config.php puts them OUTSIDE the website folder;
+ *  · unset, a folder beside the web root when the host allows one
+ *    (ngg-data/curriculum, next to the photos' ngg-data/photos);
+ *  · a file still in the old place is found there and moved across on read;
+ *  · with file storage (an S3 bucket) configured, every upload is also copied
+ *    to the bucket, and a file missing from disk is fetched back from it.
+ */
+function curriculum_file_legacy_dir(): string {
     $base = (string)(($GLOBALS['CONFIG'] ?? [])['db']['sqlite_path'] ?? '');
-    $dir = ($base !== '' ? dirname($base) : (__DIR__ . '/../../storage')) . '/curriculum';
+    return ($base !== '' ? dirname($base) : (__DIR__ . '/../../storage')) . '/curriculum';
+}
+function curriculum_file_guard(string $dir): void {
     if (!is_dir($dir)) @mkdir($dir, 0775, true);
     $ht = $dir . '/.htaccess';
     if (is_dir($dir) && !is_file($ht)) {
         @file_put_contents($ht, "<IfModule mod_authz_core.c>\n  Require all denied\n</IfModule>\n"
             . "<IfModule !mod_authz_core.c>\n  Order allow,deny\n  Deny from all\n</IfModule>\nOptions -Indexes\n");
     }
-    return $dir;
+}
+function curriculum_file_dir(): string {
+    if (isset($GLOBALS['__curriculum_file_dir'])) { curriculum_file_guard($GLOBALS['__curriculum_file_dir']); return $GLOBALS['__curriculum_file_dir']; }   // test seam
+    static $dir = null;
+    if ($dir !== null) return $dir;
+    $legacy = curriculum_file_legacy_dir();
+    $own = rtrim((string)($GLOBALS['CONFIG']['curriculum_dir'] ?? ''), '/');
+    if ($own === '' && function_exists('photo_inside_site') && function_exists('photo_safe_home') && photo_inside_site($legacy)) {
+        $safe = photo_safe_home();
+        if ($safe !== '') $own = dirname($safe) . '/curriculum';
+    }
+    if ($own !== '') {
+        curriculum_file_guard($own);
+        if (is_dir($own) && is_writable($own)) return $dir = $own;
+    }
+    curriculum_file_guard($legacy);
+    return $dir = $legacy;
+}
+/** The bucket key a lesson file is mirrored under. */
+function curriculum_file_bucket_key(string $f): string {
+    return (function_exists('store_folder') ? store_folder() : 'ngg') . '/curriculum/' . $f;
+}
+function curriculum_file_bucket_on(): bool {
+    return isset($GLOBALS['__store_http_mock']) || (function_exists('store_configured') && store_configured());
 }
 
 /**
@@ -3135,17 +3203,70 @@ function curriculum_file_store(array $p, string $by): array {
         if (!$ok) return ['ok' => false, 'error' => 'store_failed'];
         @chmod($dest, 0644);
     }
-    audit('curriculum.file', $by, $file, ['name' => $name, 'bytes' => $size], (string)($p['ip'] ?? ''));
+    // A second copy in the bucket, when there is one: a deploy, a full disk or
+    // a lost folder then costs nothing (curriculum_file_path fetches it back).
+    $mirrored = false;
+    if (curriculum_file_bucket_on()) {
+        $r = store_http('PUT', curriculum_file_bucket_key($file), (string)file_get_contents($dest), ['content-type' => CURR_FILE_TYPES[$ext][0]]);
+        $mirrored = ($r['code'] ?? 0) >= 200 && ($r['code'] ?? 0) < 300;
+    }
+    audit('curriculum.file', $by, $file, ['name' => $name, 'bytes' => $size, 'mirrored' => $mirrored], (string)($p['ip'] ?? ''));
     $url = '/api/member/curriculum-file.php?f=' . $file;
     return ['ok' => true, 'url' => $url, 'kind' => curriculum_material_kind('', 'x.' . $ext), 'bytes' => $size, 'name' => $name];
 }
 
 /** The path of a stored file for a valid name, or '' — a bad name and a
  *  missing file look the same to the caller. */
-function curriculum_file_path(string $f): string {
+function curriculum_file_path(string $f, bool $fetch = true): string {
     if (!preg_match('/^([a-f0-9]{16,64})\.([a-z0-9]{2,5})$/', $f, $m) || !isset(CURR_FILE_TYPES[$m[2]])) return '';
-    $path = curriculum_file_dir() . '/' . $f;
-    return is_file($path) ? $path : '';
+    $dir = curriculum_file_dir();
+    $path = $dir . '/' . $f;
+    if (is_file($path)) return $path;
+    // Still in the old place inside the website folder: move it out of harm's way.
+    $old = curriculum_file_legacy_dir() . '/' . $f;
+    if ($old !== $path && is_file($old)) {
+        if (@rename($old, $path) || @copy($old, $path)) { @chmod($path, 0644); return $path; }
+        return $old;
+    }
+    // Gone from disk, but mirrored: fetch it back once and keep it.
+    if ($fetch && curriculum_file_bucket_on()) {
+        $r = store_http('GET', curriculum_file_bucket_key($f));
+        if (($r['code'] ?? 0) === 200 && ($r['body'] ?? '') !== '' && @file_put_contents($path, $r['body']) !== false) { @chmod($path, 0644); return $path; }
+    }
+    return '';
+}
+
+/**
+ * Every lesson that points at one of its own files that cannot be found —
+ * as a material, or as a picture in its text — so staff can see what a lost
+ * folder took and upload it again. admin.curriculum.files (cap curriculum).
+ */
+function curriculum_missing_files(): array {
+    $out = [];
+    $seen = static function (string $f): bool { return curriculum_file_path($f, false) !== ''; };
+    foreach (db_all("SELECT m.unitId, m.title mt, m.url, u.course, u.title, u.week, u.status FROM curriculum_materials m JOIN curriculum_units u ON u.unitId = m.unitId
+                     WHERE m.url LIKE '%curriculum-file.php?f=%' AND COALESCE(m.status,'approved') = 'approved'") as $r) {
+        if (!preg_match('/[?&]f=([a-f0-9]{16,64}\.[a-z0-9]{2,5})/', (string)$r['url'], $mm) || $seen($mm[1])) continue;
+        $out[] = ['unitId' => (string)$r['unitId'], 'course' => (string)$r['course'], 'title' => (string)$r['title'], 'week' => (int)$r['week'],
+                  'status' => (string)$r['status'], 'where' => 'material', 'label' => (string)$r['mt'], 'file' => $mm[1]];
+    }
+    foreach (db_all("SELECT unitId, course, title, week, status, body FROM curriculum_units WHERE body LIKE '%curriculum-file.php?f=%'") as $r) {
+        if (!preg_match_all('/curriculum-file\.php\?f=([a-f0-9]{16,64}\.[a-z0-9]{2,5})/', (string)$r['body'], $all)) continue;
+        foreach (array_unique($all[1]) as $f) {
+            if ($seen($f)) continue;
+            $out[] = ['unitId' => (string)$r['unitId'], 'course' => (string)$r['course'], 'title' => (string)$r['title'], 'week' => (int)$r['week'],
+                      'status' => (string)$r['status'], 'where' => 'text', 'label' => 'A picture in the lesson text', 'file' => $f];
+        }
+    }
+    usort($out, static fn($a, $b) => strcmp($a['course'], $b['course']) ?: $a['week'] <=> $b['week']);
+    return $out;
+}
+function admin_curriculum_files(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $missing = curriculum_missing_files();
+    return ['ok' => true, 'missing' => array_slice($missing, 0, 500), 'count' => count($missing),
+            'dir' => curriculum_file_dir() === curriculum_file_legacy_dir() ? 'inside_site' : 'outside_site',
+            'mirrored' => curriculum_file_bucket_on()];
 }
 
 /* ══ Due dates, reminders, and the fine for a lesson left undone ══════════════

@@ -33677,5 +33677,55 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($saveCfg !== null) $GLOBALS['CONFIG']['seed_bundled_curriculum'] = $saveCfg;
 })();
 
+
+/* Lesson files survive a deploy (2026-10-29: "all of the diagrams and
+   illustrations and gifs are no longer there"). Uploads went only to
+   api/storage/curriculum, inside the folder a deploy replaces. Now: a file in
+   the old place is moved out on read; with a bucket, every upload is mirrored
+   and a lost disk copy is fetched back; and what is truly gone is listed. */
+(function () {
+    $tmpd = sys_get_temp_dir() . '/ngg-curfiles-' . bin2hex(random_bytes(4));
+    $legacy = curriculum_file_legacy_dir();
+    @mkdir($legacy, 0775, true);
+    $GLOBALS['__curriculum_file_dir'] = $tmpd . '/safe';
+    // 1. A file left in the old place is found, and moved out of the site folder.
+    $f1 = str_repeat('a', 40) . '.gif';
+    file_put_contents($legacy . '/' . $f1, 'GIF89a-legacy');
+    $p1 = curriculum_file_path($f1);
+    chk('lesson files · a file still in the old folder is found', $p1 !== '' && file_get_contents($p1) === 'GIF89a-legacy');
+    chk('lesson files · …and moved out of the website folder as it is read', $p1 === $tmpd . '/safe/' . $f1 && !is_file($legacy . '/' . $f1));
+    // 2. With a bucket: an upload is mirrored, and a lost disk copy comes back.
+    $bucket = [];
+    $GLOBALS['__store_http_mock'] = function ($m, $key, $body = '', $extra = []) use (&$bucket) {
+        if ($m === 'PUT') { $bucket[$key] = $body; return ['code' => 200, 'body' => '']; }
+        if ($m === 'GET') return isset($bucket[$key]) ? ['code' => 200, 'body' => $bucket[$key]] : ['code' => 404, 'body' => ''];
+        return ['code' => 0, 'body' => ''];
+    };
+    $src = $tmpd . '/up.png';
+    file_put_contents($src, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='));
+    $put = curriculum_file_store(['tmp' => $src, 'name' => 'diagram.png'], 'NGG-TEST');
+    preg_match('/f=(.+)$/', (string)($put['url'] ?? ''), $mm); $f2 = $mm[1] ?? '';
+    chk('lesson files · an upload is copied to the bucket too', !empty($put['ok']) && isset($bucket[curriculum_file_bucket_key($f2)]));
+    @unlink($tmpd . '/safe/' . $f2);
+    $p2 = curriculum_file_path($f2);
+    chk('lesson files · a copy lost from disk is fetched back from the bucket', $p2 !== '' && is_file($p2));
+    // 3. Truly gone: listed, per lesson, for staff to upload again.
+    unset($GLOBALS['__store_http_mock']);
+    $gone = str_repeat('b', 40) . '.gif';
+    $now = now_iso();
+    db_insert('curriculum_units', ['unitId' => 'CUR-LOSTF', 'course' => 'Drums', 'level' => 'Year 9 · Lost', 'week' => 3, 'position' => 1, 'title' => 'The backbeat',
+        'summary' => '', 'status' => 'published', 'passMark' => 50, 'version' => 1, 'objectives' => '[]',
+        'body' => "Watch this:\n\n![Backbeat](/api/member/curriculum-file.php?f=$gone)", 'durationMins' => 30, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('curriculum_materials', ['materialId' => 'MAT-LOSTF', 'unitId' => 'CUR-LOSTF', 'kind' => 'image', 'title' => 'Sticking chart',
+        'url' => '/api/member/curriculum-file.php?f=' . str_repeat('c', 40) . '.png', 'position' => 1, 'createdAt' => $now, 'status' => 'approved']);
+    $miss = array_values(array_filter(curriculum_missing_files(), static fn($x) => $x['unitId'] === 'CUR-LOSTF'));
+    chk('lesson files · a lost picture in the text and a lost material are both listed, by lesson', count($miss) === 2
+        && in_array('text', array_column($miss, 'where'), true) && in_array('material', array_column($miss, 'where'), true));
+    $r = admin_curriculum_files(['requesterId' => 'NGG-NOBODY']);
+    chk('lesson files · the list is for curriculum staff only', empty($r['ok']));
+    db_exec("DELETE FROM curriculum_materials WHERE unitId = 'CUR-LOSTF'"); db_exec("DELETE FROM curriculum_units WHERE unitId = 'CUR-LOSTF'");
+    unset($GLOBALS['__curriculum_file_dir']);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
