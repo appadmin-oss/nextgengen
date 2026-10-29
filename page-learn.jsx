@@ -162,10 +162,12 @@ function LearnLessonCard({ u, showCourse }) {
           <span className={"lrn-card-chip " + st.tone}>{st.label}{u.progress && u.progress.attempts > 0 && !u.progress.pending ? " · " + u.progress.bestPct + "%" : ""}</span>
         </span>
         <span className="lrn-card-title">{u.title}</span>
+        {u.summary && <span className="lrn-card-sum">{u.summary}</span>}
         <span className="lrn-card-meta">
           {(u.path ? u.path.code : "Week " + u.week)}
           {u.durationMins ? " · about " + u.durationMins + " minutes" : ""}
           {u.checks ? " · " + u.checks + (u.checks === 1 ? " question" : " questions") : ""}
+          {!late && lrnDue(u) ? " · " + lrnDue(u) : ""}
         </span>
         {late && <span className="lrn-card-late">{u.overdueDays} day{u.overdueDays === 1 ? "" : "s"} late</span>}
       </a>
@@ -262,6 +264,151 @@ function LearnCourseBars({ units }) {
   );
 }
 
+/* ── The richer pieces: a ring, a due date, the next lesson, the term ────── */
+
+/** An in-app link: a real href, and a client-side move on a plain click. */
+function lrnLink(path) {
+  return { href: path, onClick: e => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); lrnGo(path); } };
+}
+const lrnDone = u => !!(u.progress && u.progress.status === "completed");
+/** "Due Sat 31 Oct" from a YYYY-MM-DD, or "". */
+function lrnDue(u) {
+  if (!u.dueDate || lrnDone(u)) return "";
+  const t = new Date(u.dueDate + "T12:00:00");
+  if (isNaN(t)) return "";
+  return "Due " + t.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+}
+/** Minutes as words: "45 min", "2 h 30 min". */
+function lrnDur(m) { m = Math.round(m || 0); return m < 60 ? m + " min" : Math.floor(m / 60) + " h" + (m % 60 ? " " + (m % 60) + " min" : ""); }
+
+/** A progress ring. The number inside is the figure; the ring only draws it. */
+function LearnRing({ pct, size, label, sub }) {
+  const r = 42, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, pct || 0));
+  return (
+    <span className={"lrn-ring" + (size === "sm" ? " is-sm" : size === "lg" ? " is-lg" : "")} role="img" aria-label={label || p + "% done"}>
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <circle className="lrn-ring-bg" cx="50" cy="50" r={r}/>
+        <circle className="lrn-ring-fg" cx="50" cy="50" r={r} strokeDasharray={c} strokeDashoffset={c * (1 - p / 100)}/>
+      </svg>
+      <span className="lrn-ring-n" aria-hidden="true"><b>{p}%</b>{sub && <small>{sub}</small>}</span>
+    </span>
+  );
+}
+
+/* The one lesson to do now, large: what it is about, how long, when it is
+   due, and one button. Everything else on the week is the rest of the list. */
+function LearnUpNext({ u, why, pickup }) {
+  if (!u) return null;
+  const started = !!u.progress && !lrnDone(u);
+  const late = u.overdueDays > 0 && !(u.progress && u.progress.pending);
+  const due = lrnDue(u);
+  /* The whole card is the link: a child taps the lesson, not a button on it. */
+  return (
+    <a className={"lrn-upnext" + (late ? " is-late" : "") + (pickup ? " lrn-pickup" : "")} {...lrnLink("/learn/lesson/" + encodeURIComponent(u.unitId))}>
+      <span className="lrn-upnext-k"><i className={pickup ? "ph-fill ph-play-circle" : late ? "ph-fill ph-warning-circle" : "ph-fill ph-star"} aria-hidden="true"/>{why}</span>
+      <span className="lrn-upnext-c">{u.course || "Whole Club"}{u.path ? " · " + u.path.label : ""}</span>
+      <h2 className="lrn-upnext-t">{u.title}</h2>
+      {u.summary && <span className="lrn-upnext-s">{u.summary}</span>}
+      <span className="lrn-upnext-meta">
+        {u.durationMins > 0 && <span><i className="ph ph-timer" aria-hidden="true"/>About {lrnDur(u.durationMins)}</span>}
+        {u.checks > 0 && <span><i className="ph ph-list-checks" aria-hidden="true"/>{u.checks} {u.checks === 1 ? "question" : "questions"}</span>}
+        {u.materials > 0 && <span><i className="ph ph-paperclip" aria-hidden="true"/>{u.materials} {u.materials === 1 ? "material" : "materials"}</span>}
+        {late ? <span className="is-late"><i className="ph ph-warning" aria-hidden="true"/>{u.overdueDays} day{u.overdueDays === 1 ? "" : "s"} late</span>
+              : due && <span><i className="ph ph-calendar-blank" aria-hidden="true"/>{due}</span>}
+      </span>
+      <span className="lrn-upnext-go">{started ? "Carry on" : "Start the lesson"} <i className="ph ph-arrow-right" aria-hidden="true"/></span>
+    </a>
+  );
+}
+
+/** Lessons in terms: "Y1·T1" → { key, label, weeks: {1: [units]} }, in order. */
+function lrnTerms(units) {
+  const terms = [];
+  units.forEach(u => {
+    const p = u.path || { year: u.year || 0, term: 1, week: u.week, label: "" };
+    const key = (p.year || 0) + "·" + p.term;
+    let t = terms.find(x => x.key === key);
+    if (!t) { t = { key, year: p.year || 0, term: p.term, name: p.termName || "", weeks: {} }; terms.push(t); }
+    (t.weeks[p.week] = t.weeks[p.week] || []).push(u);
+  });
+  return terms.sort((a, b) => a.year - b.year || a.term - b.term);
+}
+/** One week's state: done, late, started, open, or nothing to do. */
+function lrnWeekState(us) {
+  if (!us || !us.length) return "none";
+  if (us.every(lrnDone)) return "done";
+  if (us.some(u => u.overdueDays > 0 && !lrnDone(u) && !(u.progress && u.progress.pending))) return "late";
+  if (us.some(u => u.progress && !lrnDone(u)) || us.some(lrnDone)) return "going";
+  return "open";
+}
+const LRN_WEEK_SAY = { done: "done", late: "late", going: "started", open: "to do", none: "no lessons" };
+
+/* The term at a glance: one cell a week, coloured by where it stands, the
+   week they are on marked. A list says what is next; this says how far. */
+function LearnTermMap({ units, termWeeks, focus }) {
+  const terms = lrnTerms(units);
+  if (!terms.length) return null;
+  const at = terms.find(t => Object.values(t.weeks).some(us => us.some(u => !lrnDone(u)))) || terms[terms.length - 1];
+  const n = Math.max(termWeeks || 12, ...Object.keys(at.weeks).map(Number));
+  const here = focus && focus.path ? focus.path.week : null;
+  const cells = Array.from({ length: n }, (_, i) => i + 1);
+  const doneW = cells.filter(w => lrnWeekState(at.weeks[w]) === "done").length;
+  return (
+    <section className="lrn-term" aria-label="This term, week by week">
+      <div className="lrn-term-head">
+        <h2 className="lrn-sec-h">{(at.year ? "Year " + at.year + " · " : "") + "Term " + at.term + (at.name ? ": " + at.name : "")}</h2>
+        <span className="lrn-term-s">{doneW} of {cells.filter(w => at.weeks[w]).length} weeks done</span>
+      </div>
+      <ol className="lrn-term-grid">
+        {cells.map(w => {
+          const us = at.weeks[w], st = lrnWeekState(us), first = us && (us.find(u => !lrnDone(u)) || us[0]);
+          const label = "Week " + w + ": " + (us ? us.length + (us.length === 1 ? " lesson, " : " lessons, ") : "") + LRN_WEEK_SAY[st] + (w === here ? ", you are here" : "");
+          const inner = <><span className="lrn-term-w">{w}</span><span className="lrn-term-dots" aria-hidden="true">{(us || []).slice(0, 4).map(u => <i key={u.unitId} className={lrnDone(u) ? "is-done" : ""}/>)}</span></>;
+          return (
+            <li key={w} className={"lrn-term-cell is-" + st + (w === here ? " is-here" : "")}>
+              {first ? <a {...lrnLink("/learn/lesson/" + encodeURIComponent(first.unitId))} aria-label={label} title={label}>{inner}</a>
+                     : <span aria-label={label} title={label}>{inner}</span>}
+            </li>
+          );
+        })}
+      </ol>
+      <ul className="lrn-term-key" aria-hidden="true">
+        <li><i className="is-done"/>Done</li><li><i className="is-going"/>Started</li><li><i className="is-open"/>To do</li><li><i className="is-late"/>Late</li>
+      </ul>
+    </section>
+  );
+}
+
+/* What they kept: lessons saved for later, and the last note written. */
+function LearnKept({ d }) {
+  const L = d.learn || {}, byId = {};
+  (d.units || []).forEach(u => { byId[u.unitId] = u; });
+  const saved = (L.saved || []).map(x => byId[x.unitId]).filter(Boolean).slice(0, 4);
+  const note = (L.notes || []).find(x => byId[x.unitId]);
+  if (!saved.length && !note) return null;
+  return (
+    <section className="lrn-kept" aria-label="What you kept">
+      {saved.length > 0 && <>
+        <h2 className="lrn-sec-h">Saved for later</h2>
+        <ul className="lrn-kept-list">
+          {saved.map(u => (
+            <li key={u.unitId}><a {...lrnLink("/learn/lesson/" + encodeURIComponent(u.unitId))}>
+              <i className="ph-fill ph-bookmark-simple" aria-hidden="true"/><span><b>{u.title}</b><small>{u.course || "Whole Club"}</small></span>
+            </a></li>
+          ))}
+        </ul>
+      </>}
+      {note && <>
+        <h2 className="lrn-sec-h">Your latest note</h2>
+        <a className="lrn-kept-note" {...lrnLink("/learn/notes")}>
+          <span>“{note.note.length > 140 ? note.note.slice(0, 140).trim() + "…" : note.note}”</span>
+          <small>On {byId[note.unitId].title}</small>
+        </a>
+      </>}
+    </section>
+  );
+}
+
 /* ── Timetable: their week ───────────────────────────────────────────────── */
 function LearnTimetable({ tt, failed, onRetry }) {
   const [all, setAll] = React.useState(false);
@@ -334,6 +481,9 @@ function LearnWeek({ d, plan, aw, me, tt, onRetry }) {
   const going = open.filter(u => u.progress && u.overdueDays <= 0);
   const lowest = open.length ? Math.min.apply(null, open.filter(u => !u.progress).map(u => u.week).concat([99])) : 99;
   const next = open.filter(u => !u.progress && u.week === lowest);
+  // What follows, so the week shows the road ahead and not only today's step.
+  const later = open.filter(u => !u.progress && u.week > lowest && !(u.overdueDays > 0))
+    .sort((a, b) => (a.year || 0) - (b.year || 0) || a.week - b.week || a.position - b.position).slice(0, 3);
   const done = units.length - open.length;
   /* Where they were: the last lesson they opened that is not finished. The
      address is real, so this is the same lesson on the phone and the laptop. */
@@ -342,6 +492,8 @@ function LearnWeek({ d, plan, aw, me, tt, onRetry }) {
   const pick = (L.recent || []).map(r => byId[r.unitId]).find(u => u && (!u.progress || u.progress.status !== "completed"));
   const st = L.stats || null;
   const m = me || {};
+  const hero = pick || late[0] || going[0] || next[0] || null;
+  const rest = list => list.filter(u => u !== hero);
   return (
     <div className="lrn-week">
       <header className="lrn-head">
@@ -353,21 +505,26 @@ function LearnWeek({ d, plan, aw, me, tt, onRetry }) {
       </header>
       <div className="lrn-week-grid">
       <div className="lrn-stack">
-      {pick && (
-        <a className="lrn-pickup" href={"/learn/lesson/" + encodeURIComponent(pick.unitId)}
-           onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo("/learn/lesson/" + encodeURIComponent(pick.unitId)); }}>
-          <i className="ph-fill ph-play-circle" aria-hidden="true"/>
-          <span><small>Pick up where you left off</small><b>{pick.title}</b><span>{pick.course || "Whole Club"}{pick.path ? " · " + pick.path.code : ""}</span></span>
-          <i className="ph ph-arrow-right" aria-hidden="true"/>
-        </a>
-      )}
-      {st && st.done > 0 && (
-        <ul className="lrn-figs" aria-label="Your learning so far">
-          <li><b>{st.streakWeeks}</b><span>{st.streakWeeks === 1 ? "week" : "weeks"} in a row</span></li>
-          <li><b>{st.doneThisWeek}</b><span>done this week</span></li>
-          <li><b>{st.minutes >= 120 ? Math.round(st.minutes / 60) : st.minutes}</b><span>{st.minutes >= 120 ? "hours" : "minutes"} of lessons</span></li>
-        </ul>
-      )}
+      {/* One lesson, large: where they left off, else what is late, else
+          what they started, else the first new one. The lists below are the rest. */}
+      <LearnUpNext u={hero} pickup={hero === pick} why={hero === pick ? "Pick up where you left off" : late.includes(hero) ? "Late — do this first" : going.includes(hero) ? "Carry on" : "Up next"}/>
+      <section className="lrn-prog" aria-label="Your progress">
+        <LearnRing pct={d.pct} size="lg" label={d.pct + "% of your lessons done"}/>
+        <div className="lrn-prog-body">
+          <p className="lrn-prog-n">{done} of {units.length} lessons done</p>
+          {d.overdue > 0
+            ? <p className="lrn-prog-s is-late">{d.overdue} {d.overdue === 1 ? "is" : "are"} late</p>
+            : <p className="lrn-prog-s">Nothing is late. Keep going.</p>}
+          {st && (
+            <ul className="lrn-figs" aria-label="Your learning so far">
+              <li><i className="ph-fill ph-fire" aria-hidden="true"/><b>{st.streakWeeks}</b><span>{st.streakWeeks === 1 ? "week" : "weeks"} in a row</span></li>
+              <li><i className="ph-fill ph-check-circle" aria-hidden="true"/><b>{st.doneThisWeek}</b><span>done this week</span></li>
+              <li><i className="ph-fill ph-hourglass-medium" aria-hidden="true"/><b>{st.minutes >= 120 ? Math.round(st.minutes / 60) : st.minutes}</b><span>{st.minutes >= 120 ? "hours" : "minutes"} learned</span></li>
+              <li><i className="ph-fill ph-stack" aria-hidden="true"/><b>{open.length}</b><span>still to do</span></li>
+            </ul>
+          )}
+        </div>
+      </section>
       {aw && (aw.earned > 0) && (
         <section className="lrn-earned" aria-label="What you hold">
           <i className="ph-fill ph-seal-check" aria-hidden="true"/>
@@ -377,25 +534,16 @@ function LearnWeek({ d, plan, aw, me, tt, onRetry }) {
           </p>
         </section>
       )}
-      <section className="lrn-prog" aria-label="Your progress">
-        <div>
-          <p className="lrn-prog-n">{done} of {units.length} lessons done</p>
-          {d.overdue > 0
-            ? <p className="lrn-prog-s is-late">{d.overdue} {d.overdue === 1 ? "is" : "are"} late</p>
-            : <p className="lrn-prog-s">Nothing is late. Keep going.</p>}
-        </div>
-        <div className="lrn-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={d.pct} aria-label="Curriculum completed">
-          <span style={{ width: d.pct + "%" }}/>
-        </div>
-      </section>
+      <LearnTermMap units={units} termWeeks={m.termWeeks} focus={hero}/>
       {/* School sits WITH the Club's lessons rather than behind another tab:
           a member's week is one week, and a plan they agreed to in their own
           results is not a different kind of thing to remember separately. */}
       <LearnSchoolStrip plan={plan}/>
-      {late.length > 0 && <LearnGroup title="Late — do these first" tone="late" units={late}/>}
-      {next.length > 0 && <LearnGroup title={late.length ? "Then this" : "Start here"} units={next}/>}
-      {going.length > 0 && <LearnGroup title="Carry on" units={going}/>}
-      {!late.length && !next.length && !going.length && (
+      {rest(late).length > 0 && <LearnGroup title="Also late" tone="late" units={rest(late)}/>}
+      {rest(going).length > 0 && <LearnGroup title="Carry on" units={rest(going)}/>}
+      {rest(next).length > 0 && <LearnGroup title={hero && next.includes(hero) ? "Also this week" : "Then this"} units={rest(next)}/>}
+      {later.length > 0 && <LearnGroup title="Coming up" units={later}/>}
+      {!late.length && !next.length && !going.length && !later.length && (
         <div className="lrn-empty">
           <i className="ph-fill ph-check-circle" aria-hidden="true"/>
           <h2>Everything is done.</h2>
@@ -407,6 +555,7 @@ function LearnWeek({ d, plan, aw, me, tt, onRetry }) {
       <aside className="lrn-week-aside" aria-label="Your week">
         <LearnNextClass tt={tt}/>
         <LearnCourseBars units={units}/>
+        <LearnKept d={d}/>
       </aside>
       </div>
     </div>
@@ -473,7 +622,23 @@ function LearnSearch({ units }) {
 }
 
 /* ── My courses ──────────────────────────────────────────────────────────── */
-function LearnCourses({ d }) {
+
+/** One course's figures, shared by the shelf and the course's own page. */
+function lrnCourseFacts(us, tt) {
+  const sorted = us.slice().sort((a, b) => (a.year || 0) - (b.year || 0) || a.week - b.week || a.position - b.position);
+  const done = sorted.filter(lrnDone).length;
+  const late = sorted.filter(u => u.overdueDays > 0 && !lrnDone(u) && !(u.progress && u.progress.pending)).length;
+  const next = sorted.find(u => u.progress && !lrnDone(u)) || sorted.find(u => !lrnDone(u)) || null;
+  const mins = sorted.reduce((t, u) => t + (u.durationMins || 0), 0);
+  const left = sorted.filter(u => !lrnDone(u)).reduce((t, u) => t + (u.durationMins || 0), 0);
+  const name = (sorted[0] && sorted[0].course) || "Whole Club";
+  const slot = tt ? lrnNextClass((tt.slots || []).filter(x => x.mine && String(x.course).toLowerCase() === name.toLowerCase())) : null;
+  const scores = sorted.filter(u => u.progress && u.progress.attempts > 0 && !u.progress.pending).map(u => u.progress.bestPct);
+  return { sorted, done, late, next, mins, left, slot, pct: sorted.length ? Math.round(done / sorted.length * 100) : 0,
+           avg: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null };
+}
+
+function LearnCourses({ d, tt }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading your courses"/>;
   const units = d.units || [];
   const by = {};
@@ -483,21 +648,29 @@ function LearnCourses({ d }) {
     <div className="lrn-empty"><i className="ph ph-books" aria-hidden="true"/><h2>No courses yet.</h2>
       <p>When your centre puts you on a course, its lessons appear here.</p></div>
   );
+  const all = units.filter(lrnDone).length;
   return (
     <div className="lrn-stack">
+      <header className="lrn-head">
+        <h1 className="lrn-h1">My courses</h1>
+        <p className="lrn-head-s">{names.length} {names.length === 1 ? "course" : "courses"} · {all} of {units.length} lessons done</p>
+      </header>
       <LearnSearch units={units}/>
       <ul className="lrn-shelf">
         {names.map(c => {
-          const us = by[c];
-          const done = us.filter(u => u.progress && u.progress.status === "completed").length;
-          const pct = us.length ? Math.round(done / us.length * 100) : 0;
+          const f = lrnCourseFacts(by[c], tt);
           return (
             <li key={c}>
-              <a className="lrn-course" href={"/learn/course/" + lrnSlug(c)}
-                 onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo("/learn/course/" + lrnSlug(c)); }}>
-                <span className="lrn-course-n">{c}</span>
-                <span className="lrn-course-m">{done} of {us.length} done</span>
-                <span className="lrn-meter is-sm"><span style={{ width: pct + "%" }}/></span>
+              <a className="lrn-course" {...lrnLink("/learn/course/" + lrnSlug(c))}>
+                <LearnRing pct={f.pct} size="sm" label={f.done + " of " + f.sorted.length + " lessons done"}/>
+                <span className="lrn-course-body">
+                  <span className="lrn-course-n">{c}</span>
+                  <span className="lrn-course-m">{f.done} of {f.sorted.length} done · about {lrnDur(f.mins)} in all{f.avg !== null ? " · average " + f.avg + "%" : ""}</span>
+                  {f.next && <span className="lrn-course-next"><i className="ph ph-arrow-circle-right" aria-hidden="true"/>Next: {f.next.title}</span>}
+                  {f.slot && <span className="lrn-course-when"><i className="ph ph-clock" aria-hidden="true"/>{lrnWhenSay(f.slot)}{f.slot.slot.room ? " · " + f.slot.slot.room : ""}</span>}
+                </span>
+                {f.late > 0 && <span className="lrn-course-late">{f.late} late</span>}
+                {!f.next && <span className="lrn-course-done"><i className="ph-fill ph-check-circle" aria-hidden="true"/>Done</span>}
               </a>
             </li>
           );
@@ -515,8 +688,8 @@ function LearnCourses({ d }) {
   );
 }
 
-/* ── One course, week by week ────────────────────────────────────────────── */
-function LearnCourse({ d, slug, aw, onAim }) {
+/* ── One course: where it stands, then its weeks as a path ───────────────── */
+function LearnCourse({ d, slug, aw, onAim, tt }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading the course"/>;
   const units = (d.units || []).filter(u => lrnSlug(u.course || "Whole Club") === slug);
   const name = units.length ? (units[0].course || "Whole Club") : "";
@@ -525,18 +698,43 @@ function LearnCourse({ d, slug, aw, onAim }) {
       <p>It may have been renamed, or you may have been moved.</p>
       <a className="lrn-btn" href="/learn/courses" onClick={e => { e.preventDefault(); lrnGo("/learn/courses"); }}>My courses</a></div>
   );
+  const f = lrnCourseFacts(units, tt);
   const weeks = [];
-  units.slice().sort((a, b) => a.week - b.week || a.position - b.position)
-       .forEach(u => { const w = weeks.find(x => x.week === u.week); w ? w.units.push(u) : weeks.push({ week: u.week, units: [u] }); });
+  f.sorted.forEach(u => {
+    const label = u.path ? u.path.label.replace(/ · Week \d+$/, "") : "";
+    const k = (u.year || 0) + "|" + (u.path ? u.path.term : 0) + "|" + u.week;
+    const w = weeks.find(x => x.k === k);
+    w ? w.units.push(u) : weeks.push({ k, week: u.path ? u.path.week : u.week, term: label, units: [u] });
+  });
   return (
     <div className="lrn-stack">
-      <h2 className="lrn-course-title">{name}</h2>
-      {weeks.map(w => (
-        <section key={w.week} className="lrn-group" aria-label={"Week " + w.week}>
-          <h3 className="lrn-group-h">Week {w.week}</h3>
-          <ul className="lrn-list">{w.units.map(u => <LearnLessonCard key={u.unitId} u={u}/>)}</ul>
-        </section>
-      ))}
+      <a className="lrn-back" {...lrnLink("/learn/courses")}><i className="ph ph-arrow-left" aria-hidden="true"/>My courses</a>
+      <section className="lrn-chero" aria-label={name + " at a glance"}>
+        <LearnRing pct={f.pct} size="lg" label={f.pct + "% of " + name + " done"}/>
+        <div className="lrn-chero-body">
+          <h2 className="lrn-course-title">{name}</h2>
+          <ul className="lrn-chero-figs">
+            <li><b>{f.done}/{f.sorted.length}</b><span>lessons done</span></li>
+            <li><b>{lrnDur(f.left)}</b><span>left to do</span></li>
+            <li><b>{f.avg !== null ? f.avg + "%" : "—"}</b><span>average score</span></li>
+            {f.late > 0 && <li className="is-late"><b>{f.late}</b><span>late</span></li>}
+          </ul>
+          {f.slot && <p className="lrn-chero-when"><i className="ph ph-clock" aria-hidden="true"/>Class: {lrnWhenSay(f.slot)}{f.slot.slot.room ? " · " + f.slot.slot.room : ""}{f.slot.slot.instructor ? " · " + f.slot.slot.instructor : ""}</p>}
+          {f.next && <a className="lrn-btn" {...lrnLink("/learn/lesson/" + encodeURIComponent(f.next.unitId))}>{f.next.progress ? "Carry on" : f.done ? "Next lesson" : "Start the course"}: {f.next.title}</a>}
+        </div>
+      </section>
+      <ol className="lrn-path" aria-label={name + ", week by week"}>
+        {weeks.map((w, i) => {
+          const st = lrnWeekState(w.units), showTerm = w.term && (i === 0 || weeks[i - 1].term !== w.term);
+          return (
+            <li key={w.k} className={"lrn-path-w is-" + st}>
+              {showTerm && <p className="lrn-path-term">{w.term}</p>}
+              <h3 className="lrn-group-h"><span className="lrn-path-dot" aria-hidden="true">{st === "done" ? <i className="ph-bold ph-check"/> : w.week}</span>Week {w.week}<span className="lrn-path-st"> · {LRN_WEEK_SAY[st]}</span></h3>
+              <ul className="lrn-list">{w.units.map(u => <LearnLessonCard key={u.unitId} u={u}/>)}</ul>
+            </li>
+          );
+        })}
+      </ol>
       <LearnAwards aw={aw} course={name} onAim={onAim} onRetry={onAim}/>
     </div>
   );
@@ -1274,9 +1472,9 @@ function LearnApp() {
           ? <ErrorState title="Couldn't load your lessons" code={err} onRetry={load}/>
           : view === "lesson" ? <LearnLesson unitId={route.unitId} onDone={load} units={(d && d.units) || []}/>
           : view === "notes" ? <LearnNotes d={d}/>
-          : view === "courses" ? <LearnCourses d={d}/>
+          : view === "courses" ? <LearnCourses d={d} tt={tt}/>
           : view === "timetable" ? <LearnTimetable tt={tt} failed={!!d && !tt} onRetry={load}/>
-          : view === "course" ? <LearnCourse d={d} slug={route.slug} aw={aw} onAim={loadAwards}/>
+          : view === "course" ? <LearnCourse d={d} slug={route.slug} aw={aw} onAim={loadAwards} tt={tt}/>
           : view === "plan" ? <LearnPlan d={plan} onRetry={loadPlan}/>
           : view === "drill" ? <LearnDrill itemId={route.itemId} onChanged={loadPlan}/>
           : view === "review" ? <LearnReview d={d}/>

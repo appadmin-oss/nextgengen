@@ -220,7 +220,7 @@ function cleanup() {
     const K = await open('/learn');
     await K.waitForSelector('.lrn-pickup', { timeout: 20000 });
     chk('This week leads with the lesson they opened and have not finished',
-      /Pick up where you left off/.test(await K.innerText('.lrn-pickup')) && /Finding middle C/.test(await K.innerText('.lrn-pickup')));
+      /Pick up where you left off/i.test(await K.innerText('.lrn-pickup')) && /Finding middle C/.test(await K.innerText('.lrn-pickup')));
     chk('…and with what their finished lessons add up to', /1\s*done this week/.test(await K.innerText('.lrn-figs')));
     await K.click('.lrn-pickup');
     await K.waitForSelector('.lrn-lesson-title', { timeout: 15000 });
@@ -290,7 +290,7 @@ function cleanup() {
 
     console.log('on a phone');
     const M = await open('/learn', 390);
-    await M.waitForSelector('.lrn-card', { timeout: 60000 });
+    await M.waitForSelector('.lrn-week', { timeout: 60000 });
     const bar = await M.evaluate(() => { const r = document.querySelector('.lrn-rail').getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height), w: Math.round(r.width) }; });
     chk('the phone gets a bottom bar, not a rail squeezed sideways', bar.w > 300 && bar.top > 400);
     const tap = await M.evaluate(() => Math.min.apply(null, [...document.querySelectorAll('.lrn-rail-item')].map(e => Math.round(e.getBoundingClientRect().height))));
