@@ -4444,3 +4444,25 @@ diagrams and illustrations and gifs are no longer there".
   already deleted can only come back from a host backup.
 - Tests: PHP 5928/0 (seed refresh ×5, lesson files ×6); learn 46/0;
   curriculum-ui 66/0; lesson-blocks 47/0.
+
+## 2026-10-29 — The remaining bundled courses made full
+
+- Studio Trades (60), Instruments (60), Divisions (48), Business (72) and
+  Piano/Guitar (144) now carry *Understand it*, *Key words* and *Read and
+  watch*, like Coding, Media Lab and Tech Foundations before them — every
+  bundled lesson (528) is covered. Piano/Guitar places the section after
+  *Learn*, before the diagrams (`apply.py` takes an anchor heading).
+- Sources only where a fetch returned 2xx with a real page title: Yamaha
+  instrument guides, musictheory.net, teoria, Ableton Learning Music,
+  MuseScore, IMSLP, Classic FM, BBC Bitesize (Drama, Music, D&T, Business),
+  RSC, Nobel Prize, Theatrecrafts, HSE, WHO, FSA, NFPA, NIDCD, NAFDAC, V&A,
+  Google Arts & Culture searches, Google Docs/Drive/Calendar Help, Trello,
+  Airtable, Make Academy, draw.io, Strategyzer, Atlassian, NN/g, GOV.UK,
+  WIPO, NDPC, CAC, SMEDAN. Blocked or soft-404 (not used): Canva, OpenAI,
+  JustinGuitar, Fender, Make help pages behind Cloudflare, Investopedia,
+  Britannica, Met Museum; Manager.io guide pages render no title, so only its
+  home page is linked.
+- The AI-word budget is unchanged: the only new mentions sit in lessons whose
+  title is already about the tool (Business ChatGPT ×2, Music Production wk10,
+  Tech Divisions wk8). Counts checked per file before and after.
+- Tests: PHP 5928/0; build OK; no-important 651 files; learn 46/0.

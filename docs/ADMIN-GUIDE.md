@@ -3612,3 +3612,15 @@ uploads are kept outside the website folder (see SETUP → Lesson files).
 The bundled lessons now carry their own diagrams: every music lesson shows its
 session drawn to scale, the scales it teaches on a keyboard (and a staff for
 piano), and the chords it uses as chord boxes — each one can be played.
+
+### Every bundled lesson now teaches the idea, not only the steps
+
+All 528 bundled lessons — Practical Coding, Media Lab, Tech Foundations,
+Studio Trades, Instruments, the Divisions, the Business course and three years
+of Piano and Guitar — now open with an **Understand it** section that explains
+the session's idea in full, a **Key words** list, and **Read and watch** links
+to reputable sources (the same links appear under the lesson's materials).
+Every link was checked to load before it shipped. Sites update existing
+lessons automatically on the next page load, **unless an instructor has
+edited that lesson** — an edited lesson is never overwritten. To take the new
+text into an edited lesson, open the bundled course and copy the section in.
