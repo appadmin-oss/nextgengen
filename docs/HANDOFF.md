@@ -4323,3 +4323,35 @@ hides an outage (CLAUDE.md §9). An empty registry comes back as a real answer
 with empty lists, so `null` means only "failed", and that case now says so and
 offers the retry. Quietly, at the bottom of a course page: nothing there
 blocks the work.
+
+## Learn: the week as a working screen, and the child's own timetable (2026-10-29)
+
+The owner called /learn "child's play": a narrow column of cards, nothing about the week, no class times.
+- **This week:**
+  - A header with the Club week (`member.learn.boot` now returns `me.first`, `me.weekNow`, `me.termWeeks`), a greeting, and what to do first, or what is late.
+  - Beside the lessons on a wide screen: **Your next class**, worked out from the child's own timetable slots (`lrnNextClass`: the next occurrence from now; "on now" while it runs), and **Your courses** with each one's standing.
+- **Timetable** (`/learn/timetable`, rail item):
+  - The next class, then the child's own classes by day (Saturday first).
+  - "The whole centre" is one tap away, with theirs marked. Each case has an honest empty state.
+- **One request:** the timetable rides in the boot (`timetable`, soft-failing like plan and awards), so the first screen is still one request.
+- **Lesson questions:** the choices are cards (8px apart, not 60), and the chosen one is outlined.
+- Styles stay on the Learn app's own tokens. The two-column week is a container query on the app.
+- **Tests:** `learn-app.test.js` 46/0 (greeting, next class from the child's own course only, course standing, timetable mine/all); PHP 5917/0.
+
+## Audit of the other sessions' work (2026-10-29)
+
+Merged into this branch:
+- **Our branch's 77 commits from other sessions:** Wi-Fi (CACENTRE gateways, regions, analytics), Summer School portal v3, support cases, projects, notifications, the shared-email sign-in, consent withdrawal, and the instrument-is-a-course catalogue with bundled lessons.
+- **`claude/community-audit-1aqug7` (38):** the Learn rail fix, providers (where courses lead), the block lesson editor, exams, the boot request.
+
+Migration renumbering:
+- This branch's course placement is 196.
+- community-audit's 183 (providers) is 197. Its 181–183 had meant different things from ours; its 181 and 182 were already here as 186 and 187.
+
+Fixes made during the audit:
+- The Wi-Fi hours test failed every night between 00:00 and 02:00, because its "an hour ago" window wrapped past midnight. It now picks a window that never wraps.
+- The id-studio tamper check could pick the token's own last character (about 1 run in 64).
+
+Not merged (owner's call):
+- **`claude/vibrant-cray-3gmdum`** ("Centres follow CACENTRE's locations"): it makes CACENTRE the only list of centres, so centres can no longer be added, renamed or retired here. It is built on an old base (its migration is 137) and conflicts in 8 files, CLAUDE.md included.
+- **`gate-lookup`** (588 commits): a separate line of work (Afrovanguard and CACENTRE sync, NGV promotion consent, reset-code hardening, suspension reaching open sessions). It shares no history with this branch in this clone. It needs a deliberate port, not a merge.

@@ -803,7 +803,16 @@ function member_learn_boot(array $p): array {
         try { $r = $fn(); return !empty($r['ok']) ? $r : null; }
         catch (\Throwable $e) { return null; }          // never costs anybody their lessons
     };
+    // Who and when, for the week's header: a first name, and the week the Club is on.
+    $who = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    $first = trim(explode(' ', trim((string)($who['fullName'] ?? '')))[0] ?? '');
+    $cfg = function_exists('curriculum_schedule') ? curriculum_schedule() : ['startDate' => ''];
+    $today = gmdate('Y-m-d'); $start = (string)($cfg['startDate'] ?? '');
+    $weekNow = $start !== '' && $today >= $start ? intdiv((int)((strtotime($today . ' UTC') - strtotime($start . ' UTC')) / 86400), 7) + 1 : null;
     return ['ok' => true, 'curriculum' => $cur,
+        'me' => ['first' => $first, 'weekNow' => $weekNow, 'termWeeks' => defined('CURR_TERM_WEEKS') ? CURR_TERM_WEEKS : 12],
         'plan' => $soft(static fn() => function_exists('member_study_plan') ? member_study_plan(['memberId' => $mid]) : null),
-        'awards' => $soft(static fn() => member_providers_mine(['memberId' => $mid]))];
+        'awards' => $soft(static fn() => member_providers_mine(['memberId' => $mid])),
+        // Their own classes, in the same request: the week screen says when the next one is.
+        'timetable' => $soft(static fn() => function_exists('member_timetable') ? member_timetable(['memberId' => $mid]) : null)];
 }

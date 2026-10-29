@@ -43,6 +43,7 @@
 const LRN_NAV = [
   { id: "week",    path: "/learn",         label: "This week", icon: "ph ph-calendar-check" },
   { id: "courses", path: "/learn/courses", label: "My courses", icon: "ph ph-books" },
+  { id: "timetable", path: "/learn/timetable", label: "Timetable", icon: "ph ph-clock" },
   { id: "plan",    path: "/learn/plan",    label: "School",     icon: "ph ph-exam" },
   { id: "review",  path: "/learn/review",  label: "Review",     icon: "ph ph-target" },
   { id: "notes",   path: "/learn/notes",   label: "Notes",      icon: "ph ph-note-pencil" },
@@ -60,6 +61,7 @@ function lrnRoute() {
   if (seg[0] !== "learn") return { view: "week" };
   const a = seg[1] || "", b = seg.slice(2).join("/");
   if (a === "courses") return { view: "courses" };
+  if (a === "timetable") return { view: "timetable" };
   if (a === "plan") return b ? { view: "drill", itemId: decodeURIComponent(b) } : { view: "plan" };
   if (a === "review") return { view: "review" };
   if (a === "notes") return { view: "notes" };
@@ -171,8 +173,150 @@ function LearnLessonCard({ u, showCourse }) {
   );
 }
 
+/* ── Time and the timetable ──────────────────────────────────────────────────
+   The member's own classes come with the boot (member.timetable): each slot
+   carries `mine` when it is one of their courses. Days are 0 (Sunday) to 6. */
+const LRN_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+function lrnMins(t) { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || "")); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+function lrnClock(t) { const n = lrnMins(t); if (n === null) return t || ""; const h = Math.floor(n / 60), mi = n % 60; return (h % 12 || 12) + (mi ? ":" + String(mi).padStart(2, "0") : "") + (h < 12 ? "am" : "pm"); }
+/* The next time one of these slots meets, from now: the slot and its date. */
+function lrnNextClass(slots, now) {
+  const t = now || new Date(); let best = null;
+  (slots || []).forEach(s => {
+    const start = lrnMins(s.startTime), end = lrnMins(s.endTime) || start;
+    if (start === null || s.weekday == null) return;
+    let add = (Number(s.weekday) - t.getDay() + 7) % 7;
+    const nowM = t.getHours() * 60 + t.getMinutes();
+    if (add === 0 && nowM >= end) add = 7;                    // today's has finished: next week's
+    const when = new Date(t.getFullYear(), t.getMonth(), t.getDate() + add, Math.floor(start / 60), start % 60);
+    const live = add === 0 && nowM >= start && nowM < end;
+    if (!best || when < best.when) best = { slot: s, when, live, inDays: add };
+  });
+  return best;
+}
+function lrnWhenSay(n) {
+  if (!n) return "";
+  if (n.live) return "On now, until " + lrnClock(n.slot.endTime);
+  if (n.inDays === 0) return "Today, " + lrnClock(n.slot.startTime);
+  if (n.inDays === 1) return "Tomorrow, " + lrnClock(n.slot.startTime);
+  return LRN_DAYS[n.when.getDay()] + " " + n.when.getDate() + " " + n.when.toLocaleDateString("en-GB", { month: "short" }) + ", " + lrnClock(n.slot.startTime);
+}
+function lrnGreeting(first) {
+  const h = new Date().getHours();
+  return (h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening") + (first ? ", " + first : "");
+}
+
+/* The next class, on its own card. Their courses first; when none of their
+   courses is on the timetable it says so rather than offering somebody else's. */
+function LearnNextClass({ tt, compact }) {
+  if (!tt) return null;
+  const mine = (tt.slots || []).filter(s => s.mine);
+  const n = lrnNextClass(mine);
+  const go = e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo("/learn/timetable"); };
+  if (!n) return (
+    <section className={"lrn-next is-none" + (compact ? " is-compact" : "")} aria-label="Your next class">
+      <p className="lrn-next-k">Your next class</p>
+      <p className="lrn-next-t">Not on the timetable yet</p>
+      <p className="lrn-next-s">{(tt.courses || []).length ? "Your centre has not given " + tt.courses.slice(0, 2).join(" or ") + " a time yet." : "You are not on a course yet: ask your centre."}</p>
+      <a className="lrn-next-link" href="/learn/timetable" onClick={go}>See the centre's week <i className="ph ph-arrow-right" aria-hidden="true"/></a>
+    </section>
+  );
+  const s = n.slot;
+  return (
+    <section className={"lrn-next" + (n.live ? " is-live" : "") + (compact ? " is-compact" : "")} aria-label="Your next class">
+      <p className="lrn-next-k">{n.live ? "Your class is on now" : "Your next class"}</p>
+      <p className="lrn-next-t">{s.course}{s.level ? " · " + s.level : ""}</p>
+      <p className="lrn-next-w"><i className="ph ph-calendar-blank" aria-hidden="true"/>{lrnWhenSay(n)}{!n.live && s.endTime ? " – " + lrnClock(s.endTime) : ""}</p>
+      <ul className="lrn-next-meta">
+        {(s.room || tt.centre) && <li><i className="ph ph-map-pin" aria-hidden="true"/>{[s.room, tt.centre].filter(Boolean).join(", ")}</li>}
+        {s.instructor && <li><i className="ph ph-chalkboard-teacher" aria-hidden="true"/>{s.instructor}</li>}
+      </ul>
+      {!compact && <a className="lrn-next-link" href="/learn/timetable" onClick={go}>My whole week <i className="ph ph-arrow-right" aria-hidden="true"/></a>}
+    </section>
+  );
+}
+
+/* Where each course stands: the shelf in miniature, beside the week. */
+function LearnCourseBars({ units }) {
+  const by = {};
+  (units || []).forEach(u => { const c = u.course || "Whole Club"; (by[c] = by[c] || []).push(u); });
+  const names = Object.keys(by).sort();
+  if (!names.length) return null;
+  return (
+    <section className="lrn-bars" aria-label="Your courses">
+      <h2 className="lrn-sec-h">Your courses</h2>
+      <ul>
+        {names.map(c => {
+          const us = by[c], done = us.filter(u => u.progress && u.progress.status === "completed").length, pct = Math.round(done / us.length * 100);
+          return (
+            <li key={c}>
+              <a href={"/learn/course/" + lrnSlug(c)} onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo("/learn/course/" + lrnSlug(c)); }}>
+                <span className="lrn-bars-n">{c}</span><span className="lrn-bars-p">{pct}%</span>
+                <span className="lrn-meter is-sm" role="img" aria-label={done + " of " + us.length + " lessons done"}><span style={{ width: pct + "%" }}/></span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/* ── Timetable: their week ───────────────────────────────────────────────── */
+function LearnTimetable({ tt, failed, onRetry }) {
+  const [all, setAll] = React.useState(false);
+  if (failed && !tt) return <ErrorState title="Couldn't load your timetable" code="load_failed" onRetry={onRetry}/>;
+  if (!tt) return <div className="lrn-wait" role="status" aria-label="Loading your timetable"/>;
+  const slots = tt.slots || [];
+  const mine = slots.filter(s => s.mine);
+  const shown = all ? slots : mine;
+  const byDay = {};
+  shown.forEach(s => { (byDay[s.weekday] = byDay[s.weekday] || []).push(s); });
+  const order = [6, 0, 1, 2, 3, 4, 5].filter(d => byDay[d]);   // Saturday first: the Club's day
+  const today = new Date().getDay();
+  return (
+    <div className="lrn-stack">
+      <header className="lrn-head">
+        <h1 className="lrn-h1">My timetable</h1>
+        <p className="lrn-head-s">{tt.centre ? tt.centre + " centre" : "Your centre"}{(tt.courses || []).length ? " · " + tt.courses.join(", ") : ""}</p>
+      </header>
+      <LearnNextClass tt={tt} compact/>
+      <div className="lrn-seg" role="group" aria-label="Show">
+        <button type="button" aria-pressed={!all} className={!all ? "is-on" : ""} onClick={() => setAll(false)}>My classes · {mine.length}</button>
+        <button type="button" aria-pressed={all} className={all ? "is-on" : ""} onClick={() => setAll(true)}>The whole centre · {slots.length}</button>
+      </div>
+      {!shown.length ? (
+        <div className="lrn-empty">
+          <i className="ph ph-clock" aria-hidden="true"/>
+          <h2>{all ? "Nothing is on this centre's timetable yet." : "None of your courses has a time yet."}</h2>
+          <p>{all ? "Your centre adds its classes as the term is planned." : "Your centre gives each course a day, a time and a room. Until then, check the whole centre's week or ask your instructor."}</p>
+          {!all && slots.length > 0 && <button type="button" className="lrn-btn is-ghost" onClick={() => setAll(true)}>See the whole centre</button>}
+        </div>
+      ) : (
+        <ol className="lrn-days">
+          {order.map(d => (
+            <li key={d} className={"lrn-day" + (d === today ? " is-today" : "")}>
+              <h2 className="lrn-day-h">{LRN_DAYS[d]}{d === today ? <span className="lrn-day-tag">Today</span> : null}</h2>
+              <ul className="lrn-slots">
+                {byDay[d].map(s => (
+                  <li key={s.slotId || s.course + s.startTime} className={"lrn-slot" + (s.mine ? " is-mine" : "")}>
+                    <span className="lrn-slot-t">{lrnClock(s.startTime)}<small>{s.endTime ? lrnClock(s.endTime) : ""}</small></span>
+                    <span className="lrn-slot-c"><b>{s.course}{s.level ? " · " + s.level : ""}</b>
+                      <span>{[s.room, s.instructor].filter(Boolean).join(" · ") || "Room to be confirmed"}</span></span>
+                    {s.mine && all && <span className="lrn-slot-mine">Yours</span>}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 /* ── This week ───────────────────────────────────────────────────────────── */
-function LearnWeek({ d, plan, aw, onRetry }) {
+function LearnWeek({ d, plan, aw, me, tt, onRetry }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading your lessons"/>;
   const units = d.units || [];
   if (!units.length) return (
@@ -197,8 +341,18 @@ function LearnWeek({ d, plan, aw, onRetry }) {
   const byId = {}; units.forEach(u => { byId[u.unitId] = u; });
   const pick = (L.recent || []).map(r => byId[r.unitId]).find(u => u && (!u.progress || u.progress.status !== "completed"));
   const st = L.stats || null;
+  const m = me || {};
   return (
-    <div className="lrn-stack">
+    <div className="lrn-week">
+      <header className="lrn-head">
+        <p className="lrn-head-k">{m.weekNow ? "Week " + m.weekNow + (m.termWeeks ? " of " + m.termWeeks : "") : "This week"}</p>
+        <h1 className="lrn-h1">{lrnGreeting(m.first)}</h1>
+        <p className="lrn-head-s">{late.length ? late.length + (late.length === 1 ? " lesson is" : " lessons are") + " late. Start with " + (late.length === 1 ? "it" : "those") + "."
+          : open.length ? open.length + (open.length === 1 ? " lesson" : " lessons") + " to do. " + (next.length ? "Start with " + next[0].title + "." : "")
+          : "Everything is done. Well played."}</p>
+      </header>
+      <div className="lrn-week-grid">
+      <div className="lrn-stack">
       {pick && (
         <a className="lrn-pickup" href={"/learn/lesson/" + encodeURIComponent(pick.unitId)}
            onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo("/learn/lesson/" + encodeURIComponent(pick.unitId)); }}>
@@ -249,6 +403,12 @@ function LearnWeek({ d, plan, aw, onRetry }) {
           <a className="lrn-btn" href="/learn/courses" onClick={e => { e.preventDefault(); lrnGo("/learn/courses"); }}>Look back over my courses</a>
         </div>
       )}
+      </div>
+      <aside className="lrn-week-aside" aria-label="Your week">
+        <LearnNextClass tt={tt}/>
+        <LearnCourseBars units={units}/>
+      </aside>
+      </div>
     </div>
   );
 }
@@ -1051,6 +1211,8 @@ function LearnApp() {
   const [d, setD] = React.useState(null);
   const [plan, setPlan] = React.useState(null);
   const [aw, setAw] = React.useState(null);
+  const [me, setMe] = React.useState(null);
+  const [tt, setTt] = React.useState(null);
   const [err, setErr] = React.useState("");
   /* ONE request for the first screen. "This week" means lessons, school and
      where the work leads, so asking for them separately was three HTTP round
@@ -1060,7 +1222,7 @@ function LearnApp() {
   const load = React.useCallback(() => {
     setErr("");
     return NGGApi.member.learnBoot()
-      .then(b => { setD(b.curriculum || null); setPlan(b.plan || null); setAw(b.awards || null); })
+      .then(b => { setD(b.curriculum || null); setPlan(b.plan || null); setAw(b.awards || null); setMe(b.me || null); setTt(b.timetable || null); })
       .catch(e => setErr(e.code || e.message || "failed"));
   }, []);
   /* After an action, only the part that moved is refetched — marking a drill
@@ -1107,18 +1269,19 @@ function LearnApp() {
         ))}
       </nav>
 
-      <main className="lrn-main">
+      <main className={"lrn-main" + (view === "week" ? " is-wide" : "")}>
         {err && err !== "not_ngg_member" && view !== "lesson"
           ? <ErrorState title="Couldn't load your lessons" code={err} onRetry={load}/>
           : view === "lesson" ? <LearnLesson unitId={route.unitId} onDone={load} units={(d && d.units) || []}/>
           : view === "notes" ? <LearnNotes d={d}/>
           : view === "courses" ? <LearnCourses d={d}/>
+          : view === "timetable" ? <LearnTimetable tt={tt} failed={!!d && !tt} onRetry={load}/>
           : view === "course" ? <LearnCourse d={d} slug={route.slug} aw={aw} onAim={loadAwards}/>
           : view === "plan" ? <LearnPlan d={plan} onRetry={loadPlan}/>
           : view === "drill" ? <LearnDrill itemId={route.itemId} onChanged={loadPlan}/>
           : view === "review" ? <LearnReview d={d}/>
           : view === "helper" ? <CurStudyHelper units={(d && d.units) || []}/>
-          : <LearnWeek d={d} plan={plan} aw={aw} onRetry={load}/>}
+          : <LearnWeek d={d} plan={plan} aw={aw} me={me} tt={tt} onRetry={load}/>}
       </main>
     </div></div>
   );

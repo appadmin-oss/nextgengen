@@ -78,6 +78,9 @@ function cleanup() {
   try {
     const now = 'now_iso()';
     php(`db_migrate(db_conn());`
+      + `db_insert('centres', ['centreId'=>'C-LRN-EG','name'=>'Egbeda','code'=>'EG','status'=>'active','createdAt'=>${now}]);`
+      + `db_insert('timetable_slots', ['slotId'=>'TT-LRN-1','centreId'=>'C-LRN-EG','course'=>'Piano','weekday'=>6,'startTime'=>'11:00','endTime'=>'12:30','room'=>'Music room','status'=>'active','createdAt'=>${now}]);`
+      + `db_insert('timetable_slots', ['slotId'=>'TT-LRN-2','centreId'=>'C-LRN-EG','course'=>'Coding','weekday'=>6,'startTime'=>'09:00','endTime'=>'10:30','room'=>'Lab 1','status'=>'active','createdAt'=>${now}]);`
       + `db_insert('members', ['memberId'=>'NGG-LRN-M1','fullName'=>'Ada Learner','email'=>'lrn-m1@example.org','type'=>'NGG','status'=>'active','role'=>'member','track'=>'Piano','courses'=>json_encode(['Piano']),'centre'=>'Egbeda','createdAt'=>${now},'updatedAt'=>${now}]);`
       /* A club admin holds `curriculum`, which is what writes the provider
          registry and records a result against a member. */
@@ -141,6 +144,20 @@ function cleanup() {
     chk('…and its own navigation, not the portal\'s',
       ['This week', 'My courses', 'School', 'Review', 'Helper'].every(l => rail.includes(l)));
     chk('…and says how far through they are', /0 of 2 lessons done/.test(await P.innerText('.lrn-prog')));
+    const wk = await P.innerText('.lrn-main');
+    chk('the week greets them by name and says what to start with', /Ada/.test(wk) && /Start with Finding middle C/.test(wk));
+    chk('…with their next class beside it: their course, Saturday at 11, the room — never another course', /Your (next class|class is on now)/i.test(wk) && /Piano/.test(await P.innerText('.lrn-next')) && /11am/.test(await P.innerText('.lrn-next')) && /Music room/.test(await P.innerText('.lrn-next')) && !/Coding/.test(await P.innerText('.lrn-next')));
+    chk('…and each course\'s standing', /Piano/.test(await P.innerText('.lrn-bars')) && /0%/.test(await P.innerText('.lrn-bars')));
+
+    await P.click('.lrn-rail-item:has-text("Timetable")');
+    await P.waitForFunction(() => location.pathname === '/learn/timetable');
+    await P.waitForSelector('.lrn-days', { timeout: 15000 });
+    let tt = await P.innerText('.lrn-main');
+    chk('Timetable: their own classes first, by day, with the time and room', /My timetable/.test(tt) && /Saturday/i.test(tt) && /Music room/.test(tt) && !/Lab 1/.test(tt));
+    await shot(P, 'learn-timetable');
+    await P.click('.lrn-seg button:has-text("The whole centre")');
+    tt = await P.innerText('.lrn-main');
+    chk('…and the whole centre\'s week a tap away, theirs marked', /Lab 1/.test(tt) && /Coding/.test(tt) && (await P.$$('.lrn-slot.is-mine')).length === 1);
 
     await P.click('.lrn-rail-item:has-text("My courses")');
     await P.waitForFunction(() => location.pathname === '/learn/courses');
