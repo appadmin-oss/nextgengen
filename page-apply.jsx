@@ -56,6 +56,18 @@ const APF_EMPTY = { filledBy: "", centre: "", nationality: "Nigerian", parent2No
 
 function apfTitle(s) { return String(s || "").trim().replace(/\s+/g, " ").toLowerCase().replace(/(^|[\s\-'’])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()); }
 function apfPhone(s) { let d = String(s || "").replace(/\D/g, ""); if (d.startsWith("234")) d = "0" + d.slice(3); if (d.length === 10 && /^[789]/.test(d)) d = "0" + d; return d; }
+/* NGV's application form, with what they already typed here carried over: a
+   hand-off that opened an empty form (or, before, the programme's landing page,
+   whose "Apply" was a WhatsApp group) lost people at exactly this step. The
+   form pre-fills from these and saves nothing until it is sent. */
+function apfNgvHref(base, v) {
+  const u = new URL(base || "https://afrovanguard.org.ng/academy/ngv/register.php", location.href);
+  const name = [v.firstName, v.middleName, v.surname].map(x => String(x || "").trim()).filter(Boolean).join(" ");
+  const put = (k, x) => { if (x) u.searchParams.set(k, x); };
+  put("from", "ngg"); put("name", name); put("dob", /^\d{4}-\d{2}-\d{2}$/.test(v.dob || "") ? v.dob : "");
+  put("email", String(v.email || "").trim().toLowerCase()); put("phone", apfPhoneOk(apfPhone(v.mobile)) ? apfPhone(v.mobile) : "");
+  return u.toString();
+}
 function apfPhoneOk(d) { return /^0[789][01]\d{8}$/.test(d); }
 function apfAge(dob) {
   if (!dob || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) return null;
@@ -472,7 +484,7 @@ function ClubApplyPage({ setPage }) {
                   <b>{(v.firstName ? v.firstName + " is " : "You’re ") + age + ": register for NGV instead"}</b>
                   <span>NGG is for ages 10 to 17. At 18 and over, members join NGV, our leadership class: mentor younger members, lead projects and grow as a young leader.</span>
                   <div className="apf-ngv-row">
-                    <a href={ngvUrl || "https://afrovanguard.org.ng/academy/ngv/"} className="apf-ngv-btn" rel="noopener">Register for NGV<i className="ph ph-arrow-right" aria-hidden="true"/></a>
+                    <a href={apfNgvHref(ngvUrl, v)} className="apf-ngv-btn" rel="noopener">Register for NGV<i className="ph ph-arrow-right" aria-hidden="true"/></a>
                     <span>Wrong date of birth? Fix it below.</span>
                   </div>
                 </div>
