@@ -299,9 +299,11 @@ function journal_media_clean($in): array {
     foreach ($in as $item) {
         if (!is_array($item)) continue;
         $url = trim((string)($item['url'] ?? ''));
-        if ($url === '' || !preg_match('#^https://#i', $url)) continue;
+        // https anywhere, or a file this site stored itself (the upload route answers with a path).
+        if ($url === '' || !(preg_match('#^https://#i', $url) || preg_match('#^/api/(public|member)/[A-Za-z0-9._/?=&%-]+$#', $url))) continue;
         $type = strtolower(trim((string)($item['type'] ?? 'image')));
-        if (!in_array($type, ['image', 'video'], true)) $type = 'image';
+        // Audio is a voice note; it was coerced to "image" here, so voice entries counted as photos.
+        if (!in_array($type, ['image', 'video', 'audio'], true)) $type = 'image';
         $out[] = [
             'type' => $type,
             'url' => substr($url, 0, 500),
@@ -310,6 +312,7 @@ function journal_media_clean($in): array {
             'alt' => substr(trim((string)($item['alt'] ?? '')), 0, 240),
             'caption' => substr(trim((string)($item['caption'] ?? '')), 0, 240),
             'poster' => preg_match('#^https://#i', (string)($item['poster'] ?? '')) ? substr((string)$item['poster'], 0, 500) : '',
+            'secs' => $type === 'audio' ? max(0, min(600, (int)($item['secs'] ?? 0))) : 0,
         ];
         // A dozen photographs on one entry is an album, not a record.
         if (count($out) >= 12) break;

@@ -68,7 +68,7 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
     const ctx = await browser.newContext({ viewport: { width: 1360, height: 1000 } });
     await ctx.addCookies([{ name: 'ngg_sess', value: token, domain: '127.0.0.1', path: '/', httpOnly: true },
@@ -109,11 +109,49 @@ function cleanup() {
     chk('the key saves: Groq reads Connected, ending wxyz, and the key itself is nowhere on the page', /•••• wxyz/.test(g2) && !/FROMtheSCREEN/.test(await pg.innerText('body')));
     chk('…stored sealed on the server', !php(`echo (string)(db_row("SELECT settingValue FROM settings WHERE settingKey = 'service_keys'")['settingValue'] ?? '');`, ['bootstrap']).includes('FROMtheSCREEN'));
     pg.once('dialog', dlg => dlg.accept());
+    await groq.locator('button:has-text("Manage")').click();
     await groq.locator('button:has-text("Remove")').click();
     const conf = await pg.waitForSelector('.cr-layer button:has-text("Remove"), [role=alertdialog] button:has-text("Remove"), [role=dialog] button:has-text("Remove")', { timeout: 10000 }).catch(() => null);
     if (conf) await conf.click();
     await pg.waitForFunction(() => /Not set/.test(document.querySelector('article.cr-key[aria-label="Groq"]')?.innerText || ''), null, { timeout: 30000 });
     chk('Remove takes it away again', true);
+    // File storage: every S3-compatible provider, each with its own guide.
+    const stg = pg.locator('article.cr-key[aria-label="File storage (S3-compatible)"]');
+    chk('File storage is not tied to one provider, and offers Set up', (await stg.count()) === 1 && (await stg.locator('button:has-text("Set up")').count()) === 1);
+    await stg.locator('button:has-text("Set up")').click();
+    const provs = await stg.locator('.cr-stg select option').allInnerTexts();
+    chk('the guide lists the providers it can connect', ['Cloudflare R2', 'Backblaze B2', 'Amazon S3', 'Wasabi', 'DigitalOcean Spaces', 'Supabase Storage', 'IDrive e2'].every(n => provs.includes(n)) && provs.length >= 8);
+    chk('…starting on R2, with numbered steps and the CORS rule for this site', /Connect Cloudflare R2, step by step/.test(await stg.innerText()) && (await stg.locator('.cr-stg-steps li').count()) >= 4
+      && (await stg.locator('button:has-text("Copy the CORS rule")').count()) === 1 && /"PUT"/.test(await stg.locator('.cr-stg-cors pre').textContent()));
+    await stg.locator('.cr-stg select').selectOption('b2');
+    chk('picking a provider shows its own steps, shapes and link', /Connect Backblaze B2, step by step/.test(await stg.innerText()) && /backblazeb2\.com/.test(await stg.locator('.cr-stg-shape').innerText())
+      && (await stg.locator('.cr-stg a.cr-key-link').getAttribute('href')).includes('backblaze.com'));
+    chk('…and for B2, whose console cannot allow PUT, the b2 command instead of a pasted rule', (await stg.locator('button:has-text("Copy the B2 command")').count()) === 1
+      && /^b2 bucket update --cors-rules .*s3_put/.test(await stg.locator('.cr-stg-cors pre').textContent()));
+    await stg.locator('.cr-stg-steps').first().evaluate(el => el.scrollIntoView());
+    await stg.locator('button:has-text("Connect Backblaze B2")').click();
+    const sf = 'form[aria-label="Connect Backblaze B2"]';
+    await pg.waitForSelector(sf);
+    chk('…and its form names the provider and shows what to type', (await pg.inputValue(sf + ' #crf-f6')) === 'Backblaze B2' && /backblazeb2/.test(await pg.getAttribute(sf + ' #crf-f0', 'placeholder')));
+    await pg.fill(sf + ' #crf-f0', 'https://s3.us-west-004.backblazeb2.com');
+    await pg.fill(sf + ' #crf-f1', 'us-west-004');
+    await pg.fill(sf + ' #crf-f2', 'ngg-media');
+    await pg.fill(sf + ' #crf-f3', '004keyid');
+    await pg.fill(sf + ' #crf-f4', 'K004SECRETfromSCREEN');
+    await pg.fill(sf + ' #crf-f5', 'https://f004.backblazeb2.com/file/ngg-media');
+    await pg.click(sf + ' button[type=submit]');
+    await pg.waitForFunction(() => /Connected/.test(document.querySelector('article.cr-key[aria-label="File storage (S3-compatible)"]')?.innerText || ''), null, { timeout: 30000 });
+    chk('the bucket saves and reads Connected, the secret nowhere on the page', !/K004SECRETfromSCREEN/.test(await pg.innerText('body')));
+    await pg.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(pg);
+    await pg.waitForSelector('article.cr-key[aria-label="File storage (S3-compatible)"]', { timeout: 60000 });
+    await stg.locator('button:has-text("Manage")').click();
+    chk('reopened, the guide is on the provider the bucket is with', (await stg.locator('.cr-stg select').inputValue()) === 'b2');
+    pg.once('dialog', dlg => dlg.accept());
+    await stg.locator('.cr-key-acts button:has-text("Remove")').first().click();
+    const conf2 = await pg.waitForSelector('[role=alertdialog] button:has-text("Remove"), [role=dialog] button:has-text("Remove")', { timeout: 10000 }).catch(() => null);
+    if (conf2) await conf2.click();
+    await pg.waitForFunction(() => /Not set/.test(document.querySelector('article.cr-key[aria-label="File storage (S3-compatible)"]')?.innerText || ''), null, { timeout: 30000 });
     // Centres: found from the page header, added through a labelled form.
     await pg.goto(BASE + '/control/members/centres', { waitUntil: 'domcontentloaded' });
     await waitForBoot(pg);

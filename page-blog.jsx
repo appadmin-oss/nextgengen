@@ -59,16 +59,16 @@ function BlogPage({ setPage }) {
   return (
     <div className="page" data-screen-label="Blog">
       {/* Header */}
-      <section className="page-hero page-hero-light" style={{background:"var(--paper)", padding:"64px 0 0"}}>
+      <section className="page-hero page-hero-light" style={{background:"var(--paper)", padding:"var(--rs-p-97, 64px 0px 0px)"}}>
         <div className="container">
-          <div style={{display:"grid", gridTemplateColumns:"1.2fr 1fr", gap:48, alignItems:"end"}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-60, 1.2fr 1fr)", gap:"var(--rs-gap-21, 48px)", alignItems:"end"}}>
             <div>
               <span className="chip chip-cream">THE JOURNAL · LONG-FORM</span>
-              <h1 className="display" style={{fontSize:"clamp(64px, 8vw, 124px)", margin:"18px 0 14px", lineHeight:0.9}}>
+              <h1 className="display" style={{fontSize:"var(--rs-fsize-98, clamp(64px, 8vw, 124px))", margin:"18px 0 14px", lineHeight:"var(--rs-lheight-52, 0.9)"}}>
                 Notes from<br/>
                 <em style={{fontStyle:"normal", color:"var(--coral)"}}>the field.</em>
               </h1>
-              <p style={{fontSize:18, color:"var(--ink-500)", maxWidth:520, lineHeight:1.55, margin:0}}>
+              <p style={{fontSize:18, color:"var(--ink-700)", maxWidth:520, lineHeight:1.55, margin:0}}>
                 Mentors, members and the editorial team write here. The thinking behind the program, the stories from the cohort, the receipts.
               </p>
             </div>
@@ -87,12 +87,12 @@ function BlogPage({ setPage }) {
       <section style={{padding:"56px 0"}}>
         <div className="container">
           <article style={{cursor:"pointer"}} onClick={() => setReading(feat)}>
-            <div style={{display:"grid", gridTemplateColumns:"1.5fr 1fr", gap:32, alignItems:"center"}}>
-              <Photo src={blogCover(feat.cover, 1600, 1000)} ratio="16/10" style={{height:520}}/>
+            <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-82, 1.5fr 1fr)", gap:32, alignItems:"center"}}>
+              <Photo src={blogCover(feat.cover, 1600, 1000)} ratio="16/10" style={{height:"var(--rs-height-99, 520px)"}}/>
               <div>
                 <span className="chip chip-gold">{feat.category}</span>
-                <h2 style={{fontFamily:"var(--font-display)", fontSize:56, lineHeight:1, letterSpacing:"-0.03em", margin:"18px 0 18px", fontWeight:700}}>{feat.title}</h2>
-                <p style={{fontSize:18, lineHeight:1.55, color:"var(--ink-500)", margin:0}}>{feat.excerpt}</p>
+                <h2 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:"var(--rs-fsize-100, 56px)", lineHeight:1, letterSpacing:"-0.03em", margin:"18px 0 18px", fontWeight:700}}>{feat.title}</h2>
+                <p style={{fontSize:18, lineHeight:1.55, color:"var(--ink-700)", margin:0}}>{feat.excerpt}</p>
                 <div style={{display:"flex", alignItems:"center", gap:12, marginTop:28, paddingTop:24, borderTop:"1px solid rgba(12,20,50,0.1)"}}>
                   <Avatar seed={feat.author.portrait} size={48} ring/>
                   <div>
@@ -116,7 +116,7 @@ function BlogPage({ setPage }) {
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:28}}>
             <span className="eyebrow" style={{color:"var(--ink-500)"}}>ALL ARTICLES · {filtered.length}</span>
           </div>
-          <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:28}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-302, repeat(3, 1fr))", gap:28}}>
             {(filter === "All" ? rest : filtered).map(p => (
               <article key={p.id} style={{display:"flex", flexDirection:"column", gap:16, cursor:"pointer"}} onClick={() => setReading(p)}>
                 <Photo src={blogCover(p.cover, 900, 600)} ratio="3/2"/>
@@ -125,8 +125,8 @@ function BlogPage({ setPage }) {
                     <span className="chip" style={{fontSize:11, padding:"3px 10px"}}>{p.category}</span>
                     <span className="mono" style={{fontSize:11, color:"var(--ink-500)"}}>{p.read}</span>
                   </div>
-                  <h3 style={{fontFamily:"var(--font-display)", fontSize:24, lineHeight:1.1, letterSpacing:"-0.02em", margin:"12px 0 10px", fontWeight:700}}>{p.title}</h3>
-                  <p style={{fontSize:14, color:"var(--ink-500)", lineHeight:1.5, margin:0, display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{p.excerpt}</p>
+                  <h3 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:24, lineHeight:1.1, letterSpacing:"-0.02em", margin:"12px 0 10px", fontWeight:700}}>{p.title}</h3>
+                  <p style={{fontSize:14, color:"var(--ink-700)", lineHeight:1.5, margin:0, display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{p.excerpt}</p>
                 </div>
                 <div style={{display:"flex", alignItems:"center", gap:10, marginTop:"auto", paddingTop:14, borderTop:"1px solid rgba(12,20,50,0.07)"}}>
                   <Avatar seed={p.author.portrait} size={30}/>
@@ -142,12 +142,12 @@ function BlogPage({ setPage }) {
       </section>
 
       {/* Newsletter strip */}
-      <section style={{background:"var(--navy-900)", color:"white", padding:"72px 0"}}>
+      <section className="dark-surface" style={{background:"var(--navy-900)", color:"white", padding:"72px 0"}}>
         <div className="container">
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:48, alignItems:"center"}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:"var(--rs-gap-21, 48px)", alignItems:"center"}}>
             <div>
               <span className="eyebrow" style={{color:"var(--gold-400)"}}>SUNDAY DISPATCH</span>
-              <h2 className="display" style={{fontSize:"clamp(36px, 4vw, 56px)", margin:"8px 0 14px", lineHeight:0.95}}>One letter, every Sunday.</h2>
+              <h2 className="display" style={{fontSize:"var(--rs-fsize-101, clamp(36px, 4vw, 56px))", margin:"8px 0 14px", lineHeight:0.95}}>One letter, every Sunday.</h2>
               <p style={{color:"rgba(255,255,255,0.7)", fontSize:16, lineHeight:1.5, maxWidth:480}}>
                 A single dispatch — the week's mission, the genius of the week, the article we wrote. No marketing, no ads. Ten minutes to read, with your tea.
               </p>
@@ -169,7 +169,7 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
   return (
     <div className="page" data-screen-label="Blog Article">
       {/* Hero cover */}
-      <section style={{position:"relative", height:560, overflow:"hidden", background:"var(--navy-900)"}}>
+      <section className="dark-surface" style={{position:"relative", height:"var(--rs-height-102, 560px)", overflow:"hidden", background:"var(--navy-900)"}}>
         <img src={blogCover(post.cover, 2000, 1200)} alt="" style={{position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", opacity:0.65}}/>
         <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(12,20,50,0.5) 0%, rgba(12,20,50,0.85) 100%)"}}/>
         <div className="container" style={{position:"relative", height:"100%", display:"flex", flexDirection:"column", justifyContent:"end", paddingBottom:48, color:"white"}}>
@@ -178,7 +178,7 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
             <span className="chip chip-gold">{post.category}</span>
             <span className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.7)", letterSpacing:"0.12em", textTransform:"uppercase"}}>{post.date} · {post.read} read</span>
           </div>
-          <h1 className="display" style={{fontSize:"clamp(40px, 6vw, 88px)", margin:"18px 0 0", maxWidth:980, lineHeight:0.95, color:"white"}}>
+          <h1 className="display" style={{fontSize:"var(--rs-fsize-103, clamp(40px, 6vw, 88px))", margin:"18px 0 0", maxWidth:980, lineHeight:0.95, color:"white"}}>
             {post.title}
           </h1>
           <div style={{display:"flex", alignItems:"center", gap:12, marginTop:28}}>
@@ -194,7 +194,7 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
       {/* Body */}
       <section style={{padding:"72px 0"}}>
         <div className="container" style={{maxWidth:760}}>
-          <p style={{fontSize:22, lineHeight:1.5, color:"var(--ink-700)", fontFamily:"var(--font-display)", fontWeight:500, letterSpacing:"-0.015em", margin:"0 0 36px"}}>
+          <p style={{fontSize:"var(--rs-fsize-1, 22px)", lineHeight:1.5, color:"var(--ink-700)", fontFamily:"var(--font-display)", fontWeight:500, letterSpacing:"-0.015em", margin:"0 0 36px"}}>
             {post.excerpt}
           </p>
           <ArticleBody post={post}/>
@@ -228,7 +228,7 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
             </figcaption>
           </figure>
 
-          <h2 style={{fontFamily:"var(--font-display)", fontSize:36, letterSpacing:"-0.025em", margin:"32px 0 18px", lineHeight:1.05}}>The trick is the system, not the speech.</h2>
+          <h2 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:"var(--rs-fsize-45, 36px)", letterSpacing:"-0.025em", margin:"32px 0 18px", lineHeight:1.05}}>The trick is the system, not the speech.</h2>
           <p style={{fontSize:17, lineHeight:1.7, color:"var(--ink-700)"}}>
             We do not motivate. We do not give pep-talks at the door. We build the calendar, the cohort, the consequences and the celebrations — and we let the teenager rise inside the structure. The character is the thing that has to keep showing up after the inspiration wears off, which is by Wednesday.
           </p>
@@ -241,7 +241,7 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
             <Avatar seed={post.author.portrait} size={72}/>
             <div style={{flex:1}}>
               <div className="mono" style={{fontSize:10, letterSpacing:"0.15em", color:"var(--ink-500)"}}>WRITTEN BY</div>
-              <div style={{fontFamily:"var(--font-display)", fontSize:22, fontWeight:700, marginTop:4}}>{post.author.name}</div>
+              <div style={{fontFamily:"var(--font-display)", fontSize:"var(--rs-fsize-1, 22px)", fontWeight:700, marginTop:4}}>{post.author.name}</div>
               <div style={{fontSize:13, color:"var(--ink-500)", marginTop:4}}>{post.author.role} · Writing about youth movements, African excellence, and the small daily work of becoming.</div>
             </div>
           </div>
@@ -254,14 +254,14 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
       <section style={{padding:"64px 0", background:"var(--cream-50)"}}>
         <div className="container">
           <SectionHead eyebrow="KEEP READING" title="More from the journal."/>
-          <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:24}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-302, repeat(3, 1fr))", gap:24}}>
             {related.map(p => (
               <article key={p.id} style={{display:"flex", flexDirection:"column", gap:14, cursor:"pointer"}} onClick={() => onOpen && onOpen(p)}>
                 <Photo src={blogCover(p.cover, 800, 500)} ratio="3/2"/>
                 <div>
                   <span className="chip" style={{fontSize:11, padding:"3px 10px"}}>{p.category}</span>
-                  <h3 style={{fontFamily:"var(--font-display)", fontSize:22, lineHeight:1.1, letterSpacing:"-0.02em", margin:"10px 0 8px", fontWeight:700}}>{p.title}</h3>
-                  <p style={{fontSize:13, color:"var(--ink-500)", lineHeight:1.45, margin:0}}>{p.excerpt.slice(0, 110)}…</p>
+                  <h3 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:"var(--rs-fsize-1, 22px)", lineHeight:1.1, letterSpacing:"-0.02em", margin:"10px 0 8px", fontWeight:700}}>{p.title}</h3>
+                  <p style={{fontSize:13, color:"var(--ink-700)", lineHeight:1.45, margin:0}}>{p.excerpt.slice(0, 110)}…</p>
                 </div>
               </article>
             ))}
@@ -328,7 +328,7 @@ function PostEngagement({ post }) {
           return <button key={e} onClick={() => react(e)} style={{ border: "1px solid " + (mine ? "var(--gold-500)" : "rgba(12,20,50,0.15)"), background: mine ? "rgba(245,176,38,0.12)" : "#fff", borderRadius: 999, padding: "6px 14px", cursor: "pointer", fontSize: 15 }}>{e} {n > 0 ? <b style={{ fontSize: 13 }}>{n}</b> : null}</button>;
         })}
       </div>
-      <h3 style={{ fontFamily: "var(--font-display)", fontSize: 24, margin: "0 0 16px" }}>Comments</h3>
+      <h3 style={{ fontFamily: "var(--rs-ffamily-11, var(--font-display))", fontSize: 24, margin: "0 0 16px" }}>Comments</h3>
       {signedIn ? (
         <div style={{ marginBottom: 24 }}>
           <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder="Share a thoughtful comment…" style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid rgba(12,20,50,0.15)", fontFamily: "inherit", fontSize: 15 }}/>
@@ -338,9 +338,9 @@ function PostEngagement({ post }) {
           </div>
         </div>
       ) : (
-        <p style={{ fontSize: 14, color: "var(--ink-500)", marginBottom: 24 }}><a href="#" onClick={e => { e.preventDefault(); auth.openSignIn && auth.openSignIn(); }} style={{ color: "var(--navy-900)", fontWeight: 600 }}>Sign in</a> to react and comment.</p>
+        <p style={{ fontSize: 14, color: "var(--ink-700)", marginBottom: 24 }}><a href="#" onClick={e => { e.preventDefault(); auth.openSignIn && auth.openSignIn(); }} style={{ color: "var(--navy-900)", fontWeight: 600 }}>Sign in</a> to react and comment.</p>
       )}
-      {(eng.comments || []).length === 0 ? <p style={{ fontSize: 14, color: "var(--ink-500)" }}>No comments yet — be the first.</p> :
+      {(eng.comments || []).length === 0 ? <p style={{ fontSize: 14, color: "var(--ink-700)" }}>No comments yet — be the first.</p> :
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {eng.comments.map(c => (
             <div key={c.commentId} style={{ padding: "12px 16px", background: "var(--cream-50)", borderRadius: 12 }}>

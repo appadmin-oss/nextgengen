@@ -1,0 +1,1701 @@
+/* The Mentor Portal (design: docs/design/portals/mentor-portal-v15.dc.html).
+ *
+ * Mp15View is the design, compiled (tools/dc-compile.js). This file is its
+ * controller: it builds the view's values from the mentor API that already
+ * exists — /member/mentor.php ?view= (reads) and action= (writes), every one
+ * gated by mentor_gate / mp_gate on the server — and owns nothing the server
+ * owns. The flags (struggling, overdue, relationship, stalled, family), the
+ * urgency order, the scorecard lock, the commitment statuses and the quiz
+ * score are the server's; the screen only displays them.
+ *
+ * The behaviour rules are the design's own (its DCLogic class), ported line by
+ * line where they are presentation, and replaced by the server's answer where
+ * they were sample data. Where the server has no write for something the design
+ * shows (ticking off last supervision's agreed actions) it is the mentor's own
+ * checklist on this device, and says so.
+ *
+ * Who gets this portal: NGG mentors in the pod, peer, lead and coordinator
+ * roles. Instructors and Summer-only mentors keep the class portal
+ * (MentorPortal in page-other.jsx), and so does anyone the API turns away, so
+ * its sign-in doors and its not-cleared / no-centre answers still apply.
+ */
+
+/* The Saturday evaluation's scale and criteria, as the server sends them (mentor-portal.php MP_EVAL_*); this copy is only the fallback before the read lands. */
+const MP15_EVAL_SCALE = ['Not yet', 'Emerging', 'Demonstrated', 'Strong'];
+const MP15_EVAL_CRITERIA = [['punctuality', 'Punctuality', 'Here and checked in by 8:00am'], ['assignment', 'Assignment', 'The week’s assignment handed in at check-in'],
+  ['participation', 'Participation', 'Took part in the huddle, the breakout and the class'], ['respect', 'Respect', 'To peers, mentors and instructors'],
+  ['teamwork', 'Teamwork', 'Worked with others and helped them'], ['courage', 'Courage', 'Tried something hard or spoke up'],
+  ['initiative', 'Initiative', 'Started things without being asked'], ['reflection', 'Reflection', 'Named what they learned and what is next']].map(([key, label, hint]) => ({ key, label, hint }));
+const MP15_ROLES = { pod: 'Pod mentor', peer: 'Peer mentor', instructor: 'Instructor mentor', lead: 'Lead mentor', coord: 'Centre coordinator' };
+const MP15_TONE = { bad: ['#fdeeea', '#b0361c'], warn: ['#fdf6e3', '#7a5600'], ok: ['#f3faf4', '#1d6b30'], neu: ['#f0efea', '#4a4a50'] };
+const MP15_KIND_TYPE = { 'one-to-one': 'One-to-one', one_to_one: 'One-to-one', pod: 'Pod session', family: 'Family', phone: 'Phone or message', note: 'Note' };
+const MP15_TYPE_ICON = { 'One-to-one': 'ph ph-user', 'Pod session': 'ph ph-users-three', Family: 'ph ph-house-line', 'Phone or message': 'ph ph-phone', Note: 'ph ph-note-pencil' };
+const MP15_AREAS = ['Character', 'Competence', 'Wellbeing', 'Leadership'];
+const MP15_LEVELS = ['Low', 'Steady', 'Strong', 'Exceptional'];
+const MP15_CONCERN_KINDS = ['Something they told me', 'Injury or harm', 'Neglect', 'Online safety', 'An adult’s behaviour', 'Something else'];
+const MP15_REL_Q = ['We talk about things that matter to them', 'They can tell me when something is wrong', 'I know what they want from our time', 'Our time helps them move forward'];
+/* The class portal's tabs. A link that lands on one of these (the results
+   email lands on ?tab=results) opens the class portal, as it always has. */
+const MP15_CLASSIC_TABS = ['session', 'class', 'skills', 'curriculum', 'results', 'attention'];
+/* The Class area's screens (mp15-class.jsx), one address: /mentor/class, with
+   ?tab=results or ?tab=curriculum for the other two — the old panel's own tab
+   names, so the "sent their results and plan" email still lands right. */
+const MP15_CLASS_SCREENS = ['stars', 'results', 'curric'];
+function mp15ClassScreenFromUrl() {
+  let t = ''; try { t = new URLSearchParams(location.search).get('tab') || ''; } catch (_) {}
+  return t === 'results' ? 'results' : t === 'curriculum' ? 'curric' : 'stars';
+}
+
+/* ── Dates: the server works in Lagos calendar dates (YYYY-MM-DD) ────────── */
+function mp15D(iso) { const s = String(iso || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00Z') : null; }
+function mp15Iso(d) { return d.toISOString().slice(0, 10); }
+function mp15AddDays(iso, n) { const d = mp15D(iso); return d ? mp15Iso(new Date(d.getTime() + n * 86400000)) : ''; }
+function mp15Days(from, to) { const a = mp15D(from), b = mp15D(to); return a && b ? Math.round((b - a) / 86400000) : null; }
+function mp15Fmt(iso, o) { const d = mp15D(iso); return d ? d.toLocaleDateString('en-GB', Object.assign({ timeZone: 'UTC' }, o || { day: 'numeric', month: 'long' })) : ''; }
+function mp15Month(ym) { return ym ? mp15Fmt(ym + '-01', { month: 'long' }) : ''; }
+function mp15Ago(n) { return n === null || n === undefined ? 'Never' : n <= 0 ? 'Today' : n === 1 ? 'Yesterday' : n + ' days ago'; }
+function mp15When(at, today) { const n = mp15Days(at, today); return n === null ? '' : n <= 0 ? 'Today' : n === 1 ? 'Yesterday' : n < 7 ? mp15Fmt(at, { weekday: 'short' }) : mp15Fmt(at, { day: 'numeric', month: 'short' }); }
+function mp15LastSat(today) { const d = mp15D(today); if (!d) return ''; return mp15AddDays(today, -((d.getUTCDay() + 1) % 7)); }
+function mp15NextSat(today) { const d = mp15D(today); if (!d) return ''; return mp15AddDays(today, (6 - d.getUTCDay() + 7) % 7); }
+function mp15Monday(iso) { const d = mp15D(iso); if (!d) return ''; return mp15AddDays(iso, -((d.getUTCDay() + 6) % 7)); }
+function mp15Initials(name) { const p = String(name || '').replace(/^(Mr|Mrs|Ms|Miss|Dr)\.?\s+/i, '').trim().split(/\s+/).filter(Boolean); return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }
+function mp15First(name) { return String(name || '').trim().split(/\s+/)[0] || ''; }
+
+/* What an API refusal means, in the portal's words. Unknown codes are shown
+   as themselves rather than as a reassurance. */
+const MP15_ERR = {
+  name_the_project: 'Give the project a name (three letters or more).', set_a_finish_date: 'Set a finish date.', finish_before_start: 'The finish date is before the start.',
+  project_too_long: 'A project runs a year at most.', choose_people: 'Choose at least one person.', not_yours_to_assign: 'Someone on the list isn’t yours to assign any more. Reload and try again.',
+  too_many_groups: 'Twenty groups at most.', too_many: 'Two hundred people at most on one project.', ask_your_lead: 'Only the person who set the project can excuse a part.',
+  not_on_project: 'That person isn’t on this project.', project_closed: 'This project has finished.',
+  not_in_caseload: 'That child isn’t in your caseload.', peer_no_family: 'Peer mentors don’t contact families. Your lead will.',
+  say_what_happened: 'Write what happened first.', reviewed_by_another: 'Another mentor already reviewed this week. Ask your lead if it needs changing.', not_a_saturday: 'The register and reviews are for a Saturday the pod met.', family_daily_limit: 'This family has had two messages today already. Send it tomorrow.', report_limit: 'You have sent the most reports allowed today. If a child is in danger now, phone your safeguarding officer.', choose_a_mentee: 'Choose a mentee first.', nobody_here: 'Nobody was marked here on Saturday.',
+  bad_date: 'That date isn’t right.', date_out_of_range: 'That Saturday is outside the two-week window for writing it up.',
+  locked: 'This month’s scores are locked.', ten_scores: 'Score all ten skills.', answer_all_four: 'Answer all four first.',
+  write_a_message: 'Write a message first.', write_a_reply: 'Write a reply first.', no_guardian_contact: 'There’s no family contact on their record. Ask your coordinator to add one.',
+  not_delivered: 'The message didn’t reach the family. Nothing was logged.', rate_all_three: 'Rate effort, character and wellbeing first.',
+  no_lead: 'You have no lead mentor on record.', no_mentor_record: 'Your mentor record isn’t set up yet. Ask your coordinator.',
+  answer_one: 'Answer at least one question.', not_agreed: 'Agree it with them first, then make it active.', no_wish: 'Write the wish first.',
+  goals_locked_connect: 'The first weeks are for getting to know each other. Goals open in week 3.', active_needs_agreed: 'A live goal stays agreed. Pause it first.',
+  progress_out_of_range: 'How close is 1 to 5.', fixed_item_missing: 'The huddle, one-to-ones and close stay on the agenda.',
+  name_every_item: 'Name the new activity first.', bad_minutes: 'Each activity is 5 to 120 minutes.', too_many_items: 'That’s the most a Saturday plan holds. Remove one first.',
+  too_many_one_to_ones: 'Six one-to-ones is the most for one Saturday.', duplicate_item: 'That item is already on the agenda.',
+  choose_the_child: 'Choose the child first.', choose_the_kind: 'Choose what kind of concern.', not_found: 'That record wasn’t found.',
+  orientation_required: 'Not saved: finish your Academy first. You can look around everything until then.',
+  forbidden: 'That isn’t yours to do.', not_in_team: 'That mentor isn’t in your team.', answer_all: 'Answer every question first.', retry_later: 'That is three tries at this module today. Read it again and try tomorrow.',
+  rate_limited: 'Too many in a row. Wait a minute and try again.', network: 'You’re offline. Nothing was saved.', too_long: 'That’s too long.',
+};
+function mp15ErrText(e) { const c = (e && (e.code || e.message)) || 'failed'; return MP15_ERR[c] || ('Couldn’t save (' + c + ').'); }
+
+/* The writes that go through before the Academy is complete: a concern, the Academy itself, marking a message read. */
+const MP15_ORI_OPEN_ACTS = ['concern', 'academyResult', 'messageRead'];
+
+const mp15Api = {
+  view: (view, opts) => NGGApi.member.mentorView(view, opts),
+  act: (action, body) => NGGApi.member.mentorAct(action, body),
+};
+
+class Mp15Portal extends React.Component {
+  rootRef = React.createRef();
+  state = {
+    scr: (this.props.initial === 'classic' ? mp15ClassScreenFromUrl() : this.props.initial) || 'week', hist: [], kid: null, ktab: 'overview', filter: 'all', q: '', sort: 'urgent', sel: {}, rel: {}, pTpl: 'saw', pBody: null,
+    step: 'before', agenda: null, aim: 'All', here: {}, obs: {}, rv: {}, rvDone: {}, mf: 'all', msel: '', read: {}, reply: '', sup: null,
+    cKid: '', cText: '', cCat: '', more: false, w: 1200, toast: '', undo: null,
+    d: {}, ld: {}, er: {}, centre: '', gEdit: {}, hidden: {},
+  };
+
+  componentDidMount() {
+    this.onKey = e => { if (e.key === 'Escape' && this.state.more) this.setState({ more: false }); };
+    window.addEventListener('keydown', this.onKey);
+    const el = this.rootRef.current;
+    if (el && window.ResizeObserver) { this.ro = new ResizeObserver(([e]) => this.setState({ w: e.contentRect.width })); this.ro.observe(el); }
+    const week = this.props.boot;
+    this.setState({ d: { week }, centre: (week && week.me && week.me.centreOnScreen) || '' }, () => this.loadAll());
+  }
+  componentWillUnmount() {
+    window.removeEventListener('keydown', this.onKey); this.ro && this.ro.disconnect(); clearTimeout(this.tt);
+    Object.values(this.timers || {}).forEach(clearTimeout);
+    this.flushRegister(); this.flushPlan();
+  }
+
+  /* ── Data ─────────────────────────────────────────────────────────────── */
+  me() { return ((this.state.d.week || {}).me) || {}; }
+  /* The Academy (domain/academy.php): until a mentor's Academy is complete
+     they can open every screen and look around, but nothing saves — the
+     server refuses the portal's writes, act() says why before sending, and
+     every screen carries the banner (slot). Report a concern and the Academy
+     itself always work. The Academy's own read is fresher than the shell's. */
+  orientation() { const a = this.state.d.academy; return (a && a.orientation) || this.me().orientation || null; }
+  oriLocked() { const o = this.orientation(); return !!this.me().mentorId && !!o && o.ok === false; }
+  today() { return (this.state.d.week || {}).today || mp15Iso(new Date()); }
+  role() { return this.me().role || 'pod'; }
+  isLead() { return this.role() === 'lead' || this.role() === 'coord'; }
+  satNextDate() { const t = this.today(); return mp15D(t) && mp15D(t).getUTCDay() === 6 ? t : mp15NextSat(t); }
+  satLastDate() { const t = this.today(); return mp15D(t) && mp15D(t).getUTCDay() === 6 ? t : mp15LastSat(t); }
+
+  load(key, view, opts) {
+    this.setState(s => ({ ld: { ...s.ld, [key]: true }, er: { ...s.er, [key]: null } }));
+    return mp15Api.view(view, Object.assign({ centre: this.state.centre || '' }, opts || {}))
+      .then(r => { this.setState(s => ({ d: { ...s.d, [key]: r }, ld: { ...s.ld, [key]: false } })); return r; })
+      .catch(e => { this.setState(s => ({ ld: { ...s.ld, [key]: false }, er: { ...s.er, [key]: e } })); return null; });
+  }
+  loadAll() {
+    this.load('week', 'week'); this.load('case', 'caseload'); this.load('goals', 'goals'); this.load('sess', 'sessions');
+    this.load('satNext', 'saturday', { date: this.satNextDate() });
+    if (this.satLastDate() !== this.satNextDate()) this.load('satLast', 'saturday', { date: this.satLastDate() });
+    this.load('msgs', 'messages'); this.load('index', 'index'); this.load('role', 'commitments'); if (this.me().mentorId) this.load('academy', 'academy');
+    if (this.isLead()) this.load('team', 'team');
+  }
+  loadKid(id) { if (id) return this.load('kid:' + id, 'mentee', { subjectId: id }); }
+  componentDidUpdate() {
+    // The Growth tab's report is read once per child, when the tab is first shown.
+    const S = this.state, k = 'grw:' + S.kid;
+    if (S.scr === 'kid' && S.ktab === 'prog' && S.kid && !S.d[k] && !S.ld[k] && !S.er[k]) this.load(k, 'growth', { subjectId: S.kid });
+  }
+  /* After a write, re-read what it changed. The server is the record. */
+  refresh(keys, kid) {
+    const map = { week: ['week', 'week'], case: ['case', 'caseload'], goals: ['goals', 'goals'], sess: ['sess', 'sessions'], msgs: ['msgs', 'messages'],
+                  index: ['index', 'index'], role: ['role', 'commitments'], academy: ['academy', 'academy'], team: ['team', 'team'] };
+    keys.forEach(k => {
+      if (k === 'sat') { this.load('satNext', 'saturday', { date: this.satNextDate() }); if (this.satLastDate() !== this.satNextDate()) this.load('satLast', 'saturday', { date: this.satLastDate() }); }
+      else if (map[k]) this.load(map[k][0], map[k][1]);
+    });
+    if (kid) this.loadKid(kid);
+  }
+  /* One write. Resolves to the server's answer or null; a refusal is a toast. */
+  act(action, body, okText) {
+    if (this.oriLocked() && !MP15_ORI_OPEN_ACTS.includes(action)) { this.say('Not saved: finish your Academy first. You can look around everything until then.'); return Promise.resolve(null); }
+    return mp15Api.act(action, Object.assign({ centre: this.state.centre || '' }, body || {}))
+      .then(r => { if (okText) this.say(typeof okText === 'function' ? okText(r) : okText); return r || {}; })
+      .catch(e => { this.say(mp15ErrText(e)); return null; });
+  }
+
+  say(t, undo) { clearTimeout(this.tt); this.setState({ toast: t, undo: undo || null }); this.tt = setTimeout(() => { this.setState({ toast: '', undo: null }); }, undo ? 6500 : 4000); }
+  go(scr, extra) {
+    const S = this.state; const m = this.rootRef.current && this.rootRef.current.querySelector('main'); if (m) m.scrollTop = 0;
+    this.setState({ scr, more: false, hist: scr === S.scr ? S.hist : S.hist.concat([S.scr]).slice(-12), ...(scr !== S.scr ? { mOpen: false } : {}), ...(scr === 'concern' ? { cSent: null } : {}), ...(extra || {}) });
+    /* The Class screens have an address of their own (/mentor/class[?tab=…]), so a reload or a shared link reopens them. */
+    const inClass = MP15_CLASS_SCREENS.includes(scr);
+    if (inClass || MP15_CLASS_SCREENS.includes(S.scr)) {
+      try { history.replaceState({ page: 'mentor' }, '', inClass ? '/mentor/class' + (scr === 'results' ? '?tab=results' : scr === 'curric' ? '?tab=curriculum' : '') : '/mentor/ngg'); } catch (_) {}
+    }
+    const kid = (extra && extra.kid) || (scr === 'kid' ? S.kid : null);
+    if (scr === 'kid' && kid && !S.d['kid:' + kid]) this.loadKid(kid);
+    if (scr === 'module' && extra && extra.mod) this.setState({ mRes: null });
+  }
+  back() { const h = this.state.hist; this.setState({ scr: h.length ? h[h.length - 1] : 'week', hist: h.slice(0, -1) }); }
+  goDue(g) {
+    if (!g) return;
+    const tab = { scorecard: 'score', overview: 'overview', goals: 'goals', family: 'family' }[g.tab] || 'overview';
+    if (g.screen === 'mentee') return this.go('kid', { kid: g.id, ktab: tab, pBody: null });
+    if (g.screen === 'mentees') return this.go('list', { filter: g.filter || 'all' });
+    if (g.screen === 'messages') return this.go('msg');
+    if (g.screen === 'saturday') return this.go('sat', { step: g.step || 'before' });
+    if (g.screen === 'goals') return this.go('goals', { gf: g.filter || 'active' });
+    if (g.screen === 'role' || g.screen === 'academy') return this.go(g.screen);
+  }
+
+  /* ── The caseload, as the design reads a child ────────────────────────── */
+  kids() {
+    const c = this.state.d.case; if (!c || !c.mentees) return [];
+    if (this._kSrc === c) return this._k;
+    const today = c.today || this.today();
+    this._kSrc = c;
+    return (this._k = c.mentees.map(r => ({
+      id: r.id, first: r.first, name: r.name, ini: r.initials, age: r.age, school: r.school || '', phase: r.phase || 'Grow', week: r.week,
+      contact: r.flags ? r.flags.contactDays : null, wb: r.wellbeing || 'Okay', relM: r.rel ? r.rel.mentor : null, relC: r.rel ? r.rel.child : null,
+      relDue: !!(r.rel && r.rel.due), mentor: r.mentorName || '', guardian: r.guardianName || '', flags: r.flags || {}, urgency: r.urgency || 0,
+      ag: r.activeGoal, famDays: r.lastFamilyUpdateAt ? mp15Days(r.lastFamilyUpdateAt, today) : null, pills: r.pills || [],
+    })));
+  }
+  goalRows() { return ((this.state.d.goals || {}).goals) || []; }
+  goalsOfKid(id) { return this.goalRows().filter(g => g.subjectId === id); }
+
+  /* ── Saturday writes, saved as tapped ─────────────────────────────────── */
+  queueRegister(id) {
+    this.regDirty = Object.assign(this.regDirty || {}, { [id]: true });
+    this.timers = this.timers || {}; clearTimeout(this.timers.reg);
+    this.timers.reg = setTimeout(() => this.flushRegister(), 700);
+  }
+  flushRegister() {
+    const ids = Object.keys(this.regDirty || {}); if (!ids.length) return Promise.resolve();
+    this.regDirty = {};
+    const rows = ids.map(id => ({ subjectId: id, here: this.hereOf(id), observed: this.obsOf(id), checks: this.chkOf(id), note: this.noteOf(id) }));
+    clearTimeout((this.timers || {}).reg);
+    return mp15Api.act('register', { centre: this.state.centre || '', date: this.satLastDate(), rows })
+      .then(() => this.setState(st => { const sv = { ...(st.savedNotes || {}) }; rows.forEach(r => { sv[r.subjectId] = r.note; }); return { savedNotes: sv }; }))
+      .catch(e => { ids.forEach(id => { this.regDirty[id] = true; }); this.say(mp15ErrText(e) + ' The register will retry.'); this.timers.reg = setTimeout(() => this.flushRegister(), 8000); });
+  }
+  satDuring() { return this.state.d.satLast || this.state.d.satNext || null; }
+  hereOf(id) { const S = this.state; if (S.here[id] !== undefined) return S.here[id]; const r = (this.satDuring() || {}).register || {}; return !!(r[id] && r[id].here); }
+  obsOf(id) { const S = this.state; if (S.obs[id]) return Object.keys(S.obs[id]).filter(v => S.obs[id][v]); const r = (this.satDuring() || {}).register || {}; return (r[id] && r[id].observed) || []; }
+  /* The detail line: what the mentor saw, written on the day. */
+  noteOf(id) { const S = this.state; if (S.notes && S.notes[id] !== undefined) return S.notes[id]; const r = (this.satDuring() || {}).register || {}; return (r[id] && r[id].note) || ''; }
+  /* The formation duties (On time · Assignment in · Checked out): the mentor's tick, or the gate's arrival time for On time. */
+  chkOf(id) { const S = this.state; if (S.chk && S.chk[id]) return Object.keys(S.chk[id]).filter(v => S.chk[id][v]); const r = (this.satDuring() || {}).register || {}; return (r[id] && r[id].checks) || []; }
+  agendaNow() {
+    const S = this.state; if (S.agenda) return S.agenda;
+    const a = (this.state.d.satNext || {}).agenda || [];
+    return a.map(x => ({ t: x.title, s: x.sub || '', m: Number(x.minutes) || 0, fixed: !!x.fixed }));
+  }
+  /* The one-to-ones picked for Saturday: the mentor's edit, else the server's (which picks the longest-unseen three). */
+  picksNow() { const S = this.state; return S.oo || (S.d.satNext || {}).oneToOnes || []; }
+  setAgenda(n) { this.setState({ agenda: n }); this.queuePlan(); }
+  setPicks(ids) { this.setState({ oo: ids }); this.queuePlan(); }
+  queuePlan() { this.timers = this.timers || {}; clearTimeout(this.timers.plan); this.planDirty = true; this.setState({ agSave: { st: 'pending' } }); this.timers.plan = setTimeout(() => this.flushPlan(), 900); }
+  /* Saves the whole plan (agenda + one-to-ones) and says so: Saving…, Saved, or why not with a retry.
+     A new activity with no name yet stays on screen and waits; nothing half-written is sent. */
+  flushPlan(share) {
+    if (!this.planDirty && !share) return Promise.resolve(null);
+    const items = this.agendaNow();
+    if (items.some(a => !a.t.trim())) { this.setState({ agSave: { st: 'error', msg: 'Name the new activity, then it saves.' } }); return Promise.resolve(null); }
+    if (this.oriLocked()) { this.setState({ agSave: { st: 'error', msg: 'Not saved: finish your Academy first.' } }); return Promise.resolve(null); }
+    this.planDirty = false; this.setState({ agSave: { st: 'saving' } });
+    const sat = this.state.d.satNext || {};
+    return mp15Api.act('saturdayPlan', { centre: this.state.centre || '', date: sat.date || this.satNextDate(), agenda: items.map(a => ({ title: a.t.trim(), sub: a.s, minutes: a.m })), oneToOnes: this.picksNow(), share: !!share })
+      .then(r => {
+        const d = this.state.d; const dirty = this.planDirty;
+        this.setState({ d: { ...d, satNext: { ...(d.satNext || {}), agenda: r.agenda, oneToOnes: r.oneToOnes, sharedAt: r.sharedAt } },
+          ...(dirty ? {} : { agenda: null, oo: null }), agSave: { st: 'saved', at: new Date() } });
+        return r;
+      })
+      .catch(e => { this.planDirty = true; this.setState({ agSave: { st: 'error', msg: mp15ErrText(e) } }); return null; });
+  }
+  async resetPlan() {
+    const def = (this.state.d.satNext || {}).agendaDefault || [];
+    if (!def.length || !(await dialog.confirm({ title: 'Put back the standard plan?', body: 'Your own activities and timings for this Saturday go.', cta: 'Put it back', danger: true }))) return;
+    this.setAgenda(def.map(x => ({ t: x.title, s: x.sub || '', m: Number(x.minutes) || 5, fixed: !!x.fixed })));
+  }
+
+  /* ── Goals: the WOOP fields save as they are typed ────────────────────── */
+  goalDraft(g) { return Object.assign({}, g, this.state.gEdit[g.id] || {}); }
+  editGoal(kidId, g, patch) {
+    this.setState(s => ({ gEdit: { ...s.gEdit, [g.id]: { ...(s.gEdit[g.id] || {}), ...patch } } }));
+    this.timers = this.timers || {}; clearTimeout(this.timers['g' + g.id]);
+    this.timers['g' + g.id] = setTimeout(() => this.saveGoal(kidId, g.id), 800);
+  }
+  saveGoal(kidId, gid) {
+    const kd = this.state.d['kid:' + kidId]; const base = kd && (kd.goals || []).find(x => x.id === gid); if (!base) return Promise.resolve(null);
+    const g = this.goalDraft(base);
+    return this.act('goal', { subjectId: kidId, id: gid, goal: g.goal || '', outcome: g.outcome || '', obstacle: g.obstacle || '', plan: g.plan || '',
+                              area: g.area || 'Character', reviewBy: g.reviewBy || '', dueOn: g.reviewBy || '', agreed: !!g.agreed });
+  }
+
+  /* ── Reports: built in the browser (the host has no renderer) ─────────── */
+  async report(kind) {
+    try {
+      await loadVendor('jspdf');
+      const { jsPDF } = window.jspdf; const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      const me = this.me(); const today = this.today();
+      let y = 18; const L = 18, W = 174;
+      const line = (t, size, bold, col) => { doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size || 10.5); doc.setTextColor(col || '#0b0b0c');
+        doc.splitTextToSize(String(t), W).forEach(s => { if (y > 280) { doc.addPage(); y = 18; } doc.text(s, L, y); y += (size || 10.5) * 0.45; }); y += 1.5; };
+      const rule = () => { doc.setDrawColor('#e8e5dd'); doc.line(L, y, L + W, y); y += 5; };
+      const series = (items) => items.forEach(it => {
+        const pts = it.series || []; const real = pts.filter(v => v !== null && v !== undefined);
+        line(it.label + ' · ' + it.source, 10.5, true);
+        if (!real.length) { line('Nothing recorded in the last 8 Saturdays.', 9.5, false, '#6b6b72'); return; }
+        const x0 = L, bw = 9, gap = 3, hMax = 16; const top = y;
+        pts.forEach((v, i) => { const h = v === null || v === undefined ? 0.6 : Math.max(0.6, hMax * v / 100); doc.setFillColor(i === pts.length - 1 ? '#0b0b0c' : '#d6d4cc'); doc.rect(x0 + i * (bw + gap), top + hMax - h, bw, h, 'F'); });
+        y = top + hMax + 5; line('Latest ' + real[real.length - 1] + '%' + (real.length > 1 ? ' · change ' + (real[real.length - 1] - real[0] > 0 ? '+' : '') + (real[real.length - 1] - real[0]) + ' points since ' + mp15Fmt((this.state.d.index || {}).outcomes ? '' : '', {}) : ''), 9.5, false, '#4a4a50');
+      });
+      if (kind === 'kid') {
+        const k = this.kids().find(x => x.id === this.state.kid); const kd = this.state.d['kid:' + (k && k.id)];
+        if (!k || !kd) return this.say('Open the mentee first, then make the report.');
+        line('NGG · Progress report', 9, true, '#6b6b72'); line(k.name, 20, true); line(k.phase + ' phase · ' + (k.school || 'School not recorded') + ' · ' + mp15Fmt(today, { day: 'numeric', month: 'long', year: 'numeric' }), 10, false, '#4a4a50'); rule();
+        const ag = (kd.goals || []).find(g => g.status === 'active');
+        line('Active goal', 12.5, true);
+        if (ag) { line('“' + ag.goal + '” · ' + ag.area, 10.5); const c = ag.checks || []; line(c.length ? 'How close: ' + c[c.length - 1].progress + ' of 5 · ' + c.length + ' check-ins, the last on ' + mp15Fmt(c[c.length - 1].at) : 'Not checked in yet', 10, false, '#4a4a50'); }
+        else line('No active goal yet.', 10, false, '#4a4a50');
+        rule();
+        const sc = kd.scorecard || {}; const skills = kd.skills || [];
+        line('NGG Leadership Index · ' + (sc.cur ? mp15Month(sc.month) : (sc.prevMonth ? mp15Month(sc.prevMonth) : 'not scored yet')), 12.5, true);
+        const cur = sc.cur || sc.prev;
+        if (cur) { skills.forEach((s, i) => line(s[0] + ': ' + cur[i] + ' of 10' + (sc.cur && sc.prev ? '  (' + (cur[i] - sc.prev[i] >= 0 ? '+' : '') + (cur[i] - sc.prev[i]) + ')' : ''), 10)); line('Total ' + cur.reduce((a, b) => a + b, 0) + ' of 100', 10.5, true); }
+        else line('No scorecard on record yet.', 10, false, '#4a4a50');
+        rule(); line('The last 8 Saturdays', 12.5, true); series(((kd.progress || {}).items) || []);
+        rule(); line('Mentor: ' + (me.name || '') + ' · ' + (MP15_ROLES[me.role] || 'Mentor') + ' · ' + (me.centre || ''), 9, false, '#6b6b72');
+        line('This report carries no contact, health or safeguarding details.', 8.5, false, '#6b6b72');
+        doc.save('NGG-progress-' + k.first + '-' + today + '.pdf');
+        return this.say('Progress report for ' + k.first + ' saved as a PDF');
+      }
+      const ix = this.state.d.index || {};
+      line('NGG · Pod report', 9, true, '#6b6b72'); line((me.name || 'Mentor') + ' · ' + this.kids().length + ' mentees', 20, true);
+      line((me.centre || '') + ' · ' + mp15Fmt(today, { day: 'numeric', month: 'long', year: 'numeric' }), 10, false, '#4a4a50'); rule();
+      line('NGG Leadership Index · ' + mp15Month(ix.month) + ' · ' + (ix.scored || 0) + ' of ' + (ix.of || 0) + ' scored', 12.5, true);
+      (ix.skills || []).forEach(s => line(s.skill + ': ' + (s.avg === null ? '—' : s.avg.toFixed(1)) + (s.change !== null && s.change !== undefined ? '  (' + (s.change >= 0 ? '+' : '') + s.change.toFixed(1) + ')' : ''), 10));
+      rule(); line('The last 8 Saturdays', 12.5, true); series(((ix.outcomes || {}).items) || []);
+      rule(); line('By mentee, lowest total first', 12.5, true);
+      (ix.byMentee || []).filter(b => b.total !== null && b.total !== undefined).forEach(b => line(b.name + ': ' + b.total + (b.prevTotal !== null && b.prevTotal !== undefined ? ' (' + (b.total - b.prevTotal >= 0 ? '+' : '') + (b.total - b.prevTotal) + ')' : '') + ' · lowest: ' + b.lowSkill, 10));
+      doc.save('NGG-pod-report-' + today + '.pdf');
+      this.say('Pod report saved as a PDF');
+    } catch (e) { this.say('Couldn’t build the PDF. Check your connection and try again.'); }
+  }
+
+  /* ── The values the view reads ────────────────────────────────────────── */
+  renderVals() {
+    const S = this.state, set = o => this.setState(o), D = S.d;
+    const me = this.me(), today = this.today();
+    const roleId = MP15_ROLES[me.role] ? me.role : 'pod'; const roleLabel = MP15_ROLES[roleId];
+    const isPeer = roleId === 'peer', isLead = roleId === 'lead' || roleId === 'coord';
+    const narrow = S.w < 760, wide = !narrow;
+    const lead = (me.lead && me.lead.first) || (isLead ? 'your coordinator' : 'your lead');
+    const all = this.kids(); const N = all.length;
+    const B = { wellbeing: k => !!k.flags.wellbeing, contact: k => !!k.flags.contact, rel: k => !!k.flags.rel, goal: k => !!k.flags.goal, family: k => !isPeer && !!k.flags.family };
+    const FL = [['all', 'All'], ['wellbeing', 'Struggling'], ['contact', 'One-to-one overdue'], ['rel', 'Relationship check'], ['goal', 'Goal needs work'], ['family', 'Family update']].filter(f => !(isPeer && f[0] === 'family'));
+    const wk = D.week || {}; const badgesSrv = wk.badges || {};
+    /* A conversation the mentor is starting (the child page's Message, or New
+       message): shown at the top until its first message makes it real. */
+    const msgRows0 = ((D.msgs || {}).messages) || [];
+    const msgRows = S.mNew && !msgRows0.some(m => m.id === 'chat:' + S.mNew.id)
+      ? [{ id: 'chat:' + S.mNew.id, threadId: 'chat:' + S.mNew.id, kind: 'New conversation', filter: 'chat', from: S.mNew.name, subjectId: S.mNew.id, thread: [], body: '', at: new Date().toISOString(), read: true, isNew: true }].concat(msgRows0)
+      : msgRows0;
+    const unreadN = msgRows.filter(m => !m.read && !S.read[m.id] && m.kind !== 'From your lead').length;
+
+    /* Saturday: Before plans the next one; During and After are the one just gone (or today). */
+    const satN = D.satNext || {}, satL = this.satDuring() || {};
+    const satKidsAll = all;
+    /* Done means evaluated: the Saturday's criteria, a strength and a next step, not only the three ratings. */
+    const reviewed = id => !!(S.rvDone[id] !== undefined ? S.rvDone[id] : ((satL.reviews || {})[id] || {}).evaluated);
+    const hereIds = satKidsAll.filter(k => this.hereOf(k.id)).map(k => k.id);
+    const revKids = hereIds.length ? satKidsAll.filter(k => hereIds.includes(k.id)) : [];
+    const revTotal = revKids.length, revDoneN = revKids.filter(k => reviewed(k.id)).length;
+
+    const dueN = all.filter(k => Object.keys(B).some(id => B[id](k))).length;
+    const acMods = ((D.academy || {}).modules) || [];
+    const modDone = m => !!m.passedAt && !(m.renewBy && m.renewBy < today);
+    const badges = { list: badgesSrv.mentees !== undefined ? badgesSrv.mentees : dueN, sat: revTotal - revDoneN, msg: unreadN, academy: badgesSrv.academy || 0 };
+    /* The Academy is a mentor's own record: staff overseeing a centre with no mentor record have none to complete. */
+    const oriL = this.oriLocked(), ori = this.orientation() || {};
+    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Class', 'ph ph-star', [['stars', 'Stars'], ['results', 'School results'], ['curric', 'Curriculum']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['My role', 'ph ph-seal-check', [['role', 'My role'], ['projects', 'Projects'], ...(me.mentorId ? [['academy', 'Academy']] : [])].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
+      .map(([l, icon, kids]) => { const n = kids.reduce((a, [id]) => a + (badges[id] || 0), 0); return { l, icon, kids, ids: kids.map(x => x[0]), b: n }; });
+    const navCur = S.scr === 'kid' ? 'list' : S.scr === 'module' ? 'academy' : S.scr === 'concern' ? 'role' : S.scr;
+    const goId = id => id === 'hub' ? this.props.onHub() : this.go(id);
+    const area = AREAS.find(a => a.ids.includes(navCur)) || AREAS[0];
+    const MP15_HUE = { week: 'amber', list: 'violet', sat: 'blue', stars: 'teal', msg: 'violet' };
+    const hue = a => PORTAL_HUE[MP15_HUE[a.ids[0]] || 'slate'], hueOn = hue(area);
+    const areaNav = AREAS.map(a => { const on = a === area; return { l: a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, bg: on ? '#fff' : 'transparent', sh: on ? '0 0 0 1px #e8e5dd, 0 1px 2px rgba(11,11,12,.06)' : 'none', fw: on ? 600 : 500, b: a.b, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
+    const areaTabbar = AREAS.map(a => { const on = a === area; return { l: a.l === 'This week' ? 'Week' : a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, fg: on ? hue(a) : '#626a6e', fw: on ? 600 : 500, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
+    const areaTabs = area.kids.map(([id, l]) => { const on = S.scr === id; const b = badges[id] || 0; return { l, on: on ? 'true' : 'false', fg: on ? hueOn : '#5a5a60', fw: on ? 600 : 500, bar: on ? hueOn : 'transparent', b, hasB: !!b, go: () => goId(id) }; });
+    const inDetail = S.scr === 'kid' || S.scr === 'concern' || S.scr === 'module';
+    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ...(me.mentorId ? [['academy', 'Academy', 'ph ph-graduation-cap']] : []), ['role', 'My role', 'ph ph-seal-check'], ['projects', 'Projects', 'ph ph-flag-checkered'], ['stars', 'Stars', 'ph ph-star'], ['results', 'School results', 'ph ph-exam'], ['curric', 'Curriculum', 'ph ph-book-open']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
+    if (isLead) navDef.splice(2, 0, ['mentors', 'Mentors', 'ph ph-chalkboard-teacher']);
+    if (oriL) navDef.unshift(navDef.splice(navDef.findIndex(n => n[0] === 'academy'), 1)[0]);   // the Academy first in More while it is due
+    const tabIds = ['week', 'list', 'sat', 'msg'];
+    const moreItems = navDef.filter(n => !tabIds.includes(n[0])).map(([id, l, icon]) => ({ l, icon, b: badges[id], hasB: !!badges[id], go: () => goId(id) }));
+
+    const ck0 = all.find(k => k.id === S.kid) || all[0] || { id: '', first: '', name: '', ini: '', age: null, school: '', phase: '', contact: null, wb: 'Okay', relM: null, relC: null, relDue: false, guardian: '', flags: {}, famDays: null };
+    const kd = D['kid:' + ck0.id] || null;
+    const q = S.q.trim().toLowerCase();
+    let kids = all.filter(k => (S.filter === 'all' || (B[S.filter] && B[S.filter](k))) && (!q || (k.name + ' ' + k.school).toLowerCase().includes(q)));
+    kids = kids.slice().sort((a, b) => S.sort === 'name' ? a.name.localeCompare(b.name) : S.sort === 'contact' ? (b.contact === null ? 9999 : b.contact) - (a.contact === null ? 9999 : a.contact) : b.urgency - a.urgency);
+    const selIds = Object.keys(S.sel).filter(k => S.sel[k] && all.some(x => x.id === k)); const nSel = selIds.length;
+    const wideCols = S.w >= 1180;
+    const flagsOf = k => { const f = []; if (B.wellbeing(k)) f.push(['Struggling', 'bad']); if (B.contact(k)) f.push(['One-to-one overdue', 'warn']); if (B.rel(k)) f.push([k.relDue ? 'Check due' : 'Relationship', 'warn']); if (!wideCols && B.goal(k)) f.push([k.ag ? (k.ag.stalled ? 'Stalled' : 'On track') : 'No plan yet', 'neu']); if (B.family(k)) f.push(['Family update', 'neu']); return f.slice(0, 2).map(([l, t]) => ({ l, bg: MP15_TONE[t][0], fg: MP15_TONE[t][1] })); };
+    const struggling = all.filter(B.wellbeing), overdue = all.filter(B.contact);
+    const due = (wk.due || []).map(x => { const t = MP15_TONE[x.tone] || MP15_TONE.neu; return { icon: 'ph ph-' + x.icon, bg: t[0], fg: t[1], t: x.title, s: x.sub, go: () => this.goDue(x.go) }; });
+
+    const firstMe = mp15First(me.name);
+    /* No guardian on record: greet without a name, never "Good afternoon their family". */
+    const hello = 'Good afternoon' + (ck0.guardian ? ' ' + ck0.guardian : '');
+    const PT = { saw: ['Something I saw', hello + '. On Saturday I saw ' + ck0.first + ' [what you saw]. What have you noticed at home this month? – ' + firstMe],
+                 plan: ['Their growth plan', hello + '. ' + ck0.first + ' and I agreed a plan' + (ck0.ag ? ': ' + ck0.ag.title : '') + '. You can help by asking how it went after school. – ' + firstMe],
+                 meet: ['Ask to meet', hello + '. Could we have 15 minutes after Saturday’s session to talk about how ' + ck0.first + ' is growing? – ' + firstMe] };
+    const draft = kd && kd.familyDraft;
+    const pBody = S.pBody != null ? S.pBody : (draft && S.pTpl === 'saw' ? draft.body : PT[S.pTpl][1]);
+
+    /* An outcome series from the server (percent, null = nothing recorded). */
+    const mkOut = (it, sinceIso) => { const pts = it.series || []; const real = pts.filter(v => v !== null && v !== undefined); const d = real.length > 1 ? real[real.length - 1] - real[0] : 0;
+      return { l: it.label, note: it.source, d: real.length > 1 ? (d > 0 ? '+' : '') + d + ' pts since ' + mp15Fmt(sinceIso, { day: 'numeric', month: 'short' }) : real.length ? real[real.length - 1] + '% latest' : 'Nothing recorded yet',
+               fg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#6b6b72', pts: pts.map((v, i) => ({ h: (v === null || v === undefined ? 0 : v) + '%', c: v === null || v === undefined ? '#f0efea' : i === pts.length - 1 ? '#0b0b0c' : '#d6d4cc' })) }; };
+
+    const agenda = this.agendaNow();
+    /* The breakout's window is the Saturday schedule's, from the server (Musing & mentor breakout, 8:30–10:00 by default). */
+    const win = satN.window || { start: '08:30', end: '10:00', minutes: 90 };
+    let t0 = (parseInt(win.start, 10) || 8) * 60 + (parseInt(String(win.start).slice(3), 10) || 0); const total = agenda.reduce((n, a) => n + a.m, 0);
+    const LIB = satN.activities || [];
+
+    /* My role: the twelve commitments, from the registers and records. */
+    const R = D.role || {};
+    const routeOf = a => {
+      if (!a) return null;
+      if (a.route === 'saturday:before') return () => this.go('sat', { step: 'before' });
+      if (a.route === 'saturday:after') return () => this.go('sat', { step: 'after' });
+      if (a.route === 'messages') return () => this.go('msg');
+      if (a.route === 'projects') return () => this.go('projects');
+      if (a.route === 'mentees:family') return () => this.go('list', { filter: 'family' });
+      if (a.route === 'action:retreat.book') return () => this.act('retreatBook', { retreatId: a.retreatId }, r => 'Place booked for ' + mp15Fmt(r.date)).then(r => r && this.refresh(['role', 'week']));
+      return () => this.askLead(R);
+    };
+    const CM = (R.commitments || []).map(r => [r.title, r.rule, r.statusText, r.status, r.source, r.action ? r.action.label : null, routeOf(r.action)]);
+    const met = CM.filter(r => r[3] === 'ok').length, tot = CM.length;
+    const supA = (R.agreedLast && R.agreedLast.items) || [];
+    const supKey = 'mp15.sup.' + ((R.agreedLast && R.agreedLast.date) || '');
+    let supDone = {}; try { supDone = JSON.parse(localStorage.getItem(supKey) || '{}') || {}; } catch (_) {}
+    const supAns = S.sup || ((R.supervision && R.supervision.prep) || ['', '', '']);
+
+    const mList = msgRows.filter(m => S.mf === 'all' || m.filter === S.mf || (S.mf === 'journal' && /Journal/.test(m.kind)));
+    const mSel0 = mList.find(m => m.id === S.msel) || mList[0];
+    // A voice note from a child plays where it was sent (domain/mentor-portal.php mp_media).
+    const aud = list => (((list || []).find(y => y.type === 'audio') || {}).url) || '';
+    const mView = m => m ? { ...m, who: m.from, when: m.isNew ? 'New' : mp15When(m.at, today), t: m.body, isThread: !!m.thread, notThread: !m.thread, empty: !!m.thread && !m.thread.length,
+      audio: aud(m.media), hasAudio: !!aud(m.media),
+      thread: (m.thread || []).map((x, i) => ({ key: i, who: x.who, when: mp15When(x.at, today) + (x.queued ? ' · goes at 8am' : ''), t: x.body, align: x.mine ? 'flex-end' : 'flex-start',
+        bg: x.mine ? '#0b0b0c' : '#f4f4f2', fg: x.mine ? '#fff' : '#0b0b0c', audio: aud(x.media), hasAudio: !!aud(x.media) })) } : {};
+    /* New message: the caseload by name, and — for a lead or a coordinator —
+       any child at their centre, searched on the server. */
+    const nmQ = (S.nmQ || '').trim().toLowerCase();
+    const nmLocal = nmQ.length >= 2 ? all.filter(k => k.name.toLowerCase().includes(nmQ)).map(k => ({ id: k.id, name: k.name, sub: 'Your mentee' })) : [];
+    const nmServer = (S.nmRes || []).filter(r => !nmLocal.some(l => l.id === r.id)).map(r => ({ id: r.id, name: r.name, sub: (r.mentee ? 'Your mentee' : 'At ' + r.centre) }));
+    const nmAll = nmLocal.concat(nmServer).slice(0, 8);
+
+    const titles = { module: ((acMods.find(m => m.id === S.mod)) || {}).title || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck0.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', projects: 'Projects', mentors: 'Mentors', concern: 'Report a concern', stars: 'Stars', results: 'School results', curric: 'Curriculum' };
+    const nTeam = ((D.team || {}).mentors || []).length;
+    const subs = { module: 'Academy', goals: 'Every mentee’s goal, how close they are, and when it was last checked', sess: 'Every one-to-one, pod session and family contact you’ve logged',
+      week: mp15Fmt(today, { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + N + ' mentees · ' + roleLabel.toLowerCase(), list: N + ' in your care · sorted by who needs you most', kid: '',
+      sat: 'Musing & mentor breakout at 8:30am · ' + mp15Fmt(S.step === 'before' ? (satN.date || this.satNextDate()) : this.satLastDate(), { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + all.length + ' mentees',
+      msg: unreadN + ' unread', growth: 'Last 8 Saturdays', academy: acMods.filter(modDone).length + ' of ' + acMods.length + ' modules complete', role: 'NGGC Mentorship Commitment and Conduct Policy', projects: 'Projects and activities, in groups, with a countdown to the finish', mentors: nTeam + ' mentors', concern: 'Goes straight to the safeguarding officer' };
+    const pill = on => ({ bw: on ? '2px' : '1px', ring: on ? '#0b0b0c' : '#d6d4cc' });
+    const chip = on => ({ line: on ? '#0b0b0c' : '#d6d4cc', bg: on ? '#0b0b0c' : '#fff', fg: on ? '#fff' : '#0b0b0c' });
+    const seg = on => ({ bg: on ? '#fff' : 'transparent', sh: on ? '0 1px 2px rgba(0,0,0,.1)' : 'none' });
+    const officer = (me.officer && me.officer.name) || 'the safeguarding officer';
+    const officerFirst = me.officer && me.officer.name ? mp15First(me.officer.name.replace(/^(Mr|Mrs|Ms|Miss|Dr)\.?\s+/i, '')) : 'The officer';
+    const nextSatL = mp15Fmt(this.satNextDate(), { weekday: 'long', day: 'numeric', month: 'long' });
+
+    return {
+      rootRef: this.rootRef, wide, narrow, narrowSub: narrow && !!subs[S.scr], mainPad: narrow ? '16px 16px 28px' : '32px 40px 56px', toastB: narrow ? '96px' : '24px',
+      mainSlot: this.slot(),
+      /* The class tools (stars, V3, notes, curriculum, school results and growth
+         plans) are this portal's own Class screens (mp15-class.jsx), under its title
+         and tabs, on the centre on screen. Nothing of the old portal is embedded. */
+      mainSlotEnd: MP15_CLASS_SCREENS.includes(S.scr)
+        ? <div className="m15x-slot m15x-slot-class m15c"><Mp15Class key={S.scr + ':' + this.classCentre()} screen={S.scr} centre={this.classCentre()} say={t => this.say(t)}
+            onOpenChild={id => all.some(k => k.id === id) && this.go('kid', { kid: id, ktab: 'overview', pBody: null })}/></div>
+        : this.slotEnd(narrow), roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), meId: me.memberId || '', signOutMe: () => nggPortalSignOut(this.props.onSignOut), nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
+      areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.l,
+      glance: [['Mentees', String(N), roleLabel, '#0b0b0c', () => this.go('list')],
+               ['Seen in last 14 days', N ? Math.round((N - overdue.length) / N * 100) + '%' : '—', overdue.length + ' overdue', overdue.length ? '#7a5600' : '#1d6b30', () => this.go('list', { filter: 'contact' })],
+               ['Struggling this week', String(struggling.length), struggling.length ? 'Talk before Saturday' : 'Nobody flagged', struggling.length ? '#b0361c' : '#1d6b30', () => this.go('list', { filter: 'wellbeing' })],
+               ['Saturday evaluations', revDoneN + ' of ' + revTotal, revTotal ? 'Due Monday' : 'Nobody marked here', revDoneN === revTotal ? '#1d6b30' : '#0b0b0c', () => this.go('sat', { step: 'after' })]].map(([k, v, s, fg, go]) => ({ k, v, s, fg, go })),
+      title: area.kids.length > 1 && !inDetail ? area.l : titles[S.scr], sub: S.scr === 'kid' ? '' : subs[S.scr], showBack: inDetail, back: () => this.back(), backL: S.scr === 'kid' ? 'Mentees' : S.scr === 'module' ? 'Academy' : 'Back',
+      goConcern: () => this.go('concern'), lead, isPeer, notPeer: !isPeer,
+      onWeek: S.scr === 'week', onModule: S.scr === 'module', onGoals: S.scr === 'goals', onSess: S.scr === 'sess', onList: S.scr === 'list', onKid: S.scr === 'kid', onSat: S.scr === 'sat', onMsg: false, /* Messages is Mp15Inbox (slotEnd); the design's flat list is retired */ onGrowth: S.scr === 'growth', onAcademy: S.scr === 'academy', acLocked: oriL,
+      acLockH: 'Your Academy: ' + (ori.done || 0) + ' of ' + (ori.required || 0) + ' done',
+      acLockT: 'Start with the short guides under “Start here: using the portal” (' + ((ori.startHere || {}).done || 0) + ' of ' + ((ori.startHere || {}).required || 0) + ' done) — each shows the right tool for one part of the job — then the required modules. You can look around the whole portal meanwhile, but nothing you do there saves until the Academy is complete (about ' + (ori.mins || 0) + ' minutes left). Report a concern works the whole time.', onRole: S.scr === 'role', onMentors: S.scr === 'mentors' && isLead, onConcern: S.scr === 'concern',
+      due: S.dueAll ? due : due.slice(0, 5), noDue: due.length === 0 && !!D.week, dueMore: due.length > 5 && !S.dueAll, dueRestL: 'Show ' + (due.length - 5) + ' more', seeAllDue: () => set({ dueAll: true }),
+      week: (wk.week || []).map(x => ({ d: x.day, t: x.time, l: x.label, done: !!x.done })),
+      filters: FL.map(([id, l]) => ({ l, n: (id === 'all' ? all : all.filter(B[id])).length, on: S.filter === id, ...chip(S.filter === id), go: () => set({ filter: id }) })),
+      q: S.q, onQ: e => set({ q: e.target.value }), sort: S.sort, onSort: e => set({ sort: e.target.value }), barBg: nSel ? '#fff8e6' : '#fff',
+      noSel: !nSel, hasSel: !!nSel, selText: nSel + ' selected', selAllIcon: !nSel ? 'ph ph-square' : nSel >= kids.length ? 'ph-fill ph-check-square' : 'ph-fill ph-minus-square', selAllL: nSel ? 'Clear selection' : 'Select all shown',
+      selAll: () => { if (nSel) return set({ sel: {} }); const m = {}; kids.forEach(k => { m[k.id] = true; }); set({ sel: m }); }, clearSel: () => set({ sel: {} }),
+      bulk: [['Add to Saturday one-to-ones', 'ph ph-calendar-plus', () => this.act('oneToOnesAdd', { subjectIds: selIds }, r => (r.added || 0) + ' added to ' + mp15Fmt(r.date, { weekday: 'long', day: 'numeric', month: 'long' }) + '’s one-to-ones').then(r => { if (r) { set({ sel: {} }); this.refresh(['sat']); } }), false],
+             ['Family update', 'ph ph-house-line', () => this.act('familyDrafts', { subjectIds: selIds }, r => 'Drafts ready for ' + r.drafted + ' families. Review each before sending.').then(r => { if (r) set({ sel: {} }); }), isPeer],
+             ['Add a note', 'ph ph-note-pencil', () => this.bulkNote(selIds), false]].map(([l, icon, go, off]) => ({ l, icon, go: off ? () => this.say('Your lead mentor contacts families') : go, off, why: off ? 'Your lead mentor contacts families' : '', op: off ? 0.4 : 1 })),
+      wideCols, cols: wideCols ? '40px minmax(200px, 1.5fr) 120px 110px minmax(110px, 1fr) 250px' : '40px minmax(0, 1fr) minmax(0, max-content)',
+      kids: kids.map(k => { const on = !!S.sel[k.id]; return { ...k, sub: [k.age !== null && k.age !== undefined ? 'Age ' + k.age : '', k.phase, isLead ? (k.mentor || 'No mentor') : k.school].filter(Boolean).join(' · '), contact: mp15Ago(k.contact), cFg: B.contact(k) ? '#7a5600' : '#4a4a50', cFw: B.contact(k) ? 600 : 400,
+        rel: k.relC === null && k.relM === null ? 'Not checked yet' : 'Child ' + (k.relC === null ? '–' : k.relC) + ' · you ' + (k.relM === null ? '–' : k.relM), relTip: k.relC === null && k.relM === null ? 'No relationship check yet' : k.first + ' rates ' + (k.relC === null ? 'not yet' : k.relC) + ', you rate ' + (k.relM === null ? 'not yet' : k.relM),
+        relDot: k.relC !== null && k.relC <= 2 ? '#b0361c' : k.relC !== null && k.relM !== null && k.relM - k.relC >= 2 ? '#e0a100' : k.relC === null ? '#d6d4cc' : '#2f9e44',
+        goal: k.ag ? k.ag.title : 'No goal yet', flags: wideCols ? flagsOf(k) : flagsOf(k).slice(0, 1), bg: on ? '#fff8e6' : '#fff', selIcon: on ? 'ph-fill ph-check-square' : 'ph ph-square', selFg: on ? '#0b0b0c' : '#9a9aa0', selA: on ? 'true' : 'false', selL: (on ? 'Deselect ' : 'Select ') + k.name,
+        toggle: () => set({ sel: { ...S.sel, [k.id]: !on } }), open: () => this.go('kid', { kid: k.id, ktab: 'overview', pBody: null }) }; }),
+      noKids: kids.length === 0 && !!D.case, emptyT: !N ? 'Nobody is paired with you yet. Your coordinator makes the match.' : S.filter === 'all' ? 'Nobody matches that search.' : 'Nobody in this group right now.', resetF: () => set({ filter: 'all', q: '' }),
+      ck: { ...ck0, sub: [ck0.age !== null && ck0.age !== undefined ? 'Age ' + ck0.age : '', ck0.phase ? ck0.phase + ' phase' : '', ck0.school, ck0.guardian ? 'Family: ' + ck0.guardian : ''].filter(Boolean).join(' · '),
+        relCT: ck0.relC === null || ck0.relC === undefined ? 'Not yet' : ck0.relC + ' / 5', relMT: ck0.relM === null || ck0.relM === undefined ? 'Not yet' : ck0.relM + ' / 5',
+        famWho: ck0.guardian || 'No family contact named', famT: ck0.famDays === null || ck0.famDays === undefined ? 'no update yet' : ck0.famDays <= 0 ? 'last update today' : 'last update ' + ck0.famDays + (ck0.famDays === 1 ? ' day ago' : ' days ago'), relGap: ck0.relM !== null && ck0.relC !== null && ck0.relM - ck0.relC >= 2 },
+      facts: [['Last one-to-one', mp15Ago(ck0.contact), B.contact(ck0) ? '#7a5600' : '#0b0b0c'], ['This week', ck0.wb, B.wellbeing(ck0) ? '#b0361c' : '#0b0b0c'],
+              ['Relationship', ck0.relC === null ? 'Not asked yet' : ck0.relC + ' / 5 from ' + ck0.first, ck0.relC !== null && ck0.relC <= 2 ? '#b0361c' : '#0b0b0c'],
+              ['Active goal', ck0.ag ? (ck0.ag.lastCheckAt ? ck0.ag.progress + ' of 5 · ' + ck0.ag.area : 'Not checked yet') : 'None yet', ck0.ag && !ck0.ag.stalled ? '#1d6b30' : '#7a5600']].map(([k, v, fg]) => ({ k, v, fg })),
+      // Journal: the child's whole journal, for their mentor; never a peer mentor's (member.mentor.journal).
+      kTabs: [['overview', 'Overview'], ['goals', 'Goals'], ['score', 'Scorecard'], ['sess', 'Sessions'], ['rel', 'Relationship'], ['family', 'Family'], ['prog', 'Growth and lessons'], ['journal', 'Journal']].filter(t => !(isPeer && (t[0] === 'family' || t[0] === 'journal'))).map(([id, l]) => ({ l, on: S.ktab === id, fw: S.ktab === id ? 600 : 500, fg: S.ktab === id ? '#0b0b0c' : '#6b6b72', line: S.ktab === id ? '#0b0b0c' : 'transparent', go: () => set({ ktab: id }) })),
+      kOverview: S.ktab === 'overview', kGoals: S.ktab === 'goals', kScore: S.ktab === 'score', kSess: S.ktab === 'sess', kRel: S.ktab === 'rel', kFamily: S.ktab === 'family' && !isPeer, kProg: S.ktab === 'prog',
+      // Growth: the whole record as a trend (mp_growth), loaded when the tab opens; the four series below it stay.
+      growthBox: S.ktab === 'prog' && S.kid ? <><Mp15Anchor key={'anc:' + S.kid} subjectId={S.kid} act={(a, b, ok) => this.act(a, b, ok)}/><GrowthReport data={D['grw:' + S.kid]} err={S.er['grw:' + S.kid]} retry={() => this.load('grw:' + S.kid, 'growth', { subjectId: S.kid })}/><Mp15KidLessons key={S.kid} subjectId={S.kid}/></> : null,
+      noTimeline: !!kd && !((kd.timeline || []).length), tlLog: () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck0.id, goalId: ck0.ag ? ck0.ag.id : '' } }),
+      timeline: ((kd && kd.timeline) || []).map(x => ({ icon: 'ph ph-' + x.icon, fg: x.icon === 'binoculars' ? '#1d6b30' : x.icon === 'flame' ? '#a07400' : '#4a4a50', t: x.text, w: mp15Fmt(x.at, { day: 'numeric', month: 'short' }) + ' · ' + x.source })),
+      relQs: MP15_REL_Q.map((qq, i) => { const relA = S.rel[ck0.id] || ((kd && kd.rel && kd.rel.mentor && kd.rel.mentor.answers) || {}); return { q: qq, opts: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: relA[i] === n, ...pill(relA[i] === n), go: () => set({ rel: { ...S.rel, [ck0.id]: { ...relA, [i]: n } } }) })) }; }),
+      saveRel: () => { const a = S.rel[ck0.id] || {}; if ([0, 1, 2, 3].some(i => !a[i])) return this.say('Answer all four first'); this.act('relCheck', { subjectId: ck0.id, answers: [a[0], a[1], a[2], a[3]] }, 'Saved. ' + ck0.first + ' answers their side this week.').then(r => r && this.refresh(['case'], ck0.id)); },
+      askFit: () => this.act('relFit', { subjectId: ck0.id }, 'Sent to ' + (isLead ? 'the coordinator' : lead) + '. Nothing changes until you’ve talked.'),
+      pTpls: Object.keys(PT).map(id => ({ l: PT[id][0], on: S.pTpl === id, ...pill(S.pTpl === id), go: () => set({ pTpl: id, pBody: null }) })), pBody, onPBody: e => set({ pBody: e.target.value }),
+      outcomes: (((kd && kd.progress) || {}).items || []).map(it => mkOut(it, ((kd.progress || {}).saturdays || [])[0])),
+      makeReport: () => this.report('kid'),
+      steps: [['before', 'Before', 'Plan the session'], ['during', 'During', hereIds.length + ' here'], ['after', 'After', revDoneN + ' of ' + revTotal + ' evaluated']].map(([id, l, s]) => ({ l, s, on: S.step === id, ...seg(S.step === id), go: () => { if (S.step === 'during' && id !== 'during') this.flushRegister(); set({ step: id }); } })),
+      sBefore: S.step === 'before', sDuring: S.step === 'during', sAfter: S.step === 'after',
+      agenda: agenda.map((a, i) => { const at = t0; t0 += a.m; return { ...a, at: Math.floor(at / 60) + ':' + String(at % 60).padStart(2, '0'), first: i === 0, upOp: i ? 1 : 0.3, rmOp: a.fixed ? 0.3 : 1,
+        up: () => { if (!i) return; const n = agenda.slice(); [n[i - 1], n[i]] = [n[i], n[i - 1]]; this.setAgenda(n); }, rm: () => { if (a.fixed) return this.say('The huddle, one-to-ones and close stay on the agenda'); this.setAgenda(agenda.filter((_, j) => j !== i)); } }; }),
+      agTotal: total + ' of ' + win.minutes + ' min', agFg: total > win.minutes ? '#b0361c' : '#4a4a50',
+      agendaBox: <Mp15Agenda items={agenda} win={win} after={satN.after || ''} mentees={satN.mentees || []} picks={this.picksNow()} max={satN.agendaMax || 12} ooMax={satN.oneToOnesMax || 6}
+        save={S.agSave || { st: 'idle' }} sharedAt={satN.sharedAt || ''} lead={me.lead ? lead : ''} onItems={n => this.setAgenda(n)} onPicks={ids => this.setPicks(ids)}
+        onReset={() => this.resetPlan()} onRetry={() => { this.planDirty = true; this.flushPlan(); }}
+        onShare={() => { this.planDirty = true; this.flushPlan(true).then(r => { if (r) this.say(me.lead ? 'Plan shared with ' + lead : 'Plan saved. There’s no lead on your record to share it with.'); }); }}/>,
+      aims: ['All'].concat(Array.from(new Set(LIB.map(x => x.aim)))).map(a => ({ l: a, on: S.aim === a, ...pill(S.aim === a), go: () => set({ aim: a }) })),
+      lib: LIB.filter(x => S.aim === 'All' || x.aim === S.aim).map(x => { const added = agenda.some(a => a.t === x.title); return { t: x.title, d: x.sub, meta: x.aim + ' · ' + x.minutes + ' min', added, op: added ? 0.5 : 1, addL: added ? 'Added' : 'Add',
+        add: () => { if (added) return; if (agenda.length >= (satN.agendaMax || 12)) return this.say(MP15_ERR.too_many_items); const n = agenda.slice(); n.splice(Math.max(1, n.length - 2), 0, { t: x.title, s: x.sub || x.aim, m: Number(x.minutes) || 15, fixed: false }); this.setAgenda(n); } }; }),
+      hereText: hereIds.length + ' of ' + satKidsAll.length + ' here',
+      toAfter: () => { this.flushRegister(); set({ step: 'after' }); },
+      reg: satKidsAll.map(k => { const h = this.hereOf(k.id); const o = this.obsOf(k.id); const VALS = satL.values || ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
+        const note = this.noteOf(k.id); const nOpen = !!(S.noteOpen || {})[k.id] && h; const sv = (S.savedNotes || {})[k.id]; const saved = (sv !== undefined ? sv : ((((satL.register || {})[k.id]) || {}).note || '')) === note;
+        return { name: k.name, open: () => { const w = this.flushRegister(); this.go('kid', { kid: k.id, ktab: 'overview', pBody: null }); w.then(() => this.loadKid(k.id)); },
+          sub: !h ? 'Away' : note ? '“' + (note.length > 70 ? note.slice(0, 68) + '…' : note) + '”' : o.length ? o.join(', ') + ' · no detail yet' : 'Nothing noted yet',
+          noteA: nOpen ? 'true' : 'false', noteOpen: nOpen, noteL: note ? 'Edit detail' : 'Add detail', noteId: 'm15-note-' + k.id, note,
+          noteGo: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); set({ noteOpen: { ...(this.state.noteOpen || {}), [k.id]: !nOpen } }); },
+          onNote: e => { set({ notes: { ...(this.state.notes || {}), [k.id]: e.target.value.slice(0, 500) } }); this.queueRegister(k.id); },
+          noteMeta: note.length + ' of 500' + (note && !saved ? ' · not saved yet' : ''),
+          noteSave: () => { this.queueRegister(k.id); this.flushRegister(); set({ noteOpen: { ...(this.state.noteOpen || {}), [k.id]: false } }); this.say(note.trim() ? 'Detail saved for ' + k.first : 'Detail cleared for ' + k.first); },
+          hereA: h ? 'true' : 'false', hereL: h ? 'Here' : 'Away', icon: h ? 'ph ph-check' : 'ph ph-minus', line: h ? '#1d6b30' : '#d6d4cc', bg: h ? '#f3faf4' : '#fff', fg: h ? '#1d6b30' : '#6b6b72', away: !h, op: h ? 1 : 0.4,
+          toggle: () => { set({ here: { ...this.state.here, [k.id]: !h } }); this.queueRegister(k.id); },
+          vals: VALS.map(v => { const on = o.includes(v); return { l: v, on, ...pill(on), bg: on ? '#f3faf4' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; o.forEach(x => { m[x] = true; }); m[v] = !on; set({ obs: { ...this.state.obs, [k.id]: m } }); this.queueRegister(k.id); } }; })
+            .concat((satL.checks || ['On time', 'Assignment in', 'Checked out']).map(v => { const cs = this.chkOf(k.id); const on = cs.includes(v); const arr = (((satL.register || {})[k.id]) || {}).arrivedAt;
+              return { l: v === 'On time' && arr ? v + ' · ' + arr : v, on, ...pill(on), bg: on ? '#eef3fb' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; cs.forEach(x => { m[x] = true; }); m[v] = !on; set({ chk: { ...(this.state.chk || {}), [k.id]: m } }); this.queueRegister(k.id); } }; })) }; }),
+      revText: revDoneN + ' of ' + revTotal + ' evaluated · due Monday', revPct: (revTotal ? revDoneN / revTotal * 100 : 0) + '%', noReviews: revTotal === 0 && !!satL.date,
+      reviews: revKids.map((k, ki) => this.evalCard(k, ki, revKids, satL, reviewed, pill)),
+      nmOpen: !!S.nmOpen, nmOpenA: S.nmOpen ? 'true' : 'false', nmToggle: () => set({ nmOpen: !S.nmOpen, nmQ: '', nmRes: [] }), nmQ: S.nmQ || '',
+      nmPh: isLead || roleId === 'coord' ? 'Type a child’s name — any child at your centre' : 'Type a mentee’s name',
+      nmOnQ: e => { const v = e.target.value; set({ nmQ: v });
+        if ((isLead || roleId === 'coord') && v.trim().length >= 2) { clearTimeout(this.nmT); this.nmT = setTimeout(() => mp15Api.view('messageSearch', { q: v.trim(), centre: S.centre || '' }).then(r => { if ((this.state.nmQ || '') === v) set({ nmRes: r.children || [] }); }).catch(() => {}), 220); } },
+      nmStatus: nmQ.length < 2 ? 'Type at least two letters.' : nmAll.length ? nmAll.length + ' found' : 'Nobody by that name you can write to.',
+      nmRes: nmAll.map(r => ({ ...r, go: () => set({ nmOpen: false, nmQ: '', nmRes: [], mNew: { id: r.id, name: r.name }, msel: 'chat:' + r.id, mOpen: true, mf: 'all', reply: '' }) })),
+      mFilters: [['all', 'All'], ['journal', 'Journal'], ['checkin', 'Check-ins'], ['chat', isLead || roleId === 'coord' ? 'Children' : 'Mentees']].concat(isPeer ? [] : [['family', 'Families']]).concat([['lead', isLead ? 'Mentors' : 'From ' + lead]]).filter(([id]) => id === 'all' || msgRows.some(m => m.filter === id)).map(([id, l]) => ({ l, on: S.mf === id, ...chip(S.mf === id), go: () => set({ mf: id }) })),
+      mCols: S.w >= 1000 ? 'minmax(0, 1fr) minmax(0, 1.2fr)' : 'minmax(0, 1fr)',
+      hasMsg: !!mSel0, mSel: mView(mSel0), reply: S.reply, onReply: e => set({ reply: e.target.value }), replyPh: mSel0 && /Journal/.test(mSel0.kind) ? 'Name what you noticed. One line is enough.' : mSel0 && mSel0.isNew ? 'Write to ' + mp15First(mSel0.from) : 'Write a reply',
+      replyL: mSel0 && mSel0.isNew ? 'Send' : 'Reply',
+      sendReply: () => { if (!S.reply.trim() || !mSel0) return this.say('Write a reply first');
+        this.act('messageReply', { threadId: mSel0.threadId, subjectId: mSel0.subjectId || '', body: S.reply.trim() }, r => r.queued ? 'Saved. It goes to ' + mp15First(mSel0.from) + ' at 8am.' : 'Sent to ' + mp15First(mSel0.from)).then(r => { if (r) { set({ reply: '', mNew: null, read: { ...S.read, [mSel0.id]: true } }); this.refresh(['msgs', 'week', 'role']); } }); },
+      podOut: (((D.index || {}).outcomes || {}).items || []).map(it => mkOut(it, (((D.index || {}).outcomes || {}).saturdays || [])[0])),
+      podReport: () => this.report('pod'),
+      acPctT: Math.round(acMods.filter(modDone).length / Math.max(1, acMods.length) * 100) + '%', acPct: (acMods.filter(modDone).length / Math.max(1, acMods.length) * 100) + '%',
+      cmMet: met, cmTot: tot, cmDaysLeft: R.daysLeft !== undefined ? R.daysLeft + ' days left in the month' : '', cmMonthL: 'commitments on track for ' + mp15Month(R.month), roleCols: S.w >= 1000 ? 'minmax(0, 1.3fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+      cmBar: CM.map(r => ({ c: r[3] === 'ok' ? '#1d6b30' : r[3] === 'bad' ? '#b0361c' : '#e0a100' })).sort((x, y) => (x.c === '#1d6b30' ? 0 : 1) - (y.c === '#1d6b30' ? 0 : 1)),
+      cmAttn: CM.filter(r => r[3] !== 'ok').map(r => ({ t: r[0], s: r[1], st: r[2], dot: r[3] === 'bad' ? '#b0361c' : '#e0a100', cta: r[5] || 'Talk to ' + lead, go: r[6] || (() => this.askLead(R, r[0])) })), cmAttnN: CM.filter(r => r[3] !== 'ok').length + ' to do', cmNoAttn: !!D.role && CM.every(r => r[3] === 'ok'),
+      cmOk: CM.filter(r => r[3] === 'ok').map(r => ({ t: r[0], st: r[2], src: r[4] })),
+      supWhen: R.supervision ? mp15Fmt(R.supervision.date, { weekday: 'long', day: 'numeric', month: 'long' }) + ', after the STS meeting · 20 minutes' : 'Not booked yet. ' + (me.lead ? lead + ' books it' : 'Your lead books it') + ', usually on a Tuesday after STS.',
+      supAgreedL: R.agreedLast ? 'Agreed last time · ' + mp15Fmt(R.agreedLast.date) + ' · your own checklist, on this device' : 'Nothing agreed at a supervision yet',
+      supActs: supA.map((x, i) => { const t = typeof x === 'string' ? x : (x && (x.t || x.text)) || ''; const d = !!supDone[i]; return { t, a: d ? 'true' : 'false', icon: d ? 'ph-fill ph-check-square' : 'ph ph-square', fg: d ? '#1d6b30' : '#9a9aa0', tfg: d ? '#6b6b72' : '#0b0b0c',
+        go: () => { try { localStorage.setItem(supKey, JSON.stringify({ ...supDone, [i]: !d })); } catch (_) {} this.forceUpdate(); } }; }),
+      supNote: supAns.filter(v => v && String(v).trim()).length + ' of 3 answered',
+      askFeedback: () => this.askLead(R, null, 2), readPolicy: () => { try { window.__navigate ? window.__navigate('policies') : (location.href = '/policies'); } catch (_) {} },
+      supQs: ['What went well with a mentee since we last met?', 'Where are you stuck?', 'What do you need from me?'].map((qq, i) => ({ q: qq, v: supAns[i] || '', on: e => { const n = supAns.slice(); n[i] = e.target.value; set({ sup: n }); } })),
+      sendSup: () => this.act('supervisionPrep', { answers: supAns }, me.lead ? 'Sent to ' + lead + '. See you on ' + (R.supervision ? mp15Fmt(R.supervision.date, { weekday: 'long' }) : 'Tuesday') + '.' : 'Saved for your supervision.').then(r => r && this.refresh(['role'])),
+      fbText: R.feedback ? '“' + R.feedback.text + '”' : 'No feedback from ' + lead + ' yet. It appears here after supervision.', fbWhen: R.feedback ? mp15Fmt(R.feedback.at) + ' · after supervision' : '',
+      polText: R.policy && R.policy.acceptedAt ? 'You accepted the NGGC Mentorship Commitment and Conduct Policy on ' + mp15Fmt(R.policy.acceptedAt, { day: 'numeric', month: 'long', year: 'numeric' }) + '. The 12 commitments you can act on each month are tracked here.'
+                                               : 'Your acceptance of the NGGC Mentorship Commitment and Conduct Policy isn’t on record yet. Your coordinator records it. The 12 commitments you can act on each month are tracked here.',
+      polStandard: (R.policy && R.policy.standard) || 'A mentor observes, models, guides, challenges, encourages, documents, collaborates and follows through.',
+      officer, cText: S.cText, onCText: e => set({ cText: e.target.value }),
+      ...this.gsVals({ all, ck: ck0, kd, pill, chip, seg, set, wideCols, today, isPeer }),
+      pkLog: this.picker('log', (S.lf || {}).kid || '', id => this.setState(st => ({ lf: { ...(st.lf || this.lfBlank()), kid: id, goalId: '' } })), all),
+      pkCon: this.picker('con', S.cKid, id => this.setState({ cKid: id }), all),
+      ...this.scVals({ all, ck: ck0, kd, set, wideCols }),
+      ...this.xVals({ all, ck: ck0, kd, set, pill, chip, wideCols, isPeer, isLead, roleId, B, lead, mList, mSel: mSel0, pBody, today, officerFirst, acMods, modDone, nextSatL, draft }),
+      hasToast: !!S.toast, toast: S.toast, toastUndo: !!S.undo, onUndo: () => { const u = S.undo; clearTimeout(this.tt); set({ toast: '', undo: null }); u && u(); },
+    };
+  }
+
+  lfBlank() { return { type: 'One-to-one', kid: '', date: this.today(), mins: '15', goalId: '', p: 0, what: '', next: '' }; }
+  /* "Talk to my lead": the supervision prep is the channel to the lead that
+     is on record, so the commitment goes in there, ready to send. */
+  askLead(R, about, field) {
+    const ans = (this.state.sup || ((R && R.supervision && R.supervision.prep) || ['', '', ''])).slice();
+    const i = field === undefined ? 1 : field;
+    if (about && !String(ans[i] || '').includes(about)) ans[i] = (ans[i] ? ans[i] + '\n' : '') + 'About “' + about + '”: ';
+    this.go('role', { sup: ans });
+    setTimeout(() => { const el = this.rootRef.current && this.rootRef.current.querySelectorAll('textarea')[i]; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 60);
+    this.say('Write it here and press Send. It reaches ' + ((this.me().lead && this.me().lead.first) || 'your lead') + ' on record.');
+  }
+  bulkNote(ids) {
+    const t = window.prompt('A note for ' + ids.length + ' record' + (ids.length === 1 ? '' : 's') + '. It is logged as a note on each.');
+    if (t === null) return;
+    if (t.trim().length <= 3) return this.say('Write what happened first.');
+    this.act('session', { type: 'Note', subjectIds: ids, date: this.today(), what: t.trim(), minutes: 0 }, r => 'Note added to ' + r.count + ' records').then(r => { if (r) { this.setState({ sel: {} }); this.refresh(['sess']); } });
+  }
+
+  /* Loading and an honest error, inside <main>, for the screen on display. */
+  /* On every screen while the Academy is incomplete: what it holds back, and the way to it. */
+  academyBanner() {
+    if (!this.oriLocked() || ['academy', 'module'].includes(this.state.scr)) return null;
+    const o = this.orientation() || {};
+    return <div className="m15x-slot m15x-acad" role="note"><i className="ph-fill ph-graduation-cap" aria-hidden="true"/>
+      <span><b>Your Academy: {o.done || 0} of {o.required || 0} done.</b> Look around as much as you like — nothing you do here saves until it’s complete (about {o.mins || 0} minutes left).</span>
+      <button type="button" onClick={() => this.go('academy')}>Open the Academy</button></div>;
+  }
+  slot() {
+    const banner = this.academyBanner();
+    const inner0 = this.slotInner();
+    const inner = banner ? <>{banner}{inner0}</> : inner0;
+    const cs = this.me().centres || [];
+    if (this.role() !== 'coord' || cs.length < 2) return inner;
+    /* A coordinator over several centres works one at a time; switching re-reads every screen for that centre. */
+    return <>
+      <div className="m15x-slot m15x-centre"><label><span>Centre</span>
+        <select value={this.state.centre || this.me().centreOnScreen || ''} onChange={e => this.setState({ centre: e.target.value, d: { week: this.state.d.week }, sel: {}, here: {}, obs: {}, chk: {}, agenda: null }, () => this.loadAll())}>
+          {cs.map(c => <option key={c} value={c}>{c}</option>)}</select></label></div>
+      {inner}</>;
+  }
+  /* One child's Saturday evaluation on After: the week's three ratings, the
+     formation criteria (pre-filled from the register, confirmed by the mentor),
+     a strength and a next step the child and family read, and a staff-only line.
+     One card open at a time; "Save and next child" walks the pod. */
+  evalPrefill(id, satL) {
+    if (!this.hereOf(id)) return { criteria: {}, strength: '' };
+    const chk = this.chkOf(id), obs = this.obsOf(id), arr = (((satL.register || {})[id]) || {}).arrivedAt || '';
+    const c = { assignment: chk.includes('Assignment in') ? 'Demonstrated' : 'Not yet' };
+    if (chk.includes('On time')) c.punctuality = 'Demonstrated'; else if (arr) c.punctuality = 'Emerging';
+    [['Respect', 'respect'], ['Teamwork', 'teamwork'], ['Courage', 'courage']].forEach(([v, key]) => { if (obs.includes(v)) c[key] = 'Demonstrated'; });
+    return { criteria: c, strength: (this.noteOf(id) || '').trim() };
+  }
+  evalCard(k, ki, kids, satL, reviewed, pill) {
+    const S = this.state, set = o => this.setState(o);
+    const CR = satL.evalCriteria || MP15_EVAL_CRITERIA, SCALE = satL.evalScale || MP15_EVAL_SCALE;
+    /* The pre-fill mirrors mp_eval_prefill on the server, from the register as it stands on this screen
+       (taps on During this morning included), so After never starts from a stale read. */
+    const srv = (satL.reviews || {})[k.id], pre = this.evalPrefill(k.id, satL);
+    const base = srv ? { Effort: srv.effort, Character: srv.characterLevel, Wellbeing: srv.wellbeing, line: srv.line || '' } : {};
+    const sev = srv && srv.eval ? srv.eval : null;
+    const v = S.rv[k.id] || { ...base, crit: sev ? { ...sev.criteria } : { ...pre.criteria }, strength: sev ? sev.strength : (pre.strength || ''), next: sev ? sev.next : '' };
+    const put = p => set({ rv: { ...this.state.rv, [k.id]: { ...v, ...p } }, evErr: { ...(this.state.evErr || {}), [k.id]: '' } });
+    const done = reviewed(k.id);
+    const firstOpen = kids.find(x => !reviewed(x.id));
+    const openId = S.evOpen !== undefined ? S.evOpen : (firstOpen ? firstOpen.id : null);
+    const open = openId === k.id;
+    const crit = v.crit || {};
+    const ratedN = CR.filter(c => crit[c.key]).length;
+    const ok3 = v.Effort && v.Character && v.Wellbeing;
+    const ok = ok3 && ratedN === CR.length && (v.strength || '').trim() && (v.next || '').trim();
+    const obs = this.obsOf(k.id), note = this.noteOf(k.id);
+    const next = kids.slice(ki + 1).find(x => !reviewed(x.id)) || kids.find((x, i) => i !== ki && !reviewed(x.id));
+    const err = (S.evErr || {})[k.id] || '';
+    const missing = () => [!ok3 ? 'effort, character and wellbeing' : '', ratedN < CR.length ? (CR.length - ratedN) + ' of the Saturday criteria' : '', !(v.strength || '').trim() ? 'a strength' : '', !(v.next || '').trim() ? 'a next step' : ''].filter(Boolean);
+    const save = goNext => {
+      if (!ok) { const m = missing(); return set({ evErr: { ...(this.state.evErr || {}), [k.id]: 'Still to do: ' + m.join(', ') + '.' } }); }
+      const body = { subjectId: k.id, date: this.satLastDate(), effort: v.Effort, character: v.Character, wellbeing: v.Wellbeing, line: v.line || '',
+        eval: { criteria: crit, strength: (v.strength || '').trim(), next: (v.next || '').trim() } };
+      mp15Api.act('weekReview', Object.assign({ centre: this.state.centre || '' }, body)).then(r => {
+        set({ rvDone: { ...this.state.rvDone, [k.id]: true }, evOpen: goNext && next ? next.id : null });
+        this.say('Evaluation saved for ' + k.first, () => this.act('weekReviewUndo', { subjectId: k.id, period: r.period }).then(u => { if (u) { const rv = { ...this.state.rvDone }; delete rv[k.id]; set({ rvDone: rv, evOpen: k.id }); this.refresh(['sat', 'sess', 'week']); } }));
+        this.refresh(['sat', 'sess', 'week']);
+      }).catch(e => { const c = e.code || e.message || ''; set({ evErr: { ...(this.state.evErr || {}), [k.id]: c === 'rate_every_criterion' ? 'Rate every Saturday criterion first.' : c === 'strength_and_next' ? 'Write a strength and a next step first.' : mp15ErrText(e) } }); });
+    };
+    const sumLine = done && sev ? 'Strength: ' + sev.strength + ' · Next: ' + sev.next : done ? 'Evaluated' : '';
+    return { name: k.name, first: k.first, done, open, openA: open ? 'true' : 'false', panelId: 'm15-ev-' + k.id, chev: open ? 'ph ph-caret-up' : 'ph ph-caret-down',
+      toggleL: open ? 'Close' : done ? 'Edit' : 'Evaluate', toggle: () => set({ evOpen: open ? null : k.id }),
+      bd: open ? '#0b0b0c' : '#e8e5dd', stL: done ? 'Evaluated' : 'To do', stBg: done ? '#f3faf4' : '#fdf6e3', stFg: done ? '#1d6b30' : '#7a5600',
+      seen: (obs.length ? 'Observed: ' + obs.join(', ') : 'Here on Saturday') + (note ? '. Noted: “' + note + '”' : ''),
+      hasSum: !open && !!sumLine, sum: sumLine,
+      scales: ['Effort', 'Character', 'Wellbeing'].map(l => ({ l, opts: MP15_LEVELS.map(o => ({ l: o, on: v[l] === o ? 'true' : 'false', ...pill(v[l] === o), go: () => put({ [l]: o }) })) })),
+      critMeta: ratedN + ' of ' + CR.length + ' rated',
+      crit: CR.map(c => { const cur = crit[c.key]; const fromReg = !sev && !(S.rv[k.id]) && pre.criteria[c.key] && pre.criteria[c.key] === cur;
+        return { l: c.label, h: c.hint, pre: !!fromReg, preL: 'From the register',
+          opts: SCALE.map(o => { const on = cur === o; return { l: o, on: on ? 'true' : 'false', ...pill(on), bg: on ? '#f3faf4' : '#fff', go: () => put({ crit: { ...crit, [c.key]: o } }) }; }) }; }),
+      strength: v.strength || '', onStrength: e => put({ strength: e.target.value.slice(0, 400) }), strBd: err && !(v.strength || '').trim() ? '#b0361c' : '#d6d4cc',
+      next: v.next || '', onNext: e => put({ next: e.target.value.slice(0, 400) }), nextBd: err && !(v.next || '').trim() ? '#b0361c' : '#d6d4cc',
+      line: v.line || '', onLine: e => put({ line: e.target.value }),
+      hasErr: !!err, err, cantA: ok ? 'false' : 'true', btnBg: ok ? '#0b0b0c' : '#efefed', btnFg: ok ? '#fff' : '#6b6b72',
+      hasNext: !!next, submit: () => save(false), submitNext: () => save(true) };
+  }
+  /* After the screen's own title and content (v.mainSlotEnd): the Saturday
+     Formation Schedule, the mentor's part of each block (the next blocks on
+     This week, the whole day on Saturday). Below the work, never above it.
+     The Class screens are mainSlotEnd's other branch (mp15-class.jsx). */
+  /* The centre the Class screens work on: the one the centre switch shows (its
+     first option until one is chosen), so a coordinator over several centres
+     is never asked to pick one a second time. */
+  classCentre() { const cs = this.me().centres || []; return this.state.centre || this.me().centreOnScreen || cs[0] || ''; }
+  slotEnd(narrow) {
+    const S = this.state; const cls = 'm15x-slot m15x-end' + (narrow ? ' is-narrow' : '');
+    const need = { week: ['week'], sat: ['satNext'] }[S.scr];
+    if (need && need.some(k => S.ld[k] || S.er[k] || !S.d[k])) return null;
+    if (S.scr === 'week') return <div className={cls}><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
+    if (S.scr === 'sat') return <div className={cls}><FormationDay audience="mentor" compact={true}/></div>;
+    if (S.scr === 'projects') return <div className={cls}><Mp15Projects act={(a, b, ok) => this.act(a, b, ok).then(r => { if (r) this.refresh(['role']); return r; })} today={this.today()}/></div>;
+    if (S.scr === 'mentors' && S.supFor) { const m = ((S.d.team || {}).mentors || []).find(x => x.mentorId === S.supFor);
+      if (m) return <div className={cls}><Mp15SupNotes key={m.mentorId} m={m} onClose={() => this.setState({ supFor: null })}
+        save={b => this.act('supervisionRecord', Object.assign({ mentorId: m.mentorId }, b), 'Supervision notes saved. ' + m.first + ' can read them in My role.').then(r => { if (r) { this.setState({ supFor: null, supBooked: Object.assign({}, S.supBooked, { [m.mentorId]: false }) }); this.refresh(['team']); } return r; })}/></div>; }
+    if (S.scr === 'msg') { const role = this.me().role || 'pod', kids = this.kids().map(k => ({ id: k.id, name: k.name }));
+      return <div className={cls}><Mp15Inbox rows={((S.d.msgs || {}).messages) || []} loaded={!!S.d.msgs} kids={kids} canSearch={role === 'lead' || role === 'coord'} centre={S.centre || ''} today={this.today()}
+        start={S.mNew} onStarted={() => this.setState({ mNew: null })} act={(a, b, ok) => this.act(a, b, ok)} refresh={() => this.refresh(['msgs', 'week', 'role'])} openKid={id => this.go('kid', { kid: id, ktab: 'overview', pBody: null })}/></div>; }
+    if (S.scr === 'kid' && S.ktab === 'journal' && S.kid && this.me().role !== 'peer') return <div className={cls}><Mp15Journal key={'jr:' + S.kid} subjectId={S.kid}/></div>;
+    if (S.scr === 'growth') return <div className={cls}><Mp15PodGrowth key={S.centre || ''} centre={S.centre || ''} open={id => this.go('kid', { kid: id, ktab: 'prog', pBody: null })}/></div>;
+    return null;
+  }
+  slotInner() {
+    const S = this.state;
+    const need = { week: ['week', 'case'], list: ['case'], goals: ['goals', 'case'], sess: ['sess', 'case'], sat: ['satNext', 'case'].concat(this.satLastDate() !== this.satNextDate() ? ['satLast'] : []),
+                   msg: ['msgs'], growth: ['index'], academy: ['academy'], module: ['academy'], role: ['role'], mentors: ['team'], kid: ['kid:' + S.kid], concern: ['case'] }[S.scr] || [];
+    const failed = need.filter(k => S.er[k]); const loading = need.some(k => S.ld[k] || (!S.d[k] && !S.er[k]));
+    if (failed.length) {
+      const e = S.er[failed[0]]; const code = (e && (e.code || e.message)) || '';
+      return <div className="m15x-slot"><div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{code === 'network' ? 'You’re offline. This screen couldn’t load.' : code === 'not_in_caseload' ? 'That child isn’t in your caseload.' : 'This screen couldn’t load (' + (code || 'error') + ').'}</span>
+        <button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); if (S.scr === 'kid') this.loadKid(S.kid); }}>Retry</button></div></div>;
+    }
+    if (loading) return <div className="m15x-slot"><div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading</span></div></div>;
+    return null;
+    return null;
+  }
+
+  gsVals(c) {
+    const S = this.state, set = c.set, all = c.all, ck = c.ck, kd = c.kd, today = c.today;
+    const rows = this.goalRows();
+    const stat = g => g.stalled ? ['Stalled', '#fdf6e3', '#7a5600'] : g.status === 'active' ? ['Active', '#f0efea', '#2b2b30'] : g.status === 'achieved' ? ['Achieved', '#f3faf4', '#1d6b30'] : [g.status === 'paused' ? 'Paused' : 'Draft', '#f4f4f2', '#6b6b72'];
+    const segsP = (p, g) => { const col = g.stalled ? '#e0a100' : g.status === 'achieved' ? '#1d6b30' : '#0b0b0c'; return [1, 2, 3, 4, 5].map(i => ({ c: i <= p ? col : '#e8e5dd' })); };
+    const fmtDue = d => d ? mp15Fmt(d, { day: 'numeric', month: 'short' }) : '—';
+    const gf = S.gf || 'active', ga = S.gArea || 'All areas';
+    const byId = Object.fromEntries(all.map(k => [k.id, k]));
+    const noneK = ((S.d.goals || {}).noGoal || []).map(x => byId[x.subjectId] || { id: x.subjectId, name: x.name, ini: x.initials, phase: x.phase });
+    const lastDays = g => g.lastCheckAt ? mp15Days(g.lastCheckAt, today) : null;
+    const picked = gf === 'none' ? noneK.map(k => [k, null]) : rows.filter(g => gf === 'active' ? g.status === 'active' : gf === 'stalled' ? g.stalled : gf === 'achieved' ? g.status === 'achieved' : g.status === 'draft' || g.status === 'paused').map(g => [byId[g.subjectId] || { id: g.subjectId, name: g.name, ini: g.initials }, g]);
+    const list = picked.filter(([, g]) => ga === 'All areas' || !g || g.area === ga).sort((a, b) => a[1] && b[1] ? ((b[1].stalled ? 1 : 0) - (a[1].stalled ? 1 : 0)) || ((lastDays(b[1]) === null ? 999 : lastDays(b[1])) - (lastDays(a[1]) === null ? 999 : lastDays(a[1]))) : 0);
+
+    const G = (kd && kd.goals) || []; const gsel = (S.gsel || {})[ck.id];
+    const g0 = G.find(x => x.id === gsel) || G.find(x => x.status === 'active') || G[0];
+    const g = g0 ? this.goalDraft(g0) : null;
+    const ci = (S.ci || {})[g ? g.id : ''] || {};
+    const checks = g ? (g.checks || []) : [];
+    const lastCk = checks.length ? checks[checks.length - 1] : null;
+    const gLast = lastCk ? mp15Days(lastCk.at, today) : null;
+    const locked = !!(kd && kd.goalsLocked);
+
+    /* Sessions: a pod session is one row per child on the server; on screen
+       it is the session, once. */
+    const srvS = (((S.d.sess || {}).sessions) || []).filter(s => !S.hidden[s.id]);
+    const grouped = []; const podAt = {};
+    srvS.forEach(s => { const type = MP15_KIND_TYPE[s.kind] || 'Note';
+      if (type === 'Pod session') { if (podAt[s.metOn]) { podAt[s.metOn].ids.push(s.id); podAt[s.metOn].n++; return; } const r = { ids: [s.id], n: 1, s, type }; podAt[s.metOn] = r; grouped.push(r); return; }
+      grouped.push({ ids: [s.id], n: 1, s, type }); });
+    const st = S.sType || 'All';
+    const sess = grouped.map(({ ids, n, s, type }) => { const k = byId[s.subjectId];
+      return { id: ids.join(','), ids, date: mp15Fmt(s.metOn, { weekday: 'short', day: 'numeric', month: 'short' }), week: 'Week of ' + mp15Fmt(mp15Monday(s.metOn)), type, kid: type === 'Pod session' ? '' : s.subjectId,
+        who: type === 'Pod session' ? 'Pod · ' + n + (n === 1 ? ' mentee' : ' mentees') : type === 'Family' || type === 'Phone or message' ? ((k && k.guardian) || 'Family') + ' · ' + (s.fullName || '') : (s.fullName || 'A mentee'),
+        mins: Number(s.minutes) || 0, what: s.discussed || '', next: s.agreed || '—', goal: s.goalTitle || '' }; });
+    const sf = sess.filter(s => st === 'All' || s.type === st || (st === 'Family' && s.type === 'Phone or message'));
+    const weeks = []; sf.forEach(s => { let w = weeks.find(x => x.l === s.week); if (!w) weeks.push(w = { l: s.week, rows: [] }); w.rows.push(s); });
+    const lf = S.lf || this.lfBlank();
+    const upLf = p => set({ lf: { ...lf, ...p } });
+    const lfKidObj = all.find(k => k.id === lf.kid);
+    const lfGoals = lfKidObj ? this.goalsOfKid(lfKidObj.id).filter(x => x.status === 'active' || x.status === 'draft') : [];
+    const lfOk = (lf.type === 'Pod session' || !!lfKidObj) && lf.what.trim().length > 3 && !(c.isPeer && lf.type === 'Family');
+    const stats = (S.d.sess || {}).stats || {};
+    const kSess = ((kd && kd.sessions) || []).map(s => { const type = MP15_KIND_TYPE[s.kind] || 'Note'; return { id: String(s.id), date: mp15Fmt(s.metOn, { weekday: 'short', day: 'numeric', month: 'short' }), type, icon: MP15_TYPE_ICON[type], who: type === 'Pod session' ? 'Pod session' : type === 'Family' || type === 'Phone or message' ? ck.guardian : ck.name, mins: Number(s.minutes) || 0, what: s.discussed || '', next: s.agreed || '—', hasGoal: !!s.goalId, goal: '' }; });
+    const sv = (msg) => (r) => { this.refresh(['goals', 'case', 'week'], ck.id); return r; };
+
+    return {
+      gStats: [['active', 'Active', '#2b2b30', rows.filter(x => x.status === 'active').length, 'One per mentee'], ['stalled', 'Stalled', '#7a5600', rows.filter(x => x.stalled).length, 'Needs a check-in'], ['none', 'No goal yet', '#7a5600', noneK.length, 'Set one after week 3'],
+               ['achieved', 'Achieved', '#1d6b30', rows.filter(x => x.status === 'achieved').length, 'All time'], ['other', 'Draft or paused', '#6b6b72', rows.filter(x => x.status === 'draft' || x.status === 'paused').length, 'Not live yet']].map(([id, l, fg, n, rule]) => ({ l, fg, n, rule, on: gf === id, ...c.pill(gf === id), go: () => set({ gf: id }) })),
+      areaNames: ['All areas'].concat(MP15_AREAS), areaPick: MP15_AREAS, gArea: ga, onGArea: e => set({ gArea: e.target.value }),
+      gCols: c.wideCols ? 'minmax(180px, 1.2fr) minmax(180px, 1.6fr) 140px 110px 90px 100px' : 'minmax(0, 1fr) minmax(0, 1.2fr) auto',
+      gCount: list.length + (gf === 'none' ? (list.length === 1 ? ' mentee' : ' mentees') : (list.length === 1 ? ' goal' : ' goals')),
+      gRows: list.map(([k, x]) => { if (!x) return { ini: k.ini, name: k.name, area: (k.phase || 'Grow') + ' phase', title: 'No goal yet', tFg: '#6b6b72', segs: [], pT: '', last: '—', lFg: '#6b6b72', due: '—', status: 'Set a goal', sBg: '#0b0b0c', sFg: '#fff', go: () => this.go('kid', { kid: k.id, ktab: 'goals' }) };
+        const s = stat(x); const ld = lastDays(x); return { ini: k.ini, name: k.name, area: x.area, title: x.title || 'Untitled goal', tFg: '#0b0b0c', segs: segsP(x.progress, x), pT: x.progress ? x.progress + ' of 5' : 'Not checked', last: x.status === 'achieved' ? 'Done' : mp15Ago(ld), lFg: (ld === null || ld > 21) && x.status === 'active' ? '#7a5600' : '#4a4a50', due: fmtDue(x.reviewBy), status: s[0], sBg: s[1], sFg: s[2],
+          go: () => this.go('kid', { kid: x.subjectId, ktab: 'goals', gsel: { ...(S.gsel || {}), [x.subjectId]: x.id } }) }; }),
+      gEmpty: list.length === 0 && !!S.d.goals, gEmptyT: gf === 'stalled' ? 'No goals have stalled. Every active goal has moved recently.' : gf === 'none' ? 'Every mentee has an active goal.' : 'No goals here yet.',
+      kgCols: c.wideCols ? '300px minmax(0, 1fr)' : 'minmax(0, 1fr)',
+      kGoalList: G.map(x0 => { const x = this.goalDraft(x0); const s = stat(x); const cc = x.checks || []; const p = cc.length ? cc[cc.length - 1].progress : 0; return { title: x.goal || 'Untitled goal', area: x.area, segs: segsP(p, x), status: s[0], sBg: s[1], sFg: s[2], cur: g && x.id === g.id ? 'true' : undefined, bg: g && x.id === g.id ? '#fafaf8' : '#fff', go: () => set({ gsel: { ...(S.gsel || {}), [ck.id]: x.id } }) }; }),
+      newGoal: () => { if (locked) return this.say('The first weeks are for getting to know each other. Goals open in week 3.');
+        this.act('goal', { subjectId: ck.id, id: 0, goal: '', dueOn: '' }).then(r => { if (r && r.id) { set({ gsel: { ...(S.gsel || {}), [ck.id]: r.id } }); this.refresh(['goals'], ck.id); } }); },
+      hasGoal: !!g, noGoal: !g,
+      gd: g ? {
+        area: g.area, onArea: e => this.editGoal(ck.id, g0, { area: e.target.value }), due: g.reviewBy || g.dueOn || '', onDue: e => this.editGoal(ck.id, g0, { reviewBy: e.target.value }),
+        statusOpts: ['Draft', 'Active', 'Achieved', 'Paused'].map(l => { const cur = g.status === l.toLowerCase(); return { l, on: cur, ...c.seg(cur), go: () => {
+          if (cur) return; if (l === 'Active' && !g.agreed) return this.say('Agree it with ' + ck.first + ' first, then make it active.'); if (l === 'Active' && !(g.goal || '').trim()) return this.say('Write the wish first.');
+          if (l === 'Draft' && g.status !== 'draft') return this.say('A goal that has been live goes to Paused, not back to Draft.');
+          clearTimeout((this.timers || {})['g' + g.id]);
+          this.saveGoal(ck.id, g.id).then(ok => ok && this.act('goalStatus', { subjectId: ck.id, id: g.id, status: l.toLowerCase() }, r => r.paused ? 'One active goal at a time. “' + r.paused.goal + '” is now paused.' : l === 'Achieved' ? 'Marked achieved. ' + ck.first + ' sees it in their growth passport.' : l === 'Active' ? 'Goal is live. You’ll be reminded to check in every 2 weeks' + (g.reviewBy ? ' and before the review date.' : '.') : 'Goal paused.')).then(r => r && sv()(r)); } }; }),
+        woop: [['goal', 'Wish', 'What do they want, in their words?', 'e.g. Get confident speaking in class'], ['outcome', 'Best outcome', 'What would it look like if it worked?', 'e.g. Present at the showcase without notes'], ['obstacle', 'Obstacle inside them', 'What in them gets in the way?', 'e.g. My voice shakes when people look'], ['plan', 'Plan: if… then I will…', 'One if–then plan for that obstacle', 'If my voice shakes, then I will pause and breathe once']].map(([k, l, hh, ph]) => ({ l, h: hh, ph, v: g[k] || '', on: e => this.editGoal(ck.id, g0, { [k]: e.target.value }) })),
+        agreedA: g.agreed ? 'true' : 'false', track: g.agreed ? '#0b0b0c' : '#d6d4cc', knob: g.agreed ? '24px' : '4px', toggleAgreed: () => { if (g.status === 'active' && g.agreed) return this.say('A live goal stays agreed. Pause it first.'); this.editGoal(ck.id, g0, { agreed: !g.agreed }); },
+        hasChecks: checks.length > 0, ciMeta: checks.length ? checks.length + ' so far · last ' + mp15Ago(gLast).toLowerCase() : 'None yet',
+        checks: checks.map((x, i) => ({ h: (x.progress / 5 * 100) + '%', c: i === checks.length - 1 ? '#0b0b0c' : '#d6d4cc' })),
+        checksRev: checks.slice().reverse().map(x => ({ d: mp15Fmt(x.at, { day: 'numeric', month: 'short' }), p: x.progress, n: x.note || '—' })),
+        ciOpts: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: ci.p === n, ...c.pill(ci.p === n), go: () => set({ ci: { ...(S.ci || {}), [g.id]: { ...ci, p: n } } }) })),
+        ciNote: ci.n || '', onCiNote: e => set({ ci: { ...(S.ci || {}), [g.id]: { ...ci, n: e.target.value } } }),
+        ciCantA: ci.p ? 'false' : 'true', ciBg: ci.p ? '#0b0b0c' : '#efefed', ciFg: ci.p ? '#fff' : '#6b6b72',
+        addCi: () => { if (!ci.p) return this.say('Choose how close, 1 to 5');
+          this.act('goalCheckin', { subjectId: ck.id, goalId: g.id, progress: ci.p, note: (ci.n || '').trim() }, r => r.achieved ? 'Check-in added. Goal achieved.' : 'Check-in added').then(r => { if (r) { set({ ci: { ...(S.ci || {}), [g.id]: {} } }); sv()(r); } }); },
+      } : {},
+      sStats: [['Seen in the last 2 weeks', (stats.seenPct || 0) + '%', (stats.seen || 0) + ' of ' + (stats.of || 0) + ' mentees', (stats.seenPct || 0) < 80 ? '#7a5600' : '#1d6b30'], ['One-to-ones', stats.oneToOnes || 0, 'All you’ve logged', '#0b0b0c'], ['Pod sessions', stats.pod || 0, 'Saturdays logged', '#0b0b0c'], ['Family contacts', stats.family || 0, 'Calls, meetings and messages', '#0b0b0c']].map(([l, v, n, fg]) => ({ l, v, n, fg })),
+      sTypes: ['All', 'One-to-one', 'Pod session', 'Family'].map(l => ({ l, on: st === l, ...c.chip(st === l), go: () => set({ sType: l }) })),
+      sCols: c.wideCols ? '150px minmax(0, 1.6fr) minmax(0, 1fr) 40px' : '110px minmax(0, 1fr) 40px',
+      sWeeks: weeks.map(w => ({ l: w.l, meta: w.rows.length + (w.rows.length === 1 ? ' session · ' : ' sessions · ') + w.rows.reduce((n, r) => n + Number(r.mins), 0) + ' min', rows: w.rows.map(r => ({ ...r, icon: MP15_TYPE_ICON[r.type] || 'ph ph-user', hasGoal: !!r.goal,
+        del: () => { const hide = {}; r.ids.forEach(id => { hide[id] = true; }); set({ hidden: { ...this.state.hidden, ...hide } });
+          const tm = setTimeout(() => { Promise.all(r.ids.map(id => mp15Api.act('sessionDelete', { id }).catch(e => e))).then(res => { const bad = res.filter(x => x && x.code); if (bad.length) { this.say(mp15ErrText(bad[0])); const un = { ...this.state.hidden }; r.ids.forEach(id => { delete un[id]; }); set({ hidden: un }); } this.refresh(['sess', 'case', 'week']); }); }, 6500);
+          this.say('Session deleted', () => { clearTimeout(tm); const un = { ...this.state.hidden }; r.ids.forEach(id => { delete un[id]; }); set({ hidden: un }); }); } })) })),
+      sEmpty: sf.length === 0 && !!S.d.sess,
+      logOpen: !!S.logOpen, logClosed: !S.logOpen, openLog: () => set({ logOpen: true }), closeLog: () => set({ logOpen: false, lf: null }),
+      logForKid: () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck.id, type: 'One-to-one', goalId: ck.ag ? ck.ag.id : '' } }),
+      lf, lfTypes: [['One-to-one', 'ph ph-user'], ['Pod session', 'ph ph-users-three']].concat(c.isPeer ? [] : [['Family', 'ph ph-house-line']]).concat([['Phone or message', 'ph ph-phone']]).map(([l, icon]) => ({ l, icon, on: lf.type === l, ...c.pill(lf.type === l), go: () => upLf({ type: l, mins: l === 'Pod session' ? '90' : lf.mins === '90' ? '15' : lf.mins }) })),
+      lfNeedsKid: lf.type !== 'Pod session', lfPod: lf.type === 'Pod session', lfPodText: 'Everyone marked here on ' + mp15Fmt(this.satLastDate(), { weekday: 'long', day: 'numeric', month: 'short' }),
+      lfKid: e => upLf({ kid: e.target.value, goalId: '' }), lfDate: e => upLf({ date: e.target.value }), lfMins: e => upLf({ mins: e.target.value }), lfGoal: e => upLf({ goalId: e.target.value, p: 0 }),
+      minsOpts: ['10', '15', '20', '30', '45', '60', '90'].map(v => ({ v, l: v + ' minutes' })),
+      lfHasGoals: lf.type !== 'Pod session' && lfGoals.length > 0, lfGoals: lfGoals.map(x => ({ id: x.id, title: x.title || 'Untitled goal' })),
+      lfShowP: !!lf.goalId && lf.type !== 'Pod session', lfP: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: lf.p === n, ...c.pill(lf.p === n), go: () => upLf({ p: n }) })),
+      lfWhat: e => upLf({ what: e.target.value }), lfNext: e => upLf({ next: e.target.value }),
+      lfCantA: lfOk ? 'false' : 'true', lfBg: lfOk ? '#0b0b0c' : '#efefed', lfFg: lfOk ? '#fff' : '#6b6b72',
+      saveLog: () => { if (!lfOk) return this.say(lf.type !== 'Pod session' && !lfKidObj ? 'Choose a mentee first.' : 'Write what happened first.');
+        const body = { type: lf.type, date: lf.date, minutes: Number(lf.mins) || 0, what: lf.what.trim(), next: lf.next.trim() };
+        if (lf.type !== 'Pod session') body.subjectId = lf.kid;
+        if (lf.goalId && lf.type !== 'Pod session') { body.goalId = Number(lf.goalId); if (lf.p) body.progress = lf.p; }
+        this.act('session', body, r => 'Session saved' + (lf.type === 'One-to-one' && lfKidObj && B_contact(lfKidObj) ? '. ' + lfKidObj.first + ' is no longer overdue.' : r.count > 1 ? ' for ' + r.count + ' mentees' : '')).then(r => { if (r) { set({ logOpen: false, lf: null }); this.refresh(['sess', 'case', 'week', 'goals', 'role'], lfKidObj && lfKidObj.id); } }); },
+      kSessList: kSess, kSessEmpty: kSess.length === 0 && !!kd, kSessMeta: (kSess.length ? kSess.length + ' logged · last one-to-one ' : 'Last one-to-one ') + mp15Ago(ck.contact).toLowerCase(),
+    };
+    function B_contact(k) { return !!(k.flags && k.flags.contact); }
+  }
+
+  picker(key, selId, onPick, all) {
+    const S = this.state; const P = (S.pk || {})[key] || {}; const selK = all.find(k => k.id === selId);
+    const q = P.q !== undefined ? P.q : (selK ? selK.name : ''); const qq = (P.q || '').trim().toLowerCase();
+    const list = all.filter(k => !qq || (k.name + ' ' + k.school).toLowerCase().includes(qq)).slice(0, 8);
+    const setP = p => this.setState(st => ({ pk: { ...(st.pk || {}), [key]: { ...((st.pk || {})[key] || {}), ...p } } }));
+    const pick = k => { onPick(k.id); setP({ q: undefined, open: false }); };
+    return { q, open: !!P.open, openA: P.open ? 'true' : 'false', line: P.open ? '#0b0b0c' : '#d6d4cc', hasVal: !!q,
+      opts: list.map((k, i) => ({ ini: k.ini, name: k.name, sub: [k.age !== null && k.age !== undefined ? 'Age ' + k.age : '', k.school].filter(Boolean).join(' · '), on: i === (P.hi || 0) ? 'true' : 'false', bg: i === (P.hi || 0) ? '#f4f4f2' : '#fff', pick: e => { e.preventDefault(); pick(k); } })),
+      none: !!P.open && list.length === 0,
+      onQ: e => { setP({ q: e.target.value, open: true, hi: 0 }); if (selK) onPick(''); }, onFocus: () => setP({ open: true }), onBlur: () => setTimeout(() => setP({ open: false, q: undefined }), 120),
+      onKey: e => { if (e.key === 'ArrowDown') { e.preventDefault(); setP({ open: true, hi: Math.min(list.length - 1, (P.hi || 0) + 1) }); } else if (e.key === 'ArrowUp') { e.preventDefault(); setP({ hi: Math.max(0, (P.hi || 0) - 1) }); } else if (e.key === 'Enter' && P.open && list[P.hi || 0]) { e.preventDefault(); pick(list[P.hi || 0]); } else if (e.key === 'Escape') setP({ open: false }); },
+      clear: e => { e.preventDefault(); onPick(''); setP({ q: '', open: true }); } };
+  }
+
+  xVals(c) {
+    const S = this.state, set = c.set, all = c.all, ck = c.ck, kd = c.kd, today = c.today;
+    const btn = p => ({ line: p ? '#0b0b0c' : '#d6d4cc', bg: p ? '#0b0b0c' : '#fff', fg: p ? '#fff' : '#0b0b0c' });
+    const scMonth = mp15Month(((kd && kd.scorecard) || {}).month || today.slice(0, 7));
+    const kActs = [['Log a session', 'ph ph-plus', () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck.id, goalId: ck.ag ? ck.ag.id : '' } }), true], ['Score ' + scMonth, 'ph ph-chart-bar', () => set({ ktab: 'score' })],
+      c.isPeer ? ['Note for ' + c.lead, 'ph ph-note-pencil', () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck.id } })] : ['Family update', 'ph ph-house-line', () => set({ ktab: 'family' })],
+      ['Message ' + ck.first, 'ph ph-chat-circle-text', () => this.go('msg', { mNew: { id: ck.id, name: ck.name }, msel: 'chat:' + ck.id, mOpen: true, mf: 'all', reply: '' })],
+      ['Report a concern', 'ph ph-shield-warning', () => this.go('concern', { cKid: ck.id })]].map(([l, icon, go, p]) => ({ l, icon, go, ...btn(p) }));
+    const famHist = ((kd && kd.family) || []).map(s => ({ date: mp15Fmt(s.metOn, { day: 'numeric', month: 'short' }), kind: s.kind === 'update' ? 'Family update' + (s.status === 'queued' ? ' · goes at 8am' : s.status === 'failed' ? ' · not delivered' : ' sent') : s.kind === 'phone' ? 'Phone or message' : 'Family conversation', what: s.discussed || '' }));
+    const wideMsg = S.w >= 1000;
+    const ix = S.d.index || {};
+    const bm = ix.byMentee || []; const bmShow = S.bmAll ? bm : bm.slice(0, 8);
+    const A = S.d.academy || {}; const acMods = c.acMods; const mod = acMods.find(m => m.id === S.mod);
+    let md = {};
+    if (mod) {
+      const steps = (mod.lessons || []).map(l => ({ k: 'lesson', h: l.h, b: l.body }));
+      if (mod.scenario) steps.push({ k: 'scen', h: mod.scenario.situation, opts: mod.scenario.options.map(o => o.text), right: mod.scenario.options.map(o => !!o.right), why: mod.scenario.options.map(o => o.why) });
+      (mod.quiz || []).forEach(q => steps.push({ k: 'quiz', h: q.q, opts: q.options }));
+      steps.push({ k: 'result' });
+      const i = Math.min(S.mStep || 0, steps.length - 1), st = steps[i], ans = (S.mAns || {})[i];
+      const qIdx = steps.map((s, j) => s.k === 'quiz' ? j : -1).filter(j => j >= 0);
+      const choice = st.k === 'scen' || st.k === 'quiz', answered = ans !== undefined;
+      const res = S.mRes; const pass = !!(res && res.passed); const score = res ? res.score : null;
+      const toStep = n => {
+        if (steps[n] && steps[n].k === 'result') {
+          set({ mRes: { pending: true } });
+          const answers = qIdx.map(j => (S.mAns || {})[j]);
+          const wasLocked = this.oriLocked();
+          mp15Api.act('academyResult', { moduleId: mod.id, answers }).then(r => { set({ mRes: r }); if (r.passed) this.refresh(['academy', 'week']);
+            if (wasLocked && r.orientation && r.orientation.ok) this.say('“Start here” is done. Your whole portal is open.'); }).catch(e => { set({ mRes: { error: mp15ErrText(e) } }); });
+        }
+        const m = this.rootRef.current && this.rootRef.current.querySelector('main'); if (m) m.scrollTop = 0; set({ mStep: n });
+      };
+      const pending = !!(res && res.pending), err = res && res.error;
+      md = {
+        stepL: st.k === 'result' ? 'Finished' : 'Step ' + (i + 1) + ' of ' + (steps.length - 1), mins: mod.mins + ' min' + (mod.note ? ' · ' + mod.note : ''), pct: (i / Math.max(1, steps.length - 1) * 100) + '%',
+        kindL: st.k === 'lesson' ? 'Lesson ' + (i + 1) + ' of ' + (mod.lessons || []).length : st.k === 'scen' ? 'What would you do?' : st.k === 'quiz' ? 'Question ' + (qIdx.indexOf(i) + 1) + ' of ' + qIdx.length : 'Result',
+        isLesson: st.k === 'lesson', isChoice: choice, isResult: st.k === 'result', h: st.h, body: st.b, locked: st.k === 'scen' && answered,
+        /* The scenario teaches, so it shows its answer. The quiz is part of what
+           clears a mentor to work with children: its key stays on the server,
+           and the score comes back when the module is finished. */
+        opts: choice ? st.opts.map((l, j) => { const p = ans === j; const scen = st.k === 'scen'; const r = scen && st.right[j]; const showOk = scen && answered && r, showBad = scen && answered && p && !r;
+          return { l, on: p ? 'true' : 'false', bw: showOk || showBad || p ? '2px' : '1px', ring: showOk ? '#1d6b30' : showBad ? '#b0361c' : p ? '#0b0b0c' : '#d6d4cc', bg: showOk ? '#f3faf4' : showBad ? '#fdeeea' : '#fff',
+                   icon: showOk ? 'ph-fill ph-check-circle' : showBad ? 'ph-fill ph-x-circle' : p ? 'ph-fill ph-radio-button' : 'ph ph-circle', ic: showOk ? '#1d6b30' : showBad ? '#b0361c' : p ? '#0b0b0c' : '#9a9aa0',
+                   go: () => { if (scen && answered) return; set({ mAns: { ...(S.mAns || {}), [i]: j } }); } }; }) : [],
+        fb: choice && answered, fbBg: st.k === 'scen' ? (st.right[ans] ? '#f3faf4' : '#fdf6e3') : '#f4f4f2', fbFg: st.k === 'scen' ? (st.right[ans] ? '#14501f' : '#5c4100') : '#2b2b30',
+        fbH: st.k === 'scen' ? (st.right[ans] ? 'Right.' : 'Not quite.') : 'Answer recorded.', fbT: answered ? (st.k === 'scen' ? st.why[ans] : 'You can change it before you go on. Your score is worked out when you finish.') : '',
+        rIcon: pending ? 'ph ph-hourglass' : pass ? 'ph-fill ph-seal-check' : 'ph ph-arrow-counter-clockwise', rFg: pass ? '#1d6b30' : '#7a5600',
+        rH: pending ? 'Checking your answers…' : err ? 'Not saved' : pass ? 'Passed · ' + score + '%' : score + '% · the pass mark is ' + (A.pass || 80) + '%',
+        rT: pending ? '' : err ? err : pass ? 'Saved to your record. Your coordinator can see it' + (mod.renewDays ? ', and you’ll be reminded before it needs renewing.' : '.') : 'Read the lessons again, then retake the questions. Nothing is recorded until you pass.',
+        canPrev: i > 0 && st.k !== 'result', prev: () => toStep(i - 1),
+        nextL: st.k === 'result' ? (pass ? 'Back to Academy' : 'Try again') : steps[i + 1].k === 'result' ? 'See result' : 'Continue',
+        nextOffA: (choice && !answered) || pending ? 'true' : 'false', nextBg: (choice && !answered) || pending ? '#efefed' : '#0b0b0c', nextFg: (choice && !answered) || pending ? '#6b6b72' : '#fff',
+        next: () => { if (pending) return; if (st.k === 'result') { if (pass) this.go('academy'); else set({ mStep: 0, mAns: {}, mRes: null }); return; } if (choice && !answered) return this.say('Choose an answer first'); toStep(i + 1); },
+      };
+    }
+    const CATS = MP15_CONCERN_KINDS;
+    const cOk = !!S.cKid && !!S.cCat && S.cText.trim().length > 10;
+    const cHint = !S.cKid ? 'Choose the child first.' : !S.cCat ? 'Choose what kind of concern.' : S.cText.trim().length <= 10 ? 'Write what happened, in a sentence or two.' : '';
+    const mtAll = (c.isLead ? ((S.d.team || {}).mentors || []) : []).map(m => { const pct = m.seenPct; const tone = m.commitments === 'On track' ? 'ok' : m.commitments === 'Below 5 mentees' ? 'bad' : 'warn'; const booked = m.booked || !!(S.supBooked || {})[m.mentorId];
+      return { name: m.name, kind: m.kind + (m.evalOf ? ' · ' + (m.evalDone || 0) + ' of ' + m.evalOf + ' evaluated Saturday' : '') + (m.bookedOn ? ' · supervision ' + mp15Fmt(m.bookedOn, { day: 'numeric', month: 'short' }) : m.notesAt ? ' · last notes ' + mp15Fmt(m.notesAt, { day: 'numeric', month: 'short' }) : ''), n: m.mentees, pctN: pct === null ? 101 : pct, pct: pct === null ? '—' : pct + '%', pBg: pct === null ? '#d6d4cc' : pct < 60 ? '#b0361c' : pct < 80 ? '#e0a100' : '#1d6b30', rel: m.relAvg === null ? '—' : Number(m.relAvg).toFixed(1),
+        commit: m.commitments, cBg: MP15_TONE[tone][0], cFg: MP15_TONE[tone][1], need: !!m.needSupport, supL: booked ? 'Write up supervision' : 'Book supervision', supOp: 1,
+        sup: () => { if (booked) { set({ supFor: m.mentorId }); return; } this.act('supervisionBook', { mentorId: m.mentorId }, r => 'Supervision booked with ' + m.first + ' for ' + mp15Fmt(r.date, { weekday: 'long', day: 'numeric', month: 'long' }) + ' after STS').then(r => { if (r) { set({ supBooked: { ...(S.supBooked || {}), [m.mentorId]: true } }); this.refresh(['team']); } }); } }; });
+    const mq = (S.mtQ || '').trim().toLowerCase(), mf = S.mtF || 'all';
+    const mt = mtAll.filter(m => (mf === 'all' || m.need) && (!mq || m.name.toLowerCase().includes(mq))).sort((a, b) => mf === 'need' ? a.pctN - b.pctN : 0);
+    const withPct = mtAll.filter(m => m.pctN <= 100);
+    const needN = mtAll.filter(m => m.need).length, avgSeen = withPct.length ? Math.round(withPct.reduce((n, m) => n + m.pctN, 0) / withPct.length) : 0;
+    const liRows = (ix.skills || []).filter(r => r.avg !== null && r.avg !== undefined).map(r => { const dd = r.change; return { l: r.skill, v: Number(r.avg).toFixed(1), w: (r.avg * 10) + '%', c: r.avg < 5 ? '#e0a100' : '#0b0b0c', d: dd ? (dd > 0 ? '+' : '') + Number(dd).toFixed(1) : '–', dFg: dd > 0 ? '#1d6b30' : dd < 0 ? '#b0361c' : '#9a9aa0' }; });
+    return {
+      kActs, famHist, famNone: famHist.length === 0 && !!kd,
+      sendParent: () => { const txt = (c.pBody || '').trim(); if (!txt) return this.say('Write a message first'); if (/\[what you saw\]/.test(txt)) return this.say('Say what you saw first: replace the words in brackets.');
+        this.act('familySend', { subjectId: ck.id, body: txt, draftId: c.draft && txt === c.draft.body ? c.draft.id : 0 }, r => r.queued ? 'Saved. It goes to ' + r.guardian + ' at 8am, and is logged in Sessions.' : 'Sent to ' + r.guardian + '. Logged in Sessions.')
+          .then(r => { if (r) { set({ pBody: null }); this.refresh(['sess', 'case', 'week', 'role'], ck.id); } }); },
+      pkGoal: this.picker('goal', '', id => { if (!id) return; const k = all.find(x => x.id === id); if (!k) return;
+        this.act('goal', { subjectId: k.id, id: 0, goal: '', dueOn: '' }).then(r => { if (!r || !r.id) return; this.go('kid', { kid: k.id, ktab: 'goals', gsel: { ...(this.state.gsel || {}), [k.id]: r.id } }); this.refresh(['goals'], k.id); this.say('Draft goal started for ' + k.first); }); }, all),
+      showInbox: wideMsg || !S.mOpen, showDetail: !!c.mSel && (wideMsg || !!S.mOpen), mBackShow: !wideMsg, mBack: () => set({ mOpen: false }), mEmpty: c.mList.length === 0 && !!S.d.msgs,
+      msgs: c.mList.map(m => ({ ...m, who: m.from, when: mp15When(m.at, today), t: m.body, unread: !m.read && !S.read[m.id] && m.kind !== 'From your lead', cur: c.mSel && m.id === c.mSel.id ? 'true' : undefined, bg: wideMsg && c.mSel && m.id === c.mSel.id ? '#fafaf8' : '#fff',
+        go: () => { set({ msel: m.id, mOpen: true, read: { ...S.read, [m.id]: true }, reply: '' }); if (!m.read) mp15Api.act('messageRead', { threadId: m.id.indexOf('m:') === 0 ? m.id : m.threadId }).catch(() => {}); } })),
+      bmCols: c.wideCols ? 'minmax(0, 1.4fr) minmax(0, 1fr) 96px 56px' : 'minmax(0, 1fr) 96px 48px',
+      bmRows: bmShow.map(r => { const un = r.total === null || r.total === undefined; const d = un || r.prevTotal === null || r.prevTotal === undefined ? null : r.total - r.prevTotal; return { ini: r.initials, name: r.name, lowT: un ? 'Not scored for ' + mp15Month(ix.month || today.slice(0, 7)) + ' yet' : 'Lowest: ' + r.lowSkill, tot: un ? '—' : r.total, d: d ? (d > 0 ? '+' : '') + d : '–', dFg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#9a9aa0', go: () => this.go('kid', { kid: r.subjectId, ktab: 'score' }) }; }),
+      bmMore: bm.length > 8 && !S.bmAll, bmMoreL: 'Show all ' + bm.length, bmShowAll: () => set({ bmAll: true }),
+      liMeta: (ix.scored ? 'out of 10 · ' + ix.scored + ' of ' + ix.of + ' scored for ' + mp15Month(ix.month) + ((ix.skills || []).some(x => x.change !== null && x.change !== undefined) ? ' · change since ' + mp15Month(ix.prevMonth) : ' · no earlier month to compare') : 'Nobody scored for ' + mp15Month(ix.month || today.slice(0, 7)) + ' yet'), liRows,
+      md,
+      acText: acMods.filter(c.modDone).length + ' of ' + acMods.length + ' modules complete',
+      acGroups: (A.groups || []).map((h, gi) => ({ h, mods: acMods.filter(m => m.group === gi).map(m => { const done = c.modDone(m); const lapsed = !!m.passedAt && !done;
+        return { t: m.title, s: done ? 'Passed ' + m.score + '% · ' + mp15Fmt(m.passedAt, { day: 'numeric', month: 'short' }) + (m.renewBy ? ' · renew by ' + mp15Fmt(m.renewBy, { day: 'numeric', month: 'short', year: 'numeric' }) : '') : (lapsed ? 'Needs renewing · ' : '') + m.mins + ' min' + (m.required ? ' · required' : '') + (m.note ? ' · ' + m.note : ''),
+          icon: done ? 'ph-fill ph-check-circle' : 'ph ph-circle', ic: done ? '#1d6b30' : '#9a9aa0', cta: done ? 'Review' : lapsed ? 'Renew' : 'Start', bd: done ? '1px solid #d6d4cc' : '0', bg: done ? '#fff' : '#0b0b0c', fg: done ? '#0b0b0c' : '#fff', go: () => this.go('module', { mod: m.id, mStep: 0, mAns: {} }) }; }) })),
+      cForm: !S.cSent, cSent: !!S.cSent, cRef: S.cSent ? S.cSent.ref : '', cSentWhen: S.cSent ? 'Today, ' + new Date(S.cSent.at || Date.now()).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' }) : '',
+      cNext: [c.officerFirst + ' reads it today and calls you if they need more detail.', 'They decide the next step with the centre lead. You won’t need to investigate.', 'Carry on as normal with the child. Don’t promise them it stays secret.'].map((t, i) => ({ i: i + 1, t })),
+      cDone: () => { set({ cSent: null }); this.go('week'); }, cAnother: () => set({ cSent: null }),
+      cCats: CATS.map(l => ({ l, on: S.cCat === l ? 'true' : 'false', ...c.pill(S.cCat === l), go: () => set({ cCat: l }) })),
+      cCantA: cOk ? 'false' : 'true', cBg: cOk ? '#b0361c' : '#c9a49c', cHint, cHasHint: !!S.cTried && !!cHint,
+      sendConcern: () => { if (!cOk) return set({ cTried: true });
+        if (this.cBusy) return; this.cBusy = true;
+        this.act('concern', { subjectId: S.cKid, category: S.cCat, body: S.cText.trim() }).then(r => { this.cBusy = false; if (r) set({ cKid: '', cText: '', cCat: '', cTried: false, cSent: { ref: r.ref, at: r.at } }); }); },
+      mtStats: [['Mentors', mtAll.length, c.roleId === 'lead' ? 'In your team' : 'At this centre', '#0b0b0c'], ['Seen in 2 weeks', withPct.length ? avgSeen + '%' : '—', 'Average across mentors · standard 80%', avgSeen < 80 ? '#7a5600' : '#1d6b30'], ['Need support', needN, 'Below standard or a commitment due', needN ? '#7a5600' : '#1d6b30']].map(([l, v, n, fg]) => ({ l, v, n, fg })),
+      mtQ: S.mtQ || '', onMtQ: e => set({ mtQ: e.target.value }),
+      mtFilters: [['all', 'All', mtAll.length], ['need', 'Need support', needN]].map(([id, l, n]) => ({ l, n, on: mf === id, ...c.chip(mf === id), go: () => set({ mtF: id }) })),
+      mentors: mt, mtEmpty: c.isLead && mt.length === 0 && !!S.d.team,
+    };
+  }
+
+  scVals(c) {
+    const S = this.state, ck = c.ck, kd = c.kd, set = c.set;
+    const sc = (kd && kd.scorecard) || {}; const skills = (kd && kd.skills) || [];
+    const zero = skills.map(() => 0);
+    const prev = sc.prev || zero; const cur = (S.sc || {})[ck.id] || sc.cur || sc.prev || zero;
+    const tot = cur.reduce((a, b) => a + b, 0), ptot = prev.reduce((a, b) => a + b, 0), d = tot - ptot;
+    const locked = !!sc.locked; const month = mp15Month(sc.month);
+    const setV = (i, v) => { if (locked) return this.say(month + '’s scores are locked.'); const n = cur.slice(); n[i] = Math.max(0, Math.min(10, v)); set({ sc: { ...(S.sc || {}), [ck.id]: n } }); };
+    const dirty = !!(S.sc || {})[ck.id] && (S.sc[ck.id].join(',') !== (sc.cur || []).join(','));
+    return {
+      scLast: sc.prevMonth ? mp15Month(sc.prevMonth) : 'never', scTotal: tot, scDelta: sc.prev ? (d > 0 ? '+' : '') + d + ' since ' + mp15Month(sc.prevMonth) : 'First scorecard', scDFg: d > 0 && sc.prev ? '#1d6b30' : d < 0 ? '#b0361c' : '#6b6b72',
+      scCols: c.wideCols ? 'minmax(180px, 1fr) minmax(160px, 1fr) auto 56px' : 'minmax(0, 1fr) auto 48px',
+      scRows: skills.map(([l, hh], i) => { const v = cur[i], p = prev[i], dd = v - p; return { l, h: hh, v, d: sc.prev && dd ? (dd > 0 ? '+' : '') + dd : '–', dFg: dd > 0 ? '#1d6b30' : dd < 0 ? '#b0361c' : '#9a9aa0', segs: Array.from({ length: 10 }, (_, j) => ({ c: j < v ? '#0b0b0c' : j < p ? '#d6d4cc' : '#f0efea' })), up: () => setV(i, v + 1), dn: () => setV(i, v - 1) }; }),
+      scSaveL: locked ? 'Locked' : !sc.savedAt && !dirty ? 'Save ' + month + ' scores' : dirty ? (sc.savedAt ? 'Save changes' : 'Save ' + month + ' scores') : 'Saved', scSaveOp: locked || (sc.savedAt && !dirty) ? 0.55 : 1,
+      scNote: locked ? 'Locked on ' + mp15Fmt(sc.lockOn) + '. An NGG admin can reopen it.' : !sc.savedAt ? 'Score what you’ve seen across the month, not one Saturday. Grey marks last month.' : dirty ? 'You’ve changed scores since saving.' : 'Saved ' + mp15When(sc.savedAt, this.today()).toLowerCase() + '. You can change it until ' + mp15Fmt(sc.lockOn) + ', then it locks.',
+      scSave: () => { if (locked) return this.say(month + '’s scores are locked.'); if (sc.savedAt && !dirty) return;
+        this.act('scorecard', { subjectId: ck.id, month: sc.month, scores: cur }, month + ' scores saved for ' + ck.first + '.').then(r => { if (r) { const n = { ...(S.sc || {}) }; delete n[ck.id]; set({ sc: n }); this.refresh(['index', 'week', 'role'], ck.id); } }); },
+    };
+  }
+
+  /* First visit: the tour. Anything owed (the week's reviews, Saturday's
+     register): the duty reminder, whose button opens the screen that does it. */
+  render() {
+    const dutyGo = d => { const k = String(d.key || '').replace(/^mentor:/, ''); this.go(/^register/.test(k) ? 'sat' : 'week'); return true; };
+    return <>{Mp15View(this.renderVals())}{typeof GuideTour === 'function' && <GuideTour portal="mentor"/>}{typeof DutyPopup === 'function' && <DutyPopup role="mentor" onGo={dutyGo}/>}</>;
+  }
+}
+
+/* /mentor and its three portals — one address per programme, so nobody (an
+   admin least of all) is ever shown NGG members and Summer School participants
+   in one list:
+     /mentor/ngg     the NGG Mentor Portal (v15): pod, peer, lead, coordinator
+     /mentor/summer  Summer School: participants only (the server narrows it)
+     /mentor/class   the NGG class: instructors' sessions, stars, school results
+   /mentor itself sends a person with one portal straight to it and shows a
+   chooser to anyone with more. Old links (/mentor?tab=results, from the school
+   results email) land on /mentor/class with their tab. */
+const MP15_SUBS = ['ngg', 'summer', 'class', 'academy'];
+function mp15Sub() { const p = (location.pathname || '').replace(/^\/+|\/+$/g, '').split('/'); return p[0] === 'mentor' && MP15_SUBS.includes(p[1]) ? p[1] : ''; }
+function mp15Portals(r) {
+  const me = (r && r.me) || {}; const progs = me.programmes || []; const out = [];
+  const v15 = ['pod', 'peer', 'lead', 'coord'].includes(me.role) && me.ngg !== false && progs.includes('ngg');
+  if (v15) out.push('ngg');
+  if (progs.includes('summer')) out.push('summer');
+  if (progs.includes('ngg') && (me.role === 'instructor' || me.gateRole === 'admin' || v15)) out.push('class');
+  return { v15, out };
+}
+function MentorHome() {
+  const [sub, setSub] = React.useState(() => {
+    const t = (() => { try { return new URLSearchParams(location.search).get('tab') || ''; } catch (_) { return ''; } })();
+    if (!mp15Sub() && MP15_CLASSIC_TABS.includes(t)) { try { history.replaceState({ page: 'mentor' }, '', '/mentor/class' + location.search); } catch (_) {} return 'class'; }
+    return mp15Sub();
+  });
+  const [boot, setBoot] = React.useState(null);
+  const [state, setState] = React.useState('loading');   // loading | ready | refused
+  const auth = (window.useAuth || (() => null))();
+  const probe = React.useCallback(() => {
+    mp15Api.view('week', {}).then(r => { setBoot(r); setState('ready'); }).catch(() => setState('refused'));
+  }, []);
+  React.useEffect(() => { probe(); }, [probe]);
+  React.useEffect(() => { if (auth && auth.isSignedIn && state === 'refused') probe(); }, [auth && auth.isSignedIn]);
+  React.useEffect(() => { const f = () => setSub(mp15Sub()); window.addEventListener('popstate', f); return () => window.removeEventListener('popstate', f); }, []);
+  const go = to => { try { history.pushState({ page: 'mentor' }, '', '/mentor' + (to ? '/' + to : '')); } catch (_) {} setSub(to); try { window.scrollTo(0, 0); } catch (_) {} };
+  const { v15, out } = mp15Portals(boot);
+  /* The Academy follows a mentor into EVERY mentor portal, not only the NGG
+     one: a Summer School mentor, a mentor with the class tools, or one whose
+     record names no programme. The NGG portal carries its own banner and
+     Academy screen (Mp15Portal); the others get Mp15AcademyBar. */
+  const me0 = (boot && boot.me) || {};
+  const ori0 = me0.orientation;
+  const oriLocked = !!me0.mentorId && !!ori0 && ori0.ok === false;
+  const ownPortal = sub === 'ngg' || (sub === 'class' && v15);
+  /* With no sub-route: one portal → straight there; several → choose. */
+  React.useEffect(() => {
+    if (state !== 'ready' || sub) return;
+    /* The class tools are inside the NGG portal (Stars & results), so they are
+       not a reason to choose: only covering Summer School as well is. */
+    const main = v15 && !out.includes('summer') ? 'ngg' : out.length === 1 ? out[0] : '';
+    if (main) { try { history.replaceState({ page: 'mentor' }, '', '/mentor/' + main + location.search); } catch (_) {} setSub(main); }
+  }, [state, sub, v15, out.join()]);
+  if (state === 'loading' && sub !== 'summer') return <div className="m15x-boot" role="status" aria-live="polite"><img src="/assets/logo.png" alt="" width="40" height="40"/><span className="m15x-bar"/><span className="m15x-sr">Loading the mentor portal</span></div>;
+  /* Refused (not signed in, not cleared, no centre, not a mentor): the class
+     portal owns those answers and its sign-in doors. */
+  const hubBtn = out.includes('summer') && out.length > 1 && <button type="button" className="m15x-back" onClick={() => go('')}><i className="ph ph-squares-four" aria-hidden="true"/>Mentor portals</button>;
+  if (state === 'ready' && me0.mentorId && sub === 'academy')
+    return <Mp15AcademyPage boot={boot} locked={oriLocked} onDone={() => probe()} back={() => go('')}/>;
+  /* The other mentor portals have no Academy screen of their own: while it is
+     incomplete they carry a banner to /mentor/academy, and their saves are
+     refused by the server with the reason. */
+  const acadBar = oriLocked && !ownPortal && <Mp15AcademyBar o={ori0} go={() => go('academy')}/>;
+  if (sub === 'summer') return <>{hubBtn}{acadBar}<MentorPortal key="summer" programme="summer"/></>;
+  /* A v15 mentor's class tools open inside their portal; an instructor or an admin with no pod keeps the stand-alone class page. */
+  if (sub === 'class' && v15) return <Mp15Portal key="ngg" boot={boot} initial="classic" onSignOut={auth && auth.signOut} onHub={out.includes('summer') ? () => go('') : null}/>;
+  if (sub === 'class') return <>{hubBtn}{acadBar}<MentorPortal key="class" programme="ngg"/></>;
+  if (state === 'refused') return <MentorPortal key="any"/>;
+  if (sub === 'ngg') {
+    if (v15) return <Mp15Portal boot={boot} onSignOut={auth && auth.signOut} onHub={out.includes('summer') ? () => go('') : null}/>;
+    return <div className="m15x-hub"><div className="m15x-hub-in"><h1>The NGG mentor portal isn’t yours</h1>
+      <p>It opens for NGG pod, peer and lead mentors and for coordinators.{out.length ? ' These are open to you:' : ' Ask your coordinator if you think that’s wrong.'}</p>
+      <Mp15HubCards out={out.concat(me0.mentorId ? ['academy'] : [])} go={go}/></div></div>;
+  }
+  if (!out.length) return <MentorPortal key="any"/>;
+  return <div className="m15x-hub"><div className="m15x-hub-in">
+    <img src="/assets/logo.png" alt="" width="40" height="40"/>
+    <h1>Which portal?</h1>
+    <p>NGG and Summer School are separate programmes, so each has its own portal and its own list of children.</p>
+    <Mp15HubCards out={out.concat(me0.mentorId ? ['academy'] : [])} go={go}/>
+  </div></div>;
+}
+function Mp15HubCards({ out, go }) {
+  const C = { academy: ['ph ph-graduation-cap', 'Mentor Academy', 'The portal guides, safeguarding and mentoring practice — and what is due for renewal.', '/mentor/academy'], ngg: ['ph ph-users-three', 'NGG mentor portal', 'Your NGG mentees, the week, Saturday formation, goals, the Leadership Index, families.', '/mentor/ngg'],
+              summer: ['ph ph-sun', 'Summer School', 'This edition’s participants: stars, notes, weekly reviews, concerns.', '/mentor/summer'],
+              class: ['ph ph-chalkboard', 'NGG class tools', 'Today’s session, stars, skills, curriculum and school results.', '/mentor/class'] };
+  return <ul className="m15x-cards">{out.map(k => <li key={k}><a href={C[k][3]} onClick={e => { e.preventDefault(); go(k); }}>
+    <i className={C[k][0]} aria-hidden="true"/><span><b>{C[k][1]}</b><span>{C[k][2]}</span></span><i className="ph ph-caret-right" aria-hidden="true"/></a></li>)}</ul>;
+}
+
+/* The Mentor Academy as a page of its own, for every mentor portal — the
+   Summer School portal and the class tools have no Academy screen of their
+   own. Locked: it IS the portal until "Start here" is done (the server holds
+   the same line: academy_intercept), with Report a concern still one press
+   away. Unlocked (/mentor/academy, or the hub's card): renewals and training. */
+function Mp15AcademyPage({ boot, locked, onDone, back }) {
+  const me = (boot && boot.me) || {};
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [toast, setToast] = React.useState('');
+  const [concern, setConcern] = React.useState(null);   // null | 'loading' | students[]
+  const tt = React.useRef(0);
+  const say = t => { clearTimeout(tt.current); setToast(t); tt.current = setTimeout(() => setToast(''), 5000); };
+  const load = () => { setErr(null); return NGGApi.member.mentorView('academy').then(r => { setData(r); return r; }).catch(e => { setErr(e); return null; }); };
+  React.useEffect(() => { load(); return () => clearTimeout(tt.current); }, []);
+  const reload = () => load().then(r => { if (locked && r && r.orientation && r.orientation.ok) { say('“Start here” is done. Your portal is open.'); setTimeout(onDone, 1200); } });
+  const progs = me.programmes || [];
+  const jobs = [progs.includes('ngg') ? 'your week, mentees, goals and sessions, Saturday, class and messages' : '',
+                progs.includes('summer') ? 'your Summer School participants, stars, notes, reviews, conversations and goals' : '',
+                'what to do when you’re worried about a child'].filter(Boolean).join('; ');
+  const openConcern = () => { setConcern('loading');
+    NGGApi.member.mentorRoster('', '', progs.includes('ngg') && !progs.includes('summer') ? 'ngg' : progs.includes('summer') && !progs.includes('ngg') ? 'summer' : '')
+      .then(r => setConcern((r && r.students) || [])).catch(() => setConcern([])); };
+  return (
+    <div className="sa-page">
+      <header className="sa-page-head">
+        <img src="/assets/logo.png" alt="" width="36" height="36"/>
+        <div className="sa-page-t"><span>{locked ? 'Start here' : 'Mentor portal'}</span><h1>Mentor Academy</h1></div>
+        <span className="sa-grow"/>
+        {back && <button type="button" className="sa-btn" onClick={back}><i className="ph ph-squares-four" aria-hidden="true"/> Mentor portals</button>}
+        <button type="button" className="sa-btn is-danger" onClick={openConcern} disabled={concern === 'loading'}>{concern === 'loading' ? 'Opening…' : 'Report a concern'}</button>
+      </header>
+      <main className="sa-page-main" id="main">
+        <StaffAcademy data={data} err={err} reload={reload} toast={say} portal="Mentor"
+          submit={(id, answers) => NGGApi.member.mentorAct('academyResult', { moduleId: id, answers })} jobs={jobs}/>
+      </main>
+      {Array.isArray(concern) && typeof MentorConcernSheet === 'function' && <MentorConcernSheet students={concern} onClose={() => setConcern(null)}/>}
+      {toast && <div className="sa-toast" role="status" aria-live="polite">{toast}</div>}
+    </div>
+  );
+}
+
+/* The banner the Summer School portal and the class tools carry while a
+   mentor's Academy is incomplete: what it holds back, and the way to it. */
+function Mp15AcademyBar({ o, go }) {
+  return <div className="m15x-acad is-bar" role="note"><i className="ph-fill ph-graduation-cap" aria-hidden="true"/>
+    <span><b>Your Academy: {o.done || 0} of {o.required || 0} done.</b> Look around as much as you like — nothing you do here saves until it’s complete (about {o.mins || 0} minutes left).</span>
+    <a href="/mentor/academy" onClick={e => { e.preventDefault(); go(); }}>Open the Academy</a></div>;
+}
+
+/* ── The Saturday plan: the mentor's part of the formation day ─────────────
+   One running order inside the breakout's window (from the Saturday
+   schedule): the huddle opens it and the close ends it; everything between is
+   the mentor's to time (five-minute steps), rename, reorder, add or remove.
+   The one-to-ones are picked here, and each child gets a time. Saving is
+   automatic and said out loud; an overrun says what it runs into. */
+function mp15Clock(min) { return Math.floor(min / 60) + ':' + String(min % 60).padStart(2, '0'); }
+function Mp15Agenda({ items, win, after, mentees, picks, max, ooMax, save, sharedAt, lead, onItems, onPicks, onReset, onRetry, onShare }) {
+  const [edit, setEdit] = React.useState(-1);
+  const start = (parseInt(win.start, 10) || 8) * 60 + (parseInt(String(win.start).slice(3), 10) || 0);
+  const total = items.reduce((n, a) => n + a.m, 0), spare = win.minutes - total;
+  const pinned = a => a.t === 'Pod huddle' || a.t === 'Close';
+  const put = (i, patch) => onItems(items.map((a, j) => j === i ? { ...a, ...patch } : a));
+  const move = (i, d) => { const j = i + d; if (j < 1 || j > items.length - 2) return; const n = items.slice(); [n[i], n[j]] = [n[j], n[i]]; onItems(n); if (edit === i) setEdit(j); };
+  const remove = i => { onItems(items.filter((_, j) => j !== i)); setEdit(-1); };
+  const add = () => { if (items.length >= max) return; const n = items.slice(); const oo = n.findIndex(a => a.t === 'One-to-ones'); const at = oo > 0 ? oo : Math.max(1, n.length - 1); n.splice(at, 0, { t: '', s: '', m: 10, fixed: false }); onItems(n); setEdit(at); };
+  let at = start; const times = items.map(a => { const t = at; at += a.m; return t; });
+  const ooI = items.findIndex(a => a.t === 'One-to-ones'), ooMin = ooI >= 0 ? items[ooI].m : 0;
+  const per = picks.length ? Math.floor(ooMin / picks.length) : 0;
+  const kids = mentees.slice().sort((a, b) => (b.contactDays === null || b.contactDays === undefined ? 9999 : b.contactDays) - (a.contactDays === null || a.contactDays === undefined ? 9999 : a.contactDays));
+  const nameOf = id => { const k = mentees.find(m => m.id === id); return k ? (k.first || mp15First(k.name)) : 'A mentee'; };
+  const togglePick = id => onPicks(picks.includes(id) ? picks.filter(x => x !== id) : picks.length >= ooMax ? picks : picks.concat([id]));
+  const last = items[items.length - 1];
+  const sum = spare > 0 ? spare + ' min spare' : spare === 0 ? 'exactly on time' : (-spare) + ' min over: ' + (last ? last.t : 'the plan') + ' would run to ' + mp15Clock(start + total) + (after ? ', into ' + after : '');
+  const saveText = { pending: 'Unsaved changes…', saving: 'Saving…', saved: 'Saved', error: save.msg || 'Not saved.' }[save.st] || '';
+  return (
+    <div className="m15ag">
+      <p className={'m15ag-sum' + (spare < 0 ? ' is-over' : '')} role="status" aria-live="polite">{win.title ? win.title + ' · ' : ''}{mp15Clock(start)}–{win.end} · <b>{total} of {win.minutes} min planned</b> · {sum}</p>
+      <ol className="m15ag-list">
+        {items.map((a, i) => {
+          const editing = edit === i, label = a.t || 'the new activity';
+          return (
+            <li key={i} className={'m15ag-row' + (editing ? ' is-editing' : '')}>
+              <span className="m15ag-at">{mp15Clock(times[i])}</span>
+              <div className="m15ag-main">
+                {editing ? (
+                  <div className="m15ag-edit">
+                    <label><span>Activity</span><input value={a.t} maxLength={80} disabled={a.fixed} autoFocus={!a.fixed} placeholder="e.g. Debate: should phones be allowed at school?" onChange={e => put(i, { t: e.target.value })}/></label>
+                    {a.fixed && <small>Every pod’s Saturday has a {a.t.toLowerCase()}, so its name stays. Change its time and what happens.</small>}
+                    <label><span>What happens</span><input value={a.s} maxLength={160} placeholder="One line the pod will recognise" onChange={e => put(i, { s: e.target.value })}/></label>
+                    <button type="button" className="m15ag-btn" onClick={() => setEdit(-1)}>Done</button>
+                  </div>
+                ) : (
+                  <>
+                    <b>{a.t || 'New activity (name it)'}</b>
+                    {a.s && <span>{a.s}</span>}
+                    {i === ooI && <span className="m15ag-oo-line">{picks.length ? picks.map((id, k) => mp15Clock(times[i] + k * per) + ' ' + nameOf(id)).join(' · ') : 'Nobody picked yet: choose below.'}</span>}
+                  </>
+                )}
+              </div>
+              <div className="m15ag-mins" role="group" aria-label={'Minutes for ' + label}>
+                <button type="button" aria-label={'Five minutes less for ' + label} disabled={a.m <= 5} onClick={() => put(i, { m: Math.max(5, a.m - 5) })}><i className="ph ph-minus" aria-hidden="true"/></button>
+                <span>{a.m} min</span>
+                <button type="button" aria-label={'Five minutes more for ' + label} disabled={a.m >= 120} onClick={() => put(i, { m: Math.min(120, a.m + 5) })}><i className="ph ph-plus" aria-hidden="true"/></button>
+              </div>
+              <div className="m15ag-acts">
+                <button type="button" aria-label={(editing ? 'Finish editing ' : 'Edit ') + label} aria-pressed={editing} onClick={() => setEdit(editing ? -1 : i)}><i className="ph ph-pencil-simple" aria-hidden="true"/></button>
+                {!pinned(a) && <button type="button" aria-label={'Move ' + label + ' earlier'} disabled={i <= 1} onClick={() => move(i, -1)}><i className="ph ph-arrow-up" aria-hidden="true"/></button>}
+                {!pinned(a) && <button type="button" aria-label={'Move ' + label + ' later'} disabled={i >= items.length - 2} onClick={() => move(i, 1)}><i className="ph ph-arrow-down" aria-hidden="true"/></button>}
+                {!a.fixed && <button type="button" aria-label={'Remove ' + label} onClick={() => remove(i)}><i className="ph ph-x" aria-hidden="true"/></button>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="m15ag-tools">
+        <button type="button" className="m15ag-btn" onClick={add} disabled={items.length >= max}><i className="ph ph-plus" aria-hidden="true"/> Add your own activity</button>
+        <button type="button" className="m15ag-btn is-quiet" onClick={onReset}>Reset to the standard plan</button>
+      </div>
+      <section className="m15ag-oo" aria-labelledby="m15ag-oo-h">
+        <h3 id="m15ag-oo-h">One-to-ones · {ooMin} min{picks.length ? ', about ' + per + ' min each' : ''}</h3>
+        <p>Pick who you see one-to-one this Saturday, up to {ooMax}. Longest since their last one-to-one first.</p>
+        <div className="m15ag-kids">
+          {kids.map(k => { const on = picks.includes(k.id); const d = k.contactDays === null || k.contactDays === undefined ? 'never' : k.contactDays + ' days';
+            return <button type="button" key={k.id} className={'m15ag-kid' + (on ? ' is-on' : '')} aria-pressed={on} disabled={!on && picks.length >= ooMax} onClick={() => togglePick(k.id)}>
+              <i className={on ? 'ph-fill ph-check-circle' : 'ph ph-circle'} aria-hidden="true"/><span>{k.name}</span><small>{d}</small></button>; })}
+          {!kids.length && <span className="m15ag-empty">No mentees on your list yet.</span>}
+        </div>
+      </section>
+      <div className="m15ag-foot">
+        <button type="button" className="m15ag-btn is-primary" onClick={onShare}>{lead ? 'Share with ' + lead : 'Save the plan'}</button>
+        <span className={'m15ag-save is-' + save.st} role="status" aria-live="polite">{saveText}{save.st === 'error' && <button type="button" className="m15ag-link" onClick={onRetry}>Retry</button>}</span>
+        {sharedAt && <span className="m15ag-shared">Shared {new Date(sharedAt).toLocaleString('en-GB', { timeZone: 'Africa/Lagos', weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>}
+      </div>
+    </div>
+  );
+}
+
+/* Pod growth: every mentee's trend in one table (member_mp_growth_pod) —
+   Saturdays now against before, the Leadership Index's change, how many
+   evaluation criteria were shown last time and how that moved. A name opens
+   their Growth tab. */
+function Mp15PodGrowth({ centre, open }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const load = React.useCallback(() => { setErr(null); return mp15Api.view('growth', { centre }).then(setD).catch(setErr); }, [centre]);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return <div className="grw-msg" role="alert"><span>Couldn’t load the pod’s growth ({err.code || err.message}).</span><button type="button" className="grw-btn" onClick={load}>Retry</button></div>;
+  if (!d) return <div className="grw-msg" role="status" aria-live="polite">Loading the pod’s growth…</div>;
+  const ch = v => v === null || v === undefined ? "—" : (v > 0 ? "+" : "") + v;
+  const tone = v => v === null || v === undefined || v === 0 ? "" : v > 0 ? "is-up" : "is-down";
+  return (
+    <section className="grw-card mpg" aria-labelledby="mpg-h">
+      <h3 id="mpg-h">Growth, mentee by mentee <small>the last 12 Saturdays and 6 months</small></h3>
+      {!d.rows.length ? <p className="grw-note">No mentees yet.</p> : (
+        <div className="mpg-wrap"><table className="mpg-t">
+          <thead><tr><th scope="col">Mentee</th><th scope="col">Saturdays</th><th scope="col">Recently vs before</th><th scope="col">Leadership Index</th><th scope="col">Evaluation</th></tr></thead>
+          <tbody>{d.rows.map(r => {
+            const att = r.attendanceRecent !== null && r.attendanceBefore !== null ? r.attendanceRecent - r.attendanceBefore : null;
+            return (
+              <tr key={r.id}>
+                <th scope="row"><button type="button" className="mpg-name" onClick={() => open(r.id)}>{r.name}</button></th>
+                <td>{r.attendance === null ? "—" : r.attendance + "%"}</td>
+                <td className={tone(att)}>{att === null ? "—" : ch(att) + " pts"}</td>
+                <td>{r.index === null ? "Not scored" : r.index}<span className={"mpg-d " + tone(r.indexChange)}> {r.indexChange === null ? "" : ch(r.indexChange)}</span></td>
+                <td>{r.evalShown === null ? "None yet" : r.evalShown + " of " + r.evalOf}<span className={"mpg-d " + tone(r.evalChange)}> {r.evalChange === null ? "" : ch(r.evalChange)}</span></td>
+              </tr>
+            );
+          })}</tbody>
+        </table></div>
+      )}
+    </section>
+  );
+}
+
+/* Projects and activities (domain/projects.php; My role → Projects).
+   A lead or coordinator assigns a project to the mentors they lead and the
+   children at their centre; any mentor, to the children in their caseload.
+   People are split into named groups and everyone sees the same countdown.
+   Writes go through the portal's act(), so the Academy lock and the toasts
+   are the portal's own. */
+const MP15_PJ_TONE = { ok: 'is-ok', soon: 'is-soon', due: 'is-soon', over: 'is-over', neutral: '', done: '' };
+const MP15_PJ_PART = { assigned: 'Not done yet', done: 'Done', excused: 'Excused' };
+function mp15PjBlank(today) { return { projectId: '', title: '', detail: '', startOn: today, dueOn: '', sel: {}, groups: [], q: '', newGroup: '' }; }
+/* A lead writes up a supervision: what they told the mentor, and up to five
+   things agreed. It closes the open booking; the mentor reads it in My role,
+   where "Feedback received professionally" dates from it
+   (member_mp_supervision_record). */
+const MP15_SUP_AGREED_MAX = 5;
+function Mp15SupNotes({ m, save, onClose }) {
+  const [fb, setFb] = React.useState('');
+  const [agreed, setAgreed] = React.useState(['', '', '']);
+  const [busy, setBusy] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(() => { if (ref.current) { ref.current.focus(); ref.current.scrollIntoView({ block: 'nearest' }); } }, []);
+  React.useEffect(() => { const k = e => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
+  const ok = fb.trim().length >= 10 && !busy;
+  const submit = e => { e.preventDefault(); if (!ok) return; setBusy(true); save({ feedback: fb.trim(), agreed: agreed.map(x => x.trim()).filter(Boolean) }).then(() => setBusy(false)); };
+  return (
+    <form className="grw-card mpj mpj-form" aria-labelledby="mp15-sup-h" onSubmit={submit}>
+      <div className="mpj-top"><h3 id="mp15-sup-h">Supervision with {m.first}</h3><button type="button" className="grw-btn" onClick={onClose}>Close</button></div>
+      <p className="mpj-detail">{m.bookedOn ? 'Booked for ' + mp15Fmt(m.bookedOn, { weekday: 'long', day: 'numeric', month: 'long' }) + '. ' : ''}Write it up after you have met. {m.first} reads it in My role, and it counts as their feedback for the month.</p>
+      <label className="mpj-f">What you told {m.first}<textarea ref={ref} rows={5} value={fb} onChange={e => setFb(e.target.value)} placeholder="What is going well, what to work on, and anything you were concerned about"/></label>
+      <fieldset className="mpj-f"><legend>What you agreed <small>up to {MP15_SUP_AGREED_MAX}, one each</small></legend>
+        {agreed.map((a, i) => <input key={i} aria-label={'Agreed ' + (i + 1)} value={a} onChange={e => setAgreed(agreed.map((x, j) => j === i ? e.target.value : x))} placeholder={i === 0 ? 'e.g. Call two families before Saturday' : ''}/>)}
+        {agreed.length < MP15_SUP_AGREED_MAX && <button type="button" className="grw-btn" onClick={() => setAgreed(agreed.concat(['']))}>Add another</button>}
+      </fieldset>
+      <div className="mpj-acts"><button type="submit" className="mpj-go" disabled={!ok} aria-disabled={!ok}>{busy ? 'Saving…' : 'Save the notes'}</button>
+        {!ok && !busy && <span className="mpj-detail" role="status">Write at least a sentence of feedback first.</span>}</div>
+    </form>
+  );
+}
+
+function Mp15Projects({ act, today }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [form, setForm] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const [notes, setNotes] = React.useState({});
+  const load = React.useCallback(() => { setErr(null); return mp15Api.view('projects', {}).then(setD).catch(setErr); }, []);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return <div className="grw-msg" role="alert"><span>Couldn’t load projects ({err.code || err.message}).</span><button type="button" className="grw-btn" onClick={load}>Retry</button></div>;
+  if (!d) return <div className="grw-msg" role="status" aria-live="polite">Loading projects…</div>;
+  const canAssign = d.mentors.length > 0 || d.children.length > 0;
+  const F = form, setF = o => setForm(f => Object.assign({}, f, o));
+  const key = (k, id) => k + ':' + id;
+  const run = (action, body, ok) => { setBusy(true); return act(action, body, ok).then(r => { setBusy(false); if (r) load(); return r; }); };
+  const edit = p => setForm({ projectId: p.projectId, title: p.title, detail: p.detail || '', startOn: p.startOn, dueOn: p.dueOn, q: '', newGroup: '',
+    groups: Array.from(new Set(p.people.map(x => x.group).filter(Boolean))), sel: Object.fromEntries(p.people.map(x => [key(x.kind, x.id), x.group || ''])), names: Object.fromEntries(p.people.map(x => [key(x.kind, x.id), x.name])) });
+  const save = (status, from) => {
+    const f = from || F;
+    const people = Object.keys(f.sel).map(k => { const i = k.indexOf(':'); return { kind: k.slice(0, i), id: k.slice(i + 1), group: f.sel[k] }; });
+    return run('projectSave', { projectId: f.projectId, title: f.title, detail: f.detail, startOn: f.startOn, dueOn: f.dueOn, status: status || 'open', people },
+      r => status === 'closed' ? 'Project marked finished.' : status === 'cancelled' ? 'Project cancelled.' : f.projectId ? 'Project saved' + (r.added ? ' · ' + r.added + ' added and told' : '') + (r.kept ? ' · ' + r.kept + ' who finished stay on the record' : '') + '.' : 'Project set · ' + r.added + ' people told.')
+      .then(r => { if (r && !from) setForm(null); return r; });
+  };
+  const asSave = p => ({ projectId: p.projectId, title: p.title, detail: p.detail || '', startOn: p.startOn, dueOn: p.dueOn, sel: Object.fromEntries(p.people.map(x => [key(x.kind, x.id), x.group || ''])) });
+  const cd = c => <span className={'mpj-cd ' + (MP15_PJ_TONE[c.tone] || '')}>{c.label}</span>;
+  const bar = c => <span className="mpj-bar" role="progressbar" aria-label={'Time gone: ' + c.elapsedPct + '%'} aria-valuemin="0" aria-valuemax="100" aria-valuenow={c.elapsedPct}><span style={{ width: c.elapsedPct + '%' }}/></span>;
+  const head = p => (
+    <div className="mpj-head">
+      <h4>{p.title}</h4>
+      <p className="mpj-when">{cd(p.countdown)} <span>{mp15Fmt(p.startOn, { day: 'numeric', month: 'short' })} – {mp15Fmt(p.dueOn, { weekday: 'short', day: 'numeric', month: 'short' })}</span></p>
+      {bar(p.countdown)}
+      {p.detail && <p className="mpj-detail">{p.detail}</p>}
+    </div>
+  );
+
+  /* The form: what, when, and who, in which group. */
+  if (F) {
+    const q = F.q.trim().toLowerCase();
+    const pick = (list, kind) => list.filter(x => !q || x.name.toLowerCase().includes(q) || F.sel[key(kind, x.id)] !== undefined);
+    const kids = pick(d.children, 'member').sort((a, b) => (b.mentee - a.mentee) || a.name.localeCompare(b.name));
+    const mentors = pick(d.mentors, 'mentor');
+    /* Somebody already on the project who has since left your reach (gone
+       inactive, moved centre, left the caseload) stays chosen — the server
+       keeps them — so they are listed here, where they can be taken off. */
+    const reachable = new Set(d.children.map(x => key('member', x.id)).concat(d.mentors.map(x => key('mentor', x.id))));
+    const outside = Object.keys(F.sel).filter(k => !reachable.has(k)).map(k => { const i = k.indexOf(':'); return { kind: k.slice(0, i), id: k.slice(i + 1), name: (F.names || {})[k] || k.slice(i + 1) }; });
+    const n = Object.keys(F.sel).length;
+    const toggle = k => { const s = Object.assign({}, F.sel); if (s[k] !== undefined) delete s[k]; else s[k] = ''; setF({ sel: s }); };
+    const row = (x, kind, tag) => { const k = key(kind, x.id), on = F.sel[k] !== undefined; return (
+      <li key={k} className={'mpj-pick' + (on ? ' is-on' : '')}>
+        <label><input type="checkbox" checked={on} onChange={() => toggle(k)}/><span>{x.name}</span>{tag && <em>{tag}</em>}</label>
+        {on && F.groups.length > 0 && <select aria-label={'Group for ' + x.name} value={F.sel[k]} onChange={e => setF({ sel: Object.assign({}, F.sel, { [k]: e.target.value }) })}>
+          <option value="">No group</option>{F.groups.map(g => <option key={g} value={g}>{g}</option>)}</select>}
+      </li>); };
+    const addGroup = () => { const g = F.newGroup.trim().replace(/\s+/g, ' ').slice(0, 40); if (!g || F.groups.includes(g)) return setF({ newGroup: '' }); setF({ groups: F.groups.concat([g]), newGroup: '' }); };
+    const ok = F.title.trim().length >= 3 && F.dueOn && n > 0 && !busy;
+    return (
+      <section className="grw-card mpj" aria-labelledby="mpj-f">
+        <h3 id="mpj-f">{F.projectId ? 'Edit the project' : 'New project'}</h3>
+        <form className="mpj-form" onSubmit={e => { e.preventDefault(); if (ok) save('open'); }}>
+          <label className="mpj-f">What it is<input value={F.title} maxLength={160} onChange={e => setF({ title: e.target.value })} placeholder="e.g. Clean-up day at the centre" required/></label>
+          <label className="mpj-f">What to do<textarea rows={3} maxLength={2000} value={F.detail} onChange={e => setF({ detail: e.target.value })} placeholder="What each person does, and what done looks like"/></label>
+          <div className="mpj-dates">
+            <label className="mpj-f">Starts<input type="date" value={F.startOn} onChange={e => setF({ startOn: e.target.value })}/></label>
+            <label className="mpj-f">Finishes<input type="date" value={F.dueOn} min={F.startOn || undefined} onChange={e => setF({ dueOn: e.target.value })} required/></label>
+          </div>
+          <fieldset className="mpj-groups"><legend>Groups <small>optional · {F.groups.length} of {d.max.groups}</small></legend>
+            {F.groups.map(g => <span key={g} className="mpj-chip">{g}<button type="button" aria-label={'Remove group ' + g} onClick={() => setF({ groups: F.groups.filter(x => x !== g), sel: Object.fromEntries(Object.entries(F.sel).map(([k, v]) => [k, v === g ? '' : v])) })}><i className="ph ph-x" aria-hidden="true"/></button></span>)}
+            {F.groups.length < d.max.groups && <span className="mpj-addg"><input aria-label="New group name" placeholder="e.g. Team Kola" value={F.newGroup} maxLength={40} onChange={e => setF({ newGroup: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addGroup(); } }}/><button type="button" className="grw-btn" onClick={addGroup}>Add group</button></span>}
+          </fieldset>
+          <fieldset className="mpj-who"><legend>Who is on it <small aria-live="polite">{n} chosen · {d.max.people} at most</small></legend>
+            <div className="mpj-search" role="search"><i className="ph ph-magnifying-glass" aria-hidden="true"/><input type="search" aria-label="Find a person" placeholder="Find a person" value={F.q} onChange={e => setF({ q: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); /* Enter here finds; it must not submit (and publish) the project around it */ }}/></div>
+            {outside.length > 0 && <><h5>Already on it, no longer in your reach</h5><ul className="mpj-list">{outside.map(x => row(x, x.kind, 'Can stay or come off'))}</ul></>}
+            {mentors.length > 0 && <><h5>Mentors</h5><ul className="mpj-list">{mentors.map(x => row(x, 'mentor'))}</ul></>}
+            <h5>Children</h5>
+            {kids.length ? <ul className="mpj-list">{kids.map(x => row(x, 'member', x.mentee ? 'Your mentee' : ''))}</ul> : <p className="grw-note">{q ? 'Nobody called “' + F.q.trim() + '”.' : 'No children you can assign yet.'}</p>}
+          </fieldset>
+          <div className="mpj-acts">
+            <button type="submit" className="mpj-go" disabled={!ok} title={ok ? undefined : 'A name, a finish date and at least one person'}>{busy ? 'Saving…' : F.projectId ? 'Save' : 'Set the project'}</button>
+            <button type="button" className="grw-btn" onClick={() => setForm(null)}>Cancel</button>
+          </div>
+        </form>
+      </section>
+    );
+  }
+
+  const markOwn = (p, status) => run('projectMark', { projectId: p.projectId, status, note: status === 'done' ? (notes[p.projectId] || '') : '' }, status === 'done' ? 'Marked your part done.' : 'Marked not done yet.')
+    .then(r => { if (r) setNotes(o => Object.assign({}, o, { [p.projectId]: '' })); });
+  return (
+    <div className="mpj">
+      <div className="mpj-top">
+        <p className="grw-note">Projects and activities, each with a finish date everyone on it sees counting down.</p>
+        {canAssign && <button type="button" className="mpj-go" onClick={() => setForm(mp15PjBlank(today))}><i className="ph ph-plus" aria-hidden="true"/>New project</button>}
+      </div>
+      <section className="grw-card" aria-labelledby="mpj-mine">
+        <h3 id="mpj-mine">Projects you’re on <small>{d.mine.length ? d.mine.length + ' open or recent' : ''}</small></h3>
+        {!d.mine.length ? <p className="grw-note">None at the moment. When your lead puts you on one, it shows here and on My role.</p> : d.mine.map(p => (
+          <article key={p.projectId} className="mpj-card">
+            {head(p)}
+            <p className="mpj-meta">Set by {p.by || 'your lead'}{p.myGroup ? ' · your group: ' + p.myGroup : ''}</p>
+            {p.groups.map(g => <ul key={g.name} className="mpj-people" aria-label={(g.name || 'Everyone') + ', ' + g.tally.done + ' of ' + g.tally.of + ' done'}>{g.people.map(x => <li key={x.kind + x.id} className={'is-' + x.status}><i className={x.status === 'done' ? 'ph-fill ph-check-circle' : 'ph ph-circle'} aria-hidden="true"/>{x.name}<span className="grw-sr"> · {MP15_PJ_PART[x.status]}</span></li>)}</ul>)}
+            {p.me && p.status === 'open' && p.me.status === 'assigned' && <div className="mpj-mark">
+              <label className="mpj-f">What you did <small>optional</small><input value={notes[p.projectId] || ''} maxLength={500} onChange={e => setNotes(o => Object.assign({}, o, { [p.projectId]: e.target.value }))}/></label>
+              <button type="button" className="mpj-go" disabled={busy} onClick={() => markOwn(p, 'done')}>Mark my part done</button>
+            </div>}
+            {p.me && p.me.status === 'done' && <p className="mpj-done"><i className="ph-fill ph-check-circle" aria-hidden="true"/>Your part is done{p.me.note ? ' · “' + p.me.note + '”' : ''}{p.status === 'open' && <button type="button" className="grw-btn" disabled={busy} onClick={() => markOwn(p, 'assigned')}>Not done yet</button>}</p>}
+            {p.me && p.me.status === 'excused' && <p className="grw-note">You’re excused from this one{p.me.note ? ': ' + p.me.note : '.'}</p>}
+          </article>
+        ))}
+      </section>
+      {(d.led.length > 0 || canAssign) && <section className="grw-card" aria-labelledby="mpj-led">
+        <h3 id="mpj-led">Projects you set <small>{d.led.length ? d.led.length + ' open or recent' : ''}</small></h3>
+        {!d.led.length ? <p className="grw-note">You haven’t set one yet. “New project” puts mentors and children on one, in groups, with a finish date.</p> : d.led.map(p => (
+          <article key={p.projectId} className="mpj-card">
+            {head(p)}
+            <p className="mpj-meta">{p.tally.done} of {p.tally.of} done{p.status === 'closed' ? ' · finished' : ''}</p>
+            {p.groups.map(g => (
+              <div key={g.name} className="mpj-group">
+                <h5>{g.name || 'No group'} <small>{g.tally.done} of {g.tally.of} done</small></h5>
+                <ul className="mpj-parts">{g.people.map(x => (
+                  <li key={x.kind + x.id}>
+                    <span className="mpj-who-n">{x.name}{x.kind === 'mentor' && <em>Mentor</em>}{x.note && <small>“{x.note}”</small>}</span>
+                    <select aria-label={'Part for ' + x.name} value={x.status} disabled={busy || p.status !== 'open'} onChange={e => run('projectMark', { projectId: p.projectId, kind: x.kind, personId: x.id, status: e.target.value }, x.name + ': ' + MP15_PJ_PART[e.target.value].toLowerCase() + '.')}>
+                      {Object.keys(MP15_PJ_PART).map(s => <option key={s} value={s}>{MP15_PJ_PART[s]}</option>)}
+                    </select>
+                  </li>))}</ul>
+              </div>
+            ))}
+            {p.status === 'open' && <div className="mpj-acts">
+              <button type="button" className="grw-btn" disabled={busy} onClick={() => edit(p)}>Edit</button>
+              <button type="button" className="grw-btn" disabled={busy} onClick={() => save('closed', asSave(p))}>Mark finished</button>
+              <button type="button" className="grw-btn mpj-danger" disabled={busy} onClick={async () => { if (await dialog.confirm({ title: 'Cancel “' + p.title + '”?', body: 'It disappears for everyone on it.', cta: 'Cancel project', cancel: 'Keep it', danger: true })) save('cancelled', asSave(p)); }}>Cancel project</button>
+            </div>}
+          </article>
+        ))}
+      </section>}
+    </div>
+  );
+}
+
+/* Where a mentee is in their lessons: done with the score, waiting for a
+   mark, started, not started. Read on the mentee's Growth tab. */
+function Mp15KidLessons({ subjectId }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const load = React.useCallback(() => { setErr(null); setD(null); return NGGApi.member.mentorChildLessons(subjectId).then(r => setD(r.curriculum || { lessons: [], total: 0 })).catch(setErr); }, [subjectId]);
+  React.useEffect(() => { load(); }, [load]);
+  const ST = { done: ["Done", "is-ok"], to_mark: ["Waiting for a mark", "is-warn"], started: ["Started", "is-warn"], not_started: ["Not started", ""] };
+  return (
+    <section className="m15c-card" aria-labelledby={"kl-" + subjectId}>
+      <h2 className="m15c-h" id={"kl-" + subjectId}>Lessons</h2>
+      {err ? <div className="m15c-msg" role="alert"><span>Couldn't load their lessons.</span><button type="button" className="m15c-btn" onClick={load}>Retry</button></div>
+        : !d ? <div className="m15c-msg" role="status"><span className="m15x-bar"/><span className="m15x-sr">Loading their lessons</span></div>
+        : !d.total ? <p className="m15c-empty">No lessons are published for their courses yet.</p>
+        : <>
+          <p className="m15c-sub" role="status">{d.done} of {d.total} done{d.avg != null ? " · average " + d.avg + "%" : ""}{d.toMark ? " · " + d.toMark + " waiting for a mark" : ""} · Year {d.year}</p>
+          <ul className="m15c-list">{d.lessons.map(l => (
+            <li key={l.unitId} className="m15c-row-static"><span><b>Week {l.week}</b> · {l.title}<small className="m15c-sub"> {l.course}{l.stage === "catchup" ? " · catch-up" : ""}</small></span>
+              <span className={"m15c-pill " + ((ST[l.state] || ST.not_started)[1])}>{(ST[l.state] || ST.not_started)[0]}{l.state === "done" && l.pct != null ? " · " + l.pct + "%" : ""}</span></li>))}</ul>
+        </>}
+    </section>
+  );
+}
+
+
+/* ── A mentee's Anchor week ────────────────────────────────────────────────
+   Anchor Circle's mentor side, in the mentor portal (it was a code-paired
+   page at /circle). No code: a child in the mentor's caseload is connected
+   because they were assigned (member.mentor.anchor). The week — systems held,
+   days reflected, streak, conduct days — never the child's words. The mentor
+   confirms their own days and leaves their own notes; the child reads notes
+   in their app. */
+/* ── Messages: one conversation per person ─────────────────────────────────
+   The owner, 2026-10-28: "The UX is currently terrible … the structure of the
+   messages is too messy." It was one flat list in which a child appeared once
+   per chat, once per shared journal entry and once per check-in, each with
+   its own label and its own reply box, under six filter chips. Now each
+   person is ONE conversation: a child's messages, the journal entries they
+   sent and their check-ins, in time order, with one reply box that reaches
+   their app. People are grouped — Needs a reply, Children, Families, and the
+   lead or mentors — and the list says what the last word was and who said it.
+   Built from member.mentor.messages as it is; replying uses messageReply on
+   the child's chat thread (journal and check-in replies made before stay in
+   the timeline). */
+const MP15_GROUPS = [['needs', 'Needs a reply'], ['kids', 'Children'], ['family', 'Families'], ['team', 'Colleagues']];
+function mp15InboxPeople(rows, kids, readMap) {
+  const P = {}, kidName = {}; (kids || []).forEach(k => { kidName[k.id] = k.name; });
+  const aud = list => (((list || []).find(y => y.type === 'audio') || {}).url) || '';
+  const add = (key, base) => (P[key] = P[key] || Object.assign({ key, items: [], rows: [], unread: false }, base));
+  (rows || []).forEach(r => {
+    let p;
+    if (r.filter === 'chat' || r.filter === 'journal' || r.filter === 'checkin' || /^journal:/.test(r.threadId || '')) {
+      p = add('kid:' + r.subjectId, { group: 'kids', name: r.filter === 'chat' ? r.from : (kidName[r.subjectId] || r.from), subjectId: r.subjectId, replyTo: 'chat:' + r.subjectId,
+        sub: r.supporting ? 'You support them with ' + r.supporting : r.mentee === false ? 'At your centre' : 'Your mentee' });
+      if (r.filter === 'chat') (r.thread || []).forEach((x, i) => p.items.push({ id: r.id + ':' + i, type: 'msg', mine: !!x.mine, who: x.who, body: x.body, at: x.at, queued: !!x.queued, audio: aud(x.media) }));
+      else p.items.push({ id: r.id, type: r.filter === 'checkin' ? 'checkin' : 'journal', mine: false, who: r.from, body: r.body, at: r.at, audio: aud(r.media) });
+    } else if (r.filter === 'family') {
+      p = add('fam:' + r.subjectId, { group: 'family', name: r.from || 'Family', subjectId: r.subjectId, sub: 'Family of ' + (kidName[r.subjectId] || 'your mentee'), replyTo: r.threadId });
+      p.items.push({ id: r.id, type: 'msg', mine: false, who: r.from, body: r.body, at: r.at });
+    } else {
+      p = add('team:' + (r.fromId || r.threadId), { group: 'team', name: r.from || 'Your lead', sub: /mentor/i.test(r.kind) && !/lead/i.test(r.kind) ? 'A mentor you lead' : r.kind === 'Conversation' ? 'Colleague' : r.kind, replyTo: /^lead:/.test(r.threadId || '') ? r.threadId : '' });
+      if (r.thread) r.thread.forEach(x => p.items.push({ id: 'mid:' + x.mid, type: 'msg', mine: x.mine, who: x.who, body: x.body, at: x.at }));
+      else p.items.push({ id: r.id, type: 'msg', mine: false, who: r.from, body: r.body, at: r.at });
+    }
+    // Replies made to a journal entry, a check-in or a family before the conversation was one.
+    (r.replies || []).forEach((x, i) => { if (r.filter !== 'chat' && r.filter !== 'lead') p.items.push({ id: r.id + ':r' + i, type: 'msg', mine: true, who: 'You', body: x.body, at: x.createdAt, queued: x.status === 'queued' }); });
+    p.rows.push(r);
+    if (!r.read && !readMap[r.id] && r.kind !== 'From your lead') p.unread = true;
+  });
+  return Object.values(P).map(p => {
+    const seen = {}; p.items = p.items.filter(x => (seen[x.id] ? false : (seen[x.id] = true))).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    p.last = p.items[p.items.length - 1] || null; p.at = p.last ? p.last.at : '';
+    p.needs = !!p.last && !p.last.mine && !!p.replyTo;
+    return p;
+  }).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+function Mp15Inbox({ rows, loaded, kids, canSearch, centre, today, start, onStarted, act, refresh, openKid }) {
+  const [read, setRead] = React.useState({});
+  const [sel, setSel] = React.useState(''), [group, setGroup] = React.useState('all'), [q, setQ] = React.useState(''), [text, setText] = React.useState(''), [busy, setBusy] = React.useState(false);
+  const [picking, setPicking] = React.useState(false), [pq, setPq] = React.useState(''), [pres, setPres] = React.useState([]), [fresh, setFresh] = React.useState(null);
+  const wrapRef = React.useRef(null), logRef = React.useRef(null), boxRef = React.useRef(null), pickT = React.useRef(null);
+  React.useEffect(() => { if (start && start.id) { setFresh(start); setSel('kid:' + start.id); setGroup('all'); onStarted && onStarted(); setTimeout(() => boxRef.current && boxRef.current.focus(), 60); } }, [start && start.id]);
+  let people = mp15InboxPeople(rows, kids, read);
+  if (fresh && !people.some(p => p.key === 'kid:' + fresh.id)) people = [{ key: 'kid:' + fresh.id, group: 'kids', name: fresh.name, subjectId: fresh.id, replyTo: 'chat:' + fresh.id, sub: 'Your mentee', items: [], rows: [], unread: false, needs: false, last: null, at: '' }].concat(people);
+  const counts = { all: people.length, needs: people.filter(p => p.needs).length };
+  MP15_GROUPS.slice(1).forEach(([g]) => { counts[g] = people.filter(p => p.group === g).length; });
+  const ql = q.trim().toLowerCase();
+  const shown = people.filter(p => (group === 'all' || (group === 'needs' ? p.needs : p.group === group)) && (!ql || p.name.toLowerCase().includes(ql)));
+  const cur = people.find(p => p.key === sel) || null;
+  React.useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [sel, cur && cur.items.length]);
+  const open = p => {
+    setSel(p.key); setText('');
+    const ids = {}; p.rows.forEach(r => { if (!r.read && !read[r.id]) { ids[r.id] = true; mp15Api.act('messageRead', { threadId: r.id.indexOf('m:') === 0 ? r.id : r.threadId }).catch(() => {}); } });
+    if (Object.keys(ids).length) setRead(x => Object.assign({}, x, ids));
+  };
+  const send = e => {
+    if (e) e.preventDefault();
+    if (!cur || !cur.replyTo || !text.trim() || busy) return;
+    setBusy(true);
+    const first = mp15First(cur.name);
+    act('messageReply', { threadId: cur.replyTo, subjectId: cur.subjectId || '', body: text.trim() }, r => r.queued ? 'Saved. It goes to ' + first + ' at 8am.' : 'Sent to ' + first)
+      .then(r => { if (r) { setText(''); setFresh(null); refresh(); } }).finally(() => setBusy(false));
+  };
+  const onPick = v => {
+    setPq(v); const l = v.trim().toLowerCase();
+    const local = l.length >= 2 ? (kids || []).filter(k => k.name.toLowerCase().includes(l)).map(k => ({ id: k.id, name: k.name, sub: 'Your mentee' })) : [];
+    setPres(local);
+    if (canSearch && l.length >= 2) { clearTimeout(pickT.current); pickT.current = setTimeout(() => mp15Api.view('messageSearch', { q: v.trim(), centre: centre || '' }).then(r => setPres(cur0 => cur0.concat((r.children || []).filter(c => !cur0.some(x => x.id === c.id)).map(c => ({ id: c.id, name: c.name, sub: c.mentee ? 'Your mentee' : 'At ' + c.centre }))))).catch(() => {}), 220); }
+  };
+  const choose = r => { setPicking(false); setPq(''); setPres([]); setFresh({ id: r.id, name: r.name }); setSel('kid:' + r.id); setGroup('all'); setTimeout(() => boxRef.current && boxRef.current.focus(), 60); };
+  const dayOf = at => mp15When(at, today) || '';
+  const lastLine = p => !p.last ? 'No messages yet' : (p.last.mine ? 'You: ' : '') + (p.last.type === 'journal' ? 'Sent you a journal entry: ' : p.last.type === 'checkin' ? 'Check-in: ' : '') + (p.last.body || (p.last.audio ? 'Voice note' : ''));
+  const items = cur ? cur.items : [];
+  let lastDay = '';
+  return (
+    <div ref={wrapRef} className="m15m-wrap"><div className={'m15m' + (cur ? ' has-sel' : '')}>
+      <div className="m15m-list" aria-label="Conversations">
+        <div className="m15m-tools">
+          {picking ? (
+            <div role="search" className="m15m-pick">
+              <div className="m15m-row"><input className="m15m-input" value={pq} onChange={e => onPick(e.target.value)} placeholder={canSearch ? 'Type a child’s name — any child at your centre' : 'Type a mentee’s name'} aria-label="Who to write to" autoFocus/>
+                <button type="button" className="m15c-btn" onClick={() => { setPicking(false); setPq(''); setPres([]); }}>Cancel</button></div>
+              <span role="status" aria-live="polite" className="m15c-sub">{pq.trim().length < 2 ? 'Type at least two letters.' : pres.length ? pres.length + ' found' : 'Nobody by that name you can write to.'}</span>
+              {pres.slice(0, 8).map(r => <button key={r.id} type="button" className="m15m-res" onClick={() => choose(r)}><b>{r.name}</b><span>{r.sub}</span></button>)}
+            </div>
+          ) : (
+            <div className="m15m-row">
+              <input className="m15m-input" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a person" aria-label="Find a conversation by name"/>
+              <button type="button" className="m15c-btn is-primary" onClick={() => setPicking(true)}><i className="ph ph-pencil-simple-line" aria-hidden="true"/>New message</button>
+            </div>
+          )}
+          <div className="m15m-groups" role="tablist" aria-label="Show">
+            {[['all', 'All']].concat(MP15_GROUPS).filter(([g]) => g === 'all' || counts[g]).map(([g, l]) =>
+              <button key={g} type="button" role="tab" aria-selected={group === g ? 'true' : 'false'} className={'m15m-group' + (group === g ? ' is-on' : '')} onClick={() => setGroup(g)}>{l}{g !== 'all' ? <span className="m15m-n">{counts[g]}</span> : null}</button>)}
+          </div>
+        </div>
+        {!loaded ? <div className="m15c-msg" role="status"><span className="m15x-bar"/><span className="m15x-sr">Loading your messages</span></div>
+          : !shown.length ? <p className="m15m-empty">{ql ? 'Nobody by that name here.' : group === 'needs' ? 'Nobody is waiting for a reply.' : 'No conversations yet. Use New message to write to a mentee.'}</p>
+          : <ul className="m15m-people">{shown.map(p => (
+            <li key={p.key}><button type="button" className={'m15m-person' + (p.key === sel ? ' is-on' : '') + (p.unread ? ' is-unread' : '')} aria-current={p.key === sel ? 'true' : undefined} onClick={() => open(p)}>
+              <span className="m15m-av" aria-hidden="true">{mp15Initials(p.name)}</span>
+              <span className="m15m-pb">
+                <span className="m15m-pl"><b>{p.name}</b><small>{p.at ? dayOf(p.at) : ''}</small></span>
+                <span className="m15m-ps">{p.sub}</span>
+                <span className="m15m-pp">{lastLine(p)}</span>
+              </span>
+              {p.unread ? <span className="m15m-dot" aria-label="Unread"/> : p.needs ? <span className="m15m-tag">Reply</span> : null}
+            </button></li>))}</ul>}
+      </div>
+      <section className="m15m-thread" aria-label={cur ? 'Conversation with ' + cur.name : 'Conversation'}>
+        {!cur ? <p className="m15m-empty m15m-pickone">Choose a conversation.</p> : <>
+          <header className="m15m-head">
+            <button type="button" className="m15m-back" onClick={() => setSel('')}><i className="ph ph-caret-left" aria-hidden="true"/>All</button>
+            <span className="m15m-av" aria-hidden="true">{mp15Initials(cur.name)}</span>
+            <span className="m15m-pb"><b>{cur.name}</b><span className="m15m-ps">{cur.sub}</span></span>
+            {cur.group === 'kids' && openKid ? <button type="button" className="m15c-btn" onClick={() => openKid(cur.subjectId)}>Their page</button> : null}
+          </header>
+          <div className="m15m-log" role="log" aria-label="Messages" ref={logRef}>
+            {!items.length ? <p className="m15m-empty">No messages yet. Write the first one below: it goes to their app and is kept on record.</p> : items.map(x => {
+              const d = dayOf(x.at), sep = d !== lastDay; lastDay = d;
+              return <React.Fragment key={x.id}>
+                {sep ? <div className="m15m-day"><span>{d}</span></div> : null}
+                {x.type === 'msg' ? <div className={'m15m-b' + (x.mine ? ' is-mine' : '')}>
+                    <span className="m15m-bt">{x.body}</span>
+                    {x.audio ? <audio controls preload="none" src={x.audio} aria-label={'Voice note from ' + x.who}/> : null}
+                    <small>{x.mine ? 'You' : x.who} · {mp15Fmt(String(x.at).slice(0, 10), { day: 'numeric', month: 'short' })}{x.at && x.at.length > 15 ? ' ' + String(x.at).slice(11, 16) : ''}{x.queued ? ' · goes at 8am' : ''}</small>
+                  </div>
+                  : <div className={'m15m-card is-' + x.type}>
+                    <span className="m15m-ck"><i className={x.type === 'journal' ? 'ph ph-notebook' : 'ph ph-heartbeat'} aria-hidden="true"/>{x.type === 'journal' ? 'Sent you a journal entry' : 'Weekly check-in'}</span>
+                    <span className="m15m-bt">{x.body}</span>
+                    {x.audio ? <audio controls preload="none" src={x.audio} aria-label="Voice note"/> : null}
+                  </div>}
+              </React.Fragment>;
+            })}
+          </div>
+          {cur.replyTo ? <form className="m15m-compose" onSubmit={send}>
+            <label className="m15x-sr" htmlFor="m15m-box">{'Message to ' + cur.name}</label>
+            <textarea id="m15m-box" ref={boxRef} rows="3" value={text} maxLength={1200} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(e); }}
+              placeholder={cur.last && cur.last.type === 'journal' ? 'Name what you noticed. One line is enough.' : 'Write to ' + mp15First(cur.name)}/>
+            <div className="m15m-row"><span className="m15c-sub">{cur.group === 'team' ? 'Kept on record.' : 'Reaches their app. After 8pm it waits until 8am. Kept on record.'}</span>
+              <button type="submit" className="m15c-btn is-primary" disabled={busy || !text.trim()}>{busy ? 'Sending…' : 'Send'}</button></div>
+          </form> : <p className="m15c-sub m15m-noreply">This one is for reading; answer it from My role.</p>}
+        </>}
+      </section>
+    </div></div>
+  );
+}
+
+/* ── A mentee's journal ───────────────────────────────────────────────────────
+   Every entry the child has written, whatever they marked it (the owner,
+   2026-10-28: nothing is kept from their mentor), with their weekly reviews
+   among them. Read-only here; replying stays in Messages. Never shown to a
+   peer mentor — the server refuses it too (member.mentor.journal). */
+const MP15_MOODS = ['', 'Low', 'Flat', 'Okay', 'Good', 'Great'];
+const MP15_VIS = { private: 'Written for themselves', mentor: 'Shared with you', programme: 'Shared with the programme' };
+function Mp15Journal({ subjectId }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(null), [busy, setBusy] = React.useState(false);
+  const load = React.useCallback(() => { setErr(null); setD(null); return mp15Api.view('journal', { subjectId }).then(setD).catch(setErr); }, [subjectId]);
+  React.useEffect(() => { load(); }, [load]);
+  const more = () => {
+    if (busy || !d) return;
+    setBusy(true);
+    mp15Api.view('journal', { subjectId, before: d.entries.length }).then(r => setD(x => Object.assign({}, r, { entries: x.entries.concat(r.entries) })), setErr).finally(() => setBusy(false));
+  };
+  return (
+    <section className="m15c-card" aria-labelledby={'jr-' + subjectId}>
+      <div className="m15c-head"><div><h2 className="m15c-h" id={'jr-' + subjectId}><i className="ph ph-notebook" aria-hidden="true"/>{d ? d.student.first + '’s journal' : 'Journal'}</h2>
+        <p className="m15c-sub">Everything they write, their weekly reviews among it. They know their mentor reads it.</p></div>
+        {d ? <span className="m15c-pill" role="status">{d.total === 1 ? '1 entry' : d.total + ' entries'}</span> : null}</div>
+      {err ? <div className="m15c-msg" role="alert"><span>Couldn't load their journal.</span><button type="button" className="m15c-btn" onClick={load}>Retry</button></div>
+        : !d ? <div className="m15c-msg" role="status"><span className="m15x-bar"/><span className="m15x-sr">Loading their journal</span></div>
+        : !d.entries.length ? <p className="m15c-sub">{d.student.first} hasn’t written anything yet.</p>
+        : <>
+          <ul className="m15c-list m15c-jr">{d.entries.map(e => <li key={e.entryId} className="m15c-jr-e">
+            <div className="m15c-head"><b>{e.title || mp15Fmt(e.occurredOn, { weekday: 'long', day: 'numeric', month: 'short' })}</b>
+              <small className="m15c-sub">{[mp15Fmt(e.occurredOn, { day: 'numeric', month: 'short', year: 'numeric' }), MP15_MOODS[e.mood || 0], MP15_VIS[e.visibility]].filter(Boolean).join(' · ')}</small></div>
+            {e.prompt ? <p className="m15c-sub">{e.prompt}</p> : null}
+            <p className="m15c-jr-body">{e.body}</p>
+            {e.tags.length ? <p className="m15c-sub">{e.tags.map(t => '#' + t).join(' ')}</p> : null}
+            {(e.media || []).filter(x => x && x.url).map((x, i) => <a key={i} href={x.url} target="_blank" rel="noopener" className="m15c-btn">{x.kind === 'audio' ? 'Voice note' : 'Attachment'} {i + 1}</a>)}
+          </li>)}</ul>
+          {d.more ? <button type="button" className="m15c-btn" onClick={more} disabled={busy}>{busy ? 'Loading…' : 'Show older entries'}</button> : null}
+        </>}
+    </section>
+  );
+}
+
+function Mp15Anchor({ subjectId, act }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(null), [note, setNote] = React.useState(''), [busy, setBusy] = React.useState('');
+  const load = React.useCallback(() => { setErr(null); return mp15Api.view('anchor', { subjectId }).then(setD).catch(setErr); }, [subjectId]);
+  React.useEffect(() => { load(); }, [load]);
+  const toggle = x => {
+    if (busy || x.future) return;
+    setBusy(x.date);
+    act('anchorConfirm', { subjectId, date: x.date, on: !x.mine }).then(load).finally(() => setBusy(''));
+  };
+  const send = e => {
+    e.preventDefault();
+    if (busy || note.trim().length < 2) return;
+    setBusy('note');
+    act('anchorRemark', { subjectId, text: note.trim() }, 'Sent. ' + ((d && d.student.first) || 'They') + ' reads it in their app.').then(r => { if (r) { setNote(''); load(); } }).finally(() => setBusy(''));
+  };
+  const S = d && d.stats, total = (S && S.systemsTotal) || 6;
+  return (
+    <section className="m15c-card" aria-labelledby={'anc-' + subjectId}>
+      <div className="m15c-head"><div><h2 className="m15c-h" id={'anc-' + subjectId}><i className="ph ph-anchor-simple" aria-hidden="true"/>Anchor this week</h2>
+        <p className="m15c-sub">Connected because you are their mentor. Their own words are under Journal.</p></div>
+        {S ? <span className={'m15c-pill ' + (S.atRisk ? 'is-warn' : 'is-ok')}>{S.atRisk ? 'Needs support' : 'On track'}</span> : null}</div>
+      {err ? <div className="m15c-msg" role="alert"><span>Couldn't load their Anchor week.</span><button type="button" className="m15c-btn" onClick={load}>Retry</button></div>
+        : !d ? <div className="m15c-msg" role="status"><span className="m15x-bar"/><span className="m15x-sr">Loading their Anchor week</span></div>
+        : <>
+          <div className="m15c-anc-stats">
+            <div><b>{S.streak}</b><span>day streak · best {S.longestStreak}</span></div>
+            <div><b>{S.reflections}</b><span>days reflected</span></div>
+            <div><b>{S.avgSystems}/{total}</b><span>systems a day</span></div>
+            <div><b>{S.conduct}%</b><span>conduct confirmed</span></div>
+          </div>
+          <p className="m15c-sub">{S.trend}. {d.suggestion}</p>
+          <div>
+            <h3 className="m15c-h3">Confirm the days their discipline held</h3>
+            <div className="m15c-anc-days" role="group" aria-label="Days this week">
+              {d.days.map(x => <button key={x.date} type="button" className={'m15c-anc-day' + (x.mine ? ' is-on' : '')} aria-pressed={x.mine ? 'true' : 'false'} disabled={x.future || busy === x.date} onClick={() => toggle(x)}
+                aria-label={x.label + ': ' + x.held + ' of ' + total + ' systems held' + (x.future ? ', still to come' : x.mine ? ', you confirmed it' : '')}>
+                <span className="m15c-anc-bar" aria-hidden="true"><i style={{ height: Math.round(Math.min(1, x.held / total) * 100) + '%' }}/></span>{x.label.slice(0, 3)}</button>)}
+            </div>
+          </div>
+          <form onSubmit={send} className="m15c-anc-form">
+            <label className="m15c-h3" htmlFor={'anc-note-' + subjectId}>A note to {d.student.first}</label>
+            <textarea id={'anc-note-' + subjectId} className="m15c-anc-text" rows="3" maxLength={600} value={note} onChange={e => setNote(e.target.value)} disabled={!d.remarksLeft}
+              placeholder="Something specific they did well, or a nudge to begin again"/>
+            <div className="m15c-head"><span className="m15c-sub">{d.remarksLeft ? d.remarksLeft + ' left this week' : 'That is this week’s notes. More from Monday.'}</span>
+              <button type="submit" className="m15c-btn is-primary" disabled={busy === 'note' || note.trim().length < 2 || !d.remarksLeft}>{busy === 'note' ? 'Sending…' : 'Send to ' + d.student.first}</button></div>
+          </form>
+          {d.remarks.length ? <ul className="m15c-list">{d.remarks.map((r, i) => <li key={i} className="m15c-row-static"><span>{r.text}</span><small className="m15c-sub">{mp15Fmt(r.at.slice(0, 10), { day: 'numeric', month: 'short' })}</small></li>)}</ul> : null}
+        </>}
+    </section>
+  );
+}

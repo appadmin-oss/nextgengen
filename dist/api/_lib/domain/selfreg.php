@@ -502,15 +502,8 @@ function selfreg_queue(array $p): array {
          * written. Searching a number and getting nothing back, when the row
          * is plainly there, is the kind of thing that makes people stop
          * trusting the search and start scrolling. */
-        $digits = preg_replace('/\D/', '', $q);
-        $clauses = ['lower(fullName) LIKE ?', 'lower(studentId) LIKE ?', 'lower(parentEmail) LIKE ?', 'lower(guardianName) LIKE ?'];
-        $like = '%' . $q . '%';
-        array_push($args, $like, $like, $like, $like);
-        if (strlen($digits) >= 4) {
-            $clauses[] = "replace(replace(replace(COALESCE(guardianPhone,''), ' ', ''), '-', ''), '+', '') LIKE ?";
-            $args[] = '%' . substr($digits, -9) . '%';
-        }
-        $where[] = '(' . implode(' OR ', $clauses) . ')';
+        [$qSql, $qArgs] = sql_text_search($q, ['fullName', 'displayId', 'studentId', 'parentEmail', 'guardianName'], ['guardianPhone']);
+        $where[] = $qSql; foreach ($qArgs as $a) $args[] = $a;
     }
     $sql = implode(' AND ', $where);
     $total = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE $sql", $args)['c'] ?? 0);

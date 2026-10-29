@@ -670,6 +670,38 @@ function admin_summer_group_report(array $p): array {
  * children are in a building, and this page must not become the way round
  * that.
  */
+/**
+ * public.summer.signup — where a family registers for Summer School: the live
+ * public sign-up link (a `self` gate, /apply?g=…) for the current edition.
+ * That centre's own link when one is asked for and exists, else a link for
+ * every centre, else any live one. {url, centre} — url '' when no link is
+ * open, which the site says in words rather than showing an old form.
+ */
+function public_summer_signup(array $p): array {
+    $ed = summer_current_cohort();
+    $now = now_iso();
+    $rows = db_all("SELECT gateId, centreId, cohortId FROM gate_links WHERE kind = 'self' AND status = 'active'
+                    AND (expiresAt IS NULL OR expiresAt = '' OR expiresAt > ?) ORDER BY id DESC", [$now]);
+    $rows = array_values(array_filter($rows, fn($r) => !$ed || (string)$r['cohortId'] === '' || (string)$r['cohortId'] === (string)$ed['cohortId']));
+    if (!$rows) return ['ok' => true, 'url' => '', 'centre' => ''];
+    $want = trim((string)($p['centre'] ?? ''));
+    $ids = $want !== '' ? [strtolower($want)] : [];
+    if ($want !== '') {
+        $c = db_row("SELECT centreId, name, code FROM centres WHERE lower(name) = lower(?) OR lower(code) = lower(?) LIMIT 1", [$want, $want]);
+        if ($c) $ids = array_merge($ids, array_map('strtolower', array_filter([(string)$c['centreId'], (string)$c['name'], (string)$c['code']])));
+    }
+    $pick = null;
+    if ($ids) foreach ($rows as $r) if (in_array(strtolower((string)$r['centreId']), $ids, true)) { $pick = $r; break; }
+    if (!$pick) foreach ($rows as $r) if ((string)$r['centreId'] === '') { $pick = $r; break; }
+    $pick ??= $rows[0];
+    $centre = '';
+    if ((string)$pick['centreId'] !== '') {
+        $c = db_row("SELECT name FROM centres WHERE centreId = ? OR name = ? OR code = ? LIMIT 1", [$pick['centreId'], $pick['centreId'], $pick['centreId']]);
+        $centre = $c ? (string)$c['name'] : (string)$pick['centreId'];
+    }
+    return ['ok' => true, 'url' => gate_kind_path('self') . rawurlencode((string)$pick['gateId']), 'centre' => $centre];
+}
+
 function public_summer_page(): array {
     $e = summer_ensure_cohort();
     $today = gmdate('Y-m-d');

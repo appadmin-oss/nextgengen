@@ -23,6 +23,8 @@
  * Writes nothing.
  */
 
+if (PHP_SAPI !== 'cli') { http_response_code(403); echo "CLI only\n"; exit(1); }
+
 $root = dirname(__DIR__);
 if (!is_file($root . '/config.php')) {
     fwrite(STDERR, "No api/config.php on this host — nothing to check.\n");

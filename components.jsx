@@ -1,3 +1,16 @@
+/* Is this an NGG member (not a Summer School account)? The same rule as the
+   server's member_is_ngg(): anything but "summer", in any case or spacing.
+   The dashboard used to ask for the exact string "NGG", so an account whose
+   type was blank or "ngg" got the old dashboard while the server called it a
+   member. */
+/* The portals' area colours, one meaning each across all three portals: amber is
+   "today / this week", blue is Saturday and the classroom, teal is progress, violet
+   is people (mentees, students, mentors), slate is admin. None is a status colour,
+   and each passes 4.5:1 as text on white. The member portal's MP9_ACCENT uses the same. */
+const PORTAL_HUE = { amber: "#a15c07", blue: "#1d4ed8", teal: "#0f766e", violet: "#6d28d9", slate: "#475569" };
+
+function memberIsNgg(m) { return !!m && String(m.type == null ? "NGG" : m.type).trim().toLowerCase() !== "summer"; }
+
 /* ================================================================
    NGG — Shared components
    Loaded as type=text/babel after React + data.js + photos.js
@@ -205,6 +218,9 @@ function inkIsLegible(hex, min) {
 const VENDOR_LIBS = {
   // Fabric 7.4.0 — the design canvas. UMD, defines window.fabric.
   fabric: { js: ["/vendor/fabric.min.js"], global: "fabric" },
+  /* @vladmandic/human 3.3.6 — the desk's face check (face-check.jsx). Bundles
+     its own TensorFlow.js; the models load from /vendor/human/models/. */
+  human: { js: ["/vendor/human/human.js"], global: "Human" },
   qrcode: { js: ["/vendor/qrcode.min.js"], global: "qrcode" },
   // Filerobot 5.0.0 — the photo editor. Built by vendor-build.js with React
   // aliased to our page globals, so it must load AFTER React (it always does:
@@ -473,7 +489,7 @@ function SectionHead({ eyebrow, title, sub, align = "left" }) {
     <div className="section-h reveal" data-reveal style={baseStyle}>
       {eyebrow && <span className="eyebrow reveal" data-reveal style={{ color: "var(--eyebrow-fg, var(--gold-700))", "--reveal-delay": "0ms" }}>{eyebrow}</span>}
       <h2 className="reveal" data-reveal style={{ "--reveal-delay": "120ms" }}>{title}</h2>
-      {sub && <p className="reveal" data-reveal style={{ fontSize: 17, color: "var(--ink-500)", margin: 0, lineHeight: 1.5, maxWidth: 640, "--reveal-delay": "240ms" }}>{sub}</p>}
+      {sub && <p className="reveal" data-reveal style={{ fontSize: 17, color: "var(--ink-700)", margin: 0, lineHeight: 1.5, maxWidth: 640, "--reveal-delay": "240ms" }}>{sub}</p>}
     </div>
   );
 }
@@ -486,7 +502,7 @@ function Progress({ value, label, variant = "" }) {
         <span>{label}</span><span className="mono">{value}%</span>
       </div>}
       <div className={"progress " + variant}>
-        <i style={{ width: `${value}%`, transition: "width 0.8s cubic-bezier(0.2,0.7,0.2,1)" }} />
+        <i style={{ width: `${value}%`, transition: "width calc(0.8s * var(--motion, 1)) cubic-bezier(0.2,0.7,0.2,1)" }} />
       </div>
     </div>
   );
@@ -573,6 +589,13 @@ function NavAuthSlot({ setPage }) {
           {isAdmin && (
             <button className="nav-auth-menu-item nav-auth-menu-admin" onClick={() => { setMenuOpen(false); setPage("admin"); }}>
               <span>⚙</span> Control Room
+            </button>
+          )}
+          {/* Staff manage the console's authenticator in the Control Room; a
+              participant's card has no second step (mfa.jsx). */}
+          {!isAdmin && member.role !== "student" && (
+            <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); if (window.nggMfa) window.nggMfa("manage"); }}>
+              <span>🛡</span> Two-step sign-in
             </button>
           )}
           <div className="nav-auth-menu-divider"/>
@@ -2015,7 +2038,7 @@ function ImageLightbox({ url, alt, onClose }) {
   if (!url) return null;
   return (
     <div onClick={onClose} role="dialog" aria-modal="true" aria-label={alt || "Photo"} style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(6,9,20,0.86)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "grid", placeItems: "center", padding: 24 }}>
-      <button type="button" onClick={onClose} aria-label="Close" style={{ position: "absolute", top: 18, right: 18, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>✕</button>
+      <button type="button" onClick={onClose} aria-label="Close" style={{ position: "absolute", top: 18, right: 18, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: "var(--rs-fsize-1, 22px)", cursor: "pointer", lineHeight: 1 }}>✕</button>
       <img src={url} alt={alt || "Photo"} onClick={e => e.stopPropagation()} style={{ maxWidth: "min(92vw, 620px)", maxHeight: "88vh", width: "auto", height: "auto", objectFit: "contain", borderRadius: 14, boxShadow: "0 30px 80px -20px rgba(0,0,0,0.7)" }}/>
     </div>
   );
@@ -2198,7 +2221,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   if (mode === "camera") {
     return (
       <div role="dialog" aria-modal="true" aria-label="Take a photo" style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(6,9,20,0.94)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, gap: 16 }}>
-        <button type="button" onClick={closeCamera} aria-label="Close" style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: 22, lineHeight: 1, cursor: "pointer" }}>✕</button>
+        <button type="button" onClick={closeCamera} aria-label="Close" style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: "var(--rs-fsize-1, 22px)", lineHeight: 1, cursor: "pointer" }}>✕</button>
         <div style={{ color: "#fff", fontFamily: "'Sora',sans-serif", fontWeight: 700, fontSize: 18 }}>{shot ? "Use this photo?" : "Take your photo"}</div>
         <div style={{ position: "relative", width: "100%", maxWidth: 360, aspectRatio: "4 / 5", borderRadius: 18, overflow: "hidden", background: "#0b1020", boxShadow: "0 24px 70px -24px rgba(0,0,0,0.75)" }}>
           <video ref={videoRef} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover", transform: facing === "environment" ? "none" : "scaleX(-1)", display: shot ? "none" : "block" }}/>
@@ -2934,6 +2957,29 @@ function nggMdInline(line, kp) {
  * sits under the page's own headings, and a member typing "# Hi" should not be
  * able to insert a document-level heading into somebody else's page outline.
  */
+/**
+ * What a fenced block becomes. ONE decision, used by BOTH lesson renderers.
+ *
+ * There are two markdown renderers here: NggMarkdown, and CurriculumText for
+ * a lesson body. The lesson diagrams (lesson-blocks.jsx) were wired into
+ * NggMarkdown alone, and a lesson is rendered by CurriculumText — so every
+ * ```keys, ```chord and ```staff an instructor wrote came out as a code
+ * block on the member's screen, and the editor's own preview agreed with it,
+ * which is the worst way for a renderer to be wrong. Verifying NggMarkdown in
+ * a browser proved the plumbing and not the path.
+ *
+ * Two renderers is already one more than this codebase should have. Until
+ * they are one, the part that decides what a fence MEANS is shared, so they
+ * cannot disagree about it again. tests/curriculum-ui.test.js asserts a
+ * diagram reaches the member's screen, not just this function.
+ */
+function nggFenceBlock(lang, args, code, key, preClass) {
+  const d = typeof lessonBlockFor === "function" ? lessonBlockFor(lang, (args || "").trim() || code.trim()) : null;
+  if (d) { const D = d.Component; return <D key={key} args={d.args}/>; }
+  const full = (args || "").trim() ? [(args || "").trim(), code].filter(x => x !== "").join("\n") : code;
+  return <pre key={key} className={preClass}><code>{full}</code></pre>;
+}
+
 function NggMarkdown({ text, className }) {
   const src = String(text || "");
   const lines = src.split("\n");
@@ -2943,14 +2989,19 @@ function NggMarkdown({ text, className }) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Fenced code — taken verbatim, including any markdown inside it.
-    const fence = line.match(/^```\s*([a-z0-9+#-]*)\s*$/i);
+    /* Fenced code — taken verbatim, including any markdown inside it.
+       A fence may carry arguments after its language (```keys C E G). When the
+       language names a lesson diagram (lesson-blocks.jsx) it is DRAWN; any
+       other language, and any fence where that file is not loaded, stays a
+       code block — which is what a Coding lesson wants and what the Word
+       export and a plain-text copy fall back to. */
+    const fence = line.match(/^```\s*([a-z0-9+#-]*)\s*(.*)$/i);
     if (fence) {
       const body = [];
       i++;
       while (i < lines.length && !/^```\s*$/.test(lines[i])) body.push(lines[i++]);
       i++; // closing fence (or end of input — an unclosed fence still renders)
-      blocks.push(<pre key={key++} className="md-pre"><code>{body.join("\n")}</code></pre>);
+      blocks.push(nggFenceBlock(fence[1], fence[2], body.join("\n"), key++, "md-pre"));
       continue;
     }
     if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) { blocks.push(<hr key={key++} className="md-hr"/>); i++; continue; }
@@ -3641,20 +3692,43 @@ function curInline(text, keyBase) {
   if (last < s.length) out.push(s.slice(last));
   return out;
 }
+/* A picture in a lesson. One that cannot be loaded (its file lost with a
+   server folder, or its host gone) says so in words instead of showing a
+   broken-image icon, and names what it was, so a learner can ask for it. */
+function CurFigure({ src, alt }) {
+  const [gone, setGone] = React.useState(false);
+  if (gone) return <p className="cur-figure-gone" role="note">{"The picture" + (alt ? " “" + alt + "”" : "") + " could not be loaded. Tell your instructor so they can add it again."}</p>;
+  return <figure className="cur-figure"><img src={src} alt={alt} loading="lazy" onError={() => setGone(true)}/>{alt && <figcaption>{alt}</figcaption>}</figure>;
+}
 function CurriculumText({ text }) {
   const src = String(text || "").replace(/\r\n?/g, "\n");
   if (!src.trim()) return null;
-  // Code fences first, so nothing inside one is read as formatting.
-  const parts = src.split(/^```[^\n]*\n?/m);
+  /* Code fences first, so nothing inside one is read as formatting.
+     Scanned line by line rather than split on the fence, because a split
+     throws the fence's INFO STRING away — and the language and arguments are
+     exactly what decides whether ```keys C E G is a keyboard or a code
+     block. See nggFenceBlock. */
+  const srcLines = src.split("\n");
   const blocks = [];
-  parts.forEach((part, pi) => {
-    if (pi % 2 === 1) { blocks.push({ code: part.replace(/\n$/, "") }); return; }
-    part.split(/\n{2,}/).map(b => b.replace(/^\n+|\n+$/g, "")).filter(b => b.trim()).forEach(b => blocks.push({ text: b }));
-  });
+  let buf = [];
+  const flush = () => {
+    buf.join("\n").split(/\n{2,}/).map(b => b.replace(/^\n+|\n+$/g, "")).filter(b => b.trim()).forEach(b => blocks.push({ text: b }));
+    buf = [];
+  };
+  for (let li = 0; li < srcLines.length; li++) {
+    const fm = srcLines[li].match(/^```\s*([a-z0-9+#-]*)\s*(.*)$/i);
+    if (!fm) { buf.push(srcLines[li]); continue; }
+    flush();
+    const code = [];
+    li++;
+    while (li < srcLines.length && !/^```\s*$/.test(srcLines[li])) code.push(srcLines[li++]);
+    blocks.push({ code: code.join("\n"), lang: fm[1], args: fm[2] });
+  }
+  flush();
   return (
     <div className="cur-text">
       {blocks.map((blk, i) => {
-        if (blk.code !== undefined) return <pre key={i} className="cur-code"><code>{blk.code}</code></pre>;
+        if (blk.code !== undefined) return nggFenceBlock(blk.lang, blk.args, blk.code, i, "cur-code");
         const b = blk.text, lines = b.split("\n");
         if (lines.every(l => /^\s*[-*•]\s+/.test(l))) return <ul key={i}>{lines.map((l, j) => <li key={j}>{curInline(l.replace(/^\s*[-*•]\s+/, ""), i + "." + j)}</li>)}</ul>;
         if (lines.every(l => /^\s*\d+[.)]\s+/.test(l))) return <ol key={i}>{lines.map((l, j) => <li key={j}>{curInline(l.replace(/^\s*\d+[.)]\s+/, ""), i + "." + j)}</li>)}</ol>;
@@ -3665,7 +3739,7 @@ function CurriculumText({ text }) {
           if (/^###\s+/.test(one)) return <h4 key={i} className="cur-text-h4">{curInline(one.replace(/^###\s+/, ""), i)}</h4>;
           if (/^#{1,2}\s+/.test(one)) return <h3 key={i} className="cur-text-h">{curInline(one.replace(/^#{1,2}\s+/, ""), i)}</h3>;
           const img = one.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/);
-          if (img && CUR_SAFE_URL.test(img[2])) return <figure key={i} className="cur-figure"><img src={img[2]} alt={img[1]} loading="lazy"/>{img[1] && <figcaption>{img[1]}</figcaption>}</figure>;
+          if (img && CUR_SAFE_URL.test(img[2])) return <CurFigure key={i} src={img[2]} alt={img[1]}/>;
           const vid = curVideoEmbed(one);
           if (vid) return <div key={i} className="cur-embed"><iframe src={vid.src} title={vid.title} loading="lazy" allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin"/></div>;
         }
@@ -3678,10 +3752,22 @@ function CurriculumText({ text }) {
 /* Materials open IN the lesson — a PDF, a video, a recording, a picture or a
    YouTube/Vimeo link plays or reads in place — with "Open" beside it for a new
    tab or a download. Anything else (a document, slides, a zip) opens as before. */
-function curMaterialViewer(m) {
+/* `fileUrl` is how THIS surface fetches a lesson file from our own origin, or
+   null when it has no such route. A PDF on the image cloud is not delivered
+   to a browser, so its own address opens an error page rather than the file —
+   but the route that solves that is gated on a MEMBER session, and this same
+   component draws an instructor's preview. So the caller names it: the
+   member surfaces pass `curMemberFile`, staff passes nothing and links out,
+   and neither has to know about the other's gate. */
+/** A lesson file served from this origin (api/member/lesson-file.php). */
+function curMemberFile(materialId) { return "/api/member/lesson-file.php?id=" + encodeURIComponent(materialId || ""); }
+
+function curMaterialViewer(m, fileUrl) {
   const u = String(m.url || ""), k = m.kind;
   const v = curVideoEmbed(u);
   if (v) return { type: "frame", src: v.src, title: v.title };
+  const ours = k === "pdf" && m.materialId && fileUrl ? fileUrl(m.materialId) : "";
+  if (ours) return { type: "frame", src: ours, title: m.title || "PDF", at: ours };
   if (!CUR_SAFE_URL.test(u)) return null;
   if (k === "pdf") return { type: "frame", src: u, title: m.title || "PDF" };
   if (k === "video" && /\.(mp4|webm|mov)(\?|$)/i.test(u)) return { type: "video", src: u };
@@ -3689,37 +3775,47 @@ function curMaterialViewer(m) {
   if (k === "image") return { type: "image", src: u };
   return null;
 }
-function CurriculumMaterials({ materials }) {
+/* What a learner DOES with each kind — the verb on the row, not a file type. */
+const CUR_MATERIAL_VERB = { pdf: "Read", slides: "Slides", doc: "Document", sheet: "Spreadsheet", video: "Watch", audio: "Listen",
+  image: "Look", ebook: "Book", code: "Code", archive: "Download", interactive: "Practise", link: "Read" };
+/** Where a material comes from, in words: the site's name, or "Lesson file" for one of ours. */
+function curMaterialSource(url) {
+  const u = String(url || "");
+  if (u.indexOf("/api/") === 0 || /\/curriculum-file\.php|\/lesson-file\.php/.test(u)) return "Lesson file";
+  try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return ""; }
+}
+function CurriculumMaterials({ materials, fileUrl }) {
   const [open, setOpen] = React.useState("");
   if (!materials || !materials.length) return null;
   return (
     <ul className="cur-mats" aria-label="Materials">
       {materials.map((m, i) => {
         const id = m.materialId || String(i);
-        const viewer = curMaterialViewer(m);
+        const viewer = curMaterialViewer(m, fileUrl);
+        /* Open ↗ has to go to the same place the reader does, or the one
+           control that is meant to rescue a file nobody can read is the one
+           that opens the error page. */
+        const away = (viewer && viewer.at) || m.url;
         const isOpen = open === id && viewer;
         return (
           <li key={id} className={isOpen ? "is-open" : ""}>
             <div className="cur-mat-row">
               {viewer
                 ? <button type="button" className="cur-mat" aria-expanded={!!isOpen} onClick={() => setOpen(isOpen ? "" : id)}>
-                    <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
-                    <span className="cur-mat-title">{m.title || m.url}</span>
-                    <span className="cur-mat-kind">{isOpen ? "Close" : (m.kind === "audio" ? "Listen" : m.kind === "image" ? "View" : m.kind === "pdf" ? "Read here" : "Watch")}</span>
+                    <CurMaterialFace m={m} verb={isOpen ? "Close" : (m.kind === "audio" ? "Listen" : m.kind === "image" ? "View" : m.kind === "pdf" ? "Read here" : "Watch")}/>
                   </button>
-                : <a className="cur-mat" href={m.url} target="_blank" rel="noopener noreferrer">
-                    <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
-                    <span className="cur-mat-title">{m.title || m.url}</span>
-                    <span className="cur-mat-kind">{m.kind}</span>
+                : <a className="cur-mat" href={away} target="_blank" rel="noopener noreferrer">
+                    <CurMaterialFace m={m} verb={(CUR_MATERIAL_VERB[m.kind] || "Open") + " ↗"}/>
+                    <span className="sr-only"> (opens in a new tab)</span>
                   </a>}
-              {viewer && <a className="cur-mat-open" href={m.url} target="_blank" rel="noopener noreferrer" aria-label={"Open " + (m.title || "material") + " in a new tab"}>Open ↗</a>}
+              {viewer && <a className="cur-mat-open" href={away} target="_blank" rel="noopener noreferrer" aria-label={"Open " + (m.title || "material") + " in a new tab"}>Open ↗</a>}
             </div>
             {isOpen && (
               <div className={"cur-viewer is-" + viewer.type}>
                 {viewer.type === "frame" && <iframe src={viewer.src} title={viewer.title} loading="lazy" allow="encrypted-media; picture-in-picture; fullscreen" allowFullScreen/>}
                 {viewer.type === "video" && <video src={viewer.src} controls preload="metadata"/>}
                 {viewer.type === "audio" && <audio src={viewer.src} controls preload="metadata"/>}
-                {viewer.type === "image" && <img src={viewer.src} alt={m.title || ""}/>}
+                {viewer.type === "image" && <CurFigure src={viewer.src} alt={m.title || ""}/>}
               </div>
             )}
           </li>
@@ -3729,6 +3825,269 @@ function CurriculumMaterials({ materials }) {
   );
 }
 
+/* One material's face: what it is, what to do with it, and where it is from.
+   The guide line is the point — a title and the word LINK told a child
+   nothing about whether to read it now, practise on it or keep it. */
+function CurMaterialFace({ m, verb }) {
+  const src = curMaterialSource(m.url);
+  return (
+    <>
+      <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
+      <span className="cur-mat-body">
+        <span className="cur-mat-title">{m.title || m.url}</span>
+        {m.guide && <span className="cur-mat-guide">{m.guide}</span>}
+        {src && <span className="cur-mat-src">{src}</span>}
+      </span>
+      <span className="cur-mat-kind">{verb}</span>
+    </>
+  );
+}
+
+/* ── Growth: one child over the term (mp_growth) ──────────────────────────
+   The mentor's profile tab and the family portal draw the same report; the
+   server decides what each audience may see and how the sentences are
+   written. Every chart is a row of marks in CSS — no chart library — and
+   every mark has its words for a screen reader. */
+function growthMonth(m) { return /^\d{4}-\d{2}$/.test(m || "") ? new Date(m + "-15T12:00:00Z").toLocaleDateString("en-GB", { month: "short" }) : m; }
+function growthDay(d) { return d ? new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""; }
+function GrowthReport({ data, err, retry }) {
+  if (err) return <div className="grw-msg" role="alert"><span>Couldn’t load the growth report ({err.code || err.message || err}).</span>{retry && <button type="button" className="grw-btn" onClick={retry}>Retry</button>}</div>;
+  if (!data) return <div className="grw-msg" role="status" aria-live="polite">Loading the growth report…</div>;
+  const d = data, A = d.attendance || {}, L = d.leadership || {}, E = d.evaluations || {}, W = d.wellbeing;
+  const lMax = Math.max(1, ...(L.months || []).map(m => m.total));
+  const toneIcon = { up: "ph-trend-up", down: "ph-trend-down", steady: "ph-minus" };
+  return (
+    <div className="grw">
+      <section className="grw-card grw-ins" aria-labelledby="grw-ins-h">
+        <h3 id="grw-ins-h">What changed <small>{growthDay(d.from)} – {growthDay(d.to)}</small></h3>
+        <ul>{(d.insights || []).map((x, i) => (
+          <li key={i} className={"is-" + x.tone}><i className={"ph " + (toneIcon[x.tone] || "ph-minus")} aria-hidden="true"/>
+            <span><span className="grw-sr">{x.tone === "up" ? "Up: " : x.tone === "down" ? "Down: " : ""}</span>{x.text}{x.do && <em>{x.do}</em>}</span></li>
+        ))}</ul>
+      </section>
+      <div className="grw-grid">
+        <section className="grw-card" aria-labelledby="grw-att-h">
+          <h3 id="grw-att-h">Saturdays <small>{A.rate !== null && A.rate !== undefined ? A.rate + "% of the Saturdays the centre met" : "No Saturdays recorded yet"}</small></h3>
+          <ol className="grw-dots" aria-label="The last 12 Saturdays">{(A.series || []).map(s => (
+            <li key={s.date} className={s.beforeJoining ? "is-pre" : s.here === null ? "is-none" : s.here ? "is-here" : "is-away"}
+              title={growthDay(s.date) + ": " + (s.beforeJoining ? "before joining" : s.here === null ? "the centre did not meet" : s.here ? "here" : "away")}>
+              <span className="grw-sr">{growthDay(s.date)}: {s.beforeJoining ? "before joining" : s.here === null ? "no Saturday" : s.here ? "here" : "away"}</span></li>
+          ))}</ol>
+          {A.earlier !== null && A.recent !== null && A.earlier !== undefined && <p className="grw-note">Earlier {A.earlier}% · recently {A.recent}%</p>}
+        </section>
+        <section className="grw-card" aria-labelledby="grw-li-h">
+          <h3 id="grw-li-h">Leadership Index <small>{L.change === null || L.change === undefined ? (L.months || []).length ? "one month scored" : "not scored yet" : (L.change > 0 ? "+" : "") + L.change + " since " + growthMonth((L.months[0] || {}).month)}</small></h3>
+          {(L.months || []).length > 0 && <ol className="grw-bars" aria-label="Leadership Index by month">{L.months.map(m => (
+            <li key={m.month}><span className="grw-bar" style={{ height: Math.max(6, Math.round(m.total / lMax * 64)) + "px" }}/><b>{m.total}</b><small>{growthMonth(m.month)}</small></li>
+          ))}</ol>}
+          {((L.gains || []).length > 0 || (L.dips || []).length > 0) && <p className="grw-chips">
+            {(L.gains || []).map(g => <span key={g.skill} className="grw-chip is-up">{g.skill} {g.from}→{g.to}</span>)}
+            {(L.dips || []).map(g => <span key={g.skill} className="grw-chip is-down">{g.skill} {g.from}→{g.to}</span>)}</p>}
+        </section>
+        <section className="grw-card" aria-labelledby="grw-ev-h">
+          <h3 id="grw-ev-h">Saturday evaluations <small>{(E.series || []).length ? (E.series[E.series.length - 1].shown + " of " + E.series[E.series.length - 1].of + " shown last time") : "none yet"}</small></h3>
+          {(E.series || []).length > 0 && <ol className="grw-bars" aria-label="Criteria shown per evaluation">{E.series.map((x, i) => (
+            <li key={i}><span className="grw-bar is-ev" style={{ height: Math.max(6, Math.round(x.shown / Math.max(1, x.of) * 64)) + "px" }}/><b>{x.shown}</b><small>{growthDay(x.date)}</small></li>
+          ))}</ol>}
+          {(E.moved || []).length > 0 && <ul className="grw-list">{E.moved.map(x => <li key={x.label} className={x.up ? "is-up" : "is-down"}>{x.label}: {x.from.toLowerCase()} → {x.to.toLowerCase()}</li>)}</ul>}
+          {E.strength && <p className="grw-note"><b>A strength:</b> {E.strength}</p>}
+          {E.next && <p className="grw-note"><b>The next step:</b> {E.next}</p>}
+        </section>
+        <section className="grw-card" aria-labelledby="grw-more-h">
+          <h3 id="grw-more-h">Learning and goals</h3>
+          <dl className="grw-facts">
+            <div><dt>Lessons</dt><dd>{d.learning.total ? d.learning.completed + " of " + d.learning.total + " done" + (d.learning.overdue ? " · " + d.learning.overdue + " overdue" : "") : "None set yet"}</dd></div>
+            <div><dt>Goal</dt><dd>{d.goal ? d.goal.title + (d.audience === "mentor" ? " (" + d.goal.progress + " of 5)" : "") : "None agreed yet"}{d.goalsDone ? " · " + d.goalsDone + " achieved before" : ""}</dd></div>
+            <div><dt>Courage</dt><dd>{d.courage && d.courage.current !== null ? (d.courage.rung || d.courage.current) + (d.courage.direction ? ", " + d.courage.direction : "") : "Not observed yet"}</dd></div>
+            <div><dt>School</dt><dd>{d.school ? (d.school.average !== null ? d.school.average + "% average" : "Uploaded") + (d.school.change !== null ? " (" + (d.school.change > 0 ? "+" : "") + d.school.change + ")" : "") + " · " + d.school.term : "No report uploaded yet"}</dd></div>
+          </dl>
+        </section>
+        {W && <section className="grw-card" aria-labelledby="grw-wb-h">
+          <h3 id="grw-wb-h">Wellbeing check-ins <small>staff only</small></h3>
+          {W.length ? <ol className="grw-dots" aria-label="Weekly check-ins">{W.map(w => (
+            <li key={w.week} className={w.wellbeing === "Okay" ? "is-here" : "is-away"} title={w.week + ": " + w.wellbeing}><span className="grw-sr">{w.week}: {w.wellbeing}</span></li>
+          ))}</ol> : <p className="grw-note">No check-ins yet.</p>}
+        </section>}
+      </div>
+    </div>
+  );
+}
+
+/* ── The curriculum as staff read it: course → year → term → week ──────────
+   One map for the mentor's and the instructor's portal (staff_curriculum):
+   the year tabs and the terms within them, each lesson at its week with how
+   many of their members have done it, the week the Club is on, and who is
+   past a due date without it. A lesson opens in place: what it covers, the
+   lesson itself, its materials, its checks, and adding a material. */
+function staffCurrState(u, weekNow) {
+  const st = u.stats || {}, pct = st.audience ? Math.round((st.completed || 0) / st.audience * 100) : 0;
+  if (weekNow && u.week === weekNow) return { k: "now", label: "This week" };
+  if (st.behind) return { k: "behind", label: st.behind + " behind" };
+  if (weekNow && u.week < weekNow) return pct >= 80 || !st.audience ? { k: "done", label: "Done" } : { k: "open", label: pct + "% done" };
+  return { k: "next", label: weekNow && u.week === weekNow + 1 ? "Next week" : "Coming" };
+}
+/* An instructor writes a lesson for their own course (staff.curriculum.lesson):
+   a draft for the curriculum lead, or published when they hold `curriculum`. */
+/**
+ * An instructor writes a lesson — in the SAME editor the Control Room uses.
+ *
+ * What was here was a four-field form: title, week, one line of summary and
+ * a plain textarea. The people who actually teach the course could file a
+ * sketch and nothing else — no opening review, no objectives, no materials,
+ * no diagrams — while a curriculum lead two portals away had all of it. The
+ * standard the programme asks of a lesson was invisible on the one screen
+ * where lessons are most often written.
+ *
+ * `desk` is the whole of the difference now: an instructor's lesson goes
+ * through their own route, and saves as a draft unless they hold the
+ * curriculum capability. The server decides that, not this component.
+ */
+function StaffLessonForm({ course, week, canPublish, courses, examRefs, onDone }) {
+  const [open, setOpen] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+  if (!course) return null;
+
+  const desk = React.useMemo(() => ({
+    canPublish: !!canPublish,
+    upload: (file) => NGGApi.member.curriculumUpload(file),
+    save: async (d) => {
+      const r = await NGGApi.member.curriculumLesson({
+        unitId: d.unitId || "", course: d.course, week: Number(d.week) || 1, position: Number(d.position) || 0,
+        title: d.title, summary: d.summary,
+        objectives: String(d.objectives || "").split("\n").map(x => x.trim()).filter(Boolean),
+        body: d.body, materials: d.materials, checks: d.checks,
+        durationMins: Number(d.durationMins) || 0, passMark: Number(d.passMark),
+        status: d.status,
+      });
+      return r.unit || { unitId: r.unitId, title: d.title, version: 1, status: r.status };
+    },
+  }), [canPublish]);
+
+  if (!open) return (
+    <div className="scm-write">
+      {msg && <p className="scm-note" role="status"><i className="ph ph-check-circle" aria-hidden="true"/> {msg}</p>}
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setOpen(true); setMsg(""); }}>
+        <i className="ph ph-plus" aria-hidden="true"/> Write a lesson for {course}
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="scm-write-open">
+      <CurriculumEditor
+        unit={{ course: course, week: week || 1 }}
+        courses={courses && courses.length ? courses : [course]}
+        divisions={[]}
+        examRefs={examRefs || {}}
+        canWrite={true}
+        aiEnabled={false}
+        desk={desk}
+        onClose={() => setOpen(false)}
+        onSaved={(u) => {
+          setOpen(false);
+          setMsg(canPublish
+            ? "Published for " + course + ", week " + (u && u.week ? u.week : week) + "."
+            : "Saved as a draft for " + course + ". A curriculum lead publishes it; your class sees it then.");
+          if (onDone) onDone();
+        }}/>
+    </div>
+  );
+}
+function StaffCurriculumMap({ data, course, reload, intro }) {
+  const units0 = (data && data.units) || [];
+  /* A lesson sits under the catalogue course it belongs to (family): "Piano" lessons are Musical Instruments'. */
+  const courseOf = u => u.family || u.course || "";
+  const courses = Array.from(new Set(units0.map(courseOf))).sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
+  const [cSel, setCSel] = React.useState(course || "");
+  const [q, setQ] = React.useState("");
+  const [open, setOpen] = React.useState("");
+  const weekNow = data && data.weekNow;
+  const curCourse = course !== undefined && course !== null && course !== "" ? course : cSel || (courses.find(c => c) || "");
+  const inCourse = units0.filter(u => !courseOf(u) || !curCourse || String(courseOf(u)).toLowerCase() === String(curCourse).toLowerCase() || String(u.course || "").toLowerCase() === String(curCourse).toLowerCase());
+  const ownLessons = inCourse.filter(u => courseOf(u)).length;
+  const years = Array.from(new Set(inCourse.map(u => (u.path && u.path.year) || 0))).sort((a, b) => (a || 99) - (b || 99));
+  const yearNow = (inCourse.find(u => weekNow && u.week === weekNow && u.path) || {}).path;
+  const [ySel, setYSel] = React.useState(null);
+  const year = ySel !== null && years.includes(ySel) ? ySel : yearNow && years.includes(yearNow.year) ? yearNow.year : years[0];
+  const t = q.trim().toLowerCase();
+  const shown = inCourse.filter(u => ((u.path && u.path.year) || 0) === year && (!t || (u.title + " " + (u.summary || "")).toLowerCase().includes(t)));
+  const terms = Array.from(new Set(shown.map(u => (u.path && u.path.term) || 1))).sort((a, b) => a - b);
+  const now = inCourse.filter(u => weekNow && u.week === weekNow);
+  const pctOf = list => { const a = list.reduce((n, u) => n + ((u.stats || {}).audience || 0), 0); return a ? Math.round(list.reduce((n, u) => n + ((u.stats || {}).completed || 0), 0) / a * 100) : null; };
+  const dateW = d => d ? new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
+  if (!units0.length) return (
+    <div className="scm">
+      <p className="scm-note" role="note"><i className="ph ph-info" aria-hidden="true"/> No lessons have been published for {course || "your courses"} yet. A curriculum lead writes them in Control Room → Curriculum{course ? ", or write the first one here" : ""}.</p>
+      <StaffLessonForm course={course} week={weekNow} courses={(data && data.courses) || null} examRefs={(data && data.examRefs) || {}} canPublish={!!(data && data.selfApprove)} onDone={reload}/>
+    </div>
+  );
+  const row = u => {
+    const st = u.stats || {}, s = staffCurrState(u, weekNow), pct = st.audience ? Math.round((st.completed || 0) / st.audience * 100) : 0, isOpen = open === u.unitId;
+    return (
+      <li key={u.unitId} className={"scm-row is-" + s.k}>
+        <button type="button" className="scm-row-btn" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? "" : u.unitId)}>
+          <span className="scm-wk" aria-label={"Week " + ((u.path && u.path.week) || u.week)}>W{(u.path && u.path.week) || u.week}</span>
+          <span className="scm-t"><b>{u.title}</b><small>{(u.due ? "Due " + dateW(u.due) + " · " : "") + (st.audience ? st.completed + " of " + st.audience + " done" : "Nobody in your class takes it") + (st.avgScore !== null && st.avgScore !== undefined ? " · average " + st.avgScore + "%" : "")}</small></span>
+          <span className="scm-bar" aria-hidden="true"><span style={{ width: pct + "%" }}/></span>
+          <span className={"scm-chip is-" + s.k}>{s.label}</span>
+          <i className={"ph ph-caret-" + (isOpen ? "up" : "down")} aria-hidden="true"/>
+        </button>
+        {isOpen && (
+          <div className="scm-lesson">
+            {u.path && u.path.label && <p className="scm-path">{u.path.label}{u.durationMins ? " · " + u.durationMins + " min" : ""}</p>}
+            {u.summary && <p>{u.summary}</p>}
+            {(u.objectives || []).length > 0 && <><h4 className="scm-h4">By the end, they can</h4><ul>{u.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul></>}
+            {st.behind > 0 && <p className="scm-behind" role="note"><i className="ph ph-warning" aria-hidden="true"/> Past its due date without it: {(st.behindNames || []).join(", ")}{st.behind > (st.behindNames || []).length ? " and " + (st.behind - st.behindNames.length) + " more" : ""}.</p>}
+            {typeof CurriculumText === "function" && u.body && <CurriculumText text={u.body}/>}
+            {typeof CurriculumMaterials === "function" && <CurriculumMaterials materials={u.materials || []}/>}
+            <p className="scm-path">{(u.checks || []).length ? u.checks.length + " check" + (u.checks.length === 1 ? "" : "s") + " · pass mark " + u.passMark + "%" : "No checks: nothing to mark for this one."}</p>
+            {typeof StaffMaterialForm === "function" && <StaffMaterialForm unitId={u.unitId} selfApprove={!!(data && data.selfApprove)} onDone={reload}/>}
+          </div>
+        )}
+      </li>
+    );
+  };
+  return (
+    <div className="scm">
+      {intro && <p className="scm-intro">{intro}</p>}
+      <div className="scm-bar-top">
+        {!course && courses.filter(Boolean).length > 1 && (
+          <div className="scm-seg" role="group" aria-label="Course">{courses.filter(Boolean).map(c => <button key={c} type="button" aria-pressed={c === curCourse} className={c === curCourse ? "is-on" : ""} onClick={() => { setCSel(c); setYSel(null); setOpen(""); }}>{c}</button>)}</div>
+        )}
+        {years.length > 1 && (
+          <div className="scm-seg" role="group" aria-label="Year">{years.map(y => <button key={y} type="button" aria-pressed={y === year} className={y === year ? "is-on" : ""} onClick={() => { setYSel(y); setOpen(""); }}>{y ? "Year " + y : "Any year"}</button>)}</div>
+        )}
+        <label className="scm-find" role="search"><span className="sr-only">Find a lesson</span><i className="ph ph-magnifying-glass" aria-hidden="true"/>
+          <input type="search" value={q} placeholder="Find a lesson" onChange={e => setQ(e.target.value)}/></label>
+      </div>
+      <p className="scm-status" role="status" aria-live="polite">{(curCourse || "Whole Club") + " · " + inCourse.length + " lesson" + (inCourse.length === 1 ? "" : "s") + (years.length > 1 ? " over " + years.filter(Boolean).length + " years" : "")
+        + (weekNow ? " · the Club is on week " + weekNow + (data.termWeeks ? " (term weeks " + data.termWeeks + ")" : "") : "") + (t ? " · " + shown.length + " match" + (shown.length === 1 ? "" : "es") : "")}</p>
+      {!weekNow && data && data.termStart === "" && <p className="scm-note" role="note"><i className="ph ph-calendar-x" aria-hidden="true"/> Lessons have no due dates yet: the term’s start date is not set. An admin sets it in Control Room → Curriculum → Schedule.</p>}
+      {curCourse && !ownLessons && !t && <p className="scm-note" role="note"><i className="ph ph-info" aria-hidden="true"/> No lessons have been published for {curCourse} yet. A curriculum lead writes them in Control Room → Curriculum, or write the first one below.</p>}
+      <StaffLessonForm course={course || curCourse} week={weekNow} courses={(data && data.courses) || null} examRefs={(data && data.examRefs) || {}} canPublish={!!(data && data.selfApprove)} onDone={reload}/>
+      {now.length > 0 && !t && (
+        <section className="scm-now" aria-labelledby="scm-now-h">
+          <h3 id="scm-now-h">This week</h3>
+          <ul className="scm-list">{now.map(row)}</ul>
+        </section>
+      )}
+      {!shown.length && (t || ownLessons > 0) && <p className="scm-empty">{t ? "No lesson in this year matches “" + q + "”." : "Nothing in this year yet."}</p>}
+      {terms.map(tm => {
+        const list = shown.filter(u => ((u.path && u.path.term) || 1) === tm).sort((a, b) => a.week - b.week || a.position - b.position);
+        const name = (list.find(u => u.path && u.path.termName) || { path: {} }).path.termName;
+        const p = pctOf(list), wks = list.map(u => (u.path && u.path.week) || u.week);
+        return (
+          <section key={tm} className="scm-term" aria-labelledby={"scm-t" + tm}>
+            <h3 id={"scm-t" + tm} className="scm-term-h">Term {tm}{name ? ": " + name : ""}<small>{list.length} lesson{list.length === 1 ? "" : "s"} · weeks {Math.min.apply(null, wks)}–{Math.max.apply(null, wks)}{p !== null ? " · " + p + "% done" : ""}</small></h3>
+            <ol className="scm-list">{list.map(row)}</ol>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+
 /* Where a member stands on one lesson, in words a chip can carry. */
 function curriculumStatusLabel(p) {
   if (!p) return { label: "New", tone: "" };
@@ -3737,3 +4096,287 @@ function curriculumStatusLabel(p) {
   if (p.attempts > 0) return { label: "Try again", tone: "is-retry" };
   return { label: "Started", tone: "is-started" };
 }
+
+/* ============================================================================
+   Every drop-down opens as the application's list (page-apply.jsx's picker):
+   a searchable list under the field on a wide screen, a full-screen sheet
+   with a search box on a phone, the chosen option ticked, groups as headings.
+
+   One layer for every <select> in the site and the Control Room, rather than
+   two hundred rewrites: the <select> stays the source of truth (its value,
+   its React onChange, its form submission, Playwright's selectOption); only
+   the OS's own option list is replaced. Choosing sets the value through the
+   native setter and fires `input` and `change`, which is what React listens
+   for. Opt out with data-native on the <select>; a multiple or sized list is
+   left alone.
+   ========================================================================== */
+function installNggSelect() {
+  if (typeof document === "undefined" || window.__ngsInstalled) return;
+  window.__ngsInstalled = true;
+  const PHONE = 640, SEARCH_FROM = 8;
+  let cur = null;   // { sel, root, items, hi, input, list }
+  const eligible = el => el && el.tagName === "SELECT" && !el.multiple && !(el.size > 1) && !el.disabled && !el.hasAttribute("data-native") && !el.closest("[data-native-selects]");
+  const labelOf = sel => sel.getAttribute("aria-label") || (sel.id && document.querySelector('label[for="' + CSS.escape(sel.id) + '"]') || {}).textContent || (sel.closest("label") || {}).textContent || "Choose";
+  const isDark = el => {
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+      const c = getComputedStyle(n).backgroundColor, m = c && c.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/);
+      if (m && (m[4] === undefined || +m[4] > 0.5)) return (0.299 * m[1] + 0.587 * m[2] + 0.114 * m[3]) < 110;
+    }
+    return false;
+  };
+  const setValue = (sel, v) => {
+    if (sel.value === v) return;
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(sel, v);
+    sel.dispatchEvent(new Event("input", { bubbles: true }));
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const close = refocus => {
+    if (!cur) return;
+    const { sel, root } = cur;
+    cur = null;
+    root.remove();
+    sel.removeAttribute("aria-expanded");
+    document.documentElement.classList.remove("ngs-lock");
+    if (refocus) try { sel.focus({ preventScroll: true }); } catch (_) {}
+  };
+  const render = () => {
+    const { sel, list, input } = cur;
+    const q = input ? input.value.trim().toLowerCase() : "";
+    // Every word typed, in any order: "college lagos" finds "Lagos State Model College".
+    const words = q.split(/\s+/).filter(Boolean);
+    const hit = text => { const t = String(text || "").toLowerCase(); return words.every(w => t.includes(w)); };
+    list.textContent = "";
+    cur.items = [];
+    const add = (opt) => {
+      if (q && !hit(opt.text)) return;
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "ngs-o" + (opt.value === "" ? " is-placeholder" : ""); b.setAttribute("role", "option");
+      b.id = "ngs-o-" + cur.items.length;
+      b.setAttribute("aria-selected", String(opt.value === sel.value));
+      if (opt.disabled) { b.disabled = true; b.setAttribute("aria-disabled", "true"); }
+      const t = document.createElement("span"); t.textContent = opt.text || " "; b.appendChild(t);
+      if (opt.value === sel.value && opt.value !== "") { const i = document.createElement("i"); i.className = "ph-bold ph-check"; i.setAttribute("aria-hidden", "true"); b.appendChild(i); }
+      b.addEventListener("mousedown", e => e.preventDefault());
+      b.addEventListener("click", () => { if (!opt.disabled) { setValue(sel, opt.value); close(true); } });
+      list.appendChild(b);
+      if (!opt.disabled) cur.items.push({ b, opt });
+    };
+    for (const node of sel.children) {
+      if (node.tagName === "OPTGROUP") {
+        const kids = [...node.children].filter(o => !q || hit(o.text));
+        if (!kids.length) continue;
+        const g = document.createElement("span"); g.className = "ngs-g"; g.setAttribute("role", "presentation"); g.textContent = node.label; list.appendChild(g);
+        kids.forEach(add);
+      } else if (node.tagName === "OPTION" && !node.hidden) add(node);
+    }
+    if (!cur.items.length) { const n = document.createElement("div"); n.className = "ngs-none"; n.textContent = q ? "No match for “" + input.value.trim() + "”." : "Nothing to choose."; list.appendChild(n); }
+    const at = cur.items.findIndex(x => x.opt.value === sel.value);
+    move(at >= 0 ? at : 0, true);
+  };
+  const move = (i, quiet) => {
+    if (!cur || !cur.items.length) return;
+    cur.hi = Math.max(0, Math.min(cur.items.length - 1, i));
+    cur.items.forEach((x, k) => x.b.classList.toggle("is-hi", k === cur.hi));
+    const b = cur.items[cur.hi].b;
+    (cur.input || cur.list).setAttribute("aria-activedescendant", b.id);
+    if (!quiet || cur.hi) b.scrollIntoView({ block: "nearest" });
+  };
+  const open = sel => {
+    if (cur && cur.sel === sel) { close(true); return; }
+    close(false);
+    const phone = window.innerWidth < PHONE;
+    const root = document.createElement("div");
+    root.className = "ngs" + (phone ? " ngs--sheet" : " ngs--pop") + (isDark(sel) ? " is-dark" : "");
+    root.setAttribute("role", "dialog"); root.setAttribute("aria-label", labelOf(sel).trim());
+    if (phone) root.setAttribute("aria-modal", "true");
+    const many = sel.options.length > SEARCH_FROM;
+    let head = "";
+    if (phone) head = '<div class="ngs-h"><button type="button" class="ngs-x" aria-label="Close"><i class="ph ph-x" aria-hidden="true"></i></button><b></b></div>';
+    root.innerHTML = head + (many || phone ? '<div class="ngs-s"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input type="search" autocomplete="off" placeholder="Search" aria-label="Search the options"></div>' : "") + '<div class="ngs-l" role="listbox" tabindex="-1"></div>';
+    if (phone) root.querySelector(".ngs-h b").textContent = labelOf(sel).trim();
+    // Inside the dialog the select is in, so a dialog's focus trap keeps the list.
+    (sel.closest('dialog, [role="dialog"], [aria-modal="true"]') || document.body).appendChild(root);
+    const input = root.querySelector(".ngs-s input"), list = root.querySelector(".ngs-l");
+    list.id = "ngs-l";
+    list.setAttribute("aria-label", labelOf(sel).trim());
+    if (input) input.setAttribute("aria-controls", "ngs-l");
+    cur = { sel, root, input, list, items: [], hi: 0 };
+    sel.setAttribute("aria-expanded", "true");
+    if (phone) { document.documentElement.classList.add("ngs-lock"); root.querySelector(".ngs-x").addEventListener("click", () => close(true)); }
+    else place(sel, root);
+    if (input) input.addEventListener("input", render);
+    render();
+    (input || list).focus({ preventScroll: true });
+  };
+  /* Under the field (above it when there is no room below), as wide as the
+     field and at least 220. Called again on scroll, so it follows the field. */
+  const place = (sel, root) => {
+    const r = sel.getBoundingClientRect(), w = Math.min(Math.max(r.width, 220), window.innerWidth - 16);
+    const below = window.innerHeight - r.bottom - 12, above = r.top - 12;
+    const up = below < 260 && above > below;
+    root.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+    root.style.width = w + "px";
+    root.style.top = up ? "" : (r.bottom + 4) + "px";
+    root.style.bottom = up ? (window.innerHeight - r.top + 4) + "px" : "";
+    root.style.setProperty("--ngs-max", Math.max(160, Math.min(360, up ? above : below)) + "px");
+    /* Inside a transformed dialog "fixed" is relative to the dialog, not the
+       window: measure where it landed and correct by the difference. */
+    const want = parseFloat(root.style.left), got = root.getBoundingClientRect();
+    if (Math.abs(got.left - want) > 1) root.style.left = (want + (want - got.left)) + "px";
+    if (!up) { const wantTop = r.bottom + 4; if (Math.abs(got.top - wantTop) > 1) root.style.top = (wantTop + (wantTop - got.top)) + "px"; }
+    return r;
+  };
+  const onKeyInside = e => {
+    if (!cur) return;
+    const k = e.key;
+    if (k === "ArrowDown") { e.preventDefault(); move(cur.hi + 1); }
+    else if (k === "ArrowUp") { e.preventDefault(); move(cur.hi - 1); }
+    else if (k === "Home" && !cur.input) { e.preventDefault(); move(0); }
+    else if (k === "End" && !cur.input) { e.preventDefault(); move(cur.items.length - 1); }
+    else if (k === "Enter") { e.preventDefault(); const x = cur.items[cur.hi]; if (x) { setValue(cur.sel, x.opt.value); close(true); } }
+    else if (k === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); }
+    else if (k === "Tab") close(true);
+    else if (!cur.input && k.length === 1) {   // type-ahead when there is no search box
+      const i = cur.items.findIndex(x => x.opt.text.toLowerCase().startsWith(k.toLowerCase()));
+      if (i >= 0) move(i);
+    }
+  };
+  document.addEventListener("keydown", e => {
+    if (cur && cur.root.contains(e.target)) return onKeyInside(e);
+    const sel = e.target;
+    if (!eligible(sel)) return;
+    if (e.key === "Enter" || e.key === " " || e.key === "F4" || (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp"))) { e.preventDefault(); open(sel); }
+  }, true);
+  document.addEventListener("mousedown", e => {
+    if (cur && !cur.root.contains(e.target) && e.target !== cur.sel) close(false);
+    const sel = e.target;
+    if (e.button !== 0 || !eligible(sel)) return;
+    e.preventDefault();
+    try { sel.focus({ preventScroll: true }); } catch (_) {}
+    open(sel);
+  }, true);
+  /* Touch: the OS picker opens on the tap, so the tap is taken (a swipe that
+     starts on a select still scrolls the page). */
+  let touch = null;
+  document.addEventListener("touchstart", e => { touch = eligible(e.target) ? { sel: e.target, x: e.touches[0].clientX, y: e.touches[0].clientY } : null; }, { capture: true, passive: true });
+  document.addEventListener("touchend", e => {
+    if (!touch || e.target !== touch.sel) { touch = null; return; }
+    const t = e.changedTouches[0];
+    if (Math.abs(t.clientX - touch.x) > 10 || Math.abs(t.clientY - touch.y) > 10) { touch = null; return; }
+    e.preventDefault();
+    const sel = touch.sel; touch = null;
+    open(sel);
+  }, { capture: true, passive: false });
+  window.addEventListener("resize", () => { if (cur && !cur.root.classList.contains("ngs--sheet")) close(false); });
+  document.addEventListener("scroll", e => {
+    if (!cur || cur.root.contains(e.target) || cur.root.classList.contains("ngs--sheet")) return;
+    const r = place(cur.sel, cur.root);
+    if (r.bottom < 0 || r.top > window.innerHeight) close(false);   // the field scrolled away
+  }, true);
+}
+installNggSelect();
+
+/* ── Pay the balance online ─────────────────────────────────────────────────
+ * One button for every screen that shows a balance (the member's account, the
+ * family portal). `pay()` asks the server for a balance invoice; the browser
+ * goes to that invoice's /pay page, where Paystack takes the payment and the
+ * server's own verify settles it. Nothing is marked paid from here. */
+const PAY_BALANCE_ERR = {
+  payments_unavailable: "Online payment is not switched on yet. Pay by transfer and the centre will record it.",
+  nothing_to_pay: "There is nothing to pay right now.",
+  offline_pending: "A transfer is waiting to be checked by the centre, so there is nothing to pay online until it is.",
+  no_email: "We need an email address for the receipt. Ask the centre to add one.",
+  fees_off: "Fees are not switched on at this centre.",
+  not_ngg: "Online payment is for NGG membership.",
+  rate_limited: "Too many tries. Wait a minute and try again.",
+};
+function PayBalanceButton({ amountText, pay, className }) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const go = () => {
+    setBusy(true); setErr("");
+    Promise.resolve().then(pay).then(r => {
+      if (r && r.payUrl) { window.location.assign(r.payUrl); return; }
+      setBusy(false); setErr("The payment page could not be opened. Try again.");
+    }).catch(e => {
+      setBusy(false);
+      setErr(PAY_BALANCE_ERR[(e && e.code) || ""] || "The payment page could not be opened. Try again.");
+    });
+  };
+  return (
+    <div className="pay-balance">
+      <button type="button" className={className || "btn btn-primary btn-sm"} onClick={go} disabled={busy} aria-busy={busy ? "true" : "false"}>
+        {busy ? "Opening payment…" : "Pay " + (amountText || "") + " online"}
+      </button>
+      {err && <p className="pay-balance-err" role="alert">{err}</p>}
+    </div>
+  );
+}
+
+/* ── Free messages on Telegram ───────────────────────────────────────────────
+ * Every text the site sends (sign-in codes, check-ins, notices) goes to
+ * Telegram instead of SMS for a number connected to the programme's bot
+ * (api/_lib/telegram.php) — free, on Android or iPhone. This card is the
+ * invitation: the bot link, a QR for a phone held up to a laptop screen, and
+ * what happens. Renders nothing when no bot is set up, and an honest line
+ * with a retry when the check fails — never a dead button. */
+function TelegramConnect({ compact }) {
+  const [st, setSt] = React.useState({ phase: "loading" });
+  const load = React.useCallback(() => {
+    setSt({ phase: "loading" });
+    NGGApi.public.telegram().then(r => setSt({ phase: "ok", r }), () => setSt({ phase: "error" }));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+  const [qr, setQr] = React.useState("");
+  const url = st.phase === "ok" && st.r.enabled ? st.r.url : "";
+  React.useEffect(() => {
+    if (!url || compact) return;
+    let alive = true;
+    loadVendor("qrcode").then(() => {
+      if (!alive || !window.qrcode) return;
+      try { const q = window.qrcode(0, "M"); q.addData(url); q.make(); setQr(q.createDataURL(6, 2)); } catch (_) {}
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [url, compact]);
+  if (st.phase === "loading") return <div className="tgc is-loading" aria-busy="true"><span className="tgc-skel"/></div>;
+  if (st.phase === "error") return <div className="tgc is-error" role="alert"><p>Couldn’t check whether Telegram messages are available.</p><button type="button" className="tgc-retry" onClick={load}>Try again</button></div>;
+  if (!url) return null;
+  return (
+    <section className={"tgc" + (compact ? " is-compact" : "")} aria-labelledby="tgc-h">
+      <div className="tgc-body">
+        <h2 id="tgc-h" className="tgc-h"><i className="ph ph-telegram-logo" aria-hidden="true"/>Get our messages free on Telegram</h2>
+        <p className="tgc-p">Sign-in codes, check-ins and notices about your child come to Telegram instead of by SMS. It works on Android and iPhone, and costs nothing.</p>
+        <ol className="tgc-steps">
+          <li>Open our bot{st.r.bot ? <> (<b>@{st.r.bot}</b>)</> : null} and press <b>Start</b>.</li>
+          <li>Press <b>Share my phone number</b>. Use the number on your NGG record.</li>
+        </ol>
+        <a className="tgc-go" href={url} target="_blank" rel="noopener noreferrer">Open Telegram</a>
+        <p className="tgc-fine">Send /stop in the chat at any time to go back to SMS.</p>
+      </div>
+      {qr && !compact ? <img className="tgc-qr" src={qr} alt={"QR code for " + url}/> : null}
+    </section>
+  );
+}
+
+/* /telegram — the same invitation as a page of its own, to share in a parents'
+   WhatsApp group or print for a centre's noticeboard. */
+function TelegramPage({ setPage }) {
+  return (
+    <div className="tgp" data-screen-label="Telegram">
+      <p className="tgp-eyebrow">Messages from NGG</p>
+      <h1 className="tgp-h1">Free messages, on the phone you already have</h1>
+      <p className="tgp-lead">A text message costs money every time it is sent. Telegram does not. Connect once and every message we would have texted you comes to Telegram instead.</p>
+      <TelegramConnect/>
+      <TelegramPageFallback setPage={setPage}/>
+    </div>
+  );
+}
+function TelegramPageFallback({ setPage }) {
+  const [on, setOn] = React.useState(null);
+  React.useEffect(() => { NGGApi.public.telegram().then(r => setOn(!!r.enabled), () => setOn(true)); }, []);
+  if (on !== false) return null;
+  return <EmptyState title="Telegram messages aren’t set up yet" message="We’ll keep sending messages by SMS and email. Check back later."
+    action={<button type="button" className="tgc-retry" onClick={() => setPage("home")}>Back to the home page</button>}/>;
+}
+
+Object.assign(window, { TelegramConnect, TelegramPage });

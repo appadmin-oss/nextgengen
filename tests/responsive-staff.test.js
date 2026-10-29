@@ -3,9 +3,10 @@
    The staff consoles, measured at the widths people actually hold them at.
 
    The public sweep (responsive.test.js) covers the marketing site. This covers
-   the other half — the Control Room's forty-one sections, the Mentor Portal,
-   the guardian Circle, the gate desk and the member dashboard — using the same
-   two measurements from the same module.
+   the other half — every page and tab of the Control Room, the Mentor and
+   Instructor portals, the Club staff portal, the guardian Circle and family
+   account, the gate desk and the member dashboard — using the same two
+   measurements from the same module.
 
    WHY THESE NEED THEIR OWN SUITE. Every surface here is behind a sign-in, and
    several cannot render at all without a session, so they cannot be reached by
@@ -45,28 +46,27 @@ const FIX = path.join(ROOT, 'tests', '_respstaff_fixture.html');
 let pass = 0, fail = 0;
 const ok = (l, c) => { c ? (pass++, console.log('  ✓ ' + l)) : (fail++, console.error('  ✗ FAIL: ' + l)); };
 
-/* The Control Room's own registry, read rather than hand-listed — CLAUDE.md
-   §6 and §11: the sidebar, the palette and the deep-link resolver are all
-   generated from ADMIN_SECTIONS, and a responsive suite that quietly stops
-   covering a new section is worse than one that never covered it. */
-function adminSections() {
-  const src = fs.readFileSync(path.join(ROOT, 'page-admin.jsx'), 'utf8');
-  const block = src.slice(src.indexOf('const ADMIN_SECTIONS = ['),
-                          src.indexOf('\n];', src.indexOf('const ADMIN_SECTIONS = [')));
-  const out = [];
-  for (const line of block.split('\n')) {
-    const m = line.match(/\{\s*id:\s*"([^"]+)"/);
-    if (m) out.push(m[1]);
-  }
-  return out;
-}
+/* The Control Room's own registry, read from the BUILT BUNDLE rather than
+   hand-listed or parsed out of a source file — CLAUDE.md §6 and §11: the
+   sidebar, the palette and the deep-link resolver are all generated from
+   CR_PAGES (src/modules/control/cr-pages.jsx), and a responsive suite that
+   quietly stops covering a page is worse than one that never covered it.
+   This suite once parsed ADMIN_SECTIONS out of page-admin.jsx; when the
+   Control Room moved, it went on reporting "0 sections" and passing. Reading
+   the live registry cannot drift, and an empty one is a failure, not a pass. */
+const adminTabs = page => page.evaluate(() => (typeof CR_PAGES === 'object' && CR_PAGES)
+  ? Object.keys(CR_PAGES).reduce((a, p) => a.concat((CR_PAGES[p].tabs || []).map(t => [p, t.id])), []) : []);
+const ADMIN_MIN_TABS = 30;   // the Control Room has ~60; fewer than this means the registry was not read
 
 /* The staff surfaces that mount standalone. Each is a global in the
    concatenated bundle (no module closures — CLAUDE.md §1), so naming it is
-   enough. `admin` is handled separately because it has forty-one sections
-   behind one component. */
+   enough. The Control Room is handled separately because every page and tab
+   sits behind one component. */
 const PORTALS = [
-  { id: 'mentor',       component: 'MentorPortal',      label: 'Mentor Portal' },
+  { id: 'mentor',       component: 'MentorHome',        label: 'Mentor Portal (v15)' },
+  { id: 'mentor-old',   component: 'MentorPortal',      label: 'Mentor Portal (Summer School / class tools)' },
+  { id: 'instructor',   component: 'InstructorHome',    label: 'Instructor Portal (v6)' },
+  { id: 'family',       component: 'FamilyPage',        label: 'Family account' },
   { id: 'circle',       component: 'CirclePortal',      label: 'Circle (guardian)' },
   { id: 'summer-admin', component: 'SummerAdminPortal', label: 'Summer School staff portal' },
   { id: 'club-admin',   component: 'ClubAdminPortal',   label: 'Club staff portal' },
@@ -89,7 +89,7 @@ function fixture(manifest) {
      That looked exactly like a crash in the surface under test, and cost a
      bisect to disprove. So the App keeps #root, hidden, and every measurement
      mounts into #probe. */
-  #root { display: none !important; }
+  #root:not(#_) { display: none; }
 </style>
 </head><body><div id="root"></div><div id="probe"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
@@ -130,7 +130,7 @@ function fixture(manifest) {
          leaves two of the console's most-reached controls unmeasured. */
       member: { memberId: 'NGG-2025-0099', fullName: 'Ada Admin', email: 'ada@example.com',
                 role: 'super_admin', centre: 'Egbeda', type: 'NGG', status: 'active',
-                caps: ['content','people','inbox','settings','rbac','summer','club','audit','journal','fees'] },
+                caps: ['content','people','inbox','settings','rbac','summer','club','checkin','curriculum','audit','journal','fees','safeguarding'] },
       isAdmin: true, adminOk: true, isSignedIn: true, loading: false,
       sessionExp: Math.floor(Date.now() / 1000) + 86400 * 3, lockAdmin: function () {},
       openSignIn: function () {}, setAdminOk: function () {}, signOut: function () {},
@@ -143,7 +143,8 @@ function fixture(manifest) {
       if (window.__root) { window.__root.unmount(); }
       el.innerHTML = '';
       window.__root = ReactDOM.createRoot(el);
-      window.__root.render(React.createElement(window[name] || eval(name), props || {}));
+      // Every page takes setPage from the router; here navigation goes nowhere.
+      window.__root.render(React.createElement(window[name] || eval(name), Object.assign({ setPage: function () {} }, props || {})));
       return '';
     } catch (e) { return String((e && e.message) || e); }
   };
@@ -159,9 +160,7 @@ function fixture(manifest) {
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'dist', 'build-manifest.json'), 'utf8'));
   fs.writeFileSync(FIX, fixture(manifest));
 
-  const sections = adminSections();
-  console.log('Sweeping the Control Room (' + sections.length + ' sections) + '
-    + PORTALS.length + ' portals × ' + WIDTHS.length + ' widths\n');
+  let tabs = null;
 
   const server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, stdio: 'ignore' });
   let browser;
@@ -171,7 +170,6 @@ function fixture(manifest) {
     browser = await chromium.launch({ executablePath: chromiumPath(fs), args: ['--no-sandbox'] });
 
     for (const vp of WIDTHS) {
-      console.log('  ' + vp.label);
       const page = await browser.newPage({ viewport: { width: vp.w, height: vp.h },
                                            hasTouch: vp.w < 900, isMobile: vp.w < 900 });
       /* Console noise is expected and ignored: the API is unconfigured here on
@@ -181,6 +179,13 @@ function fixture(manifest) {
       const crashed = [];
       page.on('pageerror', e => crashed.push(String(e && e.message).slice(0, 120)));
       await page.goto(BASE + '/tests/_respstaff_fixture.html', { waitUntil: 'networkidle' });
+      if (!tabs) {
+        tabs = await adminTabs(page);
+        console.log('Sweeping the Control Room (' + tabs.length + ' tabs on ' + new Set(tabs.map(t => t[0])).size + ' pages) + '
+          + PORTALS.length + ' portals × ' + WIDTHS.length + ' widths\n');
+        ok('the Control Room registry (CR_PAGES) is read from the bundle — ' + tabs.length + ' tabs', tabs.length >= ADMIN_MIN_TABS);
+      }
+      console.log('  ' + vp.label);
 
       const measure = async (label, mountName, props, after) => {
         const err = await page.evaluate(([n, p]) => window.__mount(n, p), [mountName, props || {}]);
@@ -198,13 +203,14 @@ function fixture(manifest) {
         const text = await page.evaluate(() => (document.getElementById('probe').innerText || '').trim());
         if (!text) { broken.push({ label, w: vp.w, err: 'rendered nothing' }); return; }
         if (r.strays.length) clipped.push({ label, w: vp.w, n: r.strays.length, sample: r.strays.slice(0, 3) });
-        if (r.small.length) tiny.push({ label, w: vp.w, n: r.small.length, sample: r.small.slice(0, 4) });
+        if (r.small.length) tiny.push({ label, w: vp.w, n: r.small.length, sample: r.small.slice(0, 4), all: r.small });
       };
 
-      // ── The Control Room, section by section ──
-      for (const id of sections) {
-        await measure('nextadmin/' + id, 'AdminPage', {}, async (pg) => {
-          await pg.evaluate((s) => window.__adminSection && window.__adminSection(s), id);
+      // ── The Control Room, page by page and tab by tab ──
+      for (const [pg0, tab] of tabs) {
+        await measure('control/' + pg0 + '/' + tab, 'ControlRoomPage', {}, async (pg) => {
+          const went = await pg.evaluate(([p, t]) => { if (!window.__adminSection) return false; window.__adminSection(p, t); return true; }, [pg0, tab]);
+          if (!went) broken.push({ label: 'control/' + pg0 + '/' + tab, w: vp.w, err: 'window.__adminSection was never published' });
         });
       }
       // ── The standalone portals and desks ──
@@ -232,6 +238,14 @@ function fixture(manifest) {
   }
 
   ok('every standalone control on every staff surface meets the 44px touch floor', tiny.length === 0);
+  /* The same control repeats on every page, so the findings are also given
+     by kind — the selector and size — which is the unit a CSS fix works in. */
+  if (tiny.length) {
+    const kinds = {};
+    for (const t of tiny) for (const smp of t.all) { const k = smp.replace(/ "[^"]*"$/, ''); (kinds[k] = kinds[k] || new Set()).add(t.label.split(' ')[0] + '@' + t.w); }
+    console.error('      by kind:');
+    Object.keys(kinds).sort((x, y) => kinds[y].size - kinds[x].size).forEach(k => console.error('         ' + k + ' — on ' + kinds[k].size + ' surface/width(s), e.g. ' + [...kinds[k]][0]));
+  }
   for (const t of tiny.slice(0, 14)) {
     console.error('      ' + t.label + ' @' + t.w + 'px — ' + t.n + ' control(s)');
     t.sample.forEach(s => console.error('         · ' + s));

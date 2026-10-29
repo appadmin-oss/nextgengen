@@ -470,7 +470,7 @@ function Stat({ label, value }) {
   return (
     <div>
       <div className="mono" style={{fontSize:10, letterSpacing:"0.15em", opacity:0.6}}>{label}</div>
-      <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:32, lineHeight:1, marginTop:4}}>{value}</div>
+      <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:"var(--rs-fsize-65, 32px)", lineHeight:1, marginTop:4}}>{value}</div>
     </div>
   );
 }
@@ -512,7 +512,7 @@ function HabitGrid() {
     });
   }, []);
   return (
-    <div style={{display:"grid", gridTemplateColumns:"repeat(14, 1fr)", gap:4, marginTop:16}} aria-hidden="true">
+    <div className="anchor-weeks-track" style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-304, repeat(14, 1fr))", gap:4, marginTop:16}} aria-hidden="true">
       {cells.map((intensity, i) => (
         <div key={i} style={{
           aspectRatio:"1/1",
@@ -536,7 +536,7 @@ function ProfilePage({ setPage }) {
         Sample profile · illustrative layout, not a real member
       </div>
       {/* Profile header */}
-      <section style={{background:"var(--navy-900)", color:"white", padding:"56px 0 88px", position:"relative", overflow:"hidden"}}>
+      <section className="dark-surface" style={{background:"var(--navy-900)", color:"white", padding:"56px 0 88px", position:"relative", overflow:"hidden"}}>
         <div style={{position:"absolute", inset:0, backgroundImage:"linear-gradient(135deg, rgba(245,176,38,0.18), transparent 50%), radial-gradient(circle at 20% 80%, rgba(208,255,58,0.12), transparent 60%)"}}/>
         <div className="container" style={{position:"relative"}}>
           <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:24, fontSize:13, color:"rgba(255,255,255,0.6)"}}>
@@ -544,16 +544,16 @@ function ProfilePage({ setPage }) {
             <span>/</span>
             <span style={{color:"white"}}>{m.first}</span>
           </div>
-          <div style={{display:"grid", gridTemplateColumns:"auto 1fr auto", gap:32, alignItems:"center"}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-66, auto 1fr auto)", gap:32, alignItems:"center"}}>
             <Avatar seed={m.id} name={m.first} size={140} ring/>
             <div>
               <div className="mono" style={{fontSize:11, letterSpacing:"0.2em", textTransform:"uppercase", color:"var(--gold-400)"}}>
                 @{m.first.toLowerCase()}.ngg · NGGC MEMBER · {m.community.toUpperCase()}
               </div>
-              <h1 className="display" style={{fontSize:"clamp(56px, 7vw, 104px)", margin:"10px 0 6px", color:"white", lineHeight:0.9}}>
+              <h1 className="display" style={{fontSize:"var(--rs-fsize-67, clamp(56px, 7vw, 104px))", margin:"10px 0 6px", color:"white", lineHeight:"var(--rs-lheight-52, 0.9)"}}>
                 {m.first}.
               </h1>
-              <div style={{fontSize:22, color:"var(--gold-500)", fontWeight:600}}>{m.title}</div>
+              <div style={{fontSize:"var(--rs-fsize-1, 22px)", color:"var(--gold-500)", fontWeight:600}}>{m.title}</div>
               <p style={{fontSize:16, color:"rgba(255,255,255,0.7)", marginTop:14, maxWidth:540, fontStyle:"italic"}}>
                 "{m.quote}"
               </p>
@@ -566,7 +566,7 @@ function ProfilePage({ setPage }) {
             </div>
             <div style={{display:"flex", flexDirection:"column", alignItems:"center", textAlign:"center", padding:"24px 32px", borderLeft:"1px solid rgba(255,255,255,0.12)"}}>
               <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.5)"}}>GENIUS LEVEL</div>
-              <div className="display" style={{fontSize:108, color:"var(--lime)", lineHeight:1, margin:"6px 0"}}>{String(m.level).padStart(2,"0")}</div>
+              <div className="display" style={{fontSize:"var(--rs-fsize-68, 108px)", color:"var(--lime)", lineHeight:"var(--rs-lheight-7, 1)", margin:"6px 0"}}>{String(m.level).padStart(2,"0")}</div>
               <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.6)"}}>{fmtNum(m.xp)} XP</div>
             </div>
           </div>
@@ -576,7 +576,7 @@ function ProfilePage({ setPage }) {
       {/* Body */}
       <section className="section-tight">
         <div className="container">
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:14, marginTop:-50, marginBottom:32}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-69, 1fr 1fr 1fr 1fr)", gap:14, marginTop:-50, marginBottom:32}}>
             {[
               { label: "WEEK", value: `${m.week}/12`, hint: "Anchor 12" },
               { label: "BADGES", value: m.badges, hint: "Earned" },
@@ -585,18 +585,18 @@ function ProfilePage({ setPage }) {
             ].map(s => (
               <div key={s.label} className="card" style={{padding:22}}>
                 <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", color:"var(--ink-500)"}}>{s.label}</div>
-                <div className="display" style={{fontSize:48, lineHeight:1, marginTop:6}}>{s.value}</div>
+                <div className="display" style={{fontSize:"var(--rs-fsize-26, 48px)", lineHeight:"var(--rs-lheight-7, 1)", marginTop:6}}>{s.value}</div>
                 <div style={{fontSize:11, color:"var(--ink-500)", marginTop:6}}>{s.hint}</div>
               </div>
             ))}
           </div>
 
-          <div style={{display:"grid", gridTemplateColumns:"2fr 1fr", gap:24}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-62, 2fr 1fr)", gap:24}}>
             {/* Track progress */}
             <div style={{display:"flex", flexDirection:"column", gap:18}}>
               <div className="card" style={{padding:28}}>
                 <div className="eyebrow" style={{color:"var(--ink-500)"}}>TRACK PROGRESS · TECH</div>
-                <h3 style={{fontFamily:"var(--font-display)", fontSize:32, margin:"6px 0 22px", letterSpacing:"-0.02em"}}>The road to vanguard.</h3>
+                <h3 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:"var(--rs-fsize-65, 32px)", margin:"6px 0 22px", letterSpacing:"-0.02em"}}>The road to vanguard.</h3>
                 <div style={{display:"flex", flexDirection:"column", gap:14}}>
                   {[
                     { t: "Anchor 12", v: 83 },
@@ -613,10 +613,10 @@ function ProfilePage({ setPage }) {
                 <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
                   <div>
                     <div className="eyebrow" style={{color:"var(--ink-500)"}}>PUBLIC PROJECTS · 07</div>
-                    <h3 style={{fontFamily:"var(--font-display)", fontSize:24, margin:"4px 0 0"}}>What I've put into the world.</h3>
+                    <h3 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:24, margin:"4px 0 0"}}>What I've put into the world.</h3>
                   </div>
                 </div>
-                <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:14}}>
+                <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-302, repeat(3, 1fr))", gap:14}}>
                   {[
                     { t: "Lagos Bus Tracker", k: "Code · Civic",     img: "techLab" },
                     { t: "OCR for elders",    k: "Code · A11y",      img: "workshop" },
@@ -655,14 +655,14 @@ function ProfilePage({ setPage }) {
             <div style={{display:"flex", flexDirection:"column", gap:18}}>
               <div className="card" style={{padding:24}}>
                 <div className="eyebrow" style={{color:"var(--ink-500)"}}>BADGES · {m.badges}</div>
-                <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:14, marginTop:16, justifyItems:"center"}}>
+                <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-302, repeat(3, 1fr))", gap:14, marginTop:16, justifyItems:"center"}}>
                   {BADGES.map(b => <BadgePin key={b.id} badge={b}/>)}
                 </div>
               </div>
 
               <div className="card" style={{padding:24, background:"var(--gold-500)", color:"var(--navy-900)"}}>
                 <div className="eyebrow">GRADUATION PATHWAY</div>
-                <div style={{fontFamily:"var(--font-display)", fontSize:22, fontWeight:700, marginTop:8, lineHeight:1.1}}>
+                <div style={{fontFamily:"var(--font-display)", fontSize:"var(--rs-fsize-1, 22px)", fontWeight:700, marginTop:8, lineHeight:1.1}}>
                   Two weeks from Vanguard invite.
                 </div>
                 <div className="progress mt-16" style={{background:"rgba(12,20,50,0.18)"}}><i style={{width:"83%", background:"var(--navy-900)"}}/></div>

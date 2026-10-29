@@ -14,7 +14,7 @@ declare(strict_types=1);
 /** 30 days — the "stay signed in" window offered at sign-in. */
 const SESSION_REMEMBER_TTL = 2592000;
 
-function session_issue(array $member, bool $adminOk = false, string $impBy = '', bool $remember = false): string {
+function session_issue(array $member, bool $adminOk = false, string $impBy = '', bool $remember = false, array $extra = []): string {
     global $CONFIG;
     $now = time();
     $sid = rand_hex(20);
@@ -30,6 +30,8 @@ function session_issue(array $member, bool $adminOk = false, string $impBy = '',
         'sid'     => $sid,
     ];
     if ($impBy !== '') $payload['imp'] = $impBy; // super-admin impersonation marker
+    // mfaP: the second sign-in step this session still owes (mfa.php).
+    foreach ($extra as $k => $v) if (in_array($k, ['mfaP'], true) && $v !== '' && $v !== null) $payload[$k] = $v;
     $body = b64url(json_encode($payload, JSON_UNESCAPED_SLASHES));
     $sig  = b64url(hash_hmac('sha256', $body, $CONFIG['cookie_secret'], true));
     $token = $body . '.' . $sig;
@@ -42,6 +44,10 @@ function session_issue(array $member, bool $adminOk = false, string $impBy = '',
         'httponly' => true,
         'samesite' => $CONFIG['cookie_samesite'],
     ]);
+
+    // A real sign-in (not a super-admin acting as somebody) marks this browser
+    // as one that has signed in before — see device_trust_issue().
+    if ($impBy === '') device_trust_issue();
 
     // Device register + new-device alert. Best-effort: sign-in must never
     // fail because bookkeeping did.
@@ -62,6 +68,60 @@ function session_issue(array $member, bool $adminOk = false, string $impBy = '',
         }
     } catch (Throwable $e) { /* bookkeeping only */ }
 
+    return $token;
+}
+
+/**
+ * "This browser has signed in here before" — a second, long-lived cookie that
+ * outlives sign-out on purpose: it is what lets the sign-in door give a known
+ * device a plain "no account with that email" while a stranger's browser gets
+ * the neutral answer (auth_find_member()).
+ *
+ * It names no member — only a random device id, an issue time and an expiry,
+ * HMAC-signed with cookie_secret under its own label so it can never be
+ * passed off as a session (and a session can never be passed off as it). It
+ * grants nothing: no session, no data, only a slightly franker error message
+ * on a small daily allowance. A valid id is kept across sign-ins; the expiry
+ * slides.
+ */
+const DEVICE_TRUST_TTL = 180 * 86400;
+
+function device_trust_cookie_name(): string {
+    global $CONFIG;
+    return (string)($CONFIG['cookie_name'] ?? 'ngg_sess') . '_dev';
+}
+
+function device_trust_sign(string $body): string {
+    global $CONFIG;
+    return b64url(hash_hmac('sha256', 'device-trust|' . $body, (string)$CONFIG['cookie_secret'], true));
+}
+
+/** The device id from a valid, unexpired cookie, or '' — never trusts an unsigned value. */
+function device_trust_id(?string $token = null): string {
+    $token = $token ?? (string)($_COOKIE[device_trust_cookie_name()] ?? '');
+    if ($token === '' || strlen($token) > 400 || substr_count($token, '.') !== 1) return '';
+    [$body, $sig] = explode('.', $token, 2);
+    if (!hash_equals(device_trust_sign($body), $sig)) return '';
+    $p = json_decode((string)b64url_decode($body), true);
+    if (!is_array($p) || (int)($p['exp'] ?? 0) < time()) return '';
+    $d = (string)($p['d'] ?? '');
+    return preg_match('/^[0-9a-f]{24}$/', $d) ? $d : '';
+}
+
+/** Mint (or refresh) the device cookie; returns the token. */
+function device_trust_issue(): string {
+    global $CONFIG;
+    $d = device_trust_id();
+    if ($d === '') $d = rand_hex(12);
+    $exp = time() + DEVICE_TRUST_TTL;
+    $body = b64url(json_encode(['d' => $d, 'iat' => time(), 'exp' => $exp], JSON_UNESCAPED_SLASHES));
+    $token = $body . '.' . device_trust_sign($body);
+    if (!headers_sent()) {
+        setcookie(device_trust_cookie_name(), $token, [
+            'expires'  => $exp, 'path' => '/', 'domain' => $CONFIG['cookie_domain'] ?: '',
+            'secure'   => (bool)$CONFIG['cookie_secure'], 'httponly' => true, 'samesite' => $CONFIG['cookie_samesite'],
+        ]);
+    }
     return $token;
 }
 
@@ -132,7 +192,7 @@ function session_issue_student(array $student, bool $remember = false): string {
  * `mid` is their own id in whichever table they live in. Neither kind carries
  * any capability — the app unlocks the Community and nothing else.
  */
-function session_issue_cardholder(array $person, string $kind, bool $remember = false): string {
+function session_issue_cardholder(array $person, string $kind, bool $remember = false, array $extra = []): string {
     global $CONFIG;
     $kind = $kind === 'volunteer' ? 'volunteer' : 'student';
     $student = ['studentId' => (string)($person['studentId'] ?? $person['volunteerId'] ?? '')];
@@ -146,6 +206,7 @@ function session_issue_cardholder(array $person, string $kind, bool $remember = 
         'stu'    => (string)($student['studentId'] ?? ''),
         'iat'    => $now, 'exp' => $exp, 'adminOk' => false,
     ];
+    if (!empty($extra['mfaP'])) $payload['mfaP'] = (string)$extra['mfaP'];
     $body = b64url(json_encode($payload, JSON_UNESCAPED_SLASHES));
     $sig  = b64url(hash_hmac('sha256', $body, $CONFIG['cookie_secret'], true));
     $token = $body . '.' . $sig;
@@ -175,11 +236,19 @@ function session_issue_cardholder(array $person, string $kind, bool $remember = 
 function family_cookie_name(): string { return (string)($GLOBALS['CONFIG']['cookie_name'] ?? 'ngg_sess') . '_family'; }
 function family_cookie_key(): string { return 'family|' . (string)($GLOBALS['CONFIG']['cookie_secret'] ?? ''); }
 
-function session_issue_family(array $guardian, bool $remember = false): string {
+function session_issue_family(array $guardian, bool $remember = false, array $extra = []): string {
     global $CONFIG;
     $now = time();
     $exp = $now + ($remember ? SESSION_REMEMBER_TTL : max(3600, (int)($CONFIG['session_ttl'] ?? 86400)));
     $payload = ['k' => 'family', 'gid' => (string)$guardian['guardianId'], 'ep' => (int)($guardian['sessionEpoch'] ?? 1), 'iat' => $now, 'exp' => $exp];
+    if (!empty($extra['mfaP'])) $payload['mfaP'] = (string)$extra['mfaP'];
+    return family_cookie_write($payload);
+}
+
+/** Sign and set a family payload (issue, and the re-sign when the second step is passed). */
+function family_cookie_write(array $payload): string {
+    global $CONFIG;
+    $exp = (int)$payload['exp'];
     $body = b64url(json_encode($payload, JSON_UNESCAPED_SLASHES));
     $token = $body . '.' . b64url(hash_hmac('sha256', $body, family_cookie_key(), true));
     setcookie(family_cookie_name(), $token, [
@@ -216,11 +285,44 @@ function require_family(): array {
         family_session_clear();
         json_error('unauthorized', 401);
     }
+    if (!empty($p['mfaP']) && empty($GLOBALS['__mfa_pending_ok'])) json_error('mfa_required', 401);
     if (time() - (strtotime((string)($g['lastSeenAt'] ?? '')) ?: 0) > 300) {
         try { db_update('guardians', ['lastSeenAt' => now_iso()], ['id' => (int)$g['id']]); } catch (Throwable $e) {}
     }
-    return ['gid' => (string)$g['guardianId'], 'guardian' => $g];
+    return ['gid' => (string)$g['guardianId'], 'guardian' => $g, 'mfaP' => (string)($p['mfaP'] ?? ''), 'payload' => $p];
 }
+
+/**
+ * Re-sign the current session with the second step marked as passed: same
+ * sid, same expiry, same device row — so passing it is not a second sign-in,
+ * and a cookie still owing it can never be copied into one that does not.
+ */
+function session_mfa_clear(array $s): string {
+    global $CONFIG;
+    unset($s['mfaP']);
+    $s['mfaAt'] = time();
+    $body = b64url(json_encode($s, JSON_UNESCAPED_SLASHES));
+    $token = $body . '.' . b64url(hash_hmac('sha256', $body, $CONFIG['cookie_secret'], true));
+    setcookie($CONFIG['cookie_name'], $token, [
+        'expires' => (int)$s['exp'], 'path' => '/', 'domain' => $CONFIG['cookie_domain'] ?: '',
+        'secure' => (bool)$CONFIG['cookie_secure'], 'httponly' => true, 'samesite' => $CONFIG['cookie_samesite'],
+    ]);
+    $_COOKIE[$CONFIG['cookie_name']] = $token;
+    return $token;
+}
+
+/** The family cookie's equivalent of session_mfa_clear(). */
+function family_session_mfa_clear(array $p): string {
+    unset($p['mfaP']);
+    $p['mfaAt'] = time();
+    $t = family_cookie_write($p);
+    $_COOKIE[family_cookie_name()] = $t;
+    return $t;
+}
+
+/** The handful of routes a session still owing its second step may reach:
+ *  the step itself, who-am-I, and sign-out. Everything else answers mfa_required. */
+function session_allow_mfa_pending(): void { $GLOBALS['__mfa_pending_ok'] = true; }
 
 function session_clear(): void {
     global $CONFIG;
@@ -320,6 +422,7 @@ function require_session(): array {
     $s = session_read();
     if (!$s) json_error('unauthorized', 401);
     if (($s['status'] ?? '') === 'suspended') json_error('suspended', 403);
+    if (!empty($s['mfaP']) && empty($GLOBALS['__mfa_pending_ok'])) json_error('mfa_required', 401);
     // Server-side revocation: a remotely revoked device dies here even though
     // its cookie signature is still valid. Missing row (pruned) stays valid —
     // the cookie's HMAC + expiry remain the base authority.

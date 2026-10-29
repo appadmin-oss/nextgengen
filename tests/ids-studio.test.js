@@ -61,6 +61,8 @@ function pdfFacts(buf) {
 
 let server, browser, passed = 0, failed = 0;
 const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
+// Layout (open), Printing and Designs (closed) are sections in the settings column: open one (and leave it open).
+const openMore = (pg, title) => pg.evaluate(t => { const d = [...document.querySelectorAll('details.ids-more')].find(x => x.querySelector('.ids-more-t').textContent === t); if (d && !d.open) d.open = true; }, title).then(() => pg.waitForTimeout(150));
 function cleanup() {
   try { if (server) process.kill(-server.pid); } catch (_) {}
   try { fs.unlinkSync(CFG); } catch (_) {}
@@ -106,7 +108,7 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
     const errs = [];
     const open = async (w, h, at) => {
@@ -126,28 +128,39 @@ function cleanup() {
     const P = await open(1440, 900);
     await P.waitForSelector('.ids-rec', { timeout: 20000 });
     chk('it opens at /club/id-cards, with three columns', new URL(P.url()).pathname === '/club/id-cards' && !!(await P.$('.ids-src')) && !!(await P.$('.ids-sheetcol')) && !!(await P.$('.ids-set')));
-    const chip = async k => P.$eval('.ids-fchip:has-text("' + k + '") .ids-fchip-n', e => +e.textContent);
+    const chip = async k => P.$eval('.ids-statbtn:has-text("' + k + '") .ids-statbtn-n', e => +e.textContent);
     chk('the queue is New 10, Reprints 1, Blocked 2 — the member printed with no request is done', (await chip('New')) === 10 && (await chip('Reprints')) === 1 && (await chip('Blocked')) === 2);
     chk('a blank division says so on the row', /New · division is blank/.test(await P.innerText('.ids-recs')));
-    await P.click('.ids-fchip:has-text("Blocked")');
+    await P.click('.ids-statbtn:has-text("Blocked")');
     chk('blocked rows say why and offer to ask for a photo', /No photo yet · can’t print/.test(await P.innerText('.ids-recs')) && (await P.$$('.ids-rec .ids-btn--28')).length === 2);
     // A person can press it (aria-disabled, not disabled) and is told why; Playwright needs force for that.
     await P.click('.ids-rec .ids-cb', { force: true });
     chk('ticking a blocked row is refused in words', await toastHas(P, /Needs a photo first/));
     const asks = () => php(`echo db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE subjectType = 'member'")['c'];`);
-    await P.click('.ids-btn--outline:has-text("Ask everyone blocked for a photo (2)")');
+    await P.click('.ids-btn:has-text("Ask all 2 for a photo")');
     await P.waitForSelector('[role=alertdialog]:has-text("Ask 2 people for a photo?")');
-    await P.click('[role=alertdialog] .ids-btn--primary:has-text("Ask 2")');
-    chk('asking everyone blocked confirms the count first, then reports what the server did', await toastHas(P, /^Asked 2 people\./) && asks() === '2'
-      && /"member"/.test(php(`echo db_row("SELECT channels FROM id_photo_asks ORDER BY id DESC LIMIT 1")['channels'];`)));
+    // The confirm previews who it reaches before the Send is live (IdsAskConfirm).
+    await P.waitForSelector('[role=alertdialog] .ids-btn--primary:has-text("Send to 2 people"):not([disabled])', { timeout: 15000 });
+    await P.click('[role=alertdialog] .ids-btn--primary:has-text("Send to 2 people")');
+    /* This test host has no mail server, so the emails fail: the studio must
+       say so, not "all sent", and not "no email on file" (both have one). The
+       first batch sends inline, so allow it longer than a toast usually takes. */
+    const askedAll = await P.waitForFunction(() => /^Photo request for 2 people: none reached by email; 2 emails couldn’t be sent — check the site’s mail settings/.test((document.querySelector('.ids-toast') || {}).innerText || ''), null, { timeout: 30000 }).then(() => true, () => false);
+    chk('asking everyone blocked confirms the count first, then reports what the server did — a failed email said as one', askedAll && asks() === '2'
+      // What actually went is recorded: the note in the app, and the email that failed.
+      && /"member_app".*"mail_failed"/.test(php(`echo db_row("SELECT channels FROM id_photo_asks ORDER BY id DESC LIMIT 1")['channels'];`)));
     await P.waitForTimeout(200);
-    chk('…each row then says when they were asked, and offers to ask again', /No photo yet · asked \d+ \w+/.test(await P.innerText('.ids-recs'))
-      && (await P.$$eval('.ids-rec .ids-btn--28', bs => bs.every(b => b.textContent === 'Ask again'))) && !(await P.$('.ids-btn--outline:has-text("Ask everyone blocked")')));
-    await P.click('.ids-rec .ids-btn--28');
-    chk('"Ask again" inside the quiet period goes through, and says where it went', await toastHas(P, /Asked them by email\./) && asks() === '3');
-    await P.click('.ids-fchip:has-text("New")');
-    await P.click('.ids-btn--outline:has-text("Add 10 to the sheet")');
-    chk('"Add 10 to the sheet" adds them, with Undo', await toastHas(P, /10 cards added\s*Undo/));
+    chk('…each row then says the photo was requested and is waiting, with an "Asked" chip that can ask again (v4)', /Photo requested \d+ \w+ · waiting for approval/.test(await P.innerText('.ids-recs'))
+      && (await P.$$('.ids-rec .ids-asked')).length === 2 && !(await P.$('.ids-btn:has-text("Ask all")')));
+    await P.click('.ids-rec .ids-asked');
+    const again = await P.waitForFunction(() => /The email couldn’t be sent, so they only have the note in the app/.test((document.querySelector('.ids-toast') || {}).innerText || ''), null, { timeout: 30000 }).then(() => true, () => false);
+    chk('"Ask again" inside the quiet period goes through, and says what actually went', again && asks() === '3');
+    await P.click('.ids-statbtn:has-text("New")');
+    await P.click('.ids-statbtn:has-text("New")');
+    chk('pressing the status that is on again shows everyone (v4)', (await P.getAttribute('.ids-statbtn:has-text("New")', 'aria-pressed')) === 'false');
+    await P.click('.ids-statbtn:has-text("New")');
+    await P.click('.ids-btn--ink:has-text("Add all 10")');
+    chk('"Add all 10" adds them, with Undo', await toastHas(P, /10 cards added\s*Undo/));
     // Improve photos: one Cloudinary edit for the whole sheet, the count asked before anything runs.
     const imp = await P.$('button:has-text("Improve photos")');
     chk('the sheet offers to improve its photos in one go', !!imp);
@@ -162,7 +175,21 @@ function cleanup() {
     chk('…each slot draws the real member card', (await P.$$('.ids-slot.is-card')).length === 9 && (await P.$$('.ids-slot.is-card .ids-face-rec')).length === 9);
     chk('the member with no ID number is told they get one at print', /1 member gets their ID number when you print/.test(await P.innerText('.ids-set')));
     chk('the blank division is flagged on its slot', (await P.$$('.ids-slot-warn.is-warn')).length === 1);
-    chk('while piles are kept apart by centre, there is no gap bar (§3.2)', !(await P.$('.ids-gapbar')));
+    // v4: a group that cannot fill a sheet is not padded, so one centre's 10 cards leave a gap to fill.
+    chk('one centre is one group: no slots padded, and the gap bar counts the empty slots on the last sheet',
+      !/left blank so the piles never mix/.test(await P.innerText('.ids-set')) && /8 empty slots on the last sheet/.test(await P.innerText('.ids-gapbar')));
+    // Framing a photo shows the box the card prints, starting with this person's own card (tests/ids-photo-shape.test.js holds the shapes).
+    await P.click('.ids-slot.is-card >> nth=0');
+    await P.click('.ids-btn:has-text("Frame photo")');
+    await P.waitForSelector('.ids-frame .ids-frame-fig', { timeout: 10000 });
+    const figs = await P.$$eval('.ids-frame .ids-frame-fig', fs => fs.map(f => { const b = f.querySelector('.ids-frame-box').getBoundingClientRect();
+      return { cap: f.querySelector('figcaption').innerText, own: f.classList.contains('is-own'), ar: b.width / b.height, round: f.querySelector('.ids-frame-box').classList.contains('is-round') }; }));
+    chk('framing a member’s photo previews the member card’s wide 54 × 37.8 mm photo first, as the card that prints', figs[0] && figs[0].own && /^Member card/.test(figs[0].cap) && Math.abs(figs[0].ar - 54 / 37.8) < 0.05 && !figs[0].round);
+    chk('…then the Summer School card’s circle and the volunteer card’s box, each under its own name',
+      figs.length === 3 && figs.some(f => /^Summer School card/.test(f.cap) && f.round && Math.abs(f.ar - 1) < 0.05) && figs.some(f => /^Volunteer card/.test(f.cap) && Math.abs(f.ar - 404 / 318) < 0.05));
+    if (process.env.IDS_SHOTS) await (await P.$('.ids-frame')).screenshot({ path: process.env.IDS_SHOTS + '/frame-photo.png' });
+    await P.click('.ids-frame .ids-btn:has-text("Cancel")');
+    await P.click('.ids-slot.is-card >> nth=0');   // the same card again: deselected, as the steps below expect
     await P.click('.ids-slot.is-card >> nth=0');
     const first = await P.getAttribute('.ids-slot.is-card >> nth=0', 'aria-label');
     await P.keyboard.press('ArrowRight');
@@ -177,11 +204,12 @@ function cleanup() {
     await P.waitForTimeout(200);
     chk('…and Undo puts it back', /10 cards ·/.test(await P.innerText('.ids-stat')));
 
+    await openMore(P, 'Layout');
     await P.click('.ids-size:has-text("A6 portrait")');
     await P.waitForTimeout(200);
     chk('the card-size setting is for uploads: record cards keep their own size, and nothing blocks the print',
       /Sheet 1 of 2/.test(await P.innerText('.ids-pager')) && (await P.$$('.ids-slot.is-card')).length === 9
-      && await P.$eval('.ids-btn--print', b => b.getAttribute('aria-disabled') !== 'true'));
+      && await P.$eval('.ids-btn--headprint', b => b.getAttribute('aria-disabled') !== 'true'));
     await P.click('.ids-size:has-text("CR80 portrait")');
     await P.click('.ids-size:has-text("Custom")');
     await P.fill('#ids-cw', '200'); await P.press('#ids-cw', 'Enter');
@@ -196,6 +224,7 @@ function cleanup() {
     await P.click('.ids-ov >> nth=1');
     chk('…and opens the one clicked', /Sheet 2 of 2/.test(await P.innerText('.ids-pager')));
 
+    await openMore(P, 'Printing');
     await P.click('.ids-radio:has-text("Double-sided · long edge")');
     await P.click('.ids-seg-opt:has-text("Backs")');
     await P.waitForFunction(() => { const i = document.querySelector('.ids-slot.is-card .nggc-back img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 15000 }).catch(() => {});
@@ -209,12 +238,14 @@ function cleanup() {
     await P.click('.ids-seg-opt:has-text("Fronts")');
     await P.click('.ids-radio:has-text("Fronts only")');
 
-    await P.click('.ids-scen-btn:has-text("Proof")');
-    chk('the Proof scenario sets 150 dpi and watermarks every slot', (await P.$eval('.ids-set .ids-field:has-text("Image quality") select', s => s.value)) === '150' && (await P.$$('.ids-slot-proof')).length > 0);
-    await P.click('.ids-scen-btn:has-text("New intake")');
+    await P.selectOption('.ids-jobsel select', 'proof');
+    chk('the Proof job sets 150 dpi and watermarks every slot', (await P.$eval('.ids-set .ids-field:has-text("Image quality") select', s => s.value)) === '150' && (await P.$$('.ids-slot-proof')).length > 0);
+    chk('…and the toast says what the job changed, with Undo (v4)', await toastHas(P, /Job: Proof · .*150 dpi\s*Undo/));
+    await P.selectOption('.ids-jobsel select', 'batch');
 
     // Print: confirm, the PDF, the log, the queue. Print never opens the browser's print dialog.
-    await P.click('.ids-btn--print');
+    chk('the header’s Print states the count before anyone presses it (v4)', /Print 10/.test(await P.innerText('.ids-btn--headprint')));
+    await P.click('.ids-btn--headprint');
     await P.waitForSelector('[role=alertdialog]');
     chk('the confirm asks, and sums up the run', /Print 10 cards\?/.test(await P.innerText('[role=alertdialog]')) && /2 × A4/.test(await P.innerText('.ids-sum')));
     const double = (await P.$eval('.ids-radio[aria-checked="true"]', b => b.innerText)).startsWith('Double');
@@ -257,20 +288,65 @@ function cleanup() {
     // Option 1: a card type prints with its assigned, published design.
     await P.click('.ids-tab:has-text("Make cards")');
     const pick = '.ids-set .ids-field:has-text("NGG members") select';
+    await openMore(P, 'Designs');
     await P.waitForSelector(pick);
     chk('only published designs are offered — the draft is not', await P.$eval(pick, s => [...s.options].map(o => o.value).join(',')) === ',TPL-IDS-1');
     await P.selectOption(pick, 'TPL-IDS-1');
-    chk('assigning one says so, the header names it, and it is stored', await toastHas(P, /NGG members now print with Club card v2/)
-      && /Member: Club card v2/.test(await P.innerText('.ids-head')) && php(`echo db_row("SELECT templateId FROM id_designs WHERE kind = 'member'")['templateId'];`) === 'TPL-IDS-1');
+    chk('assigning one says so, the Designs summary names it, and it is stored', await toastHas(P, /NGG members now print with Club card v2/)
+      && /Club card/.test(await P.$eval('details.ids-more:has(.ids-more-t:text-is("Designs")) .ids-more-s', e => e.textContent)) && php(`echo db_row("SELECT templateId FROM id_designs WHERE kind = 'member'")['templateId'];`) === 'TPL-IDS-1');
     await P.waitForSelector('.ids-slot.is-card .ids-face-tpl', { timeout: 30000 });
     chk('the sheet draws it with the Design Studio’s own renderer', (await P.$$('.ids-slot.is-card .ids-face-tpl')).length >= 1);
-    await P.click('.ids-btn--print');
+    await P.click('.ids-btn--headprint');
     await P.waitForSelector('[role=alertdialog]');
     chk('the confirm names the design', /Club card v2/.test(await P.innerText('.ids-sum')));
     const [dl2] = await Promise.all([P.waitForEvent('download', { timeout: 120000 }), P.click('[role=alertdialog] .ids-btn--primary')]);
     chk('the print carries the drawn design', pdfFacts(fs.readFileSync(await dl2.path())).images >= 1);
     await toastHas(P, /logged as CRUN-/);
     chk('…and the run records that design and its version', php(`$r = db_row("SELECT templateId, templateVersion FROM card_runs ORDER BY id DESC LIMIT 1"); echo $r['templateId'] . '@' . $r['templateVersion'];`) === 'TPL-IDS-1@2');
+
+    // A name search reaches people who already hold a card, with a Reprint on their row.
+    // Close the "did they all print?" dialog the last print left open.
+    for (let i = 0; i < 3 && await P.$('.ids-scrim'); i++) { await P.keyboard.press('Escape'); await P.waitForTimeout(150); }
+    await P.fill('.ids-search input', 'Member L');
+    await P.waitForSelector('.ids-carded', { timeout: 8000 });
+    chk('searching a carded person’s name finds them under "Already have a card"', /Member L Test/.test(await P.innerText('.ids-carded')) && /Has a card · printed/.test(await P.innerText('.ids-carded')));
+    await P.click('.ids-carded .ids-btn--28:has-text("Reprint")');
+    await P.click('.ids-rec-why .ids-btn:has-text("Damaged")');
+    chk('…Reprint with a reason queues it and says so', await toastHas(P, /1 card queued as reprints/));
+    chk('…recorded with its cause', php(`echo db_row("SELECT cause FROM id_reprints WHERE subjectId = 'NGG-IDS-12' AND doneAt = ''")['cause'] ?? '';`) === 'damaged');
+    await P.waitForFunction(() => !document.querySelector('.ids-carded') && /Member L Test/.test((document.querySelector('.ids-recs') || {}).innerText || ''), null, { timeout: 10000 });
+    chk('…and they move into the queue, on the sheet', await P.$eval('.ids-rec:has-text("Member L Test") .ids-cb', b => b.getAttribute('aria-checked')) === 'true');
+
+    // The workspace is kept: a refresh brings back the same sheet.
+    await P.fill('.ids-search input', '');
+    await P.waitForTimeout(700);   // the workspace is written a moment after the last change
+    const onSheet = async () => +(((await P.innerText('.ids-stat')).match(/(\d+) cards? ·/) || [])[1] || 0);
+    const before = await onSheet();
+    await P.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(P);
+    await P.waitForSelector('.ids-rec', { timeout: 20000 });
+    await P.waitForFunction(n => new RegExp('\\b' + n + ' cards? ·').test((document.querySelector('.ids-stat') || {}).innerText || ''), before, { timeout: 10000 }).catch(() => {});
+    chk('a refresh keeps the sheet: the same ' + before + ' cards are on it, and it says so', before > 0 && (await onSheet()) === before && await toastHas(P, /Your sheet is as you left it/));
+
+    // A change made in another tab shows here without a refresh.
+    await P.click('.ids-statbtn:has-text("Blocked")');
+    const blocked0 = await P.$eval('.ids-statbtn:has-text("Blocked") .ids-statbtn-n', e => +e.textContent);
+    const P2 = await P.context().newPage();
+    await P2.goto(BASE + '/club/id-cards', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(P2);
+    const replaced = await P2.evaluate(async () => {
+      const b = await (await fetch('/assets/logo.png')).blob();
+      const url = await new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
+      const res = await NGGApi.admin.photos.replace('member', 'NGG-IDS-13', url);
+      return !!(res && res.ok !== false);
+    });
+    await P.bringToFront();
+    const live = await P.waitForFunction(n => {
+      const b = [...document.querySelectorAll('.ids-statbtn')].find(x => /Blocked/.test(x.textContent));
+      return !!b && +((b.querySelector('.ids-statbtn-n') || {}).textContent || -1) === n - 1;
+    }, blocked0, { timeout: 12000 }).then(() => true, () => false);
+    chk('a photo added in another tab unblocks that person here, with no refresh', replaced && blocked0 >= 1 && live);
+    await P2.close();
     await P.context().close();
 
     console.log('phone (390) and the old address');
@@ -279,7 +355,8 @@ function cleanup() {
     chk('/cards forwards to /club/id-cards', new URL(Q.url()).pathname === '/club/id-cards');
     chk('on a phone it is a Queue — no sheet, no settings', (await Q.innerText('.ids-tab.is-on')).startsWith('Queue') && !(await Q.$('.ids-sheet')) && !(await Q.$('.ids-set')));
 
-    chk('…with the KPIs and the blocked count in red', /Blocked/.test(await Q.innerText('.ids-kpis')) && (await Q.$eval('.ids-kpi.is-bad b', b => b.textContent)) === '2');
+    // One of the two blocked members was given a photo from another tab above.
+    chk('…with the KPIs and the blocked count in red', /Blocked/.test(await Q.innerText('.ids-kpis')) && (await Q.$eval('.ids-kpi.is-bad b', b => b.textContent)) === '1');
     chk('nothing scrolls sideways', await Q.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await Q.context().close();
 

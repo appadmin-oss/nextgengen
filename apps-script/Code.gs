@@ -1,5 +1,11 @@
 /**
- * NGG — Google Sheets export sink (read-only admin mirror).
+ * NGG — email sender (MailApp) and Google Sheets export sink (read-only admin mirror).
+ *
+ * EMAIL ONLY: a new standalone Apps Script project is enough — paste this file,
+ * set SHARED_SECRET in Project Settings → Script properties, Deploy → New
+ * deployment → Web app (Execute as: Me · Who has access: Anyone), authorise,
+ * and paste the /exec URL and the secret into Control Room → Settings → API
+ * keys → Google Apps Script. SPREADSHEET_ID is only needed for the mirror.
  *
  * The NGG platform now runs entirely on PHP + a database on the shared host
  * (that is the source of truth). This Apps Script is OPTIONAL: it exists only
@@ -15,9 +21,37 @@
  * Each named tab is fully replaced (cleared, then headers + rows written).
  */
 
+/* The mail protocol — {action, token, data}. The token is the SECRET in
+   Script properties (Project Settings → Script properties → SECRET), and the
+   NGG Control Room holds the same value (Settings → API keys → Google Apps
+   Script). */
+function gatesAction_(body) {
+  const secret = PropertiesService.getScriptProperties().getProperty('SECRET') || PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
+  if (!secret) return gatesRespond_(false, 'This Apps Script has no SECRET set, so mail is refused. Set SECRET in Script properties and the same value in the Control Room.');
+  if (body.token !== secret) return gatesRespond_(false, 'Bad token');
+  const d = body.data || {};
+  if (body.action === 'mail.quota') return gatesRespond_(true, 'Quota', { ok: true, remaining: MailApp.getRemainingDailyQuota(), account: Session.getEffectiveUser().getEmail() });
+  if (body.action === 'mail.send') {
+    const to = String(d.to || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return gatesRespond_(false, 'No valid recipient.', { ok: false });
+    if (MailApp.getRemainingDailyQuota() < 1) return gatesRespond_(false, 'Apps Script daily email quota exceeded for this Google account.', { ok: false, remaining: 0 });
+    const opts = { to: to, subject: String(d.subject || '').slice(0, 250), htmlBody: String(d.html || ''),
+                   body: String(d.text || '') || 'This message is best read in an email app that shows HTML.', name: String(d.name || 'Next Generation Genius').slice(0, 80) };
+    if (d.reply_to) opts.replyTo = String(d.reply_to);
+    MailApp.sendEmail(opts);
+    return gatesRespond_(true, 'Sent', { ok: true, remaining: MailApp.getRemainingDailyQuota() });
+  }
+  return gatesRespond_(false, 'Unknown action: ' + body.action);
+}
+function gatesRespond_(success, message, extra) {
+  const o = Object.assign({ success: success, message: message, timestamp: new Date().toISOString() }, extra || {});
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
 function doPost(e) {
   try {
     const raw = (e && e.postData && e.postData.contents) || '{}';
+    try { const b = JSON.parse(raw); if (b && b.action) return gatesAction_(b); } catch (_) {}
     const sig = (e && e.parameter && e.parameter.sig) || '';
     if (!verifySignature_(raw, sig)) return json_({ ok: false, error: 'bad_signature' });
 
@@ -27,6 +61,10 @@ function doPost(e) {
     // so it delivers where shared-host SMTP/mail() fail (this is how the STS
     // CEO site sends). Needs the Mail scope (accepted on first run/deploy).
     if (String(payload.op) === 'sendMail') return handleSendMail_(payload);
+    // Settings → API keys → Test: proves the URL and the secret, and says how
+    // much of today's Gmail allowance is left (100 a day on a consumer account,
+    // 1,500 on Workspace).
+    if (String(payload.op) === 'ping') return json_({ ok: true, quota: MailApp.getRemainingDailyQuota(), account: Session.getEffectiveUser().getEmail() });
 
     if (String(payload.op) !== 'mirror.push') return json_({ ok: false, error: 'unknown_op' });
 
@@ -82,6 +120,7 @@ function handleSendMail_(p) {
   };
   if (p && p.text) opts.body = String(p.text);
   if (p && p.replyTo) opts.replyTo = String(p.replyTo);
+  if (MailApp.getRemainingDailyQuota() < 1) return json_({ ok: false, error: 'quota_exhausted' });
   MailApp.sendEmail(opts);
   return json_({ ok: true, sent: 1, at: new Date().toISOString() });
 }
@@ -96,7 +135,7 @@ function verifySignature_(rawBody, providedSig) {
   if (!providedSig) return false;
   const secret = PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
   if (!secret) throw new Error('SHARED_SECRET not configured');
-  const mac = Utilities.computeHmacSha256Signature(rawBody, secret);
+  const mac = Utilities.computeHmacSha256Signature(rawBody, secret, Utilities.Charset.UTF_8);
   const hex = mac.map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('');
   const a = hex, b = String(providedSig).toLowerCase();
   if (a.length !== b.length) return false;

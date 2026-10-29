@@ -41,7 +41,13 @@ const CURR_STATUSES       = ['draft', 'published', 'retired'];
 const CURR_MATERIAL_KINDS = ['pdf', 'slides', 'doc', 'sheet', 'video', 'audio', 'image', 'ebook', 'code', 'archive', 'interactive', 'link'];
 /** A material's life: an editor's goes straight to approved; an instructor's waits. */
 const CURR_MATERIAL_STATUSES = ['approved', 'pending', 'rejected'];
-const CURR_CHECK_KINDS    = ['mcq', 'short', 'task', 'essay', 'reflection', 'project', 'code'];
+/* 'watch' is a question about a video the lesson sends them to: they watch
+   it inside the exam and write what they took from it. It is marked like
+   any other written answer — against the rubric, by the AI when one is
+   configured and by the instructor otherwise. There is deliberately no
+   keyword gate: a child who can guess which three words to type has not
+   watched anything, and a child who writes it their own way would fail. */
+const CURR_CHECK_KINDS    = ['mcq', 'short', 'task', 'essay', 'reflection', 'project', 'code', 'watch'];
 /* How the AI marks each open kind. Only `short` has one right answer; the rest
  * are judged against the rubric, and a reflection is never marked for having
  * the "right" opinion. */
@@ -52,10 +58,17 @@ const CURR_MARKING_GUIDE = [
     'reflection' => 'A personal reflection. There is no right answer and no opinion is marked down. Judge honesty, specific detail from their own experience, and a link to the lesson. Never mark down anything personal they disclose.',
     'project'    => 'A description of a project they made (perhaps with a link you cannot open). Judge the description against the rubric criteria: what they built, how, what they learned. If they give only a link and no description, you cannot judge it.',
     'code'       => 'Code they wrote. Trace it mentally: does it do what the prompt asks, is the logic sound, is it readable. Small syntax slips cost less than wrong logic.',
+    /* VERIFYING A VIDEO. You cannot check that somebody pressed play, and a
+       keyword gate would only check that they guessed which three words to
+       type — passing the child who skimmed a transcript and failing the one
+       who understood it and said so in their own words. So what is judged is
+       what only watching could produce: the specifics. */
+    'watch'      => 'What they took from a video the lesson sent them to. You cannot see whether they watched it, so judge what only watching could produce: specific details, an example or a moment from the video itself, and their own words rather than the title restated. A summary that could have been written from the title alone earns little, however well written; a rough account with a real detail in it earns more. Never mark down their English.',
 ];
 const CURR_IMPORT_MAX     = 1000;
 const CURR_BULK_MAX       = 500;
 const CURR_MAX_MATERIALS  = 20;
+const CURR_MATERIAL_GUIDE_MAX = 240;
 const CURR_MAX_CHECKS     = 30;
 
 /* ══ Shapes ═══════════════════════════════════════════════════════════════ */
@@ -97,6 +110,9 @@ function curriculum_material_kind(string $kind, string $url): string {
         (bool)preg_match('/\.(py|ino|js|sb3|md)$/', $path) => 'code',
         (bool)preg_match('/\.zip$/', $path) => 'archive',
         (bool)preg_match('~(scratch\.mit\.edu|replit\.com|codepen\.io|phet\.colorado\.edu|geogebra\.org|desmos\.com|tinkercad\.com|wokwi\.com|code\.org)~', $url) => 'interactive',
+        /* Places a learner practises rather than reads: exercises that mark
+           themselves, sandboxes, interactive lessons. */
+        (bool)preg_match('~(musictheory\.net/exercises|teoria\.com|sqlbolt\.com|regex101\.com|freecodecamp\.org/learn|learningmusic\.ableton\.com|learningsynths\.ableton\.com|musiclab\.chromeexperiments\.com|picoctf\.org|teachablemachine\.withgoogle\.com|skills\.github\.com|webaim\.org/resources/contrastchecker)~', $url) => 'interactive',
         default => 'link',
     };
 }
@@ -109,23 +125,71 @@ function curriculum_material_url(string $u): string {
     $u = trim($u);
     if (preg_match('#^https://[^\s<>"]+$#i', $u)) return mb_substr($u, 0, 1000);
     if (preg_match('#^/api/member/curriculum-file\.php\?f=[a-f0-9]{16,64}\.[a-z0-9]{2,5}$#', $u)) return $u;
+    if (curriculum_media_key($u) !== '') return $u;
     return '';
+}
+
+/**
+ * A storage-independent reference to a lesson's own media: `media:<key>`,
+ * where the key is a path like `drums/backbeat.gif`.
+ *
+ * WHY THIS EXISTS. A lesson's diagrams, GIFs and audio outlive whatever is
+ * hosting them this year. Writing `https://res.cloudinary.com/...` into three
+ * hundred lesson rows means that moving to a bucket is a data migration over
+ * published content — and published content is the thing we promise not to
+ * rewrite under people. A `media:` key stores WHICH file the lesson wants and
+ * nothing about where it currently lives, so the move is one setting.
+ *
+ * Resolution is at read time (curriculum_media_url), never at write time, so
+ * the stored row never acquires a host.
+ */
+function curriculum_media_key(string $u): string {
+    if (!preg_match('#^media:([a-z0-9][a-z0-9/_-]{0,180}\.[a-z0-9]{2,5})$#i', trim($u), $m)) return '';
+    if (str_contains($m[1], '..') || str_contains($m[1], '//')) return '';     // no traversal, no empty segment
+    return $m[1];
+}
+
+/** `media:drums/backbeat.gif` → the configured base plus that key. */
+function curriculum_media_url(string $u): string {
+    $key = curriculum_media_key($u);
+    if ($key === '') return $u;
+    $base = '';
+    if (function_exists('setting_raw')) $base = trim((string)setting_raw('curriculum_media_base'));
+    if ($base === '') $base = trim((string)($GLOBALS['CONFIG']['curriculum_media_base'] ?? ''));
+    /* No base configured yet: resolve to nothing rather than to a broken host,
+       so a lesson shows the material it has and silently omits what is not
+       hosted yet. A half-built link is worse than no link. */
+    if ($base === '' || !preg_match('#^https://#i', $base)) return '';
+    return rtrim($base, '/') . '/' . $key;
 }
 
 function curriculum_unit_public(array $u, array $materials, array $checks, bool $withAnswers): array {
     return [
         'unitId' => (string)$u['unitId'], 'course' => (string)$u['course'], 'level' => (string)$u['level'],
         'week' => (int)$u['week'], 'position' => (int)$u['position'], 'title' => (string)$u['title'],
+        'path' => curriculum_path((string)$u['level'], (int)$u['week']),
         'summary' => (string)$u['summary'], 'objectives' => json_decode((string)$u['objectives'], true) ?: [],
         'body' => (string)$u['body'], 'durationMins' => (int)$u['durationMins'], 'passMark' => (int)$u['passMark'],
         'status' => (string)$u['status'], 'version' => (int)$u['version'], 'source' => (string)$u['source'],
         'updatedAt' => (string)$u['updatedAt'], 'publishedAt' => (string)$u['publishedAt'],
-        'materials' => array_map(static fn($m) => ['materialId' => (string)$m['materialId'], 'kind' => (string)$m['kind'],
-            'title' => (string)$m['title'], 'url' => (string)$m['url']], $materials),
+        /* `media:` keys resolve here, at read time, so no stored row carries a
+           host and moving buckets is one setting. A key with no base
+           configured resolves to '' and the material is dropped rather than
+           shown as a dead link. */
+        'materials' => array_values(array_filter(array_map(static function ($m) {
+            $url = curriculum_media_url((string)$m['url']);
+            if ($url === '') return null;
+            return ['materialId' => (string)$m['materialId'], 'kind' => (string)$m['kind'],
+                    'title' => (string)$m['title'], 'url' => $url, 'guide' => (string)($m['guide'] ?? '')];
+        }, $materials))),
         'checks' => array_map(static function ($c) use ($withAnswers) {
             $o = ['checkId' => (string)$c['checkId'], 'kind' => (string)$c['kind'], 'prompt' => (string)$c['prompt'],
                   'options' => json_decode((string)$c['options'], true) ?: [], 'points' => (int)$c['points'],
                   'source' => (string)$c['source']];
+            /* The video travels with the question, to the learner as well as
+               to the editor: it is what they are being asked about, not an
+               answer, so withholding it would withhold the question. */
+            if ((string)$c['kind'] === 'watch' && trim((string)($c['videoUrl'] ?? '')) !== '') $o['videoUrl'] = (string)$c['videoUrl'];
             if ($withAnswers) { $o['answer'] = (string)$c['answer']; $o['rubric'] = (string)$c['rubric']; }
             return $o;
         }, $checks),
@@ -173,11 +237,138 @@ function curriculum_load(string $where = '1=1', array $args = [], string $order 
  * `club_catalogue_before_seed`, and an admin's later edits are never
  * overwritten, because the seed runs once.
  */
-const CLUB_DIVISIONS_SEED = 'ngg-divisions-2026-10';
+const CLUB_DIVISIONS_SEED = 'ngg-divisions-2026-10b-instruments';
+/**
+ * WHAT A GOOD QUESTION LOOKS LIKE IN THIS SUBJECT — the recognised exam a
+ * course points at, and how that body actually assesses.
+ *
+ * Questions were being written out of nothing. An instructor and an AI both
+ * reach for four options and a right answer, because that is the easiest
+ * thing to produce — and a review made of those measures whether a child can
+ * recognise the right words a week later, which in subjects that are almost
+ * entirely practical is close to measuring nothing.
+ *
+ * Every one of these is a real award a Nigerian 10–17 year old can actually
+ * sit or earn, and what is recorded is the SHAPE of its assessment, not its
+ * syllabus: how the body decides somebody can do the thing. A question
+ * modelled on that is a question somebody already thought hard about.
+ *
+ * Two rules about using it:
+ *   · It is a MODEL, never a claim. Nothing here says a lesson is part of
+ *     that qualification or prepares anyone for it — only that this is the
+ *     standard the question should hold itself to.
+ *   · The `assesses` line is what goes to the AI. It is written as the body
+ *     ITSELF describes its assessment, at a level that does not invent
+ *     syllabus detail — a drafted question that cites a unit number nobody
+ *     checked is worse than no reference at all.
+ */
+const COURSE_EXAM_REFERENCE = [
+    // ── Technology & Applied Engineering ──────────────────────────────────
+    'Coding' => [
+        'body' => 'freeCodeCamp', 'award' => 'Responsive Web Design / JavaScript Algorithms certifications',
+        'assesses' => 'a set of projects you build and submit before a final exam — the certificate follows working code you wrote, not answers you picked',
+        'ask' => 'ask for code that runs and a sentence on why it is written that way',
+        'link' => 'https://www.freecodecamp.org/learn',
+    ],
+    'Software Development' => ['same' => 'Coding'],
+    'Artificial Intelligence' => ['same' => 'Coding'],
+    'Cybersecurity' => [
+        'body' => 'Cisco Networking Academy', 'award' => 'Introduction to Cybersecurity (free, with a Credly badge)',
+        'assesses' => 'scenario questions — you are given a situation and asked what you would do and why',
+        'ask' => 'put them in a situation and ask for the action and the reason',
+        'link' => 'https://www.netacad.com/',
+    ],
+    'Robotics' => ['same' => 'Coding'],
+    'Automation' => ['same' => 'Coding'],
+    'Tech Product Design' => ['same' => 'Coding'],
+
+    // ── Creative & Performing Arts ────────────────────────────────────────
+    'Music' => [
+        'body' => 'Trinity College London', 'award' => 'Graded Music Exams, which run in Nigeria',
+        'assesses' => 'you play pieces to an examiner, plus technical work and musical knowledge asked about what you just played',
+        'ask' => 'ask them to play or record something and say what they did with it — nothing can hear a child play except a person',
+        'link' => 'https://www.trinitycollege.com/qualifications/music',
+    ],
+    'Piano' => ['same' => 'Music'], 'Guitar' => ['same' => 'Music'], 'Drums' => ['same' => 'Music'],
+    'Violin' => ['same' => 'Music'], 'Saxophone' => ['same' => 'Music'], 'Vocal Training' => ['same' => 'Music'],
+    'Acting' => [
+        'body' => 'Trinity College London', 'award' => 'Graded Drama & Speech exams, which run in Nigeria',
+        'assesses' => 'you perform to an examiner and then answer questions about the choices you made',
+        'ask' => 'ask them to perform or record a piece and account for one choice in it',
+        'link' => 'https://www.trinitycollege.com/qualifications/drama-speech',
+    ],
+    'Stagecraft' => ['same' => 'Acting'],
+    'Catering' => [
+        'body' => 'NBTE', 'award' => 'National Skills Qualification — no academic entry requirement',
+        'assesses' => 'an assessor watches you do the job to an industry standard and signs off what you can do',
+        'ask' => 'ask for the finished work, photographed or brought in, and how they judged it was right',
+        'link' => 'https://net.nbte.gov.ng/',
+    ],
+    'Adire' => ['same' => 'Catering'], 'Crafts' => ['same' => 'Catering'],
+    'Music Production' => ['same' => 'Music'],
+
+    // ── Media & Content Strategy ──────────────────────────────────────────
+    'Graphic Design' => [
+        'body' => 'Google / Coursera', 'award' => 'Google Career Certificates',
+        'assesses' => 'graded work you produce for a brief, reviewed against a rubric, alongside short knowledge checks',
+        'ask' => 'give them a brief and ask for the piece plus the reasoning behind one decision',
+        'link' => 'https://grow.google/certificates/',
+    ],
+    'Branding' => ['same' => 'Graphic Design'], 'Video Production' => ['same' => 'Graphic Design'],
+    'Cinematography' => ['same' => 'Graphic Design'], 'Digital Content Creation' => ['same' => 'Graphic Design'],
+    'Social Media' => ['same' => 'Graphic Design'], 'Visual Storytelling' => ['same' => 'Graphic Design'],
+
+    // ── Business Strategy, Operations & Administration ────────────────────
+    'Project Management' => [
+        'body' => 'Google / Coursera', 'award' => 'Google Project Management Certificate',
+        'assesses' => 'you produce the real artefacts of the job — a plan, a register, a report — and they are marked against a rubric',
+        'ask' => 'ask for the artefact itself and one decision they had to make while producing it',
+        'link' => 'https://grow.google/certificates/project-management/',
+    ],
+    'Product Management' => ['same' => 'Project Management'],
+    'Data Analysis' => ['same' => 'Project Management'],
+    'Business Development' => ['same' => 'Project Management'],
+    'Finance' => ['same' => 'Project Management'],
+    'Human Resources' => ['same' => 'Project Management'],
+    'Operations' => ['same' => 'Project Management'],
+    'Administration' => ['same' => 'Project Management'],
+    'Strategic Thinking' => ['same' => 'Project Management'],
+];
+
+/**
+ * The exam reference for a course — following the strand to its parent, so
+ * "Piano" answers with Music's and a lesson filed under a course that is a
+ * part of a broader one is not left with nothing.
+ */
+function curriculum_exam_reference(string $course): ?array {
+    $try = [$course];
+    if (function_exists('course_scope')) foreach (course_scope($course) as $c) $try[] = $c;
+    if (function_exists('curriculum_course_parent')) $try[] = curriculum_course_parent($course);
+    $seen = [];
+    foreach ($try as $name) {
+        $name = trim((string)$name);
+        if ($name === '' || isset($seen[$name])) continue;
+        $seen[$name] = true;
+        foreach (COURSE_EXAM_REFERENCE as $k => $v) {
+            if (strcasecmp($k, $name) !== 0) continue;
+            $hops = 0;
+            while (isset($v['same']) && $hops++ < 4) $v = COURSE_EXAM_REFERENCE[$v['same']] ?? [];
+            return $v ? $v + ['course' => $k] : null;
+        }
+    }
+    return null;
+}
+
 const CLUB_DIVISIONS_DEFAULT = [
     ['name' => 'Creative & Performing Arts', 'icon' => '🎭', 'short' => 'CREATIVE ARTS',
      'blurb' => 'For children interested in music, catering, musical instruments, acting, stagecraft, vocal training, adire, crafts, music production and other creative expressions.',
-     'courses' => ['Music', 'Musical Instruments', 'Vocal Training', 'Music Production', 'Acting', 'Stagecraft', 'Catering', 'Adire', 'Crafts']],
+     /* An instrument is its own course. "Musical Instruments" taught nothing in
+        particular: a child learning piano and a child learning drums were on
+        the same course and could not both be given the right lesson, and the
+        144 written piano and guitar lessons had nowhere to live that a member
+        could reach. The umbrella name still resolves (member_courses_from_text
+        expands it to every instrument) so nobody on the old track is orphaned. */
+     'courses' => ['Music', 'Piano', 'Guitar', 'Drums', 'Violin', 'Saxophone', 'Vocal Training', 'Music Production', 'Acting', 'Stagecraft', 'Catering', 'Adire', 'Crafts']],
     ['name' => 'Media & Content Strategy', 'icon' => '🎥', 'short' => 'MEDIA',
      'blurb' => 'For children interested in video production, cinematography, graphic design, branding, digital content creation, social media and visual storytelling.',
      'courses' => ['Video Production', 'Cinematography', 'Graphic Design', 'Branding', 'Digital Content Creation', 'Social Media', 'Visual Storytelling']],
@@ -258,7 +449,9 @@ function admin_club_catalogue_get(array $p): array {
     foreach (db_all("SELECT DISTINCT course FROM timetable_slots WHERE status = 'active'") as $r) $inUse[(string)$r['course']] = true;
     // How many members are in each course and division, so the editor can say what a change touches.
     $members = [];
-    foreach (db_all("SELECT track, COUNT(*) c FROM members WHERE COALESCE(type,'NGG') = 'NGG' AND COALESCE(status,'active') = 'active' AND COALESCE(track,'') <> '' GROUP BY track") as $r) $members[(string)$r['track']] = (int)$r['c'];
+    // A member on two courses counts in both: their chosen courses, or the old track when none are chosen.
+    foreach (db_all("SELECT track, courses FROM members WHERE COALESCE(type,'NGG') = 'NGG' AND COALESCE(status,'active') = 'active' AND (COALESCE(track,'') <> '' OR COALESCE(courses,'') <> '')") as $r)
+        foreach (member_courses_of($r) ?: [(string)$r['track']] as $c) if ($c !== '') $members[$c] = ($members[$c] ?? 0) + 1;
     $divs = club_divisions();
     return ['ok' => true, 'catalogue' => array_map(static fn($d) => ['faculty' => $d['name'], 'courses' => $d['courses']], $divs),
             'divisions' => $divs, 'defaults' => array_map(static fn($d) => array_merge(['faculty' => $d['name']], $d), CLUB_DIVISIONS_DEFAULT),
@@ -328,6 +521,9 @@ function curriculum_course_canonical(string $course): ?string {
     $want = strtolower(preg_replace('/\s+/', ' ', trim($course)) ?? '');
     if ($want === '') return '';
     foreach (curriculum_courses() as $c) if (strtolower($c) === $want) return $c;
+    /* A DIVISION is also a legitimate scope for a lesson — see course_division.
+       Checked after the courses so a course always wins a name collision. */
+    foreach (curriculum_divisions() as $d) if (strtolower($d) === $want) return $d;
     return null;
 }
 
@@ -348,6 +544,21 @@ function curriculum_course_suggest(string $course): string {
  *
  * @return array{ok:bool,error?:string,detail?:string,unit?:array,materials?:list<array>,checks?:list<array>}
  */
+/**
+ * Is this a video the lesson can actually play?
+ *
+ * The same two hosts the member's renderer embeds, and nothing else: a link
+ * the exam cannot play is a question the learner cannot answer, and it must
+ * be refused where it is written rather than discovered on a Saturday.
+ */
+function curriculum_video_ok(string $url): bool {
+    $u = trim($url);
+    if (!preg_match('~^https://~i', $u)) return false;
+    return (bool)preg_match('~^https://(?:www\\.)?(?:youtube\\.com/watch\\?v=|youtu\\.be/)[\\w-]{6,}~i', $u)
+        || (bool)preg_match('~^https://(?:www\\.)?vimeo\\.com/\\d+~i', $u)
+        || (bool)preg_match('~^https://player\\.vimeo\\.com/video/\\d+~i', $u);
+}
+
 function curriculum_validate(array $d, bool $allowNewCourse = false): array {
     $course = curriculum_clean_text($d['course'] ?? '', 120);
     $canon = curriculum_course_canonical($course);
@@ -391,9 +602,22 @@ function curriculum_validate(array $d, bool $allowNewCourse = false): array {
         $url = curriculum_material_url((string)($m['url'] ?? ''));
         if ($url === '') return ['ok' => false, 'error' => 'bad_material_url', 'detail' => 'material ' . ($i + 1) . ' needs an https link or an uploaded file'];
         $materials[] = ['url' => $url, 'kind' => curriculum_material_kind((string)($m['kind'] ?? ''), $url),
-                        'title' => curriculum_clean_text($m['title'] ?? '', 200) ?: basename((string)parse_url($url, PHP_URL_PATH)) ?: 'Material'];
+                        'title' => curriculum_clean_text($m['title'] ?? '', 200) ?: basename((string)parse_url($url, PHP_URL_PATH)) ?: 'Material',
+                        /* One line for the learner: what to do with it. */
+                        'guide' => curriculum_clean_text($m['guide'] ?? '', CURR_MATERIAL_GUIDE_MAX)];
         if (count($materials) > CURR_MAX_MATERIALS) return ['ok' => false, 'error' => 'too_many_materials', 'max' => CURR_MAX_MATERIALS];
     }
+
+    /* THE REVIEW IS NOT OPTIONAL ON A PUBLISHED LESSON.
+       A lesson's questions are sat at the start of the NEXT session, so a
+       published lesson with none is a week of teaching that is never asked
+       about again — and nothing on any screen would ever say so. The floor
+       here is one, deliberately, not the three the editor asks for: 587 of
+       the 588 bundled lessons carry one or two, and a rule the shipped
+       curriculum cannot meet is a rule that stops the boot seeder rather
+       than one that raises anybody's standard. Three stays the standard an
+       author is held to while writing; one is what the system refuses to
+       publish below. */
 
     // Checks: [{kind,prompt,options,answer,rubric,points}].
     $checks = [];
@@ -408,19 +632,55 @@ function curriculum_validate(array $d, bool $allowNewCourse = false): array {
         if ($kind === 'mcq') {
             if (count($opts) < 2) return ['ok' => false, 'error' => 'mcq_needs_options', 'detail' => 'check ' . ($i + 1)];
             /* The answer is an option's index — or its text, or its letter,
-               because a sheet typed by a person says "B" or "photosynthesis". */
+               because a sheet typed by a person says "B" or "photosynthesis".
+
+               THE TEXT IS TRIED FIRST, and that order matters. A music theory
+               question whose options are D / E / F / G and whose answer is "E"
+               means the option reading "E", not the fifth option, which does
+               not exist. Reading the letter first rejected the lesson, and the
+               boot seeder skips a row it cannot validate — so a whole lesson
+               vanished with nothing turning red. Where an answer exactly
+               matches an option, that is what was meant; the letter convention
+               is the fallback for when nothing matches. */
             $idx = null;
-            if (ctype_digit($answer) && (int)$answer < count($opts)) $idx = (int)$answer;
-            elseif (preg_match('/^[A-Ha-h]$/', $answer)) $idx = ord(strtoupper($answer)) - 65;
-            else foreach ($opts as $k => $o) if (strcasecmp($o, $answer) === 0) $idx = $k;
+            foreach ($opts as $k => $o) if (strcasecmp($o, $answer) === 0) { $idx = $k; break; }
+            if ($idx === null && ctype_digit($answer) && (int)$answer < count($opts)) $idx = (int)$answer;
+            if ($idx === null && preg_match('/^[A-Ha-h]$/', $answer)) $idx = ord(strtoupper($answer)) - 65;
             if ($idx === null || $idx >= count($opts)) return ['ok' => false, 'error' => 'mcq_answer_missing', 'detail' => 'check ' . ($i + 1) . ': the answer must be one of its options'];
             $answer = (string)$idx;
+        }
+        /* Only a 'watch' question carries a video, and it must carry one —
+           otherwise it is a question about a film nobody was shown. */
+        $video = '';
+        if ($kind === 'watch') {
+            $video = trim((string)($c['videoUrl'] ?? ''));
+            if ($video === '' || !curriculum_video_ok($video)) {
+                return ['ok' => false, 'error' => 'watch_needs_video',
+                        'detail' => 'check ' . ($i + 1) . ': a “watch and tell me” question needs a YouTube or Vimeo link'];
+            }
         }
         $checks[] = ['checkId' => preg_match('/^CHK-[A-F0-9]{6,16}$/', (string)($c['checkId'] ?? '')) ? (string)$c['checkId'] : '',
             'kind' => $kind, 'prompt' => $prompt, 'options' => json_encode($opts, JSON_UNESCAPED_UNICODE), 'answer' => mb_substr($answer, 0, 2000),
             'rubric' => curriculum_clean_text($c['rubric'] ?? '', 2000), 'points' => max(1, min(20, (int)($c['points'] ?? 1))),
-            'source' => (string)($c['source'] ?? '') === 'ai' ? 'ai' : 'manual'];
+            'videoUrl' => $video, 'source' => (string)($c['source'] ?? '') === 'ai' ? 'ai' : 'manual'];
         if (count($checks) > CURR_MAX_CHECKS) return ['ok' => false, 'error' => 'too_many_checks', 'max' => CURR_MAX_CHECKS];
+    }
+    if ($status === 'published' && !$checks) {
+        return ['ok' => false, 'error' => 'review_required',
+                'detail' => 'a published lesson needs at least one question — your class sits them at the start of the next session'];
+    }
+    /* MORE THAN RECOGNITION.
+       A review made only of multiple choice measures whether a child can
+       pick the right words off a list a week later, which is not the same
+       as being able to do the thing — and in a programme of practical
+       subjects it is not close. Every published lesson must ask for at
+       least one piece of work, explanation or reflection that cannot be
+       guessed from four options.
+       All 588 bundled lessons meet this; 45 of them did not until the
+       practical question each one was missing was written. */
+    if ($status === 'published' && !array_filter($checks, static fn($c) => $c['kind'] !== 'mcq')) {
+        return ['ok' => false, 'error' => 'review_too_shallow',
+                'detail' => 'a review cannot be multiple choice alone — add one question that asks them to do, explain or show something'];
     }
     return ['ok' => true, 'unit' => $unit, 'materials' => $materials, 'checks' => $checks];
 }
@@ -438,9 +698,16 @@ function curriculum_fingerprint_stored(array $bundle): string {
     $unit = ['course' => (string)$u['course'], 'level' => (string)$u['level'], 'week' => (int)$u['week'], 'position' => (int)$u['position'],
         'title' => (string)$u['title'], 'summary' => (string)$u['summary'], 'objectives' => (string)$u['objectives'], 'body' => (string)$u['body'],
         'durationMins' => (int)$u['durationMins'], 'passMark' => (int)$u['passMark']];
-    $mats = array_map(static fn($m) => ['url' => (string)$m['url'], 'kind' => (string)$m['kind'], 'title' => (string)$m['title']], $bundle['materials']);
+    $mats = array_map(static fn($m) => ['url' => (string)$m['url'], 'kind' => (string)$m['kind'], 'title' => (string)$m['title'], 'guide' => (string)($m['guide'] ?? '')], $bundle['materials']);
+    /* Every field the validated shape carries has to appear here too, in the
+       same order: these two hashes are compared to decide "unchanged", so a
+       field on one side and not the other makes every row look edited —
+       which turns a re-import of the same sheet into an update of every
+       lesson in it. That is what adding `videoUrl` did until this line
+       learned about it. */
     $checks = array_map(static fn($c) => ['kind' => (string)$c['kind'], 'prompt' => (string)$c['prompt'], 'options' => (string)$c['options'],
-        'answer' => (string)$c['answer'], 'rubric' => (string)$c['rubric'], 'points' => (int)$c['points'], 'source' => (string)$c['source']], $bundle['checks']);
+        'answer' => (string)$c['answer'], 'rubric' => (string)$c['rubric'], 'points' => (int)$c['points'],
+        'videoUrl' => (string)($c['videoUrl'] ?? ''), 'source' => (string)$c['source']], $bundle['checks']);
     return hash('sha256', json_encode([$unit, $mats, $checks], JSON_UNESCAPED_UNICODE));
 }
 
@@ -472,7 +739,7 @@ function curriculum_write(array $v, ?array $existing, string $by, string $source
         db_exec("DELETE FROM curriculum_materials WHERE unitId = ? AND COALESCE(status,'approved') = 'approved'", [$unitId]);
         foreach ($v['materials'] as $i => $m) {
             db_insert('curriculum_materials', ['materialId' => 'MAT-' . strtoupper(rand_hex(5)), 'unitId' => $unitId, 'kind' => $m['kind'],
-                'title' => $m['title'], 'url' => $m['url'], 'position' => $i + 1, 'createdAt' => $now, 'status' => 'approved', 'submittedBy' => $by]);
+                'title' => $m['title'], 'url' => $m['url'], 'guide' => $m['guide'] ?? '', 'position' => $i + 1, 'createdAt' => $now, 'status' => 'approved', 'submittedBy' => $by]);
         }
         /* Checks keep their ids where the editor sent them back, so a progress
            row's answers still point at the question they answered. */
@@ -485,7 +752,8 @@ function curriculum_write(array $v, ?array $existing, string $by, string $source
         }
         foreach ($v['checks'] as $i => $c) {
             $fields = ['kind' => $c['kind'], 'prompt' => $c['prompt'], 'options' => $c['options'], 'answer' => $c['answer'],
-                       'rubric' => $c['rubric'], 'points' => $c['points'], 'position' => $i + 1, 'source' => $c['source']];
+                       'rubric' => $c['rubric'], 'points' => $c['points'], 'position' => $i + 1, 'source' => $c['source'],
+                       'videoUrl' => (string)($c['videoUrl'] ?? '')];
             if ($c['checkId'] !== '' && db_row('SELECT id FROM curriculum_checks WHERE checkId = ? AND unitId = ?', [$c['checkId'], $unitId])) {
                 db_update('curriculum_checks', $fields, ['checkId' => $c['checkId']]);
             } else {
@@ -507,8 +775,8 @@ function admin_curriculum_list(array $p): array {
     $status = (string)($p['status'] ?? '');
     if (in_array($status, CURR_STATUSES, true)) { $where[] = 'status = ?'; $args[] = $status; }
     else $where[] = "status <> 'retired'";
-    $q = strtolower(trim((string)($p['q'] ?? '')));
-    if ($q !== '') { $where[] = '(lower(title) LIKE ? OR lower(summary) LIKE ?)'; $args[] = '%' . $q . '%'; $args[] = '%' . $q . '%'; }
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''), ['title', 'summary']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $args[] = $a; }
     $units = db_all('SELECT * FROM curriculum_units WHERE ' . implode(' AND ', $where) . ' ORDER BY course, level, week, position LIMIT 2000', $args);
     $ids = array_map(static fn($u) => (string)$u['unitId'], $units);
     $counts = ['m' => [], 'c' => [], 'p' => []];
@@ -526,12 +794,26 @@ function admin_curriculum_list(array $p): array {
     $out = array_map(static fn($u) => [
         'unitId' => (string)$u['unitId'], 'course' => (string)$u['course'], 'level' => (string)$u['level'],
         'week' => (int)$u['week'], 'position' => (int)$u['position'], 'title' => (string)$u['title'],
+        'path' => curriculum_path((string)$u['level'], (int)$u['week']),
         'status' => (string)$u['status'], 'version' => (int)$u['version'], 'source' => (string)$u['source'],
         'materials' => $counts['m'][$u['unitId']] ?? 0, 'checks' => $counts['c'][$u['unitId']] ?? 0,
         'progress' => $counts['p'][$u['unitId']] ?? ['completed' => 0, 'started' => 0, 'pending' => 0, 'avgPct' => null],
         'updatedAt' => (string)$u['updatedAt'],
     ], $units);
-    return ['ok' => true, 'units' => $out, 'courses' => curriculum_courses(),
+    /* Divisions as well as courses, because a lesson may be filed against a
+       whole division (course_division) — and an editor that cannot offer the
+       scope the matcher honours is an editor that cannot write half the
+       curriculum. */
+    /* The same reference the AI drafter is given, per course, so the person
+       writing by hand is held to the standard the machine is held to. One
+       map, two consumers — a second copy for the screen is how the two
+       start recommending different things. */
+    $refs = [];
+    foreach (curriculum_courses() as $c) {
+        $r = curriculum_exam_reference((string)$c);
+        if ($r) $refs[(string)$c] = ['body' => $r['body'], 'award' => $r['award'], 'assesses' => $r['assesses'], 'ask' => $r['ask'], 'link' => $r['link']];
+    }
+    return ['ok' => true, 'units' => $out, 'courses' => curriculum_courses(), 'examRefs' => $refs, 'divisions' => curriculum_divisions(),
             'canWrite' => in_array('curriculum', member_effective_caps($g['requester']), true),
             'aiEnabled' => function_exists('ai_enabled') && ai_enabled(), 'aiMarking' => function_exists('ai_enabled') && ai_enabled('marking')];
 }
@@ -595,6 +877,17 @@ function admin_curriculum_status(array $p): array {
         if ($to === 'published' && !db_row('SELECT id FROM curriculum_units WHERE unitId = ? AND title <> ?', [$id, ''])) {
             $results[] = ['id' => $id, 'ok' => false, 'error' => 'title_required']; $refused++; continue;
         }
+        /* The same floor the editor's own save is held to. Publishing is a
+           second door onto the same act, and a rule enforced on one door
+           only is a rule anybody reaches past by using the other — here, by
+           selecting forty drafts and pressing Publish. Refused per row and
+           named, as every bulk op in this codebase is. */
+        if ($to === 'published' && !db_row('SELECT id FROM curriculum_checks WHERE unitId = ? LIMIT 1', [$id])) {
+            $results[] = ['id' => $id, 'name' => $u['title'], 'ok' => false, 'error' => 'review_required']; $refused++; continue;
+        }
+        if ($to === 'published' && !db_row("SELECT id FROM curriculum_checks WHERE unitId = ? AND kind <> 'mcq' LIMIT 1", [$id])) {
+            $results[] = ['id' => $id, 'name' => $u['title'], 'ok' => false, 'error' => 'review_too_shallow']; $refused++; continue;
+        }
         $row = ['status' => $to, 'updatedAt' => $now, 'updatedBy' => (string)$g['requester']['memberId']];
         if ($to === 'published') $row['publishedAt'] = $now;
         db_update('curriculum_units', $row, ['unitId' => $id]);
@@ -631,9 +924,31 @@ function admin_curriculum_import(array $p): array {
     $plan = []; $seen = [];
     foreach ($rows as $i => $r) {
         if (!is_array($r)) { $plan[] = ['row' => $i + 1, 'verdict' => 'failed', 'error' => 'not_a_row']; continue; }
-        if ($publish && !isset($r['status'])) $r['status'] = 'published';
+        /* A row with nothing to ask comes in as a DRAFT rather than being
+           thrown out. The invariant stands — nothing publishes without a
+           question for the next session's review — but a spreadsheet of a
+           hundred lessons must not import zero of them because some rows
+           have no questions yet. The row lands, it is named, and somebody
+           writes the question and publishes it.
+           Only a row that did not ASK to be published is moved; a sheet
+           that says `status: published` outright is still refused by
+           curriculum_validate, because that one is a stated intention. */
+        $rChecks = is_array($r['checks'] ?? null) ? $r['checks'] : [];
+        $noAsk = !$rChecks && !($r['check1'] ?? '') && !($r['check1_prompt'] ?? '');
+        // Multiple choice alone is held back for the same reason nothing at
+        // all is: it would publish a week that is never really revisited.
+        if (!$noAsk && $rChecks) {
+            $noAsk = !array_filter($rChecks, static fn($c) => is_array($c) && strtolower((string)($c['kind'] ?? 'short')) !== 'mcq');
+        }
+        $heldBack = false;
+        if ($publish && !isset($r['status'])) {
+            if ($noAsk) { $r['status'] = 'draft'; $heldBack = true; }
+            else $r['status'] = 'published';
+        }
         $v = curriculum_validate($r, $allowNew);
-        if (!$v['ok']) { $plan[] = ['row' => $i + 1, 'title' => (string)($r['title'] ?? ''), 'verdict' => 'failed', 'error' => $v['error'], 'detail' => $v['detail'] ?? '']; continue; }
+        // A refused row still says which course and week it was, so the operator can see what to fix.
+        if (!$v['ok']) { $plan[] = ['row' => $i + 1, 'title' => (string)($r['title'] ?? ''), 'course' => mb_substr(trim((string)($r['course'] ?? '')), 0, 120), 'week' => (int)($r['week'] ?? 0),
+                                    'verdict' => 'failed', 'error' => $v['error'], 'detail' => $v['detail'] ?? '']; continue; }
         $u = $v['unit'];
         $key = strtolower($u['course'] . '|' . $u['level'] . '|' . $u['week'] . '|' . $u['position']);
         if (isset($seen[$key])) { $plan[] = ['row' => $i + 1, 'title' => $u['title'], 'verdict' => 'failed', 'error' => 'duplicate_in_file', 'detail' => 'same course, level, week and position as row ' . $seen[$key]]; continue; }
@@ -648,10 +963,11 @@ function admin_curriculum_import(array $p): array {
         }
         $plan[] = ['row' => $i + 1, 'title' => $u['title'], 'course' => $u['course'], 'week' => $u['week'], 'position' => $u['position'],
                    'verdict' => $verdict, 'unitId' => $existing ? (string)$existing['unitId'] : '', '_v' => $v, '_e' => $existing,
-                   'materials' => count($v['materials']), 'checks' => count($v['checks'])];
+                   'materials' => count($v['materials']), 'checks' => count($v['checks'])]
+                   + ($heldBack ? ['note' => 'review_required', 'detail' => 'imported as a draft: no question for the next session to review'] : []);
     }
-    $tally = ['create' => 0, 'update' => 0, 'unchanged' => 0, 'failed' => 0];
-    foreach ($plan as $x) $tally[$x['verdict']]++;
+    $tally = ['create' => 0, 'update' => 0, 'unchanged' => 0, 'failed' => 0, 'drafted' => 0];
+    foreach ($plan as $x) { $tally[$x['verdict']]++; if (($x['note'] ?? '') === 'review_required') $tally['drafted']++; }
     $public = static fn($pl) => array_map(static function ($x) { unset($x['_v'], $x['_e']); return $x; }, $pl);
     if ($dry) return ['ok' => true, 'dryRun' => true, 'digest' => $digest, 'tally' => $tally, 'rows' => $public($plan)];
 
@@ -676,6 +992,7 @@ function admin_curriculum_import(array $p): array {
  * admin.curriculum.seed — with no key, the list; with a key, that course's rows.
  */
 function curriculum_seed_files(): array {
+    if (isset($GLOBALS['__curriculum_seed_files'])) return $GLOBALS['__curriculum_seed_files'];   // test seam
     $out = [];
     foreach (glob(__DIR__ . '/../seeds/curriculum-*.json') ?: [] as $f) {
         $j = json_decode((string)file_get_contents($f), true);
@@ -685,6 +1002,94 @@ function curriculum_seed_files(): array {
     ksort($out);
     return $out;
 }
+/**
+ * Seed the bundled curricula into the live lessons, once, on boot.
+ *
+ * Importing four files by hand in the Control Room is fine for a deployment
+ * somebody is setting up deliberately, and wrong for every other one: a fresh
+ * install had 336 written lessons sitting in the repository and a member
+ * opening Learn saw an empty list until an admin happened to find the import
+ * screen and press it four times.
+ *
+ * Runs from db_run_seeds(), so it happens on the first request after a deploy
+ * with no shell and nothing to remember.
+ *
+ * Three things it will not do:
+ *
+ *  · It never TOUCHES a lesson that already exists. A course, level, week and
+ *    position that is already there belongs to whoever put it there — an
+ *    instructor's own lesson is not overwritten by a shipped one.
+ *  · It records progress PER FILE. 336 lessons with their checks and materials
+ *    is more work than a shared host should do in one request, so each request
+ *    seeds at most one file and the next picks up where it stopped. A timeout
+ *    costs one file's worth of retry, never the whole set.
+ *  · It writes through curriculum_write(), the same path the import screen
+ *    uses, so a seeded lesson is indistinguishable from an imported one and
+ *    carries the same fingerprint, version and audit trail.
+ *
+ * Published, not drafted: these are the programme's own reviewed curricula,
+ * not an AI draft waiting on a human. A lesson nobody can see teaches nobody.
+ */
+function curriculum_seed_bundled_once(): int {
+    if (!function_exists('setting_raw')) return 0;
+    /* A deployment may decline the bundled curriculum. NGG's own courses ship
+       with the code and seed themselves, which is right for NGG and wrong for
+       anyone running this for a different programme — and for a test that is
+       about what the IMPORT does, where 540 lessons arriving unasked is the
+       difference between "2 new" and "2 unchanged".
+       Set 'seed_bundled_curriculum' => false in api/config.php. Absent, it
+       seeds: the default is the behaviour the programme wants. */
+    if (array_key_exists('seed_bundled_curriculum', (array)($GLOBALS['CONFIG'] ?? []))
+        && !$GLOBALS['CONFIG']['seed_bundled_curriculum']) return 0;
+    $written = 0;
+    foreach (curriculum_seed_files() as $key => $j) {
+        $flag = 'seed_curriculum_' . preg_replace('/[^a-z0-9]+/', '_', strtolower($key));
+        /* The flag holds the shipped file's revision, so a revised file (the
+           fuller lessons of 2026-10-29) reaches a deployment seeded from an
+           older one. The old flag value '1' is simply an older revision. */
+        $rev = curriculum_seed_revision($j);
+        if ((string)setting_raw($flag) === $rev) continue;
+        foreach (($j['lessons'] ?? []) as $row) {
+            if (!is_array($row)) continue;
+            $row['status'] = 'published';
+            $v = curriculum_validate($row, !empty($j['allowNewCourse']));
+            if (!$v['ok']) continue;                       // a bad row is skipped, never guessed at
+            $u = $v['unit'];
+            $existing = db_row('SELECT * FROM curriculum_units WHERE course = ? AND level = ? AND week = ? AND position = ? LIMIT 1',
+                               [$u['course'], $u['level'], $u['week'], $u['position']]);
+            if ($existing) {
+                /* Somebody else's lesson stays theirs: only a lesson that is
+                   still exactly as shipped (seeded, never saved by a person)
+                   takes the new text, and its status stays what staff set. */
+                if ((string)$existing['source'] !== 'seed' || (string)$existing['updatedBy'] !== 'system') continue;
+                $b = curriculum_load('unitId = ?', [(string)$existing['unitId']]);
+                $have = reset($b);
+                if (!$have || curriculum_fingerprint_stored($have) === curriculum_fingerprint($v)) continue;
+                $v['unit']['status'] = (string)$existing['status'];
+                // A question that has not changed keeps its id, so an answer already given still points at it.
+                foreach ($v['checks'] as $i => $c) {
+                    $old = $have['checks'][$i] ?? null;
+                    if ($old && (string)$old['prompt'] === (string)$c['prompt'] && (string)$old['kind'] === (string)$c['kind']) $v['checks'][$i]['checkId'] = (string)$old['checkId'];
+                }
+                curriculum_write($v, $existing, 'system', 'seed');
+                $written++;
+                continue;
+            }
+            curriculum_write($v, null, 'system', 'seed');
+            $written++;
+        }
+        setting_set($flag, $rev, 'system');
+        if (function_exists('audit')) audit('curriculum.seed', null, $key, ['written' => $written], '');
+        break;                                             // one file per request
+    }
+    return $written;
+}
+
+/** A shipped curriculum file's revision: its lessons, hashed. */
+function curriculum_seed_revision(array $j): string {
+    return 'r' . substr(hash('sha256', json_encode($j['lessons'] ?? [], JSON_UNESCAPED_UNICODE)), 0, 16);
+}
+
 function admin_curriculum_seed(array $p): array {
     $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
     $all = curriculum_seed_files();
@@ -702,6 +1107,217 @@ function admin_curriculum_seed(array $p): array {
         'rows' => array_values($all[$key]['lessons'] ?? [])];
 }
 
+/* ══ Course coverage, and a term's outline for a course that has none ══════
+ *
+ * The catalogue lists the courses NGG offers; lessons exist for some of them.
+ * A member whose course has no published lesson opens Learn to an empty list,
+ * and nothing told staff which courses those were. admin.curriculum.coverage
+ * says, course by course, what is written, for which years and weeks, and how
+ * many members take it — courses with members and no lessons first.
+ * admin.curriculum.plan drafts a term's outline for one course (titles,
+ * summaries, objectives) for the ordinary import to check and write as DRAFTS;
+ * each is then written with "Write the lesson" (admin.curriculum.ai) and
+ * published. Nothing reaches a member until somebody publishes it.
+ */
+const CURR_PLAN_WEEKS_MAX = 24;
+/* The NGG term arc: fundamentals, a mini project, a real brief, a capstone, a
+ * showcase. Used as written when no AI is configured, and as the spine the AI
+ * is asked to follow when one is. */
+const CURR_PLAN_ARC = [
+    ['Welcome to {c}: tools, safety and a first win', 'Meet the tools, agree how we work, and finish something small today.'],
+    ['{c} fundamentals: the core idea', 'The one idea everything else in {c} builds on, practised until it is easy.'],
+    ['{c} fundamentals: practising the basics', 'Short, repeated practice of the basics, with feedback from a partner.'],
+    ['{c} fundamentals: putting it together', 'Combine the basics into one complete piece of work.'],
+    ['Mini project: plan it', 'Choose a small project, plan it in steps, and agree what "done" looks like.'],
+    ['Mini project: make it and show it', 'Build the mini project, test it, fix what does not work, and show it to the group.'],
+    /* Weeks 7 and 11 reach BACK before they go forward. Spacing and retrieval
+     * are the best-evidenced things in this arc — a concept met again a few
+     * weeks later sticks far better than the same time spent re-reading it —
+     * and nothing in the old arc did either. Every other week ends in a recall
+     * check; these two are where the course revisits on purpose. */
+    ['Looking back, and a new technique', 'Pick up the fundamentals from weeks 1–4 again, this time to serve a technique that takes your {c} work up a level.'],
+    /* Every trade in this programme now uses AI, and a child who cannot check
+     * what it tells them is not safer for having avoided it. */
+    ['AI in {c}: what it does well, and where it is wrong', 'Use an AI tool on a real {c} task, then find where it was confidently wrong and correct it.'],
+    ['Real-world brief: a problem in our community', 'Use {c} on a real problem someone in Nigeria has, and explain your choices.'],
+    ['Capstone: plan and prototype', 'Plan the term capstone and make a first rough version.'],
+    ['Capstone: build and test', 'Finish the capstone using what you learned earlier in the term, and test it with someone who has not seen it.'],
+    ['Showcase and reflection', 'Present the capstone, celebrate the term, and set one goal for next term.'],
+];
+
+/**
+ * THE DIVISION COVERAGE BOARD — which division has a curriculum, for which year.
+ *
+ * `courseSource = division` makes the division the enrolment, so a division
+ * with no lessons for a year is not a gap in a report: it is that year's
+ * members opening their portal and finding nothing. The spine that ships
+ * (curriculum-divisions-2026.json) covers Year 1 only, so this board exists
+ * to make the other two years visible while they are written, rather than
+ * discovered by a child.
+ *
+ * Counts the division's OWN course — the one named after it — because that is
+ * exactly what the mode delivers. Strand courses are reported separately by
+ * admin_curriculum_coverage().
+ */
+function admin_curriculum_divisions(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club', 'audit']); if (!$g['ok']) return $g;
+    $cfg = curriculum_schedule();
+    $divisions = function_exists('nggc_divisions') ? nggc_divisions() : [];
+
+    $byCourse = [];
+    foreach (db_all("SELECT course, level, status, COUNT(*) n FROM curriculum_units
+                     WHERE status IN ('published','draft') AND course <> '' GROUP BY course, level, status") as $r) {
+        $y = curriculum_level_year((string)$r['level']);
+        $byCourse[mb_strtolower(trim((string)$r['course']))][$y][(string)$r['status']]
+            = ($byCourse[mb_strtolower(trim((string)$r['course']))][$y][(string)$r['status']] ?? 0) + (int)$r['n'];
+    }
+
+    /* Who it would reach. Counted through the SAME resolver a member's own
+       page uses, so this cannot drift from what they actually see. */
+    $heads = []; $unplaced = 0;
+    $placed = [];
+    foreach (db_all('SELECT memberId, stateValue FROM member_state WHERE stateKey = ?', [CURR_YEAR_KEY]) as $r) $placed[(string)$r['memberId']] = (int)$r['stateValue'];
+    $scope = function_exists('admin_centre_names_in_scope') ? admin_centre_names_in_scope($g['requester']) : null;
+    $where = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $args = [];
+    if ($scope !== null) {
+        if (!$scope) $where .= ' AND 1 = 0';
+        else { $where .= ' AND centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; $args = $scope; }
+    }
+    foreach (db_all("SELECT memberId, track, courses, division, centre FROM members WHERE $where", $args) as $m) {
+        $dv = curriculum_member_division($m);
+        if ($dv === '') { $unplaced++; continue; }
+        $y = curriculum_member_year($m, $placed[(string)$m['memberId']] ?? 0)['year'];
+        $k2 = mb_strtolower($dv);
+        $heads[$k2]['n'] = ($heads[$k2]['n'] ?? 0) + 1;
+        $heads[$k2][$y] = ($heads[$k2][$y] ?? 0) + 1;
+    }
+
+    $rows = [];
+    foreach ($divisions as $d) {
+        $k = mb_strtolower((string)$d['name']);
+        $years = [];
+        for ($y = 1; $y <= CURR_PROGRAMME_YEARS; $y++) {
+            $pub = (int)($byCourse[$k][$y]['published'] ?? 0);
+            $drf = (int)($byCourse[$k][$y]['draft'] ?? 0);
+            $years[] = ['year' => $y, 'published' => $pub, 'draft' => $drf, 'has' => $pub > 0,
+                        /* The number that matters: members placed in this
+                           year who, in division mode, would open their portal
+                           and find nothing. */
+                        'members' => (int)($heads[$k][$y] ?? 0)];
+        }
+        $rows[] = ['id' => (string)$d['id'], 'name' => (string)$d['name'],
+                   'members' => (int)($heads[$k]['n'] ?? 0),
+                   'noYear' => (int)($byCourse[$k][0]['published'] ?? 0),   // lessons whose level names no year
+                   'years' => $years,
+                   'gaps' => array_values(array_map(static fn($y) => $y['year'], array_filter($years, static fn($y) => !$y['has'])))];
+    }
+    /* Members who, in division mode, are placed in a year their division has
+       no published spine for. Counted, not estimated — it is the cost of
+       turning the mode on today, and nobody should have to infer it. */
+    $stranded = 0;
+    foreach ($rows as $r) foreach ($r['years'] as $y) if (!$y['has']) $stranded += (int)$y['members'];
+    return ['ok' => true, 'rows' => $rows, 'courseSource' => (string)$cfg['courseSource'],
+            'years' => CURR_PROGRAMME_YEARS, 'unplaced' => $unplaced, 'stranded' => $stranded];
+}
+
+function admin_curriculum_coverage(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club', 'audit']); if (!$g['ok']) return $g;
+    $catalogue = function_exists('club_catalogue') ? club_catalogue() : [];
+    $divOf = []; $courses = [];
+    foreach ($catalogue as $div => $cs) foreach ($cs as $c) { $k = mb_strtolower(trim((string)$c)); if (!isset($courses[$k])) { $courses[$k] = (string)$c; $divOf[$k] = (string)$div; } }
+    $stat = [];
+    foreach (db_all("SELECT course, level, week, status, body FROM curriculum_units WHERE status IN ('published', 'draft') AND course <> ''") as $u) {
+        $k = mb_strtolower(trim((string)$u['course']));
+        if (!isset($courses[$k])) { $courses[$k] = (string)$u['course']; $divOf[$k] = ''; }
+        $s = &$stat[$k];
+        $s = ($s ?? []) + ['published' => 0, 'draft' => 0, 'years' => [], 'weeks' => 0, 'homework' => 0];
+        if ($u['status'] === 'published') {
+            $s['published']++;
+            $s['weeks'] = max($s['weeks'], (int)$u['week']);
+            $y = curriculum_level_year((string)$u['level']); if ($y) $s['years'][$y] = true;
+            if (preg_match("/##\s*This week(?:'|’)s assignment/u", (string)$u['body'])) $s['homework']++;
+        } else $s['draft']++;
+        unset($s);
+    }
+    // Members per course, through the same matching the member's own Learn page uses (one pass, one context).
+    $scope = function_exists('admin_centre_names_in_scope') ? admin_centre_names_in_scope($g['requester']) : null;
+    $where = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer' AND COALESCE(role,'member') NOT IN ('admin','super_admin','editor','club_admin')"; $args = [];
+    if ($scope !== null) { if (!$scope) $where .= ' AND 1 = 0'; else { $where .= ' AND centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; $args = $scope; } }
+    $members = [];
+    $none = 0; $ctx = null;
+    $taught = []; foreach ($stat as $k => $s) if ($s['published'] > 0) $taught[$k] = true;
+    foreach (db_all("SELECT memberId, track, courses, disciplines, division FROM members WHERE $where", $args) as $m) {
+        $mine = array_map(static fn($c) => mb_strtolower(trim((string)$c)), curriculum_member_courses($m, $ctx));
+        $has = false;
+        foreach (array_unique($mine) as $k) { if (isset($courses[$k])) $members[$k] = ($members[$k] ?? 0) + 1; if (isset($taught[$k])) $has = true; }
+        if (!$has && isset($taught[''])) $has = true;
+        if (!$has) $none++;
+    }
+    $rows = [];
+    foreach ($courses as $k => $name) {
+        $s = $stat[$k] ?? ['published' => 0, 'draft' => 0, 'years' => [], 'weeks' => 0, 'homework' => 0];
+        $years = array_keys($s['years']); sort($years);
+        $rows[] = ['course' => $name, 'division' => $divOf[$k] ?? '', 'published' => $s['published'], 'drafts' => $s['draft'], 'years' => $years,
+                   'weeks' => $s['weeks'], 'homework' => $s['homework'], 'members' => $members[$k] ?? 0,
+                   'state' => $s['published'] > 0 ? 'taught' : ($s['draft'] > 0 ? 'drafting' : 'empty')];
+    }
+    usort($rows, static function ($a, $b) {
+        $rank = static fn($r) => $r['state'] === 'taught' ? 2 : ($r['members'] > 0 ? 0 : 1);
+        return [$rank($a), -$a['members'], $a['course']] <=> [$rank($b), -$b['members'], $b['course']];
+    });
+    $empty = count(array_filter($rows, static fn($r) => $r['state'] !== 'taught'));
+    return ['ok' => true, 'courses' => $rows, 'emptyCourses' => $empty, 'membersWithoutLessons' => $none, 'canWrite' => admin_cap_gate($p, 'curriculum')['ok']];
+}
+
+function admin_curriculum_plan(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $course = curriculum_clean_text($p['course'] ?? '', 120);
+    if ($course === '') return ['ok' => false, 'error' => 'course_required'];
+    $level = curriculum_clean_text($p['level'] ?? '', 60);
+    $weeks = max(4, min(CURR_PLAN_WEEKS_MAX, (int)($p['weeks'] ?? 12) ?: 12));
+    $start = max(1, min(104 - $weeks + 1, (int)($p['fromWeek'] ?? 1) ?: 1));
+    // The arc stretched (or squeezed) to the term's length.
+    $arc = [];
+    $n = count(CURR_PLAN_ARC);
+    for ($i = 0; $i < $weeks; $i++) {
+        $j = $weeks === 1 ? 0 : (int)round($i * ($n - 1) / ($weeks - 1));
+        [$t, $sum] = CURR_PLAN_ARC[$j];
+        $arc[] = ['title' => str_replace('{c}', $course, $t), 'summary' => str_replace('{c}', $course, $sum)];
+    }
+    $seen = [];
+    foreach ($arc as $i => $a) { $k = $a['title']; $seen[$k] = ($seen[$k] ?? 0) + 1; if ($seen[$k] > 1) $arc[$i]['title'] .= ' (part ' . $seen[$k] . ')'; }
+    $lessons = []; $via = 'template';
+    if (!empty($p['ai']) && function_exists('ai_classify') && function_exists('ai_enabled') && ai_enabled('default')) {
+        $r = ai_classify("You plan courses for Next Generation Genius, a Saturday programme for 10–17 year olds in Nigeria. Plan ONE term of the course given: "
+            . "exactly $weeks weekly lessons that build on each other, following this arc: fundamentals, a mini project, a feedback round, a new technique, "
+            . "a real-world brief rooted in Nigerian life, a capstone, and a showcase. Plain British English, no invented facts. "
+            . 'Return JSON: {"lessons": [{"title": "under 70 characters", "summary": "1–2 sentences", "objectives": ["3 to 5 short items starting You will…"]}]}.',
+            "Course: $course" . ($level !== '' ? "\nLevel: $level" : '') . "\nWeeks: $weeks\nArc to follow:\n" . implode("\n", array_map(static fn($a, $i) => ($i + 1) . '. ' . $a['title'], $arc, array_keys($arc))),
+            2400, 'default');
+        $got = is_array($r['data']['lessons'] ?? null) ? array_values($r['data']['lessons']) : [];
+        if (!empty($r['ok']) && count($got) >= $weeks) {
+            foreach (array_slice($got, 0, $weeks) as $x) {
+                $t = curriculum_clean_text(is_array($x) ? ($x['title'] ?? '') : '', 200);
+                if (mb_strlen($t) < 3) { $lessons = []; break; }
+                $lessons[] = ['title' => $t, 'summary' => curriculum_clean_text($x['summary'] ?? '', 600),
+                              'objectives' => array_slice(array_values(array_filter(array_map(static fn($o) => curriculum_clean_text((string)$o, 200), is_array($x['objectives'] ?? null) ? $x['objectives'] : []))), 0, 5)];
+            }
+            if ($lessons) $via = 'ai';
+        }
+    }
+    if (!$lessons) foreach ($arc as $a) $lessons[] = ['title' => $a['title'], 'summary' => $a['summary'], 'objectives' => []];
+    // Never on top of a lesson already in that slot: each week takes the next free position.
+    $taken = [];
+    foreach (db_all('SELECT week, position FROM curriculum_units WHERE course = ? AND level = ?', [$course, $level]) as $r) $taken[(int)$r['week']][(int)$r['position']] = true;
+    $rows = [];
+    foreach ($lessons as $i => $l) {
+        $wk = $start + $i; $pos = 1; while (isset($taken[$wk][$pos])) $pos++;
+        $rows[] = ['course' => $course, 'level' => $level, 'week' => $wk, 'position' => $pos, 'title' => $l['title'], 'summary' => $l['summary'],
+                   'objectives' => $l['objectives'], 'status' => 'draft'];
+    }
+    return ['ok' => true, 'rows' => $rows, 'via' => $via, 'aiAvailable' => function_exists('ai_enabled') && ai_enabled('default')];
+}
+
 /**
  * Draft a lesson's summary, objectives and checks from its text, with the AI.
  * Returns a DRAFT for a person to read — nothing is saved. Fails with
@@ -716,14 +1332,62 @@ function admin_curriculum_ai(array $p): array {
     $course = curriculum_clean_text($p['course'] ?? '', 120);
     $level = curriculum_clean_text($p['level'] ?? '', 60);
     $n = max(1, min(10, (int)($p['checks'] ?? 5)));
+    /* With only a title (or a line or two of notes) the AI WRITES the lesson,
+       in the NGG Saturday standard every bundled course uses, so a lesson
+       written in the editor reads like the rest of the programme. */
+    $write = mb_strlen($text) < 80;
+    $bodySpec = $write ? "body (the lesson in Markdown, using exactly these '## ' sections in this order: 'Why it matters', 'Demonstration (20 minutes)', "
+        . "'Guided hands-on practice (60 minutes)', 'Independent assignment (25 minutes)', 'Demonstration, feedback and submission (15 minutes)', "
+        . "'Success criteria' (3 bullet points a learner can check themselves), "
+        . "'Make it fit you' (a bullet starting '**If this is new to you:**' and one starting '**If you already can:**'), "
+        . "and 'This week's assignment' (one sentence naming the deliverable). Use bullets, short sentences, Nigerian examples where natural), " : "";
+    /* THE EXAM THE QUESTIONS ARE MODELLED ON.
+       The drafter was writing questions out of nothing but the lesson text,
+       and what comes out of nothing is four options and a right answer.
+       Given the body that actually certifies this subject and the way that
+       body decides somebody can do the thing, it writes to a standard
+       somebody else already thought hard about.
+       It is a MODEL, not a claim: the prompt says so, because a drafted
+       question that implies the lesson is part of a qualification is worse
+       than a weak question. */
+    $ref = curriculum_exam_reference($course);
+    $refSpec = $ref ? "This course points at " . $ref['award'] . " from " . $ref['body'] . ". "
+        . "That body assesses by " . $ref['assesses'] . ". Model the STANDARD and the SHAPE of your questions on that — "
+        . $ref['ask'] . ". Do NOT say or imply the lesson is part of that qualification, do not cite its syllabus, "
+        . "unit numbers or grade boundaries, and do not name it in a question. " : "";
     $instructions = "You help instructors at Next Generation Genius, a youth programme for 10–17 year olds in Nigeria, "
-        . "turn lesson notes into a clear lesson. Write for the learner, in plain British English, without inventing facts "
-        . "the notes do not support. Return JSON with keys: summary (2–3 sentences), objectives (3–6 short 'You will…' items), "
-        . "checks (exactly $n items; each {kind:'mcq'|'short', prompt, options (4 strings, mcq only), answer (mcq: the "
-        . "0-based index of the correct option; short: a model answer), rubric (short only: what a full-mark answer includes)}). "
-        . "Mix recall with understanding; no trick questions.";
+        . ($write ? "write a complete 120-minute Saturday lesson from its title. " : "turn lesson notes into a clear lesson. ")
+        . "Write for the learner, in plain British English, without inventing facts "
+        . ($write ? "you are not sure of. " : "the notes do not support. ")
+        . "Return JSON with keys: " . $bodySpec . "summary (2–3 sentences), objectives (3–6 short 'You will…' items), "
+        . "checks (exactly $n items; each {kind:'mcq'|'short'|'task', prompt, options (4 strings, mcq only), answer (mcq: the "
+        . "0-based index of the correct option; short/task: a model answer), rubric (short/task only: what a full-mark answer includes)}). "
+        /* These are sat a week later, at the start of the next session, and
+           they decide whether the programme can tell a child is learning.
+           Multiple choice alone measures whether they can pick the right
+           words off a list; in subjects that are almost entirely practical
+           it is close to measuring nothing. The server refuses to publish a
+           review that is mcq-only, so a draft made of four mcqs is a draft
+           somebody then has to rewrite — better that the model never
+           produces one. */
+        . $refSpec
+        . "AT MOST HALF may be 'mcq', and at least one must be a 'task': something the learner DOES and then "
+        . "describes — made, played, built, recorded, measured — with a rubric worth up to 6 points in three "
+        . "parts. These are practical subjects; a review that only asks them to recognise an answer does not "
+        . "show whether they can do it. Mix recall with understanding; no trick questions. "
+        /* AI belongs where the lesson's own work has a step an assistant
+           genuinely changes — not as a section in every lesson. Taught as a
+           ritual it stops being read; taught where it is true it is a skill.
+           When it does belong it goes INSIDE the independent work, as the
+           last step, and it always ends with the learner checking the output
+           or judging it. See api/tests/curriculum-shape.php. */
+        . "Only if this particular lesson's work has a step an AI assistant genuinely changes, add ONE final bullet to "
+        . "'Independent assignment' starting '**With an AI assistant —**', saying what to ask it and how the learner "
+        . "checks or judges what it gives back. Most lessons do not need one — a physical skill, a rehearsal or a "
+        . "conversation is not improved by it. Never add it to more than one section, and never let it produce the "
+        . "deliverable.";
     $input = "Course: " . ($course ?: 'General') . ($level ? "\nLevel: $level" : '') . "\nLesson title: $title\n\nLesson notes:\n$text";
-    $r = ai_classify($instructions, $input, 1800, 'default');
+    $r = ai_classify($instructions, $input, $write ? 3600 : 1800, 'default');
     if (empty($r['ok'])) {
         $err = (string)($r['error'] ?? 'ai_failed');
         return ['ok' => false, 'error' => $err, 'message' => $err === 'ai_disabled'
@@ -745,7 +1409,10 @@ function admin_curriculum_ai(array $p): array {
                 'answer' => $c['answer'], 'rubric' => $c['rubric'], 'points' => $c['points'], 'source' => 'ai'];
     }, $probe['checks']) : [];
     audit('curriculum.ai_draft', (string)$g['requester']['memberId'], '', ['course' => $course, 'checks' => count($valid), 'provider' => $r['provider'] ?? ''], (string)($p['ip'] ?? ''));
+    $body = $write ? trim((string)($d['body'] ?? '')) : '';
+    if ($body !== '' && !preg_match('/^##\s/m', $body)) $body = '';   // not the standard shape: leave the notes alone
     return ['ok' => true, 'draft' => [
+        'body' => mb_substr($body, 0, 12000),
         'summary' => curriculum_clean_text($d['summary'] ?? '', 1200),
         'objectives' => curriculum_list($d['objectives'] ?? []),
         'checks' => $valid,
@@ -767,7 +1434,7 @@ function admin_curriculum_report(array $p): array {
     }
     $mid = trim((string)($p['memberId'] ?? ''));
     if ($mid !== '') {
-        $m = db_row("SELECT memberId, fullName, displayId, centre, track, joinDate, createdAt, type FROM members m WHERE $mWhere AND m.memberId = ?", array_merge($mArgs, [$mid]));
+        $m = db_row("SELECT memberId, fullName, displayId, centre, track, courses, joinDate, createdAt, type FROM members m WHERE $mWhere AND m.memberId = ?", array_merge($mArgs, [$mid]));
         if (!$m) return ['ok' => false, 'error' => 'not_found'];
         return ['ok' => true, 'member' => $m + ['curriculum' => curriculum_for_member($m)]];
     }
@@ -784,8 +1451,11 @@ function admin_curriculum_report(array $p): array {
                     ORDER BY u.course, u.level, u.week, u.position", array_merge($mArgs, $uArgs));
     // How many members each course is FOR, so "12 completed" has a denominator.
     $enrolled = [];
-    foreach (db_all("SELECT m.track, COUNT(*) n FROM members m WHERE $mWhere GROUP BY m.track", $mArgs) as $r) $enrolled[(string)$r['track']] = (int)$r['n'];
-    $everyone = array_sum($enrolled);
+    $everyone = 0;
+    foreach (db_all("SELECT m.track, m.courses FROM members m WHERE $mWhere", $mArgs) as $r) {
+        $everyone++;
+        foreach (member_courses_of($r) ?: [(string)$r['track']] as $c) $enrolled[$c] = ($enrolled[$c] ?? 0) + 1;
+    }
     $units = array_map(static fn($r) => [
         'unitId' => (string)$r['unitId'], 'course' => (string)$r['course'], 'level' => (string)$r['level'], 'week' => (int)$r['week'],
         'position' => (int)$r['position'], 'title' => (string)$r['title'], 'started' => (int)$r['started'], 'completed' => (int)$r['completed'],
@@ -799,14 +1469,785 @@ function admin_curriculum_report(array $p): array {
 /* ══ Members ═════════════════════════════════════════════════════════════════ */
 
 /** The units a member's curriculum holds: their course's, and the Club-wide ones. */
-function curriculum_member_units(array $m): array {
-    $track = trim((string)($m['track'] ?? ''));
-    return curriculum_load("status = 'published' AND (course = '' OR lower(course) = lower(?))", [$track], 'week, course, position');
+/**
+ * The course names a member takes, for matching lessons.
+ *
+ * WHY THIS EXISTS. Lessons are filed under a course ("Coding", "Robotics"),
+ * but a member's `track` is the roster's First_Faculty, upper-cased on import
+ * ("TECH", "MEDIA", "MUSIC"), and `disciplines` is the one or two faculties on
+ * their card. Matching lessons to `track` verbatim meant a TECH member was
+ * shown no Technology lesson at all, only the Club-wide ones — which is the
+ * "members are not seeing their curriculum" report.
+ *
+ * Each word in track and disciplines resolves, in order:
+ *   1. a course of the catalogue, by name            → that course;
+ *   2. a faculty or division (TECH, Technology…)    → every course of it;
+ *   3. otherwise kept as written, so a course somebody filed under the
+ *      member's literal track still matches, as it always did.
+ * With nothing at all on the record, the member's `division` decides.
+ */
+/** What course matching reads, built once — callers that place many members
+ *  (an assignment's audience) pass it in rather than re-reading it per member. */
+function curriculum_course_ctx(): array {
+    $catalogue = function_exists('club_catalogue') ? club_catalogue() : [];
+    $byLower = [];
+    foreach ($catalogue as $courses) foreach ($courses as $c) $byLower[mb_strtolower(trim((string)$c))] = (string)$c;
+    $unitCourses = array_column(db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> '' AND status = 'published'"), 'course');
+    /* Read ONCE here rather than per member: curriculum_due_run() resolves
+       courses for every active member on the programme, and a setting_get()
+       inside that loop is a per-row query by another name. */
+    $src = function_exists('curriculum_schedule') ? (string)curriculum_schedule()['courseSource'] : 'member';
+    return ['catalogue' => $catalogue, 'byLower' => $byLower, 'unitCourses' => $unitCourses, 'div' => [], 'courseSource' => $src];
+}
+
+/* ── A member's courses, chosen, not guessed ─────────────────────────────────
+ *
+ * `members.courses` is a JSON list of catalogue course names, picked in the
+ * Control Room. When it is set it IS the member's courses: lessons, channels
+ * and assignments read it as it stands. Free text in `track` ("Tech", a typo)
+ * was matched by words and gave whole families of courses or none; it stays
+ * only as the fallback for records nobody has assigned yet, and is kept equal
+ * to the first chosen course so every older reader still sees one. */
+const MEMBER_COURSES_MAX = 8;
+
+/** Every course a member can be put on: the live catalogue, plus Chess (every division's). */
+function member_course_names(): array {
+    $out = function_exists('club_courses') ? club_courses() : [];
+    if (!in_array('Chess', $out, true)) $out[] = 'Chess';
+    return $out;
+}
+
+/** [clean list, unknown names] from a list or a comma-separated string, matched case-insensitively to the catalogue. */
+function member_courses_clean($raw): array {
+    $items = is_array($raw) ? $raw : preg_split('/\s*[,;\n]\s*/', (string)$raw);
+    $byLower = [];
+    foreach (member_course_names() as $c) $byLower[mb_strtolower($c)] = $c;
+    $out = []; $bad = [];
+    foreach ($items ?: [] as $c) {
+        $c = trim((string)$c);
+        if ($c === '') continue;
+        $k = mb_strtolower($c);
+        if (!isset($byLower[$k])) { $bad[] = mb_substr($c, 0, 60); continue; }
+        if (!in_array($byLower[$k], $out, true)) $out[] = $byLower[$k];
+    }
+    return [$out, $bad];
+}
+
+/**
+ * SQL for "this member takes this course": one of their chosen courses, or —
+ * when they have none chosen — their old track. [fragment, args]; `$a` is the
+ * table alias with its dot ("m.") or ''. A course is stored JSON-encoded, so
+ * the quoted name matches exactly, never a course whose name merely holds it.
+ */
+function member_course_sql(string $course, string $a = ''): array {
+    $json = json_encode($course, JSON_UNESCAPED_UNICODE);
+    $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], (string)$json) . '%';
+    // The stored proposal speaks for a member nobody has placed yet, so every
+    // SQL reader agrees with the PHP one (curriculum_member_courses).
+    if (function_exists('members_courses_backfill')) members_courses_backfill();
+    return ["(COALESCE({$a}courses,'') LIKE ? ESCAPE '!' OR (COALESCE({$a}courses,'') IN ('', '[]') AND (COALESCE({$a}coursesProposed,'') LIKE ? ESCAPE '!'"
+          . " OR lower({$a}track) = lower(?))))", [$like, $like, $course]];
+}
+
+/**
+ * Does this person take any of these courses? Their chosen courses, or their
+ * track when none are chosen (a Summer participant has only a track), compared
+ * without regard to case. When the row was read without `courses`, it is read
+ * here, once per person per request — a scope check must not miss a second
+ * course because a caller selected fewer columns.
+ */
+function member_takes_any(array $m, array $courses): bool {
+    if (!$courses) return false;
+    if (function_exists('members_courses_backfill')) members_courses_backfill();
+    if ((!array_key_exists('courses', $m) || !array_key_exists('coursesProposed', $m)) && ($id = (string)($m['memberId'] ?? '')) !== '') {
+        $row = db_row('SELECT courses, coursesProposed, track FROM members WHERE memberId = ? LIMIT 1', [$id]);
+        if ($row) $m = $row + $m;
+    }
+    // The same courses every other reader sees: chosen, else the stored
+    // proposal; a Summer participant (no member row) keeps their track.
+    $prop = json_decode((string)($m['coursesProposed'] ?? ''), true);
+    $mine = array_map(fn($c) => mb_strtolower(trim((string)$c)), member_courses_of($m) ?: (is_array($prop) && $prop ? $prop : [(string)($m['track'] ?? '')]));
+    // Unplaced, the track itself still answers (an older record's course may be the track's word).
+    if (!member_courses_of($m) && trim((string)($m['track'] ?? '')) !== '') $mine[] = mb_strtolower(trim((string)$m['track']));
+    foreach ($courses as $c) if (in_array(mb_strtolower(trim((string)$c)), $mine, true)) return true;
+    return false;
+}
+
+/** The courses chosen for this member ([] when none have been). */
+function member_courses_of(array $m): array {
+    $v = json_decode((string)($m['courses'] ?? ''), true);
+    return is_array($v) ? array_values(array_filter(array_map('strval', $v), fn($c) => trim($c) !== '')) : [];
+}
+
+/* Words that name ONE course, when nobody chose courses from the list. Each
+ * maps to a single catalogue course (used only when the catalogue has it). A
+ * word with no single meaning — "Tech", "Media", "Design" — maps to nothing:
+ * the member is listed for staff to choose, never given a division's worth of
+ * courses they did not sign up for ("Piano" once brought Catering and Adire). */
+/**
+ * Broad courses, and the strands under them.
+ *
+ * Some courses are a subject, not a skill: "Music" does not say whether a child
+ * is at a piano or behind a drum kit, and one lesson cannot serve both. The
+ * strand is what is actually taught and timetabled; the parent is the subject
+ * they belong to.
+ *
+ * This replaces three separate pieces of string-matching that each tried to
+ * infer the same relationship — a regex over course names, a hardcoded
+ * `$lw === 'music'` branch, and a word map pointing at a course that taught
+ * nothing in particular. One map, read by everything:
+ *
+ *   course_scope('Piano')  → ['Piano', 'Music']       a strand, plus its subject
+ *   course_scope('Music')  → ['Music', …every strand]  the subject, taught across
+ *   course_scope('Acting') → ['Acting']                a course that is just itself
+ *
+ * To make another broad course behave this way, add a row. Nothing else changes.
+ */
+const COURSE_STRANDS = [
+    'Music' => ['Piano', 'Guitar', 'Drums', 'Violin', 'Saxophone', 'Vocal Training', 'Music Production'],
+];
+
+/** The strands under a broad course; [] when the course is a leaf. */
+function course_strands(string $course): array {
+    foreach (COURSE_STRANDS as $parent => $kids) if (strcasecmp($parent, $course) === 0) return $kids;
+    return [];
+}
+/** The broad course a strand sits under; '' when it sits under nothing. */
+function course_parent(string $course): string {
+    foreach (COURSE_STRANDS as $parent => $kids) foreach ($kids as $k) if (strcasecmp($k, $course) === 0) return (string)$parent;
+    return '';
+}
+/** Every course name that belongs to the same subject, parent first. */
+function course_family(string $course): array {
+    $parent = course_parent($course);
+    if ($parent !== '') return array_merge([$parent], course_strands($parent));
+    $kids = course_strands($course);
+    return $kids ? array_merge([$course], $kids) : [$course];
+}
+/**
+ * What a member on `$course` should be shown.
+ *
+ * A strand gets its own lessons AND the subject's shared ones — a pianist
+ * should still learn to read music. A broad course gets everything under it.
+ * A leaf gets itself. Nothing here looks at the spelling of a name.
+ */
+function course_scope(string $course): array {
+    $parent = course_parent($course);
+    if ($parent !== '') return [$course, $parent];
+    $kids = course_strands($course);
+    return $kids ? array_merge([$course], $kids) : [$course];
+}
+
+/**
+ * Everything a member on this course can REACH — the course, its subject, and
+ * their division. This is deliberately NOT course_scope().
+ *
+ * A member's courses are their identity: what they chose, what the roster
+ * shows, what "My course" says, what an instructor is assigned against. A
+ * division is none of those — nobody enrols in Technology & Applied
+ * Engineering. Putting it in course_scope() pushed the division's NAME into
+ * the member's own course list, where it read as a course they had taken, and
+ * that is the failure the roster tests were written to catch.
+ *
+ * So reach is its own idea, used only where lessons are matched.
+ */
+function course_reach(string $course): array {
+    $out = course_scope($course);
+    $div = course_division($course);
+    if ($div !== '' && !in_array($div, $out, true)) $out[] = $div;
+    return $out;
+}
+
+/**
+ * The division a course sits in — Robotics → Technology & Applied Engineering.
+ *
+ * WHY A LESSON MAY BE SCOPED TO A DIVISION. A centre does not always have an
+ * instructor for every course. When the Robotics instructor is unavailable for
+ * a term, the Robotics learners must still have a Saturday that teaches them
+ * something, and it should be the same Saturday the rest of their division is
+ * having rather than an improvised one. So a lesson may be filed against a
+ * DIVISION as well as against a course, and a member reaches, in order:
+ *
+ *     their course   →   its parent strand   →   their division   →   ''
+ *     Robotics           (none)                  Technology          everyone
+ *     Piano              Music                   Creative Arts       everyone
+ *
+ * The division curriculum is the one that holds when the specialist is not in
+ * the room. It is not a replacement for the course: a member who has both sees
+ * both, and the course lesson is the one that carries their week.
+ */
+function course_division(string $course): string {
+    $course = trim($course);
+    if ($course === '') return '';
+    $parent = course_parent($course);
+    foreach (club_catalogue() as $division => $courses) {
+        foreach ($courses as $c) {
+            if (strcasecmp($c, $course) === 0 || ($parent !== '' && strcasecmp($c, $parent) === 0)) return (string)$division;
+        }
+    }
+    return '';
+}
+
+/** Every division name, as the catalogue spells it. */
+function curriculum_divisions(): array { return array_keys(club_catalogue()); }
+
+/** Every value a lesson may be filed against: the courses, plus the divisions. */
+function curriculum_scopes(): array {
+    return array_values(array_unique(array_merge(curriculum_courses(), curriculum_divisions())));
+}
+/* Words that name a SUBJECT rather than a course — including "Musical
+   Instruments", the umbrella that was retired when the instruments became
+   courses of their own. Each resolves to a broad course, and from there to its
+   whole family, so no member on an old track is left with nothing. */
+const BROAD_COURSE_WORDS = [
+    'musical instruments' => 'Music', 'instruments' => 'Music', 'instrument' => 'Music', 'musical' => 'Music',
+];
+const MEMBER_COURSE_WORDS = [
+    /* An instrument names its own course now. 'trumpet', 'flute' and 'bass' have
+       no course of their own yet and stay pointed at the nearest one that does,
+       so a child who wrote one on their card still reaches a real lesson. */
+    'piano' => 'Piano', 'keyboard' => 'Piano',
+    'guitar' => 'Guitar', 'bass' => 'Guitar', 'bass guitar' => 'Guitar',
+    'drums' => 'Drums', 'drum' => 'Drums', 'percussion' => 'Drums',
+    'violin' => 'Violin', 'strings' => 'Violin',
+    'saxophone' => 'Saxophone', 'sax' => 'Saxophone', 'trumpet' => 'Saxophone', 'flute' => 'Saxophone',
+    'vocal' => 'Vocal Training', 'vocals' => 'Vocal Training', 'singing' => 'Vocal Training', 'voice' => 'Vocal Training', 'choir' => 'Vocal Training',
+    'drama' => 'Acting', 'theatre' => 'Acting', 'theater' => 'Acting',
+    'ai' => 'Artificial Intelligence', 'code' => 'Coding', 'programming' => 'Coding', 'software' => 'Software Development',
+    'robots' => 'Robotics', 'robot' => 'Robotics', 'cyber' => 'Cybersecurity', 'cyber security' => 'Cybersecurity',
+    'film' => 'Video Production', 'video' => 'Video Production', 'videography' => 'Video Production',
+    'pm' => 'Project Management',
+];
+
+/**
+ * Once per deployment: every NGG member with no chosen courses whose track
+ * names courses exactly and nothing vague ("Coding, Robotics", "Piano") has
+ * them written as chosen courses. A vague track ("Tech") is left for a person
+ * to choose (the roster's "No courses chosen" filter lists them). Recorded,
+ * so it never runs twice; one audit event with the count.
+ */
+const MEMBER_COURSES_BACKFILL = 'member_courses_backfill_v1';
+function member_courses_backfill_once(): int {
+    if ((string)setting_raw(MEMBER_COURSES_BACKFILL) !== '') return 0;
+    setting_set(MEMBER_COURSES_BACKFILL, gmdate('c'), 'system');
+    $ctx = null; $n = 0; $now = now_iso();
+    foreach (db_all("SELECT memberId, track FROM members WHERE COALESCE(courses,'') = '' AND COALESCE(type,'NGG') = 'NGG' AND TRIM(COALESCE(track,'')) <> ''") as $m) {
+        // Only a track that names its courses precisely: a broad word (Music, TECH) is left as it is.
+        [$c, $vague, $broad] = member_courses_from_text((string)$m['track'], $ctx);
+        if (!$c || $vague || $broad) continue;
+        db_update('members', ['courses' => json_encode(array_slice($c, 0, MEMBER_COURSES_MAX), JSON_UNESCAPED_UNICODE), 'updatedAt' => $now], ['memberId' => (string)$m['memberId']]);
+        $n++;
+    }
+    audit('member.courses.backfill', 'system', '', ['converted' => $n], '');
+    return $n;
+}
+
+/** The words that stand for a whole division (as on the card: TECH, MEDIA), never an instrument or a hobby. */
+const MEMBER_DIVISION_WORDS = [
+    'tech' => 'tech', 'technology' => 'tech', 'media' => 'media', 'business' => 'business',
+    'arts' => 'arts', 'art' => 'arts', 'creative' => 'arts', 'performing arts' => 'arts', 'creative arts' => 'arts',
+];
+/** The music courses (the music faculty's own: Music, its instruments, voice and production). */
+/**
+ * Kept as the name other code may still call, but it is now one line over
+ * COURSE_STRANDS. It used to match course names with a regex and a word map,
+ * which is how "Piano" ended up a music course by spelling rather than by
+ * belonging to one.
+ */
+function member_music_courses(array $ctx = []): array { return course_family('Music'); }
+
+/**
+ * What free text names, word by word: [courses, vague words, broad].
+ *   - a course's exact name → that course;
+ *   - a word in MEMBER_COURSE_WORDS → its one course ("Piano" → Musical Instruments);
+ *   - "music" → the music courses (broad);
+ *   - a division word (TECH, MEDIA…) → that division's courses (broad);
+ *   - anything else → nothing, and it is reported as vague.
+ * An instrument used to be read as "the arts" and brought the whole division:
+ * Piano was given Catering and Adire. That path is gone.
+ */
+function member_courses_from_text(string $text, ?array &$ctx = null): array {
+    if ($ctx === null) $ctx = curriculum_course_ctx();
+    $byLower = $ctx['byLower'];
+    foreach ($ctx['unitCourses'] as $c) $byLower[mb_strtolower((string)$c)] ??= (string)$c;
+    $byLower['chess'] ??= 'Chess';
+    $out = []; $vague = []; $broad = false;
+    foreach (preg_split('/\s*[,;\/|:]\s*|\s+and\s+|\s*&\s*/i', trim($text)) ?: [] as $w) {
+        $w = trim($w); if ($w === '') continue;
+        $lw = mb_strtolower($w);
+        /* A broad course named directly, or the retired umbrella that used to
+           stand for one. Either way the answer is the subject's whole family,
+           read off COURSE_STRANDS rather than matched against spellings. */
+        $broadName = (BROAD_COURSE_WORDS[$lw] ?? '') ?: (course_strands($byLower[$lw] ?? $w) ? ($byLower[$lw] ?? $w) : '');
+        if ($broadName !== '') { $out = array_merge($out, course_family($broadName)); $broad = true; continue; }
+        if (isset($byLower[$lw])) { $out[] = $byLower[$lw]; continue; }
+        $syn = MEMBER_COURSE_WORDS[$lw] ?? null;
+        if ($syn !== null && isset($byLower[mb_strtolower($syn)])) { $out[] = $byLower[mb_strtolower($syn)]; continue; }
+        if (isset(MEMBER_DIVISION_WORDS[$lw])) { $out = array_merge($out, curriculum_division_courses(MEMBER_DIVISION_WORDS[$lw], $ctx)); $broad = true; continue; }
+        $vague[] = $w;
+    }
+    return [array_values(array_unique($out)), $vague, $broad];
+}
+/** The words themselves too, as course names: a lesson filed under exactly "Design" is a Design member's. */
+function member_text_words(string $text): array {
+    return array_values(array_filter(array_map('trim', preg_split('/\s*[,;\/|:]\s*|\s+and\s+|\s*&\s*/i', trim($text)) ?: []), fn($w) => $w !== ''));
+}
+
+/**
+ * A division's courses: the seeded list, plus every course of each catalogue
+ * division that is the same division under the admin's own name ("AI &
+ * Technology" is Technology), plus every course lessons are filed under that
+ * reads as the division ("Media Lab" is Media). Names only — a division is
+ * found from a division's or a course's NAME, never from an instrument.
+ */
+function curriculum_division_courses(string $divId, array &$ctx): array {
+    if (isset($ctx['div'][$divId])) return $ctx['div'][$divId];
+    $d = function_exists('nggc_division') ? nggc_division($divId) : null;
+    if (!$d) return $ctx['div'][$divId] = [];
+    $divOf = function (string $name): string {
+        if (!function_exists('nggc_division_for_track')) return '';
+        $id = nggc_division_for_track($name);
+        if ($id !== '') return $id;
+        foreach (preg_split('/[^\p{L}]+/u', $name) ?: [] as $w) { if ($w !== '' && ($id = nggc_division_for_track($w)) !== '') return $id; }
+        return '';
+    };
+    $out = array_values($d['courses'] ?? []);
+    foreach ($ctx['catalogue'] as $name => $courses) {
+        if ($divOf((string)$name) === $d['id']) { $out = array_merge($out, array_values($courses)); continue; }
+        foreach ($courses as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
+    }
+    foreach ($ctx['unitCourses'] as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
+    return $ctx['div'][$divId] = array_values(array_unique($out));
+}
+
+/**
+ * The division a member belongs to, by the NAME the catalogue spells it with,
+ * or ''. Resolved the way the rest of the programme resolves it: what is on
+ * the record, else what their track plainly means, else the division of a
+ * course they already carry.
+ */
+function curriculum_member_division(array $m): string {
+    $d = trim((string)($m['division'] ?? ''));
+    if ($d !== '' && function_exists('nggc_division') && ($x = nggc_division($d))) return (string)$x['name'];
+    if (function_exists('nggc_division_for_track')) {
+        $id = nggc_division_for_track((string)($m['track'] ?? ''));
+        if ($id !== '' && ($x = nggc_division($id))) return (string)$x['name'];
+    }
+    foreach (member_courses_of($m) as $c) { $dv = course_division((string)$c); if ($dv !== '') return $dv; }
+    return '';
+}
+
+/**
+ * A member's courses.
+ *
+ * TWO MODES, and which one is live is a setting — `courseSource` on the
+ * curriculum schedule (Control Room → Learning → Curriculum → Schedule).
+ *
+ *   'member'   (default) the courses chosen for them (members.courses), or —
+ *              for a record nobody has assigned yet — what their track and
+ *              the disciplines on their card name, or, failing those, every
+ *              course in their division.
+ *
+ *   'division' THE DIVISION IS THE ENROLMENT. A member takes their division's
+ *              OWN shared curriculum — the spine every course inside it
+ *              shares (curriculum-divisions-2026.json) — and nothing from the
+ *              individual strands. This exists because the fallback above was
+ *              doing a bad impression of it: a member with no courses on
+ *              record was handed all seven of Technology's strands at once,
+ *              which is a wall of lessons, not a curriculum. A division has
+ *              one spine; that is what the mode delivers.
+ *
+ * Club-wide lessons (course = '') reach everybody in both modes, and Chess is
+ * every division's (§6), so it is added in both.
+ */
+function curriculum_member_courses(array $m, ?array &$ctx = null): array {
+    if ($ctx === null) $ctx = curriculum_course_ctx_shared();
+    if (($ctx['courseSource'] ?? 'member') === 'division') {
+        $dv = curriculum_member_division($m);
+        /* No division on the record is not a reason to hand them somebody
+           else's curriculum: they get the Club-wide lessons and Chess, and
+           the coverage board names them as unplaced. */
+        return $dv === '' ? ['Chess'] : [$dv, 'Chess'];
+    }
+    // Placed courses, else the record's proposal: ONE inference, the same one
+    // stored for SQL readers (course-placement.php), never a second guess here.
+    $out = member_courses_of($m);
+    if (!$out) $out = curriculum_member_courses_infer($m, $ctx)['courses'];
+    /* Widen each course to its subject: a pianist is shown Piano's lessons and
+       Music's shared ones, because reading music is not a piano skill. A leaf
+       course widens to itself, so this is a no-op for most of the catalogue. */
+    $wide = [];
+    foreach ($out as $c) foreach (course_scope((string)$c) as $x) $wide[] = $x;
+    $out = $wide;
+    $seen = []; $uniq = [];
+    foreach ($out as $c) { $k = mb_strtolower(trim((string)$c)); if ($k !== '' && !isset($seen[$k])) { $seen[$k] = 1; $uniq[] = (string)$c; } }
+    $out = $uniq;
+    if ($out && !isset($seen['chess'])) $out[] = 'Chess';
+    return $out;
+}
+
+/**
+ * The courses a record SUGGESTS, for a member nobody has placed yet: what the
+ * track names (a course, an instrument, or a division's courses), plus the
+ * card's interests inside that same division; the stored division when the
+ * track names nothing. Never a second division from the interests: those are
+ * reported in `dropped` and flagged for staff to decide (course-placement.php).
+ * Returns {courses, from, dropped, flag}. Deterministic in its inputs, so the
+ * stored proposal (members.coursesProposed) and a live call always agree.
+ */
+/** One course context per request until something is written: callers in a loop share it. */
+function curriculum_course_ctx_shared(): array {
+    static $ctx = null, $gen = -1;
+    if ($ctx === null || $gen !== db_write_gen()) { $ctx = curriculum_course_ctx(); $gen = db_write_gen(); }
+    return $ctx;
+}
+
+function curriculum_member_courses_infer(array $m, ?array &$ctx = null): array {
+    if ($ctx === null) $ctx = curriculum_course_ctx_shared();
+    $track = (string)($m['track'] ?? ''); $dis = (string)($m['disciplines'] ?? ''); $div = trim((string)($m['division'] ?? ''));
+    $out = array_merge(member_courses_from_text($track, $ctx)[0], member_text_words($track));
+    $from = $out ? 'track' : '';
+    $trackDiv = function_exists('nggc_division_for_track') ? nggc_division_for_track($track) : '';
+    if ($trackDiv === '' && $div !== '' && function_exists('nggc_division') && nggc_division($div)) $trackDiv = (string)nggc_division($div)['id'];
+    $fromDis = array_merge(member_courses_from_text($dis, $ctx)[0], member_text_words($dis));
+    $dropped = [];
+    if ($trackDiv !== '' && trim($track) !== '') {
+        $mine = array_map('mb_strtolower', array_merge(curriculum_division_courses($trackDiv, $ctx), ['Chess']));
+        foreach ($fromDis as $c) if (!in_array(mb_strtolower((string)$c), $mine, true)) $dropped[] = (string)$c;
+        $fromDis = array_values(array_filter($fromDis, static fn($c) => in_array(mb_strtolower((string)$c), $mine, true)));
+    }
+    if ($fromDis) { $out = array_merge($out, $fromDis); $from = $from ?: 'interests'; }
+    if (!$out && $div !== '') { $out = curriculum_division_courses($div, $ctx); $from = $out ? 'division' : ''; }
+    // Only courses that exist are proposed: a division's word ("Tech") or a
+    // stray one ("Piano", once Musical Instruments is in) names no class.
+    // Read once per context, never per member: class lists call this for every child.
+    if (!isset($ctx['known'])) {
+        $known = ['chess' => 'Chess'];
+        foreach (curriculum_courses() as $c) $known[mb_strtolower($c)] = $c;
+        if (function_exists('nggc_divisions')) foreach (nggc_divisions() as $dv) foreach ($dv['courses'] as $c) $known[mb_strtolower($c)] ??= $c;
+        // …and a course the Community has a channel for (channels are made from courses).
+        foreach (db_all("SELECT name FROM community_channels WHERE kind = 'course'") as $r) $known[mb_strtolower((string)$r['name'])] ??= (string)$r['name'];
+        $ctx['known'] = $known;
+    }
+    $known = $ctx['known'];
+    $real = static function (array $list) use ($known): array {
+        $o = []; foreach ($list as $c) { $k = mb_strtolower(trim((string)$c)); if (isset($known[$k]) && !in_array($known[$k], $o, true)) $o[] = $known[$k]; } return $o;
+    };
+    $clean = $real($out); $dropped = $real($dropped);
+    $flag = !$clean ? 'no_match' : ($dropped ? 'other_division' : ($from === 'division' || ($from === 'track' && count($clean) > 3) ? 'whole_division' : ''));
+    return ['courses' => $clean, 'from' => $from, 'dropped' => array_values(array_unique($dropped)), 'flag' => $flag];
+}
+
+/* ── A three-year programme that adapts to the member ───────────────────────
+ *
+ * NGG lasts three years, so a course's lessons carry their year in `level`
+ * ("Year 2 · Developing"). A lesson whose level names no year is for everyone,
+ * as before. Progress through the years follows MASTERY, not the calendar:
+ *   - a member starts at Year 1, or where staff place them (an experienced
+ *     pianist can begin at Year 2: staff.curriculum.year);
+ *   - per course, finishing CURR_ADVANCE_PCT of a year's lessons opens the
+ *     next year — a fast learner is never held to an intake's pace, and one who
+ *     needs longer is never pushed on with gaps;
+ *   - the unfinished lessons of a year they have moved past stay, as catch-up;
+ *   - a course with no lessons for a year carries on with its nearest one.
+ * Deadlines (and so fines) follow the term for the year a member is PLACED in;
+ * a year opened early by progress is self-paced. */
+const CURR_PROGRAMME_YEARS = 3;
+const CURR_ADVANCE_PCT     = 80;
+const CURR_YEAR_KEY        = 'staff.curriculum.year';
+
+/** The programme year a lesson's level names — "Year 2", "Yr 2", "Level 2" — or 0. */
+function curriculum_level_year(string $level): int {
+    return preg_match('/\b(?:year|yr|level)\s*-?\s*([1-9])\b/i', $level, $h) ? min(CURR_PROGRAMME_YEARS, (int)$h[1]) : 0;
+}
+
+/* ── The NGG Learning Path: Year → Term → Week ──────────────────────────────
+ *
+ * One way of naming where a lesson sits, the same in every course: three
+ * programme YEARS, each of two TERMS of twelve WEEKS (a Saturday each). A
+ * lesson is coded `Y1·T2·W3` — Year 1, Term 2, week 3 of that term — and its
+ * term carries a name when the level gives one ("Year 1 · Module 2:
+ * Spreadsheets…" → "Spreadsheets…"). The year comes from the level; the term
+ * from the level ("Term 2", or "Module N", two modules a year), or else from
+ * the week (weeks 13–24 are Term 2). A lesson with no year is "Club-wide".
+ */
+const CURR_TERM_WEEKS = 12;
+function curriculum_path(string $level, int $week): array {
+    $year = curriculum_level_year($level);
+    $term = 0;
+    if (preg_match('/\bterm\s*([1-9])\b/i', $level, $h)) $term = (int)$h[1];
+    elseif (preg_match('/\bmodule\s*([1-9]\d?)\b/i', $level, $h)) $term = (((int)$h[1] - 1) % 2) + 1;
+    if ($term === 0) $term = $week > CURR_TERM_WEEKS ? 2 : 1;
+    $wk = $week > CURR_TERM_WEEKS ? (($week - 1) % CURR_TERM_WEEKS) + 1 : max(1, $week);
+    $name = '';
+    if (preg_match('/(?:module|term)\s*\d+\s*[:—–-]\s*(.+)$/iu', $level, $h)) $name = trim($h[1]);
+    elseif (preg_match('/^year\s*\d+\s*[·:—–-]\s*(.+)$/iu', trim($level), $h)) $name = trim($h[1]);
+    return ['year' => $year, 'term' => $term, 'week' => $wk, 'termName' => $name,
+            'code' => ($year ? 'Y' . $year . '·' : '') . 'T' . $term . '·W' . $wk,
+            'label' => ($year ? 'Year ' . $year . ' · ' : '') . 'Term ' . $term . ($name !== '' ? ': ' . $name : '') . ' · Week ' . $wk];
+}
+
+/** Where staff placed a member: ['year' => 1..3, 'source' => 'set'|'default']. */
+function curriculum_member_year(array $m, ?int $override = null): array {
+    if ($override === null) $override = (int)(db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', [(string)$m['memberId'], CURR_YEAR_KEY])['stateValue'] ?? 0);
+    return $override >= 1 && $override <= CURR_PROGRAMME_YEARS ? ['year' => $override, 'source' => 'set'] : ['year' => 1, 'source' => 'default'];
+}
+
+/**
+ * The adaptive filter. `$units` are rows with unitId, course, level; `$prog`
+ * is unitId → progress row. Returns unitId → stage: '' (a year-less lesson),
+ * 'current' (the year they are working in), 'catchup' (left behind in a year
+ * they moved past). A unit not in the result is not open to them yet. Also
+ * fills `$courses`: course → ['placed', 'year', 'pct'] for the screen.
+ * Pure: a sweep over every member loads each table once.
+ */
+function curriculum_adapt(array $units, int $placedYear, array $prog, ?array &$courses = null): array {
+    $byCourse = []; $names = [];
+    foreach ($units as $u) {
+        $y = curriculum_level_year((string)$u['level']);
+        if (!$y) continue;
+        $c = mb_strtolower((string)$u['course']); $names[$c] = (string)$u['course'];
+        $byCourse[$c][$y][] = (string)$u['unitId'];
+    }
+    $done = fn(string $id): bool => ($prog[$id]['status'] ?? '') === 'completed';
+    $pct = function (array $ids) use ($done): int { $n = 0; foreach ($ids as $id) if ($done($id)) $n++; return $ids ? (int)floor($n * 100 / count($ids)) : 0; };
+    $courses = []; $plan = [];
+    foreach ($byCourse as $c => $years) {
+        ksort($years);
+        $have = array_keys($years);
+        $below = array_filter($have, fn($y) => $y <= $placedYear);
+        $placed = $below ? max($below) : min($have);
+        $cur = $placed;
+        foreach ($have as $y) { if ($y < $placed) continue; $cur = $y; if ($pct($years[$y]) < CURR_ADVANCE_PCT) break; }
+        $plan[$c] = [$placed, $cur];
+        $courses[$names[$c]] = ['placed' => $placed, 'year' => $cur, 'pct' => $pct($years[$cur]), 'years' => $have, 'advancePct' => CURR_ADVANCE_PCT];
+    }
+    $out = [];
+    foreach ($units as $u) {
+        $id = (string)$u['unitId']; $y = curriculum_level_year((string)$u['level']);
+        if ($y === 0) { $out[$id] = ''; continue; }
+        [$placed, $cur] = $plan[mb_strtolower((string)$u['course'])];
+        $st = (string)($prog[$id]['status'] ?? '');
+        if ($y === $cur) $out[$id] = 'current';
+        elseif ($y < $cur && $y >= $placed && !$done($id)) $out[$id] = 'catchup';
+        elseif ($y < $placed && $st !== '' && !$done($id)) $out[$id] = 'catchup';
+    }
+    return $out;
+}
+
+/**
+ * curriculum.material — a lesson's PDF (or other file), served from this
+ * origin. Lesson files live on Cloudinary or the bucket, and a Cloudinary
+ * account refuses to DELIVER a PDF unless "Allow delivery of PDF and ZIP
+ * files" is switched on — so the link opened a 401 page, and a PDF never
+ * displayed. This fetches it through the signed download the Community's
+ * documents already use (cm3_doc_get), for a member whose lessons include it,
+ * or for staff. A link that is not ours (Google Drive, YouTube) is not
+ * fetched: `external` tells the page to open it as a link.
+ */
+function curriculum_material_doc(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    $mat = db_row("SELECT * FROM curriculum_materials WHERE materialId = ? LIMIT 1", [(string)($p['materialId'] ?? '')]);
+    if ($viewer === '' || !$mat) return ['ok' => false, 'error' => 'not_found'];
+    $unit = db_row("SELECT * FROM curriculum_units WHERE unitId = ? LIMIT 1", [(string)$mat['unitId']]);
+    if (!$unit) return ['ok' => false, 'error' => 'not_found'];
+    $staff = function_exists('community_actor_is_staff') && community_actor_is_staff($viewer);
+    if (!$staff) {
+        // A member sees an approved file of a published lesson that is theirs.
+        if ((string)$unit['status'] !== 'published' || (string)($mat['status'] ?? 'approved') !== 'approved') return ['ok' => false, 'error' => 'not_found'];
+        $m = curriculum_member_row($viewer);
+        if (!$m || !isset(curriculum_member_units_all($m)[(string)$unit['unitId']])) return ['ok' => false, 'error' => 'not_found'];
+    }
+    $url = trim((string)$mat['url']);
+    $src = function_exists('cm3_doc_source') ? cm3_doc_source($url) : null;
+    if (!$src) return ['ok' => false, 'error' => 'external', 'url' => $url];
+    $got = cm3_doc_get($src);
+    if ((int)$got['code'] !== 200 || $got['body'] === '') return ['ok' => false, 'error' => 'fetch_failed'];
+    if (strlen($got['body']) > CM3_DOC_MAX_BYTES) return ['ok' => false, 'error' => 'doc_too_big'];
+    $ext = strtolower($src['format'] ?? '') ?: strtolower(pathinfo(parse_url($url, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
+    if ($ext === '' && strncmp($got['body'], '%PDF', 4) === 0) $ext = 'pdf';
+    $types = (defined('STORE_TYPES') ? STORE_TYPES['pdf'] + STORE_TYPES['raw'] : []) + ['pdf' => 'application/pdf'];
+    $name = trim((string)preg_replace('/[^A-Za-z0-9 ._()-]+/', '', (string)$mat['title'])) ?: 'Lesson file';
+    if ($ext !== '' && !preg_match('/\.' . preg_quote($ext, '/') . '$/i', $name)) $name .= '.' . $ext;
+    return ['ok' => true, 'name' => $name, 'ext' => $ext, 'mime' => (string)($types[$ext] ?? 'application/octet-stream'), 'body' => $got['body']];
+}
+
+/** Whether a lesson of this stage and year falls due on the term's clock. */
+function curriculum_stage_due(string $stage, int $year, int $placedYear): bool {
+    return $stage === '' || ($stage === 'current' && ($year === 0 || $year <= $placedYear));
+}
+
+/** Every published lesson of the member's courses, before the year is applied. */
+function curriculum_member_units_all(array $m): array {
+    /* Reach, not identity. curriculum_member_courses() has ALREADY widened each
+       course to its subject — a guitarist's list holds Guitar and Music — so
+       only the DIVISION is added here. Running the full course_reach() over
+       that list widens Music a second time, back down to every strand under
+       it, and the guitarist starts receiving Piano's lessons. Add the
+       division; do not re-widen. */
+    $courses = [];
+    foreach (curriculum_member_courses($m) as $c) {
+        $courses[mb_strtolower((string)$c)] = true;
+        $div = course_division((string)$c);
+        if ($div !== '') $courses[mb_strtolower($div)] = true;
+    }
+    $courses = array_keys($courses);
+    if (!$courses) return curriculum_load("status = 'published' AND course = ''", [], 'week, course, position');
+    $ph = implode(',', array_fill(0, count($courses), '?'));
+    return curriculum_load("status = 'published' AND (course = '' OR lower(course) IN ($ph))", $courses, 'week, course, position');
+}
+
+/** The member's lessons for where they are in the programme; each bundle carries its `stage`. */
+function curriculum_member_units(array $m, ?array &$placement = null): array {
+    $all = curriculum_member_units_all($m);
+    $placement = curriculum_member_year($m) + ['courses' => []];
+    if (!$all) return [];
+    $ids = array_keys($all);
+    $prog = [];
+    foreach (db_all('SELECT unitId, status FROM curriculum_progress WHERE memberId = ? AND unitId IN (' . implode(',', array_fill(0, count($ids), '?')) . ')',
+                    array_merge([(string)$m['memberId']], $ids)) as $r) $prog[(string)$r['unitId']] = $r;
+    $stages = curriculum_adapt(array_map(fn($b) => $b['unit'], $all), (int)$placement['year'], $prog, $courses);
+    $placement['courses'] = $courses;
+    $out = [];
+    foreach ($all as $id => $b) if (array_key_exists($id, $stages)) $out[$id] = $b + ['stage' => $stages[$id]];
+    return $out;
+}
+
+/** staff.curriculum.year — place a member in a programme year (0 clears it: they start at Year 1 and progress moves them on). */
+function staff_curriculum_year(array $p): array {
+    // From the Control Room it is the `curriculum` capability within the admin's centres; from a portal, the instructor's own members.
+    if (!empty($p['viaAdmin'])) {
+        $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+        $by = (string)$g['requester']['memberId'];
+    } else {
+        $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+        $by = (string)$g['member']['memberId'];
+    }
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if (!empty($p['viaAdmin']) ? !admin_centre_allowed($g['requester'], (string)$m['centre'])
+                              : ($g['centres'] !== null && !in_array((string)$m['centre'], $g['centres'], true))) return ['ok' => false, 'error' => 'out_of_scope'];
+    $year = (int)($p['year'] ?? -1);
+    if (!is_numeric($p['year'] ?? null) || $year < 0 || $year > CURR_PROGRAMME_YEARS) return ['ok' => false, 'error' => 'bad_year', 'max' => CURR_PROGRAMME_YEARS];
+    $was = curriculum_member_year($m);
+    if ($year === 0) db_exec('DELETE FROM member_state WHERE memberId = ? AND stateKey = ?', [(string)$m['memberId'], CURR_YEAR_KEY]);
+    else db_upsert('member_state', ['memberId' => (string)$m['memberId'], 'stateKey' => CURR_YEAR_KEY, 'stateValue' => (string)$year, 'updatedAt' => now_iso()],
+                   ['memberId', 'stateKey'], ['stateValue' => (string)$year, 'updatedAt' => now_iso()]);
+    $now = curriculum_member_year($m);
+    audit('curriculum.year', $by, (string)$m['memberId'], ['from' => $was['year'], 'to' => $now['year'], 'source' => $now['source']]);
+    return ['ok' => true, 'placement' => $now, 'unchanged' => $was['year'] === $now['year'] && $was['source'] === $now['source']];
+}
+
+/* ── Placing a whole class in the curriculum, quickly ──────────────────────
+ *
+ * "We have to assess all of them where they should be in the curriculum: how
+ * do we quickly do that?" One screen: every child of the class with the year
+ * they are placed in now and a SUGGESTED year with its reason, from how long
+ * they have been in NGG (their intake year) and how much of their current
+ * year's lessons they have done. The instructor confirms or changes each and
+ * saves the class in one press; each row goes through staff_curriculum_year,
+ * so there is one placement, not two. */
+const CURR_PLACE_MAX = 200;
+
+function curriculum_suggest_year(array $m, ?array $state = null): array {
+    $intake = function_exists('member_intake_year') ? member_intake_year($m) : 0;
+    $byTime = $intake > 0 ? max(1, min(CURR_PROGRAMME_YEARS, (int)gmdate('Y') - $intake + 1)) : 1;
+    $why = $intake > 0 ? 'Joined in ' . $intake . ': year ' . $byTime . ' of NGG' : 'No intake year on record: starts at Year 1';
+    $year = $byTime;
+    if ($state && $state['total'] >= 4) {
+        $share = $state['done'] / max(1, $state['total']);
+        if ($share >= 0.8 && $year < CURR_PROGRAMME_YEARS && ($state['avg'] ?? 0) >= 70) { $year++; $why .= '; has done ' . $state['done'] . ' of ' . $state['total'] . ' lessons well, so one year up'; }
+        elseif ($share < 0.2 && $year > 1 && $state['done'] < 2) { $year--; $why .= '; has done little of the lessons yet, so a year back to fill the gaps'; }
+    }
+    return ['year' => $year, 'why' => $why];
+}
+
+/** staff.curriculum.placement — the class (or the admin's members) with their placement and a suggestion. */
+function staff_curriculum_placement(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $where = "status = 'active' AND lower(COALESCE(type,'NGG')) = 'ngg'"; $args = [];
+    $centres = $g['centres'] ?? null;
+    if ($centres !== null) { if (!$centres) return ['ok' => true, 'rows' => [], 'max' => CURR_PROGRAMME_YEARS];
+        $where .= ' AND centre IN (' . implode(',', array_fill(0, count($centres), '?')) . ')'; $args = array_merge($args, $centres); }
+    $course = trim((string)($p['course'] ?? ''));
+    if ($course !== '') { [$cs, $ca] = member_course_sql($course); $where .= ' AND ' . $cs; $args = array_merge($args, $ca); }
+    $rows = [];
+    foreach (db_all("SELECT memberId, fullName, centre, track, courses, disciplines, division, cohort, joinDate, createdAt FROM members WHERE $where ORDER BY fullName LIMIT " . CURR_PLACE_MAX, $args) as $m) {
+        if (($g['courses'] ?? null) !== null && !member_takes_any($m, (array)$g['courses'])) continue;
+        $st = curriculum_child_state($m, $course);
+        $now = curriculum_member_year($m);
+        $sug = curriculum_suggest_year($m, $st);
+        $rows[] = ['memberId' => (string)$m['memberId'], 'name' => (string)$m['fullName'], 'centre' => (string)$m['centre'],
+            'year' => (int)$now['year'], 'placed' => $now['source'] === 'set', 'suggested' => $sug['year'], 'why' => $sug['why'],
+            'done' => $st['done'], 'total' => $st['total'], 'avg' => $st['avg']];
+    }
+    return ['ok' => true, 'rows' => $rows, 'max' => CURR_PROGRAMME_YEARS, 'course' => $course];
+}
+
+/** staff.curriculum.place — save many placements at once; per-row verdicts, one audit event. */
+function staff_curriculum_place(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $in = is_array($p['placements'] ?? null) ? $p['placements'] : [];
+    if (!$in) return ['ok' => false, 'error' => 'nothing_to_place'];
+    if (count($in) > CURR_PLACE_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CURR_PLACE_MAX];
+    foreach ($in as $x) if (!is_array($x) || !is_numeric($x['year'] ?? null) || (int)$x['year'] < 1 || (int)$x['year'] > CURR_PROGRAMME_YEARS) return ['ok' => false, 'error' => 'bad_year', 'max' => CURR_PROGRAMME_YEARS];
+    $results = []; $applied = 0; $unchanged = 0; $failed = 0;
+    foreach ($in as $x) {
+        $r = staff_curriculum_year(['requesterId' => (string)$p['requesterId'], 'memberId' => (string)($x['memberId'] ?? ''), 'year' => (int)$x['year']] + (isset($p['as']) ? ['as' => $p['as']] : []));
+        $results[] = ['memberId' => (string)($x['memberId'] ?? ''), 'ok' => !empty($r['ok']), 'error' => (string)($r['error'] ?? ''), 'unchanged' => !empty($r['unchanged'])];
+        if (empty($r['ok'])) $failed++; elseif (!empty($r['unchanged'])) $unchanged++; else $applied++;
+    }
+    audit('curriculum.place', (string)$g['member']['memberId'], 'class', ['applied' => $applied, 'unchanged' => $unchanged, 'failed' => $failed], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'applied' => $applied, 'unchanged' => $unchanged, 'failed' => $failed, 'results' => $results];
+}
+
+/**
+ * staff.curriculum.confirm — the instructor says what a child HAS done: ticks
+ * lessons done (or takes a tick back). The portal's numbers are an estimate;
+ * this is the instructor's validation. A lesson the child completed online
+ * keeps its score; a ticked one is completed with no score and says who
+ * confirmed it. Only the instructor's own children and courses.
+ */
+const CURR_CONFIRM_MAX = 300;
+function staff_curriculum_confirm(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $by = (string)$g['member']['memberId'];
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if (($g['centres'] ?? null) !== null && !in_array((string)$m['centre'], $g['centres'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    $done = !array_key_exists('done', $p) || !empty($p['done']);
+    $ids = array_values(array_unique(array_filter(array_map('strval', (array)($p['unitIds'] ?? [])))));
+    if (!$ids) return ['ok' => false, 'error' => 'nothing_to_confirm'];
+    if (count($ids) > CURR_CONFIRM_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CURR_CONFIRM_MAX];
+    $mine = curriculum_member_units($m, $placement);
+    $all = curriculum_member_units_all($m);   // their courses' lessons, any year
+    $now = now_iso(); $applied = 0; $unchanged = 0; $refused = [];
+    foreach ($ids as $uid) {
+        $b = $all[$uid] ?? $mine[$uid] ?? null;
+        if (!$b) { $refused[] = ['unitId' => $uid, 'error' => 'not_their_lesson']; continue; }
+        if (($g['courses'] ?? null) !== null && (string)$b['unit']['course'] !== '' && !in_array(mb_strtolower((string)$b['unit']['course']), array_map('mb_strtolower', (array)$g['courses']), true)) { $refused[] = ['unitId' => $uid, 'error' => 'not_your_course']; continue; }
+        $pr = db_row('SELECT * FROM curriculum_progress WHERE memberId = ? AND unitId = ? LIMIT 1', [(string)$m['memberId'], $uid]);
+        if ($done) {
+            if ($pr && (string)$pr['status'] === 'completed') { $unchanged++; continue; }
+            if ($pr) db_update('curriculum_progress', ['status' => 'completed', 'completedAt' => $now, 'updatedAt' => $now, 'markedBy' => 'confirmed:' . $by, 'pending' => 0], ['id' => (int)$pr['id']]);
+            else db_insert('curriculum_progress', ['unitId' => $uid, 'memberId' => (string)$m['memberId'], 'status' => 'completed', 'unitVersion' => (int)($b['unit']['version'] ?? 1),
+                'score' => 0, 'maxScore' => 0, 'bestPct' => 0, 'attempts' => 0, 'answers' => '', 'marks' => '', 'feedback' => '', 'pending' => 0,
+                'markedBy' => 'confirmed:' . $by, 'startedAt' => $now, 'completedAt' => $now, 'updatedAt' => $now]);
+            $applied++;
+        } else {
+            // Only a tick can be taken back; a lesson the child did online stays theirs.
+            if (!$pr || !str_starts_with((string)$pr['markedBy'], 'confirmed:') || (int)$pr['attempts'] > 0) { $unchanged++; continue; }
+            db_exec('DELETE FROM curriculum_progress WHERE id = ?', [(int)$pr['id']]);
+            $applied++;
+        }
+    }
+    audit('curriculum.confirm', $by, (string)$m['memberId'], ['done' => $done, 'applied' => $applied, 'unchanged' => $unchanged, 'refused' => count($refused)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'applied' => $applied, 'unchanged' => $unchanged, 'refused' => $refused, 'state' => curriculum_child_state($m)];
 }
 
 /** A member's curriculum with their progress — the portal, a mentor's view and the report share it. */
 function curriculum_for_member(array $m): array {
-    $units = curriculum_member_units($m);
+    $units = curriculum_member_units($m, $placement);
     $prog = [];
     if ($units) {
         $ids = array_keys($units);
@@ -820,10 +2261,13 @@ function curriculum_for_member(array $m): array {
     foreach ($units as $id => $b) {
         $u = $b['unit']; $pr = $prog[$id] ?? null;
         if ($pr && $pr['status'] === 'completed') $done++;
-        $due = curriculum_due_facts($start, $u, count($b['checks']), $pr, $today, $cfg);
+        // Catch-up, and a year opened early by progress, is self-paced: never overdue.
+        $due = curriculum_stage_due($b['stage'], curriculum_level_year((string)$u['level']), (int)$placement['year']) ? curriculum_due_facts($start, $u, count($b['checks']), $pr, $today, $cfg)
+             : ['dueDate' => '', 'overdueDays' => 0, 'outstanding' => false];
         if ($due['overdueDays'] > 0) $overdue++;
         $out[] = ['unitId' => $id, 'course' => (string)$u['course'], 'level' => (string)$u['level'], 'week' => (int)$u['week'],
             'position' => (int)$u['position'], 'title' => (string)$u['title'], 'summary' => (string)$u['summary'],
+            'stage' => (string)$b['stage'], 'year' => curriculum_level_year((string)$u['level']), 'path' => curriculum_path((string)$u['level'], (int)$u['week']),
             'durationMins' => (int)$u['durationMins'], 'materials' => count($b['materials']), 'checks' => count($b['checks']),
             'dueDate' => $due['dueDate'], 'overdueDays' => $due['overdueDays'],
             'fineAfterDays' => (int)$cfg['fineAfterDays'], 'fineAmount' => (int)$cfg['fineAmount'],
@@ -832,18 +2276,21 @@ function curriculum_for_member(array $m): array {
                                  'stale' => (int)$pr['unitVersion'] !== (int)$u['version'] && (int)$pr['attempts'] > 0] : null];
     }
     return ['units' => $out, 'total' => count($out), 'completed' => $done, 'overdue' => $overdue,
-            'pct' => $out ? (int)round($done / count($out) * 100) : 0];
+            'pct' => $out ? (int)round($done / count($out) * 100) : 0, 'placement' => $placement];
 }
 
 function curriculum_member_row(string $memberId): ?array {
-    $m = db_row('SELECT memberId, fullName, track, centre, type, status, joinDate, createdAt FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    $m = db_row('SELECT memberId, fullName, track, courses, disciplines, division, centre, type, status, cohort, displayId, joinDate, createdAt FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     return ($m && member_is_ngg($m)) ? $m : null;
 }
 
 function member_curriculum_list(array $p): array {
     $m = curriculum_member_row((string)($p['memberId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
-    return ['ok' => true, 'track' => (string)$m['track']] + curriculum_for_member($m);
+    $c = curriculum_for_member($m);
+    // The Learn app's notes, saves, recently opened and figures (domain/learn.php), in the same read.
+    return ['ok' => true, 'track' => (string)$m['track']] + $c
+         + (function_exists('learn_state_for') ? ['learn' => learn_state_for($m, $c['units'])] : []);
 }
 
 function member_curriculum_unit(array $p): array {
@@ -860,8 +2307,64 @@ function member_curriculum_unit(array $p): array {
             'unitVersion' => (int)$b['unit']['version'], 'startedAt' => now_iso(), 'updatedAt' => now_iso()]); } catch (\Throwable $e) {}
         $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
     }
+    /* How they said today went, so the taps show their own answer back
+       (domain/lesson-feedback.php). This is NOT the testimonial — that is
+       asked once a session, not once a Saturday. */
+    $say = function_exists('member_lesson_feedback_mine')
+        ? (member_lesson_feedback_mine(['memberId' => (string)$m['memberId'], 'unitId' => $id])['mine'] ?? null) : null;
+    if (function_exists('learn_touch')) learn_touch((string)$m['memberId'], $id);
     return ['ok' => true, 'unit' => curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false),
-            'progress' => curriculum_progress_public($pr, $b)];
+            'mine' => function_exists('learn_mine') ? learn_mine((string)$m['memberId'], $id) : null,
+            'progress' => curriculum_progress_public($pr, $b),
+            'review' => curriculum_opening_review($units, $id, (string)$m['memberId']),
+            'feedback' => $say];
+}
+
+/**
+ * THE OPENING REVIEW: the previous session's questions, sat at the start of
+ * this one.
+ *
+ * A lesson's questions are written with it, by the person who knows what it
+ * taught, and asked a week later — because a test at the end of the hour
+ * measures the hour, with everything still on the whiteboard, and a test a
+ * week later measures what survived. Having to pull a cold memory back out
+ * is itself what fixes it there.
+ *
+ * Deliberately NOT a new table, a new op or a new progress row. The member
+ * answers through `member.curriculum.submit` against the PREVIOUS unitId, so
+ * the attempt is recorded against the lesson the questions belong to, which
+ * is where every report, deadline and completion already looks for it. The
+ * only new thing is WHEN they are put in front of somebody.
+ *
+ * It is offered, never forced. A child who joined this term late, or who was
+ * away, must still be able to read today's lesson — a review they cannot
+ * pass is not a reason to lock them out of the teaching.
+ */
+function curriculum_opening_review(array $units, string $unitId, string $memberId): ?array {
+    if (!curriculum_schedule()['reviewAtStart']) return null;   // Control Room → Curriculum → Schedule
+    $ids = array_keys($units);
+    $at = array_search($unitId, $ids, true);
+    if ($at === false || $at === 0) return null;          // the first lesson reviews nothing
+
+    $prevId = (string)$ids[$at - 1];
+    $prev = $units[$prevId];
+    if (!$prev['checks']) return null;                     // nothing was ever asked of it
+    // A different course's lesson is not last week's lesson.
+    if (mb_strtolower((string)$prev['unit']['course']) !== mb_strtolower((string)$units[$unitId]['unit']['course'])) return null;
+
+    $pr = db_row('SELECT status, bestPct, pending FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$prevId, $memberId]);
+    if ($pr && (string)$pr['status'] === 'completed') return null;   // already done, don't ask twice
+
+    $pub = curriculum_unit_public($prev['unit'], [], $prev['checks'], false);
+    return [
+        'unitId' => $prevId,
+        'title' => (string)$prev['unit']['title'],
+        'week' => (int)$prev['unit']['week'],
+        'passMark' => (int)$prev['unit']['passMark'],
+        'checks' => $pub['checks'],
+        'attempted' => $pr ? in_array((string)$pr['status'], ['attempted', 'submitted'], true) : false,
+        'pending' => $pr ? (int)$pr['pending'] > 0 : false,
+    ];
 }
 
 /**
@@ -886,7 +2389,7 @@ function member_curriculum_document(array $p): array {
     }
     $weeks = []; $done = 0;
     foreach ($units as $id => $b) {
-        $u = curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false);
+        $u = curriculum_strip_assignments(curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false));
         $pr = $prog[$id] ?? null;
         $u['progress'] = $pr ? ['status' => (string)$pr['status'], 'bestPct' => (int)$pr['bestPct'], 'completedAt' => (string)$pr['completedAt']] : null;
         if ($pr && $pr['status'] === 'completed') $done++;
@@ -902,6 +2405,188 @@ function member_curriculum_document(array $p): array {
         'pct' => $units ? (int)round($done / count($units) * 100) : 0,
         'weeks' => array_map(static fn($w, $list) => ['week' => $w, 'lessons' => $list], array_keys($weeks), array_values($weeks)),
     ]];
+}
+
+/**
+ * A lesson as a member's copy carries no assignment: the weekly homework is set,
+ * dated and marked on the assignments desk, so a printed copy that also lists
+ * it would be a second, undated version of the same work. The section headed
+ * "…assignment" / "homework" goes, and so do the marked tasks that are that
+ * homework (a task, project or essay check); the quick checks stay.
+ */
+function curriculum_strip_assignments(array $u): array {
+    $u['body'] = trim((string)preg_replace('/(^|\n)#{2,4}[^\n]*(assignment|homework)[^\n]*\n.*?(?=\n#{2,4}\s|\n>|$)/isu', '$1', (string)$u['body']));
+    $u['checks'] = array_values(array_filter($u['checks'] ?? [], static fn($c) => !in_array((string)$c['kind'], ['task', 'project', 'essay'], true)
+        && !preg_match('/^\s*assignment\b/i', (string)$c['prompt'])));
+    return $u;
+}
+
+/**
+ * admin.curriculum.document — one course (optionally one level) as a printable
+ * document. `edition` 'staff' carries the answers and marking guides; 'member'
+ * is the copy a member may be handed: no answers, and no assignments.
+ */
+function admin_curriculum_document(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club']); if (!$g['ok']) return $g;
+    $course = trim((string)($p['course'] ?? ''));
+    $level = trim((string)($p['level'] ?? ''));
+    $staff = (string)($p['edition'] ?? 'staff') !== 'member';
+    $where = "status = 'published' AND lower(course) = ?"; $args = [mb_strtolower($course)];
+    if ($level !== '') { $where .= ' AND level = ?'; $args[] = $level; }
+    $units = curriculum_load($where, $args, 'level, week, position');
+    if (!$units) return ['ok' => false, 'error' => 'not_found', 'detail' => 'No published lessons for that course' . ($level !== '' ? ' and level' : '') . '.'];
+    $groups = [];
+    foreach ($units as $b) {
+        $u = curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], $staff);
+        if (!$staff) $u = curriculum_strip_assignments($u);
+        if ($staff) foreach ($u['checks'] as &$c) {
+            if ($c['kind'] === 'mcq' && ctype_digit((string)$c['answer']) && isset($c['options'][(int)$c['answer']])) $c['answerText'] = $c['options'][(int)$c['answer']];
+            elseif ((string)$c['answer'] !== '') $c['answerText'] = (string)$c['answer'];
+        }
+        unset($c);
+        $u['progress'] = null;
+        $key = $u['path']['label'];
+        $groups[$key][] = $u;
+    }
+    return ['ok' => true, 'document' => [
+        'edition' => $staff ? 'staff' : 'member',
+        'title' => ($units ? (string)reset($units)['unit']['course'] : $course) . ' curriculum' . ($level !== '' ? ' — ' . $level : ''),
+        'member' => ['memberId' => '', 'fullName' => $staff ? 'Instructor edition' : 'Member edition', 'track' => $course, 'centre' => ''],
+        'generatedAt' => now_iso(), 'total' => count($units), 'completed' => 0, 'pct' => 0,
+        'weeks' => array_map(static fn($k, $list) => ['label' => $k, 'week' => (int)$list[0]['week'], 'lessons' => $list], array_keys($groups), array_values($groups)),
+    ]];
+}
+
+/* ── The study helper: a member asks about a lesson they are taking ──────────
+ *
+ * The AI answers from the lesson itself (its text, objectives and materials),
+ * as a patient tutor: it explains, gives a worked example, asks a question
+ * back — and never hands over the answers to the lesson's checks, which it is
+ * not shown. A daily allowance per member keeps it a study aid, and the count
+ * lives under an `ai.` key that member_state_set refuses, so a member cannot
+ * reset their own. Distress in a question is answered with a trusted adult,
+ * not a lesson.
+ */
+const CURR_TUTOR_PER_DAY = 20;
+const CURR_TUTOR_Q_MAX   = 600;
+/* How much of the conversation travels back. Enough for a follow-up and a
+   follow-up to that; not so much that a long thread crowds out the lesson. */
+const CURR_TUTOR_TURNS   = 8;
+
+/**
+ * THE STUDY HELPER — a tutor, not a search box.
+ *
+ * It was a one-shot form: one question in, one paragraph out, no memory. A
+ * child who read the answer and said "I still don't get it" was starting
+ * again from nothing, because only the latest question was ever sent. That is
+ * not what being stuck is like, and it is the whole reason the thing felt
+ * useless. It carries the conversation now.
+ *
+ * Three things it is given that it never had:
+ *   - the THREAD, so a follow-up is a follow-up;
+ *   - the member's programme YEAR, so a Year 1 child and a Year 3 child
+ *     asking the same question are not answered the same way;
+ *   - WHAT THEY GOT WRONG on this lesson's review, when they have sat it. A
+ *     tutor who can see the actual mistake teaches the actual gap instead of
+ *     re-explaining the part they already understood.
+ *
+ * What it still must not do: give away an answer to a graded question, do an
+ * assignment, or carry on as if distress were a study question.
+ */
+function member_curriculum_ask(array $p): array {
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
+    $q = trim(mb_substr((string)($p['question'] ?? ''), 0, CURR_TUTOR_Q_MAX));
+    if (mb_strlen($q) < 4) return ['ok' => false, 'error' => 'question_too_short'];
+    $units = curriculum_member_units($m, $placement);
+    $id = (string)($p['unitId'] ?? '');
+    if (!isset($units[$id])) return ['ok' => false, 'error' => 'not_found'];
+    $key = 'ai.tutor.' . gmdate('Y-m-d');
+    $used = (int)(db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', [(string)$m['memberId'], $key])['stateValue'] ?? 0);
+    if ($used >= CURR_TUTOR_PER_DAY) return ['ok' => false, 'error' => 'daily_limit', 'limit' => CURR_TUTOR_PER_DAY, 'left' => 0];
+    if (!function_exists('ai_enabled') || !ai_enabled('coach')) return ['ok' => false, 'error' => 'ai_disabled'];
+    // Distress is not a study question: point to people, and count nothing.
+    if (preg_match('/\b(kill myself|suicide|hurt myself|self[- ]harm|abuse[ds]?|touch(ed|es) me|want to die)\b/i', $q))
+        return ['ok' => true, 'answer' => 'That sounds really important, and it is not something to work out alone. Please talk to your mentor, your instructor or a parent today — or use "Report a concern" in your portal, which goes straight to the safeguarding team.', 'safeguarding' => true, 'left' => CURR_TUTOR_PER_DAY - $used];
+    // Spend the allowance BEFORE the model is called, so parallel requests cannot all slip under it.
+    db_upsert('member_state', ['memberId' => (string)$m['memberId'], 'stateKey' => $key, 'stateValue' => (string)($used + 1), 'updatedAt' => now_iso()],
+              ['memberId', 'stateKey'], ['stateValue' => (string)($used + 1), 'updatedAt' => now_iso()]);
+
+    $b = $units[$id];
+    $u = $b['unit'];
+    $obj = implode('; ', json_decode((string)$u['objectives'], true) ?: []);
+    $lesson = "Course: {$u['course']}\nLesson: {$u['title']}\nObjectives: $obj\n\n"
+            . mb_substr(preg_replace('/##\s*This week.s assignment.*$/su', '', (string)$u['body']), 0, 6000);
+
+    /* WHAT THEY ALREADY GOT WRONG. The prompt, their answer and the mark —
+       never the model answer, which is the thing they must not be handed. */
+    $wrong = curriculum_ask_gaps($b, (string)$m['memberId']);
+
+    $year = (int)($placement['year'] ?? 1);
+    $system = 'You are the NGG study helper: a patient, encouraging tutor for a ' . (($year >= 3) ? '15-17' : ($year === 2 ? '12-15' : '10-13'))
+        . ' year old member of Next Generation Genius in Nigeria, in year ' . $year . ' of three. '
+        . 'Teach, do not lecture. Explain the ONE thing they are stuck on, in short sentences, with a concrete example they could '
+        . 'actually try — use Nigerian everyday things for examples, not American ones. Build on what has already been said in this '
+        . 'conversation rather than starting again. End with one short question that checks they followed. '
+        . 'At most 200 words, plain British English, no markdown headings. '
+        . 'NEVER give the answer to a graded question and never do their assignment — help them work it out. '
+        . 'If they ask about something close to the lesson, help anyway; only decline if it is nothing to do with their studies. '
+        . 'Never ask for personal details.'
+        . ($wrong !== '' ? "\n\nTHEY RECENTLY GOT THESE WRONG in this lesson's review. Teach to this gap; do not read them the answer:\n" . $wrong : '')
+        . "\n\nTHE LESSON:\n" . $lesson;
+
+    /* The thread. The client sends it back; it is capped here rather than
+       trusted, and only the text is taken — a role the client invents must
+       not be able to put words in the system's mouth. */
+    $turns = [];
+    foreach (is_array($p['history'] ?? null) ? $p['history'] : [] as $t) {
+        if (!is_array($t)) continue;
+        $text = trim(mb_substr((string)($t['text'] ?? ''), 0, 1200));
+        if ($text === '') continue;
+        $turns[] = ['role' => (string)($t['role'] ?? '') === 'ai' ? 'ai' : 'me', 'text' => $text];
+    }
+    $turns = array_slice($turns, -CURR_TUTOR_TURNS);
+    $turns[] = ['role' => 'me', 'text' => $q];
+
+    $r = ai_chat($system, $turns, 560, 'coach');
+    if (empty($r['ok'])) {
+        // A failed answer is given back.
+        db_exec('UPDATE member_state SET stateValue = ? WHERE memberId = ? AND stateKey = ?', [(string)$used, (string)$m['memberId'], $key]);
+        return ['ok' => false, 'error' => (string)($r['error'] ?? 'ai_failed')];
+    }
+    return ['ok' => true, 'answer' => mb_substr(trim((string)$r['text']), 0, 2400), 'left' => CURR_TUTOR_PER_DAY - $used - 1, 'limit' => CURR_TUTOR_PER_DAY];
+}
+
+/**
+ * The questions this member got wrong on a lesson, as a line each: the
+ * question, what they wrote, and what it scored. Never the model answer —
+ * that is precisely what the tutor must not hand over.
+ */
+function curriculum_ask_gaps(array $b, string $memberId): string {
+    $pr = db_row('SELECT answers, marks FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [(string)$b['unit']['unitId'], $memberId]);
+    if (!$pr) return '';
+    $answers = json_decode((string)$pr['answers'], true) ?: [];
+    $marks = json_decode((string)$pr['marks'], true) ?: [];
+    if (!$marks) return '';
+    $out = [];
+    foreach ($b['checks'] as $c) {
+        $cid = (string)$c['checkId'];
+        $mk = $marks[$cid] ?? null;
+        if (!is_array($mk) || !isset($mk['points'])) continue;
+        $pts = (int)$c['points'];
+        if ($pts <= 0 || (float)$mk['points'] >= $pts) continue;      // they got it
+        $mine = $answers[$cid] ?? '';
+        if ((string)$c['kind'] === 'mcq') {
+            $opts = json_decode((string)$c['options'], true) ?: [];
+            $mine = is_numeric($mine) && isset($opts[(int)$mine]) ? (string)$opts[(int)$mine] : '(no answer)';
+        }
+        $mine = trim(mb_substr((string)$mine, 0, 300));
+        $out[] = '- Question: ' . mb_substr((string)$c['prompt'], 0, 240)
+               . "\n  They answered: " . ($mine === '' ? '(nothing)' : $mine)
+               . "\n  Scored " . (int)$mk['points'] . ' of ' . $pts;
+        if (count($out) >= 4) break;
+    }
+    return implode("\n", $out);
 }
 
 /** Render the curriculum document through its template (api/_lib/templates). */
@@ -1098,18 +2783,37 @@ function staff_curriculum(array $p): array {
     $where = "status = 'published'"; $args = [];
     if ($courses !== null) {
         if (!$courses) return ['ok' => true, 'units' => [], 'pending' => [], 'members' => 0];
-        $where .= " AND (course = '' OR course IN (" . implode(',', array_fill(0, count($courses), '?')) . '))'; $args = $courses;
+        /* A course's lessons include those filed under its parts: "Piano" and
+           "Guitar" lessons are Musical Instruments lessons. Matching the name
+           exactly gave a Musical Instruments instructor "0 lessons". */
+        $fam = [];
+        foreach ($courses as $c) foreach (curriculum_course_family((string)$c) as $f) $fam[mb_strtolower($f)] = true;
+        $fam = array_keys($fam);
+        $where .= " AND (course = '' OR lower(course) IN (" . implode(',', array_fill(0, count($fam), '?')) . '))'; $args = $fam;
     }
     $units = curriculum_load($where, $args, 'course, week, position');
     $mWhere = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $mArgs = [];
-    if ($g['centres'] !== null) {
-        if (!$g['centres']) return ['ok' => true, 'units' => [], 'pending' => [], 'members' => 0];
+    /* No centre in reach (an instructor whose safeguarding check is pending,
+     * or a record with no centre): the lessons are still theirs to read and
+     * prepare; no member, no answer and no progress reaches them. */
+    $noChildren = $g['centres'] !== null && !$g['centres'];
+    if ($g['centres'] !== null && !$noChildren) {
         $mWhere .= ' AND centre IN (' . implode(',', array_fill(0, count($g['centres']), '?')) . ')'; $mArgs = $g['centres'];
     }
-    if ($courses !== null) { $mWhere .= ' AND track IN (' . implode(',', array_fill(0, count($courses), '?')) . ')'; $mArgs = array_merge($mArgs, $courses); }
-    $members = db_all("SELECT memberId, fullName, displayId, centre, track FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
+    if ($courses !== null) {
+        // Members who take any of the instructor's courses, chosen or by their old track.
+        $or = [];
+        foreach ($courses as $c) { [$cs, $ca] = member_course_sql((string)$c); $or[] = $cs; $mArgs = array_merge($mArgs, $ca); }
+        $mWhere .= $or ? ' AND (' . implode(' OR ', $or) . ')' : ' AND 1 = 0';
+    }
+    $members = $noChildren ? [] : db_all("SELECT memberId, fullName, displayId, centre, track, courses, disciplines, division, joinDate, createdAt FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
     $byId = []; foreach ($members as $mm) $byId[(string)$mm['memberId']] = $mm;
-    $stats = []; $pending = [];
+    // Each member's courses, worked out once (the same matching their own page uses).
+    $cCtx = null; $cCache = [];
+    $coursesOf = function (string $id, array $mm) use (&$cCtx, &$cCache): array {
+        return $cCache[$id] ??= array_map('mb_strtolower', curriculum_member_courses($mm, $cCtx));
+    };
+    $stats = []; $pending = []; $doneBy = [];
     if ($units && $byId) {
         $uids = array_keys($units); $mids = array_keys($byId);
         $rows = db_all('SELECT * FROM curriculum_progress WHERE unitId IN (' . implode(',', array_fill(0, count($uids), '?')) . ')
@@ -1117,8 +2821,12 @@ function staff_curriculum(array $p): array {
         foreach ($rows as $r) {
             $s = &$stats[(string)$r['unitId']];
             $s['started'] = ($s['started'] ?? 0) + 1;
-            if ($r['status'] === 'completed') $s['completed'] = ($s['completed'] ?? 0) + 1;
+            if ($r['status'] === 'completed') {
+                $s['completed'] = ($s['completed'] ?? 0) + 1;
+                $s['scoreSum'] = ($s['scoreSum'] ?? 0) + (int)($r['bestPct'] ?? 0);
+            }
             unset($s);
+            if (in_array((string)$r['status'], ['completed', 'submitted'], true)) $doneBy[(string)$r['unitId']][(string)$r['memberId']] = true;
             if ((int)$r['pending'] > 0) {
                 $b = $units[(string)$r['unitId']];
                 $marks = json_decode((string)$r['marks'], true) ?: [];
@@ -1136,16 +2844,185 @@ function staff_curriculum(array $p): array {
             }
         }
     }
+    /* Where the term is: the week the Club is on (from the term's start date,
+       Control Room → Curriculum → Schedule), each lesson's due date, and who
+       is past it without having done it — all from the rows already read. */
+    $cfg = curriculum_schedule(); $today = gmdate('Y-m-d');
+    $weekNow = (string)$cfg['startDate'] !== '' && $today >= (string)$cfg['startDate'] ? intdiv((int)((strtotime($today . ' UTC') - strtotime($cfg['startDate'] . ' UTC')) / 86400), 7) + 1 : null;
     $out = [];
     foreach ($units as $id => $b) {
-        $audience = 0;
-        foreach ($members as $mm) if ((string)$b['unit']['course'] === '' || strcasecmp((string)$mm['track'], (string)$b['unit']['course']) === 0) $audience++;
+        $audience = 0; $behind = [];
+        $due = curriculum_due_date((string)$cfg['startDate'], (int)$b['unit']['week']);
+        foreach ($members as $mm) {
+            $uc = (string)$b['unit']['course'];
+            if ($uc !== '' && !array_intersect([mb_strtolower($uc), mb_strtolower(curriculum_course_parent($uc))], $coursesOf((string)$mm['memberId'], $mm))) continue;
+            $audience++;
+            if ($due !== '' && $today > $due && $b['checks'] && empty($doneBy[$id][(string)$mm['memberId']])) {
+                // A member who joined after it fell due is not behind on it.
+                $start = curriculum_member_start($mm, $cfg);
+                if ($start !== '' && curriculum_due_date($start, (int)$b['unit']['week']) < $today) $behind[] = (string)$mm['fullName'];
+            }
+        }
+        $done = $stats[$id]['completed'] ?? 0;
         $out[] = curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], true)
-            + ['stats' => ['audience' => $audience, 'started' => $stats[$id]['started'] ?? 0, 'completed' => $stats[$id]['completed'] ?? 0]];
+            + ['family' => curriculum_course_parent((string)$b['unit']['course']),
+               'stats' => ['audience' => $audience, 'started' => $stats[$id]['started'] ?? 0, 'completed' => $done,
+                           'avgScore' => $done ? (int)round(($stats[$id]['scoreSum'] ?? 0) / $done) : null, 'behind' => count($behind), 'behindNames' => array_slice($behind, 0, 12)],
+               'due' => $due];
     }
     return ['ok' => true, 'units' => $out, 'pending' => $pending, 'members' => count($members), 'role' => (string)$g['role'],
+            'weekNow' => $weekNow, 'termStart' => (string)$cfg['startDate'], 'termWeeks' => CURR_TERM_WEEKS,
+            'clearance' => (string)($g['clearance'] ?? 'cleared'),
             'submissions' => curriculum_submissions_by((string)$g['member']['memberId']),
+            /* The courses this person may file a lesson under, so their own
+               editor offers those and nothing else. null means every course,
+               which the screen reads as "use the catalogue". */
+            'courses' => $g['courses'] === null ? null : array_values(array_map('strval', $g['courses'])),
+            /* The standard an instructor's own questions are held to, same
+               map the AI drafter reads. */
+            'examRefs' => (static function () {
+                $out = [];
+                foreach (curriculum_courses() as $c) {
+                    $r = curriculum_exam_reference((string)$c);
+                    if ($r) $out[(string)$c] = ['body' => $r['body'], 'award' => $r['award'], 'assesses' => $r['assesses'], 'ask' => $r['ask'], 'link' => $r['link']];
+                }
+                return $out;
+            })(),
             'selfApprove' => in_array('curriculum', member_effective_caps($g['member']), true)];
+}
+
+/** The catalogue course a lesson's course belongs to: "Piano" → Musical Instruments; a catalogue course is its own. */
+function curriculum_course_parent(string $course): string {
+    $c = trim($course); if ($c === '') return '';
+    // The catalogue first ("Coding" is its own), then the word's one course
+    // ("Piano" → Musical Instruments), even when lessons already exist as "Piano".
+    foreach (club_courses() as $k) if (mb_strtolower($k) === mb_strtolower($c)) return $k;
+    $syn = MEMBER_COURSE_WORDS[mb_strtolower($c)] ?? null;
+    if ($syn !== null) foreach (club_courses() as $k) if (mb_strtolower($k) === mb_strtolower($syn)) return $k;
+    return curriculum_course_canonical($c) ?: $c;
+}
+
+/**
+ * A course and every course name whose lessons it should teach from.
+ *
+ * Two different relationships, kept apart on purpose:
+ *   · A STRAND of a broad course (COURSE_STRANDS) is a real part of the
+ *     subject, so a broad course always teaches across its strands — even
+ *     when it has lessons of its own.
+ *   · A name nobody catalogued ("Drone Flying") is a FALLBACK: it is taught
+ *     only while the course has nothing written, and is dropped the moment it
+ *     does, so a half-matched name can never dilute a real curriculum.
+ */
+function curriculum_course_family(string $course): array {
+    $strands = course_strands($course);
+    if ($strands) return array_merge([$course], $strands);
+    if (db_row("SELECT unitId FROM curriculum_units WHERE lower(course) = lower(?) AND status = 'published' LIMIT 1", [$course])) return [$course];
+    $out = [$course];
+    foreach (MEMBER_COURSE_WORDS as $w => $parent) if (mb_strtolower($parent) === mb_strtolower($course)) $out[] = $w;
+    foreach (db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> ''") as $r)
+        if (mb_strtolower(curriculum_course_parent((string)$r['course'])) === mb_strtolower($course)) $out[] = (string)$r['course'];
+    return array_values(array_unique($out));
+}
+
+/**
+ * staff.curriculum.lesson — an instructor writes a lesson for one of THEIR
+ * courses, from the portal. It is a draft for a curriculum lead to publish,
+ * unless the instructor holds `curriculum` themselves. Week and position:
+ * the week asked for, at the next free position in it.
+ */
+/**
+ * An instructor writes — or edits — a lesson for a course they teach.
+ *
+ * This used to take four fields: course, week, title, body. The Control Room
+ * had objectives, an opening review, materials, placement and the whole
+ * lesson editor; an instructor had a box. So the people who actually teach
+ * the thing could file a draft and nothing more, and every lesson that
+ * needed a review question or a worksheet had to be finished by somebody
+ * else in a different portal.
+ *
+ * It now takes the same lesson the Control Room does, through the same
+ * editor, and the difference between the two is where it SHOULD be — in what
+ * each person is allowed to do, not in what each person is shown:
+ *
+ *   · only their own courses, on the way in and on the way out;
+ *   · without the `curriculum` capability it saves as a draft, every time,
+ *     and a curriculum lead publishes it;
+ *   · and an instructor without that capability may only edit a draft THEY
+ *     wrote. A published lesson is in children's hands this Saturday, and
+ *     editing it is a curriculum lead's act, not a correction.
+ */
+function staff_curriculum_lesson(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $me = (string)$g['member']['memberId'];
+    $own = in_array('curriculum', member_effective_caps($g['member']), true);
+    $mine = static function (string $course) use ($g): bool {
+        return $g['courses'] === null
+            || in_array(mb_strtolower($course), array_map('mb_strtolower', $g['courses']), true);
+    };
+
+    $course = curriculum_course_canonical((string)($p['course'] ?? ''));
+    if (!$course) return ['ok' => false, 'error' => 'unknown_course'];
+    if (!$mine($course)) return ['ok' => false, 'error' => 'not_your_course'];
+
+    $id = trim((string)($p['unitId'] ?? ''));
+    $existing = $id !== '' ? db_row('SELECT * FROM curriculum_units WHERE unitId = ?', [$id]) : null;
+    if ($id !== '' && !$existing) return ['ok' => false, 'error' => 'not_found'];
+    if ($existing) {
+        // Reached on the way IN, against the lesson as it is stored — never
+        // against the course the request claims it is in.
+        if (!$mine((string)$existing['course']) && (string)$existing['course'] !== '') return ['ok' => false, 'error' => 'not_your_course'];
+        if (!$own) {
+            if ((string)$existing['status'] !== 'draft') return ['ok' => false, 'error' => 'already_published',
+                'message' => 'That lesson is published and children are working from it. A curriculum lead can change it.'];
+            if ((string)$existing['createdBy'] !== $me) return ['ok' => false, 'error' => 'not_your_lesson',
+                'message' => 'That draft is somebody else\'s. You can write your own lesson for this week.'];
+        }
+    }
+
+    $week = max(1, min(104, (int)($p['week'] ?? 1)));
+    $level = $existing ? (string)$existing['level'] : curriculum_clean_text($p['level'] ?? '', 60);
+    /* WHERE IN THE WEEK IS THE SERVER'S, NOT THE REQUEST'S.
+       Honouring a position from here looked harmless and was not: an
+       instructor's editor opens a brand new lesson with position 1 because
+       that is the sensible default for a field, not because anybody chose
+       it — so every first lesson an instructor wrote collided with whatever
+       already sat at position 1 and came back "slot taken" for a slot they
+       had never picked. Placing a lesson inside a week is a curriculum
+       lead's act, through the Control Room's own op. */
+    $pos = $existing ? (int)$existing['position']
+         : 1 + (int)(db_row('SELECT MAX(position) m FROM curriculum_units WHERE course = ? AND level = ? AND week = ?', [$course, $level, $week])['m'] ?? 0);
+
+    /* Publishing is the capability, not the screen. Without it the status is
+       'draft' whatever the request says — including on an edit, so a draft
+       cannot be walked into publication from here. */
+    $status = $own ? (string)($p['status'] ?? 'published') : 'draft';
+    if (!in_array($status, CURR_STATUSES, true)) $status = $own ? 'published' : 'draft';
+
+    $v = curriculum_validate([
+        'course' => $course, 'level' => $level, 'week' => $week, 'position' => $pos,
+        'title' => (string)($p['title'] ?? ''), 'summary' => (string)($p['summary'] ?? ''), 'body' => (string)($p['body'] ?? ''),
+        'objectives' => $p['objectives'] ?? [], 'materials' => $p['materials'] ?? [], 'checks' => $p['checks'] ?? [],
+        'durationMins' => $p['durationMins'] ?? 0, 'passMark' => $p['passMark'] ?? 60, 'status' => $status,
+    ]);
+    if (!$v['ok']) return $v;
+
+    $u = $v['unit'];
+    $clash = db_row('SELECT unitId FROM curriculum_units WHERE course = ? AND level = ? AND week = ? AND position = ? LIMIT 1',
+                    [$u['course'], $u['level'], $u['week'], $u['position']]);
+    if ($clash && (!$existing || (string)$clash['unitId'] !== $id)) {
+        return ['ok' => false, 'error' => 'slot_taken',
+                'detail' => 'another lesson is already week ' . $u['week'] . ', position ' . $u['position'] . ' of this course',
+                'unitId' => (string)$clash['unitId']];
+    }
+
+    $unitId = curriculum_write($v, $existing, $me, 'instructor');
+    audit('curriculum.' . ($existing ? 'update' : 'create'), $me, $unitId,
+          ['course' => $course, 'week' => $week, 'by' => 'instructor', 'status' => $u['status']], (string)($p['ip'] ?? ''));
+
+    $full = curriculum_load('unitId = ?', [$unitId]);
+    $row = $full ? reset($full) : null;
+    return ['ok' => true, 'unitId' => $unitId, 'status' => $u['status'], 'week' => $week, 'position' => $u['position'],
+            'unit' => $row ? ($row['unit'] + ['checks' => $row['checks'], 'materials' => $row['materials']]) : null];
 }
 
 /** One member's curriculum, for the mentor or instructor whose member it is. */
@@ -1154,7 +3031,8 @@ function staff_curriculum_member(array $p): array {
     $m = curriculum_member_row((string)($p['memberId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     if ($g['centres'] !== null && !in_array((string)$m['centre'], $g['centres'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
-    if ($g['courses'] !== null && !in_array((string)$m['track'], $g['courses'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    // An instructor reaches a member who takes ANY of their courses.
+    if ($g['courses'] !== null && !array_intersect(array_map('mb_strtolower', member_courses_of($m) ?: [(string)$m['track']]), array_map('mb_strtolower', $g['courses']))) return ['ok' => false, 'error' => 'out_of_scope'];
     return ['ok' => true, 'member' => ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'track' => (string)$m['track']]] + curriculum_for_member($m);
 }
 
@@ -1169,7 +3047,7 @@ function staff_curriculum_mark(array $p): array {
     $b = curriculum_load('unitId = ?', [(string)$pr['unitId']]);
     if (!$b) return ['ok' => false, 'error' => 'not_found'];
     $b = reset($b);
-    if ($g['courses'] !== null && (string)$b['unit']['course'] !== '' && !in_array((string)$b['unit']['course'], $g['courses'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    if ($g['courses'] !== null && (string)$b['unit']['course'] !== '' && !in_array(mb_strtolower((string)$b['unit']['course']), array_map('mb_strtolower', $g['courses']), true)) return ['ok' => false, 'error' => 'out_of_scope'];
     $marks = json_decode((string)$pr['marks'], true) ?: [];
     $in = is_array($p['marks'] ?? null) ? $p['marks'] : [];
     $byId = []; foreach ($b['checks'] as $c) $byId[(string)$c['checkId']] = $c;
@@ -1187,6 +3065,18 @@ function staff_curriculum_mark(array $p): array {
     if ($t['passed'] && !$completedBefore) $row['completedAt'] = now_iso();
     db_update('curriculum_progress', $row, ['id' => $pr['id']]);
     audit('curriculum.mark', (string)$g['member']['memberId'], (string)$pr['memberId'], ['unitId' => (string)$pr['unitId'], 'pct' => $t['pct']], (string)($p['ip'] ?? ''));
+    /* The child is told when the last written answer is marked: the score,
+       and the instructor's words if there are any. A mark nobody hears about
+       is feedback that never reached the learner. Once per lesson marked. */
+    if ($t['pending'] === 0 && (int)$pr['pending'] > 0 && function_exists('push_notification')) {
+        $fb = [];
+        foreach ($in as $cid => $mk) if (isset($byId[$cid]) && trim((string)($mk['feedback'] ?? '')) !== '') $fb[] = curriculum_clean_text($mk['feedback'], 300);
+        $who = trim((string)($g['mentor']['fullName'] ?? $g['member']['fullName'] ?? '')) ?: 'Your instructor';
+        try {
+            push_notification((string)$pr['memberId'], ['kind' => 'curriculum', 'title' => mb_substr($who . ' marked “' . (string)$b['unit']['title'] . '”: ' . $t['pct'] . '%', 0, 160),
+                'body' => mb_substr($fb ? implode(' ', $fb) : ($t['passed'] ? 'Well done — that lesson is complete.' : 'Have a look at what to work on, and try it again.'), 0, 400), 'linkPage' => 'dashboard']);
+        } catch (\Throwable $e) { error_log('[curriculum.mark.notify] ' . $e->getMessage()); }
+    }
     return ['ok' => true, 'pct' => $t['pct'], 'pending' => $t['pending'], 'status' => $row['status']];
 }
 
@@ -1235,16 +3125,57 @@ const CURR_FILE_TYPES = [
     'mov'  => ['video/quicktime'],
 ];
 
-function curriculum_file_dir(): string {
+/* Where a lesson's own files live.
+ *
+ * They were kept only in api/storage/curriculum — inside the website folder —
+ * and a deploy that deletes the folder before uploading the new build took
+ * every uploaded diagram, picture, GIF and recording with it, while the
+ * lessons, in the database, kept pointing at them (owner, 2026-10-29: "all of
+ * the diagrams and illustrations and gifs are no longer there"). Photos had
+ * the same failure and the same fix (domain/photos.php, photo_dir):
+ *
+ *  · `curriculum_dir` in config.php puts them OUTSIDE the website folder;
+ *  · unset, a folder beside the web root when the host allows one
+ *    (ngg-data/curriculum, next to the photos' ngg-data/photos);
+ *  · a file still in the old place is found there and moved across on read;
+ *  · with file storage (an S3 bucket) configured, every upload is also copied
+ *    to the bucket, and a file missing from disk is fetched back from it.
+ */
+function curriculum_file_legacy_dir(): string {
     $base = (string)(($GLOBALS['CONFIG'] ?? [])['db']['sqlite_path'] ?? '');
-    $dir = ($base !== '' ? dirname($base) : (__DIR__ . '/../../storage')) . '/curriculum';
+    return ($base !== '' ? dirname($base) : (__DIR__ . '/../../storage')) . '/curriculum';
+}
+function curriculum_file_guard(string $dir): void {
     if (!is_dir($dir)) @mkdir($dir, 0775, true);
     $ht = $dir . '/.htaccess';
     if (is_dir($dir) && !is_file($ht)) {
         @file_put_contents($ht, "<IfModule mod_authz_core.c>\n  Require all denied\n</IfModule>\n"
             . "<IfModule !mod_authz_core.c>\n  Order allow,deny\n  Deny from all\n</IfModule>\nOptions -Indexes\n");
     }
-    return $dir;
+}
+function curriculum_file_dir(): string {
+    if (isset($GLOBALS['__curriculum_file_dir'])) { curriculum_file_guard($GLOBALS['__curriculum_file_dir']); return $GLOBALS['__curriculum_file_dir']; }   // test seam
+    static $dir = null;
+    if ($dir !== null) return $dir;
+    $legacy = curriculum_file_legacy_dir();
+    $own = rtrim((string)($GLOBALS['CONFIG']['curriculum_dir'] ?? ''), '/');
+    if ($own === '' && function_exists('photo_inside_site') && function_exists('photo_safe_home') && photo_inside_site($legacy)) {
+        $safe = photo_safe_home();
+        if ($safe !== '') $own = dirname($safe) . '/curriculum';
+    }
+    if ($own !== '') {
+        curriculum_file_guard($own);
+        if (is_dir($own) && is_writable($own)) return $dir = $own;
+    }
+    curriculum_file_guard($legacy);
+    return $dir = $legacy;
+}
+/** The bucket key a lesson file is mirrored under. */
+function curriculum_file_bucket_key(string $f): string {
+    return (function_exists('store_folder') ? store_folder() : 'ngg') . '/curriculum/' . $f;
+}
+function curriculum_file_bucket_on(): bool {
+    return isset($GLOBALS['__store_http_mock']) || (function_exists('store_configured') && store_configured());
 }
 
 /**
@@ -1278,17 +3209,70 @@ function curriculum_file_store(array $p, string $by): array {
         if (!$ok) return ['ok' => false, 'error' => 'store_failed'];
         @chmod($dest, 0644);
     }
-    audit('curriculum.file', $by, $file, ['name' => $name, 'bytes' => $size], (string)($p['ip'] ?? ''));
+    // A second copy in the bucket, when there is one: a deploy, a full disk or
+    // a lost folder then costs nothing (curriculum_file_path fetches it back).
+    $mirrored = false;
+    if (curriculum_file_bucket_on()) {
+        $r = store_http('PUT', curriculum_file_bucket_key($file), (string)file_get_contents($dest), ['content-type' => CURR_FILE_TYPES[$ext][0]]);
+        $mirrored = ($r['code'] ?? 0) >= 200 && ($r['code'] ?? 0) < 300;
+    }
+    audit('curriculum.file', $by, $file, ['name' => $name, 'bytes' => $size, 'mirrored' => $mirrored], (string)($p['ip'] ?? ''));
     $url = '/api/member/curriculum-file.php?f=' . $file;
     return ['ok' => true, 'url' => $url, 'kind' => curriculum_material_kind('', 'x.' . $ext), 'bytes' => $size, 'name' => $name];
 }
 
 /** The path of a stored file for a valid name, or '' — a bad name and a
  *  missing file look the same to the caller. */
-function curriculum_file_path(string $f): string {
+function curriculum_file_path(string $f, bool $fetch = true): string {
     if (!preg_match('/^([a-f0-9]{16,64})\.([a-z0-9]{2,5})$/', $f, $m) || !isset(CURR_FILE_TYPES[$m[2]])) return '';
-    $path = curriculum_file_dir() . '/' . $f;
-    return is_file($path) ? $path : '';
+    $dir = curriculum_file_dir();
+    $path = $dir . '/' . $f;
+    if (is_file($path)) return $path;
+    // Still in the old place inside the website folder: move it out of harm's way.
+    $old = curriculum_file_legacy_dir() . '/' . $f;
+    if ($old !== $path && is_file($old)) {
+        if (@rename($old, $path) || @copy($old, $path)) { @chmod($path, 0644); return $path; }
+        return $old;
+    }
+    // Gone from disk, but mirrored: fetch it back once and keep it.
+    if ($fetch && curriculum_file_bucket_on()) {
+        $r = store_http('GET', curriculum_file_bucket_key($f));
+        if (($r['code'] ?? 0) === 200 && ($r['body'] ?? '') !== '' && @file_put_contents($path, $r['body']) !== false) { @chmod($path, 0644); return $path; }
+    }
+    return '';
+}
+
+/**
+ * Every lesson that points at one of its own files that cannot be found —
+ * as a material, or as a picture in its text — so staff can see what a lost
+ * folder took and upload it again. admin.curriculum.files (cap curriculum).
+ */
+function curriculum_missing_files(): array {
+    $out = [];
+    $seen = static function (string $f): bool { return curriculum_file_path($f, false) !== ''; };
+    foreach (db_all("SELECT m.unitId, m.title mt, m.url, u.course, u.title, u.week, u.status FROM curriculum_materials m JOIN curriculum_units u ON u.unitId = m.unitId
+                     WHERE m.url LIKE '%curriculum-file.php?f=%' AND COALESCE(m.status,'approved') = 'approved'") as $r) {
+        if (!preg_match('/[?&]f=([a-f0-9]{16,64}\.[a-z0-9]{2,5})/', (string)$r['url'], $mm) || $seen($mm[1])) continue;
+        $out[] = ['unitId' => (string)$r['unitId'], 'course' => (string)$r['course'], 'title' => (string)$r['title'], 'week' => (int)$r['week'],
+                  'status' => (string)$r['status'], 'where' => 'material', 'label' => (string)$r['mt'], 'file' => $mm[1]];
+    }
+    foreach (db_all("SELECT unitId, course, title, week, status, body FROM curriculum_units WHERE body LIKE '%curriculum-file.php?f=%'") as $r) {
+        if (!preg_match_all('/curriculum-file\.php\?f=([a-f0-9]{16,64}\.[a-z0-9]{2,5})/', (string)$r['body'], $all)) continue;
+        foreach (array_unique($all[1]) as $f) {
+            if ($seen($f)) continue;
+            $out[] = ['unitId' => (string)$r['unitId'], 'course' => (string)$r['course'], 'title' => (string)$r['title'], 'week' => (int)$r['week'],
+                      'status' => (string)$r['status'], 'where' => 'text', 'label' => 'A picture in the lesson text', 'file' => $f];
+        }
+    }
+    usort($out, static fn($a, $b) => strcmp($a['course'], $b['course']) ?: $a['week'] <=> $b['week']);
+    return $out;
+}
+function admin_curriculum_files(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $missing = curriculum_missing_files();
+    return ['ok' => true, 'missing' => array_slice($missing, 0, 500), 'count' => count($missing),
+            'dir' => curriculum_file_dir() === curriculum_file_legacy_dir() ? 'inside_site' : 'outside_site',
+            'mirrored' => curriculum_file_bucket_on()];
 }
 
 /* ══ Due dates, reminders, and the fine for a lesson left undone ══════════════
@@ -1310,13 +3294,34 @@ function curriculum_file_path(string $f): string {
  * editor's decision alone.
  */
 const CURR_SCHEDULE_DEFAULTS = ['enabled' => true, 'startDate' => '', 'remindBeforeDays' => 2, 'remindEveryDays' => 2,
-                                'fineAfterDays' => 7, 'fineAmount' => 1000];
+                                'fineAfterDays' => 7, 'fineAmount' => 1000,
+                                /* Whether a session opens with the previous
+                                   session's questions. On by default — it is
+                                   the programme's position — but a centre
+                                   running a short holiday course, or a term
+                                   where the rota has nobody to mark, can turn
+                                   it off rather than leave children staring
+                                   at a review nobody will ever mark. The
+                                   questions stay on the lesson either way. */
+                                'reviewAtStart' => true,
+                                /* WHERE A MEMBER'S COURSES COME FROM.
+                                   'member'   — the courses chosen for each
+                                                member (the default).
+                                   'division' — the division is the enrolment:
+                                                everyone takes their division's
+                                                own shared curriculum and
+                                                nothing from the strands.
+                                   curriculum_member_courses() is the whole
+                                   behaviour; this names which half runs. */
+                                'courseSource' => 'member'];
+const CURR_COURSE_SOURCES = ['member', 'division'];
 const CURR_DUE_BATCH = 60;
 
 function curriculum_schedule(): array {
     $c = setting_get('curriculum');
     $c = (is_array($c) ? $c : []) + CURR_SCHEDULE_DEFAULTS;
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$c['startDate'])) $c['startDate'] = '';
+    if (!in_array((string)$c['courseSource'], CURR_COURSE_SOURCES, true)) $c['courseSource'] = 'member';
     return $c;
 }
 
@@ -1355,16 +3360,19 @@ function curriculum_due_run(?string $today = null, int $limit = CURR_DUE_BATCH):
     $out = ['reminded' => 0, 'fined' => 0, 'members' => 0];
     if (empty($cfg['enabled']) || $cfg['startDate'] === '') return $out + ['skipped' => 'no_term'];
     $today = $today ?? attendance_today();
-    $units = db_all("SELECT u.unitId, u.course, u.week, u.title, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks
+    $units = db_all("SELECT u.unitId, u.course, u.level, u.week, u.title, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks
                      FROM curriculum_units u WHERE u.status = 'published'");
     $units = array_values(array_filter($units, static fn($u) => (int)$u['checks'] > 0));
     if (!$units) return $out + ['skipped' => 'no_assessments'];
     $byCourse = [];
     foreach ($units as $u) $byCourse[mb_strtolower((string)$u['course'])][] = $u;
-    $members = db_all("SELECT memberId, fullName, email, parentEmail, track, centre, joinDate, createdAt, type FROM members
+    $members = db_all("SELECT memberId, fullName, email, parentEmail, track, courses, disciplines, division, cohort, displayId, centre, joinDate, createdAt, type FROM members
                        WHERE COALESCE(type,'NGG') <> 'Summer' AND status = 'active'");
     $prog = [];
     foreach (db_all("SELECT memberId, unitId, status FROM curriculum_progress") as $r) $prog[(string)$r['memberId']][(string)$r['unitId']] = $r;
+    $placed = [];
+    foreach (db_all('SELECT memberId, stateValue FROM member_state WHERE stateKey = ?', [CURR_YEAR_KEY]) as $r) $placed[(string)$r['memberId']] = (int)$r['stateValue'];
+    $ctx = curriculum_course_ctx();
     $every = max(1, (int)$cfg['remindEveryDays']);
     $period = intdiv((int)(strtotime($today . ' UTC') / 86400), $every);
     $fineAfter = max(1, (int)$cfg['fineAfterDays']);
@@ -1375,7 +3383,13 @@ function curriculum_due_run(?string $today = null, int $limit = CURR_DUE_BATCH):
         if ($out['reminded'] >= $limit) break;
         $start = curriculum_member_start($m, $cfg);
         if ($start === '' || $start > $today) continue;
-        $mine = array_merge($byCourse[''] ?? [], $byCourse[mb_strtolower(trim((string)$m['track']))] ?? []);
+        // The same courses and the same year the member's own page shows — not a bare track match.
+        $mine = $byCourse[''] ?? [];
+        foreach (curriculum_member_courses($m, $ctx) as $c) $mine = array_merge($mine, $byCourse[mb_strtolower($c)] ?? []);
+        $mine = array_values(array_column($mine, null, 'unitId'));
+        $py = curriculum_member_year($m, $placed[(string)$m['memberId']] ?? 0)['year'];
+        $stages = curriculum_adapt($mine, $py, $prog[(string)$m['memberId']] ?? []);
+        $mine = array_values(array_filter($mine, fn($u) => isset($stages[(string)$u['unitId']]) && curriculum_stage_due($stages[(string)$u['unitId']], curriculum_level_year((string)$u['level']), $py)));
         $due = []; $finedNow = [];
         foreach ($mine as $u) {
             $f = curriculum_due_facts($start, $u, (int)$u['checks'], $prog[(string)$m['memberId']][(string)$u['unitId']] ?? null, $today, $cfg);
@@ -1441,6 +3455,9 @@ function admin_curriculum_schedule(array $p): array {
     if ($start !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) return ['ok' => false, 'error' => 'bad_date'];
     $next = [
         'enabled' => array_key_exists('enabled', $in) ? !empty($in['enabled']) : !empty($cur['enabled']),
+        'reviewAtStart' => array_key_exists('reviewAtStart', $in) ? !empty($in['reviewAtStart']) : !empty($cur['reviewAtStart']),
+        'courseSource' => in_array((string)($in['courseSource'] ?? ''), CURR_COURSE_SOURCES, true)
+            ? (string)$in['courseSource'] : (string)$cur['courseSource'],
         'startDate' => $start,
         'remindBeforeDays' => max(0, min(30, (int)($in['remindBeforeDays'] ?? $cur['remindBeforeDays']))),
         'remindEveryDays' => max(1, min(30, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']))),
@@ -1471,8 +3488,9 @@ function curriculum_overdue_board(string $mWhere, array $mArgs, string $course =
     if (!$units) return [];
     $byCourse = [];
     foreach ($units as $u) $byCourse[mb_strtolower((string)$u['course'])][] = $u;
-    $members = db_all("SELECT m.memberId, m.fullName, m.displayId, m.centre, m.track, m.joinDate, m.createdAt FROM members m WHERE $mWhere"
-                      . ($course !== '' ? ' AND lower(m.track) = lower(?)' : ''), $course !== '' ? array_merge($mArgs, [$course]) : $mArgs);
+    [$cSql, $cArgs] = $course !== '' ? member_course_sql($course, 'm.') : ['', []];
+    $members = db_all("SELECT m.memberId, m.fullName, m.displayId, m.centre, m.track, m.courses, m.joinDate, m.createdAt FROM members m WHERE $mWhere"
+                      . ($cSql !== '' ? ' AND ' . $cSql : ''), array_merge($mArgs, $cArgs));
     $prog = [];
     foreach (db_all("SELECT memberId, unitId, status FROM curriculum_progress") as $r) $prog[(string)$r['memberId']][(string)$r['unitId']] = $r;
     $fined = [];
@@ -1482,7 +3500,13 @@ function curriculum_overdue_board(string $mWhere, array $mArgs, string $course =
     foreach ($members as $m) {
         $start = curriculum_member_start($m, $cfg);
         if ($start === '') continue;
-        $mine = array_merge($byCourse[''] ?? [], $byCourse[mb_strtolower(trim((string)$m['track']))] ?? []);
+        // The same courses and the same year the member's own page shows — not a bare track match.
+        $mine = $byCourse[''] ?? [];
+        foreach (curriculum_member_courses($m, $ctx) as $c) $mine = array_merge($mine, $byCourse[mb_strtolower($c)] ?? []);
+        $mine = array_values(array_column($mine, null, 'unitId'));
+        $py = curriculum_member_year($m, $placed[(string)$m['memberId']] ?? 0)['year'];
+        $stages = curriculum_adapt($mine, $py, $prog[(string)$m['memberId']] ?? []);
+        $mine = array_values(array_filter($mine, fn($u) => isset($stages[(string)$u['unitId']]) && curriculum_stage_due($stages[(string)$u['unitId']], curriculum_level_year((string)$u['level']), $py)));
         $n = 0; $worst = 0; $titles = [];
         foreach ($mine as $u) {
             $f = curriculum_due_facts($start, $u, 1, $prog[(string)$m['memberId']][(string)$u['unitId']] ?? null, $today, $cfg);
@@ -1634,4 +3658,34 @@ function curriculum_review_notify(string $memberId, array $list, string $to, str
                                 : '<p style="margin:0 0 10px"><b>Why:</b> ' . esc_html($note) . '</p><p style="margin:0 0 10px">Fix it and send it again from the Curriculum tab of your portal.</p>');
     @send_mail($email, $head, email_template(['title' => $head, 'eyebrow' => 'NGG Club · Curriculum', 'intro' => 'A curriculum editor has looked at what you sent.',
         'bodyHtml' => $body, 'ctaLabel' => 'Open my portal →', 'ctaUrl' => $origin . '/mentor']));
+}
+
+
+/**
+ * Where one child is in their curriculum, lesson by lesson, for the adults
+ * who teach or mentor them: done (with the score), waiting for a mark, started,
+ * not started, opens later; and catch-up from a year moved past. Optionally one
+ * course. One read of the lessons, one of the progress rows.
+ */
+function curriculum_child_state(array $m, string $course = ''): array {
+    $units = function_exists('curriculum_member_units') ? curriculum_member_units($m, $placement) : [];
+    if ($course !== '') $units = array_filter($units, static fn($b) => strcasecmp((string)$b['unit']['course'], $course) === 0 || (string)$b['unit']['course'] === '');
+    $ids = array_keys($units);
+    $prog = [];
+    if ($ids) foreach (db_all('SELECT unitId, status, bestPct, attempts, pending, feedback, completedAt, updatedAt FROM curriculum_progress WHERE memberId = ? AND unitId IN (' . implode(',', array_fill(0, count($ids), '?')) . ')',
+        array_merge([(string)$m['memberId']], $ids)) as $r) $prog[(string)$r['unitId']] = $r;
+    $out = [];
+    foreach ($units as $id => $b) {
+        $u = $b['unit']; $pr = $prog[$id] ?? null;
+        $state = !$pr ? 'not_started' : ((int)$pr['pending'] > 0 ? 'to_mark' : ((string)$pr['status'] === 'completed' ? 'done' : 'started'));
+        $out[] = ['unitId' => (string)$id, 'title' => (string)$u['title'], 'course' => (string)$u['course'], 'week' => (int)$u['week'], 'level' => (string)$u['level'],
+            'stage' => (string)($b['stage'] ?? ''), 'state' => $state, 'pct' => $pr ? (int)$pr['bestPct'] : null, 'attempts' => $pr ? (int)$pr['attempts'] : 0,
+            'feedback' => $pr ? mb_substr((string)$pr['feedback'], 0, 200) : '', 'at' => $pr ? substr((string)($pr['completedAt'] ?: $pr['updatedAt']), 0, 10) : '',
+            'confirmed' => $pr ? str_starts_with((string)$pr['markedBy'], 'confirmed:') : false];
+    }
+    usort($out, static fn($a, $b) => [$a['week'], $a['course'], $a['title']] <=> [$b['week'], $b['course'], $b['title']]);
+    $done = count(array_filter($out, static fn($x) => $x['state'] === 'done'));
+    $scores = array_values(array_filter(array_column(array_filter($out, static fn($x) => $x['state'] === 'done'), 'pct'), static fn($v) => $v !== null));
+    return ['lessons' => $out, 'total' => count($out), 'done' => $done, 'toMark' => count(array_filter($out, static fn($x) => $x['state'] === 'to_mark')),
+        'avg' => $scores ? (int)round(array_sum($scores) / count($scores)) : null, 'year' => (int)($placement['year'] ?? 1)];
 }

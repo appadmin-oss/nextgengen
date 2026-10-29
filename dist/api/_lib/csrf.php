@@ -2,16 +2,25 @@
 declare(strict_types=1);
 
 /**
- * Lightweight CSRF protection.
+ * CSRF protection: a double-submit cookie.
  *
- * Strategy: double-submit cookie. On a GET to /api/auth/me.php we issue a
- * non-HttpOnly `ngg_csrf` cookie containing a random hex string. Every write
- * (POST) MUST echo that value back in the `X-NGG-CSRF` header. Because a
- * cross-site attacker cannot read the cookie (same-site Lax) AND cannot set
- * a custom header without the user's cooperation, the request is rejected.
+ * csrf_issue() sets a non-HttpOnly `ngg_csrf` cookie holding 24 random bytes.
+ * It is minted by the endpoints that establish or describe a session
+ * (auth/me, auth/login, auth/verify, auth/student-login, auth/reset-confirm,
+ * family/me, family/verify). Every write (POST/PUT/PATCH/DELETE) must echo
+ * the cookie's value in the `X-NGG-CSRF` header, compared in constant time.
  *
- * The token is also bound to the session cookie's signature, so refreshing
- * the session rotates the CSRF token too.
+ * Why that stops a forged request: a page on another origin can make the
+ * browser SEND our cookies, but the same-origin policy stops it READING the
+ * `ngg_csrf` value, so it cannot put the matching header on the request — and
+ * a custom header on a cross-origin request needs a CORS preflight this API
+ * does not grant. SameSite on the cookies is a second layer, not the first.
+ *
+ * What it is NOT: the token is independent random data, not derived from or
+ * bound to the session cookie. Re-minting it (each of the endpoints above)
+ * rotates it; signing in again does not by itself invalidate an old one. That
+ * is the standard double-submit trade-off on a host with no server-side
+ * session store (CLAUDE.md §3). Do not describe it as session-bound.
  */
 
 function csrf_cookie_name(): string { return 'ngg_csrf'; }
@@ -40,11 +49,12 @@ function csrf_require(): void {
     //   - auth/request  → user has no session yet; the OTP IS the proof
     //   - auth/verify   → same
     //   - auth/login    → pre-session; the password IS the proof
+    //   - auth/pick     → pre-session; the verified code or password it carries IS the proof
     //   - auth/reset-request / reset-confirm → pre-session; the emailed code
     //     or magic-link token IS the proof (same basis as request/verify)
     //   - public/newsletter → fully public, IP rate-limited at the server
     $path = $_SERVER['SCRIPT_NAME'] ?? '';
-    if (preg_match('#/api/auth/(gateway|request|verify|login|reset-request|reset-confirm)\\.php$#', $path)) return;
+    if (preg_match('#/api/auth/(gateway|request|verify|login|pick|reset-request|reset-confirm)\\.php$#', $path)) return;
     if (preg_match('#/api/public/verify\\.php$#', $path)) return; // parent link: the token IS the proof
     // Family sign-in: pre-session, the emailed code or link IS the proof (same basis as auth/request + verify).
     if (preg_match('#/api/family/(request|verify)\\.php$#', $path)) return;

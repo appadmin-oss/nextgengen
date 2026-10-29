@@ -49,11 +49,100 @@ function mentoring_open(array $p): array {
     if ($subjectId === '') return ['ok' => false, 'error' => 'no_subject'];
     $s = mentoring_subject($subjectId);
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    // Screening first: an unscreened mentor's gate carries no reach, and the
+    // honest refusal is "not screened", not "not your centre".
+    if (!mentoring_screened($g)) return ['ok' => false, 'error' => 'not_screened'];
     // The same scope test that governs starring. A record is at least as
     // sensitive as a star, so it is not gated more loosely.
     if (!mentor_scope_ok($g, $s)) return ['ok' => false, 'error' => 'not_your_centre'];
     if (!mentor_covers($g, $s['kind'] === 'member' ? 'ngg' : 'summer')) return ['ok' => false, 'error' => 'not_your_cohort'];
-    return ['ok' => true, 'g' => $g, 'subject' => $s];
+    /* Caseload first. A mentor opens the record of the NGG members paired
+     * with them; leads, staff and instructors keep their centre reach. Anyone
+     * else at the centre who needs a record — covering a Saturday, or a child
+     * who came to them — opens it themselves with a reason (mentoring_cover),
+     * and the child's own mentor and the lead see that it happened. Summer
+     * School participants have no pairings (their mentors take whole groups),
+     * so the centre and group scope above is still theirs. */
+    $via = 'caseload';
+    if (($g['role'] ?? '') === 'mentor' && ($g['rank'] ?? '') !== 'lead' && (string)$s['kind'] === 'member'
+        && !in_array((string)$s['id'], mentoring_caseload($g), true)) {
+        $cover = mentoring_cover_active($g, (string)$s['id']);
+        if (!$cover) return ['ok' => false, 'error' => 'not_your_mentee', 'canCover' => true];
+        $via = 'cover';
+    }
+    return ['ok' => true, 'g' => $g, 'subject' => $s, 'via' => $via];
+}
+
+/* ── Cover: opening another mentor's mentee, accountably ─────────────────
+ * The five tests this is built to pass:
+ *   repeatable   — the rule is code; nobody has to remember to apply it;
+ *   visible      — the child's own mentor and the lead are told at once, and
+ *                  the lead's Needs attention lists every cover this fortnight;
+ *   accountable  — each cover has an owner, a reason and an end date;
+ *   verifiable   — it is a row (mentor_record_cover), not an assertion;
+ *   replicable   — no approval queue, so a thousand centres cost no more admin
+ *                  than one. Safety comes from the limits instead: a cover
+ *                  lasts MENTORING_COVER_DAYS, a mentor holds at most
+ *                  MENTORING_COVER_MAX at once, and a concern's wording is not
+ *                  shown under a cover — only that one exists and who to ask. */
+const MENTORING_COVER_DAYS = 7;
+const MENTORING_COVER_MAX = 5;
+const MENTORING_COVER_REASON_MIN = 10;
+
+function mentoring_cover_active(array $g, string $subjectId): ?array {
+    return db_row("SELECT * FROM mentor_record_cover WHERE mentorMemberId = ? AND subjectId = ? AND expiresAt > ? AND endedAt = '' ORDER BY id DESC LIMIT 1",
+                  [(string)$g['member']['memberId'], $subjectId, now_iso()]) ?: null;
+}
+
+/** Open a record I am not paired to: say why; it is mine to read for a week. */
+function mentoring_cover(array $p): array {
+    $g = mentor_gate($p);
+    if (empty($g['ok'])) return $g;
+    $s = mentoring_subject(trim((string)($p['subjectId'] ?? '')));
+    if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    if (!mentoring_screened($g)) return ['ok' => false, 'error' => 'not_screened'];
+    if (!mentor_scope_ok($g, $s)) return ['ok' => false, 'error' => 'not_your_centre'];
+    $reason = trim((string)($p['reason'] ?? ''));
+    if (mb_strlen($reason) < MENTORING_COVER_REASON_MIN) return ['ok' => false, 'error' => 'say_why'];
+    $me = (string)$g['member']['memberId'];
+    if ($have = mentoring_cover_active($g, (string)$s['id'])) return ['ok' => true, 'expiresAt' => (string)$have['expiresAt'], 'unchanged' => true];
+    $open = (int)(db_row("SELECT COUNT(*) c FROM mentor_record_cover WHERE mentorMemberId = ? AND expiresAt > ? AND endedAt = ''", [$me, now_iso()])['c'] ?? 0);
+    if ($open >= MENTORING_COVER_MAX) return ['ok' => false, 'error' => 'cover_limit', 'detail' => (string)MENTORING_COVER_MAX];
+    $exp = gmdate('Y-m-d\TH:i:s\Z', time() + MENTORING_COVER_DAYS * 86400);
+    db_insert('mentor_record_cover', ['mentorMemberId' => $me, 'mentorName' => (string)($g['mentor']['fullName'] ?? $g['member']['fullName'] ?? ''),
+        'subjectId' => (string)$s['id'], 'centre' => (string)$s['centre'], 'reason' => mb_substr($reason, 0, 400),
+        'grantedAt' => now_iso(), 'expiresAt' => $exp, 'endedAt' => '']);
+    $who = (string)($g['mentor']['fullName'] ?? 'A mentor');
+    $line = $who . ' opened ' . (string)$s['fullName'] . '’s record for a week: “' . mb_substr($reason, 0, 120) . '”';
+    // The child's own mentor first — it is their mentee — then the centre's leads.
+    $own = db_row("SELECT t.memberId FROM mentor_assignments a JOIN mentors t ON t.mentorId = a.mentorId WHERE a.memberId = ? AND a.status = 'active' ORDER BY a.id DESC LIMIT 1", [(string)$s['id']]);
+    $tell = array_unique(array_filter(array_merge([(string)($own['memberId'] ?? '')], mentoring_leads((string)$s['centre'], $me))));
+    foreach ($tell as $to) if ($to !== $me) push_notification($to, ['kind' => 'mentor', 'title' => 'A record was opened by another mentor', 'body' => $line, 'linkPage' => 'mentor']);
+    audit('mentor.record.cover', $me, (string)$s['id'], ['reason' => mb_substr($reason, 0, 200), 'expiresAt' => $exp], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'expiresAt' => $exp, 'told' => count($tell)];
+}
+
+/** A week's review belongs to the mentor who wrote it. Another mentor saving
+ *  over it replaced their judgement with no trace; a lead or coordinator may
+ *  still correct it, and the overwrite is audited by the caller. Returns the
+ *  refusal, or null when the save may go ahead. */
+function mentor_review_owner_check(?array $existing, string $me, bool $wide): ?array {
+    if (!$existing) return null;
+    $by = trim((string)($existing['mentorId'] ?? ''));
+    if ($by === '' || $by === $me || $wide) return null;
+    return ['ok' => false, 'error' => 'reviewed_by_another', 'by' => (string)($existing['mentorName'] ?? '')];
+}
+
+/** Decided once, in mentor_gate — see mp_screened. */
+function mentoring_screened(array $g): bool {
+    return ($g['screened'] ?? false) === true;
+}
+
+/** The children actively paired with this mentor (any session). */
+function mentoring_caseload(array $g): array {
+    $mid = (string)($g['mentorId'] ?? '');
+    if ($mid === '') return [];
+    return array_map('strval', array_column(db_all("SELECT memberId FROM mentor_assignments WHERE mentorId = ? AND status = 'active'", [$mid]), 'memberId'));
 }
 
 /** ISO week periods, newest last — the x-axis of the V3 trend. */
@@ -73,6 +162,28 @@ function mentoring_periods(int $n): array {
  * the child in front of them, and six round trips on a Lagos phone connection
  * is the difference between a tool that gets used and one that does not.
  */
+/** member.mentor.child.lessons — where a mentee is in their lessons (the same gate as their record). */
+function mentor_child_lessons(array $p): array {
+    /* The mentor portal's mentee page shows this beside Growth, which is gated
+     * by the assignment (mp_gate + caseload). Gating Lessons on the older
+     * record gate instead (screening, centre, cohort) refused mentors whose
+     * Growth tab opened fine: "Couldn't load their lessons" under a working
+     * page. A child in the caseload is enough; the older gate still serves
+     * everyone else (instructors, cover). */
+    $id = trim((string)($p['subjectId'] ?? ''));
+    $g = function_exists('mp_gate') ? mp_gate($p) : [];
+    if (!empty($g['ok']) && $id !== '' && in_array($id, mp_caseload_ids($g), true)) {
+        $subject = $id;
+    } else {
+        $o = mentoring_open($p);
+        if (empty($o['ok'])) return $o;
+        if ((string)$o['subject']['kind'] !== 'member') return ['ok' => true, 'curriculum' => null];
+        $subject = (string)$o['subject']['id'];
+    }
+    $m = db_row('SELECT memberId, fullName, centre, track, courses, disciplines, division FROM members WHERE memberId = ? LIMIT 1', [$subject]);
+    return ['ok' => true, 'curriculum' => $m && function_exists('curriculum_child_state') ? curriculum_child_state($m) : null];
+}
+
 function mentor_child(array $p): array {
     $o = mentoring_open($p);
     if (empty($o['ok'])) return $o;
@@ -111,21 +222,32 @@ function mentor_child(array $p): array {
 
     $meetings = db_all("SELECT id, metOn, kind, discussed, agreed, concern, mentorId, mentorName, createdAt
                         FROM mentor_meetings WHERE subjectId = ? ORDER BY metOn DESC, id DESC LIMIT 60", [$id]);
+    $covering = ($o['via'] ?? 'caseload') === 'cover';
     foreach ($meetings as &$m) {
         $m['id'] = (int)$m['id'];
         $m['concern'] = (int)$m['concern'] === 1;
+        /* Under cover, a concern shows that it exists and who to ask — not its
+         * wording, which is for the people responsible for the child. */
+        if ($covering && $m['concern'] && (string)$m['mentorId'] !== (string)$g['member']['memberId']) {
+            $m['discussed'] = ''; $m['agreed'] = ''; $m['withheld'] = true;
+        }
         // Whose entry this is, so the UI can offer edit only where it applies.
         $m['mine'] = (string)$m['mentorId'] === (string)$g['member']['memberId'];
     }
     unset($m);
 
-    $goals = db_all("SELECT id, goal, dueOn, status, closedOn, setById, setByName, createdAt
+    $goals = db_all("SELECT id, goal, dueOn, status, closedOn, setById, setByName, createdAt, updatedAt, area, outcome, obstacle, plan, agreed, reviewBy
                      FROM mentor_goals WHERE subjectId = ?
-                     ORDER BY CASE WHEN status = 'open' THEN 0 ELSE 1 END, dueOn, id DESC LIMIT 60", [$id]);
+                     ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 WHEN 'paused' THEN 2 ELSE 3 END, id DESC LIMIT 60", [$id]);
     $today = gmdate('Y-m-d');
+    $checks = mentor_goal_checks_for(array_map(static fn($x) => (int)$x['id'], $goals));
     foreach ($goals as &$gl) {
         $gl['id'] = (int)$gl['id'];
-        $gl['overdue'] = $gl['status'] === 'open' && trim((string)$gl['dueOn']) !== '' && (string)$gl['dueOn'] < $today;
+        $gl['agreed'] = (int)$gl['agreed'] === 1;
+        $gl['checks'] = $checks[$gl['id']] ?? [];
+        $due = trim((string)($gl['reviewBy'] ?: $gl['dueOn']));
+        $gl['overdue'] = $gl['status'] === 'active' && $due !== '' && $due < $today;
+        $gl['stalled'] = mentor_goal_stalled($gl, $today);
     }
     unset($gl);
 
@@ -154,6 +276,8 @@ function mentor_child(array $p): array {
         'v3' => $v3,
         'attendance' => ['total' => $att, 'last90' => $attRecent, 'lastSeen' => $lastSeen],
         'meetings' => $meetings,
+        // How this mentor came to be reading it, so the record can say so.
+        'access' => $covering ? ['via' => 'cover', 'expiresAt' => (string)(mentoring_cover_active($g, $id)['expiresAt'] ?? '')] : ['via' => 'caseload'],
         'goals' => $goals,
         'courage' => $courage,
         'courageLadder' => courage_ladder(),
@@ -196,6 +320,19 @@ function mentor_meeting_save(array $p): array {
     $concern = !empty($p['concern']) ? 1 : 0;
     $now = now_iso();
     $id = (int)($p['id'] ?? 0);
+    /* A concern marked on a meeting opens a safeguarding case, the same as
+     * the portal's Report-a-concern sheet (mp_concern_file): the officer is
+     * told today, concernEscalate watches it, and a centre with no lead mentor
+     * no longer means nobody hears. Once per note — editing a note that is
+     * already a concern does not open a second case. */
+    $fileCase = function () use ($g, $s, $kind, $metOn, $discussed, $agreed, $p) {
+        if (!function_exists('mp_concern_file')) return null;
+        $body = 'Raised from a mentor\'s meeting note (' . $kind . ', ' . $metOn . ").\n\n"
+              . ($discussed !== '' ? "Discussed:\n" . $discussed . "\n\n" : '')
+              . ($agreed !== '' ? "Agreed:\n" . $agreed : '');
+        $r = mp_concern_file($g['member'], $s, 'Something they told me', trim($body), (string)($p['ip'] ?? ''), 'mentor.meeting');
+        return !empty($r['ok']) ? (string)$r['ref'] : null;
+    };
 
     if ($id > 0) {
         $row = db_row('SELECT * FROM mentor_meetings WHERE id = ? LIMIT 1', [$id]);
@@ -209,7 +346,9 @@ function mentor_meeting_save(array $p): array {
         db_update('mentor_meetings', ['metOn' => $metOn, 'kind' => $kind, 'discussed' => $discussed,
             'agreed' => $agreed, 'concern' => $concern, 'updatedAt' => $now], ['id' => $id]);
         audit('mentor.meeting.update', $me, (string)$s['id'], ['id' => $id, 'concern' => $concern], (string)($p['ip'] ?? ''));
-        return ['ok' => true, 'id' => $id];
+        $case = ($concern && !(int)$row['concern']) ? $fileCase() : null;
+        if ($concern && !(int)$row['concern']) mentoring_tell_leads($s, $g, $me);
+        return ['ok' => true, 'id' => $id, 'caseRef' => $case];
     }
 
     $newId = db_insert('mentor_meetings', [
@@ -224,15 +363,21 @@ function mentor_meeting_save(array $p): array {
     /* A concern is raised, not merely stored. The point of the flag is that
      * somebody senior finds out without the mentor having to know who that is
      * today. */
+    $case = null;
     if ($concern) {
-        foreach (mentoring_leads((string)($s['centre'] ?? ''), $me) as $leadId) {
-            push_notification($leadId, ['kind' => 'mentor',
-                'title' => 'A mentor has raised a concern',
-                'body' => (string)$s['fullName'] . ' — logged by ' . (string)($g['mentor']['fullName'] ?? 'a mentor') . '.',
-                'linkPage' => 'mentor']);
-        }
+        $case = $fileCase();
+        mentoring_tell_leads($s, $g, $me);
     }
-    return ['ok' => true, 'id' => $newId];
+    return ['ok' => true, 'id' => $newId, 'caseRef' => $case];
+}
+
+function mentoring_tell_leads(array $s, array $g, string $me): void {
+    foreach (mentoring_leads((string)($s['centre'] ?? ''), $me) as $leadId) {
+        push_notification($leadId, ['kind' => 'mentor',
+            'title' => 'A mentor has raised a concern',
+            'body' => (string)$s['fullName'] . ' — logged by ' . (string)($g['mentor']['fullName'] ?? 'a mentor') . '.',
+            'linkPage' => 'mentor']);
+    }
 }
 
 /** Lead mentors at a centre, minus the person who just wrote — nobody needs a
@@ -274,39 +419,103 @@ function mentor_goal_save(array $p): array {
     $g = $o['g']; $s = $o['subject'];
     $me = (string)$g['member']['memberId'];
 
-    $goal = trim((string)($p['goal'] ?? ''));
-    if ($goal === '') return ['ok' => false, 'error' => 'empty'];
-    if (mb_strlen($goal) > 500) return ['ok' => false, 'error' => 'too_long'];
-    $dueOn = trim((string)($p['dueOn'] ?? ''));
-    if ($dueOn !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dueOn)) $dueOn = '';
-    $now = now_iso();
     $id = (int)($p['id'] ?? 0);
+    $row = $id > 0 ? db_row('SELECT * FROM mentor_goals WHERE id = ? LIMIT 1', [$id]) : null;
+    if ($id > 0 && !$row) return ['ok' => false, 'error' => 'not_found'];
+    if ($row && (string)$row['subjectId'] !== (string)$s['id']) return ['ok' => false, 'error' => 'wrong_subject'];
 
-    if ($id > 0) {
-        $row = db_row('SELECT * FROM mentor_goals WHERE id = ? LIMIT 1', [$id]);
-        if (!$row) return ['ok' => false, 'error' => 'not_found'];
-        if ((string)$row['subjectId'] !== (string)$s['id']) return ['ok' => false, 'error' => 'wrong_subject'];
-        db_update('mentor_goals', ['goal' => $goal, 'dueOn' => $dueOn, 'updatedAt' => $now], ['id' => $id]);
-        audit('mentor.goal.update', $me, (string)$s['id'], ['id' => $id], (string)($p['ip'] ?? ''));
+    /* WOOP: the wish (`goal`), the best outcome, the obstacle inside them and
+       an if–then plan. A new goal may start as an empty Draft ("New goal with
+       Ada" creates one and opens it), so only what is sent is checked. */
+    $f = [];
+    foreach (['goal' => 500, 'outcome' => 600, 'obstacle' => 600, 'plan' => 600] as $k => $max) {
+        if (!array_key_exists($k, $p)) continue;
+        $v = trim((string)$p[$k]);
+        if (mb_strlen($v) > $max) return ['ok' => false, 'error' => 'too_long', 'field' => $k];
+        $f[$k] = $v;
+    }
+    if (array_key_exists('area', $p)) {
+        if (!in_array((string)$p['area'], MENTOR_GOAL_AREAS, true)) return ['ok' => false, 'error' => 'bad_area'];
+        $f['area'] = (string)$p['area'];
+    }
+    foreach (['reviewBy', 'dueOn'] as $k) if (array_key_exists($k, $p)) {
+        $v = trim((string)$p[$k]);
+        if ($v !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) return ['ok' => false, 'error' => 'bad_date'];
+        $f['reviewBy'] = $v; $f['dueOn'] = $v;
+    }
+    if (array_key_exists('agreed', $p)) $f['agreed'] = !empty($p['agreed']) ? 1 : 0;
+    $now = now_iso();
+
+    if ($row) {
+        // A live goal keeps its wish: an Active goal with no wish is not a goal.
+        if ((string)$row['status'] === 'active' && array_key_exists('goal', $f) && $f['goal'] === '') return ['ok' => false, 'error' => 'no_wish'];
+        if ((string)$row['status'] === 'active' && array_key_exists('agreed', $f) && !$f['agreed']) return ['ok' => false, 'error' => 'active_needs_agreed'];
+        if ($f) db_update('mentor_goals', $f + ['updatedAt' => $now], ['id' => $id]);
+        audit('mentor.goal.update', $me, (string)$s['id'], ['id' => $id, 'fields' => array_keys($f)], (string)($p['ip'] ?? ''));
+        if (!empty($f['agreed']) && empty($row['agreed']) && function_exists('push_notification') && (string)$s['kind'] === 'member') {
+            push_notification((string)$s['id'], ['kind' => 'mentor', 'title' => 'A goal you agreed', 'body' => mb_substr((string)($f['goal'] ?? $row['goal']), 0, 140), 'linkPage' => 'dashboard']);
+        }
         return ['ok' => true, 'id' => $id];
     }
 
+    /* The first weeks of a match are for getting to know each other: no goal
+     * before week 3 (mentor portal handoff; R5). Refused here as well as
+     * hidden on screen, so an older page cannot set one either. */
+    if (function_exists('ms_goals_locked') && (string)$s['kind'] === 'member' && ms_goals_locked((string)$s['id'])) {
+        return ['ok' => false, 'error' => 'goals_locked_connect'];
+    }
     $newId = db_insert('mentor_goals', [
-        'subjectId' => (string)$s['id'], 'subjectType' => (string)$s['kind'], 'goal' => $goal,
+        'subjectId' => (string)$s['id'], 'subjectType' => (string)$s['kind'], 'goal' => (string)($f['goal'] ?? ''),
         'setById' => $me, 'setByName' => (string)($g['mentor']['fullName'] ?? $g['member']['fullName'] ?? ''),
-        'dueOn' => $dueOn, 'status' => 'open', 'closedOn' => '', 'closedById' => '',
+        'dueOn' => (string)($f['dueOn'] ?? ''), 'reviewBy' => (string)($f['reviewBy'] ?? ''), 'status' => 'draft', 'closedOn' => '', 'closedById' => '',
+        'area' => (string)($f['area'] ?? 'Character'), 'outcome' => (string)($f['outcome'] ?? ''), 'obstacle' => (string)($f['obstacle'] ?? ''),
+        'plan' => (string)($f['plan'] ?? ''), 'agreed' => (int)($f['agreed'] ?? 0),
         'centre' => (string)($s['centre'] ?? ''), 'createdAt' => $now, 'updatedAt' => $now,
     ]);
     audit('mentor.goal.add', $me, (string)$s['id'], ['id' => $newId], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'id' => $newId];
+    return ['ok' => true, 'id' => $newId, 'status' => 'draft'];
+}
+
+const MENTOR_GOAL_AREAS = ['Character', 'Competence', 'Wellbeing', 'Leadership'];
+const MENTOR_GOAL_STATUSES = ['draft', 'active', 'achieved', 'paused'];
+/* Older screens speak open / done / dropped; they mean active / achieved / paused. */
+const MENTOR_GOAL_LEGACY = ['open' => 'active', 'done' => 'achieved', 'dropped' => 'paused'];
+const MENTOR_GOAL_STALLED_DAYS = 21;
+
+/** Check-ins for many goals, one read. goalId => [{at, progress, note, by}] oldest first. */
+function mentor_goal_checks_for(array $goalIds): array {
+    $goalIds = array_values(array_filter($goalIds));
+    if (!$goalIds) return [];
+    $ph = implode(',', array_fill(0, count($goalIds), '?'));
+    $out = [];
+    foreach (db_all("SELECT id, goalId, progress, note, byKind, checkedOn FROM mentor_goal_checkins WHERE goalId IN ($ph) ORDER BY checkedOn, id", $goalIds) as $c) {
+        $out[(int)$c['goalId']][] = ['id' => (int)$c['id'], 'at' => (string)$c['checkedOn'], 'progress' => (int)$c['progress'], 'note' => (string)$c['note'], 'by' => (string)$c['byKind']];
+    }
+    return $out;
 }
 
 /**
- * Close or reopen a goal.
- *
- * 'dropped' exists on purpose. Without it the only way to clear a goal that
- * stopped being the right goal is to mark it done, and a record where
- * everything is always achieved is a record nobody believes.
+ * Stalled (MTRules.goals.isStalled): an Active goal with no check-in for more
+ * than 21 days, or three or more check-ins where the latest is no higher than
+ * the one two before.
+ */
+function mentor_goal_stalled(array $goal, string $today): bool {
+    if ((string)($goal['status'] ?? '') !== 'active') return false;
+    $c = $goal['checks'] ?? [];
+    /* With no check-in yet, the clock runs from when the goal was made — not
+     * from its last edit, which restarted the 21 days every time somebody
+     * fixed a typo in the title. */
+    $last = $c ? (string)end($c)['at'] : substr((string)(($goal['createdAt'] ?? '') ?: ($goal['updatedAt'] ?? '') ?: $today), 0, 10);
+    if ((strtotime($today . 'T00:00:00Z') - strtotime(substr($last, 0, 10) . 'T00:00:00Z')) / 86400 > MENTOR_GOAL_STALLED_DAYS) return true;
+    $n = count($c);
+    return $n >= 3 && $c[$n - 1]['progress'] <= $c[$n - 3]['progress'];
+}
+
+/**
+ * Change a goal's status. One Active goal per mentee: making one Active pauses
+ * the other and says which (`pausedGoalId`). Active needs the wish and the
+ * mentee's agreement. Paused exists on purpose: a record where every goal is
+ * achieved is a record nobody believes.
  */
 function mentor_goal_status(array $p): array {
     $o = mentoring_open($p);
@@ -315,18 +524,67 @@ function mentor_goal_status(array $p): array {
     $me = (string)$g['member']['memberId'];
     $id = (int)($p['id'] ?? 0);
     $status = (string)($p['status'] ?? '');
-    if (!in_array($status, ['open', 'done', 'dropped'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    $status = MENTOR_GOAL_LEGACY[$status] ?? $status;
+    if (!in_array($status, MENTOR_GOAL_STATUSES, true)) return ['ok' => false, 'error' => 'bad_status'];
     $row = db_row('SELECT * FROM mentor_goals WHERE id = ? LIMIT 1', [$id]);
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
     if ((string)$row['subjectId'] !== (string)$s['id']) return ['ok' => false, 'error' => 'wrong_subject'];
+    $paused = null;
+    if ($status === 'active') {
+        if (trim((string)$row['goal']) === '') return ['ok' => false, 'error' => 'no_wish'];
+        /* The mentee's agreement is the rule, not a screen's convention. The
+         * older panel sent "open" and was waved through on the assumption the
+         * goal "was agreed in the room"; that let any client skip it by sending
+         * the old word. The panel now records the agreement first. */
+        if ((int)$row['agreed'] !== 1) return ['ok' => false, 'error' => 'not_agreed'];
+        $prev = db_row("SELECT id, goal FROM mentor_goals WHERE subjectId = ? AND status = 'active' AND id <> ? LIMIT 1", [(string)$s['id'], $id]);
+        if ($prev) { db_update('mentor_goals', ['status' => 'paused', 'updatedAt' => now_iso()], ['id' => (int)$prev['id']]); $paused = ['id' => (int)$prev['id'], 'goal' => (string)$prev['goal']]; }
+    }
+    $closed = in_array($status, ['achieved'], true);
     db_update('mentor_goals', [
         'status' => $status,
-        'closedOn' => $status === 'open' ? '' : gmdate('Y-m-d'),
-        'closedById' => $status === 'open' ? '' : $me,
+        'closedOn' => $closed ? gmdate('Y-m-d') : '',
+        'closedById' => $closed ? $me : '',
         'updatedAt' => now_iso(),
     ], ['id' => $id]);
-    audit('mentor.goal.status', $me, (string)$s['id'], ['id' => $id, 'status' => $status], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    audit('mentor.goal.status', $me, (string)$s['id'], ['id' => $id, 'status' => $status, 'paused' => $paused['id'] ?? null], (string)($p['ip'] ?? ''));
+    // R4: an achieved goal suggests the next, from this week's Anchor theme.
+    if ($status === 'achieved' && (string)$row['status'] !== 'achieved') {
+        if (function_exists('ms_on_goal_done')) ms_on_goal_done((string)$s['id'], $id);
+        if ((string)$s['kind'] === 'member' && function_exists('push_notification')) {
+            push_notification((string)$s['id'], ['kind' => 'mentor', 'title' => 'Goal achieved', 'body' => mb_substr((string)$row['goal'], 0, 140) . ' — it is in your growth passport.', 'linkPage' => 'dashboard']);
+        }
+    }
+    return ['ok' => true, 'status' => $status, 'pausedGoalId' => $paused['id'] ?? null, 'pausedGoal' => $paused['goal'] ?? null];
+}
+
+/**
+ * A goal check-in: "How close is Ada now?" 1–5 and a note. A 5 on an Active
+ * goal marks it Achieved (MTRules.goals.addCheck). Written by the mentor, or
+ * by the member on their own goal (byKind = member).
+ */
+function mentor_goal_checkin(array $p): array {
+    $o = mentoring_open($p);
+    if (empty($o['ok'])) return $o;
+    $g = $o['g']; $s = $o['subject'];
+    $row = db_row('SELECT * FROM mentor_goals WHERE id = ? LIMIT 1', [(int)($p['goalId'] ?? 0)]);
+    if (!$row || (string)$row['subjectId'] !== (string)$s['id']) return ['ok' => false, 'error' => 'not_found'];
+    return mentor_goal_checkin_write($row, (int)($p['progress'] ?? 0), (string)($p['note'] ?? ''), 'mentor', (string)$g['member']['memberId'], (int)($p['sessionId'] ?? 0), (string)($p['ip'] ?? ''));
+}
+function mentor_goal_checkin_write(array $row, int $progress, string $note, string $by, string $byId, int $sessionId = 0, string $ip = ''): array {
+    if ($progress < 1 || $progress > 5) return ['ok' => false, 'error' => 'bad_progress'];
+    if (!in_array((string)$row['status'], ['active', 'draft', 'paused'], true)) return ['ok' => false, 'error' => 'goal_closed'];
+    $now = now_iso();
+    $cid = db_insert('mentor_goal_checkins', ['goalId' => (int)$row['id'], 'subjectId' => (string)$row['subjectId'], 'progress' => $progress,
+        'note' => mb_substr(trim($note), 0, 400), 'byKind' => $by, 'byId' => $byId, 'sessionId' => $sessionId, 'checkedOn' => gmdate('Y-m-d'), 'createdAt' => $now]);
+    $achieved = (string)$row['status'] === 'active' && $progress === 5;
+    db_update('mentor_goals', ['updatedAt' => $now] + ($achieved ? ['status' => 'achieved', 'closedOn' => gmdate('Y-m-d'), 'closedById' => $byId] : []), ['id' => (int)$row['id']]);
+    if ($achieved) {
+        if (function_exists('ms_on_goal_done')) ms_on_goal_done((string)$row['subjectId'], (int)$row['id']);
+        if (function_exists('push_notification') && $by === 'mentor') push_notification((string)$row['subjectId'], ['kind' => 'mentor', 'title' => 'Goal achieved', 'body' => mb_substr((string)$row['goal'], 0, 140), 'linkPage' => 'dashboard']);
+    }
+    audit('mentor.goal.checkin', $byId, (string)$row['subjectId'], ['goalId' => (int)$row['id'], 'progress' => $progress, 'achieved' => $achieved], $ip);
+    return ['ok' => true, 'id' => $cid, 'progress' => $progress, 'status' => $achieved ? 'achieved' : (string)$row['status'], 'achieved' => $achieved];
 }
 
 /* ── What needs attention ─────────────────────────────────────────────── */
@@ -346,15 +604,36 @@ function mentor_attention(array $p): array {
     $use = $want !== '' ? [$want] : $centres;
     if (!$use) return ['ok' => true, 'concerns' => [], 'overdue' => [], 'centres' => $centres, 'centre' => $want];
 
+    // Unscreened: nothing about a child, as on the record itself.
+    if (!mentoring_screened($g)) return ['ok' => true, 'concerns' => [], 'overdue' => [], 'centres' => $centres, 'centre' => $want, 'screened' => false];
+
     $in = '(' . implode(',', array_fill(0, count($use), '?')) . ')';
     $since = gmdate('Y-m-d', time() - 60 * 86400);
+    /* What a concern says is for the people responsible for that child: leads
+     * and staff for the centre, the mentor who wrote it, and the child's own
+     * mentor. It was every mentor at the centre — peers included — reading
+     * what another mentor wrote about somebody else's mentee. */
+    /* The centre-wide view is for leads and coordinators (staff) only. An
+     * instructor — who is not a mentor — was treated as staff here and read
+     * every concern at the centre; they now get what a mentor gets. */
+    $wide = in_array((string)($g['rank'] ?? ''), ['lead', 'admin'], true);
+    $who = ''; $whoArgs = []; $goalWho = ''; $goalArgs = [];
+    if (!$wide) {
+        $mine = mentoring_caseload($g);
+        $minePh = $mine ? implode(',', array_fill(0, count($mine), '?')) : '';
+        $who = ' AND (mentorId = ?' . ($mine ? ' OR subjectId IN (' . $minePh . ')' : '') . ')';
+        $whoArgs = array_merge([(string)$g['member']['memberId']], $mine);
+        // Overdue goals: their own mentees', not the whole centre's.
+        $goalWho = $mine ? ' AND subjectId IN (' . $minePh . ')' : ' AND 1 = 0';
+        $goalArgs = $mine;
+    }
     $concerns = db_all("SELECT id, subjectId, subjectType, metOn, kind, discussed, agreed, mentorName, centre
-                        FROM mentor_meetings WHERE concern = 1 AND centre IN $in AND metOn >= ?
-                        ORDER BY metOn DESC, id DESC LIMIT 60", array_merge($use, [$since]));
+                        FROM mentor_meetings WHERE concern = 1 AND centre IN $in AND metOn >= ?$who
+                        ORDER BY metOn DESC, id DESC LIMIT 60", array_merge($use, [$since], $whoArgs));
     $today = gmdate('Y-m-d');
     $overdue = db_all("SELECT id, subjectId, goal, dueOn, setByName, centre FROM mentor_goals
-                       WHERE status = 'open' AND dueOn <> '' AND dueOn < ? AND centre IN $in
-                       ORDER BY dueOn LIMIT 60", array_merge([$today], $use));
+                       WHERE status = 'active' AND dueOn <> '' AND dueOn < ? AND centre IN $in$goalWho
+                       ORDER BY dueOn LIMIT 60", array_merge([$today], $use, $goalArgs));
 
     // Names, in one read rather than one per row.
     $ids = array_values(array_unique(array_merge(array_column($concerns, 'subjectId'), array_column($overdue, 'subjectId'))));
@@ -369,7 +648,16 @@ function mentor_attention(array $p): array {
     foreach ($overdue as &$d) { $d['id'] = (int)$d['id']; $d['fullName'] = $nameOf[(string)$d['subjectId']] ?? '(removed)'; }
     unset($d);
 
-    return ['ok' => true, 'concerns' => $concerns, 'overdue' => $overdue,
+    /* Leads and staff see every cover at the centre in the last fortnight: who
+     * opened whose record, and why. That list is what makes self-service safe. */
+    $covers = [];
+    if ($wide) {
+        $covers = db_all("SELECT c.subjectId, c.mentorName, c.reason, c.grantedAt, c.expiresAt, m.fullName
+                          FROM mentor_record_cover c LEFT JOIN members m ON m.memberId = c.subjectId
+                          WHERE c.centre IN $in AND c.grantedAt >= ? ORDER BY c.grantedAt DESC LIMIT 60",
+                         array_merge($use, [gmdate('Y-m-d', time() - 14 * 86400)]));
+    }
+    return ['ok' => true, 'concerns' => $concerns, 'overdue' => $overdue, 'covers' => $covers,
             'centres' => $centres, 'centre' => $want, 'rank' => (string)($g['rank'] ?? 'mentor')];
 }
 
@@ -564,7 +852,11 @@ function member_courage(array $p): array {
     if (!db_row('SELECT memberId FROM members WHERE memberId = ? LIMIT 1', [$id])) {
         return ['ok' => false, 'error' => 'not_found'];
     }
-    return ['ok' => true, 'courage' => courage_index($id), 'ladder' => courage_ladder()] ;
+    // Who marked it, as the child addresses them (staff_public_names).
+    $c = courage_index($id);
+    $titled = staff_public_names(array_column($c['marks'] ?? [], 'markedById'));
+    foreach ($c['marks'] ?? [] as $i => $mk) $c['marks'][$i]['markedByName'] = $titled[$mk['markedById']] ?? 'Your mentor';
+    return ['ok' => true, 'courage' => $c, 'ladder' => courage_ladder()];
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -662,12 +954,20 @@ function mentor_review_save(array $p): array {
         'answers' => json_encode($answers, JSON_UNESCAPED_UNICODE),
         'answered' => $answered,
         'concern' => !empty($p['concern']) ? 1 : 0,
+        /* How they are doing against last week: better | same | worse. Two
+           "worse" in a row alerts the lead (MENTORSHIP.md R3). */
+        'trend' => in_array((string)($p['trend'] ?? ''), ['better', 'same', 'worse'], true) ? (string)$p['trend'] : '',
         'mentorId' => (string)$g['member']['memberId'],
         'mentorName' => (string)($g['mentor']['fullName'] ?? $g['member']['fullName'] ?? ''),
         'centre' => (string)($s['centre'] ?? ''),
         'updatedAt' => $now,
     ];
-    $existing = db_row("SELECT id FROM mentor_reviews WHERE subjectId = ? AND period = ? LIMIT 1", [$id, $period]);
+    $existing = db_row("SELECT id, mentorId, mentorName FROM mentor_reviews WHERE subjectId = ? AND period = ? LIMIT 1", [$id, $period]);
+    $wide = in_array((string)($g['rank'] ?? ''), ['lead', 'admin'], true);
+    if ($stop = mentor_review_owner_check($existing, (string)$g['member']['memberId'], $wide)) return $stop;
+    if ($existing && (string)$existing['mentorId'] !== '' && (string)$existing['mentorId'] !== (string)$g['member']['memberId']) {
+        audit('mentor.review.overwrite', (string)$g['member']['memberId'], $id, ['period' => $period, 'was' => (string)$existing['mentorId']], (string)($p['ip'] ?? ''));
+    }
     if ($existing) {
         db_update('mentor_reviews', $row, ['id' => (int)$existing['id']]);
     } else {

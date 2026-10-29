@@ -284,7 +284,7 @@ function CrPhoneMenu({ S, nav, ctx }) {
           </div>
           <div className="cr-pmenu-card">
             <button type="button" className="cr-prow is-56" onClick={S.lock}><CrIcon n="lock-simple"/><span className="cr-prow-t"><b>Lock Control Room</b></span></button>
-            <a href="/" className="cr-prow is-56" target="_blank" rel="noopener" style={{ textDecoration: "none" }}><CrIcon n="arrow-square-out"/><span className="cr-prow-t"><b>View public site</b></span></a>
+            <a href="/" className="cr-prow is-56" target="_blank" rel="noopener" style={{ textDecoration: "var(--rs-textdecoration-47, none)" }}><CrIcon n="arrow-square-out"/><span className="cr-prow-t"><b>View public site</b></span></a>
             {S.portals.filter(pt => !pt.current).map(pt => <button key={pt.l} type="button" className="cr-prow is-56" onClick={pt.run}><CrIcon n={pt.icon}/><span className="cr-prow-t"><b>{pt.l}</b></span></button>)}
             <button type="button" className="cr-prow is-56" style={{ color: "var(--cr-danger)" }} onClick={S.signOut}><CrIcon n="sign-out"/><span className="cr-prow-t"><b>Sign out</b></span></button>
           </div>

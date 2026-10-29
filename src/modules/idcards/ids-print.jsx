@@ -159,7 +159,7 @@ function IdsConfirm({ run, onCancel, onPrint }) {
         <dt>Design</dt><dd>{nRecords ? designLabel : "Uploaded images as they are"}</dd>
       </dl>
       {nSheets > IDS_BIG_RUN && <IdsCheck tone="warn" text={nSheets + " sheets is a big run. Printing in batches stops one paper jam from spoiling the lot."}/>}
-      <IdsSeg label="Which sheets" value={mode} onChange={setMode} options={[["all", "All " + nSheets + " sheets"], ["batch", "In batches"], ["range", "Some sheets"]]}/>
+      <IdsSeg label="Which sheets" value={mode} onChange={setMode} options={[["all", nSheets === 1 ? "1 sheet" : "All " + nSheets + " sheets"], ["batch", "In batches"], ["range", "Some sheets"]]}/>
       {mode === "batch" && <>
         <IdsNum id="ids-batch" label="Sheets per batch" value={batch} min={1} max={Math.max(1, nSheets)} onChange={setBatch}/>
         <p className="ids-note">{idsN(batches.length, "batch", "batches")} of up to {batch} sheets. You print the next one when the last is out, so a jam only costs one batch.</p>

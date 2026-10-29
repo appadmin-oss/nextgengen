@@ -6,6 +6,32 @@
    ========================================================================== */
 
 /* ── Drawer (§4.2) ── */
+/* One section of a drawer, the same on a desk and a phone. The phone branch used to
+   draw `rows` and `text` and silently drop `list`, so anything a tab listed in a
+   drawer simply did not exist on a phone. A list row may carry one action
+   (`act: { l, run }`), for the one-person decision that belongs beside the name. */
+function crDrawerSec(s, i, phone) {
+  const val = f => f[1] == null || f[1] === "" ? "—" : f[1];
+  return (
+    <div key={i} className="cr-sheet-sec">
+      {s.h && <h4>{s.h}</h4>}
+      {s.rows && (phone
+        ? <div className="cr-pbox cr-pfields">{s.rows.map((f, j) => <div key={j}><span>{f[0]}</span><b>{val(f)}</b></div>)}</div>
+        : <dl className="cr-dl">{s.rows.map((f, j) => <React.Fragment key={j}><dt>{f[0]}</dt><dd>{val(f)}</dd></React.Fragment>)}</dl>)}
+      {s.text && <p className="cr-prose" style={{ fontSize: phone ? 15 : 13.5 }}>{s.text}</p>}
+      {s.code && <pre className="cr-code" tabIndex={0} aria-label={s.codeLabel || "Commands"}>{s.code}</pre>}
+      {s.tip && <p className="cr-tip"><CrIcon n="lightbulb"/><span>{s.tip}</span></p>}
+      {s.list && <div className={phone ? "cr-pbox cr-list" : "cr-box cr-list"}>{s.list.length ? s.list.map((r, j) => (
+        <div key={j} className="cr-list-row">
+          <span className="cr-list-ico"><CrIcon n={r.icon || "circle"}/></span>
+          <span className="cr-list-text"><b>{r.t}</b>{r.s && <span>{r.s}</span>}</span>
+          {r.m && <span className="cr-list-m">{r.m}</span>}
+          {r.act && <button type="button" className="cr-btn is-sm" onClick={r.act.run}>{r.act.l}</button>}
+        </div>
+      )) : <div className="cr-tempty" style={{ padding: 16 }}>{s.empty || "Nothing yet."}</div>}</div>}
+    </div>
+  );
+}
 function CrDrawer({ d, phone, onClose }) {
   const ref = React.useRef(null);
   useCrTrap(ref, true);
@@ -19,10 +45,10 @@ function CrDrawer({ d, phone, onClose }) {
     <div ref={ref} className="cr-pfull" role="dialog" aria-modal="true" aria-label={d.title}>
       <div className="cr-pfull-head"><button type="button" className="cr-p44" aria-label="Back" onClick={onClose}><CrIcon n="caret-left"/></button><b>{d.title}</b></div>
       <div className="cr-pfull-body">
-        <div className="cr-pfull-who"><CrAvatar name={d.name || d.title} photo={d.photo} className="cr-sheet-ini"/><span>{d.sub}</span></div>
+        <div className="cr-pfull-who">{d.icon ? <span className="cr-sheet-ini" aria-hidden="true"><CrIcon n={d.icon}/></span> : <CrAvatar name={d.name || d.title} photo={d.photo} className="cr-sheet-ini"/>}<span>{d.sub}</span></div>
         {d.stats && d.stats.length > 0 && <div className="cr-pstats">{d.stats.map((s, i) => <div key={i}><span>{s[0]}</span><b>{s[1]}</b></div>)}</div>}
         {d.fields && d.fields.length > 0 && <div className="cr-pbox cr-pfields">{d.fields.map((f, i) => <div key={i}><span>{f[0]}</span><b>{f[1] == null || f[1] === "" ? "—" : f[1]}</b></div>)}</div>}
-        {sections.map((s, i) => <div key={i} className="cr-sheet-sec"><h4>{s.h}</h4>{s.rows ? <div className="cr-pbox cr-pfields">{s.rows.map((f, j) => <div key={j}><span>{f[0]}</span><b>{f[1] == null || f[1] === "" ? "—" : f[1]}</b></div>)}</div> : s.text ? <p className="cr-prose" style={{ fontSize: 15 }}>{s.text}</p> : null}</div>)}
+        {sections.map((s, i) => crDrawerSec(s, i, true))}
       </div>
       {acts.length > 0 && <div className="cr-pfull-foot">{acts.map((a, i) => btn(a, i, true))}</div>}
     </div>
@@ -31,21 +57,14 @@ function CrDrawer({ d, phone, onClose }) {
     <div className="cr-layer cr-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <aside ref={ref} className="cr-sheet" role="dialog" aria-modal="true" aria-label={d.title}>
         <div className="cr-sheet-head">
-          <CrAvatar name={d.name || d.title} photo={d.photo} className="cr-sheet-ini"/>
+          {d.icon ? <span className="cr-sheet-ini" aria-hidden="true"><CrIcon n={d.icon}/></span> : <CrAvatar name={d.name || d.title} photo={d.photo} className="cr-sheet-ini"/>}
           <div className="cr-sheet-title"><b>{d.title}</b>{d.sub && <span>{d.sub}</span>}</div>
           <button type="button" className="cr-sheet-x" aria-label="Close" onClick={onClose}><CrIcon n="x"/></button>
         </div>
         <div className="cr-sheet-body">
           {d.stats && d.stats.length > 0 && <div className="cr-stats">{d.stats.map((s, i) => <div key={i}><span>{s[0]}</span><b>{s[1]}</b></div>)}</div>}
           {d.fields && d.fields.length > 0 && <dl className="cr-dl">{d.fields.map((f, i) => <React.Fragment key={i}><dt>{f[0]}</dt><dd>{f[1] == null || f[1] === "" ? "—" : f[1]}</dd></React.Fragment>)}</dl>}
-          {sections.map((s, i) => (
-            <div key={i} className="cr-sheet-sec">
-              <h4>{s.h}</h4>
-              {s.rows && <dl className="cr-dl">{s.rows.map((f, j) => <React.Fragment key={j}><dt>{f[0]}</dt><dd>{f[1] == null || f[1] === "" ? "—" : f[1]}</dd></React.Fragment>)}</dl>}
-              {s.text && <p className="cr-prose" style={{ fontSize: 13.5 }}>{s.text}</p>}
-              {s.list && <div className="cr-box cr-list">{s.list.length ? s.list.map((r, j) => <div key={j} className="cr-list-row"><span className="cr-list-ico"><CrIcon n={r.icon || "circle"}/></span><span className="cr-list-text"><b>{r.t}</b>{r.s && <span>{r.s}</span>}</span>{r.m && <span className="cr-list-m">{r.m}</span>}</div>) : <div className="cr-tempty" style={{ padding: 16 }}>{s.empty || "Nothing yet."}</div>}</div>}
-            </div>
-          ))}
+          {sections.map((s, i) => crDrawerSec(s, i, false))}
         </div>
         {acts.length > 0 && <div className="cr-sheet-foot">{acts.map((a, i) => btn(a, i))}</div>}
       </aside>
@@ -54,7 +73,9 @@ function CrDrawer({ d, phone, onClose }) {
 }
 
 /* ── Form (§4.3): validate on submit, then live ── */
-function crFieldOpts(f) { return (f.opts || []).map(o => Array.isArray(o) ? o : [o, o]); }
+/* A field's options; `optsFor(values)` lets them follow another field (a
+   member's courses follow their division). */
+function crFieldOpts(f, vals) { return ((typeof f.optsFor === "function" ? f.optsFor(vals || {}) : f.opts) || []).map(o => Array.isArray(o) ? o : [o, o]); }
 function CrFormSheet({ f, phone, onClose, toast }) {
   const init = React.useMemo(() => {
     const v = Object.assign({}, f.values || {});
@@ -101,7 +122,7 @@ function CrFormSheet({ f, phone, onClose, toast }) {
       const multi = x.type === "multi";
       control = (
         <div className="cr-wrap" role={multi ? "group" : "radiogroup"} aria-label={x.l} id={id} tabIndex={-1}>
-          {crFieldOpts(x).map(o => {
+          {crFieldOpts(x, vals).map(o => {
             const on = multi ? (v || []).includes(o[0]) : v === o[0];
             return <button key={o[0]} type="button" className="cr-chip" role={multi ? "checkbox" : "radio"} aria-checked={on}
                            onClick={() => set(x.id, multi ? (on ? (v || []).filter(y => y !== o[0]) : (v || []).concat([o[0]])) : (on && !x.req ? "" : o[0]))}>{o[1]}</button>;
@@ -109,7 +130,7 @@ function CrFormSheet({ f, phone, onClose, toast }) {
         </div>
       );
     } else if (x.type === "select") {
-      control = <select id={id} className="cr-select" value={v == null ? "" : v} aria-invalid={err ? true : undefined} aria-describedby={desc} onChange={e => set(x.id, e.target.value)}>{!x.req && <option value="">{x.ph || "None"}</option>}{crFieldOpts(x).map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select>;
+      control = <select id={id} className="cr-select" value={v == null ? "" : v} aria-invalid={err ? true : undefined} aria-describedby={desc} onChange={e => set(x.id, e.target.value)}>{!x.req && <option value="">{x.ph || "None"}</option>}{crFieldOpts(x, vals).map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select>;
     } else if (x.type === "textarea") {
       control = <textarea id={id} rows={x.rows || 5} placeholder={x.ph} maxLength={x.max} value={v == null ? "" : v} aria-invalid={err ? true : undefined} aria-describedby={desc} onChange={e => set(x.id, e.target.value)}/>;
     } else if (x.type === "switch") {
@@ -180,6 +201,9 @@ function CrPalette({ pages, actions, phone, onClose, searchPeople, scope: initSc
   const [scope, setScope] = React.useState(initScope || "all");
   const [ci, setCi] = React.useState(0);
   const [people, setPeople] = React.useState([]);
+  /* The member search is a server round trip; until it answers, "nothing
+     called …" would be a claim about members nobody has looked up yet. */
+  const [finding, setFinding] = React.useState(false);
   const inRef = React.useRef(null);
   const listRef = React.useRef(null);
   const box = React.useRef(null);
@@ -187,10 +211,12 @@ function CrPalette({ pages, actions, phone, onClose, searchPeople, scope: initSc
   React.useEffect(() => { const t = setTimeout(() => inRef.current && inRef.current.focus(), 30); return () => clearTimeout(t); }, []);
   React.useEffect(() => {
     let live = true;
+    const s = q.trim();
+    const asks = !!searchPeople && (scope === "people" || (scope === "all" && s.length >= 2));
+    setFinding(asks);
     const t = setTimeout(() => {
-      const s = q.trim();
-      if (!searchPeople || (scope !== "people" && (scope !== "all" || s.length < 2))) { setPeople([]); return; }
-      searchPeople(s).then(r => { if (live) setPeople(r || []); }, () => { if (live) setPeople([]); });
+      if (!asks) { setPeople([]); return; }
+      searchPeople(s).then(r => { if (live) { setPeople(r || []); setFinding(false); } }, () => { if (live) { setPeople([]); setFinding(false); } });
     }, 200);
     return () => { live = false; clearTimeout(t); };
   }, [q, scope]);
@@ -242,7 +268,7 @@ function CrPalette({ pages, actions, phone, onClose, searchPeople, scope: initSc
               })}
             </div>
           ))}
-          {!n && <div className="cr-cmd-none">Nothing called “{q}”. Try a member’s name or ID.</div>}
+          {!n && <div className="cr-cmd-none" role="status">{finding ? (q.trim() ? "Nothing called “" + q + "” yet. Searching members…" : "Searching members…") : "Nothing called “" + q + "”. Try a member’s name, printed ID or phone."}</div>}
         </div>
         <div className="cr-cmd-foot" aria-hidden="true">
           <span><kbd>↑↓</kbd>move</span><span><kbd>↵</kbd>open</span><span><kbd>Tab</kbd>switch scope</span>
@@ -254,6 +280,46 @@ function CrPalette({ pages, actions, phone, onClose, searchPeople, scope: initSc
 
 /* ── Ask (§4.4): the analyst, looking at the page on screen ── */
 const CR_ASK_SUGGESTIONS = ["Summarise this page in two lines", "What changed most since last week?", "Which centre needs attention?"];
+
+/* "Send me an export of the members grouped by their divisions." The analyst
+   reads aggregate figures with no names (insight-chat.php), so a request for a
+   list of people is not a question for it — it is the roster export, done here
+   through admin.members.list (the People capability, centre-scoped on the
+   server, capped at 5000), and NO name ever goes near the AI. Grouping is by
+   a field the roster has; anything else is plain name order. */
+const CR_ASK_GROUPS = [
+  ["division", /\bdivision/i, "Division"], ["centre", /\bcent(re|er)s?\b/i, "Centre"], ["level", /\blevels?\b/i, "Level"],
+  ["status", /\bstatus(es)?\b/i, "Status"], ["type", /\bprogrammes?\b|\bprograms?\b/i, "Programme"],
+];
+function crAskExportIntent(text) {
+  const t = String(text || "");
+  const verb = /\b(export|download|csv|spreadsheet|excel|sheet|send me|give me|list (of|all)|list the|print out)\b/i.test(t);
+  const who = /\b(members?|children|kids|students|roster|everyone|names)\b/i.test(t);
+  if (!verb || !who) return null;
+  const g = CR_ASK_GROUPS.find(x => x[1].test(t));
+  return { by: g ? g[0] : "", label: g ? g[2] : "" };
+}
+async function crAskMembersExport(intent) {
+  const [r, dv] = await Promise.all([
+    NGGApi.admin.members.list({ all: 1, sort: "fullName", dir: "asc" }),
+    intent.by === "division" ? NGGApi.admin.members.divisions().catch(() => ({ divisions: [] })) : Promise.resolve({ divisions: [] }),
+  ]);
+  const rows = (r && r.members) || [];
+  if (!rows.length) return "There are no members on the roster you can see, so there was nothing to export.";
+  const divName = Object.fromEntries(((dv && dv.divisions) || []).map(d => [d.id, d.name]));
+  const none = { division: "Not placed", centre: "No centre", level: "No level", status: "No status", type: "No programme" }[intent.by] || "";
+  const groupOf = m => !intent.by ? "" : intent.by === "division" ? (m.division ? divName[m.division] || m.division : none) : (String(m[intent.by] || "").trim() || none);
+  const sorted = rows.slice().sort((a, b) => { const ga = groupOf(a), gb = groupOf(b);
+    if (ga !== gb) return ga === none ? 1 : gb === none ? -1 : ga.localeCompare(gb);
+    return String(a.fullName || "").localeCompare(String(b.fullName || "")); });
+  const head = (intent.by ? [intent.label] : []).concat(["Name", "Member ID", "Centre", "Status", "Programme", "Level", "Email"]);
+  crDownloadCsv("members" + (intent.by ? "-by-" + intent.by : ""), head,
+    sorted.map(m => (intent.by ? [groupOf(m)] : []).concat([m.fullName, m.displayId || m.memberId, m.centre || "", m.status || "", m.type || "", m.level || "", m.email || ""])));
+  const counts = {}; sorted.forEach(m => { const k = groupOf(m); counts[k] = (counts[k] || 0) + 1; });
+  const capped = r.total > rows.length ? " (the first " + crNum(rows.length) + " of " + crNum(r.total) + ")" : "";
+  return "Downloaded " + crPlural(rows.length, "member") + capped + (intent.by ? ", grouped by " + intent.label.toLowerCase() + ": "
+    + Object.keys(counts).map(k => k + " " + counts[k]).join(", ") : ", in name order") + ". It is every member you can see, not just this page’s search.";
+}
 function CrAsk({ where, facts, mode, onClose }) {
   const [msgs, setMsgs] = React.useState([]);
   const [ask, setAsk] = React.useState("");
@@ -268,6 +334,15 @@ function CrAsk({ where, facts, mode, onClose }) {
     if (!t || thinking) return;
     setMsgs(m => m.concat([{ role: "user", text: t }]));
     setAsk(""); setThinking(true);
+    const ex = crAskExportIntent(t);
+    if (ex) {
+      let said;
+      try { said = await crAskMembersExport(ex); }
+      catch (e) { said = (e && (e.code === "forbidden" || e.code === "missing_cap" || e.status === 403)) ? "Exporting members needs the People permission, which your account doesn’t have." : "Couldn’t make the export. " + crErr(e, ""); }
+      setMsgs(m => m.concat([{ role: "ai", text: said }]));
+      setThinking(false);
+      return;
+    }
     ctl.current = window.AbortController ? new AbortController() : null;
     /* The figures on screen travel with the question, so the answer is about
        this page; the analyst scrubs and grounds it on the server (insight-chat.php). */
@@ -278,6 +353,8 @@ function CrAsk({ where, facts, mode, onClose }) {
       if (r && r.threadId) setThread(r.threadId);
       const turn = (r && r.turn) || {};
       answer = String(turn.answer || "").trim();
+      /* An empty answer is not an answer: say what the lenses found, or why nothing came back. */
+      if (!answer && Array.isArray(turn.claims) && turn.claims.length) answer = turn.claims.map(c => String((c && (c.text || c.claim)) || c || "").trim()).filter(Boolean).slice(0, 4).join(" ");
     } catch (e) {
       answer = e && (e.code === "question_identifies_someone" || e.message === "question_identifies_someone") ? "That question names somebody. Ask about the figures instead, without names or IDs." : "Couldn’t get an answer right now. " + crErr(e, "");
     }
@@ -289,7 +366,7 @@ function CrAsk({ where, facts, mode, onClose }) {
       <div className="cr-ask-head"><CrIcon n="sparkle"/><b>Analyst</b><span>Looking at {where}</span><button type="button" className="cr-iconbtn" style={{ width: 30, height: 30 }} aria-label="Close analyst" onClick={onClose}><CrIcon n="x"/></button></div>
       <div className="cr-ask-body" aria-live="polite">
         {!msgs.length && <>
-          <p>Ask about what’s on screen. Answers use the numbers on this page only.</p>
+          <p>Ask about what’s on screen. Answers use the numbers on this page only. Ask for an export of members (grouped by division, centre, level or status) and it downloads one.</p>
           <div className="cr-ask-sugs">{CR_ASK_SUGGESTIONS.map(s => <button key={s} type="button" className="cr-ask-sug" onClick={() => send(s)}>{s}</button>)}</div>
         </>}
         {msgs.map((m, i) => <div key={i} className={"cr-msg " + (m.role === "user" ? "is-user" : "is-ai")}>{m.text}</div>)}

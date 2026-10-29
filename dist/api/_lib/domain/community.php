@@ -80,17 +80,26 @@ function community_id_login(array $p): array {
          * address: eight misses lock that card's sign-in for half an hour. */
         if (attempt_locked('card.login', strtoupper($idIn))) return ['ok' => false, 'error' => 'too_many_attempts'];
         $tail = fn($a, $b) => strlen($a) >= 7 && strlen($b) >= 7 && (substr($a, -7) === substr($b, -7));
-        $cand = db_row("SELECT * FROM summer_students WHERE (displayId = ? OR studentId = ?) AND status = 'active' LIMIT 1", [$idIn, $idIn]);
+        // Case-blind: the card prints capitals, a phone keyboard types lower case.
+        $cand = db_row("SELECT * FROM summer_students WHERE (upper(displayId) = upper(?) OR upper(studentId) = upper(?)) AND status = 'active' LIMIT 1", [$idIn, $idIn]);
         if ($cand) {
             $g = preg_replace('/\D/', '', (string)($cand['guardianPhone'] ?? ''));
             if ($g !== '' && $tail($g, $phone)) { $person = $cand; $kind = 'student'; }
         }
         if (!$person) {
             // A volunteer's printed ID *is* their volunteerId (VOL-INS-26-001).
-            $cand = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$idIn]);
+            $cand = db_row("SELECT * FROM volunteers WHERE upper(volunteerId) = upper(?) AND status = 'active' LIMIT 1", [$idIn]);
             if ($cand) {
                 $vp = preg_replace('/\D/', '', (string)($cand['phone'] ?? ''));
                 if ($vp !== '' && $tail($vp, $phone)) { $person = $cand; $kind = 'volunteer'; }
+                /* No phone on the record: this card can never pass, whatever is
+                 * typed — which is the "instructors cannot sign in" report. The
+                 * card is in their hand, so naming the other door leaks nothing:
+                 * an emailed code to the address on the record. */
+                elseif ($vp === '') {
+                    attempt_fail('card.login', strtoupper($idIn), 8, 1800);
+                    return ['ok' => false, 'error' => trim((string)($cand['email'] ?? '')) !== '' ? 'no_phone_use_email' : 'no_phone_on_file'];
+                }
             }
         }
     }
@@ -118,38 +127,71 @@ function community_id_login(array $p): array {
     try { db_update($table, ['communityAt' => now_iso()], $key); } catch (\Throwable $e) {}
 
     return ['ok' => true, 'kind' => $kind, 'person' => $person,
+            // Only the team owes a second step at the card door; a participant's card
+            // and their guardian's phone already are the two things.
+            'mfa' => $kind === 'volunteer' && function_exists('mfa_need') ? mfa_need($personId, 'volunteer', ['card']) : '',
             // Back-compat for the existing route, which reads ['student'].
             'student' => $person];
+}
+
+/** What a card or volunteer sign-in hands the app as "the member" — one shape
+ *  for the card door and the emailed-code door, so the two cannot drift. */
+function community_member_shape(array $who, string $kind): array {
+    $vol = $kind === 'volunteer';
+    $personId = (string)($vol ? ($who['volunteerId'] ?? '') : ($who['studentId'] ?? ''));
+    return [
+        'memberId' => $personId,
+        'fullName' => (string)($who['fullName'] ?? ''),
+        'type'     => $vol ? 'VOLUNTEER' : 'SUMMER',
+        'role'     => $vol ? 'volunteer' : 'student',
+        'caps'     => [],
+        'centre'   => (string)($who['centre'] ?? ''),
+        'track'    => (string)($vol ? ($who['role'] ?? '') : ($who['track'] ?? '')),
+        'photoUrl' => (string)($who['photoUrl'] ?? ''),
+        /* Which portal this person opens, answered at sign-in rather than on
+         * the next /auth/me — see auth_me. */
+        'portal'   => function_exists('mentor_portal_role') ? mentor_portal_role($personId) : '',
+    ];
 }
 
 /* ── Channels ─────────────────────────────────────────────────────────── */
 
 /** Seed a Commons channel + one channel per academy course (idempotent). */
 function community_ensure_channels(): void {
-    $have = (int)(db_row("SELECT COUNT(*) c FROM community_channels")['c'] ?? 0);
-    if ($have > 0) return;
     $now = now_iso();
-    db_insert('community_channels', [
-        'channelId' => 'CH-COMMONS', 'slug' => 'commons', 'name' => 'The Commons', 'kind' => 'commons',
-        'icon' => '🏛️', 'color' => '#3b5bdb', 'description' => 'Everyone, every centre, every track — the shared square.',
-        'sortOrder' => -100, 'pinned' => 1, 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now,
-    ]);
+    if (!db_row("SELECT id FROM community_channels WHERE slug = 'commons'") && (int)(db_row("SELECT COUNT(*) c FROM community_channels")['c'] ?? 0) === 0) {
+        db_insert('community_channels', [
+            'channelId' => 'CH-COMMONS', 'slug' => 'commons', 'name' => 'The Commons', 'kind' => 'commons',
+            'icon' => '🏛️', 'color' => '#3b5bdb', 'description' => 'Everyone, every centre, every track — the shared square.',
+            'sortOrder' => -100, 'pinned' => 1, 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now,
+        ]);
+    }
+    /* Every course has a channel, automatically. This used to run once, on an
+       empty table, so a course added later (to the catalogue or by writing its
+       first lesson) never got one and its class had nowhere to talk. A channel
+       staff archived is left archived: the slug or name already exists. */
     $palette = ['#e4032b', '#f5b026', '#2f9e44', '#b07cff', '#3b5bdb', '#ff5a3c', '#17a2b8', '#a8d91a'];
     $icons = ['💻', '🎤', '🚀', '🎬', '🎨', '🎵', '📊', '🧠'];
-    $i = 0;
-    foreach ((function_exists('club_catalogue') ? club_catalogue() : academy_catalogue()) as $faculty => $courses) {
-        foreach ((array)$courses as $course) {
-            $slug = centre_slugify((string)$course);
-            if ($slug === '') continue;
-            if (db_row("SELECT id FROM community_channels WHERE slug = ?", [$slug])) continue;
-            db_insert('community_channels', [
-                'channelId' => 'CH-' . strtoupper(rand_hex(5)), 'slug' => $slug, 'name' => (string)$course, 'kind' => 'course',
-                'faculty' => (string)$faculty, 'icon' => $icons[$i % count($icons)], 'color' => $palette[$i % count($palette)],
-                'description' => $faculty . ' · a channel for the ' . $course . ' crew.', 'sortOrder' => $i,
-                'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now,
-            ]);
-            $i++;
-        }
+    $faculties = [];
+    foreach ((function_exists('club_catalogue') ? club_catalogue() : academy_catalogue()) as $faculty => $courses)
+        foreach ((array)$courses as $course) $faculties[(string)$course] ??= (string)$faculty;
+    $all = array_keys($faculties);
+    if (function_exists('curriculum_courses')) foreach (curriculum_courses() as $c) if (!isset($faculties[$c])) { $all[] = $c; $faculties[$c] = ''; }
+    $slugs = []; $names = [];
+    foreach (db_all("SELECT slug, name FROM community_channels") as $r) { $slugs[(string)$r['slug']] = true; $names[mb_strtolower((string)$r['name'])] = true; }
+    $i = (int)(db_row("SELECT COUNT(*) c FROM community_channels WHERE kind = 'course'")['c'] ?? 0);
+    foreach ($all as $course) {
+        $slug = centre_slugify((string)$course);
+        if ($slug === '' || isset($slugs[$slug]) || isset($names[mb_strtolower((string)$course)])) continue;
+        $faculty = $faculties[$course];
+        db_insert('community_channels', [
+            'channelId' => 'CH-' . strtoupper(rand_hex(5)), 'slug' => $slug, 'name' => (string)$course, 'kind' => 'course',
+            'faculty' => $faculty, 'icon' => $icons[$i % count($icons)], 'color' => $palette[$i % count($palette)],
+            'description' => ($faculty !== '' ? $faculty . ' · ' : '') . 'a channel for the ' . $course . ' crew.', 'sortOrder' => $i,
+            'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now,
+        ]);
+        $slugs[$slug] = true; $names[mb_strtolower((string)$course)] = true;
+        $i++;
     }
 }
 
@@ -245,7 +287,8 @@ function community_channel_members(array $p): array {
     $members = [];
     foreach ($rows as $r) {
         $aid = (string)$r['authorId'];
-        $members[] = ['name' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'], 'posts' => (int)$r['posts'],
+        $members[] = ['name' => community_staff_name($aid) ?? (string)$r['authorName'], 'centre' => (string)$r['authorCentre'], 'posts' => (int)$r['posts'],
+                      'key' => function_exists('cm3_key') ? cm3_key($aid) : '', 'last' => (string)$r['last'],
                       'staff' => community_actor_is_staff($aid), 'photo' => community_photo_for($aid)];
     }
     return ['ok' => true, 'members' => $members, 'count' => count($members)];
@@ -302,7 +345,7 @@ function community_channel_files(array $p): array {
             'pages' => (int)($r['mediaPages'] ?? 0),
             'duration' => (int)($r['mediaDuration'] ?? 0),
             'pinned' => (int)$r['pinned'] === 1,
-            'author' => ['name' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'],
+            'author' => ['name' => community_staff_name((string)$r['authorId']) ?? (string)$r['authorName'], 'centre' => (string)$r['authorCentre'],
                          'isMe' => (string)$r['authorId'] === $viewer,
                          'photo' => community_photo_for((string)$r['authorId'])],
             'note' => mb_substr(trim((string)$r['body']), 0, 120),
@@ -329,13 +372,45 @@ function community_file_fallback_name(string $kind, string $format): string {
 function community_search(array $p): array {
     $viewer = (string)($p['memberId'] ?? '');
     $q = trim((string)($p['q'] ?? ''));
-    if (mb_strlen($q) < 2) return ['ok' => true, 'posts' => []];
-    $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
-    $args = [$like]; $where = "status = 'published' AND body LIKE ?";
+    $authorKey = preg_replace('/[^a-f0-9]/', '', strtolower((string)($p['author'] ?? '')));
+    if (mb_strlen($q) < 2 && $authorKey === '') return ['ok' => true, 'posts' => []];
+    $args = []; $where = "status = 'published'";
+    if (mb_strlen($q) >= 2) {
+        /* The words, or the name on the post: "Ada" finds what Ada wrote as
+           well as what mentions her. */
+        /* '!' as the escape, which is what every other search in the codebase
+           uses (util.php, member-self.php, curriculum.php). A backslash does
+           not survive the trip: "ESCAPE '\\'" in PHP is ESCAPE '\' in SQL, and
+           MySQL reads that backslash as escaping the closing quote, so the
+           statement runs on and the whole query is a syntax error. SQLite
+           treats it literally and never noticed — community search has been
+           returning a 500 on MySQL, and passing its test on SQLite. */
+        $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $q) . '%';
+        $where .= " AND (body LIKE ? ESCAPE '!' OR authorName LIKE ? ESCAPE '!')"; $args[] = $like; $args[] = $like;
+    }
     $chSlug = (string)($p['channel'] ?? 'all');
     if ($chSlug !== 'all' && $chSlug !== '' && $chSlug !== 'bookmarks') {
         $ch = db_row("SELECT channelId FROM community_channels WHERE slug = ? LIMIT 1", [$chSlug]);
-        if ($ch) { $where .= " AND channelId = ?"; $args[] = (string)$ch['channelId']; }
+        if (!$ch) return ['ok' => true, 'posts' => []];
+        $where .= " AND channelId = ?"; $args[] = (string)$ch['channelId'];
+    } elseif (function_exists('cm3_my_channels')) {
+        /* Everywhere = the channels this member follows, the same set as the
+           home feed, so search never surfaces a channel the feed does not. */
+        $mine = cm3_my_channels($viewer);
+        if (!$mine) return ['ok' => true, 'posts' => []];
+        $where .= " AND channelId IN (SELECT channelId FROM community_channels WHERE slug IN (" . implode(',', array_fill(0, count($mine), '?')) . "))";
+        array_push($args, ...$mine);
+    }
+    if ($authorKey !== '' && function_exists('cm3_key')) {
+        /* The client only ever holds the HMAC key, never a member id; resolve
+           it against the people who have posted. */
+        $ids = [];
+        foreach (db_all("SELECT DISTINCT authorId FROM community_posts WHERE status = 'published' LIMIT 5000") as $a) {
+            if (cm3_key((string)$a['authorId']) === $authorKey) $ids[] = (string)$a['authorId'];
+        }
+        if (!$ids) return ['ok' => true, 'posts' => []];
+        $where .= " AND authorId IN (" . implode(',', array_fill(0, count($ids), '?')) . ")";
+        array_push($args, ...$ids);
     }
     $rows = db_all("SELECT * FROM community_posts WHERE $where ORDER BY createdAt DESC LIMIT 30", $args);
     return ['ok' => true, 'posts' => community_shape_page($rows, $viewer)];
@@ -343,7 +418,19 @@ function community_search(array $p): array {
 
 /* ── Attribution (PII-safe: first name + last initial only) ───────────── */
 
+/** A staff author's child-facing name ("Coach Bello"), or null for a child. Memoised per request: a feed page repeats its authors. */
+function community_staff_name(string $id): ?string {
+    static $seen = [];
+    if ($id === '') return null;
+    if (!array_key_exists($id, $seen)) $seen[$id] = staff_public_names([$id])[$id] ?? null;
+    return $seen[$id];
+}
 function community_author(string $memberId): array {
+    // An adult posts as a child addresses them: title and surname, no initial.
+    if (($t = community_staff_name($memberId)) !== null) {
+        $c = db_row("SELECT centre FROM members WHERE memberId = ? LIMIT 1", [$memberId]);
+        return ['name' => $t, 'initial' => '', 'centre' => (string)($c['centre'] ?? '')];
+    }
     $m = db_row("SELECT fullName, centre FROM members WHERE memberId = ? LIMIT 1", [$memberId]);
     if (!$m) $m = db_row("SELECT fullName, centre FROM summer_students WHERE studentId = ? LIMIT 1", [$memberId]); // student sessions
     // Volunteers have no `centre` column; they sign in with the same kind of
@@ -827,7 +914,7 @@ function community_post_shape(array $row, string $viewerId, ?array $pre = null):
          * was the one reading — inverting the single signal the design leans on
          * hardest ("is a mentor in this thread"), for exactly the people who
          * rely on it. Two different questions, so two different fields. */
-        'author' => ['name' => (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'],
+        'author' => ['name' => community_staff_name((string)$row['authorId']) ?? (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'],
                      'isMe' => $isMe, 'staff' => community_actor_is_staff((string)$row['authorId']),
                      'photo' => community_photo_for((string)$row['authorId'])],
         'body' => (string)$row['body'],
@@ -844,7 +931,7 @@ function community_post_shape(array $row, string $viewerId, ?array $pre = null):
         'bookmarked' => (bool)$booked, 'viewCount' => (int)$row['viewCount'],
         'createdAt' => (string)$row['createdAt'],
         'moderationNote' => ((string)$row['status'] !== 'published' && $isMe) ? community_status_note((string)$row['status']) : '',
-    ];
+    ] + cm3_shape_extras($row, $viewerId);
 }
 
 function community_status_note(string $status): string {
@@ -923,11 +1010,21 @@ function community_feed(array $p): array {
         $args[] = $viewer;
         $args[] = '%@' . $handle . '%';
         $mentionFilter = $handle;
+    } elseif ($channel === 'questions') {
+        $where[] = "cp.kind = 'question'";
     } elseif ($channel !== 'all' && $channel !== '') {
         $ch = db_row("SELECT channelId FROM community_channels WHERE slug = ? LIMIT 1", [$channel]);
         if (!$ch) return ['ok' => true, 'posts' => [], 'hasMore' => false];
         $where[] = "cp.channelId = ?";
         $args[] = (string)$ch['channelId'];
+    }
+    /* `scope=mine` (Community v3): the cross-channel filters read only the
+     * channels this member follows (cm3_my_channels), not every channel. */
+    if ((string)($p['scope'] ?? '') === 'mine' && !in_array($channel, ['mine', 'bookmarks'], true) && ($channel === 'all' || in_array($channel, ['unread', 'mentions', 'questions'], true))) {
+        $slugs = cm3_my_channels($viewer);
+        if (!$slugs) return ['ok' => true, 'posts' => [], 'hasMore' => false];
+        $where[] = "cp.channelId IN (SELECT channelId FROM community_channels WHERE slug IN (" . implode(',', array_fill(0, count($slugs), '?')) . "))";
+        $args = array_merge($args, $slugs);
     }
     $whereSql = implode(' AND ', $where);
 
@@ -1122,11 +1219,19 @@ function community_post_create(array $p): array {
     community_ensure_channels();
     $d = is_array($p['data'] ?? null) ? $p['data'] : [];
     $body = mb_substr(trim((string)($d['body'] ?? '')), 0, 2000);
-    $kind = (string)($d['kind'] ?? 'post') === 'poll' ? 'poll' : 'post';
-    $mediaType = in_array((string)($d['mediaType'] ?? 'none'), ['none', 'image', 'video', 'doc'], true) ? (string)($d['mediaType'] ?? 'none') : 'none';
+    $kind = (string)($d['kind'] ?? 'post');
+    if ($kind === 'announcement') $kind = 'announce';
+    if (!in_array($kind, CM3_KINDS, true)) $kind = 'post';
+    $mediaType = in_array((string)($d['mediaType'] ?? 'none'), ['none', 'image', 'video', 'doc', 'code'], true) ? (string)($d['mediaType'] ?? 'none') : 'none';
     $mediaUrl = trim((string)($d['mediaUrl'] ?? ''));
     if ($mediaUrl !== '' && !preg_match('#^https://#i', $mediaUrl)) return ['ok' => false, 'error' => 'bad_media'];
-    if ($mediaUrl === '') $mediaType = 'none';
+    // A code post carries its source, not a file; everything else needs its upload.
+    if ($mediaType === 'code') $mediaUrl = '';
+    elseif ($mediaUrl === '') $mediaType = 'none';
+    /* Kind-specific fields — staff-only kinds, video chapters and captions,
+     * code — are checked before anything is written (community-v3.php). */
+    $extras = cm3_post_extras($viewer, $kind, $d, $mediaType);
+    if (isset($extras['error'])) return ['ok' => false, 'error' => $extras['error'], 'message' => $extras['message'] ?? ''];
     $docName = mb_substr(trim((string)($d['mediaName'] ?? '')), 0, 160);
     /* The stored format, taken from the upload result rather than sniffed off
      * the url. Trusted only as far as it goes: it is checked against the url's
@@ -1164,7 +1269,7 @@ function community_post_create(array $p): array {
         if ($body === '') return ['ok' => false, 'error' => 'empty', 'message' => 'A poll needs a question.'];
         if (count($pollOptions) < 2) return ['ok' => false, 'error' => 'poll_options', 'message' => 'A poll needs at least two options.'];
     }
-    if ($body === '' && $mediaType === 'none' && $kind !== 'poll') return ['ok' => false, 'error' => 'empty'];
+    if ($body === '' && $mediaType === 'none' && $kind !== 'poll' && !($kind === 'homework' && trim((string)($d['hwTitle'] ?? '')) !== '')) return ['ok' => false, 'error' => 'empty'];
 
     // Video guards: size + duration caps (defence-in-depth; the client enforces
     // them too before upload). Cloudinary delivers a web-optimized f_auto/q_auto
@@ -1185,8 +1290,8 @@ function community_post_create(array $p): array {
     if (!$ch) $ch = db_row("SELECT channelId FROM community_channels WHERE slug = 'commons' LIMIT 1");
     if (!$ch) return ['ok' => false, 'error' => 'no_channel'];
 
-    // Safeguarding screen — text (question + poll options), then image/video.
-    $screenText = trim($body . ' ' . implode(' ', $pollOptions));
+    // Safeguarding screen — text (question + poll options + shared code), then image/video.
+    $screenText = trim($body . ' ' . implode(' ', $pollOptions) . ' ' . ($extras['mediaCode'] ?? ''));
     $screen = community_screen($screenText);
     if ($screen['verdict'] === 'block') {
         // A crisis is not a moderation outcome. Record it and raise it before
@@ -1199,22 +1304,16 @@ function community_post_create(array $p): array {
      * flag for staff. Held-vs-flagged is the whole difference between the modes:
      * in both cases a human still sees it, but only `strict` makes a child wait. */
     $mode = community_moderation_mode();
-    $flagged = 0;
-    if ($screen['verdict'] === 'review') {
-        if ($mode === 'strict') $status = 'pending';
-        else { $status = 'published'; $flagged = 1; }
-    } else {
-        $status = 'published';
-    }
-    if ($mediaType === 'video') {
-        // Best-effort free-tier AI frame check; a bad frame blocks, otherwise it
-        // still waits for a mentor (frames aren't the whole clip).
-        if (community_screen_video($mediaUrl) === 'block') return ['ok' => false, 'error' => 'blocked', 'message' => 'That video can\'t be shared here.'];
-        // A clip is the one thing `flag` still holds: frames are not the whole
-        // video, so "published and flagged" would mean the unreviewed part is
-        // already on screen. `off` publishes it, which is what off means.
-        if ($mode === 'strict' || $mode === 'flag') { $status = 'pending'; $flagged = 0; }
-    }
+    /* The shared rules (phone numbers, unkind words, social links) — the same
+     * check the composer showed while the child typed. A clip is the one thing
+     * `flag` still holds: frames are not the whole video, so "published and
+     * flagged" would mean the unreviewed part is already on screen. Hold rules
+     * are for students; staff are refused only for unsafe content (above). */
+    $rule = cm3_safety_check(trim($body . ' ' . implode(' ', $pollOptions) . ' ' . ($extras['mediaCode'] ?? '')), $mediaType);
+    $staffAuthor = community_actor_is_staff($viewer);
+    if ($mediaType === 'video' && community_screen_video($mediaUrl) === 'block') return ['ok' => false, 'error' => 'blocked', 'message' => 'That video can\'t be shared here.'];
+    $hold = cm3_hold($staffAuthor, $screen['verdict'] === 'review' || $rule['v'] === 'review', $mediaType, $mode);
+    $status = $hold['status']; $flagged = $hold['flagged'];
 
     $author = community_author($viewer);
     /* Alt text is what the POSTER says is in the picture, when they say it.
@@ -1239,7 +1338,15 @@ function community_post_create(array $p): array {
      * which is closer to showing it than to mentioning it.
      */
     $ytId = ($mediaType === 'none' && $kind === 'post') ? community_youtube_id(community_extract_url($body)) : '';
-    if ($ytId !== '' && $mode === 'strict') $status = 'pending';
+    if ($ytId !== '' && $mode === 'strict' && !$staffAuthor) $status = 'pending';
+    /* Homework is a task as well as a post: set the task first, so a refusal
+     * (no due date that can be met, nobody to set it for) writes nothing. */
+    if ($kind === 'homework') {
+        $hw = cm3_homework_for_post($viewer, $chSlug, $d, $body);
+        if (empty($hw['ok'])) return $hw;
+        $extras['homeworkId'] = (string)$hw['homeworkId'];
+        if ($body === '') $body = trim((string)($d['hwTitle'] ?? ''));
+    }
 
     /* No unfurl here. It costs up to nine seconds of the member's Send and
      * nobody is waiting on a link card — community_post_on_published() fetches
@@ -1267,9 +1374,13 @@ function community_post_create(array $p): array {
         // Checked above, and now kept: the Files list needs "4:12", not only "18 MB".
         'mediaDuration' => $mediaType === 'video' ? max(0, (int)($d['mediaDuration'] ?? 0)) : 0,
         'altText' => $alt, 'status' => $status,
+        'pinned' => in_array($kind, ['announce', 'homework'], true) ? 1 : 0,
+        'answerId' => '', 'homeworkId' => (string)($extras['homeworkId'] ?? ''),
+        'mediaMeta' => (string)($extras['mediaMeta'] ?? ''), 'mediaCode' => (string)($extras['mediaCode'] ?? ''),
         'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason'],
                                      'by' => 'ai', 'at' => $now, 'mode' => $mode,
-                                     'autoFlagged' => $flagged === 1], JSON_UNESCAPED_SLASHES),
+                                     'rule' => $rule['code'], 'why' => $rule['v'] === 'review' ? $rule['msg'] : '',
+                                     'autoFlagged' => $flagged === 1], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         /* A flagged-but-published post rides the EXISTING reported queue rather
          * than getting a column of its own — reportCount > 0 is already what
          * "somebody should look at this" means here, so the console surfaces it
@@ -1309,9 +1420,24 @@ function community_post_on_published(string $postId): void {
     $body     = (string)$r['body'];
     $chSlug   = (string)(db_row("SELECT slug FROM community_channels WHERE channelId = ? LIMIT 1", [(string)$r['channelId']])['slug'] ?? '');
     // The stored authorName is "Ada O."; the notifier wants the first name.
-    $name = explode(' ', trim((string)$r['authorName']))[0] ?? 'A member';
+    $name = community_staff_name((string)$r['authorId']) ?? (explode(' ', trim((string)$r['authorName']))[0] ?? 'A member');
 
     community_notify_mentions($body, $authorId, $name, $postId, (string)$r['channelId']);
+
+    /* Homework: each child it was set for gets ONE private in-app notice that
+       opens the task's post. In-app only — a class of thirty is thirty mails
+       sent inside the instructor's Send, and the task is on their board. */
+    $hid = (string)($r['homeworkId'] ?? '');
+    if ($hid !== '') {
+        $hw = db_row("SELECT title, dueAt FROM community_homework WHERE homeworkId = ? LIMIT 1", [$hid]);
+        if ($hw) {
+            $due = trim((string)$hw['dueAt']);
+            $line = $due !== '' && function_exists('cm3_due_words') ? 'Due ' . cm3_due_words($due) . '.' : 'No due date — hand it in when you can.';
+            foreach (db_all("SELECT memberId FROM community_homework_state WHERE homeworkId = ?", [$hid]) as $st) {
+                community_notify((string)$st['memberId'], $authorId, 'community.homework', 'New homework from ' . $name . ': ' . (string)$hw['title'], $line, false, $postId);
+            }
+        }
+    }
 
     // Mirror shared documents to a configured Drive integration (any drive:
     // Google Drive, Dropbox, OneDrive… via its webhook). Best-effort.
@@ -1512,27 +1638,61 @@ function community_star(array $p): array {
 function community_comments(array $p): array {
     $viewer = (string)($p['memberId'] ?? '');
     $pid = (string)($p['postId'] ?? '');
-    $rows = db_all("SELECT commentId, memberId, memberName, body, status, reportCount, createdAt FROM community_comments
+    $answerId = (string)(db_row('SELECT answerId FROM community_posts WHERE postId = ?', [$pid])['answerId'] ?? '');
+    $rows = db_all("SELECT commentId, memberId, memberName, body, status, reportCount, createdAt, replyTo FROM community_comments
                     WHERE postId = ? AND (status = 'published'" . ($viewer !== '' ? " OR memberId = ?" : "") . ") ORDER BY createdAt ASC",
         $viewer !== '' ? [$pid, $viewer] : [$pid]);
+    /* A quoted reply is resolved from the rows already read: one the viewer
+       cannot see (removed, or still held for someone else) is quoted as gone,
+       never by its text. Reactions: one grouped read for the whole thread. */
+    $byId = [];
+    foreach ($rows as $r) $byId[(string)$r['commentId']] = $r;
+    $reacts = []; $mine = [];
+    if ($rows) {
+        $ids = array_keys($byId); $ph = implode(',', array_fill(0, count($ids), '?'));
+        foreach (db_all("SELECT commentId, emoji, COUNT(*) c FROM community_comment_reactions WHERE commentId IN ($ph) GROUP BY commentId, emoji", $ids) as $x)
+            $reacts[(string)$x['commentId']][(string)$x['emoji']] = (int)$x['c'];
+        if ($viewer !== '') foreach (db_all("SELECT commentId, emoji FROM community_comment_reactions WHERE memberId = ? AND commentId IN ($ph)", array_merge([$viewer], $ids)) as $x)
+            $mine[(string)$x['commentId']] = (string)$x['emoji'];
+    }
+    $quote = function (string $id) use ($byId): ?array {
+        if ($id === '') return null;
+        $q = $byId[$id] ?? null;
+        if (!$q) return ['commentId' => $id, 'name' => '', 'body' => '', 'gone' => true];
+        return ['commentId' => $id, 'name' => community_staff_name((string)$q['memberId']) ?? (string)$q['memberName'], 'body' => mb_substr((string)$q['body'], 0, 140), 'gone' => false];
+    };
     $out = array_map(fn($r) => [
-        'commentId' => (string)$r['commentId'], 'name' => (string)$r['memberName'], 'body' => (string)$r['body'],
+        'commentId' => (string)$r['commentId'], 'name' => community_staff_name((string)$r['memberId']) ?? (string)$r['memberName'], 'body' => (string)$r['body'],
         'status' => (string)$r['status'], 'createdAt' => (string)$r['createdAt'], 'isMe' => (string)$r['memberId'] === $viewer,
         'photo' => community_photo_for((string)$r['memberId']),
         'staff' => community_actor_is_staff((string)$r['memberId']),
         'reported' => (int)($r['reportCount'] ?? 0) > 0,
         'note' => ((string)$r['status'] !== 'published' && (string)$r['memberId'] === $viewer) ? community_status_note((string)$r['status']) : '',
+        'authorKey' => cm3_key((string)$r['memberId']), 'role' => cm3_role_label((string)$r['memberId']),
+        'isAnswer' => $answerId !== '' && (string)$r['commentId'] === $answerId,
+        'replyTo' => (string)($r['replyTo'] ?? ''), 'quote' => $quote((string)($r['replyTo'] ?? '')),
+        'reactions' => (object)($reacts[(string)$r['commentId']] ?? []), 'myReaction' => $mine[(string)$r['commentId']] ?? '',
     ], $rows);
-    return ['ok' => true, 'comments' => $out];
+    return ['ok' => true, 'comments' => $out, 'reactionSet' => COMMUNITY_REACTIONS];
 }
 
 function community_comment_create(array $p): array {
     $viewer = (string)($p['memberId'] ?? '');
     if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
     $pid = (string)($p['postId'] ?? '');
-    if (!db_row("SELECT id FROM community_posts WHERE postId = ?", [$pid])) return ['ok' => false, 'error' => 'not_found'];
+    $post = db_row("SELECT authorId, status FROM community_posts WHERE postId = ?", [$pid]);
+    if (!$post) return ['ok' => false, 'error' => 'not_found'];
+    // A post that is not live takes no replies but its author's (and staff's): nobody else can see it.
+    if ((string)$post['status'] !== 'published' && (string)$post['authorId'] !== $viewer && (!function_exists('cm3_role') || cm3_role($viewer) !== 'admin')) return ['ok' => false, 'error' => 'not_found'];
     $body = mb_substr(trim((string)($p['body'] ?? '')), 0, 1000);
     if ($body === '') return ['ok' => false, 'error' => 'empty'];
+    /* Quoting a reply: it must be on this post, and one the replier can see. */
+    $replyTo = (string)($p['replyTo'] ?? '');
+    $quoted = null;
+    if ($replyTo !== '') {
+        $quoted = db_row("SELECT commentId, memberId, memberName, body, status FROM community_comments WHERE commentId = ? AND postId = ? LIMIT 1", [$replyTo, $pid]);
+        if (!$quoted || ((string)$quoted['status'] !== 'published' && (string)$quoted['memberId'] !== $viewer)) return ['ok' => false, 'error' => 'quote_not_found'];
+    }
     $screen = community_screen($body);
     if ($screen['verdict'] === 'block') {
         if ($screen['crisis']) {
@@ -1543,17 +1703,21 @@ function community_comment_create(array $p): array {
         return ['ok' => false, 'error' => $screen['crisis'] ? 'crisis' : 'blocked',
             'message' => $screen['crisis'] ? coach_crisis_reply() : 'That comment can\'t be posted — it looks unsafe for this community.'];
     }
-    // Same rule as a post: only `strict` makes a child wait for a mentor.
+    // Same rules as a post (community-v3.php): only `strict` makes a child wait, and staff never wait.
     $mode = community_moderation_mode();
-    $status = ($screen['verdict'] === 'review' && $mode === 'strict') ? 'pending' : 'published';
+    $rule = cm3_safety_check($body);
+    $hold = cm3_hold(community_actor_is_staff($viewer), $screen['verdict'] === 'review' || $rule['v'] === 'review', '', $mode);
+    $status = $hold['status'];
     $author = community_author($viewer);
     $id = 'CC-' . strtoupper(rand_hex(6));
     $now = now_iso();
     db_insert('community_comments', [
         'commentId' => $id, 'postId' => $pid, 'memberId' => $viewer, 'memberName' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''),
-        'body' => $body, 'status' => $status,
+        'body' => $body, 'status' => $status, 'replyTo' => $replyTo,
         'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason'], 'mode' => $mode,
-                                     'autoFlagged' => $screen['verdict'] === 'review' && $mode !== 'strict'], JSON_UNESCAPED_SLASHES),
+                                     'rule' => $rule['code'], 'why' => $rule['v'] === 'review' ? $rule['msg'] : '',
+                                     'autoFlagged' => $hold['flagged'] === 1], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        'reportCount' => $hold['flagged'],
         'createdAt' => $now,
     ]);
     audit('community.comment', $viewer, $id, ['postId' => $pid, 'status' => $status], (string)($p['ip'] ?? ''));
@@ -1562,7 +1726,28 @@ function community_comment_create(array $p): array {
         'commentId' => $id, 'name' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''), 'body' => $body,
         'status' => $status, 'createdAt' => $now, 'isMe' => true, 'photo' => community_photo_for($viewer),
         'note' => $status !== 'published' ? community_status_note($status) : '',
+        'replyTo' => $replyTo, 'quote' => $quoted ? ['commentId' => $replyTo, 'name' => community_staff_name((string)$quoted['memberId']) ?? (string)$quoted['memberName'], 'body' => mb_substr((string)$quoted['body'], 0, 140), 'gone' => false] : null,
+        'reactions' => (object)[], 'myReaction' => '',
     ]];
+}
+
+/** React to a reply, as to a post: one reaction each, the same one again takes it back. */
+function community_comment_react(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
+    $cid = (string)($p['commentId'] ?? '');
+    $emoji = (string)($p['emoji'] ?? '');
+    if (!in_array($emoji, COMMUNITY_REACTIONS, true)) return ['ok' => false, 'error' => 'bad_emoji'];
+    $c = db_row("SELECT c.status, c.memberId, p.status pstatus, p.authorId FROM community_comments c JOIN community_posts p ON p.postId = c.postId WHERE c.commentId = ? LIMIT 1", [$cid]);
+    // Only a reply the viewer can see, on a post the viewer can see.
+    if (!$c || ((string)$c['status'] !== 'published' && (string)$c['memberId'] !== $viewer) || ((string)$c['pstatus'] !== 'published' && (string)$c['authorId'] !== $viewer)) return ['ok' => false, 'error' => 'not_found'];
+    $ex = db_row("SELECT emoji FROM community_comment_reactions WHERE commentId = ? AND memberId = ?", [$cid, $viewer]);
+    if ($ex && (string)$ex['emoji'] === $emoji) { db_exec("DELETE FROM community_comment_reactions WHERE commentId = ? AND memberId = ?", [$cid, $viewer]); $mine = ''; }
+    elseif ($ex) { db_update('community_comment_reactions', ['emoji' => $emoji], ['commentId' => $cid, 'memberId' => $viewer]); $mine = $emoji; }
+    else { db_insert('community_comment_reactions', ['commentId' => $cid, 'memberId' => $viewer, 'emoji' => $emoji, 'createdAt' => now_iso()]); $mine = $emoji; }
+    $reacts = [];
+    foreach (db_all("SELECT emoji, COUNT(*) c FROM community_comment_reactions WHERE commentId = ? GROUP BY emoji", [$cid]) as $r) $reacts[(string)$r['emoji']] = (int)$r['c'];
+    return ['ok' => true, 'reactions' => (object)$reacts, 'myReaction' => $mine];
 }
 
 /**
@@ -1584,6 +1769,10 @@ function community_comment_on_published(string $commentId): void {
     $name   = explode(' ', trim((string)$c['memberName']))[0] ?? 'A member';
     $post = db_row("SELECT authorId, postId, channelId FROM community_posts WHERE postId = ? LIMIT 1", [$pid]);
     if ($post) community_notify((string)$post['authorId'], $viewer, 'community.reply', $name . ' replied to your post', mb_substr($body, 0, 120), true, (string)$post['postId']);
+    // The person whose reply was quoted is told too (once: not again if they wrote the post).
+    $qid = (string)($c['replyTo'] ?? '');
+    $qa = $qid !== '' ? (string)(db_row("SELECT memberId FROM community_comments WHERE commentId = ? LIMIT 1", [$qid])['memberId'] ?? '') : '';
+    if ($qa !== '' && (!$post || $qa !== (string)$post['authorId'])) community_notify($qa, $viewer, 'community.reply', $name . ' replied to you', mb_substr($body, 0, 120), false, $pid);
     // @mentions inside a reply notify (and email) too.
     community_notify_mentions($body, $viewer, $name, $pid, $post ? (string)$post['channelId'] : '');
 }
@@ -1610,7 +1799,15 @@ function community_report(array $p): array {
     $col = $type === 'comment' ? 'commentId' : 'postId';
     if (!db_row("SELECT id FROM $table WHERE $col = ?", [$id])) return ['ok' => false, 'error' => 'not_found'];
     if (db_row("SELECT id FROM community_reports WHERE targetType = ? AND targetId = ? AND memberId = ?", [$type, $id, $viewer])) return ['ok' => true, 'already' => true];
-    db_insert('community_reports', ['targetType' => $type, 'targetId' => $id, 'memberId' => $viewer, 'reason' => mb_substr(trim((string)($p['reason'] ?? '')), 0, 400), 'createdAt' => now_iso()]);
+    $reason = trim((string)($p['reason'] ?? ''));
+    $reasonText = CM3_REPORT_REASONS[$reason] ?? mb_substr($reason, 0, 400);
+    db_insert('community_reports', ['targetType' => $type, 'targetId' => $id, 'memberId' => $viewer, 'reason' => $reasonText, 'createdAt' => now_iso()]);
+    /* "I'm worried someone is not safe" is not a moderation report. It goes to
+     * a trained safeguarding lead, as a case, straight away. */
+    if ($reason === 'safety') {
+        $pidForCase = $type === 'post' ? $id : (string)(db_row('SELECT postId FROM community_comments WHERE commentId = ?', [$id])['postId'] ?? '');
+        if ($pidForCase !== '') cm3_case_from_post($pidForCase, $viewer, 'report', 'high', 'A member said they are worried someone is not safe' . ($type === 'comment' ? ' (about a reply).' : '.'));
+    }
     /* Comments count too. They did not, and the queue looked for comments with
      * status 'reported' — a status the moderation map never writes — so a child
      * reporting a bullying reply reached nobody at all. Comments are where
@@ -1632,6 +1829,8 @@ function community_delete(array $p): array {
         if (!$c || (string)$c['memberId'] !== $viewer) return ['ok' => false, 'error' => 'forbidden'];
         db_exec("DELETE FROM community_comments WHERE commentId = ?", [$id]);
         db_exec("DELETE FROM community_reports WHERE targetType = 'comment' AND targetId = ?", [$id]);
+        // A question answered by this reply is open again, not "answered" by nothing.
+        db_exec("UPDATE community_posts SET answerId = '' WHERE answerId = ?", [$id]);
     } else {
         $pr = db_row("SELECT authorId, featured FROM community_posts WHERE postId = ?", [$id]);
         if (!$pr || (string)$pr['authorId'] !== $viewer) return ['ok' => false, 'error' => 'forbidden'];
@@ -1699,29 +1898,50 @@ function community_showcase(array $p): array {
 }
 
 /** AI "Catch me up" — a short digest of a channel's recent activity. */
+/**
+ * community.digest — "Catch me up": this member's UNREAD posts, by the same
+ * rule as the Unread filter (published, not their own, newer than their last
+ * read of that channel). One line per post, so each opens its post; when an
+ * AI is configured it adds one summary sentence on top (first names only).
+ *
+ * It used to summarise the last 25 posts of the whole community whoever was
+ * asking, and with an AI configured it showed the word "Array": ai_complete
+ * returns an array, which was cast to a string.
+ */
 function community_digest(array $p): array {
     community_ensure_channels();
+    $viewer = (string)($p['memberId'] ?? '');
+    if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
     $chSlug = (string)($p['channel'] ?? 'all');
-    $chName = 'the community';
+    $where = "cp.status = 'published' AND cp.authorId <> ? AND cp.createdAt > COALESCE((SELECT r.lastReadAt FROM community_reads r WHERE r.memberId = ? AND r.channelId = cp.channelId), '')";
+    $args = [$viewer, $viewer];
     if ($chSlug !== 'all' && $chSlug !== '') {
-        $c = db_row("SELECT channelId, name FROM community_channels WHERE slug = ? LIMIT 1", [$chSlug]);
+        $c = db_row("SELECT channelId FROM community_channels WHERE slug = ? LIMIT 1", [$chSlug]);
         if (!$c) return ['ok' => false, 'error' => 'not_found'];
-        $chName = (string)$c['name'];
-        $rows = db_all("SELECT authorName, body FROM community_posts WHERE channelId = ? AND status = 'published' AND body <> '' ORDER BY createdAt DESC LIMIT 25", [(string)$c['channelId']]);
-    } else {
-        $rows = db_all("SELECT authorName, body FROM community_posts WHERE status = 'published' AND body <> '' ORDER BY createdAt DESC LIMIT 25");
+        $where .= ' AND cp.channelId = ?'; $args[] = (string)$c['channelId'];
     }
-    if (!$rows) return ['ok' => true, 'digest' => 'It\'s quiet in ' . $chName . ' right now — be the first to post something today.', 'ai' => false];
-    if (!function_exists('ai_enabled') || !ai_enabled('analysis')) {
-        return ['ok' => true, 'digest' => count($rows) . ' recent posts in ' . $chName . '. Scroll the feed to catch up.', 'ai' => false];
+    $total = (int)(db_row("SELECT COUNT(*) c FROM community_posts cp WHERE $where", $args)['c'] ?? 0);
+    if (!$total) return ['ok' => true, 'digest' => 'You’re up to date: nothing new since you last looked.', 'items' => [], 'total' => 0, 'ai' => false];
+    $rows = db_all("SELECT cp.postId, cp.authorName, cp.body, cp.kind, cp.mediaType, ch.name AS chName FROM community_posts cp
+                    LEFT JOIN community_channels ch ON ch.channelId = cp.channelId WHERE $where ORDER BY cp.createdAt DESC LIMIT 25", $args);
+    $chans = count(array_unique(array_map(fn($r) => (string)$r['chName'], $rows)));
+    $what = static function (array $r): string {
+        $b = trim(preg_replace('/\s+/u', ' ', (string)$r['body']));
+        if ($b !== '') return mb_strlen($b) > 90 ? rtrim(mb_substr($b, 0, 88)) . '…' : $b;
+        return ['photo' => 'shared a photo', 'image' => 'shared a photo', 'video' => 'shared a video', 'doc' => 'shared a document', 'code' => 'shared some code'][(string)$r['mediaType']] ?? 'posted';
+    };
+    $first = static fn($n) => explode(' ', trim((string)$n))[0] ?: 'Someone';
+    $items = array_map(fn($r) => ['postId' => (string)$r['postId'], 'line' => $first($r['authorName']) . ' in ' . ((string)$r['chName'] ?: 'the community') . ': ' . $what($r)], array_slice($rows, 0, 6));
+    $intro = $total . ($total === 1 ? ' new post' : ' new posts') . ' since you last looked' . ($chans > 1 ? ', in ' . $chans . ' channels' : '') . '.';
+    $ai = false;
+    if (function_exists('ai_enabled') && ai_enabled('analysis') && function_exists('ai_complete')) {
+        $feed = '';
+        foreach ($rows as $r) $feed .= '- ' . $first($r['authorName']) . ' (' . (string)$r['chName'] . '): ' . mb_substr(trim((string)$r['body']), 0, 200) . "\n";
+        $r = ai_complete("You catch up a young person on their club's community feed. In ONE warm sentence of at most 30 words, say what people have been sharing. First names only. No markdown, no emojis.", $feed, 90, 'analysis');
+        $line = !empty($r['ok']) ? trim(preg_replace('/\s+/u', ' ', (string)($r['text'] ?? ''))) : '';
+        if ($line !== '') { $intro = $intro . ' ' . mb_substr($line, 0, 240); $ai = true; }
     }
-    $feed = '';
-    foreach ($rows as $r) $feed .= '- ' . trim((string)$r['authorName']) . ': ' . mb_substr(trim((string)$r['body']), 0, 200) . "\n";
-    $sys = "You summarise a youth community feed for a teenager who's been away. In 2-3 warm, upbeat sentences (max 60 words), say what people have been posting and sharing in " . $chName . ". No names beyond first names. No markdown. If nothing notable, say it's been quiet.";
-    $out = ai_complete($sys, $feed, 160, 'analysis');
-    $out = trim((string)$out);
-    if ($out === '') $out = count($rows) . ' recent posts in ' . $chName . '. Scroll the feed to catch up.';
-    return ['ok' => true, 'digest' => $out, 'ai' => true];
+    return ['ok' => true, 'digest' => $intro, 'items' => $items, 'total' => $total, 'more' => max(0, $total - count($items)), 'ai' => $ai];
 }
 
 /* ── Admin ────────────────────────────────────────────────────────────── */
@@ -1818,12 +2038,16 @@ function admin_community_moderation_set(array $p): array {
  * whether a message belongs in the feed; this is about a child. Folding them
  * together would let "approve, approve, approve" run straight past a disclosure.
  */
+/* Safeguarding cases are for trained leads, the `safeguarding` capability —
+ * never `content`. Editing the feed and reading what a child disclosed are
+ * different trusts (CLAUDE.md §4: such caps are granted per person). */
 function admin_community_safeguarding(array $p): array {
-    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'safeguarding'); if (!$g['ok']) return $g;
     $st = (string)($p['status'] ?? 'open');
-    if (!in_array($st, ['open', 'acknowledged', 'all'], true)) $st = 'open';
-    $where = $st === 'all' ? '1=1' : 'status = ?';
-    $args  = $st === 'all' ? [] : [$st];
+    if (!in_array($st, ['open', 'acknowledged', 'closed', 'all'], true)) $st = 'open';
+    // "Open" is every case not yet dealt with, including one a lead has taken.
+    $where = $st === 'all' ? '1=1' : ($st === 'open' ? "status IN ('open','in_progress')" : 'status = ?');
+    $args  = $st === 'all' || $st === 'open' ? [] : [$st];
     $rows = db_all("SELECT * FROM community_safeguarding WHERE $where ORDER BY createdAt DESC LIMIT 200", $args);
     return ['ok' => true, 'cases' => array_map(fn($r) => [
         'caseId' => (string)$r['caseId'], 'author' => (string)$r['authorName'], 'authorId' => (string)$r['authorId'],
@@ -1831,13 +2055,16 @@ function admin_community_safeguarding(array $p): array {
         'body' => (string)$r['body'], 'status' => (string)$r['status'],
         'acknowledgedBy' => (string)($r['acknowledgedBy'] ?? ''), 'acknowledgedAt' => (string)($r['acknowledgedAt'] ?? ''),
         'createdAt' => (string)$r['createdAt'],
+        'severity' => (string)($r['severity'] ?? 'high') ?: 'high', 'leadId' => (string)($r['leadId'] ?? ''), 'leadName' => (string)($r['leadName'] ?? ''),
+        'postId' => (string)($r['postId'] ?? ''), 'source' => (string)($r['source'] ?? 'screen') ?: 'screen', 'note' => (string)($r['note'] ?? ''),
+        'mine' => (string)($r['leadId'] ?? '') === (string)$g['requester']['memberId'],
     ], $rows)];
 }
 
 /** Mark a safeguarding case as seen and acted on. Audited — "who saw this, and
  *  when" is the first question after an incident. */
 function admin_community_safeguarding_ack(array $p): array {
-    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'safeguarding'); if (!$g['ok']) return $g;
     $caseId = (string)($p['caseId'] ?? '');
     $by = (string)($g['requester']['memberId'] ?? '');
     if (!db_row("SELECT id FROM community_safeguarding WHERE caseId = ?", [$caseId])) return ['ok' => false, 'error' => 'not_found'];
@@ -1878,8 +2105,11 @@ function admin_community_channel_upsert(array $p): array {
 function admin_community_queue(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
     $filter = (string)($p['status'] ?? 'pending');
-    $st = in_array($filter, ['pending', 'published', 'hidden', 'removed', 'reported', 'all'], true) ? $filter : 'pending';
-    if ($st === 'reported') { $postWhere = "reportCount > 0 AND status <> 'removed'"; $postArgs = []; }
+    $st = in_array($filter, ['pending', 'published', 'hidden', 'removed', 'reported', 'all', 'queue'], true) ? $filter : 'pending';
+    /* `queue` is the v3 moderation queue: everything a person has to decide —
+     * held, waiting video, or published and reported. */
+    if ($st === 'queue') { $postWhere = "status = 'pending' OR (reportCount > 0 AND status = 'published')"; $postArgs = []; }
+    elseif ($st === 'reported') { $postWhere = "reportCount > 0 AND status <> 'removed'"; $postArgs = []; }
     elseif ($st === 'all') { $postWhere = "status <> 'removed'"; $postArgs = []; }
     else { $postWhere = "status = ?"; $postArgs = [$st]; }
     $postRows = db_all("SELECT * FROM community_posts WHERE $postWhere ORDER BY reportCount DESC, createdAt DESC LIMIT 100", $postArgs);
@@ -1889,7 +2119,8 @@ function admin_community_queue(array $p): array {
      * list was empty by construction on the one filter a moderator opens when a
      * child has told them something is wrong. Comments now carry reportCount
      * exactly as posts do, and the 'reported' filter reads it. */
-    if ($st === 'reported')  { $cWhere = "reportCount > 0 AND status <> 'removed'"; $cArgs = []; }
+    if ($st === 'queue')     { $cWhere = "status = 'pending' OR (reportCount > 0 AND status = 'published')"; $cArgs = []; }
+    elseif ($st === 'reported')  { $cWhere = "reportCount > 0 AND status <> 'removed'"; $cArgs = []; }
     elseif ($st === 'all')   { $cWhere = "status <> 'removed'"; $cArgs = []; }
     else                     { $cWhere = "status = ?"; $cArgs = [$st]; }
     $commentRows = db_all("SELECT * FROM community_comments WHERE $cWhere ORDER BY reportCount DESC, createdAt DESC LIMIT 100", $cArgs);
@@ -1903,9 +2134,13 @@ function admin_community_queue(array $p): array {
         array_map(fn($r) => (string)$r['postId'], $postRows),
         array_map(fn($r) => (string)$r['commentId'], $commentRows));
 
-    $posts = array_map(function ($r) use ($reports) {
-        $ch = db_row("SELECT name, color FROM community_channels WHERE channelId = ? LIMIT 1", [(string)$r['channelId']]);
+    $chans = [];
+    foreach (db_all('SELECT channelId, slug, name, color FROM community_channels') as $c) $chans[(string)$c['channelId']] = $c;
+    $posts = array_map(function ($r) use ($reports, $chans) {
+        $ch = $chans[(string)$r['channelId']] ?? null;
+        [$qk, $why] = cm3_queue_kind($r);
         return [
+            'kind' => $qk, 'why' => $why, 'authorKey' => cm3_key((string)$r['authorId']), 'channelSlug' => (string)($ch['slug'] ?? ''),
             'postId' => (string)$r['postId'], 'author' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'],
             'channel' => (string)($ch['name'] ?? ''), 'color' => (string)($ch['color'] ?? '#3b5bdb'),
             'body' => (string)$r['body'], 'mediaType' => (string)$r['mediaType'], 'mediaUrl' => (string)$r['mediaUrl'], 'mediaPoster' => (string)$r['mediaPoster'],
@@ -1916,6 +2151,9 @@ function admin_community_queue(array $p): array {
         ];
     }, $postRows);
     $comments = array_map(fn($r) => [
+        'kind' => (string)$r['status'] === 'pending' ? 'held' : 'reported',
+        'why' => (string)$r['status'] === 'pending' ? ((json_decode((string)($r['moderation'] ?? ''), true) ?: [])['why'] ?? '' ?: 'The screen was unsure about this reply.') : 'Reported by ' . (int)$r['reportCount'] . ((int)$r['reportCount'] === 1 ? ' member.' : ' members.'),
+        'authorKey' => cm3_key((string)$r['memberId']),
         'commentId' => (string)$r['commentId'], 'postId' => (string)$r['postId'], 'name' => (string)$r['memberName'],
         'body' => (string)$r['body'], 'status' => (string)$r['status'], 'createdAt' => (string)$r['createdAt'],
         'reportCount' => (int)($r['reportCount'] ?? 0),
@@ -1953,6 +2191,22 @@ function community_reports_for(array $postIds, array $commentIds): array {
     return $out;
 }
 
+/**
+ * Tell a member their post or reply was hidden or removed — once, kindly, in
+ * the app, with what to do next. "Hide with a kind note" promised this and
+ * sent nothing, and the post still looked live to its author. Never says who
+ * reported it.
+ */
+function community_moderation_told(string $memberId, string $by, string $what, string $act, string $note, string $ref): void {
+    if ($memberId === '') return;
+    $note = trim(mb_substr($note, 0, 300));
+    $title = $act === 'hide' ? 'A mentor hid your ' . $what : 'Your ' . $what . ' was taken down';
+    $body = $act === 'hide'
+        ? ($note !== '' ? $note . ' ' : 'Something in it needs another look before others see it. ') . 'Only you can see it now. You can delete it and post again, or ask your mentor about it.'
+        : ($note !== '' ? $note . ' ' : 'It broke one of the community rules. ') . 'If you think this was a mistake, talk to your mentor.';
+    community_notify($memberId, $by, 'community.moderated', $title, $body, false, $ref);
+}
+
 function admin_community_moderate(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
     $kind = (string)($p['kind'] ?? 'post');
@@ -1963,14 +2217,19 @@ function admin_community_moderate(array $p): array {
         $cid = (string)($p['id'] ?? '');
         $map = ['approve' => 'published', 'hide' => 'hidden', 'remove' => 'removed'];
         if (!isset($map[$act])) return ['ok' => false, 'error' => 'bad_action'];
-        db_update('community_comments', ['status' => $map[$act], 'moderatedBy' => $by, 'moderatedAt' => $now], ['commentId' => $cid]);
+        db_update('community_comments', ['status' => $map[$act], 'moderatedBy' => $by, 'moderatedAt' => $now, 'reviewedAt' => $now]
+            + ($act === 'approve' ? ['reportCount' => 0] : []), ['commentId' => $cid]);
         // Approving is what makes a reply real, so it owes the post's author
         // the notification the create path would have sent. Stamped once.
         if ($map[$act] === 'published') community_comment_on_published($cid);
+        // The author is told, kindly and without the detail; the moderator's toast promised it.
+        if ($act === 'hide' || $act === 'remove') { $c = db_row('SELECT memberId FROM community_comments WHERE commentId = ?', [$cid]); if ($c) community_moderation_told((string)$c['memberId'], $by, 'reply', $act, (string)($p['note'] ?? ''), $cid); }
         audit('community.moderate.comment', $by, $cid, ['action' => $act], (string)($p['ip'] ?? ''));
         return ['ok' => true];
     }
     $pid = (string)($p['id'] ?? '');
+    $extra = cm3_moderate_extra($g, $act, $pid, $p);
+    if ($extra !== null) return $extra;
     if ($act === 'pin' || $act === 'unpin') {
         db_update('community_posts', ['pinned' => $act === 'pin' ? 1 : 0, 'updatedAt' => $now], ['postId' => $pid]);
     } elseif ($act === 'feature' || $act === 'unfeature') {
@@ -1979,10 +2238,12 @@ function admin_community_moderate(array $p): array {
     } else {
         $map = ['approve' => 'published', 'hide' => 'hidden', 'remove' => 'removed'];
         if (!isset($map[$act])) return ['ok' => false, 'error' => 'bad_action'];
-        db_update('community_posts', ['status' => $map[$act], 'updatedAt' => $now], ['postId' => $pid]);
+        db_update('community_posts', ['status' => $map[$act], 'updatedAt' => $now, 'reviewedAt' => $now, 'reviewedBy' => $by]
+            + ($act === 'approve' ? ['reportCount' => 0] : []), ['postId' => $pid]);
         // @mentions, the document mirror and the link preview all belong to
         // "this post is now visible", which is exactly what approve means.
         if ($map[$act] === 'published') community_post_on_published($pid);
+        if ($act === 'hide' || $act === 'remove') { $o = db_row('SELECT authorId FROM community_posts WHERE postId = ?', [$pid]); if ($o) community_moderation_told((string)$o['authorId'], $by, 'post', $act, (string)($p['note'] ?? ''), $pid); }
     }
     audit('community.moderate.post', $by, $pid, ['action' => $act], (string)($p['ip'] ?? ''));
     return ['ok' => true];
@@ -2085,10 +2346,17 @@ function community_typing_says(array $names): string {
 
 /** A person's name as the community shows it, for members and card-holders alike. */
 function community_display_name(string $id): string {
+    if (($t = community_staff_name($id)) !== null) return $t;
+    /* A child is "Ada N." here as on every post — the typing line is read by
+       the whole channel, and a full name is more than the feed ever shows. */
+    $short = static function (string $full): string {
+        $p = preg_split('/\s+/', trim($full)) ?: [];
+        return trim(($p[0] ?? '') . (isset($p[1]) && $p[1] !== '' ? ' ' . mb_strtoupper(mb_substr($p[1], 0, 1)) . '.' : ''));
+    };
     $m = db_row("SELECT fullName FROM members WHERE memberId = ? LIMIT 1", [$id]);
-    if ($m) return (string)$m['fullName'];
+    if ($m) return community_actor_is_staff($id) ? (string)$m['fullName'] : $short((string)$m['fullName']);
     $s = db_row("SELECT fullName FROM summer_students WHERE studentId = ? LIMIT 1", [$id]);
-    if ($s) return (string)$s['fullName'];
+    if ($s) return $short((string)$s['fullName']);
     /* Falls back to whatever they last posted under rather than to an id — a
        subtitle that says "NGG-2025-0007 is typing…" is worse than silence. */
     $p = db_row("SELECT authorName FROM community_posts WHERE authorId = ? ORDER BY createdAt DESC LIMIT 1", [$id]);

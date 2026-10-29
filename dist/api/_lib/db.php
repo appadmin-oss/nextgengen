@@ -15,7 +15,10 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 138;
+const NGG_SCHEMA_TARGET = 200;
+/** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
+ *  created fresh records it as done: there is nothing to split. */
+const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -84,6 +87,38 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
  * rather than doing it silently.
  */
 const NGG_MYSQL_ROW_FIXUPS = [
+    /* 193 — Anchor Circle joined the family account: the old code-and-token
+     * links stop opening anything; their days and notes stay on the record. */
+    'circle_links.moved' => "UPDATE circle_links SET status = 'moved' WHERE status = 'active'",
+    /* 160 — the Summer School lead starts as the centre's existing lead. NULL
+     * marks "never set", so a lead somebody cleared ('') is not refilled. */
+    'centres.summerLead' => "
+        UPDATE centres SET summerLeadVolunteerId = CASE
+            WHEN COALESCE(programmes, '') = '' OR programmes LIKE '%summer%' THEN COALESCE(leadVolunteerId, '') ELSE '' END
+         WHERE summerLeadVolunteerId IS NULL
+    ",
+    /* A member could once write "MFA.bypass" / "STAFF.…" / "AI.…" (the guard was
+     * case-sensitive, MySQL's collation is not). Server-written keys are always
+     * lower case, so any such key not in lower case was forged: remove it. */
+    'member_state.forged_case' => "DELETE FROM member_state WHERE BINARY stateKey <> BINARY LOWER(stateKey) AND (LOWER(stateKey) LIKE 'mfa%' OR LOWER(stateKey) LIKE 'staff.%' OR LOWER(stateKey) LIKE 'ai.%')",
+    /* 156 — emails stored the way the sign-in door compares them (BINARY: the
+     * default collation would call 'Ada@X' and 'ada@x' equal and skip it). */
+    'volunteers.email_norm' => "UPDATE volunteers SET email = LOWER(TRIM(email)) WHERE email IS NOT NULL AND BINARY email <> BINARY LOWER(TRIM(email))",
+    'mentors.email_norm'    => "UPDATE mentors SET email = LOWER(TRIM(email)) WHERE email IS NOT NULL AND BINARY email <> BINARY LOWER(TRIM(email))",
+    'members.email_trim'    => "UPDATE members SET email = TRIM(email) WHERE email IS NOT NULL AND email <> TRIM(email)",
+    /* 146 — one active mentor per child: end duplicate active pairings,
+     * keeping each child's newest. Matches nothing once they are gone. */
+    'mentor_assignments.one_active' => "
+        UPDATE mentor_assignments a
+          JOIN (SELECT memberId, MAX(id) keepId FROM mentor_assignments WHERE status = 'active' GROUP BY memberId) k ON k.memberId = a.memberId
+           SET a.status = 'ended', a.endedAt = '2026-10-16T00:00:00Z'
+         WHERE a.status = 'active' AND a.id <> k.keepId
+    ",
+    /* 138 — goal statuses become draft | active | achieved | paused. */
+    'mentor_goals.status' => "
+        UPDATE mentor_goals SET status = CASE status WHEN 'open' THEN 'active' WHEN 'done' THEN 'achieved' WHEN 'dropped' THEN 'paused' ELSE status END
+         WHERE status IN ('open', 'done', 'dropped')
+    ",
     /* 60 — one "Full name" box, split into the parts the ID card needs. */
     'summer_students.firstName' => "
         UPDATE summer_students
@@ -216,6 +251,47 @@ function db_driver(): string {
  * break the request. Gated by a content hash in schema_meta so the full replay
  * only runs when the mirror actually changes (steady state = two tiny queries).
  */
+/**
+ * Every table in ONE collation — the one `members` was created with.
+ *
+ * The mirror's older tables take the server's default (utf8mb4_general_ci on
+ * most shared hosts); twenty-odd newer ones named utf8mb4_unicode_ci. MySQL
+ * refuses to compare a column of one with a column of the other ("1267
+ * Illegal mix of collations"), so any join between an old table and a new one
+ * — members with mentor_matches, say — failed the whole request. The fix is
+ * not to pick a collation in the mirror but to make the database agree with
+ * itself: whatever `members` uses, every other table is converted to.
+ *
+ * Runs with the mirror (once per deploy). A table whose conversion fails is
+ * logged and skipped; the rest still convert. Returns false if any failed.
+ */
+function db_mysql_unify_collation(PDO $db): bool {
+    try {
+        $st = $db->query("SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members'");
+        $target = $st ? (string)($st->fetchColumn() ?: '') : '';
+        if (!preg_match('/^utf8mb4_[a-z0-9_]+$/', $target)) return true;   // nothing to anchor on
+        $st = $db->prepare("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' AND TABLE_COLLATION <> ?
+                            UNION SELECT DISTINCT TABLE_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLLATION_NAME IS NOT NULL AND COLLATION_NAME <> ?");
+        $st->execute([$target, $target]);
+        $tables = $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    } catch (Throwable $e) {
+        error_log('[db] collation check: ' . $e->getMessage());
+        return false;
+    }
+    $ok = true;
+    foreach ($tables as $t) {
+        if (!preg_match('/^[A-Za-z0-9_]+$/', (string)$t)) continue;
+        try {
+            $db->exec("ALTER TABLE `$t` CONVERT TO CHARACTER SET utf8mb4 COLLATE $target");
+            error_log("[db] collation: $t converted to $target");
+        } catch (Throwable $e) {
+            $ok = false;
+            error_log("[db] collation: $t not converted — " . $e->getMessage());
+        }
+    }
+    return $ok;
+}
+
 function db_apply_mysql_schema(PDO $db): void {
     global $CONFIG;
     $file = (string)($CONFIG['mysql_schema_path'] ?? (__DIR__ . '/../../db/schema-mysql.sql'));
@@ -280,6 +356,7 @@ function db_apply_mysql_schema(PDO $db): void {
             }
         }
     }
+    if (!db_mysql_unify_collation($db)) $allOk = false;
     /* Data fixups the mirror cannot carry — see NGG_MYSQL_ROW_FIXUPS.
      *
      * Reached only when the mirror's hash changed, i.e. once per deploy, and
@@ -441,6 +518,21 @@ function db_run_seeds(PDO $db): void {
          * business. Those keep asking for age, which still works — the record
          * derives age from dob when it is given and falls back to the typed age
          * when it is not. */
+        /* The bundled curricula, into the live lessons, one file per request.
+         * A fresh install shipped 336 written lessons and showed a member an
+         * empty Learn screen until an admin found the import and pressed it
+         * four times. See curriculum_seed_bundled_once() for what it refuses
+         * to do — it never touches a lesson somebody else put there. */
+        if (function_exists('curriculum_seed_bundled_once') && db_table_exists($db, 'curriculum_units')) {
+            curriculum_seed_bundled_once();
+        }
+        /* Phase 1 of the centre-key migration: fill centreId from the centre
+           name once, wherever it resolves. A name that resolves to nothing is
+           left empty on purpose — those rows are the inventory that
+           admin.centres.idaudit reports. */
+        if (function_exists('centre_ids_backfill_once') && db_table_exists($db, 'centres')) {
+            centre_ids_backfill_once();
+        }
         if (setting_raw('seed_dob_v1') !== '1') {
             $db->exec("DELETE FROM form_defs WHERE status = 'live' AND publishedBy = 'system' AND formId = 'summer-reg'");
             setting_set('seed_dob_v1', '1', 'system');
@@ -484,6 +576,16 @@ function db_migrate(PDO $db): void {
 
     $db->exec("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)");
     $current = (int)($db->query('SELECT IFNULL(MAX(version),0) FROM schema_version')->fetchColumn() ?: 0);
+    /* Two branches once both numbered a 137 and a 138: one for CACENTRE's
+     * locations and Make.com (now 199 and 200), one for Mentorship. A database
+     * that ran the first pair has a 138 and no mentor_matches, and reading only
+     * MAX(version) would skip the Mentorship pair for ever. Step it back so
+     * 137 onward run again; every statement tolerates "already applied". */
+    if ($current >= 137 && $current < 199
+        && $db->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='absence_asks'")->fetchColumn()
+        && !$db->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='mentor_matches'")->fetchColumn()) {
+        $current = 136;
+    }
     /* Nothing to do is the normal case — every request after the first deploy.
      * Returning here skips building sixty-odd migration strings, asserting the
      * ladder and looping over all of them, on every single request. */
@@ -3809,7 +3911,8 @@ function db_migrate(PDO $db): void {
               rubric TEXT DEFAULT '',
               points INTEGER DEFAULT 1,
               position INTEGER DEFAULT 1,
-              source TEXT DEFAULT 'manual'
+              source TEXT DEFAULT 'manual',
+              videoUrl TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_ccheck_unit ON curriculum_checks(unitId, position);
             CREATE TABLE IF NOT EXISTS curriculum_progress (
@@ -4041,25 +4144,1674 @@ function db_migrate(PDO $db): void {
                   updatedAt TEXT NOT NULL DEFAULT '',
                   updatedBy TEXT NOT NULL DEFAULT ''
                 );",
-        /* 137 — CACENTRE's locations decide NGG's centres (domain/cac-locations.php).
+
+        /* 137 — Mentorship: Anchor Pods, the five phases, a choice of two
+         * mentors, cadence, the adaptive rules R1–R8, interventions,
+         * safeguarding cases, the Mentor Academy and the NGGC Mentorship
+         * Commitment & Conduct Policy (domain/mentorship-pods.php).
+         *
+         * mentor_assignments stays the pairing every older screen reads; a
+         * match that becomes active writes one, so nothing downstream forks. */
+        137 => "
+            CREATE TABLE IF NOT EXISTS mentor_matches (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              matchId TEXT NOT NULL UNIQUE,
+              memberId TEXT NOT NULL,
+              mentorId TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              track TEXT NOT NULL DEFAULT '',
+              phase TEXT NOT NULL DEFAULT 'match',
+              status TEXT NOT NULL DEFAULT 'offered',
+              offeredAt TEXT NOT NULL DEFAULT '',
+              startedAt TEXT NOT NULL DEFAULT '',
+              chosenBy TEXT NOT NULL DEFAULT '',
+              agreementJson TEXT NOT NULL DEFAULT '',
+              closingAt TEXT NOT NULL DEFAULT '',
+              closedAt TEXT NOT NULL DEFAULT '',
+              closeReason TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mmatch_member ON mentor_matches(memberId, status);
+            CREATE INDEX IF NOT EXISTS idx_mmatch_mentor ON mentor_matches(mentorId, status);
+            CREATE TABLE IF NOT EXISTS mentor_match_offers (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              matchId TEXT NOT NULL,
+              mentorId TEXT NOT NULL,
+              rank INTEGER NOT NULL DEFAULT 1,
+              fit INTEGER NOT NULL DEFAULT 0,
+              why TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'open'
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_moffer ON mentor_match_offers(matchId, mentorId);
+            CREATE TABLE IF NOT EXISTS mentor_tasks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              matchId TEXT NOT NULL DEFAULT '',
+              memberId TEXT NOT NULL DEFAULT '',
+              mentorId TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              kind TEXT NOT NULL,
+              owner TEXT NOT NULL DEFAULT 'mentor',
+              dueOn TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'open',
+              doneAt TEXT NOT NULL DEFAULT '',
+              doneBy TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mtask_mentor ON mentor_tasks(mentorId, status, dueOn);
+            CREATE INDEX IF NOT EXISTS idx_mtask_match ON mentor_tasks(matchId, kind, status);
+            CREATE TABLE IF NOT EXISTS mentor_nudges (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              nudgeKey TEXT NOT NULL UNIQUE,
+              rule TEXT NOT NULL,
+              audience TEXT NOT NULL,
+              mentorId TEXT NOT NULL DEFAULT '',
+              memberId TEXT NOT NULL DEFAULT '',
+              matchId TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL DEFAULT '',
+              body TEXT NOT NULL DEFAULT '',
+              suggestion TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'open',
+              createdAt TEXT NOT NULL DEFAULT '',
+              resolvedAt TEXT NOT NULL DEFAULT '',
+              resolvedBy TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mnudge_open ON mentor_nudges(status, audience, centre);
+            CREATE TABLE IF NOT EXISTS mentor_interventions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              matchId TEXT NOT NULL DEFAULT '',
+              memberId TEXT NOT NULL DEFAULT '',
+              mentorId TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              rule TEXT NOT NULL DEFAULT '',
+              reason TEXT NOT NULL DEFAULT '',
+              plan TEXT NOT NULL DEFAULT '',
+              ownerId TEXT NOT NULL DEFAULT '',
+              ownerName TEXT NOT NULL DEFAULT '',
+              reviewOn TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'open',
+              outcome TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              closedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_miv_open ON mentor_interventions(status, centre);
+            CREATE TABLE IF NOT EXISTS mentor_relationship_checks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              matchId TEXT NOT NULL,
+              respondent TEXT NOT NULL,
+              term TEXT NOT NULL,
+              q1 INTEGER NOT NULL, q2 INTEGER NOT NULL, q3 INTEGER NOT NULL, q4 INTEGER NOT NULL,
+              avg REAL NOT NULL,
+              note TEXT NOT NULL DEFAULT '',
+              byId TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mrelchk ON mentor_relationship_checks(matchId, respondent, term);
+            CREATE TABLE IF NOT EXISTS mentor_observations (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              mentorId TEXT NOT NULL,
+              matchId TEXT NOT NULL DEFAULT '',
+              onDate TEXT NOT NULL,
+              indicator TEXT NOT NULL,
+              level INTEGER NOT NULL DEFAULT 0,
+              evidence TEXT NOT NULL DEFAULT '',
+              strength TEXT NOT NULL DEFAULT '',
+              growth TEXT NOT NULL DEFAULT '',
+              nextChallenge TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mobs ON mentor_observations(memberId, onDate, indicator);
+            CREATE TABLE IF NOT EXISTS mentor_academy (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mentorId TEXT NOT NULL,
+              moduleId TEXT NOT NULL,
+              score INTEGER NOT NULL DEFAULT 0,
+              passedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_macad ON mentor_academy(mentorId, moduleId);
+            CREATE TABLE IF NOT EXISTS mentor_policy (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mentorId TEXT NOT NULL,
+              policyVersion TEXT NOT NULL,
+              signedName TEXT NOT NULL DEFAULT '',
+              acceptedAt TEXT NOT NULL DEFAULT '',
+              ip TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mpolicy ON mentor_policy(mentorId, policyVersion);
+            CREATE TABLE IF NOT EXISTS mentor_obligations (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mentorId TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              onDate TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'present',
+              note TEXT NOT NULL DEFAULT '',
+              recordedBy TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mobl ON mentor_obligations(mentorId, kind, onDate);
+            CREATE TABLE IF NOT EXISTS mentor_checkins (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mentorId TEXT NOT NULL,
+              weekOf TEXT NOT NULL,
+              feeling TEXT NOT NULL DEFAULT '',
+              wins TEXT NOT NULL DEFAULT '',
+              hard TEXT NOT NULL DEFAULT '',
+              needSupport INTEGER NOT NULL DEFAULT 0,
+              createdAt TEXT NOT NULL DEFAULT '',
+              followedUpAt TEXT NOT NULL DEFAULT '',
+              followedUpBy TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mchk_mentor ON mentor_checkins(mentorId, weekOf);
+            CREATE TABLE IF NOT EXISTS safeguarding_cases (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              caseNo TEXT NOT NULL UNIQUE,
+              reporterId TEXT NOT NULL,
+              reporterName TEXT NOT NULL DEFAULT '',
+              subjectId TEXT NOT NULL DEFAULT '',
+              subjectName TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              category TEXT NOT NULL DEFAULT '',
+              body TEXT NOT NULL,
+              officerId TEXT NOT NULL DEFAULT '',
+              officerName TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'received',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_sgcase_centre ON safeguarding_cases(centre, status);
+            CREATE TABLE IF NOT EXISTS safeguarding_notes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              caseNo TEXT NOT NULL,
+              byId TEXT NOT NULL DEFAULT '',
+              byName TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS mentee_profiles (
+              memberId TEXT PRIMARY KEY,
+              interests TEXT NOT NULL DEFAULT '',
+              wantsTo TEXT NOT NULL DEFAULT '',
+              supportArea TEXT NOT NULL DEFAULT '',
+              availability TEXT NOT NULL DEFAULT '',
+              style TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT '',
+              updatedBy TEXT NOT NULL DEFAULT ''
+            );
+            ALTER TABLE mentors ADD COLUMN leavingAt TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN leavingNote TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN cimcAt TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN anthemAt TEXT DEFAULT '';
+            ALTER TABLE mentor_reviews ADD COLUMN trend TEXT DEFAULT '';",
+
+        /* 138 — The Mentor Portal (design handoff: mentor portal v14):
+         * WOOP goals with check-ins, sessions with a length, the NGG
+         * Leadership Index scored monthly, the relationship check by side
+         * and cycle, Saturday (agenda, register, weekly review), messages
+         * and family updates, supervision and the retreat, the member's own
+         * weekly check-in, the role a mentor plays, and the background jobs'
+         * run log. One safeguarding queue: mentor concerns join
+         * community_safeguarding. (domain/mentor-portal.php) */
+        138 => "
+            ALTER TABLE mentor_meetings ADD COLUMN minutes INTEGER DEFAULT 0;
+            ALTER TABLE mentor_meetings ADD COLUMN goalId INTEGER DEFAULT 0;
+            ALTER TABLE mentor_meetings ADD COLUMN sharedWithLead INTEGER DEFAULT 0;
+            ALTER TABLE mentor_goals ADD COLUMN area TEXT DEFAULT 'Character';
+            ALTER TABLE mentor_goals ADD COLUMN outcome TEXT DEFAULT '';
+            ALTER TABLE mentor_goals ADD COLUMN obstacle TEXT DEFAULT '';
+            ALTER TABLE mentor_goals ADD COLUMN plan TEXT DEFAULT '';
+            ALTER TABLE mentor_goals ADD COLUMN agreed INTEGER DEFAULT 0;
+            ALTER TABLE mentor_goals ADD COLUMN reviewBy TEXT DEFAULT '';
+            UPDATE mentor_goals SET status = 'active' WHERE status = 'open';
+            UPDATE mentor_goals SET status = 'achieved' WHERE status = 'done';
+            UPDATE mentor_goals SET status = 'paused' WHERE status = 'dropped';
+            CREATE TABLE IF NOT EXISTS mentor_goal_checkins (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              goalId INTEGER NOT NULL,
+              subjectId TEXT NOT NULL,
+              progress INTEGER NOT NULL,
+              note TEXT NOT NULL DEFAULT '',
+              byKind TEXT NOT NULL DEFAULT 'mentor',
+              byId TEXT NOT NULL DEFAULT '',
+              sessionId INTEGER NOT NULL DEFAULT 0,
+              checkedOn TEXT NOT NULL,
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mgc_goal ON mentor_goal_checkins(goalId, checkedOn);
+            CREATE TABLE IF NOT EXISTS mentor_scorecards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              month TEXT NOT NULL,
+              scores TEXT NOT NULL,
+              total INTEGER NOT NULL,
+              byKind TEXT NOT NULL DEFAULT 'mentor',
+              mentorId TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              locked INTEGER NOT NULL DEFAULT 0,
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_msc_one ON mentor_scorecards(subjectId, month, byKind);
+            CREATE INDEX IF NOT EXISTS idx_msc_centre ON mentor_scorecards(centre, month);
+            CREATE TABLE IF NOT EXISTS mentor_rel_checks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              side TEXT NOT NULL,
+              answers TEXT NOT NULL,
+              score INTEGER NOT NULL,
+              cycle TEXT NOT NULL,
+              byId TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mrc_one ON mentor_rel_checks(subjectId, side, cycle);
+            ALTER TABLE mentor_reviews ADD COLUMN effort TEXT DEFAULT '';
+            ALTER TABLE mentor_reviews ADD COLUMN characterLevel TEXT DEFAULT '';
+            ALTER TABLE mentor_reviews ADD COLUMN wellbeing TEXT DEFAULT '';
+            ALTER TABLE mentor_reviews ADD COLUMN line TEXT DEFAULT '';
+            CREATE TABLE IF NOT EXISTS mentor_saturdays (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mentorId TEXT NOT NULL,
+              onDate TEXT NOT NULL,
+              agendaJson TEXT NOT NULL DEFAULT '',
+              oneToOnesJson TEXT NOT NULL DEFAULT '',
+              registerClosedAt TEXT NOT NULL DEFAULT '',
+              sharedAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_msat_one ON mentor_saturdays(mentorId, onDate);
+            CREATE TABLE IF NOT EXISTS mentor_register (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              onDate TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              mentorId TEXT NOT NULL,
+              here INTEGER NOT NULL DEFAULT 0,
+              observed TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mreg_one ON mentor_register(onDate, subjectId);
+            CREATE TABLE IF NOT EXISTS mentor_messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              threadId TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              subjectId TEXT NOT NULL DEFAULT '',
+              fromId TEXT NOT NULL DEFAULT '',
+              fromName TEXT NOT NULL DEFAULT '',
+              toId TEXT NOT NULL DEFAULT '',
+              channel TEXT NOT NULL DEFAULT 'portal',
+              body TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'sent',
+              sendAfter TEXT NOT NULL DEFAULT '',
+              readAt TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mmsg_to ON mentor_messages(toId, readAt);
+            CREATE INDEX IF NOT EXISTS idx_mmsg_thread ON mentor_messages(threadId, createdAt);
+            CREATE TABLE IF NOT EXISTS member_checkins (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              week TEXT NOT NULL,
+              wellbeing TEXT NOT NULL,
+              sleep INTEGER NOT NULL DEFAULT 0,
+              stress INTEGER NOT NULL DEFAULT 0,
+              energy INTEGER NOT NULL DEFAULT 0,
+              note TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mchkin_one ON member_checkins(memberId, week);
+            CREATE TABLE IF NOT EXISTS mentor_supervision (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mentorId TEXT NOT NULL,
+              leadId TEXT NOT NULL DEFAULT '',
+              onDate TEXT NOT NULL DEFAULT '',
+              prepJson TEXT NOT NULL DEFAULT '',
+              agreedJson TEXT NOT NULL DEFAULT '',
+              feedback TEXT NOT NULL DEFAULT '',
+              feedbackAt TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'booked',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_msup_mentor ON mentor_supervision(mentorId, onDate);
+            CREATE TABLE IF NOT EXISTS mentor_retreats (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              retreatId TEXT NOT NULL UNIQUE,
+              title TEXT NOT NULL DEFAULT '',
+              onDate TEXT NOT NULL,
+              place TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS mentor_retreat_bookings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              retreatId TEXT NOT NULL,
+              mentorId TEXT NOT NULL,
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mrb_one ON mentor_retreat_bookings(retreatId, mentorId);
+            CREATE TABLE IF NOT EXISTS mentor_job_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              job TEXT NOT NULL,
+              ranAt TEXT NOT NULL,
+              found INTEGER NOT NULL DEFAULT 0,
+              detail TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mjl_job ON mentor_job_log(job, ranAt);
+            ALTER TABLE mentors ADD COLUMN kind TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN leadId TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN subjectId TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN subjectName TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN category TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN centre TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN officerId TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN officerName TEXT DEFAULT '';
+            INSERT OR IGNORE INTO community_safeguarding (caseId, authorId, authorName, surface, channelSlug, body, status, acknowledgedBy, acknowledgedAt, createdAt, subjectId, subjectName, category, centre, officerId, officerName)
+              SELECT caseNo, reporterId, reporterName, 'mentor', '', body, CASE status WHEN 'resolved' THEN 'acknowledged' ELSE 'open' END, '', '', createdAt, subjectId, subjectName, category, centre, officerId, officerName FROM safeguarding_cases;",
+        /* 139 — the Academy recorded by hand: a mentor trained in person (or by
+         * an earlier programme) is cleared by an admin, who is named. Counts
+         * as every required module passed; clearing it puts the modules back.
+         * It also removes the copies 138 made of safeguarding cases into the
+         * community queue: the officer's queue is safeguarding_cases, and a
+         * second copy is a second place a case can be marked handled. */
+        139 => "
+            ALTER TABLE mentors ADD COLUMN academyClearedAt TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN academyClearedBy TEXT DEFAULT '';
+            DELETE FROM community_safeguarding WHERE surface = 'mentor' AND caseId IN (SELECT caseNo FROM safeguarding_cases);",
+        /* 140 — what each card carried, so "does the card in their hand still
+         * match the record" has an answer: the photo, name and secure code
+         * printed (and one signature over them); a client token that makes a
+         * replayed run log idempotent; and WHY a reprint was asked for as a
+         * code (lost, damaged, photo, name, design, qr, failed, asked), because
+         * a lost card needs a new QR and a damaged one does not. */
+        140 => "
+            ALTER TABLE card_issues ADD COLUMN photoUrl TEXT DEFAULT '';
+            ALTER TABLE card_issues ADD COLUMN fullName TEXT DEFAULT '';
+            ALTER TABLE card_issues ADD COLUMN secureCode TEXT DEFAULT '';
+            ALTER TABLE card_issues ADD COLUMN faceSig TEXT DEFAULT '';
+            ALTER TABLE card_runs ADD COLUMN clientToken TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_crun_token ON card_runs(clientToken);
+            ALTER TABLE id_reprints ADD COLUMN cause TEXT DEFAULT '';",
+        /* The Club application (v2026.10): everything the old Google Form
+         * collected that has no column of its own — school and class, home and
+         * origin, both parents, hobbies, areas of influence, how they heard —
+         * as one JSON object, so an application keeps every answer without a
+         * column per question. And the policy version a consent was given
+         * against, because "agreed" means nothing without "to which text". */
+        141 => "
+            ALTER TABLE applications ADD COLUMN details TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN updatedAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_apps_email_dob ON applications(email, dob);
+            ALTER TABLE consents ADD COLUMN policyVersion TEXT DEFAULT '';",
+        /* Schools a family can pick on the Club application, from GRID3
+         * Nigeria's open education-facilities data (Lagos and Ogun, primary
+         * and secondary), loaded once from api/_lib/seeds; plus the schools
+         * families typed in, added when their child is accepted. nameKey is
+         * the name lower-cased with punctuation removed, for matching. */
+        142 => "
+            CREATE TABLE IF NOT EXISTS schools (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL, nameKey TEXT NOT NULL,
+              lga TEXT DEFAULT '', state TEXT DEFAULT '', ward TEXT DEFAULT '',
+              level TEXT DEFAULT '', management TEXT DEFAULT '',
+              lat REAL, lng REAL,
+              source TEXT DEFAULT 'grid3', addedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_schools_key ON schools(nameKey);
+            CREATE INDEX IF NOT EXISTS idx_schools_place ON schools(state, lga);",
+        /* The member record drive (domain/profile-drive.php): the answers a
+         * member row has no column for — sex, class, home address, LGA and
+         * state, origin — under the Club application's own keys, so an
+         * accepted application fills them and a member completes the rest. */
+        143 => "
+            ALTER TABLE members ADD COLUMN profileJson TEXT DEFAULT '';",
+        /* School results and the growth plan (domain/school-results.php): a
+         * member uploads a term's report, confirms what was read off it,
+         * writes a plan, and the mentor approves it before a family sees it.
+         * results_log is the append-only history the member and staff read
+         * ("Nothing is deleted"). skill_marks gains the evidence a level-up
+         * now needs, and the level it moved from. */
+        144 => "
+            CREATE TABLE IF NOT EXISTS results_uploads (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              uploadId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, term TEXT NOT NULL,
+              fileUrl TEXT DEFAULT '', fileMime TEXT DEFAULT '', fileBytes INTEGER DEFAULT 0,
+              status TEXT DEFAULT 'draft', ocrJson TEXT DEFAULT '', ocrBy TEXT DEFAULT '',
+              confirmedAt TEXT DEFAULT '', sentAt TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '', updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_ru_one ON results_uploads(memberId, term);
+            CREATE TABLE IF NOT EXISTS results_subjects (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              uploadId TEXT NOT NULL, subject TEXT NOT NULL, score INTEGER,
+              ocrScore INTEGER, confidence REAL, lastScore INTEGER, position INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_rs_upload ON results_subjects(uploadId);
+            CREATE TABLE IF NOT EXISTS growth_plans (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL UNIQUE, uploadId TEXT NOT NULL, memberId TEXT NOT NULL, term TEXT NOT NULL,
+              summary TEXT DEFAULT '', flagsJson TEXT DEFAULT '', habit TEXT DEFAULT '',
+              aiModel TEXT DEFAULT '', aiPromptVersion TEXT DEFAULT '',
+              status TEXT DEFAULT 'draft', committed INTEGER DEFAULT 0, recipientsJson TEXT DEFAULT '',
+              returnNote TEXT DEFAULT '', approvedBy TEXT DEFAULT '', approvedByName TEXT DEFAULT '', approvedAt TEXT DEFAULT '',
+              sentAt TEXT DEFAULT '', familySentAt TEXT DEFAULT '', createdAt TEXT DEFAULT '', updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_gp_one ON growth_plans(memberId, term);
+            CREATE INDEX IF NOT EXISTS idx_gp_status ON growth_plans(status, sentAt);
+            CREATE TABLE IF NOT EXISTS growth_plan_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              itemId TEXT NOT NULL UNIQUE, planId TEXT NOT NULL, subject TEXT NOT NULL,
+              current INTEGER, target INTEGER, method TEXT DEFAULT 'retrieval',
+              what TEXT DEFAULT '', whenWhere TEXT DEFAULT '', sessionsPerWeek INTEGER DEFAULT 3,
+              helper TEXT DEFAULT 'self', position INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_gpi_plan ON growth_plan_items(planId);
+            CREATE TABLE IF NOT EXISTS plan_checkins (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              itemId TEXT NOT NULL, memberId TEXT NOT NULL, weekStart TEXT NOT NULL,
+              done INTEGER DEFAULT 0, planned INTEGER DEFAULT 0, updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pc_one ON plan_checkins(itemId, weekStart);
+            CREATE INDEX IF NOT EXISTS idx_pc_member ON plan_checkins(memberId, weekStart);
+            CREATE TABLE IF NOT EXISTS plan_notes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL, authorId TEXT NOT NULL, authorName TEXT DEFAULT '', authorRole TEXT DEFAULT '',
+              text TEXT NOT NULL, createdAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_pn_plan ON plan_notes(planId);
+            CREATE TABLE IF NOT EXISTS plan_acks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL, userId TEXT NOT NULL, at TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pa_one ON plan_acks(planId, userId);
+            CREATE TABLE IF NOT EXISTS results_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, term TEXT NOT NULL, actorId TEXT DEFAULT '', actorName TEXT DEFAULT '',
+              actorRole TEXT DEFAULT '', what TEXT NOT NULL, kind TEXT DEFAULT '', at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rl_member ON results_log(memberId, term, at);
+            CREATE INDEX IF NOT EXISTS idx_rl_kind ON results_log(kind, memberId, at);
+            ALTER TABLE skill_marks ADD COLUMN evidence TEXT DEFAULT '';
+            ALTER TABLE skill_marks ADD COLUMN prevLevel INTEGER;",
+        /* The Club class's Saturday (domain/club-class.php): the roll, the
+         * plan, the hinge question, the exit ticket and the filed log — one
+         * row per course, centre and date. The Summer School's course_sessions
+         * stays as it is; that one keys on participants, this one on members. */
+        145 => "
+            CREATE TABLE IF NOT EXISTS club_class_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sessionId TEXT NOT NULL UNIQUE, course TEXT NOT NULL, centre TEXT NOT NULL, date TEXT NOT NULL,
+              instructorId TEXT DEFAULT '', instructorName TEXT DEFAULT '',
+              rollJson TEXT DEFAULT '', rollClosedAt TEXT DEFAULT '',
+              planJson TEXT DEFAULT '', planAt TEXT DEFAULT '',
+              hingeJson TEXT DEFAULT '', exitJson TEXT DEFAULT '', exitAt TEXT DEFAULT '',
+              logJson TEXT DEFAULT '', filedAt TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '', updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_ccs_slot ON club_class_sessions(course, centre, date);
+            CREATE INDEX IF NOT EXISTS idx_ccs_instr ON club_class_sessions(instructorId, date);",
+
+        /* One mentor per child. admin_assign_mentor ended only the current
+         * session's link, so a pairing from an earlier term could stay active
+         * beside the new one — the child in two caseloads. Both write paths
+         * now end every active link first; this ends the duplicates already
+         * there, keeping each child's newest. Data only, no DDL. */
+        146 => "
+            UPDATE mentor_assignments SET status = 'ended', endedAt = '2026-10-16T00:00:00Z'
+             WHERE status = 'active'
+               AND id NOT IN (SELECT keep FROM (SELECT MAX(id) keep FROM mentor_assignments WHERE status = 'active' GROUP BY memberId) k);",
+
+        /* A mentor opening the record of a child who is not their mentee:
+         * who, which child, why, and until when (mentoring_cover). */
+        147 => "
+            CREATE TABLE IF NOT EXISTS mentor_record_cover (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mentorMemberId TEXT NOT NULL, mentorName TEXT DEFAULT '',
+              subjectId TEXT NOT NULL, centre TEXT DEFAULT '', reason TEXT NOT NULL,
+              grantedAt TEXT NOT NULL, expiresAt TEXT NOT NULL, endedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mrc_mentor ON mentor_record_cover(mentorMemberId, subjectId, expiresAt);
+            CREATE INDEX IF NOT EXISTS idx_mrc_centre ON mentor_record_cover(centre, grantedAt);",
+        /* 148 — the Saturday Formation Schedule (domain/saturday-formation.php):
+         * the day's blocks with each audience's part, and the ledger of what the
+         * day's reminders and family messages have already sent. */
+        148 => "
+            CREATE TABLE IF NOT EXISTS saturday_formation (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              blockKey TEXT UNIQUE NOT NULL, sort INTEGER DEFAULT 0, startTime TEXT NOT NULL, endTime TEXT NOT NULL,
+              title TEXT NOT NULL, flow TEXT DEFAULT '', purpose TEXT DEFAULT '', quote TEXT DEFAULT '', forJson TEXT DEFAULT '',
+              status TEXT DEFAULT 'active', updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS saturday_formation_sends (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              onDate TEXT NOT NULL, slot TEXT NOT NULL, recipient TEXT NOT NULL, channel TEXT NOT NULL, sentAt TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sfs ON saturday_formation_sends(onDate, slot, recipient, channel);
+        ",
+        /* 149 — the Saturday register's mentor duties (Saturday Formation
+         * Schedule): on time at 8:00, assignment handed in, checked out at the close. */
+        149 => "ALTER TABLE mentor_register ADD COLUMN checks TEXT DEFAULT '';",
+        /* 150 — the register's detail: what the mentor saw, written on the
+         * Saturday itself, so the weekly review starts from evidence. */
+        150 => "ALTER TABLE mentor_register ADD COLUMN note TEXT DEFAULT '';",
+        // What an invoice is for: 'joining' (the fee and first month, posted on
+        // settlement) or 'balance' (money already on the ledger, paid online).
+        151 => "ALTER TABLE membership_invoices ADD COLUMN purpose TEXT NOT NULL DEFAULT 'joining';",
+        // Every Academy quiz attempt, pass or fail: the retry limit reads it (ms_academy_attempt_gate).
+        152 => "CREATE TABLE IF NOT EXISTS mentor_academy_attempts (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  mentorId TEXT NOT NULL,
+                  moduleId TEXT NOT NULL,
+                  score INTEGER NOT NULL DEFAULT 0,
+                  passed INTEGER NOT NULL DEFAULT 0,
+                  at TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_macad_att ON mentor_academy_attempts(mentorId, moduleId, at);",
+        /* 153 — the Saturday evaluation: each child, each Saturday, on the
+         * formation day's criteria (Not yet · Emerging · Demonstrated · Strong),
+         * a strength and a next step, beside the week's three ratings. */
+        153 => "ALTER TABLE mentor_reviews ADD COLUMN evalJson TEXT DEFAULT '';",
+        /* 154 — assignments that work for the instructor who sets them: the
+         * lesson an assignment belongs to, and when its audience was last
+         * reminded (a quiet period, so a press cannot spam a class). */
+        154 => "
+            ALTER TABLE assignments ADD COLUMN unitId TEXT DEFAULT '';
+            ALTER TABLE assignments ADD COLUMN remindedAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_sub_member ON assignment_submissions(memberId);
+        ",
+        /* 155 — assignments collect more than a paragraph: the success-criteria
+         * steps a member ticks before handing in, and on a hand-in, a link
+         * (a Google Doc, a Canva design, a GitHub repo), several files, and
+         * which steps were ticked. `fileUrl` stays the first file, so every
+         * older reader keeps working. */
+        155 => "
+            ALTER TABLE assignments ADD COLUMN steps TEXT DEFAULT '';
+            ALTER TABLE assignment_submissions ADD COLUMN linkUrl TEXT DEFAULT '';
+            ALTER TABLE assignment_submissions ADD COLUMN filesJson TEXT DEFAULT '';
+            ALTER TABLE assignment_submissions ADD COLUMN stepsJson TEXT DEFAULT '';
+        ",
+        /* 156 — the sign-in door compares emails trimmed and lower-cased; a
+         * volunteer or mentor saved as "Tunde@Example.org " could never match.
+         * Lookups now tolerate it too; this cleans what is already stored.
+         * Member emails are only trimmed (their case is shown back to them). */
+        156 => "
+            UPDATE volunteers SET email = lower(trim(email)) WHERE email IS NOT NULL AND email <> lower(trim(email));
+            UPDATE mentors SET email = lower(trim(email)) WHERE email IS NOT NULL AND email <> lower(trim(email));
+            UPDATE members SET email = trim(email) WHERE email IS NOT NULL AND email <> trim(email);
+        ",
+        /* 157 — texts by Telegram, free. A person opens the programme's bot and
+         * shares their phone number (Telegram verifies it is theirs); every
+         * text this site would send that number then goes to that chat
+         * instead (api/_lib/telegram.php). Keyed by the E.164 number, so no
+         * record type needs to know about it. */
+        157 => "
+            CREATE TABLE IF NOT EXISTS telegram_links (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              phone TEXT NOT NULL,
+              chatId TEXT NOT NULL,
+              tgUserId TEXT DEFAULT '',
+              tgName TEXT DEFAULT '',
+              linkedAt TEXT DEFAULT '',
+              lastSentAt TEXT DEFAULT '',
+              sent INTEGER DEFAULT 0
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_tg_phone ON telegram_links(phone);
+            CREATE INDEX IF NOT EXISTS idx_tg_chat ON telegram_links(chatId);
+        ",
+        /* 158 — every file uploaded to the storage bucket, so the same file is
+         * stored once (sha256, verified by the server reading the object back,
+         * never taken from the browser's word), and a file nothing points at
+         * any more is found and deleted (domain/media-objects.php). */
+        158 => "
+            CREATE TABLE IF NOT EXISTS media_objects (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              storeKey TEXT NOT NULL,
+              url TEXT NOT NULL,
+              sha256 TEXT DEFAULT '',
+              bytes INTEGER DEFAULT 0,
+              mediaKind TEXT DEFAULT '',
+              kind TEXT DEFAULT '',
+              ownerId TEXT DEFAULT '',
+              status TEXT DEFAULT 'signed',
+              reuses INTEGER DEFAULT 0,
+              createdAt TEXT DEFAULT '',
+              verifiedAt TEXT DEFAULT '',
+              checkedAt TEXT DEFAULT '',
+              deletedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_mo_key ON media_objects(storeKey);
+            CREATE INDEX IF NOT EXISTS idx_mo_sha ON media_objects(sha256, status);
+            CREATE INDEX IF NOT EXISTS idx_mo_status ON media_objects(status, createdAt);
+        ",
+        /* 159 — Study tools (domain/study-tools.php): a member's flashcard decks
+         * and cards, scheduled by spaced repetition, and the focus and typing
+         * sessions they log. Theirs alone: no other member sees them. */
+        159 => "
+            CREATE TABLE IF NOT EXISTS study_decks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              deckId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              name TEXT NOT NULL,
+              source TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sd_deck ON study_decks(deckId);
+            CREATE INDEX IF NOT EXISTS idx_sd_member ON study_decks(memberId);
+            CREATE TABLE IF NOT EXISTS study_cards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              cardId TEXT NOT NULL,
+              deckId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              front TEXT NOT NULL,
+              back TEXT NOT NULL,
+              ease REAL DEFAULT 2.5,
+              intervalDays INTEGER DEFAULT 0,
+              reps INTEGER DEFAULT 0,
+              lapses INTEGER DEFAULT 0,
+              dueAt TEXT DEFAULT '',
+              reviewedAt TEXT DEFAULT '',
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sc_card ON study_cards(cardId);
+            CREATE INDEX IF NOT EXISTS idx_sc_due ON study_cards(memberId, deckId, dueAt);
+            CREATE TABLE IF NOT EXISTS study_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              tool TEXT NOT NULL,
+              label TEXT DEFAULT '',
+              minutes INTEGER DEFAULT 0,
+              wpm INTEGER DEFAULT 0,
+              accuracy INTEGER DEFAULT 0,
+              cards INTEGER DEFAULT 0,
+              at TEXT DEFAULT '',
+              day TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ss_member ON study_sessions(memberId, day);
+        ",
+        /* One lead per programme. leadVolunteerId is the NGG centre lead; a
+           centre that also hosts Summer School names its Summer lead
+           separately, because they are different people. Existing rows that
+           serve Summer start with the same person, so nothing changes until
+           somebody sets it. */
+        160 => "
+            ALTER TABLE centres ADD COLUMN summerLeadVolunteerId TEXT;
+            UPDATE centres SET summerLeadVolunteerId = CASE
+                WHEN COALESCE(programmes, '') = '' OR programmes LIKE '%summer%' THEN COALESCE(leadVolunteerId, '') ELSE '' END
+              WHERE summerLeadVolunteerId IS NULL;
+        ",
+        /* Club portal v3 (domain/club-portal.php). Announcements wait for an
+           admin before they reach a family; a check-in a coordinator passed to
+           a mentor, or marked seen, stays that way; a fine rule is on or off
+           and never goes over its cap per term; a duty shift has its times. */
+        161 => "
+            CREATE TABLE IF NOT EXISTS club_announcements (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              annId TEXT NOT NULL,
+              title TEXT DEFAULT '',
+              body TEXT DEFAULT '',
+              aud TEXT DEFAULT 'guardians',
+              centre TEXT DEFAULT 'all',
+              channels TEXT DEFAULT '[\"app\"]',
+              status TEXT DEFAULT 'draft',
+              sendAt TEXT DEFAULT '',
+              byId TEXT DEFAULT '',
+              byName TEXT DEFAULT '',
+              approvedById TEXT DEFAULT '',
+              approvedByName TEXT DEFAULT '',
+              note TEXT DEFAULT '',
+              sentAt TEXT DEFAULT '',
+              stats TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cann_id ON club_announcements(annId);
+            CREATE INDEX IF NOT EXISTS idx_cann_status ON club_announcements(status, sendAt);
+            CREATE TABLE IF NOT EXISTS club_checkin_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              checkinKey TEXT NOT NULL,
+              toldAt TEXT DEFAULT '',
+              toldBy TEXT DEFAULT '',
+              seenAt TEXT DEFAULT '',
+              seenBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_ccs_key ON club_checkin_state(checkinKey);
+            CREATE TABLE IF NOT EXISTS conduct_rules (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ruleId TEXT NOT NULL,
+              reason TEXT DEFAULT '',
+              name TEXT DEFAULT '',
+              whenText TEXT DEFAULT '',
+              amount INTEGER DEFAULT 0,
+              capTerm INTEGER DEFAULT 0,
+              active INTEGER DEFAULT 1,
+              createdBy TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_crule_id ON conduct_rules(ruleId);
+            ALTER TABLE attendance_duty ADD COLUMN startTime TEXT DEFAULT '';
+            ALTER TABLE attendance_duty ADD COLUMN endTime TEXT DEFAULT '';
+        ",
+        /* Community v3 (domain/community-v3.php). A question can have an
+           accepted answer; a homework post names its task; a video carries its
+           chapters, captions and summary points, and a code post its source;
+           a moderator's decision is timed so the median review time is real;
+           a safeguarding case has a severity and a lead; a member's place in a
+           video is kept on the server, not in one browser. */
+        162 => "
+            ALTER TABLE community_posts ADD COLUMN answerId TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN homeworkId TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN mediaMeta TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN mediaCode TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN reviewedAt TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN reviewedBy TEXT DEFAULT '';
+            ALTER TABLE community_comments ADD COLUMN reviewedAt TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN severity TEXT DEFAULT 'high';
+            ALTER TABLE community_safeguarding ADD COLUMN leadId TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN leadName TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN postId TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN source TEXT DEFAULT 'screen';
+            ALTER TABLE community_safeguarding ADD COLUMN note TEXT DEFAULT '';
+            CREATE TABLE IF NOT EXISTS community_video_progress (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              postId TEXT NOT NULL,
+              pos INTEGER DEFAULT 0,
+              dur INTEGER DEFAULT 0,
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cvp_member_post ON community_video_progress(memberId, postId);
+        ",
+        /* Announcements reach guardians in their family account, not only by
+         * email: guardian_notices is the family inbox (one row per guardian per
+         * announcement, read when they open it). smsBody is the short SMS
+         * version an announcement carries when its text is too long for a
+         * text — written or AI-shortened, approved with the rest. */
+        163 => "
+            CREATE TABLE IF NOT EXISTS guardian_notices (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              noticeId TEXT UNIQUE NOT NULL,
+              guardianId TEXT NOT NULL,
+              kind TEXT DEFAULT 'announcement',
+              refId TEXT DEFAULT '',
+              title TEXT DEFAULT '',
+              body TEXT DEFAULT '',
+              fromName TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              readAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_gnotice_guardian ON guardian_notices(guardianId, createdAt);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_gnotice_ref ON guardian_notices(guardianId, kind, refId);
+            ALTER TABLE club_announcements ADD COLUMN smsBody TEXT DEFAULT '';
+        ",
+        /* The Instructor Academy's record (domain/academy.php): passes and
+         * every attempt, keyed by track and person so another portal's
+         * Academy is a seed file, not a table. Mentors keep mentor_academy. */
+        164 => "
+            CREATE TABLE IF NOT EXISTS academy_passes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              track TEXT NOT NULL,
+              personId TEXT NOT NULL,
+              moduleId TEXT NOT NULL,
+              score INTEGER DEFAULT 0,
+              passedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_acpass ON academy_passes(track, personId, moduleId);
+            CREATE TABLE IF NOT EXISTS academy_attempts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              track TEXT NOT NULL,
+              personId TEXT NOT NULL,
+              moduleId TEXT NOT NULL,
+              score INTEGER DEFAULT 0,
+              passed INTEGER DEFAULT 0,
+              at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_acatt ON academy_attempts(track, personId, moduleId, at);
+        ",
+        /* 165 — how a child addresses an adult: a title (Mr, Mrs, Dr, Coach…)
+         * and the surname, never the first name. Kept on the person's every
+         * staff record so whichever one a screen reads has it; staff_public_name()
+         * in util.php is the one reader. Blank means "Coach". */
+        165 => "
+            ALTER TABLE mentors ADD COLUMN honorific TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN honorific TEXT DEFAULT '';
+            ALTER TABLE members ADD COLUMN honorific TEXT DEFAULT '';
+        ",
+        /* 166 — projects and activities (domain/projects.php): staff in the
+         * mentor portal assign one to mentors, to children or both, split
+         * into named groups, from a start date to a finish date. One row per
+         * person on it: kind mentor (personId = mentorId) or member
+         * (personId = memberId), their group, and their part's status. */
+        166 => "
+            CREATE TABLE IF NOT EXISTS projects (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              projectId TEXT NOT NULL,
+              title TEXT NOT NULL,
+              detail TEXT DEFAULT '',
+              startOn TEXT DEFAULT '',
+              dueOn TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              status TEXT DEFAULT 'open',
+              createdBy TEXT DEFAULT '',
+              createdByName TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_id ON projects(projectId);
+            CREATE INDEX IF NOT EXISTS idx_projects_by ON projects(createdBy, status);
+            CREATE TABLE IF NOT EXISTS project_people (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              projectId TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              personId TEXT NOT NULL,
+              groupName TEXT DEFAULT '',
+              status TEXT DEFAULT 'assigned',
+              note TEXT DEFAULT '',
+              doneAt TEXT DEFAULT '',
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_project_person ON project_people(projectId, kind, personId);
+            CREATE INDEX IF NOT EXISTS idx_project_people_who ON project_people(kind, personId, status);
+        ",
+        /* 167 — every AI call, with its tokens and estimated cost
+         * (api/_lib/ai.php ai_log_usage), so the monthly limit on paid
+         * models is enforced against what was actually spent. costMicros is
+         * USD × 1,000,000; `estimated` = 1 when the provider gave no counts. */
+        167 => "
+            CREATE TABLE IF NOT EXISTS ai_usage (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              at TEXT NOT NULL,
+              month TEXT NOT NULL,
+              profile TEXT DEFAULT '',
+              job TEXT DEFAULT '',
+              provider TEXT DEFAULT '',
+              model TEXT DEFAULT '',
+              tier TEXT DEFAULT '',
+              inTokens INTEGER DEFAULT 0,
+              outTokens INTEGER DEFAULT 0,
+              costMicros INTEGER DEFAULT 0,
+              estimated INTEGER DEFAULT 0,
+              ok INTEGER DEFAULT 1,
+              error TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_usage_month ON ai_usage(month, tier);
+        ",
+        /* 168 — "settled up to": the last day a member's membership and dues
+         * are known to be paid outside this system (an imported member who
+         * had paid, or a family the programme decided owes nothing to that
+         * date). fees_accrue_member never charges a period on or before it,
+         * and fees_settle_through() clears what was already charged. */
+        168 => "
+            ALTER TABLE members ADD COLUMN feesSettledThrough TEXT DEFAULT '';
+        ",
+        /* Feedback is its own request kind (member_feedback_create): what it is
+           about, the centre it came from (an anonymous one has no member to
+           read it from), and when the desk passed it to that centre's lead. */
+        169 => "
+            ALTER TABLE member_requests ADD COLUMN topic TEXT DEFAULT '';
+            ALTER TABLE member_requests ADD COLUMN centre TEXT DEFAULT '';
+            ALTER TABLE member_requests ADD COLUMN passedAt TEXT DEFAULT '';
+        ",
+        /* How a member rates their time at NGG, 1 (bad) to 5 (great), on an
+           "experience" feedback row; 0 everywhere else. */
+        170 => "
+            ALTER TABLE member_requests ADD COLUMN rating INTEGER DEFAULT 0;
+        ",
+        /* A voice note on a message between a child and their mentor:
+           journal_media_clean's shape, audio only. */
+        171 => "
+            ALTER TABLE mentor_messages ADD COLUMN mediaJson TEXT DEFAULT '';
+        ",
+        /* Supporting mentors (domain/mentor-supports.php): beside the primary
+           in mentor_assignments, never in it. */
+        172 => "
+            CREATE TABLE IF NOT EXISTS mentor_supports (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              mentorId TEXT NOT NULL,
+              focus TEXT DEFAULT '',
+              endsOn TEXT DEFAULT '',
+              status TEXT DEFAULT 'active',
+              startedAt TEXT DEFAULT '',
+              endedAt TEXT DEFAULT '',
+              createdBy TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mentor_supports_member ON mentor_supports(memberId, status);
+            CREATE INDEX IF NOT EXISTS idx_mentor_supports_mentor ON mentor_supports(mentorId, status);
+        ",
+        /* Photo requests at any size (id-studio.php): one press is a campaign,
+           its people queued on id_photo_asks and sent a batch at a time by the
+           web-cron, with ONE summary to staff when it is done and at most one
+           reminder. Rows from before this are sent (`status` defaults so). */
+        173 => "
+            CREATE TABLE IF NOT EXISTS id_photo_campaigns (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              campaignId TEXT NOT NULL UNIQUE,
+              askedBy TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL,
+              total INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'sending',
+              summaryAt TEXT NOT NULL DEFAULT '',
+              remindedAt TEXT NOT NULL DEFAULT '',
+              remindedBy TEXT NOT NULL DEFAULT ''
+            );
+            ALTER TABLE id_photo_asks ADD COLUMN campaignId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE id_photo_asks ADD COLUMN status TEXT NOT NULL DEFAULT 'sent';
+            ALTER TABLE id_photo_asks ADD COLUMN sentAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE id_photo_asks ADD COLUMN reminders INTEGER NOT NULL DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_id_photo_asks_campaign ON id_photo_asks(campaignId, status);
+            CREATE INDEX IF NOT EXISTS idx_id_photo_asks_status ON id_photo_asks(status);
+        ",
+        /* 174 — a member's courses, chosen from the catalogue (a JSON list),
+           instead of guessed from free text in `track`; and a photo change as
+           a request with the new photo, decided by staff, never a direct swap. */
+        174 => "
+            ALTER TABLE members ADD COLUMN courses TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS photo_change_requests (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              requestId TEXT NOT NULL UNIQUE,
+              subjectType TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              centre TEXT NOT NULL DEFAULT '',
+              photoUrl TEXT NOT NULL,
+              oldPhotoUrl TEXT NOT NULL DEFAULT '',
+              reason TEXT NOT NULL DEFAULT '',
+              via TEXT NOT NULL DEFAULT '',
+              requestedBy TEXT NOT NULL DEFAULT '',
+              requestedAt TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              decidedBy TEXT NOT NULL DEFAULT '',
+              decidedAt TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_pcr_subject ON photo_change_requests(subjectType, subjectId, status);
+            CREATE INDEX IF NOT EXISTS idx_pcr_status ON photo_change_requests(status, requestedAt);
+        ",
+        /* A reply can quote the reply it answers, and carry reactions of its own,
+           as in a chat: the thread is a conversation, not a list of comments. */
+        175 => "
+            ALTER TABLE community_comments ADD COLUMN replyTo TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS community_comment_reactions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              commentId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              emoji TEXT NOT NULL,
+              createdAt TEXT NOT NULL,
+              UNIQUE(commentId, memberId)
+            );
+            CREATE INDEX IF NOT EXISTS idx_ccr_comment ON community_comment_reactions(commentId);
+        ",
+        /* Time on the portal: one row per person, day and portal, added to by
+           a heartbeat the page sends only while it is visible and in use. */
+        176 => "
+            CREATE TABLE IF NOT EXISTS portal_time (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              day TEXT NOT NULL,
+              portal TEXT NOT NULL,
+              seconds INTEGER NOT NULL DEFAULT 0,
+              beats INTEGER NOT NULL DEFAULT 0,
+              firstAt TEXT NOT NULL,
+              lastAt TEXT NOT NULL,
+              UNIQUE(memberId, day, portal)
+            );
+            CREATE INDEX IF NOT EXISTS idx_pt_day ON portal_time(day);
+        ",
+        /* An instructor who did the Academy in person (or needs none) is
+           cleared by hand, as a mentor already can be. */
+        177 => "
+            ALTER TABLE volunteers ADD COLUMN academyClearedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN academyClearedBy TEXT NOT NULL DEFAULT '';
+        ",
+        /* Phase 1 of the centre-key migration (domain/centres-ngg.php).
+           A centreId beside the centre NAME in all 32 tables that carry one.
+           Adds columns only: nothing reads centreId this release, so nothing
+           behaves differently. The backfill is centre_ids_backfill_once(),
+           run from db_run_seeds so it is idempotent and does not sit inside
+           the DDL transaction. */
+        178 => "
+            ALTER TABLE activities ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE arcade_scores ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE attendance_duty ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE awards ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE club_announcements ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE community_homework_state ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE courage_marks ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE course_sessions ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE engagement_snapshots ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE insight_threads ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE member_requests ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE member_stars ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_goals ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_interventions ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_matches ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_meetings ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_nudges ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_reviews ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_scorecards ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_tasks ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE photo_change_requests ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE projects ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE safeguarding_cases ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE skill_marks ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE student_remarks ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tournament_entrants ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tournament_invites ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tournament_pairings ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_activities_centreid ON activities(centreId);
+            CREATE INDEX IF NOT EXISTS idx_arcade_scores_centreid ON arcade_scores(centreId);
+            CREATE INDEX IF NOT EXISTS idx_attendance_duty_centreid ON attendance_duty(centreId);
+            CREATE INDEX IF NOT EXISTS idx_awards_centreid ON awards(centreId);
+            CREATE INDEX IF NOT EXISTS idx_club_announcements_centreid ON club_announcements(centreId);
+            CREATE INDEX IF NOT EXISTS idx_community_homework_state_centreid ON community_homework_state(centreId);
+            CREATE INDEX IF NOT EXISTS idx_community_safeguarding_centreid ON community_safeguarding(centreId);
+            CREATE INDEX IF NOT EXISTS idx_courage_marks_centreid ON courage_marks(centreId);
+            CREATE INDEX IF NOT EXISTS idx_course_sessions_centreid ON course_sessions(centreId);
+            CREATE INDEX IF NOT EXISTS idx_engagement_snapshots_centreid ON engagement_snapshots(centreId);
+            CREATE INDEX IF NOT EXISTS idx_insight_threads_centreid ON insight_threads(centreId);
+            CREATE INDEX IF NOT EXISTS idx_match_games_centreid ON match_games(centreId);
+            CREATE INDEX IF NOT EXISTS idx_member_requests_centreid ON member_requests(centreId);
+            CREATE INDEX IF NOT EXISTS idx_member_stars_centreid ON member_stars(centreId);
+            CREATE INDEX IF NOT EXISTS idx_members_centreid ON members(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_goals_centreid ON mentor_goals(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_interventions_centreid ON mentor_interventions(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_matches_centreid ON mentor_matches(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_meetings_centreid ON mentor_meetings(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_nudges_centreid ON mentor_nudges(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_reviews_centreid ON mentor_reviews(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_scorecards_centreid ON mentor_scorecards(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_tasks_centreid ON mentor_tasks(centreId);
+            CREATE INDEX IF NOT EXISTS idx_photo_change_requests_centreid ON photo_change_requests(centreId);
+            CREATE INDEX IF NOT EXISTS idx_projects_centreid ON projects(centreId);
+            CREATE INDEX IF NOT EXISTS idx_safeguarding_cases_centreid ON safeguarding_cases(centreId);
+            CREATE INDEX IF NOT EXISTS idx_skill_marks_centreid ON skill_marks(centreId);
+            CREATE INDEX IF NOT EXISTS idx_student_remarks_centreid ON student_remarks(centreId);
+            CREATE INDEX IF NOT EXISTS idx_tournament_entrants_centreid ON tournament_entrants(centreId);
+            CREATE INDEX IF NOT EXISTS idx_tournament_invites_centreid ON tournament_invites(centreId);
+            CREATE INDEX IF NOT EXISTS idx_tournament_pairings_centreid ON tournament_pairings(centreId);
+            CREATE INDEX IF NOT EXISTS idx_volunteers_centreid ON volunteers(centreId);
+            ALTER TABLE applications ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE assignments ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE club_class_sessions ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE events ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_record_cover ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE v3_scores ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_applications_centreid ON applications(centreId);
+            CREATE INDEX IF NOT EXISTS idx_assignments_centreid ON assignments(centreId);
+            CREATE INDEX IF NOT EXISTS idx_club_class_sessions_centreid ON club_class_sessions(centreId);
+            CREATE INDEX IF NOT EXISTS idx_events_centreid ON events(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_record_cover_centreid ON mentor_record_cover(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentors_centreid ON mentors(centreId);
+            CREATE INDEX IF NOT EXISTS idx_summer_students_centreid ON summer_students(centreId);
+            CREATE INDEX IF NOT EXISTS idx_v3_scores_centreid ON v3_scores(centreId);
+        ",
+        /* A question of kind 'watch' carries the video it is about, so the
+           learner watches it inside the exam rather than being sent off to
+           find it. It is the check's own column and not a material: a lesson
+           may carry several videos, and "the one this question is about" is
+           not a thing a list of materials can say. */
+        179 => "
+            ALTER TABLE curriculum_checks ADD COLUMN videoUrl TEXT NOT NULL DEFAULT '';
+        ",
+        /* What a member says about a session, in their own words, asked at
+           the end of every one. PRIVATE until a person decides otherwise —
+           see domain/testimonials.php for why every column here exists. */
+        180 => "
+            CREATE TABLE IF NOT EXISTS testimonials (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tid TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL DEFAULT '',
+              unitId TEXT NOT NULL DEFAULT '',
+              course TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              body TEXT NOT NULL DEFAULT '',
+              showAs TEXT NOT NULL DEFAULT 'initials',
+              status TEXT NOT NULL DEFAULT 'new',
+              decidedBy TEXT NOT NULL DEFAULT '',
+              decidedAt TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_testi_status ON testimonials(status, createdAt);
+            CREATE INDEX IF NOT EXISTS idx_testi_member ON testimonials(memberId, unitId);
+            CREATE INDEX IF NOT EXISTS idx_testi_centreid ON testimonials(centreId);
+        ",
+        /* Family Portal v3 (domain/family.php). The inbox learns what a notice
+         * is (a report, an alert, a word from the centre), which child it is
+         * about and whether it asks for a signature; a family answers an event
+         * on its own row, not as a member's RSVP; a mentor publishes times a
+         * family may book; and the centre keeps the list of who may collect a
+         * child, which a family reads but cannot write. */
+        181 => "
+            ALTER TABLE guardian_notices ADD COLUMN cat TEXT NOT NULL DEFAULT 'centre';
+            ALTER TABLE guardian_notices ADD COLUMN memberId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE guardian_notices ADD COLUMN sign INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE guardian_notices ADD COLUMN signedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE events ADD COLUMN familiesExpected INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE IF NOT EXISTS guardian_rsvps (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              guardianId TEXT NOT NULL, eventId TEXT NOT NULL, answer TEXT NOT NULL DEFAULT 'yes',
+              reminded INTEGER NOT NULL DEFAULT 0, updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_grsvp_one ON guardian_rsvps(guardianId, eventId);
+            CREATE TABLE IF NOT EXISTS mentor_slots (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              slotId TEXT NOT NULL UNIQUE, mentorId TEXT NOT NULL, startAt TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'centre',
+              bookedBy TEXT NOT NULL DEFAULT '', memberId TEXT NOT NULL DEFAULT '', bookedAt TEXT NOT NULL DEFAULT '',
+              reminded INTEGER NOT NULL DEFAULT 0, createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mslot_mentor ON mentor_slots(mentorId, startAt);
+            CREATE INDEX IF NOT EXISTS idx_mslot_member ON mentor_slots(memberId, startAt);
+            CREATE TABLE IF NOT EXISTS member_collectors (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, name TEXT NOT NULL, relation TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mcoll_member ON member_collectors(memberId);
+        ",
+
+        /* Summer School Portal v3. `pending_actions` holds a bulk act for its
+           undo window: nothing is promoted, invoiced or sent until the row is
+           committed (domain/pending.php). `summer_recent` is each staff
+           member's last children opened, for the command palette.
+           `members.fromSummerId` links a promoted member to the participant
+           they were, which until now lived only in a free-text note. Incidents
+           and guardian messages are the coordinator's day-to-day record. */
+        182 => "
+            CREATE TABLE IF NOT EXISTS pending_actions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              pendingId TEXT NOT NULL UNIQUE, op TEXT NOT NULL, args TEXT NOT NULL DEFAULT '{}',
+              requesterId TEXT NOT NULL, label TEXT NOT NULL DEFAULT '', n INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'pending', commitAt TEXT NOT NULL,
+              result TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', doneAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_pend_due ON pending_actions(status, commitAt);
+            CREATE TABLE IF NOT EXISTS summer_recent (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              staffId TEXT NOT NULL, studentId TEXT NOT NULL, at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_srecent_one ON summer_recent(staffId, studentId);
+            ALTER TABLE members ADD COLUMN fromSummerId TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_members_fromsummer ON members(fromSummerId);
+            CREATE TABLE IF NOT EXISTS summer_incidents (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              incidentId TEXT NOT NULL UNIQUE, cohortId TEXT NOT NULL DEFAULT '', studentId TEXT NOT NULL DEFAULT '',
+              childName TEXT NOT NULL DEFAULT '', centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '',
+              severity TEXT NOT NULL DEFAULT 'low', note TEXT NOT NULL DEFAULT '',
+              byId TEXT NOT NULL DEFAULT '', byName TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'open', toldAt TEXT NOT NULL DEFAULT '', toldBy TEXT NOT NULL DEFAULT '',
+              closedAt TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_sinc_edition ON summer_incidents(cohortId, status);
+            CREATE TABLE IF NOT EXISTS summer_messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              messageId TEXT NOT NULL UNIQUE, cohortId TEXT NOT NULL DEFAULT '', template TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', audience TEXT NOT NULL DEFAULT '',
+              channel TEXT NOT NULL DEFAULT 'email', recipients INTEGER NOT NULL DEFAULT 0,
+              delivered INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0,
+              byId TEXT NOT NULL DEFAULT '', byName TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_smsg_edition ON summer_messages(cohortId, createdAt);
+        ",
+        /* 183 — one email, several member accounts (siblings on a parent's
+         * address). A sign-in code for such an address proves the inbox, not a
+         * person, so the verified challenge keeps the accounts it may open
+         * (comma-separated memberIds) and the browser picks one (auth_pick). */
+        183 => "
+            ALTER TABLE auth_sessions ADD COLUMN pickIds TEXT DEFAULT '';
+        ",
+
+        /* Notifications a person can act on. `notification_state` holds each
+           person's read and dismissed marks — a broadcast row is shared, so
+           marking it read on the row marked it read for everybody. `groupKey`
+           lets a running thing (Saturday's timetable) keep ONE live item that
+           is updated, instead of a new alert every block. `actionLabel` names
+           the button when the default for the kind is not right. */
+        184 => "
+            CREATE TABLE IF NOT EXISTS notification_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, notifId TEXT NOT NULL,
+              readAt TEXT NOT NULL DEFAULT '', dismissedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_nstate_one ON notification_state(memberId, notifId);
+            ALTER TABLE notifications ADD COLUMN groupKey TEXT NOT NULL DEFAULT '';
+            ALTER TABLE notifications ADD COLUMN actionLabel TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_notif_group ON notifications(memberId, groupKey);
+        ",
+
+        /* Support cases (domain/support.php). A case, not a ticket: one problem
+           a person brought, its priority by impact (P1–P4), its category, and a
+           lifecycle (new → open → pending → solved → closed). Messages are rows,
+           so an author, a time and the internal/visible line survive. Cases
+           are opened inside the member and family portals, never publicly. */
+        185 => "
+            CREATE TABLE IF NOT EXISTS support_cases (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              caseNo INTEGER NOT NULL UNIQUE,
+              status TEXT NOT NULL DEFAULT 'new', priority TEXT NOT NULL DEFAULT 'P3',
+              category TEXT NOT NULL DEFAULT 'other', subcategory TEXT NOT NULL DEFAULT '',
+              subject TEXT NOT NULL DEFAULT '',
+              requesterKind TEXT NOT NULL DEFAULT 'visitor', requesterId TEXT NOT NULL DEFAULT '',
+              name TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
+              memberId TEXT NOT NULL DEFAULT '', centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '',
+              assigneeId TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'web',
+              pageUrl TEXT NOT NULL DEFAULT '', userAgent TEXT NOT NULL DEFAULT '',
+              ipHash TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', lastActivityAt TEXT NOT NULL DEFAULT '',
+              lastReplyBy TEXT NOT NULL DEFAULT 'requester', respondBy TEXT NOT NULL DEFAULT '',
+              firstResponseAt TEXT NOT NULL DEFAULT '', solvedAt TEXT NOT NULL DEFAULT '', closedAt TEXT NOT NULL DEFAULT '',
+              rating INTEGER NOT NULL DEFAULT 0, ratingNote TEXT NOT NULL DEFAULT '', followUpOf INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_scase_status ON support_cases(status, respondBy);
+            CREATE INDEX IF NOT EXISTS idx_scase_requester ON support_cases(requesterKind, requesterId);
+            CREATE INDEX IF NOT EXISTS idx_scase_assignee ON support_cases(assigneeId, status);
+            CREATE TABLE IF NOT EXISTS support_messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              caseNo INTEGER NOT NULL, authorKind TEXT NOT NULL DEFAULT 'requester', authorId TEXT NOT NULL DEFAULT '',
+              authorName TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', internal INTEGER NOT NULL DEFAULT 0,
+              files TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_smsgs_case ON support_messages(caseNo, id);
+        ",
+
+        /* 186–187 came from the community-audit branch as 181–182; renumbered
+           when it was merged, because this branch had already used 181–185. */
+        /* Two different questions, asked at two different rhythms — they were
+           one, and one was wrong (domain/lesson-feedback.php).
+
+           HOW DID TODAY GO is asked after every LESSON: a tap, for the person
+           teaching. It is never published and never leaves the staff.
+
+           WHAT DID THIS TERM GIVE YOU is asked after every SESSION — the
+           twelve-week block, four a year — and that is the testimonial.
+           `testimonials.unitId` is left in place and unread rather than
+           dropped: SQLite cannot drop a column on older builds, and a
+           deployment that already ran 180 keeps resolving. */
+        186 => "
+            ALTER TABLE testimonials ADD COLUMN sessionId TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_testi_session ON testimonials(memberId, sessionId);
+            CREATE TABLE IF NOT EXISTS lesson_feedback (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              fid TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL DEFAULT '',
+              unitId TEXT NOT NULL DEFAULT '',
+              course TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              signal TEXT NOT NULL DEFAULT '',
+              body TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_lfb_one ON lesson_feedback(memberId, unitId);
+            CREATE INDEX IF NOT EXISTS idx_lfb_unit ON lesson_feedback(unitId, signal);
+            CREATE INDEX IF NOT EXISTS idx_lfb_centreid ON lesson_feedback(centreId);
+        ",
+        /* STUDYING FOR SCHOOL, in the Learn app (domain/study-drill.php).
+           The growth plan from a member's school results already said WHAT to
+           work on — Maths 62 → 70, retrieval practice, three sessions a week
+           — and there has never been anywhere to actually DO one. A drill is
+           one of those sessions: a short adaptive set on that subject, marked
+           with reasons, which ticks the week's check-in and turns what they
+           got wrong into spaced-repetition cards.
+
+           One table. The member's LEVEL in a subject is not stored twice: it
+           is the level of their most recent drill in it, which is also what
+           makes it auditable — you can see the ladder they climbed. */
+        187 => "
+            CREATE TABLE IF NOT EXISTS study_drills (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              drillId TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL DEFAULT '',
+              itemId TEXT NOT NULL DEFAULT '',
+              subject TEXT NOT NULL DEFAULT '',
+              topic TEXT NOT NULL DEFAULT '',
+              level INTEGER NOT NULL DEFAULT 2,
+              source TEXT NOT NULL DEFAULT '',
+              asked INTEGER NOT NULL DEFAULT 0,
+              correct INTEGER NOT NULL DEFAULT 0,
+              questionsJson TEXT NOT NULL DEFAULT '[]',
+              answersJson TEXT NOT NULL DEFAULT '[]',
+              startedAt TEXT NOT NULL DEFAULT '',
+              markedAt TEXT NOT NULL DEFAULT ''
+            );
+            /* `idx_sd_*` is taken: study_decks already owns idx_sd_deck and
+               idx_sd_member, and an index name is global in SQLite — so
+               CREATE INDEX IF NOT EXISTS would have silently skipped these
+               and left the table unindexed. */
+            CREATE INDEX IF NOT EXISTS idx_drill_member ON study_drills(memberId, subject, startedAt);
+            CREATE INDEX IF NOT EXISTS idx_drill_marked ON study_drills(memberId, markedAt);
+        ",
+        /* The Learn app's own record of a member and a lesson (domain/learn.php):
+           their private note on it, whether they saved it for later, and when
+           they last opened it — what "pick up where you left off" reads.
+           One row per member per lesson. Never read by staff. */
+        188 => "
+            CREATE TABLE IF NOT EXISTS learn_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              unitId TEXT NOT NULL,
+              note TEXT NOT NULL DEFAULT '',
+              noteAt TEXT NOT NULL DEFAULT '',
+              saved INTEGER NOT NULL DEFAULT 0,
+              savedAt TEXT NOT NULL DEFAULT '',
+              openedAt TEXT NOT NULL DEFAULT '',
+              opens INTEGER NOT NULL DEFAULT 0,
+              UNIQUE (memberId, unitId)
+            );
+            CREATE INDEX IF NOT EXISTS idx_learn_state_opened ON learn_state(memberId, openedAt);
+        ",
+        189 => "
+            CREATE TABLE IF NOT EXISTS wifi_accounts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectType TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              username TEXT NOT NULL,
+              pinSealed TEXT NOT NULL DEFAULT '',
+              pinSetAt TEXT NOT NULL DEFAULT '',
+              pinResetDay TEXT NOT NULL DEFAULT '',
+              pinResets INTEGER NOT NULL DEFAULT 0,
+              override TEXT NOT NULL DEFAULT '',
+              overrideWhy TEXT NOT NULL DEFAULT '',
+              overrideBy TEXT NOT NULL DEFAULT '',
+              overrideAt TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT '',
+              UNIQUE (subjectType, subjectId),
+              UNIQUE (username)
+            );
+            CREATE TABLE IF NOT EXISTS wifi_gateways (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gatewayId TEXT NOT NULL UNIQUE,
+              platform TEXT NOT NULL DEFAULT 'mikrotik',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              label TEXT NOT NULL DEFAULT '',
+              keyHash TEXT NOT NULL DEFAULT '',
+              keyTail TEXT NOT NULL DEFAULT '',
+              keySetAt TEXT NOT NULL DEFAULT '',
+              lastSeenAt TEXT NOT NULL DEFAULT '',
+              lastFullAt TEXT NOT NULL DEFAULT '',
+              osVersion TEXT NOT NULL DEFAULT '',
+              lastError TEXT NOT NULL DEFAULT '',
+              lastVersion INTEGER NOT NULL DEFAULT 0,
+              lastChangeAt TEXT NOT NULL DEFAULT '',
+              ackedJson TEXT NOT NULL DEFAULT '',
+              pendingJson TEXT NOT NULL DEFAULT '',
+              pendingVersion INTEGER NOT NULL DEFAULT 0,
+              createdAt TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '',
+              removedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_gateways_centre ON wifi_gateways(centre);
+        ",
+        190 => "
+            ALTER TABLE wifi_gateways ADD COLUMN testAsked INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE wifi_gateways ADD COLUMN lastStatsJson TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS wifi_gateway_stats (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gatewayId TEXT NOT NULL,
+              hour TEXT NOT NULL,
+              samples INTEGER NOT NULL DEFAULT 0,
+              activeMax INTEGER NOT NULL DEFAULT 0,
+              activeSum INTEGER NOT NULL DEFAULT 0,
+              cpuMax INTEGER NOT NULL DEFAULT 0,
+              memFreeMin INTEGER NOT NULL DEFAULT 0,
+              UNIQUE (gatewayId, hour)
+            );
+            CREATE TABLE IF NOT EXISTS wifi_speed_tests (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              gatewayId TEXT NOT NULL DEFAULT '',
+              source TEXT NOT NULL DEFAULT 'device',
+              downMbps REAL NOT NULL DEFAULT 0,
+              upMbps REAL NOT NULL DEFAULT 0,
+              rttMs INTEGER NOT NULL DEFAULT 0,
+              byId TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_speed_centre ON wifi_speed_tests(centre, at);
+        ",
+        191 => "
+            CREATE TABLE IF NOT EXISTS wifi_regions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              regionId TEXT NOT NULL UNIQUE,
+              name TEXT NOT NULL DEFAULT '',
+              code TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '',
+              removedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS wifi_region_centres (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              centre TEXT NOT NULL UNIQUE,
+              centreId TEXT NOT NULL DEFAULT '',
+              regionId TEXT NOT NULL,
+              assignedAt TEXT NOT NULL DEFAULT '',
+              assignedBy TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_rc_region ON wifi_region_centres(regionId);
+            CREATE TABLE IF NOT EXISTS wifi_region_leads (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              regionId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              addedAt TEXT NOT NULL DEFAULT '',
+              addedBy TEXT NOT NULL DEFAULT '',
+              UNIQUE (regionId, memberId)
+            );
+            CREATE TABLE IF NOT EXISTS wifi_profile_overrides (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              regionId TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              profilesJson TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT '',
+              updatedBy TEXT NOT NULL DEFAULT '',
+              UNIQUE (regionId, centre)
+            );
+            CREATE TABLE IF NOT EXISTS wifi_gateway_daily (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gatewayId TEXT NOT NULL,
+              date TEXT NOT NULL,
+              samples INTEGER NOT NULL DEFAULT 0,
+              hoursUp INTEGER NOT NULL DEFAULT 0,
+              activePeak INTEGER NOT NULL DEFAULT 0,
+              activeSum INTEGER NOT NULL DEFAULT 0,
+              activeSamples INTEGER NOT NULL DEFAULT 0,
+              cpuMax INTEGER NOT NULL DEFAULT 0,
+              UNIQUE (gatewayId, date)
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_daily_date ON wifi_gateway_daily(date);
+            CREATE INDEX IF NOT EXISTS idx_wifi_stats_hour ON wifi_gateway_stats(hour);
+            ALTER TABLE wifi_gateway_stats ADD COLUMN activeSamples INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* Wi-Fi: a silent gateway is told to its region lead once per silence
+           (silentAlertAt, cleared by its next fetch), and what the feed costs
+           this host is measured per hour before more than one pilot region
+           goes live (wifi_feed_load; time buckets in milliseconds). */
+        192 => "
+            ALTER TABLE wifi_gateways ADD COLUMN silentAlertAt TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS wifi_feed_load (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              hour TEXT NOT NULL UNIQUE,
+              fetches INTEGER NOT NULL DEFAULT 0,
+              failed INTEGER NOT NULL DEFAULT 0,
+              msTotal INTEGER NOT NULL DEFAULT 0,
+              msMax INTEGER NOT NULL DEFAULT 0,
+              bytesTotal INTEGER NOT NULL DEFAULT 0,
+              memMaxKb INTEGER NOT NULL DEFAULT 0,
+              b25 INTEGER NOT NULL DEFAULT 0,
+              b50 INTEGER NOT NULL DEFAULT 0,
+              b100 INTEGER NOT NULL DEFAULT 0,
+              b250 INTEGER NOT NULL DEFAULT 0,
+              b500 INTEGER NOT NULL DEFAULT 0,
+              bOver INTEGER NOT NULL DEFAULT 0
+            );
+        ",
+        /* Anchor Circle joins the family account and the mentor portal: the old
+           code-and-token links stop opening anything. Their days and remarks
+           stay on the child's record and keep counting. */
+        193 => "
+            UPDATE circle_links SET status = 'moved' WHERE status = 'active';
+        ",
+        /* Wi-Fi data used, per person per day per centre (wifi_usage_*), and
+           each gateway's last word on each session, so a counter that keeps
+           climbing is only counted once. */
+        194 => "
+            CREATE TABLE IF NOT EXISTS wifi_usage_daily (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectType TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              date TEXT NOT NULL,
+              bytesDown INTEGER NOT NULL DEFAULT 0,
+              bytesUp INTEGER NOT NULL DEFAULT 0,
+              updatedAt TEXT NOT NULL DEFAULT '',
+              UNIQUE (subjectType, subjectId, date, centre)
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_usage_centre ON wifi_usage_daily(centre, date);
+            CREATE INDEX IF NOT EXISTS idx_wifi_usage_date ON wifi_usage_daily(date);
+            CREATE TABLE IF NOT EXISTS wifi_usage_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gatewayId TEXT NOT NULL,
+              sessionKey TEXT NOT NULL,
+              username TEXT NOT NULL DEFAULT '',
+              bytesIn INTEGER NOT NULL DEFAULT 0,
+              bytesOut INTEGER NOT NULL DEFAULT 0,
+              seenAt TEXT NOT NULL DEFAULT '',
+              UNIQUE (gatewayId, sessionKey)
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_usess_seen ON wifi_usage_sessions(seenAt);
+            ALTER TABLE wifi_gateways ADD COLUMN usageAt TEXT NOT NULL DEFAULT '';
+        ",
+        /* A centre's router that now runs from CACENTRE (domain/wifi-cacentre.php):
+           NGG stops calling it silent, its members' PINs come from CACENTRE at
+           once, and an old script still asking NGG is told it has moved. */
+        195 => "
+            ALTER TABLE wifi_gateways ADD COLUMN movedAt TEXT NOT NULL DEFAULT '';
+        ",
+        /* A member's courses as a stored fact (course-placement.php): the
+           proposal for an unplaced member, why, whether a person should look,
+           what it was computed from, and who confirmed the placement. */
+        196 => "
+            ALTER TABLE members ADD COLUMN coursesProposed TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN coursesFlag TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN coursesReason TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN coursesInputs TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN coursesConfirmedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN coursesConfirmedBy TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_members_courses_flag ON members(coursesFlag);
+        ",
+        197 => "
+            /* WHERE A COURSE LEADS. The curriculum already names its routes
+               out — freeCodeCamp, Trinity, ABRSM, NBTE, Cisco, Google — but
+               only in lesson prose and loose links, so a child finished a
+               course and nothing told them there was a recognised credential
+               at the end of it, and the programme could not say how many of
+               its members hold one. Three tables, because the domain has
+               three things: the organisation, the thing it awards, and the
+               person who holds it. */
+            CREATE TABLE IF NOT EXISTS providers (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              providerId TEXT UNIQUE NOT NULL,
+              name TEXT NOT NULL DEFAULT '',
+              slug TEXT NOT NULL DEFAULT '',
+              country TEXT NOT NULL DEFAULT '',
+              url TEXT NOT NULL DEFAULT '',
+              free INTEGER NOT NULL DEFAULT 0,
+              costNote TEXT NOT NULL DEFAULT '',
+              notes TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'active',
+              position INTEGER NOT NULL DEFAULT 0,
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_prv_status ON providers(status, position);
+            CREATE TABLE IF NOT EXISTS provider_awards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              awardId TEXT UNIQUE NOT NULL,
+              providerId TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL DEFAULT '',
+              kind TEXT NOT NULL DEFAULT 'certificate',
+              level TEXT NOT NULL DEFAULT '',
+              courses TEXT NOT NULL DEFAULT '[]',
+              url TEXT NOT NULL DEFAULT '',
+              examNote TEXT NOT NULL DEFAULT '',
+              costNote TEXT NOT NULL DEFAULT '',
+              free INTEGER NOT NULL DEFAULT 0,
+              validMonths INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'active',
+              position INTEGER NOT NULL DEFAULT 0,
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_paw_provider ON provider_awards(providerId, status, position);
+            CREATE TABLE IF NOT EXISTS member_credentials (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              credId TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL DEFAULT '',
+              providerId TEXT NOT NULL DEFAULT '',
+              awardId TEXT NOT NULL DEFAULT '',
+              state TEXT NOT NULL DEFAULT 'aiming',
+              grade TEXT NOT NULL DEFAULT '',
+              credentialRef TEXT NOT NULL DEFAULT '',
+              evidenceUrl TEXT NOT NULL DEFAULT '',
+              awardedOn TEXT NOT NULL DEFAULT '',
+              expiresOn TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              recordedBy TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            /* One row per member per award: re-recording is a correction, not
+               a second credential. */
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_mcr_one ON member_credentials(memberId, awardId);
+            CREATE INDEX IF NOT EXISTS idx_mcr_state ON member_credentials(state, awardedOn);
+            CREATE INDEX IF NOT EXISTS idx_mcr_centre ON member_credentials(centre, state);
+            CREATE INDEX IF NOT EXISTS idx_mcr_centreid ON member_credentials(centreId);
+        ",
+        198 => "
+            /* WHAT TO DO WITH A MATERIAL. A lesson's links reached a learner
+               as a title and the word LINK, so nothing said whether to read
+               it now, practise on it, or keep it for later. One line per
+               material, written by whoever attaches it, shown under its
+               title. */
+            ALTER TABLE curriculum_materials ADD COLUMN guide TEXT DEFAULT '';
+        ",
+        /* 199 — CACENTRE's locations decide NGG's centres (domain/cac-locations.php).
          * A centre is linked to its location by the location's id, which stays
          * when the name changes; the location's calendar is kept for reading.
          * And a check-in through the gate records which location it was at. */
-        137 => "ALTER TABLE centres ADD COLUMN cacLocationId TEXT NOT NULL DEFAULT '';
+        199 => "ALTER TABLE centres ADD COLUMN cacLocationId TEXT NOT NULL DEFAULT '';
                 ALTER TABLE centres ADD COLUMN cacCalendar TEXT NOT NULL DEFAULT '';
                 ALTER TABLE centres ADD COLUMN cacSyncedAt TEXT NOT NULL DEFAULT '';
                 ALTER TABLE attendance ADD COLUMN centre TEXT NOT NULL DEFAULT '';
+                ALTER TABLE attendance ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
                 CREATE INDEX IF NOT EXISTS idx_centres_cac ON centres(cacLocationId);",
-        /* 138 — the processes that wait on a person (domain/make.php): the
+        /* 200 — the processes that wait on a person (domain/make.php): the
          * question asked about each absence and the guardian's answer, each
          * safeguarding flag and who took it, and which Summer School dates
          * have already been announced. */
-        138 => "CREATE TABLE IF NOT EXISTS absence_asks (
+        200 => "CREATE TABLE IF NOT EXISTS absence_asks (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   ref TEXT UNIQUE NOT NULL,
                   infractionId INTEGER NOT NULL,
                   personId TEXT NOT NULL, personType TEXT NOT NULL DEFAULT 'student',
-                  date TEXT NOT NULL, centre TEXT NOT NULL DEFAULT '',
+                  date TEXT NOT NULL, centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '',
                   status TEXT NOT NULL DEFAULT 'asked',
                   reason TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
                   channel TEXT NOT NULL DEFAULT '', messageId TEXT NOT NULL DEFAULT '',
@@ -4070,7 +5822,7 @@ function db_migrate(PDO $db): void {
                 CREATE TABLE IF NOT EXISTS safeguarding_flags (
                   ref TEXT PRIMARY KEY,
                   source TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', severity TEXT NOT NULL DEFAULT '',
-                  centre TEXT NOT NULL DEFAULT '', flaggedAt TEXT NOT NULL DEFAULT '',
+                  centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', flaggedAt TEXT NOT NULL DEFAULT '',
                   ackAt TEXT NOT NULL DEFAULT '', ackBy TEXT NOT NULL DEFAULT '',
                   ackChannel TEXT NOT NULL DEFAULT '', ackMessageId TEXT NOT NULL DEFAULT ''
                 );
@@ -4105,12 +5857,59 @@ function db_migrate(PDO $db): void {
             throw new RuntimeException("migration $v failed: " . $e->getMessage(), (int)$e->getCode(), $e);
         }
     }
+    /* A database built from nothing has no shared centres to split, so the
+       one-time split is recorded as done — it is for deployments that existed
+       before it, and must never run over a fresh install's first centres. */
+    if ($current === 0) {
+        try {
+            $st = $db->prepare('INSERT OR IGNORE INTO settings (settingKey, settingValue, updatedAt, updatedBy) VALUES (?, ?, ?, ?)');
+            $st->execute(['centres_split_seed', CENTRES_SPLIT_SEED, gmdate('Y-m-d\TH:i:s\Z'), 'install']);
+        } catch (Throwable $e) { /* settings missing: the seed's own empty check covers it */ }
+    }
 }
 
 // ── Query helpers ────────────────────────────────────────────────────────
 
+/**
+ * Mirror a centre NAME into centreId on the way in.
+ *
+ * Phase 1 of the centre-key migration writes both columns while reads still
+ * use the name (domain/centres-ngg.php). Doing it here rather than at the 288
+ * call sites means a table joins the migration by being in CENTRE_NAME_TABLES,
+ * not by someone remembering — which is the failure the migration exists to
+ * end, so it would be a poor way to run it.
+ *
+ * A name that resolves to NOTHING is left alone, so the column keeps its ''
+ * default. That is deliberate: the empty rows are the inventory that
+ * admin.centres.idaudit reports, and filling them with a guess would move a
+ * child's record to the wrong centre with nothing to say it happened.
+ */
+function db_centre_mirror(string $table, array $data): array {
+    if (!isset($data['centre']) || isset($data['centreId'])) return $data;
+    if (!function_exists('centre_table_tracked') || !centre_table_tracked($table)) return $data;
+    $id = centre_id_for_name((string)$data['centre']);
+    if ($id !== '') $data['centreId'] = $id;
+    return $data;
+}
+
+/* A column whose name MySQL reserves (`signal`, on lesson_feedback) is a syntax
+   error there unquoted, while SQLite takes it either way — so it was only ever
+   found on MySQL. Backticks quote it on both drivers. Only listed names are
+   quoted, so every other statement stays exactly as it was. */
+const DB_RESERVED_COLUMNS = ['signal'];
+function db_ident(string $col): string { return in_array(strtolower($col), DB_RESERVED_COLUMNS, true) ? '`' . $col . '`' : $col; }
+
+/* A counter every write moves. A derived value computed in a read-only
+   request (a member's courses, the course list) can be reused until it moves,
+   so a list never rebuilds it per row. */
+function db_write_gen(): int { return (int)($GLOBALS['__db_wgen'] ?? 0); }
+function db_wrote(): void { $GLOBALS['__db_wgen'] = (int)($GLOBALS['__db_wgen'] ?? 0) + 1; }
+
 function db_insert(string $table, array $data): int {
-    $cols = array_keys($data);
+    db_wrote();
+    $data = db_centre_mirror($table, $data);
+    if ($table === 'centres' && function_exists('centre_id_cache_clear')) centre_id_cache_clear();
+    $cols = array_map('db_ident', array_keys($data));
     $ph = array_fill(0, count($cols), '?');
     $sql = 'INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', $ph) . ')';
     db_conn()->prepare($sql)->execute(array_values($data));
@@ -4118,9 +5917,12 @@ function db_insert(string $table, array $data): int {
 }
 
 function db_update(string $table, array $data, array $where): int {
+    db_wrote();
+    $data = db_centre_mirror($table, $data);
+    if ($table === 'centres' && function_exists('centre_id_cache_clear')) centre_id_cache_clear();
     $set = []; $vals = [];
-    foreach ($data as $k => $v) { $set[] = "$k = ?"; $vals[] = $v; }
-    $wh = []; foreach ($where as $k => $v) { $wh[] = "$k = ?"; $vals[] = $v; }
+    foreach ($data as $k => $v) { $set[] = db_ident($k) . ' = ?'; $vals[] = $v; }
+    $wh = []; foreach ($where as $k => $v) { $wh[] = db_ident($k) . ' = ?'; $vals[] = $v; }
     $sql = 'UPDATE ' . $table . ' SET ' . implode(',', $set) . ' WHERE ' . implode(' AND ', $wh);
     $stmt = db_conn()->prepare($sql);
     $stmt->execute($vals);
@@ -4129,10 +5931,14 @@ function db_update(string $table, array $data, array $where): int {
 
 /** Cross-driver insert-or-update. $conflict = unique/PK column(s). */
 function db_upsert(string $table, array $insert, array $conflict, array $update): void {
-    $cols = array_keys($insert);
+    db_wrote();
+    $insert = db_centre_mirror($table, $insert);
+    $update = db_centre_mirror($table, $update);
+    if ($table === 'centres' && function_exists('centre_id_cache_clear')) centre_id_cache_clear();
+    $cols = array_map('db_ident', array_keys($insert));
     $ph = implode(',', array_fill(0, count($cols), '?'));
     $vals = array_values($insert);
-    $set = []; foreach ($update as $k => $v) { $set[] = "$k = ?"; $vals[] = $v; }
+    $set = []; foreach ($update as $k => $v) { $set[] = db_ident($k) . ' = ?'; $vals[] = $v; }
     $head = 'INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . $ph . ') ';
     if (db_driver() === 'mysql') {
         $sql = $head . 'ON DUPLICATE KEY UPDATE ' . implode(', ', $set);
@@ -4170,7 +5976,7 @@ function db_all(string $sql, array $params = []): array {
 }
 
 function db_exec(string $sql, array $params = []): int {
-    db_tick();
+    db_tick(); db_wrote();
     $stmt = db_conn()->prepare($sql);
     $stmt->execute($params);
     return $stmt->rowCount();

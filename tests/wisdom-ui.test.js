@@ -190,11 +190,47 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     chk('Stop ends the loop', await mp.waitForTimeout(2500).then(() => mp.$eval('.qow-play', b => b.getAttribute('aria-pressed') === 'false')));
     // Share: the phone's sheet where there is one, else the saying copied with its meaning.
     await mp.evaluate(() => { try { Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }); } catch (_) {} navigator.clipboard.writeText = t => { window.__copied = t; return Promise.resolve(); }; });
+    // Share opens the share card (qow-card.jsx); the plain text is one press inside it.
     await mp.click('.qow-share');
+    await mp.waitForSelector('.qcs', { timeout: 15000 });
+    await mp.click('.qcs-btn:has-text("Copy the text")');
+    await mp.waitForFunction(() => !!window.__copied, null, { timeout: 5000 }).catch(() => {});
     const copied = await mp.evaluate(() => window.__copied || '');
-    chk('Share copies the saying, its meaning and where it came from, and says so', copied.includes(s.text) && (!s.translation || copied.includes(s.translation)) && /Copied/.test(await mp.$eval('.qow-listen', el => el.textContent)));
+    chk('Share opens the share card, and its Copy the text copies the saying, its meaning and where it came from, and says so',
+        copied.includes(s.text) && (!s.translation || copied.includes(s.translation)) && /Copied/.test(await mp.$eval('.qcs', el => el.innerText)));
+    await mp.keyboard.press('Escape');
         chk('the card fits a phone with no sideways scroll', await mp.evaluate(() => document.querySelector('.qow').scrollWidth <= window.innerWidth));
     await (await mp.$('.qow')).screenshot({ path: path.join(SHOTS, 'home-phone.png') });
+
+    // The Community: the same quote as a card at the top of Today's feed.
+    php(`db_insert('members', ['memberId'=>'NGG-WS-MEM','fullName'=>'Ada Member','email'=>'ws-mem@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Main','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`);
+    const memTok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = 'NGG-WS-MEM'"), false);`, ['session']);
+    for (const [label, W, H] of [['phone', 390, 844], ['laptop', 1280, 900]]) {
+      const cctx = await browser.newContext({ viewport: { width: W, height: H } });
+      await cctx.addCookies([{ name: 'ngg_sess', value: memTok, domain: '127.0.0.1', path: '/', httpOnly: true }]);
+      const cp = await cctx.newPage();
+      cp.on('pageerror', e => errs.push('community: ' + String(e).slice(0, 200)));
+      await cp.goto(BASE + '/community', { waitUntil: 'domcontentloaded' });
+      await waitForBoot(cp);
+      const shown = await cp.waitForSelector('.cmm-feed .qow-cm .qow-text', { timeout: 30000 }).then(() => true, () => false);
+      chk('community (' + label + '): the quote of the week leads the Today feed', shown
+          && await cp.$eval('.cmm-feed .qow-cm .qow-text', el => el.textContent) === s.text
+          && await cp.$eval('.cmm-feed', f => f.firstElementChild && f.firstElementChild.classList.contains('qow-cm')));
+      chk('community (' + label + '): it is a card inside the feed, not the home page’s full-bleed band',
+          await cp.$eval('.qow-cm', el => { const b = el.getBoundingClientRect(), f = el.parentElement.getBoundingClientRect();
+            return b.left >= f.left - 1 && b.right <= f.right + 1 && parseFloat(getComputedStyle(el).borderTopLeftRadius) > 0; }));
+      chk('community (' + label + '): no sideways scroll', await cp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+      if (s.meaning) {
+        await cp.click('.qow-cm .qow-btn:has-text("What it means")');
+        chk('community (' + label + '): its controls work — the meaning opens',
+            (await cp.$eval('.qow-cm', el => el.innerText)).includes(s.meaning.slice(0, 30)));
+      }
+      await (await cp.$('.qow-cm')).screenshot({ path: path.join(SHOTS, 'community-' + label + '.png') });
+      await cp.click('.cmm-chip:has-text("Mentions"), [role=tab]:has-text("Mentions"), button:has-text("Mentions")').catch(() => {});
+      await cp.waitForTimeout(300);
+      chk('community (' + label + '): a filtered view (Mentions) does not repeat it', (await cp.$$('.qow-cm')).length === 0);
+      await cctx.close();
+    }
 
     // The Control Room screen.
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
@@ -225,7 +261,10 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await ap.click('.wis-tab:has-text("Yorùbá")');
     chk('the Yorùbá tab lists the four proverbs, tone marks intact',
         (await ap.$$('.wis-item')).length === 4 && (await ap.$eval('.admin-main', el => el.innerText)).includes('A kì í fi orí wé orí Mọkírè'));
-    chk('the schedule has Yorùbá in the third week', /Yorùbá\s*#1/.test(await ap.$eval('.wis-sched', el => el.innerText)));
+    // The rotation moves with the calendar, so pin the pattern, not a number: every third week is Yorùbá's.
+    chk('the schedule takes turns: Hausa, Igbo, Yorùbá, then again', await ap.$$eval('.wis-sched-lang', els => {
+        const L = els.map(e => e.textContent.replace(/\s*#\d+/, '').trim());
+        return L.length === 9 && L.every((l, i) => l === L[i % 3]) && new Set(L.slice(0, 3)).size === 3; }));
     await ap.screenshot({ path: path.join(SHOTS, 'admin.png'), fullPage: false });
 
     /* ── With a Spitch key. Every saying already has its saved clips and its

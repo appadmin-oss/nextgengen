@@ -17,10 +17,8 @@
 <meta property="og:image:alt" content="A school week printed in the Classic style">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/assets/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="image" href="/assets/timetable/landing/style-classic.webp" type="image/webp" fetchpriority="high">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="/assets/fonts/fonts.css">
 <link rel="stylesheet" href="/vendor/phosphor/phosphor.css">
 <style>
 /* ═══ Timetable Maker landing (/timetable/about) ════════════════════════════
@@ -67,7 +65,7 @@
 html { background: var(--tt-lp-ground); scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  * { transition: none !important; }
+  :not(#_):not(#_) { transition: none; }
 }
 body {
   margin: 0; background: var(--tt-lp-ground); color: var(--tt-lp-ink);

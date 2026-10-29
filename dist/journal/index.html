@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="ngg-build" content="07940cf0e8"/>
+<meta name="ngg-build" content="4ca2bb4807"/>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
 <meta name="theme-color" content="#0c1432"/>
@@ -33,10 +33,12 @@
   @keyframes ajb { 0%,100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.08); opacity: 1; } }
   .aj-boot.gone { opacity: 0; pointer-events: none; }
   /* Carry global accessibility prefs into the journal PWA. */
-  :root[data-motion="reduce"] *, :root[data-motion="reduce"] ::before, :root[data-motion="reduce"] ::after {
-    animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important;
+  /* :not(#_) adds an id's weight without matching anything less, so these beat
+     every class rule in app.css, with no important flag. */
+  :root[data-motion="reduce"] :not(#_):not(#_), :root[data-motion="reduce"] :not(#_):not(#_)::before, :root[data-motion="reduce"] :not(#_):not(#_)::after {
+    animation-duration: .01ms; animation-iteration-count: 1; transition-duration: .01ms;
   }
-  :root[data-motion="reduce"] .aj-blob, :root[data-motion="reduce"] .aj-bg { animation: none !important; }
+  :root[data-motion="reduce"] .aj-blob:not(#_):not(#_), :root[data-motion="reduce"] .aj-bg:not(#_):not(#_) { animation: none; }
 </style>
 <script>
   /* Apply saved accessibility preferences before first paint. */
@@ -53,7 +55,7 @@
 
 <script defer src="/vendor/react.production.min.js"></script>
 <script defer src="/vendor/react-dom.production.min.js"></script>
-<script defer src="/api-client.cdb78bdafe.js"></script>
+<script defer src="/api-client.fd8460ebb6.js"></script>
 <script defer src="/journal/app.min.js"></script>
 <script>
   (function () { var t = 0; (function check() { var r = document.getElementById("aj-root"); if (r && r.children.length > 0) { var b = document.getElementById("aj-boot"); if (b) { b.classList.add("gone"); setTimeout(function () { b.remove(); }, 500); } } else if (t++ < 200) setTimeout(check, 80); })(); })();

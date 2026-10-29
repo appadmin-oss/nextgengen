@@ -11,8 +11,11 @@ declare(strict_types=1);
 function org_contact(): array {
     global $CONFIG;
     $o = $CONFIG['org'] ?? [];
+    /* The example config's placeholder ("hello@yourdomain.com") was copied into
+       live configs and printed in every email footer. A placeholder is no address. */
+    $real = static fn($e) => ($e = trim((string)$e)) !== '' && !preg_match('/@(your)?domain\.|example\.(com|org)$/i', $e) ? $e : '';
     return [
-        'email' => (string)(($o['email'] ?? '') ?: ($CONFIG['mail']['reply_to'] ?? '') ?: 'next@afrovanguard.org.ng'),
+        'email' => $real($o['email'] ?? '') ?: $real($CONFIG['mail']['reply_to'] ?? '') ?: 'next@afrovanguard.org.ng',
         'phone' => (string)($o['phone'] ?? '+234 903 777 6318'),
         'site'  => preg_replace('#^https?://#', '', (string)($CONFIG['app_origin'] ?? 'next.afrovanguard.org.ng')) ?: 'next.afrovanguard.org.ng',
     ];
@@ -52,7 +55,24 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
     $smtp = $mail['smtp'] ?? [];
     $errors = [];
 
-    // Path 1 — SMTP (authenticated relay). Most reliable when the host permits
+    // Path 1 — Google Apps Script MailApp (signed with the script's SECRET).
+    // Google sends from the authenticated account: no SMTP ports, no SPF/DKIM,
+    // no third-party key — the path that delivers on shared hosting. Set it in
+    // Settings → API keys → Google Apps Script (or apps_script_url +
+    // shared_secret in config.php). First whenever it is set, so a slow or
+    // broken SMTP relay never stands in front of it.
+    [$asUrl, $asSecret] = mail_apps_script_cfg();
+    if (($mail['apps_script'] ?? true) !== false && $asUrl !== '' && $asSecret !== '') {
+        try {
+            if (appsscript_send($asUrl, $asSecret, $from, $to, $subject, $html, $text)) return true;
+            $errors[] = 'apps_script: send failed';
+        } catch (Throwable $e) {
+            $errors[] = 'apps_script: ' . $e->getMessage();
+            error_log('[send_mail/apps_script] ' . $e->getMessage());
+        }
+    }
+
+    // Path 2 — SMTP (authenticated relay). Most reliable when the host permits
     // outbound 587/465 and the relay is aligned with the From domain.
     if (!empty($smtp['host'])) {
         try {
@@ -64,21 +84,18 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
         }
     }
 
-    // Path 2 — Google Apps Script MailApp. If an Apps Script Web App is wired
-    // up (apps_script_url + shared_secret — the same one the Sheets mirror
-    // uses), Google sends the mail from the authenticated account. This is the
-    // most reliable path on shared hosting and is exactly how the STS CEO site
-    // delivers: no SMTP ports, no SPF/DKIM setup, no third-party key.
-    $asUrl = trim((string)($CONFIG['apps_script_url'] ?? ''));
-    $asSecret = (string)($CONFIG['shared_secret'] ?? '');
-    if (($mail['apps_script'] ?? true) !== false
-        && $asUrl !== '' && $asSecret !== '' && $asSecret !== 'REPLACE_ME_64_HEX_BYTES') {
+    // Path 2b — Brevo's relay, set in Settings → API keys → Brevo
+    // (smtp-relay.brevo.com:587, STARTTLS, login + SMTP key).
+    $brevo = $mail['brevo'] ?? [];
+    if (trim((string)($brevo['user'] ?? '')) !== '' && trim((string)($brevo['pass'] ?? '')) !== '') {
+        $bFrom = filter_var((string)($brevo['from'] ?? ''), FILTER_VALIDATE_EMAIL) ? array_merge($from, ['email' => (string)$brevo['from']]) : $from;
         try {
-            if (appsscript_send($asUrl, $asSecret, $from, $to, $subject, $html, $text)) return true;
-            $errors[] = 'apps_script: send failed';
+            if (smtp_send(['host' => 'smtp-relay.brevo.com', 'port' => 587, 'secure' => 'tls', 'user' => (string)$brevo['user'], 'pass' => (string)$brevo['pass']],
+                          $bFrom, $to, $subject, $html, $text)) return true;
+            $errors[] = 'brevo: send returned false';
         } catch (Throwable $e) {
-            $errors[] = 'apps_script: ' . $e->getMessage();
-            error_log('[send_mail/apps_script] ' . $e->getMessage());
+            $errors[] = 'brevo: ' . $e->getMessage();
+            error_log('[send_mail/brevo] ' . $e->getMessage());
         }
     }
 
@@ -105,6 +122,9 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
         error_log('[send_mail/native] ' . $e->getMessage());
     }
 
+    /* A relay that fails mid-TLS can echo binary into its error text; keep
+       only what a person can read, so the report says what went wrong. */
+    $errors = array_map(static fn($e) => trim((string)preg_replace('/\s{2,}/', ' ', (string)preg_replace('/[^\x20-\x7E\x{2018}-\x{201D}]+/u', ' ', mb_convert_encoding((string)$e, 'UTF-8', 'UTF-8')))), $errors);
     $GLOBALS['__mail_last_error'] = $errors
         ? implode(' | ', $errors)
         : 'No delivery path available. Set mail.smtp.* or mail.resend_key in api/config.php.';
@@ -112,15 +132,24 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
     return false;
 }
 
+/** The Apps Script mail endpoint: Settings (mail.apps_script_*) first, then config.php's apps_script_url + shared_secret. */
+function mail_apps_script_cfg(): array {
+    global $CONFIG;
+    $mail = $CONFIG['mail'] ?? [];
+    $url = rtrim(trim((string)($mail['apps_script_url'] ?? '')) ?: trim((string)($CONFIG['apps_script_url'] ?? '')), '/');
+    $secret = (string)($mail['apps_script_secret'] ?? '') ?: (string)($CONFIG['shared_secret'] ?? '');
+    if ($secret === 'REPLACE_ME_64_HEX_BYTES') $secret = '';
+    return [$url, $secret];
+}
+
 /** Which delivery path send_mail() will try first — for the Control Room diagnostic. */
 function mail_mode(): string {
     global $CONFIG;
     $mail = $CONFIG['mail'] ?? [];
+    [$asUrl, $asSecret] = mail_apps_script_cfg();
+    if (($mail['apps_script'] ?? true) !== false && $asUrl !== '' && $asSecret !== '') return 'apps_script';
     if (!empty($mail['smtp']['host'] ?? '')) return 'smtp';
-    $asUrl = trim((string)($CONFIG['apps_script_url'] ?? ''));
-    $asSecret = (string)($CONFIG['shared_secret'] ?? '');
-    if (($mail['apps_script'] ?? true) !== false
-        && $asUrl !== '' && $asSecret !== '' && $asSecret !== 'REPLACE_ME_64_HEX_BYTES') return 'apps_script';
+    if (trim((string)($mail['brevo']['user'] ?? '')) !== '' && trim((string)($mail['brevo']['pass'] ?? '')) !== '') return 'brevo';
     $k = trim((string)($mail['resend_key'] ?? ''));
     if ($k !== '' && $k !== 'YOUR_RESEND_KEY_HERE') return 'resend';
     return 'php_mail';
@@ -134,26 +163,35 @@ function mail_mode(): string {
  * googleusercontent, so redirects must be followed.
  */
 function appsscript_send(string $url, string $secret, array $from, string $to, string $subject, string $html, string $text): bool {
-    if (!function_exists('curl_init')) throw new RuntimeException('curl_unavailable');
-    $body = json_encode([
-        'op'       => 'sendMail',
+    appsscript_call($url, $secret, 'mail.send', [
         'to'       => $to,
         'subject'  => $subject,
         'html'     => $html,
         'text'     => $text,
-        'fromName' => $from['name'] ?? '',
-        'replyTo'  => $from['replyTo'] ?? '',
-    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    $sig = hash_hmac('sha256', $body, $secret);
+        'name'     => $from['name'] ?? '',
+        'reply_to' => $from['replyTo'] ?? '',
+    ]);
+    return true;
+}
 
-    $ch = curl_init($url . (strpos($url, '?') === false ? '?' : '&') . 'sig=' . $sig);
+/**
+ * One call to the Apps Script Web App:
+ * POST {action, token, data, source} → {ok|success, message, …}. The token is
+ * the script's SECRET; apps-script/Code.gs answers mail.send and mail.quota.
+ * /exec answers with a 302 to googleusercontent; the body is at the far end.
+ * Returns the JSON on success; throws with a sentence an operator can act on.
+ */
+function appsscript_call(string $url, string $secret, string $action, array $data = []): array {
+    if (isset($GLOBALS['__gas_mock']) && is_callable($GLOBALS['__gas_mock'])) return ($GLOBALS['__gas_mock'])($url, $secret, $action, $data);
+    if (!function_exists('curl_init')) throw new RuntimeException('PHP has no curl extension');
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $body,
+        CURLOPT_POSTFIELDS     => appsscript_body(['action' => $action, 'token' => $secret, 'data' => $data, 'source' => 'ngg']),
         CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-        CURLOPT_TIMEOUT        => 15,
-        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT        => 25,
+        CURLOPT_CONNECTTIMEOUT => 6,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_SSL_VERIFYPEER => true,
     ]);
@@ -161,11 +199,57 @@ function appsscript_send(string $url, string $secret, array $from, string $to, s
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $cerr = curl_error($ch);
     curl_close($ch);
-
-    if ($raw === false) throw new RuntimeException('curl: ' . $cerr);
+    if ($raw === false) throw new RuntimeException('could not reach it (' . $cerr . ')');
+    if ($code < 200 || $code >= 400) throw new RuntimeException('could not reach it (HTTP ' . $code . ')');
     $j = json_decode((string)$raw, true);
-    if (is_array($j) && !empty($j['ok'])) return true;
-    throw new RuntimeException('HTTP ' . $code . ' · ' . substr((string)$raw, 0, 160));
+    if (!is_array($j)) throw new RuntimeException('it did not answer JSON — usually an old deployment, or access not set to “Anyone”: paste the latest script and Deploy → Manage deployments → New version');
+    if (!empty($j['ok']) || !empty($j['success'])) return $j;
+    /* An earlier NGG Code.gs checks an HMAC of the body (?sig=) before it reads
+       anything, so it answers this format with bad_signature. Speak its
+       format instead: the same secret signs the body, and its ops are
+       sendMail (and ping, on newer copies). */
+    if (($j['error'] ?? '') === 'bad_signature') return appsscript_call_signed($url, $secret, $action, $data);
+    $msg = (string)($j['message'] ?? $j['error'] ?? 'refused');
+    if (str_starts_with($msg, 'Unknown action')) $msg = 'the deployed script is older than the mail action — paste the latest script and deploy a New version';
+    throw new RuntimeException($msg);
+}
+
+/** A request body for the script: JSON in pure ASCII (non-ASCII as \uXXXX), so a signature over it is the same on both sides. */
+function appsscript_body(array $payload): string {
+    return (string)json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+}
+
+/** The earlier NGG Code.gs: POST {op, …} with ?sig=HMAC-SHA256(body, secret). */
+function appsscript_call_signed(string $url, string $secret, string $action, array $data): array {
+    $payload = $action === 'mail.send'
+        ? ['op' => 'sendMail', 'to' => $data['to'] ?? '', 'subject' => $data['subject'] ?? '', 'html' => $data['html'] ?? '',
+           'text' => $data['text'] ?? '', 'fromName' => $data['name'] ?? '', 'replyTo' => $data['reply_to'] ?? '']
+        : ['op' => 'ping'];
+    /* Pure ASCII on the wire. Apps Script's computeHmacSha256Signature(text, key)
+       does not hash text as UTF-8, so a body with “—” or curly quotes signed
+       differently on each side: a short ping matched and every real email was
+       refused. \uXXXX escapes keep the body ASCII; JSON.parse restores it. */
+    $body = appsscript_body($payload);
+    $ch = curl_init($url . (strpos($url, '?') === false ? '?' : '&') . 'sig=' . hash_hmac('sha256', $body, $secret));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_TIMEOUT => 25, CURLOPT_CONNECTTIMEOUT => 6,
+        CURLOPT_FOLLOWLOCATION => true, CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $raw = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+    if ($raw === false) throw new RuntimeException('could not reach it (' . $cerr . ')');
+    $j = json_decode((string)$raw, true);
+    if (!is_array($j)) throw new RuntimeException('could not reach it (HTTP ' . $code . ')');
+    if (!empty($j['ok'])) return $j;
+    $err = (string)($j['error'] ?? '');
+    if ($err === 'bad_signature') throw new RuntimeException('Bad token');
+    // Signed and accepted, but too old to answer ping: the URL and the secret are right.
+    if ($err === 'unknown_op' && $action === 'mail.quota') return ['ok' => true, 'legacy' => true];
+    if (str_contains((string)($j['detail'] ?? ''), 'SHARED_SECRET')) throw new RuntimeException('the script has no SHARED_SECRET in its Script properties');
+    throw new RuntimeException($err !== '' ? $err . (isset($j['detail']) ? ' (' . $j['detail'] . ')' : '') : 'refused');
 }
 
 /**
@@ -518,7 +602,7 @@ function email_template(array $opts): string {
 
     // Navy CTA — solid base for Outlook, gradient as progressive enhancement.
     $cta = (!empty($opts['ctaLabel']) && !empty($opts['ctaUrl']))
-        ? '<tr><td style="padding:28px 36px 0"><a href="' . esc_html($opts['ctaUrl']) . '" style="display:block;text-align:center;background:' . $navy . ';background:linear-gradient(180deg,' . $navyTop . ',' . $navy . ');color:#ffffff;text-decoration:none;font-family:' . $sans . ';font-size:15px;font-weight:600;letter-spacing:.2px;padding:15px 30px;border-radius:12px">' . esc_html($opts['ctaLabel']) . '</a></td></tr>'
+        ? '<tr><td style="padding:28px 36px 0"><a href="' . esc_html($opts['ctaUrl']) . '" style="display:block;text-align:center;background:' . $navy . ';background:linear-gradient(180deg,' . $navyTop . ',' . $navy . ');color:#ffffff;text-decoration:none;font-family:' . $sans . ';font-size:15px;font-weight:600;letter-spacing:.2px;padding:15px 24px;border-radius:12px">' . str_replace(' →', '&nbsp;→', esc_html($opts['ctaLabel'])) . '</a></td></tr>'
         : '';
 
     return '<div style="background:' . $outer . ';padding:40px 0;font-family:' . $sans . ';-webkit-font-smoothing:antialiased">'

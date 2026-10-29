@@ -11,6 +11,14 @@ const AuthCtx = React.createContext({
   refresh: async () => {},
 });
 
+/* A portal's own Sign out. The page passes the app's signOut (it clears the
+   drafts a shared centre computer would hand to the next child, and leaves
+   for home); without one, the bare logout and a reload of the front door. */
+function nggPortalSignOut(fn) {
+  if (typeof fn === "function") return fn();
+  return NGGApi.auth.logout().catch(() => {}).then(() => { try { location.assign("/"); } catch (_) {} });
+}
+
 function useAuth() {
   return React.useContext(AuthCtx);
 }
@@ -32,6 +40,11 @@ function AuthProvider({ children }) {
   const [loading, setLoading] = React.useState(true);
   const [signinOpen, setSigninOpen] = React.useState(false);
   const [signinSeed, setSigninSeed] = React.useState(null); // { token } when coming from magic link
+  /* The second sign-in step this session still owes (domain/mfa.php): '' none,
+     'enroll', a step type, or 'ask' when a route said mfa_required first. While
+     it is owed the app treats the person as not yet signed in — no screen
+     loads their data only to be refused — and MfaHost asks for it. */
+  const [mfaPending, setMfaPending] = React.useState("");
 
   // Boot — fetch /me + consume ?signin= magic link if present.
   React.useEffect(() => {
@@ -57,6 +70,7 @@ function AuthProvider({ children }) {
           try {
             const v = await NGGApi.auth.verify({ token });
             setMember(v.member);
+            setMfaPending(v.mfa || "");
             setSigninOpen(false);
           } catch (e) {
             // Show the modal pre-filled, so they can retry with OTP
@@ -68,6 +82,7 @@ function AuthProvider({ children }) {
         } else {
           const me = await NGGApi.auth.me();
           setMember(me.member || null);
+          setMfaPending(me.mfaPending || "");
           setAdminOk(Boolean(me.adminOk));
           setSessionExp(me.sessionExp || 0);
           setIdleExp(me.idleExpiresAt || 0);
@@ -75,7 +90,7 @@ function AuthProvider({ children }) {
           // Conventional /login (or /signin) entry point: open the sign-in
           // modal for guests, send signed-in members to their dashboard.
           if (BOOT_WANTS_LOGIN) {
-            if (me.member) {
+            if (me.member && !me.mfaPending) {
               // Coordinator-only accounts land in their own portal, not the
               // dashboard. summer_admin → Summer portal, club_admin → Club.
               const caps = me.member.caps || [];
@@ -95,16 +110,18 @@ function AuthProvider({ children }) {
     })();
   }, []);
 
+  // Not signed in until the second step is passed (see mfaPending).
+  const signedIn = mfaPending ? null : member;
   const ctx = {
-    member,
+    member: signedIn,
     adminOk,
     loading,
-    isSignedIn: !!member,
+    isSignedIn: !!signedIn,
     // Any staff tier (editor/admin/super_admin) can open the console; caps
     // decide what's visible inside.
-    isAdmin: !!member && Array.isArray(member.caps) && member.caps.length > 0,
-    caps: (member && member.caps) || [],
-    hasCap: (cap) => !!member && Array.isArray(member.caps) && member.caps.indexOf(cap) !== -1,
+    isAdmin: !!signedIn && Array.isArray(signedIn.caps) && signedIn.caps.length > 0,
+    caps: (signedIn && signedIn.caps) || [],
+    hasCap: (cap) => !!signedIn && Array.isArray(signedIn.caps) && signedIn.caps.indexOf(cap) !== -1,
     openSignIn: (seed) => { setSigninSeed(seed || null); setSigninOpen(true); },
     closeSignIn: () => setSigninOpen(false),
     impersonating,
@@ -113,6 +130,7 @@ function AuthProvider({ children }) {
     refresh: async () => {
       const me = await NGGApi.auth.me();
       setMember(me.member || null);
+      setMfaPending(me.mfaPending || "");
       setAdminOk(Boolean(me.adminOk));
       setSessionExp(me.sessionExp || 0);
       setIdleExp(me.idleExpiresAt || 0);
@@ -135,6 +153,7 @@ function AuthProvider({ children }) {
         stale.forEach(k => localStorage.removeItem(k));
       } catch (_) {}
       setMember(null);
+      setMfaPending("");
       setAdminOk(false);
       // Leave any members-only page (dashboard/admin) for home on sign-out.
       if (window.__navigate) window.__navigate("home");
@@ -143,7 +162,7 @@ function AuthProvider({ children }) {
     // Lock the Control Room without signing out — re-entry needs only a fresh
     // 2FA code, not a full sign-in.
     lockAdmin: () => setAdminOk(false),
-    onVerified: (m) => { setMember(m); setSigninOpen(false); },
+    onVerified: (m, mfa) => { setMember(m); setMfaPending(mfa || ""); setSigninOpen(false); },
   };
 
   /* Keep an ACTIVE session alive.
@@ -228,7 +247,10 @@ function AuthProvider({ children }) {
       setSigninOpen(true);
     };
     window.addEventListener("ngg:session-expired", onExpired);
-    return () => window.removeEventListener("ngg:session-expired", onExpired);
+    // A route refused because the second step is owed: ask for it, wherever we are.
+    const onMfa = () => { if (memberRef.current) setMfaPending(p => p || "ask"); };
+    window.addEventListener("ngg:mfa-required", onMfa);
+    return () => { window.removeEventListener("ngg:session-expired", onExpired); window.removeEventListener("ngg:mfa-required", onMfa); };
   }, []);
 
   const staySignedIn = async () => {
@@ -263,6 +285,13 @@ function AuthProvider({ children }) {
       {signinOpen && (
         <SignInModal seed={signinSeed} onClose={ctx.closeSignIn} onVerified={ctx.onVerified}/>
       )}
+      {/* Staff answer the console's own authenticator (cr-gate.jsx), and a
+          participant's card session has no second step. */}
+      {member && member.role !== "student" && !impersonating && typeof MfaHost === "function" && (
+        <MfaHost id={member.memberId} pending={mfaPending}
+          onCleared={() => { ctx.refresh().catch(() => setMfaPending("")); }}
+          onSignOut={ctx.signOut}/>
+      )}
     </AuthCtx.Provider>
   );
 }
@@ -275,12 +304,16 @@ function SignInModal({ seed, onClose, onVerified }) {
   // One door (W1): 'id' → gateway decides → 'password' | 'enter-otp'.
   // The gateway never reveals account types — staff look like any member.
   const [stage, setStage] = React.useState(seed && seed.resetToken ? "reset-new" : (seed && seed.token ? "enter-otp" : "id"));
-  const [identifier, setIdentifier] = React.useState("");
+  const [identifier, setIdentifier] = React.useState(seed && seed.identifier ? seed.identifier : "");
   const [password, setPassword] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
   // Which sign-in methods the gateway offered for this identifier. Admins come
   // back password-only (no 'code'), so we hide the emailed-code fallback.
   const [methods, setMethods] = React.useState([]);
+  /* The gateway gives every unknown browser the same answer (both methods),
+     so this screen cannot know whether this person has a password at all.
+     It says so, and makes the code the obvious way in for those who don't. */
+  const [uniform, setUniform] = React.useState(false);
   const [otp, setOtp] = React.useState("");
   // Self-service password reset: a magic-link token (from ?reset=) skips the
   // code entry; otherwise the member types the emailed code + a new password.
@@ -288,6 +321,10 @@ function SignInModal({ seed, onClose, onVerified }) {
   const [newPw, setNewPw] = React.useState("");
   const [masked, setMasked] = React.useState("");
   const [deliveryOk, setDeliveryOk] = React.useState(true); // false ⇒ mail relay hiccup
+  // A code was asked for this identifier. The server answers a real and an
+  // unknown account alike (auth_find_member()), so this means "asked", never
+  // "an account exists" — the copy below says "if there's an account".
+  const [sent, setSent] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [remember, setRemember] = React.useState(true); // "stay signed in for 30 days"
   const [cooldown, setCooldown] = React.useState(0); // seconds until a code can be resent
@@ -300,6 +337,9 @@ function SignInModal({ seed, onClose, onVerified }) {
   const [err, setErr] = React.useState(seed && seed.error ? humanizeAuthError(seed.error) : "");
   const inputRef = React.useRef(null);
   const cardRef = React.useRef(null);
+  // Honeypot: a field no person sees or can tab to. A script that fills every
+  // input fills this one too, and the server turns it away.
+  const [hp, setHp] = React.useState("");
 
   // Mount-only: lock scroll, remember prior focus, trap Tab, restore on close.
   React.useEffect(() => {
@@ -334,9 +374,9 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.gateway(identifier.trim());
+      const r = await NGGApi.auth.gateway(authTidyId(identifier), hp);
       const m = r.methods || [];
-      setMethods(m);
+      setMethods(m); setUniform(!!r.uniform);
       if (m.includes("password")) { setStage("password"); }
       else { await requestLinkInner(); }
     } catch (e) {
@@ -350,8 +390,8 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.login(identifier.trim(), password, remember);
-      onVerified(r.member);
+      const r = await NGGApi.auth.login(authTidyId(identifier), password, remember, hp);
+      onVerified(r.member, r.mfa);
     } catch (e) {
       const code = e.code || e.message;
       if (code === "no_password") {
@@ -366,9 +406,10 @@ function SignInModal({ seed, onClose, onVerified }) {
   };
 
   const requestLinkInner = async () => {
-    const r = await NGGApi.auth.request(identifier.trim());
+    const r = await NGGApi.auth.request(authTidyId(identifier), hp);
     setMasked(r.masked || "");
     setDeliveryOk(r.delivery !== false);
+    setSent(true);
     setStage("enter-otp");
     setCooldown(30); // let the user resend after 30s
   };
@@ -396,8 +437,9 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (identifier.trim().length < 3) { setErr("Enter your email or member ID first."); return; }
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.resetRequest(identifier.trim());
+      const r = await NGGApi.auth.resetRequest(authTidyId(identifier), hp);
       setMasked(r.masked || "");
+      setSent(true);
       setDeliveryOk(r.delivery !== false);
       setResetToken("");
       setStage("reset-new");
@@ -414,19 +456,21 @@ function SignInModal({ seed, onClose, onVerified }) {
     try {
       const creds = resetToken
         ? { token: resetToken, password: newPw }
-        : { memberId: identifier.trim(), otp: otp.replace(/\s+/g, ""), password: newPw };
+        : { memberId: authTidyId(identifier), otp: otp.replace(/\s+/g, ""), password: newPw };
       const r = await NGGApi.auth.resetConfirm(creds);
-      onVerified(r.member);
+      onVerified(r.member, r.mfa);
     } catch (e) { setErr(humanizeAuthError(e.code || e.message)); }
     finally { setBusy(false); }
   };
 
-  const verifyOtp = async (e) => {
+  // `code` is passed when the sixth digit arrives, before the state has caught up.
+  const verifyOtp = async (e, code) => {
     if (e) e.preventDefault();
+    if (busy) return;
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.verify({ memberId: identifier.trim(), otp: otp.replace(/\s+/g, ""), remember });
-      onVerified(r.member);
+      const r = await NGGApi.auth.verify({ memberId: authTidyId(identifier), otp: String(code || otp).replace(/\s+/g, ""), remember });
+      onVerified(r.member, r.mfa);
     } catch (e) {
       setErr(humanizeAuthError(e.code || e.message));
     } finally {
@@ -439,278 +483,263 @@ function SignInModal({ seed, onClose, onVerified }) {
   // closing the modal mid-input.
   const scrimMouseDown = React.useRef(false);
 
+  /* One job per screen: one field (or the code), one button, and at most one
+     quiet way out. On the Control Room v2 design system (the --cr-* tokens,
+     declared for .signin-scrim in styles-app.css). Errors sit under the field
+     they are about. */
+  const fieldErr = err ? <p role="alert" className="signin-ferr"><i className="ph ph-warning-circle" aria-hidden="true"/>{err}</p> : null;
+  const submit = (label, off) => (
+    <button className="signin-submit" type="submit" disabled={busy || off} aria-busy={busy || undefined}>
+      {busy ? <span className="signin-spin" role="status" aria-label="Working"/> : label}
+    </button>
+  );
+  const pwField = (id, value, onChange, autoComplete, ref, minLength) => (
+    <div className="signin-pw">
+      <input id={id} ref={ref} className={"signin-input" + (err ? " is-bad" : "")} type={showPw ? "text" : "password"} autoComplete={autoComplete}
+        value={value} onChange={(e) => { setErr(""); onChange(e); }} required minLength={minLength} aria-invalid={!!err || undefined}/>
+      <button type="button" className="signin-eye" onClick={() => setShowPw(v => !v)}
+        aria-label={showPw ? "Hide password" : "Show password"} aria-pressed={showPw}>
+        <i className={"ph ph-" + (showPw ? "eye-slash" : "eye")} aria-hidden="true"/>
+      </button>
+    </div>
+  );
+  // Who is signing in, once they have said, with the way back to change it.
+  const who = (
+    <div className="signin-who">
+      <span className="signin-who-av" aria-hidden="true">{(identifier.trim().charAt(0) || "?").toUpperCase()}</span>
+      <span className="signin-who-id"><span className="cr-sr">Signing in as </span>{identifier.trim()}</span>
+      <button type="button" className="signin-change" onClick={() => { setStage("id"); setOtp(""); setNewPw(""); setPassword(""); setResetToken(""); setErr(""); setCooldown(0); }}>Change</button>
+    </div>
+  );
+  const resend = (onClick) => (
+    <button type="button" className="signin-link" onClick={onClick} disabled={busy || cooldown > 0 || identifier.trim().length < 3}>
+      {cooldown > 0 ? "Resend code in " + cooldown + "s" : "Resend code"}
+    </button>
+  );
+  const knownId = identifier.trim().length >= 3 && (sent || masked || stage === "password");
+  // Honest without being an oracle: true for a real account and an unknown one.
+  // An unknown EMAIL is told by email that it has no account; a browser that
+  // has signed in here before is told on screen (no_account) instead.
+  const ifAccount = identifier.includes("@")
+    ? "If there’s an NGG account for this email, we’ve emailed it a 6-digit code."
+    : "If this is your Member ID, we’ve emailed a 6-digit code to the email on file.";
+  const nothingYet = (
+    <p className="signin-help signin-help--wait">
+      {identifier.includes("@")
+        ? "Nothing after a couple of minutes? Check spam and the spelling. If no account uses that email, we’ve emailed it to say so."
+        : "Nothing after a couple of minutes? Check spam, or try the email you joined with."}
+    </p>
+  );
+
+  const title = stage === "enter-otp" ? "Check your email"
+    : stage === "password" ? "Welcome back"
+    : (stage === "reset-request" || stage === "reset-new") ? "Set a new password" : "Sign in";
+  const sub = stage === "id" ? "Use your email, Member ID or the ID on your card."
+    : stage === "password" ? null
+    : stage === "reset-request" ? "We’ll email you a code to set a new password."
+    : stage === "reset-new" ? (resetToken ? "Choose a password. You’ll be signed in straight after." : sent ? <>{ifAccount} Enter it, then choose a password.</> : "Enter the code from your email, then choose a password.")
+    : (sent && knownId) ? ifAccount : "Enter your Member ID and the 6-digit code from your email.";
+
   return (
     <div
       className="signin-scrim"
       onMouseDown={(e) => { scrimMouseDown.current = e.target === e.currentTarget; }}
       onMouseUp={(e) => { if (scrimMouseDown.current && e.target === e.currentTarget) onClose(); scrimMouseDown.current = false; }}
     >
-      <div ref={cardRef} className="signin-card" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="signin-h">
-        <button className="signin-close" onClick={onClose} aria-label="Close">✕</button>
-
-        <div className="signin-brand">
-          <div className="signin-eyebrow">SIGN IN · MEMBERS ONLY</div>
-          <div id="signin-h" className="signin-headline">
-            {stage === "enter-otp" ? "Check your email."
-              : (stage === "reset-request" || stage === "reset-new") ? "Set a password."
-              : "Welcome back."}
-          </div>
-          <div className="signin-sub">
-            {stage === "id"
-              ? "Your Member ID or email — we'll take it from there."
-              : stage === "password"
-                ? (methods.includes("code") ? "Enter your password, or get a code by email instead." : "Enter your password to continue.")
-              : stage === "reset-request"
-                ? "We'll email you a link and code to set a new password."
-              : stage === "reset-new"
-                ? "Choose a new password — you'll be signed in straight after."
-                : masked ? <>We sent a magic link and a 6-digit code to <b>{masked}</b>. Either works.</>
-                         : "Paste the 6-digit code from your email."}
-          </div>
-        </div>
+      <div ref={cardRef} className="signin-card" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="signin-h" aria-describedby={sub ? "signin-sub" : undefined}>
+        <button type="button" className="signin-close" onClick={onClose} aria-label="Close"><i className="ph ph-x" aria-hidden="true"/></button>
+        <header className="signin-head">
+          <img className="signin-logo" src="/assets/logo.png" alt="Next Generation Genius" width="40" height="40"/>
+          <h2 id="signin-h" className="signin-headline">{title}</h2>
+          {sub && <p id="signin-sub" className="signin-sub">{sub}</p>}
+        </header>
 
         {stage === "id" && (
-          <form onSubmit={continueId} className="signin-form">
-            <label className="signin-label" htmlFor="signin-idp">Email or Member ID</label>
-            <input
-              id="signin-idp"
-              ref={inputRef}
-              className="signin-input"
-              type="text"
-              autoComplete="username"
-              placeholder="you@email.com  or  NGG-2025-0042"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-              minLength={3}
-            />
-            {err && <div role="alert" className="signin-err">{err}</div>}
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || identifier.trim().length < 3}>
-              {busy ? "One moment…" : "Continue →"}
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-otp"); }}>
-              I already have a code
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("reset-request"); }}>
-              Set or reset a password
-            </button>
+          <form onSubmit={continueId} className="signin-form" noValidate>
+            <div className="signin-trap" aria-hidden="true">
+              <label htmlFor="signin-hp">Leave this empty</label>
+              <input id="signin-hp" name="ngg_hp" type="text" tabIndex={-1} autoComplete="off" value={hp} onChange={(e) => setHp(e.target.value)}/>
+            </div>
+            <label className="signin-label" htmlFor="signin-idp">Email, Member ID or card ID</label>
+            <input id="signin-idp" ref={inputRef} className={"signin-input" + (err ? " is-bad" : "")} type="text" autoComplete="username" spellCheck="false" autoCapitalize="none"
+              placeholder="NGG-2025-0042" value={identifier} onChange={(e) => { setErr(""); setIdentifier(e.target.value); }} aria-invalid={!!err || undefined}
+              onBlur={() => { const t = authTidyId(identifier); if (t && t !== identifier.trim().toLowerCase()) setIdentifier(t); }} aria-describedby="signin-idp-hint"/>
+            <AuthIdHint value={identifier} onUse={(v) => { setErr(""); setIdentifier(v); }}/>
+            {fieldErr}
+            {submit("Continue", identifier.trim().length < 3)}
+            <div className="signin-alts">
+              <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-otp"); }}>I have a code</button>
+            </div>
           </form>
         )}
 
         {stage === "password" && (
-          <form onSubmit={loginPassword} className="signin-form">
-            <div className="signin-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span>Signing in as <b>{identifier.trim()}</b></span>
-              <button type="button" className="signin-link" style={{ margin: 0 }} onClick={() => { setErr(""); setPassword(""); setStage("id"); }}>Change</button>
+          <form onSubmit={loginPassword} className="signin-form" noValidate>
+            {who}
+            <div className="signin-label-row">
+              <label className="signin-label" htmlFor="signin-pw">Password</label>
+              <button type="button" className="signin-link signin-link--sm" onClick={() => { setErr(""); setPassword(""); setStage("reset-request"); }}>Forgot?</button>
             </div>
-            <label className="signin-label" htmlFor="signin-pw">Password</label>
-            <div className="signin-pw-wrap" style={{ position: "relative" }}>
-              <input
-                id="signin-pw"
-                ref={inputRef}
-                className="signin-input"
-                type={showPw ? "text" : "password"}
-                autoComplete="current-password"
-                placeholder="Your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                style={{ paddingRight: 64 }}
-              />
-              <button
-                type="button"
-                className="signin-pw-toggle"
-                onClick={() => setShowPw(v => !v)}
-                aria-label={showPw ? "Hide password" : "Show password"}
-                style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}
-              >{showPw ? "HIDE" : "SHOW"}</button>
-            </div>
-            {err && <div role="alert" className="signin-err">{err}</div>}
+            {pwField("signin-pw", password, (e) => setPassword(e.target.value), "current-password", inputRef)}
+            {fieldErr}
             <label className="signin-remember">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}/>
-              <span>Stay signed in for 30 days</span>
+              <span>Keep me signed in on this device</span>
             </label>
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || !identifier.trim() || !password}>
-              {busy ? "Signing in…" : "Sign in →"}
-            </button>
+            {submit("Sign in", !password)}
             {methods.includes("code") && (
-              <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>
-                Email me a sign-in code instead
-              </button>
+              <div className="signin-alts">
+                <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>{uniform ? "No password? Email me a sign-in code" : "Email me a code instead"}</button>
+              </div>
             )}
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setPassword(""); setStage("reset-request"); }}>
-              Forgot your password?
-            </button>
           </form>
         )}
 
         {stage === "enter-otp" && (
-          <form onSubmit={verifyOtp} className="signin-form">
-            {!seed && (
+          <form onSubmit={verifyOtp} className="signin-form" noValidate>
+            {seed ? null : knownId ? who : (
               <>
-                <label className="signin-label" htmlFor="signin-id2">Member ID</label>
-                <input
-                  id="signin-id2"
-                  className="signin-input"
-                  type="text"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="NGG-2025-0042"
-                  autoComplete="username"
-                />
+                <label className="signin-label" htmlFor="signin-id2">Member ID or email</label>
+                <input id="signin-id2" ref={inputRef} className="signin-input" type="text" value={identifier} onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder="NGG-2025-0042" autoComplete="username" spellCheck="false" autoCapitalize="none"/>
               </>
             )}
-            {!deliveryOk && (
-              <p className="signin-hint" style={{ margin: "0 0 8px", padding: "8px 10px", fontSize: 13, borderRadius: 8, background: "var(--amber-50, #fff7ed)", color: "var(--amber-800, #9a3412)", border: "1px solid var(--amber-200, #fed7aa)" }}>
-                We had trouble sending your email just now. If it doesn't arrive, use <b>Resend code</b>, sign in with your <b>password</b>, or contact admin.
-              </p>
-            )}
-            {masked
-              ? <p className="signin-hint" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-500)" }}>We sent a 6-digit code to <b>{masked}</b>. It expires in 15 minutes.</p>
-              : <p className="signin-hint" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-500)" }}>Enter your ID above, then send yourself a fresh code.</p>}
-            <label className="signin-label" htmlFor="signin-otp">6-digit code</label>
-            <input
-              id="signin-otp"
-              ref={inputRef}
-              className="signin-input signin-otp"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={7}
-              pattern="[0-9 ]*"
-              placeholder="••• •••"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/[^\d ]/g, ""))}
-              required
-            />
-            {err && <div role="alert" className="signin-err">{err}</div>}
-            <label className="signin-remember">
-              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}/>
-              <span>Stay signed in for 30 days</span>
-            </label>
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || otp.replace(/\s/g, "").length !== 6}>
-              {busy ? "Verifying…" : "Sign in →"}
-            </button>
-            <button type="button" className="signin-link" onClick={sendCode} disabled={busy || cooldown > 0 || identifier.trim().length < 3}>
-              {cooldown > 0 ? "Resend code in " + cooldown + "s" : (masked ? "Resend code" : "Send me a code")}
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("reset-request"); }}>
-              Set or reset a password instead
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setStage("id"); setOtp(""); setErr(""); setCooldown(0); }}>
-              ← Start over
-            </button>
+            {!deliveryOk && <p className="signin-note"><i className="ph ph-envelope-simple" aria-hidden="true"/>The email may be slow to arrive. Check spam, or resend in a moment.</p>}
+            <span className="signin-label" id="signin-otp-l">6-digit code</span>
+            <SignInCode id="signin-otp" labelledBy="signin-otp-l" value={otp} bad={!!err} autoFocus={!!(seed || knownId)} inputRef={seed || knownId ? inputRef : null}
+              onChange={(v) => { setErr(""); setOtp(v); }} onComplete={(v) => { if (identifier.trim().length >= 3 || seed) verifyOtp(null, v); }}/>
+            {fieldErr || (sent && knownId && !seed ? nothingYet : null)}
+            {submit("Sign in", otp.replace(/\s/g, "").length !== 6)}
+            <div className="signin-alts">{resend(sendCode)}</div>
           </form>
         )}
 
         {stage === "reset-request" && (
-          <form onSubmit={sendReset} className="signin-form">
-            <label className="signin-label" htmlFor="signin-rid">Email or Member ID</label>
-            <input
-              id="signin-rid"
-              ref={inputRef}
-              className="signin-input"
-              type="text"
-              autoComplete="username"
-              placeholder="you@email.com  or  NGG-2025-0042"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-              minLength={3}
-            />
-            <p className="signin-hint" style={{ margin: "4px 0 0", fontSize: 13, color: "var(--ink-500)" }}>
-              We'll email a link and a 6-digit code so you can set a new password.
-            </p>
-            {err && <div role="alert" className="signin-err">{err}</div>}
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || identifier.trim().length < 3}>
-              {busy ? "Sending…" : "Email me a set-password link →"}
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("id"); }}>
-              ← Back to sign in
-            </button>
+          <form onSubmit={sendReset} className="signin-form" noValidate>
+            <label className="signin-label" htmlFor="signin-rid">Member ID or email</label>
+            <input id="signin-rid" ref={inputRef} className={"signin-input" + (err ? " is-bad" : "")} type="text" autoComplete="username" spellCheck="false" autoCapitalize="none"
+              placeholder="NGG-2025-0042" value={identifier} onChange={(e) => { setErr(""); setIdentifier(e.target.value); }}/>
+            {fieldErr}
+            {submit("Email me a code", identifier.trim().length < 3)}
+            <div className="signin-alts">
+              <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("id"); }}>Back to sign in</button>
+            </div>
           </form>
         )}
 
         {stage === "reset-new" && (
-          <form onSubmit={confirmReset} className="signin-form">
-            {!deliveryOk && (
-              <p className="signin-hint" style={{ margin: "0 0 8px", padding: "8px 10px", fontSize: 13, borderRadius: 8, background: "var(--amber-50, #fff7ed)", color: "var(--amber-800, #9a3412)", border: "1px solid var(--amber-200, #fed7aa)" }}>
-                We had trouble sending your email just now. Check spam, or use <b>Resend code</b> in a moment.
-              </p>
-            )}
+          <form onSubmit={confirmReset} className="signin-form" noValidate>
+            {!deliveryOk && <p className="signin-note"><i className="ph ph-envelope-simple" aria-hidden="true"/>The email may be slow to arrive. Check spam, or resend in a moment.</p>}
             {!resetToken && (
               <>
-                <p className="signin-hint" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-500)" }}>
-                  {masked ? <>We sent a 6-digit code to <b>{masked}</b>. It expires in 30 minutes.</> : "Enter the code we emailed you."}
-                </p>
-                <label className="signin-label" htmlFor="signin-rotp">6-digit code</label>
-                <input
-                  id="signin-rotp"
-                  className="signin-input signin-otp"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={7}
-                  pattern="[0-9 ]*"
-                  placeholder="••• •••"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/[^\d ]/g, ""))}
-                  required
-                />
+                <span className="signin-label" id="signin-rotp-l">6-digit code</span>
+                <SignInCode id="signin-rotp" labelledBy="signin-rotp-l" value={otp} bad={false} autoFocus inputRef={null}
+                  onChange={(v) => { setErr(""); setOtp(v); }} onComplete={() => { const el = document.getElementById("signin-newpw"); if (el) el.focus(); }}/>
               </>
             )}
             <label className="signin-label" htmlFor="signin-newpw">New password</label>
-            <div className="signin-pw-wrap" style={{ position: "relative" }}>
-              <input
-                id="signin-newpw"
-                ref={resetToken ? inputRef : null}
-                className="signin-input"
-                type={showPw ? "text" : "password"}
-                autoComplete="new-password"
-                placeholder="At least 8 characters"
-                value={newPw}
-                onChange={(e) => setNewPw(e.target.value)}
-                required
-                minLength={8}
-                style={{ paddingRight: 64 }}
-              />
-              <button
-                type="button"
-                className="signin-pw-toggle"
-                onClick={() => setShowPw(v => !v)}
-                aria-label={showPw ? "Hide password" : "Show password"}
-                style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}
-              >{showPw ? "HIDE" : "SHOW"}</button>
-            </div>
-            {err && <div role="alert" className="signin-err">{err}</div>}
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || newPw.length < 8 || (!resetToken && otp.replace(/\s/g, "").length !== 6)}>
-              {busy ? "Setting…" : "Set password & sign in →"}
-            </button>
-            {!resetToken && (
-              <button type="button" className="signin-link" onClick={sendReset} disabled={busy || cooldown > 0 || identifier.trim().length < 3}>
-                {cooldown > 0 ? "Resend code in " + cooldown + "s" : "Resend code"}
-              </button>
-            )}
-            <button type="button" className="signin-link" onClick={() => { setStage("id"); setOtp(""); setNewPw(""); setResetToken(""); setErr(""); setCooldown(0); }}>
-              ← Start over
-            </button>
+            {pwField("signin-newpw", newPw, (e) => setNewPw(e.target.value), "new-password", resetToken ? inputRef : null, 8)}
+            {fieldErr || <p className="signin-help">At least 8 characters.</p>}
+            {!resetToken && sent && !fieldErr && nothingYet}
+            {submit("Set password and sign in", newPw.length < 8 || (!resetToken && otp.replace(/\s/g, "").length !== 6))}
+            {!resetToken && <div className="signin-alts">{resend(sendReset)}</div>}
           </form>
         )}
 
-        <div className="signin-foot">
-          New here? <a href="#" onClick={(e) => { e.preventDefault(); onClose(); window.__navigate && window.__navigate("join"); }}>Apply for a session</a>
-        </div>
+        <p className="signin-foot">
+          New to NGG? <a href="/join" onClick={(e) => { e.preventDefault(); onClose(); window.__navigate && window.__navigate("join"); }}>Apply for a session</a>
+        </p>
       </div>
     </div>
   );
 }
 
+/* The six-digit code as six boxes. Typing moves on, Backspace moves back,
+   a paste or the phone's one-time-code autofill fills them all, and the
+   sixth digit hands the code to onComplete — no extra press. */
+function SignInCode({ id, labelledBy, value, onChange, onComplete, bad, autoFocus, inputRef }) {
+  const refs = React.useRef([]);
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 6).split("");
+  React.useEffect(() => { if (autoFocus && refs.current[0] && !inputRef) refs.current[0].focus(); }, []);
+  const put = (from, text) => {
+    const add = String(text || "").replace(/\D/g, "");
+    if (!add) return;
+    const next = digits.slice(0, from).concat(add.split("")).slice(0, 6);
+    onChange(next.join(""));
+    const at = Math.min(next.length, 5);
+    if (refs.current[at]) refs.current[at].focus();
+    if (next.length === 6) onComplete && onComplete(next.join(""));
+  };
+  return (
+    <div className={"signin-code" + (bad ? " is-bad" : "")} role="group" aria-labelledby={labelledBy}>
+      {[0, 1, 2, 3, 4, 5].map(i => (
+        <input key={i} id={i === 0 ? id : undefined}
+          ref={el => { refs.current[i] = el; if (i === 0 && inputRef) inputRef.current = el; }}
+          className="signin-digit" type="text" inputMode="numeric" pattern="[0-9]*"
+          autoComplete={i === 0 ? "one-time-code" : "off"} maxLength={i === 0 ? 6 : 1}
+          aria-label={"Digit " + (i + 1) + " of 6"} value={digits[i] || ""}
+          onFocus={e => e.target.select()}
+          onChange={e => {
+            const v = e.target.value.replace(/\D/g, "");
+            if (!v) { onChange(digits.slice(0, i).concat(digits.slice(i + 1)).join("")); return; }
+            put(i, v);
+          }}
+          onKeyDown={e => {
+            if (e.key === "Backspace" && !digits[i] && i > 0) { e.preventDefault(); onChange(digits.slice(0, i - 1).join("")); refs.current[i - 1].focus(); }
+            else if (e.key === "ArrowLeft" && i > 0) { e.preventDefault(); refs.current[i - 1].focus(); }
+            else if (e.key === "ArrowRight" && i < 5) { e.preventDefault(); refs.current[i + 1].focus(); }
+          }}
+          onPaste={e => { e.preventDefault(); put(i, (e.clipboardData || window.clipboardData).getData("text")); }}/>
+      ))}
+    </div>
+  );
+}
+
+/* What the person typed, the way the server will read it (auth_clean_identifier):
+   no invisible characters, dashes for the en dashes and spaces a printed card
+   or a phone keyboard brings, no trailing full stop on an email. */
+function authTidyId(raw) {
+  let s = String(raw || "").replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").replace(/[\u00A0\u2007\u202F]/g, " ").replace(/[\u2010-\u2015\u2212]/g, "-").trim().toLowerCase().replace(/^mailto:/, "");
+  if (s.indexOf("@") !== -1) return s.replace(/\s+/g, "").replace(/[.,;]+$/, "");
+  return s.replace(/[\s_.]+/g, "-").replace(/-{2,}/g, "-").replace(/^-+|-+$/g, "");
+}
+/* Common slips in email domains, offered as one tap — never applied silently. */
+const AUTH_DOMAIN_FIX = { "gmial.com": "gmail.com", "gmai.com": "gmail.com", "gamil.com": "gmail.com", "gmail.co": "gmail.com", "gmail.con": "gmail.com", "gmail.cm": "gmail.com",
+  "gmaill.com": "gmail.com", "gnail.com": "gmail.com", "yahoo.con": "yahoo.com", "yaho.com": "yahoo.com", "yahooo.com": "yahoo.com", "hotmial.com": "hotmail.com", "hotmail.con": "hotmail.com",
+  "outlok.com": "outlook.com", "outlook.con": "outlook.com", "icloud.con": "icloud.com", "yahoo.co": "yahoo.com" };
+function authIdIssue(raw) {
+  const v = authTidyId(raw);
+  if (v.length < 3) return null;
+  if (v.indexOf("@") !== -1) {
+    const [user, dom] = [v.slice(0, v.lastIndexOf("@")), v.slice(v.lastIndexOf("@") + 1)];
+    if (!user || !dom || dom.indexOf(".") === -1) return { msg: "An email needs a name, an @ and a domain, like ada@gmail.com." };
+    if (AUTH_DOMAIN_FIX[dom]) return { msg: "Did you mean", fix: user + "@" + AUTH_DOMAIN_FIX[dom] };
+    return null;
+  }
+  if (!/^[a-z0-9]{2,8}(-[a-z0-9]{1,8}){1,3}$/.test(v)) return { msg: "IDs look like NGG-2025-0042, 026-014 or VOL-INS-26-001 — letters and numbers with dashes." };
+  return null;
+}
+function AuthIdHint({ value, onUse }) {
+  const issue = authIdIssue(value);
+  if (!issue) return <span id="signin-idp-hint" className="signin-hint" aria-live="polite"></span>;
+  return <span id="signin-idp-hint" className="signin-hint is-warn" aria-live="polite">{issue.msg}{issue.fix ? <> <button type="button" className="signin-link" onClick={() => onUse(issue.fix)}>{issue.fix}</button>?</> : null}</span>;
+}
+
 function humanizeAuthError(code) {
   const map = {
     rate_limited: "Too many tries. Wait a minute and try again.",
-    invalid: "That code or link isn't valid. Request a fresh one.",
+    // Only ever sent to a browser that has signed in here before (see
+    // auth_find_member()); a stranger's browser gets the neutral screen.
+    no_account: "We couldn’t find an account with that Member ID or email. Check it for typos, or apply below.",
+    too_many_misses: "Too many sign-in attempts from this network. Try again in 30 minutes.",
+    request_failed: "Something went wrong. Try again.",
+    invalid: "That code isn’t right. Check it, or resend a new one.",
+    bad_otp_format: "Enter the 6 digits from your email.",
+    bad_member_id: "Check your Member ID (like NGG-2025-0042), or use your email.",
     expired: "Link or code expired. They're only good for 15 minutes — request a new one.",
     already_used: "That code was already used. Request a fresh one.",
+    pick_cancelled: "Choose who is signing in to continue. Request a fresh code if this one has run out.",
+    not_on_this_email: "That account isn’t on this email. Sign in with its own Member ID.",
     too_many_attempts: "Too many wrong tries on that code. Request a new one.",
     no_credentials: "Enter your code or click your magic link.",
     no_identifier: "Tell us your Member ID or email.",
@@ -727,8 +756,10 @@ function humanizeAuthError(code) {
     suspended: "This account is suspended. Contact admin.",
     account_locked: "Too many failed tries — this account is paused for 15 minutes. Try again then, or use your email link.",
     identifier_too_short: "Tell us your Member ID or email.",
-    bad_identifier_format: "That doesn't look like a Member ID or email — check it and try again.",
+    bad_identifier_format: "That doesn't look like an email, a Member ID or a card ID — check it and try again.",
     unauthorized: "Sign in to continue.",
+    no_email_use_card: "There’s no email on this card’s record. Sign in with your card and phone number, or ask your coordinator to add your email.",
+    mfa_required: "Finish your second sign-in step to continue.",
     admin_2fa_required: "Admin area needs a 2FA code.",
   };
   return map[code] || "Something went wrong. Try again.";

@@ -73,6 +73,9 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     'rate_limits' => ['default' => ['max' => 100000, 'window' => 60]],
     'session_ttl' => 604800, 'kiosk_ttl' => 43200,
     'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
+    /* The bundled curricula seed themselves on first boot. This suite
+       counts what IT writes, so it declines them (docs/SETUP.md). */
+    'seed_bundled_curriculum' => false,
     'webcron' => ['enabled' => false], 'debug' => false,
   ];\n`);
 
@@ -91,7 +94,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
     else {
       const d = fs.existsSync('/opt/pw-browsers') ? fs.readdirSync('/opt/pw-browsers').find(x => x.startsWith('chromium-')) : null;
-      if (d) launch.executablePath = `/opt/pw-browsers/${d}/chrome-linux/chrome`;
+      if (d) launch.executablePath = require('./_responsive-probe').chromiumPath(require('fs'));
     }
     browser = await chromium.launch(launch);
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -111,7 +114,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await page.waitForTimeout(2000);
     chk('the roster fetches once, not in a loop (' + listCalls + ')', listCalls <= 2);
     chk('the footer gives the true total', /of 31/.test(await body()));
-    await page.fill('input[aria-label="Search by name, ID or email"]', 'Member 07');
+    await page.fill('input[aria-label="Search by name, ID, email or phone"]', 'Member 07');
     chk('search narrows on the server', await page.waitForFunction(() => document.querySelectorAll('table tbody tr').length === 1, null, { timeout: 15000 }).then(() => true, () => false));
     /* Joined is the roster's join date, not the day the record was made —
        an imported roster used to read as everybody joining on import day. */
@@ -123,13 +126,42 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await page.click('.cr-sheet button:has-text("Edit")');
     await page.fill('#crf-phone', '08031234567');
     await page.selectOption('#crf-centre', 'Ijaiye');
-    chk('the form carries the join date on file', await page.inputValue('#crf-joinDate') === '2021-05-02');
-    await page.fill('#crf-joinDate', '2022-09-17');
+    // The join date is not on the edit form any more: it is corrected with a reason (profile-drive.php).
+    chk('the edit form does not carry the join date', !(await page.$('#crf-joinDate')));
     await page.click('button:has-text("Save changes")');
     chk('Edit saves and says so', await until(/Saved · Member 07/));
     const m7 = one("SELECT phone, centre, email, joinDate FROM members WHERE memberId='CRMC-7'");
     chk('…and the record holds the change, untouched fields intact', m7.phone === '08031234567' && m7.centre === 'Ijaiye' && m7.email === 'crmc7@example.org');
-    chk('…including a join date set by hand', m7.joinDate === '2022-09-17');
+    chk('…the join date untouched by the edit', m7.joinDate === '2021-05-02');
+
+    // ── Courses are chosen from the catalogue, by division ──
+    await page.waitForFunction(() => !document.querySelector('#crf-phone'), null, { timeout: 8000 }).catch(() => {});
+    if (!(await page.$('.cr-sheet button:has-text("Edit")'))) await page.click('table tbody tr');
+    await page.click('.cr-sheet button:has-text("Edit")');
+    await page.waitForSelector('#crf-division', { timeout: 10000 });
+    chk('the editor has a Courses picker, not a free-text track', !!(await page.$('#crf-courses')) && !(await page.$('#crf-track')));
+    await page.selectOption('#crf-division', 'tech');
+    const chips = await page.$$eval('#crf-courses .cr-chip', b => b.map(x => x.textContent.trim()));
+    chk('choosing Technology offers its courses, with Chess, and not another division\'s',
+        chips.includes('Coding') && chips.includes('Robotics') && chips.includes('Chess') && !chips.includes('Acting') && !chips.includes('Finance'));
+    await page.click('#crf-courses .cr-chip:text-is("Coding")');
+    await page.click('#crf-courses .cr-chip:text-is("Robotics")');
+    chk('ticked chips say so (aria-checked)', (await page.$$eval('#crf-courses .cr-chip[aria-checked="true"]', b => b.length)) === 2);
+    await page.click('button:has-text("Save changes")');
+    chk('saving the courses says so', await until(/Saved · Member 07/));
+    const c7 = one("SELECT courses, track, division FROM members WHERE memberId='CRMC-7'");
+    chk('…and the record holds exactly the chosen courses, the first as its track', c7.courses === '["Coding","Robotics"]' && c7.track === 'Coding' && c7.division === 'tech');
+    // Corrected through its own action, inside the intake year the printed ID carries.
+    const did = one("SELECT displayId FROM members WHERE memberId='CRMC-7'").displayId || '';
+    const yr = /^\d{3}-/.test(did) ? 2000 + (Number(did.slice(0, 3)) % 100) : 2021;
+    await page.click('table tbody tr');
+    await page.click('.cr-sheet button:has-text("Correct the join date")');
+    await page.waitForSelector('form:has-text("Why it is being corrected")');
+    await page.fill('form input[type=date]', yr + '-09-17');
+    await page.fill('form textarea', 'The register shows September');
+    await page.click('form button[type=submit]');
+    chk('…and corrected with a reason through “Correct the join date”', await until(/Join date corrected/)
+      && one("SELECT joinDate FROM members WHERE memberId='CRMC-7'").joinDate === yr + '-09-17');
 
     await page.click('table tbody tr');
     await page.click('.cr-sheet button:has-text("Edit")');
@@ -165,6 +197,21 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     chk('…and the lessons table lists them', await until(/72 lessons/));
     await check();
     chk('a second check reports every lesson unchanged', await until(/72 unchanged/, 60000));
+
+    // ── Course coverage, and a term's outline for a course with none ──
+    chk('coverage: the Courses table lists the catalogue, with the courses that have no lessons', await until(/Courses with none/) && await until(/Robotics/) && await until(/No lessons/));
+    await page.click('button:has-text("Build a course outline") >> nth=0');
+    await page.selectOption('#crf-course', 'Robotics');
+    await page.click('button:has-text("Draft the outline")');
+    chk('the outline is checked like an import before anything is written', await until(/Import 12 lessons/, 60000)
+      && +one("SELECT COUNT(*) n FROM curriculum_units WHERE course = 'Robotics'").n === 0);
+    await page.click('button:has-text("Import 12 lessons")');
+    await page.click('.cr-confirm button.is-primary');
+    chk('…and imports twelve weekly drafts nobody sees yet', await until(/Imported · 12 created/, 60000)
+      && +one("SELECT COUNT(*) n FROM curriculum_units WHERE course = 'Robotics' AND status = 'draft'").n === 12
+      && +one("SELECT COUNT(*) n FROM curriculum_units WHERE course = 'Robotics' AND status = 'published'").n === 0);
+    chk('…week 1 to 12, opening with the welcome and closing with the showcase', /Welcome to Robotics/.test(one("SELECT title FROM curriculum_units WHERE course = 'Robotics' AND week = 1").title)
+      && /Showcase/.test(one("SELECT title FROM curriculum_units WHERE course = 'Robotics' AND week = 12").title));
 
     chk('no uncaught page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

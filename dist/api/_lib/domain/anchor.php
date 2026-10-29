@@ -185,12 +185,31 @@ function anchor_journal_list(array $p): array {
     $isAdmin = is_admin_role($requester['role']);
     $rows = db_all('SELECT * FROM journal WHERE memberId = ? ORDER BY createdAt DESC', [$memberId]);
 
+    /* The mentor's replies to the member's shared entries, for the member's own
+       list only — one query for them all, keyed by the entry's thread. */
+    $replies = [];
+    if ($isOwn) {
+        $threads = array_map(static fn($r) => 'journal:' . $r['entryId'], array_filter($rows, static fn($r) => (string)($r['visibility'] ?? '') === 'mentor'));
+        if ($threads) {
+            $msgs = db_all('SELECT threadId, fromId, body, createdAt, status, sendAfter FROM mentor_messages WHERE threadId IN (' . implode(',', array_fill(0, count($threads), '?')) . ") AND kind = 'Reply' ORDER BY createdAt, id", array_values($threads));
+            $names = function_exists('staff_public_names') ? staff_public_names(array_column($msgs, 'fromId')) : [];
+            $now = now_iso();
+            foreach ($msgs as $m) {
+                if ((string)$m['status'] === 'queued' && (string)$m['sendAfter'] > $now) continue;   // held for quiet hours
+                $replies[substr((string)$m['threadId'], 8)][] = ['from' => $names[(string)$m['fromId']] ?? 'Your mentor', 'body' => (string)$m['body'], 'at' => (string)$m['createdAt']];
+            }
+        }
+    }
     $entries = [];
     foreach ($rows as $r) {
         if (!($isOwn || $isAdmin || !to_bool($r['isPrivate']))) continue;
         $entries[] = [
             'entryId' => $r['entryId'], 'sessionId' => $r['sessionId'], 'week' => (int)$r['week'],
             'mood' => $r['mood'], 'body' => $r['body'], 'createdAt' => $r['createdAt'],
+            'title' => (string)($r['title'] ?? ''), 'occurredOn' => (string)($r['occurredOn'] ?? ''),
+            'visibility' => (string)($r['visibility'] ?? '') !== '' ? (string)$r['visibility'] : (to_bool($r['isPrivate']) ? 'private' : 'mentor'),
+            'replies' => $replies[(string)$r['entryId']] ?? [],
+            'media' => function_exists('mp_media') ? mp_media((string)($r['mediaJson'] ?? '')) : [],
         ];
     }
     return ['ok' => true, 'entries' => $entries];

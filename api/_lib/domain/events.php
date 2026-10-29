@@ -518,6 +518,7 @@ function intake_photo_accept(string $incoming): string {
     }
     if (preg_match('#^/api/public/photo\.php\?#', $u)) return substr($u, 0, 512);
     if (preg_match('#^https://res\.cloudinary\.com/[A-Za-z0-9_-]+/#', $u)) return substr($u, 0, 512);
+    if (store_hosted($u)) return substr($u, 0, 512);     // our own bucket (R2 / B2)
     return '';
 }
 
@@ -564,6 +565,9 @@ function public_apply(array $p): array {
     if ($kind === 'teen') {
         // Age is derived from the date of birth, not entered separately.
         $age = $dobAge;
+        /* 18 and over is not "too old", it is the other door: NGV, the
+           leadership class. Said by name so the form can send them there. */
+        if ($age >= 18 && $age <= 40 && (string)($p['program'] ?? '') !== 'summer') return ['ok' => false, 'error' => 'age_ngv', 'age' => $age];
         if ($age < 10 || $age > 17) return ['ok' => false, 'error' => 'bad_age'];
         $track = substr(trim((string)($p['track'] ?? '')), 0, 60);
         $centre = substr(trim((string)($p['centre'] ?? '')), 0, 60);
@@ -645,6 +649,20 @@ function public_apply(array $p): array {
         return ['ok' => false, 'error' => 'photo_required'];
     }
 
+    /* The Club application (v2026.10) sends the rest of what the old Google
+       Form asked, and the typed agreements. Checked as a whole before any
+       write: a refused agreement or a malformed phone saves nothing. */
+    $details = null; $agree = [];
+    if ($kind === 'teen' && $program !== 'summer' && is_array($p['details'] ?? null)) {
+        $cd = club_apply_details($p['details'], $why);
+        if (empty($cd['ok'])) return $cd;
+        $details = $cd['details'];
+        $ag = club_apply_consents(is_array($p['consents'] ?? null) ? $p['consents'] : []);
+        if (empty($ag['ok'])) return $ag;
+        $agree = $ag['consents'];
+        $details['policyVersion'] = CLUB_POLICY_VERSION;
+    }
+
     // Standardised intake: dedupe → persist → reference → notify + acknowledge.
     // Every path returns { ok, ref, duplicate } so the client + admin queue
     // and the applicant's inbox all speak the same reference.
@@ -653,8 +671,32 @@ function public_apply(array $p): array {
     $waRow = $centre !== '' ? db_row("SELECT whatsappUrl FROM centres WHERE name = ? AND status = 'active' LIMIT 1", [$centre]) : null;
     $whatsapp = $waRow ? (string)($waRow['whatsappUrl'] ?? '') : '';
 
+    /* The same child applying twice — a resend, a second device, a parent and
+       the child each filling it in — is one application. Matched on email AND
+       date of birth within the programme, so siblings sharing a parent's email
+       stay separate. An application not yet decided is UPDATED with the newer
+       answers; a decided one is left as it was. */
+    if ($details !== null) {
+        $prev = db_row("SELECT id, ref, status FROM applications WHERE kind = 'teen' AND lower(email) = ? AND dob = ? AND program = ? ORDER BY id DESC LIMIT 1", [$email, $dob, $program]);
+        if ($prev && in_array((string)$prev['status'], ['new', 'reviewing', 'waitlist', ''], true)) {
+            db_update('applications', [
+                'name' => $name, 'firstName' => $first, 'lastName' => $last, 'otherName' => $other, 'sex' => $sex, 'age' => $age ?: null,
+                'centre' => $centre, 'track' => $track, 'faculty' => $faculty, 'why' => $why, 'phone' => $phone,
+                'photoUrl' => $photoUrl, 'details' => json_encode($details, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 'updatedAt' => now_iso(),
+            ], ['id' => (int)$prev['id']]);
+            $ref = intake_reference($kind, (int)$prev['id']);
+            club_apply_consents_record($ref, $agree, $details);
+            audit('apply.teen', null, $email, ['name' => $name, 'ref' => $ref, 'updated' => true], (string)($p['ip'] ?? ''));
+            return ['ok' => true, 'ref' => $ref, 'duplicate' => false, 'updated' => true, 'whatsapp' => $whatsapp];
+        }
+    }
     $cutoff = gmdate('Y-m-d\TH:i:s\Z', time() - 24 * 3600);
-    $dupe = db_row('SELECT id FROM applications WHERE lower(email) = ? AND kind = ? AND createdAt > ? LIMIT 1', [$email, $kind, $cutoff]);
+    /* Siblings share a parent's email, so the Club form (which sends a date of
+       birth it has checked) is guarded on email AND date of birth; "Apply for
+       another child" must not come back as the first child's reference. */
+    $dupe = $details !== null
+        ? db_row('SELECT id FROM applications WHERE lower(email) = ? AND dob = ? AND kind = ? AND createdAt > ? LIMIT 1', [$email, $dob, $kind, $cutoff])
+        : db_row('SELECT id FROM applications WHERE lower(email) = ? AND kind = ? AND createdAt > ? LIMIT 1', [$email, $kind, $cutoff]);
     if ($dupe) {
         audit('apply.' . $kind, null, $email, ['name' => $name, 'duplicate' => true], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'ref' => intake_reference($kind, (int)$dupe['id']), 'duplicate' => true, 'whatsapp' => $whatsapp];
@@ -668,9 +710,11 @@ function public_apply(array $p): array {
         'visibilityConsent' => $visibilityConsent, 'programme' => $programme,
         'role' => $role, 'why' => $why, 'email' => $email, 'program' => $program, 'photoUrl' => $photoUrl,
         'phone' => $phone, 'courses' => $courses ? json_encode($courses, JSON_UNESCAPED_SLASHES) : '',
+        'details' => $details !== null ? json_encode($details, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : '',
         'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
     ]);
     $ref = intake_reference($kind, $appId);
+    if ($details !== null) club_apply_consents_record($ref, $agree, $details);
     if ($kind === 'volunteer') {
         event_emit('volunteer.applied', [
             'ref' => $ref, 'name' => $name, 'role' => $role, 'courses' => $courses,
@@ -732,19 +776,239 @@ function public_apply(array $p): array {
     return ['ok' => true, 'ref' => $ref, 'duplicate' => false, 'whatsapp' => $whatsapp];
 }
 
+/* ── The Club application (v2026.10) ─────────────────────────────────────── */
+
+const CLUB_POLICY_VERSION = '2026.10';
+const CLUB_APPLY_CLASSES = ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6',
+    'JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3', 'Finished secondary school'];
+const CLUB_APPLY_RELS = ['Father', 'Mother', 'Guardian'];
+/* The agreements a family gives to join the Club. Every one is required: the
+   owner's decision (2026-10-10) is that photos, the website feature and family
+   updates are conditions of NGG membership. Off-site trips stay a choice. The
+   Summer School's parent verification keeps its own rules (CONSENT_TYPES). */
+const CLUB_APPLY_REQUIRED = ['participation', 'medical', 'data', 'comms', 'media', 'site_visibility'];
+
+/** A Nigerian mobile as 0XXXXXXXXXX, or '' when it is not one. */
+function club_phone(string $raw): string {
+    $d = preg_replace('/\D/', '', $raw);
+    if (strpos($d, '234') === 0) $d = '0' . substr($d, 3);
+    if (strlen($d) === 10 && strpbrk($d[0], '789') !== false) $d = '0' . $d;
+    return preg_match('/^0[789][01]\d{8}$/', $d) ? $d : '';
+}
+function club_title(string $s): string {
+    $s = trim(preg_replace('/\s+/', ' ', $s));
+    return preg_replace_callback("/(^|[\\s\\-'])(\\p{L})/u", fn($m) => $m[1] . mb_strtoupper($m[2]), mb_strtolower($s));
+}
+
+/**
+ * Validate and normalise the Club application's extra answers. Returns
+ * {ok, details} or {ok:false, error, field}. The error names the field so the
+ * form can point at it; the same rules run in the browser first.
+ */
+function club_apply_details(array $d, string $vision): array {
+    $t = fn($k, $n = 120) => mb_substr(trim(preg_replace('/\s+/', ' ', (string)($d[$k] ?? ''))), 0, $n);
+    $bad = fn($field, $error = 'bad_details') => ['ok' => false, 'error' => $error, 'field' => $field];
+    $o = ['form' => 'club-2026.10'];
+    $o['filledBy'] = in_array($d['filledBy'] ?? '', ['parent', 'child'], true) ? (string)$d['filledBy'] : '';
+    if ($o['filledBy'] === '') return $bad('filledBy');
+    $o['school'] = club_title($t('school'));
+    if (mb_strlen($o['school']) < 3) return $bad('school');
+    $o['class'] = $t('class', 40);
+    if (!in_array($o['class'], CLUB_APPLY_CLASSES, true)) return $bad('class');
+    $o['classArm'] = $t('classArm', 40);
+    $o['address'] = mb_substr(trim((string)($d['address'] ?? '')), 0, 300);
+    if (mb_strlen($o['address']) < 6) return $bad('address');
+    foreach (['resState' => 1, 'resLga' => 1, 'originState' => 1, 'originLga' => 0, 'nationality' => 1] as $k => $req) {
+        $o[$k] = club_title($t($k, 60));
+        if ($req && $o[$k] === '') return $bad($k);
+    }
+    $o['parent1Rel'] = in_array($d['parent1Rel'] ?? '', CLUB_APPLY_RELS, true) ? (string)$d['parent1Rel'] : '';
+    if ($o['parent1Rel'] === '') return $bad('parent1Rel');
+    $o['parent1Name'] = club_title($t('parent1Name'));
+    if (mb_strlen($o['parent1Name']) < 3) return $bad('parent1Name');
+    $o['parent1Phone'] = club_phone((string)($d['parent1Phone'] ?? ''));
+    if ($o['parent1Phone'] === '') return $bad('parent1Phone', 'bad_phone');
+    $o['parent2None'] = !empty($d['parent2None']);
+    if (!$o['parent2None']) {
+        $o['parent2Rel'] = in_array($d['parent2Rel'] ?? '', CLUB_APPLY_RELS, true) ? (string)$d['parent2Rel'] : '';
+        if ($o['parent2Rel'] === '') return $bad('parent2Rel');
+        $o['parent2Name'] = club_title($t('parent2Name'));
+        if (mb_strlen($o['parent2Name']) < 3) return $bad('parent2Name');
+        $p2 = trim((string)($d['parent2Phone'] ?? ''));
+        $o['parent2Phone'] = $p2 === '' ? '' : club_phone($p2);
+        if ($p2 !== '' && $o['parent2Phone'] === '') return $bad('parent2Phone', 'bad_phone');
+    }
+    $o['courseOther'] = $t('courseOther', 80);
+    // The vision is the application's `why`; a non-answer is refused here as in the form.
+    $v = trim($vision);
+    if (mb_strlen($v) < 40) return $bad('vision', 'vision_too_short');
+    $list = function ($k, $max) use ($d) {
+        $out = [];
+        foreach ((is_array($d[$k] ?? null) ? $d[$k] : []) as $x) {
+            $x = club_title(mb_substr((string)$x, 0, 40));
+            if ($x !== '' && !in_array(mb_strtolower($x), array_map('mb_strtolower', $out), true)) $out[] = $x;
+        }
+        return array_slice($out, 0, $max);
+    };
+    $o['hobbies'] = $list('hobbies', 8);
+    if (!$o['hobbies']) return $bad('hobbies');
+    $o['influenceAreas'] = $list('influenceAreas', 3);
+    if (!$o['influenceAreas']) return $bad('influenceAreas');
+    $o['influenceOther'] = $t('influenceOther', 80);
+    $o['heardFrom'] = $t('heardFrom', 60);
+    if ($o['heardFrom'] === '') return $bad('heardFrom');
+    $o['heardOther'] = $t('heardOther', 80);
+    $promo = strtoupper(preg_replace('/\s+/', '', (string)($d['promoCode'] ?? '')));
+    if ($promo !== '' && !preg_match('/^[A-Z0-9]{4,20}$/', $promo)) return $bad('promoCode', 'bad_promo');
+    $o['promoCode'] = $promo;
+    return ['ok' => true, 'details' => $o];
+}
+
+/**
+ * public.apply.check — has this child (email + date of birth) applied to the
+ * programme before? {seen, open}: open means still undecided, so sending again
+ * updates it. Nothing else is said about the application.
+ */
+function public_apply_check(array $p): array {
+    $email = strtolower(trim((string)($p['email'] ?? '')));
+    $dob = trim((string)($p['dob'] ?? ''));
+    if (!preg_match('/^[^\s@]+@[^\s@]+\.[^\s@]+$/', $email) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) return ['ok' => true, 'seen' => false, 'open' => false];
+    $program = (string)($p['program'] ?? '') === 'summer' ? 'summer' : 'anchor';
+    $row = db_row("SELECT status FROM applications WHERE kind = 'teen' AND lower(email) = ? AND dob = ? AND program = ? ORDER BY id DESC LIMIT 1", [$email, $dob, $program]);
+    return ['ok' => true, 'seen' => (bool)$row, 'open' => $row && in_array((string)$row['status'], ['new', 'reviewing', 'waitlist', ''], true)];
+}
+
+/* ── Schools (the Club application's picker) ───────────────────────────────── */
+
+const SCHOOLS_SEED_FILE = __DIR__ . '/../seeds/schools-lagos-ogun.json.gz';
+const SCHOOLS_SEED_VERSION = 'grid3-2023-08-lagos-ogun-2';
+
+function school_key(string $name): string {
+    return trim(preg_replace('/[^a-z0-9]+/', ' ', mb_strtolower($name)));
+}
+
+/**
+ * Load GRID3 Nigeria's schools for Lagos and Ogun, once per seed version.
+ * Free, open data (CC BY 4.0): https://data.humdata.org/dataset/nigeria-education-facilities
+ * A family's own schools (source 'application') are kept across reloads.
+ */
+function schools_seed_once(): array {
+    if (setting_raw('schools_seed') === SCHOOLS_SEED_VERSION) return ['ok' => true, 'already' => true];
+    if (!is_file(SCHOOLS_SEED_FILE)) return ['ok' => false, 'error' => 'seed_missing'];
+    $j = json_decode((string)gzdecode((string)file_get_contents(SCHOOLS_SEED_FILE)), true);
+    $rows = is_array($j['rows'] ?? null) ? $j['rows'] : [];
+    if (!$rows) return ['ok' => false, 'error' => 'seed_empty'];
+    $db = db_conn();
+    $db->beginTransaction();
+    try {
+        db_exec("DELETE FROM schools WHERE source = 'grid3'");
+        $st = $db->prepare('INSERT INTO schools (name, nameKey, lga, state, ward, level, management, lat, lng, source, addedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+        $now = now_iso();
+        foreach ($rows as [$name, $lga, $state, $ward, $level, $mg, $lat, $lng]) {
+            $st->execute([$name, school_key($name), $lga, $state, $ward, $level, $mg, $lat, $lng, 'grid3', $now]);
+        }
+        $db->commit();
+    } catch (Throwable $e) { $db->rollBack(); return ['ok' => false, 'error' => 'seed_failed']; }
+    setting_set('schools_seed', SCHOOLS_SEED_VERSION, 'system');
+    return ['ok' => true, 'loaded' => count($rows)];
+}
+
+/**
+ * public.schools — schools matching what a family typed: every word must
+ * appear, names that START with it first, then those in the LGA or state they
+ * named. At most 20, each with its LGA so two schools of one name can be told
+ * apart. {ok, schools: [{name, lga, state, level}]}
+ */
+function public_schools(array $p): array {
+    $q = school_key((string)($p['q'] ?? ''));
+    if (mb_strlen($q) < 2) return ['ok' => true, 'schools' => []];
+    if (!(int)(db_row("SELECT COUNT(*) c FROM schools WHERE source = 'grid3'")['c'] ?? 0)) schools_seed_once();
+    $words = array_slice(array_values(array_filter(explode(' ', $q), fn($w) => $w !== '')), 0, 5);
+    $where = implode(' AND ', array_fill(0, count($words), 'nameKey LIKE ?'));
+    $args = array_map(fn($w) => '%' . $w . '%', $words);
+    $lga = trim((string)($p['lga'] ?? '')); $state = trim((string)($p['state'] ?? ''));
+    /* The schools that START with what was typed are chosen in SQL, before
+       the cap: the cap used to come first, so in a list of thousands the 400
+       rows ranked below were whichever the table happened to return, and
+       "st" or "ade" could miss every school whose name begins that way. */
+    $rows = db_all("SELECT name, lga, state, level, nameKey FROM schools WHERE $where
+                    ORDER BY CASE WHEN nameKey LIKE ? THEN 0 ELSE 1 END, nameKey LIMIT 400", array_merge($args, [$q . '%']));
+    usort($rows, function ($a, $b) use ($q, $lga, $state) {
+        $sa = (int)(strpos($a['nameKey'], $q) === 0) * 4 + (int)($lga !== '' && strcasecmp($a['lga'], $lga) === 0) * 2 + (int)($state !== '' && strcasecmp($a['state'], $state) === 0);
+        $sb = (int)(strpos($b['nameKey'], $q) === 0) * 4 + (int)($lga !== '' && strcasecmp($b['lga'], $lga) === 0) * 2 + (int)($state !== '' && strcasecmp($b['state'], $state) === 0);
+        return $sb <=> $sa ?: strcmp($a['nameKey'], $b['nameKey']);
+    });
+    $out = []; $seen = [];
+    foreach ($rows as $r) {
+        $k = $r['nameKey'] . '|' . strtolower($r['lga']);
+        if (isset($seen[$k])) continue; $seen[$k] = true;
+        $out[] = ['name' => $r['name'], 'lga' => $r['lga'], 'state' => $r['state'], 'level' => $r['level']];
+        if (count($out) >= 20) break;
+    }
+    return ['ok' => true, 'schools' => $out];
+}
+
+/** A school a family typed, added to the list once staff accept their child. */
+function school_learn(string $name, string $lga = '', string $state = ''): void {
+    $name = trim(preg_replace('/\s+/', ' ', $name)); $k = school_key($name);
+    if (mb_strlen($k) < 3) return;
+    if (db_row('SELECT id FROM schools WHERE nameKey = ? LIMIT 1', [$k])) return;
+    db_insert('schools', ['name' => $name, 'nameKey' => $k, 'lga' => $lga, 'state' => $state, 'source' => 'application', 'addedAt' => now_iso()]);
+}
+
+/** Every required agreement must be true; trips is the family's choice. */
+function club_apply_consents(array $c): array {
+    $miss = array_values(array_filter(CLUB_APPLY_REQUIRED, fn($k) => ($c[$k] ?? null) !== true));
+    if ($miss) return ['ok' => false, 'error' => 'consent_required', 'missing' => $miss];
+    $out = array_fill_keys(CLUB_APPLY_REQUIRED, 'granted');
+    $out['trips'] = !empty($c['trips']) ? 'granted' : 'declined';
+    return ['ok' => true, 'consents' => $out];
+}
+
+/** Ledger rows for an application, keyed to it until it becomes a member. */
+function club_apply_consents_record(string $ref, array $consents, array $details): void {
+    $by = ($details['filledBy'] ?? '') === 'child' ? 'Applicant, with parent' : (string)($details['parent1Name'] ?? 'Parent or guardian');
+    foreach ($consents as $type => $status) {
+        db_insert('consents', ['studentId' => 'APP:' . $ref, 'type' => $type, 'status' => $status,
+            'method' => 'online-application', 'actorName' => mb_substr($by, 0, 120),
+            'policyVersion' => CLUB_POLICY_VERSION, 'createdAt' => now_iso()]);
+    }
+}
+
 /* ── Volunteer registration (public) ──────────────────────────────────────── */
 
 /** The courses instructors can offer — same source the live summer
  *  registration form serves, so the admin's form builder stays the single
  *  place to manage the catalogue. */
 function volunteer_course_options(): array {
-    $live = form_live();
+    /* The VOLUNTEER form, not form_live()'s default.
+     *
+     * This read form_live() with no argument, which is 'summer-reg' — the form
+     * a parent fills in for a child joining Summer School. So the courses a
+     * volunteer was offered to TEACH were the courses on offer to Summer
+     * School children, and none of the Club's own courses appeared at all. */
+    $live = form_live('volunteer');
     foreach ($live['fields'] as $f) {
         if (($f['key'] ?? '') === 'course' && !empty($f['options']) && is_array($f['options'])) {
             return array_values(array_map('strval', $f['options']));
         }
     }
-    return academy_courses();
+    /* BOTH programmes, not just Summer School's academy.
+     *
+     * A volunteer may teach on the Club, on Summer School, or on both, and
+     * volunteer_courses_accepted() has accepted the Club's courses on submit
+     * for a while — but this list is what the form actually OFFERS, and it
+     * named Summer's courses alone. So an instructor who came to teach Piano,
+     * Robotics or Finance could not pick them: the submit would have taken
+     * them, and the form never let them say it. */
+    return volunteer_both_programmes_courses();
+}
+
+/** Every course either programme teaches, Club first, de-duplicated. */
+function volunteer_both_programmes_courses(): array {
+    $out = function_exists('club_courses') ? club_courses() : [];
+    foreach (academy_courses() as $c) if (!in_array($c, $out, true)) $out[] = $c;
+    return array_values($out);
 }
 
 /** The full set of courses accepted on an instructor's intake: the flat form
@@ -778,7 +1042,17 @@ function volunteer_faculty_options(): array {
             return array_values(array_map('strval', $f['options']));
         }
     }
-    return academy_faculties();
+    /* The Club's divisions as well as Summer School's faculties.
+     *
+     * volunteer_courses_by_faculty() has merged both for a while, so the Club's
+     * courses were sitting in the map the form reads — under keys the form
+     * never listed. Choosing a faculty is how the course picker is filtered, so
+     * a division that is not offered here makes every course under it
+     * unreachable. That is what made the updated catalogue impossible to get
+     * to from the volunteer form. */
+    $out = function_exists('club_catalogue') ? array_keys(club_catalogue()) : [];
+    foreach (academy_faculties() as $f) if (!in_array($f, $out, true)) $out[] = $f;
+    return array_values($out);
 }
 
 /** A programme's own courses: the Club's list for 'ngg', the academy catalogue for 'summer'. */

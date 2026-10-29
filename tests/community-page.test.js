@@ -24,6 +24,8 @@
      · The wordmark's ink ran 42px OUTSIDE its own box on a phone, under the
        buttons beside it, while every box measurement said it fitted.
 
+   The page now opens Community v3 (tests/community-v3.test.js); this suite
+   holds the classic app, still one ?classic=1 away, to the same promises.
    Run:  node tests/community-page.test.js
    ========================================================================== */
 'use strict';
@@ -211,7 +213,7 @@ async function openPage(browser, width, height, media) {
      no such thing as an idle network on this page any more, so waiting for one
      is waiting for something that will not happen; the selector below is the
      real readiness signal and always was. */
-  await page.goto(BASE + '/community', { waitUntil: 'load' });
+  await page.goto(BASE + '/community?classic=1', { waitUntil: 'load' });
   await page.waitForSelector('.cmm-msg', { timeout: 10000 });
   await page.waitForTimeout(400);
   return { page, errs };
@@ -1080,7 +1082,7 @@ async function openPage(browser, width, height, media) {
             body: fs.readFileSync(path.join(ROOT, 'dist', 'index.html'), 'utf8') });
         } catch (_) {}
       });
-      await page.goto(BASE + '/community', { waitUntil: 'load' });   // see openPage
+      await page.goto(BASE + '/community?classic=1', { waitUntil: 'load' });   // see openPage
       await page.waitForSelector('.cmm-msg', { timeout: 10000 });
       await page.locator('.cmd-row').nth(1).click();
       await page.waitForTimeout(700);

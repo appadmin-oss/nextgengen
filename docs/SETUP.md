@@ -150,9 +150,9 @@ have their own addresses, so a member can be sent straight to one:
 
 | | |
 |---|---|
-| `/dashboard/account` | The statement: every line with a running total, and "I've made a payment" |
+| `/dashboard/account` | The statement: every line with a running total, and "Ask my parent" (the parent pays, or confirms a payment, from /family) |
 | `/dashboard/records` | Attendance, the rate (withheld if no term calendar is set), certificates |
-| `/dashboard/requests` | Payment claims, appeals, leave, replacement ID — and what the desk replied |
+| `/dashboard/requests` | Appeals, leave, replacement ID — and what the desk replied (payment claims come from the parent's family account) |
 
 What a member raises lands in **Control Room → People → Member requests**.
 Approving a payment claim posts it through the ordinary ledger path, so money
@@ -253,6 +253,114 @@ of every locally-stored image, and an FTP sync set to mirror-and-delete will
 remove it because it is not in the repository. Exclude `api/storage` from
 deployment, and back it up with the database.
 
+**Better: keep the photos outside the deploy.** Set `'photo_dir'` in
+`api/config.php` to a folder outside the web root (for example
+`/home/youruser/ngg-photos`), writable by PHP. New photos are stored there, and
+a deploy can then replace `api/` without touching them. Photos already in
+`api/storage/photos` are still found, and are moved across as they are read.
+
+A third way they were lost has been fixed: the sweep recognised a photo's
+address only when it was written out literally, so a photo referenced from
+inside JSON (where the slashes are escaped, `\/api\/public\/photo.php`) or
+inside a percent-encoded link was deleted a week after upload. Every encoding
+is recognised now, and a scan that cannot be completed deletes nothing.
+
+### Lesson files: keep them out of the deploy
+
+Every file an instructor attaches to a lesson — a diagram, a picture, a GIF, a
+recording, a worksheet — is stored on the server, and the lesson only points at
+it. They used to live in `api/storage/curriculum`, **inside** the folder a
+deploy replaces: deleting the old folder before uploading the new build took
+every one of them, while the lessons kept pointing at files that were gone.
+
+- Set `'curriculum_dir'` in `api/config.php` to a folder outside the web root
+  (for example `/home/youruser/ngg-data/curriculum`). Left empty, the app uses
+  `ngg-data/curriculum` beside the web root when the host allows it.
+- Files still in `api/storage/curriculum` are found and moved across as they
+  are read, so nothing needs copying by hand.
+- With **File storage** (below) configured, every upload is also copied to the
+  bucket, and a file missing from disk is fetched back from it.
+- **Control Room → Learning → Course health** shows *lesson files missing* per
+  course, and lists the lessons, so anything already lost can be uploaded
+  again. A file that is gone cannot be recovered by the app: restore
+  `api/storage/curriculum` from your host's backup if you have one.
+
+When updating, upload the new build **over** the old one; never delete
+`api/storage` or `api/data`.
+
+### File storage: any S3-compatible bucket
+
+Once a bucket is configured, every new upload goes to it (the browser PUTs the
+file straight to the bucket with a 15-minute presigned URL; the secret never
+leaves PHP). Cloudinary, if set, keeps serving what it already holds. Enter the
+values in **Control Room → Settings → API keys → File storage**, or in
+`api/config.php` under `storage` (see `api/config.example.php`), then press
+**Test**.
+
+The **File storage** row opens a connection guide: pick the provider and it
+shows that provider's numbered steps, the endpoint / region / public-address
+shapes to type, a button that copies the CORS rule for *this* site (built from
+`app_origin`), and a **Connect** button whose form is pre-labelled for it. The
+catalogue is `STORAGE_PROVIDERS` in `api/_lib/domain/service-keys.php`: Cloudflare
+R2, Backblaze B2, Amazon S3, Wasabi, DigitalOcean Spaces, Supabase Storage,
+IDrive e2, and any other S3-compatible service. All of them use the same upload
+code (SigV4 presigned PUT); a new provider is a row in that list, never new
+upload code. The R2 and B2 steps are below; the guide on screen has the rest.
+
+**Cloudflare R2 (recommended: 10 GB free, no download charges)**
+
+1. Cloudflare dashboard → **R2** → *Create bucket* (e.g. `ngg-media`).
+2. Bucket → **Settings → Public access** → allow the **r2.dev subdomain** (or
+   connect a custom domain). Copy that address: it is the *Public address*,
+   e.g. `https://pub-1a2b3c.r2.dev`.
+3. R2 → **Manage API tokens** → *Create API token* with **Object Read & Write**
+   on this bucket. Copy the *Access Key ID* and *Secret Access Key*.
+4. *Endpoint*: `https://<account id>.r2.cloudflarestorage.com` (shown on the R2
+   overview). *Region*: `auto`.
+5. Bucket → **Settings → CORS policy** → paste:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://your-ngg-site.example"],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedHeaders": ["content-type"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+**Backblaze B2**
+
+1. B2 → *Create a Bucket*, **Files in Bucket are: Public**.
+2. *Application Keys* → *Add a New Application Key* for this bucket, **Read and
+   Write**. The *keyID* is the access key, the *applicationKey* the secret.
+3. *Endpoint*: the bucket's S3 endpoint with `https://`, e.g.
+   `https://s3.us-west-004.backblazeb2.com`. *Region*: the middle part,
+   `us-west-004`.
+4. *Public address*: `https://f004.backblazeb2.com/file/<bucket>` (the
+   "Friendly URL" of any file, up to the bucket name).
+5. CORS: B2's web console cannot allow PUT, so set the rule with the B2 CLI:
+
+```bash
+b2 bucket update --cors-rules '[{"corsRuleName":"ngg","allowedOrigins":["https://your-ngg-site.example"],
+  "allowedOperations":["s3_put","s3_get","s3_head"],"allowedHeaders":["content-type"],
+  "exposeHeaders":["ETag"],"maxAgeSeconds":3600}]' <bucket> allPublic
+```
+
+**Content-Security-Policy.** `.htaccess` already allows
+`*.r2.cloudflarestorage.com`, `*.r2.dev`, `*.backblazeb2.com`, `*.amazonaws.com`,
+`*.wasabisys.com`, `*.digitaloceanspaces.com` and `*.supabase.co`. IDrive e2
+(its hosts carry a region number), any other provider, and a bucket on a
+**custom domain** must be added to `connect-src` and `frame-src` there by hand,
+or uploads (and photos on printed cards) fail with a CSP error in the console.
+
+What the server enforces: the object key is chosen by the server (folder, date,
+random id), so nobody can overwrite another file; the content type comes from an
+allow-list by extension (no HTML, SVG or scripts); and the signature covers the
+exact byte length and type, so a signed URL cannot carry a different file.
+
 ### Photos without Cloudinary
 
 Cloudinary needs three keys, and until they are set there is nowhere to upload
@@ -303,15 +411,30 @@ image bytes out of your database backups.
 
 ### AI providers and the analyst panel
 
-Four providers are supported and every one is optional: **Groq**, **Google
-Gemini**, **Anthropic**, and **OpenRouter**. Anything you leave blank is skipped,
-and each acts as a fallback for the others — one exhausted key costs speed, not
-capability. With none set, every AI feature degrades to deterministic behaviour
-and says so; nothing invents an answer.
+Eleven providers are supported and every one is optional. Keys can be entered
+in Control Room → System → Service keys or in `api/config.php`. Anything you
+leave blank is skipped, and **each acts as a fallback for the others** — one
+exhausted key costs speed, not capability. With none set, every AI feature
+degrades to deterministic behaviour and says so; nothing invents an answer.
 
-OpenRouter is worth a key on its own: one credential reaches hundreds of models
-from every major lab, so trying a different model is a config line rather than a
-deploy.
+| Provider | Config key | Free tier | Worth knowing |
+|---|---|---|---|
+| **Groq** | `ai.groq_api_key` | yes | Fast, generous, the sensible first key |
+| **Google Gemini** | `ai.gemini_api_key` | yes | Leave the model blank and the best one the key can use is asked of Google |
+| **Cerebras** | `ai.cerebras_api_key` | yes | The fastest of these by a distance |
+| **Mistral** | `ai.mistral_api_key` | yes | European, good at the smaller sizes |
+| **Together AI** | `ai.together_api_key` | yes | Free Llama 70B, useful where a bigger model matters |
+| **GitHub Models** | `ai.github_api_key` | yes | A GitHub personal access token is the key |
+| **Anthropic** | `ai.anthropic_api_key` | no | The capable tier; required for marking open answers |
+| **OpenAI** | `ai.openai_api_key` | no | Default `gpt-4.1-mini`; reasoning models such as `o4-mini` work too |
+| **DeepSeek** | `ai.deepseek_api_key` | no | Inexpensive |
+| **OpenRouter** | `ai.openrouter_api_key` | some | One credential reaches hundreds of models from every major lab, so trying a different one is a config line rather than a deploy |
+| **Self-hosted / other** | `ai.custom_base_url` | — | Anything speaking the OpenAI chat-completions shape: llama.cpp, Ollama, a university endpoint. No key needed |
+
+Six of the eleven have a free tier that does not expire into a card, which is
+what a programme running on shared hosting actually needs. **Set two or three
+of those** rather than one: the fallback chain is what keeps a feature working
+on the afternoon one provider is rate-limiting.
 
 **Analytics → Level 7 · Analyst panel** is the one feature that uses several
 models at once. Four lenses (mechanism, action, scepticism, equity) read the same
@@ -526,6 +649,25 @@ due. If you wire the host cron you can switch the web-cron off in `config.php`:
 ```php
 'webcron' => ['enabled' => false],
 ```
+
+## The bundled curriculum
+
+NGG's own courses ship with the code, in `api/_lib/seeds/curriculum-*.json`,
+and seed themselves into live, published lessons on the first request after a
+deploy. Each file is imported once, nothing already in `curriculum_units` is
+touched, and a lesson somebody else put at the same week and position stays
+theirs.
+
+That is right for NGG and wrong for anyone running this codebase for a
+different programme, or for a deployment that imports its own curriculum and
+does not want several hundred lessons arriving unasked. Decline them:
+
+```php
+'seed_bundled_curriculum' => false,
+```
+
+Absent, they seed. Already-seeded lessons are not removed by setting it — it
+stops the next file from loading, it does not undo the last one.
 
 Note the one thing neither path can do: a gate set to rotate but with **no
 notification address** is never rolled unattended — it is reported as due and

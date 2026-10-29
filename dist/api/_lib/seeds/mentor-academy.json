@@ -1,0 +1,1084 @@
+{
+ "pass": 80,
+ "groups": [
+  "Start here: using the portal",
+  "Foundations",
+  "Keeping young people safe",
+  "Mentoring practice"
+ ],
+ "modules": [
+  {
+   "id": "p01",
+   "title": "Your portal: This week and what’s due",
+   "mins": 4,
+   "note": "Start here",
+   "orientation": true,
+   "required": false,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Where everything is",
+     "body": "On a computer the areas are down the left: This week, Mentees, Saturday, Class, Messages and My role. On a phone they are the tab bar at the bottom, and “More” holds the rest. Inside an area, the tabs under the title switch between its screens (Mentees has All mentees, Goals, Sessions and Pod growth). The red Report a concern button is always in the top bar."
+    },
+    {
+     "h": "This week is your to-do list",
+     "body": "Open This week first, every time. “Due” lists what needs you, most urgent first: a mentee who is struggling, a one-to-one that is overdue, a family update, a Saturday evaluation, an Academy module to renew. Press an item and it opens the exact screen that does it — you never have to hunt for the tool."
+    },
+    {
+     "h": "At a glance",
+     "body": "The four tiles count your mentees, how many you have seen in the last 14 days, who is struggling this week and how many Saturday evaluations are done. Each tile opens the filtered list behind it. The Saturday formation schedule underneath shows the times for the coming Saturday."
+    }
+   ],
+   "scenario": {
+    "situation": "You open the portal on a Thursday evening with fifteen minutes to spare. What do you do first?",
+    "options": [
+     {
+      "text": "Open This week and work down the Due list from the top.",
+      "right": true,
+      "why": "Due is sorted by urgency and each item opens the screen that fixes it. Fifteen minutes there does the most good."
+     },
+     {
+      "text": "Open Messages and reply to everything.",
+      "right": false,
+      "why": "Messages matter, but a struggling child or an overdue one-to-one in Due may matter more. Due includes unread messages when they are urgent."
+     },
+     {
+      "text": "Read every mentee’s child page in turn.",
+      "right": false,
+      "why": "That takes far longer than fifteen minutes and misses what is actually due."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "A Due item says “Family update due for Tobi”. What happens when you press it?",
+     "options": [
+      "Nothing — you go to Messages and find Tobi",
+      "It opens Tobi’s child page on the Family tab, ready to write",
+      "It emails Tobi’s family automatically"
+     ],
+     "answer": 1,
+     "why": "Every Due item opens the screen that does the job. Nothing is sent until you write and send it."
+    },
+    {
+     "q": "Where is Report a concern?",
+     "options": [
+      "Only on the child page",
+      "In the top bar on every screen, and on each child page",
+      "In My role, under Policy"
+     ],
+     "answer": 1,
+     "why": "It is always one press away, because a worry about a child cannot wait for you to find a menu."
+    }
+   ],
+   "group": 0,
+   "portal": "ngg"
+  },
+  {
+   "id": "p02",
+   "title": "Your portal: mentees and the child page",
+   "mins": 5,
+   "note": "Start here",
+   "orientation": true,
+   "required": false,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "All mentees",
+     "body": "Mentees → All mentees lists everyone in your care, sorted by who needs you most. The filter chips narrow it: Struggling, One-to-one overdue, Relationship check, Goal needs work, Family update. Search finds a child by name or school."
+    },
+    {
+     "h": "Doing one thing for several children",
+     "body": "Tick the children (or “Select all shown”) and use the bar that appears: “Add to Saturday one-to-ones” books them in, “Family update” drafts a message to each family for you to review before anything is sent, and “Add a note” logs one note against each. Use these instead of repeating the same job child by child."
+    },
+    {
+     "h": "The child page",
+     "body": "Press a child to open their page. Its tabs are Overview, Goals, Scorecard, Sessions, Relationship, Family and Progress. The buttons along the top do the common jobs: Log a session, Score the month, Family update and Report a concern. A progress report is made on the Progress tab as a PDF, in your browser."
+    }
+   ],
+   "scenario": {
+    "situation": "Five of your mentees have not had a family update this term. What is the right tool?",
+    "options": [
+     {
+      "text": "Filter All mentees by “Family update”, select all shown, and press Family update — then read and send each draft.",
+      "right": true,
+      "why": "The bulk Family update drafts a message per family. You still read each one before it goes, so nothing generic is sent."
+     },
+     {
+      "text": "Text each family from your own phone.",
+      "right": false,
+      "why": "Messages from your own phone are not recorded and are not protected. Family contact goes through the portal so it is logged in Sessions."
+     },
+     {
+      "text": "Ask your lead to do it.",
+      "right": false,
+      "why": "Family updates are part of your role, and the portal makes five of them a few minutes’ work."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "You want to score Bimpe’s month. Where do you go?",
+     "options": [
+      "My role → Commitments",
+      "Bimpe’s child page → Score the month (the Scorecard tab)",
+      "Saturday → After"
+     ],
+     "answer": 1,
+     "why": "The monthly score lives on the child’s Scorecard tab; the Score button on their page opens it."
+    },
+    {
+     "q": "Three children need a Saturday one-to-one. Fastest way?",
+     "options": [
+      "Tick them in All mentees and press “Add to Saturday one-to-ones”",
+      "Log a session for each",
+      "Message your lead"
+     ],
+     "answer": 0,
+     "why": "The bulk action books all three at once on the coming Saturday."
+    }
+   ],
+   "group": 0,
+   "portal": "ngg"
+  },
+  {
+   "id": "p03",
+   "title": "Your portal: goals and sessions",
+   "mins": 4,
+   "note": "Start here",
+   "orientation": true,
+   "required": false,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Goals (WOOP)",
+     "body": "Mentees → Goals shows every mentee’s goal and how close they are. “New goal” starts a draft for a child; fill in the Wish, Outcome, Obstacle and Plan with them — each field saves as you type. Tick “agreed” when the child has agreed it, then set it Active. Use Check-in (1–5) to record progress; set Achieved or Paused when that is true."
+    },
+    {
+     "h": "Sessions are the record",
+     "body": "Mentees → Sessions lists every one-to-one, pod session, family contact and phone call you have logged. “Log a session” records a new one — choose the kind, the child and what you talked about, and link it to their goal. Delete is possible, with an undo, if you logged the wrong thing."
+    },
+    {
+     "h": "If it isn’t logged, it didn’t happen",
+     "body": "Your one-to-ones count towards your commitments only when they are logged here. Log them the same day, while you remember what was said."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "You had a 10-minute phone call with a mentee about exams. How do you record it?",
+     "options": [
+      "Write it in Messages",
+      "Mentees → Sessions → Log a session, kind Phone call, linked to their goal",
+      "Nowhere — only Saturday one-to-ones count"
+     ],
+     "answer": 1,
+     "why": "Every contact is logged as a session of the right kind, so your record and the child’s are complete."
+    },
+    {
+     "q": "A child has reached their goal. What do you do?",
+     "options": [
+      "Delete the goal",
+      "Record a final check-in and set its status to Achieved",
+      "Start a new goal on top of it"
+     ],
+     "answer": 1,
+     "why": "Achieved keeps the record of what they did; a new goal can follow."
+    }
+   ],
+   "group": 0,
+   "portal": "ngg"
+  },
+  {
+   "id": "p04",
+   "title": "Your portal: Saturday, before, during and after",
+   "mins": 5,
+   "note": "Start here",
+   "orientation": true,
+   "required": false,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Before: plan it",
+     "body": "Saturday → Before plans the coming Saturday’s Musing & mentor breakout. Edit the agenda, add activities from the library, and press Share with your lead when it is ready."
+    },
+    {
+     "h": "During: the register",
+     "body": "Saturday → During is the register. Mark who is here, the values you observed, and the three checks (On time, Assignment in, Checked out). Add a detail note where it helps. It saves as you go — there is no Save button to forget."
+    },
+    {
+     "h": "After: evaluate each child",
+     "body": "Saturday → After is due by Monday. For every child who was here, rate effort, character and wellbeing, tick the Saturday’s criteria, and write one strength and one next step. A child counts as evaluated only when all of that is done. Undo is there if you saved the wrong child."
+    }
+   ],
+   "scenario": {
+    "situation": "It is Saturday morning and a mentee arrives late, without their assignment. Where do you record that?",
+    "options": [
+     {
+      "text": "Saturday → During: mark them here, and leave On time and Assignment in unticked.",
+      "right": true,
+      "why": "The register is where the morning is recorded, and it saves as you go."
+     },
+     {
+      "text": "Saturday → After, on Monday.",
+      "right": false,
+      "why": "After is the evaluation. Who came, and when, belongs in the register on the day."
+     },
+     {
+      "text": "A note in Messages to your lead.",
+      "right": false,
+      "why": "Your lead sees the register. A message is not the record."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "When is the Saturday evaluation (After) due?",
+     "options": [
+      "The same Saturday",
+      "By Monday",
+      "At the end of the month"
+     ],
+     "answer": 1,
+     "why": "Evaluations are due Monday, while the Saturday is fresh."
+    },
+    {
+     "q": "Which of these makes a child count as evaluated?",
+     "options": [
+      "The three ratings alone",
+      "The ratings, the Saturday’s criteria, one strength and one next step",
+      "Marking them here"
+     ],
+     "answer": 1,
+     "why": "The strength and next step are what the child and their family actually read."
+    }
+   ],
+   "group": 0,
+   "portal": "ngg"
+  },
+  {
+   "id": "p05",
+   "title": "Your portal: class, messages and your role",
+   "mins": 5,
+   "note": "Start here",
+   "orientation": true,
+   "required": false,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Class",
+     "body": "Class → Stars is where you give Genius Stars, award several children at once and write remarks. Class → School results shows your mentees’ results and growth plans: approve a plan, or return it with a note saying what to change. Class → Curriculum shows the lessons and lets you mark written answers."
+    },
+    {
+     "h": "Messages",
+     "body": "Messages gathers journal entries shared with you, weekly check-ins, mentees, families and your lead; the chips filter them. Open a message to read it and reply. Replies written late in the evening are held and go out at 8am — children are not messaged at night."
+    },
+    {
+     "h": "My role and the Academy",
+     "body": "My role shows your monthly commitments, each with the button that meets it, your supervision preparation (three questions before you meet your lead) and the conduct policy. The Academy holds these guides and the training modules; it reminds you before a module needs renewing."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "A mentee’s growth plan needs a clearer target. What do you do?",
+     "options": [
+      "Approve it anyway",
+      "Class → School results → Return it with a note",
+      "Delete it"
+     ],
+     "answer": 1,
+     "why": "Returning it with a note tells the child exactly what to change."
+    },
+    {
+     "q": "You reply to a mentee at 10:30pm. When does it reach them?",
+     "options": [
+      "Immediately",
+      "At 8am the next morning",
+      "Never — late replies are discarded"
+     ],
+     "answer": 1,
+     "why": "Late replies are held until 8am so children aren’t messaged at night."
+    },
+    {
+     "q": "Before your supervision you should…",
+     "options": [
+      "Answer the three supervision-prep questions in My role",
+      "Write to every family",
+      "Re-take the Academy"
+     ],
+     "answer": 0,
+     "why": "The prep questions make the supervision about what matters to you."
+    }
+   ],
+   "group": 0,
+   "portal": "ngg"
+  },
+  {
+   "id": "p07",
+   "group": 0,
+   "title": "Summer School portal: your participants",
+   "mins": 4,
+   "note": "Start here",
+   "orientation": true,
+   "portal": "summer",
+   "required": false,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Where everything is",
+     "body": "The Summer School mentor portal is one page. At the top: your name, your centre and Report a concern. If you cover more than one centre, choose the one you’re standing in. If you have mentees of your own, switch between “My mentees” and “Whole centre”. Below that: who still needs a weekly review, then everyone in the edition, with search."
+    },
+    {
+     "h": "One participant",
+     "body": "Each row has three buttons. ★ Stars gives stars for something you saw, with a note — once a day per participant; the row then shows today’s stars. V3 rates how they speak (verbal, vocal, visual) when you watch them present. ✎ opens their notes, where you write what isn’t a reward and read what instructors saw. Press their name to open the full record."
+    },
+    {
+     "h": "Several at once",
+     "body": "Tick the participants (or “Select all shown”) and press “Record for N” at the bottom to award the same stars or note to all of them in one go. Search first to narrow the list; ticks survive a new search."
+    }
+   ],
+   "scenario": {
+    "situation": "Six participants in your group helped set up the hall this morning. What’s the right tool?",
+    "options": [
+     {
+      "text": "Search or scroll to them, tick all six, and press “Record for 6”.",
+      "right": true,
+      "why": "The bulk record gives all six the same stars and note in one step, and each still shows on their own record."
+     },
+     {
+      "text": "Open each record and write a conversation.",
+      "right": false,
+      "why": "A conversation is for a one-to-one talk. A shared reward is a bulk record."
+     },
+     {
+      "text": "Tell them they did well and leave it.",
+      "right": false,
+      "why": "Praise that isn’t recorded can’t be seen on their record by their family or the team."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "Where do you read what an instructor noticed about a participant?",
+     "options": [
+      "In their notes (✎)",
+      "In the V3 rating",
+      "Nowhere — instructors don’t share"
+     ],
+     "answer": 0,
+     "why": "Notes are the shared thread between you and the instructors."
+    },
+    {
+     "q": "A participant gave a talk to the group. How do you record how they spoke?",
+     "options": [
+      "★ Stars",
+      "V3 rating",
+      "A weekly review"
+     ],
+     "answer": 1,
+     "why": "V3 scores verbal, vocal and visual delivery, out of 15."
+    }
+   ]
+  },
+  {
+   "id": "p08",
+   "group": 0,
+   "title": "Summer School portal: reviews, conversations and goals",
+   "mins": 4,
+   "note": "Start here",
+   "orientation": true,
+   "portal": "summer",
+   "required": false,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "The weekly review",
+     "body": "Every participant is reviewed once a week. The list at the top of the page names who is still waiting; press a name to open their record on “This week” and answer the questions. When everyone is done it says so."
+    },
+    {
+     "h": "The record",
+     "body": "A participant’s record has four tabs. Conversations: log each talk you have with them — what you discussed, what you agreed, and anything that worried you. Goals: write a goal with them; it becomes active once they agree it, and you mark it achieved when it is. Courage: moments they stepped out of their comfort zone. This week: the weekly review."
+    },
+    {
+     "h": "Log it the same day",
+     "body": "Conversations and reviews are the record your lead and the safeguarding officer rely on. Log them the same day, in plain words."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "Who still needs this week’s review?",
+     "options": [
+      "The list at the top of the page shows them",
+      "You have to open every record to check",
+      "Ask your lead"
+     ],
+     "answer": 0,
+     "why": "The reviews-due list names everyone still waiting."
+    },
+    {
+     "q": "You talked with a participant about missing home. Where does it go?",
+     "options": [
+      "Their record → Conversations: what you discussed and agreed",
+      "A star with a note",
+      "Nowhere"
+     ],
+     "answer": 0,
+     "why": "A conversation is logged as a conversation, with anything that worried you."
+    },
+    {
+     "q": "When does a goal become active?",
+     "options": [
+      "As soon as you type it",
+      "Once the participant has agreed it",
+      "At the end of the edition"
+     ],
+     "answer": 1,
+     "why": "A goal is theirs: it goes live when they agree it."
+    }
+   ]
+  },
+  {
+   "id": "p06",
+   "title": "Your portal: when you are worried about a child",
+   "mins": 3,
+   "note": "Start here",
+   "orientation": true,
+   "required": false,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "One button, one person",
+     "body": "Report a concern (top bar, or the child page) goes straight to the safeguarding officer. Choose the child, the kind of concern, and write what happened in a sentence or two — what you saw or were told, in their words where you can."
+    },
+    {
+     "h": "What happens next",
+     "body": "The officer reads it the same day and calls you if they need more. They decide the next step with the centre lead; you do not investigate. Carry on as normal with the child, and never promise them it stays secret."
+    },
+    {
+     "h": "Immediate danger",
+     "body": "If a child is in immediate danger, call the emergency services first, then report it here. The report is the record; it is not a substitute for a phone call when every minute counts."
+    }
+   ],
+   "scenario": {
+    "situation": "During a one-to-one a mentee tells you something at home frightens them, and asks you not to tell anyone. What do you do?",
+    "options": [
+     {
+      "text": "Tell them you can’t keep it secret, that you’ll make sure the right person helps, and report it through Report a concern today.",
+      "right": true,
+      "why": "You never promise secrecy, and the report goes to the officer the same day."
+     },
+     {
+      "text": "Promise to keep it secret so they keep trusting you.",
+      "right": false,
+      "why": "A promise you cannot keep breaks trust later, and leaves the child unprotected."
+     },
+     {
+      "text": "Ask questions until you know exactly what happened, then decide.",
+      "right": false,
+      "why": "Investigating is the officer’s job. Record what they said and report it."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "Where does Report a concern go?",
+     "options": [
+      "To your lead’s inbox",
+      "Straight to the safeguarding officer",
+      "To the child’s family"
+     ],
+     "answer": 1,
+     "why": "It goes to the safeguarding officer, who decides what happens next."
+    }
+   ],
+   "group": 0
+  },
+  {
+   "id": "a01",
+   "group": 1,
+   "title": "Understanding NGG",
+   "mins": 12,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "What NGG is for",
+     "body": "NGG helps young people aged 10–17 grow in character, competence and contribution. Saturdays are where development is practised; mentoring is where it is noticed and named."
+    },
+    {
+     "h": "Where you fit",
+     "body": "You are one of three adults around each young person: their guardian, their centre team and you. You don't replace any of them."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "Where is development mostly practised at NGG?",
+     "options": [
+      "In mentor messages",
+      "At Saturday sessions",
+      "At school"
+     ],
+     "answer": 1,
+     "why": "Saturdays are the development lab. Mentoring helps the young person notice and build on it."
+    }
+   ]
+  },
+  {
+   "id": "a02",
+   "group": 1,
+   "title": "The role of a mentor",
+   "mins": 15,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Relationship first",
+     "body": "Matches that start with friendship and trust last longer and do more good than matches that start with fixing problems. Spend the first month getting to know them."
+    },
+    {
+     "h": "Consistency beats intensity",
+     "body": "Short, regular contact matters more than long, rare meetings. Matches that end early can leave a young person worse off than having no mentor, so only commit to what you can keep."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "A new mentee is quiet in your first meeting. What helps most?",
+     "options": [
+      "Set three goals straight away",
+      "Do something together and let them lead the talk",
+      "Ask about their school grades"
+     ],
+     "answer": 1,
+     "why": "Youth-led, activity-based time builds trust. Goals come after."
+    }
+   ]
+  },
+  {
+   "id": "a03",
+   "group": 1,
+   "title": "Building trust",
+   "mins": 14,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Show up",
+     "body": "Be on time, every time. If you can't make it, tell the coordinator and the young person through the portal."
+    },
+    {
+     "h": "Listen more than you talk",
+     "body": "Ask open questions. Repeat back what you heard. Don't judge what they tell you."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "You can't make Saturday. What do you do?",
+     "options": [
+      "Nothing, they'll understand",
+      "Message the mentee on WhatsApp",
+      "Tell the coordinator and message through the portal"
+     ],
+     "answer": 2,
+     "why": "All contact goes through the portal, and the coordinator can arrange cover."
+    }
+   ]
+  },
+  {
+   "id": "a04",
+   "group": 2,
+   "title": "Child safeguarding",
+   "mins": 30,
+   "note": "Renew yearly",
+   "required": true,
+   "renewDays": 365,
+   "lessons": [
+    {
+     "h": "Your duty",
+     "body": "Safeguarding is everyone's job. If you are worried about a young person, you must report it the same day. You do not need proof, and you must not investigate yourself."
+    },
+    {
+     "h": "Signs to notice",
+     "body": "Changes in mood, behaviour or appearance; unexplained injuries; fear of going home; talk of harm; sudden withdrawal from the group."
+    },
+    {
+     "h": "If a young person tells you something",
+     "body": "Stay calm and listen. Don't promise to keep it secret. Say you'll need to tell someone whose job is to help. Write down their words, the date and time, then report through the portal."
+    }
+   ],
+   "scenario": {
+    "situation": "Mariam says: “If I tell you something, promise you won't tell anyone?”",
+    "options": [
+     {
+      "text": "“I promise.”",
+      "right": false,
+      "why": "You can't keep this promise if she's at risk. Breaking it later damages trust more."
+     },
+     {
+      "text": "“I can't promise that. If you're in danger, I'll need to tell someone whose job is to help. You can still talk to me.”",
+      "right": true,
+      "why": "Honest and kind. She can decide what to say knowing the truth."
+     },
+     {
+      "text": "“Let's talk about it another time.”",
+      "right": false,
+      "why": "She's chosen this moment. Putting it off can mean she never tells anyone."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "You're worried but have no proof. What do you do?",
+     "options": [
+      "Wait until you're sure",
+      "Report it today through the portal",
+      "Ask the guardian first"
+     ],
+     "answer": 1,
+     "why": "Report concerns, not certainties. The safeguarding officer decides what happens next."
+    },
+    {
+     "q": "A young person discloses harm. What do you write down?",
+     "options": [
+      "Your opinion of what happened",
+      "Their exact words, date and time",
+      "Nothing until you've asked more questions"
+     ],
+     "answer": 1,
+     "why": "Their words, unchanged. Don't lead or question further."
+    },
+    {
+     "q": "Who investigates a concern?",
+     "options": [
+      "You, the mentor",
+      "The safeguarding officer",
+      "The young person's friends"
+     ],
+     "answer": 1,
+     "why": "Never investigate yourself."
+    }
+   ]
+  },
+  {
+   "id": "a05",
+   "group": 2,
+   "title": "Boundaries",
+   "mins": 20,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Where you meet",
+     "body": "Only at the centre or in the NGG call room. Never alone off-site, never at your home or theirs, never in your car."
+    },
+    {
+     "h": "Money and gifts",
+     "body": "Don't give or lend money. Small, equal gifts only through the centre, such as a book at the end of term."
+    },
+    {
+     "h": "Touch and language",
+     "body": "Handshakes and high-fives in public. No private jokes, nicknames or comments about appearance."
+    }
+   ],
+   "scenario": {
+    "situation": "Tolulope's parent asks if you can drive her home after the session because it's raining.",
+    "options": [
+     {
+      "text": "Agree, it's only ten minutes",
+      "right": false,
+      "why": "Mentors don't transport mentees. It protects both of you."
+     },
+     {
+      "text": "Say no kindly and ask the centre lead to help arrange safe transport",
+      "right": true,
+      "why": "The centre has a process for this."
+     },
+     {
+      "text": "Give her money for a taxi",
+      "right": false,
+      "why": "No money changes hands between mentor and mentee."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "Where can you meet your mentee?",
+     "options": [
+      "Anywhere public",
+      "Only at the centre or the NGG call room",
+      "At their home with a parent present"
+     ],
+     "answer": 1,
+     "why": "Meeting places are fixed so everyone knows where young people are."
+    }
+   ]
+  },
+  {
+   "id": "a06",
+   "group": 2,
+   "title": "Digital communication",
+   "mins": 18,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Portal only",
+     "body": "Message only through the NGG portal. No WhatsApp, Instagram, TikTok or phone calls. Messages are kept and can be seen by the safeguarding team."
+    },
+    {
+     "h": "Hours",
+     "body": "Between 8am and 8pm. If a young person messages late, reply the next morning."
+    },
+    {
+     "h": "Photos",
+     "body": "Don't take or share photos of a young person on your own phone. The centre handles photos with media consent."
+    }
+   ],
+   "scenario": {
+    "situation": "Kelechi sends you a friend request on Instagram.",
+    "options": [
+     {
+      "text": "Accept, it's harmless",
+      "right": false,
+      "why": "Personal social media is off limits, even if it seems friendly."
+     },
+     {
+      "text": "Ignore it and say nothing",
+      "right": false,
+      "why": "Better to explain, so he doesn't feel rejected."
+     },
+     {
+      "text": "Decline and explain in the portal that you only chat on NGG",
+      "right": true,
+      "why": "Clear and kind."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "A mentee messages at 10pm. What do you do?",
+     "options": [
+      "Reply straight away",
+      "Reply after 8am the next day",
+      "Call them"
+     ],
+     "answer": 1,
+     "why": "Keep to the hours. If it's urgent or worrying, report it."
+    }
+   ]
+  },
+  {
+   "id": "a07",
+   "group": 2,
+   "title": "Reporting concerns",
+   "mins": 12,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "How to report",
+     "body": "Tap Report a concern, pick a category and write what happened. It goes straight to the safeguarding officer."
+    },
+    {
+     "h": "In an emergency",
+     "body": "If a child is in immediate danger, call 112 first, then the safeguarding officer."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "A child is in immediate danger. First step?",
+     "options": [
+      "Report in the portal",
+      "Call 112",
+      "Message the coordinator"
+     ],
+     "answer": 1,
+     "why": "Emergency services first, then the officer."
+    }
+   ]
+  },
+  {
+   "id": "a08",
+   "group": 3,
+   "title": "Development conversations",
+   "mins": 20,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Five mentor actions",
+     "body": "Express care, challenge growth, provide support, share power, expand possibilities."
+    },
+    {
+     "h": "Ask, don't tell",
+     "body": "Help them work out what they think. “What would you do differently?” beats “You should…”"
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "Which is ‘sharing power’?",
+     "options": [
+      "Choosing their goal for them",
+      "Letting them pick what you work on next",
+      "Correcting every mistake"
+     ],
+     "answer": 1,
+     "why": "Young people grow more when they help decide."
+    }
+   ]
+  },
+  {
+   "id": "a09",
+   "group": 3,
+   "title": "Saturday observation and evidence",
+   "mins": 25,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Ten indicators",
+     "body": "Voice, courage, thinking, creativity, collaboration, responsibility, character, identity, initiative, reflection. Four levels: not seen, emerging, demonstrated, exemplary."
+    },
+    {
+     "h": "Rate what you saw, not who they are",
+     "body": "Rate today's behaviour. A quiet day doesn't make a quiet child."
+    },
+    {
+     "h": "Evidence",
+     "body": "For any rise or for exemplary, write what they did: “Volunteered to present first.” Not “Excellent.”"
+    }
+   ],
+   "scenario": {
+    "situation": "You want to rate Ibrahim's Initiative as Exemplary. Which evidence works?",
+    "options": [
+     {
+      "text": "“Great initiative today!”",
+      "right": false,
+      "why": "Says how good, not what happened."
+     },
+     {
+      "text": "“Noticed his group had no plan, wrote one on the board and gave each person a job.”",
+      "right": true,
+      "why": "Specific and observable. Another mentor would rate it the same."
+     },
+     {
+      "text": "“He's always a leader.”",
+      "right": false,
+      "why": "About who he is, not what he did today."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "Which needs written evidence?",
+     "options": [
+      "Every rating",
+      "Any rise, and any exemplary",
+      "Only low ratings"
+     ],
+     "answer": 1,
+     "why": "Rises and exemplary ratings must be backed by what you saw."
+    }
+   ]
+  },
+  {
+   "id": "a10",
+   "group": 3,
+   "title": "The Anchor Journal",
+   "mins": 10,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Theirs, not yours",
+     "body": "The journal is private unless they choose to share. You only see what they share with you."
+    },
+    {
+     "h": "Responding",
+     "body": "Reply briefly and warmly. Ask one question. Never correct spelling or grammar."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "A mentee shares a journal entry. Best reply?",
+     "options": [
+      "Correct the spelling",
+      "“What helped you do it?”",
+      "Forward it to their parent"
+     ],
+     "answer": 1,
+     "why": "Warm, curious, short."
+    }
+   ]
+  },
+  {
+   "id": "a11",
+   "group": 3,
+   "title": "Giving feedback",
+   "mins": 12,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Specific and soon",
+     "body": "Name what they did, why it mattered and one thing to try next, on the same day."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "Most useful feedback?",
+     "options": [
+      "“Good job”",
+      "“You explained your idea clearly; next time try looking at the group”",
+      "“You can do better”"
+     ],
+     "answer": 1,
+     "why": "Specific, kind, one next step."
+    }
+   ]
+  },
+  {
+   "id": "a12",
+   "group": 3,
+   "title": "Handling difficult situations",
+   "mins": 20,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "When they go quiet",
+     "body": "Keep showing up. Send one short message a week. Tell the coordinator after two weeks of silence."
+    },
+    {
+     "h": "Conflict in the pod",
+     "body": "Stay calm, separate if needed, and hear each side privately. Log it."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "A mentee hasn't replied for two weeks. What now?",
+     "options": [
+      "Stop messaging",
+      "Tell the coordinator",
+      "Message their parent directly"
+     ],
+     "answer": 1,
+     "why": "Coordinators help re-engage. Don't go round the portal."
+    }
+   ]
+  },
+  {
+   "id": "a13",
+   "group": 3,
+   "title": "Closing a match well",
+   "mins": 15,
+   "note": "New this term",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Why endings matter",
+     "body": "Abrupt endings can hurt. A planned ending, with time to say goodbye, protects what you built."
+    },
+    {
+     "h": "The steps",
+     "body": "Tell the coordinator first. Agree a last meeting. Review their goals and achievements together. Write a final note. Say goodbye properly, even if you're staying at NGG."
+    },
+    {
+     "h": "What you mustn't do",
+     "body": "Don't just stop turning up. Don't promise to stay in touch outside NGG."
+    }
+   ],
+   "scenario": {
+    "situation": "You're moving to Abuja next month. When do you tell Tolulope?",
+    "options": [
+     {
+      "text": "On the last Saturday, so she isn't upset for weeks",
+      "right": false,
+      "why": "A surprise ending feels like rejection."
+     },
+     {
+      "text": "After telling the coordinator, with at least three weeks to plan a proper goodbye",
+      "right": true,
+      "why": "Time to review, celebrate and hand over."
+     },
+     {
+      "text": "Not at all, the coordinator will tell her",
+      "right": false,
+      "why": "She should hear it from you, with support."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "Who do you tell first about ending a match?",
+     "options": [
+      "Your mentee",
+      "The coordinator",
+      "The guardian"
+     ],
+     "answer": 1,
+     "why": "The coordinator plans the closure with you."
+    },
+    {
+     "q": "Which is part of a good closure?",
+     "options": [
+      "Swapping phone numbers",
+      "Reviewing their goals and achievements together",
+      "Ending by message"
+     ],
+     "answer": 1,
+     "why": "Celebrate what they achieved."
+    }
+   ]
+  },
+  {
+   "id": "a14",
+   "group": 2,
+   "title": "Refresher: digital safety",
+   "mins": 10,
+   "note": "Yearly refresher",
+   "required": false,
+   "renewDays": 365,
+   "lessons": [
+    {
+     "h": "What's changed",
+     "body": "New this year: voice notes are allowed in the portal. They are kept like messages. Video calls only in the NGG call room, which is recorded."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "Where can you video call a mentee?",
+     "options": [
+      "WhatsApp video",
+      "The NGG call room",
+      "Zoom"
+     ],
+     "answer": 1,
+     "why": "Only the NGG call room, which is recorded."
+    }
+   ]
+  }
+ ]
+}

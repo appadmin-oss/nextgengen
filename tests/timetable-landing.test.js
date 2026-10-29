@@ -146,7 +146,7 @@ header('Content-Type: text/html; charset=utf-8'); readfile(${JSON.stringify(path
     const launch = {};
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
     if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
-    else if (d) launch.executablePath = '/opt/pw-browsers/' + d + '/chrome-linux/chrome';
+    else if (d) launch.executablePath = require('./_responsive-probe').chromiumPath(require('fs'));
     browser = await chromium.launch(launch);
     const errs = [];
     const ctx = async (o = {}) => {

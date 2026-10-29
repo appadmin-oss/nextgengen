@@ -22,6 +22,8 @@ if ($method === 'GET') {
         $res = gs_call($keyOps[(string)$b['action']], array_merge($b, ['requesterId' => $s['mid'], 'ip' => client_ip()]));
     } elseif (($b['action'] ?? '') === 'aiKeys') {
         $res = gs_call('admin.ai.keys.set', array_merge($b, ['requesterId' => $s['mid'], 'ip' => client_ip()]));
+    } elseif (($b['action'] ?? '') === 'aiRouting') {
+        $res = gs_call('admin.ai.routing.set', array_intersect_key($b, array_flip(['monthlyLimitUsd', 'paidEveryday', 'prices'])) + ['requesterId' => $s['mid'], 'ip' => client_ip()]);
     } elseif (($b['action'] ?? '') === 'aiKeysTest') {
         $res = gs_call('admin.ai.keys.test', ['requesterId' => $s['mid'], 'ip' => client_ip()]);
     } elseif (($b['action'] ?? '') === 'testMail') {

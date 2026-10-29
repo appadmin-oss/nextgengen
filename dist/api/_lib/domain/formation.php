@@ -32,30 +32,56 @@ declare(strict_types=1);
  *
  * Chess appears in all four course lists because §6 makes it compulsory across
  * all four — that is the point of it, not a duplication to clean up.
+ *
+ * The courses and `audience` lines are the programme's own list of the
+ * Divisional Heads (2026-10): who each division is for, in their words. The
+ * Club's course catalogue is seeded from them (club_catalogue()).
  */
 function nggc_divisions(): array {
-    return [
+    $base = [
         ['id' => 'arts', 'code' => '01', 'name' => 'Creative & Performing Arts',
-         'mandate' => 'Develop and monetize artistic, cultural and performance abilities.',
-         'courses' => ['Acting & Stagecraft', 'Vocal Training & Oral Tradition', 'Music Theory',
-                       'Musical Instruments', 'Music Production', 'Sound Engineering',
-                       'Adire Textile Design', 'Craft Making', 'Product Design', 'Chess']],
+         'mandate' => 'Develop and monetize artistic, cultural and performance abilities.'],
         ['id' => 'media', 'code' => '02', 'name' => 'Media & Content Strategy',
-         'mandate' => 'Develop the ability to communicate ideas, build audiences and position brands.',
-         'courses' => ['Video Production', 'Cinematography', 'Motion Graphics', 'Graphic Design',
-                       'Brand Identity', 'Digital Content Strategy', 'Editorial',
-                       'Social Media Marketing', 'Channel Growth', 'Chess']],
+         'mandate' => 'Develop the ability to communicate ideas, build audiences and position brands.'],
         ['id' => 'tech', 'code' => '03', 'name' => 'Technology & Applied Engineering',
-         'mandate' => 'Develop builders capable of creating technological solutions.',
-         'courses' => ['Artificial Intelligence', 'Machine Learning', 'Coding', 'Software Development',
-                       'Robotics', 'Automation', 'Product Design', 'Cybersecurity',
-                       'Systems Architecture', 'Chess']],
+         'mandate' => 'Develop builders capable of creating technological solutions.'],
         ['id' => 'business', 'code' => '04', 'name' => 'Business Strategy, Operations & Administration',
-         'mandate' => 'Develop young people capable of organizing people, resources, systems and ideas into executable outcomes.',
-         'courses' => ['Project Management', 'Product Management', 'Data Analysis', 'Business Intelligence',
-                       'Digital Strategy', 'Business Development', 'HR', 'Finance', 'Operations',
-                       'Compliance', 'Chess']],
+         'mandate' => 'Develop young people capable of organizing people, resources, systems and ideas into executable outcomes.'],
     ];
+    /* The courses and the "for children interested in…" line come from ONE
+       place, the seeded NGG divisions (CLUB_DIVISIONS_DEFAULT, curriculum.php),
+       plus Chess, which §6 makes every division's. A second hand-kept list here
+       had drifted from the catalogue the join form offers. */
+    $byName = [];
+    foreach (CLUB_DIVISIONS_DEFAULT as $d) $byName[$d['name']] = $d;
+    foreach ($base as &$d) {
+        $src = $byName[$d['name']] ?? null;
+        $d['audience'] = $src ? (string)$src['blurb'] : '';
+        $d['courses'] = array_values(array_merge($src ? $src['courses'] : [], ['Chess']));
+    }
+    unset($d);
+    return $base;
+}
+
+/**
+ * The courses a member of this division can be put on, from the LIVE
+ * catalogue (the one admins edit under Divisions & courses), plus Chess.
+ * A catalogue division is this one when its name, or a word of it, maps here;
+ * with no such division the seeded list stands, so the picker is never empty.
+ */
+function nggc_division_course_list(string $id): array {
+    $out = [];
+    if (function_exists('club_divisions')) {
+        foreach (club_divisions() as $d) {
+            $name = (string)$d['name'];
+            $hit = nggc_division_for_track($name) === $id;
+            if (!$hit) foreach (preg_split('/[^\p{L}]+/u', $name) ?: [] as $w) if ($w !== '' && nggc_division_for_track($w) === $id) { $hit = true; break; }
+            if ($hit) foreach ($d['courses'] as $c) if (!in_array($c, $out, true)) $out[] = (string)$c;
+        }
+    }
+    if (!$out) { $d = nggc_division($id); $out = $d ? array_values(array_diff($d['courses'], ['Chess'])) : []; }
+    if (!in_array('Chess', $out, true)) $out[] = 'Chess';
+    return $out;
 }
 
 /** The four ids, for a closed-set check. */
@@ -99,6 +125,9 @@ function nggc_division_for_track(?string $track): string {
     if ($t === '') return '';
     static $map = [
         'music' => 'arts', 'arts' => 'arts', 'art' => 'arts', 'creative' => 'arts',
+        // Instruments are music, and music is the arts.
+        'piano' => 'arts', 'keyboard' => 'arts', 'guitar' => 'arts', 'drums' => 'arts', 'violin' => 'arts',
+        'saxophone' => 'arts', 'vocals' => 'arts', 'singing' => 'arts', 'voice' => 'arts',
         'drama' => 'arts', 'dance' => 'arts', 'fashion' => 'arts', 'craft' => 'arts',
         'media' => 'media', 'film' => 'media', 'photography' => 'media', 'design' => 'media',
         'graphics' => 'media', 'content' => 'media',
@@ -110,7 +139,13 @@ function nggc_division_for_track(?string $track): string {
     if (isset($map[$t])) return $map[$t];
     // A direct hit on an id or a full division name, for rosters already using them.
     $d = nggc_division($t);
-    return $d ? $d['id'] : '';
+    if ($d) return $d['id'];
+    // One of a division's own courses ("Catering", "Branding"). Chess is every
+    // division's, so it places nobody.
+    foreach (nggc_divisions() as $dv) {
+        foreach ($dv['courses'] as $c) if ($c !== 'Chess' && mb_strtolower($c) === $t) return $dv['id'];
+    }
+    return '';
 }
 
 /* ── §14 · The Courage Index ladder and its ten observations ──────────────
@@ -220,12 +255,15 @@ function admin_divisions_overview(array $p): array {
         $n = (int)($counts[$d['id']] ?? 0);
         $placed += $n;
         $out[] = ['id' => $d['id'], 'code' => $d['code'], 'name' => $d['name'],
-                  'mandate' => $d['mandate'], 'courses' => count($d['courses']), 'members' => $n];
+                  'mandate' => $d['mandate'], 'courses' => count($d['courses']), 'members' => $n,
+                  // The picker's options: this division's courses as admins have them now.
+                  'courseList' => nggc_division_course_list((string)$d['id'])];
     }
     $total = array_sum($counts);
     /* Anything not one of the four counts as unplaced, including a value that
        predates the closed set. It cannot go negative and it cannot hide. */
-    return ['ok' => true, 'divisions' => $out, 'unplaced' => max(0, $total - $placed), 'total' => $total];
+    return ['ok' => true, 'divisions' => $out, 'unplaced' => max(0, $total - $placed), 'total' => $total,
+            'allCourses' => function_exists('member_course_names') ? member_course_names() : []];
 }
 
 /* ── §20 · Progression is evidence of formation, never time served ─────────

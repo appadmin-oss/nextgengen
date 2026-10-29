@@ -33,13 +33,19 @@ function CrKpis({ b, phone }) {
       {!phone && <CrIcon n={k.tone === "up" ? "arrow-up-right" : k.tone === "down" ? "arrow-down-right" : "minus"}/>}{k.d}
     </span>
   ) : null;
+  /* Columns follow the count, so a row is never left with a hole in it: six are 3 × 2
+     (and 6 × 1 on a desktop), five are 3 + 2 on a phone, four are 2 × 2. The value is
+     geometry from data, so it travels as a custom property. */
+  const n = b.items.length;
+  const pcols = n === 1 ? 1 : (n === 2 || n === 4) ? 2 : 3;
+  const dcols = n <= 6 ? n : Math.ceil(n / 2);
   if (phone) return (
-    <div className="cr-pkpis">
+    <div className="cr-pkpis" style={{ "--cols": pcols }}>
       {b.items.map((k, i) => <div key={i} className="cr-pkpi"><span>{k.l}</span><b>{k.v}</b>{k.d ? <span className={"cr-kpi-d" + (k.tone === "up" ? " is-up" : k.tone === "down" ? " is-down" : "")}>{k.d} <em>{k.dn}</em></span> : k.dn ? <span className="cr-hint">{k.dn}</span> : null}</div>)}
     </div>
   );
   return (
-    <div className="cr-kpis">
+    <div className="cr-kpis" style={{ "--cols": dcols }}>
       {b.items.map((k, i) => <div key={i} className="cr-kpi"><span className="cr-kpi-l">{k.l}</span><span className="cr-kpi-v">{k.v}</span><span className="cr-kpi-n">{d(k)}{k.dn}</span></div>)}
     </div>
   );
@@ -95,7 +101,7 @@ function CrColumns({ b, phone }) {
   const fmt = v => crNum(v) + (b.pct ? "%" : "");
   if (phone) return (
     <div className="cr-pbox cr-pcols">
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}><span className="cr-big" style={{ fontSize: 22 }}>{b.big}</span><span className="cr-hint">{b.sub}</span></div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}><span className="cr-big" style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>{b.big}</span><span className="cr-hint">{b.sub}</span></div>
       <div className="cr-pcols-plot" role="img" aria-label={(b.title || "Chart") + ": " + b.bars.map(x => (x.l || "") + " " + fmt(x.v)).join(", ")}>
         {b.bars.map((c, j) => <div key={j} className={"cr-cols-bar" + (j === b.bars.length - 1 ? " is-last" : "")} style={{ height: sc.h(c.v) + "%" }}/>)}
       </div>
@@ -285,7 +291,7 @@ function CrFormBlock({ b, ctx, phone }) {
   return (
     <div className="cr-form">
       {b.groups.map((g, gi) => (
-        <div key={gi} className="cr-box cr-fgroup">
+        <div key={gi} className="cr-box cr-fgroup" id={g.h ? crAnchor(g.h) : undefined}>
           {(g.h || g.help) && <div className="cr-fgroup-h">{g.h && <b>{g.h}</b>}{g.help && <span>{g.help}</span>}</div>}
           {g.rows.map(r => (
             <div key={r.id} className="cr-frow">
@@ -377,7 +383,11 @@ function CrTable({ b, ctx, phone }) {
   const [sort, setSort] = React.useState(b.sortInit || null);
   const [page, setPage] = React.useState(0);
   const [sel, setSel] = React.useState({});
-  const [srv, setSrv] = React.useState({ state: server ? "loading" : "ready", rows: [], total: 0, error: null });
+  /* `loaded`: an answer has come back at least once. Only the FIRST load draws
+     the skeleton. Keying it on "no rows yet" swapped the whole table, search
+     box included, for a skeleton on the keystroke after a search that found
+     nobody — the field under the cursor vanished and focus fell to the page. */
+  const [srv, setSrv] = React.useState({ state: server ? "loading" : "ready", rows: [], total: 0, error: null, loaded: false });
   const selectable = !b.nosel && !!(b.bulk && b.bulk.length);
   React.useEffect(() => { const t = setTimeout(() => setQ(qLive), server ? 300 : 0); return () => clearTimeout(t); }, [qLive]);
   React.useEffect(() => { setPage(0); }, [q, JSON.stringify(fv), JSON.stringify(sort)]);
@@ -385,9 +395,9 @@ function CrTable({ b, ctx, phone }) {
   const loadServer = React.useCallback(() => {
     if (!server) return;
     const n = ++seq.current;
-    setSrv(s => Object.assign({}, s, { state: s.rows.length ? "refresh" : "loading", error: null }));
+    setSrv(s => Object.assign({}, s, { state: s.loaded ? "refresh" : "loading", error: null }));
     server.fetch({ q: q.trim(), filters: fv, sort, page, pageSize: CR_PAGE_SIZE })
-      .then(r => { if (n === seq.current) setSrv({ state: "ready", rows: r.rows || [], total: r.total || 0, error: null }); },
+      .then(r => { if (n === seq.current) setSrv({ state: "ready", rows: r.rows || [], total: r.total || 0, error: null, loaded: true }); },
             e => { if (n === seq.current) setSrv(s => Object.assign({}, s, { state: "error", error: e })); });
   }, [server, q, JSON.stringify(fv), JSON.stringify(sort), page]);
   React.useEffect(() => { loadServer(); }, [loadServer]);
@@ -432,7 +442,11 @@ function CrTable({ b, ctx, phone }) {
   const setFilter = (c, v) => { setFv(s => Object.assign({}, s, { [c.id]: s[c.id] === v ? "" : v })); setFopen(null); };
 
   if (server && srv.state === "loading") return <CrSkeleton phone={phone}/>;
-  if (server && srv.state === "error" && !srv.rows.length) return <CrError error={srv.error} onRetry={loadServer} what="this list"/>;
+  if (server && srv.state === "error" && !srv.loaded) return <CrError error={srv.error} onRetry={loadServer} what="this list"/>;
+  /* A search or page that failed after the list had loaded keeps the toolbar
+     (and what was typed) and says so, with a retry, above the rows it had. */
+  const srvErr = server && srv.state === "error" && srv.loaded
+    ? <div className="cr-tfail" role="alert"><CrIcon n="warning-circle"/><span>{crErr(srv.error, "Couldn’t load this list.")}</span><button type="button" className="cr-btn is-sm" onClick={loadServer}>Try again</button></div> : null;
 
   if (phone) {
     const st = x => x.r.cells.find(c => c && c.k === "status");
@@ -447,6 +461,7 @@ function CrTable({ b, ctx, phone }) {
         )}
         {filterOpts && <div className="cr-pbox" role="group" aria-label={"Filter by " + filterOpts.l}>{filterOpts.opts.map(o => <button key={o.v} type="button" className="cr-popt" aria-pressed={fv[filterOpts.id] === o.v} onClick={() => setFilter(filterOpts, o.v)}><span>{o.l}</span>{o.n != null && <em>{crNum(o.n)}</em>}{fv[filterOpts.id] === o.v && <CrIcon n="check"/>}</button>)}</div>}
         <span className="cr-sr" role="status">{crPlural(total, "row")}</span>
+        {srvErr}
         {!view.length ? (
           <div className="cr-tempty" style={{ padding: "24px 12px", fontSize: 14 }}>{emptyText}{applied && <button type="button" className="cr-pbig is-ghost" style={{ height: 44, width: "auto", padding: "0 16px", fontSize: 14 }} onClick={clearAll}>Clear filters</button>}</div>
         ) : (
@@ -490,6 +505,7 @@ function CrTable({ b, ctx, phone }) {
           )}
         </div>
       )}
+      {srvErr}
       {filterOpts && (
         <div className="cr-fopts" role="group" aria-label={"Filter by " + filterOpts.l}>
           <span>{filterOpts.l}</span>
@@ -541,3 +557,18 @@ const CR_BLOCKS = {
   kpis: CrKpis, attention: CrAttention, status: CrStatus, columns: CrColumns, bars: CrBars, list: CrList,
   note: CrNote, cards: CrCards, form: CrFormBlock, compose: CrCompose, table: CrTable, custom: CrCustom,
 };
+
+/** An in-page anchor for a section heading ("Staff sign-in" → cr-sec-staff-sign-in), so an index can jump to it. */
+function crAnchor(h) { return "cr-sec-" + String(h || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+/** "On this page": one chip per section, each jumping to it. */
+function CrJumpIndex({ items, foot }) {
+  const go = h => { const el = document.getElementById(crAnchor(h)); if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); const f = el.querySelector("button, input, select, textarea"); if (f) f.focus({ preventScroll: true }); } };
+  return (
+    <div className="cr-jump">
+      <nav aria-label="On this page"><span className="cr-jump-h">On this page</span>
+        {items.map(h => <button key={h} type="button" className="cr-keys-chip" onClick={() => go(h)}>{h}</button>)}
+      </nav>
+      {foot && <p className="cr-jump-foot">{foot}</p>}
+    </div>
+  );
+}

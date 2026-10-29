@@ -12,11 +12,11 @@
    ========================================================================== */
 
 const CR_GROUPS = [
-  { h: null, items: ["home", "inbox", "analytics"] },
-  { h: "People", items: ["members", "mentors", "money"] },
+  { h: null, items: ["home", "inbox", "support", "analytics"] },
+  { h: "People", items: ["members", "mentors", "mentorship", "money"] },
   { h: "Programme", items: ["checkin", "summer", "learning", "events"] },
   { h: "Publishing", items: ["content", "community", "comms"] },
-  { h: "System", items: ["settings"] },
+  { h: "System", items: ["settings", "wifi"] },
 ];
 
 /* cap: null = any staff · "x" = that capability · ["x","y"] = any of them. */
@@ -32,6 +32,13 @@ const CR_PAGES = {
     { id: "messages", label: "Messages", desc: "Contact form and replies.", cap: "inbox" },
     { id: "comments", label: "Comments", desc: "Public comments waiting for moderation.", cap: "content" },
     { id: "photos", label: "Photo review", desc: "Headshots must pass before an ID card can print.", cap: "content" },
+    { id: "testimonials", label: "Testimonials", desc: "What members said about their own sessions, waiting to be read.", cap: "content" },
+  ] },
+  /* Support cases (domain/support.php, cr-tab-support.jsx): opened by members
+     and families inside their portals, answered here. */
+  support: { label: "Support", icon: "lifebuoy", tabs: [
+    { id: "cases", label: "Cases", desc: "What members and families have asked the team, next reply due first.", cap: "support" },
+    { id: "support-health", label: "How we’re doing", desc: "Open and overdue cases, reply targets and how people rated the help.", cap: "support" },
   ] },
   analytics: { label: "Analytics", icon: "chart-line-up", tabs: [
     { id: "dashboard", label: "M&E overview", desc: "Monitoring and evaluation against the formation goals.", cap: null },
@@ -42,16 +49,35 @@ const CR_PAGES = {
   ] },
   members: { label: "Members", icon: "users", tabs: [
     { id: "members", label: "Roster", desc: "Everyone in NGG, NGV and Afrovanguard.", cap: "people" },
+    { id: "courses", label: "Courses", desc: "Every child’s courses: confirm what their record proposes, or choose. Every portal reads what is placed here.", cap: "people" },
     { id: "quality", label: "Data quality", desc: "Gaps and duplicates that break ID cards, reminders and reports.", cap: "people" },
     { id: "families", label: "Families", desc: "Parent and guardian accounts connected to members.", cap: "people" },
     { id: "centres", label: "Centres", desc: "Where NGG meets.", cap: "people" },
     { id: "idcards", label: "ID cards", desc: "Print queue for member and staff cards.", cap: "people" },
+    { id: "request-log", label: "Request history", desc: "Every request members and parents have raised — open, approved, declined and withdrawn — and who decided it.", cap: "people" },
+    { id: "accounts", label: "Accounts", desc: "Who cannot sign in, and why. Ending a membership is not done here.", cap: "people" },
+    { id: "security", label: "Sign-in security", desc: "Who has a second sign-in step, the policy for each kind of person, and letting someone in for ten minutes.", cap: "people" },
   ] },
   mentors: { label: "Mentors & volunteers", icon: "handshake", tabs: [
     { id: "mentors", label: "Mentors", desc: "The mentor develops the person.", cap: "people" },
     { id: "mentorship", label: "Pairings", desc: "Who mentors whom, and whether the weekly review is happening.", cap: "people" },
     { id: "volunteers", label: "Volunteers", desc: "Everyone helping on Saturdays.", cap: "people" },
     { id: "companion", label: "Companion check-ins", desc: "How members say they are doing, between sessions.", cap: "club" },
+  ] },
+  /* The Anchor Pods workspace (MENTORSHIP.md §4.2; cr-tab-mentorship.jsx).
+     Its tab ids carry an ms- prefix because "mentorship" is already the old
+     Pairings tab's id — /control/mentorship now opens this page, which is
+     where a mentorship link should land. */
+  mentorship: { label: "Mentorship", icon: "users-three", tabs: [
+    { id: "ms-overview", label: "Overview", desc: "This week across the pods: who needs a person, relationship health and the match lifecycle.", cap: "people" },
+    { id: "ms-queue", label: "Match queue", desc: "Mentees waiting for a mentor. Each is offered two and chooses one.", cap: "people" },
+    { id: "ms-rel", label: "Relationships", desc: "Every live match, its phase and its health.", cap: "people" },
+    { id: "ms-checkins", label: "Check-ins", desc: "The cadence every match carries, and what is overdue.", cap: "people" },
+    { id: "ms-interventions", label: "Interventions", desc: "Every flag becomes a plan with an owner and a review date.", cap: "people" },
+    { id: "ms-projects", label: "Projects", desc: "Projects and activities set for mentors and children: who is on each, in which group, and the countdown to the finish.", cap: "people" },
+    { id: "ms-safeguarding", label: "Safeguarding", desc: "Concerns reported about young people. Visible only to safeguarding roles.", cap: "safeguarding" },
+    { id: "ms-mentors", label: "Mentors", desc: "From application to first match: screening, the Academy, the Commitment Policy and each pod.", cap: "people" },
+    { id: "ms-impact", label: "Impact", desc: "Six measures against fixed targets.", cap: "people" },
   ] },
   money: { label: "Money", icon: "wallet", tabs: [
     { id: "membership", label: "Membership payments", desc: "Joining invoices: Paystack, and offline payments a second person checks against their evidence.", cap: "fees" },
@@ -72,12 +98,17 @@ const CR_PAGES = {
   ] },
   learning: { label: "Learning", icon: "graduation-cap", tabs: [
     { id: "divisions", label: "Divisions & courses", desc: "The NGG Club’s four divisions and the courses in each — what the join form offers and the card prints.", cap: ["curriculum", "club", "people"] },
-    { id: "curriculum", label: "Curriculum", desc: "The four divisions. Chess is compulsory in all of them.", cap: "curriculum" },
+    { id: "curriculum", label: "Curriculum", desc: "What the Club teaches, lesson by lesson, and the exam that ends each one.", cap: "curriculum" },
+    { id: "feedback", label: "How lessons land", desc: "What members tapped after each lesson — the ones most of a class could not follow, worst first.", cap: ["curriculum", "club"] },
+    { id: "course-health", label: "Course health", desc: "Whether each course can be taught: children, instructors, lessons, class times, a channel, and what is missing.", cap: ["curriculum", "club", "people"] },
+    { id: "providers", label: "Where courses lead", desc: "The awarding bodies outside NGG — freeCodeCamp, Trinity, NBTE — what each awards, and which members hold one.", cap: ["curriculum", "club"] },
     { id: "sessions", label: "Sessions", desc: "Each session is 12 weeks.", cap: "content" },
     { id: "missions", label: "Missions", desc: "Anchor missions members complete and mentors verify.", cap: "content" },
     { id: "assignments", label: "Assignments", desc: "Coursework submitted for grading.", cap: "content" },
     { id: "anchor", label: "Anchor Journal", desc: "The weekly reflection every member writes.", cap: "content" },
     { id: "timetable", label: "Timetable", desc: "Which course meets when, where and with whom, at each centre.", cap: "club" },
+    { id: "formation", label: "Saturday formation", desc: "The 8:00–2:00 Saturday schedule every portal reads, and what each reader is told.", cap: "content" },
+    { id: "opps", label: "Opportunities", desc: "Bootcamps, competitions and volunteering shown to members, matched to their age.", cap: "content" },
   ] },
   events: { label: "Events", icon: "calendar-blank", tabs: [
     { id: "events", label: "Events", desc: "Sessions, outings and showcases members can RSVP to.", cap: "content" },
@@ -98,10 +129,22 @@ const CR_PAGES = {
     { id: "broadcast", label: "Send", desc: "Reach members and parents by app, SMS and email.", cap: "content" },
     { id: "newsletter", label: "Newsletter", desc: "The monthly email to subscribers.", cap: "inbox" },
   ] },
+  /* The centres' Wi-Fi (cr-tab-wifi.jsx). The Club portal's Wi-Fi item opens it. */
+  wifi: { label: "Wi-Fi", icon: "wifi-high", tabs: [
+    { id: "wifi", label: "Gateways", desc: "Each centre’s Wi-Fi gateway: whether it is working, and what to do when it isn’t.", cap: "network" },
+    { id: "wifi-analytics", label: "Analytics", desc: "Who is online and when, how much of the day each gateway is there, line speeds and each region’s health.", cap: "network" },
+    { id: "wifi-regions", label: "Regions", desc: "Centres grouped for their Wi-Fi: their leads, their speeds and how they are doing.", cap: "wifi_regions" },
+    { id: "wifi-health", label: "Speed & health", desc: "How fast each centre’s line is, how busy it gets, and testing it from where people sit.", cap: "network" },
+    { id: "wifi-usage", label: "Data used", desc: "How much data each person used, against their allowance, and who is over it.", cap: "network" },
+    { id: "wifi-access", label: "Who gets on", desc: "Wi-Fi follows people’s records. Why somebody can’t get on, who gets what, and how fast.", cap: "network" },
+    { id: "wifi-guides", label: "Setup guides", desc: "Which gateway a centre can use, what each does, and how it fits together.", cap: "network" },
+  ] },
   settings: { label: "Settings", icon: "gear", tabs: [
     { id: "settings", label: "General", desc: "Sign-ups, messages, staff sign-in and the homepage banner.", cap: "settings" },
     { id: "attendance-rules", label: "Attendance", desc: "When somebody is late, and when they may leave.", cap: "settings" },
     { id: "card-branding", label: "Card branding", desc: "What is printed on the Summer School cards and digital IDs.", cap: "settings" },
+    { id: "member-records", label: "Member records", desc: "Make every member’s record complete: the fields asked for, the deadline, who is still missing what, and reminders.", cap: "people" },
+    { id: "mentor-automations", label: "Mentorship automations", desc: "The Mentor Portal's background jobs: their thresholds, times and centres, and what each run found.", cap: "people" },
     { id: "keys", label: "API keys", desc: "Connect AI, photo storage, payments, email and text messages.", cap: "settings" },
     { id: "access", label: "Access & roles", desc: "Who can do what. Give people the least they need.", cap: "rbac" },
     { id: "integrations", label: "Integrations", desc: "Services that send, store and take payments.", cap: "settings" },

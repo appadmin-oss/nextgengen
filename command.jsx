@@ -38,13 +38,15 @@ function CommandPalette() {
 
   const items = React.useMemo(() => buildItems(auth), [auth.isSignedIn, auth.isAdmin, auth.member && auth.member.memberId]);
   const filtered = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(it =>
-      it.label.toLowerCase().includes(q) ||
-      (it.hint && it.hint.toLowerCase().includes(q)) ||
-      (it.keywords || []).some(k => k.toLowerCase().includes(q))
-    );
+    /* Every word typed, anywhere in the label, hint or keywords. One string
+       match meant "apply summer" found nothing while "Apply · Summer School"
+       sat in the list, and a trailing space emptied it. */
+    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return items;
+    return items.filter(it => {
+      const hay = [it.label, it.hint || ""].concat(it.keywords || []).join(" ").toLowerCase();
+      return words.every(w => hay.includes(w));
+    });
   }, [items, query]);
 
   React.useEffect(() => {
@@ -196,7 +198,7 @@ function buildItems(auth) {
   const list = [
     { id: "nav.home",       section: "Pages", icon: "◉", label: "Home",          hint: "Hero, programs, the room", run: nav("home"),    keywords: ["start","intro"] },
     { id: "nav.about",      section: "Pages", icon: "◆", label: "About NGGC",      hint: "The 2040 formation brief", run: nav("about"),   keywords: ["about","2040","divisions","courage","formation","brief","vision"] },
-    { id: "nav.summer",     section: "Pages", icon: "☀", label: "Summer Students",hint: "The on-ramp",              run: nav("summer") },
+    { id: "nav.summer",     section: "Pages", icon: "☀", label: "Summer School",  hint: "The on-ramp",              run: nav("summer") },
     { id: "nav.club",       section: "Pages", icon: "◐", label: "NGGC",            hint: "The identity society",     run: nav("club"),    keywords: ["club","identity"] },
     { id: "nav.anchor",     section: "Pages", icon: "✦", label: "Anchor 12",       hint: "The 12-week flagship",     run: nav("anchor") },
     { id: "nav.book",       section: "Pages", icon: "📕", label: "The Anchor book",hint: "Field manual",             run: nav("book"),    keywords: ["book","manual"] },

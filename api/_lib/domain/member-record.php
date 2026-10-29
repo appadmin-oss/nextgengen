@@ -35,13 +35,21 @@ function admin_member_record(array $p): array {
     // Attendance: the days they came, and the absences the nightly sweep recorded.
     $att = db_all('SELECT date, status, checkInAt, checkOutAt, lateMinutes FROM attendance WHERE studentId = ? AND date >= ? ORDER BY date DESC', [$id, $since]);
     $absent = db_all("SELECT date, note FROM infractions WHERE personId = ? AND kind = 'absence' AND date >= ? AND COALESCE(voidedAt,'') = '' ORDER BY date DESC", [$id, $since]);
-    $late = count(array_filter($att, static fn($a) => in_array((string)$a['status'], ['late', 'tardy'], true)));
-    $out['attendance'] = ['present' => count($att), 'late' => $late, 'absent' => count($absent),
-        'rate' => (count($att) + count($absent)) > 0 ? (int)round(100 * count($att) / (count($att) + count($absent))) : null,
+    /* One row a day. A day they came but never signed out is absent by the
+       rule (the sweep logs it), not present AND absent: it shows once, as
+       "no sign-out", and counts once, as the absence it is. */
+    $absentOn = array_column($absent, 'date', 'date');
+    $late = count(array_filter($att, static fn($a) => !isset($absentOn[(string)$a['date']]) && in_array((string)$a['status'], ['late', 'tardy'], true)));
+    $came = count(array_filter($att, static fn($a) => !isset($absentOn[(string)$a['date']])));
+    $cameOn = array_column($att, 'date', 'date');
+    $out['attendance'] = ['present' => $came, 'late' => $late, 'absent' => count($absent),
+        'rate' => ($came + count($absent)) > 0 ? (int)round(100 * $came / ($came + count($absent))) : null,
         'recent' => array_slice(array_merge(
-            array_map(static fn($a) => ['date' => (string)$a['date'], 'kind' => in_array((string)$a['status'], ['late', 'tardy'], true) ? 'late' : 'present',
+            array_map(static fn($a) => ['date' => (string)$a['date'],
+                'kind' => isset($absentOn[(string)$a['date']]) ? 'incomplete' : (in_array((string)$a['status'], ['late', 'tardy'], true) ? 'late' : 'present'),
                 'in' => substr((string)$a['checkInAt'], 11, 5), 'out' => substr((string)$a['checkOutAt'], 11, 5), 'lateMinutes' => (int)($a['lateMinutes'] ?? 0)], $att),
-            array_map(static fn($a) => ['date' => (string)$a['date'], 'kind' => 'absent', 'in' => '', 'out' => '', 'lateMinutes' => 0], $absent)), 0, 40)];
+            array_map(static fn($a) => ['date' => (string)$a['date'], 'kind' => 'absent', 'in' => '', 'out' => '', 'lateMinutes' => 0],
+                array_values(array_filter($absent, static fn($a) => !isset($cameOn[(string)$a['date']]))))), 0, 40)];
     usort($out['attendance']['recent'], static fn($a, $b) => strcmp($b['date'], $a['date']));
 
     // Conduct — where the reader may see it (policy_subject_gate decides by the member's real type).
@@ -91,7 +99,7 @@ function admin_member_record(array $p): array {
 
     // Their classes: their course's slots on their centre's timetable.
     if (function_exists('tt_for_centre') && (string)$m['centre'] !== '') {
-        $tt = tt_for_centre((string)$m['centre'], true, (string)($m['track'] ?? ''));
+        $tt = tt_for_centre((string)$m['centre'], true, function_exists('curriculum_member_courses') ? curriculum_member_courses($m) : (string)($m['track'] ?? ''));
         $out['classes'] = array_values(array_filter($tt['slots'], static fn($s) => !empty($s['mine'])));
     }
     return $out;

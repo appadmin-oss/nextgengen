@@ -102,7 +102,7 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
     const errs = [];
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
@@ -121,7 +121,7 @@ function cleanup() {
     chk('…all nine of them, and none blocked for want of a photo', (await P.$$('.ids-rec')).length === 9 && !/can’t print/.test(list));
     chk('a member with no photo says it prints initials', /no photo, prints initials/.test(list));
 
-    await P.click('.ids-btn--outline:has-text("Add 9 to the sheet")');
+    await P.click('.ids-btn--ink:has-text("Add all 9")');
     await P.waitForSelector('.ids-slot.is-card .ids-face-tpl', { timeout: 60000 });
     await P.waitForFunction(() => [...document.querySelectorAll('.ids-slot.is-card')].every(s => s.querySelector('.ids-face-tpl') || s.querySelector('[data-ids-failed]')), null, { timeout: 90000 });
     chk('every slot is drawn by Afrovanguard’s own card, none failed',
@@ -153,6 +153,9 @@ function cleanup() {
     if (OUT && studio) fs.writeFileSync(path.join(OUT, 'av-studio-front.png'), Buffer.from(studio.split(',')[1], 'base64'));
     await A.close();
 
+    // Backs live in the Printing section (v4), closed until opened.
+    await P.evaluate(() => { const d = [...document.querySelectorAll('details.ids-more')].find(x => x.querySelector('.ids-more-t').textContent === 'Printing'); if (d && !d.open) d.open = true; });
+    await P.waitForTimeout(150);
     await P.click('.ids-radio:has-text("Double-sided · long edge")');
     await P.click('.ids-seg-opt:has-text("Backs")');
     await P.waitForFunction(() => [...document.querySelectorAll('.ids-slot.is-card')].every(s => s.querySelector('.ids-face-tpl')), null, { timeout: 90000 }).catch(() => {});
@@ -174,7 +177,7 @@ function cleanup() {
     await P.click('.ids-seg-opt:has-text("Fronts")');
     if (OUT) await (await P.$('.ids-sheet')).screenshot({ path: path.join(OUT, 'av-sheet-fronts.png') });
 
-    await P.click('.ids-btn--print');
+    await P.click('.ids-btn--headprint');
     await P.waitForSelector('[role=alertdialog]');
     chk('the confirm counts nine cards and names Afrovanguard’s card', /Print 9 cards\?/.test(await P.innerText('[role=alertdialog]')) && /Afrovanguard’s card/.test(await P.innerText('[role=alertdialog]')));
     const [dl] = await Promise.all([P.waitForEvent('download', { timeout: 180000 }), P.click('[role=alertdialog] .ids-btn--primary')]);

@@ -83,6 +83,13 @@ function hooks_attendance(array $p): array {
          * not_checked_in is answered rather than swallowed: the arrival may
          * still be in flight, and the sender retries. */
         if (strtolower((string)($e['action'] ?? 'in')) === 'out') {
+            /* A departure re-sent days later (the gate's back-fill) keeps its
+               own time when that time falls on the day it names: clamped to
+               "now" like an arrival, it would read as leaving today. Only for
+               a day that already has an arrival, and at most 45 days back. */
+            if (is_string($rawScan) && ($ts1 = strtotime($rawScan)) !== false && $ts1 <= time() && $ts1 >= time() - 45 * 86400 && attendance_today($ts1) === $date) {
+                $scanTs = $ts1; $scanIso = gmdate('Y-m-d\TH:i:s\Z', $scanTs);
+            }
             $row = db_row('SELECT id, checkOutAt FROM attendance WHERE studentId = ? AND date = ?', [$sid, $date]);
             if (!$row) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'not_checked_in']; continue; }
             /* A LATER departure moves it: at a CACENTRE terminal the check-out
@@ -96,7 +103,8 @@ function hooks_attendance(array $p): array {
                 $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'too_early', 'closesAt' => $no['closesAt']]; continue;
             }
             db_update('attendance', ['checkOutAt' => $scanIso], ['id' => $row['id']]);
-            if ($isMember && empty($row['checkOutAt']) && ($mrow = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$sid]))) {
+            if (empty($row['checkOutAt'])) policy_checkout_landed($sid, $outType, $date, 'hook:' . $source);
+            if ($isMember && empty($row['checkOutAt']) && $date === attendance_today() && ($mrow = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$sid]))) {
                 checkin_member_email($mrow, 'out', $scanTs, ['checkInAt' => (string)(db_row('SELECT checkInAt FROM attendance WHERE id = ?', [$row['id']])['checkInAt'] ?? '')]);
             }
             $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'marked', 'action' => 'out'];

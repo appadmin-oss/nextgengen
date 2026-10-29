@@ -47,7 +47,7 @@ function PromoBanner({ setPage }) {
     window.__navigate ? window.__navigate(p) : (setPage && setPage(p));
   };
   return (
-    <div style={{ background: "var(--navy-900, #00225F)", color: "#fff", padding: "10px 16px", textAlign: "center", position: "relative", fontSize: 14 }}>
+    <div className="dark-surface" style={{ background: "var(--navy-900, #00225F)", color: "#fff", padding: "10px 16px", textAlign: "center", position: "relative", fontSize: 14 }}>
       <span>{promo.text}</span>
       {promo.ctaLabel && promo.ctaUrl ? <a href={/^https?:\/\//.test(promo.ctaUrl) ? promo.ctaUrl : "#"} onClick={go} style={{ color: "var(--gold-400, #F5B026)", fontWeight: 700, marginLeft: 12, textDecoration: "underline" }}>{promo.ctaLabel} →</a> : null}
       <button aria-label="Dismiss" onClick={dismiss} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
@@ -86,16 +86,16 @@ function Hero({ setPage }) {
   const gotwName = site.heroGotwName || "Zara · Voice of Influence";
 
   return (
-    <section style={{ background: "var(--grad-hero)", color: "#fff", position: "relative", overflow: "hidden" }}>
+    <section className="dark-surface" style={{ background: "var(--grad-hero)", color: "#fff", position: "relative", overflow: "hidden" }}>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "var(--grad-hero-glow)" }}/>
       <div className="container" style={{ maxWidth: 1320, padding: "56px 28px 0", position: "relative" }}>
         <div className="home-hero-cols">
           <div>
             <div data-reveal className="reveal" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(111,220,157,0.14)", border: "1px solid rgba(111,220,157,0.4)" }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--mint)", animation: "ngg-live-pulse 1.8s infinite" }}/>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--mint)", animation: "ngg-live-pulse calc(1.8s * var(--motion, 1)) infinite" }}/>
               <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#bff3d4" }}>{badge}</span>
             </div>
-            <h1 className="display" style={{ fontWeight: 800, fontSize: "clamp(38px, 5.6vw, 68px)", letterSpacing: "-0.035em", lineHeight: 0.98, margin: "20px 0 14px", color: "#fff" }}>
+            <h1 className="display" style={{ fontWeight: 800, fontSize: "var(--rs-fsize-3, clamp(38px, 5.6vw, 68px))", letterSpacing: "-0.035em", lineHeight: "var(--rs-lheight-4, 0.98)", margin: "20px 0 14px", color: "#fff" }}>
               {(site.heroTitle1 || "Africa's next geniuses") + " " + (site.heroTitle2 || "are") + " "}
               <span style={{ color: "var(--gold-500)" }}>{site.heroEmphasis || "not waiting"}</span>.
             </h1>
@@ -166,14 +166,14 @@ function StatBar() {
   ];
 
   return (
-    <section style={{background:"var(--navy-900)", color:"white"}}>
-      <div className="container" style={{padding:"64px 28px"}}>
-        <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:0}} aria-busy={!stats}>
+    <section className="dark-surface" style={{background:"var(--navy-900)", color:"white"}}>
+      <div className="container" style={{padding:"var(--rs-p-5, 64px 28px)"}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-301, repeat(4, 1fr))", gap:0}} aria-busy={!stats}>
           {cells.map((c, i) => {
             const hasNum = typeof c.num === "number" && c.num > 0;
             return (
             <div key={c.label} className="reveal" data-reveal style={{padding:"8px 28px", borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.08)", "--reveal-delay": (i * 120) + "ms"}}>
-              <div className="display" style={{fontSize:96, lineHeight:1, color: c.goldNum ? "var(--gold-500)" : "white"}}>
+              <div className="display" style={{fontSize:"var(--rs-fsize-6, 96px)", lineHeight:"var(--rs-lheight-7, 1)", color: c.goldNum ? "var(--gold-500)" : "white"}}>
                 {hasNum ? <CountUp to={String(c.num)}/> : <span style={{opacity:0.3}}>—</span>}
                 {c.suffix && hasNum && <span style={{color:"var(--gold-500)"}}>{c.suffix}</span>}
               </div>
@@ -213,7 +213,7 @@ function ProgressionSystem({ setPage }) {
         />
 
         {/* Stage selector strip */}
-        <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:14, marginBottom:36}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-301, repeat(4, 1fr))", gap:14, marginBottom:36}}>
           {STAGES.map((s, i) => {
             const sc = colorMap[s.color];
             const isActive = s.id === active;
@@ -226,7 +226,7 @@ function ProgressionSystem({ setPage }) {
                   color: isActive ? sc.text : "var(--ink-900)",
                   border: isActive ? "2px solid var(--navy-900)" : "1px solid rgba(12,20,50,0.1)",
                   cursor:"pointer", fontFamily:"inherit",
-                  transition:"all 0.2s ease",
+                  transition:"all calc(0.2s * var(--motion, 1)) ease",
                 }}>
                 <div className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", opacity:0.7}}>
                   Stage {s.code}
@@ -248,13 +248,13 @@ function ProgressionSystem({ setPage }) {
         </div>
 
         {/* Active stage detail */}
-        <div style={{display:"grid", gridTemplateColumns:"1.1fr 1fr", gap:24, alignItems:"stretch"}}>
-          <div style={{background:"var(--navy-900)", color:"white", padding:"44px 48px", borderRadius:24, position:"relative", overflow:"hidden"}}>
-            <div style={{position:"absolute", top:-30, right:-20, fontFamily:"var(--font-display)", fontSize:280, fontWeight:800, color:"rgba(255,255,255,0.05)", lineHeight:1, letterSpacing:"-0.06em"}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-8, 1.1fr 1fr)", gap:24, alignItems:"stretch"}}>
+          <div className="dark-surface" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-9, 44px 48px)", borderRadius:24, position:"relative", overflow:"hidden"}}>
+            <div style={{position:"absolute", top:-30, right:-20, fontFamily:"var(--font-display)", fontSize:"var(--rs-fsize-10, 280px)", fontWeight:800, color:"rgba(255,255,255,0.05)", lineHeight:1, letterSpacing:"-0.06em"}}>
               {stage.code}
             </div>
             <div className="eyebrow" style={{color:"var(--gold-500)"}}>STAGE {stage.code} · {stage.tag.toUpperCase()}</div>
-            <h3 style={{fontFamily:"var(--font-display)", fontSize:52, lineHeight:1, margin:"16px 0 18px", letterSpacing:"-0.03em"}}>{stage.title}</h3>
+            <h3 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:"var(--rs-fsize-12, 52px)", lineHeight:1, margin:"16px 0 18px", letterSpacing:"-0.03em"}}>{stage.title}</h3>
             <p style={{fontSize:17, lineHeight:1.55, color:"rgba(255,255,255,0.78)", maxWidth:480}}>{stage.desc}</p>
             <div style={{marginTop:36}}>
               <div className="eyebrow" style={{color:"rgba(255,255,255,0.4)", marginBottom:16}}>What you walk away with</div>
@@ -273,7 +273,7 @@ function ProgressionSystem({ setPage }) {
           </div>
 
           <div style={{display:"flex", flexDirection:"column", gap:18}}>
-            <Photo name={stageScenes[stage.id]} ratio="16/10" overlay style={{height:280}}>
+            <Photo name={stageScenes[stage.id]} ratio="16/10" overlay style={{height:"var(--rs-height-13, 280px)"}}>
               <div style={{position:"absolute", top:18, left:18, display:"flex", alignItems:"center", gap:8}}>
                 <span style={{width:42, height:42, borderRadius:12, background:c.fill, color:c.text, display:"grid", placeItems:"center", fontFamily:"var(--font-display)", fontWeight:800, fontSize:18}}>{stage.code}</span>
                 <span className="chip chip-on-dark" style={{background:"rgba(12,20,50,0.55)", color:"white"}}>{stage.tag}</span>
@@ -285,7 +285,7 @@ function ProgressionSystem({ setPage }) {
             </Photo>
             <div className="card" style={{padding:24}}>
               <div className="eyebrow" style={{color:"var(--ink-500)"}}>Active in this stage</div>
-              <div className="display" style={{fontSize:84, color:"var(--navy-900)", marginTop:8, lineHeight:0.95}}>
+              <div className="display" style={{fontSize:"var(--rs-fsize-14, 84px)", color:"var(--navy-900)", marginTop:8, lineHeight:0.95}}>
                 {stage.id === "summer" ? "318" : stage.id === "club" ? "164" : stage.id === "vanguard" ? "29" : "06"}
                 <span style={{color:"var(--gold-500)"}}>.</span>
               </div>
@@ -317,7 +317,7 @@ function FlagshipCallout({ setPage }) {
   const pct = Math.round((weekOf / totalWeeks) * 100);
 
   return (
-    <section style={{background:"var(--navy-900)", color:"white", padding:"104px 0", position:"relative", overflow:"hidden"}}>
+    <section className="dark-surface" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-15, 104px 0px)", position:"relative", overflow:"hidden"}}>
       {/* Atmospheric background */}
       <div style={{position:"absolute", top:0, right:0, width:"50%", height:"100%", opacity:0.35}}>
         <img src={scene("classroom", 1400)} alt="" style={{width:"100%", height:"100%", objectFit:"cover"}}/>
@@ -325,10 +325,10 @@ function FlagshipCallout({ setPage }) {
       </div>
       <div style={{position:"absolute", top:-100, right:-100, width:500, height:500, borderRadius:"50%", background:"radial-gradient(circle, rgba(208,255,58,0.18), transparent 70%)"}}/>
       <div className="container" style={{position:"relative", zIndex:1}}>
-        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:80, alignItems:"center"}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:"var(--rs-gap-17, 80px)", alignItems:"center"}}>
           <div>
             <span className="chip chip-on-dark"><span className="deco-star"/> THE FLAGSHIP</span>
-            <h2 className="display" style={{fontSize:"clamp(64px, 8vw, 132px)", margin:"22px 0 26px", color:"white", lineHeight:0.86}}>
+            <h2 className="display" style={{fontSize:"var(--rs-fsize-18, clamp(64px, 8vw, 132px))", margin:"22px 0 26px", color:"white", lineHeight:"var(--rs-lheight-19, 0.86)"}}>
               Anchor<br/>
               <span style={{color:"var(--lime)"}}>Twelve.</span>
             </h2>
@@ -341,7 +341,7 @@ function FlagshipCallout({ setPage }) {
             </div>
           </div>
           <div>
-            <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:8}}>
+            <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-301, repeat(4, 1fr))", gap:8}}>
               {WEEKS.map((w, i) => {
                 const idx = i + 1;
                 const status = idx < weekOf ? "done" : idx === weekOf ? "current" : "locked";
@@ -415,7 +415,7 @@ function TracksRibbon({ setPage }) {
           title="Pick a craft. Build a self around it."
           sub="Each track gets its own mentor team, curriculum and showcase format. Switch any time — we measure character, not commitment to a category."
         />
-        <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:14}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-301, repeat(4, 1fr))", gap:14}}>
           {TRACKS.map((t, i) => {
             const c = trackColors[t.id];
             return (
@@ -451,12 +451,12 @@ function TracksRibbon({ setPage }) {
 /* =========== Cinematic community collage =========== */
 function CommunityCollage() {
   return (
-    <section style={{background:"var(--navy-900)", color:"white", padding:"96px 0"}}>
+    <section className="dark-surface" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-20, 96px 0px)"}}>
       <div className="container">
-        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:48, alignItems:"end", marginBottom:48}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:"var(--rs-gap-21, 48px)", alignItems:"end", marginBottom:48}}>
           <div>
             <span className="eyebrow" style={{color:"var(--gold-500)"}}>THE MOVEMENT, IN MOTION</span>
-            <h2 className="display" style={{fontSize:"clamp(40px, 4.8vw, 68px)", margin:"8px 0 0", color:"white", lineHeight:0.98}}>
+            <h2 className="display" style={{fontSize:"var(--rs-fsize-22, clamp(40px, 4.8vw, 68px))", margin:"8px 0 0", color:"white", lineHeight:"var(--rs-lheight-4, 0.98)"}}>
               Two centres.<br/>One generation showing up.
             </h2>
           </div>
@@ -466,7 +466,7 @@ function CommunityCollage() {
         </div>
 
         {/* Asymmetric photo grid */}
-        <div style={{display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gridTemplateRows:"260px 260px", gap:12}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-23, 2fr 1fr 1fr)", gridTemplateRows:"var(--rs-grows-24, 260px 260px)", gap:12}}>
           <Photo name="dance" ratio="auto" style={{gridRow:"1 / 3", height:"100%"}} overlay>
             <div style={{position:"absolute", bottom:20, left:20, color:"white"}}>
               <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", color:"var(--gold-400)"}}>SHOWCASE · LAGOS</div>
@@ -486,17 +486,36 @@ function CommunityCollage() {
 /* =========== Testimonials =========== */
 function Testimonials() {
   const sceneFor = ["studio", "graduation", "techLab", "speaker"];
+  /* REAL ONES ONLY, from members, about their own sessions.
+     Four invented quotes used to live in data.js, attributed to named
+     people who never said them. These come from the end of a session, in a
+     member's own words, and reach this page only after somebody with
+     `content` published them AND the record carries the guardian's
+     visibility consent — which is read again on every request, so
+     withdrawing it takes the words down.
+     Nothing is drawn until there are some. An empty row of cards says "we
+     have no stories" louder than leaving it out. */
+  const [live, setLive] = React.useState(null);
+  React.useEffect(() => {
+    let gone = false;
+    NGGApi.public.testimonials()
+      .then(r => { if (!gone) setLive((r && r.testimonials) || []); })
+      .catch(() => { if (!gone) setLive([]); });
+    return () => { gone = true; };
+  }, []);
+  const items = live === null ? TESTIMONIALS : (live.length ? live : TESTIMONIALS);
+  if (!items.length) return null;
   return (
     <section className="section" style={{background:"var(--cream-50)"}}>
       <div className="container">
         <SectionHead
           eyebrow="THE KIND OF STORY WE BUILD"
           title="The work shows in the people."
-          sub="Illustrative of the journey a member goes through — a teenager who ships, a parent who sees the change, a mentor who keeps showing up. Real, named stories replace these as our first cohorts graduate."
+          sub="Members write one line at the end of a session, in their own words. These are the ones they and their guardians agreed we could show."
         />
-        <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:18}}>
-          {TESTIMONIALS.map((t, i) => (
-            <div key={i} className="card" style={{padding:0, display:"flex", flexDirection:"column", overflow:"hidden", border:"1px solid rgba(12,20,50,0.07)"}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-301, repeat(4, 1fr))", gap:18}}>
+          {items.map((t, i) => (
+            <div key={i} className="card" style={{padding:0, display:"flex", flexDirection:"column", overflow:"hidden", border:"var(--rs-border-25, 1px solid rgba(12, 20, 50, 0.07))"}}>
               <div className="zoom-on-hover" style={{position:"relative", height:200}}>
                 <Photo name={sceneFor[i]} ratio="auto" style={{height:"100%", borderRadius:0}}/>
                 <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, transparent 40%, rgba(12,20,50,0.55) 100%)"}}/>
@@ -511,7 +530,7 @@ function Testimonials() {
                 </div>
               </div>
               <div style={{padding:24, display:"flex", flexDirection:"column", gap:12, flex:1}}>
-                <div style={{fontFamily:"var(--font-display)", fontSize:48, lineHeight:0.5, color:"var(--gold-500)", marginTop:-4}}>"</div>
+                <div style={{fontFamily:"var(--font-display)", fontSize:"var(--rs-fsize-26, 48px)", lineHeight:0.5, color:"var(--gold-500)", marginTop:-4}}>"</div>
                 <p style={{fontSize:14, lineHeight:1.55, margin:0, flex:1}}>{t.q}</p>
               </div>
             </div>
@@ -532,25 +551,25 @@ function BlogPreview({ setPage }) {
         <div style={{display:"flex", justifyContent:"space-between", alignItems:"end", marginBottom:36, flexWrap:"wrap", gap:24}}>
           <div style={{maxWidth:600}}>
             <span className="eyebrow" style={{color:"var(--gold-500)"}}>THE JOURNAL</span>
-            <h2 className="display" style={{fontSize:"clamp(40px, 5vw, 68px)", margin:"6px 0 0", lineHeight:0.95}}>Notes from the field.</h2>
-            <p style={{fontSize:16, color:"var(--ink-500)", marginTop:14, maxWidth:520, lineHeight:1.5}}>
+            <h2 className="display" style={{fontSize:"var(--rs-fsize-27, clamp(40px, 5vw, 68px))", margin:"6px 0 0", lineHeight:0.95}}>Notes from the field.</h2>
+            <p style={{fontSize:16, color:"var(--ink-700)", marginTop:14, maxWidth:520, lineHeight:1.5}}>
               Long-form writing from mentors, members and the editorial team. Why we work the way we work.
             </p>
           </div>
           <button className="btn btn-ghost" onClick={() => setPage("blog")}>All articles →</button>
         </div>
-        <div style={{display:"grid", gridTemplateColumns:"1.4fr 1fr", gap:24}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-28, 1.4fr 1fr)", gap:24}}>
           <article style={{cursor:"pointer"}} onClick={() => setPage("blog")}>
             <div className="zoom-on-hover" style={{borderRadius:18, overflow:"hidden"}}>
-              <Photo src={blogCover(feat.cover, 1400, 800)} ratio="16/10" style={{height:420, borderRadius:0}}/>
+              <Photo src={blogCover(feat.cover, 1400, 800)} ratio="16/10" style={{height:"var(--rs-height-29, 420px)", borderRadius:0}}/>
             </div>
             <div style={{marginTop:20}}>
               <div style={{display:"flex", alignItems:"center", gap:10, fontSize:12}}>
                 <span className="chip chip-gold">{feat.category}</span>
                 <span className="mono" style={{color:"var(--ink-500)"}}>{feat.date} · {feat.read}</span>
               </div>
-              <h3 style={{fontFamily:"var(--font-display)", fontSize:38, fontWeight:700, lineHeight:1.05, letterSpacing:"-0.025em", margin:"12px 0 10px"}}>{feat.title}</h3>
-              <p style={{fontSize:15, lineHeight:1.55, color:"var(--ink-500)", margin:0}}>{feat.excerpt}</p>
+              <h3 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:"var(--rs-fsize-30, 38px)", fontWeight:700, lineHeight:1.05, letterSpacing:"-0.025em", margin:"12px 0 10px"}}>{feat.title}</h3>
+              <p style={{fontSize:15, lineHeight:1.55, color:"var(--ink-700)", margin:0}}>{feat.excerpt}</p>
               <div style={{display:"flex", alignItems:"center", gap:10, marginTop:16}}>
                 <Avatar seed={feat.author.portrait} size={32}/>
                 <div style={{fontSize:13}}>
@@ -562,7 +581,7 @@ function BlogPreview({ setPage }) {
           </article>
           <div style={{display:"flex", flexDirection:"column", gap:18}}>
             {previews.map(p => (
-              <article key={p.id} style={{display:"grid", gridTemplateColumns:"140px 1fr", gap:16, cursor:"pointer"}} onClick={() => setPage("blog")}>
+              <article key={p.id} style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-31, 140px 1fr)", gap:16, cursor:"pointer"}} onClick={() => setPage("blog")}>
                 <Photo src={blogCover(p.cover, 400, 400)} ratio="1/1" style={{height:140}}/>
                 <div>
                   <div style={{display:"flex", gap:8, alignItems:"center"}}>
@@ -570,7 +589,7 @@ function BlogPreview({ setPage }) {
                     <span className="mono" style={{fontSize:10, color:"var(--ink-500)"}}>{p.read}</span>
                   </div>
                   <h4 style={{fontFamily:"var(--font-display)", fontSize:20, lineHeight:1.1, letterSpacing:"-0.015em", margin:"8px 0 8px", fontWeight:700}}>{p.title}</h4>
-                  <p style={{fontSize:13, color:"var(--ink-500)", margin:0, lineHeight:1.45, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{p.excerpt}</p>
+                  <p style={{fontSize:13, color:"var(--ink-700)", margin:0, lineHeight:1.45, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{p.excerpt}</p>
                 </div>
               </article>
             ))}
@@ -591,14 +610,14 @@ function ClosingCTA({ setPage }) {
     ? "Apply for " + sessionLabel(session, "the next session") + " →"
     : "Apply for the next session →";
   return (
-    <section style={{background:"var(--gold-500)", color:"var(--navy-900)", padding:"112px 0", position:"relative", overflow:"hidden"}}>
+    <section style={{background:"var(--gold-500)", color:"var(--navy-900)", padding:"var(--rs-p-32, 112px 0px)", position:"relative", overflow:"hidden"}}>
       {/* Decorative photo strip */}
       <div style={{position:"absolute", inset:0, opacity:0.18}}>
         <img src={scene("showcase", 2000)} alt="" style={{width:"100%", height:"100%", objectFit:"cover"}}/>
       </div>
       <div className="container" style={{textAlign:"center", position:"relative"}}>
         <span className="mono" style={{fontSize:11, letterSpacing:"0.22em", textTransform:"uppercase"}}>{cohortLine}</span>
-        <h2 className="display" style={{fontSize:"clamp(60px, 9vw, 152px)", margin:"24px auto", maxWidth:1100, lineHeight:0.88}}>
+        <h2 className="display" style={{fontSize:"var(--rs-fsize-33, clamp(60px, 9vw, 152px))", margin:"24px auto", maxWidth:1100, lineHeight:"var(--rs-lheight-34, 0.88)"}}>
           Not everybody is<br/>
           ready to lead the future.
         </h2>
@@ -639,7 +658,7 @@ function EventsBand({ setPage }) {
     <section className="section" style={{ background: "var(--cream-50)" }}>
       <div className="container">
         <SectionHead eyebrow="WHAT'S COMING UP" title="Events & open days." sub="Showcases, open days and community sessions. Everyone's welcome — come see the work in the room." />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-302, repeat(3, 1fr))", gap: 18 }}>
           {events.map((e, i) => (
             <div key={e.eventId} className="card reveal" data-reveal style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", "--reveal-delay": (i * 60) + "ms" }}>
               {e.coverUrl
@@ -647,7 +666,7 @@ function EventsBand({ setPage }) {
                 : <div style={{ aspectRatio: "16/9", background: "linear-gradient(135deg, var(--navy-900), #1b2a63)" }}/>}
               <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
                 <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", color: "var(--coral)", textTransform: "uppercase" }}>{fmt(e.startAt)}</div>
-                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 22, lineHeight: 1.1 }}>{e.title}</div>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "var(--rs-fsize-1, 22px)", lineHeight: 1.1 }}>{e.title}</div>
                 {e.location && <div style={{ fontSize: 13, color: "var(--ink-500)" }}>📍 {e.location}{e.centre && e.centre !== "Both" ? " · " + e.centre : ""}</div>}
                 {e.body && <p style={{ fontSize: 14, color: "var(--ink-700)", lineHeight: 1.5, margin: 0 }}>{String(e.body).slice(0, 140)}{String(e.body).length > 140 ? "…" : ""}</p>}
               </div>
@@ -790,11 +809,11 @@ function StatusPage({ setPage, previewConfig }) {
   const page = previewConfig || (d && d.page) || {};
   if (!previewConfig && d && d.page && d.page.published === false) return (
     <div className="page" data-screen-label="Live status">
-      <section className="section" style={{ padding: "120px 0", textAlign: "center" }}>
+      <section className="section" style={{ padding: "var(--rs-p-35, 120px 0px)", textAlign: "center" }}>
         <div className="container" style={{ maxWidth: 560 }}>
           <div className="eyebrow">LIVE STATUS</div>
-          <h1 className="display" style={{ fontSize: "clamp(32px,5vw,56px)", margin: "12px 0 10px" }}>This board is offline.</h1>
-          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>The live attendance board isn't published right now. Check back soon.</p>
+          <h1 className="display" style={{ fontSize: "var(--rs-fsize-36, clamp(32px, 5vw, 56px))", margin: "12px 0 10px" }}>This board is offline.</h1>
+          <p style={{ color: "var(--ink-700)", fontSize: 16, lineHeight: 1.6 }}>The live attendance board isn't published right now. Check back soon.</p>
           <button className="btn btn-primary mt-24" onClick={() => setPage && setPage("home")}>Back to home →</button>
         </div>
       </section>
@@ -804,11 +823,11 @@ function StatusPage({ setPage, previewConfig }) {
   // program. Show a clear retry instead until data arrives.
   if (!previewConfig && err && !d) return (
     <div className="page" data-screen-label="Live status">
-      <section className="section" style={{ padding: "110px 0", textAlign: "center" }}>
+      <section className="section" style={{ padding: "var(--rs-p-37, 110px 0px)", textAlign: "center" }}>
         <div className="container" style={{ maxWidth: 520 }}>
           <div className="eyebrow">LIVE STATUS</div>
-          <h1 className="display" style={{ fontSize: "clamp(28px,4vw,46px)", margin: "12px 0 10px" }}>{boardOffline(err) ? "We can't reach the server." : "We couldn't load the board."}</h1>
-          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>{boardOffline(err)
+          <h1 className="display" style={{ fontSize: "var(--rs-fsize-38, clamp(28px, 4vw, 46px))", margin: "12px 0 10px" }}>{boardOffline(err) ? "We can't reach the server." : "We couldn't load the board."}</h1>
+          <p style={{ color: "var(--ink-700)", fontSize: 16, lineHeight: 1.6 }}>{boardOffline(err)
             ? "This isn't your device or connection — the site's server isn't answering. The board comes back on its own once it does."
             : "A quick hiccup reaching the live numbers — give it another try."}</p>
           <button className="btn btn-primary mt-24" onClick={retry}>Retry</button>
@@ -1041,7 +1060,7 @@ function StatusPage({ setPage, previewConfig }) {
     <div className="page" data-screen-label="Live status">
       {banner.text ? <div style={{ background: banner.tone === "warn" ? "#7a2e2e" : banner.tone === "success" ? "#1c5138" : "#1c2a5e", color: "#fff", textAlign: "center", padding: "10px 16px", fontSize: 14, fontWeight: 600 }}>{banner.text}</div> : null}
 
-      <section style={{ background: "linear-gradient(158deg,#0c1432 0%,#16224e 58%,#1d2c63 100%)", color: "#fff", position: "relative", overflow: "hidden" }}>
+      <section className="dark-surface" style={{ background: "linear-gradient(158deg,#0c1432 0%,#16224e 58%,#1d2c63 100%)", color: "#fff", position: "relative", overflow: "hidden" }}>
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(52% 42% at 90% 4%,rgba(245,176,38,0.22),transparent 62%),radial-gradient(44% 48% at 12% 96%,rgba(208,255,58,0.10),transparent 60%)" }}/>
         <div style={{ maxWidth: 1320, margin: "0 auto", padding: "30px 28px 0", position: "relative" }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
@@ -1052,13 +1071,13 @@ function StatusPage({ setPage, previewConfig }) {
             </div>
           </div>
 
-          <div className="hero-cols" style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 44, alignItems: "center", marginTop: 26 }}>
+          <div className="hero-cols" style={{ marginTop: 26 }}>
             <div>
               <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(111,220,157,0.14)", border: "1px solid rgba(111,220,157,0.4)" }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#6fdc9d", animation: "statuspulse 1.8s infinite" }}/>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#6fdc9d", animation: "statuspulse calc(1.8s * var(--motion, 1)) infinite" }}/>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", color: "#bff3d4" }}>LIVE{week ? " · WEEK " + week : ""}</span>
               </div>
-              <h1 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(34px,5vw,58px)", letterSpacing: "-0.035em", lineHeight: 0.98, margin: "18px 0 10px" }}>{yearName}</h1>
+              <h1 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: "clamp(34px,5vw,58px)", letterSpacing: "-0.035em", lineHeight: 0.98, margin: "18px 0 10px" }}>{yearName}</h1>
               <p style={{ color: "rgba(255,255,255,0.68)", fontSize: 15.5, maxWidth: 520, margin: "0 0 24px", lineHeight: 1.55 }}>{heroSub}</p>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <button onClick={() => setPage && setPage(page.ctaPage || "join")} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#0c1432", border: "none", background: "linear-gradient(135deg,#ffc34d,#f5b026)", boxShadow: "0 12px 26px -12px rgba(176,124,18,0.7)", display: "inline-flex", alignItems: "center", gap: 8 }}>{page.ctaLabel || "Apply for a place"} <i className="ph ph-arrow-right"/></button>
@@ -1066,7 +1085,7 @@ function StatusPage({ setPage, previewConfig }) {
               </div>
             </div>
 
-            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "26px 28px", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "var(--rs-p-40, 26px 28px)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Attendance today</span>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: accent }}>{k.centres || 0} centres</span>
@@ -1076,9 +1095,9 @@ function StatusPage({ setPage, previewConfig }) {
                 <span style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "rgba(255,255,255,0.8)", paddingBottom: 10 }}>{sFmt(ci(present))} / {sFmt(enrolled)} present</span>
               </div>
               <div style={{ display: "flex", height: 12, borderRadius: 99, overflow: "hidden", background: "rgba(255,255,255,0.12)", marginTop: 14 }}>
-                <div style={{ width: rate + "%", background: "linear-gradient(90deg,#6fdc9d,#3fb873)", transition: "width .8s cubic-bezier(.2,.7,.2,1)" }}/>
+                <div style={{ width: rate + "%", background: "linear-gradient(90deg,#6fdc9d,#3fb873)", transition: "width calc(.8s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)" }}/>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginTop: 22 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-301, repeat(4, 1fr))", gap: 12, marginTop: 22 }}>
                 <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#6fdc9d", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(onTime))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>On time</div></div>
                 <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#f5b026", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(late))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Late</div></div>
                 <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#ffd18a", fontVariantNumeric: "tabular-nums" }}>{sFmt(enrolled - ci(present))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Absent</div></div>
@@ -1100,14 +1119,14 @@ function StatusPage({ setPage, previewConfig }) {
         <section style={{ padding: "44px 0 8px" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
-              <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em", margin: 0 }}>Today at a glance</h2>
+              <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em", margin: 0 }}>Today at a glance</h2>
               <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6" }}>▲ deltas vs. yesterday</span>
             </div>
             <div className="kpi-grid">
               {kpis.map((kp, i) => (
                 <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                    <span style={{ width: 42, height: 42, borderRadius: 12, display: "grid", placeItems: "center", fontSize: 22, background: kp.tintBg, color: kp.iconColor }}><i className={"ph " + kp.icon}/></span>
+                    <span style={{ width: 42, height: 42, borderRadius: 12, display: "grid", placeItems: "center", fontSize: "var(--rs-fsize-1, 22px)", background: kp.tintBg, color: kp.iconColor }}><i className={"ph " + kp.icon}/></span>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, padding: "4px 9px", borderRadius: 999, background: kp.deltaBg, color: kp.deltaColor }}><i className={"ph " + kp.deltaIcon}/>{kp.deltaText}</span>
                   </div>
                   <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 40, lineHeight: 1, letterSpacing: "-0.03em", marginTop: 16, fontVariantNumeric: "tabular-nums", color: kp.valueColor }}>{kp.value}</div>
@@ -1123,14 +1142,14 @@ function StatusPage({ setPage, previewConfig }) {
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#a07400" }}>Places and consent</div>
-                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Registration</h2>
+                <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Registration</h2>
               </div>
               <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6" }}>Every sign-up, including withdrawn</span>
             </div>
 
-            <div className="reg-cols" style={{ display: "grid", gridTemplateColumns: "1fr 1.25fr", gap: 16, alignItems: "stretch" }}>
+            <div className="reg-cols">
               {/* Headline: total signed up, against capacity when it is set. */}
-              <div style={{ background: "linear-gradient(158deg,#0c1432 0%,#1d2c63 100%)", color: "#fff", borderRadius: 18, padding: "26px 26px 24px", display: "flex", flexDirection: "column" }}>
+              <div className="dark-surface" style={{ background: "linear-gradient(158deg,#0c1432 0%,#1d2c63 100%)", color: "#fff", borderRadius: 18, padding: "var(--rs-p-41, 26px 26px 24px)", display: "flex", flexDirection: "column" }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Registered</span>
                 <div style={{ display: "flex", alignItems: "flex-end", gap: 12, margin: "10px 0 0" }}>
                   <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(46px,6vw,68px)", lineHeight: 0.84, letterSpacing: "-0.04em", color: accent, fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.total))}</span>
@@ -1138,14 +1157,14 @@ function StatusPage({ setPage, previewConfig }) {
                 </div>
                 {hasCapacity ? <>
                   <div style={{ display: "flex", height: 12, borderRadius: 99, overflow: "hidden", background: "rgba(255,255,255,0.12)", marginTop: 18 }}>
-                    <div style={{ width: Math.min(100, reg.fill) + "%", background: "linear-gradient(90deg,#ffcf6b,#f5b026)", transition: "width .8s cubic-bezier(.2,.7,.2,1)" }}/>
+                    <div style={{ width: Math.min(100, reg.fill) + "%", background: "linear-gradient(90deg,#ffcf6b,#f5b026)", transition: "width calc(.8s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)" }}/>
                   </div>
                   <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "rgba(255,255,255,0.62)", marginTop: 10 }}>{reg.fill}% of places taken{reg.fill >= 100 ? " · full" : " · " + sFmt(Math.max(0, reg.capacity - reg.total)) + " left"}</div>
                 </> : (
                   <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "rgba(255,255,255,0.5)", marginTop: 18, lineHeight: 1.5 }}>No centre capacities set, so there is no fill rate to show.</div>
                 )}
                 <div style={{ flex: "1 1 auto", minHeight: 14 }}/>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, borderTop: "1px solid rgba(255,255,255,0.14)", paddingTop: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 12, borderTop: "1px solid rgba(255,255,255,0.14)", paddingTop: 16 }}>
                   <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.today))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Signed up today</div></div>
                   <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.thisWeek))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>This week</div></div>
                 </div>
@@ -1160,9 +1179,9 @@ function StatusPage({ setPage, previewConfig }) {
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: statusBg(reg.consentRate), color: rateTone(reg.consentRate) }}><i className={"ph " + (reg.pending > 0 ? "ph-hourglass-medium" : "ph-shield-check")}/>{reg.consentRate}% verified</span>
                   </div>
                   <div style={{ display: "flex", height: 10, borderRadius: 99, overflow: "hidden", background: "rgba(12,20,50,0.07)", marginTop: 16 }}>
-                    <div style={{ width: (reg.consentRate * t) + "%", background: rateTone(reg.consentRate), transition: "width .8s cubic-bezier(.2,.7,.2,1)" }}/>
+                    <div style={{ width: (reg.consentRate * t) + "%", background: rateTone(reg.consentRate), transition: "width calc(.8s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)" }}/>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 18 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 14, marginTop: 18 }}>
                     <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 28, color: "#2f9e44", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.verified))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488", marginTop: 5 }}>Consent verified</div></div>
                     <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 28, color: reg.pending > 0 ? "#a07400" : "#5a6488", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.pending))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488", marginTop: 5 }}>Awaiting a parent</div></div>
                   </div>
@@ -1180,12 +1199,12 @@ function StatusPage({ setPage, previewConfig }) {
                       {regTrend.map((b, i) => (
                         <div key={i} title={b.date + " · " + b.signups + " sign-up" + (b.signups === 1 ? "" : "s")} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", height: "100%" }}>
                           <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: "#8088a6", marginBottom: 4 }}>{b.signups}</span>
-                          <div style={{ width: "100%", maxWidth: 22, borderRadius: "5px 5px 0 0", background: "linear-gradient(180deg,#6a3fc0,#b07cff)", height: Math.round((b.signups || 0) / regMax * 66 * t) + "px", transition: "height .8s cubic-bezier(.2,.7,.2,1)" }}/>
+                          <div style={{ width: "100%", maxWidth: 22, borderRadius: "5px 5px 0 0", background: "linear-gradient(180deg,#6a3fc0,#b07cff)", height: Math.round((b.signups || 0) / regMax * 66 * t) + "px", transition: "height calc(.8s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)" }}/>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "#8088a6", padding: "26px 0 18px", textAlign: "center" }}>No sign-ups in this window.</div>
+                    <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "#8088a6", padding: "var(--rs-p-42, 26px 0px 18px)", textAlign: "center" }}>No sign-ups in this window.</div>
                   )}
                 </div>
               </div>
@@ -1197,15 +1216,15 @@ function StatusPage({ setPage, previewConfig }) {
               <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8088a6", marginBottom: 16 }}>How each centre is filling</div>
               <div style={{ display: "grid", gap: 14 }}>
                 {regCentres.map(c => (
-                  <div key={c.code} className="reg-centre-row" style={{ display: "grid", gridTemplateColumns: "1.2fr 2.6fr 96px 118px", alignItems: "center", gap: 16 }}>
+                  <div key={c.code} className="reg-centre-row">
                     <span style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color, flex: "0 0 auto" }}/>
                       <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 14.5, color: "#0a1130", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</b>
                     </span>
                     <span style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}>
-                      <span style={{ display: "block", height: "100%", borderRadius: 99, width: Math.min(100, c.fill) + "%", transformOrigin: "left", transition: "transform .8s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + t.toFixed(3) + ")", background: fillTone(c.fill) }}/>
+                      <span style={{ display: "block", height: "100%", borderRadius: 99, width: Math.min(100, c.fill) + "%", transformOrigin: "left", transition: "transform calc(.8s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + t.toFixed(3) + ")", background: fillTone(c.fill) }}/>
                     </span>
-                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#2a335c", fontVariantNumeric: "tabular-nums", textAlign: "right" }}>{ci(c.registered)} / {c.capacity}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#2a335c", fontVariantNumeric: "tabular-nums" }}>{ci(c.registered)} / {c.capacity}</span>
                     <span style={{ justifySelf: "end", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
                       <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, color: fillTone(c.fill), fontVariantNumeric: "tabular-nums" }}>{ci(c.fill)}%</span>
                       {(c.pending || 0) > 0 ? <span style={{ color: "#a07400" }}>· {c.pending} pending</span> : null}
@@ -1217,12 +1236,12 @@ function StatusPage({ setPage, previewConfig }) {
           </div>
         </section>}
 
-        <section style={{ padding: "48px 0 44px" }}>
+        <section style={{ padding: "var(--rs-p-43, 48px 0px 44px)" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#a07400" }}>Across the centres</div>
-                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Centre by centre</h2>
+                <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Centre by centre</h2>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6" }}>Sort</span>
@@ -1249,7 +1268,7 @@ function StatusPage({ setPage, previewConfig }) {
                     <span style={{ fontSize: 10, marginTop: 3, color: (c.late || 0) > 0 ? "#a07400" : "#2f9e44" }}>{(c.late || 0) > 0 ? (c.onTime || 0) + " on time · " + c.late + " late" : "all on time"}</span>
                   </span>
                   <span className="c-bar" style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}>
-                    <span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform .8s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + (c.rate * t / 100).toFixed(3) + ")", background: rateTone(c.rate) }}/>
+                    <span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform calc(.8s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + (c.rate * t / 100).toFixed(3) + ")", background: rateTone(c.rate) }}/>
                   </span>
                   <span className="c-rate" style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, textAlign: "right", fontVariantNumeric: "tabular-nums", color: rateTone(c.rate) }}>{ci(c.rate)}%</span>
                   <span className="c-status" style={{ justifySelf: "end", display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: statusBg(c.rate), color: rateTone(c.rate) }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: rateTone(c.rate) }}/>{statusLabel(c.rate)}</span>
@@ -1267,7 +1286,7 @@ function StatusPage({ setPage, previewConfig }) {
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
             <div style={{ marginBottom: 18 }}>
               <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#a07400" }}>Over the whole term</div>
-              <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Who is still coming</h2>
+              <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Who is still coming</h2>
               <p style={{ fontFamily: "'Inter',sans-serif", fontSize: 14.5, lineHeight: 1.6, color: "#5a6488", maxWidth: 700, margin: "10px 0 0" }}>
                 Today's rate counts who turned up. This counts who is still with us: a child who came at
                 least once and has now missed the last {ret.stoppedRun} sessions has stopped, not
@@ -1293,14 +1312,14 @@ function StatusPage({ setPage, previewConfig }) {
               </div>
 
               {retCentres.length > 1 && <>
-                <div className="ret-head">{["Centre", "Still coming", "Stopped", "Never started", "Stopped %"].map((h, i) => <span key={i} style={{ textAlign: i ? "right" : "left" }}>{h}</span>)}</div>
+                <div className="ret-head">{["Centre", "Still coming", "Stopped", "Never started", "Stopped %"].map((h, i) => <span key={i}>{h}</span>)}</div>
                 {retCentres.map(c => (
                   <div key={c.centre} className="ret-row">
                     <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}>{c.centre}</b>
-                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2f9e44", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.stillComing}</span>
-                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: (c.stopped || 0) > 0 ? "#c02c2c" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.stopped}</span>
-                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: (c.neverCame || 0) > 0 ? "#5a6488" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.neverCame}</span>
-                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, textAlign: "right", fontVariantNumeric: "tabular-nums", color: retTone(c.stoppedPct || 0) }}>{c.stoppedPct}%</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2f9e44", fontVariantNumeric: "tabular-nums" }}>{c.stillComing}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: (c.stopped || 0) > 0 ? "#c02c2c" : "#8088a6", fontVariantNumeric: "tabular-nums" }}>{c.stopped}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: (c.neverCame || 0) > 0 ? "#5a6488" : "#8088a6", fontVariantNumeric: "tabular-nums" }}>{c.neverCame}</span>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, fontVariantNumeric: "tabular-nums", color: retTone(c.stoppedPct || 0) }}>{c.stoppedPct}%</span>
                   </div>
                 ))}
               </>}
@@ -1308,12 +1327,12 @@ function StatusPage({ setPage, previewConfig }) {
           </div>
         </section>}
 
-        <section style={{ background: "#faf6ec", borderTop: "1px solid #e8dec6", borderBottom: "1px solid #e8dec6", padding: "48px 0" }}>
+        <section style={{ background: "#faf6ec", borderTop: "1px solid #e8dec6", borderBottom: "1px solid #e8dec6", padding: "var(--rs-p-44, 48px 0px)" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 22, flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#a07400" }}>The last two weeks</div>
-                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Attendance trend</h2>
+                <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Attendance trend</h2>
               </div>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#5a6488" }}><span style={{ width: 18, borderTop: "1.5px dashed #f5b026", display: "inline-block" }}/>avg {avg} present</span>
             </div>
@@ -1327,7 +1346,7 @@ function StatusPage({ setPage, previewConfig }) {
                       const isToday = i === trendArr.length - 1;
                       return <div key={i} title={b.date + " · " + b.present + " present"} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", height: "100%" }}>
                         <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: "#8088a6", marginBottom: 4 }}>{b.present}</span>
-                        <div style={{ width: "100%", maxWidth: 24, borderRadius: "5px 5px 0 0", background: isToday ? "linear-gradient(180deg,#f5b026,#ffcf6b)" : "linear-gradient(180deg,#16224e,#3b5bdb)", height: Math.round((b.present || 0) / maxTrend * 150 * t) + "px", transition: "height .8s cubic-bezier(.2,.7,.2,1)" }}/>
+                        <div style={{ width: "100%", maxWidth: 24, borderRadius: "5px 5px 0 0", background: isToday ? "linear-gradient(180deg,#f5b026,#ffcf6b)" : "linear-gradient(180deg,#16224e,#3b5bdb)", height: Math.round((b.present || 0) / maxTrend * 150 * t) + "px", transition: "height calc(.8s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)" }}/>
                       </div>;
                     })}
                   </div>
@@ -1344,7 +1363,7 @@ function StatusPage({ setPage, previewConfig }) {
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
             <div style={{ marginBottom: 8 }}>
               <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#a07400", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-sparkle"/> Smart insights</div>
-              <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>What the numbers are saying</h2>
+              <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>What the numbers are saying</h2>
             </div>
             <p style={{ fontFamily: "'Sora'", fontWeight: 600, fontSize: 19, lineHeight: 1.45, letterSpacing: "-0.01em", color: "#2a335c", maxWidth: 720, margin: "14px 0 26px" }}>{insightsSummary}</p>
             <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "20px 22px", marginBottom: 20, boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
@@ -1377,7 +1396,7 @@ function StatusPage({ setPage, previewConfig }) {
       {showCentreGrid && <div className="view">
         <section style={{ padding: "44px 0 56px" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
-            <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px" }}>Every centre</h2>
+            <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px" }}>Every centre</h2>
             <p style={{ color: "#5a6488", fontSize: 14.5, margin: "0 0 26px" }}>Tap a centre for its activities, faculties and member leaderboard.</p>
             <div className="centre-cards">
               {centresRaw.map(c => {
@@ -1388,7 +1407,7 @@ function StatusPage({ setPage, previewConfig }) {
                     <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{c.code}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "16px 0 6px" }}>
-                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 38, lineHeight: 1, color: rateTone(c.rate), fontVariantNumeric: "tabular-nums" }}>{c.rate}%</span>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "var(--rs-fsize-30, 38px)", lineHeight: 1, color: rateTone(c.rate), fontVariantNumeric: "tabular-nums" }}>{c.rate}%</span>
                     <span style={{ fontSize: 13, color: "#5a6488" }}>{c.present} / {c.enrolled} present</span>
                   </div>
                   <span style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden", marginTop: 6 }}>
@@ -1416,7 +1435,7 @@ function StatusPage({ setPage, previewConfig }) {
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                 <span style={{ width: 20, height: 56, borderRadius: 8, background: detail.color, display: "block" }}/>
                 <div>
-                  <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 34, letterSpacing: "-0.025em", margin: 0 }}>{detail.name}</h2>
+                  <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 34, letterSpacing: "-0.025em", margin: 0 }}>{detail.name}</h2>
                   <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#8088a6" }}>{detail.code} · {detail.weekLabel}</span>
                 </div>
               </div>
@@ -1449,7 +1468,7 @@ function StatusPage({ setPage, previewConfig }) {
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, margin: "36px 0 16px", flexWrap: "wrap" }}>
-              <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: 0 }}>{detail.activitiesLabel}</h3>
+              <h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: 0 }}>{detail.activitiesLabel}</h3>
             </div>
             {detail.activities.length === 0
               ? <div style={{ border: "1px dashed #d9d2c0", borderRadius: 16, padding: 28, textAlign: "center", color: "#8088a6", fontSize: 14 }}>No activities logged for {detail.name} yet.</div>
@@ -1472,7 +1491,7 @@ function StatusPage({ setPage, previewConfig }) {
                 ))}
               </div>}
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, margin: "36px 0 14px", flexWrap: "wrap" }}>
-              <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: 0 }}><i className="ph-fill ph-trophy" style={{ color: "#f5b026", marginRight: 8 }}/>{detail.name} leaderboard</h3>
+              <h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: 0 }}><i className="ph-fill ph-trophy" style={{ color: "#f5b026", marginRight: 8 }}/>{detail.name} leaderboard</h3>
               <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{detail.lbCount} students · {tfLabel}</span>
             </div>
             {!detail.hasMembers
@@ -1489,7 +1508,7 @@ function StatusPage({ setPage, previewConfig }) {
           <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px" }}>
             <div className="filter-bar" style={{ justifyContent: "space-between", marginBottom: 6 }}>
               <div>
-                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: 0 }}>Student leaderboard</h2>
+                <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: 0 }}>Student leaderboard</h2>
                 <p style={{ color: "#5a6488", fontSize: 14, margin: "6px 0 0" }}>{lbCount} students ranked by points · {tfLabel}</p>
               </div>
               <div className="filter-bar">
@@ -1502,12 +1521,12 @@ function StatusPage({ setPage, previewConfig }) {
             </div>
           </div>
         </section>
-        <section style={{ background: "linear-gradient(180deg,#0c1432,#16224e)", padding: "40px 0 48px" }}>
+        <section className="dark-surface" style={{ background: "linear-gradient(180deg,#0c1432,#16224e)", padding: "40px 0 48px" }}>
           <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px" }}>
             <div className="podium">
               {podium.map((p, i) => (
                 <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 160, maxWidth: "40vw" }}>
-                  <span style={{ width: p.avatarSize, height: p.avatarSize, borderRadius: "50%", display: "grid", placeItems: "center", position: "relative", overflow: "hidden", fontFamily: "'Sora'", fontWeight: 800, fontSize: 22, color: inkOn(p.color).ink, background: p.color, border: "3px solid " + p.medalColor, boxShadow: "0 0 0 4px rgba(255,255,255,0.06)" }}>
+                  <span style={{ width: p.avatarSize, height: p.avatarSize, borderRadius: "50%", display: "grid", placeItems: "center", position: "relative", overflow: "hidden", fontFamily: "'Sora'", fontWeight: 800, fontSize: "var(--rs-fsize-1, 22px)", color: inkOn(p.color).ink, background: p.color, border: "3px solid " + p.medalColor, boxShadow: "0 0 0 4px rgba(255,255,255,0.06)" }}>
                     {p.initial}
                     {p.photo ? <img src={p.photo} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
                   </span>
@@ -1539,10 +1558,10 @@ function StatusPage({ setPage, previewConfig }) {
         </section>
       </div>}
 
-      <section style={{ background: "#0c1432", color: "#fff", padding: "56px 0 60px" }}>
+      <section className="dark-surface" style={{ background: "#0c1432", color: "#fff", padding: "56px 0 60px" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 28px" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(255,255,255,0.08)", fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em" }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "#d0ff3a" }}/>TRANSPARENCY</span>
-          <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(28px,3.6vw,42px)", letterSpacing: "-0.02em", margin: "16px 0 12px" }}>{page.transparencyTitle || "Numbers, not names."}</h2>
+          <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: "clamp(28px,3.6vw,42px)", letterSpacing: "-0.02em", margin: "16px 0 12px" }}>{page.transparencyTitle || "Numbers, not names."}</h2>
           <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 15.5, lineHeight: 1.75, margin: "0 0 24px" }}>{page.transparencyBody || "This board updates live and shows aggregate figures and student handles — how many attended, at which centres, and how participation is trending. A child's record never appears here. A name or photograph appears only where a parent or guardian has consented to it, and disappears the moment that consent is withdrawn. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy."}</p>
           {/* Not editable, and deliberately so. The paragraph above it is
               admin copy, and an older saved version of it still promises that
@@ -1565,20 +1584,21 @@ function StatusPage({ setPage, previewConfig }) {
       {!d && !err && <div className="container" style={{ padding: "60px 0", textAlign: "center" }}><div className="dash-spinner"/></div>}
       {err && <div role="alert" className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={retry} style={{ background: "none", border: "none", color: "#1c2a5e", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
       <style>{`@keyframes statuspulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,0.55)}70%{box-shadow:0 0 0 8px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}
-.hero-cols{display:grid}@media(max-width:860px){.hero-cols{grid-template-columns:1fr!important;gap:28px!important}}
 .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:920px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}}
 /* auto-fit, not repeat(4): the retention card makes five when there is a term
    to measure over, and a fixed four columns would leave the fifth stranded on a
    row of its own — the one card most worth reading, looking like an afterthought. */
 .insight-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:16px}@media(max-width:1000px){.insight-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.insight-grid{grid-template-columns:1fr}}
-@media(max-width:920px){.reg-cols{grid-template-columns:1fr!important}}
-@media(max-width:700px){.reg-centre-row{grid-template-columns:1fr auto!important;grid-template-areas:"name pct" "bar bar" "count count";row-gap:7px}.reg-centre-row>*:nth-child(1){grid-area:name}.reg-centre-row>*:nth-child(2){grid-area:bar}.reg-centre-row>*:nth-child(3){grid-area:count;text-align:left!important}.reg-centre-row>*:nth-child(4){grid-area:pct}}
+.reg-cols{display:grid;grid-template-columns:1fr 1.25fr;gap:16px;align-items:stretch}@media(max-width:920px){.reg-cols{grid-template-columns:1fr}}
+.reg-centre-row{display:grid;grid-template-columns:1.2fr 2.6fr 96px 118px;align-items:center;gap:16px}.reg-centre-row>*:nth-child(3){text-align:right}
+@media(max-width:700px){.reg-centre-row{grid-template-columns:1fr auto;grid-template-areas:"name pct" "bar bar" "count count";row-gap:7px}.reg-centre-row>*:nth-child(1){grid-area:name}.reg-centre-row>*:nth-child(2){grid-area:bar}.reg-centre-row>*:nth-child(3){grid-area:count;text-align:left}.reg-centre-row>*:nth-child(4){grid-area:pct}}
 .ret-head,.ret-row{display:grid;grid-template-columns:1.6fr 100px 84px 108px 92px;align-items:center;gap:12px;padding:0 22px}
 .ret-head{height:38px;background:#faf6ec;border-top:1px solid #e5e8ee;border-bottom:1px solid #e5e8ee;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:#8088a6}
 .ret-row{min-height:52px;border-bottom:1px solid #eef0f4}.ret-row:last-child{border-bottom:none}
+.ret-head>*+*,.ret-row>*+*{text-align:right}
 /* Narrow: the headers go, so each figure carries its own label rather than
    becoming an unlabelled column of numbers. */
-@media(max-width:700px){.ret-head{display:none}.ret-row{grid-template-columns:1fr;row-gap:4px;padding:14px 18px}.ret-row>*{text-align:left!important}.ret-row>*:nth-child(2)::after{content:" still coming"}.ret-row>*:nth-child(3)::after{content:" stopped"}.ret-row>*:nth-child(4)::after{content:" never came"}.ret-row>*:nth-child(5)::after{content:" of them stopped"}}
+@media(max-width:700px){.ret-head{display:none}.ret-row{grid-template-columns:1fr;row-gap:4px;padding:14px 18px}.ret-row>*,.ret-row>*+*{text-align:left}.ret-row>*:nth-child(2)::after{content:" still coming"}.ret-row>*:nth-child(3)::after{content:" stopped"}.ret-row>*:nth-child(4)::after{content:" never came"}.ret-row>*:nth-child(5)::after{content:" of them stopped"}}
 .centre-head,.centre-row{display:grid;grid-template-columns:46px 1.5fr 96px 2.3fr 66px 140px;align-items:center;gap:16px;padding:0 20px}
 .centre-head{height:46px;background:#faf6ec;border-bottom:1px solid #e5e8ee}.centre-row{min-height:66px;border-bottom:1px solid #eef0f4}.centre-row:last-child{border-bottom:none}
 @media(max-width:820px){.centre-head{display:none}.centre-row{grid-template-columns:38px 1fr auto;grid-template-areas:"rank name rate" "rank present status" "bar bar bar";row-gap:10px;padding:16px 18px;min-height:0}.c-rank{grid-area:rank}.c-name{grid-area:name}.c-present{grid-area:present;justify-self:start}.c-bar{grid-area:bar}.c-rate{grid-area:rate;justify-self:end}.c-status{grid-area:status;justify-self:end}}
@@ -1655,11 +1675,11 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
   const page = previewConfig || (d && d.page) || {};
   if (!previewConfig && d && d.page && d.page.published === false) return (
     <div className="page" data-screen-label="Volunteer status">
-      <section className="section" style={{ padding: "120px 0", textAlign: "center" }}>
+      <section className="section" style={{ padding: "var(--rs-p-35, 120px 0px)", textAlign: "center" }}>
         <div className="container" style={{ maxWidth: 560 }}>
           <div className="eyebrow">VOLUNTEER STATUS</div>
-          <h1 className="display" style={{ fontSize: "clamp(32px,5vw,56px)", margin: "12px 0 10px" }}>This board is offline.</h1>
-          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>The live volunteer board isn't published right now. Want to help? You can still register.</p>
+          <h1 className="display" style={{ fontSize: "var(--rs-fsize-36, clamp(32px, 5vw, 56px))", margin: "12px 0 10px" }}>This board is offline.</h1>
+          <p style={{ color: "var(--ink-700)", fontSize: 16, lineHeight: 1.6 }}>The live volunteer board isn't published right now. Want to help? You can still register.</p>
           <button className="btn btn-primary mt-24" onClick={() => setPage && setPage("volunteer")}>Volunteer with us →</button>
         </div>
       </section>
@@ -1668,11 +1688,11 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
   // Don't render a zero-filled board on a fetch error.
   if (!previewConfig && err && !d) return (
     <div className="page" data-screen-label="Volunteer status">
-      <section className="section" style={{ padding: "110px 0", textAlign: "center" }}>
+      <section className="section" style={{ padding: "var(--rs-p-37, 110px 0px)", textAlign: "center" }}>
         <div className="container" style={{ maxWidth: 520 }}>
           <div className="eyebrow">VOLUNTEER STATUS</div>
-          <h1 className="display" style={{ fontSize: "clamp(28px,4vw,46px)", margin: "12px 0 10px" }}>{boardOffline(err) ? "We can't reach the server." : "We couldn't load the board."}</h1>
-          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>{boardOffline(err)
+          <h1 className="display" style={{ fontSize: "var(--rs-fsize-38, clamp(28px, 4vw, 46px))", margin: "12px 0 10px" }}>{boardOffline(err) ? "We can't reach the server." : "We couldn't load the board."}</h1>
+          <p style={{ color: "var(--ink-700)", fontSize: 16, lineHeight: 1.6 }}>{boardOffline(err)
             ? "This isn't your device or connection — the site's server isn't answering. The board comes back on its own once it does."
             : "A quick hiccup reaching the live numbers — give it another try."}</p>
           <button className="btn btn-primary mt-24" onClick={retry}>Retry</button>
@@ -1850,13 +1870,13 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
             </div>
           </div>
 
-          <div className="hero-cols" style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 44, alignItems: "center", marginTop: 26 }}>
+          <div className="hero-cols" style={{ marginTop: 26 }}>
             <div>
               <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(208,255,58,0.12)", border: "1px solid rgba(208,255,58,0.4)" }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#d0ff3a", animation: "volpulse 1.8s infinite" }}/>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#d0ff3a", animation: "volpulse calc(1.8s * var(--motion, 1)) infinite" }}/>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", color: "#e8ffb0" }}>LIVE · VOLUNTEER STATUS</span>
               </div>
-              <h1 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(34px,5vw,58px)", letterSpacing: "-0.035em", lineHeight: 0.98, margin: "18px 0 10px" }}>{page.title || "Build the team."}</h1>
+              <h1 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: "clamp(34px,5vw,58px)", letterSpacing: "-0.035em", lineHeight: 0.98, margin: "18px 0 10px" }}>{page.title || "Build the team."}</h1>
               <p style={{ color: "rgba(255,255,255,0.68)", fontSize: 15.5, maxWidth: 520, margin: "0 0 24px", lineHeight: 1.55 }}>{heroSub}</p>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <button onClick={() => setPage && setPage(page.ctaPage || "volunteer")} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#0c1432", border: "none", background: "linear-gradient(135deg,#ffc34d,#f5b026)", boxShadow: "0 12px 26px -12px rgba(176,124,18,0.7)", display: "inline-flex", alignItems: "center", gap: 8 }}>{page.ctaLabel || "Volunteer with us"} <i className="ph ph-arrow-right"/></button>
@@ -1864,7 +1884,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
               </div>
             </div>
 
-            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "26px 28px", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "var(--rs-p-40, 26px 28px)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Needs filled</span>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: accent }}>{k.centres || 0} centres</span>
@@ -1874,9 +1894,9 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                 <span style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "rgba(255,255,255,0.8)", paddingBottom: 10 }}>{ci(totFilled)} / {totNeed} slots</span>
               </div>
               <div style={{ display: "flex", height: 12, borderRadius: 99, overflow: "hidden", background: "rgba(255,255,255,0.12)", marginTop: 14 }}>
-                <div style={{ width: Math.min(100, rate) + "%", background: "linear-gradient(90deg,#d0ff3a,#a6e814)", transition: "width .8s cubic-bezier(.2,.7,.2,1)" }}/>
+                <div style={{ width: Math.min(100, rate) + "%", background: "linear-gradient(90deg,#d0ff3a,#a6e814)", transition: "width calc(.8s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)" }}/>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 22 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-302, repeat(3, 1fr))", gap: 12, marginTop: 22 }}>
                 <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{ci(totFilled)}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>On board</div></div>
                 <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#ffd18a", fontVariantNumeric: "tabular-nums" }}>{totGap}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Open</div></div>
                 <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{totNeed}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Total need</div></div>
@@ -1894,11 +1914,11 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
       {isOverview && <div className="view">
         <section style={{ padding: "44px 0 8px" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
-            <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em", margin: "0 0 20px" }}>Volunteering at a glance</h2>
+            <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em", margin: "0 0 20px" }}>Volunteering at a glance</h2>
             <div className="kpi-grid">
               {kpis.map((kp, i) => (
                 <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
-                  <span style={{ width: 42, height: 42, borderRadius: 12, display: "grid", placeItems: "center", fontSize: 22, background: kp.tintBg, color: kp.iconColor }}><i className={"ph " + kp.icon}/></span>
+                  <span style={{ width: 42, height: 42, borderRadius: 12, display: "grid", placeItems: "center", fontSize: "var(--rs-fsize-1, 22px)", background: kp.tintBg, color: kp.iconColor }}><i className={"ph " + kp.icon}/></span>
                   <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 40, lineHeight: 1, letterSpacing: "-0.03em", marginTop: 16, fontVariantNumeric: "tabular-nums", color: kp.valueColor }}>{kp.value}</div>
                   <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488", marginTop: 8 }}>{kp.label}</div>
                   {kp.foot && <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: kp.footColor || "#8088a6", marginTop: 6 }}>{kp.foot}</div>}
@@ -1908,12 +1928,12 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
           </div>
         </section>
 
-        <section style={{ padding: "48px 0 44px" }}>
+        <section style={{ padding: "var(--rs-p-43, 48px 0px 44px)" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#7c4dff" }}>Need by centre</div>
-                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Where the gaps are</h2>
+                <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Where the gaps are</h2>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6" }}>Sort</span>
@@ -1938,7 +1958,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                     {c.attendance && <span style={{ fontSize: 10, marginTop: 3, color: (c.attendance.late || 0) > 0 ? "#a07400" : (c.attendance.present || 0) > 0 ? "#2f9e44" : "#8088a6" }}>{(c.attendance.present || 0) > 0 ? c.attendance.present + " in" + ((c.attendance.late || 0) > 0 ? " · " + c.attendance.late + " late" : " · on time") : "—"}</span>}
                   </span>
                   <span className="c-bar" style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}>
-                    <span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform .8s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + (Math.min(100, c.fulfillmentRate) * t / 100).toFixed(3) + ")", background: volTone(c.fulfillmentRate) }}/>
+                    <span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform calc(.8s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + (Math.min(100, c.fulfillmentRate) * t / 100).toFixed(3) + ")", background: volTone(c.fulfillmentRate) }}/>
                   </span>
                   <span className="c-rate" style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, textAlign: "right", fontVariantNumeric: "tabular-nums", color: volTone(c.fulfillmentRate) }}>{ci(c.fulfillmentRate)}%</span>
                   <span className="c-status" style={{ justifySelf: "end", display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: detailStatusBg(c.fulfillmentRate), color: volTone(c.fulfillmentRate) }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: volTone(c.fulfillmentRate) }}/>{volLabel(c.fulfillmentRate)}</span>
@@ -1952,7 +1972,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#7c4dff", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-package"/> Materials needed</div>
-              <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Items that keep the centres running</h2>
+              <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Items that keep the centres running</h2>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 14 }}>
               {itemsAgg.map((it, i) => {
@@ -1980,7 +2000,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
             <div style={{ marginBottom: 8, marginTop: itemsAgg.length > 0 ? 40 : 0 }}>
               <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#7c4dff", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-sparkle"/> Smart insights</div>
-              <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>What the board is telling us</h2>
+              <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>What the board is telling us</h2>
             </div>
             <p style={{ fontFamily: "'Sora'", fontWeight: 600, fontSize: 19, lineHeight: 1.45, letterSpacing: "-0.01em", color: "#2a335c", maxWidth: 740, margin: "14px 0 26px" }}>{insightsSummary}</p>
             <div className="insight-grid">
@@ -2002,7 +2022,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
       {showCentreGrid && <div className="view">
         <section style={{ padding: "44px 0 56px" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
-            <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px" }}>Every centre</h2>
+            <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px" }}>Every centre</h2>
             <p style={{ color: "#5a6488", fontSize: 14.5, margin: "0 0 26px" }}>Tap a centre for its full role, faculty and course breakdown.</p>
             <div className="centre-cards">
               {byCentre.map(c => (
@@ -2012,7 +2032,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                     <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{c.code}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "16px 0 6px" }}>
-                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 38, lineHeight: 1, color: volTone(c.fulfillmentRate), fontVariantNumeric: "tabular-nums" }}>{c.fulfillmentRate}%</span>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "var(--rs-fsize-30, 38px)", lineHeight: 1, color: volTone(c.fulfillmentRate), fontVariantNumeric: "tabular-nums" }}>{c.fulfillmentRate}%</span>
                     <span style={{ fontSize: 13, color: "#5a6488" }}>{c.filled} / {c.need} filled</span>
                   </div>
                   <span style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden", marginTop: 6 }}>
@@ -2042,7 +2062,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                 <span style={{ width: 20, height: 56, borderRadius: 8, background: detail.color, display: "block" }}/>
                 <div>
-                  <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 34, letterSpacing: "-0.025em", margin: 0 }}>{detail.name}</h2>
+                  <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 34, letterSpacing: "-0.025em", margin: 0 }}>{detail.name}</h2>
                   <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#8088a6" }}>{detail.code} · volunteer needs</span>
                 </div>
               </div>
@@ -2075,7 +2095,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                 {detail.roleChips.map((r, i) => <button key={i} onClick={() => setRoleFilter(r.roleKey)} style={r.style}><i className={"ph " + r.icon} style={{ marginRight: 2 }}/>{r.label}<span style={r.badgeStyle}>{r.count}</span></button>)}
               </div>
             </div>
-            <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>Needs by role</h3>
+            <h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>Needs by role</h3>
             <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: 22, display: "grid", gap: 18 }}>
               {detail.byRole.map((r, i) => (
                 <div key={i}>
@@ -2083,24 +2103,24 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 9, fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}><span style={{ width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", fontSize: 16, background: r.tintBg, color: r.color }}><i className={"ph " + r.icon}/></span>{r.label}</span>
                     <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#5a6488" }}>{r.countLabel} · {r.gapLabel}</span>
                   </div>
-                  <span style={{ display: "block", height: 10, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform .7s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + r.frac + ")", background: r.tone }}/></span>
+                  <span style={{ display: "block", height: 10, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform calc(.7s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + r.frac + ")", background: r.tone }}/></span>
                 </div>
               ))}
             </div>
             {detail.showFaculty && <>
-              <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>By faculty <span style={{ fontFamily: "'Inter'", fontWeight: 500, fontSize: 14, color: "#8088a6" }}>— mentors &amp; instructors</span></h3>
+              <h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>By faculty <span style={{ fontFamily: "'Inter'", fontWeight: 500, fontSize: 14, color: "#8088a6" }}>— mentors &amp; instructors</span></h3>
               {detail.hasFaculty
                 ? <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>{detail.byFaculty.map((f, i) => <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "10px 15px", borderRadius: 12, background: "#fff", border: "1px solid #e5e8ee" }}><span style={{ width: 9, height: 9, borderRadius: 3, background: f.color }}/><b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 14, color: "#0a1130" }}>{f.faculty}</b><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#5a6488" }}>{f.count}</span></span>)}</div>
                 : <div style={{ border: "1px dashed #d9d2c0", borderRadius: 14, padding: 20, textAlign: "center", color: "#8088a6", fontSize: 13.5 }}>No mentors or instructors on board for this filter yet.</div>}
             </>}
             {detail.showCourses && <>
-              <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>Instructors by course</h3>
+              <h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>Instructors by course</h3>
               {detail.hasCourses
                 ? <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "6px 22px" }}>{detail.byCourse.map((c, i) => <div key={i} className="course-row"><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.04em", color: c.color, textTransform: "uppercase" }}>{c.faculty}</span><span style={{ fontFamily: "'Sora'", fontWeight: 600, fontSize: 15, color: "#0a1130" }}>{c.course}</span><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#5a6488", textAlign: "right" }}>{c.filledLabel}</span></div>)}</div>
                 : <div style={{ border: "1px dashed #d9d2c0", borderRadius: 14, padding: 20, textAlign: "center", color: "#8088a6", fontSize: 13.5 }}>No instructors have signed up for a course here yet.</div>}
             </>}
             {detail.items.length > 0 && <>
-              <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>Items needed <span style={{ fontFamily: "'Inter'", fontWeight: 500, fontSize: 14, color: "#8088a6" }}>— materials this centre is asking for</span></h3>
+              <h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>Items needed <span style={{ fontFamily: "'Inter'", fontWeight: 500, fontSize: 14, color: "#8088a6" }}>— materials this centre is asking for</span></h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 12 }}>
                 {detail.items.map((it, i) => {
                   const pct = Math.min(100, it.fulfillmentRate || 0);
@@ -2135,7 +2155,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
       {isRoles && <div className="view">
         <section style={{ padding: "44px 0 24px" }}>
           <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px" }}>
-            <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px" }}>Roles across the programme</h2>
+            <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px" }}>Roles across the programme</h2>
             <p style={{ color: "#5a6488", fontSize: 14.5, margin: "0 0 26px" }}>Every role we run, how many have stepped up, and where the open slots are.</p>
             <div className="role-grid">
               {roleCards.map((r, i) => (
@@ -2173,14 +2193,14 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
             {!att || !att.measurable
               ? <div style={{ border: "1px dashed #d9d2c0", borderRadius: 18, padding: "40px 28px", textAlign: "center", background: "#fff" }}>
                   <span style={{ width: 52, height: 52, borderRadius: 14, display: "inline-grid", placeItems: "center", fontSize: 26, background: "rgba(124,77,255,0.13)", color: "#6a3fc0" }}><i className="ph ph-calendar-x"/></span>
-                  <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 22, margin: "16px 0 8px" }}>Nothing to measure yet.</h2>
+                  <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: "var(--rs-fsize-1, 22px)", margin: "16px 0 8px" }}>Nothing to measure yet.</h2>
                   <p style={{ color: "#5a6488", fontSize: 14.5, maxWidth: 520, margin: "0 auto", lineHeight: 1.6 }}>{(att && att.caveats && att.caveats[0]) || "Volunteer attendance appears here once the roll has been taken on at least one programme day."}</p>
                 </div>
               : <React.Fragment>
                 <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
                   <div>
                     <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#7c4dff" }}>Turning up</div>
-                    <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Attendance over the last {att.days} programme day{att.days === 1 ? "" : "s"}</h2>
+                    <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Attendance over the last {att.days} programme day{att.days === 1 ? "" : "s"}</h2>
                   </div>
                   <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, padding: "6px 12px", borderRadius: 999, background: att.basis === "calendar" ? "rgba(47,158,68,0.12)" : "rgba(232,169,43,0.16)", color: att.basis === "calendar" ? "#2f9e44" : "#a07400" }}>
                     <i className={"ph " + (att.basis === "calendar" ? "ph-calendar-check" : "ph-warning")} style={{ marginRight: 6 }}/>
@@ -2200,7 +2220,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
 
                 <div className="att-cols" style={{ marginTop: 26 }}>
                   <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, padding: "20px 22px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
-                    <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: "0 0 4px" }}>Day by day</h3>
+                    <h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 17, margin: "0 0 4px" }}>Day by day</h3>
                     <p style={{ color: "#8088a6", fontSize: 12.5, margin: "0 0 18px" }}>Volunteers present out of those on the roster that day. The pale band is who was expected.</p>
                     <div className="att-chart">
                       {attTrend.map((x, i) => (
@@ -2223,7 +2243,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                   </div>
 
                   <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, padding: "20px 22px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
-                    <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: "0 0 4px" }}>How reliable</h3>
+                    <h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 17, margin: "0 0 4px" }}>How reliable</h3>
                     <p style={{ color: "#8088a6", fontSize: 12.5, margin: "0 0 18px" }}>{attBandTotal} volunteer{attBandTotal === 1 ? "" : "s"} with at least three days on the board.</p>
                     {attBandTotal === 0
                       ? <div style={{ color: "#8088a6", fontSize: 13.5 }}>Nobody has been on the board long enough for a rate yet.</div>
@@ -2234,7 +2254,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                             <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, fontWeight: 700, color: b.color }}>{b.count}</span>
                           </div>
                           <span style={{ display: "block", height: 9, borderRadius: 99, background: "#f1f3f7", overflow: "hidden" }}>
-                            <span style={{ display: "block", height: "100%", width: Math.round((b.count / Math.max(1, attBandTotal)) * 100) + "%", background: b.color, transition: "width .6s cubic-bezier(.2,.7,.2,1)" }}/>
+                            <span style={{ display: "block", height: "100%", width: Math.round((b.count / Math.max(1, attBandTotal)) * 100) + "%", background: b.color, transition: "width calc(.6s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)" }}/>
                           </span>
                         </div>
                       ))}
@@ -2250,7 +2270,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                 {vret && vret.settled > 0 && (vret.stopped > 0 || vret.never > 0) && (
                   <div style={{ marginTop: 20, background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, overflow: "hidden", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
                     <div style={{ padding: "18px 22px 14px" }}>
-                      <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: "0 0 4px" }}>Who is still with us</h3>
+                      <h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 17, margin: "0 0 4px" }}>Who is still with us</h3>
                       <p style={{ color: "#8088a6", fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>
                         The rate above says how full the sessions were. This says whether the volunteers
                         who signed up are still coming: someone who served and has now missed the last{" "}
@@ -2259,7 +2279,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                         {vret.new > 0 ? " (" + vret.new + " " + (vret.new === 1 ? "is" : "are") + " too new)" : ""}.
                       </p>
                     </div>
-                    <div className="vret-head">{["", "Still coming", "Stopped", "Never started"].map((h, i) => <span key={i} style={{ textAlign: i ? "right" : "left" }}>{h}</span>)}</div>
+                    <div className="vret-head">{["", "Still coming", "Stopped", "Never started"].map((h, i) => <span key={i}>{h}</span>)}</div>
                     {[["centre", vret.byCentre || []], ["role", vret.byRole || []]].map(([dim, rows]) =>
                       (rows || []).filter(r => r.people > 0).map((r, i) => (
                         <div key={dim + i} className="vret-row">
@@ -2267,9 +2287,9 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                             <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 14.5, color: "#0a1130", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textTransform: dim === "role" ? "capitalize" : "none" }}>{r[dim]}</b>
                             <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6" }}>{dim === "role" ? "role" : "centre"} · {r.people} volunteer{r.people === 1 ? "" : "s"}</span>
                           </span>
-                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: r.coming > 0 ? "#2f9e44" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.coming}</span>
-                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, fontWeight: r.stopped > 0 ? 700 : 400, color: r.stopped > 0 ? "#c02c2c" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.stopped || "—"}</span>
-                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: r.never > 0 ? "#5a6488" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.never || "—"}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: r.coming > 0 ? "#2f9e44" : "#8088a6", fontVariantNumeric: "tabular-nums" }}>{r.coming}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, fontWeight: r.stopped > 0 ? 700 : 400, color: r.stopped > 0 ? "#c02c2c" : "#8088a6", fontVariantNumeric: "tabular-nums" }}>{r.stopped || "—"}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: r.never > 0 ? "#5a6488" : "#8088a6", fontVariantNumeric: "tabular-nums" }}>{r.never || "—"}</span>
                         </div>
                       )))}
                   </div>
@@ -2277,7 +2297,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
 
                 <div className="att-cols" style={{ marginTop: 20 }}>
                   <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, overflow: "hidden", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
-                    <div style={{ padding: "18px 22px 12px" }}><h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: 0 }}>By centre</h3></div>
+                    <div style={{ padding: "18px 22px 12px" }}><h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 17, margin: 0 }}>By centre</h3></div>
                     <div className="att-head">{["Centre", "Served", "Rate", "On time"].map((h, i) => <span key={i} style={{ textAlign: i ? "right" : "left" }}>{h}</span>)}</div>
                     {attCentres.length === 0 ? <div style={{ padding: "18px 22px", color: "#8088a6", fontSize: 13.5 }}>No centre has a measurable rate yet.</div>
                       : attCentres.map((r, i) => (
@@ -2297,7 +2317,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                   </div>
 
                   <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, padding: "20px 22px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
-                    <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: "0 0 18px" }}>By role</h3>
+                    <h3 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 17, margin: "0 0 18px" }}>By role</h3>
                     {attRoles.length === 0 ? <div style={{ color: "#8088a6", fontSize: 13.5 }}>No role has a measurable rate yet.</div>
                       : attRoles.map(attRoleRow).map((r, i) => (
                         <div key={i} style={{ marginBottom: 16 }}>
@@ -2306,7 +2326,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                             <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "#8088a6" }}>{r.sessions}/{r.expected} · <b style={{ color: volTone(r.rate || 0) }}>{r.rate == null ? "—" : r.rate + "%"}</b></span>
                           </div>
                           <span style={{ display: "block", height: 9, borderRadius: 99, background: "#f1f3f7", overflow: "hidden" }}>
-                            <span style={{ display: "block", height: "100%", width: Math.min(100, r.rate || 0) + "%", background: r.meta.color, transition: "width .6s cubic-bezier(.2,.7,.2,1)" }}/>
+                            <span style={{ display: "block", height: "100%", width: Math.min(100, r.rate || 0) + "%", background: r.meta.color, transition: "width calc(.6s * var(--motion, 1)) cubic-bezier(.2,.7,.2,1)" }}/>
                           </span>
                         </div>
                       ))}
@@ -2329,7 +2349,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 6, flexWrap: "wrap" }}>
               <div>
-                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: 0 }}>All volunteers</h2>
+                <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: 0 }}>All volunteers</h2>
                 <p style={{ color: "#5a6488", fontSize: 14.5, margin: "6px 0 0" }}>{dirList.length} people giving their time · shown by handle only</p>
               </div>
               <select value={volCentre} onChange={e => setVolCentre(e.target.value)} style={{ fontSize: 13, fontWeight: 600, padding: "9px 13px", borderRadius: 10, border: "1px solid #d9d2c0", background: "#fff", color: "#2a335c", cursor: "pointer" }}>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}</select>
@@ -2344,7 +2364,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                   <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "22px 18px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 6 }}>
                     <div style={{ width: 104, height: 104, borderRadius: "50%", padding: 4, background: v.color, boxShadow: "0 8px 20px -10px rgba(12,20,50,0.4)" }}>
                       <div style={{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden", background: v.color, position: "relative" }}>
-                        <span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 36, color: "rgba(255,255,255,0.9)" }}>{v.initial}</span>
+                        <span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: "var(--rs-fsize-45, 36px)", color: "rgba(255,255,255,0.9)" }}>{v.initial}</span>
                         {v.face && <img src={v.face} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}/>}
                       </div>
                     </div>
@@ -2377,7 +2397,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
       <section style={{ background: "#140a2e", color: "#fff", padding: "56px 0 60px" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 28px" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(255,255,255,0.08)", fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em" }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "#d0ff3a" }}/>TRANSPARENCY</span>
-          <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(28px,3.6vw,42px)", letterSpacing: "-0.02em", margin: "16px 0 12px" }}>{page.transparencyTitle || "Roles, not people."}</h2>
+          <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: "clamp(28px,3.6vw,42px)", letterSpacing: "-0.02em", margin: "16px 0 12px" }}>{page.transparencyTitle || "Roles, not people."}</h2>
           <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 15.5, lineHeight: 1.75, margin: "0 0 24px" }}>{page.transparencyBody || "This board shows only how many volunteers each centre needs and how many have stepped up — by role, faculty and course. A volunteer's name, photo or contact detail never appears here unless they've given consent. It's how we stay accountable while protecting everyone who gives their time."}</p>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <button onClick={() => setPage && setPage(page.ctaPage || "volunteer")} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#0c1432", border: "none", background: "linear-gradient(135deg,#ffc34d,#f5b026)", boxShadow: "0 12px 26px -12px rgba(176,124,18,0.7)", display: "inline-flex", alignItems: "center", gap: 8 }}>{page.ctaLabel || "Volunteer with us"} <i className="ph ph-arrow-right"/></button>
@@ -2418,9 +2438,10 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
 .vret-head,.vret-row{display:grid;grid-template-columns:1.5fr 104px 88px 108px;align-items:center;gap:12px;padding:0 22px}
 .vret-head{height:34px;background:#faf6ec;border-top:1px solid #e5e8ee;border-bottom:1px solid #e5e8ee;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:#8088a6}
 .vret-row{min-height:50px;border-bottom:1px solid #eef0f4}.vret-row:last-child{border-bottom:none}
+.vret-head>*+*,.vret-row>*+*{text-align:right}
 /* Narrow: the headers go, so each figure labels itself rather than becoming a
    column of unexplained numbers. */
-@media(max-width:620px){.vret-head{display:none}.vret-row{grid-template-columns:1fr;row-gap:4px;padding:14px 18px}.vret-row>*{text-align:left!important}.vret-row>*:nth-child(2)::after{content:" still coming"}.vret-row>*:nth-child(3)::after{content:" stopped"}.vret-row>*:nth-child(4)::after{content:" never started"}}`}</style>
+@media(max-width:620px){.vret-head{display:none}.vret-row{grid-template-columns:1fr;row-gap:4px;padding:14px 18px}.vret-row>*,.vret-row>*+*{text-align:left}.vret-row>*:nth-child(2)::after{content:" still coming"}.vret-row>*:nth-child(3)::after{content:" stopped"}.vret-row>*:nth-child(4)::after{content:" never started"}}`}</style>
     </div>
   );
 }

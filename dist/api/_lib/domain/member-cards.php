@@ -255,7 +255,13 @@ function member_card_public(array $m, bool $secure): array {
             'active' => (string)($m['status'] ?? 'active') === 'active',
             'fullName' => '', 'initials' => '', 'photoUrl' => '', 'centre' => '', 'track' => '', 'division' => '', 'attendance' => [], 'attendanceCount' => 0];
     }
-    $division = function_exists('club_division_of') ? club_division_of((string)($m['track'] ?? '')) : '';
+    /* The division of the member's first course (chosen, else what the track
+       names), not of the raw track: "Tech" names no single course. */
+    $division = '';
+    if (function_exists('club_division_of')) {
+        $mc = function_exists('curriculum_member_courses') && array_key_exists('courses', $m) ? curriculum_member_courses($m) : [];
+        foreach (array_merge([(string)($m['track'] ?? '')], $mc) as $c) if (strcasecmp($c, 'Chess') !== 0 && ($division = club_division_of($c)) !== '') break;
+    }
     $meta = null;
     if ($division !== '' && function_exists('club_divisions')) foreach (club_divisions() as $d) if ($d['name'] === $division) $meta = $d;
     $name = trim((string)($m['fullName'] ?? ''));
@@ -337,6 +343,12 @@ function admin_member_card_reissue(array $p): array {
     $code = member_card_issue((string)$m['memberId'], (string)($g['requester']['memberId'] ?? ''), 'reissue');
     if (!empty($p['voidPrinted'])) {
         db_exec("UPDATE member_cards SET status = 'void', voidedAt = ? WHERE memberId = ? AND kind = 'printed' AND status = 'active'", [now_iso(), (string)$m['memberId']]);
+    }
+    /* The card in their hand stopped opening the gate a moment ago. If they
+       hold a printed card, they need a new one: queue it, or the studio goes
+       on showing them as carded with a card that no longer works. */
+    if (function_exists('ids_reprints_open') && db_row("SELECT 1 FROM card_issues WHERE subjectType = 'member' AND subjectId = ? AND ok = 1 LIMIT 1", [(string)$m['memberId']])) {
+        ids_reprints_open([['subjectType' => 'member', 'subjectId' => (string)$m['memberId'], 'why' => 'New QR issued — the old card no longer opens the gate', 'cause' => 'qr']], (string)($g['requester']['memberId'] ?? ''));
     }
     audit('member.card.reissue', (string)($g['requester']['memberId'] ?? ''), (string)$m['memberId'], ['voidPrinted' => !empty($p['voidPrinted'])], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'code' => $code, 'cards' => member_cards_of((string)$m['memberId'])];

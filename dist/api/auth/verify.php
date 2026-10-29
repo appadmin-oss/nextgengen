@@ -7,7 +7,7 @@ rate_limit_check('auth.verify');
 
 $body = read_json_body();
 $token = trim((string)($body['token'] ?? ''));
-$memberId = trim((string)($body['memberId'] ?? ''));
+$memberId = auth_clean_identifier((string)($body['memberId'] ?? ''));
 $otp = trim((string)($body['otp'] ?? ''));
 
 // Either a token (magic link) or memberId+otp must be present.
@@ -20,9 +20,8 @@ if ($token !== '' && !preg_match('/^[a-f0-9]{32,128}$/i', $token)) {
 if ($otp !== '' && !preg_match('/^\d{6}$/', preg_replace('/\s+/', '', $otp))) {
     json_error('bad_otp_format', 422);
 }
-if ($memberId !== '' && !preg_match('/^[A-Z]{2,6}-\d{4}-\d{3,5}$/i', $memberId)) {
-    json_error('bad_member_id', 422);
-}
+// A Member ID, or the email the code was sent to (resolved in auth_verify).
+if ($memberId !== '' && !auth_identifier_ok($memberId)) json_error('bad_member_id', 422);
 
 $res = gs_call('auth.verify', [
     'token'    => $token,
@@ -35,8 +34,20 @@ if (empty($res['ok'])) {
     json_error($code, $code === 'rate_limited' ? 429 : 400);
 }
 
+// An address several accounts share: the code is proven, no session yet — the person picks (auth/pick.php).
+if (!empty($res['pick'])) json_ok(['pick' => $res['pick'], 'pickToken' => $res['pickToken'], 'pickMinutes' => $res['pickMinutes'] ?? 10]);
+
+$mfa = (string)($res['mfa'] ?? '');
+if (!empty($res['volunteer'])) {
+    // An instructor, volunteer or mentor signing in with an emailed code: the
+    // same card-holder session their ID card gives them.
+    $v = $res['volunteer'];
+    session_issue_cardholder($v, 'volunteer', !empty($body['remember']), ['mfaP' => $mfa]);
+    $csrf = csrf_issue();
+    json_ok(['member' => community_member_shape($v, 'volunteer'), 'kind' => 'volunteer', 'mfa' => $mfa, 'csrf' => $csrf]);
+}
 $member = $res['member'] ?? [];
-session_issue($member, false, '', !empty($body['remember']));
+session_issue($member, false, '', !empty($body['remember']), ['mfaP' => $mfa]);
 $csrf = csrf_issue();
 
-json_ok(['member' => $member, 'csrf' => $csrf]);
+json_ok(['member' => $member, 'mfa' => $mfa, 'csrf' => $csrf]);

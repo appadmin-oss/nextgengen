@@ -40,12 +40,29 @@ function DashMoneyText({ n, currency }) {
 
 function DashSectionShell({ title, sub, children, err, onRetry, loading }) {
   return (
-    <section className="ngg-anchor" style={{ maxWidth: 860 }}>
+    <section className="ngg-anchor ngg-anchor-narrow">
       <header style={{ marginBottom: 16 }}>
         <h2 className="ngg-head-name" style={{ fontSize: 26, margin: 0 }}>{title}</h2>
         {sub && <p className="ngg-head-sub" style={{ margin: "6px 0 0" }}>{sub}</p>}
       </header>
       {err ? <ErrorState code={err} onRetry={onRetry}/> : loading ? <div className="dash-spinner"/> : children}
+    </section>
+  );
+}
+
+/* ── School results ──────────────────────────────────────────────────────────
+ * Upload the term's report, check the scores, plan at most three subjects with
+ * a "when and where", and send it to the mentor, who approves it in the Mentor
+ * Portal. The flow is MbrResults (src/modules/portal/member-results.jsx); this
+ * is its place on the dashboard, in the dashboard's own palette (.dash-results). */
+function DashResults() {
+  return (
+    <section className="ngg-anchor ngg-anchor-narrow dash-results">
+      <header style={{ marginBottom: 16 }}>
+        <h2 className="ngg-head-name" style={{ fontSize: 26, margin: 0 }}>School results</h2>
+        <p className="ngg-head-sub" style={{ margin: "6px 0 0" }}>Upload your report card, check the scores, and plan next term with your mentor.</p>
+      </header>
+      <MbrResults/>
     </section>
   );
 }
@@ -460,6 +477,7 @@ var DASH_SECTIONS = [
   { id: "overview", path: "", label: "Overview" },
   { id: "timetable", path: "timetable", label: "Timetable" },
   { id: "learning", path: "learning", label: "Curriculum" },
+  { id: "results",  path: "results",  label: "School results" },
   { id: "companion", path: "companion", label: "Companion" },
   { id: "account",  path: "account",  label: "Money & account" },
   { id: "records",  path: "records",  label: "Records" },
@@ -531,6 +549,16 @@ function DashboardPage({ setPage }) {
   const [mutateSeq, setMutateSeq] = React.useState(0);
   const [err, setErr] = React.useState("");
   const [refreshing, setRefreshing] = React.useState(false);
+  /* The record drive (domain/profile-drive.php): what is missing from this
+     member's record, and whether the account is locked until it is done. */
+  const [rec, setRec] = React.useState(null);
+  const loadRec = React.useCallback(() => { NGGApi.member.record().then(setRec, () => {}); }, []);
+  React.useEffect(() => { if (isSignedIn) loadRec(); }, [isSignedIn, loadRec]);
+  React.useEffect(() => {
+    const f = () => loadRec();
+    window.addEventListener("ngg:record-incomplete", f);
+    return () => window.removeEventListener("ngg:record-incomplete", f);
+  }, [loadRec]);
 
   // A real user mutation (mission submit, journal, RSVP) bumps both the
   // dashboard reload and a mutation sequence the activity feed listens to —
@@ -560,8 +588,11 @@ function DashboardPage({ setPage }) {
   // calls (members reported the dashboard chewing data on phones left
   // in their pocket). We also refresh immediately on becoming-visible
   // so the dashboard is current the moment they look at it.
+  /* NGG members get the Member Portal (v9, src/modules/member9), which reads
+     its own data per screen; `?classic=1` keeps this dashboard reachable. */
+  const v9 = !!(data && memberIsNgg(data.member)) && !/[?&]classic=1/.test(window.location.search || "") && typeof Mp9Portal === "function";
   React.useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isSignedIn || v9) return;
     let id = null;
     const start = () => { if (!id) id = setInterval(() => setReload(r => r + 1), 60000); };
     const stop  = () => { if (id) { clearInterval(id); id = null; } };
@@ -572,24 +603,35 @@ function DashboardPage({ setPage }) {
     if (!document.hidden) start();
     document.addEventListener("visibilitychange", onVis);
     return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
-  }, [isSignedIn]);
+  }, [isSignedIn, v9]);
 
   if (loading) {
-    return <DashboardShell><DashboardSkeleton/></DashboardShell>;
+    return <DashboardShell setPage={setPage}><DashboardSkeleton/></DashboardShell>;
   }
   if (!isSignedIn) {
-    return <DashboardShell><DashboardSignedOut openSignIn={openSignIn} setPage={setPage}/></DashboardShell>;
+    return <DashboardShell setPage={setPage}><DashboardSignedOut openSignIn={openSignIn} setPage={setPage}/></DashboardShell>;
   }
   // Full error screen only when we have nothing to show.
+  // A volunteer signed in with their card: their own landing, not an error.
+  if (data && data.volunteer) return <DashboardShell setPage={setPage}><VolunteerHome v={data.volunteer}/></DashboardShell>;
   if (err && !data) {
-    return <DashboardShell><DashboardError code={err} onRetry={() => setReload(r => r + 1)}/></DashboardShell>;
+    if (rec && rec.locked) return <DashboardShell setPage={setPage}><RecordDrive status={rec} locked onSaved={setRec} onSignOut={signOut}/></DashboardShell>;
+    return <DashboardShell setPage={setPage}><DashboardError code={err} onRetry={() => setReload(r => r + 1)}/></DashboardShell>;
   }
   if (!data) {
-    return <DashboardShell><DashboardSkeleton/></DashboardShell>;
+    return <DashboardShell setPage={setPage}><DashboardSkeleton/></DashboardShell>;
   }
 
+  // The record drive: past its deadline, an incomplete record is the only screen.
+  if (rec && rec.locked) {
+    return <DashboardShell setPage={setPage}><RecordDrive status={rec} locked onSaved={setRec} onSignOut={signOut}/></DashboardShell>;
+  }
+
+  if (v9) return <Mp9Portal rec={rec} onRecSaved={setRec} onSignOut={signOut}/>;
+
   return (
-    <DashboardShell>
+    <DashboardShell setPage={setPage}>
+      {rec && rec.asked && <RecordDrive status={rec} onSaved={setRec}/>}
       <DashboardLive
         data={data}
         setPage={setPage}
@@ -602,11 +644,98 @@ function DashboardPage({ setPage }) {
   );
 }
 
-function DashboardShell({ children }) {
+/* ── The record drive: complete your record ─────────────────────────────────
+   Before the deadline, a card at the top of the dashboard with the days left;
+   after it, the only screen until the record is complete. Each missing field
+   is asked once, checked by the same rules the server uses, and saved in one
+   go; a refusal names each field. */
+function RecordDrive({ status, locked, onSaved, onSignOut }) {
+  const [open, setOpen] = React.useState(!!locked);
+  const [vals, setVals] = React.useState(() => Object.fromEntries((status.fields || []).map(f => [f.key, f.value || ""])));
+  const [errs, setErrs] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+  const fields = (status.fields || []).filter(f => f.self);
+  const staffOnly = (status.fields || []).filter(f => !f.self);
+  const set = (k, v) => { setVals(x => Object.assign({}, x, { [k]: v })); setErrs(e => (e[k] ? Object.assign({}, e, { [k]: "" }) : e)); };
+  const days = status.daysLeft;
+  const when = status.deadline ? new Date(status.deadline + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : "";
+  const save = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await NGGApi.member.recordSave(Object.fromEntries(fields.map(f => [f.key, vals[f.key]])));
+      setErrs({});
+      onSaved && onSaved(r);
+      if (!r.asked) setMsg("Thank you. Your record is complete.");
+    } catch (e) {
+      const ee = (e && e.data && e.data.errors) || null;
+      if (ee) { setErrs(ee); setMsg("A few answers need another look."); }
+      else setMsg("We couldn’t save that. Check your connection and try again.");
+    } finally { setBusy(false); }
+  };
+  const lgaList = vals.resState && typeof APF_LGAS !== "undefined" ? APF_LGAS[vals.resState] : null;
+  const input = f => {
+    const id = "rec-" + f.key, bad = !!errs[f.key];
+    const common = { id, "aria-invalid": bad || undefined, "aria-describedby": bad ? id + "-e" : undefined };
+    if (f.type === "photo") return <PhotoCapture value={vals[f.key]} onChange={u => set(f.key, u)} label="Passport photo"/>;
+    if (f.type === "choice" || (f.key === "resState" && typeof APF_STATES !== "undefined") || (f.key === "resLga" && lgaList)) {
+      const opts = f.key === "resState" ? APF_STATES : f.key === "resLga" ? lgaList : f.options;
+      return <select {...common} className="rec-input" value={vals[f.key]} onChange={e => set(f.key, e.target.value)}>
+        <option value="">Choose…</option>{opts.map(o => <option key={o} value={o}>{o}</option>)}</select>;
+    }
+    if (f.type === "textarea") return <textarea {...common} className="rec-input" rows={3} value={vals[f.key]} onChange={e => set(f.key, e.target.value)}/>;
+    return <input {...common} className="rec-input" type={f.type === "date" ? "date" : f.type === "tel" ? "tel" : f.type === "email" ? "email" : "text"}
+      inputMode={f.type === "tel" ? "tel" : f.type === "email" ? "email" : undefined} value={vals[f.key]} onChange={e => set(f.key, e.target.value)}/>;
+  };
   return (
-    <div className="page dashboard" data-screen-label="05 Dashboard">
-      {children}
-    </div>
+    <section className={"rec" + (locked ? " is-locked" : "")} aria-labelledby="rec-h">
+      <div className="rec-head">
+        <i className={"ph " + (locked ? "ph-lock-simple" : "ph-clipboard-text")} aria-hidden="true"/>
+        <div className="rec-head-t">
+          <h2 id="rec-h">{locked ? "Complete your record to carry on" : "Complete your record"}</h2>
+          <p>{locked
+            ? "The deadline" + (when ? " (" + when + ")" : "") + " has passed. Fill in what is missing below and your dashboard opens again straight away."
+            : (days != null && days >= 0 ? (days === 0 ? "Due today" : days + (days === 1 ? " day" : " days") + " left") + (when ? ", by " + when : "") + ". " : "")
+              + "NGG is making every member’s record complete. After the deadline, the dashboard opens on this form until it is done."}</p>
+        </div>
+        {!locked && <button type="button" className="btn btn-primary btn-sm" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? "Later" : "Complete now"}</button>}
+      </div>
+      {open && <>
+        <p className="rec-count" role="status">{fields.length === 1 ? "One thing is missing." : fields.length + " things are missing."} Ask a parent or guardian to help with their details.</p>
+        <div className="rec-grid">
+          {fields.map(f => (
+            <div key={f.key} className={"rec-fld" + (f.type === "textarea" || f.type === "photo" ? " is-wide" : "")}>
+              <label htmlFor={"rec-" + f.key}>{f.label}</label>
+              {input(f)}
+              {errs[f.key] && <span className="rec-err" id={"rec-" + f.key + "-e"}><i className="ph ph-warning-circle" aria-hidden="true"/>{errs[f.key]}</span>}
+            </div>
+          ))}
+        </div>
+        {staffOnly.length > 0 && <p className="rec-note">Your centre also needs to set: {staffOnly.map(f => f.label.toLowerCase()).join(", ")}. Ask at the desk on Saturday; you can’t change {staffOnly.length === 1 ? "it" : "them"} here.</p>}
+        {msg && <p className={"rec-msg" + (Object.keys(errs).length ? " is-bad" : "")} role="status">{msg}</p>}
+        <div className="rec-actions">
+          {fields.length > 0 && <button type="button" className="btn btn-primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save my record"}</button>}
+          {locked && onSignOut && <button type="button" className="btn btn-ghost" onClick={onSignOut}>Sign out</button>}
+        </div>
+      </>}
+    </section>
+  );
+}
+
+/* The dashboard route draws its own chrome (the Member Portal is a whole app);
+   this older dashboard puts the site's header and footer back around itself. */
+function DashboardShell({ children, setPage }) {
+  setPage = setPage || (() => {});
+  return (
+    <React.Fragment>
+      {typeof TopNav === "function" && <TopNav page="dashboard" setPage={setPage}/>}
+      <main id="main" style={{ flex: 1 }}>
+        <div className="page dashboard" data-screen-label="05 Dashboard">
+          {children}
+        </div>
+      </main>
+      {typeof Footer === "function" && <Footer setPage={setPage} page="dashboard"/>}
+    </React.Fragment>
   );
 }
 
@@ -616,7 +745,7 @@ function DashboardShell({ children }) {
 
 function DashboardSignedOut({ openSignIn, setPage }) {
   return (
-    <section className="signed-out-hero" style={{padding: "112px 0 96px"}}>
+    <section className="signed-out-hero" style={{padding: "var(--rs-p-104, 112px 0px 96px)"}}>
       <div className="container">
         <div className="signed-out-grid">
           <div>
@@ -701,11 +830,37 @@ function DashboardSkeleton() {
   );
 }
 
+/* A volunteer's landing (instructor, mentor, centre ops): who they are, and
+   their portals. The full volunteer dashboard (time on the portal, analytics)
+   is a later piece of work; this says so rather than pretending. */
+function VolunteerHome({ v }) {
+  const role = { instructor: "Instructor", mentor: "Mentor", admin: "Centre operations" }[v.role] || "Volunteer";
+  const links = [];
+  if (v.role === "instructor") links.push(["/instructor", "Instructor Portal", "Your class: roll, lessons, marking, skills and each child's progress."]);
+  if (v.role === "mentor" || v.isMentor) links.push(["/mentor", "Mentor Portal", "Your mentees: sessions, goals, plans and messages."]);
+  if (v.role === "admin") links.push(["/mentor", "Centre portal", "Your centre's children, attendance and staff."]);
+  if (v.idPath) links.push([v.idPath, "My volunteer ID", "Your digital ID and check-in code, the same as your printed card."]);
+  links.push(["/community", "Community", "The NGG community."]);
+  return (
+    <section className="vol-home">
+      <div className="container">
+        <p className="vol-home-eyebrow">{role}{v.centre ? " · " + v.centre : ""}</p>
+        <h1 className="vol-home-h">Welcome, {String(v.fullName || "").split(/\s+/)[0] || "volunteer"}</h1>
+        <p className="vol-home-sub">You signed in as a volunteer{v.courses && v.courses.length ? ", teaching " + v.courses.join(", ") : ""}. Your work happens in your portal below.{!v.cleared ? " Your safeguarding check is not recorded yet, so children's records stay closed until your centre admin clears it." : ""}</p>
+        <ul className="vol-home-links">{links.map(([href, t, d]) => (
+          <li key={href}><a href={href}><b>{t}</b><span>{d}</span></a></li>))}</ul>
+        <p className="vol-home-note">A volunteer dashboard with your hours and activity is on the way.</p>
+      </div>
+    </section>
+  );
+}
+
 function DashboardError({ code, onRetry }) {
+  const offline = code === "network" || (typeof navigator !== "undefined" && navigator.onLine === false);
   return (
     <section style={{padding:"120px 0", textAlign:"center"}}>
-      <div className="display" style={{fontSize:48, color:"var(--coral)"}}>off-line</div>
-      <p style={{marginTop:18, color:"var(--ink-500)"}}>{code === "upstream_unreachable" ? "We couldn't reach the data server. Try again in a moment." : "Something went wrong loading your dashboard."}</p>
+      <div className="display" style={{fontSize:"var(--rs-fsize-26, 48px)", color:"var(--coral)"}}>{offline ? "off-line" : "Not loaded"}</div>
+      <p style={{marginTop:18, color:"var(--ink-700)"}}>{offline ? "You're offline. Check your connection, then try again." : code === "upstream_unreachable" ? "We couldn't reach the data server. Try again in a moment." : "Your dashboard couldn't load (" + (code || "error") + "). Try again; if it keeps happening, tell the NGG desk."}</p>
       <button className="btn btn-primary" onClick={onRetry} style={{marginTop:24}}>Try again</button>
     </section>
   );
@@ -818,7 +973,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
   return (
     <React.Fragment>
-      {editProfile && <DashboardProfileModal m={m} onClose={() => setEditProfile(false)} onSaved={() => { setEditProfile(false); onMutate(); }}/>}
+      {editProfile && <DashboardProfileModal m={m} onClose={() => setEditProfile(false)} onSaved={() => { setEditProfile(false); onMutate(); }} onAsk={(k) => { setEditProfile(false); askFor(k); }}/>}
       <section className="dash-section ngg-dash" data-screen-label="05 Dashboard">
         <div className="container ngg-dash-wrap">
 
@@ -853,6 +1008,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
               <DashSectionTabs section={section} go={goSection} openRequests={openRequests}/>
 
               {section === "learning" && <DashCurriculum/>}
+              {section === "results"  && <DashResults/>}
               {section === "companion" && <DashCompanion/>}
               {section === "timetable" && <DashTimetable/>}
               {section === "account"  && <DashAccount onRaise={askFor}/>}
@@ -867,6 +1023,9 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                 <div className="dash-main">
                   <section id="sec-today" className="ngg-anchor"><DashboardToday today={today} member={m} onMutate={onMutate} session={session}/></section>
                   <section id="sec-assignments" className="ngg-anchor"><DashboardAssignments assignments={data.assignments || []} onMutate={onMutate}/></section>
+                  {/* The Saturday Formation Schedule, the member's part of each block (an NGG member's Saturday; Summer School keeps its own). */}
+                  {(m.type || "NGG") === "NGG" && typeof FormationDay === "function" && <section id="sec-saturday" className="ngg-anchor"><FormationDay audience="member" compact={true}/></section>}
+                  {mentor && <section id="sec-checkin" className="ngg-anchor"><DashboardCheckin/></section>}
                   <section id="sec-activity" className="ngg-anchor"><DashboardActivityFeed memberId={m.memberId} session={session} reloadKey={mutateSeq}/></section>
                   <section id="sec-journal" className="ngg-anchor"><DashboardJournal onMutate={onMutate}/></section>
                   {/* The account and what is coming up are not rail furniture.
@@ -936,6 +1095,7 @@ function DashboardSidebar({ m, first, account, ngv, fines, counts, mentorNamed, 
     { g: "Today", items: [
       { id: "sec-today", label: "Today's missions", badge: counts.today || null },
       { id: "sec-assignments", label: "Set work" },
+      ...(mentorNamed ? [{ id: "sec-checkin", label: "Weekly check-in" }] : []),
       { id: "sec-activity", label: "Your trail" },
       { id: "sec-journal", label: "Journal" },
       ...(account ? [{ id: "sec-account", label: "Your account", badge: owed > 0 ? naira(owed) : null }] : []),
@@ -1070,25 +1230,24 @@ function DashboardKpis({ session, prog, stats, account, acctState }) {
 // ----------------------------------------------------------------------------
 
 // Compact member profile editor with a Cloudinary avatar upload.
-function DashboardProfileModal({ m, onClose, onSaved }) {
+function DashboardProfileModal({ m, onClose, onSaved, onAsk }) {
   const socials = (m.socials && typeof m.socials === "object") ? m.socials : {};
   const [d, setD] = React.useState({
     photoUrl: m.photoUrl || "",
     bio: m.bio || "",
-    phone: m.phone || "",
     instagram: socials.instagram || "",
-    school: m.school || "",
   });
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
   const save = async () => {
     setBusy(true);
     try {
-      await NGGApi.member.updateProfile({
-        photoUrl: d.photoUrl, bio: d.bio, phone: d.phone, school: d.school,
+      const r = await NGGApi.member.updateProfile({
+        photoUrl: d.photoUrl, bio: d.bio,
         socials: { instagram: d.instagram },
       });
-      toast.success("Profile updated");
+      // A different photo is an ask the desk approves, not a change (member_update).
+      toast.success(r && r.photoRequested ? "Saved. Your new photo is with the desk to approve." : "Profile updated");
       onSaved();
     } catch (e) {
       toast.error("Couldn't save: " + humanError(e));
@@ -1134,9 +1293,13 @@ function DashboardProfileModal({ m, onClose, onSaved }) {
             </div>
           </div>
           <label className="admin-field"><span>Short bio</span><textarea className="admin-input" rows={3} value={d.bio} onChange={(e) => set("bio", e.target.value)} placeholder="One or two lines about you."/></label>
-          <div className="admin-fields-row">
-            <label className="admin-field"><span>Phone</span><input className="admin-input" value={d.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+234…"/></label>
-            <label className="admin-field"><span>School</span><input className="admin-input" value={d.school} onChange={(e) => set("school", e.target.value)} placeholder="Your school"/></label>
+          {/* Name, phone, school and guardian contacts are the programme's record
+              (member.update refuses them: managed_by_ngg). A correction is a
+              "Correct my details" request, checked with the family. */}
+          <div className="dash-managed">
+            <p><span>School</span><b>{m.school || "—"}</b></p>
+            <p><span>Phone</span><b>{m.phone || "—"}</b></p>
+            <p className="dash-managed-note">Managed by NGG.{onAsk && <> <button type="button" className="dash-link" onClick={() => onAsk("details")}>Ask for a change</button></>}</p>
           </div>
           <label className="admin-field"><span>Instagram</span><input className="admin-input" value={d.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@handle or link"/></label>
 
@@ -1234,37 +1397,6 @@ function DashboardAccount({ m }) {
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); }
   };
-  const del = async () => {
-    /* The most destructive thing anybody can do in this product, and it was
-       two stacked native confirms — the second of them "Are you absolutely
-       sure? There is no undo." Two generic dialogs in a row is not twice the
-       friction; it is a rhythm people click through, and neither one said what
-       actually gets destroyed.
-
-       One dialog that names it, then a typed word. Type-to-confirm is reserved
-       for the genuinely catastrophic and this qualifies: a child's journal is
-       not recoverable from anywhere once this runs. */
-    const ok = await dialog.confirm({
-      title: "Delete your account?",
-      body: "This removes your profile, your journal entries, your missions and your XP, "
-          + "and signs you out everywhere. Nobody — not your mentor, not an admin — can get it back. "
-          + "If you only want to stop for a while, ask a mentor to pause your account instead.",
-      cta: "I understand, continue", cancel: "Keep my account", danger: true,
-    });
-    if (!ok) return;
-    const typed = await dialog.prompt({
-      title: "Type DELETE to confirm",
-      body: "Last step. This is here so nobody deletes their journal by accident.",
-      label: "Type DELETE", placeholder: "DELETE", cta: "Delete my account", cancel: "Cancel",
-    });
-    if (String(typed || "").trim().toUpperCase() !== "DELETE") {
-      if (typed !== null) toast.error("That did not match, so nothing was deleted.", "Account kept");
-      return;
-    }
-    setBusy("delete");
-    try { await NGGApi.member.deleteAccount(); toast.success("Your account has been deleted."); setTimeout(() => { window.location.href = "/"; }, 800); }
-    catch (e) { toast.error(humanError(e)); setBusy(""); }
-  };
   return (
     <div style={{ borderTop: "1px solid rgba(12,20,50,0.08)", margin: "6px 0 2px", paddingTop: 16 }}>
       <div style={{ fontWeight: 700, fontSize: 15 }}>Account</div>
@@ -1277,8 +1409,20 @@ function DashboardAccount({ m }) {
       </label>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
         <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "export"} onClick={exportData}>{busy === "export" ? "Preparing…" : "Download my data"}</button>
-        <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "delete"} onClick={del} style={{ color: "#b03535" }}>Delete my account</button>
       </div>
+      {/* There was a "Delete my account" button here.
+          It called member_erase() directly, so a ten-to-seventeen-year-old
+          could scrub their own profile, journal, missions and XP, revoke every
+          session and blank their ledger's notes — in two confirmations, with
+          nothing recoverable by anybody, including the people answerable for
+          them. Whether a membership continues is not a setting: it is what the
+          MoU between NGG and the family says, and it is settled between people.
+          Taking a copy of everything, above, is untouched and still one press. */}
+      <p className="dash-account-note">
+        Your membership is governed by the agreement between NGG and your parent
+        or guardian, so it is not something to switch off here. If something
+        needs to change, speak to your centre lead or your mentor.
+      </p>
     </div>
   );
 }
@@ -1398,7 +1542,7 @@ function MissionProofModal({ m, busy, onClose, onSubmit }) {
           <button type="button" className="admin-drawer-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="admin-fields">
-          <p style={{ color: "var(--ink-500)", margin: "0 0 4px", fontSize: 14 }}>{m.prompt}</p>
+          <p style={{ color: "var(--ink-700)", margin: "0 0 4px", fontSize: 14 }}>{m.prompt}</p>
           {isMedia ? (
             <React.Fragment>
               <label className="admin-field">
@@ -1773,6 +1917,7 @@ function DashboardDivision({ m }) {
           <div className="mono dash-division-code">DIVISION {d.code}</div>
           <div className="dash-division-name">{d.name}</div>
           <p className="dash-division-mandate">{d.mandate}</p>
+          {d.audience && <p className="dash-division-audience">{d.audience}</p>}
           <ul className="dash-division-courses">
             {d.courses.map(c => (
               <li key={c} className={c === "Chess" ? "is-chess" : ""}>{c}</li>
@@ -1821,7 +1966,7 @@ function DashboardNgv({ ngv }) {
         <h3 className="dash-card-h-sm">Your NGV role.</h3>
         <span className="chip chip-gold" style={active ? undefined : { opacity: 0.55 }}>{active ? "NGV" : "NGV · paused"}</span>
       </div>
-      <div className="dash-account-figure is-clear" style={{ fontSize: 22 }}>{NGV_ROLE_LABEL[ngv.role] || "Volunteer"}</div>
+      <div className="dash-account-figure is-clear" style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>{NGV_ROLE_LABEL[ngv.role] || "Volunteer"}</div>
       <div className="dash-account-sub">
         Volunteer ID <b className="mono">{ngv.volunteerId}</b>
         {ngv.since ? " · since " + String(ngv.since).slice(0, 10) : ""}
@@ -1831,7 +1976,7 @@ function DashboardNgv({ ngv }) {
         <a href={ngv.profileUrl} target="_blank" rel="noopener noreferrer"
           style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px",
             borderRadius: 10, background: "var(--gold, #e8961f)", color: "#1a1205", fontWeight: 700,
-            fontSize: 13, textDecoration: "none" }}>
+            fontSize: 13, textDecoration: "var(--rs-textdecoration-47, none)" }}>
           Open my volunteer ID &amp; check-in QR →
         </a>
       )}
@@ -1880,6 +2025,7 @@ function DashboardObligations({ account }) {
         <React.Fragment>
           <div className="dash-account-figure">{naira(owed)}</div>
           <div className="dash-account-sub">to pay</div>
+          {a.payOnline && <PayBalanceButton amountText={naira(owed)} pay={() => NGGApi.member.feesPay()}/>}
         </React.Fragment>
       ) : (
         <React.Fragment>
@@ -2024,6 +2170,93 @@ const ACCOUNT_KIND_LABEL = {
   payment: "You paid", writeoff: "Written off", waiver: "Waived",
 };
 
+/* ── Your week, with your mentor ───────────────────────────────────────────
+   The member's side of the Mentor Portal: how this week went (and, if they
+   want, sleep, stress and energy), their side of the relationship check when
+   their mentor asks for it, their own Leadership Index scores once a month,
+   and the goal they agreed. A "Need help" reaches their mentor at once and the
+   safeguarding lead too — so the card says so before they press it. Nothing
+   here is shared with other members. */
+const DCI_FEEL = [["Okay", "I’m okay", "smiley"], ["Struggling", "It’s been hard", "smiley-meh"], ["Need help", "I need help", "lifebuoy"]];
+const DCI_EXTRA = [["sleep", "Sleep", ["Very poor", "Poor", "Okay", "Good", "Great"]], ["stress", "Stress", ["None", "A little", "Some", "A lot", "Too much"]], ["energy", "Energy", ["Empty", "Low", "Okay", "Good", "Full"]]];
+function DashboardCheckin() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [edit, setEdit] = React.useState(false);
+  const [v, setV] = React.useState({ wellbeing: "", sleep: 0, stress: 0, energy: 0, note: "" });
+  const [more, setMore] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [rel, setRel] = React.useState([0, 0, 0, 0]);
+  const [scoring, setScoring] = React.useState(false);
+  const [sc, setSc] = React.useState(null);
+  const load = () => NGGApi.member.pod.read("mine").then(r => { setD(r); setErr(null); if (r.checkin) setV({ wellbeing: r.checkin.wellbeing, sleep: +r.checkin.sleep, stress: +r.checkin.stress, energy: +r.checkin.energy, note: r.checkin.note || "" }); }, setErr);
+  React.useEffect(() => { load(); }, []);
+  if (err && !d) return <div className="dash-card"><div className="dash-card-head"><h3 className="dash-card-h-sm">Your week.</h3></div>
+    <p className="dash-account-sub" style={{ margin: "8px 0 12px" }}>Couldn’t load your check-in just now.</p><button className="btn btn-ghost btn-sm" onClick={load}>Try again</button></div>;
+  if (!d) return <div className="dash-card dci" aria-busy="true"><div className="dash-card-head"><h3 className="dash-card-h-sm">Your week.</h3></div><div className="dci-skel"/></div>;
+  if (!d.mentor) return null;
+  const done = !!d.checkin && !edit;
+  const send = () => {
+    if (!v.wellbeing) { toast.error("Choose how your week has been first."); return; }
+    setBusy(true);
+    NGGApi.member.pod.act("weekCheckin", v).then(() => {
+      toast.success(v.wellbeing === "Okay" ? "Thanks. " + d.mentor.first + " can see it." : v.wellbeing === "Need help" ? d.mentor.first + " has been told and will reach you today." : "Thanks for telling us. " + d.mentor.first + " will check in with you.", "Check-in sent");
+      setEdit(false); load();
+    }, e => toast.error((e && e.message) || "Couldn’t send it. Try again.")).finally(() => setBusy(false));
+  };
+  const sendRel = () => {
+    if (rel.some(x => !x)) { toast.error("Answer all four first."); return; }
+    NGGApi.member.pod.act("relChild", { answers: rel }).then(() => { toast.success("Thank you. Only the coordinator sees your answers.", "Sent"); load(); }, e => toast.error((e && e.message) || "Couldn’t send it."));
+  };
+  const sendScores = () => NGGApi.member.pod.act("selfScore", { scores: sc }).then(() => { toast.success("Your mentor will see these next to theirs.", "Scores saved"); setScoring(false); load(); }, e => toast.error((e && e.message) || "Couldn’t save them."));
+  const g = d.goal;
+  return (
+    <div className="dash-card dci">
+      <div className="dash-card-head"><h3 className="dash-card-h-sm">Your week.</h3><span className="dci-with">{"With " + d.mentor.name}</span></div>
+      {done ? (
+        <div className="dci-done">
+          <span className={"dci-done-chip is-" + (d.checkin.wellbeing === "Okay" ? "ok" : "warn")}>{(DCI_FEEL.find(f => f[0] === d.checkin.wellbeing) || DCI_FEEL[0])[1]}</span>
+          <span className="dci-muted">{"Checked in this week" + (d.checkin.note ? " · “" + d.checkin.note + "”" : "")}</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEdit(true)}>Change</button>
+        </div>
+      ) : (
+        <div className="dci-form">
+          <p className="dci-q" id="dci-q">How has your week been?</p>
+          <div className="dci-feel" role="radiogroup" aria-labelledby="dci-q">
+            {DCI_FEEL.map(([k, l, ic]) => <button key={k} type="button" role="radio" aria-checked={v.wellbeing === k} className={"dci-feel-b is-" + k.replace(/\s/, "").toLowerCase()} onClick={() => setV(Object.assign({}, v, { wellbeing: k }))}>
+              <i className={"ph ph-" + ic} aria-hidden="true"/><span>{l}</span></button>)}
+          </div>
+          {v.wellbeing === "Need help" && <p className="dci-help" role="note">{d.mentor.first + " is told straight away, and so is the person at your centre who keeps young people safe. If you are in danger right now, call 112."}</p>}
+          {!more ? <button type="button" className="dci-link" onClick={() => setMore(true)}>Add sleep, stress and energy</button> : DCI_EXTRA.map(([k, l, words]) => (
+            <div key={k} className="dci-extra"><span className="dci-extra-l" id={"dci-" + k}>{l}</span>
+              <div className="dci-scale" role="radiogroup" aria-labelledby={"dci-" + k}>{words.map((w, i) => <button key={w} type="button" role="radio" aria-checked={v[k] === i + 1} onClick={() => setV(Object.assign({}, v, { [k]: i + 1 }))}>{w}</button>)}</div></div>))}
+          <textarea className="dci-note" rows={2} maxLength={600} placeholder={"Anything you want " + d.mentor.first + " to know? (optional)"} aria-label="Note for your mentor" value={v.note} onChange={e => setV(Object.assign({}, v, { note: e.target.value }))}/>
+          <div className="dci-actions"><button className="btn btn-primary btn-sm" disabled={busy || !v.wellbeing} onClick={send}>{busy ? "Sending…" : "Send to " + d.mentor.first}</button>
+            {edit && <button className="btn btn-ghost btn-sm" onClick={() => setEdit(false)}>Cancel</button>}</div>
+        </div>
+      )}
+      {g && <div className="dci-goal"><span className="dci-label">Your goal</span><b>{g.goal}</b>
+        <span className="dci-segs" aria-label={"How close: " + (g.progress || 0) + " of 5"}>{[1, 2, 3, 4, 5].map(i => <i key={i} className={i <= (g.progress || 0) ? "is-on" : ""}/>)}</span>
+        {g.plan && <span className="dci-muted">{"Your plan: " + g.plan}</span>}</div>}
+      {d.relAsked && !d.relDone && <div className="dci-rel"><span className="dci-label">{d.mentor.first + " asked how mentoring is going"}</span>
+        <span className="dci-muted">Four quick questions. Only the coordinator sees your answers; your mentor sees one number.</span>
+        {d.relQuestions.map((q, i) => <div key={q} className="dci-extra"><span className="dci-extra-l" id={"dci-rq" + i}>{q}</span>
+          <div className="dci-scale" role="radiogroup" aria-labelledby={"dci-rq" + i}>{[1, 2, 3, 4, 5].map(n => <button key={n} type="button" role="radio" aria-checked={rel[i] === n} onClick={() => setRel(r => r.map((x, j) => j === i ? n : x))}>{n}</button>)}</div></div>)}
+        <span className="dci-muted">1 = not at all · 5 = very much</span>
+        <div className="dci-actions"><button className="btn btn-primary btn-sm" onClick={sendRel}>Send my answers</button></div></div>}
+      {d.selfScoreDue && (!scoring ? <div className="dci-score"><span className="dci-label">Your Leadership Index</span>
+          <span className="dci-muted">{"Score yourself for this month. " + d.mentor.first + " scores you too; the difference is a good conversation."}</span>
+          <div className="dci-actions"><button className="btn btn-ghost btn-sm" onClick={() => { setSc((d.selfScore && d.selfScore.scores) || d.skills.map(() => 5)); setScoring(true); }}>Score myself</button></div></div>
+        : <div className="dci-score"><span className="dci-label">Your Leadership Index · 0 to 10</span>
+          {d.skills.map(([name, desc], i) => <div key={name} className="dci-sk"><span><b>{name}</b><em>{desc}</em></span>
+            <span className="dci-step"><button type="button" aria-label={"Lower " + name} disabled={sc[i] <= 0} onClick={() => setSc(x => x.map((y, j) => j === i ? y - 1 : y))}>−</button>
+              <output aria-live="polite">{sc[i]}</output>
+              <button type="button" aria-label={"Raise " + name} disabled={sc[i] >= 10} onClick={() => setSc(x => x.map((y, j) => j === i ? y + 1 : y))}>+</button></span></div>)}
+          <div className="dci-actions"><button className="btn btn-primary btn-sm" onClick={sendScores}>Save my scores</button><button className="btn btn-ghost btn-sm" onClick={() => setScoring(false)}>Cancel</button></div></div>)}
+    </div>
+  );
+}
+
 function DashboardMentor({ mentor }) {
   return (
     <div className="dash-card dash-mentor">
@@ -2035,7 +2268,7 @@ function DashboardMentor({ mentor }) {
         <div>
           <div className="dash-mentor-name">{mentor.fullName}</div>
           <div className="dash-mentor-meta">
-            {(mentor.tracks || []).join(" · ") || "Mentor"} · CACENTRE {mentor.centre}
+            {(mentor.tracks || []).join(" · ") || "Mentor"}{mentor.centre ? " · " + mentor.centre : ""}
           </div>
         </div>
       </div>
@@ -2339,6 +2572,13 @@ function DashCurriculum() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [open, setOpen] = React.useState("");
+  const [say, setSay] = React.useState(null);
+  /* Its own request, and its own failure: the term question never being
+     asked must not cost anybody their lessons. */
+  const loadSay = React.useCallback(() => {
+    NGGApi.member.testimonialMine().then(setSay).catch(() => setSay(null));
+  }, []);
+  React.useEffect(() => { loadSay(); }, [loadSay]);
   const load = React.useCallback(() => {
     setErr("");
     return NGGApi.member.curriculum().then(setData).catch(e => setErr(e.code || e.message || "failed"));
@@ -2361,6 +2601,9 @@ function DashCurriculum() {
   data.units.forEach(u => { const w = weeks.find(x => x.week === u.week); w ? w.units.push(u) : weeks.push({ week: u.week, units: [u] }); });
   return (
     <div className="cur">
+      {/* Once a session, in its last weeks — never a gate on anything. The
+          server decides whether the question is open (testi_session_ask). */}
+      {say && say.session && <DashTermSay ask={say.session} mine={say.mine} onSaved={loadSay}/>}
       <div className="dash-card cur-summary">
         <div>
           <div className="eyebrow cur-eyebrow">CURRICULUM{data.track ? " · " + data.track.toUpperCase() : ""}</div>
@@ -2401,12 +2644,317 @@ function DashCurriculum() {
   );
 }
 
+/* The kinds of question where the work itself is the answer. A practical
+   subject assessed only in prose is a practical subject assessed badly —
+   so these carry the thing made, done or played, attached in the exam
+   itself rather than "bring it next Saturday". */
+const CUR_SHOWS_WORK = ["task", "project", "code"];
+
+/**
+ * Attach the work to the answer — a photo of it, a recording of it, a file.
+ *
+ * This is what makes the practical half of a review sittable HERE. Before
+ * it, "play the scale and say where your thumb went" could only ever be
+ * marked on the learner's own account of it, which in a music programme is
+ * the one thing that is not evidence. The upload goes through the member's
+ * own curriculum store (signed-in readers only) and its URL is appended to
+ * the written answer, so nothing about marking, progress or the schema
+ * changes — a marker opens the answer and the work is in it.
+ */
+function CurAttach({ n, onAdd }) {
+  const [busy, setBusy] = React.useState(false);
+  const pick = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.curriculumUpload(file);
+      onAdd(r.url);
+      toast.success("Added to your answer.", file.name);
+    } catch (e) {
+      toast.error(e.code === "too_large" ? "That file is over 25 MB — a shorter recording or a smaller photo."
+        : e.code === "bad_type" ? "That kind of file is not allowed here." : humanizeError(e.code, e.code));
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="cur-attach">
+      <label className={"cur-attach-btn" + (busy ? " is-busy" : "")}>
+        {busy ? "Adding…" : "Attach your work"}
+        <input type="file" className="sr-only" disabled={busy} accept={CUR_FILE_ACCEPT}
+               aria-label={"Attach your work for question " + n}
+               onChange={e => { pick(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
+      </label>
+      <span className="cur-attach-hint">A photo, a recording, a screenshot or a file — whatever shows you did it.</span>
+    </div>
+  );
+}
+
+/**
+ * One question, wherever it is asked.
+ *
+ * It is asked in two places now — at the START of a session, as the review
+ * of the one before it, and inside a lesson's own set — and they must be the
+ * same question: the same options, the same marking, the same feedback, the
+ * same model answer. A second copy of this markup for the review panel is
+ * how the two drift until a child sees a different thing depending on which
+ * screen asked them.
+ */
+function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
+  const rv = verdict;
+  return (
+    <fieldset className="cur-check">
+      <legend><span className="cur-check-n">{n}.</span> {c.prompt} <span className="cur-check-pts">{c.points} pt{c.points === 1 ? "" : "s"}</span></legend>
+      {/* THE VIDEO IS PART OF THE QUESTION, so it plays here. Sending a
+          learner away to find it is where this flow breaks: they lose the
+          exam, they lose the question, and on a phone they lose the tab. */}
+      {c.kind === "watch" && c.videoUrl && (() => {
+        const v = curVideoEmbed(c.videoUrl);
+        return v ? <div className="cur-watch">
+          <div className="cur-embed"><iframe src={v.src} title={v.title} loading="lazy"
+            allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"/></div>
+          <p className="cur-watch-note">Watch it, then write what you took from it — in your own words. A detail or a moment from the video counts for more than a tidy summary.</p>
+        </div> : null;
+      })()}
+      {c.kind === "mcq"
+        ? c.options.map((o, k) => (
+            <label key={k} className={"cur-opt" + (rv && String(k) === rv.answer ? " is-right" : "") + (rv && value === k && String(k) !== rv.answer ? " is-wrong" : "")}>
+              <input type="radio" name={c.checkId} checked={value === k} disabled={disabled} onChange={() => onChange(k)}/>
+              <span>{o}</span>
+            </label>))
+        : <React.Fragment>
+            <textarea className={"cur-answer" + (c.kind === "code" ? " is-code" : "")} rows={["essay", "reflection", "project", "code"].includes(c.kind) ? 8 : 3}
+              value={value || ""} aria-label={"Answer to question " + n} spellCheck={c.kind !== "code"} disabled={disabled}
+              onChange={e => onChange(e.target.value)}
+              placeholder={{ essay: "Make your case — a clear point, your reasons, an example", reflection: "Be honest and specific — there is no wrong answer",
+                project: "What you made, how you made it, and what you learned", task: "What you actually did, and one decision you made while doing it",
+                watch: "What you took from it — something specific you saw or heard, in your own words",
+                code: "Paste or type your code" }[c.kind] || "Your answer, in your own words"}/>
+            {CUR_SHOWS_WORK.includes(c.kind) && !disabled && <CurAttach n={n} onAdd={url => onChange(((value || "") + "\n" + url).trim())}/>}
+          </React.Fragment>}
+      {mark && mark.feedback && <p className="cur-feedback"><b>{mark.by === "ai" ? "Feedback (AI)" : mark.by === "auto" ? "Note" : "Your instructor"}:</b> {mark.feedback}</p>}
+      {rv && c.kind !== "mcq" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
+    </fieldset>
+  );
+}
+
+/**
+ * ONE LINE ABOUT TODAY, asked at the end of every session.
+ *
+ * The home page used to carry four testimonials attributed to named people.
+ * Nobody said any of them. This is where the real ones come from — written
+ * the day it happened, by the person it happened to, rather than
+ * reconstructed for a funder's report eighteen months later.
+ *
+ * Four things this screen will not do:
+ *   · It will not publish anything. What is written here is private, goes to
+ *     staff, and reaches the public site only if somebody with `content`
+ *     decides so AND the record carries the guardian's visibility consent.
+ *     That is said here, in a sentence, before they type.
+ *   · It will not ask for a name. They choose initials, their first name, or
+ *     nothing — and the quietest option is the default.
+ *   · It will not block anything. No lesson, no review, no progress depends
+ *     on it. A testimonial given to unlock something is not a testimonial.
+ *   · It will not hold on to it. Clearing the box takes it back, published
+ *     or not, without asking anybody.
+ */
+/* ── HOW DID TODAY GO ───────────────────────────────────────────────────────
+ *
+ * Three taps, two seconds, after every lesson. Private to the people who
+ * teach them (domain/lesson-feedback.php) — it is never published and there
+ * is no op that could publish it.
+ *
+ * This replaced a text box asking for a testimonial after every lesson, which
+ * was the wrong question at the wrong rhythm: a child asked to write
+ * something quotable twenty-four times a term answers twice. The considered
+ * sentence is asked once a SESSION and lives in DashTermSay below.
+ *
+ * The words are optional, asked SECOND, and only of the child who did not
+ * follow — because that is the only one whose words change what somebody
+ * does next Saturday.
+ */
+const CUR_FB = [
+  { id: "got",    label: "I could do it",   icon: "\u2713" },
+  { id: "mostly", label: "I could follow,\nbut I'd need help", icon: "\u2248" },
+  { id: "lost",   label: "I could not follow", icon: "?" },
+];
+
+function DashLessonFeedback({ unitId, mine, onSaved }) {
+  const [signal, setSignal] = React.useState((mine && mine.signal) || "");
+  const [body, setBody] = React.useState((mine && mine.body) || "");
+  const [busy, setBusy] = React.useState(false);
+  const [saidAt, setSaidAt] = React.useState(0);
+  const send = async (sig, text) => {
+    setBusy(true);
+    try {
+      await NGGApi.member.lessonFeedback(unitId, sig, text);
+      setSaidAt(Date.now());
+      if (onSaved) onSaved();
+    } catch (e) { toast.error(humanizeError(e.code, e.code)); }
+    finally { setBusy(false); }
+  };
+  const tap = (id) => { const next = signal === id ? "" : id; setSignal(next); send(next, next ? body : ""); };
+  return (
+    <section className="dash-card cur-fb" aria-label="How today went">
+      <h3 className="cur-sec-h">How did that go?</h3>
+      <p className="cur-fb-note">Only your instructor sees this. It never goes anywhere else, and it is not marked.</p>
+      <div className="cur-fb-taps" role="group" aria-label="How did that go?">
+        {CUR_FB.map(o => (
+          <button key={o.id} type="button" disabled={busy}
+                  className={"cur-fb-tap is-" + o.id + (signal === o.id ? " is-on" : "")}
+                  aria-pressed={signal === o.id} onClick={() => tap(o.id)}>
+            <span className="cur-fb-ico" aria-hidden="true">{o.icon}</span>
+            <span className="cur-fb-lab">{o.label}</span>
+          </button>
+        ))}
+      </div>
+      {/* Asked only of the child who struggled: a nice note on "got it" is
+          pleasant and is not why an instructor opens this. */}
+      {(signal === "lost" || signal === "mostly") && (
+        <label className="cur-fb-more">
+          <span>What was hard? (you can skip this)</span>
+          <textarea rows={2} value={body} maxLength={400} disabled={busy}
+                    placeholder="e.g. I did not understand where the variable goes"
+                    onChange={e => setBody(e.target.value)}
+                    onBlur={() => body !== ((mine && mine.body) || "") && send(signal, body)}/>
+        </label>
+      )}
+      {saidAt > 0 && <p className="cur-fb-done" role="status">Thank you \u2014 your instructor will see this.</p>}
+    </section>
+  );
+}
+
+/* ── WHAT THIS TERM GAVE YOU ────────────────────────────────────────────────
+ *
+ * The testimonial, asked once a SESSION — the twelve-week block, four a year
+ * — in the last three weeks of it and for two months after it ends. The
+ * server decides whether the question is open at all (testi_session_ask);
+ * this draws nothing when it is not.
+ */
+function DashTermSay({ ask, mine, onSaved }) {
+  const [body, setBody] = React.useState((mine && mine.body) || "");
+  const [showAs, setShowAs] = React.useState((mine && mine.showAs) || "initials");
+  const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  const had = !!(mine && mine.body);
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.testimonialGive({ sessionId: ask.sessionId, body: body.trim(), showAs });
+      setDone(true);
+      toast.success(r.status === "withdrawn" ? "Taken back. Nobody will see it."
+        : had ? "Changed. Somebody at NGG reads it before it goes anywhere."
+        : "Thank you \u2014 somebody at NGG will read it.");
+      if (onSaved) onSaved();
+    } catch (e2) {
+      toast.error(e2.code === "too_short" ? "A few more words than that." : humanizeError(e2.code, e2.code));
+    } finally { setBusy(false); }
+  };
+  const SHOW = [["initials", "My initials"], ["first", "My first name"], ["anon", "Don\u2019t say who"]];
+  return (
+    <form className="dash-card cur-say" onSubmit={save} aria-label={"What " + ask.name + " gave you"}>
+      <div className="eyebrow cur-eyebrow">{ask.name.toUpperCase()} IS ENDING</div>
+      <h3 className="cur-sec-h">What did this term give you?</h3>
+      <p className="cur-say-q">One or two lines, in your own words. Not today \u2014 the whole term.</p>
+      <label className="cur-say-f">
+        <span className="sr-only">What this term gave you</span>
+        <textarea rows={3} value={body} maxLength={600} disabled={busy}
+                  onChange={e => { setBody(e.target.value); setDone(false); }}
+                  placeholder="Something you can do now that you could not do in week one."/>
+      </label>
+      <fieldset className="cur-say-as">
+        <legend>If this ever goes on the website, show me as</legend>
+        {SHOW.map(([v, l]) => (
+          <label key={v} className={"cur-say-opt" + (showAs === v ? " is-on" : "")}>
+            <input type="radio" name="showas" checked={showAs === v} disabled={busy}
+                   onChange={() => { setShowAs(v); setDone(false); }}/>
+            <span>{l}</span>
+          </label>
+        ))}
+      </fieldset>
+      <p className="cur-say-note">
+        Nobody sees this but NGG staff unless you and your parent or guardian have
+        agreed it can go on the website \u2014 and even then, a person decides, not a computer.
+        {had ? " Clearing the box takes it back." : ""}
+      </p>
+      <div className="cur-say-acts">
+        <button type="submit" className="btn btn-primary" disabled={busy || (!body.trim() && !had)}>
+          {busy ? "Saving\u2026" : had ? (body.trim() ? "Change it" : "Take it back") : "Send it"}
+        </button>
+        {done && <span className="cur-say-done" role="status">Saved.</span>}
+      </div>
+    </form>
+  );
+}
+
+/**
+ * THE OPENING REVIEW — last week's questions, before today's lesson.
+ *
+ * The questions belong to the PREVIOUS lesson and are submitted against it,
+ * so the attempt lands on the lesson it is about and every report, deadline
+ * and completion already knows where to look. Nothing new is stored.
+ *
+ * It is first on the page and today's teaching waits behind it — but "Skip
+ * to today's lesson" is always there, in plain words, because a child who
+ * joined late or was away must not be locked out of the lesson by a review
+ * of a week they were not here for.
+ */
+function DashOpeningReview({ review, onDone, onSkip }) {
+  const [answers, setAnswers] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const [out, setOut] = React.useState(null);
+  const checks = review.checks || [];
+  const answered = checks.every(c => answers[c.checkId] !== undefined && answers[c.checkId] !== "");
+  const verdicts = {}; ((out && out.review) || []).forEach(c => { verdicts[c.checkId] = c; });
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.curriculumSubmit(review.unitId, answers);
+      setOut(r);
+      if (r.progress.pending) toast.info("Sent. Your instructor will mark the written answers.", review.title);
+      else toast.success("Review done — " + Math.round(r.progress.score) + " of " + r.progress.maxScore + ".", review.title);
+    } catch (e2) { toast.error(humanizeError(e2.code, e2.code)); }
+    finally { setBusy(false); }
+  };
+  const p = out && out.progress;
+  return (
+    <form className="dash-card cur-review" onSubmit={submit} aria-label={"Review of week " + review.week}>
+      <div className="eyebrow cur-review-eyebrow">BEFORE TODAY&rsquo;S LESSON</div>
+      <h3 className="cur-review-h">What do you still remember?</h3>
+      <p className="cur-review-sub">
+        {checks.length} question{checks.length === 1 ? "" : "s"} from week {review.week}, <b>{review.title}</b>.
+        {review.attempted ? " You have had a go at these before." : " Try them from memory — looking them up does not help you."}
+      </p>
+      {checks.map((c, i) => (
+        <CurCheckField key={c.checkId} c={c} n={i + 1} value={answers[c.checkId]} disabled={!!p}
+                       onChange={v => setAnswers(a => ({ ...a, [c.checkId]: v }))}
+                       verdict={verdicts[c.checkId]} mark={p && p.marks && p.marks[c.checkId]}/>
+      ))}
+      {p
+        ? <div className="cur-review-done" aria-live="polite">
+            <p className="cur-result">
+              {p.pending ? "Your written answers are with your instructor."
+                : Math.round(p.score) + " of " + p.maxScore + ". " + (p.status === "completed" ? "That week is complete." : "Worth going back over before you carry on.")}
+            </p>
+            <button type="button" className="btn btn-primary" onClick={onDone}>Start today&rsquo;s lesson</button>
+          </div>
+        : <div className="cur-review-acts">
+            <button type="submit" className="btn btn-primary" disabled={busy || !answered}>{busy ? "Marking…" : "Check my answers"}</button>
+            <button type="button" className="btn btn-ghost" onClick={onSkip}>Skip to today&rsquo;s lesson</button>
+            {!answered && <span className="cur-note">Answer every question to check them.</span>}
+          </div>}
+    </form>
+  );
+}
+
 function DashCurriculumLesson({ unitId, onBack }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [answers, setAnswers] = React.useState({});
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState(null);
+  const [started, setStarted] = React.useState(false);
   const load = React.useCallback(() => {
     setErr("");
     return NGGApi.member.curriculumUnit(unitId).then(r => { setD(r); setResult(null); }).catch(e => setErr(e.code || e.message));
@@ -2433,6 +2981,11 @@ function DashCurriculumLesson({ unitId, onBack }) {
     finally { setBusy(false); }
   };
   const st = curriculumStatusLabel(p);
+  /* The review comes FIRST and today's teaching waits behind it, because a
+     review sat after the lesson it is meant to precede is just a quiz. The
+     skip is always there: being away last week is not a reason to be shut
+     out of this week. */
+  const opened = started || !d.review;
   return (
     <article className="cur-lesson">
       <button type="button" className="btn btn-ghost btn-sm cur-back" onClick={onBack}>← All lessons</button>
@@ -2443,44 +2996,39 @@ function DashCurriculumLesson({ unitId, onBack }) {
         <span className={"cur-chip " + st.tone}>{st.label}</span>
         {p && p.stale && <p className="cur-note">This lesson's checks have changed since you sat them — your earlier score was on the older questions.</p>}
       </header>
-      {u.objectives.length > 0 && (
+      {!opened && <DashOpeningReview review={d.review} onDone={() => setStarted(true)} onSkip={() => setStarted(true)}/>}
+      {opened && u.objectives.length > 0 && (
         <section className="dash-card">
           <h3 className="cur-sec-h">What you'll learn</h3>
           <ul className="cur-objectives">{u.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>
         </section>
       )}
-      {(u.body || u.materials.length > 0) && (
+      {opened && (u.body || u.materials.length > 0) && (
         <section className="dash-card">
           <h3 className="cur-sec-h">The lesson</h3>
           <CurriculumText text={u.body}/>
-          <CurriculumMaterials materials={u.materials}/>
+          <CurriculumMaterials materials={u.materials} fileUrl={curMemberFile}/>
         </section>
       )}
-      {u.checks.length > 0 && (
-        <form className="dash-card cur-checks" onSubmit={submit} aria-label="Check your understanding">
-          <h3 className="cur-sec-h">Check your understanding</h3>
-          <p className="cur-note">Pass mark {u.passMark}%.{p && p.attempts > 0 ? " Attempts so far: " + p.attempts + "." : ""}</p>
-          {u.checks.map((c, i) => {
-            const rv = reviewById[c.checkId]; const mk = marks[c.checkId];
-            return (
-              <fieldset key={c.checkId} className="cur-check">
-                <legend><span className="cur-check-n">{i + 1}.</span> {c.prompt} <span className="cur-check-pts">{c.points} pt{c.points === 1 ? "" : "s"}</span></legend>
-                {c.kind === "mcq"
-                  ? c.options.map((o, k) => (
-                      <label key={k} className={"cur-opt" + (rv && String(k) === rv.answer ? " is-right" : "") + (rv && answers[c.checkId] === k && String(k) !== rv.answer ? " is-wrong" : "")}>
-                        <input type="radio" name={c.checkId} checked={answers[c.checkId] === k} onChange={() => setAnswers(a => ({ ...a, [c.checkId]: k }))}/>
-                        <span>{o}</span>
-                      </label>))
-                  : <textarea className={"cur-answer" + (c.kind === "code" ? " is-code" : "")} rows={["essay", "reflection", "project", "code"].includes(c.kind) ? 8 : 3}
-                      value={answers[c.checkId] || ""} aria-label={"Answer to question " + (i + 1)} spellCheck={c.kind !== "code"}
-                      onChange={e => setAnswers(a => ({ ...a, [c.checkId]: e.target.value }))}
-                      placeholder={{ essay: "Make your case — a clear point, your reasons, an example", reflection: "Be honest and specific — there is no wrong answer",
-                        project: "What you made, how you made it, and what you learned (add a link if you have one)", code: "Paste or type your code" }[c.kind] || "Your answer, in your own words"}/>}
-                {mk && mk.feedback && <p className="cur-feedback"><b>{mk.by === "ai" ? "Feedback (AI)" : mk.by === "auto" ? "Note" : "Your instructor"}:</b> {mk.feedback}</p>}
-                {rv && c.kind !== "mcq" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
-              </fieldset>
-            );
-          })}
+      {opened && u.checks.length > 0 && (
+        /* These are the questions you will be asked at the START of the next
+           session, a week from now. They stay reachable here on purpose: a
+           member who wants to try them straight away should be able to, the
+           last lesson of a course has no next session to be asked in, and
+           completion has to remain possible either way. What changed is
+           which moment the programme treats as the real one. */
+        <form className="dash-card cur-checks" onSubmit={submit} aria-label="Next session's review">
+          <h3 className="cur-sec-h">Next session&rsquo;s review</h3>
+          <p className="cur-note">
+            You&rsquo;ll be asked {u.checks.length === 1 ? "this" : "these"} at the start of your next session, from memory.
+            Have a go now if you like — it is the remembering a week later that makes it stick.
+            Pass mark {u.passMark}%.{p && p.attempts > 0 ? " Attempts so far: " + p.attempts + "." : ""}
+          </p>
+          {u.checks.map((c, i) => (
+            <CurCheckField key={c.checkId} c={c} n={i + 1} value={answers[c.checkId]}
+                           onChange={v => setAnswers(a => ({ ...a, [c.checkId]: v }))}
+                           verdict={reviewById[c.checkId]} mark={marks[c.checkId]}/>
+          ))}
           {p && p.attempts > 0 && (
             <p className="cur-result" aria-live="polite">
               {p.pending ? "Your written answers are with your instructor. Your score appears once they're marked."
@@ -2491,6 +3039,9 @@ function DashCurriculumLesson({ unitId, onBack }) {
           {!answered && <span className="cur-note"> Answer every question to submit.</span>}
         </form>
       )}
+      {/* Last on the page, after the work, because that is when somebody
+          knows what the session gave them. Never a gate on any of it. */}
+      {opened && <DashLessonFeedback unitId={unitId} mine={d.feedback} onSaved={load}/>}
     </article>
   );
 }

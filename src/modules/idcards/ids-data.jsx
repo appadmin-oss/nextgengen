@@ -33,6 +33,11 @@ function idsRecord(kind, raw, state) {
   const key = subjectType + ":" + id;
   const issued = (state.issued || {})[key] || null;
   const re = (state.reprints || {})[key] || null;
+  /* The card in their hand no longer matches the record — the server compares
+     what was PRINTED (photo, name, ID, QR) with the record now. A newer design
+     alone is not a reason: a card in last year's design is still a good card. */
+  const staleAll = (state.stale || {})[key] || [];
+  const stale = staleAll.filter(x => x !== "design");
   const division = kind === "afrovanguard" ? (raw.avKind === "NGV" ? "NextGen Vanguard" : "Level " + (raw.level || "")) : kind === "member" ? ((raw.disciplines || []).length ? raw.disciplines.join(" · ") : raw.track) : kind === "summer" ? raw.track : (raw.faculty || raw.role);
   const displayId = kind === "member" && raw.displayIdMissing ? "" : String(raw.displayId || "");
   return {
@@ -43,7 +48,8 @@ function idsRecord(kind, raw, state) {
     hasPhoto: kind === "afrovanguard" ? !!raw.hasPhoto : !!raw.photoUrl,
     // A reprint is somebody already holding a card and asked for again; a
     // person with a card and no request is done, not queued.
-    reason: re ? "reprint" : "new", why: re ? re.why : "",
+    reason: re || stale.length ? "reprint" : "new", why: re ? re.why : stale.length ? idsStaleWhy(stale) : "",
+    cause: re ? (re.cause || "") : stale.length ? "changed" : "", stale, designOld: staleAll.indexOf("design") >= 0,
     printedBefore: !!issued, lastIssue: issued,
     divMissing: !String(division || "").trim(),
     // When they registered (participants, volunteers) or joined (members): what a run "by date" cuts on.
@@ -53,6 +59,13 @@ function idsRecord(kind, raw, state) {
     asked: (state.asked || {})[key] || null,      // { at, channels } of the last photo request
   };
 }
+
+/** "Card no longer matches: photo changed, name corrected". */
+const IDS_STALE_WORDS = { photo: "photo changed", name: "name corrected", id: "ID number changed", qr: "QR reissued, the old card no longer opens" };
+function idsStaleWhy(list) { return "Card no longer matches: " + list.map(x => IDS_STALE_WORDS[x] || x).join(", "); }
+/** Reprint reasons an operator picks; the server keeps them as codes (lost and never received get a new QR). */
+const IDS_REPRINT_REASONS = [["lost", "Lost", "Lost or stolen — gets a new QR, the old card stops working"], ["damaged", "Damaged", "Damaged or faded — same QR"],
+  ["never_received", "Never received", "Never reached them — gets a new QR"], ["name", "Details changed", "Name or details corrected"]];
 
 /** Load everything the studio shows. Each list is optional: a 403 means that desk is not this operator's. */
 async function idsLoad() {
@@ -70,7 +83,11 @@ async function idsLoad() {
   /* Afrovanguard is another site: a failure is said on the page, with its
      reason (not set up, wrong secret, unreachable), never a reason the
      studio's own cards cannot print. */
-  const avNote = av.ok || av.forbidden ? "" : "Afrovanguard cards couldn’t be fetched: " + ((av.e && (av.e.detail || av.e.message)) || "no answer") + "";
+  /* A deployment with no Afrovanguard link set up has nothing to fetch: that
+     is a setting, not a failure, so it is not announced on every visit. */
+  const avWhy = (av.e && (av.e.detail || av.e.message || av.e.code)) || "";
+  const avOff = /not_configured/.test(String(avWhy) + " " + String((av.e && av.e.code) || ""));
+  const avNote = av.ok || av.forbidden || avOff ? "" : "Afrovanguard cards couldn’t be fetched: " + (avWhy || "no answer");
   if (av.ok) lists.push(["afrovanguard", av]);
   const state = st.r || {};
   const records = [], programs = {};
@@ -208,22 +225,32 @@ function IdsMemberFace({ rec, back, program, boxW, boxH }) {
 
 const IDS_ASK_CHANNEL = { member: "them by email", member_app: "them in the app", guardians: "their guardians", guardian: "their guardian", volunteer: "them by email" };
 const IDS_ASK_REFUSAL = { has_photo: "already has a photo", asked_recently: "was asked in the last few days", out_of_scope: "is outside your centres",
-  forbidden: "isn’t yours to ask", not_found: "wasn’t found", bad_subject: "wasn’t found" };
+  forbidden: "isn’t yours to ask", not_found: "wasn’t found", bad_subject: "wasn’t found", already_queued: "is already in a request that is still sending" };
 
 /** One sentence for the toast, from the server's per-row verdicts — never from what was pressed. */
 function idsAskSummary(res, nameOf) {
   const rows = (res && res.results) || [];
-  const sent = rows.filter(r => r.sent), refused = rows.filter(r => r.error);
-  const admins = (res && res.admins) || 0;
-  const adminsTxt = admins ? " " + idsN(admins, "admin") + " told." : "";
+  const sent = rows.filter(r => r.sent && !r.queued), queued = rows.filter(r => r.queued), refused = rows.filter(r => r.error);
   if (rows.length === 1 && sent.length === 1) {
-    const ch = sent[0].sent.map(c => IDS_ASK_CHANNEL[c]).filter(Boolean);
-    return ch.length ? "Asked " + ch.join(" and ") + "." + adminsTxt : "Noted, but there was nobody to send it to. Ask them in person." + adminsTxt;
+    const ch = sent[0].sent.filter(c => c !== "member_app" || sent[0].sent.length === 1).map(c => IDS_ASK_CHANNEL[c]).filter(Boolean);
+    if (sent[0].mailFailed) return "The email couldn’t be sent" + (sent[0].sent.length ? ", so they only have the note in the app" : "") + ". Check the site’s mail settings, or ask them in person.";
+    return sent[0].unreachable ? (sent[0].sent.length ? "Sent in the app only: there is no email or guardian on file. Ask them in person too." : "There was nobody to send it to. Ask them in person.")
+      : "Asked " + ch.join(" and ") + ". The staff for their centre get one summary.";
   }
   if (rows.length === 1 && refused.length === 1) return nameOf(refused[0]) + " " + (IDS_ASK_REFUSAL[refused[0].error] || "couldn’t be asked") + ".";
-  const quiet = sent.filter(r => !r.sent.length).length;
-  return "Asked " + idsN(sent.length - quiet, "person", "people") + (quiet ? ", " + quiet + " with no one to send to" : "")
-    + (refused.length ? ", " + refused.length + " skipped" : "") + "." + adminsTxt;
+  const failedMail = sent.filter(r => r.mailFailed).length, quiet = sent.filter(r => r.unreachable && !r.mailFailed).length;
+  const n = sent.length + queued.length;
+  /* A big request is a queue, said as one: how many, and that the rest follow. */
+  /* "All sent" only when it all went: a request where the mail failed, or
+     nobody had an address, says that instead of a success it did not have. */
+  const went = sent.length - failedMail - quiet;
+  const head = queued.length ? sent.length + " sent now, the other " + queued.length + " go out over the next few minutes"
+    : went === sent.length ? "all sent" : went ? went + " sent" : "none reached by email";
+  return (n ? "Photo request for " + idsN(n, "person", "people") + ": " + head : "Nobody new to ask")
+    + (quiet ? "; " + quiet + " have no email or guardian on file" : "")
+    + (failedMail ? "; " + idsN(failedMail, "email") + " couldn’t be sent — check the site’s mail settings" : "")
+    + (refused.length ? "; " + refused.length + " left out" : "") + "."
+    + (n ? " Staff get one summary when it has all gone." : "");
 }
 function idsAskedOn(a) {
   return a && a.at ? new Date(a.at).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";

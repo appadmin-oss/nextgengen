@@ -8,9 +8,9 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'feed');
     if ($view === 'channels')      $res = gs_call('community.channels', ['memberId' => $s['mid']]);
     elseif ($view === 'comments')  $res = gs_call('community.comments', ['memberId' => $s['mid'], 'postId' => $_GET['postId'] ?? '']);
-    elseif ($view === 'digest')    $res = gs_call('community.digest', ['channel' => $_GET['channel'] ?? 'all']);
+    elseif ($view === 'digest')    $res = gs_call('community.digest', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all']);
     elseif ($view === 'mention')   $res = gs_call('community.mentionSearch', ['q' => $_GET['q'] ?? '', 'memberId' => $s['mid']]);
-    elseif ($view === 'search')    $res = gs_call('community.search', ['memberId' => $s['mid'], 'q' => $_GET['q'] ?? '', 'channel' => $_GET['channel'] ?? '']);
+    elseif ($view === 'search')    $res = gs_call('community.search', ['memberId' => $s['mid'], 'q' => $_GET['q'] ?? '', 'channel' => $_GET['channel'] ?? '', 'author' => $_GET['author'] ?? '']);
     elseif ($view === 'members')   $res = gs_call('community.channelMembers', ['channel' => $_GET['channel'] ?? '']);
     // Every file shared in a channel — the Files screen.
     elseif ($view === 'files')     $res = gs_call('community.files', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? '', 'kind' => $_GET['kind'] ?? 'all']);
@@ -23,7 +23,15 @@ if ($method === 'GET') {
     elseif ($view === 'homeworkList') $res = gs_call('community.homeworkList', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? '']);
     // Who is typing. Read on the channel's existing poll — no extra timer.
     elseif ($view === 'typing')    $res = gs_call('community.typingWho', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? '']);
-    else                           $res = gs_call('community.feed', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all', 'sort' => $_GET['sort'] ?? 'latest', 'page' => (int)($_GET['page'] ?? 0)]);
+    // Community v3: the viewer, once; the home carousel; homework as a board;
+    // files across the viewer's channels; a video's chapters and captions.
+    elseif ($view === 'v3boot')    $res = gs_call('community.v3boot', ['memberId' => $s['mid']]);
+    elseif ($view === 'home')      $res = gs_call('community.home', ['memberId' => $s['mid']]);
+    elseif ($view === 'hwBoard')   $res = gs_call('community.hwBoard', ['memberId' => $s['mid']]);
+    elseif ($view === 'v3files')   $res = gs_call('community.v3files', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? '']);
+    elseif ($view === 'media')     $res = gs_call('community.media', ['memberId' => $s['mid'], 'postId' => $_GET['postId'] ?? '']);
+    elseif ($view === 'videoPoints') $res = gs_call('community.videoPoints', ['memberId' => $s['mid'], 'postId' => $_GET['postId'] ?? '']);
+    else                           $res = gs_call('community.feed', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all', 'sort' => $_GET['sort'] ?? 'latest', 'page' => (int)($_GET['page'] ?? 0), 'scope' => $_GET['scope'] ?? '']);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
@@ -39,7 +47,9 @@ if ($method === 'GET') {
     } elseif ($action === 'comment') {
         rate_limit_check('community.post.ip');
         rate_limit_check('community.post', $s['mid']);
-        $res = gs_call('community.comment', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'body' => $b['body'] ?? '', 'ip' => client_ip()]);
+        $res = gs_call('community.comment', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'body' => $b['body'] ?? '', 'replyTo' => $b['replyTo'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'commentReact') {
+        $res = gs_call('community.comment.react', ['memberId' => $s['mid'], 'commentId' => $b['commentId'] ?? '', 'emoji' => $b['emoji'] ?? '']);
     } elseif ($action === 'bookmark') {
         $res = gs_call('community.bookmark', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '']);
     } elseif ($action === 'vote') {
@@ -72,6 +82,10 @@ if ($method === 'GET') {
         $res = empty($b['stop'])
             ? gs_call('community.typingPing', ['memberId' => $s['mid'], 'channel' => $b['channel'] ?? ''])
             : gs_call('community.typingStop', ['memberId' => $s['mid'], 'channel' => $b['channel'] ?? '']);
+    } elseif ($action === 'answer') {
+        $res = gs_call('community.answer', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'commentId' => $b['commentId'] ?? '']);
+    } elseif ($action === 'videoPos') {
+        $res = gs_call('community.videoPos', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'pos' => $b['pos'] ?? 0, 'dur' => $b['dur'] ?? 0]);
     } elseif ($action === 'star') {
         $res = gs_call('community.star', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'ip' => client_ip()]);
     } else {

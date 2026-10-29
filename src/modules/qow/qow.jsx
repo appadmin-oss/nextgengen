@@ -43,7 +43,12 @@ function qowWrite(key, v) { try { localStorage.setItem(key, String(v)); } catch 
 /** A stored speed, or 1 when it is missing or not one we offer. */
 function qowStoredRate() { const r = parseFloat(qowRead("ngg_qow_rate", "1")); return QOW_RATES.some(x => x[0] === r) ? r : 1; }
 
-function QuoteOfWeek() {
+/* `variant`: "page" is the home page's full-bleed section; "community" is the
+   same component as a card at the top of the Community's Today feed. One
+   component, so the player, the reveals and the share card cannot drift
+   between the two — only the housing differs, and that is CSS (.qow-cm). */
+function QuoteOfWeek({ variant = "page" } = {}) {
+  const idp = variant === "community" ? "qow-cm" : "qow";
   const [d, setD] = React.useState(null);
   const [reveal, setReveal] = React.useState(false);
   const [open, setOpen] = React.useState(false);
@@ -162,10 +167,10 @@ function QuoteOfWeek() {
       : "Hear it in " + lang + (pace ? " " + pace : "") + (hasEn && withEn ? ", then English" : ""));
 
   return (
-    <section className={"qow qow-" + s.language} aria-labelledby="qow-h">
+    <section className={"qow qow-" + s.language + (variant === "community" ? " qow-cm" : "")} aria-labelledby={idp + "-h"}>
       <div className="qow-inner">
         <div className="qow-head">
-          <span className="qow-eyebrow" id="qow-h">Quote of the week{week ? " · from " + week : ""}</span>
+          <span className="qow-eyebrow" id={idp + "-h"}>Quote of the week{week ? " · from " + week : ""}</span>
           <span className="qow-tag">{lang}{native ? " · " + native : ""} <span className="qow-tag-en">{QOW_KIND[s.kind] || ""}</span></span>
         </div>
         <blockquote className="qow-quote" lang={s.langCode}>
@@ -209,7 +214,7 @@ function QuoteOfWeek() {
               </button>
             )}
             {s.meaning && (
-              <button type="button" className={"qow-btn" + (open ? " is-on" : "")} aria-expanded={open} aria-controls="qow-meaning" onClick={() => setOpen(v => !v)}>
+              <button type="button" className={"qow-btn" + (open ? " is-on" : "")} aria-expanded={open} aria-controls={idp + "-meaning"} onClick={() => setOpen(v => !v)}>
                 {open ? "Close" : "What it means"}
               </button>
             )}
@@ -225,7 +230,7 @@ function QuoteOfWeek() {
               {s.answerTranslation && <span className="qow-a-en">{s.answerTranslation}</span>}
             </div>
           )}
-          {open && <p className="qow-meaning" id="qow-meaning"><span className="qow-k">Deeper meaning</span>{s.meaning}</p>}
+          {open && <p className="qow-meaning" id={idp + "-meaning"}><span className="qow-k">Deeper meaning</span>{s.meaning}</p>}
         </div>
         {s.audioUrl && <audio ref={nativeRef} src={s.audioUrl} preload="none" onEnded={nativeEnded} onError={() => phase && failed()} onTimeUpdate={e => phase === "native" && onTime(e)}/>}
         {sharing && <QowShareSheet saying={s} weekYmd={d.week} shareText={shareText} onClose={() => setSharing(false)}/>}

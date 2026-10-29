@@ -517,6 +517,8 @@ Family accounts (`api/_lib/domain/family.php`). `guardians`: `guardianId` (`GDN-
 
 `member_requests.raisedBy` — `guardian:<guardianId>` when a parent raised the request from their family account; empty otherwise. Only `family_request_create()` sets it.
 
+`member_requests.topic`, `.centre`, `.passedAt` (migration 169) — feedback only (`kind = 'feedback'`). `topic` is `idea | change | love` (`MEMBER_FEEDBACK_TOPICS`). `centre` is the member's centre at the time, and the only scope an anonymous row has: an anonymous feedback row stores `memberId = ''`. `passedAt` is when the desk passed it to the centre lead; it stays `open` until thanked (`status = 'approved'`, `decision` = the thank-you).
+
 ## `timetable_slots` (migration 129)
 A centre's weekly timetable (`api/_lib/domain/timetable.php`). `slotId` (`TT-` + hex), `centreId`, `course` (a curriculum/catalogue course), `level`, `weekday` 1 (Mon)–7 (Sun), `startTime` / `endTime` `HH:MM` (end after start, at most 8 hours), `room`, `instructorId` (a volunteer), `note`, `status` `active` | `removed`, `createdAt`, `updatedAt`, `updatedBy`. Indexed on (`centreId`, `status`) and (`instructorId`, `status`). Clashes (room, instructor across centres, course+level, centre day, centre hours) are refused on save by `tt_clashes()`; rows saved before a rule are reported, not rewritten.
 
@@ -526,4 +528,78 @@ Setting `wisdom_week_pins` — `{ "<Monday YYYY-MM-DD>": "<wisdomId>" }`, the sa
 Which programmes run at a centre: `ngg`, `summer`, or `ngg,summer` (the default, and what blank means). Read through `centre_serves()` / `centres_for_programme()` in `domain/registration.php`; every programme's centre list is filtered by it.
 
 Setting `club_catalogue` — the NGG Club's own faculty → courses map (`club_catalogue()` in `domain/curriculum.php`), separate from Summer School's `academy_catalogue`. Materialised from the academy catalogue on first read, then edited only under Curriculum → Courses.
+
+
+## `guardian_notices`, `club_announcements.smsBody` (migration 163)
+A guardian's family-account inbox (`api/_lib/domain/family.php`). `noticeId` (`GN-` + 12 hex), `guardianId`, `kind` (`announcement`), `refId` (the announcement's `annId`), `title`, `body`, `fromName`, `createdAt`, `readAt` (`''` = unread). Unique on (`guardianId`, `kind`, `refId`), so a re-send is not a second notice. `club_announcements.smsBody`: the short SMS version of a long announcement — written or AI-shortened, checked by `cp_ann_lost_facts`, approved with the rest; `''` when the message fits a text or SMS is not used.
+
+## `academy_passes`, `academy_attempts` (migration 164)
+Progress in an Academy other than the mentors' (they keep `mentor_academy` / `mentor_academy_attempts`), keyed by `track` (`instructor`) and `personId` (the signed-in member id). `academy_passes`: `moduleId`, `score`, `passedAt`, unique on (`track`, `personId`, `moduleId`) — only passes are stored. `academy_attempts`: every try, `score`, `passed` 0/1, `at` — three a module a day. Content is `api/_lib/seeds/<track>-academy.json`; modules flagged `orientation` are the "Start here" guides that open the portal (`api/_lib/domain/academy.php`).
+
+## `projects`, `project_people` (migration 166)
+Projects and activities set in the Mentor Portal (`api/_lib/domain/projects.php`). `projects`: `projectId` (`PRJ-` + 10 hex, unique), `title`, `detail`, `startOn` / `dueOn` (`YYYY-MM-DD`, at most 366 days apart), `centre`, `status` (`open` | `closed` | `cancelled`), `createdBy` (the setter's memberId — only they may edit it or set others' parts), `createdByName`, `createdAt`, `updatedAt`. `project_people`: one row per person on a project, unique on (`projectId`, `kind`, `personId`) — `kind` `mentor` (`personId` = mentorId) or `member` (`personId` = memberId), `groupName` ('' = no group), `status` (`assigned` | `done` | `excused`; excused parts are not counted), `note` (what they did, or why excused), `doneAt`.
+
+## `ai_usage` (migration 167)
+One row per AI call (`api/_lib/ai.php` `ai_log_usage`): `at`, `month` (`YYYY-MM`), `profile`, `job` (`everyday` | `brain`), `provider`, `model`, `tier` (`free` | `paid`), `inTokens`, `outTokens`, `costMicros` (USD × 1,000,000 — the provider's reported cost for OpenRouter, otherwise tokens × the price table), `estimated` (1 when the provider returned no token counts), `ok`, `error` (`ai_limit_reached` marks a paid call the monthly limit held back, at no cost). The month's spend is `SUM(costMicros)`; the limit is setting `ai_routing` (`monthlyLimitUsd`, `paidEveryday`, `prices`).
+
+## `members.feesSettledThrough` (migration 168)
+`YYYY-MM-DD` or ''. The last day the member's membership and dues are settled outside this system. `fees_accrue_member` never charges a membership period due, or a dues month, on or before it; `fees_settle_through()` sets it (never backwards) and posts one `waiver` with periodKey `settle:<date>` for what was still unpaid on those periods (payments applied oldest first).
+
+`member_requests.rating` (migration 170) — 1–5 on an `experience` feedback row (`MEMBER_FEEDBACK_RATINGS`: Not good … Great); 0 everywhere else.
+
+`mentor_messages.mediaJson` (migration 171) — a voice note on a chat message: `journal_media_clean`'s shape, audio only, one clip. `journal.mediaJson` now accepts `type: audio` (it was coerced to image) and site paths under `/api/public|member/` as well as https URLs.
+
+`mentor_supports` (migration 172) — supporting mentors: memberId, mentorId, focus, endsOn (YYYY-MM-DD, '' = until ended), status active|ended, startedAt, endedAt, createdBy. The primary stays in `mentor_assignments`. Merge policy: MOVE.
+
+## `wifi_accounts`, `wifi_gateways` (migration 189)
+
+`wifi_accounts`: one per person with Wi-Fi — `subjectType` (`member` |
+`summer`), `subjectId`, `username` (the printed ID; unique), `pinSealed`
+(AES-256-GCM, not a hash: the gateway is handed it), `pinSetAt`,
+`pinResetDay`/`pinResets` (three a day), and an `override` (`on` | `limited` |
+`off`) with `overrideWhy`/`overrideBy`/`overrideAt`. Access itself is never
+stored: `wifi_access_for()` derives it from the record.
+
+`wifi_gateways`: `gatewayId` (`G` + 8 hex), `platform` (`mikrotik` | `radius` |
+`openwrt` | `generic`), `centre`/`centreId`, `label`, `keyHash` (sha256)/
+`keyTail`/`keySetAt`, `lastSeenAt`, `lastFullAt`, `lastChangeAt`, `osVersion`,
+`lastError`, `lastVersion` + `ackedJson` (what the gateway confirmed) +
+`pendingJson`/`pendingVersion` (what it was last handed), `removedAt`.
+
+## `wifi_gateway_stats`, `wifi_speed_tests` (migration 190)
+
+`wifi_gateways` gains `testAsked` and `lastStatsJson` (the latest report:
+active, cpu, memFree, uptime). `wifi_gateway_stats`: one row per gateway per
+UTC hour (`hour` = `YYYY-MM-DDTHH`) — `samples`, `activeMax`, `activeSum`,
+`cpuMax`, `memFreeMin`; kept 14 days. `wifi_speed_tests`: `centre`/`centreId`,
+`gatewayId` (blank for a device), `source` (`gateway` | `device`), `downMbps`,
+`upMbps`, `rttMs`, `byId`, `note`, `at`. No table holds who browsed what.
+
+## Wi-Fi regions and analytics (migration 191)
+
+`wifi_regions` (regionId `WR…`, name, code, note, removedAt) · `wifi_region_centres`
+(centre UNIQUE + centreId, regionId) · `wifi_region_leads` (regionId, memberId) ·
+`wifi_profile_overrides` (regionId | centre + centreId, profilesJson: only the
+fields set at that level) · `wifi_gateway_daily` (gatewayId, date, samples,
+hoursUp, activePeak, activeSum, activeSamples, cpuMax; 400 days) ·
+`wifi_gateway_stats.activeSamples` (so an hour's average counts only reports
+that carried a figure).
+
+## Wi-Fi silence alerts and feed load (migration 192)
+
+`wifi_gateways.silentAlertAt` (when its silence was last told; cleared by its
+next fetch) · `wifi_feed_load` (hour UNIQUE `YYYY-MM-DDTHH`, fetches, failed,
+msTotal, msMax, bytesTotal, memMaxKb, and fetch-time buckets b25 / b50 / b100 /
+b250 / b500 / bOver in milliseconds; 30 days).
+
+Paying ahead needs no table: `membership_invoices.purpose` takes `advance`
+(invoiceId `NGG-ADV-…`), and its payment is an ordinary `payment` credit on
+`member_ledger`. A child's ask is a `guardian_notices` row of kind `nudge`.
+
+## Anchor Circle in the family account (migration 193)
+
+No new table. `circle_links` (the old code-and-token portal) are all
+`moved`. `circle_confirmations` and `circle_remarks` carry on, keyed by the
+adult's link: a family link (`GW-…`) or a mentor (`MT-<mentorId>`), with
+`role` parent | mentor (old rows may still say `teacher`).
 

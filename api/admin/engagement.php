@@ -4,6 +4,7 @@
  *
  *   (default)  the three staff roles — volunteers, instructors, mentors
  *   trends     their weekly history
+ *   portal     how long members actually use the portal
  *   community  whether the community is a community: reply rate, distinct
  *              voices, reach, return rate, answer speed, and the posts
  *              nobody answered
@@ -11,7 +12,14 @@
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_admin();
 
-if (($_GET['view'] ?? '') === 'community') {
+if (($_GET['view'] ?? '') === 'portal') {
+    $res = gs_call('admin.engagement.portal', [
+        'requesterId' => $s['mid'],
+        'days'        => $_GET['days'] ?? 30,
+        'centre'      => $_GET['centre'] ?? '',
+        'type'        => $_GET['type'] ?? '',
+    ]);
+} elseif (($_GET['view'] ?? '') === 'community') {
     $res = gs_call('admin.community.engagement', [
         'requesterId' => $s['mid'],
         'days'        => $_GET['days'] ?? 30,

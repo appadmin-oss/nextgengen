@@ -74,7 +74,7 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const tok = id => php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${id}'"), true);`, ['session']);
     const errs = [];
     const open = async (at, who, w) => {
@@ -90,31 +90,37 @@ function cleanup() {
 
     console.log('the join form (phone, 390)');
     const J = await open('/join?program=anchor', null, 390);
-    await J.evaluate(() => localStorage.setItem('ngg.join.draft.anchor', JSON.stringify({ firstName: 'Tobi', lastName: 'Ade', otherName: '', sex: 'Female', dob: (new Date().getFullYear() - 13) + '-03-02', city: 'Egbeda', division: '', track: '', why: '', parentEmail: '', parentPhone: '', photoUrl: '/assets/logo.png' })));
+    // Everything up to Interests answered already, as a resumed draft would have it.
+    await J.evaluate(() => localStorage.setItem('ngg-apply', JSON.stringify({ step: 5, v: {
+      filledBy: 'parent', centre: 'Egbeda', firstName: 'Tobi', middleName: '', surname: 'Ade', dob: (new Date().getFullYear() - 13) + '-03-02', sex: 'Female',
+      email: 'tobi.parent@example.org', mobile: '08031234567', school: 'Egbeda Senior High School', class: 'JSS 2', classArm: '',
+      address: '4 Ola Street, Egbeda', resState: 'Lagos', resLga: 'Alimosho', originState: 'Ogun', originLga: '', nationality: 'Nigerian',
+      parent1Rel: 'Mother', parent1Name: 'Bola Ade', parent1Phone: '08031234567', parent2None: true, hobbies: [], influenceAreas: [],
+      photoUrl: '/assets/logo.png', heardFrom: 'WhatsApp' } })));
     await J.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(J);
-    await J.waitForFunction(() => document.querySelectorAll('#join-centre option').length > 1, null, { timeout: 30000 });
+    await J.waitForSelector('.apf-cgroup', { timeout: 30000 });
+    const divs = await J.$$eval('.apf-cgroup', g => g.map(x => x.innerText.replace(/\s+/g, ' ')));
+    chk('the NGG form groups courses by the four NGG divisions, each in a family\'s words', divs.length === 5 && /Creative & Performing Arts/.test(divs[0]) && /cybersecurity/i.test(divs[2]) && /Business Strategy, Operations & Administration/.test(divs[3]) && /Not sure yet/.test(divs[4]));
+    // Piano, Guitar and Catering are NGG courses too (the Creative division); these three are Summer School's alone.
+    chk('…and no Summer School course is on it', !/Talking Drums|Tie & Dye|Dance \/ Acting/.test(await J.innerText('.apf-courses')));
     await J.click('button:has-text("Continue")');
-    await J.waitForSelector('.join-div', { timeout: 20000 });
-    const divs = await J.$$eval('.join-div', b => b.map(x => x.innerText.replace(/\s+/g, ' ')));
-    chk('the NGG form asks for a division first: the four NGG divisions, each in a family\'s words', divs.length === 4 && /🎭\s*Creative & Performing Arts/.test(divs[0]) && /cybersecurity/.test(divs[2]) && /Business Strategy, Operations & Administration/.test(divs[3]));
-    chk('…and no Summer School course is on it', !/Talking Drums|Piano|Tie & Dye/.test(await J.innerText('.card')));
+    chk('continuing without a course says what is missing', /Choose an option/.test(await J.innerText('.apf-errsum')));
+    await J.click('.apf-course:has-text("Robotics")');
+    await J.click('.apf-starters button >> nth=0');
+    await J.type('#apf-in-vision', 'an engineer who builds robots that sort plastic waste.');
+    await J.click('#apf-fld-hobbies .apf-chip:has-text("Reading")');
+    await J.click('#apf-fld-influenceAreas .apf-chip:has-text("Education")');
     await J.click('button:has-text("Continue")');
-    chk('continuing without a division says what is missing', /Choose the division/.test(await J.innerText('[role=alert]')));
-    await J.click('.join-div:has-text("Technology")');
-    chk('choosing a division shows its courses', /Start with a course in Technology & Applied Engineering/i.test(await J.innerText('.card')) && !!(await J.$('.join-course:has-text("Robotics")')));
-    await J.click('.join-course:has-text("Robotics")');
-    await J.click('button:has-text("Continue")');
-    await J.fill('textarea', 'I want to build a robot that sorts plastic waste for my street.');
-    await J.click('button:has-text("Continue")');
-    await J.waitForSelector('.join-costs', { timeout: 10000 });
-    const costs = await J.innerText('.join-costs');
-    chk('before applying, the family is told what joining costs and that nothing is paid now', /₦10,000/.test(costs) && /₦4,000/.test(costs) && /first month is charged only for the meetings left/.test(costs) && /Nothing is paid now/.test(costs));
-    chk('the summary names the division and the course', /Technology & Applied Engineering/.test(await J.innerText('.join-sum')) && /Robotics/.test(await J.innerText('.join-sum')));
+    await J.waitForSelector('#apf-fld-agree', { timeout: 10000 });
+    const costs = await J.innerText('.apf-info');
+    chk('before applying, the family is told what joining costs and that nothing is paid now', /₦10,000/.test(costs) && /₦4,000/.test(costs) && /first month is charged only for the meetings left/.test(costs) && /Nothing to pay today/.test(costs));
     chk('nothing on the form scrolls sideways on a phone', await J.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
-    await J.fill('input[type=email]', 'tobi.parent@example.org');
-    await J.fill('input[type=tel]', '08031234567');
-    await J.click('button:has-text("Submit application")');
-    await J.waitForSelector('text=APPLICATION RECEIVED', { timeout: 20000 });
+    await J.click('button:has-text("Agree to all")');
+    await J.click('button:has-text("Review")');
+    await J.waitForSelector('.apf-review', { timeout: 10000 });
+    chk('the review names the course', /Robotics/.test(await J.innerText('.apf-review')));
+    await J.click('button:has-text("Send application")');
+    await J.waitForSelector('.apf-done', { timeout: 20000 });
     const app = JSON.parse(php(`echo json_encode(db_row("SELECT id, faculty, track, program FROM applications WHERE email = 'tobi.parent@example.org'"));`));
     chk('the application is filed under its division and course', app && app.faculty === 'Technology & Applied Engineering' && app.track === 'Robotics' && app.program === 'anchor');
     await J.context().close();
@@ -200,11 +206,14 @@ function cleanup() {
     chk('…and the row shows the receipt and who checked it', /checked by Bola Ade/.test(await Q.innerText('.cr-mp-table')) && !!(await Q.$('.cr-mp-table a:has-text("NGG-RCT-")')));
 
     await Q.evaluate(() => window.__adminSection('centres'));
-    await Q.waitForSelector('.admin-seg', { timeout: 20000 });
-    await Q.click('.admin-seg button:has-text("NGG Club")');
-    const cen = await Q.innerText('.admin-main');
-    chk('People → Centres can be read programme by programme', /Egbeda/.test(cen) && !/Ijaiye Summer Venue/.test(cen) && /NGG Club only/i.test(cen));
-    if (!/NGG Club only/i.test(cen) || /Ijaiye Summer Venue/.test(cen)) console.error('       centres said: ' + cen.replace(/\s+/g, ' ').slice(0, 600));
+    // The Control Room's centres page: the Runs filter reads it programme by programme.
+    await Q.waitForSelector('.cr-tbl tbody tr', { timeout: 30000 });
+    await Q.click('.cr-fchip:has-text("Runs")');
+    await Q.locator('.cr-fopts button', { hasText: /^NGG Club/ }).click();
+    await Q.waitForFunction(() => !/Ijaiye Summer Venue/.test(document.querySelector('.cr-tbl tbody')?.innerText || ''), null, { timeout: 10000 }).catch(() => {});
+    const cen = await Q.innerText('.cr-tbl tbody');
+    chk('People → Centres can be read programme by programme', /Egbeda/.test(cen) && /NGG Club/.test(cen) && !/Ijaiye Summer Venue/.test(cen));
+    if (!/Egbeda/.test(cen) || /Ijaiye Summer Venue/.test(cen)) console.error('       centres said: ' + cen.replace(/\s+/g, ' ').slice(0, 600));
     await Q.context().close();
 
     console.log('the family’s pages');

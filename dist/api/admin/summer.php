@@ -37,6 +37,17 @@ if ($method === 'GET') {
     elseif ($view === 'group-report') $res = gs_call('admin.summer.group.report', ['requesterId' => $mid,
         'editionId' => $_GET['editionId'] ?? ($_GET['cohortId'] ?? '')]);
     elseif ($view === 'consent')    $res = gs_call('admin.summer.consent', ['requesterId' => $mid, 'studentId' => $_GET['studentId'] ?? '']);
+    /* Summer School Portal v3: `part` names the screen. Every filter is
+       forwarded as given; the domain allow-lists and falls back. */
+    elseif ($view === 'portal') {
+        $args = ['requesterId' => $mid, 'view' => (string)($_GET['part'] ?? 'boot')];
+        foreach (['editionId', 'pview', 'q', 'sort', 'page', 'export', 'f_centre', 'f_group', 'f_track', 'f_today', 'date', 'rf', 'centre', 'studentId', 'stage'] as $__k) {
+            if (isset($_GET[$__k])) $args[$__k] = (string)$_GET[$__k];
+        }
+        $res = gs_call('admin.summer.portal', $args);
+    }
+    elseif ($view === 'search')     $res = gs_call('admin.summer.search', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '']);
+    elseif ($view === 'recent')     $res = gs_call('admin.summer.recent', ['requesterId' => $mid]);
     else                          $res = gs_call('admin.summer.overview', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -64,6 +75,14 @@ if ($method === 'GET') {
         'absenceAlert' => 'admin.summer.absence.alert',
         'import'       => 'admin.summer.import',
         'historyImport'=> 'admin.summer.history.import',
+        'graduatesInvoice' => 'admin.summer.graduates.invoice',
+        'pendingCancel' => 'admin.pending.cancel',
+        'pendingFlush' => 'admin.pending.flush',
+        'desk'         => 'admin.summer.desk',
+        'incidentSave' => 'admin.summer.incident.save',
+        'incidentTell' => 'admin.summer.incident.tell',
+        'incidentClose'=> 'admin.summer.incident.close',
+        'messageSend'  => 'admin.summer.message.send',
     ];
     if (!isset($map[$action])) json_error('unknown_action', 400);
     // Never let the client set kiosk-only control flags: `gateAuthorized` skips

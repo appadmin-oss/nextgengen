@@ -75,7 +75,7 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
     const ctx = await browser.newContext({ viewport: { width: 1360, height: 1000 } });
     await ctx.addCookies([{ name: 'ngg_sess', value: token, domain: '127.0.0.1', path: '/', httpOnly: true },
@@ -125,7 +125,7 @@ function cleanup() {
     await pg.waitForSelector('form[aria-label^="Make Kemi Adewale"]', { timeout: 30000 });
     const form = await pg.innerText('form[aria-label^="Make Kemi Adewale"]');
     chk('Promote asks for the NGG centre: NGG centres only, the nearest to where her Summer School met first and chosen',
-      /Egbeda · [\d.]+ km · nearest/.test(form) && /Ikeja/.test(form) && !/Summer School\)/.test(form.replace(/Summer School record/, ''))
+      /Egbeda · [^\n]*(min drive|km)[^\n]* · nearest/.test(form) && /Ikeja/.test(form) && !/Summer School\)/.test(form.replace(/Summer School record/, ''))
       && (await pg.$eval('form[aria-label^="Make Kemi Adewale"] [role=radio][aria-checked=true]', el => el.innerText)).startsWith('Egbeda'));
     await pg.click('form[aria-label^="Make Kemi Adewale"] [role=radio]:has-text("Ikeja")');
     await pg.click('form[aria-label^="Make Kemi Adewale"] button[type=submit]');

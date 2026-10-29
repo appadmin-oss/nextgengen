@@ -9,6 +9,10 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'overview');
     if ($view === 'promoteOptions') {
         $res = gs_call('admin.club.promote.options', ['requesterId' => $mid, 'studentId' => (string)($_GET['studentId'] ?? '')]);
+    } elseif ($view === 'graduates') {
+        // Into NGG (FEES_SPEC_v2 §3.4): the edition's graduates, by stage.
+        $res = gs_call('admin.summer.graduates', ['requesterId' => $mid, 'editionId' => $_GET['editionId'] ?? '',
+            'stage' => $_GET['stage'] ?? '', 'q' => $_GET['q'] ?? '', 'page' => $_GET['page'] ?? 0]);
     } elseif ($view === 'promotable') {
         $res = gs_call('admin.club.promotable', ['requesterId' => $mid,
             'q' => $_GET['q'] ?? '', 'centre' => $_GET['centre'] ?? '', 'track' => $_GET['track'] ?? '',
@@ -22,7 +26,7 @@ if ($method === 'GET') {
         $args = ['requesterId' => $mid, 'q' => $_GET['q'] ?? '', 'centre' => $_GET['centre'] ?? '',
                  'sort' => $_GET['sort'] ?? '', 'dir' => $_GET['dir'] ?? '',
                  'page' => $_GET['page'] ?? null, 'pageSize' => $_GET['pageSize'] ?? null,
-                 'all' => $_GET['all'] ?? null];
+                 'all' => $_GET['all'] ?? null, 'track' => $_GET['track'] ?? '', 'counts' => $_GET['counts'] ?? null];
         if (array_key_exists('status', $_GET)) $args['status'] = (string)$_GET['status'];
         $res = gs_call('admin.club.members', $args);
     }
@@ -31,9 +35,9 @@ if ($method === 'GET') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
     if ($action === 'promote') {
-        $res = gs_call('admin.club.promote', ['requesterId' => $mid, 'studentId' => $b['studentId'] ?? '', 'centre' => (string)($b['centre'] ?? ''), 'ip' => client_ip()]);
+        $res = gs_call('admin.club.promote', ['requesterId' => $mid, 'studentId' => $b['studentId'] ?? '', 'centre' => (string)($b['centre'] ?? ''), 'defer' => (int)($b['defer'] ?? 0), 'ip' => client_ip()]);
     } elseif ($action === 'promoteBulk') {
-        $res = gs_call('admin.club.promote.bulk', ['requesterId' => $mid, 'studentIds' => $b['studentIds'] ?? [], 'centres' => is_array($b['centres'] ?? null) ? $b['centres'] : [], 'ip' => client_ip()]);
+        $res = gs_call('admin.club.promote.bulk', ['requesterId' => $mid, 'studentIds' => $b['studentIds'] ?? [], 'centres' => is_array($b['centres'] ?? null) ? $b['centres'] : [], 'defer' => (int)($b['defer'] ?? 0), 'ip' => client_ip()]);
     } elseif ($action === 'bulk') {
         // `action` on the wire picks the route branch; `op` names the bulk
         // action, so one key never has to mean two things.

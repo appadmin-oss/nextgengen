@@ -27,6 +27,119 @@ function adminJump(sectionId, tab) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+/* ── Member accounts ─────────────────────────────────────────────────────────
+ *
+ * Five signals about SIGNING IN, which is the one thing the members roster
+ * assumes and never checks. Each is a count, a sentence saying why it matters,
+ * and the members it counts — because a count nobody can act on is an
+ * accusation rather than a tool, and "14 locked out" with no names is exactly
+ * that.
+ *
+ * Nothing here ends an account. Whether a membership continues is settled by
+ * the MoU between NGG and the family; the screen says so rather than leaving
+ * an operator to look for a button that is deliberately absent.
+ */
+function AdminAccounts() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const [openId, setOpenId] = React.useState("");
+
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.admin.accounts.overview().then(setD)
+      .catch(e => setErr(e.code || e.message || "load_failed"));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const unlock = async (m) => {
+    setBusy(m.memberId);
+    try {
+      await NGGApi.admin.accounts.unlock(m.memberId);
+      toast.success(m.fullName + " can sign in again.", "Lock lifted");
+      await load();
+    } catch (e) { toast.error(humanizeError(e.message, e.code), "Lock not lifted"); }
+    finally { setBusy(""); }
+  };
+
+  if (err) return <ErrorState code={err} onRetry={load}/>;
+  if (!d) return <div className="dash-spinner"/>;
+
+  const clean = (d.signals || []).every(s => s.count === 0);
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Member accounts</h2>
+        <div className="admin-section-actions">
+          <span className="mono acct-totals">
+            {fmtNum(d.totals.active)} active{d.totals.closed ? " · " + fmtNum(d.totals.closed) + " erased" : ""}
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+        </div>
+      </div>
+      <p className="admin-hint" style={{ marginTop: 0 }}>
+        Whether somebody can get in, which the roster assumes and never checks.
+        <b> Ending a membership is not done here</b> — that is settled by the agreement
+        between NGG and the family, and no button on this screen or a member&rsquo;s own
+        dashboard closes an account.
+      </p>
+
+      {clean ? (
+        <div className="admin-empty">
+          Nobody is locked out, everybody has an email to sign in with, and every staff
+          account has a second factor. Nothing to do.
+        </div>
+      ) : (
+        <div className="acct-signals">
+          {(d.signals || []).filter(s => s.count > 0).map(sig => {
+            const isOpen = openId === sig.id;
+            return (
+              <div key={sig.id} className="admin-panel acct-signal">
+                <button type="button" className="acct-signal-head"
+                  aria-expanded={isOpen} aria-controls={"acct-" + sig.id}
+                  onClick={() => setOpenId(isOpen ? "" : sig.id)}>
+                  <span className="mono acct-signal-n">{fmtNum(sig.count)}</span>
+                  <span className="acct-signal-text">
+                    <b>{sig.label}</b>
+                    <span className="acct-signal-why">{sig.why}</span>
+                  </span>
+                  <span className="acct-signal-caret" aria-hidden="true">{isOpen ? "–" : "+"}</span>
+                </button>
+                {isOpen && (
+                  <div id={"acct-" + sig.id} className="acct-list">
+                    {sig.members.map(m => (
+                      <div key={m.memberId} className="acct-row">
+                        <span className="acct-row-name">
+                          {m.fullName || "—"}
+                          <span className="mono acct-row-meta">
+                            {[m.displayId, m.centre].filter(Boolean).join(" · ") || m.memberId}
+                          </span>
+                        </span>
+                        {sig.id === "locked"
+                          ? <button type="button" className="btn btn-ghost btn-sm"
+                              disabled={busy === m.memberId} onClick={() => unlock(m)}>
+                              {busy === m.memberId ? "…" : "Lift the lock"}
+                            </button>
+                          : <span className="mono acct-row-meta">{m.email || "no email"}</span>}
+                      </div>
+                    ))}
+                    {sig.count > sig.members.length && (
+                      <div className="acct-more">
+                        …and {fmtNum(sig.count - sig.members.length)} more. The roster holds them all.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminAttendanceDuty() {
   const [date, setDate] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [data, setData] = React.useState(null);
@@ -137,6 +250,98 @@ const CENG_RUNG = {
 
 /** A stat with its own sentence under it. A number with no unit and no
  *  denominator is the thing people misread on a dashboard. */
+/* Portal time: how long members actually use the portals (engagement.php
+   admin_engagement_portal). Counted only while a page is open, visible and
+   touched in the last two minutes; a tab left open overnight counts nothing. */
+const PT_PORTAL_LABEL = { member: "Member portal", mentor: "Mentor portal", instructor: "Instructor portal", community: "Community", family: "Family", club: "Club", site: "Website", other: "Other" };
+function ptMins(n) { n = Number(n) || 0; return n >= 90 ? (Math.round(n / 6) / 10) + "h" : n + "m"; }
+function PortalTimePanel() {
+  const [days, setDays] = React.useState(30);
+  const [centre, setCentre] = React.useState("");
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [q, setQ] = React.useState("");
+  const load = () => { setErr(""); setData(null); return NGGApi.admin.engagementPortal({ days, centre }).then(setData).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [days, centre]);
+  const t = (data && data.totals) || {};
+  const daily = (data && data.daily) || [];
+  const peak = Math.max(1, ...daily.map(d => d.minutes));
+  const hours = (data && data.byHour) || [];
+  const hPeak = Math.max(1, ...hours);
+  const centres = (data && data.byCentre) || [];
+  const rows = ((data && data.rows) || []).filter(r => !q || (r.name + " " + r.memberId + " " + r.centre).toLowerCase().indexOf(q.toLowerCase()) >= 0);
+  const exportCsv = () => {
+    const csv = [["Member ID", "Name", "Centre", "Minutes", "Days active", "Minutes per active day", "Most used", "Last seen"]]
+      .concat(rows.map(r => [r.memberId, r.name, r.centre, r.minutes, r.daysActive, r.avgPerDay, PT_PORTAL_LABEL[r.topPortal] || r.topPortal, r.lastAt]))
+      .map(row => row.map(nggCsvCell).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a"); a.href = url; a.download = "portal-time-" + days + "d.csv"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+  return (
+    <React.Fragment>
+      <div className="pt-bar">
+        <select className="admin-select" value={days} onChange={e => setDays(Number(e.target.value))} aria-label="Window">
+          <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
+        </select>
+        <select className="admin-select" value={centre} onChange={e => setCentre(e.target.value)} aria-label="Centre">
+          <option value="">All centres</option>
+          {centres.filter(c => c.centre !== "No centre").map(c => <option key={c.centre} value={c.centre}>{c.centre}</option>)}
+        </select>
+        <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
+      </div>
+      <p className="admin-hint">NGG members only. Time counts while a portal is open, on screen and in use (touched in the last two minutes), so a tab left open adds nothing. Counting started with this release.</p>
+      {err ? <ErrorState code={err} onRetry={load}/> :
+       !data ? <div className="dash-spinner"/> :
+       <React.Fragment>
+         <div className="pt-stats" aria-live="polite">
+           <CengStat label="Used the portal" value={fmtNum(t.active)} sub={t.reach + "% of " + fmtNum(t.members) + " members"} warn={t.members > 0 && t.reach < 40}/>
+           <CengStat label="Total time" value={ptMins(t.minutes)} sub={"in the last " + days + " days"}/>
+           <CengStat label="Per active member" value={ptMins(t.avgMinutes)} sub={"median " + ptMins(t.medianMinutes)}/>
+           <CengStat label="Days active" value={t.avgDaysActive} sub="average, of those who came"/>
+           <CengStat label="Not seen" value={fmtNum(t.quiet)} sub="no time recorded in the window" warn={t.quiet > 0}/>
+         </div>
+         <h3 className="admin-h3">Minutes per day</h3>
+         <div className="pt-chart" role="img" aria-label={"Minutes on the portal per day, last " + days + " days; busiest day " + peak + " minutes"}>
+           {daily.map(d => <span key={d.day} className="pt-col" style={{ height: Math.max(2, Math.round(100 * d.minutes / peak)) + "%" }} title={d.day + ": " + d.minutes + " min, " + d.members + " members"}/>)}
+         </div>
+         <div className="pt-two">
+           <div>
+             <h3 className="admin-h3">Where the time goes</h3>
+             {(data.byPortal || []).length === 0 ? <p className="admin-hint">No time recorded yet.</p> :
+               <table className="admin-table"><thead><tr><th scope="col">Portal</th><th scope="col">Time</th><th scope="col">Members</th></tr></thead>
+                 <tbody>{data.byPortal.map(b => <tr key={b.portal}><td>{PT_PORTAL_LABEL[b.portal] || b.portal}</td><td className="mono">{ptMins(b.minutes)}</td><td className="mono">{b.members}</td></tr>)}</tbody></table>}
+           </div>
+           <div>
+             <h3 className="admin-h3">Time of day</h3>
+             <div className="pt-hours" role="img" aria-label="Minutes by hour of the day">
+               {hours.map((m, h) => <span key={h} className="pt-col" style={{ height: Math.max(2, Math.round(100 * m / hPeak)) + "%" }} title={h + ":00 — " + m + " min"}/>)}
+             </div>
+             <div className="pt-hours-axis mono"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+           </div>
+         </div>
+         <h3 className="admin-h3">By centre</h3>
+         <table className="admin-table"><thead><tr><th scope="col">Centre</th><th scope="col">Members</th><th scope="col">Used it</th><th scope="col">Reach</th><th scope="col">Time</th></tr></thead>
+           <tbody>{centres.map(c => <tr key={c.centre}><td>{c.centre}</td><td className="mono">{c.members}</td><td className="mono">{c.active}</td><td className="mono">{c.reach}%</td><td className="mono">{ptMins(c.minutes)}</td></tr>)}</tbody></table>
+         <h3 className="admin-h3">Members</h3>
+         <form role="search" className="pt-bar" onSubmit={e => e.preventDefault()}>
+           <input className="admin-input" value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, ID or centre" aria-label="Search members"/>
+           <span role="status" className="admin-hint">{rows.length} shown</span>
+         </form>
+         {rows.length === 0 ? <EmptyState title="No members match" message="Change the search or the centre."/> :
+           <div className="admin-table-wrap"><table className="admin-table">
+             <thead><tr><th scope="col">Member</th><th scope="col">Centre</th><th scope="col">Time</th><th scope="col">Days</th><th scope="col">Per day</th><th scope="col">Most used</th><th scope="col">Last seen</th></tr></thead>
+             <tbody>{rows.slice(0, 300).map(r => (
+               <tr key={r.memberId}><td>{r.name}<div className="mono admin-hint">{r.memberId}</div></td><td>{r.centre || "—"}</td>
+                 <td className="mono">{r.minutes ? ptMins(r.minutes) : "—"}</td><td className="mono">{r.daysActive || "—"}</td>
+                 <td className="mono">{r.avgPerDay ? ptMins(r.avgPerDay) : "—"}</td><td>{PT_PORTAL_LABEL[r.topPortal] || "—"}</td>
+                 <td className="mono">{r.lastAt ? r.lastAt.slice(0, 16).replace("T", " ") : "never"}</td></tr>))}</tbody>
+           </table></div>}
+         {rows.length > 300 && <p className="admin-hint">Showing the first 300. Export the CSV for everyone.</p>}
+       </React.Fragment>}
+    </React.Fragment>
+  );
+}
+
 function CengStat({ label, value, sub, warn }) {
   return (
     <div style={{ border: "1px solid var(--line,#e7e9ee)", borderRadius: 12, padding: "12px 14px" }}>
@@ -404,11 +609,12 @@ function EngagementPanel() {
       <div className="admin-section-head">
         <h2 className="admin-h2">Engagement</h2>
         <div style={{ display: "flex", gap: 6 }}>
-          {tabBtn("now", "Team")}{tabBtn("trends", "Trends")}{tabBtn("community", "Community")}
+          {tabBtn("now", "Team")}{tabBtn("portal", "Portal time")}{tabBtn("trends", "Trends")}{tabBtn("community", "Community")}
         </div>
       </div>
 
       {tab === "community" ? <CommunityEngagementPanel/> :
+       tab === "portal" ? <PortalTimePanel/> :
        tab === "now" ?
         <React.Fragment>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 6px" }}>
@@ -1120,13 +1326,19 @@ function AdminMembers() {
      to null first is what made every page turn and every sort flash the table
      away — which reads as the data going missing, on the screen where that is
      the most alarming thing it could read as. */
+  /* Only the LATEST request may draw. Typing "amina" sends a request per
+     pause, and the answers can come back in any order: without this, a slow
+     answer for "am" landing after the one for "amina" put the wrong roster
+     under the right search. */
+  const loadSeq = React.useRef(0);
   const load = React.useCallback((p, so, f) => {
     const pg = p || page, s0 = so || sort, ff = f || filters;
+    const n = ++loadSeq.current;
     setErr(""); setRefreshing(true);
     return NGGApi.admin.members.list(Object.assign({}, ff, { page: pg, pageSize: meta.pageSize, sort: s0.col, dir: s0.dir }))
-      .then(r => { setList(r.members || []); setMeta(m => ({ total: r.total || 0, pageSize: r.pageSize || m.pageSize })); })
-      .catch(e => setErr(e.code || e.message || "load_failed"))
-      .finally(() => setRefreshing(false));
+      .then(r => { if (n !== loadSeq.current) return; setList(r.members || []); setMeta(m => ({ total: r.total || 0, pageSize: r.pageSize || m.pageSize })); })
+      .catch(e => { if (n === loadSeq.current) setErr(e.code || e.message || "load_failed"); })
+      .finally(() => { if (n === loadSeq.current) setRefreshing(false); });
     // eslint-disable-next-line
   }, [page, sort, filters, meta.pageSize]);
   /* Dashboard first. Opening the section on a 50-row page of a roster
@@ -1253,7 +1465,7 @@ function AdminMembers() {
         </div>
       )}
       <div className="admin-filters admin-filters-6">
-        <input className="admin-input" placeholder="Search name, ID, email…" aria-label="Search members by name, member id or email"
+        <input className="admin-input" type="search" placeholder="Search name, ID, email or phone…" aria-label="Search members by name, printed ID, email or phone"
           value={filters.q} onChange={(e) => setFilters(f => ({...f, q: e.target.value}))}/>
         <select className="admin-select" aria-label="Filter by centre" value={filters.centre} onChange={(e) => setFilters(f => ({...f, centre: e.target.value}))}>
           <option value="">All centres</option>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1746,7 +1958,7 @@ function CurriculumLessons() {
     try { const r = await NGGApi.admin.curriculum.get(u.unitId); setEdit(r.unit); }
     catch (e) { toast.error(humanizeError(e.code, e.code)); }
   };
-  if (edit) return <CurriculumEditor unit={edit} courses={(d && d.courses) || []} canWrite={!!(d && d.canWrite)} aiEnabled={!!(d && d.aiEnabled)}
+  if (edit) return <CurriculumEditor unit={edit} courses={(d && d.courses) || []} divisions={(d && d.divisions) || []} examRefs={(d && d.examRefs) || {}} canWrite={!!(d && d.canWrite)} aiEnabled={!!(d && d.aiEnabled)}
     onClose={() => setEdit(null)} onSaved={(u) => { setEdit(u); load(); }}/>;
   return (
     <div>
@@ -1789,13 +2001,22 @@ function CurriculumLessons() {
   );
 }
 
-const CUR_EMPTY_CHECK = { kind: "mcq", prompt: "", options: ["", ""], answer: "0", rubric: "", points: 1 };
+/* A new question is a PRACTICAL one, not a multiple choice.
+   The default is the answer most people give: four options is the quickest
+   thing to type, and a review made of them measures whether a child can
+   recognise the right words a week later, not whether they can do the
+   thing. The server refuses to publish a review that is multiple choice
+   alone, so defaulting to mcq was defaulting to a lesson that would be
+   refused. Multiple choice is one press away, and worth having — alongside
+   something they did. */
+const CUR_EMPTY_CHECK = { kind: "task", prompt: "", options: ["", ""], answer: "", rubric: "", points: 3, videoUrl: "" };
 /* The kinds of question, as CURR_CHECK_KINDS has them. Only multiple choice is
    marked by the computer; the rest are marked by a capable AI model against
    the rubric when one is configured for marking, and by the instructor if not
    — or whenever the AI is unsure, or the answer raises a safeguarding worry. */
 const CUR_CHECK_KIND_OPTS = [["mcq", "Multiple choice"], ["short", "Written answer"], ["essay", "Essay / extended writing"],
-  ["reflection", "Reflection"], ["project", "Project write-up"], ["code", "Code"], ["task", "Practical task"]];
+  ["reflection", "Reflection"], ["project", "Project write-up"], ["code", "Code"], ["task", "Practical task"],
+  ["watch", "Watch a video and tell me"]];
 const CUR_MARK_HINT = {
   short: "Marked against the model answer — any wording that has the ideas earns the points.",
   essay: "No single right answer: marked against the rubric (a clear point, reasons, evidence).",
@@ -1803,121 +2024,210 @@ const CUR_MARK_HINT = {
   project: "Marked from the learner's description against the rubric; a bare link waits for the instructor.",
   code: "Marked on whether it does what was asked and the logic is sound.",
   task: "Marked from the learner's account of what they did, against the rubric.",
+  watch: "Marked on what only watching could produce — a detail, an example, a moment from the video — in their own words. Nothing can check that play was pressed, and a keyword gate would only check that they guessed the words.",
 };
 
-/* ── The lesson text editor ───────────────────────────────────────────────────
-   A toolbar over a plain textarea, writing the small formatting language
-   CurriculumText renders (headings, bold, lists, links, images, video, code).
-   Plain text underneath, so an import, the AI draft and a hand edit all speak
-   the same language and nothing a lesson says can become HTML. Every button
-   has a keyboard route (Ctrl/⌘+B, I, K) and Preview shows exactly what a
-   member will see. */
-const LESSON_TOOLS = [
-  { id: "h2", label: "Heading", icon: "H", line: "## " },
-  { id: "h3", label: "Subheading", icon: "h", line: "### " },
-  { id: "b", label: "Bold (Ctrl+B)", icon: "B", wrap: ["**", "**"], key: "b" },
-  { id: "i", label: "Italic (Ctrl+I)", icon: "I", wrap: ["*", "*"], key: "i" },
-  { id: "ul", label: "Bulleted list", icon: "•", line: "- " },
-  { id: "ol", label: "Numbered list", icon: "1.", line: "1. " },
-  { id: "q", label: "Callout", icon: "❝", line: "> " },
-  { id: "code", label: "Code block", icon: "</>", block: ["```\n", "\n```"] },
-  { id: "hr", label: "Divider", icon: "—", insert: "\n\n---\n\n" },
+/* The markdown toolbar that used to live here — eighteen buttons over a
+   textarea, inserting "## " and ```` ```keys ```` for an instructor to get
+   right — is gone. Writing a lesson is now lesson-editor.jsx, where a
+   heading is drawn as a heading and the piano is drawn as the piano. The
+   markdown it produces is byte-for-byte what this toolbar produced, because
+   the member's renderer did not change and must not. */
+
+/**
+ * What the programme asks of every lesson, checked while it is being written.
+ *
+ * These are the rules in api/tests/curriculum-shape.php, which fail the build
+ * for the bundled courses. An instructor writing a new lesson had no way to
+ * know any of them existed, so the standard lived in a test file and nowhere
+ * a person could read it. Shown here, with the reason beside each — a rule
+ * whose reason is not given is a rule people route around.
+ *
+ * ADVISORY, NEVER BLOCKING. The same shape as the Design Studio's preflight:
+ * it tells you what is missing and lets you save anyway, because an
+ * instructor part-way through a lesson is not writing a defect. The server
+ * still validates what it validates.
+ */
+function lessonShape(f) {
+  const body = String(f.body || ""), text = (body + " " + (f.title || "") + " " + (f.summary || "") + " " + (f.objectives || "")).toLowerCase();
+  const has = (...w) => w.every(x => text.includes(x));
+  return [
+    { id: "review", ok: (f.checks || []).length >= 3,
+      want: "Questions for next week", why: "Your class sits these at the start of the next session. Pulling a week-old lesson back out of a cold memory is what fixes it there — three questions is the floor." },
+    { id: "routes", ok: has("if this is new") && has("if you already can"),
+      want: "Two routes through it", why: "Ten- and seventeen-year-olds sit in the same room. A worked example that helps one of them slows the other." },
+    { id: "made", ok: (f.checks || []).some(c => c.kind === "project" || c.kind === "task"),
+      want: "Something made or done", why: "These are practical subjects and they are marked that way: the observed work is worth six, the written check one." },
+    { id: "back", ok: /earlier|back to|again|revisit/.test(text),
+      want: "The lesson itself reaches back", why: "Not only the review: the teaching should pick something up from an earlier week and use it, or the weeks never join into a skill." },
+    { id: "ai", ok: /\bai\b|chatgpt|copilot/.test(text),
+      want: "AI, where it is true", why: "Optional, and deliberately rare — about one lesson in four, one in eight for an instrument. Nothing can hear a child play." },
+  ];
+}
+
+/**
+ * The parts of an NGG Saturday, in the order they happen, read out of the
+ * headings the instructor has actually written. A generic editor cannot do
+ * this: it is the programme's own shape, and knowing which part is missing
+ * at a glance is most of what a curriculum lead is looking for.
+ *
+ * Matching is loose on purpose — "Warm-up", "Warm up (10 minutes)" and
+ * "Warm-up and tuning" are all the warm-up. A spine that only recognised one
+ * spelling would report a part missing that is plainly there, and an
+ * instructor who is told something false once stops reading it.
+ */
+const LESSON_SPINE = [
+  { id: "review", label: "Opening review", note: "last week, before anything new" },
+  { id: "warm",   label: "Warm-up",        re: /^##+\s*warm[\s-]?up/im },
+  { id: "learn",  label: "Learn",          re: /^##+\s*(learn|what to do|today'?s tool|essentials|guided)/im },
+  { id: "play",   label: "Play or do",     re: /^##+\s*(play|do it|practice|practise|hands[\s-]?on|workshop|make)/im },
+  { id: "home",   label: "Practise at home", re: /^##+\s*(practise at home|practice at home|at home|this week'?s assignment|independent assignment)/im },
+  { id: "fit",    label: "Make it fit you", re: /^##+\s*make it fit/im },
 ];
-function LessonTextEditor({ value, onChange, labelledBy, disabled }) {
-  const ref = React.useRef(null);
-  const [preview, setPreview] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
-  const edit = (fn) => {
-    const ta = ref.current; if (!ta) return;
-    const v = value || "", a = ta.selectionStart, b = ta.selectionEnd;
-    const r = fn(v, a, b);
-    onChange(r.text);
-    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(r.a, r.b); });
-  };
-  const apply = (t) => edit((v, a, b) => {
-    const sel = v.slice(a, b);
-    if (t.wrap) { const ins = t.wrap[0] + (sel || "text") + t.wrap[1]; return { text: v.slice(0, a) + ins + v.slice(b), a: a + t.wrap[0].length, b: a + ins.length - t.wrap[1].length }; }
-    if (t.block) { const ins = t.block[0] + (sel || "") + t.block[1]; return { text: v.slice(0, a) + ins + v.slice(b), a: a + t.block[0].length, b: a + t.block[0].length + sel.length }; }
-    if (t.insert) return { text: v.slice(0, a) + t.insert + v.slice(b), a: a + t.insert.length, b: a + t.insert.length };
-    // A line prefix: every selected line (or the current one) gets it; a numbered list counts up.
-    const ls = v.lastIndexOf("\n", a - 1) + 1, leRaw = v.indexOf("\n", b), le = leRaw === -1 ? v.length : leRaw;
-    const lines = v.slice(ls, le).split("\n").map((l, n) => (t.id === "ol" ? (n + 1) + ". " : t.line) + l.replace(/^(#{1,3}\s+|[-*•]\s+|\d+[.)]\s+|>\s?)/, ""));
-    const joined = lines.join("\n");
-    return { text: v.slice(0, ls) + joined + v.slice(le), a: ls, b: ls + joined.length };
-  });
-  const link = async () => {
-    const url = await dialog.prompt({ title: "Add a link", label: "Web address (https://…)", placeholder: "https://", cta: "Add link" });
-    if (!url) return;
-    if (!/^https:\/\//i.test(url.trim())) { toast.error("Links must start with https://"); return; }
-    edit((v, a, b) => { const txt = v.slice(a, b) || "link text"; const ins = "[" + txt + "](" + url.trim() + ")"; return { text: v.slice(0, a) + ins + v.slice(b), a: a + 1, b: a + 1 + txt.length }; });
-  };
-  const video = async () => {
-    const url = await dialog.prompt({ title: "Embed a video", label: "YouTube or Vimeo link", placeholder: "https://www.youtube.com/watch?v=…", cta: "Embed" });
-    if (!url) return;
-    if (!curVideoEmbed(url.trim())) { toast.error("That is not a YouTube or Vimeo link — add it as a link or a material instead."); return; }
-    edit((v, a) => { const ins = "\n\n" + url.trim() + "\n\n"; return { text: v.slice(0, a) + ins + v.slice(a), a: a + ins.length, b: a + ins.length }; });
-  };
-  const image = async (file) => {
-    if (!file) return;
-    setBusy(true);
-    try {
-      const r = await NGGApi.admin.curriculum.upload(file);
-      if (r.kind !== "image") { toast.error("That is not an image — add it as a material instead."); return; }
-      const cap = String(file.name || "").replace(/\.[^.]+$/, "").replace(/[\[\]]/g, "");
-      edit((v, a) => { const ins = "\n\n![" + cap + "](" + r.url + ")\n\n"; return { text: v.slice(0, a) + ins + v.slice(a), a: a + ins.length, b: a + ins.length }; });
-    } catch (e) { toast.error(e.code === "too_large" ? "That image is over 25 MB." : humanizeError(e.code, e.code)); }
-    finally { setBusy(false); }
-  };
-  const onKey = (e) => {
-    if (!(e.ctrlKey || e.metaKey)) return;
-    const k = e.key.toLowerCase();
-    if (k === "k") { e.preventDefault(); link(); return; }
-    const t = LESSON_TOOLS.find(x => x.key === k);
-    if (t) { e.preventDefault(); apply(t); }
-  };
+
+/* The two words that send an operator to the wrong screen (CLAUDE.md §11).
+   Not a ban on the English words — "cohort completion rate" is fine. What is
+   flagged is the EDITION called a cohort and a Summer PARTICIPANT called a
+   student, because those two are the ones that mislead. */
+const LESSON_WORDS = [
+  { re: /\b(archive|close|activate|start|end|this|the|next|last)\s+(the\s+)?cohort\b/i,
+    say: "“cohort” for a season", use: "A season of Summer School is an edition. A cohort, to a coordinator, means a group." },
+  { re: /\bsummer(\s+school)?\s+students?\b/i,
+    say: "“Summer student”", use: "Summer School has participants. Students belong to the Club." },
+];
+
+function lessonSpine(f) {
+  const body = String(f.body || "");
+  return LESSON_SPINE.map(p => ({
+    id: p.id, label: p.label, note: p.note,
+    ok: p.id === "review" ? (f.checks || []).length >= 3 : p.re.test(body),
+  }));
+}
+function lessonWords(f) {
+  const text = String(f.body || "") + " " + (f.title || "") + " " + (f.summary || "");
+  return LESSON_WORDS.filter(w => w.re.test(text));
+}
+
+function CurriculumShape({ f }) {
+  const rows = lessonShape(f);
+  const met = rows.filter(r => r.ok).length;
+  const spine = lessonSpine(f);
+  const here = spine.filter(p => p.ok).length;
+  const words = lessonWords(f);
   return (
-    <div className="cur-rte">
-      <div className="cur-rte-bar" role="toolbar" aria-label="Format the lesson" aria-controls="cur-rte-ta">
-        {LESSON_TOOLS.map(t => (
-          <button key={t.id} type="button" className={"cur-rte-btn is-" + t.id} aria-label={t.label} title={t.label} disabled={disabled || preview} onClick={() => apply(t)}>{t.icon}</button>
-        ))}
-        <button type="button" className="cur-rte-btn" aria-label="Link (Ctrl+K)" title="Link (Ctrl+K)" disabled={disabled || preview} onClick={link}>🔗</button>
-        <label className={"cur-rte-btn" + (disabled || preview || busy ? " is-disabled" : "")} title="Insert an image" aria-label="Insert an image">{busy ? "…" : "🖼"}
-          <input type="file" className="sr-only" accept=".png,.jpg,.jpeg,.webp,.gif" disabled={disabled || preview || busy} onChange={e => { image(e.target.files && e.target.files[0]); e.target.value = ""; }}/></label>
-        <button type="button" className="cur-rte-btn" aria-label="Embed a YouTube or Vimeo video" title="Embed a video" disabled={disabled || preview} onClick={video}>▶</button>
-        <span className="cur-rte-sp"/>
-        <button type="button" className="cur-rte-btn is-preview" aria-pressed={preview} onClick={() => setPreview(p => !p)}>{preview ? "Edit" : "Preview"}</button>
-      </div>
-      {preview
-        ? <div className="cur-rte-preview">{(value || "").trim() ? <CurriculumText text={value}/> : <p className="admin-cell-sub">Nothing written yet.</p>}</div>
-        : <textarea id="cur-rte-ta" ref={ref} className="admin-input cur-ed-body" rows={12} value={value || ""} aria-labelledby={labelledBy}
-            onChange={e => onChange(e.target.value)} onKeyDown={onKey} disabled={disabled}
-            placeholder={"Write the lesson. Use the toolbar for headings, lists, links, pictures and videos.\n\n## A heading\nA paragraph — **bold** and *italic* work too.\n\n- a bulleted point\n- another"}/>}
-      <p className="admin-cell-sub cur-rte-hint">Blank lines make paragraphs. A line that is just a YouTube or Vimeo link plays the video in the lesson.</p>
+    <div className="cur-check">
+      <section className="cur-spine-wrap" aria-label="The session, part by part">
+        <h3 className="admin-h3">The session <span className="admin-cell-sub">{here} of {spine.length} parts</span></h3>
+        <ol className="cur-spine">
+          {spine.map(p => (
+            <li key={p.id} className={"cur-spine-p " + (p.ok ? "is-here" : "is-gone")}>
+              <span className="cur-spine-dot" aria-hidden="true"/>
+              <span className="cur-spine-l">{p.label}</span>
+              <span className="cur-spine-s">{p.ok ? "written" : (p.note || "not written yet")}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {!!words.length && (
+        <section className="cur-words" aria-label="Words to change">
+          <h3 className="admin-h3">Words to change</h3>
+          {words.map((w, i) => (
+            <p key={i} className="cur-word-row"><b>{w.say}</b> — {w.use}</p>
+          ))}
+        </section>
+      )}
+
+      <section className="cur-shape" aria-label="What the programme asks of a lesson">
+        <h3 className="admin-h3">What the programme asks <span className="admin-cell-sub">{met} of {rows.length}</span></h3>
+        <p className="admin-hint">Guidance, not a gate — you can save a lesson that does not meet all of these.</p>
+        <ul className="cur-shape-list">
+          {rows.map(r => (
+            <li key={r.id} className={"cur-shape-row " + (r.ok ? "is-met" : "is-unmet")}>
+              <span className="cur-shape-mark" aria-hidden="true">{r.ok ? "✓" : "○"}</span>
+              <span className="cur-shape-want"><b>{r.want}</b> <span className="sr-only">{r.ok ? "— done" : "— not yet"}</span></span>
+              <span className="cur-shape-why">{r.why}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }
 
-function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved }) {
+/* Real glyphs, not emoji. An emoji is drawn by the operating system, so the
+   same toolbar is a flat pictogram on one machine and a glossy 3-D sticker on
+   another — and on a Saturday at a centre those are different machines. These
+   are 16px line icons on the current colour, so they inherit state. */
+const LED_ICONS = {
+  back:  "M10 3 4.5 8 10 13",
+  x:     "M4 4l8 8M12 4l-8 8",
+  eye:   "M1.6 8S4 3.6 8 3.6 14.4 8 14.4 8 12 12.4 8 12.4 1.6 8 1.6 8Z M8 9.9a1.9 1.9 0 1 0 0-3.8 1.9 1.9 0 0 0 0 3.8Z",
+  alert: "M8 2.2 15 13.6H1L8 2.2Z M8 6.6v3.1 M8 11.6v.01",
+  keys:  "M2 3h12v10H2z M5.2 3v6.2 M8 3v6.2 M10.8 3v6.2",
+  chord: "M3 3v10 M6 3v10 M9 3v10 M12 3v10 M3 5.4h9 M3 8.2h9 M3 11h9",
+  staff: "M2 4h12 M2 6.5h12 M2 9h12 M2 11.5h12 M11.4 8.6a1.5 1.2 0 1 0 0-2.4 1.5 1.2 0 0 0 0 2.4Z",
+  swatch:"M3 3h4.4v10H3z M8.6 3H13v10H8.6z M3 7.6h4.4 M8.6 10.1H13",
+  steps: "M2 4.5h4 M2 8h8 M2 11.5h11",
+};
+function LedIcon({ name }) {
+  const d = LED_ICONS[name];
+  if (!d) return null;
+  return (
+    <svg className="led-i" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"
+         fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      {d.split(" M").map((seg, i) => <path key={i} d={(i ? "M" : "") + seg}/>)}
+    </svg>
+  );
+}
+
+/**
+ * `desk` is how the SAME editor serves two portals.
+ *
+ * The Control Room and an instructor's own screen were two different things:
+ * a full editor here, a four-field box there. That is the wrong axis to
+ * differ on — what an instructor may do is narrower than what a curriculum
+ * lead may do, but what they are WRITING is the same lesson, to the same
+ * standard, with the same opening review and the same two routes. A smaller
+ * editor did not make the standard smaller; it just hid it.
+ *
+ * So the screen is one screen, and the portal supplies three things: how a
+ * lesson is saved, how a file is uploaded, and whether this person may
+ * publish. Every actual permission is still decided on the server.
+ */
+const CUR_DESK_ADMIN = {
+  save: (d) => NGGApi.admin.curriculum.upsert(d).then(r => r.unit),
+  upload: (f) => NGGApi.admin.curriculum.upload(f),
+  ai: (d) => NGGApi.admin.curriculum.ai(d),
+  canPublish: true,
+};
+
+function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnabled, desk, onClose, onSaved }) {
+  const api = desk || CUR_DESK_ADMIN;
+  const canPublish = api.canPublish !== false;
   const isNew = !unit.unitId;
   const [f, setF] = React.useState(() => ({
     unitId: unit.unitId || "", course: unit.course || "", level: unit.level || "", week: unit.week || 1, position: unit.position || 1,
     title: unit.title || "", summary: unit.summary || "", objectives: (unit.objectives || []).join("\n"), body: unit.body || "",
     durationMins: unit.durationMins || "", passMark: unit.passMark ?? 60, status: unit.status || "draft",
     materials: (unit.materials || []).map(m => ({ ...m })),
-    checks: (unit.checks || []).map(c => ({ ...c, options: c.options && c.options.length ? c.options : ["", ""], answer: String(c.answer ?? "") })),
+    checks: (unit.checks || []).map(c => ({ ...c, options: c.options && c.options.length ? c.options : ["", ""], answer: String(c.answer ?? ""), videoUrl: c.videoUrl || "" })),
   }));
   const [busy, setBusy] = React.useState("");
+  const examRef = (examRefs || {})[f.course] || null;
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const setCheck = (i, k, v) => setF(x => ({ ...x, checks: x.checks.map((c, j) => j === i ? { ...c, [k]: v } : c) }));
   const setMat = (i, k, v) => setF(x => ({ ...x, materials: x.materials.map((m, j) => j === i ? { ...m, [k]: v } : m) }));
   const save = async () => {
     setBusy("save");
     try {
-      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => ({ ...c, options: c.kind === "mcq" ? c.options.filter(o => o.trim()) : [] })) };
-      const r = await NGGApi.admin.curriculum.upsert(data);
-      toast.success(isNew ? "Lesson created." : "Lesson saved.", r.unit.title);
-      onSaved(r.unit);
+      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => ({ ...c, options: c.kind === "mcq" ? c.options.filter(o => o.trim()) : [], videoUrl: c.kind === "watch" ? (c.videoUrl || "") : "" })) };
+      const saved = await api.save(data);
+      toast.success(
+        canPublish ? (isNew ? "Lesson created." : "Lesson saved.")
+                   : (isNew ? "Saved as a draft." : "Draft saved."),
+        canPublish ? (saved && saved.title) : "A curriculum lead publishes it; your class sees it then.");
+      onSaved(saved);
     } catch (e) {
       toast.error(e.code === "unknown_course" ? "That course isn't in the academy catalogue" + (e.detail ? " — " + e.detail : "") + "."
         : e.code === "slot_taken" ? "Another lesson already holds week " + f.week + ", position " + f.position + " of this course."
@@ -1928,10 +2238,11 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
     if (!f.title.trim() && !f.body.trim()) { toast.error("Give the lesson a title or some notes for the AI to work from."); return; }
     setBusy("ai");
     try {
-      const r = await NGGApi.admin.curriculum.ai({ title: f.title, text: f.body, course: f.course, level: f.level, checks: 5 });
-      setF(x => ({ ...x, summary: x.summary || r.draft.summary, objectives: x.objectives || r.draft.objectives.join("\n"),
+      const r = await api.ai({ title: f.title, text: f.body, course: f.course, level: f.level, checks: 5 });
+      // With only a title the AI writes the whole lesson in the NGG Saturday standard; real notes are never replaced.
+      setF(x => ({ ...x, body: x.body.trim().length < 80 && r.draft.body ? r.draft.body : x.body, summary: x.summary || r.draft.summary, objectives: x.objectives || r.draft.objectives.join("\n"),
         checks: x.checks.concat(r.draft.checks.map(c => ({ ...c, answer: String(c.answer), options: c.options && c.options.length ? c.options : ["", ""] }))) }));
-      toast.success("Draft added — read it before saving. AI checks are marked AI." + (r.note ? " " + r.note : ""), "AI draft");
+      toast.success((r.draft.body && f.body.trim().length < 80 ? "Lesson written in the NGG Saturday standard" : "Draft added") + " — read it before saving. AI checks are marked AI." + (r.note ? " " + r.note : ""), "AI draft");
     } catch (e) { toast.error(e.message && e.code === "ai_disabled" ? "No AI provider is configured (Settings → AI)." : humanizeError(e.code, e.code), "No draft"); }
     finally { setBusy(""); }
   };
@@ -1939,7 +2250,7 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
     if (!file) return;
     setBusy("upload");
     try {
-      const r = await NGGApi.admin.curriculum.upload(file);
+      const r = await api.upload(file);
       setF(x => ({ ...x, materials: x.materials.concat([{ title: file.name.replace(/\.[^.]+$/, ""), url: r.url, kind: r.kind }]) }));
       toast.success("Uploaded — save the lesson to keep it.", file.name);
     } catch (e) { toast.error(e.code === "bad_type" ? "That file type isn't allowed (" + (e.detail || "") + ")." : e.code === "too_large" ? "That file is larger than 25 MB." : humanizeError(e.code, e.code), "Upload failed"); }
@@ -1947,116 +2258,281 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
   };
   const ro = !canWrite;
   return (
-    <div className="cur-ed">
-      <div className="cur-ed-bar">
-        <button className="btn btn-ghost btn-sm" onClick={onClose}>← All lessons</button>
-        <span className="admin-cell-sub">{isNew ? "New lesson" : unit.unitId + " · v" + unit.version + (unit.publishedAt ? " · published " + fmtDate(unit.publishedAt) : "")}</span>
-      </div>
-      <fieldset className="cur-ed-grid" disabled={ro}>
-        <label className="admin-field cur-ed-wide"><span className="admin-label">Title</span>
-          <input className="admin-input" value={f.title} onChange={e => set("title", e.target.value)} placeholder="e.g. Finding middle C"/></label>
-        <label className="admin-field"><span className="admin-label">Course</span>
-          <select className="admin-select" value={f.course} onChange={e => set("course", e.target.value)}>
-            <option value="">Whole Club (every member)</option>
-            {(f.course && !courses.includes(f.course) ? [f.course, ...courses] : courses).map(c => <option key={c} value={c}>{c}</option>)}
-          </select></label>
-        <label className="admin-field"><span className="admin-label">Level (optional)</span>
-          <input className="admin-input" value={f.level} onChange={e => set("level", e.target.value)} placeholder="e.g. Foundation"/></label>
-        <label className="admin-field"><span className="admin-label">Week</span>
-          <input className="admin-input" type="number" min={1} max={104} value={f.week} onChange={e => set("week", e.target.value)}/></label>
-        <label className="admin-field"><span className="admin-label">Position in week</span>
-          <input className="admin-input" type="number" min={1} max={50} value={f.position} onChange={e => set("position", e.target.value)}/></label>
-        <label className="admin-field"><span className="admin-label">Minutes</span>
-          <input className="admin-input" type="number" min={0} max={600} value={f.durationMins} onChange={e => set("durationMins", e.target.value)}/></label>
-        <label className="admin-field"><span className="admin-label">Pass mark %</span>
-          <input className="admin-input" type="number" min={0} max={100} value={f.passMark} onChange={e => set("passMark", e.target.value)}/></label>
-        <label className="admin-field"><span className="admin-label">Status</span>
-          <select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}>
-            <option value="draft">Draft — only staff see it</option><option value="published">Published — members see it</option><option value="retired">Retired</option>
-          </select></label>
-        <label className="admin-field cur-ed-wide"><span className="admin-label">Summary</span>
-          <textarea className="admin-input" rows={2} value={f.summary} onChange={e => set("summary", e.target.value)} placeholder="Two or three sentences a member reads first."/></label>
-        <label className="admin-field cur-ed-wide"><span className="admin-label">What they'll learn — one per line</span>
-          <textarea className="admin-input" rows={3} value={f.objectives} onChange={e => set("objectives", e.target.value)} placeholder={"You will find middle C\nYou will play a C major scale"}/></label>
-        <div className="admin-field cur-ed-wide"><span className="admin-label" id="cur-ed-body-l">The lesson</span>
-          <LessonTextEditor value={f.body} onChange={v => set("body", v)} labelledBy="cur-ed-body-l" disabled={ro}/></div>
-      </fieldset>
+    <div className={"led" + (ro ? " is-readonly" : "")}>
 
-      <section className="cur-ed-sec" aria-label="Materials">
-        <h3 className="admin-h3">Materials</h3>
-        {f.materials.map((m, i) => (
-          <div key={i} className="cur-ed-mat">
-            <input className="admin-input" value={m.title} onChange={e => setMat(i, "title", e.target.value)} aria-label="Material title" disabled={ro}/>
-            <input className="admin-input" value={m.url} onChange={e => setMat(i, "url", e.target.value)} aria-label="Material link" placeholder="https://…" disabled={ro}/>
-            <span className="chip">{m.kind || "link"}</span>
-            {!ro && <button type="button" className="btn btn-ghost btn-sm" aria-label={"Remove " + (m.title || "material")} onClick={() => setF(x => ({ ...x, materials: x.materials.filter((_, j) => j !== i) }))}>✕</button>}
-          </div>
-        ))}
-        {!ro && <div className="cur-ed-row">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, materials: x.materials.concat([{ title: "", url: "", kind: "link" }]) }))}>+ Add a link</button>
-          <label className="btn btn-ghost btn-sm cur-ed-upload">{busy === "upload" ? "Uploading…" : "↑ Upload a file"}
-            <input type="file" className="sr-only" accept={CUR_FILE_ACCEPT}
-              onChange={e => { upload(e.target.files && e.target.files[0]); e.target.value = ""; }} disabled={!!busy}/></label>
-          <span className="admin-cell-sub">PDF, slides, documents, sheets, e-books, images, audio, video, Scratch and code files, zip packs · up to 25 MB</span>
-        </div>}
-      </section>
-
-      <section className="cur-ed-sec" aria-label="Checks">
-        <div className="cur-ed-row cur-ed-row-between">
-          <h3 className="admin-h3">Checks</h3>
-          {!ro && <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy || !aiEnabled} onClick={draftAi}
-            title={aiEnabled ? "Drafts a summary, objectives and five checks from the title and lesson text" : "No AI provider is configured (Settings → AI)"}>
-            {busy === "ai" ? "Drafting…" : "✦ Draft with AI"}</button>}
+      {/* One bar, always in reach: where you are, what state it is in, and
+          the only two actions that matter. It used to be a back link at the
+          top and a save button somewhere in the middle of the page. */}
+      <header className="led-top">
+        <button type="button" className="led-back" onClick={onClose} aria-label="Back to all lessons">
+          <LedIcon name="back"/><span>All lessons</span>
+        </button>
+        <div className="led-ident">
+          <input className="led-title" value={f.title} disabled={ro} aria-label="Lesson title"
+                 onChange={e => set("title", e.target.value)} placeholder="Name this lesson"/>
+          <p className="led-sub">{isNew ? "New lesson" : unit.unitId + " · version " + unit.version + (unit.publishedAt ? " · published " + fmtDate(unit.publishedAt) : "")}</p>
         </div>
-        {!f.checks.length && <p className="admin-hint">No checks — the lesson completes when it is opened and submitted. Add questions, or draft them with the AI.</p>}
-        {f.checks.map((c, i) => (
-          <div key={c.checkId || i} className="cur-ed-check">
-            <div className="cur-ed-row">
-              <span className="cur-check-n">{i + 1}.</span>
-              <select className="admin-select" value={c.kind} onChange={e => setCheck(i, "kind", e.target.value)} aria-label="Question type" disabled={ro}>
-                {CUR_CHECK_KIND_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-              </select>
-              <input className="admin-input cur-ed-pts" type="number" min={1} max={20} value={c.points} onChange={e => setCheck(i, "points", e.target.value)} aria-label="Points" disabled={ro}/>
-              {c.source === "ai" && <span className="chip chip-gold" title="Written by the AI — read it before publishing">AI</span>}
-              {!ro && <button type="button" className="btn btn-ghost btn-sm" aria-label={"Remove question " + (i + 1)} onClick={() => setF(x => ({ ...x, checks: x.checks.filter((_, j) => j !== i) }))}>✕</button>}
-            </div>
-            <textarea className="admin-input" rows={2} value={c.prompt} onChange={e => setCheck(i, "prompt", e.target.value)} placeholder="The question" aria-label="Question" disabled={ro}/>
-            {c.kind === "mcq" ? (
-              <div className="cur-ed-opts" role="radiogroup" aria-label="Options — choose the right one">
-                {c.options.map((o, k) => (
-                  <div key={k} className="cur-ed-opt">
-                    <input type="radio" name={"ans-" + i} checked={String(k) === String(c.answer)} onChange={() => setCheck(i, "answer", String(k))} aria-label={"Option " + (k + 1) + " is correct"} disabled={ro}/>
-                    <input className="admin-input" value={o} onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))} placeholder={"Option " + (k + 1)} disabled={ro}/>
-                    {!ro && c.options.length > 2 && <button type="button" className="btn btn-ghost btn-sm" aria-label={"Remove option " + (k + 1)}
-                      onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}>✕</button>}
-                  </div>
-                ))}
-                {!ro && c.options.length < 8 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCheck(i, "options", c.options.concat([""]))}>+ Option</button>}
-              </div>
-            ) : (
-              <div className="cur-ed-grid2">
-                <textarea className="admin-input" rows={2} value={c.answer} onChange={e => setCheck(i, "answer", e.target.value)}
-                  placeholder={c.kind === "short" ? "A model answer (what full marks looks like)" : c.kind === "reflection" ? "What a thoughtful reflection would touch on (optional — there is no right answer)" : "What a strong answer includes"} aria-label="Model answer" disabled={ro}/>
-                <textarea className="admin-input" rows={2} value={c.rubric} onChange={e => setCheck(i, "rubric", e.target.value)} placeholder="Rubric — what a marker should look for, and how the points are earned" aria-label="Rubric" disabled={ro}/>
-                <p className="admin-cell-sub cur-ed-markhint">{CUR_MARK_HINT[c.kind] || ""}</p>
-              </div>
-            )}
-          </div>
-        ))}
-        {!ro && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, checks: x.checks.concat([{ ...CUR_EMPTY_CHECK }]) }))}>+ Add a question</button>}
-      </section>
+        {!ro && <div className="led-act">
+          {canPublish
+            ? <label className="led-status">
+                <span className="sr-only">Status</span>
+                <select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}>
+                  <option value="draft">Draft — staff only</option>
+                  <option value="published">Published — members see it</option>
+                  <option value="retired">Retired</option>
+                </select>
+              </label>
+            /* Not a disabled select saying "Published" they cannot choose —
+               a control that cannot act is not left on the screen. */
+            : <span className="led-draftnote">Saves as a draft · a curriculum lead publishes it</span>}
+          <button className="btn btn-primary" disabled={!!busy} onClick={save}>
+            {busy === "save" ? "Saving…" : canPublish ? (isNew ? "Create lesson" : "Save lesson") : (isNew ? "Save for review" : "Save draft")}
+          </button>
+        </div>}
+      </header>
 
-      {!ro && <div className="cur-ed-foot">
-        <button className="btn btn-primary" disabled={!!busy} onClick={save}>{busy === "save" ? "Saving…" : isNew ? "Create lesson" : "Save lesson"}</button>
-        <span className="admin-cell-sub">{f.status === "published" ? "Members see it as soon as it is saved." : "Drafts are visible to staff only."}</span>
-      </div>}
+      <div className="led-work">
+        <div className="led-write">
+
+          {/* Who it is for, and where it sits. Three fields that are always
+              decided; the rest are folded away because they are almost always
+              already right. Nine fields in a row was the whole of the old
+              screen's first impression. */}
+          <section className="led-card" aria-label="Placement">
+            <div className={"led-row3" + (canPublish ? "" : " is-two")}>
+              <label className="led-f"><span>Who it is for</span>
+                <select className="admin-select" value={f.course} disabled={ro} onChange={e => set("course", e.target.value)}>
+                  <option value="">Whole Club — every member</option>
+                  {!!(divisions || []).length && <optgroup label="A whole division">
+                    {(divisions || []).map(dv => <option key={dv} value={dv}>{dv}</option>)}
+                  </optgroup>}
+                  <optgroup label="One course">
+                    {(f.course && !courses.includes(f.course) && !(divisions || []).includes(f.course) ? [f.course, ...courses] : courses)
+                      .map(c => <option key={c} value={c}>{c}</option>)}
+                  </optgroup>
+                </select></label>
+              <label className="led-f"><span>Week</span>
+                <input className="admin-input" type="number" min={1} max={104} value={f.week} disabled={ro} onChange={e => set("week", e.target.value)}/></label>
+              {/* Placing a lesson inside a week is a curriculum lead's act, and
+                  the server chooses it for anyone else — so for them the field
+                  cannot act, and is not drawn. */}
+              {canPublish && <label className="led-f"><span>Session in that week</span>
+                <input className="admin-input" type="number" min={1} max={50} value={f.position} disabled={ro} onChange={e => set("position", e.target.value)}/></label>}
+            </div>
+            <details className="led-more">
+              <summary>Level, length and pass mark</summary>
+              <div className="led-row3">
+                <label className="led-f"><span>Level</span>
+                  <input className="admin-input" value={f.level} disabled={ro} onChange={e => set("level", e.target.value)} placeholder="Year 1 · Foundation"/></label>
+                <label className="led-f"><span>Minutes</span>
+                  <input className="admin-input" type="number" min={0} max={600} value={f.durationMins} disabled={ro} onChange={e => set("durationMins", e.target.value)}/></label>
+                <label className="led-f"><span>Pass mark %</span>
+                  <input className="admin-input" type="number" min={0} max={100} value={f.passMark} disabled={ro} onChange={e => set("passMark", e.target.value)}/></label>
+              </div>
+            </details>
+          </section>
+
+          <section className="led-card" aria-label="Summary and objectives">
+            <label className="led-f"><span>The two sentences a member reads first</span>
+              <textarea className="admin-input" rows={2} value={f.summary} disabled={ro}
+                        onChange={e => set("summary", e.target.value)} placeholder="What this session is, in plain words."/></label>
+            <label className="led-f"><span>What they will be able to do — one per line</span>
+              <textarea className="admin-input" rows={3} value={f.objectives} disabled={ro}
+                        onChange={e => set("objectives", e.target.value)}
+                        placeholder={"You will find middle C\nYou will play a C major scale"}/></label>
+            <p className="led-hint">These three become the exam's marking rubric, two marks each.</p>
+          </section>
+
+          /* THE OPENING REVIEW.
+           *
+           * Written HERE, with this lesson, by the person who knows what it
+           * taught — and sat at the START OF THE NEXT SESSION, a week later,
+           * before anything new is taught.
+           *
+           * Those are two different moments on purpose, and it is worth
+           * being plain about why, because the obvious design is to ask at
+           * the end of the hour. A test at the end measures the hour that
+           * just happened, with everything still in the room and still on
+           * the whiteboard. A test a week later measures what survived the
+           * week — and the act of pulling it back out of a cold memory is
+           * itself the thing that fixes it there.
+           *
+           * So the questions belong to THIS lesson, the sitting belongs to
+           * the next one, and an empty set is drawn as a problem because it
+           * means a week's teaching will never be asked about again. */
+          <section className={"led-card led-exam" + (f.checks.length ? "" : " is-missing")} aria-label="The opening review">
+            <h3 className="led-h">The opening review <span className="led-count">{f.checks.length}</span></h3>
+            <p className="led-hint">Written here, with this lesson. Your class sits it at the <b>start of the next session</b>, a week later, before anything new is taught.</p>
+            {/* The standard, named. An instructor writing by hand is held to
+                what the AI drafter is held to — the same map, one source. */}
+            {!!examRef && <p className="led-ref">
+              <b>{examRef.body}</b> assesses {f.course} by {examRef.assesses}. For a question here, {examRef.ask}.
+              {" "}<a href={examRef.link} target="_blank" rel="noopener noreferrer">{examRef.award}</a>
+            </p>}
+            {!f.checks.length ? null : !f.checks.some(c => c.kind !== "mcq") && (
+              <p className="led-warn"><LedIcon name="alert"/> Every question here is multiple choice. A week later that shows whether they can recognise an answer, not whether they can do it — add one that asks them to make, play or explain something. This will not publish as it is.</p>
+            )}
+            {!f.checks.length
+              ? <p className="led-warn"><LedIcon name="alert"/> No questions yet — so nothing from this session is ever asked about again. A week later your class walks into the next one with this one already fading.</p>
+              : <p className="led-hint">{f.checks.reduce((n, c) => n + (Number(c.points) || 1), 0)} marks · passes at {f.passMark}%</p>}
+            {/* A QUESTION IS A BLOCK, like everything else in this editor.
+                What was here was a form: a full-width native dropdown, a bare
+                number beside a bare ×, and two textareas whose placeholders
+                were doing the work of labels — so the lesson above was a
+                writing surface and the exam below it was a 2014 admin panel
+                on the same screen. Placeholders are not labels (they vanish
+                when you type, and a screen reader is left with nothing), so
+                every field here has one. */}
+            {f.checks.map((c, i) => {
+              const marking = CUR_MARK_HINT[c.kind] || "";
+              const kindLabel = (CUR_CHECK_KIND_OPTS.find(([k]) => k === c.kind) || [, c.kind])[1];
+              const badVideo = c.kind === "watch" && c.videoUrl && !curVideoEmbed(c.videoUrl);
+              return (
+                <article key={c.checkId || i} className={"lq" + (c.kind === "mcq" ? " is-mcq" : "")} aria-label={"Question " + (i + 1) + " — " + kindLabel}>
+                  <header className="lq-top">
+                    <span className="lq-n" aria-hidden="true">{i + 1}</span>
+                    <label className="lq-kind">
+                      <span className="sr-only">{"What question " + (i + 1) + " asks for"}</span>
+                      <select value={c.kind} onChange={e => setCheck(i, "kind", e.target.value)} disabled={ro}>
+                        {CUR_CHECK_KIND_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      </select>
+                    </label>
+                    <label className="lq-pts">
+                      <span>Marks</span>
+                      <input type="number" min={1} max={20} value={c.points}
+                             onChange={e => setCheck(i, "points", e.target.value)} disabled={ro}
+                             aria-label={"Marks for question " + (i + 1)}/>
+                    </label>
+                    {c.source === "ai" && <span className="lq-ai" title="Written by the AI — read it before publishing">AI</span>}
+                    {!ro && <button type="button" className="lq-del" aria-label={"Remove question " + (i + 1)}
+                      onClick={() => setF(x => ({ ...x, checks: x.checks.filter((_, j) => j !== i) }))}><LedIcon name="x"/></button>}
+                  </header>
+
+                  <label className="lq-f lq-ask">
+                    <span>What you are asking</span>
+                    <textarea rows={2} value={c.prompt} onChange={e => setCheck(i, "prompt", e.target.value)} disabled={ro}
+                              placeholder={c.kind === "watch" ? "What did her thumb do before the hand moved?" : "Ask it the way you would say it out loud"}/>
+                  </label>
+
+                  {c.kind === "mcq" ? (
+                    <div className="lq-opts">
+                      <span className="lq-label" id={"lqo-" + i}>The options — tick the right one</span>
+                      <ul role="radiogroup" aria-labelledby={"lqo-" + i}>
+                        {c.options.map((o, k) => {
+                          const right = String(k) === String(c.answer);
+                          return (
+                            <li key={k} className={"lq-opt" + (right ? " is-right" : "")}>
+                              <label className="lq-tick">
+                                <input type="radio" name={"ans-" + i} checked={right} disabled={ro}
+                                       onChange={() => setCheck(i, "answer", String(k))}
+                                       aria-label={"Option " + (k + 1) + " is the right answer"}/>
+                                <span aria-hidden="true"/>
+                              </label>
+                              <input className="lq-opt-text" value={o} disabled={ro}
+                                     onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))}
+                                     placeholder={"Option " + (k + 1)} aria-label={"Option " + (k + 1)}/>
+                              {!ro && c.options.length > 2 && <button type="button" className="lq-del" aria-label={"Remove option " + (k + 1)}
+                                onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}><LedIcon name="x"/></button>}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {!ro && c.options.length < 8 && <button type="button" className="lq-add" onClick={() => setCheck(i, "options", c.options.concat([""]))}>Add an option</button>}
+                    </div>
+                  ) : (
+                    <div className="lq-mark">
+                      {/* Only a 'watch' question carries a video, and it must:
+                          a question about a film nobody was shown is a question
+                          nobody can answer, so it is refused on save. */}
+                      {c.kind === "watch" && (
+                        <label className="lq-f lq-video">
+                          <span>The video they watch</span>
+                          <input value={c.videoUrl || ""} inputMode="url" disabled={ro}
+                                 placeholder="https://www.youtube.com/watch?v=…"
+                                 aria-invalid={badVideo ? "true" : undefined}
+                                 aria-label={"Video for question " + (i + 1)}
+                                 onChange={e => setCheck(i, "videoUrl", e.target.value.trim())}/>
+                          {badVideo
+                            ? <em className="lq-bad" role="alert">That is not a YouTube or Vimeo link — the exam can only play those.</em>
+                            : <em className="lq-note">It plays inside the exam, so they never leave the question to find it.</em>}
+                        </label>
+                      )}
+                      <label className="lq-f lq-model">
+                        <span>{c.kind === "reflection" ? "What a thoughtful answer touches on" : "What full marks looks like"}</span>
+                        <textarea rows={2} value={c.answer} onChange={e => setCheck(i, "answer", e.target.value)} disabled={ro}
+                          placeholder={c.kind === "short" ? "The ideas it has to contain, in any wording"
+                            : c.kind === "reflection" ? "There is no right answer here — say what an honest one would mention"
+                            : c.kind === "watch" ? "Something only somebody who actually watched it could say"
+                            : "What a strong answer includes"}/>
+                      </label>
+                      <label className="lq-f lq-rubric">
+                        <span>How the marks are earned</span>
+                        <textarea rows={2} value={c.rubric} onChange={e => setCheck(i, "rubric", e.target.value)} disabled={ro}
+                          placeholder={"Up to " + (Number(c.points) || 1) + ": what earns each one"}/>
+                      </label>
+                      {!!marking && <p className="lq-hint">{marking}</p>}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+            {!ro && <div className="led-add">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, checks: x.checks.concat([{ ...CUR_EMPTY_CHECK }]) }))}>Add a question</button>
+              {!!api.ai && <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy || !aiEnabled} onClick={draftAi}
+                title={aiEnabled ? "Drafts a summary, objectives and five review questions from the title and the lesson" : "No AI provider is configured (Settings → AI)"}>
+                {busy === "ai" ? "Writing…" : f.body.trim().length < 80 ? "Write the lesson with AI" : "Draft the review with AI"}</button>}
+            </div>}
+          </section>
+
+          <section className="led-card led-card-wide" aria-label="The lesson">
+            <h3 className="led-h" id="led-lesson-h">The lesson</h3>
+            <LessonBlockEditor value={f.body} onChange={v => set("body", v)} readOnly={ro} labelledBy="led-lesson-h"
+                               onUpload={async (file) => {
+                                 try { const r = await api.upload(file); return r.url; }
+                                 catch (e) { toast.error(e.code === "too_large" ? "That image is over 25 MB." : humanizeError(e.code, e.code)); return ""; }
+                               }}/>
+          </section>
+
+          <section className="led-card" aria-label="Materials">
+            <h3 className="led-h">Materials <span className="led-count">{f.materials.length}</span></h3>
+            {!f.materials.length && <p className="led-hint">Nothing attached. Lessons work without materials — a link or a worksheet is a bonus, not a requirement.</p>}
+            {f.materials.map((m, i) => (
+              <div key={i} className="led-mat">
+                <input className="admin-input" value={m.title} onChange={e => setMat(i, "title", e.target.value)} aria-label={"Material " + (i + 1) + " title"} placeholder="What it is" disabled={ro}/>
+                <input className="admin-input" value={m.url} onChange={e => setMat(i, "url", e.target.value)} aria-label={"Material " + (i + 1) + " link"} placeholder="https://…" disabled={ro}/>
+                <input className="admin-input led-mat-guide" value={m.guide || ""} maxLength={240} onChange={e => setMat(i, "guide", e.target.value)} aria-label={"Material " + (i + 1) + ": what the learner should do with it"} placeholder="What to do with it — e.g. “Do the first three exercises, then check yourself”" disabled={ro}/>
+                <span className="chip">{m.kind || "link"}</span>
+                {!ro && <button type="button" className="led-x" aria-label={"Remove " + (m.title || "material " + (i + 1))}
+                  onClick={() => setF(x => ({ ...x, materials: x.materials.filter((_, j) => j !== i) }))}><LedIcon name="x"/></button>}
+              </div>
+            ))}
+            {!ro && <div className="led-add">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, materials: x.materials.concat([{ title: "", url: "", kind: "link" }]) }))}>Add a link</button>
+              <label className="btn btn-ghost btn-sm led-upload">{busy === "upload" ? "Uploading…" : "Upload a file"}
+                <input type="file" className="sr-only" accept={CUR_FILE_ACCEPT}
+                  onChange={e => { upload(e.target.files && e.target.files[0]); e.target.value = ""; }} disabled={!!busy}/></label>
+              <span className="led-hint">Documents, sheets, images, audio, video, code · up to 25 MB</span>
+            </div>}
+          </section>
+
+        </div>
+
+        {/* There was a live copy of the member's page here, beside the text.
+            It is gone because the editor now DRAWS the lesson rather than its
+            markup — a heading is a heading and the piano is the piano — so a
+            second rendering of the same words showed nothing the first one
+            did not, and re-ran the whole renderer on every keystroke.
+            What the rail holds instead is the part the writing surface
+            genuinely cannot show you: whether the lesson meets the standard
+            the programme asks of it. */}
+        <aside className="led-see" aria-label="How this lesson is shaping up">
+          <CurriculumShape f={f}/>
+        </aside>
+      </div>
     </div>
   );
 }
 
-/* A CSV parser that understands quotes — a cell holding "Lagos, Nigeria" or
-   a line break stays one cell. The Summer import splits on commas and shifts
-   every column after the first quoted comma; this is the version that doesn't. */
 function curriculumParseCsv(text) {
   const rows = []; let row = [], cell = "", q = false;
   const s = String(text || "").replace(/^﻿/, "");
@@ -2348,9 +2824,14 @@ function CurriculumSchedule({ onSaved }) {
   return (
     <details className="cur-sched" open={!!startOpen}>
       <summary>Deadlines, reminders and fines{s.startDate ? " — term began " + s.startDate : " — not set: nothing is due yet"}</summary>
-      <p className="admin-hint">A lesson with checks in week N is due N weeks after the term starts — or after the member joined, if later. Members (and the parent on their record) are reminded by email while anything is outstanding, from a few days before it is due; an assessment left undone past the fine window is fined once, on their account.</p>
+      <p className="admin-hint">With the review on, a member opening a session sits the previous session&rsquo;s questions first, from memory, before today&rsquo;s teaching — they can always skip to the lesson. A lesson with checks in week N is due N weeks after the term starts — or after the member joined, if later. Members (and the parent on their record) are reminded by email while anything is outstanding, from a few days before it is due; an assessment left undone past the fine window is fined once, on their account.</p>
       <div className="admin-fields cur-sched-grid">
         <label className="admin-field admin-field-check"><input type="checkbox" checked={!!s.enabled} onChange={e => set("enabled", e.target.checked)}/><span>Deadlines on</span></label>
+        {/* The opening review, on or off for the whole Club. On is the
+            programme's position; off is for a short holiday course, or a
+            term whose rota has nobody to mark. The questions stay on the
+            lessons either way — only the sitting moves. */}
+        <label className="admin-field admin-field-check"><input type="checkbox" checked={s.reviewAtStart !== false} onChange={e => set("reviewAtStart", e.target.checked)}/><span>Open each session with last week&rsquo;s review</span></label>
         <label className="admin-field"><span>Term starts</span><input type="date" className="admin-input" value={s.startDate || ""} onChange={e => set("startDate", e.target.value)}/></label>
         <label className="admin-field"><span>Remind from (days before due)</span><input type="number" min={0} max={30} className="admin-input" value={s.remindBeforeDays} onChange={e => set("remindBeforeDays", Number(e.target.value))}/></label>
         <label className="admin-field"><span>Remind every (days)</span><input type="number" min={1} max={30} className="admin-input" value={s.remindEveryDays} onChange={e => set("remindEveryDays", Number(e.target.value))}/></label>
@@ -3972,10 +4453,11 @@ function AdminMentors() {
   const [editing, setEditing] = React.useState(null);
   const [promoting, setPromoting] = React.useState(false);
   const [centres, setCentres] = React.useState({});
+  const [titles, setTitles] = React.useState(null);
   const load = () => {
     setErr("");
     NGGApi.admin.mentorship.roster().then(r => setCentres(r.centres || {})).catch(() => {});
-    return NGGApi.admin.mentors.list().then(r => setList(r.mentors || [])).catch(e => setErr(e.code || e.message || "load_failed"));
+    return NGGApi.admin.mentors.list().then(r => { setList(r.mentors || []); setTitles({ list: r.titles || [], def: r.titleDefault || "" }); }).catch(e => setErr(e.code || e.message || "load_failed"));
   };
   React.useEffect(() => { load(); }, []);
   return (
@@ -4015,20 +4497,32 @@ function AdminMentors() {
           {list.length === 0 && <div className="admin-empty">No mentors yet.</div>}
         </div>
       }
-      {editing && <AdminMentorEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
+      {editing && <AdminMentorEditor data={editing} titles={titles} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
     </div>
   );
 }
 
-function AdminMentorEditor({ data, onClose, onSaved }) {
+function AdminMentorEditor({ data, titles: titlesIn, onClose, onSaved }) {
   const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({}, data, { tracks: Array.isArray(data.tracks) ? data.tracks.join(", ") : (data.tracks || "") }));
+  /* Opened from the Mentorship roster, whose rows are not the mentor record:
+     the titles and this mentor's own title come from the mentors list. */
+  const [titles, setTitles] = React.useState(titlesIn || null);
+  React.useEffect(() => {
+    if (titlesIn && data.honorific !== undefined) return;
+    NGGApi.admin.mentors.list().then(r => {
+      setTitles({ list: r.titles || [], def: r.titleDefault || "" });
+      const me = (r.mentors || []).find(m => m.mentorId === data.mentorId);
+      if (me && d.honorific === undefined) setD(o => Object.assign({ honorific: me.honorific || "" }, o));
+    }).catch(() => {});
+    /* eslint-disable-next-line */
+  }, []);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
   const save = async (e) => {
     e.preventDefault(); setBusy(true);
     try { await NGGApi.admin.mentors.upsert(d); onSaved(); }
-    catch (e) { toast.error(e.code || e.message); }
+    catch (e) { toast.error(e.code === "bad_title" ? "Choose a title from the list." : e.code === "email_taken" ? "Another active mentor already uses that email." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   return (
@@ -4040,6 +4534,9 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
         </div>
         <div className="admin-fields">
           <Field label="Full name" value={d.fullName||""} onChange={v => set("fullName", v)} required/>
+          {/* How a child addresses them: title and surname, never the first name. */}
+          {titles && titles.list.length > 0 && <FieldSelect label={"Title — children see “" + (d.honorific || titles.def) + " " + ((d.fullName || "").trim().split(/\s+/).pop() || "…") + "”"}
+            value={d.honorific || ""} onChange={v => set("honorific", v)} options={[{ value: "", label: "None (" + titles.def + ")" }].concat(titles.list.map(t => ({ value: t, label: t })))}/>}
           <Field label="Email" value={d.email||""} onChange={v => set("email", v)} required type="email"/>
           <Field label="Phone" value={d.phone||""} onChange={v => set("phone", v)}/>
           <Field label="Tracks (comma separated)" value={d.tracks||""} onChange={v => set("tracks", v)} placeholder="Music, Tech, Leadership"/>
@@ -4052,6 +4549,10 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
               existed. */}
           <FieldSelect label="Supervises" value={d.programme||"summer"} onChange={v => set("programme", v)}
             options={[{ value: "summer", label: "Summer School" }, { value: "ngg", label: "NGG Club" }, { value: "both", label: "Both programmes" }]}/>
+          {/* Lead or not is set here, so a lead can be stepped down without re-promoting them. */}
+          <FieldSelect label="Role" value={d.rank||"mentor"} onChange={v => set("rank", v)}
+            options={[{ value: "mentor", label: "Mentor" }, { value: "lead", label: "Lead mentor (runs the centre's mentors)" }, { value: "peer", label: "Peer mentor (supports a mentor; cannot approve)" }]}/>
+          <Field label="Department (a course, to narrow who they see)" value={d.department||""} onChange={v => set("department", v)} placeholder="Leave empty to mentor across courses"/>
           <FieldSelect label="Status" value={d.status||"pending-checks"} onChange={v => set("status", v)} options={["active","pending-checks","on-break","retired"]}/>
           <Field label="Max mentees" value={d.maxMentees||"8"} onChange={v => set("maxMentees", v)} type="number"/>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
@@ -4327,12 +4828,14 @@ function AdminMissionQueue() {
       </div>
       {!subs.length && <p className="admin-hint" style={{ margin: "8px 0 0" }}>Nothing waiting — proof-requiring submissions land here for a mentor or admin to verify.</p>}
       {subs.map(s => (
-        <div key={s.memberId + "/" + s.missionId} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--line-200, #e6e8ee)", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
+        <div key={s.memberId + "/" + s.missionId} className="admin-proof-row">
+          <div>
             <div style={{ fontWeight: 700 }}>{s.fullName || s.memberId} <span className="mono" style={{ color: "var(--ink-500)", fontWeight: 400 }}>· {s.centre || ""}</span></div>
             <div style={{ fontSize: 13, color: "var(--ink-700)" }}>Wk {s.week} · {s.title} <span className="mono">+{s.xp} XP</span></div>
             {s.note ? <div style={{ fontSize: 12.5, color: "var(--ink-500)", marginTop: 2 }}>“{s.note}”</div> : null}
-            {s.proofUrl ? <a href={s.proofUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>View proof ↗</a> : null}
+            {/* A link only when the proof IS a link; a child's typed answer is shown as their words (it was opened as a broken address). */}
+            {s.proofUrl && /^https?:\/\//i.test(String(s.proofUrl).trim()) ? <a href={s.proofUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>View proof ↗</a>
+              : s.proofUrl ? <div className="admin-proof-text">{s.proofUrl}</div> : null}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => act(s, false)}>Return</button>
@@ -5300,14 +5803,14 @@ function AdminAssessment() {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "0 0 14px" }}>
             {["All"].concat(Array.from(new Set((cat || []).map(c => c.family)))).map(f => (
               <button key={f} className={"chip" + (catFam === f ? " is-active" : "")} onClick={() => setCatFam(f)}
-                style={{ cursor: "pointer", border: "1px solid var(--line,#e5e8ee)", background: catFam === f ? "var(--ink-900,#0a1130)" : "#fff", color: catFam === f ? "#fff" : "inherit" }}>{f}</button>
+                style={{ cursor: "pointer", border: "var(--rs-border-112, 1px solid var(--line,#e5e8ee))", background: catFam === f ? "var(--ink-900,#0a1130)" : "#fff", color: catFam === f ? "#fff" : "inherit" }}>{f}</button>
             ))}
           </div>
           {cat === null ? <div className="admin-empty">Loading…</div>
             : cat.length === 0 ? <div className="admin-empty">The catalogue is empty.</div>
             : <div style={{ display: "grid", gap: 12 }}>
               {cat.filter(c => catFam === "All" || c.family === catFam).map(c => (
-                <div key={c.key} className="admin-card" style={{ padding: 16, border: "1px solid var(--line,#e5e8ee)", borderRadius: 12, background: "#fff" }}>
+                <div key={c.key} className="admin-card" style={{ padding: 16, border: "var(--rs-border-112, 1px solid var(--line,#e5e8ee))", borderRadius: 12, background: "#fff" }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                     {!c.adopted && <input type="checkbox" checked={!!picked[c.key]} aria-label={"Adopt " + c.name}
                       style={{ marginTop: 4 }}
@@ -6696,6 +7199,10 @@ function AdminTournamentBracket({ tournamentId, onBack }) {
 }
 
 function AdminCommunity() {
+  const auth = typeof useAuth === "function" ? useAuth() : {};
+  /* Safeguarding cases are for trained leads (the `safeguarding` capability),
+     not everyone who edits the feed; the server refuses the rest. */
+  const canSg = typeof auth.hasCap === "function" && auth.hasCap("safeguarding");
   const [tab, setTab] = React.useState("moderation");
   const [pending, setPending] = React.useState(null);
   const [mode, setMode] = React.useState("");
@@ -6715,10 +7222,11 @@ function AdminCommunity() {
       <div className="admin-filters">
         <button className={"btn btn-sm " + (tab === "moderation" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("moderation")}>Moderation</button>
         <button className={"btn btn-sm " + (tab === "channels" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("channels")}>Channels</button>
-        <button className={"btn btn-sm " + (tab === "safeguarding" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("safeguarding")}>
+        {canSg && <button className={"btn btn-sm " + (tab === "safeguarding" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("safeguarding")}>
           Safeguarding{safeguarding > 0 ? " · " + safeguarding : ""}
-        </button>
+        </button>}
       </div>
+      {!canSg && safeguarding > 0 && <p className="admin-hint">{safeguarding} safeguarding {safeguarding === 1 ? "case is" : "cases are"} open. Only trained safeguarding leads can open them; a super admin can grant that.</p>}
       {tab === "moderation" && <AdminCommunityModeration mode={mode} onChanged={setMode}/>}
       {tab === "moderation" ? <AdminCommunityQueue onChange={loadPending}/>
         : tab === "safeguarding" ? <AdminCommunitySafeguarding onChange={loadPending}/>
@@ -7028,7 +7536,7 @@ function AdminOps() {
     <div className="admin-tile" style={{ cursor: "default" }}>
       {/* Never colour alone: a red dot and a green dot are the same dot to
           about one man in twelve, and this is the screen you read in a hurry. */}
-      <div className="admin-tile-n" style={{ fontSize: 22, color: ok ? "var(--lime-ink)" : "var(--coral, #c0341a)" }}>{ok ? "✓" : "✕"}</div>
+      <div className="admin-tile-n" style={{ fontSize: "var(--rs-fsize-1, 22px)", color: ok ? "var(--lime-ink)" : "var(--coral, #c0341a)" }}>{ok ? "✓" : "✕"}</div>
       <div className="admin-tile-l">{label}</div>
       <div className="mono admin-cell-sub">{ok ? "ok" : detail || "failing"}</div>
     </div>
@@ -7894,181 +8402,7 @@ function AdminAnchor() {
   );
 }
 
-// ============================================================================
-// Assignments — publish work, collect submissions, grade with feedback.
-// ============================================================================
-
-function AdminAssignments() {
-  const [list, setList] = React.useState(null);
-  const [editing, setEditing] = React.useState(null);
-  const [grading, setGrading] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  const load = () => NGGApi.admin.assignments.list()
-    .then(r => { setList(r.assignments || []); setErr(""); })
-    .catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); }, []);
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Assignments</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New assignment</button>
-      </div>
-      {err ? <div className="admin-empty">Couldn't load assignments: {err}</div> :
-        list === null ? <div className="dash-spinner"/> :
-        list.length === 0 ? <div className="admin-empty">No assignments yet. Publish one to send it to members.</div> :
-        <div className="admin-assign-list">
-          {list.map(a => (
-            <div key={a.assignmentId} className="admin-assign-row">
-              <button className="admin-assign-main" onClick={() => setEditing(a)}>
-                <div className="admin-assign-title">{a.title}</div>
-                <div className="mono admin-assign-meta">
-                  {(a.track || "All tracks")} · {(a.centre || "All centres")}
-                  {a.dueAt ? " · due " + fmtDate(a.dueAt) : ""} · {a.points} pts
-                </div>
-              </button>
-              <div className="admin-assign-side">
-                <span className={"chip status-" + (a.status || "draft")}>{a.status || "draft"}</span>
-                <button className="btn btn-ghost btn-sm" onClick={() => setGrading(a)}>
-                  {a.submissionCount} submitted{a.submissionCount ? " · " + a.gradedCount + " graded" : ""} →
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      }
-      {editing && <AdminAssignmentEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
-      {grading && <AdminSubmissions assignment={grading} onClose={() => { setGrading(null); load(); }}/>}
-    </div>
-  );
-}
-
-function AdminAssignmentEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
-  const [d, setD] = React.useState(Object.assign({ status:"draft", proof:"text", points:10, centre:"", track:"" }, data));
-  const [busy, setBusy] = React.useState(false);
-  const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
-  const save = async (e) => {
-    e.preventDefault(); setBusy(true);
-    try { await NGGApi.admin.assignments.upsert(d); onSaved(); }
-    catch (e) { toast.error(e.code || e.message); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
-      <form className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()} onSubmit={save}>
-        <div className="admin-drawer-head">
-          <h3 {...headingProps}>{d.assignmentId ? "Edit assignment" : "New assignment"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
-        </div>
-        <div className="admin-fields">
-          <Field label="Title" value={d.title||""} onChange={v => set("title", v)} required/>
-          <FieldTextarea label="Instructions" value={d.instructions||""} onChange={v => set("instructions", v)} rows={6}/>
-          <div className="admin-fields-row">
-            <FieldCentre value={d.centre} onChange={v => set("centre", v)} extra={["Both"]} blank="Any centre"/>
-            <Field label="Track (blank = all)" value={d.track||""} onChange={v => set("track", v)} placeholder="Tech, Music…"/>
-            <Field label="Week" value={d.week||""} onChange={v => set("week", Number(v) || "")} type="number"/>
-          </div>
-          <div className="admin-fields-row">
-            <Field label="Due" value={d.dueAt||""} onChange={v => set("dueAt", v)} type="datetime-local"/>
-            <Field label="Points" value={d.points||"10"} onChange={v => set("points", Number(v))} type="number"/>
-            <FieldSelect label="Submission type" value={d.proof||"text"} onChange={v => set("proof", v)} options={["text","link","photo","audio","video","file"]}/>
-          </div>
-          <FieldUpload label="Attachment / brief (optional)" value={d.attachmentUrl||""} onChange={v => set("attachmentUrl", v)} kind="cover" accept="*/*" placeholder="Paste a URL or upload a brief →"/>
-          <div className="admin-fields-row">
-            <FieldSelect label="Status" value={d.status} onChange={v => set("status", v)} options={["draft","published","archived"]}/>
-            {d.status === "published" && !d.assignmentId && <FieldCheckbox label="Email members on publish" value={d.notify} onChange={v => set("notify", v)}/>}
-          </div>
-        </div>
-        <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
-          <button className="btn btn-primary" disabled={busy || !d.title}>{busy ? "Saving…" : "Save"}</button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function AdminSubmissions({ assignment, onClose }) {
-  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose, false);
-  const [data, setData] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  const load = () => { setErr(""); return NGGApi.admin.assignments.submissions(assignment.assignmentId)
-    .then(setData).catch(e => { setErr(e.code || e.message || "load_failed"); }); };
-  React.useEffect(() => { load(); }, []);
-  return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
-      <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="admin-drawer-head">
-          <h3 {...headingProps}>Submissions · {assignment.title}</h3>
-          <button type="button" className="admin-drawer-close" onClick={close} aria-label="Close">✕</button>
-        </div>
-        {err ? <div className="admin-empty">Couldn't load submissions. <button className="btn btn-ghost btn-sm" onClick={() => { setData(null); load(); }}>Retry</button></div> :
-          !data ? <div className="dash-spinner"/> :
-          data.submissions.length === 0 ? <div className="admin-empty">No submissions yet.</div> :
-          <div className="admin-sub-list">
-            {data.submissions.map(s => (
-              <SubmissionRow key={s.submissionId} s={s} maxPoints={data.assignment.points} onGraded={load}/>
-            ))}
-          </div>
-        }
-      </div>
-    </div>
-  );
-}
-
-function SubmissionRow({ s, maxPoints, onGraded }) {
-  const [grade, setGrade] = React.useState(s.grade == null ? "" : String(s.grade));
-  const [feedback, setFeedback] = React.useState(s.feedback || "");
-  const [email, setEmail] = React.useState(true);
-  const [busy, setBusy] = React.useState(false);
-  const submit = async () => {
-    setBusy(true);
-    try {
-      await NGGApi.admin.assignments.grade({ submissionId: s.submissionId, grade: Number(grade) || 0, feedback, email });
-      toast.success("Graded", s.memberName);
-      onGraded();
-    } catch (e) { toast.error(e.code || e.message); }
-    finally { setBusy(false); }
-  };
-  const returnForRevision = async () => {
-    setBusy(true);
-    try {
-      await NGGApi.admin.assignments.returnForRevision(s.submissionId, feedback);
-      toast.success("Returned for revision — they can resubmit.", s.memberName);
-      onGraded();
-    } catch (e) { toast.error(e.code || e.message); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div className="admin-sub-row">
-      <div className="admin-sub-head">
-        <div>
-          <div className="admin-sub-name">{s.memberName} <span className="mono admin-sub-id">{s.memberId}</span></div>
-          <div className="mono admin-sub-meta">{s.centre || ""} · submitted {fmtDate(s.submittedAt)}</div>
-        </div>
-        <span className={"chip status-" + (s.status === "graded" ? "published" : "draft")}>{s.status}</span>
-      </div>
-      {s.text && <div className="admin-sub-text">{s.text}</div>}
-      {s.fileUrl && <a className="admin-sub-file" href={s.fileUrl} target="_blank" rel="noopener noreferrer">↗ Open attachment</a>}
-      <div className="admin-sub-grade">
-        <label className="admin-field admin-sub-grade-num"><span>Grade{maxPoints ? " / " + maxPoints : ""}</span>
-          <input type="number" className="admin-input" value={grade} onChange={e => setGrade(e.target.value)} max={maxPoints || undefined} min={0}/>
-        </label>
-        <label className="admin-field admin-sub-grade-fb"><span>Feedback</span>
-          <input type="text" className="admin-input" value={feedback} onChange={e => setFeedback(e.target.value)} placeholder="What was strong, what to improve…"/>
-        </label>
-        <label className="admin-sub-email"><input type="checkbox" checked={email} onChange={e => setEmail(e.target.checked)}/> email</label>
-        <button className="btn btn-ghost btn-sm" onClick={returnForRevision} disabled={busy} title="Send back for a revision (unlocks resubmission)">Return</button>
-        <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy || grade === ""}>{busy ? "…" : "Grade"}</button>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// Member 360° detail — profile, mentor, progress, journal, submissions, status
-// ============================================================================
-
+// Assignments live in one desk shared with the instructor portal: src/modules/learn/assign-desk.jsx.
 
 /* ── What has happened to this member ─────────────────────────────────────
  *
@@ -8299,12 +8633,12 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
                     </div>
                   </div>
                 : <div className="admin-detail-actions" style={{ alignItems: "center", flexWrap: "wrap" }}>
-                    <select className="admin-select" value={ngvRole} disabled={busy || m.type !== "NGG" || m.status !== "active"} onChange={(e) => setNgvRole(e.target.value)} aria-label="Volunteer role">
+                    <select className="admin-select" value={ngvRole} disabled={busy || !memberIsNgg(m) || m.status !== "active"} onChange={(e) => setNgvRole(e.target.value)} aria-label="Volunteer role">
                       <option value="volunteer">Volunteer</option>
                       <option value="instructor">Instructor</option>
                       <option value="mentor">Mentor</option>
                     </select>
-                    <button className="btn btn-ghost btn-sm" disabled={busy || m.type !== "NGG" || m.status !== "active"} onClick={promoteNgv}>Promote to NGV</button>
+                    <button className="btn btn-ghost btn-sm" disabled={busy || !memberIsNgg(m) || m.status !== "active"} onClick={promoteNgv}>Promote to NGV</button>
                     <span className="admin-hint" style={{ margin: 0 }}>Advances an active NGG member into the volunteer tier, provisions their NGV ID, and emails it to them.</span>
                   </div>}
             </div>
@@ -8844,7 +9178,7 @@ function FeeEntryForm({ kind, account, busy, onCancel, onSubmit }) {
           </div>
         </label>
         {isPay && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 12, marginBottom: 12 }}>
             <label>
               <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>How it came</span>
               <select className="admin-input" value={f.method} onChange={e => set("method", e.target.value)} style={{ marginTop: 6 }}>
@@ -9437,7 +9771,7 @@ function AdminFees() {
             <div data-fee-microcopy="1" style={{ fontSize: 11, color: "var(--ink-400)", marginTop: 4, fontStyle: "italic" }}>
               Written off in full once the MOU is accomplished.
             </div>)}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 14 }}>
             {num("trainingMonths", "Training months", "", null, { min: B.phaseMin, max: B.phaseMax })}
             {num("serviceMonths", "Service months", "", null, { min: B.phaseMin, max: B.phaseMax })}
           </div>
@@ -9468,7 +9802,7 @@ function AdminFees() {
           <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 10 }}>
             Keeping up with inflation
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 14 }}>
             {num("upratePct", "Raise amounts by", "Per cent. 0 switches it off. At most " + B.uprateMaxPct + "% at a time.",
               null, { min: 0, max: B.uprateMaxPct })}
             {num("uprateEveryMonths", "No more often than every",
@@ -9739,8 +10073,8 @@ function AdminStatusPages() {
               <button type="button" onClick={() => set(b.key, "published", !on)}
                 style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 0", padding: "10px 12px", borderRadius: 12, width: "100%", cursor: "pointer",
                   border: "1px solid " + (on ? "rgba(22,163,74,.4)" : "var(--line-cool,#e5e8ee)"), background: on ? "rgba(22,163,74,.08)" : "var(--cream-50,#faf7ef)" }}>
-                <span style={{ width: 40, height: 22, borderRadius: 99, background: on ? "#16a34a" : "#c4cad8", position: "relative", flex: "none", transition: "background .15s" }}>
-                  <span style={{ position: "absolute", top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .15s" }}/>
+                <span style={{ width: 40, height: 22, borderRadius: 99, background: on ? "#16a34a" : "#c4cad8", position: "relative", flex: "none", transition: "background calc(.15s * var(--motion, 1))" }}>
+                  <span style={{ position: "absolute", top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left calc(.15s * var(--motion, 1))" }}/>
                 </span>
                 <span style={{ fontWeight: 700, fontSize: 14, color: on ? "#15803d" : "var(--ink-500)" }}>{on ? "Published — live to the public" : "Unpublished — hidden with an “offline” notice"}</span>
               </button>
@@ -9771,7 +10105,7 @@ function AdminStatusPages() {
                 </StatusGroup>
 
                 <StatusGroup label="KPI tiles">
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 6 }}>
                     {Object.keys(c.kpis || {}).map(kk => (
                       <label key={kk} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
                         <input type="checkbox" checked={c.kpis[kk] !== false} onChange={e => setSub(b.key, "kpis", kk, e.target.checked)}/> {STATUS_KPI_LABELS[kk] || kk}
@@ -9798,7 +10132,7 @@ function AdminStatusPages() {
 
                 <StatusGroup label={"Centres shown" + (shownAll ? " · all" : " · " + c.centres.length + " selected")}>
                   {meta.centres.length === 0 ? <div style={{ fontSize: 12, color: "var(--ink-400)" }}>No active centres yet.</div>
-                    : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                    : <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 6 }}>
                       {meta.centres.map(ct => (
                         <label key={ct.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
                           <input type="checkbox" checked={shownAll || c.centres.includes(ct.name)} onChange={() => toggleCentre(b.key, ct.name)}/>
@@ -10018,69 +10352,191 @@ function VolunteerNeedsEditor() {
 
 /* Edit an active volunteer's data — name, contact, role, centre, faculty,
    courses, visibility consent, status, photo. Mirrors admin.volunteers.update. */
-function VolunteerEditor({ v, onSaved, onDelete }) {
-  const centreOpts = useCentreOptions();
-  const [f, setF] = React.useState({
-    fullName: v.fullName || "", firstName: v.firstName || "", lastName: v.lastName || "",
-    email: v.email || "", phone: v.phone || "", role: v.role || "mentor",
-    centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join(", "),
-    visibilityConsent: !!v.visibilityConsent, status: v.status || "active", photoUrl: v.photoUrl || "",
-    dob: v.dob || "", programme: v.programme || "summer",
-  });
+/**
+ * Summer School → NGG for one volunteer. The centre list is the open NGG
+ * centres, nearest to where their Summer School met; Summer venues are never
+ * offered. "Keep serving Summer School" makes them both. Their mentor record,
+ * if they have one, moves with them (admin_volunteer_promote_ngg).
+ */
+function VolunteerNggMove({ v, onDone }) {
+  const [opts, setOpts] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [centre, setCentre] = React.useState("");
+  const [keep, setKeep] = React.useState(true);
+  const [newCard, setNewCard] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
-  const set = (k, val) => setF(x => ({ ...x, [k]: val }));
-  const save = async () => {
-    if ((f.firstName.trim() + f.lastName.trim()).length < 2) { toast.error("Enter a first and last name."); return; }
+  const load = () => { setErr(""); NGGApi.admin.volunteers.nggOptions(v.volunteerId).then(r => { setOpts(r); setCentre(r.suggested || ""); }).catch(e => setErr(e.code || e.message)); };
+  React.useEffect(load, [v.volunteerId]);
+  const go = async () => {
     setBusy(true);
     try {
-      await NGGApi.admin.volunteers.update(v.volunteerId, {
-        ...f, courses: f.courses.split(",").map(c => c.trim()).filter(Boolean), visibilityConsent: f.visibilityConsent ? 1 : 0,
-      });
-      toast.success("Volunteer saved."); onSaved();
-    } catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : e.code === "bad_role" ? "Pick a valid role." : e.code === "bad_dob" ? "That date of birth isn't a real date in the past." : (e.code || e.message)); }
-    finally { setBusy(false); }
+      const r = await NGGApi.admin.volunteers.promoteNgg(v.volunteerId, centre, keep, newCard);
+      toast.success(v.fullName + " now serves " + (r.programme === "both" ? "NGG and Summer School" : "NGG") + " at " + r.centre + (r.mentorRecords ? " · mentor record moved too" : "")
+        + ". " + (r.card && r.card.keeps ? "Their card scans at NGG desks from now on" + (r.card.expiresAt ? ", until " + r.card.expiresAt : "") + "." : "")
+        + (r.queued ? " An NGG-style card is queued in the ID Card Studio." : ""));
+      onDone();
+    } catch (e) { toast.error(({ invalid_centre: "Choose one of the open NGG centres.", centre_required: "Choose the NGG centre they will serve.", already_ngg: "They already serve NGG." })[e.code] || e.message); setBusy(false); }
   };
-  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
-  const fld = (key, label, opts = {}) => (
-    <div style={{ flex: "1 1 180px", minWidth: opts.min || 150 }}>
-      <span style={lbl}>{label}</span>
-      <input className="admin-input" style={{ width: "100%" }} type={opts.type || "text"} value={f[key]} onChange={e => set(key, e.target.value)} placeholder={opts.ph || ""}/>
+  if (err) return <div className="vol-ngg"><p role="alert">Couldn’t load the NGG centres ({err}).</p><button className="btn btn-ghost btn-sm" onClick={load}>Try again</button></div>;
+  if (!opts) return <div className="vol-ngg"><p>Loading the NGG centres…</p></div>;
+  return (
+    <div className="vol-ngg">
+      <p className="vol-ngg-lead">Bring <b>{v.fullName}</b> from Summer School into the NGG Club. Their ID card stays the same; it keeps working all year.</p>
+      {!opts.centres.length ? <p role="alert">There are no open NGG centres you can place them at. Add one in Members → Centres.</p> : <>
+        <fieldset className="vol-ngg-centres">
+          <legend>NGG centre{opts.summerCentre ? " · nearest to " + opts.summerCentre + " first" : ""}</legend>
+          {opts.centres.map((c, i) => <label key={c.name} className="vol-ngg-opt">
+            <input type="radio" name={"ngg-" + v.volunteerId} checked={centre === c.name} onChange={() => setCentre(c.name)}/>
+            {c.name}{c.minutes != null ? " · ~" + c.minutes + " min drive" + (c.roadKm != null ? ", " + c.roadKm + " km by road" : "") : c.km != null ? " · " + c.km + " km in a straight line" : ""}{i === 0 && opts.suggested === c.name ? " · suggested" : ""}
+          </label>)}
+        </fieldset>
+        <label className="vol-ngg-opt"><input type="checkbox" checked={keep} onChange={e => setKeep(e.target.checked)}/> Keep serving Summer School too</label>
+        <label className="vol-ngg-opt"><input type="checkbox" checked={newCard} onChange={e => setNewCard(e.target.checked)}/> Also print them an NGG-style card (their current card keeps working)</label>
+        <div className="vol-ngg-acts">
+          <button className="btn btn-primary btn-sm" disabled={busy || !centre} onClick={go}>{busy ? "Moving…" : "Bring into NGG"}</button>
+          <button className="btn btn-ghost btn-sm" onClick={onDone} disabled={busy}>Cancel</button>
+        </div>
+      </>}
     </div>
   );
+}
+
+/* Edit a volunteer's details — the Control Room's own form (ctx.form), the
+   same layer every other record in the Control Room edits through.
+
+   What used to go wrong, each now closed:
+   · it sent EVERY field back, so anything the roster row did not carry was
+     written over: the photo (the list had no photoUrl) was wiped on every
+     save. Now only the fields that changed are sent.
+   · it required a first and last name even on a record that only ever had a
+     full name, and kept three name boxes that could disagree. Now: first and
+     last name, split from the full name when the record has only that, and
+     the server rebuilds the full name from them.
+   · an empty email was refused, so a volunteer who signs in with an ID card
+     (and has no email) could not be edited at all. Blank is allowed now.
+   · a blank programme was sent as "summer", quietly moving NGG volunteers
+     (and their card's expiry) to Summer School. Programme is a field now. */
+const VOL_ROLE_OPTS = [["mentor", "Mentor"], ["instructor", "Instructor"], ["admin", "Admin / Ops"]];
+const VOL_PROG_OPTS = [["summer", "Summer School"], ["ngg", "NGG Club"], ["both", "Both"]];
+const VOL_STATUS_OPTS = [["active", "Active"], ["inactive", "Inactive"], ["archived", "Archived"]];
+const VOL_ERR_FIELD = { bad_title: ["honorific", "Choose a title from the list."], bad_email: ["email", "That email isn’t valid."], bad_dob: ["dob", "That date of birth isn’t a real date in the past."],
+  bad_name: ["firstName", "Enter a first and last name."], bad_role: ["role", "Pick a role."], bad_programme: ["programme", "Pick a programme."],
+  out_of_scope: ["centre", "That centre is outside the centres you manage."] };
+function volunteerNameParts(v) {
+  const first = String(v.firstName || "").trim(), last = String(v.lastName || "").trim();
+  if (first || last) return [first, last];
+  const w = String(v.fullName || "").trim().split(/\s+/).filter(Boolean);
+  return [w[0] || "", w.slice(1).join(" ")];
+}
+function volunteerEditForm(v, centres, onSaved, titles) {
+  const [first, last] = volunteerNameParts(v);
+  /* The title is how a child addresses them ("Mrs Adeyemi"); the server's
+     list is the only list, and blank reads as its default. */
+  const tl = (titles && titles.list) || [];
+  const init = { honorific: v.honorific || "", firstName: first, lastName: last, email: v.email || "", phone: v.phone || "", role: VOL_ROLE_OPTS.some(o => o[0] === v.role) ? v.role : "mentor",
+    programme: v.programme || "summer", status: v.status || "active", centre: v.centre || "", faculty: v.faculty || "",
+    courses: (v.courses || []).join(", "), dob: /^\d{4}-\d{2}-\d{2}/.test(v.dob || "") ? String(v.dob).slice(0, 10) : "", visibilityConsent: !!Number(v.visibilityConsent) };
+  const centreOpts = (v.centre && !centres.includes(v.centre) ? [v.centre].concat(centres) : centres).map(c => [c, c]);
+  return {
+    title: "Edit " + (v.fullName || "volunteer"),
+    intro: "Only what you change is saved. The photo, portal access and profile are under More.",
+    submit: "Save",
+    values: init,
+    fields: [
+      { id: "honorific", l: "Title", type: "select", opts: tl.map(t => [t, t]), ph: "None (" + ((titles && titles.def) || "Coach") + ")",
+        help: "Children and families see them as the title and surname — " + (v.honorific || (titles && titles.def) || "Coach") + " " + (last || "…") + " — never the first name." },
+      { id: "firstName", l: "First name", req: true, max: 80, ac: "given-name" },
+      { id: "lastName", l: "Last name", req: true, max: 80, ac: "family-name" },
+      { id: "email", l: "Email", type: "email", email: true, max: 160, help: "Leave blank for someone who signs in with their ID card." },
+      { id: "phone", l: "Phone", type: "tel", max: 48, im: "tel" },
+      { id: "role", l: "Role", type: "chips", req: true, opts: VOL_ROLE_OPTS },
+      { id: "programme", l: "Programme", type: "chips", req: true, opts: VOL_PROG_OPTS, help: "Moving between Summer School and NGG changes when their card stops opening the door." },
+      { id: "centre", l: "Centre", type: "select", opts: centreOpts, ph: "No centre" },
+      { id: "faculty", l: "Faculty", max: 80 },
+      { id: "courses", l: "Courses", max: 600, help: "What they teach, separated by commas. For NGG this is their class, so each must be a course in the catalogue; spelling and capitals are fixed for you." },
+      { id: "dob", l: "Date of birth", type: "date" },
+      { id: "status", l: "Status", type: "chips", req: true, opts: VOL_STATUS_OPTS },
+      { id: "visibilityConsent", l: "Consented to be featured (photo and first name) on the public site and boards", type: "switch" },
+    ],
+    onSubmit: async vals => {
+      const out = {};
+      Object.keys(init).forEach(k => {
+        const a = typeof init[k] === "string" ? init[k].trim() : init[k], b = typeof vals[k] === "string" ? vals[k].trim() : vals[k];
+        if (a !== b) out[k] = b;
+      });
+      /* The name is one thing: change either part and both are sent, so a
+         record that only ever had a full name gets both parts at once. */
+      if (out.firstName !== undefined || out.lastName !== undefined) { out.firstName = vals.firstName.trim(); out.lastName = vals.lastName.trim(); }
+      if (out.courses !== undefined) out.courses = out.courses.split(",").map(c => c.trim()).filter(Boolean);
+      if (out.visibilityConsent !== undefined) out.visibilityConsent = out.visibilityConsent ? 1 : 0;
+      if (!Object.keys(out).length) return { unchanged: true };
+      try { await NGGApi.admin.volunteers.update(v.volunteerId, out); }
+      catch (e) {
+        if (e.code === "unknown_course") return { fieldErrors: { courses: e.detail || "One of those is not a course in the catalogue." } };
+        const fe = VOL_ERR_FIELD[e.code]; if (fe) return { fieldErrors: { [fe[0]]: fe[1] } }; throw e;
+      }
+      onSaved();
+      return { saved: Object.keys(out).length };
+    },
+    done: (vals, r) => r && r.unchanged ? "Nothing changed." : (vals.firstName.trim() + " " + vals.lastName.trim()).trim() + " saved.",
+  };
+}
+
+/* What else this volunteer is: a mentor as well (one person, both portals;
+   admin.mentor.promote / demote), and whether the online Instructor Academy is
+   waived because they did it in person (admin.volunteers.academy). */
+function VolunteerRoles({ v, onSaved }) {
+  const [busy, setBusy] = React.useState("");
+  const isMentor = !!v.mentorId, cleared = !!v.academyClearedAt;
+  const run = async (key, fn, ok) => {
+    setBusy(key);
+    try { await fn(); toast.success(ok); onSaved(); }
+    catch (e) { toast.error(e.code === "own_account" ? "You can’t change this on your own record." : e.code === "out_of_scope" ? "That volunteer’s centre is outside the centres you manage." : "Not saved (" + (e.code || e.message) + "). Try again."); }
+    finally { setBusy(""); }
+  };
   return (
-    <div style={{ padding: "16px 4px", display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div><span style={lbl}>Photo</span><PhotoCapture value={f.photoUrl} onChange={val => set("photoUrl", val)} size={80} label="Volunteer photo"/></div>
-        <div style={{ flex: 1, minWidth: 260, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-          {fld("fullName", "Full name", { min: 200 })}
-          {fld("email", "Email", { type: "email", min: 200 })}
-          {fld("phone", "Phone")}
-          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Role</span><select className="admin-select" value={f.role} onChange={e => set("role", e.target.value)}><option value="admin">Admin / Ops</option><option value="mentor">Mentor</option><option value="instructor">Instructor</option></select></div>
-          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option><option value="archived">Archived</option></select></div>
-        </div>
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-        {fld("firstName", "First name")}
-        {fld("lastName", "Last name")}
-        <div style={{ flex: "1 1 180px", minWidth: 150 }}><span style={lbl}>Centre</span>
-          <select className="admin-input" style={{ width: "100%" }} value={f.centre || ""} onChange={e => set("centre", e.target.value)}>
-            <option value="">— select —</option>
-            {((f.centre && !centreOpts.includes(f.centre)) ? [f.centre, ...centreOpts] : centreOpts).map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        {fld("faculty", "Faculty")}
-        {fld("dob", "Date of birth", { type: "date", min: 160 })}
-        {fld("courses", "Courses (comma-separated)", { min: 220 })}
-      </div>
-      <label style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 13.5, fontWeight: 600 }}>
-        <input type="checkbox" checked={f.visibilityConsent} onChange={e => set("visibilityConsent", e.target.checked)}/>
-        Consented to be featured (photo + first name) on the public site &amp; boards
+    <div className="vol-roles">
+      <span className="admin-field-label">Also</span>
+      <label className="vol-role-row">
+        <input type="checkbox" checked={isMentor} disabled={!!busy} onChange={() => run("mentor",
+          () => isMentor ? NGGApi.admin.mentor.demote(v.mentorId) : NGGApi.admin.mentor.promote(v.volunteerId, { rank: "mentor", programme: v.programme === "summer" ? "summer" : "ngg", centre: v.centre || "" }),
+          isMentor ? (v.fullName || "They") + " is no longer a mentor. Their instructor role is unchanged." : (v.fullName || "They") + " is now a mentor too: the Mentor Portal opens for them, and pair mentees in Mentors & volunteers → Pairings.")}/>
+        <span><b>A mentor as well</b><small>{isMentor ? "On the mentor roster" + (v.role === "instructor" ? " and teaching: both portals open for them." : ".") : "Adds them to the mentor roster without changing their role here."}</small></span>
       </label>
+      {v.role === "instructor" && (
+        <label className="vol-role-row">
+          <input type="checkbox" checked={cleared} disabled={!!busy} onChange={() => run("academy", () => NGGApi.admin.volunteers.academy(v.volunteerId, !cleared),
+            !cleared ? "Academy marked as done in person. Their portal opens without the online modules." : "Academy waiver removed. They complete the online modules again.")}/>
+          <span><b>Skip the online Academy</b><small>{cleared ? "Done in person, recorded " + String(v.academyClearedAt).slice(0, 10) + "." : "Tick when they trained in person or need none. The portal stops asking for the modules."}</small></span>
+        </label>
+      )}
+      {busy && <span className="admin-hint" role="status">Saving…</span>}
+    </div>
+  );
+}
+
+/* The rest of a volunteer's record: the photo (saved on its own, the moment
+   it is taken), their public profile, and delete. Portal access sits below. */
+function VolunteerMore({ v, onSaved, onDelete }) {
+  const [photo, setPhoto] = React.useState(v.photoUrl || "");
+  const [busy, setBusy] = React.useState(false);
+  const savePhoto = async val => {
+    const prev = photo; setPhoto(val); setBusy(true);
+    try { await NGGApi.admin.volunteers.update(v.volunteerId, { photoUrl: val || "" }); toast.success(val ? "Photo saved." : "Photo removed."); onSaved(); }
+    catch (e) { setPhoto(prev); toast.error("Couldn’t save the photo (" + (e.code || e.message) + "). Try again."); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="vol-more">
+      <div className="vol-more-photo">
+        <span className="admin-field-label">Photo</span>
+        <PhotoCapture value={photo} onChange={savePhoto} size={80} label={"Photo of " + (v.fullName || "the volunteer")}/>
+        {busy && <span className="admin-hint" role="status">Saving…</span>}
+      </div>
+      <VolunteerRoles v={v} onSaved={onSaved}/>
       <ProfileExtrasEditor subjectType="volunteer" subjectId={v.volunteerId}/>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save volunteer"}</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onSaved}>Cancel</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onDelete} style={{ color: "#b03535", marginLeft: "auto" }}>Delete volunteer</button>
+      <div className="vol-more-acts">
+        <button type="button" className="btn btn-ghost btn-sm vol-del" onClick={onDelete}>Delete volunteer</button>
       </div>
     </div>
   );
@@ -10133,7 +10589,8 @@ function VolunteerPortalAccess({ v, onSaved }) {
 
 const VOL_PROGRAMME_SHORT = { summer: "Summer", ngg: "NGG Club", both: "Club + Summer" };
 
-function AdminVolunteers() {
+function AdminVolunteers({ crCtx } = {}) {
+  const volCentres = useCentreOptions();
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState("");
@@ -10294,14 +10751,20 @@ function AdminVolunteers() {
                       </td>
                       <td className="mono" style={{ fontSize: 12 }}><a href={"/q/" + v.token} target="_blank" rel="noreferrer">/q/{(v.token || "").slice(0, 10)}…</a></td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === v.volunteerId ? "" : v.volunteerId)}>{editId === v.volunteerId ? "Close" : "Edit"}</button>
+                        {crCtx && <button className="btn btn-ghost btn-sm" onClick={() => crCtx.form(volunteerEditForm(v, volCentres, load, { list: data.titles, def: data.titleDefault }))}>Edit details</button>}
+                        <button className="btn btn-ghost btn-sm" aria-expanded={editId === v.volunteerId} onClick={() => setEditId(editId === v.volunteerId ? "" : v.volunteerId)}>{editId === v.volunteerId ? "Close" : "More"}</button>
+                        {(v.programme || "summer") === "summer" && v.status === "active" &&
+                          <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === "ngg:" + v.volunteerId ? "" : "ngg:" + v.volunteerId)}>{editId === "ngg:" + v.volunteerId ? "Close" : "Bring into NGG"}</button>}
                         {v.safeguarding === "cleared"
                           ? <button className="btn btn-ghost btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "pending")}>Un-clear</button>
                           : <button className="btn btn-primary btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "cleared")}>{busy === "s" + v.volunteerId ? "…" : "Mark screened"}</button>}
                       </td>
                     </tr>
+                    {editId === "ngg:" + v.volunteerId && <tr><td colSpan={8} className="vol-ngg-cell">
+                      <VolunteerNggMove v={v} onDone={() => { setEditId(""); load(); }}/>
+                    </td></tr>}
                     {editId === v.volunteerId && <tr><td colSpan={8} style={{ background: "rgba(12,20,50,0.03)" }}>
-                      <VolunteerEditor v={v} onSaved={() => { setEditId(""); load(); }} onDelete={() => removeVol(v)}/>
+                      <VolunteerMore v={v} onSaved={load} onDelete={() => removeVol(v)}/>
                       <VolunteerPortalAccess v={v} onSaved={load}/>
                     </td></tr>}
                     </React.Fragment>
@@ -11176,11 +11639,15 @@ function AdminCentres() {
                   : cac ? <span className="chip chip-cac-not" title="Not on CACENTRE's locations list. Retire it here, or add it in CACENTRE.">Not a CACENTRE location</span> : null}
                 <span className="chip" style={{ marginLeft: 8 }} title="Which programme's forms, desks and lists offer this centre">{centreProgrammes(c).length === 2 ? "NGG + Summer" : centreProgrammes(c)[0] === "ngg" ? "NGG Club only" : "Summer only"}</span>
                 {c.pageStatus === "published"
-                  ? <a className="chip chip-lime" href={"/centres/" + (c.slug || "")} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, textDecoration: "none" }}>page live ↗</a>
+                  ? <a className="chip chip-lime" href={"/centres/" + (c.slug || "")} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, textDecoration: "var(--rs-textdecoration-47, none)" }}>page live ↗</a>
                   : <span className="chip" style={{ marginLeft: 8, opacity: 0.7 }}>page draft</span>}
               </td>
               <td>{c.area || c.address ? <span style={{ lineHeight: 1.3 }}><b style={{ fontWeight: 600 }}>{c.area || "—"}</b>{c.address ? <><br/><span className="admin-cell-sub" style={{ fontSize: 12 }}>{c.address}</span></> : null}</span> : <span className="admin-cell-sub">—</span>}</td>
-              <td>{c.leadName ? <span className="chip chip-lime">{c.leadName}</span> : <span className="admin-cell-sub">—</span>}</td>
+              <td>
+                {centreProgrammes(c).indexOf("ngg") !== -1 && (c.leadName ? <span className="chip chip-lime" title="NGG centre lead">{c.leadName}</span> : <span className="admin-cell-sub">No NGG lead</span>)}
+                {centreProgrammes(c).length === 2 && <br/>}
+                {centreProgrammes(c).indexOf("summer") !== -1 && (c.summerLeadName ? <span className="chip" title="Summer School lead">Summer · {c.summerLeadName}</span> : <span className="admin-cell-sub">No Summer lead</span>)}
+              </td>
               {/* Two programmes, two numbers. The year-round roster first,
                   because this is the NGG directory. */}
               <td className="admin-num">{c.members ? fmtNum(c.members) : <span className="admin-cell-sub">0</span>}</td>
@@ -11235,6 +11702,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
     name: c.name || "", code: c.code || "", color: c.color || "#76B043",
     status: c.status || "active", capacity: c.capacity != null ? String(c.capacity) : "",
     address: c.address || "", area: c.area || "", leadVolunteerId: c.leadVolunteerId || "",
+    summerLeadVolunteerId: c.summerLeadVolunteerId || "",
     phone: c.phone || "", email: c.email || "", meetDays: c.meetDays || "", meetTime: c.meetTime || "", notes: c.notes || "",
     whatsappUrl: c.whatsappUrl || "",
     slug: c.slug || "", pageStatus: c.pageStatus || "draft",
@@ -11268,6 +11736,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
         centreId: c.centreId, name: f.name.trim(), code: f.code.trim().toUpperCase(), color: f.color,
         status: f.status, capacity: f.capacity === "" ? 0 : parseInt(f.capacity, 10) || 0,
         address: f.address, area: f.area, leadVolunteerId: f.leadVolunteerId,
+        summerLeadVolunteerId: f.summerLeadVolunteerId,
         phone: f.phone, email: f.email, meetDays: f.meetDays, meetTime: f.meetTime, notes: f.notes,
         whatsappUrl: f.whatsappUrl.trim(),
         slug: f.slug.trim(), pageStatus: f.pageStatus,
@@ -11318,8 +11787,18 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
           {field("area", "Area / city", { max: 120, ph: "e.g. Alimosho · Lagos" })}
           {field("address", "Street address", { max: 240, grow: true, min: 260, ph: "Building, street, landmark" })}
           <div style={{ flex: "1 1 240px", minWidth: 200 }}>
-            <span style={lbl}>Centre lead (volunteer)</span>
-            <select className="admin-select" style={{ width: "100%" }} value={f.leadVolunteerId} onChange={e => set("leadVolunteerId", e.target.value)}>
+            <span style={lbl}>NGG centre lead (volunteer)</span>
+            <select className="admin-select" style={{ width: "100%" }} value={f.leadVolunteerId} onChange={e => set("leadVolunteerId", e.target.value)}
+              disabled={f.programmes.indexOf("ngg") === -1} title={f.programmes.indexOf("ngg") === -1 ? "The NGG Club doesn't run here" : undefined}>
+              <option value="">— none —</option>
+              {leads.map(o => <option key={o.volunteerId} value={o.volunteerId}>{o.name}{o.role ? " · " + o.role : ""}{o.centre && o.centre !== c.name ? " (" + o.centre + ")" : ""}</option>)}
+            </select>
+          </div>
+          {/* Summer School names its own lead: a different person from the NGG lead. */}
+          <div style={{ flex: "1 1 240px", minWidth: 200 }}>
+            <span style={lbl}>Summer School lead (volunteer)</span>
+            <select className="admin-select" style={{ width: "100%" }} value={f.summerLeadVolunteerId} onChange={e => set("summerLeadVolunteerId", e.target.value)}
+              disabled={f.programmes.indexOf("summer") === -1} title={f.programmes.indexOf("summer") === -1 ? "Summer School doesn't run here" : undefined}>
               <option value="">— none —</option>
               {leads.map(o => <option key={o.volunteerId} value={o.volunteerId}>{o.name}{o.role ? " · " + o.role : ""}{o.centre && o.centre !== c.name ? " (" + o.centre + ")" : ""}</option>)}
             </select>
@@ -11345,7 +11824,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
             <option value="published">Published — live</option>
           </select>
           {effectiveSlug ? (
-            <a className="mono" href={"/centres/" + effectiveSlug} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "var(--ink-500)", textDecoration: "none" }}>
+            <a className="mono" href={"/centres/" + effectiveSlug} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "var(--ink-500)", textDecoration: "var(--rs-textdecoration-47, none)" }}>
               next.afrovanguard.org.ng/centres/<b style={{ color: "var(--ink-800, #0a1130)" }}>{effectiveSlug}</b> ↗
             </a>
           ) : null}
@@ -11750,7 +12229,7 @@ function AdminSite() {
       </div>
       <p className="admin-hint">Edit the public homepage copy. Changes go live immediately — leave a field blank to restore its default.</p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "start" }} className="site-editor">
+      <div className="site-editor">
         <div className="admin-fields">
           <div className="mono admin-cell-sub" style={{ marginBottom: 4 }}>HERO</div>
           <Field label="'Live now' word" value={c.heroEyebrowLive || ""} onChange={set("heroEyebrowLive")} placeholder="Live now"/>
@@ -11769,9 +12248,9 @@ function AdminSite() {
         </div>
 
         {/* Live preview of the hero copy */}
-        <div style={{ position: "sticky", top: 90 }}>
+        <div className="site-editor-preview">
           <div className="mono admin-cell-sub" style={{ marginBottom: 8 }}>PREVIEW</div>
-          <div style={{ background: "var(--navy-900)", borderRadius: 16, padding: "28px 24px", color: "#fff", overflow: "hidden" }}>
+          <div style={{ background: "var(--navy-900)", borderRadius: 16, padding: "var(--rs-p-113, 28px 24px)", color: "#fff", overflow: "hidden" }}>
             <span className="chip chip-on-dark" style={{ fontSize: 10 }}><span className="dot dot-coral"/> {(c.heroEyebrowLive || "Live now").toUpperCase()} · SUMMER 2026</span>
             <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 34, lineHeight: 0.98, margin: "12px 0 10px" }}>
               {c.heroTitle1 || "Africa's next geniuses"}<br/>{c.heroTitle2 || "are"} <span style={{ color: "var(--gold-500)" }}>{c.heroEmphasis || "not waiting"}</span>.

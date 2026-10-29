@@ -172,21 +172,61 @@ return [
     'ai' => [
         // Default profile (legacy flat block — used when a purpose below has
         // no key of its own):
-        'provider'       => 'groq',                    // preference: groq | gemini | anthropic | openrouter
+        'provider'       => 'groq',                    // preference: see the list below
+
+        // ─────────────────────────────────────────────────────────────────
+        // LEAVE EVERY '…_model' BLANK UNLESS YOU MEAN TO PIN ONE.
+        //
+        // Blank means "whatever this release of NGG considers current for
+        // that provider" (AI_DEFAULT_MODEL in api/_lib/ai.php), so upgrading
+        // the code upgrades the models with it. A model id written in here
+        // is a PIN, and a pin is what nobody ever comes back to: a config
+        // copied once went on calling a model a generation behind for a year
+        // — and, by ai.php's own price table, paying about ten times per
+        // token what the current small model costs.
+        //
+        // Pin one only to hold a deployment steady on purpose (a model you
+        // have tested against, or one your account is approved for), and put
+        // a date beside it so the next person knows it was deliberate.
+        // ─────────────────────────────────────────────────────────────────
         'groq_api_key'   => '',                        // leave empty to disable
-        'groq_model'     => 'llama-3.1-8b-instant',
+        'groq_model'     => '',
         'gemini_api_key' => '',                        // leave empty to disable
         'gemini_model'   => '',                        // blank: the best model the key can use (asked of Google)
         // Paid providers. Anything not set is simply skipped, and every
         // provider listed here is a fallback for every other — one exhausted
         // key degrades speed, not capability.
         'anthropic_api_key'  => '',
-        'anthropic_model'    => 'claude-haiku-4-5-20251001',
+        'anthropic_model'    => '',
+        'openai_api_key'     => '',                    // https://platform.openai.com/api-keys
+        'openai_model'       => '',
         // OpenRouter is the "and everything else": one key reaches hundreds of
         // models from every major lab, so trying a different one is a config
         // line rather than a deploy. Model ids look like 'vendor/model'.
         'openrouter_api_key' => '',
-        'openrouter_model'   => 'meta-llama/llama-3.1-8b-instruct',
+        'openrouter_model'   => '',
+
+        // More providers, all speaking the same OpenAI-shaped request, so
+        // they are one branch in ai.php rather than one each. Set a key and
+        // the provider joins the fallback chain; leave it empty and it is
+        // skipped. The four marked FREE TIER have one that does not expire
+        // into a card, which is what a programme on shared hosting needs.
+        'cerebras_api_key'   => '',   // FREE TIER — https://cloud.cerebras.ai  (fastest of these by a distance)
+        'cerebras_model'     => '',
+        'mistral_api_key'    => '',   // FREE TIER — https://console.mistral.ai
+        'mistral_model'      => '',
+        'together_api_key'   => '',   // FREE TIER — https://api.together.xyz
+        'together_model'     => '',
+        'github_api_key'     => '',   // FREE TIER — a GitHub PAT; https://github.com/marketplace/models
+        'github_model'       => '',
+        'deepseek_api_key'   => '',   // paid, inexpensive — https://platform.deepseek.com
+        'deepseek_model'     => '',
+        // Anything else that speaks the OpenAI chat-completions shape: a
+        // self-hosted llama.cpp or Ollama, a university's endpoint, a model
+        // gateway. No key is required, because many of these want none.
+        'custom_base_url'    => '',   // e.g. 'http://127.0.0.1:11434/v1/chat/completions'
+        'custom_api_key'     => '',
+        'custom_model'       => '',
 
         // Pro allocation — one key per purpose so a rate-limited or leaked
         // key degrades ONE feature. Every entry optional; each may carry a
@@ -197,16 +237,16 @@ return [
             // code). CAPABLE MODELS ONLY: small/fast tiers (Haiku, Flash,
             // Mini, Lite, anything under 30B) are refused for this profile,
             // and with none left an instructor marks instead.
-            'marking'    => ['provider' => 'anthropic', 'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929',
-                             'fallback' => ['provider' => 'openrouter', 'api_key' => '', 'model' => 'anthropic/claude-sonnet-4.5']],
+            'marking'    => ['provider' => 'anthropic', 'api_key' => '', 'model' => '',
+                             'fallback' => ['provider' => 'openrouter', 'api_key' => '', 'model' => '']],
             // Reflection Coach — best free conversational quality.
             'coach'      => ['provider' => 'gemini', 'api_key' => '', 'model' => ''],
             // Behaviour classification — high volume, fast, strict JSON.
-            'behaviour'  => ['provider' => 'groq', 'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
+            'behaviour'  => ['provider' => 'groq', 'api_key' => '', 'model' => ''],
             // Digests / attendance & registration analysis.
             'analysis'   => ['provider' => 'gemini', 'api_key' => '', 'model' => ''],
             // Cheap pre-screen of free text before storage.
-            'moderation' => ['provider' => 'groq', 'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
+            'moderation' => ['provider' => 'groq', 'api_key' => '', 'model' => ''],
 
             /* Level 7 · the analyst panel (Analytics → "What a panel of
              * analysts makes of this").
@@ -226,12 +266,19 @@ return [
              * The payload is counts, rates and confidence intervals, and a
              * second pass refuses the whole run rather than send a name, an id,
              * a contact or a date of birth.
+             *
+             * Five different labs below, and no model pinned: the panel's
+             * whole value is that the lenses do not share a mind, and two
+             * lenses on one provider's default model would be the same mind
+             * twice. DeepSeek and Together are reached directly rather than
+             * through OpenRouter, so a programme paying for them is not also
+             * paying a proxy margin.
              */
-            'insight_mechanism' => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-haiku-4-5-20251001'],
-            'insight_action'    => ['provider' => 'gemini',     'api_key' => '', 'model' => ''],
-            'insight_risk'      => ['provider' => 'openrouter', 'api_key' => '', 'model' => 'deepseek/deepseek-chat'],
-            'insight_equity'    => ['provider' => 'groq',       'api_key' => '', 'model' => 'llama-3.3-70b-versatile'],
-            'insight_synth'     => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929'],
+            'insight_mechanism' => ['provider' => 'cerebras',  'api_key' => '', 'model' => ''],
+            'insight_action'    => ['provider' => 'gemini',    'api_key' => '', 'model' => ''],
+            'insight_risk'      => ['provider' => 'deepseek',  'api_key' => '', 'model' => ''],
+            'insight_equity'    => ['provider' => 'together',  'api_key' => '', 'model' => ''],
+            'insight_synth'     => ['provider' => 'anthropic', 'api_key' => '', 'model' => ''],
             /* Level 7b · the analyst chat.
              *
              * 'insight_router' only decides which lenses a question needs, so it
@@ -243,9 +290,43 @@ return [
              * and is the one place worth a capable model: it has to hold a
              * disagreement between two analysts without tidying it away, which
              * is exactly what a small model does. */
-            'insight_router'    => ['provider' => 'groq',       'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
-            'insight_answer'    => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929'],
+            'insight_router'    => ['provider' => 'groq',       'api_key' => '', 'model' => ''],
+            'insight_answer'    => ['provider' => 'anthropic',  'api_key' => '', 'model' => ''],
         ],
+    ],
+
+    // -----------------------------------------------------------------------
+    // SCHOOL QUESTION BANK (optional) — where /learn's School drill gets its
+    // questions BEFORE it asks a model. A real past-question bank beats
+    // anything generated: the wording, the mark scheme and the difficulty are
+    // the ones the child will actually meet in WAEC, NECO or UTME.
+    //
+    // Leave it empty and the drill asks the AI layer instead; with neither,
+    // it refuses in words and sends the child to their flashcards rather than
+    // handing them a blank paper. It is asked over HTTPS with a 6s timeout
+    // and a 256KB cap, it never follows a redirect, and a failure is silent —
+    // the drill falls through to AI rather than erroring at a child.
+    //
+    // It asks for ONE question per request, five times, because that is the
+    // shape these banks have; fewer than five and it falls through to AI
+    // rather than handing over a short paper.
+    //
+    //   'url'       the endpoint. `subject` and `type` are appended as query
+    //               parameters (`type` is the exam: waec | neco | utme).
+    //   'token'     sent in the header named by 'header', when set.
+    //   'header'    the header that carries the token. Default 'AccessToken'.
+    //   'subjects'  optional: this programme's subject name → the bank's own
+    //               slug. Unmapped subjects are sent lowercased.
+    //
+    // The reply may be {question, option:{a:…,b:…}, answer:'a'}, the same
+    // wrapped in `data`, or a one-element list of either — the common
+    // Nigerian past-question shapes. Anything else is treated as no answer.
+    // -----------------------------------------------------------------------
+    'study_bank' => [
+        'url'      => '',
+        'token'    => '',
+        'header'   => 'AccessToken',
+        'subjects' => [],   // e.g. ['Mathematics' => 'mathematics', 'English' => 'english']
     ],
 
     // -----------------------------------------------------------------------
@@ -370,7 +451,7 @@ return [
     'org' => [
         'name'  => 'Next Generation Genius',
         'short' => 'NGG',
-        'email' => 'hello@yourdomain.com',
+        'email' => 'next@afrovanguard.org.ng',
     ],
 
     // -----------------------------------------------------------------------
@@ -380,11 +461,28 @@ return [
     // (this site + /volunteer); only set them once the external STS site is
     // actually live, so nothing links users to an unbuilt destination.
     // -----------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // Maps: placing addresses and measuring distance to the centres.
+    // Google (geocoding + Distance Matrix) when a key is set; otherwise free
+    // OpenStreetMap: Nominatim to place an address, OSRM for driving time and
+    // road distance (the public demo server by default; light use, cached a
+    // month). 'offline' => true never asks the network.
+    // -----------------------------------------------------------------------
+    'maps' => [
+        'google_key' => '',
+        'osrm_url'   => 'https://router.project-osrm.org',
+        'offline'    => false,
+    ],
+
     'afrovanguard' => [
         'org_url'        => 'https://afrovanguard.org.ng',   // parent org (optional)
         'sts_url'        => '',   // empty ⇒ NGG (app_origin); set when STS is live
         'volunteer_url'  => '',   // empty ⇒ NGG's own /volunteer
         'mentor_program' => 'Street-To-Stardom · Next Gen',
+        // Where 18-and-over applicants register for NGV, on Afrovanguard.
+        // The Club application's NGV panel links here: NGV's application form, which the panel
+        // pre-fills (name, date of birth, email, phone). Empty ⇒ {org_url}/academy/ngv/register.php.
+        'ngv_url'        => '',
         // Sync: pull Afrovanguard's approved mentor/volunteer pool into NGG's
         // mentors table (source='afrovanguard'). Leave `api_token` empty to
         // disable the sync. Mint the token in Afrovanguard's Studio →
@@ -442,6 +540,9 @@ return [
         'public.stats'     => 300,  // 5 min
         'public.events'    => 120,
         'public.posts'     => 120,
+        // What members said about their own sessions. Short, because a
+        // withdrawal or a consent turned off has to leave the page quickly.
+        'public.testimonials'      => 120,
         'public.session'   => 300,
         'public.anchorContent' => 300,
         'public.centres'   => 300,  // centre list; purged on centre_upsert/delete
@@ -453,6 +554,7 @@ return [
         'public.summer'    => 300,
         'public.programme' => 300,  // the join form's courses and centres per programme; purged by catalogue and centre writes
         'public.timetable' => 300,  // a centre's public timetable; purged on any timetable or centre write
+        'public.formation' => 300,  // the Saturday Formation Schedule; purged when an admin edits a block
         'community.showcase' => 180, // admin-featured posts; purged on feature/hide
         'post.get'         => 120,  // a single post by slug; purged with public.posts
         'default'          => 0,    // 0 = no cache
@@ -468,6 +570,45 @@ return [
     //
     // Get these from your Cloudinary dashboard → Settings → API Keys.
     // -----------------------------------------------------------------------
+    /* Where locally-stored photographs live. Leave empty for api/storage/photos,
+     * which is INSIDE the folder a deploy replaces: an upload of a fresh api/
+     * folder, or an FTP mirror that deletes what the repository does not have,
+     * takes every stored photo with it. Point this at a folder outside the web
+     * root (e.g. '/home/youruser/ngg-photos'), writable by PHP, and back it up
+     * with the database. Photos already in api/storage/photos are still found
+     * and moved across as they are read. */
+    'photo_dir' => '',
+
+    /* Where a lesson's uploaded files live — the diagrams, pictures, GIFs,
+     * recordings and documents instructors attach. Same danger as photos: left
+     * empty, they go to a folder beside the web root when the host allows it
+     * (ngg-data/curriculum), else api/storage/curriculum INSIDE the deployed
+     * folder, where replacing the folder deletes them all while the lessons
+     * keep pointing at them. Set a folder outside the web root and back it up.
+     * Files still in the old place are found and moved across as they are
+     * read; with 'storage' (below) configured, each upload is also copied to
+     * the bucket and fetched back from it if the disk copy is ever lost. */
+    'curriculum_dir' => '',
+
+    /* File storage on an S3-compatible bucket — Cloudflare R2 (recommended:
+     * 10 GB free, no download charges) or Backblaze B2. When every field below
+     * is set, EVERY new upload goes here instead of Cloudinary; what Cloudinary
+     * already holds keeps working. The browser uploads straight to the bucket
+     * with a 15-minute presigned URL; the secret never leaves PHP. The bucket
+     * needs a CORS rule (docs/SETUP.md → File storage). Can also be set in
+     * Control Room → Settings → API keys → File storage. */
+    'storage' => [
+        'endpoint'    => '',               // R2: https://<account-id>.r2.cloudflarestorage.com · B2: https://s3.us-west-004.backblazeb2.com
+        'region'      => 'auto',           // R2: auto · B2: the region in the endpoint (us-west-004)
+        'bucket'      => '',               // e.g. 'ngg-media'
+        'access_key'  => '',
+        'secret_key'  => '',               // NEVER exposed to the browser
+        'public_base' => '',               // R2: https://pub-<hash>.r2.dev (or a custom domain) · B2: https://f004.backblazeb2.com/file/ngg-media
+        'folder'      => 'ngg',            // key prefix
+        'ca_file'     => '',               // only for a self-hosted store with its own certificate (MinIO): path to its CA .pem
+        'max_bytes'   => 25 * 1024 * 1024, // per file
+    ],
+
     'cloudinary' => [
         'cloud_name'  => '',               // e.g. 'ngg-afrovanguard'
         'api_key'     => '',               // numeric key
@@ -498,6 +639,15 @@ return [
         'unsigned_preset' => '',             // e.g. 'ngg_public_headshots'
         'unsigned_folder' => 'ngg/headshots',
     ],
+
+    // CACENTRE: the one connection NGG has with it. It carries the person
+    // directory (domain/directory-push.php) and the Wi-Fi: NGG's people and its
+    // say about each, every 15 minutes, and each member's PIN for Me → Wi-Fi
+    // (domain/wifi-cacentre.php). Empty secret: nothing is sent. The SAME value
+    // goes in CACENTRE's includes/.env as DIR_PUSH_SECRET_NGG (an environment
+    // variable of that name here wins over this file).
+    'dir_push_secret' => '',                 // 32+ random characters
+    'dir_push_url'    => '',                 // default https://cacentre.afrovanguard.org.ng
 
     // Debug — flip to true only in local dev. Leaks internal errors.
     'debug' => false,

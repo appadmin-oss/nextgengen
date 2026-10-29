@@ -44,11 +44,23 @@ console.log('sheets, skip and group breaks');
 chk('sheets = ceil((skip + cards) / per)', T.idsSheetCount(9, 0, 18) === 2 && T.idsSheetCount(9, 2, 18) === 3 && T.idsSheetCount(9, 0, 0) === 0 && T.idsSheetCount(0, 0, 5) === 0);
 const cards = ['E', 'E', 'E', 'E', 'A', 'A', 'O'].map((c, i) => ({ id: i, c }));
 let L = T.idsLayout(cards, 9, 0, x => x.c);
-chk('a group break pads to the next sheet: Egbeda 4, pads 5, then Ayobo', L.slots.length === 9 + 9 + 1 && L.slots[4].pad && L.slots[8].pad && L.slots[9].c === 'A');
-chk('…and every group starts at a sheet boundary', L.slots[11].pad === true && L.slots[18].c === 'O');
-L = T.idsLayout(cards, 9, 2, x => x.c);
+chk('groups too small to fill a sheet share one: 7 cards from 3 centres is 1 sheet, no pads', L.slots.length === 7 && L.pads === 0);
+const big = ['E', 'E', 'E', 'E'].concat(Array(10).fill('A'), ['O']).map((c, i) => ({ id: i, c }));
+L = T.idsLayout(big, 9, 0, x => x.c);
+chk('a group that fills a sheet starts a fresh one: Egbeda 4, pads 5, then Ayobo', L.slots[4].pad && L.slots[8].pad && L.slots[9].c === 'A' && L.pads === 5);
+chk('…and a small group after it shares Ayobo’s last sheet', L.slots[19].c === 'O' && L.slots.length === 20);
+L = T.idsLayout(big, 9, 2, x => x.c);
 chk('with 2 used slots, the first sheet holds 7 before the break', L.slots.findIndex(s => s.c === 'A') === 7);
 chk('no grouping, no pads', T.idsLayout(cards, 9, 0, null).pads === 0);
+
+console.log('range filter (v4)');
+chk('name range: partial ends are inclusive — "Ade" to "Chi" takes Ade… through Chi…', (() => { const e = T.idsRangeEnds('Ade', 'Chi');
+  return ['Ade Chukwu', 'Bola', 'Chi', 'Chinedu Okoro'].every(n => T.idsInAlphaRange(n, e.lo, e.hi)) && !T.idsInAlphaRange('Ada', e.lo, e.hi) && !T.idsInAlphaRange('Damola', e.lo, e.hi); })());
+chk('ends typed the wrong way round are swapped', (() => { const e = T.idsRangeEnds('Funke', 'adaeze'); return e.lo === 'adaeze' && e.hi === 'funke' && !e.digits; })());
+chk('ID range compares printed IDs as text, case-insensitively', (() => { const e = T.idsRangeEnds('eg-26-1100', 'EG-26-1150');
+  return T.idsInAlphaRange('EG-26-1103', e.lo, e.hi) && !T.idsInAlphaRange('EG-26-1151', e.lo, e.hi) && !T.idsInAlphaRange('AY-26-1103', e.lo, e.hi); })());
+chk('bare digits mean the serial, and swap numerically', (() => { const e = T.idsRangeEnds('80', '9'); return e.digits && e.lo === '9' && e.hi === '80'; })());
+chk('one end may be empty', (() => { const e = T.idsRangeEnds('', 'B'); return T.idsInAlphaRange('Ada', e.lo, e.hi) && !T.idsInAlphaRange('Chi', e.lo, e.hi); })());
 
 console.log('mirroring for backs');
 g = G('cr80p', 'a4');

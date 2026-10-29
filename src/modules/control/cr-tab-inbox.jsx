@@ -116,7 +116,8 @@ const CR_INBOX_SOURCES = {
           id: "app:" + a.id, cat: "applications", kind: "Application", icon: "user-plus", who: a.name || a.email || "Applicant", at: a.createdAt,
           unread: a.status === "new", title: [prog, a.track || a.role].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
           search: [a.email, a.centre, a.track, a.ref].join(" "),
-          facts: [["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.program === "summer" ? "" : (a.faculty || "—")], ["Course", a.track || "—"], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]].filter(f => f[1] !== ""),
+          facts: [["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.program === "summer" ? "" : (a.faculty || "—")], ["Course", a.track || (a.details && a.details.courseOther ? "Something else: " + a.details.courseOther : "—")], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]]
+            .concat(crAppDetailFacts(a)).filter(f => f[1] !== ""),
           note: a.photoUrl ? "" : "No photo yet — their ID card cannot print until one is uploaded.",
           actions,
         });
@@ -160,6 +161,24 @@ const CR_INBOX_SOURCES = {
       const r = await NGGApi.admin.requests.list({ status: "open" });
       const canMoney = ctx.can("fees");
       return (r.requests || []).map(x => {
+        /* Feedback is thanked or passed on, never approved: an "approved idea" means nothing to a child. */
+        if (x.kind === "feedback") {
+          const who = x.anonymous ? "A member (no name given)" : (x.fullName || x.displayId || "A member");
+          return crItem({
+            id: "req:" + x.requestId, cat: "requests", kind: "Idea or feedback · " + (x.topicLabel || "An idea"), icon: "lightbulb", who, at: x.createdAt, unread: true,
+            title: x.subject || x.topicLabel, body: x.body || (x.rating ? "No words, just the rating." : ""), search: [x.requestId, x.displayId, x.memberId, x.centre, "feedback idea"].join(" "),
+            facts: [["From", x.anonymous ? "Sent without their name" : who + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"]]
+              .concat(x.rating ? [["How it’s going", x.rating + " of 5 · " + x.ratingLabel]] : []).concat(x.passedAt ? [["Passed to the centre lead", crDate(x.passedAt)]] : []),
+            thread: [{ who, at: x.createdAt, body: x.body || "", mine: false }],
+            note: x.anonymous ? "Sent without a name, so a thank-you closes it but reaches nobody." : "",
+            actions: [
+              { l: "Thank and close", tone: "primary", note: CR_REASON_NOTE("Your reply", x.anonymous ? "Kept with the record." : "The member reads this. Leave it empty for a plain thank-you.", false),
+                run: async (it, v) => { await NGGApi.admin.requests.answer(x.requestId, "thank", v.why || ""); return { text: x.anonymous ? "Closed" : "Thanked · " + who }; } },
+              x.passedAt ? null : { l: "Pass to centre lead", note: CR_REASON_NOTE("A note for the lead", "Optional. The lead reads this with the feedback.", false),
+                run: async (it, v) => { await NGGApi.admin.requests.answer(x.requestId, "pass", v.why || ""); return { text: "Passed to the " + (x.centre || "centre") + " lead" }; } },
+            ].filter(Boolean),
+          });
+        }
         const pay = x.kind === "payment";
         const f = [["Member", (x.fullName || "") + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"]];
         if (pay) f.push(["Claims", fmtMoney(x.amount)], ["Reference", x.reference || "—"], ["Paid on", x.paidAt ? crDate(x.paidAt) : "—"]);
@@ -175,8 +194,8 @@ const CR_INBOX_SOURCES = {
           run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Approved · " + x.fullName }; },
         };
         return crItem({
-          id: "req:" + x.requestId, cat: "requests", kind: x.kindLabel || "Member request", icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
-          title: x.subject || x.kindLabel, body: x.body || "", search: [x.displayId, x.centre, x.reference].join(" "),
+          id: "req:" + x.requestId, cat: "requests", kind: (x.kindLabel || "Member request") + (x.byFamily ? " · From their family account" : ""), icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
+          title: x.subject || x.kindLabel, body: x.body || "", search: [x.requestId, x.displayId, x.memberId, x.centre, x.reference].join(" "),
           facts: f, thread: x.body ? [{ who: x.byFamily ? (x.raisedByName || "Their family") : (x.fullName || "Member"), at: x.createdAt, body: x.body, mine: false }] : null,
           note: pay && !canMoney ? "Approving a payment needs the Fees permission." : "",
           actions: [approve, { l: "Decline", note: CR_REASON_NOTE("Why it is declined", "Say why — the member reads this."), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: "Declined, with your reason" }; } }].filter(Boolean),
@@ -205,11 +224,64 @@ const CR_INBOX_SOURCES = {
       });
     },
   },
+  /* What members said about their sessions (domain/testimonials.php).
+     A child wrote these about themselves, so two things are different from
+     every other queue here: publishing needs the guardian's consent on the
+     record — without it there is no Publish button to press, because a
+     control that cannot act should not be drawn — and the words go out under
+     the byline the MEMBER chose, never their full name. */
+  testimonials: {
+    cap: "content",
+    async load() {
+      const r = await NGGApi.admin.curriculum.testimonials("new");
+      return (r.rows || []).map(t => {
+        const ok = !!t.consent;
+        const back = () => NGGApi.admin.curriculum.testimonialDecide(t.tid, "new", "");
+        const actions = [];
+        if (ok) actions.push({ l: "Publish", tone: "primary", run: async () => {
+          await NGGApi.admin.curriculum.testimonialDecide(t.tid, "published", "");
+          return { text: "Published · it is on the home page now", undo: back };
+        } });
+        actions.push({ l: "Not this one", note: { l: "Why (staff only)", req: false, ph: "e.g. names another child", help: "Kept on the record. The member is not told, and can still write another." },
+          run: async (it, v) => { await NGGApi.admin.curriculum.testimonialDecide(t.tid, "declined", v.why || ""); return { text: "Left unpublished", undo: back }; } });
+        return crItem({
+          id: "tst:" + t.tid, cat: "testimonials", kind: "Testimonial", icon: "quotes",
+          who: t.name || t.memberId, at: t.createdAt, unread: true,
+          title: t.course ? "After a " + t.course + " session" : "After a session",
+          body: t.body || "", search: [t.memberId, t.centre, t.course].join(" "),
+          facts: [["Member", t.memberId + (t.centre ? " · " + t.centre : "")],
+                  ["Goes out as", t.byline + " · " + (CR_TESTI_SHOW[t.showAs] || t.showAs)],
+                  ["Consent", ok ? "Guardian granted “Feature on our website”" : "Not granted"]],
+          note: ok
+            ? "Publishing puts these words on the public home page under that byline — never their full name. They can take it back at any time, and withdrawing the consent takes it down on its own."
+            : "No Publish here: the guardian has not granted “Feature on our website”. Record that consent on the member first. The words are still worth reading.",
+          actions,
+        });
+      });
+    },
+  },
   photos: {
     cap: "content",
     async load(ctx) {
-      const r = await NGGApi.admin.photos.queue();
-      return (r.queue || []).map(p => {
+      /* Two kinds of photo work: headshots the pipeline routed to review, and
+         members asking to change their photo (they send the new one; nothing
+         changes until it is approved here). */
+      const [r, ch] = await Promise.all([NGGApi.admin.photos.queue(), NGGApi.admin.photos.changes()]);
+      const asks = (ch.requests || []).map(q => {
+        const who = q.subjectName || q.subjectId;
+        return crItem({
+          id: "pcr:" + q.requestId, cat: "photos", kind: "Photo change", icon: "image", who, at: q.requestedAt, unread: true,
+          title: "Asks to change their photo", photoUrl: nggPhotoSrc(q.photoUrl), oldPhotoUrl: nggPhotoSrc(q.oldPhotoUrl), search: [q.subjectId, q.subjectCentre, q.reason].join(" "),
+          facts: [["Member", q.subjectId + (q.subjectCentre ? " · " + q.subjectCentre : "")], ["Why", q.reason || "No reason given"]],
+          note: "Approving puts it on their profile and on the next ID card printed. A card already printed is not reissued.",
+          actions: [
+            { l: "Approve", tone: "primary", run: async () => { await NGGApi.admin.photos.changeDecide(q.requestId, "approve", ""); return { text: "New photo approved · " + who }; } },
+            { l: "Decline", note: { l: "Why (they see this)", req: true, ph: "Please send one with your face clear and a plain background.", help: "Their photo stays as it is, and they are told why." },
+              run: async (it, v) => { await NGGApi.admin.photos.changeDecide(q.requestId, "decline", v.why); return { text: "Declined · " + who + " was told why" }; } },
+          ],
+        });
+      });
+      return asks.concat((r.queue || []).map(p => {
         const fd = p.aiFindings || {};
         const flags = (fd.flags || []).map(x => String(x).replace(/_/g, " "));
         const who = p.subjectName || (p.subjectType + " " + p.subjectId);
@@ -228,11 +300,55 @@ const CR_INBOX_SOURCES = {
           note: p.status === "in_review" ? "Another reviewer has this open." : "",
           actions,
         });
-      });
+      }));
     },
   },
 };
-const CR_INBOX_ORDER = ["messages", "requests", "approvals", "applications", "photos", "comments"];
+/* The Club application's answers (applications.details), as facts on the
+   item. A parent's number is masked like the applicant's. */
+function crAppDetailFacts(a) {
+  const d = a.details; if (!d) return [];
+  const ag = a.agreements || {}, req = ["participation", "medical", "data", "comms", "media", "site_visibility"];
+  const agreed = req.every(t => ag[t] && ag[t].status === "granted");
+  const ver = (ag.participation && ag.participation.version) || d.policyVersion || "";
+  const parent = (n, r, ph) => n ? n + (r ? " (" + r + ")" : "") + (ph ? " · " + crMask(ph) : "") : "";
+  return [
+    ["Filled in by", d.filledBy === "child" ? "The applicant" : d.filledBy ? "Parent or guardian" : ""],
+    ["School", [d.school, [d.class, d.classArm].filter(Boolean).join(" ")].filter(Boolean).join(" · ")],
+    ["Lives in", [d.address, d.resLga, d.resState].filter(Boolean).join(", ")],
+    ["Origin", [d.originLga, d.originState].filter(Boolean).join(", ")],
+    ["Nationality", d.nationality || ""],
+    ["Main contact", parent(d.parent1Name, d.parent1Rel, d.parent1Phone)],
+    ["Second contact", d.parent2None ? "None" : parent(d.parent2Name, d.parent2Rel, d.parent2Phone)],
+    ["Hobbies", (d.hobbies || []).join(", ")],
+    ["Wants to lead in", (d.influenceAreas || []).join(", ")],
+    ["Heard from", d.heardFrom || ""],
+    ["Promo code", d.promoCode || ""],
+    ["Agreements", agreed ? "All agreed" + (ver ? " (v" + ver + ")" : "") : "Incomplete"],
+    ["Off-site trips", ag.trips ? (ag.trips.status === "granted" ? "Yes" : "No") : ""],
+  ];
+}
+/* The applications export: every column the old Google Form had, then the new ones. */
+const CR_APP_PARENT = (d, rel, k) => d.parent1Rel === rel ? d["parent1" + k] : d.parent2Rel === rel && !d.parent2None ? d["parent2" + k] : "";
+const CR_APP_EXPORT = [
+  ["Timestamp", a => a.createdAt], ["Reference", a => a.ref], ["Kind", a => a.kind], ["Programme", a => a.program], ["Status", a => a.status],
+  ["First name", a => a.firstName], ["Middle name", a => a.otherName], ["Surname", a => a.lastName], ["Date of birth", a => a.dob], ["Age", a => a.dobAge != null ? a.dobAge : a.age],
+  ["Email", a => a.email], ["Sex", a => a.sex], ["Name of school", (a, d) => d.school], ["Class", (a, d) => d.class], ["Class arm", (a, d) => d.classArm],
+  ["Mobile number", a => a.phone], ["Address", (a, d) => d.address], ["Local government", (a, d) => d.resLga], ["State", (a, d) => d.resState], ["Country", (a, d) => d.nationality ? "Nigeria" : ""],
+  ["Father's full name", (a, d) => CR_APP_PARENT(d, "Father", "Name")], ["Father's number", (a, d) => CR_APP_PARENT(d, "Father", "Phone")],
+  ["Mother's full name", (a, d) => CR_APP_PARENT(d, "Mother", "Name")], ["Mother's number", (a, d) => CR_APP_PARENT(d, "Mother", "Phone")],
+  ["Guardian's full name", (a, d) => CR_APP_PARENT(d, "Guardian", "Name")], ["Guardian's number", (a, d) => CR_APP_PARENT(d, "Guardian", "Phone")],
+  ["Your vision", a => a.why], ["Hobbies", (a, d) => (d.hobbies || []).join(", ")], ["Courses", (a, d) => a.track || d.courseOther || ""], ["Division", a => a.faculty],
+  ["Areas of influence", (a, d) => (d.influenceAreas || []).join(", ")], ["How did you hear", (a, d) => d.heardFrom], ["Promo code", (a, d) => d.promoCode], ["Centre", a => a.centre],
+  ["Filled in by", (a, d) => d.filledBy], ["State of origin", (a, d) => d.originState], ["LGA of origin", (a, d) => d.originLga], ["Nationality", (a, d) => d.nationality],
+  ["Main contact", (a, d) => d.parent1Rel], ["No second parent", (a, d) => d.parent2None ? "Yes" : ""],
+  ["Agreements", a => { const g = a.agreements || {}; return Object.keys(g).length ? Object.keys(g).map(t => t + ":" + g[t].status).join(" ") : ""; }],
+  ["Policy version", (a, d) => d.policyVersion], ["Photo", a => a.photoUrl ? "Yes" : "No"], ["Role", a => a.role],
+];
+/* How the member chose to be signed, in the words the member saw. */
+const CR_TESTI_SHOW = { initials: "initials and age", first: "first name and age", anon: "not named at all" };
+
+const CR_INBOX_ORDER = ["messages", "requests", "approvals", "applications", "photos", "comments", "testimonials"];
 
 /** Load every queue this person may see, at once. A queue that fails is named, not hidden. */
 async function crInboxLoad(ctx) {
@@ -441,7 +557,7 @@ function CrInbox({ ctx, phone, data }) {
   );
   return <div className="cr-ib">{rail}{list}{pane}</div>;
 }
-const CR_INBOX_ICON = { messages: "envelope-simple", applications: "user-plus", approvals: "seal-check", requests: "hand", comments: "chat-circle", photos: "image" };
+const CR_INBOX_ICON = { messages: "envelope-simple", applications: "user-plus", approvals: "seal-check", requests: "hand", comments: "chat-circle", photos: "image", testimonials: "quotes" };
 
 function CrInboxClear({ handled }) {
   return (
@@ -543,7 +659,13 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
       <div className="cr-ib-pbody">
         <h3 className="cr-ib-subject">{it.title}</h3>
         {it.note && <p className="cr-ib-callout"><CrIcon n="info"/>{it.note}</p>}
-        {it.photoUrl && it.cat === "photos" && <img className="cr-ib-photo" src={it.photoUrl} alt={"Headshot uploaded for " + it.who}/>}
+        {it.photoUrl && it.cat === "photos" && (it.kind === "Photo change" ? (
+          <div className="cr-ib-photos">
+            <figure><figcaption>Now</figcaption>{it.oldPhotoUrl ? <img className="cr-ib-photo" src={it.oldPhotoUrl} alt={"Current photo of " + it.who}/> : <span className="cr-ib-photo is-empty">No photo yet</span>}</figure>
+            <CrIcon n="arrow-right"/>
+            <figure><figcaption>Asked for</figcaption><img className="cr-ib-photo" src={it.photoUrl} alt={"Photo " + it.who + " asked for"}/></figure>
+          </div>
+        ) : <img className="cr-ib-photo" src={it.photoUrl} alt={"Headshot uploaded for " + it.who}/>)}
         {it.facts.length > 0 && <dl className="cr-ib-facts">{it.facts.map((f, i) => <div key={i}><dt>{f[0]}</dt><dd>{f[1] == null || f[1] === "" ? "—" : f[1]}</dd></div>)}</dl>}
         {it.thread ? (
           <ol className="cr-ib-thread" aria-label="Conversation">
@@ -616,8 +738,7 @@ function crInboxTab(key) {
     blocks: () => [],
     actions: (d, ctx) => key === "applications" && ctx.can("people") ? [{ l: "Export applications", icon: "download-simple", run: async () => {
       const r = await NGGApi.admin.applications.list({});
-      crDownloadCsv("applications", ["Kind", "Programme", "Name", "Email", "Age", "Centre", "Division", "Role", "Status", "Submitted"],
-        (r.applications || []).map(a => [a.kind, a.program, a.name, a.email, a.age, a.centre, a.track, a.role, a.status, a.createdAt]));
+      crDownloadCsv("applications", CR_APP_EXPORT.map(c => c[0]), (r.applications || []).map(a => CR_APP_EXPORT.map(c => c[1](a, a.details || {}))));
     } }] : key === "photos" && ctx.can("summer") ? [{ l: "Ask families for missing photos", icon: "camera", run: async () => {
       const m = await NGGApi.admin.photos.missing(200).catch(() => null);
       const due = m ? (m.students || []).filter(s => s.reachable && !s.askedAt).length : 0;
@@ -639,4 +760,5 @@ Object.assign(CR_TAB_DEFS, {
   messages: crInboxTab("messages"),
   comments: crInboxTab("comments"),
   photos: crInboxTab("photos"),
+  testimonials: crInboxTab("testimonials"),
 });

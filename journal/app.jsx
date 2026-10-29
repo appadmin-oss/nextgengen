@@ -86,6 +86,46 @@ const MOODS = [
   { key: "rough", label: "Rough", icon: "ph-smiley-sad" },
 ];
 const MOOD_ICON = { great: "ph-smiley", good: "ph-smiley-wink", okay: "ph-smiley-blank", low: "ph-smiley-meh", rough: "ph-smiley-sad" };
+/* The portal stores mood as 1–5 (journal.mine); this app's words map onto it,
+   so an entry written in either reads the same in both. */
+const MOOD_NUM = { great: 5, good: 4, okay: 3, low: 2, rough: 1 };
+const moodKey = m => MOOD_NUM[m] ? m : ({ 5: "great", 4: "good", 3: "okay", 2: "low", 1: "rough" })[String(m)] || m;
+/* One save, the portal's (journal.mine.save): `new` keeps each reflection its
+   own entry, and visibility is the member's choice — private unless shared. */
+function journalWrite(it) {
+  return NGGApi.member.journalSave({ new: true, body: it.body, mood: MOOD_NUM[it.mood] || 0, visibility: it.share ? "mentor" : "private", prompt: it.prompt || "", media: it.media || [] });
+}
+/* A voice note: Opus at about 24 kbps (a minute is ~180 KB on mobile data), two
+   minutes at most, uploaded with the site's own file route. */
+function useVoiceNote() {
+  const [st, setSt] = useState({ rec: "idle", secs: 0, url: "" });
+  const ref = useRef(null);
+  const can = typeof window !== "undefined" && !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const start = () => {
+    if (ref.current) return;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      const chunks = [], t0 = Date.now();
+      const opus = MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported("audio/webm;codecs=opus");
+      const rec = new MediaRecorder(stream, Object.assign({ audioBitsPerSecond: 24000 }, opus ? { mimeType: "audio/webm;codecs=opus" } : {}));
+      const cap = setTimeout(() => { if (rec.state !== "inactive") rec.stop(); }, 120000);
+      ref.current = rec;
+      rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = () => {
+        clearTimeout(cap); stream.getTracks().forEach(t => t.stop()); ref.current = null;
+        const secs = Math.round((Date.now() - t0) / 1000);
+        setSt({ rec: "done", secs, url: "" });
+        const type = rec.mimeType || "audio/webm";
+        NGGApi.uploadFile(new File([new Blob(chunks, { type })], "voice-note.webm", { type }), "post")
+          .then(u => setSt({ rec: "done", secs, url: String(u.url || "").replace(location.origin, "") })).catch(() => { setSt({ rec: "idle", secs: 0, url: "" }); toast.err("Couldn’t keep the voice note. Write it instead."); });
+      };
+      rec.start(); setSt({ rec: "rec", secs: 0, url: "" });
+    }).catch(() => toast.err("Your phone didn’t let us use the microphone."));
+  };
+  const stop = () => { if (ref.current && ref.current.state !== "inactive") ref.current.stop(); };
+  const reset = () => setSt({ rec: "idle", secs: 0, url: "" });
+  return { can, st, start, stop, reset };
+}
+const fmtSecs = n => Math.floor(n / 60) + ":" + String(n % 60).padStart(2, "0");
 const SCORE_DIMS = [
   { key: "journal", label: "Journal Consistency" },
   { key: "home", label: "Home Discipline" },
@@ -206,7 +246,7 @@ function Tilt({ children, strength = 9, glare = true, className = "" }) {
   const ref = useRef(null);
   useEffect(() => {
     if (!TILT_ON) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || window.matchMedia("(hover: none)").matches) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || window.matchMedia("(hover: none)").matches || document.documentElement.getAttribute("data-motion") === "reduce") return;
     const el = ref.current; if (!el) return;
     let rect = null, raf = 0;
     const onMove = (e) => {
@@ -267,7 +307,8 @@ function App() {
   const [booting, setBooting] = useState(true);
   const [member, setMember] = useState(store.cache().member || null);
   const [sessionLost, setSessionLost] = useState(false);
-  const [view, setView] = useState("home");
+  // ?write=1 (from My NGG’s “Write today’s reflection”) opens straight onto the writer.
+  const [view, setView] = useState(() => { try { return new URLSearchParams(location.search).get("write") ? "reflect" : "home"; } catch { return "home"; } });
   const prev = useRef("home");
   const [online, setOnline] = useState(navigator.onLine);
 
@@ -365,7 +406,7 @@ function App() {
     const q = store.queue(); if (!q.length || !navigator.onLine) return;
     for (const it of q) {
       try {
-        await NGGApi.member.journalCreate({ mood: it.mood, body: it.body, private: true });
+        await journalWrite(it);
         store.setQueue(store.queue().filter(x => x.tempId !== it.tempId));
       } catch (e) {
         // NEVER discard a reflection on a recoverable error. An expired session
@@ -436,7 +477,7 @@ function App() {
   }, [member, entries]);
 
   /* save a reflection (Anchor it) */
-  const anchorReflection = useCallback(async ({ mood, musing, s1, s2, s3, school, home, peer }) => {
+  const anchorReflection = useCallback(async ({ mood, musing, s1, s2, s3, school, home, peer, share, prompt, media }) => {
     const parts = [];
     if (musing) parts.push(musing.trim());
     if (school) parts.push("School: " + school.trim());
@@ -448,12 +489,12 @@ function App() {
     const body = parts.join("\n");
     const already = (entries || []).some(e => dayKey(e.createdAt) === dayKey(Date.now()));
     const tempId = "t-" + Date.now();
-    const optimistic = { entryId: tempId, mood: mood || "good", body, week: (session && session.weekOf) || 1, createdAt: new Date().toISOString(), _pending: true };
+    const optimistic = { entryId: tempId, mood: mood || "good", body, visibility: share ? "mentor" : "private", replies: [], week: (session && session.weekOf) || 1, createdAt: new Date().toISOString(), _pending: true };
     setEntries(e => [optimistic, ...(e || [])]);
-    const q = store.queue(); q.push({ tempId, mood: mood || "good", body }); store.setQueue(q); setPending(q);
+    const q = store.queue(); q.push({ tempId, mood: mood || "good", body, share: !!share, prompt: prompt || "", media: media || [] }); store.setQueue(q); setPending(q);
     setCelebrate({ already });
     setView("home");
-    try { await NGGApi.member.journalCreate({ mood: mood || "good", body, private: true }); store.setQueue(store.queue().filter(x => x.tempId !== tempId)); setPending(store.queue()); await refresh(); }
+    try { await journalWrite({ mood: mood || "good", body, share, prompt, media }); store.setQueue(store.queue().filter(x => x.tempId !== tempId)); setPending(store.queue()); await refresh(); }
     catch (e) {
       // The entry is already queued (above), so it is safe on-device regardless.
       if (isAuthErr(e)) { setSessionLost(true); toast.err("Session expired — saved here, sign in to sync."); }
@@ -503,6 +544,8 @@ function App() {
           </button>.
         </div>
       )}
+      {/* The way back: the journal opens from My NGG, so it never leaves a member with no road home. */}
+      {view === "home" && <a className="aj-back-ngg" href="/dashboard"><i className="ph-bold ph-arrow-left" aria-hidden="true"/>My NGG</a>}
       {view === "home" && <Journey ctx={ctx}/>}
       {view === "reflect" && <Reflect ctx={ctx}/>}
       {view === "systems" && <Systems ctx={ctx}/>}
@@ -701,8 +744,11 @@ function MissionSheet({ mission, ctx, onClose }) {
 
 /* ---- Reflect editor ----------------------------------------------------- */
 function Reflect({ ctx }) {
-  const { currentWeek, back, anchorReflection, pstate, setState, go } = ctx;
+  const { currentWeek, back, anchorReflection, pstate, setState, go, mentor } = ctx;
   const [musing, setMusing] = useState("");
+  // Private unless the member chooses: sharing is what lets the mentor read it and reply.
+  const [share, setShare] = useState(false);
+  const voice = useVoiceNote();
   const [s1, setS1] = useState(""); const [s2, setS2] = useState(""); const [s3, setS3] = useState("");
   // School / Home / Peer execution logs — structured per the Anchor design.
   const [learned, setLearned] = useState("");
@@ -756,9 +802,13 @@ function Reflect({ ctx }) {
 
   const submit = async () => {
     const { school, home, peer } = compose();
-    if (!musing.trim() && !s1.trim() && !s2.trim() && !s3.trim() && !school && !home && !peer) { toast.err("Write at least one line."); return; }
+    const media = voice.st.url ? [{ type: "audio", url: voice.st.url, secs: voice.st.secs }] : [];
+    if (!musing.trim() && !s1.trim() && !s2.trim() && !s3.trim() && !school && !home && !peer && !media.length) { toast.err("Write at least one line, or record a voice note."); return; }
+    if (voice.st.rec === "done" && !voice.st.url) { toast.err("The voice note is still getting ready."); return; }
     setBusy(true);
-    try { await anchorReflection({ mood, musing, s1, s2, s3, school, home, peer }); } finally { setBusy(false); }
+    /* A voice note alone is still an entry; its body says so, so the list and a mentor reading it know what it is. */
+    const m2 = media.length && !musing.trim() ? "Voice note (" + fmtSecs(voice.st.secs) + ")" : musing;
+    try { await anchorReflection({ mood, musing: m2, s1, s2, s3, school, home, peer, share, prompt: weekPrompt, media }); } finally { setBusy(false); }
   };
 
   return (
@@ -783,8 +833,16 @@ function Reflect({ ctx }) {
       </div></Tilt></div>
 
       {sec("1", "TODAY'S MUSING", <>
-        {weekPrompt && <div className="aj-prompt-hint"><i className="ph-fill ph-notebook"/><span>This week's prompt · <b>{weekPrompt}</b></span></div>}
-        <textarea className="aj-musing" placeholder="What's on your mind this morning?" value={musing} maxLength={2000} onChange={e => setMusing(e.target.value)}/>
+        {weekPrompt && <div className="aj-prompt-hint"><i className="ph-fill ph-notebook" aria-hidden="true"/><span>This week's prompt · <b>{weekPrompt}</b></span>
+          {"speechSynthesis" in window && <button type="button" className="aj-read" onClick={() => speak(weekPrompt)} aria-label="Read the prompt aloud"><i className="ph-fill ph-speaker-high" aria-hidden="true"/></button>}</div>}
+        <textarea className="aj-musing" aria-label="Today's musing" placeholder="What's on your mind this morning?" value={musing} maxLength={2000} onChange={e => setMusing(e.target.value)}/>
+        {voice.can && <div className="aj-voice">
+          {voice.st.rec === "idle" && <button type="button" className="aj-voice-b" onClick={voice.start}><i className="ph-fill ph-microphone" aria-hidden="true"/>Record a voice note</button>}
+          {voice.st.rec === "rec" && <div className="aj-voice-rec" role="status"><i className="ph-fill ph-record" aria-hidden="true"/><span>Recording… up to 2 minutes</span><button type="button" className="aj-voice-b" onClick={voice.stop}>Stop</button></div>}
+          {voice.st.rec === "done" && <div className="aj-voice-rec"><span>Voice note · {fmtSecs(voice.st.secs)}</span>
+            {voice.st.url ? <audio controls src={voice.st.url} aria-label="Listen to your voice note"/> : <span role="status">Getting it ready…</span>}
+            <button type="button" className="aj-voice-x" onClick={voice.reset}>Delete</button></div>}
+        </div>}
       </>)}
 
       {sec("2", "DAILY SYSTEM CHECK · " + doneCount + "/6", (
@@ -834,6 +892,10 @@ function Reflect({ ctx }) {
       </div>
 
       <div className="pad" style={{ marginTop: 24 }}>
+        {mentor && <button type="button" className={"aj-share" + (share ? " on" : "")} aria-pressed={share} onClick={() => setShare(!share)}>
+          <i className={"ph-fill " + (share ? "ph-check-square" : "ph-square")} aria-hidden="true"/>
+          <span><b>Share with {mentor.displayName || mentor.fullName || "my mentor"}</b><span>{share ? "Sent to your mentor to read and reply to." : "Off: it isn’t sent, but your mentor can still read your journal."}</span></span>
+        </button>}
         <button className="btn-a" disabled={busy} onClick={submit}>Anchor it <i className="ph-fill ph-anchor"/></button>
         <p className="center muted" style={{ fontSize: 12, margin: "14px 0 0" }}>Earn +60 XP · keep your streak alive</p>
       </div>
@@ -868,7 +930,7 @@ function Notepad({ ctx }) {
         </div>
         <div className="pad" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
           <input className="aj-note-title" placeholder="Title" value={open.title} maxLength={120} onChange={e => setOpen(o => Object.assign({}, o, { title: e.target.value }))}/>
-          <textarea className="aj-note-body" placeholder="Write freely — this stays private to you." value={open.body} onChange={e => setOpen(o => Object.assign({}, o, { body: e.target.value }))}/>
+          <textarea className="aj-note-body" placeholder="Write freely — only you and your mentor read this." value={open.body} onChange={e => setOpen(o => Object.assign({}, o, { body: e.target.value }))}/>
           {open.i !== -1 && <button className="aj-note-del" onClick={del}><i className="ph-bold ph-trash"/> Delete note</button>}
         </div>
       </div>
@@ -1171,12 +1233,13 @@ function Timeline({ ctx }) {
               <button className={"aj-entry" + (e._pending ? " fresh" : "")} key={e.entryId} onClick={() => openEntry(e)} style={{ textAlign: "left", width: "100%", cursor: "pointer" }}>
                 <div className="aj-entry-top">
                   <div className="aj-entry-l">
-                    <div className="aj-entry-ic"><i className={"ph-fill " + (MOOD_ICON[e.mood] || "ph-feather")}/></div>
+                    <div className="aj-entry-ic"><i className={"ph-fill " + (MOOD_ICON[moodKey(e.mood)] || "ph-feather")}/></div>
                     <div><div className="aj-entry-day">{fmtWeekday(d)}</div><div className="aj-entry-date mono">{fmtDayMonth(d).toUpperCase()}</div></div>
                   </div>
                   {e._pending ? <span className="aj-entry-sys"><i className="ph-fill ph-cloud-arrow-up"/>SYNC</span> : <i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)", fontSize: 15 }}/>}
                 </div>
-                <p className="aj-entry-body">{(e.body || "").split("\n")[0]}</p>
+                <p className="aj-entry-body">{(e.title || e.body || "").split("\n")[0]}</p>
+                <span className="aj-entry-vis">{e.visibility === "mentor" ? <><i className="ph-fill ph-users" aria-hidden="true"/>Shared with your mentor{(e.replies || []).length ? " · " + e.replies.length + " " + (e.replies.length === 1 ? "reply" : "replies") : ""}</> : <><i className="ph-fill ph-lock-simple" aria-hidden="true"/>Private</>}</span>
               </button>
             );
           })}
@@ -1196,7 +1259,7 @@ function EntryDetail({ ctx }) {
   );
   const d = new Date(e.createdAt);
   const p = parseEntry(e.body);
-  const mood = MOODS.find(m => m.key === e.mood);
+  const mood = MOODS.find(m => m.key === moodKey(e.mood));
   const night = [
     ["Did well by", p.did, "ph-check-circle", "var(--a)"],
     ["Difficult because", p.hard, "ph-cloud-rain", "var(--violet-l)"],
@@ -1227,6 +1290,17 @@ function EntryDetail({ ctx }) {
           <p style={{ fontSize: 15, lineHeight: 1.55, color: "var(--tx-80)", margin: 0, whiteSpace: "pre-wrap" }}>{p.musing}</p>
         </div></Tilt></div>
       )}
+      <div className="pad" style={{ marginTop: 16 }}>
+        {(e.media || []).filter(x => x.type === "audio").map((x, i) => <audio key={i} controls preload="none" src={x.url} aria-label="Your voice note" style={{ width: "100%", marginBottom: 12 }}/>)}
+        {"speechSynthesis" in window && (e.body || "").trim() && <button type="button" className="aj-voice-b" style={{ marginBottom: 12 }} onClick={() => speak(e.body)}><i className="ph-fill ph-speaker-high" aria-hidden="true"/>Read it aloud</button>}
+        <div className="aj-vis-note">{e.visibility === "mentor" ? <><i className="ph-fill ph-users" aria-hidden="true"/>Shared with your mentor</> : <><i className="ph-fill ph-lock-simple" aria-hidden="true"/>Only you and your mentor read this</>}</div>
+        {(e.replies || []).map((r, i) => (
+          <div className="aj-reply" key={i}>
+            <div className="eyebrow" style={{ letterSpacing: ".12em" }}>{(r.from || "Your mentor").toUpperCase()} REPLIED · {fmtDayMonth(new Date(r.at)).toUpperCase()}</div>
+            <p>{r.body}</p>
+          </div>
+        ))}
+      </div>
       {logs.length > 0 && (
         <div className="pad" style={{ marginTop: 18 }}>
           <div className="eyebrow" style={{ marginBottom: 12 }}>EXECUTION LOGS</div>
@@ -1333,7 +1407,7 @@ function Calendar({ ctx }) {
       <div className="pad aj-callegend"><span><i className="dot done"/>Done</span><span><i className="dot missed"/>Missed</span><span><i className="dot up"/>Upcoming</span></div>
       <div className="pad" style={{ marginTop: 18 }}>{React.createElement(selEntry ? "button" : "div", { className: "card", onClick: selEntry ? (() => openEntry(selEntry)) : undefined, style: selEntry ? { textAlign: "left", width: "100%", cursor: "pointer" } : undefined },
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700 }}>{fmtWeekdayShort(new Date(y, m, sel)).toUpperCase()}</div><span className="aj-entry-sys"><i className="ph-fill ph-check-circle"/>{selSys}</span></div>,
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14 }}><i className={"ph-fill " + (selEntry ? (MOOD_ICON[selEntry.mood] || "ph-feather") : "ph-moon-stars")} style={{ fontSize: 28, color: "var(--violet-l)" }}/><p style={{ flex: 1, fontSize: 14, lineHeight: 1.45, color: "var(--tx-70)", margin: 0 }}>{selEntry ? (selEntry.body || "").split("\n")[0] : "No reflection logged this day."}</p>{selEntry && <i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)", fontSize: 15 }}/>}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14 }}><i className={"ph-fill " + (selEntry ? (MOOD_ICON[moodKey(selEntry.mood)] || "ph-feather") : "ph-moon-stars")} style={{ fontSize: 28, color: "var(--violet-l)" }}/><p style={{ flex: 1, fontSize: 14, lineHeight: 1.45, color: "var(--tx-70)", margin: 0 }}>{selEntry ? (selEntry.body || "").split("\n")[0] : "No reflection logged this day."}</p>{selEntry && <i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)", fontSize: 15 }}/>}</div>
       )}</div>
     </div>
   );
@@ -1654,7 +1728,7 @@ function You({ ctx }) {
     [...list].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).forEach(e => {
       const d = new Date(e.createdAt); const p = parseEntry(e.body);
       out.push("## " + fmtDateLong(d) + (e.week ? "  ·  Week " + String(e.week).padStart(2, "0") : ""));
-      const mood = MOODS.find(m => m.key === e.mood); if (mood) out.push("_Felt " + mood.label.toLowerCase() + "._");
+      const mood = MOODS.find(m => m.key === moodKey(e.mood)); if (mood) out.push("_Felt " + mood.label.toLowerCase() + "._");
       if (p.musing) out.push("", p.musing);
       if (p.school || p.home || p.peer) { out.push(""); if (p.school) out.push("- **School:** " + p.school); if (p.home) out.push("- **Home:** " + p.home); if (p.peer) out.push("- **Peers:** " + p.peer); }
       if (p.did || p.hard || p.tomorrow) { out.push("", "**Night reflection**"); if (p.did) out.push("- Did well by " + p.did); if (p.hard) out.push("- Difficult because " + p.hard); if (p.tomorrow) out.push("- Tomorrow I improve by " + p.tomorrow); }

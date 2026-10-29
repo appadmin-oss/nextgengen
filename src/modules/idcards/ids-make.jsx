@@ -36,37 +36,63 @@ function IdsSource({ M }) {
 
 function IdsRecords({ M }) {
   const R = M.records;
+  /* Kind, centre and the range sit behind the funnel (v4); it opens itself
+     when something narrows the list, so a narrowed list is never a mystery. */
+  const [more, setMore] = React.useState(R.narrowed);
+  React.useEffect(() => { if (R.narrowed) setMore(true); }, [R.narrowed]);
+  const total = R.filters.reduce((n, f) => n + f.n, 0);
   return (
-    <div className="ids-col ids-col--12">
-      <form role="search" className="ids-search" onSubmit={e => e.preventDefault()}>
-        <IdsIcon name="magnifying-glass"/>
-        <input ref={M.searchRef} className="ids-input" type="search" placeholder="Name or ID" aria-label="Search records" value={R.q} onChange={e => R.setQ(e.target.value)}/>
-      </form>
-      <div className="ids-chips" role="radiogroup" aria-label="Show">
-        {R.filters.map(f => (
-          <button key={f.k} type="button" role="radio" aria-checked={f.on} className={"ids-fchip" + (f.on ? " is-on" : "")} onClick={() => R.setFilter(f.k)}>
-            {f.dot && <span className={"ids-dot is-" + f.dot}/>}{f.label}<span className="ids-fchip-n">{f.n}</span>
-          </button>
-        ))}
+    <div className="ids-col ids-col--10">
+      <div className="ids-searchrow">
+        <form role="search" className="ids-search" onSubmit={e => e.preventDefault()}>
+          <IdsIcon name="magnifying-glass"/>
+          <input ref={M.searchRef} className="ids-input" type="search" placeholder="Name or ID" aria-label="Search records" value={R.q} onChange={e => R.setQ(e.target.value)}/>
+        </form>
+        <button type="button" className={"ids-funnel" + (more ? " is-on" : "")} aria-pressed={more} aria-expanded={more} aria-controls="ids-filters"
+                aria-label={"More filters" + (R.narrowed ? " (some are set)" : "")} title="More filters" onClick={() => setMore(m => !m)}>
+          <IdsIcon name="funnel-simple"/>{R.narrowed && <span className="ids-funnel-dot" aria-hidden="true"/>}
+        </button>
       </div>
-      <span className="ids-sr" role="status">{R.shown.length} records shown</span>
-      <div className="ids-row">
-        <select className="ids-select ids-select--30" aria-label="Kind" value={R.kind} onChange={e => R.setKind(e.target.value)}>
-          <option value="">Every kind</option>{IDS_KIND_IDS.map(k => <option key={k} value={k}>{IDS_KIND_PLURAL[k]}</option>)}
-        </select>
-        <select className="ids-select ids-select--30" aria-label="Centre" value={R.centre} onChange={e => R.setCentre(e.target.value)}>
-          <option value="">Every centre</option>{M.centres.map(c => <option key={c} value={c}>{c}</option>)}
-          {R.noCentreCount > 0 && <option value={IDS_NO_CENTRE}>No centre on file · {R.noCentreCount}</option>}
-        </select>
+      <div className="ids-status">
+        <div className="ids-status-bar" aria-hidden="true">
+          {/* Inline on purpose: each segment's share IS the count — data, not chrome. */}
+          {total > 0 && R.filters.map(f => f.n > 0 && <span key={f.k} className={"is-" + f.dot + (R.filter === "all" || f.on ? "" : " is-dim")} style={{ flexGrow: f.n }}/>)}
+        </div>
+        <div className="ids-status-grid" role="group" aria-label="Show">
+          {R.filters.map(f => (
+            <button key={f.k} type="button" aria-pressed={f.on} title={f.help + (f.on ? ". Press again to show everyone" : "")}
+                    className={"ids-statbtn" + (f.on ? " is-on" : "")} onClick={() => M.setFilterToggle(f.k)}>
+              <span className={"ids-dot is-" + f.dot}/><span className="ids-statbtn-l">{f.label}</span><span className="ids-statbtn-n">{f.n}</span>
+            </button>
+          ))}
+        </div>
       </div>
+      <span className="ids-sr" role="status">{R.shown.length} records shown{R.filter === "all" ? ", everyone" : ""}</span>
+      {more && (
+        <div id="ids-filters" className="ids-col ids-col--8">
+          <div className="ids-row ids-row--8">
+            <select className="ids-select ids-select--30" aria-label="Kind" value={R.kind} onChange={e => R.setKind(e.target.value)}>
+              <option value="">Every kind</option>{IDS_KIND_IDS.map(k => <option key={k} value={k}>{IDS_KIND_PLURAL[k]}</option>)}
+            </select>
+            <select className="ids-select ids-select--30" aria-label="Centre" value={R.centre} onChange={e => R.setCentre(e.target.value)}>
+              <option value="">Every centre</option>{M.centres.map(c => <option key={c} value={c}>{c}</option>)}
+              {R.noCentreCount > 0 && <option value={IDS_NO_CENTRE}>No centre on file · {R.noCentreCount}</option>}
+            </select>
+          </div>
+          <IdsRange R={R}/>
+        </div>
+      )}
       {/* Shown whatever the filter is: a warning you only see once you went looking is not a warning. */}
       {R.noCentreCount > 0 && R.centre !== IDS_NO_CENTRE && (
-        <IdsCheck tone="warn" text={idsN(R.noCentreCount, "card") + " would print with no centre: no colour, no code, nothing saying which site."} action="Show them" onAction={() => R.setCentre(IDS_NO_CENTRE)}/>
+        <IdsCheck tone="warn" text={idsN(R.noCentreCount, "card") + " would print with no centre: no colour, no code, nothing saying which site."} action="Show them" onAction={() => { setMore(true); R.setCentre(IDS_NO_CENTRE); }}/>
       )}
       {R.centre === IDS_NO_CENTRE && <p className="ids-note"><span>No centre on the record means no coloured band and no code on the card. Set the centre on their record (Control Room, or the Summer School portal for a participant), then print. Printing them as they are is fine if you mean to.</span></p>}
-      <IdsRange R={R}/>
-      {R.canAddAll && <button type="button" className="ids-btn ids-btn--outline" onClick={R.addAll}><IdsIcon name="plus"/>Add {R.addable} to the sheet</button>}
-      {R.canAskAll && <button type="button" className="ids-btn ids-btn--outline" onClick={R.askAll}><IdsIcon name="envelope-simple"/>Ask everyone blocked for a photo ({R.askable})</button>}
+      {(R.canAddAll || R.canAskAll) && (
+        <div className="ids-row ids-row--8">
+          {R.canAddAll && <button type="button" className="ids-btn ids-btn--28 ids-btn--ink" onClick={R.addAll}><IdsIcon name="plus"/>Add all {R.addable}</button>}
+          {R.canAskAll && <button type="button" className="ids-btn ids-btn--28" onClick={R.askAll}><IdsIcon name="envelope-simple"/>Ask all {R.askable} for a photo</button>}
+        </div>
+      )}
       {M.dataState !== "ready" ? <IdsLoadState state={M.dataState} onRetry={M.reload} what="the records"/> : (
         <ul className="ids-recs">
           {R.rows.map(r => (
@@ -83,14 +109,52 @@ function IdsRecords({ M }) {
                 <span className={"ids-rec-tag is-" + r.tagTone}>{r.tag}</span>
               </span>
               {r.blocked && r.canEditPhoto && <button type="button" className="ids-iconbtn" onClick={r.editPhoto} aria-label={"Add a photo for " + r.name} title="Add a photo"><IdsIcon name="camera"/></button>}
-              {r.blocked && <button type="button" className="ids-btn ids-btn--28" onClick={r.ask} aria-label={r.askLabel + ": " + r.name}>{r.askLabel}</button>}
+              {r.blocked && (r.asked
+                ? <button type="button" className="ids-asked" onClick={r.ask} title={"Asked " + r.askedOn + ". Press to ask again"} aria-label={"Asked " + r.askedOn + ". Ask " + r.name + " again"}><IdsIcon name="check"/>Asked</button>
+                : <button type="button" className="ids-btn ids-btn--28" onClick={r.ask} aria-label={"Ask for a photo: " + r.name}>Ask for photo</button>)}
             </li>
           ))}
         </ul>
       )}
       {M.dataState === "ready" && R.more > 0 && <button type="button" className="ids-btn ids-btn--more" onClick={R.showMore}>Show {Math.min(IDS_REC_MORE, R.more)} more · {R.rows.length} of {R.shown.length} shown</button>}
-      {M.dataState === "ready" && !R.shown.length && <p className="ids-empty">{R.filter === "blocked" ? "Nobody is blocked. Every record has a photo." : "Nobody matches."}</p>}
+      {M.dataState === "ready" && !R.shown.length && <p className="ids-empty">{R.filter === "blocked" ? "Nobody is blocked. Every record has a photo." : R.carded.length ? "Nobody in the queue matches." : R.q.trim() ? "Nobody matches \u201c" + R.q.trim() + "\u201d. Try part of the name or the ID number." : "Nobody matches."}</p>}
+      {M.dataState === "ready" && R.carded.length > 0 && <IdsCarded M={M} R={R}/>}
     </div>
+  );
+}
+
+/* People the search found who already hold a card. Not in the queue, so not
+   on the list above; each carries the reasons a card is reprinted. */
+function IdsCarded({ M, R }) {
+  return (
+    <section className="ids-carded" aria-label="Already have a card">
+      <h3 className="ids-carded-h"><IdsIcon name="identification-card"/>Already have a card<span className="ids-fchip-n">{R.carded.length + R.cardedMore}</span></h3>
+      <ul className="ids-recs">
+        {R.carded.map(r => (
+          <li key={r.key} className={"ids-rec ids-rec--carded" + (r.open ? " is-open" : "")}>
+            <span className="ids-thumb" style={{ "--ids-accent": M.accent(r.centre) }}>
+              {r.photoUrl ? <img src={r.photoUrl} alt="" loading="lazy"/> : idsInitials(r.name)}
+            </span>
+            <span className="ids-grow ids-rec-text">
+              <span className="ids-rec-name">{r.name}</span>
+              <span className="ids-rec-meta"><span className="ids-mono">{r.displayId || r.id}</span> · {r.centre || "No centre"} · {IDS_KINDS[r.kind]}</span>
+              <span className="ids-rec-tag is-ok">{"Has a card" + (r.printedOn ? " · printed " + r.printedOn : "")}</span>
+            </span>
+            <button type="button" className={"ids-btn ids-btn--28" + (r.open ? " is-on" : "")} aria-expanded={r.open} onClick={r.toggleOpen} aria-label={"Reprint " + r.name + "’s card"}>
+              <IdsIcon name="arrow-counter-clockwise"/>Reprint
+            </button>
+            {r.open && (
+              <div className="ids-reasons ids-rec-why" role="group" aria-label={"Why is " + r.name + "’s card being reprinted?"}>
+                <span className="ids-muted">Why?</span>
+                {IDS_REPRINT_REASONS.map(([k, l, help]) => <button key={k} type="button" className="ids-btn ids-btn--sm ids-btn--outline" title={help} disabled={r.busy} onClick={() => r.reprint(k)}>{l}</button>)}
+                <span className="ids-help">Lost and never received get a new QR; the old card stops opening.</span>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {R.cardedMore > 0 && <p className="ids-empty">{R.cardedMore} more with a card. Type more of the name to narrow it.</p>}
+    </section>
   );
 }
 
@@ -101,6 +165,7 @@ function IdsRange({ R }) {
   const [paste, setPaste] = React.useState("");
   const [pasteMsg, setPasteMsg] = React.useState(null);
   const [reprintBusy, setReprintBusy] = React.useState(false);
+  const [reprintWhy, setReprintWhy] = React.useState("damaged");
   const lastDays = n => { const t = new Date(), f = new Date(t.getTime() - (n - 1) * 864e5); R.setRng({ dFrom: f.toISOString().slice(0, 10), dTo: t.toISOString().slice(0, 10) }); };
   const doPaste = () => {
     const res = R.pasteIds(paste);
@@ -116,46 +181,62 @@ function IdsRange({ R }) {
     setPasteMsg({ tone: short ? "warn" : "ok", text: bits.join(" · "), carded: res.carded });
     if (!short) setPaste("");
   };
+  const m = R.rmode || "name";
+  const alpha = m === "name" || m === "id";
+  const ph = m === "name" ? ["Adaeze", "Funke"] : ["026-001", "026-050"];
+  const order = m === "name" ? "name" : R.rangeDigits ? "number" : "ID";
   return (
-    <div className="ids-col ids-col--12">
-      <select className="ids-select ids-select--30" aria-label="Range" value={R.rmode} onChange={e => { R.setRmode(e.target.value); setPasteMsg(null); }}>
-        <option value="">Everyone in the list</option>
-        <option value="date">By date registered</option>
-        <option value="number">By ID number</option>
-        <option value="paste">Paste a list of IDs</option>
-      </select>
-      {R.rmode === "date" && <>
-        <div className="ids-row">
-          <label className="ids-num"><span className="ids-num-l">From</span><span className="ids-num-box"><input type="date" aria-label="Registered from" value={R.rng.dFrom} onChange={e => R.setRng({ dFrom: e.target.value })}/></span></label>
-          <label className="ids-num"><span className="ids-num-l">To</span><span className="ids-num-box"><input type="date" aria-label="Registered to" value={R.rng.dTo} onChange={e => R.setRng({ dTo: e.target.value })}/></span></label>
+    <div className="ids-rangebox" role="group" aria-labelledby="ids-range-l">
+      <div className="ids-rangebox-top">
+        <span className="ids-rangebox-l" id="ids-range-l">Range</span>
+        <IdsSeg label="Range by" size="xs" value={m} onChange={v => { R.setRmode(v); setPasteMsg(null); }}
+                options={[["name", "Name"], ["id", "ID"], ["date", "Joined"], ["paste", "List"]]}/>
+      </div>
+      {alpha && (
+        <div className="ids-rangebox-row">
+          <input className="ids-input ids-input--30" aria-label={m === "name" ? "Names from" : "IDs from"} placeholder={ph[0]} value={R.rng.nFrom} onChange={e => R.setRng({ nFrom: e.target.value })}/>
+          <span className="ids-muted">to</span>
+          <input className="ids-input ids-input--30" aria-label={m === "name" ? "Names to" : "IDs to"} placeholder={ph[1]} value={R.rng.nTo} onChange={e => R.setRng({ nTo: e.target.value })}/>
+        </div>
+      )}
+      {m === "id" && !R.rangeSet && <span className="ids-help">Printed IDs, or just the numbers at the end (40 to 80).</span>}
+      {m === "date" && <>
+        <div className="ids-rangebox-row">
+          <input type="date" className="ids-input ids-input--30" aria-label="Joined from" value={R.rng.dFrom} onChange={e => R.setRng({ dFrom: e.target.value })}/>
+          <span className="ids-muted">to</span>
+          <input type="date" className="ids-input ids-input--30" aria-label="Joined to" value={R.rng.dTo} onChange={e => R.setRng({ dTo: e.target.value })}/>
         </div>
         <div className="ids-row ids-row--8">
           <button type="button" className="ids-btn ids-btn--28" onClick={() => lastDays(7)}>Last 7 days</button>
           <button type="button" className="ids-btn ids-btn--28" onClick={() => lastDays(30)}>Last 30 days</button>
         </div>
       </>}
-      {R.rmode === "number" && <>
-        <div className="ids-row">
-          <label className="ids-num"><span className="ids-num-l">ID number from</span><span className="ids-num-box"><input type="number" min={0} inputMode="numeric" value={R.rng.nFrom} onChange={e => R.setRng({ nFrom: e.target.value })}/></span></label>
-          <label className="ids-num"><span className="ids-num-l">To</span><span className="ids-num-box"><input type="number" min={0} inputMode="numeric" value={R.rng.nTo} onChange={e => R.setRng({ nTo: e.target.value })}/></span></label>
-        </div>
-        <span className="ids-help">The number printed at the end of the ID (EG-26-0<b>42</b>), not the place in this list, which moves whenever somebody registers.</span>
-      </>}
-      {R.rmode === "paste" && <>
+      {m === "paste" && <>
         <label className="ids-sr" htmlFor="ids-paste">IDs to put on the sheet</label>
-        <textarea id="ids-paste" className="ids-input ids-input--area" rows={3} placeholder="EG-26-041, EG-26-043 or just 41, 43" value={paste} onChange={e => setPaste(e.target.value)}/>
-        <button type="button" className="ids-btn ids-btn--outline" disabled={!paste.trim()} onClick={doPaste}><IdsIcon name="plus"/>Put these on the sheet</button>
+        <textarea id="ids-paste" className="ids-input ids-input--area" rows={3} placeholder="026-041, EG-26-043 or just 41, 43" value={paste} onChange={e => setPaste(e.target.value)}/>
+        <button type="button" className="ids-btn ids-btn--28 ids-btn--outline" disabled={!paste.trim()} onClick={doPaste}><IdsIcon name="plus"/>Put these on the sheet</button>
         {pasteMsg && <span className={"ids-rec-tag is-" + pasteMsg.tone} role="status">{pasteMsg.text}</span>}
         {pasteMsg && pasteMsg.carded && pasteMsg.carded.length > 0 && (
+          <label className="ids-field"><span className="ids-muted">Why they need a new card</span>
+            <select className="ids-input" value={reprintWhy} onChange={e => setReprintWhy(e.target.value)}>
+              {IDS_REPRINT_REASONS.map(([k, l, help]) => <option key={k} value={k}>{l + " — " + help.split(" — ").pop()}</option>)}</select></label>
+        )}
+        {pasteMsg && pasteMsg.carded && pasteMsg.carded.length > 0 && (
           <button type="button" className="ids-btn ids-btn--sm" disabled={reprintBusy}
-            onClick={async () => { setReprintBusy(true); const done = await R.queueReprints(pasteMsg.carded); setReprintBusy(false); if (done) setPasteMsg({ tone: "ok", text: idsN(pasteMsg.carded.length, "card") + " queued as reprints — paste again to put them on the sheet" }); }}>
+            onClick={async () => { setReprintBusy(true); const done = await R.queueReprints(pasteMsg.carded, reprintWhy); setReprintBusy(false); if (done) setPasteMsg({ tone: "ok", text: idsN(pasteMsg.carded.length, "card") + " queued as reprints — paste again to put them on the sheet" }); }}>
             {reprintBusy ? "Queuing…" : "Queue " + idsN(pasteMsg.carded.length, "reprint")}
           </button>
         )}
       </>}
-      {(R.rmode === "date" || R.rmode === "number") && R.ranged && (
-        <IdsCheck tone={R.inRangeN ? "info" : "warn"} text={(R.inRangeN ? R.inRangeN + " of " + R.preRangeN + " in this range." : "Nothing matches this range.")
-          + (R.undated ? " " + idsN(R.undated, "record") + " with no registration date " + (R.undated === 1 ? "is" : "are") + " left out of any date range." : "")}/>
+      {R.rangeSet && (
+        <p className="ids-rangebox-note" role="status">
+          <span className="ids-grow">
+            {m === "date"
+              ? (R.inRangeN ? R.inRangeN + " of " + R.preRangeN + " joined in this range." : "Nobody joined in this range.") + (R.undated ? " " + idsN(R.undated, "record") + " with no date " + (R.undated === 1 ? "is" : "are") + " left out." : "")
+              : (R.inRangeN ? idsN(R.inRangeN, "person", "people") : "Nobody") + " from “" + (R.rangeLo || "the start") + "” to “" + (R.rangeHi || "the end") + "”" + (R.inRangeN ? ", listed in " + order + " order" : "") + "."}
+          </span>
+          <button type="button" className="ids-linkbtn" onClick={R.clearRange}>Clear</button>
+        </p>
       )}
     </div>
   );
@@ -234,17 +315,6 @@ function IdsSheetCol({ M }) {
   const onSheet = S.sec ? idsCardsOnSheets(M.sections, S.idx + 1, S.idx + 1).length : 0;
   return (
     <main className="ids-sheetcol" aria-label="Sheet preview">
-      <div className="ids-scen">
-        <div className="ids-scen-btns" role="radiogroup" aria-label="What are you printing?">
-          {IDS_SCENARIOS.map(sc => (
-            <button key={sc.key} type="button" role="radio" aria-checked={M.scen === sc.key} className={"ids-scen-btn" + (M.scen === sc.key ? " is-on" : "")} onClick={() => M.applyScenario(sc.key)}>
-              <IdsIcon name={sc.icon}/>{sc.label}
-            </button>
-          ))}
-        </div>
-        <p className="ids-scen-hint">{(IDS_SCENARIOS.find(s => s.key === M.scen) || IDS_SCENARIOS[0]).hint}</p>
-      </div>
-
       {M.job && (
         <div className="ids-job" role="status">
           <IdsIcon name="printer"/>
@@ -263,6 +333,15 @@ function IdsSheetCol({ M }) {
       )}
 
       <div className="ids-toolbar">
+        {/* The job sets several things at once; the toast says which, with Undo. */}
+        <label className="ids-jobsel" title={(IDS_SCENARIOS.find(x => x.key === M.scen) || IDS_SCENARIOS[0]).hint}>
+          <span className="ids-jobsel-l">Job</span>
+          <select className="ids-select ids-select--30 ids-select--bare" value={M.scen} onChange={e => M.pickJob(e.target.value)}
+                  aria-describedby="ids-job-hint">
+            {IDS_SCENARIOS.map(sc => <option key={sc.key} value={sc.key}>{sc.label}</option>)}
+          </select>
+          <span id="ids-job-hint" className="ids-sr">{(IDS_SCENARIOS.find(x => x.key === M.scen) || IDS_SCENARIOS[0]).hint}</span>
+        </label>
         <div className="ids-pager">
           <button type="button" className="ids-iconbtn" aria-label="Previous sheet" disabled={S.idx <= 0} onClick={() => S.go(S.idx - 1)}><IdsIcon name="caret-left"/></button>
           <span aria-live="polite">Sheet {S.count ? S.idx + 1 : 0} of {S.count}{S.sec && M.sections.length > 1 ? <span className="ids-pager-size"> · {idsMmLabel(S.sec.mm)}</span> : null}</span>
@@ -304,7 +383,7 @@ function IdsSheetCol({ M }) {
         </IdsDialog>
       )}
 
-      {M.gap > 0 && !M.breakActive && (
+      {M.gap > 0 && !(M.breakActive && M.pads) && (
         <div className="ids-gapbar">
           <span className="ids-grow">{idsN(M.gap, "empty slot")} on the last sheet. Card stock is wasted unless you fill them.</span>
           {M.fillable > 0 && <button type="button" className="ids-linkbtn" onClick={M.fillGap}>Fill with {Math.min(M.gap, M.fillable)} more ready cards</button>}
@@ -485,109 +564,131 @@ function IdsLanyardSize({ L }) {
   );
 }
 
+/* A section that is set up once and rarely changed: closed by default, with
+   what it holds summed up on its own line, and remembered open or closed in
+   this browser. The settings every print touches stay above it, open. */
+function IdsMore({ id, title, summary, icon, open: dflt, children }) {
+  const key = "ngg.ids.more." + id;
+  const [open, setOpen] = React.useState(() => { try { const v = localStorage.getItem(key); return v == null ? !!dflt : v === "1"; } catch (_) { return !!dflt; } });
+  return (
+    <details className="ids-more" open={open} onToggle={e => { const o = e.currentTarget.open; setOpen(o); try { localStorage.setItem(key, o ? "1" : "0"); } catch (_) {} }}>
+      <summary className="ids-more-sum">
+        {icon && <IdsIcon name={icon} className="ids-more-ico"/>}
+        <span className="ids-more-t">{title}</span><span className="ids-more-s">{summary}</span><IdsIcon name="caret-down" className="ids-more-caret"/>
+      </summary>
+      <div className="ids-more-body">{children}</div>
+    </details>
+  );
+}
+
+/* Settings (v4): the checks first, because they say whether you can print;
+   then Layout, open; then Printing and Designs, which are set once and rarely
+   touched, closed with a summary line. Print itself is in the header. */
 function IdsSettings({ M }) {
   const set = M.set, st = M.settings, G = M.G;
+  const assigned = M.designsUI.filter(d => d.value);
+  const designSum = assigned.length ? assigned.map(d => d.label + ": " + ((d.options.find(o => o.templateId === d.value) || {}).name || "a design")).join(" · ") : "Standard cards";
+  const sec0 = (M.sections[0] || {}).G || G;
+  const layoutSum = [IDS_PAPERS[st.paper][0], idsN(sec0.per, "card") + " per sheet", "by " + ((IDS_ORDERS.find(o => o[0] === st.order) || IDS_ORDERS[0])[1]).toLowerCase()].join(" · ");
+  const printSum = [(IDS_BACKS.find(b => b[0] === st.backs) || IDS_BACKS[0])[1], st.marks ? "cut marks" : "no cut marks", st.dpi + " dpi"].join(" · ");
   return (
-    <aside className="ids-set" aria-label="Layout and print">
+    <aside className="ids-set" aria-label="Settings">
       <div className="ids-set-scroll">
-        <section className="ids-sec" aria-labelledby="ids-designs-h">
-          <h2 className="ids-h2" id="ids-designs-h">Designs</h2>
-          {M.designsUI.map(d => (
-            <label key={d.kind} className="ids-field">
-              <span className="ids-field-l">{d.label}</span>
-              <select className="ids-select" value={d.value} disabled={d.busy} onChange={e => M.setDesign(d.kind, e.target.value)}>
-                <option value="">Standard card</option>
-                {d.options.map(o => <option key={o.templateId} value={o.templateId}>{o.name} · v{o.version}{o.paired ? " · with back" : ""}</option>)}
-              </select>
-              <span className="ids-help">{d.help}</span>
-            </label>
-          ))}
-          {!M.designsUI.length && <p className="ids-note">No card type you can print.</p>}
-          {M.lanyardUI && <IdsLanyardSize L={M.lanyardUI}/>}
-          <p className="ids-note"><span>Only published designs are offered. Draw and publish them in the <a className="ids-linkbtn" href="/designer" onClick={M.openDesigner}>Design Studio</a>; every run logs the version it used.</span></p>
+        <section className="ids-sec ids-checks" aria-label="Checks" aria-live="polite">
+          {M.checks.length ? M.checks.map((c, i) => <IdsCheck key={i} tone={c.tone} text={c.text} action={c.action} onAction={c.onAction}/>)
+            : <IdsCheck tone="info" text="Put cards on the sheet and the checks appear here."/>}
         </section>
 
-        {M.hasVolunteers && <IdsTiers onChanged={M.reload}/>}
-
-        <section className="ids-sec">
-          <h2 className="ids-h2">Card size</h2>
-          <p className="ids-note"><span>Cards from records print at their own design’s size. This size is for uploaded images. When a run holds more than one size, each size gets its own sheets.</span></p>
-          <div className="ids-sizes" role="radiogroup" aria-label="Card size">
-            {IDS_SIZE_IDS.map(k => (
-              <button key={k} type="button" role="radio" aria-checked={st.size === k} className={"ids-size" + (st.size === k ? " is-on" : "")} onClick={() => set({ size: k })}>
-                <b>{IDS_SIZES[k][0]}</b><span>{IDS_SIZES[k][1]}</span>
-              </button>
-            ))}
-          </div>
-          {st.size === "custom" && (
-            <div className="ids-row">
-              <IdsNum id="ids-cw" label="Width (mm)" value={st.cw} min={IDS_CUSTOM_LIMITS.min} max={IDS_CUSTOM_LIMITS.maxW} step={0.1} onChange={v => set({ cw: v })}/>
-              <IdsNum id="ids-ch" label="Height (mm)" value={st.ch} min={IDS_CUSTOM_LIMITS.min} max={IDS_CUSTOM_LIMITS.maxH} step={0.1} onChange={v => set({ ch: v })}/>
+        <IdsMore id="layout" title="Layout" icon="layout" summary={layoutSum} open>
+          <section className="ids-sec">
+            <h2 className="ids-h2">Card size for uploads</h2>
+            <div className="ids-sizes" role="radiogroup" aria-label="Card size for uploads">
+              {IDS_SIZE_IDS.map(k => (
+                <button key={k} type="button" role="radio" aria-checked={st.size === k} className={"ids-size" + (st.size === k ? " is-on" : "")} onClick={() => set({ size: k })}>
+                  <b>{IDS_SIZES[k][0]}</b><span>{IDS_SIZES[k][1]}</span>
+                </button>
+              ))}
             </div>
-          )}
-        </section>
-
-        <section className="ids-sec">
-          <h2 className="ids-h2">Paper</h2>
-          <IdsSeg label="Paper" value={st.paper} onChange={v => set({ paper: v })} options={IDS_PAPER_IDS.map(k => [k, IDS_PAPERS[k][0]])}/>
-          <div className="ids-row">
-            <IdsNum id="ids-margin" label="Margin (mm)" value={st.margin} min={IDS_MARGIN.min} max={IDS_MARGIN.max} onChange={v => set({ margin: v })}/>
-            <IdsNum id="ids-gap" label="Gap (mm)" value={st.gap} min={IDS_GAP.min} max={IDS_GAP.max} onChange={v => set({ gap: v })}/>
-          </div>
-          {(M.sections.length ? M.sections : [{ key: "up", mm: [G.cw, G.ch], G }]).map(sec => (
-            <p key={sec.key} className="ids-perline" aria-live="polite"><b>{idsN(sec.G.per, "card")}</b> per sheet · {sec.G.cols} across, {sec.G.rows} down{M.sections.length > 1 ? " · " + idsMmLabel(sec.mm) : ""}</p>
-          ))}
-          {!G.per && <IdsCheck tone="bad" text={"Cards this size don’t fit on " + IDS_PAPERS[G.paper][0] + " with these margins."}/>}
-          <IdsNum id="ids-skip" inline label="Skip used slots on sheet 1" help="For a part-used sheet of card stock" value={st.skip} min={0} max={Math.max(0, ((M.sections[0] || {}).G || G).per - 1)} onChange={v => set({ skip: v })}/>
-        </section>
-
-        <section className="ids-sec">
-          <h2 className="ids-h2">Order on the sheet</h2>
-          <IdsSeg label="Order" value={st.order} onChange={M.setOrder} options={IDS_ORDERS}/>
-          {(st.order === "centre" || st.order === "kind") && <>
-            <IdsSwitch id="ids-break" on={st.breakBy} onChange={v => set({ breakBy: v })} label={"New sheet for each " + st.order} help="Cut piles stay separate"/>
-            {st.breakBy && M.pads > 0 && <p className="ids-note">{idsN(M.pads, "slot")} left blank so the piles never mix</p>}
-          </>}
-          <p className="ids-stock"><IdsIcon name="stack"/>{idsN(M.stock.sheets, "sheet")} of card stock · {M.stock.sides} printed sides · {M.stock.used}% used</p>
-        </section>
-
-        <section className="ids-sec">
-          <h2 className="ids-h2">Backs</h2>
-          <div className="ids-radios" role="radiogroup" aria-label="Backs">
-            {IDS_BACKS.map(([k, l, sub]) => (
-              <button key={k} type="button" role="radio" aria-checked={st.backs === k} className={"ids-radio" + (st.backs === k ? " is-on" : "")} onClick={() => set({ backs: k })}>
-                <span className="ids-radio-dot"/><span className="ids-grow"><b>{l}</b><span>{sub}</span></span>
-              </button>
+            {st.size === "custom" && (
+              <div className="ids-row">
+                <IdsNum id="ids-cw" label="Width (mm)" value={st.cw} min={IDS_CUSTOM_LIMITS.min} max={IDS_CUSTOM_LIMITS.maxW} step={0.1} onChange={v => set({ cw: v })}/>
+                <IdsNum id="ids-ch" label="Height (mm)" value={st.ch} min={IDS_CUSTOM_LIMITS.min} max={IDS_CUSTOM_LIMITS.maxH} step={0.1} onChange={v => set({ ch: v })}/>
+              </div>
+            )}
+            <span className="ids-help">Cards from records print at their own card’s size. When a run holds more than one size, each size gets its own sheets.</span>
+          </section>
+          <section className="ids-sec">
+            <h2 className="ids-h2">Paper</h2>
+            <IdsSeg label="Paper" value={st.paper} onChange={v => set({ paper: v })} options={IDS_PAPER_IDS.map(k => [k, IDS_PAPERS[k][0]])}/>
+            <div className="ids-row">
+              <IdsNum id="ids-margin" label="Margin (mm)" value={st.margin} min={IDS_MARGIN.min} max={IDS_MARGIN.max} onChange={v => set({ margin: v })}/>
+              <IdsNum id="ids-gap" label="Gap (mm)" value={st.gap} min={IDS_GAP.min} max={IDS_GAP.max} onChange={v => set({ gap: v })}/>
+            </div>
+            {(M.sections.length ? M.sections : [{ key: "up", mm: [G.cw, G.ch], G }]).map(sec => (
+              <p key={sec.key} className="ids-perline" aria-live="polite"><b>{idsN(sec.G.per, "card")}</b> per sheet · {sec.G.cols} across, {sec.G.rows} down{M.sections.length > 1 ? " · " + idsMmLabel(sec.mm) : ""}</p>
             ))}
-          </div>
-        </section>
+            {!G.per && <IdsCheck tone="bad" text={"Cards this size don’t fit on " + IDS_PAPERS[G.paper][0] + " with these margins."}/>}
+            <IdsNum id="ids-skip" inline label="Skip used slots on sheet 1" help="For a part-used sheet of card stock" value={st.skip} min={0} max={Math.max(0, sec0.per - 1)} onChange={v => set({ skip: v })}/>
+          </section>
+          <section className="ids-sec">
+            <h2 className="ids-h2">Order on the sheet</h2>
+            <IdsSeg label="Order" value={st.order} onChange={M.setOrder} options={IDS_ORDERS}/>
+            {(st.order === "centre" || st.order === "kind") && <>
+              <IdsSwitch id="ids-break" on={st.breakBy} onChange={v => set({ breakBy: v })} label={"New sheet for each " + st.order}
+                         help="Only for groups that fill a sheet. Smaller groups share one, so no stock is wasted."/>
+              {st.breakBy && M.pads > 0 && <p className="ids-note">{idsN(M.pads, "slot")} left blank so the piles never mix</p>}
+            </>}
+            <p className="ids-stock"><IdsIcon name="stack"/>{idsN(M.stock.sheets, "sheet")} of card stock · {M.stock.sides} printed sides · {M.stock.used}% used</p>
+          </section>
+        </IdsMore>
 
-        <section className="ids-sec">
-          <h2 className="ids-h2">Finish</h2>
-          <IdsSwitch id="ids-marks" on={st.marks} onChange={v => set({ marks: v })} label="Cut marks"/>
-          <label className="ids-field">
-            <span className="ids-field-l">Image quality</span>
-            <select className="ids-select" value={st.dpi} onChange={e => set({ dpi: +e.target.value })}>{IDS_DPI.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-          </label>
-        </section>
+        <IdsMore id="printing" title="Printing" icon="printer" summary={printSum}>
+          <section className="ids-sec">
+            <h2 className="ids-h2">Backs</h2>
+            <div className="ids-radios" role="radiogroup" aria-label="Backs">
+              {IDS_BACKS.map(([k, l, sub]) => (
+                <button key={k} type="button" role="radio" aria-checked={st.backs === k} className={"ids-radio" + (st.backs === k ? " is-on" : "")} onClick={() => set({ backs: k })}>
+                  <span className="ids-radio-dot"/><span className="ids-grow"><b>{l}</b>{st.backs === k && <span>{sub}</span>}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+          <section className="ids-sec">
+            <IdsSwitch id="ids-marks" on={st.marks} onChange={v => set({ marks: v })} label="Cut marks"/>
+            <label className="ids-field">
+              <span className="ids-field-l">Image quality</span>
+              <select className="ids-select" value={st.dpi} onChange={e => set({ dpi: +e.target.value })}>{IDS_DPI.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+            </label>
+            {M.nCards > 0 && !M.printBlock && (
+              <p className="ids-ready" role="status" aria-live="polite">
+                {M.warm.busy ? "Preparing in the background · " + M.warm.ready + " of " + M.warm.total + " faces"
+                  : M.warm.total && M.warm.ready >= M.warm.total ? "Print-ready · makes a PDF at " + M.dpi + " dpi" : "Makes a PDF at " + M.dpi + " dpi"}
+              </p>
+            )}
+            <button type="button" className="ids-btn ids-btn--34" onClick={M.printTest} disabled={!M.sheetG.per || !!M.xjob}><IdsIcon name="crosshair"/>Print an alignment test</button>
+            <button type="button" className="ids-btn ids-btn--34" onClick={M.startExport} disabled={!!M.xjob}><IdsIcon name="file-pdf"/>Export files for a print shop</button>
+          </section>
+        </IdsMore>
 
-        <section className="ids-sec" aria-live="polite">
-          <h2 className="ids-h2">Checks</h2>
-          {M.checks.map((c, i) => <IdsCheck key={i} tone={c.tone} text={c.text} action={c.action} onAction={c.onAction}/>)}
-        </section>
-      </div>
-      <div className="ids-set-foot">
-        <button type="button" className={"ids-btn ids-btn--print" + (M.printBlock ? " is-off" : "")} aria-disabled={!!M.printBlock || undefined} disabled={!!M.xjob} onClick={M.startPrint}>
-          <IdsIcon name="printer"/>Print {idsN(M.nCards, "card")} · {idsN(M.sheet.count, "sheet")}
-        </button>
-        {M.nCards > 0 && !M.printBlock && (
-          <p className="ids-ready" role="status" aria-live="polite">
-            {M.warm.busy ? "Preparing in the background · " + M.warm.ready + " of " + M.warm.total + " faces"
-              : M.warm.total && M.warm.ready >= M.warm.total ? "Print-ready · makes a PDF at " + M.dpi + " dpi" : "Makes a PDF at " + M.dpi + " dpi"}
-          </p>
-        )}
-        <button type="button" className="ids-btn ids-btn--34" onClick={M.startExport} disabled={!!M.xjob}><IdsIcon name="file-pdf"/>Export files for a print shop</button>
-        <button type="button" className="ids-btn ids-btn--34" onClick={M.printTest} disabled={!M.sheetG.per || !!M.xjob}>Print an alignment test</button>
+        <IdsMore id="designs" title="Designs" icon="paint-brush" summary={designSum}>
+          <section className="ids-sec" aria-labelledby="ids-designs-h">
+            <h2 className="ids-h2 ids-sr" id="ids-designs-h">Designs</h2>
+            {M.designsUI.map(d => (
+              <label key={d.kind} className="ids-field">
+                <span className="ids-field-l">{d.label}</span>
+                <select className="ids-select" value={d.value} disabled={d.busy} onChange={e => M.setDesign(d.kind, e.target.value)}>
+                  <option value="">Standard card</option>
+                  {d.options.map(o => <option key={o.templateId} value={o.templateId}>{o.name} · v{o.version}{o.paired ? " · with back" : ""}</option>)}
+                </select>
+                <span className="ids-help">{d.help}</span>
+              </label>
+            ))}
+            {!M.designsUI.length && <p className="ids-note">No card type you can print.</p>}
+            {M.lanyardUI && <IdsLanyardSize L={M.lanyardUI}/>}
+            <p className="ids-note"><span>Only published designs are offered. Draw and publish them in the <a className="ids-linkbtn" href="/designer" onClick={M.openDesigner}>Design Studio</a>; every run logs the version it used.</span></p>
+          </section>
+          {M.hasVolunteers && <IdsTiers onChanged={M.reload}/>}
+        </IdsMore>
       </div>
     </aside>
   );
@@ -598,8 +699,9 @@ function IdsSettings({ M }) {
    the sheet. The count is shown before anything runs, and the result says who
    was changed, who already looked like this, and who could not be. */
 const IDS_FOCUS = [["face", "Face"], ["center", "Centre"], ["north", "Top"], ["south", "Bottom"]];
-function IdsImproveDialog({ run, onCancel, onStart }) {
-  const [spec, setSpec] = React.useState({ gravity: "face", zoom: 1, brighten: false, sharpen: false, removeBg: false });
+function IdsImproveDialog({ run, preset, onCancel, onStart }) {
+  // The assistant opens it with what was asked ("remove their backgrounds") already set; the operator still presses Improve.
+  const [spec, setSpec] = React.useState(Object.assign({ gravity: "face", zoom: 1, brighten: false, sharpen: false, removeBg: false }, preset || {}));
   const set = (k, v) => setSpec(x => Object.assign({}, x, { [k]: v }));
   return (
     <IdsDialog alert width={500} title={"Improve " + idsN(run.n, "photo") + "?"}
@@ -641,8 +743,31 @@ function IdsImproveResult({ res, onClose }) {
    the others. Every control is a button, and the arrow and +/− keys work
    too: nothing needs a drag. */
 const IDS_FRAME_STEP = { zoom: 0.08, move: 0.03 };
-const IDS_FRAME_SHAPES = [["Member card", 0.82], ["Summer School", 404 / 318], ["Round", 1]];
-function IdsPhotoFrame({ rec, say, onClose, onSaved }) {
+/* The photograph box each card type prints, read from its renderer — never a
+   list of its own. This list once said "Member card" for a portrait box no card
+   has, "Summer School" for the volunteer card's landscape box, and "Round" for
+   what is in fact the Summer School card, so a photo was framed against the
+   wrong card. A type with an assigned design prints that design's photo box. */
+function idsPhotoShape(kind, design) {
+  const box = design && design.published && typeof tplPhotoBox === "function" ? tplPhotoBox(design.published) : null;
+  if (box) return { ar: box.round ? 1 : box.w / box.h, round: box.round, design: true };
+  if (kind === "member") return { ar: NGGC_PHOTO_MM.w / NGGC_PHOTO_MM.h, round: false };
+  if (kind === "summer") return { ar: 1, round: !!CARD_FRONT_PHOTO.round };
+  if (kind === "volunteer") return { ar: VOL_CARD_PHOTO.w / VOL_CARD_PHOTO.h, round: false };
+  return null;
+}
+/* The person's own card first, as it prints; then the other standard cards a
+   shared photograph can also be on, each under its own name. */
+function idsFrameShapes(rec, designOfKind) {
+  const own = idsPhotoShape(rec.kind, designOfKind ? designOfKind(rec.kind) : null);
+  const out = own ? [{ key: rec.kind, label: (IDS_KINDS[rec.kind] || "This") + " card" + (own.design ? " · its design" : ""), own: true, ar: own.ar, round: own.round }] : [];
+  ["member", "summer", "volunteer"].filter(k => k !== rec.kind).forEach(k => {
+    const s = idsPhotoShape(k, designOfKind ? designOfKind(k) : null);
+    if (s) out.push({ key: k, label: IDS_KINDS[k] + " card" + (s.design ? " · its design" : ""), own: false, ar: s.ar, round: s.round });
+  });
+  return out;
+}
+function IdsPhotoFrame({ rec, say, onClose, onSaved, designOfKind }) {
   const url = nggPhotoSrc(rec.photoUrl);
   const start = React.useRef(undefined);
   const [adj, setAdj] = React.useState(null);
@@ -706,12 +831,12 @@ function IdsPhotoFrame({ rec, say, onClose, onSaved }) {
       sub={measured ? "Framed from Gemini’s measurement of the head and face. Adjust it here; it applies on every card this photo is on." : "This photo hasn’t been measured by Gemini yet, so it is framed by its face landmarks. Measure it, or adjust it by hand."}>
       <div className="ids-frame-body" onKeyDown={keys}>
         <div className="ids-frame-previews">
-          {IDS_FRAME_SHAPES.map(([label, ar]) => (
-            <figure key={label} className="ids-frame-fig">
-              <div className={"ids-frame-box" + (ar === 1 ? " is-round" : "")} style={{ aspectRatio: String(ar) }}>
-                {adj && <CardPhoto url={rec.photoUrl} wPx={Math.round(600 * Math.min(1, ar))} hPx={Math.round(600 * Math.min(1, ar) / ar)}/>}
+          {idsFrameShapes(rec, designOfKind).map(f => (
+            <figure key={f.key} className={"ids-frame-fig" + (f.own ? " is-own" : "")}>
+              <div className={"ids-frame-box" + (f.round ? " is-round" : "")} style={{ aspectRatio: String(f.ar) }}>
+                {adj && <CardPhoto url={rec.photoUrl} wPx={Math.round(600 * Math.min(1, f.ar))} hPx={Math.round(600 * Math.min(1, f.ar) / f.ar)}/>}
               </div>
-              <figcaption>{label}</figcaption>
+              <figcaption>{f.label}{f.own ? <span className="ids-frame-own"> · prints on this</span> : null}</figcaption>
             </figure>
           ))}
         </div>
