@@ -447,88 +447,222 @@ function crSyIntOpen(ctx, i, h) {
   });
 }
 /* ══ Make.com ════════════════════════════════════════════════════════════════
-   Set up entirely here (domain/make.php): NGG makes both keys and shows each
-   once, connects Make's webhook to exactly the events its scenarios use, and
-   says whether the scheduler is keeping the background jobs running. Nothing
-   is typed into config.php. The scenarios themselves: docs/make.md. */
-function crSyMakeSrc(src, ending) { return src === "here" ? "Made here · ends …" + ending : src === "file" ? "From config.php · ends …" + ending : "Not made yet"; }
-function crSyMakeReveal(ctx, title, sections, copy) {
-  setTimeout(() => ctx.drawer({ title, sub: "Shown once. Afterwards only its last four characters are.", sections,
-    actions: [...copy.map(([l, t, what], n) => ({ l, primary: n === 0, run: () => crSyCopy(ctx, t, what) })), { l: "Done", run: () => { ctx.closeDrawer(); ctx.reload(); } }] }), 50);
+   Set up entirely here (domain/make.php), as three numbered steps, each with
+   its state and its one action on the same row. NGG makes both keys; a key
+   is shown inline, once, and stays until the operator says it is copied —
+   never in a toast or a drawer that a stray click dismisses. The scenario
+   guide lives here too, because the person building them in Make does not
+   have the repository open. */
+const CR_SY_MAKE_SIGN = "X-NGG-Timestamp: {{formatDate(now; \"X\")}}\nX-NGG-Signature: sha256={{sha256(TIMESTAMP + \".\" + BODY; \"hex\"; KEY)}}";
+const CR_SY_MAKE_SCENARIOS = [
+  { id: "heartbeat", icon: "heartbeat", t: "Keep time", s: "Runs reminders and the nightly absence check when nobody is visiting the site. Build this first.", needs: ["cron"],
+    steps: ["For each address step 3 gave you: a new scenario with a Schedule trigger at the interval shown, then HTTP → Make a request (GET) to the address.",
+      "Watchdog: a scenario every hour that sends {\"action\":\"jobs\"} to NGG’s door (signed) and, when healthy is false, messages the person who looks after the site."],
+    body: "{\"action\":\"jobs\"}" },
+  { id: "consent", icon: "signature", t: "Consent reminders", s: "Chases a guardian on WhatsApp when a registration is waiting for consent. Consent itself is still given on NGG’s form.", needs: ["secret", "hook"],
+    steps: ["Trigger: the custom webhook, filtered to event = private.registration.stalled.",
+      "WhatsApp the guardian an approved template with data.verifyUrl, and save data.ref with the time in a data store.",
+      "Hourly over the store: send {\"action\":\"registration.status\",\"ref\":…}. Verified → delete the row. Not after 24 hours → WhatsApp again. Not after 48 → a call task for the centre coordinator."],
+    body: "{\"action\":\"registration.status\",\"ref\":\"SS-…\"}" },
+  { id: "absence", icon: "chat-circle-dots", t: "Why were they away?", s: "Asks guardians the morning after an absence. Their answer appears beside the absence on the Conduct tab.", needs: ["secret", "hook"],
+    steps: ["Trigger: the custom webhook, filtered to event = private.attendance.absences. Iterate over data.items.",
+      "WhatsApp each guardian a template with four quick replies — Sick, Travelled, Family matter, Other — and put the item’s ref in each button’s payload.",
+      "Second scenario on WhatsApp’s incoming messages: send {\"action\":\"absence.reason\",\"ref\":…,\"reason\":\"sick\",\"channel\":\"whatsapp\"}. The reason explains the absence; staff decide whether to void it."],
+    body: "{\"action\":\"absence.reason\",\"ref\":\"AB-…\",\"reason\":\"sick\",\"channel\":\"whatsapp\"}" },
+  { id: "safeguarding", icon: "shield-warning", t: "Safeguarding escalation", s: "Makes sure a flag is taken by somebody. The message carries a reference and a link, never the child’s name.", needs: ["secret", "hook"],
+    steps: ["Trigger: the custom webhook, filtered to event = safeguarding.flag. Message the safeguarding lead with data.adminUrl and an “I’ve got this” button carrying data.ref.",
+      "Their tap: {\"action\":\"safeguarding.ack\",\"ref\":…,\"by\":\"their name\"}.",
+      "Every 15 minutes: {\"action\":\"safeguarding.status\",\"ref\":…}. Not acknowledged after 2 hours → the deputy; after 6 → the director. Marking it reviewed on the Behaviour monitor also stops it."],
+    body: "{\"action\":\"safeguarding.ack\",\"ref\":\"BL-…\",\"by\":\"Safeguarding lead\"}" },
+  { id: "season", icon: "sun", t: "Summer School season", s: "Acts on the edition’s own dates: re-enrolment six weeks out, rota two weeks out, feedback in the last week.", needs: ["secret", "hook"],
+    steps: ["Trigger: the custom webhook, filtered to event = edition.milestone. Branch on data.milestone: starts_in_42, starts_in_14, started, ends_in_7, ended.",
+      "Read dates and counts with {\"action\":\"editions\"} — never type the dates into Make."],
+    body: "{\"action\":\"editions\"}" },
+  { id: "impact", icon: "chart-line-up", t: "Monthly impact report", s: "Fills a Google Doc or Slides with last month’s figures — counts only, ready for funders.", needs: ["secret"],
+    steps: ["Schedule: the 1st of each month. Send {\"action\":\"impact\"} (or add \"month\":\"2026-09\").",
+      "Map data.totals and data.centres into a Google Docs or Slides template and share it with the director."],
+    body: "{\"action\":\"impact\"}" },
+];
+const CR_SY_JOB_LABEL = { deliver: "Sending events", reminders: "Reminders", maint: "Absence check and upkeep", editions: "Season dates", accrue: "Fees" };
+
+function crSyMakeState(m) {
+  const done = [m.secretSet, !!(m.destination && m.destination.status === "active"), m.cronSet];
+  const n = done.filter(Boolean).length;
+  if (!m.secretSet && m.destination && m.destination.status === "paused") return { done, n, t: "Turned off", tone: "neutral" };
+  if (n === 0) return { done, n, t: "Not set up", tone: "neutral" };
+  if (n < 3) return { done, n, t: "Step " + (done.indexOf(false) + 1) + " of 3", tone: "warn" };
+  if (m.delivery && m.delivery.dead) return { done, n, t: "Events failing", tone: "bad" };
+  if (m.jobs && !m.jobs.healthy) return { done, n, t: "Jobs behind", tone: "warn" };
+  return { done, n, t: "On", tone: "ok" };
 }
-async function crSyMakeSecret(ctx, m) {
-  if (m.secretSet) {
-    const ok = await ctx.confirm({ title: "Replace Make’s signing key?", danger: true, cta: "Replace it",
-      body: "Make’s calls stop working the moment this is pressed, until the new key is pasted into every scenario that calls NGG." });
-    if (!ok) return;
-  }
-  try {
-    const r = await NGGApi.admin.integrations.makeSecret();
-    ctx.closeDrawer();
-    crSyMakeReveal(ctx, "Copy Make’s signing key now", [
-      { h: "Signing key", text: r.secret },
-      { h: "Where it goes", text: "In Make, put it in a data store (or a scenario variable) and sign each call to NGG with it:\nX-NGG-Signature = sha256=" + "{{sha256(timestamp + \".\" + body; \"hex\"; key)}}\nX-NGG-Timestamp = {{formatDate(now; \"X\")}}" },
-      { h: "NGG’s door", text: m.door },
-    ], [["Copy the key", r.secret, "Key"], ["Copy the door address", m.door, "Address"]]);
-  } catch (e) { ctx.toast(crErr(e, "Couldn’t make the key."), null, true); }
+
+/** A key or address shown once, with its own copy button, until dismissed. */
+function CrSyMakeReveal({ ctx, r, onDone }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => { if (ref.current) ref.current.focus(); }, []);
+  return (
+    <section ref={ref} tabIndex={-1} className="cr-box cr-mk-reveal" aria-labelledby="cr-mk-reveal-h">
+      <div className="cr-mk-reveal-head"><CrIcon n="key"/><b id="cr-mk-reveal-h">{r.title}</b></div>
+      <p className="cr-mk-hint">{r.note}</p>
+      {r.items.map((it, i) => (
+        <div key={i} className="cr-mk-copy">
+          <span className="cr-mk-copy-l">{it.l}</span>
+          <code className="cr-mk-code">{it.v}</code>
+          <button type="button" className="cr-btn is-sm" aria-label={"Copy " + it.l} onClick={() => crSyCopy(ctx, it.v, it.l)}><CrIcon n="copy"/>Copy</button>
+        </div>
+      ))}
+      <div className="cr-mk-reveal-foot">
+        <span className="cr-mk-hint">After this, only the last four characters are shown.</span>
+        <button type="button" className="cr-btn is-primary" onClick={onDone}>I’ve copied it</button>
+      </div>
+    </section>
+  );
 }
-async function crSyMakeCron(ctx, m) {
-  if (m.cronSet) {
-    const ok = await ctx.confirm({ title: "Replace the scheduler key?", danger: true, cta: "Replace it",
-      body: "Every scheduled call using the old key stops at once — Make’s, and any cPanel cron or uptime monitor. Paste the new addresses into each." });
-    if (!ok) return;
-  }
-  try {
-    const r = await NGGApi.admin.integrations.makeCron();
-    ctx.closeDrawer();
-    const urls = r.urls || [];
-    crSyMakeReveal(ctx, "Copy the scheduler addresses now", [
-      { h: "What to do", text: "In Make, one scenario per line below: a Schedule trigger at that interval, then HTTP → Make a request (GET) to the address. These keep NGG’s reminders, absence check and season jobs running when nobody is visiting the site." },
-      ...urls.map(u => ({ h: u.every + " · " + u.job, text: u.url })),
-    ], urls.map(u => ["Copy · " + u.job, u.url, "Address"]));
-  } catch (e) { ctx.toast(crErr(e, "Couldn’t make the key."), null, true); }
+
+function CrSyMakeStep({ n, done, title, what, children, action }) {
+  return (
+    <li className={"cr-mk-step" + (done ? " is-done" : "")}>
+      <span className="cr-mk-num" aria-hidden="true">{done ? <CrIcon n="check"/> : n}</span>
+      <div className="cr-mk-step-body">
+        <b>{title}<span className="cr-sr">{done ? " — done" : " — to do"}</span></b>
+        <span className="cr-mk-what">{what}</span>
+        {children}
+      </div>
+      {action && <div className="cr-mk-step-acts">{action}</div>}
+    </li>
+  );
 }
-function crSyMakeConnect(ctx, m) {
-  ctx.closeDrawer();
-  ctx.form({
-    title: m.destination ? "Move Make’s webhook" : "Connect Make’s webhook", submit: "Connect", busyLabel: "Connecting…",
-    intro: "In Make, start a scenario with Webhooks → Custom webhook, copy its address and paste it here. NGG sends it exactly the events the Make scenarios use: " + (m.events || []).join(", ") + ".",
-    values: { url: m.destination ? m.destination.url : "" },
-    fields: [{ id: "url", l: "Make webhook address", req: true, type: "url", ph: "https://hook.eu1.make.com/…",
-      check: v => /^https:\/\/hook\.[a-z0-9]+\.make\.com\/[A-Za-z0-9_-]+$/.test(String(v).trim()) ? "" : "Paste a Make custom webhook address — https://hook.eu1.make.com/…" }],
-    onSubmit: async v => { const r = await NGGApi.admin.integrations.makeConnect(String(v.url).trim()); ctx.reload(); return r; },
-    done: (v, r) => (r && r.moved ? "Moved · " : "Connected · ") + "Make.com",
-  });
-}
-async function crSyMakeOff(ctx) {
-  const ok = await ctx.confirm({ title: "Turn Make off?", danger: true, cta: "Turn it off",
-    body: "Make’s calls to NGG are refused from now on and its events stop. The scheduler key stays, so the background jobs keep running. Turn it back on by making a new signing key." });
-  if (!ok) return;
-  try { await NGGApi.admin.integrations.makeOff(); ctx.closeDrawer(); ctx.toast("Make.com turned off"); ctx.reload(); }
-  catch (e) { ctx.toast(crErr(e, "Couldn’t turn it off."), null, true); }
-}
-function crSyMakeOpen(ctx, m) {
+
+function CrSyMake({ ctx, make }) {
+  const [m, setM] = React.useState(make);
+  const [reveal, setReveal] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const [test, setTest] = React.useState(null);
+  React.useEffect(() => { setM(make); }, [make]);
+  const st = crSyMakeState(m);
+  const d = m.destination, dl = m.delivery || {};
   const jobs = (m.jobs && m.jobs.jobs) || [];
-  const d = m.destination;
-  ctx.drawer({
-    title: "Make.com", sub: m.secretSet ? "On" : "Off",
-    stats: [["Calls in", m.secretSet ? "Open" : "Closed"], ["Events out", d ? (d.status === "paused" ? "Paused" : "Connected") : "Not connected"], ["Background jobs", m.jobs && m.jobs.healthy ? "Running" : "Behind"]],
-    fields: [["NGG’s door", m.door], ["Signing key", crSyMakeSrc(m.secretSource, m.secretEnding) + (m.secretAt ? " · " + crDate(m.secretAt) + (m.secretBy ? " by " + m.secretBy : "") : "")],
-      ["Make webhook", d ? d.url : "Not connected"], ["Scheduler key", crSyMakeSrc(m.cronSource, m.cronEnding)],
-      ["Last answer from Make", m.lastAnswerAt ? crDate(m.lastAnswerAt, true) : "None yet"]],
-    sections: [
-      { h: "Background jobs", text: jobs.map(j => j.job + " — " + (j.lastRunAt ? "ran " + crAgo(j.lastRunAt) : "never ran") + (j.stale ? " · behind" : "")).join("\n") },
-      !m.sealed ? { h: "Can’t store keys", text: "This server cannot encrypt (PHP openssl is missing), so keys cannot be made here." } : null,
-      { h: "Building the scenarios", text: "Step by step in docs/make.md: the scheduler, consent reminders, why-were-they-away, safeguarding escalation, the Summer School season and the monthly impact report. Turn on “Data is confidential” in every scenario." },
-    ].filter(Boolean),
-    actions: [
-      { l: m.secretSet ? "Replace signing key" : "Make signing key", primary: !m.secretSet, disabled: !m.sealed, run: () => crSyMakeSecret(ctx, m) },
-      { l: d ? "Move webhook" : "Connect Make’s webhook", primary: m.secretSet && !d, disabled: !m.sealed, run: () => crSyMakeConnect(ctx, m) },
-      { l: m.cronSet ? "Replace scheduler key" : "Make scheduler key", primary: m.secretSet && !!d && !m.cronSet, disabled: !m.sealed, run: () => crSyMakeCron(ctx, m) },
-      { l: "Copy door address", run: () => crSyCopy(ctx, m.door, "Address") },
-      m.secretSource === "here" || (d && d.status !== "paused") ? { l: "Turn off", run: () => crSyMakeOff(ctx) } : null,
-    ].filter(Boolean),
+  const late = jobs.filter(j => j.stale);
+  const run = async (key, fn) => { setBusy(key); try { await fn(); } catch (e) { ctx.toast(crErr(e, "That didn’t work. Try again."), null, true); } setBusy(""); };
+
+  const makeSecret = () => run("secret", async () => {
+    if (m.secretSet && !(await ctx.confirm({ title: "Replace Make’s signing key?", danger: true, cta: "Replace it",
+      body: "Make’s calls stop working the moment you press this, until the new key is in every scenario that calls NGG." }))) return;
+    const r = await NGGApi.admin.integrations.makeSecret();
+    setM(r.make);
+    setReveal({ title: "Copy Make’s signing key now", note: "In Make, keep it in a data store or a scenario variable. Sign every call to NGG’s door with it — the headers are in “How to call NGG” below.",
+      items: [{ l: "Signing key", v: r.secret }, { l: "NGG’s door", v: m.door }] });
   });
+  const makeCron = () => run("cron", async () => {
+    if (m.cronSet && !(await ctx.confirm({ title: "Replace the scheduler key?", danger: true, cta: "Replace it",
+      body: "Every scheduled call using the old addresses stops at once — Make’s, and any cPanel cron or uptime monitor." }))) return;
+    const r = await NGGApi.admin.integrations.makeCron();
+    setM(r.make);
+    setReveal({ title: "Copy the scheduler addresses now", note: "One Make scenario per address: a Schedule trigger at the interval shown, then HTTP → Make a request (GET) to the address.",
+      items: (r.urls || []).map(u => ({ l: u.every + " — " + (CR_SY_JOB_LABEL[u.job] || u.job), v: u.url })) });
+  });
+  const connect = () => ctx.form({
+    title: d ? "Move Make’s webhook" : "Connect Make’s webhook", submit: "Connect", busyLabel: "Connecting…",
+    intro: "In Make: Create a scenario → add Webhooks → Custom webhook → Add → Save, then copy the address it shows.",
+    values: { url: d ? d.url : "" },
+    fields: [{ id: "url", l: "Make webhook address", req: true, type: "url", ph: "https://hook.eu1.make.com/…",
+      help: "NGG sends it only the events the scenarios below use — never everything.",
+      check: v => /^https:\/\/hook\.[a-z0-9]+\.make\.com\/[A-Za-z0-9_-]+$/.test(String(v).trim()) ? "" : "Paste a Make custom webhook address — it starts https://hook.eu1.make.com/" }],
+    onSubmit: async v => { const r = await NGGApi.admin.integrations.makeConnect(String(v.url).trim()); setM(r.make); setTest(null); ctx.reload(); return r; },
+    done: (v, r) => (r && r.moved ? "Moved" : "Connected") + " — press Send test to check Make receives it",
+  });
+  const sendTest = () => run("test", async () => {
+    setTest(null);
+    const r = await NGGApi.admin.integrations.test(d.integrationId);
+    setTest(r.delivered ? { ok: true, t: "Make received the test. Open the scenario in Make to see it." } : { ok: false, t: "Make did not take it: " + (r.error || "no answer") + ". Is the scenario switched on, or listening with “Run once”?" });
+    ctx.reload();
+  });
+  const turnOff = () => run("off", async () => {
+    if (!(await ctx.confirm({ title: "Turn Make off?", danger: true, cta: "Turn it off",
+      body: "Make’s calls to NGG are refused and its events pause. The scheduler keeps running. Make a new signing key to turn it back on." }))) return;
+    const r = await NGGApi.admin.integrations.makeOff();
+    setM(r.make); ctx.toast("Make.com turned off");
+  });
+
+  return (
+    <div className="cr-mk">
+      <div className="cr-box cr-mk-panel">
+        <header className="cr-mk-head">
+          <div><b>Make.com</b><span className="cr-mk-what">Reminders, guardians’ replies and escalations that wait on a person. Set up here — nothing to edit on the server, and every rule stays in NGG.</span></div>
+          <CrPill tone={st.tone} t={st.t}/>
+        </header>
+        <p className="cr-sr" role="status" aria-live="polite">{"Make.com: " + st.t + ", " + st.n + " of 3 steps done."}</p>
+        {!m.sealed && <p className="cr-key-res is-bad"><CrIcon n="warning-circle"/>This server cannot encrypt keys (PHP openssl is missing), so they cannot be made here.</p>}
+
+        {reveal && <CrSyMakeReveal ctx={ctx} r={reveal} onDone={() => { setReveal(null); ctx.reload(); }}/>}
+
+        <ol className="cr-mk-steps">
+          <CrSyMakeStep n={1} done={st.done[0]} title="Signing key" what="Lets Make answer back — guardians’ replies, safeguarding acknowledgements."
+            action={<button type="button" className={"cr-btn is-sm" + (st.done[0] ? "" : " is-primary")} disabled={!m.sealed || !!busy} onClick={makeSecret}>{busy === "secret" ? "Making…" : m.secretSet ? "Replace" : "Make key"}</button>}>
+            <span className="cr-mk-state">{m.secretSet ? <>Ends <code>…{m.secretEnding}</code>{m.secretSource === "file" ? " · from config.php" : m.secretAt ? " · made " + crAgo(m.secretAt) + (m.secretBy ? " by " + m.secretBy : "") : ""}</> : "Not made yet — Make cannot call NGG."}</span>
+          </CrSyMakeStep>
+
+          <CrSyMakeStep n={2} done={st.done[1]} title="Make’s webhook" what="Where NGG sends absences, stalled consents, safeguarding flags and season dates."
+            action={<>
+              {d && d.status === "active" && <button type="button" className="cr-btn is-sm" disabled={!!busy} onClick={sendTest}>{busy === "test" ? "Sending…" : "Send test"}</button>}
+              <button type="button" className={"cr-btn is-sm" + (st.done[0] && !st.done[1] ? " is-primary" : "")} disabled={!m.sealed || !!busy} onClick={connect}>{d ? "Change" : "Connect"}</button>
+            </>}>
+            {d ? <span className="cr-mk-state"><code className="cr-mk-url">{d.url}</code>{d.status === "paused" ? " · paused" : ""}</span> : <span className="cr-mk-state">Not connected.</span>}
+            {d && <span className="cr-mk-state">{dl.ok ? crNum(dl.ok) + " delivered, last " + crAgo(dl.lastOkAt) : "Nothing delivered yet"}{dl.waiting ? " · " + crNum(dl.waiting) + " waiting" : ""}{dl.dead ? " · " + crNum(dl.dead) + " failed for good" : ""}</span>}
+            {d && dl.dead > 0 && dl.lastError && <p className="cr-key-res is-bad" role="status"><CrIcon n="warning-circle"/>{dl.lastError}</p>}
+            {test && <p className={"cr-key-res " + (test.ok ? "is-ok" : "is-bad")} role="status"><CrIcon n={test.ok ? "check-circle" : "warning-circle"}/>{test.t}</p>}
+          </CrSyMakeStep>
+
+          <CrSyMakeStep n={3} done={st.done[2]} title="Scheduler" what="Keeps the background jobs on time when nobody is visiting the site."
+            action={<button type="button" className={"cr-btn is-sm" + (st.done[0] && st.done[1] && !st.done[2] ? " is-primary" : "")} disabled={!m.sealed || !!busy} onClick={makeCron}>{busy === "cron" ? "Making…" : m.cronSet ? "Replace" : "Make addresses"}</button>}>
+            <ul className="cr-mk-jobs" aria-label="Background jobs">
+              {jobs.map(j => (
+                <li key={j.job} className={j.stale ? "is-late" : "is-ok"}>
+                  <span className="cr-mk-dot" aria-hidden="true"/>
+                  <span>{CR_SY_JOB_LABEL[j.job] || j.job}</span>
+                  <span className="cr-mk-when">{j.lastRunAt ? "ran " + crAgo(j.lastRunAt) : "not run yet"}{j.stale ? " · late" : ""}</span>
+                </li>
+              ))}
+            </ul>
+            {m.cronSet && late.length > 0 && <span className="cr-mk-state">Late jobs usually mean a scheduler scenario is off in Make, or its address was replaced here.</span>}
+          </CrSyMakeStep>
+        </ol>
+
+        <p className="cr-key-res"><CrIcon n="lock-simple"/><span>In Make, open each NGG scenario’s settings and turn on <b>Data is confidential</b>, so Make keeps no copy of children’s names or guardians’ numbers.</span></p>
+
+        <footer className="cr-mk-foot">
+          <span className="cr-mk-hint">{m.lastAnswerAt ? "Make last answered " + crAgo(m.lastAnswerAt) + "." : "No answer from Make yet."}</span>
+          <span className="cr-grow"/>
+          <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, m.door, "Door address")}><CrIcon n="copy"/>Copy door address</button>
+          {(m.secretSource === "here" || (d && d.status === "active")) && <button type="button" className="cr-btn is-sm is-danger" disabled={!!busy} onClick={turnOff}>Turn off</button>}
+        </footer>
+      </div>
+
+      <div className="cr-box cr-mk-panel">
+        <header className="cr-mk-head"><div><b>Scenarios to build in Make</b><span className="cr-mk-what">Each one says what it needs from the steps above. Open one for its build steps.</span></div></header>
+        <details className="cr-mk-sc">
+          <summary><CrIcon n="code"/><span><b>How to call NGG</b><span className="cr-mk-what">The request every scenario below sends back.</span></span></summary>
+          <div className="cr-mk-sc-body">
+            <p>HTTP → Make a request: method POST, address <code>{m.door}</code>, body type Raw, content type application/json. Build the body once in a Set variable module and send that exact text — the signature covers it. Calls older than five minutes are refused.</p>
+            <div className="cr-mk-copy"><span className="cr-mk-copy-l">Headers</span><code className="cr-mk-code">{CR_SY_MAKE_SIGN}</code><button type="button" className="cr-btn is-sm" aria-label="Copy the headers" onClick={() => crSyCopy(ctx, CR_SY_MAKE_SIGN, "Headers")}><CrIcon n="copy"/>Copy</button></div>
+          </div>
+        </details>
+        {CR_SY_MAKE_SCENARIOS.map(sc => {
+          const missing = sc.needs.filter(k => !(k === "secret" ? st.done[0] : k === "hook" ? st.done[1] : st.done[2]));
+          return (
+            <details key={sc.id} className="cr-mk-sc">
+              <summary><CrIcon n={sc.icon}/><span><b>{sc.t}</b><span className="cr-mk-what">{sc.s}</span></span>
+                <CrPill tone={missing.length ? "neutral" : "ok"} t={missing.length ? "Needs step " + missing.map(k => ({ secret: 1, hook: 2, cron: 3 })[k]).join(" and ") : "Ready to build"}/></summary>
+              <div className="cr-mk-sc-body">
+                <ol>{sc.steps.map((t, i) => <li key={i}>{t}</li>)}</ol>
+                <div className="cr-mk-copy"><span className="cr-mk-copy-l">Example body</span><code className="cr-mk-code">{sc.body}</code><button type="button" className="cr-btn is-sm" aria-label={"Copy the example body for " + sc.t} onClick={() => crSyCopy(ctx, sc.body, "Body")}><CrIcon n="copy"/>Copy</button></div>
+              </div>
+            </details>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 const CR_SY_DLV = { ok: ["Delivered", "ok"], pending: ["Pending", "warn"], failed: ["Retrying", "warn"], dead: ["Dead", "bad"] };
 
@@ -566,15 +700,9 @@ Object.assign(CR_TAB_DEFS, {
         ] },
         { type: "note", span: 6, icon: "plugs-connected", text: "Events — registrations, attendance, awards, wellbeing flags, shared documents — go to Google Chat, a signed webhook, the Sheets mirror or a Drive sink.",
           sub: "Delivery runs by itself on web-cron. Use “Run delivery queue now” to send what is waiting straight away." },
-        d.make ? { type: "cards", span: 6, title: "Make.com", sub: "Automations that wait on a person — set up here, no config file",
-          cards: [{ icon: "flow-arrow", title: "Make.com", sub: d.make.door,
-            tag: !d.make.secretSet ? "Off" : !d.make.destination ? "Half set up" : d.make.jobs && !d.make.jobs.healthy ? "Jobs behind" : "On",
-            tone: !d.make.secretSet ? "neutral" : !d.make.destination || (d.make.jobs && !d.make.jobs.healthy) ? "warn" : "ok",
-            meta: [["Signing key", crSyMakeSrc(d.make.secretSource, d.make.secretEnding)], ["Webhook", d.make.destination ? "Connected" : "Not connected"],
-              ["Scheduler", d.make.cronSet ? "Key made" : "No key"], ["Last answer", d.make.lastAnswerAt ? crAgo(d.make.lastAnswerAt) : "None yet"]],
-            onClick: () => crSyMakeOpen(ctx, d.make) }] } : null,
-        { type: "cards", span: 6, title: "Destinations", empty: "No integrations yet. Add one to send events to Google Chat, Sheets, Drive or your own endpoint.",
-          cards: items.map(i => {
+        d.make ? { type: "custom", span: 6, render: () => <CrSyMake ctx={ctx} make={d.make}/> } : null,
+        { type: "cards", span: 6, title: "Destinations", empty: d.make && d.make.destination ? "No other destinations. Make.com is set up above." : "No integrations yet. Add one to send events to Google Chat, Sheets, Drive or your own endpoint.",
+          cards: items.filter(i => !(d.make && d.make.destination && i.integrationId === d.make.destination.integrationId)).map(i => {
             const h = health[i.integrationId] || {};
             const stuck = (h.pending || 0) + (h.dead || 0);
             return { icon: { gchat: "chat-circle-text", webhook: "webhooks-logo", sheets: "table", drive: "folder-simple" }[i.kind] || "plug",

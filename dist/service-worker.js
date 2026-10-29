@@ -18,7 +18,7 @@
      deploy shows up without anybody hunting for a hard refresh.
    ================================================================ */
 
-const CACHE_VERSION = 'ngg-762fcedffa';
+const CACHE_VERSION = 'ngg-07940cf0e8';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
@@ -37,12 +37,12 @@ const PRECACHE = [
   '/',
   '/index.html',
   '/styles.b07ba5a4f9.css',
-  '/styles-app.040fcb80c2.css',
+  '/styles-app.4a75ffb0bd.css',
   '/data.29d3739700.js',
   '/photos.fffb7d55bb.js',
   '/api-client.cdb78bdafe.js',
   '/outbox.042a8c9122.js',
-  '/app.18e45d1017.min.js',
+  '/app.124e3c19db.min.js',
   '/vendor/react.production.min.js',
   '/vendor/react-dom.production.min.js',
   '/assets/logo.png',

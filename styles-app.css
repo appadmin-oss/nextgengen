@@ -8096,6 +8096,62 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-key-res.is-bad { background: var(--cr-bad-bg); color: var(--cr-bad-fg); }
 .cr-key-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; }
 .cr-key-link { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+/* Settings → Integrations → Make.com: three numbered steps, a key shown once
+   inline, and the scenario guide (cr-tab-system.jsx, CrSyMake). */
+.cr-mk { display: flex; flex-direction: column; gap: 12px; container-type: inline-size; }
+.cr-mk-panel { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.cr-mk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.cr-mk-head > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cr-mk-head b { font-size: 15px; }
+.cr-mk-what { font-size: 13px; color: var(--cr-muted-2); font-weight: 400; }
+.cr-mk-hint { font-size: 12.5px; color: var(--cr-muted-3); margin: 0; }
+.cr-mk-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cr-mk-step { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 14px 0; border-top: 1px solid var(--cr-line); }
+.cr-mk-step:first-child { border-top: 0; padding-top: 4px; }
+.cr-mk-num { width: 32px; height: 32px; border-radius: var(--cr-r-pill); display: grid; place-items: center; font-size: 13px; font-weight: 600; background: var(--cr-s2); color: var(--cr-muted); font-variant-numeric: tabular-nums; }
+.cr-mk-step.is-done .cr-mk-num { background: var(--cr-ok-bg); color: var(--cr-ok-fg); }
+.cr-mk-step-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cr-mk-step-body > b { font-size: 14px; }
+.cr-mk-state { font-size: 13px; color: var(--cr-text); overflow-wrap: anywhere; }
+.cr-mk-state code, .cr-mk-url { font-family: var(--cr-mono); font-size: 12.5px; }
+.cr-mk-step-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.cr-mk-jobs { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; max-width: 460px; }
+.cr-mk-jobs li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.cr-mk-dot { width: 8px; height: 8px; border-radius: var(--cr-r-pill); background: var(--cr-ok-dot); }
+.cr-mk-jobs .is-late .cr-mk-dot { background: var(--cr-warn-dot); }
+.cr-mk-when { color: var(--cr-muted-3); font-variant-numeric: tabular-nums; }
+.cr-mk-jobs .is-late .cr-mk-when { color: var(--cr-warn-fg); }
+.cr-mk-reveal { padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--cr-gold-bg); border-color: transparent; color: var(--cr-gold-fg); outline: none; }
+.cr-mk-reveal:focus-visible { box-shadow: 0 0 0 2px var(--cr-gold); }
+.cr-mk-reveal .cr-mk-hint { color: var(--cr-gold-fg); }
+.cr-mk-reveal-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.cr-mk-reveal-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
+.cr-mk-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; }
+.cr-mk-copy-l { grid-column: 1 / -1; font-size: 12.5px; color: var(--cr-muted-2); }
+.cr-mk-reveal .cr-mk-copy-l { color: var(--cr-gold-fg); }
+.cr-mk-code { font-family: var(--cr-mono); font-size: 12.5px; padding: 8px 10px; border-radius: var(--cr-r-sm); background: var(--cr-bg); color: var(--cr-ink); border: 1px solid var(--cr-line-2); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.cr-mk-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--cr-line); }
+.cr-mk-sc { border-top: 1px solid var(--cr-line); }
+.cr-mk-sc:first-of-type { border-top: 0; }
+.cr-mk-sc > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 12px 0; min-height: 44px; }
+.cr-mk-sc > summary::-webkit-details-marker { display: none; }
+.cr-mk-sc > summary > .ph { font-size: 18px; margin-top: 1px; color: var(--cr-muted); }
+.cr-mk-sc > summary > span:not(.cr-pill) { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cr-mk-sc > summary b { font-size: 14px; }
+.cr-mk-sc > summary:focus-visible { outline: 2px solid var(--cr-ink); outline-offset: 2px; border-radius: var(--cr-r-sm); }
+.cr-mk-sc[open] > summary b { text-decoration: underline; text-underline-offset: 3px; }
+.cr-mk-sc-body { padding: 0 0 14px 30px; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; color: var(--cr-text); }
+.cr-mk-sc-body p { margin: 0; }
+.cr-mk-sc-body ol { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.cr-mk-sc-body code { font-family: var(--cr-mono); font-size: 12.5px; overflow-wrap: anywhere; }
+@container (max-width: 560px) {
+  .cr-mk-step { grid-template-columns: 32px minmax(0, 1fr); }
+  .cr-mk-step-acts { grid-column: 2; justify-content: flex-start; }
+  .cr-mk-sc > summary { grid-template-columns: 20px minmax(0, 1fr); }
+  .cr-mk-sc > summary .cr-pill { grid-column: 2; justify-self: start; }
+  .cr-mk-sc-body { padding-left: 0; }
+}
+
 .cr-mp-note.is-bad { background: var(--cr-bad-bg); color: var(--cr-bad-fg); border-color: transparent; }
 .cr-mp-note code { font-family: var(--cr-mono); font-size: 12.5px; }
 .cr-mp-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }

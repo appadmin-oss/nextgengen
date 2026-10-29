@@ -406,13 +406,24 @@ function make_admin_view(): array {
     $secret = make_secret(); $cron = cron_key_effective();
     $dest = !empty($l['integrationId']) ? db_row('SELECT * FROM integrations WHERE integrationId = ? LIMIT 1', [(string)$l['integrationId']]) : null;
     $last = db_row("SELECT at FROM audit_log WHERE event IN ('absence.reason', 'safeguarding.ack') ORDER BY id DESC LIMIT 1");
+    /* How the events are actually arriving — the question after "is it
+       connected" is "is anything getting through", and a dead delivery is
+       the answer nobody sees unless the card says it. */
+    $health = null;
+    if ($dest) {
+        $id = (string)$dest['integrationId'];
+        $c = db_row("SELECT SUM(status='ok') ok, SUM(status IN ('pending','failed')) waiting, SUM(status='dead') dead, MAX(deliveredAt) lastOkAt FROM deliveries WHERE integrationId = ?", [$id]);
+        $err = db_row("SELECT lastError FROM deliveries WHERE integrationId = ? AND status IN ('failed','dead') AND lastError <> '' ORDER BY id DESC LIMIT 1", [$id]);
+        $health = ['ok' => (int)($c['ok'] ?? 0), 'waiting' => (int)($c['waiting'] ?? 0), 'dead' => (int)($c['dead'] ?? 0),
+                   'lastOkAt' => (string)($c['lastOkAt'] ?? ''), 'lastError' => (string)($err['lastError'] ?? '')];
+    }
     return [
         'door' => make_origin() . '/api/hooks/make.php',
         'secretSet' => $secret !== '', 'secretSource' => !empty($l['secret']) ? 'here' : ($secret !== '' ? 'file' : ''),
         'secretEnding' => $secret !== '' ? substr($secret, -4) : '', 'secretAt' => (string)($l['secretAt'] ?? ''), 'secretBy' => (string)($l['secretBy'] ?? ''),
         'cronSet' => $cron !== '', 'cronSource' => !empty($l['cronKey']) ? 'here' : ($cron !== '' ? 'file' : ''),
         'cronEnding' => $cron !== '' ? substr($cron, -4) : '', 'cronAt' => (string)($l['cronAt'] ?? ''),
-        'destination' => $dest ? integration_public($dest) : null,
+        'destination' => $dest ? integration_public($dest) : null, 'delivery' => $health,
         'events' => MAKE_EVENTS, 'jobs' => make_jobs([]),
         'lastAnswerAt' => (string)($last['at'] ?? ''),
         'sealed' => function_exists('openssl_encrypt'),

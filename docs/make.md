@@ -14,7 +14,7 @@ absence is still a person's call on the conduct screen.
 
 ## 0 · Once, before any scenario — all on screen
 
-Control Room → Settings → **Integrations** → the **Make.com** card. Nothing is
+Control Room → Settings → **Integrations** → the **Make.com** panel: three numbered steps, each with its state and its button, and the next one to press highlighted. Every scenario below is also on that panel, with its build steps and a body to copy. Nothing is
 typed into `api/config.php`.
 
 1. **Make signing key.** NGG makes it and shows it once, with the door's
@@ -27,7 +27,7 @@ typed into `api/config.php`.
    events below — never `*` — signed (`docs/integrations.md` §2), retried up
    to eight times. Connecting again moves the one destination. One Make
    webhook can take every event and branch on `event` with a Router.
-3. **Make scheduler key.** NGG hands over four addresses, one per job, to
+3. **Scheduler → Make addresses.** NGG hands over four addresses, one per job, to
    paste into scheduled HTTP modules (scenario 1). They are shown once; the
    card afterwards says only that a key exists and how it ends.
 4. **Make: Scenario settings → "Data is confidential" → on**, for every
@@ -94,7 +94,7 @@ One already overtaken when the dates were set is skipped, not sent late.
 NGG's background work runs on visitor traffic. A quiet weekend is a weekend
 with no reminders, no absence sweep and no season close.
 
-- **Heartbeat** — one scenario per address the card's **Make scheduler key**
+- **Heartbeat** — one scenario per address step 3's **Make addresses**
   handed over: a Schedule trigger at the interval shown (deliver every 5
   minutes, reminders every 15, maint hourly, accrue daily at 02:00), then
   *HTTP → Make a request* (GET) to the address. Leave out `deliver` if

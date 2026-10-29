@@ -77,54 +77,75 @@ function cleanup() {
     const pg = await ctx.newPage();
     pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
 
-    const card = () => pg.locator('button.cr-card:has-text("Make.com")').first();   // the setup card comes before Destinations, where the connected webhook also appears
-    const drawerText = () => pg.innerText('.cr-sheet, .cr-pfull');
-    const press = l => pg.click(`.cr-sheet button:has-text("${l}"), .cr-pfull button:has-text("${l}")`);
+    const panel = () => pg.locator('.cr-mk-panel').first();
+    const step = n => pg.locator('.cr-mk-step').nth(n - 1);
+    const pill = async () => (await panel().locator('.cr-mk-head .cr-pill').innerText()).trim();
+    const shot = async name => { if (process.env.MU_SHOT) await pg.screenshot({ path: process.env.MU_SHOT.replace(/\.png$/, '-' + name + '.png'), fullPage: true }); };
 
     await pg.goto(BASE + '/control/settings/integrations', { waitUntil: 'domcontentloaded' });
     await waitForBoot(pg);
-    await pg.waitForSelector('button.cr-card:has-text("Make.com")', { timeout: 60000 });
-    chk('Integrations has a Make.com card, off until it is set up', /Off/.test(await card().innerText()) && /\/api\/hooks\/make\.php/.test(await card().innerText()));
+    await pg.waitForSelector('.cr-mk-panel', { timeout: 60000 });
+    chk('Integrations opens on a Make.com panel: not set up, three numbered steps, the first one the obvious next press',
+      /Not set up/i.test(await pill()) && (await pg.$$('.cr-mk-step')).length === 3
+      && (await step(1).locator('button.is-primary').innerText()).trim() === 'Make key' && (await step(2).locator('button.is-primary').count()) === 0);
+    chk('the scenario guide is on the screen, each saying what it still needs', (await pg.$$('.cr-mk-sc')).length === 7 && /Needs step 1 and 2/.test(await pg.innerText('.cr-mk')));
+    await shot('empty');
 
-    await card().click();
-    await pg.waitForSelector('.cr-sheet, .cr-pfull');
-    chk('the drawer says the door is closed and offers to make the key', /Closed/.test(await drawerText()) && /Make signing key/.test(await drawerText()));
-    await press('Make signing key');
-    await pg.waitForFunction(() => /Copy Make’s signing key now/.test(document.body.innerText), null, { timeout: 20000 });
-    const shown = (await pg.innerText('body')).match(/mk_[0-9a-f]{48}/);
-    chk('NGG makes the key and shows it once, with where it goes', !!shown && /X-NGG-Signature/.test(await pg.innerText('body')));
-    chk('…stored sealed, never as the key itself', !!shown && !php(`echo (string)(db_row("SELECT settingValue FROM settings WHERE settingKey = 'make_link'")['settingValue'] ?? '');`, ['bootstrap']).includes(shown[0]));
-    await press('Done');
-    await pg.waitForFunction(() => /Half set up/.test(document.querySelector('button.cr-card')?.closest('.cr-cards')?.innerText || document.body.innerText), null, { timeout: 20000 });
-    chk('afterwards the card shows only how the key ends', /Half set up/.test(await card().innerText()) && (await card().innerText()).includes('…' + shown[0].slice(-4)) && !(await pg.innerText('body')).includes(shown[0]));
+    await step(1).locator('button:has-text("Make key")').click();
+    await pg.waitForSelector('.cr-mk-reveal');
+    const key = (await pg.innerText('.cr-mk-reveal')).match(/mk_[0-9a-f]{48}/);
+    chk('NGG makes the key and shows it inline, with the door, focused for a keyboard user',
+      !!key && /\/api\/hooks\/make\.php/.test(await pg.innerText('.cr-mk-reveal')) && await pg.evaluate(() => document.activeElement && document.activeElement.classList.contains('cr-mk-reveal')));
+    chk('…stored sealed, never as the key itself', !!key && !php(`echo (string)(db_row("SELECT settingValue FROM settings WHERE settingKey = 'make_link'")['settingValue'] ?? '');`, ['bootstrap']).includes(key[0]));
+    chk('step 1 is ticked and step 2 becomes the next press', /done/.test(await step(1).innerText()) && (await step(2).locator('button.is-primary').innerText()).trim() === 'Connect' && /Step 2 of 3/.test(await pill()));
+    await shot('reveal');
+    await pg.click('.cr-mk-reveal button:has-text("I’ve copied it")');
+    await pg.waitForFunction(() => !document.querySelector('.cr-mk-reveal'), null, { timeout: 20000 });
+    await pg.waitForSelector('.cr-mk-panel', { timeout: 20000 });
+    chk('once copied, the key is gone and only how it ends is shown', (await step(1).innerText()).includes('…' + key[0].slice(-4)) && !(await pg.innerText('body')).includes(key[0]));
 
-    await card().click();
-    await press('Connect Make’s webhook');
+    await step(2).locator('button:has-text("Connect")').click();
     await pg.waitForSelector('form #crf-url');
+    chk('the form says where in Make to find the address', /Custom webhook/.test(await pg.innerText('form')));
     await pg.fill('form #crf-url', 'https://evil.example/x');
     await pg.click('form button[type=submit]');
     chk('only a Make webhook address is accepted', await pg.waitForFunction(() => /Paste a Make custom webhook address/.test(document.body.innerText), null, { timeout: 8000 }).then(() => true, () => false));
     await pg.fill('form #crf-url', 'https://hook.eu1.make.com/abc123XYZ');
     await pg.click('form button[type=submit]');
-    await pg.waitForFunction(() => /Connected/.test([...document.querySelectorAll('button.cr-card')].find(b => /Make\.com/.test(b.innerText))?.innerText || ''), null, { timeout: 20000 });
+    await pg.waitForFunction(() => /hook\.eu1\.make\.com\/abc123XYZ/.test(document.querySelectorAll('.cr-mk-step')[1]?.innerText || ''), null, { timeout: 20000 });
     const dest = JSON.parse(php(`echo json_encode(db_row("SELECT events, status, kind FROM integrations WHERE name = 'Make.com'"));`, ['bootstrap']));
     chk('connecting creates one signed destination with exactly Make’s events', dest.kind === 'webhook' && dest.status === 'active' && JSON.parse(dest.events).includes('private.attendance.absences') && !JSON.parse(dest.events).includes('*'));
+    chk('…shown once, in the panel — not again in the Destinations list', (await pg.locator('button.cr-card:has-text("Make.com")').count()) === 0 && /Make\.com is set up above/.test(await pg.innerText('body')));
+    await step(2).locator('button:has-text("Send test")').click();
+    chk('Send test says plainly whether Make took it, and what to check if not',
+      await pg.waitForFunction(() => /Make did not take it|Make received the test/.test(document.querySelectorAll('.cr-mk-step')[1]?.innerText || ''), null, { timeout: 30000 }).then(() => true, () => false));
 
-    await card().click();
-    await press('Make scheduler key');
-    await pg.waitForFunction(() => /Copy the scheduler addresses now/.test(document.body.innerText), null, { timeout: 20000 });
-    const urls = (await pg.innerText('body')).match(/\/api\/public\/cron\.php\?key=ck_[0-9a-f]{48}&job=\w+/g) || [];
-    chk('the scheduler key comes as the four addresses to paste into Make', urls.length === 4);
+    await step(3).locator('button:has-text("Make addresses")').click();
+    await pg.waitForSelector('.cr-mk-reveal');
+    const urls = (await pg.innerText('.cr-mk-reveal')).match(/\/api\/public\/cron\.php\?key=ck_[0-9a-f]{48}&job=\w+/g) || [];
+    chk('the scheduler comes as four labelled addresses, each with its own copy button', urls.length === 4 && (await pg.$$('.cr-mk-reveal .cr-mk-copy button')).length === 4 && /Every 15 minutes — Reminders/.test(await pg.innerText('.cr-mk-reveal')));
     const cron = await pg.evaluate(u => fetch(u).then(r => r.text().then(t => ({ s: r.status, t }))), BASE + urls[3]);
     chk('…and the address works: the background job runs', cron.s === 200 && /accrue\s+ran/.test(cron.t));
-    await press('Done');
+    await pg.click('.cr-mk-reveal button:has-text("I’ve copied it")');
+    await pg.waitForFunction(() => !document.querySelector('.cr-mk-reveal'), null, { timeout: 20000 });
+    await pg.waitForSelector('.cr-mk-panel', { timeout: 20000 });
+    chk('all three steps done, and every scenario reads ready to build', (await pg.$$('.cr-mk-step.is-done')).length === 3 && !/Needs step/.test(await pg.innerText('.cr-mk')));
 
-    await card().click();
-    await press('Turn off');
+    await pg.click('.cr-mk-sc:has-text("Why were they away?") > summary');
+    chk('a scenario opens to its build steps and a body to copy', /quick replies/.test(await pg.innerText('.cr-mk-sc[open]')) && (await pg.$$('.cr-mk-sc[open] .cr-mk-copy button')).length === 1);
+    await shot('done');
+
+    await panel().locator('button:has-text("Turn off")').click();
     await pg.click('[role=alertdialog] button:has-text("Turn it off"), .cr-confirm-acts button:has-text("Turn it off")');
-    await pg.waitForFunction(() => /\bOff\b/.test([...document.querySelectorAll('button.cr-card')].find(b => /Make\.com/.test(b.innerText))?.innerText || ''), null, { timeout: 20000 });
+    await pg.waitForFunction(() => /Turned off/.test(document.querySelector('.cr-mk-head')?.innerText || ''), null, { timeout: 20000 });
     chk('Turn off closes the door and pauses the events', php(`echo db_row("SELECT status FROM integrations WHERE name = 'Make.com'")['status'];`, ['bootstrap']) === 'paused');
-    if (process.env.MU_SHOT) { await card().click(); await pg.screenshot({ path: process.env.MU_SHOT }); }
+
+    await pg.setViewportSize({ width: 390, height: 844 });
+    await pg.waitForTimeout(400);
+    const over = await pg.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const small = await pg.$$eval('.cr-mk button, .cr-mk summary', els => els.filter(e => e.getBoundingClientRect().height > 0 && e.getBoundingClientRect().height < 30).length);
+    chk('on a phone it fits the width, and nothing to press is too small', over <= 1 && small === 0);
+    await shot('phone');
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

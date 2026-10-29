@@ -1435,9 +1435,11 @@ Change, Test and Remove act on that one service.
 
 ### Make.com
 
-Make.com is set up from **Settings → Integrations → Make.com**: make the
-signing key, connect Make's webhook, make the scheduler key. Each key is shown
-once — copy it into Make then — and afterwards only how it ends. Replacing a
+Make.com is set up from **Settings → Integrations → Make.com**: work down the three numbered steps — signing key, Make's webhook
+(then **Send test**), scheduler addresses. Each key is shown once, on the
+panel, until you press **I've copied it**; afterwards only how it ends.
+The scenarios to build in Make are listed under the steps, each saying which
+step it still needs, with its build steps and an example to copy. Replacing a
 key stops the old one at once. **Turn off** refuses Make's calls and pauses its
 events; making a new signing key turns both back on. The scenarios themselves
 are in `docs/make.md`.
