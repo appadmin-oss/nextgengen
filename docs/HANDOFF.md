@@ -4444,3 +4444,14 @@ diagrams and illustrations and gifs are no longer there".
   already deleted can only come back from a host backup.
 - Tests: PHP 5928/0 (seed refresh ×5, lesson files ×6); learn 46/0;
   curriculum-ui 66/0; lesson-blocks 47/0.
+
+## 29 Oct 2026 — The NGV hand-off lands on the form, filled in
+
+The Club application's "18 and over — register for NGV" button opened
+Afrovanguard's NGV landing page, whose every "Apply now" was a WhatsApp group
+invite. It now opens NGV's application form (`afrovanguard.ngv_url`, default
+`{org_url}/academy/ngv/register.php`) with the name, date of birth, email and
+mobile typed here carried in the address (`apfNgvHref` in page-apply.jsx); the
+form pre-fills and saves nothing until it is sent. The Afrovanguard side of the
+same change (the form, accounts made at enrolment, a guardian's own consent) is
+in that repo's `docs/HANDOFF.md`, 29 Oct 2026.

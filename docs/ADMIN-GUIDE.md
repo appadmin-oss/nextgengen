@@ -2267,9 +2267,10 @@ areas of influence; photo and agreements. Then a review.
   `803…` and `+234…`); "Yes" as a vision (40 characters at least); a promo
   code with spaces or a phone number in it; a photo too small, too dark or
   too bright for the card.
-- **18 and over** is not refused, it is sent to **NGV registration on
+- **18 and over** is not refused, it is sent to **NGV's application form on
   Afrovanguard** (`afrovanguard.ngv_url` in `api/config.php`; empty means
-  `{org_url}/academy/ngv/`).
+  `{org_url}/academy/ngv/register.php`), with the name, date of birth, email
+  and mobile already typed here filled in.
 - **The same child sent twice** (same email and date of birth) updates the
   application you already have, as long as it is not yet decided. A brother or
   sister on the same parent's email is a separate application.

@@ -114,7 +114,10 @@ const yearsAgo = (n, md) => (new Date().getFullYear() - n) + '-' + (md || '01-15
       && /ADEBAYO, Tolu/.test(await P.innerText('.apf-idprev')) && /ID card: ADEBAYO, Tolu/.test(await P.innerText('#apf-fld-surname')));
     await P.fill('#apf-in-dob', yearsAgo(20)); await blurField(P, '#apf-in-dob');
     chk('18 and over is sent to NGV, by name, not just refused', /Tolu is 20: register for NGV instead/.test(await P.innerText('.apf-ngv')) && /At 18 and over, register for NGV/.test(await P.innerText('#apf-fld-dob')));
-    chk('…on Afrovanguard, where NGV registers', (await P.getAttribute('.apf-ngv-btn', 'href')) === 'https://afrovanguard.org.ng/academy/ngv/');
+    const ngvHref = new URL(await P.getAttribute('.apf-ngv-btn', 'href'));
+    chk('…to NGV\'s application form on Afrovanguard, not its landing page', ngvHref.origin + ngvHref.pathname === 'https://afrovanguard.org.ng/academy/ngv/register.php');
+    chk('…carrying what they typed here, so the form opens filled in',
+      ngvHref.searchParams.get('from') === 'ngg' && ngvHref.searchParams.get('name') === 'Tolu Adebayo' && ngvHref.searchParams.get('dob') === yearsAgo(20));
     await P.fill('#apf-in-dob', yearsAgo(6)); await blurField(P, '#apf-in-dob');
     chk('under 10 says the age the date makes them', /This date makes them [56]\./.test(await P.innerText('#apf-fld-dob')));
     await P.fill('#apf-in-dob', yearsAgo(13)); await blurField(P, '#apf-in-dob');

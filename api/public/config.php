@@ -49,6 +49,6 @@ json_ok([
         'volunteerUrl'  => $CONFIG['afrovanguard']['volunteer_url'] ?? 'https://cacentre.afrovanguard.org.ng/volunteer',
         'mentorProgram' => $CONFIG['afrovanguard']['mentor_program'] ?? 'Street-To-Stardom · Next Gen',
         // NGV (18 and over) registers on Afrovanguard; the Club form sends them there.
-        'ngvUrl'        => (string)(($CONFIG['afrovanguard']['ngv_url'] ?? '') ?: rtrim((string)($CONFIG['afrovanguard']['org_url'] ?? 'https://afrovanguard.org.ng'), '/') . '/academy/ngv/'),
+        'ngvUrl'        => (string)(($CONFIG['afrovanguard']['ngv_url'] ?? '') ?: rtrim((string)($CONFIG['afrovanguard']['org_url'] ?? 'https://afrovanguard.org.ng'), '/') . '/academy/ngv/register.php'),
     ],
 ]);
