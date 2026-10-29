@@ -320,11 +320,15 @@ function TtMaker({ setPage }) {
      their own and anyone else gets everything. */
   const addCentre = React.useCallback(async (slug, quiet, pick) => {
     const got = await fetchCentre(slug);
-    const chosen = pick ? got.entries.filter(e => pick.includes(ttSlotKey(e))) : got.marked ? got.entries.filter(e => e.mine) : got.entries;
+    /* A timetable is a person's (owner, 2026-10-29: "most timetables would be
+       personal"): nothing goes in that nobody chose. Unknown classes are asked
+       about — the caller opens the picker on "choose". */
+    const chosen = pick ? got.entries.filter(e => pick.includes(ttSlotKey(e))) : got.marked ? got.entries.filter(e => e.mine) : null;
+    if (!chosen) throw new Error("choose");
     if (!chosen.length) throw new Error("none_chosen");
     commit(d => {
       const own = d.entries.filter(x => !x.official);
-      const s2 = d.entries.length ? d.s : Object.assign({}, d.s, { title: member && firstName ? firstName + "’s week" : got.centre + " timetable" });
+      const s2 = d.entries.length || !member || !firstName ? d.s : Object.assign({}, d.s, { title: firstName + "’s week" });
       return Object.assign({}, d, { entries: own.concat(chosen.map((e, i) => Object.assign(e, { color: (own.length + i) % 8 }))), s: Object.assign({}, s2, { mode: s2.mode || "school" }) });
     }, quiet ? null : "Added " + chosen.length + " class" + (chosen.length === 1 ? "" : "es") + " from " + got.centre, !quiet);
     setDay(null);
@@ -335,8 +339,8 @@ function TtMaker({ setPage }) {
     // After sign-in has settled, so a member's own classes are marked.
     if (!boot.centre || auth.loading || centreBooted.current) return;
     centreBooted.current = true;
-    addCentre(boot.centre, true).then(r => setNote({ kind: "centre", centre: r.centre, slug: r.slug, mine: member ? r.added.map(e => e.title) : null, others: r.others }))
-      .catch(() => setLayers(l => Object.assign({}, l, { import: { tab: "centre", slug: boot.centre, failed: true } })));
+    addCentre(boot.centre, true).then(r => setNote({ kind: "centre", centre: r.centre, slug: r.slug, mine: r.added.map(e => e.title), others: r.others }))
+      .catch(err => setLayers(l => Object.assign({}, l, { import: { tab: "centre", slug: boot.centre, failed: !(err && err.message === "choose") } })));
     // Once, for the centre in the address.
     // eslint-disable-next-line
   }, [auth.loading]);

@@ -101,9 +101,7 @@ function TtNotes({ C }) {
   const more = n && n.kind === "centre" && n.others > 0 ? n.others : 0;
   const ctx = !n ? null : n.kind === "shared"
     ? { icon: "link-simple", text: n.by ? "Shared by " + n.by + ". This is your own copy; changes won’t reach them." : "This is your own copy" }
-    : n.mine && n.mine.length
-      ? { icon: "seal-check", text: ttAnd(n.mine) + (n.mine.length === 1 ? ", your class at " : ", your classes at ") + n.centre + ", " + (n.mine.length === 1 ? "is" : "are") + " in." + (more ? " " + more + (more === 1 ? " more runs there." : " more run there.") : "") }
-      : { icon: "seal-check", text: n.centre + "’s official sessions are in. Add your school classes around them." };
+    : { icon: "seal-check", text: ttAnd(n.mine) + (n.mine.length === 1 ? ", your class at " : ", your classes at ") + n.centre + ", " + (n.mine.length === 1 ? "is" : "are") + " in." + (more ? " " + more + (more === 1 ? " more runs there." : " more run there.") : "") };
   const k = C.sync ? C.sync.changes.length : 0;
   return <>
     {ctx && <TtNote icon={ctx.icon} text={ctx.text} onDismiss={C.dismissNote}

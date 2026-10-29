@@ -4391,3 +4391,12 @@ a child (Tobi, Coding at Egbeda) through *Make my week*:
   the title, no YOUR COURSE everywhere, no false change after reload, the
   picker's ticks, ticking Piano adds it); `timetable-ui.test.js` updated for
   *Next steps* and own-class-only.
+
+**Follow-up, same day.** The owner: "Most timetables would be personal." So
+nothing enters a week that nobody chose: `addCentre` without a pick, for
+someone whose classes are not marked, throws `choose` and the page opens the
+picker on that centre with **nothing ticked** (it used to bring the whole
+centre in, titled "<centre> timetable"). The picker ticks only what is in the
+week already or a member's own. A non-member's week keeps its own title.
+`timetable-maker.test.js` pins the link: nothing ticked, the button disabled,
+nothing stored, then only the ticked class goes in (74/0).

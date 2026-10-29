@@ -583,7 +583,9 @@ stays in that browser.
   named. A signed-in member opening their centre (*Make my week*) gets **their
   own classes only** (their courses, and Chess), titled "<name>’s week", with
   a note saying how many more run there and a *Choose classes* button to add
-  any of them. Someone else's centre link starts with everything ticked.
+  any of them. A timetable is a person's, so for anybody else a centre link
+  opens *Which classes are yours?* with **nothing ticked** and nothing added
+  until they choose; the week keeps its own title ("My week").
 - A centre that moves a class the visitor **kept** is reported for them to
   accept; a class they left out is never reported as a change.
 - **Undo and redo** (buttons, or Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z): every

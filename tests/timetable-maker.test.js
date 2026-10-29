@@ -381,10 +381,18 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await S.context().close();
 
     const Ce = await open({ w: 834, h: 1112, at: '/timetable?centre=egbeda' });
-    await Ce.waitForSelector('.tt-note', { timeout: 15000 });
-    chk('a centre link brings its sessions in and says so', /Egbeda’s official sessions are in\. Add your school classes around them\./.test(await Ce.innerText('.tt-note'))
-      && (await Ce.inputValue('.tt-head-title')) === 'Egbeda timetable');
-    await Ce.waitForTimeout(400);
+    /* A timetable is a person's: a centre link asks which classes are yours,
+       with nothing ticked, and adds only those. */
+    await Ce.waitForSelector('.tt-pick-row', { timeout: 15000 });
+    chk('a centre link asks which of its classes are yours, with nothing ticked and nothing added yet',
+      (await Ce.$$eval('.tt-pick-row input', r => r.filter(x => x.checked).length)) === 0 && await Ce.$eval('.tt-pick .tt-btn--primary', b => b.disabled)
+      && !((await stored(Ce)) || { entries: [] }).entries.some(e => e.official));
+    await Ce.click('.tt-pick-row:has-text("Coding")');
+    await Ce.click('.tt-pick .tt-btn--primary');
+    await Ce.waitForFunction(() => /Coding/.test(localStorage.getItem('ngg.timetable.maker.v2') || ''), null, { timeout: 8000 }).catch(() => {});
+    const ceDoc = await stored(Ce);
+    chk('…only the ticked class goes in, and the week keeps its own title', ceDoc.entries.filter(e => e.official).map(e => e.title).join() === 'Coding'
+      && (await Ce.inputValue('.tt-head-title')) !== 'Egbeda timetable');
     chk('…without anything about its instructors', !/VOL-SECRET|instructor/i.test(await Ce.evaluate(() => localStorage.getItem('ngg.timetable.maker.v2') || '')));
     chk('at 834 the tablet shows one pane, switched by tabs, with the save label', (await Ce.$$('.tt-tab')).length === 2 && !!(await Ce.$('.tt-listpane')) && !(await Ce.$('.tt-previewpane'))
       && await Ce.$eval('.tt-savepill-l', el => getComputedStyle(el).display !== 'none'));

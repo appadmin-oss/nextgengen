@@ -170,7 +170,8 @@ function TtImport({ C, init }) {
     C.fetchCentre(slug).then(got => {
       if (!live) return;
       const have = new Set(C.entries.filter(e => e.official && e.source === got.centre).map(ttSlotKey));
-      const picked = got.entries.filter(e => have.size ? have.has(ttSlotKey(e)) : got.marked ? e.mine : true).map(ttSlotKey);
+      // Nothing is ticked that is not known to be theirs: a timetable is a person's.
+      const picked = got.entries.filter(e => have.size ? have.has(ttSlotKey(e)) : got.marked && e.mine).map(ttSlotKey);
       setSess({ slug, centre: got.centre, list: got.entries, picked });
     }).catch(() => { if (live) setFailed(slug); });
     return () => { live = false; };
@@ -195,7 +196,7 @@ function TtImport({ C, init }) {
       <div className="tt-lbody tt-lbody--safe">
         <div className="tt-col tt-col--18">
           <div className="tt-col tt-col--8">
-            <span className="tt-field-label" id="tt-im-centre">Your NGG centre’s sessions</span>
+            <span className="tt-field-label" id="tt-im-centre">Your NGG centre</span>
             <div className="tt-row8">
               <select className="tt-input tt-input--ctl tt-select tt-grow" aria-labelledby="tt-im-centre" value={slug} disabled={!centres || !centres.length} onChange={e => { setSlug(e.target.value); setFailed(""); }}>
                 {!centres && <option value="">{listFailed ? "Couldn’t load the centres" : "Loading centres…"}</option>}
@@ -234,7 +235,7 @@ function TtImport({ C, init }) {
                 <button type="button" className="tt-textbtn" onClick={loadList}>Try again</button>
               </span>
             )}
-            <span className="tt-help">Only the classes you tick go in your week. They stay in step with the centre: if it moves one, you’re asked first.</span>
+            <span className="tt-help">Tick the classes you go to. Only those go in your week, and they stay in step with the centre: if it moves one, you’re asked first.</span>
           </div>
           <div className="tt-col tt-col--8">
             <label className="tt-field-label" htmlFor="tt-paste">Paste from a spreadsheet or WhatsApp</label>
