@@ -4400,3 +4400,47 @@ centre in, titled "<centre> timetable"). The picker ticks only what is in the
 week already or a member's own. A non-member's week keeps its own title.
 `timetable-maker.test.js` pins the link: nothing ticked, the button disabled,
 nothing stored, then only the ticked class goes in (74/0).
+
+## Learn richer; fuller lessons; lesson files that vanished (2026-10-29)
+
+The owner, in order: "Improve the /learn. Make it richer" — "The lesson content
+is almost empty" — "Source from reputable sources and repos" — "All of the
+diagrams and illustrations and gifs are no longer there".
+
+- **/learn screens** (`page-learn.jsx`, `.lrn-*` in styles-app.css): an Up next
+  card (`LearnUpNext`, the whole card is the link; `.lrn-pickup` when resuming),
+  a ring (`LearnRing`) with streak / this week / time / still to do, a term map
+  (`LearnTermMap`, one cell per week by `lrnWeekState`), "Coming up", Saved and
+  latest note (`LearnKept`); course cards and a course hero from
+  `lrnCourseFacts`; weeks as a path. Uses only what the boot already returns.
+- **Fuller bundled lessons.** Practical Coding (72) and Media Lab (48) gained
+  *Understand it*, *Key words* and *Read and watch* (links also added as
+  materials). Text is original; links are to MDN, W3C WAI, web.dev, GitHub
+  Docs, Node/Express/Mongoose/MongoDB, OWASP, NN/g, Interaction Design
+  Foundation, UNICEF, Khan Academy, etc. **Every link was fetched and returned
+  2xx**; sites that block automated checks (Canva, Adobe, Cambridge in Colour)
+  were replaced rather than shipped unchecked. Wikipedia and GitHub are not
+  reachable from the build sandbox. Still thin and next in line: divisions,
+  instruments, music (piano/guitar text), studio trades, tech foundations,
+  business.
+- **Revised seeds reach existing sites.** `curriculum_seed_bundled_once()` now
+  stores each file's revision (`curriculum_seed_revision`) and updates lessons
+  still exactly as shipped (`source = seed`, `updatedBy = system`), keeping
+  status and unchanged question ids. An instructor's saved lesson is never
+  touched. Test seam `$GLOBALS['__curriculum_seed_files']`.
+- **Diagrams in the bundled lessons.** All 144 piano/guitar lessons now carry
+  lesson-blocks notation derived from their own text: ```steps (the timed
+  headings), ```keys/```staff for the scales named (title first), ```chord for
+  the chords used. Business lessons and four instrument lessons get ```steps.
+  The generator skipped any body that already had a fence.
+- **Why the pictures vanished.** Lesson uploads lived only in
+  `api/storage/curriculum`, inside the deployed folder; a deploy that replaced
+  the folder deleted them while the lessons (in the database) kept pointing at
+  them. Same failure photos had. Now: `curriculum_dir` (or ngg-data/curriculum
+  beside the web root), move-out on read, bucket mirror and fetch-back
+  (`curriculum_file_bucket_key`), `admin.curriculum.files` +
+  `curriculum_missing_files()`, a `missing_files` gap with the list in Course
+  health, and `CurFigure` saying in words when a picture cannot load. Files
+  already deleted can only come back from a host backup.
+- Tests: PHP 5928/0 (seed refresh ×5, lesson files ×6); learn 46/0;
+  curriculum-ui 66/0; lesson-blocks 47/0.

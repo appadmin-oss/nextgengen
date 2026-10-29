@@ -265,6 +265,29 @@ inside JSON (where the slashes are escaped, `\/api\/public\/photo.php`) or
 inside a percent-encoded link was deleted a week after upload. Every encoding
 is recognised now, and a scan that cannot be completed deletes nothing.
 
+### Lesson files: keep them out of the deploy
+
+Every file an instructor attaches to a lesson — a diagram, a picture, a GIF, a
+recording, a worksheet — is stored on the server, and the lesson only points at
+it. They used to live in `api/storage/curriculum`, **inside** the folder a
+deploy replaces: deleting the old folder before uploading the new build took
+every one of them, while the lessons kept pointing at files that were gone.
+
+- Set `'curriculum_dir'` in `api/config.php` to a folder outside the web root
+  (for example `/home/youruser/ngg-data/curriculum`). Left empty, the app uses
+  `ngg-data/curriculum` beside the web root when the host allows it.
+- Files still in `api/storage/curriculum` are found and moved across as they
+  are read, so nothing needs copying by hand.
+- With **File storage** (below) configured, every upload is also copied to the
+  bucket, and a file missing from disk is fetched back from it.
+- **Control Room → Learning → Course health** shows *lesson files missing* per
+  course, and lists the lessons, so anything already lost can be uploaded
+  again. A file that is gone cannot be recovered by the app: restore
+  `api/storage/curriculum` from your host's backup if you have one.
+
+When updating, upload the new build **over** the old one; never delete
+`api/storage` or `api/data`.
+
 ### File storage: any S3-compatible bucket
 
 Once a bucket is configured, every new upload goes to it (the browser PUTs the

@@ -3597,3 +3597,18 @@ A child's courses decide their lessons, Community channels, timetable and which 
 - **Confirm proposed:** select children, then Confirm. Their proposal becomes their courses.
 - **Add / Remove / Set courses:** choose from the course list. To place a child in two divisions on purpose, do it here.
 - **Course health** (Learning) lists every course: the children in it, its instructors, lessons, class times and channel. A course failing children comes first. Open one to see what is missing and go straight to where it is fixed.
+
+
+### Lesson files that went missing (2026-10-29)
+
+If pictures, GIFs or diagrams you uploaded to lessons have disappeared, the
+files were deleted from the server (usually by a deploy that replaced the
+website folder); the lessons themselves are fine. **Learning → Course health**
+now marks any course with *lesson files missing* and its drawer lists each
+lesson and file — upload them again from Curriculum. Learners see "The picture
+… could not be loaded. Tell your instructor" instead of a broken image. New
+uploads are kept outside the website folder (see SETUP → Lesson files).
+
+The bundled lessons now carry their own diagrams: every music lesson shows its
+session drawn to scale, the scales it teaches on a keyboard (and a staff for
+piano), and the chords it uses as chord boxes — each one can be played.
