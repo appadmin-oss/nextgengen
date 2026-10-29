@@ -517,7 +517,7 @@ function member_today(array $p): array {
             $next = null;
             foreach ((array)$a['schedule'] as $r) if (($r['state'] ?? '') !== 'paid' && (string)$r['startDate'] >= $today) { $next = ['label' => (string)$r['name'], 'amount' => (int)$r['amount'], 'on' => (string)$r['startDate']]; break; }
             $account = ['payable' => (int)$a['payable'], 'status' => (int)$a['payable'] > 0 ? 'owing' : 'clear',
-                'trainingFee' => (int)$a['trainingFeePerSession'], 'next' => $next, 'paidThisYear' => $paid, 'lastPayment' => $last, 'fines' => $fines];
+                'trainingFee' => (int)($a['trainingTotal'] ?? $a['trainingFeePerSession']), 'trainingOwed' => (int)($a['trainingOwed'] ?? 0), 'next' => $next, 'paidThisYear' => $paid, 'lastPayment' => $last, 'fines' => $fines];
             if ((int)$a['payable'] > 0) {
                 $badges['account/money'] = (int)$a['payable'];
                 $todo[] = portal_todo('dues', 'wallet', 'Pay ' . (function_exists('fees_money_text') ? fees_money_text((int)$a['payable']) : (string)$a['payable']), 'Your dues are open · pay, or tell us you already have', 'Pay', '/member/account/money', 'warning', 2, $next['on'] ?? '');

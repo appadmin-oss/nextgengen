@@ -1527,12 +1527,40 @@ homework is not set for Year 1 members.
   mark an every-centre assignment for their course, but only their own
   centre's hand-ins. Whole-Club work is admin-only.
 
+### How the training fee works (from 29 Oct 2026)
+
+The training fee is the cost of a member's place: **₦300,000 for the three
+years by default**, charged **once** when they start. It is not a bill. NGG
+covers it while they serve, and it is earned off across the 18-month service
+half, **by the days they actually serve**.
+
+- **Each member keeps the terms they started on.** The basis, the amount and
+  the two half lengths are fixed on their account at their first accrual.
+  Changing the settings (or an uprate) only affects members who start after.
+- **Charged per session, day or week instead?** Choose it under *Training fee
+  is charged*. Changing it needs a new amount in the same save, because the
+  amount means something different on each. Saving with the old figure is
+  refused. Summer School is never charged as a training session.
+- **Leaving.** A member made *inactive*, or evicted, stops earning the fee off
+  that day. What service had not earned off then becomes **real money they
+  owe**: it is in what they are asked for, in reminders and on their statement.
+  A member who completed the MOU or graduated owes none of it.
+- **Suspension is a pause.** No days are earned while suspended, and they are
+  never credited back after it is lifted. A suspended member owes nothing for it.
+- **The balance ceiling counts real money only** (membership, dues, fines). The
+  training fee no longer stops dues being charged.
+- Members charged per session before this change keep those charges. If they
+  came to more than ₦300,000, the excess is taken back by a write-off marked
+  "Training fee held to the fixed ₦300,000"; if less, the rest is charged.
+- A deployment that never changed the old default (₦75,000 per session) now
+  reads as the ₦300,000 total. A rate an admin actually chose is kept.
+
 ### Watching the training fee
 
 **Dues & fees → Training fees** (needs `fees`; a centre-scoped admin sees their
 own centres). One row per NGG member who carries a training fee or is in their
-training months: what has been **charged** (and how many sessions, days or
-weeks that is), how much service has **covered** (earned off, plus anything
+training months, and anybody who left still owing part of it (filter **owed**):
+what has been **charged** (and how many sessions, days or weeks that is), how much service has **covered** (earned off, plus anything
 written off at the MOU), what is **still to cover**, where they are in the
 three years, and whether their service credit is **paused** (a suspension) or
 **stopped** (an eviction). Filter by phase or by paused/stopped, sort by what

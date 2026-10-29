@@ -212,7 +212,7 @@ Object.assign(Mp9Portal.prototype, {
     return {
       ledger: rows.length ? (s.ledgerAll ? rows : rows.slice(-8)) : [{ d: "–", w: st.enabled === false ? "Nothing is being charged on this account" : "Nothing charged yet", c: "", p: "", bal: mp9Naira(0), isPay: false }],
       ledgerMore: rows.length > 8 && !s.ledgerAll, ledgerN: rows.length, showLedger: () => this.setState({ ledgerAll: true }),
-      mou: { done: true, cost: a.trainingFee ? mp9Naira(a.trainingFee) : "Covered", note: "Covered by NGG. This is not something you are asked to pay.", status: "Active" },
+      mou: { done: true, cost: a.trainingFee ? mp9Naira(a.trainingFee) : "Covered", note: "Covered by NGG while you serve. It is only yours to pay if you leave before your MOU is complete.", status: "Active" },
       finesList: fines.length ? fines.map(f => ({ d: mp9Date(f.issuedAt), t: f.reason, a: mp9Naira(f.amount), st: f.status === "pending" ? "Being reviewed" : "Owed", fg: "#b0361c", strike: "none" }))
         : [{ d: "", t: "No fines. Keep it that way.", a: "", st: "", fg: "#1d6b30", strike: "none" }],
       /* A member does not record payments: their parent does, from the family

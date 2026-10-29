@@ -15,11 +15,17 @@ declare(strict_types=1);
  * ── THE THREE CHARGES ────────────────────────────────────────────────────────
  *   membership   one-off, on joining
  *   dues         monthly, while the member is active
- *   training     per programme session
+ *   training     the cost of the training place: a fixed total by default
  *
  * All three amounts are ADMIN-DEFINED. The defaults below are starting points,
- * not policy — ₦75,000 is the training figure the programme uses today and it
- * lives in a setting precisely so it is not this file's opinion.
+ * not policy — ₦300,000 for the three years is the training figure the
+ * programme uses today (it was once quoted as ₦75,000 a session), and it lives in
+ * a setting precisely so it is not this file's opinion.
+ *
+ * Each member's training terms — the basis, the rate, the two half lengths —
+ * are FROZEN when their account first accrues (fees_freeze_terms). A settings
+ * edit, an uprate or a basis switch changes what the next member signs up to
+ * and nothing about anybody already on the programme.
  *
  * ── THE TRAINING FEE IS NOT REALLY A BILL ────────────────────────────────────
  * This is the part worth reading twice. The training fee is charged, but a
@@ -69,13 +75,18 @@ const FEES_DEFAULTS = [
        behaviour — and is still reachable by setting it there. */
     'membershipEveryMonths' => 12,
     'monthlyDues'   => 0,
-    /* The training figure. What it is PER depends on `trainingBasis`. */
-    'trainingFee'   => 75000,
+    /* The training figure. What it is PER depends on `trainingBasis`: on the
+       default 'total' basis it is the whole fee for the place, charged once. */
+    'trainingFee'   => 300000,
     /* What the training fee is charged per.
      *
+     *   'total'    ONE charge, for the whole training place, the day the
+     *              member starts. The default (29 Oct 2026). The per-session
+     *              default it replaced came to ₦450,000 or ₦375,000 by join
+     *              date for a fee the programme quotes as ₦300,000.
      *   'session'  one charge per programme session the member is enrolled
-     *              through — the original behaviour, and the default so that
-     *              switching this on is always a deliberate act.
+     *              through — TONI, MEDI and DOMI. Summer School is not a
+     *              training session and is never charged as one.
      *   'day'      one charge per day the programme actually meets, off the
      *              admin's own calendar: the weekdays it runs, its holidays and
      *              its extra days, inside each session's start/end window.
@@ -90,7 +101,7 @@ const FEES_DEFAULTS = [
      * basis does not touch charges already posted, and a session that already
      * carries a session-level charge is never also charged by the day — see
      * fees_training_days(). */
-    'trainingBasis' => 'session',
+    'trainingBasis' => 'total',
     /* Three years, split. Training accrues the fee; service earns it off. */
     'trainingMonths' => 18,
     'serviceMonths'  => 18,
@@ -216,7 +227,11 @@ const FEES_CREDIT_KINDS = ['payment', 'writeoff', 'waiver'];
 const FEES_MANUAL_CHARGE_KINDS = ['fine', 'adjustment'];
 
 /** What the training fee may be charged per. See FEES_DEFAULTS['trainingBasis']. */
-const FEES_TRAINING_BASES = ['session', 'day', 'week'];
+const FEES_TRAINING_BASES = ['total', 'session', 'day', 'week'];
+/** The session codes that are not training: Summer School runs in its own
+ *  season, and billing it as a fourth training session was one of the ways the
+ *  per-session total came to more than the fee. */
+const FEES_NON_TRAINING_SESSIONS = ['SUMMER'];
 
 /** A ceiling on how many day-charges one member can pick up in a single accrual
  *  run. Three years of a five-day week is about 780, so this is generous — it
@@ -239,7 +254,16 @@ const FEES_LOOKUP_MAX = 25;
 
 function fees_settings(): array {
     $cfg = setting_get('fees');
-    return (is_array($cfg) ? $cfg : []) + FEES_DEFAULTS;
+    $cfg = (is_array($cfg) ? $cfg : []) + FEES_DEFAULTS;
+    /* The shipped default was ₦75,000 PER SESSION, which nobody chose: it is
+       what a deployment that switched fees on without touching the training
+       fields still holds. The fee is ₦300,000 for the place, so that exact
+       pair reads as the fixed total. Anything an admin actually set — another
+       rate, another basis — is theirs and is left alone. */
+    if ((string)$cfg['trainingBasis'] === 'session' && (int)$cfg['trainingFee'] === 75000) {
+        $cfg['trainingBasis'] = 'total'; $cfg['trainingFee'] = 300000;
+    }
+    return $cfg;
 }
 
 /** Currency symbols by the code the setting stores. One entry, because the
@@ -261,6 +285,16 @@ function fees_money($v, int $fallback = 0): int {
 
 function fees_settings_save(array $in, string $by): array {
     $cur = fees_settings();
+    /* A basis switch carries its own rate, or it is refused. The rate means a
+       different thing on each basis — the whole fee, a session, a day, a week —
+       and switching ₦75,000 a session to "per day" without touching the figure
+       made it ₦75,000 a day: ₦5.25 million, with nothing on the screen to say so. */
+    $newBasis = in_array($in['trainingBasis'] ?? null, FEES_TRAINING_BASES, true) ? (string)$in['trainingBasis'] : (string)$cur['trainingBasis'];
+    if ($newBasis !== (string)$cur['trainingBasis']
+        && fees_money($in['trainingFee'] ?? null, (int)$cur['trainingFee']) === (int)$cur['trainingFee']) {
+        return ['ok' => false, 'error' => 'training_rate_required',
+                'detail' => 'Changing what the training fee is charged per needs a new amount for it: the old figure was per ' . (string)$cur['trainingBasis'] . '.'];
+    }
     $bool = fn(string $k) => array_key_exists($k, $in) ? !empty($in[$k]) : !empty($cur[$k]);
     $phase = fn($v, int $fb) => max(FEES_PHASE_MIN, min(FEES_PHASE_MAX, (int)($v ?? $fb) ?: $fb));
     /* The membership cycle allows 0 — "once, ever" — which $phase's floor would
@@ -297,6 +331,7 @@ function fees_settings_save(array $in, string $by): array {
         'uprateNotedAt' => (string)($cur['uprateNotedAt'] ?? ''),
     ];
     setting_set('fees', $clean, $by);
+    $clean['ok'] = true;
     audit('fees.settings.save', $by, 'fees', [
         'enabled' => $clean['enabled'], 'monthlyDues' => $clean['monthlyDues'],
         'trainingFee' => $clean['trainingFee'], 'membershipFee' => $clean['membershipFee'],
@@ -458,17 +493,190 @@ function fees_compliance_cutoff(array $member): array {
     return ['cutoff' => '', 'state' => $state, 'final' => false];
 }
 
+/* ── When a member's status changed ──────────────────────────────────────
+ *
+ * The write-down is earned by SERVING, and serving needs a date range. Before
+ * 29 Oct 2026 nothing recorded when a member's status changed, so a member made
+ * inactive at month twenty — who never came back — had the whole fee "covered"
+ * by month thirty-six on the calendar alone. member_status_log is that record,
+ * written by db_insert()/db_update() whenever a member row's status is written,
+ * so no screen that sets a status can forget to.
+ *
+ * A member with no rows yet (everybody from before it existed) is read as
+ * active from their start, then — if they are not active now — in their
+ * current status since the row was last updated. That is the best evidence
+ * there is, and it is never later than the truth.
+ */
+const MEMBER_STATUS_LEFT = ['inactive'];
+const MEMBER_STATUS_DONE = ['graduated-ngg', 'graduated-vanguard'];
+
+function member_status_start(array $m): string {
+    foreach (['joinDate', 'createdAt'] as $k) {
+        $d = substr((string)($m[$k] ?? ''), 0, 10);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) return $d;
+    }
+    return gmdate('Y-m-d');
+}
+
+function member_status_record(string $memberId, string $status, string $since, string $source): void {
+    if ($memberId === '' || $status === '') return;
+    try {
+        db_insert('member_status_log', ['memberId' => $memberId, 'status' => $status, 'since' => substr($since, 0, 10),
+                                        'source' => substr($source, 0, 32), 'recordedAt' => now_iso()]);
+    } catch (\Throwable $e) { error_log('[fees] status log: ' . $e->getMessage()); }
+}
+
+/** db_insert('members', …) */
+function member_status_created(array $row): void {
+    $id = (string)($row['memberId'] ?? '');
+    if ($id === '') return;
+    member_status_record($id, (string)($row['status'] ?? 'active') ?: 'active', member_status_start($row), 'created');
+}
+
+/** db_update('members', ['status' => …]) — $before is each row as it was. */
+function member_status_changed(array $before, string $status): void {
+    $today = gmdate('Y-m-d');
+    foreach ($before as $r) {
+        $id = (string)($r['memberId'] ?? '');
+        $was = (string)($r['status'] ?? '');
+        if ($id === '' || $was === $status) continue;
+        try { $have = db_row('SELECT id FROM member_status_log WHERE memberId = ? LIMIT 1', [$id]); }
+        catch (\Throwable $e) { continue; }
+        if (!$have) member_status_record($id, $was !== '' ? $was : 'active', member_status_start($r), 'seed');
+        member_status_record($id, $status, $today, 'write');
+    }
+}
+
+/**
+ * A member's statuses as [['status' => …, 'since' => YYYY-MM-DD], …], oldest
+ * first. $rows lets a list pass the log it fetched in one query.
+ */
+function member_status_history(array $member, ?array $rows = null): array {
+    if ($rows === null) {
+        try { $rows = db_all('SELECT status, since FROM member_status_log WHERE memberId = ? ORDER BY since, id', [(string)($member['memberId'] ?? '')]); }
+        catch (\Throwable $e) { $rows = []; }
+    }
+    if ($rows) return array_map(static fn($r) => ['status' => (string)$r['status'], 'since' => substr((string)$r['since'], 0, 10)], $rows);
+    $out = [['status' => 'active', 'since' => member_status_start($member)]];
+    $now = (string)($member['status'] ?? 'active');
+    if ($now !== '' && $now !== 'active') {
+        $at = substr((string)($member['updatedAt'] ?? ''), 0, 10);
+        $out[] = ['status' => $now, 'since' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $at) ? $at : gmdate('Y-m-d')];
+    }
+    return $out;
+}
+
+/** The suspensions that were ever in force, as [from, to) day ranges. A
+ *  lifted or cleared one ends the day it was lifted; a pending or void one was
+ *  never in force. */
+function fees_suspension_ranges(array $rows, string $asOf): array {
+    $out = [];
+    foreach ($rows as $r) {
+        if (!in_array((string)($r['status'] ?? ''), ['active', 'cleared', 'lifted'], true)) continue;
+        $from = substr((string)($r['startsAt'] ?? ''), 0, 10);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) continue;
+        $to = $asOf;
+        $end = substr((string)($r['endsAt'] ?? ''), 0, 10);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) $end = fees_add_days($end, 1);   // endsAt is the last day suspended
+        else $end = '';
+        $cleared = substr((string)($r['clearedAt'] ?? ''), 0, 10);
+        foreach ([$end, (string)($r['status'] ?? '') !== 'active' ? $cleared : ''] as $c) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $c) && $c < $to) $to = $c;
+        }
+        if ($from < $to) $out[] = [$from, $to];
+    }
+    return $out;
+}
+
+function fees_add_days(string $d, int $n): string {
+    return gmdate('Y-m-d', (int)strtotime($d . ' 00:00:00 UTC ' . ($n >= 0 ? '+' : '') . $n . ' days'));
+}
+
+/**
+ * Days from $from to $to (exclusive) the member was SERVING: their status was
+ * `active`, no suspension was in force, and they had not been evicted.
+ *
+ * A suspension is a pause: its days are never counted, during it OR after it
+ * is lifted. (Before, the pause only held while the suspension was live — once
+ * lifted, the months it covered were counted back in.)
+ */
+function fees_serving_days(array $history, array $suspensions, string $evictedAt, string $from, string $to): int {
+    if ($evictedAt !== '' && $evictedAt < $to) $to = $evictedAt;
+    if ($from >= $to) return 0;
+    $ranges = [];
+    $n = count($history);
+    for ($i = 0; $i < $n; $i++) {
+        if ($history[$i]['status'] !== 'active') continue;
+        $a = max($history[$i]['since'], $from);
+        $b = $i + 1 < $n ? min($history[$i + 1]['since'], $to) : $to;
+        if ($a < $b) $ranges[] = [$a, $b];
+    }
+    $days = 0;
+    foreach ($ranges as [$a, $b]) {
+        $cut = [[$a, $b]];
+        foreach ($suspensions as [$sa, $sb]) {
+            $next = [];
+            foreach ($cut as [$x, $y]) {
+                if ($sb <= $x || $sa >= $y) { $next[] = [$x, $y]; continue; }
+                if ($sa > $x) $next[] = [$x, $sa];
+                if ($sb < $y) $next[] = [$sb, $y];
+            }
+            $cut = $next;
+        }
+        foreach ($cut as [$x, $y]) $days += (int)round((strtotime($y . ' UTC') - strtotime($x . ' UTC')) / 86400);
+    }
+    return $days;
+}
+
+/* ── A member's training terms, frozen ─────────────────────────────────── */
+
+/**
+ * The basis, rate and half lengths this member's training fee runs on. Frozen
+ * terms win; a member not yet frozen reads today's settings (and is frozen at
+ * their next accrual, fees_freeze_terms).
+ */
+function fees_member_terms(array $member, ?array $cfg = null): array {
+    $t = json_decode((string)($member['feeTerms'] ?? ''), true);
+    if (is_array($t) && in_array($t['basis'] ?? '', FEES_TRAINING_BASES, true)) {
+        return ['basis' => (string)$t['basis'], 'rate' => max(0, (int)($t['rate'] ?? 0)),
+                'trainingMonths' => max(FEES_PHASE_MIN, (int)($t['trainingMonths'] ?? 18)),
+                'serviceMonths' => max(FEES_PHASE_MIN, (int)($t['serviceMonths'] ?? 18)),
+                'frozenAt' => (string)($t['frozenAt'] ?? ''), 'frozen' => true];
+    }
+    $cfg = $cfg ?? fees_settings();
+    return ['basis' => in_array((string)$cfg['trainingBasis'], FEES_TRAINING_BASES, true) ? (string)$cfg['trainingBasis'] : 'total',
+            'rate' => (int)$cfg['trainingFee'], 'trainingMonths' => (int)$cfg['trainingMonths'],
+            'serviceMonths' => (int)$cfg['serviceMonths'], 'frozenAt' => '', 'frozen' => false];
+}
+
+/** Freeze today's settings onto a member who has no terms yet. Returns the
+ *  member row with them on. Never changes terms already frozen. */
+function fees_freeze_terms(array $member, ?array $cfg = null): array {
+    $t = fees_member_terms($member, $cfg);
+    if ($t['frozen'] || (string)($member['memberId'] ?? '') === '') return $member;
+    $json = json_encode(['basis' => $t['basis'], 'rate' => $t['rate'], 'trainingMonths' => $t['trainingMonths'],
+                         'serviceMonths' => $t['serviceMonths'], 'frozenAt' => now_iso()], JSON_UNESCAPED_SLASHES);
+    db_exec("UPDATE members SET feeTerms = ? WHERE memberId = ? AND COALESCE(feeTerms, '') = ''", [$json, (string)$member['memberId']]);
+    $member['feeTerms'] = (string)(db_row('SELECT feeTerms FROM members WHERE memberId = ? LIMIT 1', [(string)$member['memberId']])['feeTerms'] ?? $json);
+    return $member;
+}
+
 function fees_tenure(array $member, ?array $cfg = null, ?string $asOf = null, ?array $comp = null): array {
     $cfg = $cfg ?? fees_settings();
+    /* The half lengths are the MEMBER's, frozen with their terms: changing the
+       setting from 18 to 6 months used to move every member's worked-off
+       figure overnight. */
+    $terms = fees_member_terms($member, $cfg);
     $start = substr((string)($member['joinDate'] ?? ''), 0, 10);
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) $start = substr((string)($member['createdAt'] ?? ''), 0, 10);
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) {
-        return ['start' => '', 'months' => 0, 'phase' => 'unknown', 'trainingMonths' => (int)$cfg['trainingMonths'],
-                'serviceMonths' => (int)$cfg['serviceMonths'], 'servedMonths' => 0, 'complete' => false];
+        return ['start' => '', 'months' => 0, 'phase' => 'unknown', 'trainingMonths' => $terms['trainingMonths'],
+                'serviceMonths' => $terms['serviceMonths'], 'servedMonths' => 0, 'servedDays' => 0, 'serviceDays' => 0, 'complete' => false,
+                'standing' => 'clear', 'creditPausedAt' => '', 'creditStopped' => false, 'terms' => $terms];
     }
     $today = $asOf ?? gmdate('Y-m-d');
     $months = fees_months_between($start, $today);
-    $tm = (int)$cfg['trainingMonths']; $sm = (int)$cfg['serviceMonths'];
+    $tm = $terms['trainingMonths']; $sm = $terms['serviceMonths'];
 
     /* Service months are counted to the day the member stopped serving, not to
      * today. A suspension pauses the clock; an eviction stops it. The phase and
@@ -477,25 +685,46 @@ function fees_tenure(array $member, ?array $cfg = null, ?string $asOf = null, ?a
      * different questions and a screen showing one as the other is a screen
      * nobody can reconcile. */
     $comp = $comp ?? fees_compliance_cutoff($member);
-    $creditTo = ($comp['cutoff'] !== '' && $comp['cutoff'] < $today) ? $comp['cutoff'] : $today;
-    $creditMonths = fees_months_between($start, $creditTo);
-    $served = max(0, min($sm, $creditMonths - $tm));
 
     /* The training half also ENDS. Kept here so the accrual and the dashboard
      * agree on the last date a session may be charged: without it, training
      * charges carried on for as long as the member stayed enrolled, which is
      * not eighteen months of training, it is forever. */
     $trainingEndsAt = gmdate('Y-m-d', (int)strtotime($start . ' 00:00:00 UTC +' . $tm . ' months'));
+    $serviceEndsAt = gmdate('Y-m-d', (int)strtotime($start . ' 00:00:00 UTC +' . ($tm + $sm) . ' months'));
+
+    /* Served = the DAYS of the service half the member was actually serving:
+       active, not suspended (ever — a lifted suspension is not credited back),
+       not evicted. A member who left stops earning the day they left. */
+    $history = isset($comp['history']) ? member_status_history($member, $comp['history']) : member_status_history($member);
+    if (isset($comp['suspensions'])) $susp = $comp['suspensions'];
+    else {
+        try { $susp = db_all("SELECT status, startsAt, endsAt, clearedAt FROM sanctions WHERE personId = ? AND kind = 'suspension'", [(string)($member['memberId'] ?? '')]); }
+        catch (\Throwable $e) { $susp = []; }
+    }
+    $evictedAt = !empty($comp['final']) ? (string)$comp['cutoff'] : '';
+    $windowDays = max(1, (int)round((strtotime($serviceEndsAt . ' UTC') - strtotime($trainingEndsAt . ' UTC')) / 86400));
+    $servedDays = $today > $trainingEndsAt
+        ? fees_serving_days($history, fees_suspension_ranges($susp, $today), $evictedAt, $trainingEndsAt, min($today, $serviceEndsAt))
+        : 0;
+    $served = min($sm, (int)floor($sm * $servedDays / $windowDays));
+    $nowStatus = (string)($member['status'] ?? 'active');
 
     return [
         'start' => $start, 'months' => $months,
         'phase' => $months < $tm ? 'training' : ($months < $tm + $sm ? 'service' : 'complete'),
         'trainingMonths' => $tm, 'serviceMonths' => $sm,
-        'trainingEndsAt' => $trainingEndsAt,
-        'servedMonths' => $served, 'complete' => $months >= $tm + $sm,
+        'trainingEndsAt' => $trainingEndsAt, 'serviceEndsAt' => $serviceEndsAt,
+        'servedMonths' => $served, 'servedDays' => $servedDays, 'serviceDays' => $windowDays,
+        'complete' => $months >= $tm + $sm,
+        /* Left the programme, as opposed to paused: an inactive member, or one
+           evicted. What is not yet earned off becomes theirs to pay. */
+        'left' => in_array($nowStatus, MEMBER_STATUS_LEFT, true) || $evictedAt !== '',
+        'graduated' => in_array($nowStatus, MEMBER_STATUS_DONE, true),
+        'terms' => $terms,
         // Why the write-down is paused or stopped, so a screen can say it.
         'standing' => (string)$comp['state'],
-        'creditPausedAt' => ($comp['cutoff'] !== '' && $comp['cutoff'] < $today) ? $comp['cutoff'] : '',
+        'creditPausedAt' => ($comp['cutoff'] !== '' && $comp['cutoff'] < $today) ? $comp['cutoff'] : ($nowStatus === 'suspended' ? $today : ''),
         'creditStopped' => !empty($comp['final']),
     ];
 }
@@ -715,7 +944,7 @@ function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null, ?
     $cfg = $cfg ?? fees_settings();
     $memberId = (string)($member['memberId'] ?? '');
     $charged = 0; $credited = 0; $byKind = [];
-    $trainingCharged = 0; $trainingWritten = 0;
+    $trainingCharged = 0; $trainingWritten = 0; $trainingCapped = 0;
     /* `$entries` and `$comp` let a list pass what it already fetched in one
        query, so a roster of three hundred is not three hundred ledger reads. */
     $entries = $entries ?? fees_entries($memberId);
@@ -728,18 +957,30 @@ function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null, ?
             if ($kind === 'training') $trainingCharged += $amt;
         } else {
             $credited += $amt;
-            if ($kind === 'writeoff') $trainingWritten += $amt;
+            /* The cap on a fixed total (fees_accrue_member) is not a write-off
+               anybody earned: it takes back what was charged above the fee. */
+            if ($kind === 'writeoff' && str_starts_with((string)($e['periodKey'] ?? ''), 'cap:training')) $trainingCapped += $amt;
+            elseif ($kind === 'writeoff') $trainingWritten += $amt;
         }
     }
+    $trainingCharged -= min($trainingCharged, $trainingCapped);
     $ten = fees_tenure($member, $cfg, $asOf, $comp);
     /* "Deducts as they come": the share of the training fee that service has
        earned off so far. Straight-line across the service half — the simplest
        rule that is also explainable to a family, which matters more here than
        precision. A completed MOU earns the whole of it. */
-    $mou = trim((string)($member['mouAt'] ?? '')) !== '';
+    /* By DAYS served, not calendar months: a member who stopped serving
+       stopped earning (fees_tenure). Graduating is completing. */
+    $mou = trim((string)($member['mouAt'] ?? '')) !== '' || !empty($ten['graduated']);
     $earnedPct = $mou ? 1.0
-        : ((int)$ten['serviceMonths'] > 0 ? min(1.0, $ten['servedMonths'] / (int)$ten['serviceMonths']) : 0.0);
+        : ((int)($ten['serviceDays'] ?? 0) > 0 ? min(1.0, (int)$ten['servedDays'] / (int)$ten['serviceDays']) : 0.0);
     $earned = (int)floor(max(0, $trainingCharged - $trainingWritten) * $earnedPct);
+    $covered = min($trainingCharged, $earned + $trainingWritten);
+    /* "A family who leaves before the MOU is complete will owe the balance."
+       That was the rule in this file's own header, and nothing ever made it
+       payable. Left (inactive, or evicted) and not completed: what service had
+       not yet earned off is real money now. A pause (suspended) owes nothing. */
+    $trainingOwed = (!$mou && !empty($ten['left'])) ? max(0, $trainingCharged - $covered) : 0;
     $outstanding = max(0, $charged - $credited);
 
     /* ── What a family is ASKED FOR, versus what the programme COVERS ──────
@@ -773,8 +1014,11 @@ function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null, ?
             if ($kind !== 'writeoff') $realCredited += $amt;
         }
     }
-    $payable = max(0, $realCharged - $realCredited);
+    $payable = max(0, $realCharged - $realCredited) + $trainingOwed;
 
+    /* The ceiling is on REAL money. The training fee is notional while they
+       serve, and counting it stopped real dues being charged once it alone
+       (₦450,000 on the old default) filled most of a ₦500,000 ceiling. */
     $cap = (int)$cfg['balanceCap'];
     return [
         'charged' => $charged, 'credited' => $credited,
@@ -788,11 +1032,11 @@ function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null, ?
         /* The notional side, named for what it is so a screen can say it
            without implying a bill. */
         'programmeCost' => $trainingCharged,
-        'programmeCovered' => min($trainingCharged, $earned + $trainingWritten),
+        'programmeCovered' => $covered,
         'trainingCharged' => $trainingCharged, 'trainingWrittenOff' => $trainingWritten,
-        'trainingEarned' => $earned,
+        'trainingEarned' => $earned, 'trainingOwed' => $trainingOwed, 'trainingCapped' => $trainingCapped,
         'byKind' => $byKind,
-        'cap' => $cap, 'atCap' => $cap > 0 && $outstanding >= $cap,
+        'cap' => $cap, 'atCap' => $cap > 0 && max(0, $realCharged - $realCredited) >= $cap,
         'tenure' => $ten, 'mouAt' => (string)($member['mouAt'] ?? ''),
     ];
 }
@@ -816,14 +1060,16 @@ function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null, ?
  */
 const FEES_WATCH_UPCOMING_MAX = 24;
 const FEES_WATCH_ROWS_MAX = 400;
-const FEES_TRAINING_UNIT = ['session' => 'session', 'day' => 'day', 'week' => 'week'];
+const FEES_TRAINING_UNIT = ['total' => 'programme', 'session' => 'session', 'day' => 'day', 'week' => 'week'];
 
 function fees_training_watch(array $member, ?array $cfg = null, ?array $bal = null, ?string $asOf = null): array {
     $cfg = $cfg ?? fees_settings();
     $bal = $bal ?? fees_balance($member, $cfg, $asOf);
     $ten = $bal['tenure'];
-    $basis = in_array((string)($cfg['trainingBasis'] ?? 'session'), FEES_TRAINING_BASES, true) ? (string)$cfg['trainingBasis'] : 'session';
-    $fee = (int)$cfg['trainingFee'];
+    /* The member's own terms, not today's settings: what they signed up to. */
+    $terms = $ten['terms'] ?? fees_member_terms($member, $cfg);
+    $basis = $terms['basis'];
+    $fee = (int)$terms['rate'];
     $today = $asOf ?? gmdate('Y-m-d');
     $mid = (string)$member['memberId'];
     $rows = []; $chargedKeys = [];
@@ -838,10 +1084,16 @@ function fees_training_watch(array $member, ?array $cfg = null, ?array $bal = nu
         $rows[] = ['key' => $key, 'label' => (string)$e['note'] !== '' ? (string)$e['note'] : 'Training', 'date' => $date, 'amount' => (int)$e['amount'], 'state' => 'charged'];
     }
     $due = []; $upcoming = []; $upcomingCount = 0;
-    if ($fee > 0 && $ten['start'] !== '' && $ten['phase'] === 'training') {
+    if ($fee > 0 && $basis === 'total' && $ten['start'] !== '') {
+        // One charge for the place; until the accrual posts it, it is due.
+        $left = $fee - (int)$bal['trainingCharged'];
+        if ($left > 0) $due[] = ['key' => 'total', 'label' => 'Training fee — the place, for the whole programme',
+                                 'date' => (string)$ten['start'], 'amount' => $left, 'state' => 'due'];
+    } elseif ($fee > 0 && $ten['start'] !== '' && $ten['phase'] === 'training') {
         $ends = (string)($ten['trainingEndsAt'] ?? '');
         if ($basis === 'session') {
-            foreach (db_all('SELECT sessionId, name, startDate FROM sessions ORDER BY startDate') as $sx) {
+            foreach (db_all('SELECT sessionId, code, name, startDate FROM sessions ORDER BY startDate') as $sx) {
+                if (in_array(strtoupper((string)($sx['code'] ?? '')), FEES_NON_TRAINING_SESSIONS, true)) continue;
                 $sd = substr((string)($sx['startDate'] ?? ''), 0, 10);
                 $sid = (string)$sx['sessionId'];
                 if ($sd === '' || $sd < $ten['start'] || ($ends !== '' && $sd >= $ends) || isset($chargedKeys[$sid])) continue;
@@ -877,13 +1129,20 @@ function fees_training_watch(array $member, ?array $cfg = null, ?array $bal = nu
         }
     }
     $chargedCount = count($rows);
+    $dueAmount = array_sum(array_column($due, 'amount'));
     $all = array_merge($rows, $due, $upcoming);
     if (count($all) > FEES_WATCH_ROWS_MAX) $all = array_slice($all, -FEES_WATCH_ROWS_MAX);
     return [
         'basis' => $basis, 'unit' => FEES_TRAINING_UNIT[$basis], 'perUnit' => $fee,
+        'termsFrozen' => !empty($terms['frozen']), 'termsFrozenAt' => (string)($terms['frozenAt'] ?? ''),
         'charged' => $chargedCount, 'due' => count($due), 'upcoming' => $upcomingCount,
         'chargedAmount' => (int)$bal['trainingCharged'],
-        'dueAmount' => count($due) * $fee, 'upcomingAmount' => $upcomingCount * $fee,
+        'dueAmount' => $dueAmount, 'upcomingAmount' => $upcomingCount * $fee,
+        /* The whole cost of the place, as far as it can be known: the fixed
+           total, or what is charged, due and still to come on a per-unit basis.
+           This — never the per-unit rate — is the "training fee" a member sees. */
+        'total' => $basis === 'total' ? max($fee, (int)$bal['trainingCharged']) : (int)$bal['trainingCharged'] + $dueAmount + $upcomingCount * $fee,
+        'owed' => (int)($bal['trainingOwed'] ?? 0), 'left' => !empty($ten['left']),
         'earnedOff' => (int)$bal['trainingEarned'], 'writtenOff' => (int)$bal['trainingWrittenOff'],
         'covered' => (int)$bal['programmeCovered'],
         'coveredPct' => (int)$bal['trainingCharged'] > 0 ? (int)floor(100 * (int)$bal['programmeCovered'] / (int)$bal['trainingCharged']) : 0,
@@ -908,7 +1167,7 @@ function fees_training_watch(array $member, ?array $cfg = null, ?array $bal = nu
  * Filtered and sorted by allow-listed names; an unknown value falls back to
  * the default rather than erroring, so a stale bookmark still shows the list.
  */
-const FEES_TRAINING_FILTERS = ['all', 'training', 'service', 'complete', 'stopped', 'paused', 'nojoin'];
+const FEES_TRAINING_FILTERS = ['all', 'training', 'service', 'complete', 'stopped', 'paused', 'owed', 'nojoin'];
 const FEES_TRAINING_SORTS = ['charged', 'earned', 'remaining', 'name', 'month'];
 function admin_fees_training(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
@@ -918,7 +1177,9 @@ function admin_fees_training(array $p): array {
     $q = mb_strtolower(trim((string)($p['q'] ?? '')));
     $limit = max(1, min(FEES_ARREARS_PAGE_MAX, (int)($p['limit'] ?? FEES_ARREARS_PAGE)));
     $scope = admin_centre_names_in_scope($g['requester']);
-    $members = array_values(array_filter(db_all("SELECT * FROM members WHERE status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"),
+    /* Inactive members too: a leaver who owes the rest of the fee is exactly
+       who this list has to show. */
+    $members = array_values(array_filter(db_all("SELECT * FROM members WHERE status IN ('active','suspended','inactive') AND COALESCE(type,'NGG') <> 'Summer'"),
         static fn($m) => member_is_ngg($m) && ($scope === null || in_array((string)($m['centre'] ?? ''), $scope, true))));
     $out = []; $totals = ['charged' => 0, 'earned' => 0, 'writtenOff' => 0, 'remaining' => 0, 'members' => 0];
     $counts = array_fill_keys(FEES_TRAINING_FILTERS, 0);
@@ -936,9 +1197,15 @@ function admin_fees_training(array $p): array {
             if ($sx['kind'] === 'eviction') $comp[$pid] = ['cutoff' => substr((string)$sx['issuedAt'], 0, 10), 'state' => 'evicted', 'final' => true];
             elseif (($comp[$pid]['state'] ?? '') !== 'evicted') $comp[$pid] = ['cutoff' => substr((string)$sx['startsAt'], 0, 10), 'state' => 'suspended', 'final' => false];
         }
+        /* The status history and every suspension, for the serving-days count —
+           one query each for the chunk, as above. */
+        $hist = []; $susp = [];
+        foreach (db_all("SELECT memberId, status, since FROM member_status_log WHERE memberId IN ($ph) ORDER BY since, id", $ids) as $h) $hist[(string)$h['memberId']][] = $h;
+        foreach (db_all("SELECT personId, status, startsAt, endsAt, clearedAt FROM sanctions WHERE personId IN ($ph) AND kind = 'suspension'", $ids) as $sx) $susp[(string)$sx['personId']][] = $sx;
         foreach ($chunk as $m) {
             $mid = (string)$m['memberId'];
-            $b = fees_balance($m, $cfg, null, $ledger[$mid] ?? [], $comp[$mid] ?? ['cutoff' => '', 'state' => 'clear', 'final' => false]);
+            $b = fees_balance($m, $cfg, null, $ledger[$mid] ?? [],
+                              ($comp[$mid] ?? ['cutoff' => '', 'state' => 'clear', 'final' => false]) + ['history' => $hist[$mid] ?? [], 'suspensions' => $susp[$mid] ?? []]);
             $t = $b['tenure'];
             $units = 0;
             foreach ($ledger[$mid] ?? [] as $e) if ((string)$e['kind'] === 'training' && (string)$e['direction'] === 'charge' && trim((string)($e['voidedAt'] ?? '')) === '') $units++;
@@ -948,6 +1215,8 @@ function admin_fees_training(array $p): array {
             if ($units === 0 && ($t['phase'] !== 'training' || is_admin_role((string)($m['role'] ?? '')))) continue;
             $remaining = max(0, (int)$b['trainingCharged'] - (int)$b['programmeCovered']);
             $tags = [$t['phase'] === 'unknown' ? 'nojoin' : $t['phase']];
+            if ((int)$b['trainingOwed'] > 0) $tags[] = 'owed';
+            if ($units === 0 && (string)$m['status'] !== 'active') continue;
             if (!empty($t['creditStopped'])) $tags[] = 'stopped';
             elseif ((string)($t['creditPausedAt'] ?? '') !== '') $tags[] = 'paused';
             $counts['all']++; foreach ($tags as $tg) if (isset($counts[$tg])) $counts[$tg]++;
@@ -958,6 +1227,7 @@ function admin_fees_training(array $p): array {
             $out[] = ['memberId' => $mid, 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? ''),
                       'units' => $units, 'charged' => (int)$b['trainingCharged'], 'earned' => (int)$b['trainingEarned'],
                       'writtenOff' => (int)$b['trainingWrittenOff'], 'covered' => (int)$b['programmeCovered'], 'remaining' => $remaining,
+                      'owed' => (int)$b['trainingOwed'], 'status' => (string)$m['status'], 'basis' => (string)$t['terms']['basis'],
                       'coveredPct' => (int)$b['trainingCharged'] > 0 ? (int)floor(100 * (int)$b['programmeCovered'] / (int)$b['trainingCharged']) : 0,
                       'phase' => (string)$t['phase'], 'months' => (int)$t['months'], 'servedMonths' => (int)$t['servedMonths'],
                       'trainingEndsAt' => (string)($t['trainingEndsAt'] ?? ''), 'mouAt' => (string)$b['mouAt'],
@@ -992,6 +1262,10 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     if (empty($cfg['enabled'])) { $out['skipped'] = 'disabled'; return $out; }
     if ((string)($member['status'] ?? 'active') !== 'active') { $out['skipped'] = 'not_active'; return $out; }
     $memberId = (string)$member['memberId'];
+    /* The terms this member's training place runs on, fixed the first time
+       their account accrues: later edits are for later members. */
+    $member = fees_freeze_terms($member, $cfg);
+    $terms = fees_member_terms($member, $cfg);
     $ten = fees_tenure($member, $cfg, $asOf);
     if ($ten['start'] === '') { $out['skipped'] = 'no_join_date'; return $out; }
     $bal = fees_balance($member, $cfg, $asOf);
@@ -1029,34 +1303,59 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
             }
         }
     }
-    /* Training charges attach to a programme SESSION, not to a month — and only
-       to sessions that had started, so a session on next year's calendar does
-       not appear on an account today. */
-    if ((int)$cfg['trainingFee'] > 0 && (string)$cfg['trainingBasis'] === 'week') {
+    /* Training, on the member's own frozen terms. */
+    $rate = (int)$terms['rate'];
+    if ($rate > 0 && $terms['basis'] === 'total' && $ten['start'] <= ($asOf ?? gmdate('Y-m-d'))) {
+        /* ONE charge for the place. A member charged per session before the
+           switch keeps those rows (a charge is never re-priced) and is topped
+           up to the total, or — if the sessions came to MORE than the total, as
+           the old default did (₦450,000 against ₦300,000) — the excess is
+           taken back by a cap write-off, so nobody's place costs more than the
+           fee. Both are keyed, so a re-run posts nothing twice. */
+        $have = 0; $capped = 0;
+        foreach (fees_entries($memberId) as $e) {
+            if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
+            if ((string)$e['kind'] === 'training') $have += (int)$e['amount'];
+            if ((string)$e['kind'] === 'writeoff' && str_starts_with((string)$e['periodKey'], 'cap:training')) $capped += (int)$e['amount'];
+        }
+        if ($have < $rate) {
+            if (fees_post($memberId, 'training', $rate - $have,
+                          ['periodKey' => $have > 0 ? 'total:' . $have : 'total',
+                           'note' => $have > 0 ? 'Training fee — the rest of the fixed ' . fees_money_text($rate, $cfg) : 'Training fee — the place, for the whole programme',
+                           'by' => 'accrual'])) {
+                $out['training']++;
+            }
+        } elseif ($have - $capped > $rate) {
+            fees_post($memberId, 'writeoff', $have - $capped - $rate,
+                      ['periodKey' => 'cap:training:' . $have,
+                       'note' => 'Training fee held to the fixed ' . fees_money_text($rate, $cfg) . ' — charged per session above it', 'by' => 'accrual']);
+        }
+    } elseif ($rate > 0 && $terms['basis'] === 'week') {
         /* A week rate, off the same meeting calendar, one charge per week met. */
         $weeks = fees_training_weeks($memberId, $ten, $asOf);
         if (!$weeks && empty(member_programme_settings()['enabled'])) $out['skipped'] = 'no_calendar';
         foreach ($weeks as $key => $monday) {
-            if (fees_post($memberId, 'training', (int)$cfg['trainingFee'],
+            if (fees_post($memberId, 'training', $rate,
                           ['periodKey' => $key, 'sessionId' => explode(':', $key)[0],
                            'note' => 'Training — week of ' . $monday, 'by' => 'accrual'])) {
                 $out['training']++;
             }
         }
-    } elseif ((int)$cfg['trainingFee'] > 0 && (string)$cfg['trainingBasis'] === 'day') {
+    } elseif ($rate > 0 && $terms['basis'] === 'day') {
         /* A day rate, off the admin's own meeting calendar. */
         $days = fees_training_days($memberId, $ten, $asOf);
         if (!$days && empty(member_programme_settings()['enabled'])) $out['skipped'] = 'no_calendar';
         foreach ($days as $key => $day) {
-            if (fees_post($memberId, 'training', (int)$cfg['trainingFee'],
+            if (fees_post($memberId, 'training', $rate,
                           ['periodKey' => $key, 'sessionId' => explode(':', $key)[0],
                            'note' => 'Training — ' . $day, 'by' => 'accrual'])) {
                 $out['training']++;
             }
         }
-    } elseif ((int)$cfg['trainingFee'] > 0) {
+    } elseif ($rate > 0) {
         $today = $asOf ?? gmdate('Y-m-d');
-        foreach (db_all('SELECT sessionId, name, startDate FROM sessions ORDER BY startDate') as $s) {
+        foreach (db_all('SELECT sessionId, code, name, startDate FROM sessions ORDER BY startDate') as $s) {
+            if (in_array(strtoupper((string)($s['code'] ?? '')), FEES_NON_TRAINING_SESSIONS, true)) continue;
             $sd = substr((string)($s['startDate'] ?? ''), 0, 10);
             if ($sd === '' || $sd > $today) continue;
             if ($sd < $ten['start']) continue;                 // before they joined
@@ -1066,7 +1365,7 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
              * grew through the very period it was supposed to be shrinking. The
              * eighteen months are a training PERIOD, not a rate. */
             if ((string)($ten['trainingEndsAt'] ?? '') !== '' && $sd >= (string)$ten['trainingEndsAt']) continue;
-            if (fees_post($memberId, 'training', (int)$cfg['trainingFee'],
+            if (fees_post($memberId, 'training', $rate,
                           ['periodKey' => (string)$s['sessionId'], 'sessionId' => (string)$s['sessionId'],
                            'note' => 'Training fee — ' . ((string)($s['name'] ?? $s['sessionId'])), 'by' => 'accrual'])) {
                 $out['training']++;
@@ -1211,7 +1510,10 @@ function admin_fees_settings_get(array $p): array {
 function admin_fees_settings_set(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $in = is_array($p['data'] ?? null) ? $p['data'] : [];
-    return ['ok' => true, 'fees' => fees_settings_save($in, (string)($g['requester']['memberId'] ?? ''))];
+    $r = fees_settings_save($in, (string)($g['requester']['memberId'] ?? ''));
+    if (empty($r['ok'])) return $r;
+    unset($r['ok']);
+    return ['ok' => true, 'fees' => $r];
 }
 
 /** One member's account: the balance, the tenure, and every entry behind it. */
@@ -1580,7 +1882,14 @@ function member_fees_account(array $p): array {
 
     return ['ok' => true, 'enabled' => true, 'account' => [
         'memberId' => (string)$m['memberId'],
-        'trainingFeePerSession' => (int)$cfg['trainingFee'],
+        /* The per-unit RATE, kept for older clients — never shown as "the
+           training fee": ₦75,000 a session was being shown as the whole fee.
+           `trainingTotal` is the place's cost, `trainingOwed` what becomes
+           payable only if they leave before completing. */
+        'trainingFeePerSession' => (int)$watch['perUnit'],
+        'trainingTotal' => (int)$watch['total'],
+        'trainingBasis' => (string)$watch['basis'],
+        'trainingOwed' => (int)$bal['trainingOwed'],
         'schedule' => $schedule,
         'training' => $watch,
         'payable' => (int)$bal['payable'],
