@@ -1435,8 +1435,14 @@ Change, Test and Remove act on that one service.
 
 ### Make.com
 
-If the programme runs Make.com scenarios (`docs/make.md`), three things show up
-in the Control Room:
+Make.com is set up from **Settings → Integrations → Make.com**: make the
+signing key, connect Make's webhook, make the scheduler key. Each key is shown
+once — copy it into Make then — and afterwards only how it ends. Replacing a
+key stops the old one at once. **Turn off** refuses Make's calls and pauses its
+events; making a new signing key turns both back on. The scenarios themselves
+are in `docs/make.md`.
+
+Once it runs, three things show up in the Control Room:
 
 - guardians' answers about absences, beside each absence on the Conduct tab;
 - on the Behaviour monitor, who acknowledged a safeguarding flag, when, and

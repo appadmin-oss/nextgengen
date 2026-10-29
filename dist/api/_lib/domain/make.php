@@ -358,3 +358,125 @@ function make_jobs(array $p): array {
     }
     return ['ok' => true, 'healthy' => $stale === 0, 'stale' => $stale, 'jobs' => $out];
 }
+
+/* ── Set up on screen — Control Room → Settings → Integrations → Make.com ─── */
+
+/** The events a Make destination is subscribed to when connected from the screen. */
+const MAKE_EVENTS = ['private.attendance.absences', 'private.registration.stalled', 'safeguarding.flag',
+    'safeguarding.acknowledged', 'absence.reason', 'edition.milestone'];
+
+/**
+ * What the screen stored: both keys sealed, never sent back to a browser
+ * after the press that made them. A key made here wins over config.php, the
+ * way an API key entered on screen does; config.php alone still works.
+ */
+function make_link(): array {
+    $s = setting_get('make_link');
+    return is_array($s) ? $s : [];
+}
+function make_link_save(array $patch, string $by): void {
+    setting_set('make_link', array_merge(make_link(), $patch), $by);
+}
+function make_secret(): string {
+    $sealed = (string)(make_link()['secret'] ?? '');
+    $v = $sealed !== '' ? ai_ui_open($sealed) : '';
+    return $v !== '' ? $v : (string)($GLOBALS['CONFIG']['hooks']['make_secret'] ?? '');
+}
+/** The scheduler key api/public/cron.php accepts. */
+function cron_key_effective(): string {
+    $sealed = (string)(make_link()['cronKey'] ?? '');
+    $v = $sealed !== '' ? ai_ui_open($sealed) : '';
+    return $v !== '' ? $v : trim((string)($GLOBALS['CONFIG']['cron_key'] ?? ''));
+}
+
+function make_origin(): string {
+    return rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+}
+function make_cron_urls(string $key): array {
+    $base = make_origin() . '/api/public/cron.php?key=' . rawurlencode($key) . '&job=';
+    return [['job' => 'deliver', 'every' => 'Every 5 minutes', 'url' => $base . 'deliver'],
+            ['job' => 'reminders', 'every' => 'Every 15 minutes', 'url' => $base . 'reminders'],
+            ['job' => 'maint', 'every' => 'Every hour', 'url' => $base . 'maint'],
+            ['job' => 'accrue', 'every' => 'Every day, 02:00', 'url' => $base . 'accrue']];
+}
+
+/** The card's view: what is set, where from, how it ends — never a key. */
+function make_admin_view(): array {
+    $l = make_link();
+    $secret = make_secret(); $cron = cron_key_effective();
+    $dest = !empty($l['integrationId']) ? db_row('SELECT * FROM integrations WHERE integrationId = ? LIMIT 1', [(string)$l['integrationId']]) : null;
+    $last = db_row("SELECT at FROM audit_log WHERE event IN ('absence.reason', 'safeguarding.ack') ORDER BY id DESC LIMIT 1");
+    return [
+        'door' => make_origin() . '/api/hooks/make.php',
+        'secretSet' => $secret !== '', 'secretSource' => !empty($l['secret']) ? 'here' : ($secret !== '' ? 'file' : ''),
+        'secretEnding' => $secret !== '' ? substr($secret, -4) : '', 'secretAt' => (string)($l['secretAt'] ?? ''), 'secretBy' => (string)($l['secretBy'] ?? ''),
+        'cronSet' => $cron !== '', 'cronSource' => !empty($l['cronKey']) ? 'here' : ($cron !== '' ? 'file' : ''),
+        'cronEnding' => $cron !== '' ? substr($cron, -4) : '', 'cronAt' => (string)($l['cronAt'] ?? ''),
+        'destination' => $dest ? integration_public($dest) : null,
+        'events' => MAKE_EVENTS, 'jobs' => make_jobs([]),
+        'lastAnswerAt' => (string)($last['at'] ?? ''),
+        'sealed' => function_exists('openssl_encrypt'),
+    ];
+}
+
+function make_gate(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    if (!function_exists('openssl_encrypt')) return ['ok' => false, 'error' => 'no_openssl', 'detail' => 'This server cannot encrypt keys (PHP openssl is missing), so they cannot be stored here.'];
+    return $g;
+}
+
+/** admin.make.secret — make (or replace) the key Make signs its calls with.
+ *  Returned once. Replacing it stops the old one at once. */
+function admin_make_secret(array $p): array {
+    $g = make_gate($p); if (!$g['ok']) return $g;
+    $by = (string)$g['requester']['memberId'];
+    $had = make_secret() !== '';
+    $secret = 'mk_' . rand_hex(24);
+    make_link_save(['secret' => ai_ui_seal($secret), 'secretAt' => now_iso(), 'secretBy' => membership_staff_name($by)], $by);
+    // Turning Make back on resumes the events "Turn off" paused.
+    $dest = (string)(make_link()['integrationId'] ?? '');
+    if ($dest !== '') db_update('integrations', ['status' => 'active', 'updatedAt' => now_iso()], ['integrationId' => $dest]);
+    audit('make.secret', $by, '', ['replaced' => $had], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'secret' => $secret, 'replaced' => $had, 'make' => make_admin_view()];
+}
+
+/** admin.make.cron — make (or replace) the scheduler key; returns the URLs to
+ *  paste into Make's scheduled HTTP modules, once. */
+function admin_make_cron(array $p): array {
+    $g = make_gate($p); if (!$g['ok']) return $g;
+    $by = (string)$g['requester']['memberId'];
+    $had = cron_key_effective() !== '';
+    $key = 'ck_' . rand_hex(24);
+    make_link_save(['cronKey' => ai_ui_seal($key), 'cronAt' => now_iso()], $by);
+    audit('make.cron_key', $by, '', ['replaced' => $had], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'urls' => make_cron_urls($key), 'replaced' => $had, 'make' => make_admin_view()];
+}
+
+/** admin.make.connect — {url}: point NGG's events at a Make custom webhook,
+ *  subscribed to exactly MAKE_EVENTS. One destination; connecting again moves it. */
+function admin_make_connect(array $p): array {
+    $g = make_gate($p); if (!$g['ok']) return $g;
+    $url = trim((string)($p['url'] ?? ''));
+    if (!preg_match('#^https://hook\.[a-z0-9]+\.make\.com/[A-Za-z0-9_\-]+$#', $url)) {
+        return ['ok' => false, 'error' => 'bad_make_url', 'detail' => 'Paste the address of a Make custom webhook — it looks like https://hook.eu1.make.com/abc123…'];
+    }
+    $id = (string)(make_link()['integrationId'] ?? '');
+    if ($id !== '' && !db_row('SELECT id FROM integrations WHERE integrationId = ? LIMIT 1', [$id])) $id = '';
+    $r = admin_integrations_upsert(['requesterId' => $p['requesterId'], 'ip' => $p['ip'] ?? '', 'data' => [
+        'integrationId' => $id ?: null, 'kind' => 'webhook', 'name' => 'Make.com', 'url' => $url, 'events' => MAKE_EVENTS, 'status' => 'active']]);
+    if (empty($r['ok'])) return $r;
+    make_link_save(['integrationId' => (string)$r['integration']['integrationId']], (string)$g['requester']['memberId']);
+    return ['ok' => true, 'make' => make_admin_view(), 'moved' => $id !== ''];
+}
+
+/** admin.make.off — close the door: the key made here is removed (one in
+ *  config.php, if any, still applies) and the events destination paused. */
+function admin_make_off(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $by = (string)$g['requester']['memberId'];
+    $l = make_link();
+    if (!empty($l['integrationId'])) db_update('integrations', ['status' => 'paused', 'updatedAt' => now_iso()], ['integrationId' => (string)$l['integrationId']]);
+    make_link_save(['secret' => '', 'secretAt' => '', 'secretBy' => ''], $by);
+    audit('make.off', $by, '', [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'make' => make_admin_view()];
+}

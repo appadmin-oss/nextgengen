@@ -265,8 +265,8 @@ return [
     // -----------------------------------------------------------------------
     'hooks' => [
         'attendance_secret' => '',
-        // Make.com scenarios (docs/make.md): absence reasons, safeguarding
-        // acknowledgements, and the read actions — editions, impact, jobs.
+        // Make.com (docs/make.md). Normally left empty: the key is made on
+        // screen, Settings → Integrations → Make.com, and wins over this.
         'make_secret' => '',
     ],
 

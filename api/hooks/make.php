@@ -7,14 +7,15 @@
  *   X-NGG-Signature:  sha256=hex(HMAC_SHA256(secret, timestamp + "." + rawBody))
  * Body: {"action": "absence.reason", …}. The actions and what each may do are
  * in domain/make.php — this file only checks the signature and hands over.
- * Secret lives in config.php → 'hooks' => ['make_secret' => '…']; empty =
- * endpoint off, and off answers 404.
+ * The secret is made in Control Room → Settings → Integrations → Make.com
+ * (config.php 'hooks' => ['make_secret'] still works); none = endpoint off,
+ * and off answers 404.
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 require_method('POST');
 rate_limit_check('hook');
 
-$secret = (string)($CONFIG['hooks']['make_secret'] ?? '');
+$secret = make_secret();   // made on screen (Settings → Integrations → Make.com), or config.php
 if ($secret === '') json_error('hook_disabled', 404);
 
 $raw = file_get_contents('php://input') ?: '';

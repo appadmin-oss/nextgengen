@@ -22,7 +22,7 @@ const os = require('os');
 const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { waitForServer } = require('./_serve');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -31,6 +31,8 @@ const BASE = 'http://127.0.0.1:' + PORT;
 const CONFIG = path.join(ROOT, 'api', 'config.php');
 const DB = path.join(os.tmpdir(), 'ngg-make-hook-' + process.pid + '.db');
 const SECRET = 'm' + 'test-make-secret-0123456789abcdef';
+const UI_SECRET = 'mk_' + 'made-on-screen-0123456789abcdef';
+const UI_CRON = 'ck_' + 'made-on-screen-0123456789abcdef';
 
 let passed = 0, failed = 0;
 function chk(name, cond) {
@@ -113,6 +115,26 @@ function writeConfig(secret) {
 
     const missing = await signed({ action: 'absence.reason', ref: 'AB-NOPE', reason: 'sick' });
     chk('an answer to a question never asked is a 404', missing.status === 404 && missing.json.error === 'not_found');
+
+    /* Set up on screen: no secret in config.php at all — the key the Control
+       Room made (stored sealed in the database) opens the door, and the
+       scheduler key made beside it opens cron.php. */
+    stop();
+    writeConfig('');
+    const seed = spawnSync('php', ['-r', [
+      "$_SERVER['REQUEST_METHOD'] = 'GET';",
+      "require 'api/_lib/bootstrap.php';",
+      "make_link_save(['secret' => ai_ui_seal('" + UI_SECRET + "'), 'cronKey' => ai_ui_seal('" + UI_CRON + "')], 'test');",
+      "echo make_secret() === '" + UI_SECRET + "' ? 'seeded' : 'no';",
+    ].join(' ')], { cwd: ROOT, encoding: 'utf8' });
+    chk('a key made on screen is stored (setup needs no config file)', /seeded/.test(seed.stdout || ''));
+    await start();
+    chk('…and opens the door', (await signed({ action: 'jobs' }, { secret: UI_SECRET })).status === 200);
+    chk('…while the old config secret does not', (await signed({ action: 'jobs' })).status === 401);
+    const cron = await new Promise((resolve) => http.get(BASE + '/api/public/cron.php?key=' + UI_CRON + '&job=accrue', (res) => {
+      let b = ''; res.on('data', (c) => { b += c; }); res.on('end', () => resolve({ status: res.statusCode, body: b }));
+    }).on('error', () => resolve({ status: 0, body: '' })));
+    chk('the scheduler key made on screen runs the background jobs', cron.status === 200 && /accrue\s+ran/.test(cron.body));
   } finally {
     stop();
     try { fs.unlinkSync(CONFIG); } catch (_) {}

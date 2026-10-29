@@ -1692,6 +1692,11 @@
         dispatch: () => request('/admin/integrations.php', { body: { action: 'dispatch' } }),
         retry:    (integrationId = "") => request('/admin/integrations.php', { body: { action: 'retry', integrationId } }),
         syncMembers: () => request('/admin/integrations.php', { body: { action: 'sync_members' } }),
+        // Make.com, set up on screen (domain/make.php). Keys come back once.
+        makeSecret:  () => request('/admin/integrations.php', { body: { action: 'make_secret' } }),
+        makeCron:    () => request('/admin/integrations.php', { body: { action: 'make_cron' } }),
+        makeConnect: (url) => request('/admin/integrations.php', { body: { action: 'make_connect', url } }),
+        makeOff:     () => request('/admin/integrations.php', { body: { action: 'make_off' } }),
       },
       settings: {
         get: () => request('/admin/settings.php'),

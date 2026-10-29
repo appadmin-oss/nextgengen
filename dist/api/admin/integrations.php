@@ -16,9 +16,13 @@ if ($method === 'GET') {
     elseif ($action === 'dispatch')  $res = gs_call('admin.integrations.dispatch', ['requesterId' => $s['mid']]);
     elseif ($action === 'retry')     $res = gs_call('admin.integrations.retry', ['requesterId' => $s['mid'], 'integrationId' => $b['integrationId'] ?? '', 'ip' => client_ip()]);
     elseif ($action === 'sync_members') $res = gs_call('admin.sheets.syncMembers', ['requesterId' => $s['mid'], 'ip' => $ip]);
+    elseif ($action === 'make_secret')  $res = gs_call('admin.make.secret', ['requesterId' => $s['mid'], 'ip' => $ip]);
+    elseif ($action === 'make_cron')    $res = gs_call('admin.make.cron', ['requesterId' => $s['mid'], 'ip' => $ip]);
+    elseif ($action === 'make_connect') $res = gs_call('admin.make.connect', ['requesterId' => $s['mid'], 'url' => $b['url'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'make_off')     $res = gs_call('admin.make.off', ['requesterId' => $s['mid'], 'ip' => $ip]);
     else json_error('unknown_action', 400);
 } else {
     json_error('method_not_allowed', 405);
 }
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400, $res['detail'] ?? null);
 unset($res['ok']); json_ok($res);

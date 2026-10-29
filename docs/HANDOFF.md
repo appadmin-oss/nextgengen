@@ -892,3 +892,12 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   `tests/make-hook.test.js` (signature, staleness, actions over real HTTP).
 - Why: shared hosting cannot keep time on a quiet weekend, hear a reply, or
   wait days for a person. Make does those; every rule stays here.
+- Set up on screen, not in config.php: Settings → Integrations → Make.com
+  (`admin.make.secret|cron|connect|off`, through `/admin/integrations.php`).
+  NGG makes both keys (`mk_…`, `ck_…`), returns each once and stores them
+  sealed in `settings.make_link`; `make_secret()` and `cron_key_effective()`
+  read them first and config.php second, so `api/hooks/make.php` and
+  `api/public/cron.php` need no file edit. Connect accepts only a
+  `hook.*.make.com` address and keeps one destination subscribed to
+  `MAKE_EVENTS`. Tests: "make ui:" in run.php, `tests/make-ui.test.js` in a
+  browser, `tests/make-hook.test.js` against a key made on screen.

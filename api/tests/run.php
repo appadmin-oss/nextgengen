@@ -25514,5 +25514,55 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
               "DELETE FROM deliveries WHERE integrationId IN ('INT-MAKE-1','INT-MAKE-ALL')", "DELETE FROM integrations WHERE integrationId IN ('INT-MAKE-1','INT-MAKE-ALL')"] as $sql) db_exec($sql);
 })();
 
+// ── Make.com set up on screen, no config file ──
+(function () {
+    $A = ['requesterId' => 'NGG-2025-0099'];
+    $keep = $GLOBALS['CONFIG']['hooks']['make_secret'] ?? null; $keepCron = $GLOBALS['CONFIG']['cron_key'] ?? null;
+    $GLOBALS['CONFIG']['hooks']['make_secret'] = ''; $GLOBALS['CONFIG']['cron_key'] = '';
+    db_exec("DELETE FROM settings WHERE settingKey = 'make_link'");
+
+    $v0 = backend_dispatch('admin.integrations.list', $A)['make'] ?? [];
+    chk('make ui: off until a key is made — the door is closed', ($v0['secretSet'] ?? true) === false && make_secret() === '' && str_ends_with((string)($v0['door'] ?? ''), '/api/hooks/make.php'));
+    chk('make ui: only Settings may make the key', !empty(backend_dispatch('admin.make.secret', ['requesterId' => 'NGG-2025-0001'])['error']));
+
+    $r = backend_dispatch('admin.make.secret', $A);
+    $stored = json_encode(setting_get('make_link'));
+    chk('make ui: the key is made by NGG, shown once, and stored sealed', !empty($r['ok']) && strncmp((string)$r['secret'], 'mk_', 3) === 0
+        && make_secret() === $r['secret'] && strpos($stored, (string)$r['secret']) === false
+        && $r['make']['secretSource'] === 'here' && $r['make']['secretEnding'] === substr($r['secret'], -4));
+    chk('make ui: the list never sends the key back', strpos(json_encode(backend_dispatch('admin.integrations.list', $A)), (string)$r['secret']) === false);
+    $sig = fn(string $k, string $b, string $ts) => 'sha256=' . hash_hmac('sha256', $ts . '.' . $b, $k);
+    $ts = (string)time(); $b = '{"action":"jobs"}';
+    chk('make ui: a call signed with it passes the door’s check', hook_verify_signature(make_secret(), $ts, $b, $sig($r['secret'], $b, $ts)));
+    $r2 = backend_dispatch('admin.make.secret', $A);
+    chk('make ui: replacing it stops the old one at once', $r2['replaced'] === true && !hook_verify_signature(make_secret(), $ts, $b, $sig($r['secret'], $b, $ts)));
+
+    $GLOBALS['CONFIG']['hooks']['make_secret'] = 'from-the-file-1234';
+    chk('make ui: a key made here wins over config.php', make_secret() === $r2['secret']);
+    $GLOBALS['CONFIG']['hooks']['make_secret'] = '';
+
+    chk('make ui: only a Make webhook address is accepted', backend_dispatch('admin.make.connect', $A + ['url' => 'https://evil.example/x'])['error'] === 'bad_make_url');
+    $c = backend_dispatch('admin.make.connect', $A + ['url' => 'https://hook.eu1.make.com/abc123XYZ']);
+    $dest = $c['make']['destination'] ?? [];
+    chk('make ui: connecting subscribes Make to exactly its events, signed', !empty($c['ok']) && $dest['kind'] === 'webhook' && $dest['events'] === MAKE_EVENTS && $dest['hasSecret'] === true);
+    $c2 = backend_dispatch('admin.make.connect', $A + ['url' => 'https://hook.us1.make.com/other456']);
+    chk('make ui: connecting again moves the one destination, never a second', $c2['moved'] === true
+        && (int)db_row("SELECT COUNT(*) c FROM integrations WHERE name = 'Make.com'")['c'] === 1 && $c2['make']['destination']['url'] === 'https://hook.us1.make.com/other456');
+
+    $k = backend_dispatch('admin.make.cron', $A);
+    $u = $k['urls'][1]['url'] ?? '';
+    parse_str((string)parse_url($u, PHP_URL_QUERY), $q);
+    chk('make ui: the scheduler key is made here, and the addresses carry it', !empty($k['ok']) && count($k['urls']) === 4 && cron_key_effective() === ($q['key'] ?? '-')
+        && ($q['job'] ?? '') === 'reminders' && strpos(json_encode(setting_get('make_link')), (string)$q['key']) === false);
+
+    $off = backend_dispatch('admin.make.off', $A);
+    chk('make ui: turning off closes the door and pauses the events, but keeps the scheduler', make_secret() === '' && $off['make']['destination']['status'] === 'paused' && cron_key_effective() !== '');
+    $on = backend_dispatch('admin.make.secret', $A);
+    chk('make ui: a new signing key turns it back on, events included', make_secret() === $on['secret'] && $on['make']['destination']['status'] === 'active');
+
+    db_exec("DELETE FROM integrations WHERE name = 'Make.com'"); db_exec("DELETE FROM settings WHERE settingKey = 'make_link'");
+    $GLOBALS['CONFIG']['hooks']['make_secret'] = $keep; $GLOBALS['CONFIG']['cron_key'] = $keepCron;
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

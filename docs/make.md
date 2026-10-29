@@ -12,40 +12,47 @@ absence is still a person's call on the conduct screen.
 
 ---
 
-## 0 · Once, before any scenario
+## 0 · Once, before any scenario — all on screen
 
-1. **Make: Scenario settings → "Data is confidential" → on**, for every
-   scenario below. Without it Make keeps a copy of every payload (children's
-   first names, guardians' numbers) in its run history. Choose the EU region
-   when the organisation is created.
-2. **NGG secret.** In `api/config.php`:
-   ```php
-   'hooks' => [
-       'attendance_secret' => '…',
-       'make_secret' => '<a long random string>',
-   ],
-   ```
-   Empty means the door is off and answers 404. Keep this string in a Make
-   **data store** or a scenario variable, never in a module's visible text.
-3. **NGG → Make (events).** Control Room → Settings → Integrations → add a
-   **Webhook** destination with the URL of a Make *Custom webhook* trigger,
-   and subscribe it to the events that scenario needs (below). NGG signs every
-   delivery (`docs/integrations.md` §2) and retries for up to eight attempts.
-   One Make webhook can take several events and branch on the `event` field
-   with a Router; separate webhooks per scenario are easier to read.
-4. **Make → NGG (actions).** Every call back is an *HTTP → Make a request*:
+Control Room → Settings → **Integrations** → the **Make.com** card. Nothing is
+typed into `api/config.php`.
 
-   | Field | Value |
-   |---|---|
-   | URL | `https://<site>/api/hooks/make.php` |
-   | Method | `POST` |
-   | Body type | Raw, content type `application/json` |
-   | Header `X-NGG-Timestamp` | `{{formatDate(now; "X")}}` |
-   | Header `X-NGG-Signature` | `sha256={{sha256(TS + "." + BODY; "hex"; SECRET)}}` |
+1. **Make signing key.** NGG makes it and shows it once, with the door's
+   address. In Make, keep it in a **data store** (or a scenario variable),
+   never in a module's visible text. Replacing it stops the old one at once;
+   **Turn off** closes the door and pauses the events, and making a new key
+   turns both back on.
+2. **Connect Make's webhook.** In Make, start a scenario with *Webhooks →
+   Custom webhook*, copy its address, paste it here. NGG sends it exactly the
+   events below — never `*` — signed (`docs/integrations.md` §2), retried up
+   to eight times. Connecting again moves the one destination. One Make
+   webhook can take every event and branch on `event` with a Router.
+3. **Make scheduler key.** NGG hands over four addresses, one per job, to
+   paste into scheduled HTTP modules (scenario 1). They are shown once; the
+   card afterwards says only that a key exists and how it ends.
+4. **Make: Scenario settings → "Data is confidential" → on**, for every
+   scenario. Without it Make keeps a copy of every payload (children's first
+   names, guardians' numbers) in its run history. Choose the EU region when
+   the Make organisation is created.
 
-   Build `BODY` once in a *Set variable* module and send that exact string;
-   the signature covers the bytes, so a body re-serialised between signing
-   and sending is refused. Requests more than five minutes old are refused.
+The card shows whether calls can come in, whether events go out, whether the
+background jobs are keeping time, and when Make last sent an answer. A key
+already in `config.php` (`hooks.make_secret`, `cron_key`) still works; one made
+on screen wins over it.
+
+**Make → NGG (actions).** Every call back is an *HTTP → Make a request*:
+
+| Field | Value |
+|---|---|
+| URL | the door address on the card (`https://<site>/api/hooks/make.php`) |
+| Method | `POST` |
+| Body type | Raw, content type `application/json` |
+| Header `X-NGG-Timestamp` | `{{formatDate(now; "X")}}` |
+| Header `X-NGG-Signature` | `sha256={{sha256(TS + "." + BODY; "hex"; KEY)}}` |
+
+Build `BODY` once in a *Set variable* module and send that exact string;
+the signature covers the bytes, so a body re-serialised between signing
+and sending is refused. Requests more than five minutes old are refused.
 
 ### The actions
 
@@ -87,13 +94,11 @@ One already overtaken when the dates were set is skipped, not sent late.
 NGG's background work runs on visitor traffic. A quiet weekend is a weekend
 with no reminders, no absence sweep and no season close.
 
-- **Heartbeat** — three scenarios, each one *HTTP → Get a file* (or Make a
-  request) on a schedule:
-  - every 15 min: `https://<site>/api/public/cron.php?key=<cron_key>&job=reminders`
-  - every hour: `…&job=maint`
-  - daily, 02:00: `…&job=accrue`
-  Plus `…&job=deliver` every 5 minutes if Chat or Make deliveries matter
-  within minutes. `cron_key` is in `api/config.php`.
+- **Heartbeat** — one scenario per address the card's **Make scheduler key**
+  handed over: a Schedule trigger at the interval shown (deliver every 5
+  minutes, reminders every 15, maint hourly, accrue daily at 02:00), then
+  *HTTP → Make a request* (GET) to the address. Leave out `deliver` if
+  deliveries arriving within the hour is fine.
 - **Watchdog** — hourly: `{"action":"jobs"}` → *Filter* `healthy = false` →
   WhatsApp/email the ops lead with the stale job names. Also poll
   `/api/public/health.php` and alert on any status other than 200.
