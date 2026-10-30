@@ -17655,3 +17655,109 @@ button.m9x-ev-sum { cursor: pointer; }
 .fp3x-push { margin-top: 16px; }
 .cr-push-wrap { padding: 4px 0; }
 .cr-ib-push { padding: 8px 12px 0; }
+
+/* ── The notice editor (cr-tab-comms.jsx NoticeEditor) ──────────────────────
+   A document editor, not a form: the page is the notice (.nt-paper.nt-doc, the
+   same drawing members read), set on a quiet desk, with a slim toolbar above
+   it and the sending choices in a rail beside it — a sheet when the editor is
+   narrower than page + rail. Widths are the editor's own (a container), not
+   the window's. */
+.nte { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; background: var(--cr-s2); font-family: var(--cr-font); color: var(--cr-ink); container-type: inline-size; container-name: nte; }
+.nte-bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--cr-bg); border-bottom: 1px solid var(--cr-line); flex: none; }
+.nte-grow { flex: 1; }
+.nte-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--cr-muted-3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nte-state.is-saved { color: var(--cr-ok-fg); }
+.nte-state.is-error { color: var(--cr-danger); }
+.nte-state.is-saving .ph { animation: nte-spin 1s linear infinite; }
+@keyframes nte-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .nte-state.is-saving .ph { animation: none; } }
+.nte-count { font-size: 12.5px; color: var(--cr-muted-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nte-banner { display: flex; gap: 8px; align-items: flex-start; padding: 10px 16px; background: var(--cr-banner-bg); border-bottom: 1px solid var(--cr-banner-line); color: var(--cr-banner-fg); font-size: 13.5px; line-height: 1.45; flex: none; }
+.nte-banner .ph { margin-top: 2px; }
+.nte-work { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+.nte-desk { overflow-y: auto; padding: 24px 24px 72px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.nte-desk > * { width: 100%; max-width: 780px; }
+/* The formatting band sits between the bar and the desk, never over the words. */
+.nte-format { flex: none; display: flex; padding: 6px 16px; background: var(--cr-bg); border-bottom: 1px solid var(--cr-line); overflow-x: auto; }
+.nte-tools { display: flex; align-items: center; gap: 2px; flex: none; margin: 0 auto; }   /* auto margins centre it and, unlike justify-content, never clip its start when it overflows */
+.nte-tool { width: 36px; height: 36px; display: inline-grid; place-items: center; border: 0; border-radius: var(--cr-r-sm); background: transparent; color: var(--cr-muted); font-size: 18px; }
+.nte-tool:hover { background: var(--cr-s2); color: var(--cr-ink); }
+.nte-tool[aria-pressed="true"] { background: var(--cr-nav-on); color: var(--cr-ink); }
+.nte-tool.is-label { width: auto; display: inline-flex; gap: 6px; padding: 0 10px; font-size: 13px; font-weight: 500; }
+.nte-tool.is-label .ph { font-size: 16px; }
+.nte-tool:focus-visible, .nte-add:focus-visible, .nte-x:focus-visible { outline: 2px solid var(--cr-ink); outline-offset: 1px; }
+.nte-sep { width: 1px; height: 20px; background: var(--cr-line-3); margin: 0 4px; }
+.nte-paper { min-height: 60vh; position: relative; box-shadow: var(--cr-sh-switch); }
+.nte-in { display: block; width: 100%; border: 0; background: transparent; padding: 2px 0; margin: 0; color: inherit; text-align: inherit; border-radius: 4px; }
+.nte-in::placeholder { color: var(--cr-faint); }
+.nte-in:focus { outline: none; background: var(--cr-s4); }
+.nte-head { position: relative; }
+.nte-head .nte-in.nt-org { margin-bottom: 4px; }
+.nte-head .nte-in.nt-kind { margin-bottom: 14px; }
+.nte-subj { display: flex; align-items: baseline; gap: 8px; }
+.nte-subj.is-official { justify-content: center; text-align: center; padding-bottom: 16px; border-bottom: 2px solid var(--cr-ink); margin-bottom: 18px; }
+.nte-subj-k { font: 600 clamp(18px, 2.6vw, 22px)/1.3 var(--c-font-display, sans-serif); flex: none; }
+.nte-subj .nte-in.nt-subject { resize: none; overflow: hidden; font-size: 26px; line-height: 1.25; }
+.nte-subj.is-official .nte-in.nt-subject { font-size: clamp(18px, 2.6vw, 22px); text-align: left; width: auto; flex: 1; max-width: 560px; }
+.nte-subj:not(.is-official) { margin: 4px 0 14px; }
+.nte-body { min-height: 180px; outline: none; border-radius: 4px; caret-color: var(--cr-ink); }
+/* The page is the field: its caret is the focus, as in a document — the Control Room's 2px ring (.cr-app :focus-visible) would box the notice in. */
+.nte .nte-paper .nte-body:focus-visible { outline: none; }
+.nte .nte-paper .nte-in:focus-visible { outline: none; }
+.nte-body.is-empty::before { content: attr(data-ph); color: var(--cr-faint); pointer-events: none; display: block; }
+.nte-body.is-empty:focus::before { color: var(--cr-faint-2); }
+.nte-add { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; margin: 0 0 14px; border: 1px dashed var(--cr-line-strong); border-radius: var(--cr-r-sm); background: transparent; color: var(--cr-muted); font-size: 13px; width: auto; }
+.nte-add em { font-style: normal; color: var(--cr-muted-3); }
+.nte-add:hover { border-color: var(--cr-ink); color: var(--cr-ink); }
+.nte-add.is-sign { margin: 24px 0 0; }
+.nte-x { position: absolute; top: -6px; right: -6px; width: 32px; height: 32px; display: inline-grid; place-items: center; border: 0; border-radius: var(--cr-r-sm); background: transparent; color: var(--cr-muted-3); }
+.nte-x:hover { background: var(--cr-s2); color: var(--cr-ink); }
+.nte-signrow { position: relative; margin-top: 24px; }
+.nte-signrow .nte-in.nt-sign { margin: 0; padding-right: 36px; }
+.nte-signrow .nte-x { top: -2px; right: 0; }
+.nte-err { color: var(--cr-danger); font-size: 13px; margin: 6px 0 0; }
+.nte-wait { color: var(--cr-muted-3); font-size: 13px; margin: 0; text-align: center; }
+.nte-side { background: var(--cr-bg); border-left: 1px solid var(--cr-line); overflow-y: auto; display: flex; flex-direction: column; }
+.nte-side-head { display: none; }
+.nte-side-in { display: flex; flex-direction: column; }
+.nte-sec { padding: 16px 18px; border-bottom: 1px solid var(--cr-line-4); display: flex; flex-direction: column; gap: 8px; }
+.nte .nte-side .nte-sec-h { font-size: 12.5px; line-height: 1.3; font-weight: 600; color: var(--cr-muted-3); margin: 0 0 2px; }
+.nte-lbl { font-size: 13px; font-weight: 500; color: var(--cr-text); }
+.nte-lbl i { font-style: normal; color: var(--cr-muted-3); font-weight: 400; }
+.nte-select, .nte-input { width: 100%; max-width: none; }
+.nte-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.nte-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.nte-row b { display: block; font-size: 13.5px; font-weight: 500; }
+.nte-row em { display: block; font-style: normal; font-size: 12.5px; color: var(--cr-muted-3); line-height: 1.4; margin-top: 2px; }
+.nte-fixed { margin: 0; font-size: 13.5px; }
+.nte-fixed span { display: block; font-size: 12.5px; color: var(--cr-muted-3); margin-top: 4px; }
+.nte-help ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.5; color: var(--cr-muted); display: flex; flex-direction: column; gap: 6px; }
+.nte-help kbd { font-family: var(--cr-mono); font-size: 11.5px; padding: 0 4px; border: 1px solid var(--cr-line-3); border-radius: 4px; background: var(--cr-s4); }
+/* What will happen, in a sentence, before any of the choices that decide it. */
+.nte-sum { display: flex; gap: 10px; align-items: flex-start; margin: 14px 14px 2px; padding: 12px 14px; background: var(--cr-s4); border-radius: var(--cr-r); font-size: 13px; line-height: 1.45; }
+.nte-sum > .ph { font-size: 18px; margin-top: 1px; color: var(--cr-muted); }
+.nte-sum b { display: block; font-weight: 600; font-size: 13.5px; }
+.nte-sum em { display: block; font-style: normal; color: var(--cr-muted); }
+.nte-help summary { cursor: pointer; font-size: 13px; font-weight: 500; color: var(--cr-muted); list-style-position: inside; }
+.nte-help summary:hover { color: var(--cr-ink); }
+.nte-help[open] summary { margin-bottom: 8px; }
+.nte-sheet-l { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nte-sheet-btn { display: none; }
+@container nte (max-width: 900px) {
+  .nte-work { grid-template-columns: minmax(0, 1fr); }
+  .nte-sheet-btn { display: inline-flex; }
+  .nte-side { position: absolute; left: 0; right: 0; bottom: 0; max-height: 80%; border-left: 0; border-top: 1px solid var(--cr-line); border-radius: var(--cr-r-xl) var(--cr-r-xl) 0 0; box-shadow: var(--cr-sh-sheet); transform: translateY(105%); transition: transform .2s var(--cr-ease); z-index: 3; visibility: hidden; }
+  .nte-side.is-open { transform: none; visibility: visible; }
+  .nte-side-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 4px; position: relative; }
+  .nte-side-head .nte-x { position: static; }
+}
+@container nte (max-width: 560px) {
+  .nte-bar { flex-wrap: wrap; padding: 8px 12px; row-gap: 6px; }
+  .nte-bar .nte-sheet-btn { margin-left: auto; }
+  .nte-count { display: none; }
+  .nte-format { padding: 4px 8px; }
+  .nte-tool.is-label { width: 36px; padding: 0; }
+  .nte-tool.is-label span { display: none; }
+  .nte-desk { padding: 12px 10px 72px; }
+  .nte-subj .nte-in.nt-subject { font-size: 22px; }
+}

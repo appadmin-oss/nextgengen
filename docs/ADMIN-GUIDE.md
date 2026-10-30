@@ -2096,29 +2096,42 @@ places; change either one without touching the other.
 
 ### Official notices (Control Room → Announcements → Notices)
 
-For a management notice written the way it goes out on WhatsApp — a
-letterhead, *MANAGEMENT OFFICIAL NOTICE*, `SUBJECT: *…*`, numbered sections,
-bullets and a sign-off.
+Notices are written **on the page**, like a document — a one-line
+announcement and a full management notice use the same editor.
 
-1. **New notice.** Paste the whole notice as it was written. Choose who it is
-   for (everyone, a programme, or one centre), whether it goes to members,
-   their families, or both, whether readers must **confirm they have read and
-   understood it**, and whether to email it too.
-2. **Check it.** It is split into the organisation, the kind of notice, the
-   subject, the body and the sign-off, and opened as a **draft** with a
-   preview. The preview is exactly what members and parents will read:
-   `1. *HEADING*` becomes a section heading, `- ` lines a list, `*bold*` bold,
-   and the dashboard address a link. **Edit** fixes any part. A draft reaches
-   nobody.
-3. **Publish…** The confirm says how many members (and their families) it is
-   about to reach. Each member gets it in their notifications, with a push;
-   each family account gets it once in Messages, however many children; and,
-   if chosen, every address gets one email (sent a batch a minute).
-4. **Who has read it.** Open the notice: how many read it and how many
+1. **New notice** opens a blank page: a **title** and the **message**. That is
+   all a short announcement needs ("No class this Saturday" — "The centre is
+   closed for repairs."). Press Enter in the title to start the message.
+2. **An official notice** adds its parts from the page: **+ Letterhead** (the
+   organisation and the kind of notice — it then reads "Subject: …") and
+   **+ Sign-off**, both filled from your last notice. Or **paste the whole
+   notice from WhatsApp onto the empty page**: the letterhead, subject, body
+   and sign-off are filled in for you, and the sections, bold and lists keep
+   their formatting.
+3. **Write and format** with the band above the page: **Text** / **Heading**
+   for a paragraph or a section heading (a heading that starts "1." keeps its
+   number), **B**, *I*, strikethrough, bullets, undo/redo. Type `-` and a space
+   for a bullet. Shortcuts: Ctrl+B, Ctrl+I, Ctrl+Alt+2 heading, Ctrl+Alt+0
+   text, Ctrl+S save. Pasting from Word or Google Docs keeps bold and lists.
+4. **It saves itself.** A draft saves a moment after you stop typing (the bar
+   says *Saved*); a draft reaches nobody. The address is the notice's own, so
+   a refresh or a shared link reopens it.
+5. **Sending** (the panel on the right; a sheet from **To …** on a phone)
+   says in one sentence who it reaches, then: who it is for (everyone, a
+   programme or one centre), members / families / both, whether readers must
+   **confirm they have read and understood it**, and whether to email it too.
+6. **Preview** shows it exactly as members and parents will read it.
+   **Publish…** confirms how many members (and their families) it is about to
+   reach. Each member gets it in their notifications, with a push; each family
+   account gets it once in Messages, however many children; and, if chosen,
+   every address gets one email (sent a batch a minute).
+7. **Who has read it.** Open the notice: how many read it and how many
    acknowledged it — the member themselves, or a parent for them — and a list
    of everyone it is for. **Remind** sends one more notification to those who
    have not, and nobody else; once a day at most.
-5. **Correct…** changes a published notice; readers see that it was
+8. **Correct…** opens the published notice in the same editor; change it,
+   say what you corrected (required — readers are shown it), and **Save the
+   correction**. Who it went to cannot change. Readers see that it was
    corrected, when, and your note. **Withdraw…** takes it back; readers see
    that it was withdrawn and why, and unsent emails are cancelled. A published
    notice is never deleted.

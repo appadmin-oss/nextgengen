@@ -5161,3 +5161,34 @@ route (`notice`); the Control Room keeps the open notice in the URL
 
 Tests: PHP suite 6398 passed, 2 failed (the two known pre-existing ones);
 notices 17/17, conduct-rulebook 10/10, fines-upload 18/18, route-registry 60/60.
+
+## 2026-10-30 — Notices are written on the page (a document editor)
+
+The notice drawer (a long form with a raw WhatsApp textarea) was rejected as
+"not user friendly", with Claude Docs as the model, and "some announcements
+are not this long". `NoticeEditor` (cr-tab-comms.jsx) replaces it:
+
+- The page IS the notice (`.nt-paper.nt-doc`, the drawing members read): the
+  title inline, a contenteditable body, a formatting band above the page
+  (Text / Heading, B, I, S, bullets, undo/redo), Sending choices in a rail
+  (a sheet below 900px of the editor's OWN width — container queries).
+- Short by default: a new notice is a title and a message. Letterhead and
+  sign-off are optional parts added from the page, prefilled from the last
+  notice (`lastLetterhead` on `admin.notices.list`). A notice with no
+  letterhead is an announcement: no "SUBJECT:" on the page, in the email or
+  in the WhatsApp copy (`notice_is_official` / `notice_title`); the minimum
+  body is now 2 characters.
+- Storage is unchanged: the editor serialises its DOM back to WhatsApp text
+  (`ntSerialize`), so `notice_html` stays the one formatter. The test asserts
+  the round trip keeps every section and list item of the STS notice.
+- Paste: a whole notice on an empty page → `notices.parse` fills every part;
+  rich HTML (Word, Google Docs) → serialised → `notices.preview` → inserted.
+- Drafts autosave (1.2s, one save at a time so the first save's id is never
+  raced); the address is `/broadcast/new` → `/broadcast/<id>/edit`; unsaved
+  words register with the Control Room's unsaved-changes guard. A published
+  notice opens in the same editor in correction mode (note required).
+- `admin.notices.save` now returns `reachMembers`, which the publish confirm
+  reads before asking.
+- `tests/notices.test.js`: 36 checks — paste, round trip, toolbar state,
+  autosave, preview, publish, correction, a one-line announcement, the phone
+  sheet.

@@ -150,12 +150,22 @@ function notice_excerpt(string $body, int $max = 180): string {
     return mb_strlen($p) <= $max ? $p : rtrim(mb_substr($p, 0, $max - 1)) . '…';
 }
 
+/**
+ * A notice with a letterhead is an OFFICIAL notice and is headed "SUBJECT:", as
+ * management writes them; one without is an announcement, and its subject is
+ * simply its title ("No class this Saturday") — the same rule on the page, in
+ * the email and in the copy for WhatsApp.
+ */
+function notice_is_official(array $n): bool { return trim((string)$n['org']) !== '' || trim((string)$n['kind']) !== ''; }
+/** The subject as a heading line: "SUBJECT: …" on an official notice, the bare subject otherwise. */
+function notice_title(array $n): string { return (notice_is_official($n) ? 'SUBJECT: ' : '') . (string)$n['subject']; }
+
 /** The notice as it is pasted into WhatsApp — the parts, in WhatsApp's own marks. */
 function notice_whatsapp(array $n): string {
     $parts = [];
     if ((string)$n['org'] !== '') $parts[] = (string)$n['org'];
     if ((string)$n['kind'] !== '') $parts[] = '*' . (string)$n['kind'] . '*';
-    $parts[] = 'SUBJECT: *' . (string)$n['subject'] . '*';
+    $parts[] = (notice_is_official($n) ? 'SUBJECT: ' : '') . '*' . (string)$n['subject'] . '*';
     $parts[] = trim((string)$n['body']);
     if ((string)$n['signoff'] !== '') $parts[] = '*' . (string)$n['signoff'] . '*';
     return implode("\n\n", array_filter($parts, static fn($x) => $x !== ''));
@@ -206,7 +216,7 @@ function notice_get(string $id): ?array { return db_row('SELECT * FROM notices W
 function notice_public(array $n): array {
     return ['noticeId' => (string)$n['noticeId'], 'org' => (string)$n['org'], 'kind' => (string)$n['kind'], 'subject' => (string)$n['subject'],
             'html' => notice_html((string)$n['body']), 'signoff' => (string)$n['signoff'], 'needsAck' => (bool)(int)$n['needsAck'],
-            'status' => (string)$n['status'], 'publishedAt' => (string)$n['publishedAt'],
+            'official' => notice_is_official($n), 'status' => (string)$n['status'], 'publishedAt' => (string)$n['publishedAt'],
             'correctedAt' => (string)$n['correctedAt'], 'correctionNote' => (string)$n['correctionNote'],
             'withdrawnAt' => (string)$n['withdrawnAt'], 'withdrawReason' => (string)$n['withdrawReason'],
             'whatsapp' => notice_whatsapp($n)];
@@ -233,13 +243,19 @@ function notice_counts(array $ids): array {
 
 /* ── The desk ─────────────────────────────────────────────────────────────── */
 
+/** notice_admin() with how many it reaches and who has read it — what the editor's Publish confirm reads. */
+function notice_admin_counted(array $n): array {
+    return notice_admin($n, ['reachMembers' => count(notice_members($n))] + (notice_counts([(string)$n['noticeId']])[(string)$n['noticeId']] ?? ['readers' => 0, 'acked' => 0]));
+}
+
 /** Validate the parts the desk sends. ['ok'=>false,…] or the clean row fields. */
 function notice_clean(array $p): array {
     $t = static fn($k, $max) => trim(mb_substr(str_replace(["\r\n", "\r"], "\n", (string)($p[$k] ?? '')), 0, $max));
     $row = ['org' => $t('org', 160), 'kind' => $t('kind', 160), 'subject' => $t('subject', 300), 'body' => $t('body', NOTICE_BODY_MAX), 'signoff' => $t('signoff', 160)];
     if (mb_strlen((string)($p['body'] ?? '')) > NOTICE_BODY_MAX) return ['ok' => false, 'error' => 'too_long', 'field' => 'body', 'detail' => 'A notice is at most ' . number_format(NOTICE_BODY_MAX) . ' characters.'];
     if (mb_strlen($row['subject']) < 3) return ['ok' => false, 'error' => 'subject_required', 'field' => 'subject', 'detail' => 'Give the notice its subject.'];
-    if (mb_strlen($row['body']) < 10) return ['ok' => false, 'error' => 'body_required', 'field' => 'body', 'detail' => 'Write the notice.'];
+    // A notice may be one line ("No class this Saturday — the centre is closed for repairs."): only an empty one is refused.
+    if (mb_strlen($row['body']) < 2) return ['ok' => false, 'error' => 'body_required', 'field' => 'body', 'detail' => 'Write the notice.'];
     $aud = trim((string)($p['audience'] ?? 'all')) ?: 'all';
     if (!notice_audience_ok($aud)) return ['ok' => false, 'error' => 'bad_audience', 'field' => 'audience', 'detail' => 'Choose everyone, a programme, or one of the centres.'];
     $reach = (string)($p['reach'] ?? 'both');
@@ -274,7 +290,10 @@ function admin_notices_list(array $p): array {
         $out[] = notice_admin($n, ['reachMembers' => $reach[$k]] + ($counts[(string)$n['noticeId']] ?? ['readers' => 0, 'acked' => 0]));
     }
     $aud = function_exists('admin_broadcast_history') ? (admin_broadcast_history($p)['audiences'] ?? []) : [];
-    return ['ok' => true, 'notices' => $out, 'audiences' => $aud, 'reachLabels' => NOTICE_REACH, 'max' => NOTICE_BODY_MAX];
+    // The last letterhead used, so "+ Letterhead" on a new notice starts from it rather than from nothing.
+    $lh = db_row("SELECT org, kind, signoff FROM notices WHERE org <> '' OR signoff <> '' ORDER BY id DESC LIMIT 1");
+    return ['ok' => true, 'notices' => $out, 'audiences' => $aud, 'reachLabels' => NOTICE_REACH, 'max' => NOTICE_BODY_MAX,
+            'lastLetterhead' => $lh ? ['org' => (string)$lh['org'], 'kind' => (string)$lh['kind'], 'signoff' => (string)$lh['signoff']] : null];
 }
 
 /**
@@ -291,7 +310,7 @@ function admin_notices_save(array $p): array {
         $id = 'NTC-' . gmdate('Y') . '-' . strtoupper(rand_hex(4));
         db_insert('notices', $c['row'] + ['noticeId' => $id, 'status' => 'draft', 'stats' => '', 'createdBy' => $by, 'createdAt' => $now, 'updatedAt' => $now]);
         audit('notice.create', $by, $id, ['subject' => $c['row']['subject']], (string)($p['ip'] ?? ''));
-        return ['ok' => true, 'notice' => notice_admin(notice_get($id))];
+        return ['ok' => true, 'notice' => notice_admin_counted(notice_get($id))];
     }
     $n = notice_get($id);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
@@ -303,10 +322,10 @@ function admin_notices_save(array $p): array {
         $row = array_diff_key($c['row'], ['audience' => 1, 'reach' => 1, 'emailOn' => 1]);
         db_update('notices', $row + ['correctedBy' => $by, 'correctedAt' => $now, 'correctionNote' => $note, 'updatedAt' => $now], ['noticeId' => $id]);
         audit('notice.correct', $by, $id, ['note' => $note], (string)($p['ip'] ?? ''));
-        return ['ok' => true, 'notice' => notice_admin(notice_get($id)), 'corrected' => true];
+        return ['ok' => true, 'notice' => notice_admin_counted(notice_get($id)), 'corrected' => true];
     }
     db_update('notices', $c['row'] + ['updatedAt' => $now], ['noticeId' => $id]);
-    return ['ok' => true, 'notice' => notice_admin(notice_get($id))];
+    return ['ok' => true, 'notice' => notice_admin_counted(notice_get($id))];
 }
 
 /** admin.notices.delete — a draft only. What went out is withdrawn, never deleted. */
@@ -530,7 +549,7 @@ function notice_email_html(array $n): string {
           . ((string)$n['kind'] !== '' ? '<p style="margin:0 0 14px;font-weight:700">' . esc_html(notice_unmark((string)$n['kind'])) . '</p>' : '');
     $body = str_replace(['<h3>', '<p>', '<ul>'], ['<h3 style="margin:18px 0 6px;font-size:16px">', '<p style="margin:0 0 12px;line-height:1.55">', '<ul style="margin:0 0 12px;padding-left:20px;line-height:1.55">'], notice_html((string)$n['body']));
     $sign = (string)$n['signoff'] !== '' ? '<p style="margin:18px 0 0;font-weight:700">' . esc_html((string)$n['signoff']) . '</p>' : '';
-    return email_template(['title' => 'SUBJECT: ' . (string)$n['subject'], 'eyebrow' => (string)$n['org'] !== '' ? (string)$n['org'] : 'NGG',
+    return email_template(['title' => notice_title($n), 'eyebrow' => (string)$n['org'] !== '' ? (string)$n['org'] : 'NGG',
         'bodyHtml' => $head . $body . $sign,
         'ctaLabel' => (int)$n['needsAck'] ? 'Read and acknowledge' : 'Open the notice', 'ctaUrl' => $origin . '/notice/' . rawurlencode((string)$n['noticeId'])]);
 }
@@ -547,7 +566,7 @@ function notice_mail_drain(int $batch = NOTICE_MAIL_BATCH): array {
         $n = $cache[$id] ??= notice_get($id);
         $html = $cache['h:' . $id] ??= notice_email_html($n);
         $ok = false;
-        try { $ok = (bool)send_mail((string)$r['email'], 'SUBJECT: ' . (string)$n['subject'], $html); } catch (Throwable $e) { $ok = false; }
+        try { $ok = (bool)send_mail((string)$r['email'], notice_title($n), $html); } catch (Throwable $e) { $ok = false; }
         $tries = (int)$r['attempts'] + 1;
         db_update('notice_mail', ['status' => $ok ? 'sent' : ($tries >= 3 ? 'failed' : 'queued'), 'attempts' => $tries, 'sentAt' => $ok ? now_iso() : ''], ['id' => (int)$r['id']]);
         $ok ? $out['sent']++ : $out['failed']++;

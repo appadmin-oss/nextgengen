@@ -8074,10 +8074,10 @@ function NoticeDoc({ n, level }) {
     <article className={"nt-paper nt-doc" + (withdrawn ? " is-withdrawn" : "")} aria-labelledby={"nt-subject-" + (n.noticeId || "draft")}>
       {withdrawn && <div className="nt-banner is-bad" role="status"><b>This notice was withdrawn</b> on {noticeDate(n.withdrawnAt)}.{n.withdrawReason ? " " + n.withdrawReason : ""}</div>}
       {!withdrawn && n.correctedAt && <div className="nt-banner" role="status"><b>Corrected</b> on {noticeDate(n.correctedAt)}: {n.correctionNote}</div>}
-      <header className="nt-head">
+      <header className={"nt-head" + ((n.official == null ? (n.org || n.kind) : n.official) ? "" : " is-plain")}>
         {n.org && <p className="nt-org">{n.org}</p>}
         {n.kind && <p className="nt-kind">{n.kind}</p>}
-        <H id={"nt-subject-" + (n.noticeId || "draft")} className="nt-subject"><span>Subject:</span> {n.subject}</H>
+        <H id={"nt-subject-" + (n.noticeId || "draft")} className="nt-subject">{(n.official == null ? (n.org || n.kind) : n.official) && <span>Subject: </span>}{n.subject}</H>
         {n.publishedAt && <p className="nt-date">{noticeDate(n.publishedAt)}</p>}
       </header>
       <div className="nt-body" dangerouslySetInnerHTML={{ __html: n.html }}/>

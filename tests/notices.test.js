@@ -98,35 +98,72 @@ async function pageFor(memberId, viewport) {
     const text = pg => pg.evaluate(() => document.body.innerText);
     const dlg = 'form[role="dialog"]';
 
-    // ── The desk: paste the whole notice ──
+    const paste = (pg, t, html) => pg.evaluate(([t, html]) => {
+      const el = document.querySelector('#nte-body'); el.focus();
+      const dt = new DataTransfer(); dt.setData('text/plain', t); if (html) dt.setData('text/html', html);
+      el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    }, [t, html || '']);
+    const val = (pg, sel) => pg.$eval(sel, e => e.value);
+
+    // ── The desk: a notice is written on the page, like a document ──
     await P.goto(BASE + '/control/comms/broadcast', { waitUntil: 'domcontentloaded' });
     await waitForBoot(P);
     chk('Announcements opens on notices, with “New notice”', await until(P, () => /New notice/.test(document.body.innerText) && /Notices published/.test(document.body.innerText), null, 60000));
     await P.click('button:has-text("New notice")');
-    await P.waitForSelector(dlg);
-    await P.fill(dlg + ' textarea#crf-text', notice);
-    await P.selectOption(dlg + ' select#crf-audience', 'Ikotun');
-    await P.click(dlg + ' button[type="submit"]');
-    chk('the whole notice is taken as a draft, split into its parts, and opened for checking', await until(P, () => /Preview — exactly what they will read/.test(document.body.innerText), null, 30000)
-      && /\/control\/comms\/broadcast\/NTC-/.test(new URL(P.url()).pathname));
-    let t = await text(P);
-    chk('…the preview shows the letterhead, the kind, the subject and the sign-off', /STREET TO STARDOM \(STS\)/.test(t) && /MANAGEMENT OFFICIAL NOTICE/.test(t)
-      && /Subject: REVISED SATURDAY RESUMPTION/.test(t) && /STS MANAGEMENT/.test(t));
-    const pv = P.locator('.nt-doc').first();
-    chk('…formatted: numbered sections are headings, the dash lines are a list, *bold* is bold — no asterisks left',
-      (await pv.locator('h3').count()) >= 7 && (await pv.locator('li').count()) >= 15 && (await pv.locator('strong').count()) >= 2 && !/\*[A-Z]/.test(await pv.innerText()));
-    await P.screenshot({ path: path.join(SHOTS, 'draft.png'), fullPage: true });
+    chk('“New notice” opens the editor on its own address — a blank page: a title and a message, nothing else asked',
+      await until(P, () => !!document.querySelector('.nte .nte-paper #nte-body'))
+      && new URL(P.url()).pathname === '/control/comms/broadcast/new'
+      && (await P.locator('.nte .nte-in.nt-org').count()) === 0 && (await P.locator('.nte-add:has-text("Letterhead")').count()) === 1
+      && (await P.locator('.nte-paper textarea[aria-label="Title"]').count()) === 1);
+    chk('…the title has the focus, so writing starts at once', await P.evaluate(() => document.activeElement && document.activeElement.getAttribute('aria-label') === 'Title'));
+    await P.screenshot({ path: path.join(SHOTS, 'editor-blank.png') });
+    chk('the formatting band sits above the page, never over the words, with paragraph styles named “Text” and “Heading”',
+      await P.evaluate(() => document.querySelector('.nte-format').getBoundingClientRect().bottom <= document.querySelector('.nte-desk').getBoundingClientRect().top + 1)
+      && (await P.locator('.nte-tool.is-label:has-text("Text")').count()) === 1 && (await P.locator('.nte-tool.is-label:has-text("Heading")').count()) === 1);
+    chk('the panel says what will happen first: who it goes to, in a sentence', /To Everyone/.test(await P.locator('.nte-sum').innerText()) && /Reaches 3 members and their families/.test(await P.locator('.nte-sum').innerText()));
+
+    // Paste the whole Management notice onto the empty page.
+    await paste(P, notice);
+    chk('pasting a whole notice fills every part: letterhead, kind, subject, the body and the sign-off',
+      await until(P, () => document.querySelectorAll('#nte-body h3').length >= 7, null, 20000)
+      && await val(P, '.nte-in.nt-org') === 'STREET TO STARDOM (STS)' && /MANAGEMENT OFFICIAL NOTICE/.test(await val(P, '.nte-in.nt-kind'))
+      && /^REVISED SATURDAY RESUMPTION/.test(await val(P, '.nte-paper textarea[aria-label="Subject"]')) && await val(P, '.nte-in.nt-sign') === 'STS MANAGEMENT');
+    const ed = P.locator('#nte-body');
+    chk('…the body is the formatted notice, editable in place — sections are headings, dashes a list, no asterisks',
+      (await ed.locator('li').count()) >= 15 && (await ed.locator('strong, b').count()) >= 2 && !/\*[A-Z]/.test(await ed.innerText()));
+    await P.selectOption('#nte-aud', 'Ikotun');
+    await P.click('button[role="switch"][aria-label="Ask readers to acknowledge it"]');
+    chk('it saves itself as a draft, and the address becomes the notice’s own', await until(P, () => /\/broadcast\/NTC-[^/]+\/edit$/.test(location.pathname) && /^Saved/.test((document.querySelector('.nte-state') || {}).innerText || ''), null, 20000));
+    const fid = () => php(`echo db_row("SELECT noticeId FROM notices ORDER BY id LIMIT 1")['noticeId'];`);
+    chk('…and what it stored is the WhatsApp text: the same sections, list and sign-off as the notice pasted',
+      php(`$o = notice_parse(file_get_contents(${JSON.stringify(path.join(ROOT, 'api', 'tests', 'sts-notice.txt'))})); $n = db_row("SELECT * FROM notices LIMIT 1");`
+        + `$a = notice_html($o['body']); $b = notice_html($n['body']);`
+        + `echo (substr_count($a, '<h3') === substr_count($b, '<h3') && substr_count($a, '<li') === substr_count($b, '<li') && $n['audience'] === 'Ikotun' && (int)$n['needsAck'] === 1 && $n['signoff'] === 'STS MANAGEMENT' && strpos($n['body'], '1. *') !== false) ? 'y' : 'n:' . substr_count($a, '<h3') . '/' . substr_count($b, '<h3') . ' ' . substr_count($a, '<li') . '/' . substr_count($b, '<li');`) === 'y');
+
+    // Write on the page with the toolbar, as in a document.
+    await ed.click();
+    await P.keyboard.press('Control+End');
+    await P.keyboard.press('Enter');
+    await P.click('.nte-tool[aria-label="Bold"]');
+    await P.keyboard.type('Bring your ID card.');
+    chk('the toolbar says what the caret is in (Bold pressed while typing bold)', await P.getAttribute('.nte-tool[aria-label="Bold"]', 'aria-pressed') === 'true');
+    chk('…and what is typed is saved as WhatsApp bold, at the end of the body', await until(P, () => /^Saved/.test(document.querySelector('.nte-state').innerText), null, 20000)
+      && /\*Bring your ID card\.\*\s*$/.test(php(`echo db_row("SELECT body FROM notices LIMIT 1")['body'];`)));
+    await P.screenshot({ path: path.join(SHOTS, 'editor-official.png') });
+    await P.click('.nte-bar button:has-text("Preview")');
+    chk('Preview shows it exactly as members will read it', await until(P, () => /Subject: REVISED SATURDAY RESUMPTION/.test(document.body.innerText) && !!document.querySelector('.nte .nt-doc h3'), null, 20000));
     chk('a draft reaches nobody yet', php(`echo (int)db_row("SELECT COUNT(*) c FROM notifications WHERE kind = 'notice'")['c'];`) === '0');
 
     // ── Publish ──
-    await P.click('.cr-note button:has-text("Publish…")');
+    await P.click('.nte-bar button:has-text("Publish…")');
     await P.waitForSelector('[role="alertdialog"]');
     chk('the confirm says how many it is about to reach', /2 members and their families/.test(await P.locator('[role="alertdialog"]').innerText()));
     await P.click('[role="alertdialog"] .cr-confirm-acts button:has-text("Publish")');
     chk('published: both members have it in their feed, and the family account once', await until(P, () => /Published · 2 members · 1 family account/.test(document.body.innerText), null, 20000)
       && php(`echo (int)db_row("SELECT COUNT(*) c FROM notifications WHERE kind = 'notice' AND linkPage = 'notice'")['c'];`) === '2'
       && php(`echo (int)db_row("SELECT COUNT(*) c FROM guardian_notices WHERE kind = 'notice' AND sign = 1")['c'];`) === '1');
-    const id = php(`echo db_row("SELECT noticeId FROM notices LIMIT 1")['noticeId'];`);
+    const id = fid();
+    chk('…and the desk leaves the editor for the notice itself', await until(P, id => location.pathname === '/control/comms/broadcast/' + id && !document.querySelector('.nte'), id, 20000));
 
     // ── A member reads it and acknowledges ──
     const M = await pageFor('NGG-NT-1');
@@ -165,8 +202,56 @@ async function pageFor(memberId, viewport) {
     await until(P, () => /Notices published/.test(document.body.innerText), null, 60000);
     await P.click('tr:has-text("REVISED SATURDAY RESUMPTION")');
     chk('the desk sees both read and acknowledged — one by the member, one by a parent', await until(P, () => /Who has read it/.test(document.body.innerText) && /By a parent/.test(document.body.innerText), null, 20000));
-    t = await text(P);
+    const t = await text(P);
     chk('…and nobody is left to remind', !/Remind the/.test(t) && /Not yet acknowledged\s*0/.test(t));
+
+    // ── A correction is made on the same page, and says so ──
+    await P.click('.cr-list-row:has-text("Correct…"), button:has-text("Correct…")');
+    chk('“Correct…” opens the published notice in the editor, with what a correction means', await until(P, () => !!document.querySelector('.nte #nte-body h3') && /It has gone out/.test(document.body.innerText), null, 20000)
+      && (await P.locator('.nte-bar button:has-text("Save the correction")').count()) === 1 && (await P.locator('#nte-aud').count()) === 0);
+    await P.fill('.nte-paper textarea[aria-label="Subject"]', 'REVISED SATURDAY RESUMPTION TIME AND CONDUCT');
+    await P.click('.nte-bar button:has-text("Save the correction")');
+    chk('…a correction without a note is refused on the page, before anything is sent', await until(P, () => /Say what was corrected/.test(document.body.innerText)) && php(`echo db_row("SELECT correctedAt FROM notices WHERE noticeId = '${id}'")['correctedAt'];`) === '');
+    await P.fill('#nte-note', 'The subject now names conduct as well');
+    await P.click('.nte-bar button:has-text("Save the correction")');
+    chk('…with the note it is corrected, and readers are shown that it was', await until(P, () => !document.querySelector('.nte') && /Corrected/.test(document.body.innerText), null, 20000)
+      && php(`echo db_row("SELECT subject FROM notices WHERE noticeId = '${id}'")['subject'] . '|' . db_row("SELECT correctionNote FROM notices WHERE noticeId = '${id}'")['correctionNote'];`) === 'REVISED SATURDAY RESUMPTION TIME AND CONDUCT|The subject now names conduct as well');
+
+    // ── A short announcement: a title and a sentence ──
+    await P.click('button:has-text("New notice")');
+    await until(P, () => !!document.querySelector('.nte #nte-body'));
+    await P.fill('.nte-paper textarea[aria-label="Title"]', 'No class this Saturday');
+    await P.keyboard.press('Enter');
+    chk('Enter in the title moves to the message', await P.evaluate(() => document.activeElement && document.activeElement.id === 'nte-body'));
+    await P.keyboard.type('The centre is closed for repairs. See you next week.');
+    await P.keyboard.press('Control+s');
+    chk('one line is enough: Ctrl+S saves it as a draft with no letterhead and no sign-off', await until(P, () => /\/edit$/.test(location.pathname) && /^Saved/.test(document.querySelector('.nte-state').innerText), null, 20000)
+      && php(`$n = db_row("SELECT * FROM notices WHERE subject = 'No class this Saturday'"); echo $n && $n['org'] === '' && $n['signoff'] === '' && $n['body'] === 'The centre is closed for repairs. See you next week.' ? 'y' : 'n';`) === 'y');
+    await P.screenshot({ path: path.join(SHOTS, 'editor-short.png') });
+    await P.click('.nte-bar button:has-text("Publish…")');
+    await P.waitForSelector('[role="alertdialog"]');
+    await P.click('[role="alertdialog"] .cr-confirm-acts button:has-text("Publish")');
+    const id2 = await until(P, () => /Published ·/.test(document.body.innerText), null, 20000) && php(`echo db_row("SELECT noticeId FROM notices WHERE subject = 'No class this Saturday'")['noticeId'];`);
+    chk('…published to everyone; its WhatsApp copy is the title and the sentence — no “SUBJECT:”', !!id2
+      && php(`echo notice_whatsapp(notice_get('${id2}'));`) === '*No class this Saturday*\n\nThe centre is closed for repairs. See you next week.');
+    await M.goto(BASE + '/notice/' + id2, { waitUntil: 'domcontentloaded' });
+    await waitForBoot(M);
+    chk('a member reads it as an announcement: its title, its sentence, no “Subject:” banner', await until(M, () => /No class this Saturday/.test(document.body.innerText) && /closed for repairs/.test(document.body.innerText), null, 60000)
+      && !/Subject:/.test(await text(M)) && (await M.locator('.nt-head.is-plain').count()) === 1);
+
+    // ── The editor on a phone ──
+    const Q = await pageFor('NGG-NT-ADM', { width: 390, height: 844 });
+    Q.on('pageerror', e => errs.push(String(e).slice(0, 200)));
+    await Q.goto(BASE + '/control/comms/broadcast/new', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(Q);
+    chk('on a phone the editor opens from its address, the page fills the width, nothing scrolls sideways',
+      await until(Q, () => !!document.querySelector('.nte #nte-body'), null, 60000)
+      && await Q.evaluate(() => { const n = document.querySelector('.nte'); return n.scrollWidth <= n.clientWidth + 1 && document.querySelector('.nte-paper').getBoundingClientRect().width > 340; }));
+    chk('…the sending choices are a sheet, closed until asked for', !(await Q.isVisible('#nte-aud')) && await Q.isVisible('.nte-sheet-btn'));
+    await Q.click('.nte-sheet-btn');
+    chk('…and open from “Sending”', await until(Q, () => { const r = document.querySelector('#nte-aud').getBoundingClientRect(); return r.height > 0 && r.top < innerHeight; }));
+    await Q.waitForTimeout(300);
+    await Q.screenshot({ path: path.join(SHOTS, 'editor-phone.png') });
 
     // A signed-out visitor is asked to sign in, not shown the notice.
     const V = await (await browser.newContext()).newPage();

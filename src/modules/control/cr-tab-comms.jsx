@@ -74,71 +74,390 @@ const CR_NT_ERR = { subject_required: "Give the notice its subject.", body_requi
   not_draft: "Only a draft is deleted. Withdraw a published notice instead.", withdrawn: "A withdrawn notice is not edited. Write a new one." };
 function crNtErr(e, fb) { const c = e && ((e.data && e.data.error) || e.code); return (e && e.data && e.data.detail) || CR_NT_ERR[c] || crErr(e, fb); }
 function crNtAud(d, id) { const a = (d.audiences || []).find(x => x.id === id); return id === "all" ? "Everyone" : a ? a.l : id; }
-function crNtFields(d, n, published) {
-  const aud = d.audiences || [], R = d.reachLabels || {};
-  return [
-    { id: "org", l: "Organisation (letterhead)", max: 160, ph: "STREET TO STARDOM (STS)" },
-    { id: "kind", l: "Kind of notice", max: 160, ph: "MANAGEMENT OFFICIAL NOTICE" },
-    { id: "subject", l: "Subject", req: true, max: 300 },
-    { id: "body", l: "The notice", type: "textarea", rows: 16, req: true, max: d.max || 40000, help: "As you would write it on WhatsApp: *bold*, _italic_, a blank line between paragraphs, “1. *HEADING*” for a section, “- ” for a bullet." },
-    { id: "signoff", l: "Sign-off", max: 160, ph: "STS MANAGEMENT" },
-  ].concat(published ? [
-    { id: "correctionNote", l: "What was corrected", req: true, max: 240, ph: "Section 3: the re-entry fee is ₦5,000", help: "Readers see that the notice was corrected, when, and this note." },
-  ] : [
-    { id: "audience", l: "Who it is for", type: "select", req: true, opts: aud.map(a => [a.id, (a.id === "all" ? "Everyone" : a.l) + " · " + crNum(a.n)]) },
-    { id: "reach", l: "Send to", type: "chips", req: true, opts: Object.keys(R).map(k => [k, R[k]]) },
-    { id: "needsAck", l: "Ask readers to confirm they have read and understood it", type: "switch" },
-    { id: "emailOn", l: "Email it as well", type: "switch", help: "Every member and family address, once each, a batch a minute." },
-  ]);
+/* ── The editor ──────────────────────────────────────────────────────────────
+   A notice is written ON THE PAGE, the way a document is: the subject is the
+   title, the body is typed into the notice itself with a slim toolbar, and the
+   letterhead and the sign-off are optional parts added from the page — so a
+   one-line announcement is a title and a sentence, and a management notice is
+   the same page with its letterhead on. Who it goes to sits beside the page.
+   It saves itself while it is a draft; a published notice is corrected with a
+   note instead. What is stored is still the WhatsApp text (ntSerialize below):
+   one formatter on the server (notice_html) draws the page, the email and the
+   copy for WhatsApp, so the editor is a way of WRITING that text, never a
+   second format. The address carries it: /…/broadcast/new, /…/broadcast/<id>/edit. */
+const NT_BLOCK = /^(P|DIV|H[1-6]|UL|OL|LI|BLOCKQUOTE|PRE|TABLE|TR|SECTION|ARTICLE|HEADER|FOOTER)$/;
+/** One run of text with its marks, in WhatsApp's: *bold*, _italic_, ~strike~, ```code```. */
+function ntInline(node) {
+  let s = "";
+  node.childNodes.forEach(c => {
+    if (c.nodeType === 3) { s += c.nodeValue.replace(/ /g, " ").replace(/[\r\n]+/g, " "); return; }
+    if (c.nodeType !== 1) return;
+    const t = c.tagName, st = c.style || {};
+    if (t === "BR") { s += "\n"; return; }
+    if (/^(SCRIPT|STYLE|META|TITLE)$/.test(t)) return;
+    const inner = ntInline(c);
+    const fw = String(st.fontWeight || ""), bold = ((t === "B" || t === "STRONG") && !/^(normal|[1-4]00)$/.test(fw)) || /^(bold|[6-9]00)$/.test(fw);
+    const ital = t === "I" || t === "EM" || st.fontStyle === "italic";
+    const strike = t === "S" || t === "STRIKE" || t === "DEL" || /line-through/.test(String(st.textDecoration || st.textDecorationLine || ""));
+    let mark = t === "CODE" ? "```" : "";
+    const wrap = (x, w) => { const m = x.match(/^(\s*)([\s\S]*?)(\s*)$/); return m[2] ? m[1] + w + m[2] + w + m[3] : x; };
+    let x = inner;
+    if (mark) x = wrap(x, mark);
+    else { if (strike) x = wrap(x, "~"); if (ital) x = wrap(x, "_"); if (bold) x = wrap(x, "*"); }
+    if (t === "A") { const h = c.getAttribute("href") || ""; if (/^https?:/i.test(h) && x.indexOf(h.replace(/^https?:\/\//i, "").replace(/\/$/, "")) < 0) x += " (" + h + ")"; }
+    s += x;
+  });
+  return s;
 }
-function crNtNew(ctx) {
-  const d = ctx.data || {}, R = d.reachLabels || {};
-  ctx.form({
-    title: "New notice", submit: "Check it", busyLabel: "Reading it…",
-    intro: "Paste the whole notice as it was written for WhatsApp, or write it here. It is split into its letterhead, subject, body and sign-off for you to check before anything is sent.",
-    values: { text: "", audience: "all", reach: Object.keys(R)[0] || "both", needsAck: true, emailOn: false },
-    fields: [
-      { id: "text", l: "The notice", type: "textarea", rows: 16, req: true, max: (d.max || 40000) + 2000, check: v => v.trim().length >= 20 ? "" : "That is too short to be a notice." },
-      { id: "audience", l: "Who it is for", type: "select", req: true, opts: (d.audiences || []).map(a => [a.id, (a.id === "all" ? "Everyone" : a.l) + " · " + crNum(a.n)]) },
-      { id: "reach", l: "Send to", type: "chips", req: true, opts: Object.keys(R).map(k => [k, R[k]]) },
-      { id: "needsAck", l: "Ask readers to confirm they have read and understood it", type: "switch" },
-      { id: "emailOn", l: "Email it as well", type: "switch" },
-    ],
-    onSubmit: async v => {
-      const P = await NGGApi.admin.notices.parse(v.text);
+/** The editor's page → the stored WhatsApp text: a blank line between blocks, a heading wholly bold, "- " for a bullet. */
+function ntSerialize(root) {
+  const out = [];
+  let run = null;
+  const flush = () => { if (run != null) { const t = run.replace(/[ \t]+\n/g, "\n").trim(); if (t) out.push(t); run = null; } };
+  const walk = parent => parent.childNodes.forEach(c => {
+    const el = c.nodeType === 1 ? c : null, t = el ? el.tagName : "";
+    if (el && !NT_BLOCK.test(t) && el.querySelector && el.querySelector("p,div,h1,h2,h3,h4,ul,ol,li,pre,blockquote")) { flush(); walk(el); return; }   // a wrapper (Google Docs puts the whole paste in a <b>)
+    if (!el || !NT_BLOCK.test(t)) { if (el && t === "BR") { flush(); return; } run = (run || "") + (el ? ntInline({ childNodes: [el] }) : c.nodeType === 3 ? c.nodeValue.replace(/ /g, " ") : ""); return; }
+    flush();
+    if (/^H[1-6]$/.test(t)) {
+      const x = ntInline(el).replace(/[*_~]/g, "").replace(/\s+/g, " ").trim(); if (!x) return;
+      const m = x.match(/^(\d{1,2})[.)]\s*(.+)$/);
+      out.push(m ? m[1] + ". *" + m[2] + "*" : "*" + x + "*");
+    } else if (t === "UL" || t === "OL") {
+      const items = Array.from(el.children).filter(li => li.tagName === "LI").map((li, i) => (t === "OL" ? (i + 1) + ". " : "- ") + ntInline(li).replace(/\s*\n\s*/g, " ").trim()).filter(x => !/^(-|\d+\.)\s*$/.test(x));
+      if (items.length) out.push(items.join("\n"));
+    } else if (t === "PRE") { const x = el.textContent.trim(); if (x) out.push("```" + x + "```"); }
+    else if (t === "LI" || t === "TR") { const x = ntInline(el).trim(); if (x) out.push("- " + x); }
+    else if (/^(DIV|SECTION|ARTICLE|HEADER|FOOTER|BLOCKQUOTE|TABLE)$/.test(t) && el.querySelector("p,div,h1,h2,h3,h4,ul,ol,pre,tr")) walk(el);
+    else { const x = ntInline(el).replace(/[ \t]+\n/g, "\n").trim(); if (x) out.push(x); }
+  });
+  walk(root);
+  flush();
+  return out.join("\n\n");
+}
+/** How many words are on the page. */
+function ntWords(s) { const m = String(s || "").replace(/[*_~`]/g, " ").match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu); return m ? m.length : 0; }
+
+/** Open the editor: a new notice, or this one. */
+function crNtNew(ctx) { ctx.setSub("new"); }
+function crNtEdit(ctx, n) { ctx.setSub(n.noticeId + "/edit"); }
+
+const NT_TOOLS = [
+  { id: "bold", icon: "text-b", l: "Bold", k: "Ctrl+B", cmd: "bold" },
+  { id: "italic", icon: "text-italic", l: "Italic", k: "Ctrl+I", cmd: "italic" },
+  { id: "strike", icon: "text-strikethrough", l: "Strikethrough", k: "Ctrl+Shift+X", cmd: "strikeThrough" },
+  { sep: true },
+  { id: "p", icon: "text-t", l: "Text", k: "Ctrl+Alt+0", block: "p", label: true },
+  { id: "h", icon: "text-h", l: "Heading", k: "Ctrl+Alt+2", block: "h3", label: true },
+  { sep: true },
+  { id: "ul", icon: "list-bullets", l: "Bulleted list", k: "Ctrl+Shift+8", cmd: "insertUnorderedList" },
+  { sep: true },
+  { id: "undo", icon: "arrow-counter-clockwise", l: "Undo", k: "Ctrl+Z", cmd: "undo", plain: true },
+  { id: "redo", icon: "arrow-clockwise", l: "Redo", k: "Ctrl+Y", cmd: "redo", plain: true },
+];
+
+function NoticeEditor({ d, ctx, id }) {
+  const n0 = React.useMemo(() => id ? (d.notices || []).find(x => x.noticeId === id) || null : null, []);   // read once: the page is the editor's from here
+  const R = d.reachLabels || {}, lh = d.lastLetterhead || {};
+  const [nid, setNid] = React.useState(n0 ? n0.noticeId : "");
+  const [status, setStatus] = React.useState(n0 ? n0.status : "draft");
+  const pub = status === "published";
+  const [f, setF] = React.useState(() => n0 ? { org: n0.org, kind: n0.kind, subject: n0.subject, signoff: n0.signoff, audience: n0.audience, reach: n0.reach, needsAck: !!n0.needsAck, emailOn: !!n0.emailOn }
+    : { org: "", kind: "", subject: "", signoff: "", audience: "all", reach: Object.keys(R)[0] || "both", needsAck: false, emailOn: false });
+  const [head, setHead] = React.useState(!!(n0 && (n0.org || n0.kind)));
+  const [sign, setSign] = React.useState(!!(n0 && n0.signoff));
+  const [body, setBody] = React.useState(n0 ? n0.body : "");
+  const [note, setNote] = React.useState("");
+  const [save, setSave] = React.useState({ s: n0 ? "saved" : "new" });   // new | dirty | saving | saved | error
+  const [fmt, setFmt] = React.useState({});
+  const [view, setView] = React.useState("edit");   // edit | preview
+  const [prev, setPrev] = React.useState(null);
+  const [sheet, setSheet] = React.useState(false);
+  const [errs, setErrs] = React.useState({});
+  const bodyRef = React.useRef(null), subjRef = React.useRef(null), rangeRef = React.useRef(null);
+  const ver = React.useRef(0), chain = React.useRef(Promise.resolve()), last = React.useRef(n0), live = React.useRef({});
+  live.current = { f, head, sign, body, nid, note, pub };
+
+  /* The page is set once, from the server's own drawing of the stored text; after that it is the writer's. */
+  React.useLayoutEffect(() => { if (bodyRef.current && n0) bodyRef.current.innerHTML = n0.html || ""; }, []);
+  React.useEffect(() => { const t = n0 ? bodyRef.current : subjRef.current; if (t) t.focus({ preventScroll: true }); }, []);
+  React.useLayoutEffect(() => { const t = subjRef.current; if (t) { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; } }, [f.subject, view]);
+
+  const payload = () => {
+    const L = live.current, v = L.f;
+    return { noticeId: L.nid || undefined, org: L.head ? v.org : "", kind: L.head ? v.kind : "", subject: v.subject, signoff: L.sign ? v.signoff : "", body: L.body,
+      audience: v.audience, reach: v.reach, needsAck: !!v.needsAck, emailOn: !!v.emailOn, correctionNote: L.pub ? L.note : undefined };
+  };
+  const valid = () => { const L = live.current; return L.f.subject.trim().length >= 3 && L.body.trim().length >= 2; };
+  /* One save at a time, in order: the first save of a new notice creates it, and every later one must name it. */
+  const doSave = () => {
+    const mine = ++ver.current;
+    chain.current = chain.current.then(async () => {
+      if (mine !== ver.current) return last.current;   // a later change will save the newer text
+      setSave({ s: "saving" });
       try {
-        return await NGGApi.admin.notices.save(Object.assign({}, P.parts, { audience: v.audience, reach: v.reach, needsAck: !!v.needsAck, emailOn: !!v.emailOn }));
-      } catch (e) { const f = e && e.data && e.data.field; if (f === "subject" || f === "body") return { fieldErrors: { text: crNtErr(e) } }; throw e; }
-    },
-    done: (v, r) => { crNtOpen(ctx, r.notice.noticeId, true); return "Saved as a draft. Check each part below, then publish."; },
-  });
-}
-function crNtEdit(ctx, n) {
-  const d = ctx.data || {}, pub = n.status === "published";
-  ctx.form({
-    title: pub ? "Correct the notice" : "Edit the draft", submit: pub ? "Save the correction" : "Save", busyLabel: "Saving…",
-    intro: pub ? "It has gone out: readers will see it was corrected, when, and your note. Who it is for cannot change — that would be a new notice." : "",
-    values: { org: n.org, kind: n.kind, subject: n.subject, body: n.body, signoff: n.signoff, audience: n.audience, reach: n.reach, needsAck: n.needsAck, emailOn: n.emailOn, correctionNote: "" },
-    fields: crNtFields(d, n, pub),
-    onSubmit: async v => {
-      try { return await NGGApi.admin.notices.save(Object.assign({ noticeId: n.noticeId }, v, { needsAck: !!v.needsAck, emailOn: !!v.emailOn })); }
-      catch (e) { const f = e && e.data && e.data.field; if (f) return { fieldErrors: { [f]: crNtErr(e) } }; throw Object.assign(new Error("failed"), { data: { message: crNtErr(e, "Couldn’t save it.") } }); }
-    },
-    done: () => { ctx.reload(); return pub ? "Corrected. Readers see the change and your note." : "Saved."; },
-  });
+        const r = await NGGApi.admin.notices.save(payload());
+        const n = r.notice; last.current = n;
+        if (!live.current.nid) { setNid(n.noticeId); live.current.nid = n.noticeId; ctx.setSub(n.noticeId + "/edit"); }
+        ctx.setData(x => Object.assign({}, x, { notices: [n].concat((x.notices || []).filter(y => y.noticeId !== n.noticeId)) }));
+        setErrs({});
+        setSave(mine === ver.current ? { s: "saved", at: Date.now() } : { s: "dirty" });
+        return n;
+      } catch (e) {
+        const fld = e && e.data && e.data.field;
+        if (fld) setErrs({ [fld]: crNtErr(e) });
+        setSave({ s: "error", msg: crNtErr(e, "Couldn’t save it.") });
+        throw e;
+      }
+    });
+    return chain.current;
+  };
+  const changed = () => { ver.current++; setSave(s => s.s === "new" && !valid() ? s : { s: "dirty" }); };
+  /* Drafts save themselves a moment after the writing stops — once there is a subject and something to say. */
+  React.useEffect(() => {
+    if (pub || save.s !== "dirty" || !valid()) return;
+    const t = setTimeout(() => { doSave().catch(() => {}); }, 1200);
+    return () => clearTimeout(t);
+  }, [save, f, head, sign, body, pub]);
+  /* Leaving with words unsaved asks first (the Control Room's own unsaved-changes guard). */
+  React.useEffect(() => {
+    const unsaved = save.s === "dirty" || save.s === "error" || (pub && save.s !== "saved");
+    ctx.setDirty("notice-editor", unsaved ? { n: 1, save: () => pub ? Promise.resolve() : doSave(), discard: () => {} } : null);
+  }, [save.s, pub]);
+  React.useEffect(() => () => ctx.setDirty("notice-editor", null), []);
+
+  const set = (k, v) => { setF(x => Object.assign({}, x, { [k]: v })); setErrs(e => Object.assign({}, e, { [k]: "" })); changed(); };
+  const readBody = () => { const el = bodyRef.current; if (!el) return; const t = ntSerialize(el); el.classList.toggle("is-empty", !el.textContent.trim() && !el.querySelector("li,br+br")); if (t !== live.current.body) { setBody(t); live.current.body = t; setErrs(e => Object.assign({}, e, { body: "" })); changed(); } };
+
+  /* The toolbar reflects where the caret is; a press acts on the selection the page had. */
+  React.useEffect(() => {
+    const onSel = () => {
+      const el = bodyRef.current, s = document.getSelection();
+      if (!el || !s || !s.rangeCount || !el.contains(s.anchorNode)) return;
+      rangeRef.current = s.getRangeAt(0).cloneRange();
+      let blk = ""; try { blk = String(document.queryCommandValue("formatBlock") || "").toLowerCase(); } catch (_) {}
+      const q = c => { try { return document.queryCommandState(c); } catch (_) { return false; } };
+      const ul = q("insertUnorderedList"), h = /^h[1-6]$/.test(blk);
+      setFmt({ bold: q("bold"), italic: q("italic"), strike: q("strikeThrough"), ul, h, p: !h && !ul });
+    };
+    document.addEventListener("selectionchange", onSel);
+    return () => document.removeEventListener("selectionchange", onSel);
+  }, []);
+  const focusBody = () => {
+    const el = bodyRef.current; if (!el) return;
+    if (document.activeElement !== el) { el.focus(); const r = rangeRef.current, s = document.getSelection(); if (r && s && el.contains(r.startContainer)) { s.removeAllRanges(); s.addRange(r); } }
+    try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (_) {}
+  };
+  const run = t => {
+    focusBody();
+    if (t.block) document.execCommand("formatBlock", false, "<" + t.block + ">");
+    else document.execCommand(t.cmd, false, null);
+    readBody();
+  };
+  const onKey = e => {
+    const mod = e.ctrlKey || e.metaKey;
+    const tool = k => NT_TOOLS.find(t => t.id === k);
+    if (mod && e.shiftKey && (e.key === "x" || e.key === "X")) { e.preventDefault(); run(tool("strike")); return; }
+    if (mod && e.altKey && e.code === "Digit2") { e.preventDefault(); run(tool("h")); return; }
+    if (mod && e.altKey && e.code === "Digit0") { e.preventDefault(); run(tool("p")); return; }
+    if (mod && e.shiftKey && (e.code === "Digit8")) { e.preventDefault(); run(tool("ul")); return; }
+    /* "- " at the start of a line starts a list, as it does in a document. */
+    if (e.key === " " && !mod) {
+      const s = document.getSelection(); const node = s && s.anchorNode;
+      if (node && node.nodeType === 3 && s.anchorOffset === node.nodeValue.length && /^[-*•]$/.test(node.nodeValue.trim()) && (!node.previousSibling)) {
+        const blk = node.parentNode; if (blk && blk !== bodyRef.current && /^(P|DIV)$/.test(blk.tagName) || blk === bodyRef.current) {
+          e.preventDefault(); node.nodeValue = ""; document.execCommand("insertUnorderedList", false, null); readBody(); return;
+        }
+      }
+    }
+  };
+  /* Pasting: a whole notice onto an empty page fills every part; anything else keeps its formatting, through the same formatter. */
+  const onPaste = async e => {
+    const cd = e.clipboardData; if (!cd) return;
+    const txt = cd.getData("text/plain") || "", html = cd.getData("text/html") || "";
+    if (!txt && !html) return;
+    e.preventDefault();
+    focusBody();
+    const empty = !live.current.body.trim();
+    try {
+      if (empty && /(^|\n)\s*[*_]*\s*SUBJECT\s*[*_]*\s*:/i.test(txt)) {
+        const P = await NGGApi.admin.notices.parse(txt), p = P.parts || {};
+        setF(x => Object.assign({}, x, { org: p.org || "", kind: p.kind || "", subject: p.subject || x.subject, signoff: p.signoff || "" }));
+        setHead(!!(p.org || p.kind)); setSign(!!p.signoff);
+        bodyRef.current.innerHTML = P.html || ""; readBody(); changed();
+        ctx.toast("Pasted as a notice: its letterhead, subject" + (p.signoff ? ", body and sign-off" : " and body") + " are filled in. Check each part.");
+        return;
+      }
+      let src = txt;
+      if (html && !/^\s*$/.test(html)) { const doc = new DOMParser().parseFromString(html, "text/html"); const t = ntSerialize(doc.body); if (t.trim()) src = t; }
+      if (!/\n/.test(src.trim()) && !/[*_~`]/.test(src)) { document.execCommand("insertText", false, src); readBody(); return; }
+      const P = await NGGApi.admin.notices.preview(src);
+      focusBody();
+      document.execCommand("insertHTML", false, P.html || "");
+      readBody();
+    } catch (err) { document.execCommand("insertText", false, txt); readBody(); }
+  };
+
+  const showPreview = async () => {
+    if (view === "preview") { setView("edit"); return; }
+    setView("preview"); setPrev(null);
+    try { const r = await NGGApi.admin.notices.preview(live.current.body); setPrev({ html: r.html }); }
+    catch (e) { setPrev({ err: crNtErr(e, "Couldn’t draw the preview.") }); }
+  };
+  const need = () => {
+    const L = live.current, e = {};
+    if (L.f.subject.trim().length < 3) e.subject = "Give it a title.";
+    if (L.body.trim().length < 2) e.body = "Write the notice.";
+    if (L.pub && L.note.trim().length < 5) e.correctionNote = "Say what was corrected — readers are shown it.";
+    setErrs(e);
+    if (e.subject) { setView("edit"); setTimeout(() => subjRef.current && subjRef.current.focus(), 0); }
+    else if (e.body) { setView("edit"); setTimeout(focusBody, 0); }
+    else if (e.correctionNote) { setSheet(true); setTimeout(() => { const x = document.getElementById("nte-note"); if (x) x.focus(); }, 0); }
+    return !Object.keys(e).length;
+  };
+  const publish = async () => {
+    if (!need()) return;
+    let n;
+    try { n = (save.s === "saved" && last.current) ? last.current : await doSave(); } catch (_) { return; }
+    if (await crNtPublish(ctx, n)) ctx.setSub(n.noticeId);
+  };
+  const correct = async () => {
+    if (!need()) return;
+    try { await doSave(); ctx.toast("Corrected. Readers see the change and your note."); ctx.setDirty("notice-editor", null); ctx.setSub(live.current.nid); ctx.reload(); } catch (_) {}
+  };
+  const leave = async () => {
+    if (!pub && (save.s === "dirty") && valid()) { try { await doSave(); } catch (_) { return; } }
+    ctx.setDirty("notice-editor", null);
+    ctx.setSub(live.current.nid || "");
+  };
+
+  /* Ctrl+S saves now — the habit every writer has — wherever the caret is in the editor. */
+  const onKeyAll = e => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+      e.preventDefault();
+      if (pub) { correct(); return; }
+      if (valid()) doSave().catch(() => {}); else need();
+    }
+  };
+  const aud = d.audiences || [], audN = (aud.find(a => a.id === f.audience) || {}).n;
+  const audName = crNtAud(d, f.audience);
+  const reachLine = audN == null ? "" : "Reaches " + crPlural(audN, "member") + (f.reach === "both" ? " and their families" : f.reach === "guardians" ? "’ families only" : " only") + ".";
+  const extras = [f.needsAck ? "Asks them to acknowledge it" : "", f.emailOn ? "Emailed as well" : ""].filter(Boolean).join(" · ");
+  const words = ntWords(body);
+  const saveText = { new: "Not saved yet", dirty: pub ? "Unsaved correction" : "Editing…", saving: "Saving…", saved: pub ? "Published · nothing changed yet" : "Saved", error: save.msg || "Couldn’t save it" }[save.s];
+  const official = head && (f.org || f.kind);
+  const settings = (
+    <div className="nte-side-in">
+      <div className="nte-sum" aria-live="polite">
+        <CrIcon n={pub ? "megaphone" : "paper-plane-tilt"}/>
+        <span><b>{pub ? "Sent to " + audName : "To " + audName}</b><em>{pub ? (R[f.reach] || "") : reachLine}{extras ? <><br/>{extras}</> : null}</em></span>
+      </div>
+      <section className="nte-sec" aria-labelledby="nte-who">
+        <h2 id="nte-who" className="nte-sec-h">Who it is for</h2>
+        {pub ? <p className="nte-fixed">{crNtAud(d, f.audience)} · {R[f.reach] || f.reach}<span>Fixed once it has gone out — re-addressing it would be a new notice.</span></p> : <>
+          <label className="nte-lbl" htmlFor="nte-aud">Audience</label>
+          <select id="nte-aud" className="cr-select nte-select" value={f.audience} onChange={e => set("audience", e.target.value)}>
+            {aud.map(a => <option key={a.id} value={a.id}>{(a.id === "all" ? "Everyone" : a.l) + " · " + crNum(a.n)}</option>)}
+          </select>
+          {errs.audience && <p className="nte-err" role="alert">{errs.audience}</p>}
+          <span className="nte-lbl" id="nte-reach-l">Send to</span>
+          <div className="nte-chips" role="group" aria-labelledby="nte-reach-l">
+            {Object.keys(R).map(k => <button key={k} type="button" className="cr-chip" aria-pressed={f.reach === k} onClick={() => set("reach", k)}>{R[k]}</button>)}
+          </div>
+        </>}
+      </section>
+      <section className="nte-sec" aria-labelledby="nte-how">
+        <h2 id="nte-how" className="nte-sec-h">Delivery</h2>
+        <div className="nte-row"><span><b>Ask them to acknowledge it</b><em>Readers confirm they have read and understood it, and you see who has not.</em></span><CrSwitch on={f.needsAck} label="Ask readers to acknowledge it" onChange={v => set("needsAck", v)}/></div>
+        <div className="nte-row"><span><b>Email it as well</b><em>{pub ? "Fixed once it has gone out." : "Every member and family address, once each."}</em></span><CrSwitch on={f.emailOn} disabled={pub} label="Email it as well" onChange={v => set("emailOn", v)}/></div>
+      </section>
+      {pub && <section className="nte-sec" aria-labelledby="nte-cor">
+        <h2 id="nte-cor" className="nte-sec-h">The correction</h2>
+        <label className="nte-lbl" htmlFor="nte-note">What was corrected <i>(readers are shown it)</i></label>
+        <input id="nte-note" className="cr-input nte-input" maxLength={240} value={note} placeholder="Section 3: the re-entry fee is ₦5,000" aria-invalid={!!errs.correctionNote}
+          onChange={e => { setNote(e.target.value); setErrs(x => Object.assign({}, x, { correctionNote: "" })); setSave({ s: "dirty" }); }}/>
+        {errs.correctionNote && <p className="nte-err" role="alert">{errs.correctionNote}</p>}
+      </section>}
+      <details className="nte-sec nte-help">
+        <summary>Shortcuts and pasting</summary>
+        <ul>
+          <li>Paste a whole notice from WhatsApp onto an empty page and every part is filled in.</li>
+          <li><kbd>Enter</kbd> starts a paragraph, <kbd>Shift</kbd>+<kbd>Enter</kbd> a new line in it.</li>
+          <li>Type <kbd>-</kbd> and a space for a bullet; a section heading that starts “1.” keeps its number.</li>
+          <li><kbd>Ctrl</kbd>+<kbd>B</kbd> bold · <kbd>Ctrl</kbd>+<kbd>I</kbd> italic · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>2</kbd> heading · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>0</kbd> text.</li>
+          <li><kbd>Ctrl</kbd>+<kbd>S</kbd> saves now; a draft also saves itself as you write.</li>
+        </ul>
+      </details>
+    </div>
+  );
+  return (
+    <div className="nte" role="region" aria-label={pub ? "Correct the notice" : "Notice editor"} onKeyDown={onKeyAll}>
+      <div className="nte-bar">
+        <button type="button" className="cr-btn is-sm nte-back" onClick={leave}><CrIcon n="arrow-left"/>Notices</button>
+        <span className={"nte-state is-" + save.s} role="status" aria-live="polite">{save.s === "saving" ? <CrIcon n="circle-notch"/> : save.s === "saved" ? <CrIcon n="check"/> : save.s === "error" ? <CrIcon n="warning-circle"/> : null}{saveText}</span>
+        <span className="nte-grow"/>
+        <span className="nte-count" aria-live="off">{crPlural(words, "word")}</span>
+        <button type="button" className="cr-btn is-sm" aria-pressed={view === "preview"} onClick={showPreview}><CrIcon n={view === "preview" ? "pencil-simple" : "eye"}/>{view === "preview" ? "Back to writing" : "Preview"}</button>
+        <button type="button" className="cr-btn is-sm nte-sheet-btn" aria-expanded={sheet} aria-controls="nte-side" onClick={() => setSheet(s => !s)}><CrIcon n="paper-plane-tilt"/><span className="nte-sheet-l">To {audName}</span></button>
+        {pub ? <button type="button" className="cr-btn is-primary is-sm" onClick={correct} disabled={save.s === "saving"}>Save the correction</button>
+          : <button type="button" className="cr-btn is-primary is-sm" onClick={publish} disabled={save.s === "saving"}>Publish…</button>}
+      </div>
+      {pub && <div className="nte-banner" role="note"><CrIcon n="info"/>It has gone out. Change what needs changing, say what you corrected, and save: readers see that it was corrected, when, and your note.</div>}
+      {view === "edit" && <div className="nte-format"><div className="nte-tools" role="toolbar" aria-label="Formatting" aria-controls="nte-body">
+        {NT_TOOLS.map((t, i) => t.sep ? <span key={i} className="nte-sep" aria-hidden="true"/> :
+          <button key={t.id} type="button" className={"nte-tool" + (t.label ? " is-label" : "")} title={t.l + " (" + t.k + ")"} aria-label={t.l} aria-pressed={t.plain ? undefined : !!fmt[t.id]}
+            onMouseDown={e => e.preventDefault()} onClick={() => run(t)}><CrIcon n={t.icon}/>{t.label ? <span>{t.l}</span> : null}</button>)}
+      </div></div>}
+      <div className="nte-work">
+        <main className="nte-desk">
+          {view === "preview" ? (
+            !prev ? <p className="nte-wait">Drawing it as members will see it…</p>
+            : prev.err ? <p className="nte-err" role="alert">{prev.err} <button type="button" className="cr-linkbtn" onClick={() => { setView("edit"); showPreview(); }}>Try again</button></p>
+            : <><p className="nte-wait">Exactly what members and families will read.</p><NoticeDoc n={{ org: head ? f.org : "", kind: head ? f.kind : "", subject: f.subject || "(no title yet)", html: prev.html, signoff: sign ? f.signoff : "", official: !!official, noticeId: "preview" }} level={2}/></>
+          ) : (
+          <article className="nt-paper nt-doc nte-paper">
+            {head ? <header className="nt-head nte-head">
+              <input className="nte-in nt-org" aria-label="Organisation (letterhead)" placeholder="Organisation" maxLength={160} value={f.org} onChange={e => set("org", e.target.value)}/>
+              <input className="nte-in nt-kind" aria-label="Kind of notice" placeholder="Kind of notice, e.g. MANAGEMENT OFFICIAL NOTICE" maxLength={160} value={f.kind} onChange={e => set("kind", e.target.value)}/>
+              <button type="button" className="nte-x" aria-label="Remove the letterhead" title="Remove the letterhead" onClick={() => { setHead(false); changed(); }}><CrIcon n="x"/></button>
+            </header> : <button type="button" className="nte-add" onClick={() => { setHead(true); setF(x => x.org || x.kind ? x : Object.assign({}, x, { org: lh.org || "", kind: lh.kind || "" })); changed(); }}><CrIcon n="plus"/>Letterhead<em>for an official notice</em></button>}
+            <div className={"nte-subj" + (official ? " is-official" : "")}>
+              {official && <span className="nte-subj-k" aria-hidden="true">Subject:</span>}
+              <textarea ref={subjRef} rows={1} className="nte-in nt-subject" aria-label={official ? "Subject" : "Title"} placeholder={official ? "Subject" : "Title"} maxLength={300} value={f.subject} aria-invalid={!!errs.subject}
+                onChange={e => set("subject", e.target.value.replace(/\n/g, " "))} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); focusBody(); } }}/>
+            </div>
+            {errs.subject && <p className="nte-err" role="alert">{errs.subject}</p>}
+            <div id="nte-body" ref={bodyRef} className={"nt-body nte-body" + (n0 && n0.html ? "" : " is-empty")} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label="The notice" aria-invalid={!!errs.body}
+              data-ph={official ? "Write the notice. Paste one from WhatsApp and it keeps its sections, bold and lists." : "Write your message. A sentence is enough — or paste a whole notice from WhatsApp."}
+              onInput={readBody} onBlur={readBody} onKeyDown={onKey} onPaste={onPaste} onFocus={() => { try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (_) {} }}/>
+            {errs.body && <p className="nte-err" role="alert">{errs.body}</p>}
+            {sign ? <div className="nte-signrow">
+              <input className="nte-in nt-sign" aria-label="Sign-off" placeholder="Sign-off, e.g. STS MANAGEMENT" maxLength={160} value={f.signoff} onChange={e => set("signoff", e.target.value)}/>
+              <button type="button" className="nte-x" aria-label="Remove the sign-off" title="Remove the sign-off" onClick={() => { setSign(false); changed(); }}><CrIcon n="x"/></button>
+            </div> : <button type="button" className="nte-add is-sign" onClick={() => { setSign(true); setF(x => x.signoff ? x : Object.assign({}, x, { signoff: lh.signoff || "" })); changed(); }}><CrIcon n="plus"/>Sign-off</button>}
+          </article>)}
+        </main>
+        <aside id="nte-side" className={"nte-side" + (sheet ? " is-open" : "")} aria-label="Sending">
+          <div className="nte-side-head"><b>Sending</b><button type="button" className="nte-x" aria-label="Close" onClick={() => setSheet(false)}><CrIcon n="x"/></button></div>
+          {settings}
+        </aside>
+      </div>
+    </div>
+  );
 }
 async function crNtPublish(ctx, n) {
   const who = crNtAud(ctx.data, n.audience), N = n.reachMembers || 0;   // read before the confirm: what is agreed is what runs
   const reach = { both: crPlural(N, "member") + " and their families", members: crPlural(N, "member"), guardians: "the families of " + crPlural(N, "member") }[n.reach] || crPlural(N, "member");
   const ok = await ctx.confirm({ title: "Publish to " + who + "?", cta: "Publish",
     body: "“" + n.subject + "” goes to " + reach + (n.emailOn ? ", by email as well" : "") + ". It can be corrected or withdrawn afterwards, but not unsent." });
-  if (!ok) return;
+  if (!ok) return false;
   try {
     const r = await NGGApi.admin.notices.publish(n.noticeId);
     ctx.toast("Published · " + crPlural(r.stats.members, "member") + " · " + crPlural(r.stats.families, "family account") + (r.stats.emailsQueued ? " · " + crNum(r.stats.emailsQueued) + " emails on their way" : ""));
     ctx.setData(x => Object.assign({}, x, { readers: {} }));
     ctx.reload();
-  } catch (e) { ctx.toast(crNtErr(e, "Couldn’t publish it."), null, true); }
+    return true;
+  } catch (e) { ctx.toast(crNtErr(e, "Couldn’t publish it."), null, true); return false; }
 }
 function crNtWithdraw(ctx, n) {
   ctx.form({
@@ -174,8 +493,10 @@ function crNtWantReaders(ctx, id) {
 async function crNtCopy(ctx, n) {
   try { await navigator.clipboard.writeText(n.whatsapp); ctx.toast("Copied for WhatsApp."); } catch (_) { ctx.toast("Couldn’t copy — select the text on the notice’s page instead.", null, true); }
 }
+/** The address's notice: /…/broadcast/<id> opens it, /…/broadcast/<id>/edit (or /new) writes it. */
+function crNtRoute(sub) { const p = String(sub || "").split("/"); return { id: p[0] === "new" ? "" : p[0], edit: p[0] === "new" || p[1] === "edit" }; }
 function crNtDetail(d, ctx) {
-  const n = (d.notices || []).find(x => x.noticeId === ctx.sub); if (!n) return [];
+  const n = (d.notices || []).find(x => x.noticeId === crNtRoute(ctx.sub).id); if (!n) return [];
   const st = CR_NT_STATUS[n.status] || [n.status, "neutral"], R = (d.readers || {})[n.noticeId];
   if (!R && n.status !== "draft") crNtWantReaders(ctx, n.noticeId);
   const out = [];
@@ -220,7 +541,7 @@ Object.assign(CR_TAB_DEFS, {
   broadcast: {
     skeleton: ["kpis", "table"],
     load: async ctx => {
-      const open = ctx.sub || "";
+      const rt = crNtRoute(ctx.sub), open = rt.edit ? "" : rt.id;
       const [N, B, R] = await Promise.all([NGGApi.admin.notices.list(), NGGApi.admin.broadcastHistory(), open ? NGGApi.admin.notices.readers(open).catch(e => ({ err: e })) : null]);
       return Object.assign({}, N, { announcements: B.announcements || [], readers: open && R ? { [open]: R } : {} });
     },
@@ -229,6 +550,14 @@ Object.assign(CR_TAB_DEFS, {
       { l: "Quick message", icon: "megaphone", run: () => crAnnSend(ctx) },
     ] : [],
     blocks: (d, ctx) => {
+      const rt = crNtRoute(ctx.sub);
+      if (rt.edit && ctx.can("content")) {
+        const n = rt.id ? (d.notices || []).find(x => x.noticeId === rt.id) : null;
+        if (rt.id && !n) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "That notice isn’t here.", sub: "It may have been deleted.", act: { l: "Back to notices", run: () => ctx.setSub("") } }];
+        if (n && n.status === "withdrawn") return [{ type: "note", span: 6, icon: "prohibit", tone: "bad", text: "A withdrawn notice is not edited.", sub: "Write a new one instead.", act: { l: "Open it", run: () => ctx.setSub(n.noticeId) } }];
+        // One key for the whole life of the page: saving a new notice moves the address from /new to /<id>/edit without remounting the writing.
+        return [{ type: "custom", span: 6, render: () => <NoticeEditor key="nte" d={d} ctx={ctx} id={rt.id}/> }];
+      }
       const name = id => crNtAud(d, id);
       const N = d.notices || [];
       const pub = N.filter(n => n.status === "published");
