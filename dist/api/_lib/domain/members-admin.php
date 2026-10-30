@@ -322,6 +322,7 @@ function member_merge_policy(): array {
         'auth_sessions'          => 'DROP',           // sign-in state, not history
         'device_sessions'        => 'DROP',
         'notifications'          => 'MOVE',
+        'notice_reads'           => 'MOVE',           // who read and acknowledged a notice follows the person
         'journal'                => 'MOVE',
         'assignment_submissions' => 'MOVE',
         'mentor_assignments'     => 'MOVE',

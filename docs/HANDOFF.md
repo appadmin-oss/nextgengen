@@ -5110,3 +5110,54 @@ days*; then Compliance → Repair absences for whatever is older than 31 days.
 
 Tests: PHP block "the sign-out half" (11; disabling the departure brake fails
 4, judging every group by check-ins fails 3); `attendance-repair.test.js` 22.
+
+## 2026-10-30 (evening) — imported dues, the member rulebook, official notices
+
+**Imported money.** The fines upload read a "Dues"/"Outstanding dues" heading
+as the fine's AMOUNT (`/due/` in the amount pattern), so arrears were posted as
+fines; with a Fines column beside it, `col("amount")` took the first and the
+other was silently dropped (not even listed as ignored). Dues and membership
+columns are now their own kinds (`kind` on the row; `import:dues:`/
+`import:membership:` keys, method `import`). `fees_entry_imported()` read
+`byId`/`by`, which a ledger row does not have — it reads `createdBy`. Fines →
+*Brought over by upload* (`admin.fees.imported`, `admin.fees.importReclass`)
+corrects a row's kind: void with reason + same amount, same `createdAt`, the
+right kind; refuses anything not imported; ≤500; one audit event.
+
+**The member rulebook** (`policy.member.rulebook = session`, the default; the
+suite pins `ladder` at its top for the older tests). Tier ranges, so a relift
+knows what each sanction is for: late-band fine 600000+day, late jumps
+700000+day, absence jumps 800000+day, review 900000+day (kind `review`,
+`proposed`), session suspension 30000000 + sessionStartDay×10 + n and its
+re-entry fee 40000000 + the same. New sanction kinds `corrective` (amount =
+how many; pending → done) and `review`. `policy_relift` reads those first
+(`policy_rulebook_holds`) and the old `tier >= 500000` absence-fine branch is
+now `< 600000` — it used to swallow every higher tier. A served session
+suspension with its re-entry fee pending still blocks (`policy_state`,
+`policy_states_for`, `policy_gate_checkin` → `policy_reentry_fee`);
+`fees_post` of any credit calls `policy_reentry_sync`, which marks the fee paid
+when `fees_entry_left()` (oldest-first, as `fees_unpaid_of`) says it is
+covered. Permission cap in `member_excuses_session` and at approval in
+`admin_request_decide`; > `formalAfterDays` is `formal_application`. Evidence
+fine: `policy_evidence_fines_run`, from the member sweep (both exits), keyed
+`asg-evidence:<assignmentId>`, only for assignments due on/after
+`policy_evidence_since`; `conduct_rule_key` no longer sniffs the note when a
+caller names its `rule`. Fresh start (`admin.policy.fresh_start`) runs the
+real thing in a transaction and rolls back for the preview; it relifts with
+`keepPaid` (revoking is not refunding). `policy_member_rule_lines()` feeds the
+family portal's rules box, which had "After 09:10 it counts as late" typed in.
+
+**Official notices** (`domain/notices.php`, migration 211). One formatter,
+`notice_html()`, escapes first and then applies WhatsApp's marks; it serves
+the page, the Control Room preview (the shared `NoticeDoc` component) and the
+email. Publishing claims the row (`status = draft` → `published` in one
+UPDATE) before sending, so a double press sends once. Reads/acks per reader
+(`m:<id>`, `g:<gid>:<memberId>`); a guardian's acknowledgement counts for
+each child it is for and signs the family-inbox item (`family_report_sign` on
+a `notice` delegates to `family_notice`). Email from `notice_mail`, drained
+40 a minute by the webcron. `/notice/<id>` and `/notice` are a non-addressable
+route (`notice`); the Control Room keeps the open notice in the URL
+(`/control/comms/broadcast/<id>`).
+
+Tests: PHP suite 6398 passed, 2 failed (the two known pre-existing ones);
+notices 17/17, conduct-rulebook 10/10, fines-upload 18/18, route-registry 60/60.

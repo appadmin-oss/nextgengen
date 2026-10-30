@@ -8051,3 +8051,126 @@ Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegiste
      assertion had actually LOCKED IN — the long-name test asserted the shrunk
      size was smaller, which it was, because the formula was wrong. */
   cardColorsClash, centreBandFont, cardFit, footBandFit, colourNeighbours, cardInk });
+
+/* ── An official notice: /notice/<id>, and /notice for a member's list ──────
+   What management sends members and families (domain/notices.php). The body
+   arrives as HTML from the ONE formatter on the server — the same one the
+   desk previewed and the email carries — so it is shown as given. A member
+   reads it through their session, a parent through their family account; the
+   acknowledgement is one press and is said back with its date. Print / save
+   as PDF uses the browser's own dialog with a print stylesheet (no renderer on
+   the host), and "Copy for WhatsApp" gives back the notice in WhatsApp's marks. */
+function noticeDate(iso) {
+  if (!iso) return "";
+  const d = new Date(String(iso).replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? "" : "Z"));
+  return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
+/** The notice itself — letterhead, subject, the formatted body, the sign-off,
+ *  and its correction or withdrawal. One drawing, used by this page and by the
+ *  Control Room's preview, so the desk sees exactly what a family reads. */
+function NoticeDoc({ n, level }) {
+  const withdrawn = n.status === "withdrawn", H = level === 1 ? "h1" : "h2";
+  return (
+    <article className={"nt-paper nt-doc" + (withdrawn ? " is-withdrawn" : "")} aria-labelledby={"nt-subject-" + (n.noticeId || "draft")}>
+      {withdrawn && <div className="nt-banner is-bad" role="status"><b>This notice was withdrawn</b> on {noticeDate(n.withdrawnAt)}.{n.withdrawReason ? " " + n.withdrawReason : ""}</div>}
+      {!withdrawn && n.correctedAt && <div className="nt-banner" role="status"><b>Corrected</b> on {noticeDate(n.correctedAt)}: {n.correctionNote}</div>}
+      <header className="nt-head">
+        {n.org && <p className="nt-org">{n.org}</p>}
+        {n.kind && <p className="nt-kind">{n.kind}</p>}
+        <H id={"nt-subject-" + (n.noticeId || "draft")} className="nt-subject"><span>Subject:</span> {n.subject}</H>
+        {n.publishedAt && <p className="nt-date">{noticeDate(n.publishedAt)}</p>}
+      </header>
+      <div className="nt-body" dangerouslySetInnerHTML={{ __html: n.html }}/>
+      {n.signoff && <p className="nt-sign">{n.signoff}</p>}
+    </article>
+  );
+}
+function NoticePage({ setPage }) {
+  const { isSignedIn, loading: authLoading, openSignIn } = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false, loading: false, openSignIn: () => {} };
+  const id = decodeURIComponent((window.location.pathname || "").split("/").filter(Boolean)[1] || "");
+  const [st, setSt] = React.useState({ loading: true });
+  const [busy, setBusy] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+  const load = React.useCallback(async () => {
+    setSt({ loading: true });
+    const code = e => (e && (e.status || (e.data && e.data.status))) || 0;
+    const err = e => String((e && ((e.data && e.data.error) || e.code || e.message)) || "");
+    if (!id) {
+      try { const r = await NGGApi.member.notices(); setSt({ list: r.notices || [] }); }
+      catch (e) { setSt(code(e) === 401 || /unauthor/.test(err(e)) ? { signIn: true } : { error: e }); }
+      return;
+    }
+    try { const r = await NGGApi.member.notice(id); setSt({ notice: r.notice, reader: r.reader, via: "member" }); return; }
+    catch (e) { if (!(code(e) === 401 || code(e) === 403 || /unauthor|forbidden|not_found/.test(err(e)))) { setSt({ error: e }); return; } }
+    try { const r = await NGGApi.family.notice(id); setSt({ notice: r.notice, reader: r.reader, via: "family" }); }
+    catch (e) { setSt(code(e) === 401 || /unauthor/.test(err(e)) ? { signIn: true } : /not_found/.test(err(e)) || code(e) === 404 ? { notFound: true } : { error: e }); }
+  }, [id, isSignedIn]);
+  React.useEffect(() => { if (!authLoading) load(); }, [load, authLoading]);
+  const ack = async () => {
+    setBusy(true);
+    try { const r = st.via === "family" ? await NGGApi.family.noticeAck(id) : await NGGApi.member.noticeAck(id); setSt(s => Object.assign({}, s, { reader: r.reader })); }
+    catch (e) { setSt(s => Object.assign({}, s, { ackErr: "Couldn’t record that. Please try again." })); }
+    setBusy(false);
+  };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(st.notice.whatsapp); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch (_) { setCopied(false); }
+  };
+
+  if (st.loading) return <main className="nt-page" aria-busy="true"><div className="nt-paper nt-loading"><div className="dash-spinner"/><p>Opening the notice…</p></div></main>;
+  if (st.signIn) return (
+    <main className="nt-page"><div className="nt-paper nt-gate">
+      <h1>Sign in to read this notice</h1>
+      <p>Notices are for NGG members and their families. Members sign in here; parents and guardians sign in to their family account.</p>
+      <div className="nt-actions">
+        <button type="button" className="btn btn-primary" onClick={() => openSignIn()}>Member sign-in</button>
+        <a className="btn btn-ghost" href={"/family?next=" + encodeURIComponent(window.location.pathname)}>Family account</a>
+      </div>
+    </div></main>
+  );
+  if (st.notFound) return <main className="nt-page"><div className="nt-paper nt-gate"><h1>We can’t find that notice</h1><p>It may not be addressed to you, or the link is wrong.</p><a className="btn btn-primary" href="/notice">Your notices</a></div></main>;
+  if (st.error) return <main className="nt-page"><div className="nt-paper nt-gate" role="alert"><h1>The notice didn’t load</h1><p>Check your connection and try again.</p><button type="button" className="btn btn-primary" onClick={load}>Try again</button></div></main>;
+
+  if (st.list) return (
+    <main className="nt-page"><div className="nt-paper">
+      <h1 className="nt-list-h">Notices</h1>
+      {!st.list.length ? <p className="nt-empty">No notices yet. When the management sends one, it appears here and in your notifications.</p> : (
+        <ul className="nt-list">
+          {st.list.map(n => (
+            <li key={n.noticeId}><a href={"/notice/" + encodeURIComponent(n.noticeId)} className={"nt-item" + (n.read ? "" : " is-unread")}>
+              <span className="nt-item-k">{n.kind || n.org || "Notice"} · {noticeDate(n.publishedAt)}</span>
+              <b>{n.subject}</b><span className="nt-item-x">{n.excerpt}</span>
+              {n.status === "withdrawn" ? <span className="nt-tag">Withdrawn</span> : n.needsAck && !n.acked ? <span className="nt-tag is-warn">Needs your acknowledgement</span> : n.acked ? <span className="nt-tag is-ok">Acknowledged</span> : null}
+            </a></li>
+          ))}
+        </ul>
+      )}
+    </div></main>
+  );
+
+  const n = st.notice, r = st.reader || {};
+  const withdrawn = n.status === "withdrawn";
+  // (the subject is the page's h1, inside NoticeDoc)
+  return (
+    <main className="nt-page">
+      <div className="nt-tools" role="toolbar" aria-label="Notice actions">
+        <a className="btn btn-ghost btn-sm" href={st.via === "family" ? "/family" : "/notice"}>← {st.via === "family" ? "Family account" : "All notices"}</a>
+        <span className="nt-grow"/>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={copy} aria-live="polite">{copied ? "Copied" : "Copy for WhatsApp"}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.print()}>Print or save as PDF</button>
+      </div>
+      <NoticeDoc n={n} level={1}/>
+      {!withdrawn && n.needsAck && r.kind !== "staff" && (
+        <section className="nt-paper nt-ack" aria-live="polite">
+          {r.ackAt
+            ? <p className="nt-ack-done"><i className="ph-fill ph-check-circle" aria-hidden="true"/> Acknowledged on {noticeDate(r.ackAt)}{r.for && r.for.length ? " for " + r.for.join(" and ") : ""}. Thank you.</p>
+            : <>
+                <p>Management asks every {st.via === "family" ? "parent and guardian" : "member"} to confirm they have read and understood this notice{r.for && r.for.length ? " (for " + r.for.join(" and ") + ")" : ""}.</p>
+                <button type="button" className="btn btn-primary" onClick={ack} disabled={busy}>{busy ? "Recording…" : "I have read and understood this notice"}</button>
+                {st.ackErr && <p className="nt-err" role="alert">{st.ackErr}</p>}
+              </>}
+        </section>
+      )}
+      {r.kind === "staff" && <p className="nt-staffnote">You are reading this as staff: it is not counted as read, and staff do not acknowledge.</p>}
+    </main>
+  );
+}

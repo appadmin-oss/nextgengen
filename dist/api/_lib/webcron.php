@@ -199,6 +199,8 @@ function web_cron_run(): void {
                 if (web_cron_due('editions', web_cron_cfg('editions', 21600)) && function_exists('summer_editions_close_elapsed')) web_cron_guard('editions_close', fn() => summer_editions_close_elapsed());
                 // The thank-yous a closed season queued for its volunteers, a batch a minute (summer-editions.php).
                 if (web_cron_due('vol_thanks', web_cron_cfg('vol_thanks', 60)) && function_exists('summer_thanks_drain')) web_cron_guard('vol_thanks', fn() => summer_thanks_drain());
+                // Official notices' email copies, a batch a minute (domain/notices.php).
+                if (web_cron_due('notice_mail', web_cron_cfg('notice_mail', 60)) && function_exists('notice_mail_drain')) web_cron_guard('notice_mail', fn() => notice_mail_drain());
                 /* Push notifications held for quiet hours or a burst go out
                    when their time comes, as one summary per person (push.php). */
                 if (web_cron_due('push', web_cron_cfg('push', 60)) && function_exists('push_flush')) web_cron_guard('push', fn() => push_flush());

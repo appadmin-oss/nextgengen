@@ -256,7 +256,9 @@ function family_inbox(array $p): array {
         $out[] = ['id' => (string)$n['noticeId'], 'cat' => $c, 'wardLinkId' => $links[(string)($n['memberId'] ?? '')] ?? null,
             'icon' => ['report' => 'file-text', 'alert' => 'warning-circle', 'centre' => 'megaphone'][$c],
             'title' => (string)$n['title'], 'body' => (string)$n['body'], 'from' => (string)$n['fromName'], 'at' => (string)$n['createdAt'],
-            'unread' => (string)$n['readAt'] === '', 'sign' => (int)($n['sign'] ?? 0) === 1, 'signedAt' => (string)($n['signedAt'] ?? '') ?: null];
+            'unread' => (string)$n['readAt'] === '', 'sign' => (int)($n['sign'] ?? 0) === 1, 'signedAt' => (string)($n['signedAt'] ?? '') ?: null,
+            // An official notice opens in full on its own page (domain/notices.php).
+            'href' => (string)$n['kind'] === 'notice' ? '/notice/' . rawurlencode((string)$n['refId']) : null];
         $last = (int)$n['id'];
         if (count($out) >= FAMILY_INBOX_PAGE) break;
     }
@@ -274,6 +276,12 @@ function family_report_sign(array $p): array {
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     if ((int)($n['sign'] ?? 0) !== 1) return ['ok' => false, 'error' => 'not_signable'];
     if ((string)($n['signedAt'] ?? '') !== '') return ['ok' => true, 'signedAt' => (string)$n['signedAt'], 'already' => true];
+    // Signing a notice is acknowledging it, for each child it is for — the same act as on the notice's own page.
+    if ((string)$n['kind'] === 'notice' && function_exists('family_notice')) {
+        $r = family_notice(['guardianId' => $gid, 'noticeId' => (string)$n['refId'], 'ack' => true]);
+        if (empty($r['ok'])) return $r;
+        return ['ok' => true, 'signedAt' => (string)($r['reader']['ackAt'] ?? now_iso())];
+    }
     $now = now_iso();
     db_exec("UPDATE guardian_notices SET signedAt = ?, readAt = CASE WHEN readAt = '' THEN ? ELSE readAt END WHERE id = ?", [$now, $now, (int)$n['id']]);
     audit('family.report.sign', $gid, (string)$n['noticeId'], ['memberId' => (string)($n['memberId'] ?? '')], (string)($p['ip'] ?? ''));

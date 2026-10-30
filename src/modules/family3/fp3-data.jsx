@@ -177,5 +177,5 @@ function fp3Events(rows) {
 /** Inbox rows, in the design's shape. `ward` is the child's link, or 'all' for a household notice. */
 function fp3Inbox(rows) {
   return (rows || []).map(r => ({ id: r.id, cat: r.cat, ward: r.wardLinkId || "all", icon: FP3_ICON[r.icon] || "ph ph-envelope-simple", h: r.title, b: r.body,
-    t: fp3Ago(r.at), from: r.from, unread: !!r.unread, sign: !!r.sign, signed: r.signedAt ? fp3Date(r.signedAt) : "" }));
+    t: fp3Ago(r.at), from: r.from, unread: !!r.unread, sign: !!r.sign, signed: r.signedAt ? fp3Date(r.signedAt) : "", href: r.href || "" }));
 }

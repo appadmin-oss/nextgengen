@@ -160,7 +160,7 @@ function member_excuses_session(array $m, string $today): array {
     return ['used' => count($days), 'max' => $max, 'left' => max(0, $max - count($days)), 'recorded' => $without,
             'ahead' => count(array_filter(array_keys($days), static fn($d) => $d >= $today)), 'days' => array_keys($days), 'fine' => $fine,
             'session' => ['from' => $a, 'to' => $b], 'suspendAfter' => (int)$cfg['suspendAfterAbsences'], 'formalAfterDays' => (int)$cfg['formalAfterDays'],
-            'rulebook' => 'session'];
+            'rulebook' => 'session', 'rules' => policy_enabled_for('member') ? policy_member_rule_lines() : []];
 }
 
 /* ── A payment, one line per way it was paid ─────────────────────────────────

@@ -1748,6 +1748,17 @@ is refused. Changes apply to fines posted from then on — a fine already on an
 account keeps its amount — and every change is in the audit log. Rules are
 switched off, never deleted, so a fine posted under one can always be explained.
 
+**Brought over by upload** (Fines). Every fine, due and membership charge an
+upload put on an account. A register's **Dues** column is now posted as dues
+(and a **Membership** column as membership), beside the fines on the same
+line — before 30 October 2026 a Dues column was read as the fine's amount, so
+arrears could be sitting on accounts as fines, and with a Fines column beside
+it one of the two was dropped. Fines whose own words say dues, monthly,
+subscription or arrears are flagged (*Reads like: Dues*). Select them and
+choose **These are dues** (or membership, or fines): each is voided with your
+reason and posted again, the same amount on the same day, as the right kind.
+What the family owes does not change; what it is called does.
+
 **Compliance.** Totals (warned, dormant, suspended, evicted, policy fines owed)
 and everybody with a consequence on record, worst first. Open a row for the
 record: the **consequences** (a fine can be marked paid, a suspension served, a
@@ -1757,6 +1768,47 @@ record, struck through, and everything it caused is lifted at once. The record
 also logs *No ID card today*, *Lost ID card*, and for volunteers *Missed Review
 Time*; an evicted person can be **reinstated** (a Governing Council override,
 with its resolution, when the conditions are not met).
+
+**The member rulebook.** Under Policy → *NGG members — the rulebook*, set as
+the Management notice states it, every figure editable:
+
+- **Lateness by arrival time.** Activities begin at the resumption time
+  (09:00). From 09:30 to before 09:45: ₦500 fine and 3 frog jumps; from 09:45
+  to before 10:00: 5 frog jumps; at or after 10:00: **management review** — it
+  appears on Compliance as awaiting review, with no automatic penalty, and is
+  closed with *Reviewed* on the record. Up to three bands.
+- **Absence without permission:** ₦1,000 and 7 frog jumps. An absence with
+  permission costs nothing; one still waiting for the desk is not charged
+  until it is decided.
+- **Suspension:** the third absence without permission in a session suspends
+  for 7 days from the next day. When the week is over the child still cannot
+  check in until the **₦5,000 re-entry fee** is paid or waived — a payment
+  that covers it marks it paid by itself. Lifting the suspension lifts its
+  fee.
+- **Permission:** at most 5 absences with permission are accepted in a
+  session — a request that would go over is refused when it is made, and the
+  desk cannot approve past it either. An absence longer than 21 days is a
+  formal written application, not a dashboard request.
+- **Assignment evidence:** a member with nothing handed in by an
+  assignment's due day owes ₦1,000, once per assignment — only for assignments
+  due after the rule first ran.
+- **Frog jumps** are listed on Compliance under *Frog jumps to do*, with who,
+  how many and why; select and **Mark done** as they are done at the centre.
+  They never block anybody.
+
+*Which rulebook* can be set back to the older ladder (warnings, Dormant Track,
+eviction), whose settings are kept under *NGG members — the older ladder*.
+The rules PDF and the family portal's rules box state whichever is running.
+
+**Fresh start** (Compliance, top right). Choose the day of the announcement:
+every offence recorded before it is revoked with your reason, and whatever it
+caused — warnings, suspensions, reviews, frog jumps and unpaid policy fines —
+is lifted, however late it was issued. The preview is exact (it is worked out
+and then undone) and changes nothing. A fine already **paid stays paid**; an
+**evicted** member is listed, not reinstated (use their record); fines
+brought over by upload stay owed unless someone with the Fees permission
+ticks *Also waive fines brought over by upload*. Dues are never touched. The
+day and reason are shown on Compliance afterwards.
 
 **When check-ins did not reach NGG.** Above the board, Compliance shows what
 needs a person when the check-in feed fails:
@@ -2041,6 +2093,43 @@ lead cannot.
 the NGG lead; public Summer School pages use the Summer lead. When the two were
 split, a centre that runs Summer School started with its old lead in both
 places; change either one without touching the other.
+
+### Official notices (Control Room → Announcements → Notices)
+
+For a management notice written the way it goes out on WhatsApp — a
+letterhead, *MANAGEMENT OFFICIAL NOTICE*, `SUBJECT: *…*`, numbered sections,
+bullets and a sign-off.
+
+1. **New notice.** Paste the whole notice as it was written. Choose who it is
+   for (everyone, a programme, or one centre), whether it goes to members,
+   their families, or both, whether readers must **confirm they have read and
+   understood it**, and whether to email it too.
+2. **Check it.** It is split into the organisation, the kind of notice, the
+   subject, the body and the sign-off, and opened as a **draft** with a
+   preview. The preview is exactly what members and parents will read:
+   `1. *HEADING*` becomes a section heading, `- ` lines a list, `*bold*` bold,
+   and the dashboard address a link. **Edit** fixes any part. A draft reaches
+   nobody.
+3. **Publish…** The confirm says how many members (and their families) it is
+   about to reach. Each member gets it in their notifications, with a push;
+   each family account gets it once in Messages, however many children; and,
+   if chosen, every address gets one email (sent a batch a minute).
+4. **Who has read it.** Open the notice: how many read it and how many
+   acknowledged it — the member themselves, or a parent for them — and a list
+   of everyone it is for. **Remind** sends one more notification to those who
+   have not, and nobody else; once a day at most.
+5. **Correct…** changes a published notice; readers see that it was
+   corrected, when, and your note. **Withdraw…** takes it back; readers see
+   that it was withdrawn and why, and unsent emails are cancelled. A published
+   notice is never deleted.
+
+**Copy for WhatsApp** gives the notice back in WhatsApp's own marks to paste
+into a group. Members and parents read it at **/notice/…** (signed in;
+parents through their family account), where they can also **print or save
+it as a PDF**. A member's notices are listed at **/notice**. A parent can
+also acknowledge from Messages — signing the notice there is the same thing.
+
+**Quick message** is the old one-line notification, kept for short alerts.
 
 ### Club announcements (Club portal → Announcements)
 

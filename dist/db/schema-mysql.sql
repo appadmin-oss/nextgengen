@@ -4918,3 +4918,59 @@ INSERT INTO schema_version (version) VALUES (209) ON DUPLICATE KEY UPDATE versio
 ALTER TABLE attendance_held_days ADD COLUMN cause VARCHAR(16) NOT NULL DEFAULT 'checkin';
 
 INSERT INTO schema_version (version) VALUES (210) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 211 · Official notices: letterhead, subject, a WhatsApp-formatted body, sign-off; who read and acknowledged; the email queue ──
+CREATE TABLE IF NOT EXISTS notices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  noticeId VARCHAR(40) NOT NULL,
+  org VARCHAR(160) NOT NULL DEFAULT '',
+  kind VARCHAR(160) NOT NULL DEFAULT '',
+  subject VARCHAR(300) NOT NULL DEFAULT '',
+  body MEDIUMTEXT NULL,
+  signoff VARCHAR(160) NOT NULL DEFAULT '',
+  audience VARCHAR(80) NOT NULL DEFAULT 'all',
+  reach VARCHAR(16) NOT NULL DEFAULT 'both',
+  needsAck TINYINT NOT NULL DEFAULT 0,
+  emailOn TINYINT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'draft',
+  stats TEXT NULL,
+  createdBy VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  publishedBy VARCHAR(64) NOT NULL DEFAULT '',
+  publishedAt VARCHAR(32) NOT NULL DEFAULT '',
+  correctedBy VARCHAR(64) NOT NULL DEFAULT '',
+  correctedAt VARCHAR(32) NOT NULL DEFAULT '',
+  correctionNote VARCHAR(255) NOT NULL DEFAULT '',
+  withdrawnBy VARCHAR(64) NOT NULL DEFAULT '',
+  withdrawnAt VARCHAR(32) NOT NULL DEFAULT '',
+  withdrawReason VARCHAR(255) NOT NULL DEFAULT '',
+  remindedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_notices_id (noticeId),
+  KEY idx_notices_status (status, publishedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS notice_reads (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  noticeId VARCHAR(40) NOT NULL,
+  readerKey VARCHAR(80) NOT NULL,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  readAt VARCHAR(32) NOT NULL DEFAULT '',
+  ackAt VARCHAR(32) NOT NULL DEFAULT '',
+  ackName VARCHAR(160) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_notice_reads (noticeId, readerKey),
+  KEY idx_notice_reads_member (noticeId, memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS notice_mail (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  noticeId VARCHAR(40) NOT NULL,
+  email VARCHAR(190) NOT NULL,
+  name VARCHAR(160) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'queued',
+  attempts INT NOT NULL DEFAULT 0,
+  sentAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_notice_mail (noticeId, email),
+  KEY idx_notice_mail_status (status, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (211) ON DUPLICATE KEY UPDATE version = version;

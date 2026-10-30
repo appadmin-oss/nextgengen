@@ -106,6 +106,8 @@ const ROUTES = [
   { id: "reshoot",      title: "A new photo · NGG",                        desc: "", chrome: "own", index: false },
   { id: "id-cards",     title: "ID Card Studio · NGG",                     desc: "", chrome: "own", index: false },
   { id: "designer",     title: "Design Studio · NGG",                      desc: "", chrome: "own", index: false },
+  /* An official notice from management (/notice/<id>), and /notice for a member's list. Members and families only. */
+  { id: "notice",      title: "Notice · NGG",                              desc: "An official notice from the NGG management to members and their families.", index: false, addressable: false },
   { id: "certificate",  title: "Service certificate · NGG",                desc: "A verifiable Next Generation Genius volunteer service certificate.", chrome: "own", index: false },
   { id: "journal-entry",title: "From the programme journal · NGG",         desc: "", chrome: "own", index: false },
 ];
@@ -275,6 +277,8 @@ function pageFromPath() {
   if (seg === "pay") return "pay";
   // Volunteer service certificates: /cert/<certId> — public + printable.
   if (seg === "cert") return "certificate";
+  // Official notices: /notice/<id>, and /notice (or /notices) for the list.
+  if (seg === "notice" || seg === "notices") return "notice";
   // The staff Control Room lives at /control (it owns the subtree
   // /control/<page>/<tab>); /nextadmin, /hq and /admin are kept as aliases so
   // old links, bookmarks and emailed ?s=<section> deep links keep working.
@@ -458,6 +462,7 @@ function App() {
     "id-cards": <IdCardStudioPage setPage={setPage}/>,
     designer:   <DesignerPage/>,
     certificate: <CertificatePage/>,
+    notice:     <NoticePage setPage={setPage}/>,
     pay: <MembershipPayPage setPage={setPage}/>,
     "journal-entry": <JournalEntryPage/>,
     legal:      <LegalPage setPage={setPage}/>,

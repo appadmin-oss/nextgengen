@@ -1387,6 +1387,21 @@ function policy_apply_session(string $personId, string $type, array $cfg, string
     return $issued;
 }
 
+/**
+ * The rulebook in sentences a family reads — from the settings, so a screen
+ * cannot promise a time or an amount the engine does not use. [[icon, text]].
+ */
+function policy_member_rule_lines(): array {
+    $c = policy_for('member'); $w = (string)$c['jumpWord']; $bands = policy_late_bands($c);
+    $out = [['ph ph-clock', 'Activities begin at ' . $c['resumption'] . '. Arriving at or after ' . $bands[0]['from'] . ' is recorded as late.']];
+    foreach ($bands as $b) $out[] = ['ph ph-timer', $b['from'] . ($b['to'] !== '' ? ' to before ' . $b['to'] : ' or later') . ': ' . (policy_penalty_text($b['fine'], $b['jumps'], $w) ?: 'recorded') . '.'];
+    if ((string)$c['reviewFrom'] !== '') $out[] = ['ph ph-gavel', 'At or after ' . $c['reviewFrom'] . ': management review and appropriate disciplinary action.'];
+    $out[] = ['ph ph-calendar-x', 'An absence without permission: ' . (policy_penalty_text((int)($c['absenceFine'] ?? 0), (int)$c['absenceJumps'], $w) ?: 'recorded') . '. '
+        . (int)$c['suspendAfterAbsences'] . ' in a session is a ' . (int)$c['suspendDays'] . '-day suspension' . ((int)$c['reentryFee'] > 0 ? ', and ' . policy_naira((int)$c['reentryFee']) . ' to come back' : '') . '.'];
+    if ((int)$c['evidenceFine'] > 0) $out[] = ['ph ph-camera', 'Upload a photo or screenshot of each assignment to the dashboard by its due day, or it is a ' . policy_naira((int)$c['evidenceFine']) . ' fine.'];
+    return $out;
+}
+
 /** A session suspension's re-entry fee still owed: the fine row, or null. */
 function policy_reentry_owed(array $sanctions, array $suspension): ?array {
     $t = (int)$suspension['tier'];

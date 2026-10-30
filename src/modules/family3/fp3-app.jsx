@@ -247,7 +247,11 @@ class Fp3Portal extends React.Component {
           if (S.siBusy) return;
           if (S.siCode.length !== 6) return this.setState({ siErr: "The code is 6 digits." });
           this.setState({ siBusy: true, siErr: "" });
-          NGGApi.family.verify({ email: S.siEmail.trim(), otp: S.siCode, remember: true }).then(() => { this.setState({ siBusy: false, siStep: "email", siCode: "" }); this.boot(); })
+          NGGApi.family.verify({ email: S.siEmail.trim(), otp: S.siCode, remember: true }).then(() => {
+            /* Sent here from a notice (/notice/<id>) to sign in: back to that notice, not the dashboard. */
+            const next = new URLSearchParams(location.search).get("next") || "";
+            if (/^\/notice\/[A-Za-z0-9-]+$/.test(next)) { location.assign(next); return; }
+            this.setState({ siBusy: false, siStep: "email", siCode: "" }); this.boot(); })
             .catch(e => this.setState({ siBusy: false, siErr: fp3Err(e) }));
         },
         siBack: () => this.setState({ siStep: "email", siCode: "", siErr: "" }) });
@@ -404,7 +408,13 @@ class Fp3Portal extends React.Component {
         strip: a.recent.map((d, i) => { const M = { p: ["#22a05a", "#fff", "ph ph-check", "In"], l: ["#e0a100", "#2a1d00", "ph ph-clock", "Late"], a: ["#d94141", "#fff", "ph ph-x", "Missed"], x: ["#e8e5dd", "#6b6b72", "ph ph-minus", "No record"] }[d]; return { c: M[0], fg: M[1], icon: M[2], t: (i === a.recent.length - 1 ? "Last Saturday" : (a.recent.length - 1 - i) + " weeks before") + ": " + M[3] }; }),
         hasLate: a.late.length > 0, late: a.late.map(l => ({ date: l.date, min: l.minutes + " min late" })) };
       const ex = w.excuses;
-      out.dayRules = (ex ? [["ph ph-calendar-x", "Absences: " + ex.used + " of " + ex.max + " allowed in the programme" + (ex.ahead ? ", " + ex.ahead + " of them still ahead" : "") + (ex.left ? ". " + ex.left + " left." : ". None left — a further absence starts a review, so speak to the centre in an emergency.")]].concat(ex.fine ? [["ph ph-receipt", "An absence nobody told the centre about is fined " + N(ex.fine) + ". If you’ve asked, nothing is charged until the centre answers."]] : []) : []).concat([["ph ph-door-open", "Doors open at 09:00. After 09:10 it counts as late."], ["ph ph-sign-in", "You get a text and email when " + first + " checks in, and again at sign-out."], ["ph ph-sign-out", "Sign-out opens at 14:00. Leaving earlier needs a coordinator, so collect them from the desk."], ["ph ph-warning", "Leaving without signing out counts as “no sign-out” and can be fined. You’ll be told the same day."]]).map(r => ({ icon: r[0], t: r[1] }));
+      /* The revised rules come from the server in sentences (policy_member_rule_lines), so this box cannot
+         state a time or an amount the engine does not use; the older ladder keeps its own lines. */
+      const session = ex && ex.rulebook === "session";
+      out.dayRules = (session
+        ? [["ph ph-check-circle", "Absences with permission: " + ex.used + " of " + ex.max + " used this session" + (ex.ahead ? ", " + ex.ahead + " still ahead" : "") + ". Ask on the dashboard — asking is not approval until the centre says yes."]].concat(ex.recorded ? [["ph ph-warning", ex.recorded + " absence" + (ex.recorded === 1 ? "" : "s") + " without permission this session; " + ex.suspendAfter + " is a suspension."]] : []).concat(ex.rules || [])
+        : (ex ? [["ph ph-calendar-x", "Absences: " + ex.used + " of " + ex.max + " allowed in the programme" + (ex.ahead ? ", " + ex.ahead + " of them still ahead" : "") + (ex.left ? ". " + ex.left + " left." : ". None left — a further absence starts a review, so speak to the centre in an emergency.")]].concat(ex.fine ? [["ph ph-receipt", "An absence nobody told the centre about is fined " + N(ex.fine) + ". If you’ve asked, nothing is charged until the centre answers."]] : []) : []).concat([["ph ph-door-open", "Doors open at 09:00. After 09:10 it counts as late."]]))
+        .concat([["ph ph-sign-in", "You get a text and email when " + first + " checks in, and again at sign-out."], ["ph ph-sign-out", "Sign-out opens at 14:00. Leaving earlier needs a coordinator, so collect them from the desk."], ["ph ph-warning", "Leaving without signing out counts as “no sign-out” and can be fined. You’ll be told the same day."]]).map(r => ({ icon: r[0], t: r[1] }));
       out.leaveL = "Tell the centre " + first + " will be away"; out.newLeave = () => openSheet("leave");
     }
 
@@ -634,9 +644,14 @@ class Fp3Portal extends React.Component {
       }
       if (sh === "msg") {
         const mm = this.inbox().find(x => x.id === S.msgId) || {};
-        out.msg = { meta: [mm.t, mm.from].filter(Boolean).join(" · "), b: mm.b, signed: !!mm.signed, signedL: "Signed. The mentor can see you’ve read it." };
-        Object.assign(out, { shTitle: mm.h || "", shLead: "", shGoL: mm.sign && !mm.signed ? busyL("Sign as read") : "Close" });
+        /* An official notice is read on its own page, in full, formatted — and
+           acknowledged there (domain/notices.php); this is its summary. */
+        const notice = !!mm.href;
+        out.msg = { meta: [mm.t, mm.from].filter(Boolean).join(" · "), b: notice ? mm.b + (mm.sign && !mm.signed ? "\n\nPlease read the whole notice and confirm you have understood it." : "") : mm.b,
+          signed: !!mm.signed, signedL: notice ? "Acknowledged. The centre can see you have read and understood it." : "Signed. The mentor can see you’ve read it." };
+        Object.assign(out, { shTitle: mm.h || "", shLead: "", shGoL: notice ? (mm.sign && !mm.signed ? "Read and acknowledge" : "Open the notice") : mm.sign && !mm.signed ? busyL("Sign as read") : "Close" });
         out.shGo = () => {
+          if (notice) { location.assign(mm.href); return; }
           if (!(mm.sign && !mm.signed)) return this.closeSheet();
           this.write(() => NGGApi.family.act("report.sign", { id: mm.id }), () => { this.closeSheet(); this.toast("Signed. The mentor can see you’ve read it."); }, () => this.loadInbox());
         };

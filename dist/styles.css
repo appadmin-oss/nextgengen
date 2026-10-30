@@ -8830,3 +8830,57 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .vol-cta-title { font-size: var(--rs-fsize-76, clamp(28px, 4vw, 44px)); margin: 0 0 10px; }
 .vol-cta-lede { color: var(--ink-700); font-size: 15px; margin: 0 0 22px; }
 .vol-cta-doors { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+
+/* ═══ Official notices (/notice/<id>) — page-other.jsx NoticePage ═══════════
+   A letter, not an app screen: the paper is the only surface, the letterhead
+   and subject lead, and the body is the server's own formatting of the
+   WhatsApp text (domain/notices.php notice_html) — headings, lists and bold,
+   nothing else. The Control Room's preview uses the same .nt-doc, so what the
+   desk previews is what a family reads. */
+.nt-page { max-width: 820px; margin: 0 auto; padding: 24px var(--c-gutter) 64px; display: grid; gap: 14px; }
+.nt-paper { background: #fff; border: 1px solid var(--cream-200); border-radius: var(--c-r-card); padding: clamp(20px, 4vw, 44px); color: var(--ink-900); }
+.nt-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.nt-grow { flex: 1; }
+.nt-loading { display: grid; place-items: center; gap: 12px; min-height: 240px; color: var(--ink-700); }
+.nt-gate h1, .nt-list-h { font: 800 26px/1.2 var(--c-font-display, sans-serif); margin: 0 0 8px; }
+.nt-gate p { color: var(--ink-700); line-height: 1.55; margin: 0 0 16px; }
+.nt-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.nt-head { border-bottom: 2px solid var(--ink-900); padding-bottom: 16px; margin-bottom: 18px; text-align: center; }
+.nt-org { font: 800 15px/1.3 var(--c-font-display, sans-serif); letter-spacing: .06em; margin: 0 0 6px; }
+.nt-kind { font-weight: 700; font-size: 14px; letter-spacing: .04em; margin: 0 0 14px; color: var(--ink-700); }
+.nt-subject { font: 800 clamp(18px, 2.6vw, 22px)/1.3 var(--c-font-display, sans-serif); margin: 0; }
+.nt-subject span { font-weight: 600; }
+.nt-date { margin: 10px 0 0; color: var(--ink-700); font-size: 14px; }
+.nt-doc .nt-body, .nt-preview { font-size: 16px; line-height: 1.6; overflow-wrap: anywhere; }
+.nt-doc .nt-body p, .nt-preview p { margin: 0 0 12px; }
+.nt-doc .nt-body h3, .nt-preview h3 { font: 800 16px/1.35 var(--c-font-display, sans-serif); margin: 22px 0 8px; letter-spacing: .01em; }
+.nt-doc .nt-body .nt-num, .nt-preview .nt-num { color: var(--gold-700); }
+.nt-doc .nt-body ul, .nt-preview ul { margin: 0 0 12px; padding-left: 22px; }
+.nt-doc .nt-body li, .nt-preview li { margin: 0 0 6px; }
+.nt-doc .nt-body a, .nt-preview a { color: var(--navy-700); text-decoration: underline; }
+.nt-doc .nt-body code, .nt-preview code { font-family: var(--c-font-mono); font-size: .92em; }
+.nt-sign { font: 800 15px/1.3 var(--c-font-display, sans-serif); margin: 24px 0 0; letter-spacing: .04em; }
+.nt-banner { background: var(--cream-50); border: 1px solid var(--cream-200); border-radius: var(--c-r-sm); padding: 10px 14px; margin: 0 0 18px; font-size: 14px; line-height: 1.5; }
+.nt-banner.is-bad { background: #fdeeea; border-color: #f3cfc5; color: #7a2410; }
+.nt-doc.is-withdrawn .nt-body { opacity: .55; }
+.nt-ack { display: grid; gap: 12px; justify-items: start; }
+.nt-ack p { margin: 0; line-height: 1.55; }
+.nt-ack-done { display: flex; gap: 8px; align-items: center; color: #17663a; font-weight: 600; }
+.nt-err { color: #a12a2a; }
+.nt-staffnote { color: var(--ink-700); font-size: 13px; margin: 0; }
+.nt-empty { color: var(--ink-700); }
+.nt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.nt-item { display: grid; gap: 4px; padding: 14px 16px; border: 1px solid var(--cream-200); border-radius: var(--c-r-sm); color: var(--ink-900); text-decoration: none; }
+.nt-item:hover, .nt-item:focus-visible { border-color: var(--ink-700); }
+.nt-item.is-unread { border-left: 4px solid var(--gold-500); }
+.nt-item-k { font-size: 12.5px; color: var(--ink-700); font-weight: 600; }
+.nt-item-x { color: var(--ink-700); font-size: 14px; line-height: 1.45; }
+.nt-tag { justify-self: start; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: var(--c-r-chip); background: var(--cream-100); color: var(--ink-700); }
+.nt-tag.is-warn { background: #fdf2d8; color: var(--gold-700); }
+.nt-tag.is-ok { background: #e8f5ec; color: #17663a; }
+@media print {
+  /* Scoped to a page that HAS a notice: unscoped, this would blank every other page's print. */
+  body:has(.nt-page) *:not(#_):not(#_) { visibility: hidden; }
+  .nt-doc:not(#_):not(#_), .nt-doc *:not(#_):not(#_) { visibility: visible; }
+  .nt-doc { position: absolute; left: 0; top: 0; width: 100%; border: 0; border-radius: 0; padding: 0; }
+}

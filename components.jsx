@@ -647,6 +647,7 @@ function NavBell({ setPage }) {
   const openItem = async (n) => {
     await markRead(n);
     setOpen(false);
+    if (n.linkPage === "notice" && n.linkRef) { location.assign("/notice/" + encodeURIComponent(n.linkRef)); return; }
     if (n.linkPage) setPage(n.linkPage);
   };
   const markAll = async () => {

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 210;
+const NGG_SCHEMA_TARGET = 211;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6057,6 +6057,45 @@ function db_migrate(PDO $db): void {
            right thing — the missing arrivals, or the missing departures. */
         210 => "
             ALTER TABLE attendance_held_days ADD COLUMN cause TEXT NOT NULL DEFAULT 'checkin';
+        ",
+
+        /* 211 — official notices (domain/notices.php). An announcement was a
+           140-character title and a 2,000-character body in the notification
+           feed, so a management notice could not be sent at all, and nobody
+           could say who had read one. A notice has its letterhead (org, kind),
+           a subject, a WhatsApp-formatted body and a sign-off; each reader's
+           read and acknowledgement is one row (member or guardian); the email
+           copies go out from a queue, a batch a minute. */
+        211 => "
+            CREATE TABLE IF NOT EXISTS notices (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              noticeId TEXT NOT NULL UNIQUE,
+              org TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '',
+              body TEXT NOT NULL DEFAULT '', signoff TEXT NOT NULL DEFAULT '',
+              audience TEXT NOT NULL DEFAULT 'all', reach TEXT NOT NULL DEFAULT 'both',
+              needsAck INTEGER NOT NULL DEFAULT 0, emailOn INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'draft', stats TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '',
+              publishedBy TEXT NOT NULL DEFAULT '', publishedAt TEXT NOT NULL DEFAULT '',
+              correctedBy TEXT NOT NULL DEFAULT '', correctedAt TEXT NOT NULL DEFAULT '', correctionNote TEXT NOT NULL DEFAULT '',
+              withdrawnBy TEXT NOT NULL DEFAULT '', withdrawnAt TEXT NOT NULL DEFAULT '', withdrawReason TEXT NOT NULL DEFAULT '',
+              remindedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_notices_status ON notices(status, publishedAt);
+            CREATE TABLE IF NOT EXISTS notice_reads (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              noticeId TEXT NOT NULL, readerKey TEXT NOT NULL, memberId TEXT NOT NULL DEFAULT '',
+              readAt TEXT NOT NULL DEFAULT '', ackAt TEXT NOT NULL DEFAULT '', ackName TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_notice_reads ON notice_reads(noticeId, readerKey);
+            CREATE INDEX IF NOT EXISTS idx_notice_reads_member ON notice_reads(noticeId, memberId);
+            CREATE TABLE IF NOT EXISTS notice_mail (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              noticeId TEXT NOT NULL, email TEXT NOT NULL, name TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, sentAt TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_notice_mail ON notice_mail(noticeId, email);
+            CREATE INDEX IF NOT EXISTS idx_notice_mail_status ON notice_mail(status, id);
         ",
     ];
 

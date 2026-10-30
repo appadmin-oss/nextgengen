@@ -127,7 +127,7 @@ const CR_PAGES = {
     { id: "community", label: "Threads", desc: "Member conversations. A genius who cannot live with people is an unfinished person.", cap: "content" },
   ] },
   comms: { label: "Announcements", icon: "megaphone", tabs: [
-    { id: "broadcast", label: "Send", desc: "Reach members and parents by app, SMS and email.", cap: "content" },
+    { id: "broadcast", label: "Notices", desc: "Official notices to members and their families — and who has read them. Quick one-line messages too.", cap: "content" },
     { id: "newsletter", label: "Newsletter", desc: "The monthly email to subscribers.", cap: "inbox" },
   ] },
   /* The centres' Wi-Fi (cr-tab-wifi.jsx). The Club portal's Wi-Fi item opens it. */
@@ -169,7 +169,7 @@ const CR_ALIASES = {
 const CR_ACTIONS = [
   { icon: "user-plus", l: "Add member", tab: "members", act: "Add member" },
   { icon: "currency-ngn", l: "Record a payment", tab: "fees", act: "Record payment" },
-  { icon: "megaphone", l: "Send an announcement", tab: "broadcast" },
+  { icon: "megaphone", l: "Send a notice", tab: "broadcast" },
   { icon: "pencil-simple", l: "New post", tab: "posts", act: "New post" },
   { icon: "calendar-plus", l: "New event", tab: "events", act: "New event" },
   { icon: "star", l: "Add mission", tab: "missions", act: "Add mission" },

@@ -747,6 +747,7 @@ Object.assign(Mp9Portal.prototype, {
       retry={() => this.load("notifs")} isRead={x => mp9NotifRead(x, s)} unreadOnly={!!s.nUnread} setUnreadOnly={v => this.setState({ nUnread: v })}
       narrow={this.state.w < 760} onClose={close}
       onAct={x => { if (!mp9NotifRead(x, s)) mark(x, true); this.setState({ notif: false }); const a = x.action || {}, to = PAGE[a.page];
+        if (a.page === "notice" && a.ref) { location.assign("/notice/" + encodeURIComponent(a.ref)); return; }   // an official notice reads on its own page
         if (to === "support" && a.ref) { try { history.pushState({ page: "dashboard" }, "", "/dashboard/support?case=" + encodeURIComponent(a.ref)); } catch (_) {} this.setState({ scr: "support" }); return; }
         if (to) this.go(to); }}
       onToggleRead={x => mark(x, !mp9NotifRead(x, s))}

@@ -35884,5 +35884,87 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM assignments WHERE assignmentId LIKE 'ASG-RB-%'");
 })();
 
+
+// ── Official notices: the Management notice as written, formatted once, sent, read and acknowledged ──
+(function () {
+    $now = now_iso();
+    $raw = file_get_contents(__DIR__ . '/sts-notice.txt');
+    $P = notice_parse($raw);
+    chk('notice · a pasted notice is split into its letterhead, subject, body and sign-off', $P['org'] === 'STREET TO STARDOM (STS)' && $P['kind'] === 'MANAGEMENT OFFICIAL NOTICE'
+        && $P['subject'] === 'REVISED SATURDAY RESUMPTION, ATTENDANCE, DISCIPLINE AND HOUSEHOLD RESPONSIBILITY POLICY' && $P['signoff'] === 'STS MANAGEMENT');
+    chk('notice · …the body keeps every word, from the first paragraph to “KA BERE KA SISE.”', str_starts_with($P['body'], 'Following constructive input') && str_ends_with($P['body'], 'KA BERE KA SISE.')
+        && !str_contains($P['body'], 'SUBJECT:') && !str_contains($P['body'], 'STS MANAGEMENT*'));
+    $H = notice_html($P['body']);
+    chk('notice · numbered sections become headings', str_contains($H, '<h3><span class="nt-num">1.</span> SATURDAY RESUMPTION TIME</h3>') && str_contains($H, '<h3><span class="nt-num">6.</span> FRESH START: REVOCATION OF PREVIOUS OFFENCES</h3>'));
+    chk('notice · a heading with no number stays a heading', str_contains($H, '<h3>OUR COLLECTIVE RESPONSIBILITY</h3>'));
+    chk('notice · the dash lines are bullet lists', substr_count($H, '<ul>') === 5 && str_contains($H, '<li>9:30 AM to before 9:45 AM: ₦500 fine and 3 frog jumps.</li>'));
+    chk('notice · *bold* inside a sentence is bold, and the asterisks are gone', str_contains($H, '<strong>bought, bent or broken.</strong>') && str_contains($H, '<strong>INCORRUPTIBLE GENERATION!</strong>') && !preg_match('/(?<![a-z])\*[A-Za-z]/', strip_tags($H)));
+    chk('notice · the dashboard address is a link', str_contains($H, '<a href="https://next.afrovanguard.org.ng" target="_blank" rel="noopener">next.afrovanguard.org.ng</a>'));
+    $X = notice_html("Hello <script>alert(1)</script> *x* & \"q\"\n- <img src=x onerror=alert(1)>");
+    chk('notice · nothing typed becomes markup: tags are shown as text', !str_contains($X, '<script') && !str_contains($X, '<img') && str_contains($X, '&lt;script&gt;') && str_contains($X, '<strong>x</strong>'));
+    chk('notice · the copy for WhatsApp is the notice in WhatsApp’s own marks', str_starts_with(notice_whatsapp($P + ['noticeId' => 'x']), "STREET TO STARDOM (STS)\n\n*MANAGEMENT OFFICIAL NOTICE*\n\nSUBJECT: *REVISED SATURDAY")
+        && str_ends_with(notice_whatsapp($P), "*STS MANAGEMENT*"));
+    chk('notice · the excerpt for a feed line is plain words', !str_contains(notice_excerpt($P['body']), '*') && str_starts_with(notice_excerpt($P['body']), 'Following constructive input'));
+
+    // The desk: draft, publish to a centre, read, acknowledge (member and parent), remind the rest, correct, withdraw.
+    $mk = fn($id, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Nt ' . $id, 'email' => strtolower($id) . '@example.org', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'centre' => 'Nt Centre', 'parentEmail' => 'family.' . strtolower($id) . '@example.org', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-NT-ADM', ['role' => 'super_admin', 'centre' => '']); $mk('NGG-NT-ED', ['role' => 'editor', 'centre' => '']);
+    foreach ([1, 2, 3] as $i) $mk('NGG-NT-' . $i);
+    $mk('NGG-NT-X', ['centre' => 'Nt Elsewhere']);
+    db_insert('centres', ['centreId' => 'CEN-NT-1', 'name' => 'Nt Centre', 'code' => 'NT', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'GRD-NT-1', 'email' => 'parent.nt@example.org', 'fullName' => 'Mrs Nt', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'LNK-NT-1', 'guardianId' => 'GRD-NT-1', 'memberId' => 'NGG-NT-1', 'relationship' => 'parent', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'LNK-NT-2', 'guardianId' => 'GRD-NT-1', 'memberId' => 'NGG-NT-2', 'relationship' => 'parent', 'status' => 'active', 'createdAt' => $now]);
+    $ADM = 'NGG-NT-ADM';
+    chk('notice · writing notices needs the content permission', (backend_dispatch('admin.notices.save', ['requesterId' => 'NGG-NT-1'] + $P)['error'] ?? '') === 'forbidden');
+    $sv = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'audience' => 'Nt Centre', 'reach' => 'both', 'needsAck' => true, 'emailOn' => true] + $P);
+    $id = $sv['notice']['noticeId'] ?? '';
+    chk('notice · the whole notice saves as a draft — far past the old 2,000-character limit', !empty($sv['ok']) && $sv['notice']['status'] === 'draft' && mb_strlen($sv['notice']['body']) > 3000);
+    chk('notice · a draft reaches nobody', (member_notice(['memberId' => 'NGG-NT-1', 'noticeId' => $id])['error'] ?? '') === 'not_found');
+    $pb = backend_dispatch('admin.notices.publish', ['requesterId' => $ADM, 'noticeId' => $id]);
+    chk('notice · published: every member of the centre gets it in their feed, the family once, and the email copies are queued', !empty($pb['ok']) && $pb['stats']['members'] === 3
+        && $pb['stats']['families'] === 1 && $pb['stats']['emailsQueued'] === 7
+        && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE kind = 'notice' AND linkRef = ? AND linkPage = 'notice'", [$id])['c'] === 3
+        && (bool)db_row("SELECT 1 FROM guardian_notices WHERE guardianId = 'GRD-NT-1' AND kind = 'notice' AND refId = ?", [$id]));
+    chk('notice · …and not to a member at another centre', !db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-NT-X' AND linkRef = ?", [$id]) && (member_notice(['memberId' => 'NGG-NT-X', 'noticeId' => $id])['error'] ?? '') === 'not_found');
+    chk('notice · published twice is refused — a double press does not send it twice', (backend_dispatch('admin.notices.publish', ['requesterId' => $ADM, 'noticeId' => $id])['error'] ?? '') === 'already_published');
+    $act = public_notification(db_row("SELECT * FROM notifications WHERE memberId = 'NGG-NT-1' AND linkRef = ?", [$id]))['action'];
+    chk('notice · the feed item opens the notice, and asks for the acknowledgement', $act['page'] === 'notice' && $act['ref'] === $id && $act['label'] === 'Read and acknowledge');
+    $r1 = member_notice(['memberId' => 'NGG-NT-1', 'noticeId' => $id]);
+    chk('notice · a member reads the formatted notice', !empty($r1['ok']) && str_contains($r1['notice']['html'], '<h3><span class="nt-num">2.</span> LATENESS AND DISCIPLINARY MEASURES</h3>') && $r1['reader']['readAt'] !== '' && $r1['reader']['ackAt'] === '');
+    member_notice(['memberId' => 'NGG-NT-1', 'noticeId' => $id, 'ack' => true]);
+    $f = family_notice(['guardianId' => 'GRD-NT-1', 'noticeId' => $id, 'ack' => true]);
+    chk('notice · a parent reads and acknowledges once, for both children it is for', !empty($f['ok']) && $f['reader']['for'] === ['Nt NGG-NT-1', 'Nt NGG-NT-2'] && $f['reader']['ackAt'] !== ''
+        && (string)db_row("SELECT readAt FROM guardian_notices WHERE guardianId = 'GRD-NT-1' AND refId = ?", [$id])['readAt'] !== '');
+    $R = backend_dispatch('admin.notices.readers', ['requesterId' => $ADM, 'noticeId' => $id]);
+    $by = array_column($R['rows'], null, 'memberId');
+    chk('notice · the desk sees who has read and acknowledged — the member themself, or a parent for them', $R['totals'] === ['members' => 3, 'read' => 2, 'acked' => 2]
+        && $by['NGG-NT-1']['ackBy'] !== '' && $by['NGG-NT-2']['ackBy'] === 'parent' && $by['NGG-NT-3']['ackAt'] === '');
+    $L = backend_dispatch('admin.notices.list', ['requesterId' => $ADM]);
+    $mine = array_values(array_filter($L['notices'], fn($x) => $x['noticeId'] === $id))[0];
+    chk('notice · the list counts them too', $mine['readers'] === 2 && $mine['acked'] === 2 && $mine['reachMembers'] === 3);
+    $rm = backend_dispatch('admin.notices.remind', ['requesterId' => $ADM, 'noticeId' => $id]);
+    chk('notice · a reminder goes only to the one who has not acknowledged, and not twice in a day', $rm['reminded'] === 1
+        && (backend_dispatch('admin.notices.remind', ['requesterId' => $ADM, 'noticeId' => $id])['error'] ?? '') === 'too_soon');
+    chk('notice · correcting a published notice needs a note', (backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'noticeId' => $id] + $P)['error'] ?? '') === 'note_required');
+    $c = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'noticeId' => $id, 'correctionNote' => 'Section 3: the re-entry fee is ₦5,000'] + array_merge($P, ['body' => $P['body'] . "\n\nCorrected."]));
+    chk('notice · …and readers are shown that it was corrected, and why', !empty($c['corrected']) && member_notice(['memberId' => 'NGG-NT-3', 'noticeId' => $id])['notice']['correctionNote'] === 'Section 3: the re-entry fee is ₦5,000');
+    $sent = notice_mail_drain(5);
+    // (No mail server here: a failed attempt stays queued for its retry — three tries, then failed.)
+    chk('notice · the email copies go out from the queue, a batch at a time', $sent['sent'] + $sent['failed'] === 5
+        && (int)db_row("SELECT COUNT(*) c FROM notice_mail WHERE noticeId = ? AND attempts = 1", [$id])['c'] === 5 && (int)db_row("SELECT COUNT(*) c FROM notice_mail WHERE noticeId = ? AND attempts = 0", [$id])['c'] === 2);
+    chk('notice · the email carries the formatted notice and the link to acknowledge', str_contains(notice_email_html(notice_get($id)), 'LATENESS AND DISCIPLINARY MEASURES') && str_contains(notice_email_html(notice_get($id)), '/notice/' . $id));
+    $w = backend_dispatch('admin.notices.withdraw', ['requesterId' => $ADM, 'noticeId' => $id, 'reason' => 'Replaced by the 7 November notice']);
+    $wr = member_notice(['memberId' => 'NGG-NT-2', 'noticeId' => $id]);
+    chk('notice · withdrawn: readers are told so, with why — it does not just vanish — and its unsent emails are cancelled', !empty($w['ok']) && $wr['notice']['status'] === 'withdrawn'
+        && $wr['notice']['withdrawReason'] === 'Replaced by the 7 November notice' && (int)db_row("SELECT COUNT(*) c FROM notice_mail WHERE noticeId = ? AND status = 'queued'", [$id])['c'] === 0);
+    chk('notice · a draft may be deleted; what went out may not', (backend_dispatch('admin.notices.delete', ['requesterId' => $ADM, 'noticeId' => $id])['error'] ?? '') === 'not_draft');
+    chk('notice · the member’s list shows it, read and acknowledged', ($ml = member_notices(['memberId' => 'NGG-NT-1'])['notices'][0] ?? null) && $ml['noticeId'] === $id && $ml['read'] && $ml['acked']);
+
+    foreach (['notice_reads' => "noticeId = '$id'", 'notice_mail' => "noticeId = '$id'", 'notices' => "noticeId = '$id'", 'notifications' => "linkRef = '$id'", 'guardian_notices' => "guardianId = 'GRD-NT-1'",
+              'guardian_wards' => "guardianId = 'GRD-NT-1'", 'guardians' => "guardianId = 'GRD-NT-1'", 'members' => "memberId LIKE 'NGG-NT-%'", 'centres' => "centreId = 'CEN-NT-1'"] as $t => $w2) db_exec("DELETE FROM $t WHERE $w2");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

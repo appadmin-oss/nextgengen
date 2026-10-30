@@ -981,6 +981,9 @@
       journalCreate: (data) => request('/member/journal.php', { body: data }),
       rsvp:          (data) => request('/member/rsvp.php', { body: data }),
       notifications: () => request('/member/notifications.php'),
+      notices:       () => request('/member/notices.php'),
+      notice:        (noticeId) => request('/member/notices.php' + qs({ noticeId })),
+      noticeAck:     (noticeId) => request('/member/notices.php', { body: { noticeId, ack: true } }),
       /* Support cases from My NGG (api/member/support.php, domain/support.php). */
       support: supportApi('/member/support.php'),
       markRead:      (notifId, unread) => request('/member/notifications.php', { body: { notifId, unread: !!unread } }),
@@ -1376,6 +1379,8 @@
     },
     /* Family accounts — a parent's own sign-in (its own cookie; never a member session). */
     family: {
+      notice:    (noticeId) => request('/family/notice.php' + qs({ noticeId })),
+      noticeAck: (noticeId) => request('/family/notice.php', { body: { noticeId, ack: true } }),
       /* Support cases from the Family account — the same contract as the member's. */
       support: supportApi('/family/support.php'),
       me:       () => request('/family/me.php'),
@@ -1688,6 +1693,18 @@
       },
       broadcast: (data) => request('/admin/broadcast.php', { body: data }),
       broadcastHistory: () => request('/admin/broadcast.php'),
+      /* Official notices (domain/notices.php): letterhead, subject, a WhatsApp-formatted body, sign-off. */
+      notices: {
+        list:     () => request('/admin/notices.php'),
+        readers:  (noticeId) => request('/admin/notices.php' + qs({ view: 'readers', noticeId })),
+        parse:    (text) => request('/admin/notices.php', { body: { action: 'parse', text } }),
+        preview:  (body) => request('/admin/notices.php', { body: { action: 'preview', body } }),
+        save:     (notice) => request('/admin/notices.php', { body: Object.assign({ action: 'save' }, notice) }),
+        del:      (noticeId) => request('/admin/notices.php', { body: { action: 'delete', noticeId } }),
+        publish:  (noticeId) => request('/admin/notices.php', { body: { action: 'publish', noticeId } }),
+        withdraw: (noticeId, reason) => request('/admin/notices.php', { body: { action: 'withdraw', noticeId, reason } }),
+        remind:   (noticeId) => request('/admin/notices.php', { body: { action: 'remind', noticeId } }),
+      },
       anchor: {
         get:      () => request('/admin/anchor.php'),
         defaults: () => request('/admin/anchor.php?defaults=1'),
