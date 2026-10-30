@@ -126,7 +126,7 @@ db_conn();
    nobody checked in. The legacy blocks below test the absence RULES on
    fixtures where whole centres never check in, so the brake is off for them;
    the brake's own tests switch it on. */
-if (function_exists('policy_settings_save')) policy_settings_save(['outageBrake' => false], 'test');
+if (function_exists('policy_settings_save')) policy_settings_save(['outageBrake' => false, 'member' => ['rulebook' => 'ladder']], 'test');
 chk('schema at target', (int)db_row('SELECT MAX(version) v FROM schema_version')['v'] === NGG_SCHEMA_TARGET);
 
 // ── Proper migrator: ladder integrity, idempotency, SQLite⇄MySQL parity ──
@@ -35732,6 +35732,156 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('imported · a centre-scoped desk cannot correct another centre\'s charge', ($sc['results'][0]['error'] ?? '') === 'out_of_scope' || ($sc['error'] ?? '') === 'forbidden');
 
     db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-IM-%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-IM-%'");
+})();
+
+
+// ── The member rulebook (Management notice): bands, frog jumps, suspension, re-entry, permission, evidence, fresh start ──
+(function () {
+    $now = now_iso(); $ADM = 'NGG-RB-ADM';
+    $keep = []; foreach (['policy', 'memberProgramme', 'policy_evidence_since', 'policy_fresh_start'] as $k) $keep[$k] = setting_raw($k);
+    $today = attendance_today(); $ago = fn($n) => gmdate('Y-m-d', strtotime($today . ' UTC') - $n * 86400);
+    member_programme_settings_save(['enabled' => true, 'startDate' => $ago(60), 'endDate' => $ago(-30), 'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'test');
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true, 'member' => ['enabled' => true, 'rulebook' => 'session', 'checkoutRequired' => false, 'absenceFine' => 1000,
+        'resumption' => '09:00', 'lateBands' => [['from' => '09:30', 'fine' => 500, 'jumps' => 3], ['from' => '09:45', 'fine' => 0, 'jumps' => 5]], 'reviewFrom' => '10:00',
+        'absenceJumps' => 7, 'suspendAfterAbsences' => 3, 'suspendDays' => 7, 'reentryFee' => 5000, 'permittedAbsences' => 5, 'formalAfterDays' => 21, 'evidenceFine' => 1000, 'jumpWord' => 'frog jumps']], 'test');
+    $mk = fn($id, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Rb ' . $id, 'email' => strtolower($id) . '@example.org', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'centre' => 'Rb Centre', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk($ADM, ['role' => 'super_admin', 'centre' => '']);
+    foreach (range(1, 6) as $i) $mk('NGG-RB-' . $i);
+    $cfg = policy_for('member');
+    chk('rulebook · the saved rules are the notice\'s: late from 09:30, ₦500 + 3, then 5, review from 10:00', $cfg['rulebook'] === 'session' && policy_late_bands($cfg)[0]['from'] === '09:30'
+        && policy_late_bands($cfg)[0]['to'] === '09:45' && policy_late_bands($cfg)[1]['jumps'] === 5 && $cfg['reviewFrom'] === '10:00');
+    $local = fn($d, $hm) => strtotime($d . ' ' . $hm . ':00 UTC') - (int)attendance_settings()['tzOffset'] * 60;   // epoch of a local wall-clock time
+    $p1 = policy_punctuality('member', $local($today, '09:38')); $p2 = policy_punctuality('member', $local($today, '09:10')); $p3 = policy_punctuality('member', $local($today, '08:55'));
+    chk('rulebook · 09:38 is late, 09:10 is past resumption but not late, 08:55 is on time', $p1['status'] === 'late' && $p1['redline'] === 1 && $p2['status'] === 'tardy' && empty($p2['redline']) && $p3['status'] === 'present');
+    chk('rulebook · …and no member\'s day becomes a half-day for missing an 08:00 Musing Period', empty($p1['halfDay']));
+
+    // Three lates, one in each band.
+    $arrive = function ($id, $d, $hm) use ($local, $now) {
+        db_insert('attendance', ['cohortId' => '', 'studentId' => $id, 'token' => '', 'date' => $d, 'checkInAt' => gmdate('Y-m-d\TH:i:s\Z', $local($d, $hm)), 'method' => 'gate', 'centre' => 'Rb Centre', 'createdAt' => $now]);
+        return policy_on_checkin($id, 'member', $d, policy_punctuality('member', $local($d, $hm)));
+    };
+    [$d1, $d2, $d3] = [$ago(10), $ago(9), $ago(8)];
+    $arrive('NGG-RB-1', $d1, '09:38'); $arrive('NGG-RB-1', $d2, '09:50'); $arrive('NGG-RB-1', $d3, '10:05');
+    $sc = fn($id, $kind, $tier) => db_row('SELECT * FROM sanctions WHERE personId = ? AND kind = ? AND tier = ?', [$id, $kind, $tier]);
+    $f1 = $sc('NGG-RB-1', 'fine', POLICY_T_LATE_FINE + policy_day_number($d1)); $j1 = $sc('NGG-RB-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d1));
+    chk('rulebook · 09:38: a ₦500 fine and 3 frog jumps, the fine on the account', $f1 && (int)$f1['amount'] === 500 && $j1 && (int)$j1['amount'] === 3 && $j1['status'] === 'pending'
+        && (bool)db_row("SELECT 1 FROM member_ledger WHERE memberId = 'NGG-RB-1' AND periodKey = ? AND amount = 500", ['sanction-' . $f1['id']]));
+    chk('rulebook · …and the late says what it cost, in words', str_contains((string)db_row("SELECT note FROM infractions WHERE personId = 'NGG-RB-1' AND date = ? AND kind = 'late'", [$d1])['note'], 'Arrived 09:38')
+        && str_contains((string)$f1['reason'], '₦500 fine and 3 frog jumps'));
+    chk('rulebook · 09:50: 5 frog jumps and no fine', !$sc('NGG-RB-1', 'fine', POLICY_T_LATE_FINE + policy_day_number($d2)) && (int)$sc('NGG-RB-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d2))['amount'] === 5);
+    $rv = $sc('NGG-RB-1', 'review', POLICY_T_REVIEW + policy_day_number($d3));
+    chk('rulebook · 10:05: for management review — no automatic fine or jumps, but on the board awaiting a person', $rv && $rv['status'] === 'proposed'
+        && !$sc('NGG-RB-1', 'fine', POLICY_T_LATE_FINE + policy_day_number($d3)) && !$sc('NGG-RB-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d3))
+        && !empty(policy_state('NGG-RB-1', 'member')['awaitingReview']));
+    $st = policy_state('NGG-RB-1', 'member');
+    chk('rulebook · three lates is not a suspension in this rulebook, and the jumps owed are counted', $st['state'] === 'clear' && $st['jumpsOwed'] === 8 && $st['finesOwed'] === 500);
+    db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = 'test', voidReason = 'wrong scan' WHERE personId = 'NGG-RB-1' AND date = ? AND kind = 'late'", [$now, $d1]);
+    policy_relift('NGG-RB-1', 'member');
+    chk('rulebook · voiding the 09:38 late lifts its fine (off the account) and its jumps', $sc('NGG-RB-1', 'fine', POLICY_T_LATE_FINE + policy_day_number($d1))['status'] === 'lifted'
+        && $sc('NGG-RB-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d1))['status'] === 'lifted'
+        && (string)db_row("SELECT voidedAt FROM member_ledger WHERE memberId = 'NGG-RB-1' AND periodKey = ?", ['sanction-' . $f1['id']])['voidedAt'] !== ''
+        && $sc('NGG-RB-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d2))['status'] === 'pending');
+
+    // Absences: ₦1,000 and 7 jumps each; the third without permission in the session suspends, with the re-entry fee.
+    $absent = function ($id, $d) { policy_log($id, 'member', 'absence', $d, 'No check-in on a member programme day.'); return policy_apply($id, 'member'); };
+    $absent('NGG-RB-2', $ago(20));
+    chk('rulebook · an absence without permission: ₦1,000 and 7 frog jumps', (int)$sc('NGG-RB-2', 'fine', 500000 + policy_day_number($ago(20)))['amount'] === 1000
+        && (int)$sc('NGG-RB-2', 'corrective', POLICY_T_ABS_JUMPS + policy_day_number($ago(20)))['amount'] === 7);
+    db_insert('member_requests', ['requestId' => 'REQ-RB-1', 'memberId' => 'NGG-RB-2', 'kind' => 'leave', 'status' => 'approved', 'fromDate' => $ago(19), 'toDate' => $ago(19), 'subject' => 'leave', 'body' => 'a wedding', 'createdAt' => $now, 'updatedAt' => $now]);
+    $absent('NGG-RB-2', $ago(19));
+    chk('rulebook · an absence with permission costs nothing', !$sc('NGG-RB-2', 'fine', 500000 + policy_day_number($ago(19))) && !$sc('NGG-RB-2', 'corrective', POLICY_T_ABS_JUMPS + policy_day_number($ago(19))));
+    $absent('NGG-RB-2', $ago(18));
+    chk('rulebook · two without permission: not suspended yet', policy_state('NGG-RB-2', 'member')['state'] === 'clear');
+    $absent('NGG-RB-2', $ago(17));
+    [$sa] = policy_session_bounds('NGG-RB-2', $ago(17));
+    $sus = $sc('NGG-RB-2', 'suspension', POLICY_T_SUSPENSION + policy_day_number($sa) * 10 + 1);
+    $fee = $sc('NGG-RB-2', 'fine', POLICY_T_REENTRY + policy_day_number($sa) * 10 + 1);
+    chk('rulebook · the third without permission this session: a 7-day suspension from the next day, and a ₦5,000 re-entry fee', $sus && $sus['status'] === 'active'
+        && $sus['startsAt'] === $ago(16) && $sus['endsAt'] === $ago(10) && $fee && (int)$fee['amount'] === 5000 && $fee['status'] === 'pending');
+    $st2 = policy_state('NGG-RB-2', 'member'); $gate = policy_gate_checkin('NGG-RB-2', 'member');
+    chk('rulebook · the week is over but the fee is not paid: still suspended, and the door says why', $st2['state'] === 'suspended' && $st2['reentryOwed'] === 5000
+        && ($gate['error'] ?? '') === 'policy_reentry_fee' && str_contains((string)$gate['message'], '₦5,000 re-entry fee'));
+    $batch = policy_states_for(['NGG-RB-2'], 'member');
+    chk('rulebook · the roster reads it the same way (policy_states_for)', $batch['NGG-RB-2']['state'] === 'suspended' && $batch['NGG-RB-2']['reentryOwed'] === 5000);
+    $m2 = db_row("SELECT * FROM members WHERE memberId = 'NGG-RB-2'");
+    fees_post('NGG-RB-2', 'payment', fees_balance($m2)['outstanding'], ['by' => 'test', 'method' => 'cash', 'note' => 'all of it']);
+    chk('rulebook · once the account covers it, the fee is paid by itself and the child may come back', $sc('NGG-RB-2', 'fine', POLICY_T_REENTRY + policy_day_number($sa) * 10 + 1)['status'] === 'paid'
+        && !empty(policy_gate_checkin('NGG-RB-2', 'member')['ok']));
+
+    // Voiding one of the three lifts the suspension and its unpaid re-entry fee.
+    foreach ([$ago(30), $ago(29), $ago(28)] as $d) $absent('NGG-RB-3', $d);
+    [$sb] = policy_session_bounds('NGG-RB-3', $ago(28));
+    chk('rulebook · (another member, three absences: suspended)', $sc('NGG-RB-3', 'suspension', POLICY_T_SUSPENSION + policy_day_number($sb) * 10 + 1)['status'] === 'active');
+    db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = 'test', voidReason = 'was at an exam' WHERE personId = 'NGG-RB-3' AND date = ? AND kind = 'absence'", [$now, $ago(29)]);
+    policy_relift('NGG-RB-3', 'member');
+    $f3 = $sc('NGG-RB-3', 'fine', POLICY_T_REENTRY + policy_day_number($sb) * 10 + 1);
+    chk('rulebook · voiding one of the three lifts the suspension and its re-entry fee, off the account', $sc('NGG-RB-3', 'suspension', POLICY_T_SUSPENSION + policy_day_number($sb) * 10 + 1)['status'] === 'lifted'
+        && $f3['status'] === 'lifted' && (string)db_row("SELECT voidedAt FROM member_ledger WHERE periodKey = ?", ['sanction-' . $f3['id']])['voidedAt'] !== ''
+        && !empty(policy_gate_checkin('NGG-RB-3', 'member')['ok']));
+
+    // Frog jumps: listed by centre, marked done in one press.
+    $L = backend_dispatch('admin.policy.correctives', ['requesterId' => $ADM]);
+    $mine = array_values(array_filter($L['rows'], fn($r) => str_starts_with($r['memberId'], 'NGG-RB-')));
+    chk('rulebook · the desk sees who owes frog jumps, and how many', count($mine) >= 3 && $L['word'] === 'frog jumps' && in_array(5, array_column($mine, 'count'), true));
+    $done = backend_dispatch('admin.policy.correctives.done', ['requesterId' => $ADM, 'ids' => array_column($mine, 'id')]);
+    chk('rulebook · …and marks them done, each answered, once', $done['done'] === count($mine) && policy_state('NGG-RB-2', 'member')['jumpsOwed'] === 0
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'policy.corrective.done'")['c'] === 1);
+
+    // Permission: five a session, through the dashboard only; longer than three weeks is a formal application.
+    $ask = fn($from, $to) => member_request_create(['memberId' => 'NGG-RB-4', 'kind' => 'leave', 'fromDate' => $from, 'toDate' => $to, 'body' => 'family travel']);
+    $r1 = $ask($ago(-2), $ago(-5));
+    chk('rulebook · four days with permission is fine', !empty($r1['ok']));
+    $r2 = $ask($ago(-8), $ago(-9));
+    chk('rulebook · a sixth day with permission in the session is refused, and says the rule', ($r2['error'] ?? '') === 'excuse_limit' && str_contains((string)$r2['detail'], 'with permission are accepted in a session'));
+    $r3 = $ask($ago(-10), $ago(-40));
+    chk('rulebook · more than three weeks is not a dashboard request: it needs a formal written application', ($r3['error'] ?? '') === 'formal_application');
+    $ex = member_excuses(db_row("SELECT * FROM members WHERE memberId = 'NGG-RB-4'"));
+    chk('rulebook · the allowance shown is 4 of 5 used this session', $ex['used'] === 4 && $ex['max'] === 5 && $ex['rulebook'] === 'session');
+    db_insert('member_requests', ['requestId' => 'REQ-RB-9', 'memberId' => 'NGG-RB-4', 'kind' => 'leave', 'status' => 'open', 'fromDate' => $ago(-12), 'toDate' => $ago(-13), 'subject' => 'x', 'body' => 'x', 'createdAt' => $now, 'updatedAt' => $now]);
+    $rid1 = (string)db_row("SELECT requestId FROM member_requests WHERE memberId = 'NGG-RB-4' AND kind = 'leave' AND requestId <> 'REQ-RB-9'")['requestId'];
+    backend_dispatch('admin.requests.decide', ['requesterId' => $ADM, 'requestId' => $rid1, 'approve' => true]);
+    $ap = backend_dispatch('admin.requests.decide', ['requesterId' => $ADM, 'requestId' => 'REQ-RB-9', 'approve' => true]);
+    chk('rulebook · the desk cannot approve past five either (4 approved + 2 more)', ($ap['error'] ?? '') === 'excuse_limit');
+
+    // Evidence: nothing uploaded by the due day is ₦1,000, once; uploaded work is not fined; older homework is not reached back for.
+    setting_set('policy_evidence_since', $ago(5), 'test');
+    foreach ([['ASG-RB-1', $ago(2)], ['ASG-RB-OLD', $ago(8)]] as [$aid, $due])
+        db_insert('assignments', ['assignmentId' => $aid, 'title' => 'Absence essay ' . $aid, 'track' => '', 'sessionId' => '', 'dueAt' => $due, 'centre' => 'Rb Centre', 'status' => 'published', 'createdBy' => $ADM, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('assignment_submissions', ['submissionId' => 'SUB-RB-1', 'assignmentId' => 'ASG-RB-1', 'memberId' => 'NGG-RB-5', 'answerText' => '', 'fileUrl' => '/api/public/photo.php?f=x.jpg', 'submittedAt' => $now, 'createdAt' => $now]);
+    $ev = policy_evidence_fines_run(); $ev2 = policy_evidence_fines_run();
+    $fe = fn($id, $aid) => db_row("SELECT amount FROM member_ledger WHERE memberId = ? AND kind = 'fine' AND periodKey = ?", [$id, 'asg-evidence:' . $aid]);
+    chk('rulebook · no evidence by the due day: ₦1,000 — whatever the title says', $fe('NGG-RB-6', 'ASG-RB-1') && (int)$fe('NGG-RB-6', 'ASG-RB-1')['amount'] === 1000);
+    chk('rulebook · …but not for the member who uploaded a photo, not twice, and not for homework due before the rule', !$fe('NGG-RB-5', 'ASG-RB-1') && $ev2['fined'] === 0 && !$fe('NGG-RB-6', 'ASG-RB-OLD'));
+
+    // Fresh start: everything before the announcement revoked; paid stays paid; an eviction is named, not undone; imported stays unless asked.
+    $asOf = $ago(1);
+    $paidFine = db_row("SELECT id FROM sanctions WHERE personId = 'NGG-RB-2' AND kind = 'fine' AND status = 'paid' LIMIT 1");
+    policy_issue('NGG-RB-6', 'member', 'eviction', 999001, ['status' => 'active', 'reason' => 'test eviction']);
+    fees_post('NGG-RB-6', 'fine', 3000, ['periodKey' => 'bulkfine:rbold', 'method' => 'other', 'by' => $ADM, 'note' => 'old register']);
+    db_update('member_ledger', ['createdAt' => $ago(40) . 'T10:00:00Z'], ['periodKey' => 'bulkfine:rbold']);
+    db_exec("UPDATE sanctions SET issuedAt = ? WHERE personId LIKE 'NGG-RB-%' AND kind = 'eviction'", [$ago(3) . 'T10:00:00Z']);
+    $pv = backend_dispatch('admin.policy.fresh_start', ['requesterId' => $ADM, 'asOf' => $asOf]);
+    chk('rulebook · fresh start previews who, how many and what money, and changes nothing', !empty($pv['preview']) && $pv['people'] >= 4 && $pv['infractions'] > 0
+        && $pv['paidKept'] >= 1 && count(array_filter($pv['evicted'], fn($e) => $e['memberId'] === 'NGG-RB-6')) === 1 && $pv['imported'] === 0
+        && (int)db_row("SELECT COUNT(*) c FROM infractions WHERE personId LIKE 'NGG-RB-%' AND (voidedAt IS NULL OR voidedAt = '') AND date < ?", [$asOf])['c'] > 0);
+    chk('rulebook · a reason is required', (backend_dispatch('admin.policy.fresh_start', ['requesterId' => $ADM, 'asOf' => $asOf, 'apply' => true])['error'] ?? '') === 'reason_required');
+    $fs = backend_dispatch('admin.policy.fresh_start', ['requesterId' => $ADM, 'asOf' => $asOf, 'apply' => true, 'reason' => 'Revised Saturday policy — every child starts afresh']);
+    chk('rulebook · applied: no offence before the announcement is standing, and nothing pending from before it either', !empty($fs['applied'])
+        && (int)db_row("SELECT COUNT(*) c FROM infractions WHERE personId LIKE 'NGG-RB-%' AND (voidedAt IS NULL OR voidedAt = '') AND date < ?", [$asOf])['c'] === 0
+        && (int)db_row("SELECT COUNT(*) c FROM sanctions WHERE personId LIKE 'NGG-RB-%' AND kind <> 'eviction' AND status IN ('active','proposed','pending')")['c'] === 0);
+    chk('rulebook · …a fine already paid stays paid; the eviction stays for reinstatement; the imported fine is still owed', db_row('SELECT status FROM sanctions WHERE id = ?', [(int)$paidFine['id']])['status'] === 'paid'
+        && db_row("SELECT status FROM sanctions WHERE personId = 'NGG-RB-6' AND kind = 'eviction'")['status'] === 'active'
+        && (string)db_row("SELECT voidedAt FROM member_ledger WHERE periodKey = 'bulkfine:rbold'")['voidedAt'] === '' && !db_row("SELECT 1 FROM member_ledger WHERE periodKey LIKE 'fresh-start:%'"));
+    chk('rulebook · …recorded once, with its reason', (setting_get('policy_fresh_start')['asOf'] ?? '') === $asOf && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'policy.fresh_start'")['c'] === 1);
+    $ed = 'NGG-RB-ED'; $mk($ed, ['role' => 'admin', 'centre' => '']);
+    chk('rulebook · waiving imported fines in a fresh start needs the Fees permission', (backend_dispatch('admin.policy.fresh_start', ['requesterId' => $ed, 'asOf' => $asOf, 'includeImported' => true])['error'] ?? '') === 'forbidden');
+    $fi = backend_dispatch('admin.policy.fresh_start', ['requesterId' => $ADM, 'asOf' => $asOf, 'includeImported' => true]);
+    chk('rulebook · with it, the imported fine is offered as a waiver for what is still unpaid', $fi['imported'] === 1 && $fi['importedTotal'] === 3000);
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'attendance' => 'studentId', 'member_requests' => 'memberId', 'assignment_submissions' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-RB-%'");
+    db_exec("DELETE FROM assignments WHERE assignmentId LIKE 'ASG-RB-%'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

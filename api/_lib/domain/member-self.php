@@ -119,6 +119,7 @@ function member_absence_cover(string $memberId, string $date): string {
 /** {used, max, left, recorded, ahead, days[]}: the engine's absences plus the days still ahead on open or approved leave. */
 function member_excuses(array $m): array {
     $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
+    if (function_exists('policy_is_session') && policy_is_session('member')) return member_excuses_session($m, $today);
     $st = function_exists('policy_state') ? policy_state((string)$m['memberId'], 'member') : ['absences' => 0, 'absenceLimit' => 2];
     $limit = (int)($st['absenceLimit'] ?? (function_exists('policy_for') ? (int)policy_for('member')['absenceLimit'] : 2));
     $recorded = (int)($st['absences'] ?? 0);
@@ -133,6 +134,33 @@ function member_excuses(array $m): array {
     $fine = function_exists('policy_enabled_for') && policy_enabled_for('member') ? (int)(policy_for('member')['absenceFine'] ?? 0) : 0;
     return ['used' => $used, 'max' => $limit, 'left' => max(0, $limit - $used), 'recorded' => $recorded, 'ahead' => count($ahead), 'days' => array_keys($ahead),
             'fine' => $fine];   // ₦ for an absence nobody asked about; 0 when member enforcement is off
+}
+
+/**
+ * The rulebook's allowance: `permittedAbsences` absences WITH permission per
+ * session, counted as the programme days that leave requests — waiting or
+ * approved — cover in the session holding today. Absences without permission
+ * are a different count (they lead to suspension) and are reported apart as
+ * `recorded`, so a family can see both. `days` are the session's covered
+ * days, which a new request is compared against so a day is never counted
+ * twice.
+ */
+function member_excuses_session(array $m, string $today): array {
+    $cfg = policy_for('member');
+    [$a, $b] = policy_session_bounds((string)$m['memberId'], $today);
+    $days = [];
+    foreach (db_all("SELECT fromDate, toDate FROM member_requests WHERE memberId = ? AND kind = 'leave' AND status IN ('open', 'approved') AND fromDate <> ''
+                     AND fromDate <= ? AND (CASE WHEN toDate = '' THEN fromDate ELSE toDate END) >= ?", [(string)$m['memberId'], $b, $a]) as $r) {
+        $to = (string)$r['toDate'] !== '' ? (string)$r['toDate'] : (string)$r['fromDate'];
+        foreach (member_excuse_days($m, max((string)$r['fromDate'], $a), min($to, $b)) as $d) $days[$d] = true;
+    }
+    $max = (int)$cfg['permittedAbsences'];
+    $without = count(policy_unexcused_absences((string)$m['memberId'], $a, min($b, $today)));
+    $fine = policy_enabled_for('member') ? (int)($cfg['absenceFine'] ?? 0) : 0;
+    return ['used' => count($days), 'max' => $max, 'left' => max(0, $max - count($days)), 'recorded' => $without,
+            'ahead' => count(array_filter(array_keys($days), static fn($d) => $d >= $today)), 'days' => array_keys($days), 'fine' => $fine,
+            'session' => ['from' => $a, 'to' => $b], 'suspendAfter' => (int)$cfg['suspendAfterAbsences'], 'formalAfterDays' => (int)$cfg['formalAfterDays'],
+            'rulebook' => 'session'];
 }
 
 /* ── A payment, one line per way it was paid ─────────────────────────────────
@@ -673,13 +701,22 @@ function member_request_create(array $p): array
            days. A request that would take it past two is refused whole, with
            what is left, rather than half-granted by the desk later. */
         $full = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]) ?: $m;
+        /* "An absence extending beyond three consecutive weeks requires a
+           formal written application" — the dashboard request is for the
+           ordinary absence, and says where the long one goes instead. */
+        if (function_exists('policy_is_session') && policy_is_session('member')) {
+            $span = (int)((strtotime(($row['toDate'] !== '' ? $row['toDate'] : $row['fromDate']) . ' UTC') - strtotime($row['fromDate'] . ' UTC')) / 86400) + 1;
+            $formal = (int)policy_for('member')['formalAfterDays'];
+            if ($span > $formal) return ['ok' => false, 'error' => 'formal_application',
+                'detail' => 'An absence longer than ' . $formal . ' days (' . intdiv($formal, 7) . ' weeks) needs a formal written application to the management, not a dashboard request. For exams, ask for academic leave instead.'];
+        }
         $asked = member_excuse_days($full, $row['fromDate'], $row['toDate'] !== '' ? $row['toDate'] : $row['fromDate']);
         if (!$asked) return ['ok' => false, 'error' => 'no_programme_day', 'detail' => 'There is no NGG day between those dates, so there is nothing to excuse.'];
         $ex = member_excuses($full);
         $new = array_values(array_diff($asked, $ex['days']));
         if ($ex['used'] + count($new) > $ex['max']) {
             return ['ok' => false, 'error' => 'excuse_limit', 'excuses' => array_diff_key($ex, ['days' => 1]),
-                'detail' => 'Only ' . $ex['max'] . ' absences are allowed in the programme, and ' . $ex['used'] . ' ' . ($ex['used'] === 1 ? 'is' : 'are') . ' already counted. '
+                'detail' => 'Only ' . $ex['max'] . ' absences ' . (($ex['rulebook'] ?? '') === 'session' ? 'with permission are accepted in a session' : 'are allowed in the programme') . ', and ' . $ex['used'] . ' ' . ($ex['used'] === 1 ? 'is' : 'are') . ' already counted. '
                     . ($ex['left'] ? 'These dates cover ' . count($new) . '.' : 'There are none left.') . ' Speak to the centre if this is an emergency.'];
         }
         if ($row['subject'] === '') $row['subject'] = 'Leave from ' . $row['fromDate'];
@@ -1057,6 +1094,27 @@ function admin_request_decide(array $p): array
     if ((string)$r['kind'] === 'feedback' || ((string)($r['topic'] ?? '') !== '' && isset(MEMBER_FEEDBACK_TOPICS[(string)$r['topic']]))) return admin_feedback_answer($g, $r, $rCentre, $p);
 
     $approve = !empty($p['approve']);
+    /* The permission cap holds at the desk too: several requests may each have
+       fitted when filed, and approving all of them would grant more than the
+       session allows. Counted against what is already APPROVED. */
+    if ($approve && (string)$r['kind'] === 'leave' && function_exists('policy_is_session') && policy_is_session('member') && (string)$r['memberId'] !== '') {
+        $mm = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]);
+        if ($mm) {
+            $to = (string)$r['toDate'] !== '' ? (string)$r['toDate'] : (string)$r['fromDate'];
+            [$sa, $sb] = policy_session_bounds((string)$r['memberId'], (string)$r['fromDate']);
+            $have = [];
+            foreach (db_all("SELECT fromDate, toDate FROM member_requests WHERE memberId = ? AND kind = 'leave' AND status = 'approved' AND requestId <> ? AND fromDate <> ''
+                             AND fromDate <= ? AND (CASE WHEN toDate = '' THEN fromDate ELSE toDate END) >= ?", [(string)$r['memberId'], $rid, $sb, $sa]) as $x) {
+                foreach (member_excuse_days($mm, max((string)$x['fromDate'], $sa), min((string)$x['toDate'] !== '' ? (string)$x['toDate'] : (string)$x['fromDate'], $sb)) as $d) $have[$d] = true;
+            }
+            $adds = array_diff(member_excuse_days($mm, max((string)$r['fromDate'], $sa), min($to, $sb)), array_keys($have));
+            $max = (int)policy_for('member')['permittedAbsences'];
+            if (count($have) + count($adds) > $max) {
+                return ['ok' => false, 'error' => 'excuse_limit', 'detail' => 'Approving this would make ' . (count($have) + count($adds)) . ' absences with permission this session; at most '
+                    . $max . ' are accepted. ' . count($have) . ' are already approved. Decline it with the reason, or approve fewer days.'];
+            }
+        }
+    }
     /* Approving a payment claim posts money to the fees ledger, and money is
        a separate trust (CLAUDE.md §4): `people` decides leave and appeals,
        only a `fees` holder may say a payment arrived. Declining needs no

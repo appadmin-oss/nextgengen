@@ -536,6 +536,10 @@ function cp_term_bounds(string $memberId): array {
 function conduct_rule_key(array $opts): string {
     $k = strtolower((string)($opts['rule'] ?? $opts['method'] ?? ''));
     if (in_array($k, ['late', 'absent', 'equipment', 'conduct'], true)) return $k;
+    /* A caller that NAMES its rule is not guessed at from its wording: the
+       evidence fine's note carries an assignment's title, and a title like
+       "Absence essay" must not be capped under the absence rule. */
+    if (isset($opts['rule'])) return '';
     $note = strtolower((string)($opts['note'] ?? ''));
     if (str_contains($note, 'late')) return 'late';
     if (str_contains($note, 'absen') || str_contains($note, 'missed')) return 'absent';

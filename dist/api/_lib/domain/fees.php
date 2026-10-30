@@ -920,6 +920,12 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
             [$memberId, $kind, $periodKey]);
         return $have ?: null;
     }
+    /* Money in may settle a re-entry fee, and a settled one is what lets a
+       suspended child back through the door — asked here, where every
+       payment and waiver passes, so no desk can forget to. */
+    if ($isCredit && function_exists('policy_reentry_sync')) {
+        try { policy_reentry_sync($memberId); } catch (Throwable $e) { error_log('[fees_post] reentry sync: ' . $e->getMessage()); }
+    }
     return $row;
 }
 
@@ -1742,6 +1748,36 @@ function fees_unpaid_of(array $member, array $kinds, ?string $through = null, ?a
     }
     return $unpaid;
 }
+/**
+ * What is still owed on ONE charge, identified by its period key — payments
+ * and waivers applied to the oldest real charges first, exactly as
+ * fees_unpaid_of() reads the account. Null when there is no live charge with
+ * that key. The re-entry fee asks this before a suspended child may return.
+ */
+function fees_entry_left(array $member, string $periodKey, ?array $cfg = null): ?int {
+    $cfg = $cfg ?? fees_settings();
+    $ten = fees_tenure($member, $cfg);
+    $memberDues = [];
+    if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
+    $charges = []; $credit = 0; $found = false;
+    foreach (fees_entries((string)$member['memberId']) as $e) {
+        if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
+        $kind = (string)$e['kind'];
+        if ((string)$e['direction'] === 'charge') {
+            if ($kind === 'training') continue;
+            $charges[] = ['key' => (string)$e['periodKey'], 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)];
+            if ((string)$e['periodKey'] === $periodKey) $found = true;
+        } elseif ($kind !== 'writeoff') $credit += (int)$e['amount'];
+    }
+    if (!$found) return null;
+    usort($charges, static fn($a, $b) => [$a['day'], $a['id']] <=> [$b['day'], $b['id']]);
+    foreach ($charges as $c) {
+        $take = min($credit, $c['amount']); $credit -= $take;
+        if ($c['key'] === $periodKey) return $c['amount'] - $take;
+    }
+    return null;
+}
+
 /** admin.fees.settle — retired. Kept as an op so an old screen gets a reason, not unknown_op. */
 function admin_fees_settle(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;

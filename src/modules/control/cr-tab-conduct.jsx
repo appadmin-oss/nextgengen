@@ -163,13 +163,14 @@ function crCfDay(iso) { return iso ? crDate(String(iso).slice(0, 10) + "T12:00:0
 function crCfAccount(ctx, memberId) { ctx.go("money", "fees", "account/" + encodeURIComponent(memberId)); }
 /** After a write: the rules, the clearance status and the board, refetched quietly. */
 async function crCfRefresh(ctx) {
-  const [rules, once, board, integ] = await Promise.all([
+  const [rules, once, board, integ, corr] = await Promise.all([
     ctx.can("fees") ? NGGApi.admin.fees.fineRules().catch(() => null) : null,
     ctx.can("fees") ? NGGApi.admin.fees.finesClearOnce("status").catch(() => null) : null,
     ctx.can(["people", "summer"]) ? NGGApi.admin.policy.board().catch(() => null) : null,
     ctx.can(["people", "summer"]) ? NGGApi.admin.policy.integrity().catch(() => null) : null,
+    ctx.can("people") ? NGGApi.admin.policy.correctives().catch(() => null) : null,
   ]);
-  ctx.setData(x => Object.assign({}, x, rules ? { rules } : null, once ? { once } : null, board ? { board } : null, integ ? { integ, integErr: null } : null));
+  ctx.setData(x => Object.assign({}, x, rules ? { rules } : null, once ? { once } : null, board ? { board } : null, integ ? { integ, integErr: null } : null, corr ? { correctives: corr } : null));
 }
 
 /* ══ Fines: the upload ═══════════════════════════════════════════════════════ */
@@ -549,6 +550,8 @@ async function crCfPerson(ctx, row) {
     try { await NGGApi.admin.policy.update(s.id, status); ctx.toast(l + " · done"); again(); } catch (e) { ctx.toast(crErr(e, "Couldn’t update that."), null, true); }
   } });
   const sanctionAct = s => s.status === "pending" && s.kind === "fine" ? close(s, "paid", "Mark paid")
+    : s.status === "pending" && s.kind === "corrective" ? close(s, "done", "Mark done")
+    : s.status === "proposed" && s.kind === "review" ? close(s, "cleared", "Reviewed")
     : s.status === "active" && s.kind === "suspension" ? close(s, "served", "Mark served")
     : s.status === "active" && s.kind === "dormant" ? close(s, "cleared", "Clear") : null;
   const log = (kind, label) => async () => {
@@ -583,11 +586,12 @@ async function crCfPerson(ctx, row) {
   };
   ctx.drawer({
     title: row.fullName, name: row.fullName, sub: (CR_CF_TYPE[row.personType] || row.personType) + " · " + row.personId + " · " + sState[0],
-    stats: [["Fines owed", st.finesOwed ? fmtMoney(st.finesOwed) : "None"], ["Absences", (st.absences || 0) + " of " + (st.absenceLimit || "—")], ["Lates", (st.lates || 0) + " of " + (st.latenessCap || "—")]],
+    stats: [["Fines owed", st.finesOwed ? fmtMoney(st.finesOwed) : "None"], ["Absences", String(st.absences || 0)], ["Lates", String(st.lates || 0)],
+      [crCfCap(st.jumpWord || "frog jumps") + " to do", crNum(st.jumpsOwed || 0)]].concat(st.reentryOwed ? [["Re-entry fee", fmtMoney(st.reentryOwed)]] : []),
     sections: [
       st.reason ? { h: "Why", text: st.reason + (st.awardsEligible === false ? " Awards are frozen until this is resolved." : "") } : null,
-      { h: "Consequences", empty: "None.", list: (p.sanctions || []).map(s => ({ icon: s.kind === "fine" ? "coins" : s.kind === "suspension" ? "pause-circle" : s.kind === "evicted" || s.kind === "eviction" ? "door-open" : "flag",
-        t: crCfWord(s.kind) + (Number(s.amount) > 0 ? " · " + fmtMoney(s.amount) : ""),
+      { h: "Consequences", empty: "None.", list: (p.sanctions || []).map(s => ({ icon: s.kind === "fine" ? "coins" : s.kind === "suspension" ? "pause-circle" : s.kind === "evicted" || s.kind === "eviction" ? "door-open" : s.kind === "corrective" ? "person-simple-run" : s.kind === "review" ? "gavel" : "flag",
+        t: s.kind === "corrective" ? crNum(s.amount) + " " + (st.jumpWord || "frog jumps") : s.kind === "review" ? "Management review" : crCfWord(s.kind) + (Number(s.amount) > 0 ? " · " + fmtMoney(s.amount) : ""),
         s: [s.reason, crCfDay(s.issuedAt) + (s.endsAt ? " → " + crCfDay(s.endsAt) : "")].filter(Boolean).join(" · "), m: crCfWord(s.status), act: sanctionAct(s) })) },
       { h: "What they are based on", empty: "Nothing logged.", tip: "Void a wrong entry and everything it caused is lifted immediately.",
         list: (p.infractions || []).map(i => ({ icon: i.voidedAt ? "prohibit" : "dot-outline", t: crCfWord(i.kind, CR_CF_INFRACTION),
@@ -606,22 +610,107 @@ function crCfComplianceBlocks(d, ctx) {
   const b = d.board, t = b.tally || {}, out = crCfIntegrityBlocks(d, ctx);
   if (!b.policyEnabled) out.push({ type: "note", span: 6, icon: "pause-circle", text: "Enforcement is off, so nothing new is logged or issued. What is below was recorded while it was on.",
     act: ctx.can("summer") ? { l: "Open Policy", run: () => ctx.setSub("policy") } : null });
-  out.push({ type: "kpis", span: 6, items: [
+  const word = b.jumpWord || "frog jumps", session = b.rulebook !== "ladder";
+  out.push({ type: "kpis", span: 6, items: (session ? [
+    { l: "Suspended", v: crNum(t.suspended || 0) }, { l: "Awaiting management review", v: crNum(t.awaitingReview || 0) },
+    { l: crCfCap(word) + " to do", v: crNum(t.jumpsOwed || 0) }, { l: "Policy fines owed", v: fmtMoney(t.finesOwed || 0) },
+  ] : [
     { l: "Warned", v: crNum(t.warned || 0) }, { l: "Dormant", v: crNum(t.dormant || 0) }, { l: "Suspended", v: crNum(t.suspended || 0) },
     { l: "Evicted", v: crNum(t.evicted || 0) }, { l: "Policy fines owed", v: fmtMoney(t.finesOwed || 0) },
-  ] });
+  ]) });
+  if (b.freshStart && b.freshStart.asOf) out.push({ type: "note", span: 6, icon: "sparkle",
+    text: "Fresh start from " + crCfDay(b.freshStart.asOf) + ": everything recorded before it was revoked for " + crPlural(b.freshStart.people || 0, "member") + ".",
+    sub: (b.freshStart.reason || "") + (b.freshStart.at ? " · " + crDate(b.freshStart.at) : "") });
+  out.push.apply(out, crCfCorrectiveBlocks(d, ctx, word));
   out.push({ type: "table", span: 6, title: "Everyone with something on record", nosel: true, sub: "Open a row for the record behind it — and to void a wrong entry.",
-    cols: ["Person", "Standing", { l: "Absences", num: true }, { l: "Lates", num: true }, { l: "Fines owed", num: true }, "Awards"],
+    cols: ["Person", "Standing", { l: "Absences", num: true }, { l: "Lates", num: true }, { l: "Fines owed", num: true }, { l: crCfCap(word), num: true }, "Awards"],
     rows: (b.board || []).map(r => { const s = crCfState(r.state); return { key: r.personType + ":" + r.personId, open: () => crCfPerson(ctx, r), cells: [
       { k: "person", t: r.fullName, s: (CR_CF_TYPE[r.personType] || r.personType) + " · " + r.personId },
       { k: "status", t: s[0], tone: s[1], s: r.until ? "until " + crCfDay(r.until) : "" },
-      { k: "num", t: r.absences + " / " + r.absenceLimit, v: +r.absences || 0 },
-      { k: "num", t: r.lates + " / " + r.latenessCap, v: +r.lates || 0 },
-      { k: "num", t: r.finesOwed ? fmtMoney(r.finesOwed) : "—", v: +r.finesOwed || 0 },
+      { k: "num", t: session && r.personType === "member" ? String(r.absences) : r.absences + " / " + r.absenceLimit, v: +r.absences || 0 },
+      { k: "num", t: session && r.personType === "member" ? String(r.lates) : r.lates + " / " + r.latenessCap, v: +r.lates || 0 },
+      { k: "num", t: r.finesOwed ? fmtMoney(r.finesOwed) : "—", v: +r.finesOwed || 0, s: r.reentryOwed ? "re-entry " + fmtMoney(r.reentryOwed) : "" },
+      { k: "num", t: r.jumpsOwed ? crNum(r.jumpsOwed) : "—", v: +r.jumpsOwed || 0 },
       { k: "status", t: r.awardsEligible ? "Eligible" : "Frozen", tone: r.awardsEligible ? "ok" : "neutral" },
     ] }; }),
     search: "Search by name or ID", filters: ["Standing", "Awards"],
     emptyText: "Nobody has anything on record." + (b.policyEnabled ? "" : " Enforcement is off.") });
+  return out;
+}
+
+/** "frog jumps" → "Frog jumps". */
+function crCfCap(w) { w = String(w || ""); return w.charAt(0).toUpperCase() + w.slice(1); }
+
+/* ══ Compliance: corrective exercise to do ══════════════════════════════════
+   The rulebook's frog jumps are owed at the centre, not paid: who owes how
+   many, and why, for the person on duty to see done and tick off — many at
+   once (admin.policy.correctives.done answers each). Nothing is blocked by an
+   unserved set; it is a record of what was done, not a gate. */
+function crCfCorrectiveBlocks(d, ctx, word) {
+  const C = d.correctives;
+  if (!C || !(C.rows || []).length) return [];
+  return [{ type: "table", span: 6, title: crCfCap(word) + " to do (" + crNum(C.total) + ")", search: "Search by name or centre",
+    sub: "Tick them off as they are done at the centre.",
+    cols: ["Member", "Centre", { l: "How many", num: true }, { l: "Why", wrap: true }],
+    rows: C.rows.map(r => ({ key: String(r.id), cells: [
+      { k: "person", t: r.fullName, s: r.displayId || r.memberId }, { k: "text", t: r.centre || "—" },
+      { k: "num", t: crNum(r.count), v: r.count }, { k: "text", t: r.reason } ] })),
+    filters: ["Centre"],
+    bulk: [{ l: "Mark done", max: C.max || 500, run: async keys => {
+      try { const r = await NGGApi.admin.policy.correctivesDone(keys.map(Number)); ctx.toast(crPlural(r.done, "set") + " of " + word + " done."); crCfRefresh(ctx); }
+      catch (e) { ctx.toast(crErr(e, "Couldn’t mark those done."), null, true); return false; }
+    } }] }];
+}
+
+/* ══ Compliance: a fresh start ════════════════════════════════════════════════
+   "All offences and pending disciplinary penalties recorded before this
+   announcement are hereby revoked." Previewed exactly (the server runs it and
+   rolls back), then applied with a reason. A paid fine stays paid; an
+   eviction is named, not undone; imported fines are left unless the fees desk
+   chooses to waive them too. */
+function crCfFreshStart(ctx) {
+  const fees = ctx.can("fees");
+  ctx.form({
+    title: "Fresh start", submit: "Preview", busyLabel: "Working it out…",
+    intro: "Revokes every offence recorded before the day you choose, and every penalty still pending from them — warnings, suspensions, reviews, " + "corrective exercise and unpaid policy fines. Nothing is changed until you have seen the preview.",
+    values: { asOf: new Date().toISOString().slice(0, 10), imported: false },
+    fields: [
+      { id: "asOf", l: "Revoke what was recorded before", type: "date", req: true, help: "The day of the announcement. Offences on or after it stand." },
+      fees ? { id: "imported", l: "Also waive fines brought over by upload", type: "switch", help: "Off: fines from the old registers stay owed. Dues are never touched." } : null,
+    ].filter(Boolean),
+    onSubmit: async v => {
+      const r = await NGGApi.admin.policy.freshStart({ asOf: v.asOf, includeImported: !!v.imported });
+      ctx.setData(x => Object.assign({}, x, { freshPlan: Object.assign({}, r, { asOf: v.asOf, includeImported: !!v.imported }) }));
+      return r;
+    },
+    done: (v, r) => r.people ? crPlural(r.people, "member") + " would start afresh." : "Nothing recorded before that day is still standing.",
+  });
+}
+function crCfFreshRun(ctx) {
+  const P = ctx.data.freshPlan; if (!P) return;
+  const n = P.people;   // read before the form: what is agreed is what runs
+  ctx.form({
+    title: "Give " + crPlural(n, "member") + " a fresh start", submit: "Revoke and start afresh", busyLabel: "Revoking…",
+    intro: "Every offence before " + crCfDay(P.asOf) + " is voided with your reason, and what it caused is lifted. This is recorded in the audit log. It cannot be undone in one press — each entry would have to be put back by hand.",
+    values: { reason: "" },
+    fields: [{ id: "reason", l: "Why", type: "textarea", rows: 2, req: true, max: 240, ph: "Revised Saturday policy — every child starts afresh", check: v => v.trim().length >= 5 ? "" : "Say why, in a sentence." }],
+    onSubmit: v => NGGApi.admin.policy.freshStart({ asOf: P.asOf, includeImported: P.includeImported, apply: true, reason: v.reason.trim() }),
+    done: (v, r) => { ctx.setData(x => Object.assign({}, x, { freshPlan: null })); crCfRefresh(ctx); return crPlural(r.people, "member") + " start afresh · " + crPlural(r.infractions, "offence") + " revoked."; },
+  });
+}
+function crCfFreshBlocks(d, ctx) {
+  const P = d.freshPlan; if (!P) return [];
+  const S = P.sanctions || {}, kinds = Object.keys(S).map(k => crNum(S[k]) + " " + (k === "corrective" ? (d.board && d.board.jumpWord) || "corrective" : k === "review" ? "review" : crCfWord(k).toLowerCase()) + (S[k] === 1 ? "" : k === "corrective" ? "" : "s"));
+  const out = [{ type: "note", span: 6, icon: P.people ? "sparkle" : "info", tone: P.people ? "warn" : null,
+    text: P.people ? crPlural(P.people, "member") + " start afresh: " + crPlural(P.infractions, "offence") + " recorded before " + crCfDay(P.asOf) + " revoked." : "Nothing recorded before " + crCfDay(P.asOf) + " is still standing.",
+    sub: P.people ? [kinds.length ? "Lifted: " + kinds.join(", ") : "",
+      P.fineTotal ? fmtMoney(P.fineTotal) + " of unpaid policy fines taken off accounts" : "",
+      P.paidKept ? crPlural(P.paidKept, "fine already paid stays", "fines already paid stay") + " paid" : "",
+      P.includeImported ? (P.imported ? fmtMoney(P.importedTotal) + " of imported fines waived" : "no imported fines to waive") : "imported fines stay owed",
+      P.outOfScope ? crNum(P.outOfScope) + " members at centres outside yours are left alone" : ""].filter(Boolean).join(" · ") + "." : "",
+    act: P.people ? { l: "Revoke and start afresh…", run: () => crCfFreshRun(ctx) } : { l: "Close", run: () => ctx.setData(x => Object.assign({}, x, { freshPlan: null })) } }];
+  if ((P.evicted || []).length) out.push({ type: "list", span: 6, title: "Evicted — not undone by a fresh start", rows: P.evicted.map(e => ({ icon: "door-open", t: e.fullName, s: e.memberId + " · reinstate from their record if the notice covers them" })) });
+  if (P.people) out.push({ type: "list", span: 6, rows: [{ icon: "x", onClick: () => ctx.setData(x => Object.assign({}, x, { freshPlan: null })), t: "Close the preview", s: "Nothing has changed." }] });
   return out;
 }
 
@@ -708,6 +797,7 @@ function crCfIntegrityBlocks(d, ctx) {
   if (d.integErr) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the attendance checks.", sub: crErr(d.integErr, ""), act: { l: "Try again", run: () => ctx.reload() } }];
   const I = d.integ; if (!I) return [];
   const out = [], held = (I.held || []).filter(h => h.status === "held"), unm = I.unmatched || [];
+  out.push.apply(out, crCfFreshBlocks(d, ctx));
   out.push.apply(out, crCfRepairBlocks(d, ctx));
   if (held.length) out.push({ type: "note", span: 6, icon: "hand-palm", tone: "warn",
     text: crPlural(held.length, "day") + " held — nobody was marked absent",
@@ -837,11 +927,11 @@ function crCfPolicyForm(pol, ctx) {
       { id: "musing.enabled", l: "Missing the Musing Period makes it a half-day", c: "toggle", value: !!g(P.musing, "enabled", false) },
       { id: "musing.endsAt", l: "Musing Period ends", c: "input", type: "time", value: g(P.musing, "endsAt", "") },
     ] },
+    crCfRulebookGroup(P, g, int, money),
     { h: "Summer School participants", rows: ladder("student", P.student) },
     { h: "Volunteers, mentors and instructors", rows: ladder("volunteer", P.volunteer) },
-    { h: "NGG members", help: "Members have an account, so they are held to more: every late can be fined from the first, an absence nobody asked about is fined, and a day with no sign-out counts as an absence.", rows: ladder("member", P.member).concat([
+    { h: "NGG members — the older ladder", help: "Used only when the rulebook above is set to the older ladder: warnings, then the Dormant Track, then eviction; a late redline, and a fine for every late.", rows: ladder("member", P.member).concat([
       { id: "member.lateFine", l: "Fine for every late (₦)", c: "input", type: "number", im: "numeric", value: String(g(P.member, "lateFine", 500)), check: money, help: "0 switches it off. The Late rule under Fines can cap it per term." },
-      { id: "member.absenceFine", l: "Fine for an absence nobody asked about (₦)", c: "input", type: "number", im: "numeric", value: String(g(P.member, "absenceFine", 1000)), check: money, help: "A request still waiting is not fined until the desk decides; approved leave is excused." },
       { id: "member.tardyIsLate", l: "No grace band — after resumption is late", c: "toggle", value: g(P.member, "tardyIsLate", true) !== false },
       { id: "member.checkoutRequired", l: "A day with no sign-out is an absence", c: "toggle", value: g(P.member, "checkoutRequired", true) !== false },
       { id: "confirmEviction", l: "An admin confirms a member’s eviction", c: "toggle", value: P.confirmEviction !== false, help: "The last absence proposes eviction for review instead of expelling automatically." },
@@ -855,7 +945,58 @@ function crCfPolicyForm(pol, ctx) {
     ] },
   ];
   return { type: "form", span: 6, key: "conduct-policy", groups,
-    save: async (patch, vals) => { await NGGApi.admin.policy.save(null, crCfNest(groups, vals), null); ctx.reload(); } };
+    save: async (patch, vals) => { await NGGApi.admin.policy.save(null, crCfRulebookPack(crCfNest(groups, vals), vals), null); ctx.reload(); } };
+}
+
+/* The member rulebook, as the Management notice states it: a resumption time,
+   lateness in bands by arrival time (each a fine and/or corrective exercise),
+   a time from which lateness is management's to review, the cost of an
+   absence without permission, the suspension a session's absences lead to
+   and its re-entry fee, the cap on absences with permission, and the
+   assignment-evidence fine. Three band rows; a band with no start time is
+   not used. */
+const CR_CF_BANDS = 3;
+function crCfRulebookGroup(P, g, int, money) {
+  const M = P.member || {}, bands = M.lateBands || [], word = g(M, "jumpWord", "frog jumps");
+  const band = i => {
+    const b = bands[i] || {}, n = i + 1;
+    return [
+      { id: "member.band" + n + "From", l: "Late band " + n + " — from", c: "input", type: "time", value: b.from || "", help: i === 0 ? "Arriving at or after this is late." : "Leave empty to use fewer bands." },
+      { id: "member.band" + n + "Fine", l: "Band " + n + " fine (₦)", c: "input", type: "number", im: "numeric", value: String(b.fine != null ? b.fine : 0), check: money },
+      { id: "member.band" + n + "Jumps", l: "Band " + n + " " + word, c: "input", type: "number", im: "numeric", value: String(b.jumps != null ? b.jumps : 0), check: int(0, 200) },
+    ];
+  };
+  let rows = [
+    { id: "member.rulebook", l: "Which rulebook", c: "select", value: g(M, "rulebook", "session"),
+      opts: [["session", "The revised rules — lateness bands, " + word + ", suspension per session"], ["ladder", "The older ladder — warnings, Dormant Track, eviction"]] },
+    { id: "member.resumption", l: "Resumption", c: "input", type: "time", value: g(M, "resumption", "09:00"), help: "Arriving after this and before the first band is seen, not penalised." },
+  ];
+  for (let i = 0; i < CR_CF_BANDS; i++) rows = rows.concat(band(i));
+  rows = rows.concat([
+    { id: "member.reviewFrom", l: "Management review from", c: "input", type: "time", value: g(M, "reviewFrom", ""), help: "Arriving at or after this goes to management for review, with no automatic penalty. Empty: the last band runs on." },
+    { id: "member.absenceFine", l: "Absence without permission — fine (₦)", c: "input", type: "number", im: "numeric", value: String(g(M, "absenceFine", 1000)), check: money, help: "Also the ladder’s absence fine. A request still waiting is not charged until the desk decides." },
+    { id: "member.absenceJumps", l: "Absence without permission — " + word, c: "input", type: "number", im: "numeric", value: String(g(M, "absenceJumps", 7)), check: int(0, 200) },
+    { id: "member.suspendAfterAbsences", l: "Absences without permission in a session before suspension", c: "input", type: "number", im: "numeric", value: String(g(M, "suspendAfterAbsences", 3)), check: int(1, 60) },
+    { id: "member.suspendDays", l: "Suspension length (days)", c: "input", type: "number", im: "numeric", value: String(g(M, "suspendDays", 7)), check: int(1, 365) },
+    { id: "member.reentryFee", l: "Re-entry fee after a suspension (₦)", c: "input", type: "number", im: "numeric", value: String(g(M, "reentryFee", 5000)), check: money, help: "Paid (or waived) before the child can check in again." },
+    { id: "member.permittedAbsences", l: "Absences with permission accepted in a session", c: "input", type: "number", im: "numeric", value: String(g(M, "permittedAbsences", 5)), check: int(0, 60) },
+    { id: "member.formalAfterDays", l: "Longer than this needs a formal written application (days)", c: "input", type: "number", im: "numeric", value: String(g(M, "formalAfterDays", 21)), check: int(1, 365) },
+    { id: "member.evidenceFine", l: "No assignment evidence by the due day — fine (₦)", c: "input", type: "number", im: "numeric", value: String(g(M, "evidenceFine", 1000)), check: money, help: "Only assignments due after the rule first ran. 0 switches it off." },
+    { id: "member.jumpWord", l: "What the corrective exercise is called", c: "input", value: word, max: 40 },
+  ]);
+  return { h: "NGG members — the rulebook", help: "As the Management notice sets it out. Every penalty is worked out from the record, so changing a figure here applies to what is recorded from now on; it does not re-charge the past.", rows };
+}
+/** The flat band fields back into the list the server keeps. */
+function crCfRulebookPack(out, vals) {
+  const m = out.member = out.member || {}, bands = [];
+  for (let i = 1; i <= CR_CF_BANDS; i++) {
+    const from = String(vals["member.band" + i + "From"] || "").trim();
+    delete m["band" + i + "From"]; delete m["band" + i + "Fine"]; delete m["band" + i + "Jumps"];
+    if (from) bands.push({ from, fine: parseInt(vals["member.band" + i + "Fine"], 10) || 0, jumps: parseInt(vals["member.band" + i + "Jumps"], 10) || 0 });
+  }
+  if (bands.length) m.lateBands = bands;
+  m.reviewFrom = String(vals["member.reviewFrom"] || "").trim();
+  return out;
 }
 function crCfPolicyBlocks(d, ctx) {
   if (d.polErr || !d.pol) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the policy.", sub: crErr(d.polErr, ""), act: { l: "Try again", run: () => ctx.reload() } }];
@@ -982,8 +1123,31 @@ async function crCfRulesPdf(ctx, d) {
     para("Arriving after the time below counts as late. Absences are counted on programme days only (section " + (sec + 4) + "). When the limits below are reached the policy applies, in order: a warning, dormancy, a suspension of the stated length, and eviction. After a suspension, further lateness leads to the fine shown. A suspended or evicted person is not admitted at the door."
       + (P.enabled ? "" : " Enforcement for Summer School is currently switched off.") + ((P.member || {}).enabled ? "" : " Enforcement for NGG members is currently switched off."));
     table([{ l: "Who", w: 0.21 }, { l: "Late after", w: 0.10 }, { l: "Absences allowed", w: 0.12, num: true }, { l: "Lates before a suspension", w: 0.15, num: true }, { l: "Suspension (days)", w: 0.14, num: true }, { l: "Lates after, before a fine", w: 0.14, num: true }, { l: "That fine", w: 0.14, num: true }],
-      [ladder("Summer School participants", P.student), ladder("Volunteers, mentors and instructors", P.volunteer), ladder("NGG members", P.member)]);
+      [ladder("Summer School participants", P.student), ladder("Volunteers, mentors and instructors", P.volunteer)].concat((P.member || {}).rulebook === "ladder" ? [ladder("NGG members", P.member)] : []));
     const Mb = P.member || {};
+    if (Mb.rulebook !== "ladder") {
+      /* The rulebook as the Management notice states it — what the engine
+         applies (policy_apply_session), so the document cannot promise
+         something the system does not do. */
+      const W = Mb.jumpWord || "frog jumps", bands = Mb.lateBands || [];
+      const pen = (f, j) => [f ? crCfMoney(f) + " fine" : "", j ? j + " " + W : ""].filter(Boolean).join(" and ") || "Recorded only";
+      heading("NGG members — resumption, lateness and attendance");
+      para("Activities begin at " + (Mb.resumption || "09:00") + ". Arrival at or after " + ((bands[0] || {}).from || "—") + " is recorded as lateness, and the penalty depends on the time of arrival."
+        + (Mb.enabled ? "" : " Enforcement for NGG members is currently switched off."));
+      table([{ l: "Arrival", w: 0.45 }, { l: "Penalty", w: 0.55 }], bands.map((b, i) => [b.from + " to before " + ((bands[i + 1] || {}).from || Mb.reviewFrom || "the end of the day"), pen(b.fine, b.jumps)])
+        .concat(Mb.reviewFrom ? [["At or after " + Mb.reviewFrom, "Management review and appropriate disciplinary action"]] : []));
+      table([{ l: "Rule", w: 0.62 }, { l: "Applies", w: 0.38 }], [
+        ["Absence without prior notice or approved permission", pen(Mb.absenceFine, Mb.absenceJumps)],
+        ["Absences without permission within one session before suspension", String(Mb.suspendAfterAbsences ?? 3)],
+        ["Length of the suspension", (Mb.suspendDays ?? 7) + " days"],
+        ["Re-entry fee, paid before resuming", crCfMoney(Mb.reentryFee)],
+        ["Absences with permission accepted within one session", String(Mb.permittedAbsences ?? 5)],
+        ["An absence longer than this needs a formal written application", (Mb.formalAfterDays ?? 21) + " days"],
+        ["No evidence of an assignment uploaded by its due day", Mb.evidenceFine ? crCfMoney(Mb.evidenceFine) + " fine" : "Not applied"],
+        ["A day with no sign-out counts as an absence", Mb.checkoutRequired !== false ? "Yes" : "No"],
+      ]);
+      para("Permission is requested through the NGG Members Dashboard only. Submitting a request is not approval: an absence is excused once the request is approved. A request still waiting is not penalised until it is decided.", { color: MUTE });
+    } else {
     heading("Additional rules for NGG members");
     table([{ l: "Rule", w: 0.62 }, { l: "Applies", w: 0.38 }], [
       ["A fine for every late arrival", Mb.lateFine ? crCfMoney(Mb.lateFine) + " each" : "Not applied"],
@@ -993,6 +1157,7 @@ async function crCfRulesPdf(ctx, d) {
       ["Eviction is confirmed by an administrator before it takes effect", P.confirmEviction !== false ? "Yes" : "No — it takes effect automatically"],
     ]);
     para("An absence with a request still waiting is not fined until it is decided. Approved leave is excused; approved academic leave is not an absence at all.", { color: MUTE });
+    }
     heading("Identity cards and reinstatement");
     table([{ l: "Rule", w: 0.62 }, { l: "Applies", w: 0.38 }], [
       ["Identity card not worn — first time", "A temporary card for the day; no fine"],
@@ -1044,16 +1209,18 @@ Object.assign(CR_TAB_DEFS, {
     load: async ctx => {
       const safe = p => p.then(ok => ({ ok }), err => ({ err }));
       const fees = ctx.can("fees"), summer = ctx.can("summer"), board = ctx.can(["people", "summer"]);
-      const [rules, once, pol, brd, integ] = await Promise.all([
+      const [rules, once, pol, brd, integ, corr] = await Promise.all([
         fees ? safe(NGGApi.admin.fees.fineRules()) : null,
         fees ? safe(NGGApi.admin.fees.finesClearOnce("status")) : null,
         summer ? safe(NGGApi.admin.policy.settings()) : null,
         board ? safe(NGGApi.admin.policy.board()) : null,
         board ? safe(NGGApi.admin.policy.integrity()) : null,
+        ctx.can("people") ? safe(NGGApi.admin.policy.correctives()) : null,
       ]);
       const prev = ctx.data || {};
       return { rules: rules && rules.ok, rulesErr: rules && rules.err, once: once && once.ok, pol: pol && pol.ok, polErr: pol && pol.err,
-        board: brd && brd.ok, boardErr: brd && brd.err, integ: integ && integ.ok, integErr: integ && integ.err,
+        board: brd && brd.ok, boardErr: brd && brd.err, integ: integ && integ.ok, integErr: integ && integ.err, correctives: corr && corr.ok,
+        freshPlan: prev.freshPlan || null,
         finePlan: prev.finePlan || null, clearPlan: prev.clearPlan || null, repairPlan: prev.repairPlan || null, imported: prev.imported || null };
     },
     actions: (d, ctx) => {
@@ -1066,6 +1233,7 @@ Object.assign(CR_TAB_DEFS, {
       if (v !== "compliance") out.push({ l: "Export the rules (PDF)", icon: "file-pdf", run: () => crCfRulesPdf(ctx, d).catch(e => ctx.toast(crErr(e, "Couldn’t make the document."), null, true)) });
       if ((v === "policy" || v === "calendar") && ctx.can("summer")) out.push({ l: "Run the absence sweep now", icon: "broom", run: () => crCfSweep(ctx) });
       if (v === "compliance") {
+        if (ctx.can("people")) out.push({ l: "Fresh start…", icon: "sparkle", run: () => crCfFreshStart(ctx) });
         out.push({ l: "Repair absences", icon: "first-aid-kit", run: () => crCfRepairForm(ctx) });
         out.push({ l: "Refresh", icon: "arrows-clockwise", run: () => crCfRefresh(ctx) });
       }

@@ -600,6 +600,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.attendance.integrity'       => 'admin_attendance_integrity',
             'admin.attendance.held.decide'     => 'admin_attendance_held_decide',
             'admin.attendance.unmatched.match' => 'admin_attendance_unmatched_match',
+            'admin.policy.fresh_start'     => 'admin_policy_fresh_start',
+            'admin.policy.correctives'     => 'admin_policy_correctives',
+            'admin.policy.correctives.done' => 'admin_policy_correctives_done',
             'admin.policy.absence.repair'      => 'admin_policy_absence_repair',
             // NGG Club coordinator (Summer → Club bridge)
             // Club portal v3 (domain/club-portal.php) — gate `club`, NGG centres only, scoped per row.

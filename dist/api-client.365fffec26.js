@@ -2097,6 +2097,9 @@
         heldDecide:(id, decision) => request('/admin/policy.php', { body: { action: 'heldDecide', id, decision } }),
         unmatched: (id, personId, personType, dismiss) => request('/admin/policy.php', { body: { action: 'unmatchedMatch', id, personId: personId || '', personType: personType || 'member', dismiss: !!dismiss } }),
         repair:    (opts) => request('/admin/policy.php', { body: Object.assign({ action: 'repair' }, opts || {}) }),
+        freshStart:(opts) => request('/admin/policy.php', { body: Object.assign({ action: 'freshStart' }, opts || {}) }),
+        correctives: () => request('/admin/policy.php' + qs({ view: 'correctives' })),
+        correctivesDone: (ids) => request('/admin/policy.php', { body: { action: 'correctivesDone', ids } }),
       },
       // Attendance-taker rotation + gamified attendance duty.
       attendance: {

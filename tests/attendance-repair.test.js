@@ -96,7 +96,7 @@ async function pageFor(memberId, viewport) {
     names.forEach((n, i) => { seed += mk('NGG-AR-' + (i + 1), `['fullName'=>'${n}']`); });
     seed += `$t = attendance_today(); $d = fn($n) => gmdate('Y-m-d', strtotime($t . ' UTC') - $n * 86400);`
       + `member_programme_settings_save(['enabled'=>true,'startDate'=>$d(60),'endDate'=>$d(-30),'weekdays'=>[1,2,3,4,5,6,7],'holidays'=>[],'extraDays'=>[]], 'NGG-AR-ADM');`
-      + `policy_settings_save(['enabled'=>true,'autoEnforce'=>true,'outageBrake'=>true,'member'=>['enabled'=>true,'absenceLimit'=>2,'absenceFine'=>1000,'checkoutRequired'=>false]], 'NGG-AR-ADM');`
+      + `policy_settings_save(['enabled'=>true,'autoEnforce'=>true,'outageBrake'=>true,'member'=>['enabled'=>true,'rulebook'=>'ladder','absenceLimit'=>2,'absenceFine'=>1000,'checkoutRequired'=>false]], 'NGG-AR-ADM');`
       // The weeks CACENTRE's check-ins were not read: every Ikotun member marked absent on two days.
       + `foreach (['NGG-AR-1','NGG-AR-2','NGG-AR-3','NGG-AR-4'] as $id) { foreach ([$d(10), $d(9)] as $day) policy_log($id, 'member', 'absence', $day, 'No check-in on a member programme day.'); policy_apply($id, 'member'); }`
       // …and the day that actually happened: everybody came through the gate, no sign-out reached NGG.
