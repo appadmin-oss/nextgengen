@@ -4766,3 +4766,62 @@ Also: `naira` stays a shared global in page-portals.jsx (page-admin.jsx's v1
 fees screen uses it — removing it broke ui-smoke); `.cr-seg` buttons are 44px
 on a coarse pointer. Final runs: ui-smoke 649/0, responsive-staff 4/0,
 control-room 51/0, conduct-tab 22/0, routes 60/0, admin-bulk 44/0, build 31/0.
+
+## 2026-10-30 (later) — Requests the desk can act on; the clearance is the whole account; the rules as a document
+
+Owner reports, each with a screenshot: a payment claim whose Reference held the
+family's whole story ("…I paid 10000 naira as transfer and 2000 naira cash to
+Mrs Basirat Awolaja"); "Correct my details" drawers with nothing to act on and a
+bare "The reply" heading; "add comments … a proper response"; "they cannot add
+a receipt"; "the clearance is the whole account … imported fines or dues or
+membership fees must not be affected"; "export all rules into a proper formal
+document".
+
+- **Payments by the way they came** — migration **202** adds
+  `member_requests.parts` (and `comments`). A claim carries parts
+  `{method transfer|cash|pos|other, amount, reference, receivedBy}`;
+  `member_payment_parts()` validates them (a family must give a transfer's
+  reference and who took cash). Approving with parts posts **one `fees_post`
+  per part** with its own method and reference; `ledgerEntryId` holds the ids
+  comma-separated. **A real bug the test found:** `fees_money("10,000")` reads
+  the comma as a decimal point — ₦10,000 became ₦10; parts go through
+  `fees_fine_amount()`. The drawer and the Inbox share one approval form
+  (`crPayApproveForm`, cr-tab-members.jsx), filled in from an older claim's
+  sentence by `crPayGuess` (amount + method + "to <name>", reference tokens).
+- **Receipts**: the family's "I've paid" card takes a photo, uploaded through
+  the school-report uploader to the site's own photo store (`proofUrl`).
+- **Details read** — `member_details_read()` (member-self.php) finds field +
+  value in free text (day-first dates, +234 phones, parent vs member by the
+  words and by who raised it), flags a date of birth outside 5–25 and a value
+  already on another record, and names fields given with no value.
+  `admin.requests.applyDetails` changes the record through
+  `admin_members_upsert` (every field rule still holds) and approves with a
+  reply listing what changed. The list attaches `reading` with ONE query for the
+  page's members.
+- **Comments and replies** — `admin.requests.comment` keeps a message on the
+  request and tells the member and the raising parent through the new
+  `member_request_tell()` (the decision uses it too, so both reach the same
+  people in the same words); the member and family portals show the messages
+  above the decision. Every outcome starts from a drafted reply
+  (`crReqDraftApprove`); a decline picks a reason per kind (`CR_REQ_DECLINE`).
+  The Inbox's note can now open pre-filled (`note.dflt`). Drawer sections with
+  nothing in them now say so (`empty`) instead of drawing a bare heading.
+- **The clearance is the whole account** — `fees_clear_unpaid_of()` clears the
+  unpaid fines, dues and membership this system charged; `fees_entry_imported()`
+  (a `bulkfine:`/`import:` key, or an import method/author) is never cleared, and
+  payments are counted against the system's own charges first so an import is
+  never treated as paid. Training is untouched. Phrase now `CLEAR ALL ACCOUNTS`;
+  the lock key and the waiver key are unchanged, so it is still ONE run.
+- **The rules as a PDF** — `crCfRulesPdf` (cr-tab-conduct.jsx), jsPDF in the
+  browser, from the same data the screen applies: fine rules, the ladders,
+  members' rules, ID cards and reinstatement, programme days, fairness and
+  appeals; reference and page numbers on every page. Money is "NGN 5,000"
+  because the standard PDF fonts have no naira sign. Two layout faults found by
+  rendering it (paragraphs measured at the previous heading's size; headings
+  overprinting): fixed.
+
+Tests: PHP — details (9), payment parts (3), clearance updated to the whole
+account (imported fine stays owed; a payment never pays an import). New
+`tests/requests-desk.test.js` (15/0, `npm run test:reqdesk`, in `test:all`)
+seeded with the two reported requests as written. `fees-lockdown` 12/0 on the new
+rule; `conduct-tab` 23/0 with the PDF download.

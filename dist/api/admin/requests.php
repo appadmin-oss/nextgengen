@@ -11,9 +11,14 @@ if ($method === 'GET') {
         'offset' => $_GET['offset'] ?? 0, 'pageSize' => $_GET['pageSize'] ?? 0]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
-    $res = gs_call('admin.requests.decide', ['requesterId' => $s['mid'],
+    if (($b['action'] ?? '') === 'comment') $res = gs_call('admin.requests.comment', ['requesterId' => $s['mid'], 'requestId' => $b['requestId'] ?? '',
+        'text' => (string)($b['text'] ?? ''), 'ip' => client_ip()]);
+    elseif (($b['action'] ?? '') === 'applyDetails') $res = gs_call('admin.requests.applyDetails', ['requesterId' => $s['mid'], 'requestId' => $b['requestId'] ?? '',
+        'changes' => is_array($b['changes'] ?? null) ? $b['changes'] : [], 'reply' => (string)($b['reply'] ?? ''), 'ip' => client_ip()]);
+    else $res = gs_call('admin.requests.decide', ['requesterId' => $s['mid'],
         'requestId' => $b['requestId'] ?? '', 'approve' => !empty($b['approve']), 'answer' => (string)($b['answer'] ?? ''),
-        'decision' => $b['decision'] ?? '', 'amount' => $b['amount'] ?? null, 'ip' => client_ip()]);
+        'decision' => $b['decision'] ?? '', 'amount' => $b['amount'] ?? null,
+        'parts' => is_array($b['parts'] ?? null) ? $b['parts'] : null, 'ip' => client_ip()]);
 } else {
     json_error('method_not_allowed', 405);
 }

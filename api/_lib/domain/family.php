@@ -406,7 +406,7 @@ function family_request_create(array $p): array {
         'subject' => (string)($p['subject'] ?? ''), 'body' => (string)($p['body'] ?? ''),
         'fromDate' => (string)($p['fromDate'] ?? ''), 'toDate' => (string)($p['toDate'] ?? ''),
         'refEntryId' => (string)($p['refEntryId'] ?? ''), 'proofUrl' => (string)($p['proofUrl'] ?? ''), 'ip' => (string)($p['ip'] ?? ''),
-        'amount' => $p['amount'] ?? null, 'reference' => (string)($p['reference'] ?? ''), 'paidAt' => (string)($p['paidAt'] ?? ''),
+        'amount' => $p['amount'] ?? null, 'reference' => (string)($p['reference'] ?? ''), 'paidAt' => (string)($p['paidAt'] ?? ''), 'parts' => $p['parts'] ?? null,
         'raisedBy' => 'guardian:' . $gid,
         'raisedByName' => trim((string)($g['fullName'] ?? '')) !== '' ? (string)$g['fullName'] : 'A parent (' . mask_email((string)($g['email'] ?? '')) . ')',
     ]);

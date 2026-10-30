@@ -123,7 +123,7 @@ function fp3Ward(link, d, today) {
   const fees3 = d.fees3 || null;
   const fines = ((d.conduct || {}).fines || []).filter(f => f.status !== "paid" && f.status !== "void").map((f, i) => ({ id: "fine-" + i + "-" + (f.issuedAt || ""), amount: f.amount, when: fp3Date(f.issuedAt), reason: f.reason }));
   const rq = (d.requests || []).map(r => ({ id: r.requestId, kind: r.kind, kindLabel: r.kindLabel, status: r.status, at: fp3Date(r.createdAt), subject: r.subject,
-    from: r.fromDate ? fp3Date(r.fromDate) : "", to: r.toDate ? fp3Date(r.toDate) : "", reply: r.decision || "" }));
+    from: r.fromDate ? fp3Date(r.fromDate) : "", to: r.toDate ? fp3Date(r.toDate) : "", reply: [].concat((r.comments || []).map(m => m.byName + " · " + fp3Date(String(m.at).slice(0, 10)) + ": " + m.text), r.decision ? [r.decision] : []).join("\n\n") }));
   const results = (d.results || []).map(r => ({ id: r.id, name: r.name, school: r.school, baseline: !!r.baseline, status: r.status, due: fp3Date(r.due),
     reminded: r.reminded ? fp3Date(r.reminded) : "", uploaded: fp3Date(r.uploaded), uploadedBy: r.uploadedBy, avg: r.avg, prevAvg: r.prevAvg, fileUrl: r.fileUrl,
     subjects: (r.subjects || []).filter(s => s.score !== null).map(s => [s.name, s.score, s.prev]),   // prev null: first time this subject is on a report

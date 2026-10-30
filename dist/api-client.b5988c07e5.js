@@ -1506,8 +1506,12 @@
       },
       requests: {
         list:   (q) => request('/admin/requests.php' + qs(q || {})),
-        decide: (requestId, approve, decision, amount) => request('/admin/requests.php',
-          { body: Object.assign({ requestId, approve, decision }, amount !== undefined ? { amount } : {}) }),
+        /* A details correction applied to the record and approved in one step (member-self.php). */
+        /* A message to the member on their request, without deciding it. */
+        comment: (requestId, text) => request('/admin/requests.php', { body: { action: 'comment', requestId, text } }),
+        applyDetails: (requestId, changes, reply) => request('/admin/requests.php', { body: { action: 'applyDetails', requestId, changes, reply: reply || '' } }),
+        decide: (requestId, approve, decision, amount, parts) => request('/admin/requests.php',
+          { body: Object.assign({ requestId, approve, decision }, amount !== undefined ? { amount } : {}, parts ? { parts } : {}) }),
         // Feedback is answered, not decided: 'thank' closes it with a reply, 'pass' sends it to the centre lead.
         answer: (requestId, answer, note) => request('/admin/requests.php', { body: { requestId, answer, decision: note || '' } }),
       },

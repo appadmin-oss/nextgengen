@@ -17411,9 +17411,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mk('CLR-SU', 'super_admin', ['totpSecret' => $secret]);
     $mk('CLR-SU2', 'super_admin');                      // a super admin with no authenticator
     $mk('CLR-FEE', 'admin', ['capsExtra' => '["fees"]']); // holds `fees`, not super
-    $mk('CLR-A', 'member'); $mk('CLR-B', 'member'); $mk('CLR-C', 'member', ['status' => 'inactive']); $mk('CLR-D', 'member');
+    $mk('CLR-A', 'member'); $mk('CLR-B', 'member'); $mk('CLR-C', 'member', ['status' => 'inactive']); $mk('CLR-D', 'member'); $mk('CLR-E', 'member');
     fees_post('CLR-A', 'fine', 2000, ['periodKey' => 'clr:a1', 'method' => 'other', 'note' => 'x']);
     fees_post('CLR-A', 'dues', 1500, ['periodKey' => '2026-01']);
+    fees_post('CLR-A', 'fine', 3000, ['periodKey' => 'bulkfine:clr-a-imported', 'method' => 'late', 'note' => 'from the paper register']);   // imported: stays owed
+    // E: an imported fine and the system's own dues, and a payment of exactly the dues. The payment is the
+    // dues', not the import's, so there is nothing to clear and the imported fine is owed in full.
+    fees_post('CLR-E', 'fine', 4000, ['periodKey' => 'bulkfine:clr-e-imported', 'method' => 'late', 'note' => 'from the paper register']);
+    fees_post('CLR-E', 'dues', 1000, ['periodKey' => '2026-02']);
+    fees_post('CLR-E', 'payment', 1000, ['note' => 'paid the dues']);
     fees_post('CLR-B', 'fine', 5000, ['periodKey' => 'clr:b1', 'method' => 'other', 'note' => 'x']);
     fees_post('CLR-B', 'payment', 5000, ['note' => 'paid the fine']);     // B's fine is paid: nothing to clear
     fees_post('CLR-C', 'fine', 7000, ['periodKey' => 'clr:c1', 'method' => 'other', 'note' => 'x']);   // inactive: not touched
@@ -17424,22 +17430,24 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('fines clear: only a super admin may preview or run it', ($go('CLR-FEE', ['mode' => 'preview'])['detail'] ?? '') === 'super_admin_only');
     $pv = $go('CLR-SU', ['mode' => 'preview']);
     $mine = array_values(array_filter($pv['rows'] ?? [], fn($r) => str_starts_with($r['memberId'], 'CLR-')));
-    chk('fines clear: the preview names active members with UNPAID fines only (a paid fine, dues and an inactive member are not in it)',
-        !empty($pv['ok']) && count($mine) === 1 && $mine[0]['memberId'] === 'CLR-A' && $mine[0]['amount'] === 2000);
+    chk('clearance: the preview is the whole account — unpaid fines AND dues — and says what imported charge stays owed (a paid account and an inactive member are not in it)',
+        !empty($pv['ok']) && count($mine) === 1 && $mine[0]['memberId'] === 'CLR-A' && $mine[0]['amount'] === 3500
+        && $mine[0]['fines'] === 2000 && $mine[0]['dues'] === 1500 && $mine[0]['importedLeft'] === 3000);
+    chk('clearance: a payment is counted against the system’s own charges, never as having paid an import', !in_array('CLR-E', array_column($pv['rows'], 'memberId'), true));
     $base = ['mode' => 'run', 'digest' => $pv['digest'], 'phrase' => FEES_FINES_CLEAR_PHRASE, 'reason' => 'Fines carried over from the paper register'];
     chk('fines clear: a super admin with no authenticator is refused', ($go('CLR-SU2', $base + ['code' => '123456'])['error'] ?? '') === 'totp_required');
     chk('fines clear: a wrong authenticator code is refused', ($go('CLR-SU', $base + ['code' => '000000'])['error'] ?? '') === 'bad_code');
     for ($i = 0; $i < 4; $i++) $go('CLR-SU', $base + ['code' => '000000']);
     chk('fines clear: five wrong codes and even the right one is refused for fifteen minutes', ($go('CLR-SU', $base + ['code' => $code()])['error'] ?? '') === 'too_many_attempts');
     db_exec("DELETE FROM audit_log WHERE event = 'fees.fines.clear_badcode'");
-    chk('fines clear: the typed phrase must match', ($go('CLR-SU', ['phrase' => 'clear all fines', 'code' => $code()] + $base)['error'] ?? '') === 'phrase_mismatch');
+    chk('fines clear: the typed phrase must match', ($go('CLR-SU', ['phrase' => 'clear all accounts', 'code' => $code()] + $base)['error'] ?? '') === 'phrase_mismatch');
     chk('fines clear: a reason is required', ($go('CLR-SU', ['reason' => 'ok', 'code' => $code()] + $base)['error'] ?? '') === 'reason_required');
     chk('fines clear: a stale preview is refused', ($go('CLR-SU', ['digest' => 'x', 'code' => $code()] + $base)['error'] ?? '') === 'import_changed');
     chk('fines clear: nothing was written by any refusal', (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE periodKey = 'fines-cleared:once'")['c'] === 0 && fees_fines_clear_lock() === null);
     $r = $go('CLR-SU', $base + ['code' => $code()]);
     $bal = fn($id) => fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$id]));
-    chk('fines clear: the run clears exactly the unpaid fines; dues stay owed',
-        !empty($r['ok']) && $r['total'] === $pv['total'] && $bal('CLR-A')['payable'] === 1500 && $bal('CLR-C')['payable'] === 7000);
+    chk('clearance: the run clears the fines and the dues, and the imported fine is owed exactly as before',
+        !empty($r['ok']) && $r['total'] === $pv['total'] && $bal('CLR-A')['payable'] === 3000 && $bal('CLR-C')['payable'] === 7000 && $bal('CLR-E')['payable'] === 4000);
     chk('fines clear: the cleared fine stays on the ledger with one waiver beside it',
         (bool)db_row("SELECT 1 FROM member_ledger WHERE memberId = 'CLR-A' AND kind = 'fine' AND COALESCE(voidedAt,'') = ''")
         && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'CLR-A' AND periodKey = 'fines-cleared:once'")['c'] === 1);
@@ -24528,6 +24536,55 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM qr_codes WHERE token LIKE 'SUMQR-SEAS%'");
     db_exec("DELETE FROM summer_students WHERE studentId LIKE 'SS-SEAS-%'");
     db_exec("DELETE FROM summer_cohorts WHERE cohortId IN ('SUM-SEAS-OLD','SUM-SEAS-NEW') OR name = 'Seas Plan'");
+})();
+
+/* ── Requests the desk can act on: details read, payments by the way they came ── */
+(function () {
+    $SU = 'NGG-2025-0099'; $now = now_iso();
+    db_exec("DELETE FROM members WHERE memberId IN ('RQD-1','RQD-2')"); db_exec("DELETE FROM member_requests WHERE memberId IN ('RQD-1','RQD-2')");
+    db_exec("DELETE FROM member_ledger WHERE memberId IN ('RQD-1','RQD-2')");
+    db_insert('members', ['memberId' => 'RQD-1', 'fullName' => 'Elizabeth Araoluwa Ajao', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'dob' => '2013-08-06', 'phone' => '', 'parentPhone' => '08030000001', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'RQD-2', 'fullName' => 'Sibling Ajao', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'parentPhone' => '08098190961', 'createdAt' => $now, 'updatedAt' => $now]);
+    $m = db_row("SELECT * FROM members WHERE memberId = 'RQD-1'");
+    $r1 = member_details_read("Date of birth: 08/06/2013.      Phone number: +2348098190961", $m);
+    $by = []; foreach ($r1['changes'] as $c) $by[$c['field']] = $c;
+    chk('details: "Date of birth: 08/06/2013" is read day-first, beside what the record holds', ($by['dob']['proposed'] ?? '') === '2013-06-08' && ($by['dob']['current'] ?? '') === '2013-08-06');
+    chk('details: a phone written +234… is the 0-prefixed number, and one already on another record says so',
+        ($by['phone']['proposed'] ?? '') === '08098190961' && str_contains($by['phone']['warn'] ?? '', 'Sibling Ajao'));
+    $r2 = member_details_read("Parent phone number", $m);
+    chk('details: a field named with no new value is asked for, not guessed', !$r2['changes'] && ($r2['asked'][0]['field'] ?? '') === 'parentPhone');
+    $r3 = member_details_read("Phone number: 08011112222", $m, 'familydetails');
+    chk('details: from a parent, "phone number" is the parent’s', ($r3['changes'][0]['field'] ?? '') === 'parentPhone');
+    $r4 = member_details_read("dob 8th June 1990", $m);
+    chk('details: a date of birth outside the programme’s ages is flagged', str_contains($r4['changes'][0]['warn'] ?? '', 'check the year'));
+    $rq = member_request_create(['memberId' => 'RQD-1', 'kind' => 'details', 'body' => "Date of birth: 08/06/2013.  Phone number: 08098190961"]);
+    $rid = $rq['request']['requestId'] ?? '';
+    $L = backend_dispatch('admin.requests.list', ['requesterId' => $SU, 'status' => 'open', 'q' => $rid]);
+    chk('details: the desk’s list carries the reading', count($L['requests'][0]['reading']['changes'] ?? []) === 2);
+    chk('details: an invalid value is refused by name, and nothing changes', (backend_dispatch('admin.requests.applyDetails', ['requesterId' => $SU, 'requestId' => $rid, 'changes' => ['dob' => '31/02/2013']])['error'] ?? '') === 'bad_value'
+        && db_row("SELECT dob FROM members WHERE memberId = 'RQD-1'")['dob'] === '2013-08-06');
+    $ap = backend_dispatch('admin.requests.applyDetails', ['requesterId' => $SU, 'requestId' => $rid, 'changes' => ['dob' => '08/06/2013', 'phone' => '0809 819 0961']]);
+    $after = db_row("SELECT dob, phone FROM members WHERE memberId = 'RQD-1'"); $req = db_row('SELECT status, decision FROM member_requests WHERE requestId = ?', [$rid]);
+    chk('details: applying changes the record and approves the request with a reply that says what changed',
+        !empty($ap['ok']) && $after['dob'] === '2013-06-08' && $after['phone'] === '08098190961' && $req['status'] === 'approved' && str_contains($req['decision'], 'Date of birth → 8 Jun 2013'));
+    chk('details: it cannot be applied twice', (backend_dispatch('admin.requests.applyDetails', ['requesterId' => $SU, 'requestId' => $rid, 'changes' => ['dob' => '2013-06-09']])['error'] ?? '') === 'already_decided');
+
+    // A payment made two ways is claimed, and posted, as two.
+    $bad = member_request_create(['memberId' => 'RQD-1', 'kind' => 'payment', 'parts' => [['method' => 'transfer', 'amount' => 10000, 'reference' => ''], ['method' => 'cash', 'amount' => 2000, 'receivedBy' => 'Mrs Awolaja']]]);
+    chk('payment: a transfer with no reference is refused, naming the amount', ($bad['error'] ?? '') === 'need_reference' && str_contains($bad['detail'] ?? '', '10,000'));
+    $pc = member_request_create(['memberId' => 'RQD-1', 'kind' => 'payment', 'parts' => [['method' => 'transfer', 'amount' => '10,000', 'reference' => '210882705917985177'], ['method' => 'cash', 'amount' => 2000, 'receivedBy' => 'Mrs Basirat Awolaja']]]);
+    $prid = $pc['request']['requestId'] ?? '';
+    chk('payment: the claim is the sum of its parts, and its reference is the references',
+        (int)($pc['request']['amount'] ?? 0) === 12000 && ($pc['request']['reference'] ?? '') === '210882705917985177' && count($pc['request']['parts'] ?? []) === 2);
+    $dec = backend_dispatch('admin.requests.decide', ['requesterId' => $SU, 'requestId' => $prid, 'approve' => true, 'decision' => '',
+        'parts' => [['method' => 'transfer', 'amount' => 10000, 'reference' => '210882705917985177'], ['method' => 'cash', 'amount' => 2000, 'receivedBy' => 'Mrs Basirat Awolaja']]]);
+    $led = db_all("SELECT amount, method, reference FROM member_ledger WHERE memberId = 'RQD-1' AND kind = 'payment' ORDER BY amount DESC");
+    chk('payment: approving posts one ledger entry per way it came, each with its own method and reference',
+        !empty($dec['ok']) && count($led) === 2 && $led[0]['method'] === 'transfer' && $led[0]['reference'] === '210882705917985177'
+        && $led[1]['method'] === 'cash' && str_contains($led[1]['reference'], 'Awolaja')
+        && count(explode(',', (string)db_row('SELECT ledgerEntryId FROM member_requests WHERE requestId = ?', [$prid])['ledgerEntryId'])) === 2);
+    db_exec("DELETE FROM member_ledger WHERE memberId IN ('RQD-1','RQD-2')"); db_exec("DELETE FROM member_requests WHERE memberId IN ('RQD-1','RQD-2')");
+    db_exec("DELETE FROM members WHERE memberId IN ('RQD-1','RQD-2')");
 })();
 
 /* ── Broadened roles: the door, and a club admin's approvals ───────────── */

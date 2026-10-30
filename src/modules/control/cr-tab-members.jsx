@@ -1212,26 +1212,224 @@ const crMbCentreCtx = { current: null };
 const CR_REQ_STATUS = { open: ["Waiting", "warn"], approved: ["Approved", "ok"], declined: ["Declined", "bad"], withdrawn: ["Withdrawn", "neutral"] };
 const CR_REQ_SORTS = [["newest", "Newest first"], ["oldest", "Oldest first"], ["decided", "Recently decided"], ["amount", "Largest amount"]];
 function crReqStatus(x) { return CR_REQ_STATUS[x.status] || [String(x.status || "—"), "neutral"]; }
+/* ── A payment claim, one line per way it was paid ──────────────────────────
+   Claims carry `parts` (member-self.php): a transfer with its reference, cash
+   with who took it. An older claim has only a Reference box, and families
+   wrote the whole story in it ("2MPTg39mv. 2108827059… I paid 10000 naira as
+   transfer and 2000 naira cash to Mrs Basirat Awolaja") — so that text is
+   read for its references and its "N by transfer / N cash to …" pieces, and
+   offered as the starting lines of the approval for the desk to check. Nothing
+   posts on a guess: the desk confirms each line against the statement. */
+const CR_PAY_METHODS = [["transfer", "Transfer"], ["cash", "Cash"], ["pos", "POS"]];
+const CR_PAY_LINES = 3;
+/** A reference that is really a sentence — more words than a reference has. */
+function crPayIsNote(ref) { return String(ref || "").trim().split(/\s+/).length >= 4; }
+/** The reference-like tokens in a sentence: a run of 8+ letters and digits with at least one digit. */
+function crPayRefs(text) { return (String(text || "").match(/\b(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{8,}\b/g) || []).filter((v, i, a) => a.indexOf(v) === i); }
+/** "10000 naira as transfer and 2000 naira cash to Mrs Awolaja" → lines. */
+function crPayGuess(x) {
+  if (x.parts && x.parts.length) return x.parts.map(p => ({ method: p.method, amount: p.amount, ref: p.method === "cash" ? p.receivedBy : p.reference }));
+  const t = String(x.reference || "") + " " + String(x.body || ""), out = [];
+  const re = /(?:₦|#|n)?\s*(\d[\d,]*(?:\.\d+)?)\s*(k\b)?\s*(?:naira|ngn)?\s*(?:as|by|in|via|through|paid)?\s*(?:a\s+|bank\s+)?(transfer|cash|pos)\b/gi;
+  let m;
+  while ((m = re.exec(t)) && out.length < CR_PAY_LINES) {
+    const amount = Math.round(Number(m[1].replace(/,/g, "")) * (m[2] ? 1000 : 1)), method = m[3].toLowerCase();
+    if (!(amount > 0)) continue;
+    const after = t.slice(re.lastIndex, re.lastIndex + 80), who = method === "cash" ? (/^\s*(?:to|with|given to|handed to)\s+([A-Z][^.,;\d]{2,60})/i.exec(after) || [])[1] : "";
+    out.push({ method, amount, ref: method === "cash" ? String(who || "").trim() : "" });
+  }
+  const refs = crPayRefs(x.reference);
+  const tr = out.find(p => p.method !== "cash");
+  if (tr && refs.length) tr.ref = refs.join(" · ");
+  if (!out.length) out.push({ method: "transfer", amount: x.amount || "", ref: crPayIsNote(x.reference) ? refs.join(" · ") : (x.reference || "") });
+  return out;
+}
+/** The approval form for a payment claim: up to three lines, each a way it arrived. */
+function crPayApproveForm(x) {
+  const g = crPayGuess(x), values = { why: "" }, fields = [];
+  const money = v => v === "" || /^\d[\d,]*(\.\d+)?$/.test(String(v).trim()) ? "" : "A number of naira.";
+  for (let i = 1; i <= CR_PAY_LINES; i++) {
+    const p = g[i - 1] || {};
+    values["m" + i] = p.method || (i === 1 ? "transfer" : ""); values["a" + i] = p.amount ? String(p.amount) : ""; values["r" + i] = p.ref || "";
+    fields.push({ id: "m" + i, l: i === 1 ? "How it arrived" : "…and " + (i === 2 ? "a second" : "a third") + " way", type: "chips", req: i === 1, opts: CR_PAY_METHODS },
+      { id: "a" + i, l: "Amount (₦)", req: i === 1, im: "decimal", max: 12, check: money },
+      { id: "r" + i, l: "Reference on the statement — or, for cash, who took it", max: 80 });
+  }
+  fields.push({ id: "why", l: "Your reply", type: "textarea", max: 2000, help: "The family reads this." });
+  return { values, fields };
+}
+function crPayParts(v) {
+  const out = [];
+  for (let i = 1; i <= CR_PAY_LINES; i++) {
+    const amount = Math.round(Number(String(v["a" + i] || "").replace(/[^\d.]/g, ""))), method = v["m" + i] || "transfer", r = String(v["r" + i] || "").trim();
+    if (amount > 0) out.push({ method, amount, reference: method === "cash" ? "" : r, receivedBy: method === "cash" ? r : "" });
+  }
+  return out;
+}
+const crPayTotal = parts => parts.reduce((n, p) => n + p.amount, 0);
+function crPayLabel(p) { return (p.methodLabel || (CR_PAY_METHODS.find(m => m[0] === p.method) || [0, p.method])[1]) + " " + fmtMoney(p.amount)
+  + (p.reference ? " · ref " + p.reference : "") + (p.receivedBy ? " · to " + p.receivedBy : ""); }
+
+/* ── Replies that read as replies ───────────────────────────────────────────
+   A decision used to reach the family as "Your request was declined." with
+   whatever one line the desk typed. Every outcome now starts from a drafted
+   message in full sentences, by name, saying what happens next — the desk
+   edits it, or sends it as it is. A decline picks its reason from the ones
+   that actually occur for that kind, so the family is told what to do. */
+function crReqFirst(x) { return String(x.fullName || "").trim().split(/\s+/)[0] || "your child"; }
+function crReqDraftApprove(x, parts) {
+  const f = crReqFirst(x), on = d => d ? crDate(d + "T12:00:00") : "";
+  switch (x.kind) {
+    case "payment": return "Thank you. We have received " + (parts && parts.length ? parts.map(p => fmtMoney(p.amount) + (p.method === "cash" ? " in cash" : p.method === "pos" ? " by POS" : " by transfer")).join(" and ") : fmtMoney(x.amount))
+      + " and it is now on " + f + "’s account. The receipt is on its way to you by email.";
+    case "leave": return "Approved. " + f + " is excused " + (x.toDate && x.toDate !== x.fromDate ? "from " + on(x.fromDate) + " to " + on(x.toDate) : "on " + on(x.fromDate)) + ", so " + (x.toDate && x.toDate !== x.fromDate ? "those days do" : "that day does") + " not count as an absence. We look forward to seeing " + f + " back.";
+    case "academic": return "Approved, and good luck with the exams. The Saturdays from " + on(x.fromDate) + " to " + on(x.toDate) + " are not absences: nothing is fined and nothing counts against " + f + "’s allowance.";
+    case "idcard": return "Approved. " + f + "’s replacement ID card will be printed and left at the " + (x.centre || "centre") + " desk. We will tell you when it is ready to collect.";
+    case "appeal": return "We have reviewed the charge and your appeal is accepted. Thank you for raising it with us.";
+    case "mentor": return "Approved. We will arrange the change and introduce " + f + "’s new mentor shortly.";
+    case "collect": return "Done. The list of people who may collect " + f + " has been updated, and the desk will check it at pick-up.";
+    default: return "Thank you — this has been done.";
+  }
+}
+const CR_REQ_DECLINE = {
+  payment: [["notfound", "Not on the statement yet", x => "We could not find this payment on our bank statement yet. Transfers can take a day to show — please send a photo of the transfer receipt, or the reference from your bank app, and we will check again."],
+    ["amount", "A different amount arrived", x => "The amount that reached us is different from the " + fmtMoney(x.amount) + " in this claim. Please check your bank app and send the receipt, so we can record exactly what was paid."],
+    ["duplicate", "Already recorded", x => "This payment is already on " + crReqFirst(x) + "’s account, so it has not been added a second time."]],
+  leave: [["limit", "No absences left", x => "We can’t excuse this one: " + crReqFirst(x) + " has used the absences the programme allows. If it is an emergency, please call the centre and we will talk it through."],
+    ["late", "Asked after the day", x => "Leave has to be asked for before the day. This absence stays on the record; if something unexpected happened, please tell us what, and we will look at it again."]],
+  academic: [["proof", "Needs the school’s letter", x => "Please send the school’s letter or timetable for the exams, and we will approve it straight away."],
+    ["long", "Too long in one go", x => "Academic leave covers up to ten weeks at a time. Please ask for the first part now and the rest later."]],
+  appeal: [["stands", "The charge stands", x => "We have looked at the charge again and it stands: it was recorded correctly. If there is something we have not seen, please tell us and we will look again."]],
+  idcard: [["photo", "Needs a new photo first", x => "Before we print a new card we need a recent photo of " + crReqFirst(x) + ". Please send one through the portal, and we will print the card as soon as it arrives."]],
+};
+const CR_REQ_DECLINE_ANY = [["info", "Need more information", x => "We need a little more information before we can do this. Please reply with the details, and we will take it from there."],
+  ["rules", "Not possible under the rules", x => "We are sorry — this is not something the programme’s rules allow, so we cannot do it."]];
+function crReqDecline(ctx, x, done) {
+  const opts = (CR_REQ_DECLINE[x.kind] || []).concat(CR_REQ_DECLINE_ANY);
+  ctx.form({ title: "Decline · " + (x.subject || x.kindLabel), submit: "Decline and send", busyLabel: "Sending…",
+    intro: "Pick the reason; they are sent a message in full sentences saying what to do next. Add anything specific below.",
+    values: { why: opts[0][0], note: "" },
+    fields: [{ id: "why", l: "Why", type: "chips", req: true, opts: opts.map(o => [o[0], o[1]]).concat([["other", "Something else"]]) },
+      { id: "note", l: "Add to the message", type: "textarea", max: 1500, help: "Required for “Something else”. The family reads it." }],
+    onSubmit: async v => {
+      const o = opts.find(z => z[0] === v.why), note = String(v.note || "").trim();
+      if (!o && note.length < 10) return { fieldErrors: { note: "Say why, in a sentence or two." } };
+      await NGGApi.admin.requests.decide(x.requestId, false, [o ? o[2](x) : "", note].filter(Boolean).join("\n\n"));
+    },
+    done: () => { setTimeout(() => done("Declined — they have been told why"), 0); return null; } });
+}
+function crReqMessage(ctx, x, again) {
+  ctx.form({ title: "Message · " + (x.fullName || x.requestId), submit: "Send the message", busyLabel: "Sending…",
+    intro: "Ask a question or say what is happening, without deciding the request. It is sent to " + (x.byFamily ? "the family" : crReqFirst(x)) + " and kept on the request, so everyone sees the same conversation.",
+    values: { text: "" },
+    fields: [{ id: "text", l: "Message", type: "textarea", req: true, rows: 5, max: 2000,
+      ph: x.kind === "payment" ? "We can see the transfer of ₦10,000 but not the ₦2,000 cash. Who at the centre took it, and on which day?" : "What do you need to know, or what is happening next?" }],
+    onSubmit: v => NGGApi.admin.requests.comment(x.requestId, v.text.trim()),
+    done: (v, r) => { setTimeout(() => again(r && r.request ? Object.assign({}, x, r.request) : x), 0); return "Sent. It is on the request too."; } });
+}
+const CR_DETAIL_FIELDS = [["fullName", "Name"], ["dob", "Date of birth"], ["phone", "Phone"], ["email", "Email"], ["parentName", "Parent’s name"], ["parentPhone", "Parent’s phone"], ["parentEmail", "Parent’s email"], ["school", "School"]];
+/** The details form, as a spec both the drawer and the Inbox open: lines read from what they wrote. */
+function crReqDetailsForm(x) {
+  const rd = x.reading || { changes: [] }, n = Math.max(2, Math.min(4, rd.changes.length)), values = { reply: "" }, fields = [];
+  for (let i = 1; i <= n; i++) {
+    const c = rd.changes[i - 1] || {};
+    values["f" + i] = c.field || ""; values["v" + i] = c.field === "dob" && c.proposed ? c.proposed.split("-").reverse().join("/") : (c.proposed || "");
+    fields.push({ id: "f" + i, l: i === 1 ? "Change" : "…and", type: "select", req: i === 1, ph: "Nothing", opts: CR_DETAIL_FIELDS,
+        help: c.field ? "On the record now: " + (c.current || "nothing") + (c.warn ? " · " + c.warn : "") : "" },
+      { id: "v" + i, l: "To", max: 120, ph: "The new value (a date as 08/06/2013)" });
+  }
+  fields.push({ id: "reply", l: "Add to the reply", type: "textarea", max: 1500, help: "They are told exactly what changed; add anything else here." });
+  return { title: "Change " + (x.fullName || "their") + "’s details", submit: "Change and approve",
+    intro: rd.changes.length ? "Read from what they wrote — check each line, then change it. Their record and the request are updated together." : "Nothing could be read as a change. Choose the field and type the new value.",
+    values, fields };
+}
+/** Send the details form: {changes} applied and the request approved, or field errors. */
+async function crReqDetailsSend(x, v) {
+  const changes = {};
+  for (let i = 1; i <= 4; i++) if (v["f" + i] && String(v["v" + i] || "").trim()) changes[v["f" + i]] = String(v["v" + i]).trim();
+  if (!Object.keys(changes).length) return { fieldErrors: { v1: "Give the new value." } };
+  try { await NGGApi.admin.requests.applyDetails(x.requestId, changes, v.reply || ""); }
+  catch (e) { const c = e && e.data; if (c && c.field) { const k = Object.keys(changes).indexOf(c.field) + 1; return { fieldErrors: { ["v" + (k || 1)]: c.detail || "Not a valid value." } }; } throw e; }
+  return { changed: Object.keys(changes) };
+}
+function crReqApplyDetails(ctx, x, done) {
+  ctx.form(Object.assign(crReqDetailsForm(x), { busyLabel: "Saving…",
+    onSubmit: async v => { const r = await crReqDetailsSend(x, v); if (r.fieldErrors) return r; },
+    done: () => { setTimeout(() => done("Changed on the record and approved"), 0); return null; } }));
+}
+
 function crReqOpen(ctx, x) {
-  const st = crReqStatus(x), pay = x.kind === "payment", open = x.status === "open";
-  const fields = [["Request", x.requestId], ["Kind", x.kindLabel || x.kind], ["Member", (x.fullName || x.memberId) + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"]];
-  if (pay) fields.push(["Claimed", fmtMoney(x.amount)], ["Reference", x.reference || "—"], ["Paid on", x.paidAt ? crDate(x.paidAt) : "—"], ["Receipt", x.proofUrl ? "Attached" : "None attached"]);
-  if (x.kind === "leave") fields.push(["From", x.fromDate ? crDate(x.fromDate) : "—"], ["To", x.toDate ? crDate(x.toDate) : "Open-ended"]);
+  const st = crReqStatus(x), pay = x.kind === "payment", open = x.status === "open", det = x.kind === "details" || x.kind === "familydetails";
+  const again = y => crReqOpen(ctx, y || x);
+  const fields = [["Request", x.requestId], ["Kind", x.kindLabel || x.kind], ["Member", (x.fullName || x.memberId) + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"],
+    ["Raised", crDate(x.createdAt, true)]];
+  const note = pay && !(x.parts && x.parts.length) && crPayIsNote(x.reference);
+  if (pay) {
+    fields.push(["Claimed", fmtMoney(x.amount)]);
+    if (x.parts && x.parts.length) x.parts.forEach((p, i) => fields.push([x.parts.length > 1 ? "Paid, part " + (i + 1) : "Paid", crPayLabel(p)]));
+    else fields.push(["Reference", note ? (crPayRefs(x.reference).join(" · ") || "None given — see their note") : (x.reference || "—")]);
+    fields.push(["Paid on", x.paidAt ? crDate(x.paidAt) : "—"], ["Receipt", x.proofUrl ? "Attached — open it below" : "None attached"]);
+  }
+  if (x.kind === "leave" || x.kind === "academic") fields.push(["From", x.fromDate ? crDate(x.fromDate) : "—"], ["To", x.toDate ? crDate(x.toDate) : "Open-ended"]);
   if (x.byFamily) fields.push(["Raised by", (x.raisedByName || "Their family") + " · from the family account"]);
-  if (x.ledgerEntryId) fields.push(["Ledger entry", x.ledgerEntryId]);
+  if (x.ledgerEntryId) fields.push([x.ledgerEntryId.indexOf(",") >= 0 ? "Ledger entries" : "Ledger entry", x.ledgerEntryId.split(",").join(" · ")]);
+  if (x.decidedAt) fields.push(["Decided", crDate(x.decidedAt, true) + (x.decidedByName ? " · " + x.decidedByName : "")]);
+  const done = msg => { ctx.closeDrawer(); ctx.toast(msg); if (ctx.reload) ctx.reload(); if (ctx.refreshCounts) ctx.refreshCounts(); };
+  const rd = det ? (x.reading || { changes: [], asked: [] }) : null;
+
+  const approvePay = () => {
+    const f = crPayApproveForm(x);
+    f.values.why = crReqDraftApprove(x, crPayGuess(x).map(p => ({ method: p.method, amount: +p.amount || 0 })).filter(p => p.amount));
+    ctx.form({ title: "Approve · " + (x.fullName || x.requestId), submit: "Post and send", busyLabel: "Posting…",
+      intro: "Post what arrived, one line per way it came — each becomes its own ledger entry with its own reference. "
+        + (note || (x.parts && x.parts.length) ? "The lines are filled in from what they wrote; check each one against the statement." : "Claimed: " + fmtMoney(x.amount) + "."),
+      values: f.values, fields: f.fields,
+      onSubmit: async v => {
+        const parts = crPayParts(v);
+        if (!parts.length) return { fieldErrors: { a1: "Enter the amount that arrived." } };
+        await NGGApi.admin.requests.decide(x.requestId, true, v.why || "", crPayTotal(parts), parts);
+      },
+      done: v => { const parts = crPayParts(v); setTimeout(() => done(fmtMoney(crPayTotal(parts)) + " posted in " + crPlural(parts.length, "entry", "entries") + " · they have been told"), 0); return null; } });
+  };
+  const approvePlain = () => ctx.form({ title: "Approve · " + (x.subject || x.kindLabel), submit: "Approve and send", busyLabel: "Saving…",
+    intro: "A drafted reply — edit it, or send it as it is.",
+    values: { why: crReqDraftApprove(x) },
+    fields: [{ id: "why", l: "The reply", type: "textarea", rows: 5, max: 2000, help: x.byFamily ? "The family reads this." : "The member reads this." }],
+    onSubmit: v => NGGApi.admin.requests.decide(x.requestId, true, v.why || ""), done: () => { setTimeout(() => done("Approved — they have been told"), 0); return null; } });
+  const askMissing = rd && rd.asked && rd.asked.length ? () => ctx.form({ title: "Ask for the new " + rd.asked.map(a => a.label.toLowerCase()).join(" and "), submit: "Send", busyLabel: "Sending…",
+    intro: "They named what to change but not what to change it to. This asks for it on the request, without deciding it.",
+    values: { text: "Thank you. To change " + rd.asked.map(a => "the " + a.label.toLowerCase() + (a.current ? " (it is " + a.current + " on the record now)" : "")).join(" and ") + ", please reply with the new " + (rd.asked.length > 1 ? "details" : rd.asked[0].label.toLowerCase()) + " and we will update it straight away." },
+    fields: [{ id: "text", l: "Message", type: "textarea", rows: 4, req: true, max: 2000 }],
+    onSubmit: v => NGGApi.admin.requests.comment(x.requestId, v.text.trim()),
+    done: (v, r) => { setTimeout(() => again(r && r.request ? Object.assign({}, x, r.request) : x), 0); return "Asked. It is on the request too."; } }) : null;
+
+  const actions = [];
+  if (open) {
+    if (det) actions.push({ l: rd.changes.length ? "Change it (" + crPlural(rd.changes.length, "field") + ")" : "Change their details", primary: true, run: () => crReqApplyDetails(ctx, x, done) });
+    if (askMissing) actions.push({ l: "Ask for the new value", primary: !rd.changes.length && !det, run: askMissing });
+    if (pay) actions.push(ctx.can("fees") ? { l: "Approve and post", primary: true, run: approvePay } : { l: "Approving needs the Fees permission", disabled: true });
+    else if (!det) actions.push({ l: "Approve", primary: true, run: approvePlain });
+    actions.push({ l: "Decline", run: () => crReqDecline(ctx, x, done) });
+  }
+  if (x.status !== "withdrawn" && x.memberId) actions.push({ l: "Send a message", run: () => crReqMessage(ctx, x, again) });
+  if (x.proofUrl) actions.push({ l: "Open the receipt", run: () => window.open(x.proofUrl, "_blank", "noopener") });
+  if (x.memberId) actions.push({ l: "Open the member’s record", primary: !open, run: () => { ctx.closeDrawer(); ctx.go("members", "members", x.memberId); } });
+
   ctx.drawer({
     title: x.subject || x.kindLabel, sub: x.requestId + " · " + (x.kindLabel || x.kind),
-    stats: [["Status", st[0]], ["Raised", crDate(x.createdAt, true)], [x.status === "withdrawn" ? "Withdrawn" : "Decided", x.decidedAt ? crDate(x.decidedAt, true) + (x.decidedByName ? " · " + x.decidedByName : "") : x.status === "withdrawn" ? crDate(x.updatedAt, true) : "Not yet"]],
+    stats: [["Status", st[0]], ["Raised", crDate(x.createdAt)], [x.status === "withdrawn" ? "Withdrawn" : "Decided", x.decidedAt ? crDate(x.decidedAt) : x.status === "withdrawn" ? crDate(x.updatedAt) : "Not yet"]],
     fields,
     sections: [
+      det && (rd.changes.length || rd.asked.length) ? { h: "What they asked to change", list:
+        rd.changes.map(c => ({ icon: c.warn ? "warning" : "pencil-simple", t: c.label + ": " + (c.field === "dob" ? crDate(c.proposed + "T12:00:00") : c.proposed),
+          s: "On the record now: " + (c.current ? (c.field === "dob" ? crDate(c.current + "T12:00:00") : c.current) : "nothing") + (c.warn ? " · " + c.warn : "") }))
+        .concat(rd.asked.map(a => ({ icon: "question", t: a.label + " — no new value given", s: "On the record now: " + (a.current || "nothing") + ". Ask them for it." }))) } : null,
+      note ? { h: "What they wrote about the payment", text: x.reference } : null,
       { h: "What they wrote", text: x.body || "", empty: "Nothing beyond the subject." },
-      { h: "The reply", text: x.decision || "", empty: open ? "Not decided yet." : x.status === "withdrawn" ? "Withdrawn by the member before anyone decided it." : "Decided without a written reply." },
-    ],
-    actions: [
-      open ? { l: "Decide it in the Inbox", primary: true, run: () => { ctx.closeDrawer(); ctx.go("inbox", "requests"); } } : null,
-      x.proofUrl ? { l: "Open the receipt", run: () => window.open(x.proofUrl, "_blank", "noopener") } : null,
-      x.memberId ? { l: "Open the member’s record", primary: !open, run: () => { ctx.closeDrawer(); ctx.go("members", "members", x.memberId); } } : null,
+      (x.comments || []).length ? { h: "Messages", list: x.comments.map(m => ({ icon: "chat-circle-text", t: m.text, s: m.byName + " · " + crDate(m.at, true) })) } : null,
+      { h: "The reply", text: x.decision || "", empty: open ? "Not decided yet." : x.status === "withdrawn" ? "Withdrawn before anyone decided it." : "Decided without a written reply." },
     ].filter(Boolean),
+    actions,
   });
 }
 function crReqServer(ctx) {
@@ -1264,7 +1462,7 @@ Object.assign(CR_TAB_DEFS, {
     blocks: (d, ctx) => {
       const waiting = Object.keys(d.open).reduce((n, k) => n + d.open[k], 0);
       return [
-        waiting ? { type: "note", span: 6, icon: "tray", text: crPlural(waiting, "request") + " still waiting for a decision.", sub: "They are decided in the Inbox, where the actions are; this page is the record of all of them.", act: { l: "Open the Inbox", run: () => ctx.go("inbox", "requests") } } : null,
+        waiting ? { type: "note", span: 6, icon: "tray", text: crPlural(waiting, "request") + " still waiting for a decision.", sub: "Open one to decide it here — the reply is drafted for you — or work through them in the Inbox.", act: { l: "Open the Inbox", run: () => ctx.go("inbox", "requests") } } : null,
         { type: "table", span: 6, title: "Every request", sub: crPlural(d.total, "request") + " raised", nosel: true, server: d.server, q: ctx.sub || "",
           search: "Request ID, member, reference or subject",
           cols: ["Request", "Member", { l: "What", wrap: true }, "Status", "Raised", "Decided"],

@@ -372,7 +372,7 @@ function crCfRuleTable(d, ctx) {
    admin_fees_fines_clear_once): super admin, a current authenticator code,
    the typed phrase and a reason, applied exactly as previewed; afterwards the
    server refuses it for ever and this screen shows the record of the run. */
-const CR_CF_CLEAR_ERR = { already_used: "Fines have already been cleared once. It cannot be done again.", bad_code: "That is not the current code from your authenticator app.",
+const CR_CF_CLEAR_ERR = { already_used: "Accounts have already been cleared once. It cannot be done again.", bad_code: "That is not the current code from your authenticator app.",
   totp_required: "Set up an authenticator app on your own account first (Account → Security).", phrase_mismatch: "Type the phrase exactly as shown.",
   reason_required: "Say why, in a sentence.", too_many_attempts: "Too many wrong codes. Wait fifteen minutes, then try again.", import_changed: "The fines changed since the preview. Preview again.", forbidden: "Only a super admin can do this." };
 function crCfClearErr(e, fb) { const c = e && ((e.data && e.data.error) || e.code); return CR_CF_CLEAR_ERR[c] || crErr(e, fb); }
@@ -382,13 +382,14 @@ async function crCfClearPreview(ctx) {
 }
 function crCfClearRun(ctx) {
   const plan = ctx.data.clearPlan; if (!plan) return;
-  const phrase = plan.phrase || "CLEAR ALL FINES";
+  const phrase = plan.phrase || "CLEAR ALL ACCOUNTS";
   ctx.form({
-    title: "Clear the fines of " + crPlural(plan.members, "active member") + " — " + fmtMoney(plan.total), submit: "Clear them, once", busyLabel: "Clearing…",
-    intro: "This waives every unpaid fine on the accounts listed, records why, and then locks itself for good: nobody, you included, can run it again. Dues, membership and the training fee are not touched. Fines issued after today are owed as normal.",
+    title: "Clear " + crPlural(plan.members, "active member’s account", "active members’ accounts") + " — " + fmtMoney(plan.total), submit: "Clear them, once", busyLabel: "Clearing…",
+    intro: "This waives the unpaid fines, dues and membership on the accounts listed, records why, and then locks itself for good: nobody, you included, can run it again. Anything that arrived by import stays owed in full"
+      + (plan.importedLeft ? " (" + fmtMoney(plan.importedLeft) + " across these accounts)" : "") + ", and the training fee is not touched. Charges made after today are owed as normal.",
     values: { reason: "", phrase: "", code: "" },
     fields: [
-      { id: "reason", l: "Why", type: "textarea", rows: 2, req: true, max: 240, ph: "Fines carried over from the paper register before this system, cleared by decision of the board" },
+      { id: "reason", l: "Why", type: "textarea", rows: 2, req: true, max: 240, ph: "Balances carried over from before this system, cleared by decision of the board" },
       { id: "phrase", l: "Type " + phrase + " to confirm", req: true, max: 40, ph: phrase, check: v => v.trim() === phrase ? "" : "Type " + phrase + " exactly." },
       { id: "code", l: "Code from your authenticator app", req: true, im: "numeric", max: 6, ph: "6 digits", check: v => /^\d{6}$/.test(v.trim()) ? "" : "Six digits." },
     ],
@@ -402,7 +403,7 @@ function crCfClearRun(ctx) {
         throw Object.assign(new Error(c || "failed"), { data: { message: crCfClearErr(e, "Couldn’t clear the fines. Nothing was written.") } });
       }
     },
-    done: (v, r) => { ctx.setData(x => Object.assign({}, x, { once: { used: true, lock: r.lock, canRun: false }, clearPlan: null })); crCfRefresh(ctx); return fmtMoney(r.total) + " of fines cleared across " + crPlural(r.members, "member") + ". This is now locked."; },
+    done: (v, r) => { ctx.setData(x => Object.assign({}, x, { once: { used: true, lock: r.lock, canRun: false }, clearPlan: null })); crCfRefresh(ctx); return fmtMoney(r.total) + " cleared across " + crPlural(r.members, "account") + ". Imported charges are still owed. This is now locked."; },
   });
 }
 function crCfClearBlocks(d, ctx) {
@@ -410,24 +411,28 @@ function crCfClearBlocks(d, ctx) {
   if (o.used && o.lock) {
     const l = o.lock;
     return [{ type: "list", span: 6, title: "One-time clearance", rows: [{ icon: "lock-simple",
-      t: "Used " + crDate(l.usedAt) + " by " + (l.usedByName || l.usedBy) + " — " + crPlural(l.members, "member") + ", " + fmtMoney(l.total),
-      s: "Why: " + (l.reason || "—") + ". It can never be run again; every cleared fine stays on its account with the waiver beside it." }] }];
+      t: "Used " + crDate(l.usedAt) + " by " + (l.usedByName || l.usedBy) + " — " + crPlural(l.members, "account") + ", " + fmtMoney(l.total),
+      s: "Why: " + (l.reason || "—") + ". It can never be run again; every cleared charge stays on its account with the waiver beside it, and imported charges were left owed." }] }];
   }
   if (!o.canRun) return [];
   const p = d.clearPlan;
   if (!p) return [{ type: "list", span: 6, title: "One-time clearance", rows: [{ icon: "broom", onClick: () => crCfClearPreview(ctx),
-    t: "Clear the unpaid fines of every active member — once",
-    s: "For fines carried over from before this system. You see every account first; it needs a reason, a typed phrase and your authenticator code, then locks for good.",
+    t: "Clear every active member’s account — once",
+    s: "Unpaid fines, dues and membership charged by this system. Anything imported stays owed, and the training fee is not touched. You see every account first; it needs a reason, a typed phrase and your authenticator code, then locks for good.",
     m: "Preview" }] }];
   return [
     { type: "note", span: 6, icon: p.members ? "warning" : "check-circle", tone: p.members ? "warn" : "ok",
-      text: p.members ? crPlural(p.members, "active member") + " with unpaid fines — " + fmtMoney(p.total) + " in all." : "No active member has an unpaid fine. There is nothing to clear.",
-      sub: p.members ? "Only unpaid fines are cleared; a fine already paid stays paid. The run applies exactly this list." : "Nothing is locked: it stays available until it is used.",
-      act: p.members ? { l: "Clear these fines, once…", run: () => crCfClearRun(ctx) } : { l: "Close", run: () => ctx.setData(x => Object.assign({}, x, { clearPlan: null })) } },
-    p.members ? { type: "table", span: 6, title: "Fines that would be cleared", nosel: true, search: "Search the list",
-      cols: ["Member", "Centre", { l: "Unpaid fines", num: true }],
+      text: p.members ? crPlural(p.members, "account") + " to clear — " + fmtMoney(p.total) + " in all: fines " + fmtMoney((p.byKind || {}).fine || 0) + ", dues " + fmtMoney((p.byKind || {}).dues || 0) + ", membership " + fmtMoney((p.byKind || {}).membership || 0) + "."
+        : "No active member owes anything this system charged. There is nothing to clear.",
+      sub: p.members ? "What is already paid stays paid. " + (p.importedLeft ? fmtMoney(p.importedLeft) + " of imported charges stays owed. " : "Nothing imported is owed on these accounts. ") + "The run applies exactly this list." : "Nothing is locked: it stays available until it is used.",
+      act: p.members ? { l: "Clear these accounts, once…", run: () => crCfClearRun(ctx) } : { l: "Close", run: () => ctx.setData(x => Object.assign({}, x, { clearPlan: null })) } },
+    p.members ? { type: "table", span: 6, title: "What would be cleared", nosel: true, search: "Search the list",
+      cols: ["Member", "Centre", { l: "Fines", num: true }, { l: "Dues", num: true }, { l: "Membership", num: true }, { l: "Cleared", num: true }, { l: "Imported — stays owed", num: true }],
       rows: (p.rows || []).map(r => ({ key: r.memberId, open: () => crCfAccount(ctx, r.memberId), cells: [
-        { k: "person", t: r.fullName, s: r.displayId || r.memberId }, { k: "text", t: r.centre || "—" }, { k: "num", t: fmtMoney(r.amount), v: r.amount }] })) } : null,
+        { k: "person", t: r.fullName, s: r.displayId || r.memberId }, { k: "text", t: r.centre || "—" },
+        { k: "num", t: r.fines ? fmtMoney(r.fines) : "—", v: r.fines || 0 }, { k: "num", t: r.dues ? fmtMoney(r.dues) : "—", v: r.dues || 0 },
+        { k: "num", t: r.membership ? fmtMoney(r.membership) : "—", v: r.membership || 0 }, { k: "strong", t: fmtMoney(r.amount) },
+        { k: "num", t: r.importedLeft ? fmtMoney(r.importedLeft) : "—", v: r.importedLeft || 0 }] })) } : null,
   ].filter(Boolean);
 }
 
@@ -643,6 +648,135 @@ async function crCfSweep(ctx) {
   } catch (e) { ctx.toast(crErr(e, "Couldn’t run the sweep."), null, true); }
 }
 
+/* ══ The rules, as a document ═══════════════════════════════════════════════
+   One formal document of every rule this screen holds — the fine rules, the
+   attendance and lateness ladders, the members' stricter rules, ID cards and
+   reinstatement, the programme days, and how a fine is appealed — drawn in
+   the browser (jsPDF; the host has no renderer) from the SAME data the screen
+   shows, so the document cannot say something the system does not do. The
+   standard PDF fonts have no naira sign, so money is written NGN 5,000. */
+function crCfMoney(n) { return n ? "NGN " + Number(n).toLocaleString("en-GB") : "None"; }
+async function crCfRulesPdf(ctx, d) {
+  const [rules, pol] = await Promise.all([d.rules ? Promise.resolve(d.rules) : NGGApi.admin.fees.fineRules().catch(() => null),
+    d.pol ? Promise.resolve(d.pol) : NGGApi.admin.policy.settings().catch(() => null)]);
+  if (!rules && !pol) { ctx.toast("Couldn’t load the rules to export.", null, true); return; }
+  const { jsPDF } = await loadVendor("jspdf");
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const W = 210, H = 297, M = 20, CW = W - 2 * M, INK = [11, 11, 12], MUTE = [93, 93, 99], LINE = [226, 226, 223], BAND = [12, 20, 50], GOLD = [245, 176, 38];
+  const today = new Date(), issued = today.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const ref = "NGG/CF/" + today.toISOString().slice(0, 10);
+  let y = 0, sec = 0;
+  const text = (t, x, yy, o) => { doc.setFont("helvetica", (o && o.bold) ? "bold" : "normal"); doc.setFontSize((o && o.size) || 10); doc.setTextColor.apply(doc, (o && o.color) || INK); doc.text(t, x, yy, o && o.align ? { align: o.align } : undefined); };
+  const room = h => { if (y + h > H - 22) { doc.addPage(); y = 24; } };
+  // Measured at the size it is drawn at — splitting first measured at the last heading's size and wrapped at half the page.
+  const para = (t, o) => { doc.setFont("helvetica", "normal"); doc.setFontSize(10); const lines = doc.splitTextToSize(t, CW); lines.forEach(l => { room(5.2); text(l, M, y, Object.assign({ color: (o && o.color) || [43, 43, 48] }, o)); y += 5.2; }); y += 1.5; };
+  const heading = t => { room(18); y += 4; sec++; text(sec + ".", M, y, { bold: true, size: 12.5 }); text(t, M + 9, y, { bold: true, size: 12.5 }); y += 2.5;
+    doc.setDrawColor.apply(doc, GOLD); doc.setLineWidth(0.6); doc.line(M, y, M + 18, y); y += 6; };
+  /* A ruled table: header on a quiet band, hairlines between rows, cells wrapped to their column. */
+  const table = (cols, rows) => {
+    const widths = cols.map(c => c.w * CW), pad = 2.2, lh = 4.6;
+    /* Headings wrap in their column like the cells do: a long heading over a narrow column overprinted its neighbour. */
+    const head = () => {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(8.6);
+      const hl = cols.map((c, i) => doc.splitTextToSize(c.l, widths[i] - 2 * pad)), hh = Math.max.apply(null, hl.map(l => l.length)) * 3.8 + 4.4;
+      room(hh + 6); doc.setFillColor(244, 244, 243); doc.rect(M, y, CW, hh, "F"); let x = M;
+      hl.forEach((lines, i) => { lines.forEach((l, k) => text(l, cols[i].num ? x + widths[i] - pad : x + pad, y + 5.2 + k * 3.8, { bold: true, size: 8.6, color: MUTE, align: cols[i].num ? "right" : undefined })); x += widths[i]; });
+      y += hh; };
+    head();
+    rows.forEach(r => {
+      doc.setFontSize(9.4);
+      const cells = r.map((v, i) => doc.splitTextToSize(String(v == null ? "" : v), widths[i] - 2 * pad));
+      const h = Math.max.apply(null, cells.map(c => c.length)) * lh + 3.4;
+      if (y + h > H - 22) { doc.addPage(); y = 24; head(); }
+      let x = M;
+      cells.forEach((lines, i) => { lines.forEach((l, k) => text(l, cols[i].num ? x + widths[i] - pad : x + pad, y + 4.9 + k * lh, { size: 9.4, bold: i === 0, align: cols[i].num ? "right" : undefined })); x += widths[i]; });
+      y += h; doc.setDrawColor.apply(doc, LINE); doc.setLineWidth(0.2); doc.line(M, y, M + CW, y);
+    });
+    y += 5;
+  };
+
+  // ── The cover band ──
+  doc.setFillColor.apply(doc, BAND); doc.rect(0, 0, W, 58, "F");
+  doc.setFillColor.apply(doc, GOLD); doc.rect(M, 16, 10, 1.4, "F");
+  text("NEXT GENERATION GENIUS", M, 25, { bold: true, size: 9, color: [200, 206, 226] });
+  text("Conduct & Fines", M, 38, { bold: true, size: 24, color: [255, 255, 255] });
+  text("The rules of the programme", M, 47, { size: 12, color: [214, 218, 232] });
+  text("Issued " + issued, W - M, 38, { size: 9, color: [200, 206, 226], align: "right" });
+  text("Ref. " + ref, W - M, 44, { size: 9, color: [200, 206, 226], align: "right" });
+  y = 72;
+  para("This document sets out the rules on conduct, attendance and fines that apply to Next Generation Genius (NGG) members and to Summer School participants, volunteers, mentors and instructors. It is generated from the Control Room, where these rules are kept and applied, so it states exactly what the system does on the day it was issued.");
+
+  heading("Fines and their limits");
+  if (rules && (rules.rules || []).length) {
+    para("Each kind of fine has a standard amount and the most it may add up to for one member in a term. A fine of a kind whose rule is switched off is not charged. A fine that would go past the term’s limit is reduced to what is left of it, and once the limit is reached nothing more of that kind is charged until the next term.");
+    table([{ l: "Rule", w: 0.30 }, { l: "Applies to", w: 0.22 }, { l: "Standard amount", w: 0.17, num: true }, { l: "Limit per term", w: 0.17, num: true }, { l: "In force", w: 0.14 }],
+      rules.rules.map(r => [r.name + (r.whenText ? " — " + r.whenText : ""), r.reasonLabel || "Fined per case", r.amount ? crCfMoney(r.amount) : "Per case", r.capTerm ? crCfMoney(r.capTerm) : "No limit", r.active ? "Yes" : "Switched off"]));
+    if (rules.term) para("The current term runs from " + crCfDay(rules.term.from) + " to " + crCfDay(rules.term.to) + ".", { color: MUTE });
+  } else para("The fine rules could not be included: they need the Fees permission to read.", { color: MUTE });
+
+  const P = pol && pol.policy;
+  if (P) {
+    const ladder = (k, o) => [k, (o || {}).lateRedline || "—", String((o || {}).absenceLimit ?? "—"), String((o || {}).latenessCap ?? "—"), String((o || {}).suspensionDays ?? "—"), String((o || {}).postSuspensionLateness ?? "—"), crCfMoney((o || {}).fine)];
+    heading("Attendance and lateness");
+    para("Arriving after the time below counts as late. Absences are counted on programme days only (section " + (sec + 4) + "). When the limits below are reached the policy applies, in order: a warning, dormancy, a suspension of the stated length, and eviction. After a suspension, further lateness leads to the fine shown. A suspended or evicted person is not admitted at the door."
+      + (P.enabled ? "" : " Enforcement for Summer School is currently switched off.") + ((P.member || {}).enabled ? "" : " Enforcement for NGG members is currently switched off."));
+    table([{ l: "Who", w: 0.21 }, { l: "Late after", w: 0.10 }, { l: "Absences allowed", w: 0.12, num: true }, { l: "Lates before a suspension", w: 0.15, num: true }, { l: "Suspension (days)", w: 0.14, num: true }, { l: "Lates after, before a fine", w: 0.14, num: true }, { l: "That fine", w: 0.14, num: true }],
+      [ladder("Summer School participants", P.student), ladder("Volunteers, mentors and instructors", P.volunteer), ladder("NGG members", P.member)]);
+    const Mb = P.member || {};
+    heading("Additional rules for NGG members");
+    table([{ l: "Rule", w: 0.62 }, { l: "Applies", w: 0.38 }], [
+      ["A fine for every late arrival", Mb.lateFine ? crCfMoney(Mb.lateFine) + " each" : "Not applied"],
+      ["A fine for an absence nobody asked about", Mb.absenceFine ? crCfMoney(Mb.absenceFine) + " each" : "Not applied"],
+      ["Arriving after resumption time is late, with no grace period", Mb.tardyIsLate !== false ? "Yes" : "No — a grace period applies"],
+      ["A day with no sign-out counts as an absence", Mb.checkoutRequired !== false ? "Yes" : "No"],
+      ["Eviction is confirmed by an administrator before it takes effect", P.confirmEviction !== false ? "Yes" : "No — it takes effect automatically"],
+    ]);
+    para("An absence with a request still waiting is not fined until it is decided. Approved leave is excused; approved academic leave is not an absence at all.", { color: MUTE });
+    heading("Identity cards and reinstatement");
+    table([{ l: "Rule", w: 0.62 }, { l: "Applies", w: 0.38 }], [
+      ["Identity card not worn — first time", "A temporary card for the day; no fine"],
+      ["Identity card not worn — second time", crCfMoney((P.idCard || {}).secondOffenceFine)],
+      ["Identity card lost", crCfMoney((P.idCard || {}).lostFine)],
+      ["Waiting period after an eviction before reinstatement", ((P.reinstatement || {}).coolOffDays || 0) + " days"],
+      ["Reinstatement fine", crCfMoney((P.reinstatement || {}).fine)],
+      ["Reinstatement training", (P.reinstatement || {}).training || "None"],
+      ["Missing the Musing Period", (P.musing || {}).enabled ? "The day counts as a half-day (Musing Period ends " + ((P.musing || {}).endsAt || "—") + ")" : "No effect"],
+    ]);
+    const cal = (c, who) => {
+      if (!c || !c.enabled) return [who, "No calendar set — every date counts", "", ""];
+      const days = (c.weekdays || []).map(n => ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][n]).join(", ");
+      return [who, c.startDate && c.endDate ? crCfDay(c.startDate) + " to " + crCfDay(c.endDate) : c.derivedFromSession ? "Follows the season / terms" : "Open", days || "—",
+        ((c.holidays || []).length ? (c.holidays || []).length + " cancelled" : "None cancelled") + ((c.extraDays || []).length ? ", " + (c.extraDays || []).length + " added" : "")];
+    };
+    heading("Programme days");
+    para("Absences, lateness and the fines that follow are counted only on programme days: the days of the week below, within the dates shown, less the days cancelled and plus the days added.");
+    table([{ l: "Calendar", w: 0.24 }, { l: "Dates", w: 0.30 }, { l: "Meets on", w: 0.22 }, { l: "Exceptions", w: 0.24 }], [cal(pol.programme, "Summer School"), cal(pol.memberProgramme, "NGG members")]);
+  } else {
+    heading("Attendance, lateness and programme days");
+    para("These sections need the Summer School permission to read and are not included in this copy.", { color: MUTE });
+  }
+
+  heading("Fairness, records and appeals");
+  [
+    "Every fine is recorded on the member’s account with its reason and date, and guardians can see every line.",
+    "A fine recorded in error is voided with a written reason; it stays on the record, struck through, and anything it caused is lifted at once.",
+    "A member or guardian may appeal any charge from their account (Requests → Appeal a charge). The appeal is answered in writing.",
+    "No fine is charged beyond the limit for its kind in a term, and no rule is applied while it is switched off.",
+  ].forEach((t, i) => para((i + 1) + ".  " + t));
+
+  // Footers: page numbers and the document's own reference, on every page.
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    doc.setDrawColor.apply(doc, LINE); doc.setLineWidth(0.2); doc.line(M, H - 15, W - M, H - 15);
+    text("Next Generation Genius · Conduct & Fines · " + ref, M, H - 10, { size: 8, color: MUTE });
+    text("Page " + i + " of " + n, W - M, H - 10, { size: 8, color: MUTE, align: "right" });
+  }
+  doc.setProperties({ title: "Conduct & Fines — the rules of the programme", subject: "NGG conduct and fines", author: "Next Generation Genius", creator: "NGG Control Room" });
+  doc.save("NGG-Conduct-and-Fines-" + today.toISOString().slice(0, 10) + ".pdf");
+  ctx.toast("The rules document is downloading.");
+}
+
 Object.assign(CR_TAB_DEFS, {
   conduct: {
     skeleton: ["kpis", "table"],
@@ -665,6 +799,8 @@ Object.assign(CR_TAB_DEFS, {
         out.push({ l: "Upload fines", icon: "upload-simple", primary: true, run: () => crCfFineCheck(ctx) });
         if (d.rules) out.push({ l: "Add a rule", icon: "plus", run: () => crCfRuleEdit(ctx, d.rules, null) });
       }
+      /* The whole rule book as one formal PDF, from every view that shows rules. */
+      if (v !== "compliance") out.push({ l: "Export the rules (PDF)", icon: "file-pdf", run: () => crCfRulesPdf(ctx, d).catch(e => ctx.toast(crErr(e, "Couldn’t make the document."), null, true)) });
       if ((v === "policy" || v === "calendar") && ctx.can("summer")) out.push({ l: "Run the absence sweep now", icon: "broom", run: () => crCfSweep(ctx) });
       if (v === "compliance") out.push({ l: "Refresh", icon: "arrows-clockwise", run: () => crCfRefresh(ctx) });
       return out;

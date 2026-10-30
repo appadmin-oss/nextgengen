@@ -234,7 +234,9 @@ Object.assign(Mp9Portal.prototype, {
     const rOk = !!K && (K[1] === "leave" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && !!(f[K[2][2]] || "").trim() : K[1] === "academic" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][1]] || "") && (f[K[2][2]] || "").trim().length >= 10 : !!(f[K[2][0]] || "").trim());
     const ST = { open: ["Waiting for a reply", "#7a5600"], approved: ["Approved", "#1d6b30"], declined: ["Declined", "#b0361c"], withdrawn: ["Withdrawn", "#6b6b72"] };
     const list = (q.requests || []).map(x => { const st = x.kind === "feedback" && x.status === "approved" ? ["Thanked", "#1d6b30"] : ST[x.status] || [x.status, "#4a4a50"];
-      return { t: x.subject || x.kindLabel, key: x.requestId, gone: x.status === "withdrawn", hasReply: !!x.decision, reply: x.decision || "", canWithdraw: x.status === "open", sFg: st[1], sText: st[0], when: mp9Date(x.createdAt),
+      return { t: x.subject || x.kindLabel, key: x.requestId, gone: x.status === "withdrawn", hasReply: !!(x.decision || (x.comments || []).length),
+        // The desk's messages on the request come first, then the decision: one conversation, in order.
+        reply: [].concat((x.comments || []).map(m => m.byName + " · " + mp9Date(m.at) + ": " + m.text), x.decision ? [x.decision] : []).join("\n\n"), canWithdraw: x.status === "open", sFg: st[1], sText: st[0], when: mp9Date(x.createdAt),
         withdraw: () => NGGApi.member.withdrawRequest(x.requestId).then(() => { this.refresh(["reqs"]); this.toast("Request withdrawn"); }).catch(e => this.toast(mp9Err(e))) }; });
     return {
       rec: { attended: att.present || 0, ran: att.daysRan || 0, pct: att.rateKnown ? att.rate + "%" : "no term calendar set" },

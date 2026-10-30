@@ -151,8 +151,35 @@ back; the *AI features* table shows each feature's kind of work and, when it is
 on rules only, why. With only a paid key and no free one, everyday work uses each
 feature's own rules unless you allow paid models to do everyday work too.
 
+**Deciding a request.** Open it — in **Inbox → Member requests**, or in
+**Members → Request history** — and decide it there. Every reply starts as a
+drafted message in full sentences, by name, saying what happens next; edit it or
+send it as it is. **Decline** asks you to pick the reason (for a payment: *not on
+the statement yet*, *a different amount arrived*, *already recorded*; for leave:
+*no absences left*, *asked after the day*; and so on), and the family is told
+what to do about it. **Send a message** writes to them on the request without
+deciding it — "Who at the centre took the cash?" — and the message is emailed,
+shown on their request, and kept on it for the desk.
+
+- **A payment made more than one way.** A family can now say *₦10,000 by
+  transfer (reference …) and ₦2,000 in cash to Mrs Awolaja* as two lines, and
+  attach a photo of the receipt. **Approve and post** shows one line per way it
+  arrived — filled in from what they wrote, even when an older claim put the
+  whole story in the reference box — and posts **one ledger entry per line**, each
+  with its own method and reference, so the transfer can be found on the
+  statement and the cash has a name against it.
+- **Correct my details.** The request is read for what it asks: *Date of birth:
+  Sat 8 Jun 2013 — on the record now: Tue 6 Aug 2013*. Dates are read day first;
+  phone numbers are tidied (+234… becomes 0…); a date that makes the child older
+  than 25 or younger than 5, or a number already on another member's record, is
+  flagged. **Change it** opens with those lines filled in; check them and press
+  **Change and approve** — the record and the request are updated together, and
+  the reply says exactly what changed. When they named a field but gave no new
+  value ("Parent phone number"), **Ask for the new value** asks them for it. From
+  a parent's account, "phone number" means the parent's.
+
 **Finding a request.** A request waiting for a decision is in **Inbox → Member
-requests**; that is where it is approved or declined. Once it is decided — or
+requests**. Once it is decided — or
 the member withdraws it — it leaves the Inbox, and it is in **Members →
 Request history** (`/control/members/request-log`). Search there by the
 request id an alert or a webhook carried (`REQ-9EE53F1611`), the member's name
@@ -1637,27 +1664,45 @@ on**, **cancelled days** and **extra days** (add a date, remove one with ×).
 With no dates typed in, the Summer calendar follows the edition's own season.
 Switching a calendar off makes every date count — the warning above it says so.
 
-### Clearing every active member's fines — once
+### Clearing every active member's account — once
 
 **Conduct & fines → Fines**, at the bottom, for a **super admin** only. For
-fines carried over from before this system. It can be used **one time, ever**:
+balances carried over from before this system. It can be used **one time, ever**,
+and it clears the **whole account** — with one exception:
 
-1. **Clear the unpaid fines of every active member — once** (Preview) lists every active NGG member with an
-   unpaid fine and the amount, and the total. Nothing has happened yet.
-2. **Clear these fines, once…** asks for a reason, the phrase **CLEAR ALL FINES**
-   typed exactly, and the current 6-digit code from **your authenticator app**
-   (set one up on your own account first; five wrong codes lock it for fifteen
-   minutes). It clears exactly the list you saw;
-   if any fine changed since, it asks you to look again.
-3. Each account gets one waiver for its unpaid fines, with your reason. Dues,
-   membership and the training cost are not touched, and fines issued afterwards
-   are owed as normal.
+- **Cleared:** the unpaid **fines, dues and membership** this system charged.
+- **Never cleared:** anything that arrived by **import** (an uploaded fines
+  register) stays owed in full. Payments already made are counted against the
+  system's own charges first, so an imported charge is never treated as paid.
+- **Not touched:** the **training fee** — service earns it off, and the MOU writes
+  it off; it is not a debt in the same sense.
+
+1. **Clear every active member's account — once** (Preview) lists every active
+   NGG member with something to clear, by kind (fines, dues, membership), what
+   will be cleared, and what imported charge stays owed. Nothing has happened yet.
+2. **Clear these accounts, once…** asks for a reason, the phrase **CLEAR ALL
+   ACCOUNTS** typed exactly, and the current 6-digit code from **your
+   authenticator app** (set one up on your own account first; five wrong codes
+   lock it for fifteen minutes). It clears exactly the list you saw; if anything
+   changed since, it asks you to look again.
+3. Each account gets one waiver for what was cleared, with your reason and a
+   note of what it covered. Charges made afterwards are owed as normal.
 
 Afterwards the screen shows, to everyone with the Fees permission, when it was
-run, by whom, for how many members, how much and why — and it can never be run
-again, by anybody. The fines themselves stay on each account with the waiver
-beside them, so uploading an old register again still reports them as already
+run, by whom, for how many accounts, how much and why — and it can never be run
+again, by anybody. The cleared charges stay on each account with the waiver
+beside them, so uploading an old register again still reports it as already
 posted.
+
+### The rules as a document
+
+**Conduct & fines → Export the rules (PDF)** (on the Fines, Policy and Calendars
+views) downloads one formal document of every rule in force: the fine rules and
+their limits per term, the attendance and lateness ladder for each group, the
+members' additional rules, ID cards and reinstatement, the programme days, and
+how a fine is recorded and appealed — dated, with a reference number on every
+page. It is drawn from the same settings the system applies, so it says exactly
+what the system does on the day it is issued. Export it again after a change.
 
 ### Uploading a sheet of fines
 
@@ -1984,8 +2029,9 @@ not the child's:
   to <month>*. A fee changed in the meantime is charged at its new price
   against the same credit. Paying ahead waits until the joining invoice is paid.
 - **"I've paid".** A parent who paid by transfer or at the desk tells you from
-  *Fees → Paid by transfer or at the desk?* with the amount, the reference and
-  the date. It arrives in **Member requests** as *Payment made*, marked *From
+  *Fees → Paid by transfer or at the desk?* — one line per way they paid
+  (transfer with its reference, cash with who took it, POS with its receipt
+  number), the date, and a photo of the receipt if they have one. It arrives in **Member requests** as *Payment made*, marked *From
   their family account*, and moves no money until you approve it against the
   statement — exactly as a member's claim used to.
 - **The child asks.** The member's app no longer has *I've made a payment*. On

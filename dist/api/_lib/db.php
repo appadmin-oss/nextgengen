@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 201;
+const NGG_SCHEMA_TARGET = 202;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5835,6 +5835,18 @@ function db_migrate(PDO $db): void {
               createdAt TEXT NOT NULL
             );
             CREATE UNIQUE INDEX idx_volthanks ON volunteer_thanks(cohortId, volunteerId);
+        ",
+        202 => "
+            /* HOW A PAYMENT ARRIVED, ONE LINE PER WAY. A family paying ₦10,000 by
+               transfer and ₦2,000 in cash to a coordinator had one Reference box
+               to say so in, so the sentence went there and approving posted one
+               ₦12,000 'claim' whose reference was a paragraph. JSON
+               [{method, amount, reference, receivedBy, entryId}] — what the
+               family said, then what the desk posted (member-self.php). */
+            ALTER TABLE member_requests ADD COLUMN parts TEXT DEFAULT '';
+            /* Messages between the desk and the member on one request, before or
+               after it is decided: [{at, by, byName, text}] (admin_request_comment). */
+            ALTER TABLE member_requests ADD COLUMN comments TEXT DEFAULT '';
         ",
     ];
 

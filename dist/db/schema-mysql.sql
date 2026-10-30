@@ -4699,3 +4699,8 @@ CREATE TABLE IF NOT EXISTS volunteer_thanks (
   UNIQUE KEY idx_volthanks (cohortId, volunteerId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (201) ON DUPLICATE KEY UPDATE version = version;
+
+-- 202: a payment claim, one line per way it was paid (member-self.php)
+ALTER TABLE member_requests ADD COLUMN parts TEXT NULL;
+ALTER TABLE member_requests ADD COLUMN comments TEXT NULL;
+INSERT INTO schema_version (version) VALUES (202) ON DUPLICATE KEY UPDATE version = version;

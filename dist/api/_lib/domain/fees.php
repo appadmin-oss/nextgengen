@@ -1760,10 +1760,14 @@ function admin_fees_settle(array $p): array {
  *  · WHO. A super admin (by role — a granted `fees` cap is not enough), with
  *    no centre scope, typing a CURRENT code from their own authenticator app
  *    with the request: a stolen session cookie alone cannot run it.
- *  · WHAT. Every member who is NGG and `active`, the fines still unpaid on
- *    their account (payments applied oldest first, so a fine already paid is
- *    not "cleared" a second time). Dues, membership and the training fee are
- *    not touched. One waiver per member, keyed `fines-cleared:once`.
+ *  · WHAT (owner, 30 Oct 2026: "the clearance is the whole account"). Every
+ *    member who is NGG and `active`: the fines, dues and membership still
+ *    unpaid that THIS SYSTEM charged — never anything that arrived by import
+ *    (fees_entry_imported), which stays owed in full; payments are counted
+ *    against the system's own charges first, so an import is never what was
+ *    "paid". The training fee is not touched (service earns it off). One
+ *    waiver per member, keyed `fines-cleared:once` (the key predates the
+ *    widening and is kept so the lock and the waivers stay one record).
  *  · CHECK, THEN APPLY WHAT WAS CHECKED. The preview returns the members, the
  *    total and a digest; the run recomputes and refuses on any difference,
  *    and needs the typed phrase and a reason.
@@ -1781,7 +1785,7 @@ function admin_fees_settle(array $p): array {
  * still reports "already posted" rather than fining the family again.
  */
 const FEES_FINES_CLEAR_LOCK = 'fines_clear';
-const FEES_FINES_CLEAR_PHRASE = 'CLEAR ALL FINES';
+const FEES_FINES_CLEAR_PHRASE = 'CLEAR ALL ACCOUNTS';
 function fees_fines_clear_lock(): ?array {
     try { $r = db_row('SELECT * FROM fees_once_locks WHERE lockKey = ? LIMIT 1', [FEES_FINES_CLEAR_LOCK]); }
     catch (Throwable $e) { return null; }
@@ -1789,6 +1793,51 @@ function fees_fines_clear_lock(): ?array {
     $who = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [(string)$r['usedBy']]);
     return ['usedAt' => (string)$r['usedAt'], 'usedBy' => (string)$r['usedBy'], 'usedByName' => (string)($who['fullName'] ?? ''),
             'members' => (int)$r['members'], 'total' => (int)$r['total'], 'reason' => (string)$r['reason']];
+}
+/**
+ * A charge that arrived by IMPORT — a register of fines uploaded (bulkfine:),
+ * or any row an import marks as its own. The clearance never touches these:
+ * the owner's rule is that what was imported stays owed, whatever is cleared.
+ */
+function fees_entry_imported(array $e): bool {
+    $pk = (string)($e['periodKey'] ?? ''); $by = (string)($e['byId'] ?? $e['by'] ?? ''); $m = (string)($e['method'] ?? '');
+    return str_starts_with($pk, 'bulkfine:') || str_starts_with($pk, 'import:') || $m === 'import' || str_starts_with($by, 'import');
+}
+/**
+ * What the clearance would waive on one account: the unpaid fines, dues and
+ * membership THIS SYSTEM charged. Payments and waivers are counted against
+ * those first, so an imported charge is never what a payment is said to have
+ * covered — after the run the account owes exactly its imported charges, as
+ * it did before. The training fee is not a debt in this sense (service earns
+ * it off, MOU writes it off) and is left alone.
+ * ['amount', 'byKind' => [fine, dues, membership], 'imported' => still owed].
+ */
+const FEES_CLEAR_KINDS = ['fine', 'dues', 'membership'];
+function fees_clear_unpaid_of(array $member, array $cfg, array $entries): array {
+    $ten = fees_tenure($member, $cfg);
+    $memberDues = [];
+    if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
+    $own = []; $imp = []; $credit = 0;
+    foreach ($entries as $e) {
+        if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
+        $kind = (string)$e['kind'];
+        if ((string)$e['direction'] === 'charge') {
+            if ($kind === 'training') continue;
+            $c = ['kind' => $kind, 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)];
+            if (fees_entry_imported($e)) $imp[] = $c; else $own[] = $c;
+        } elseif ($kind !== 'writeoff') $credit += (int)$e['amount'];
+    }
+    $order = static fn($a, $b) => [$a['day'], $a['id']] <=> [$b['day'], $b['id']];
+    usort($own, $order); usort($imp, $order);
+    $byKind = array_fill_keys(FEES_CLEAR_KINDS, 0); $other = 0;
+    foreach ($own as $c) {
+        $take = min($credit, $c['amount']); $credit -= $take; $left = $c['amount'] - $take;
+        if ($left <= 0) continue;
+        if (isset($byKind[$c['kind']])) $byKind[$c['kind']] += $left; else $other += $left;   // an adjustment stays owed
+    }
+    $imported = 0;
+    foreach ($imp as $c) { $take = min($credit, $c['amount']); $credit -= $take; $imported += $c['amount'] - $take; }
+    return ['amount' => array_sum($byKind), 'byKind' => $byKind, 'imported' => $imported, 'otherOwed' => $other];
 }
 /** Who would be cleared, and of how much. One ledger read for everybody. */
 function fees_fines_clear_plan(): array {
@@ -1804,13 +1853,16 @@ function fees_fines_clear_plan(): array {
     $rows = []; $total = 0;
     foreach ($ms as $m) {
         $id = (string)$m['memberId'];
-        $amt = fees_unpaid_of($m, ['fine'], null, $cfg, $byId[$id] ?? []);
-        if ($amt <= 0) continue;
-        $rows[] = ['memberId' => $id, 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? ''), 'amount' => $amt];
-        $total += $amt;
+        $u = fees_clear_unpaid_of($m, $cfg, $byId[$id] ?? []);
+        if ($u['amount'] <= 0) continue;
+        $rows[] = ['memberId' => $id, 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? ''),
+                   'amount' => $u['amount'], 'fines' => $u['byKind']['fine'], 'dues' => $u['byKind']['dues'], 'membership' => $u['byKind']['membership'], 'importedLeft' => $u['imported']];
+        $total += $u['amount'];
     }
     $digest = substr(hash('sha256', json_encode(array_map(static fn($r) => [$r['memberId'], $r['amount']], $rows))), 0, 32);
-    return ['rows' => $rows, 'members' => count($rows), 'total' => $total, 'digest' => $digest];
+    $sum = static fn($k) => array_sum(array_column($rows, $k));
+    return ['rows' => $rows, 'members' => count($rows), 'total' => $total, 'digest' => $digest,
+            'byKind' => ['fine' => $sum('fines'), 'dues' => $sum('dues'), 'membership' => $sum('membership')], 'importedLeft' => $sum('importedLeft')];
 }
 /** Gate: super admin by role, unscoped, with a current authenticator code when acting. */
 function fees_fines_clear_gate(array $p, bool $acting): array {
@@ -1849,7 +1901,8 @@ function admin_fees_fines_clear_once(array $p): array {
     $by = (string)$g['requester']['memberId'];
     if (($lock = fees_fines_clear_lock()) !== null) return ['ok' => false, 'error' => 'already_used', 'lock' => $lock];
     $plan = fees_fines_clear_plan();
-    if ($mode === 'preview') return ['ok' => true, 'members' => $plan['members'], 'total' => $plan['total'], 'digest' => $plan['digest'], 'rows' => array_slice($plan['rows'], 0, 1000), 'phrase' => FEES_FINES_CLEAR_PHRASE];
+    if ($mode === 'preview') return ['ok' => true, 'members' => $plan['members'], 'total' => $plan['total'], 'digest' => $plan['digest'], 'rows' => array_slice($plan['rows'], 0, 1000),
+        'byKind' => $plan['byKind'], 'importedLeft' => $plan['importedLeft'], 'phrase' => FEES_FINES_CLEAR_PHRASE];
     if ($mode !== 'run') return ['ok' => false, 'error' => 'bad_mode'];
     if (trim((string)($p['phrase'] ?? '')) !== FEES_FINES_CLEAR_PHRASE) return ['ok' => false, 'error' => 'phrase_mismatch', 'detail' => 'Type ' . FEES_FINES_CLEAR_PHRASE . ' exactly.'];
     $reason = trim((string)preg_replace('/\s+/u', ' ', (string)($p['reason'] ?? '')));
@@ -1862,8 +1915,10 @@ function admin_fees_fines_clear_once(array $p): array {
         db_insert('fees_once_locks', ['lockKey' => FEES_FINES_CLEAR_LOCK, 'usedAt' => $now, 'usedBy' => $by,
             'members' => $plan['members'], 'total' => $plan['total'], 'reason' => mb_substr($reason, 0, 240), 'digest' => $plan['digest']]);
         foreach ($plan['rows'] as $r) {
+            $what = implode(', ', array_filter([$r['fines'] ? 'fines ' . fees_money_text($r['fines']) : '', $r['dues'] ? 'dues ' . fees_money_text($r['dues']) : '',
+                $r['membership'] ? 'membership ' . fees_money_text($r['membership']) : '']));
             $e = fees_post($r['memberId'], 'waiver', $r['amount'], ['periodKey' => 'fines-cleared:once', 'by' => $by,
-                'note' => mb_substr('Fines cleared for every active member (' . substr($now, 0, 10) . '): ' . $reason, 0, 240)]);
+                'note' => mb_substr('Account cleared for every active member (' . substr($now, 0, 10) . ') — ' . $what . '; imported charges not cleared: ' . $reason, 0, 240)]);
             if (!$e) throw new RuntimeException('post_failed:' . $r['memberId']);
         }
         $pdo->commit();
@@ -1872,7 +1927,8 @@ function admin_fees_fines_clear_once(array $p): array {
         if (fees_fines_clear_lock() !== null) return ['ok' => false, 'error' => 'already_used', 'lock' => fees_fines_clear_lock()];
         return ['ok' => false, 'error' => 'post_failed', 'detail' => 'Nothing was written.'];
     }
-    audit('fees.fines.clear_once', $by, '', ['members' => $plan['members'], 'total' => $plan['total'], 'reason' => $reason, 'digest' => $plan['digest']], (string)($p['ip'] ?? ''));
+    audit('fees.fines.clear_once', $by, '', ['members' => $plan['members'], 'total' => $plan['total'], 'byKind' => $plan['byKind'], 'importedLeft' => $plan['importedLeft'],
+        'reason' => $reason, 'digest' => $plan['digest']], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'members' => $plan['members'], 'total' => $plan['total'], 'lock' => fees_fines_clear_lock()];
 }
 

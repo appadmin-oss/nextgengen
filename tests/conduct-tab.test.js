@@ -141,6 +141,14 @@ async function pageFor(memberId, viewport) {
       +rule.amount === 700 && +rule.capTerm === 2100 && await until(() => /₦700/.test(document.body.innerText) && /₦2,100/.test(document.body.innerText)));
     chk('…and it is audited', +php(`echo db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'fees.rule.save'")['c'];`) === 1);
 
+    // ── The rule book, as a document ──
+    const [dl] = await Promise.all([P.waitForEvent('download', { timeout: 30000 }), P.click('button:has-text("Export the rules (PDF)")')]);
+    const pdfPath = path.join(SHOTS, 'rules.pdf');
+    await dl.saveAs(pdfPath);
+    const pdf = fs.readFileSync(pdfPath);
+    const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+    chk('“Export the rules” downloads a real PDF (' + pages + ' pages, ' + Math.round(pdf.length / 1024) + ' KB) named for the day', pdf.slice(0, 5).toString() === '%PDF-' && pages >= 2 && /NGG-Conduct-and-Fines-\d{4}-\d{2}-\d{2}\.pdf/.test(dl.suggestedFilename()));
+
     // ── Compliance: the board and one record ──
     await view('Compliance');
     chk('the compliance board lists everyone with something on record', await until(() => /Everyone with something on record/.test(document.body.innerText) && /Musa Lateef/.test(document.body.innerText) && /Grace Obi/.test(document.body.innerText)));

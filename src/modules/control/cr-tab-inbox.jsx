@@ -181,24 +181,42 @@ const CR_INBOX_SOURCES = {
         }
         const pay = x.kind === "payment";
         const f = [["Member", (x.fullName || "") + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"]];
-        if (pay) f.push(["Claims", fmtMoney(x.amount)], ["Reference", x.reference || "—"], ["Paid on", x.paidAt ? crDate(x.paidAt) : "—"]);
+        if (pay) {
+          f.push(["Claims", fmtMoney(x.amount)]);
+          if (x.parts && x.parts.length) x.parts.forEach((p, i) => f.push([x.parts.length > 1 ? "Paid, part " + (i + 1) : "Paid", crPayLabel(p)]));
+          else f.push(["Reference", crPayIsNote(x.reference) ? (crPayRefs(x.reference).join(" · ") || "See what they wrote") : (x.reference || "—")]);
+          f.push(["Paid on", x.paidAt ? crDate(x.paidAt) : "—"]);
+        }
+        const payNote = pay && !(x.parts && x.parts.length) && crPayIsNote(x.reference) ? x.reference : "";
         if (x.kind === "leave") f.push(["From", x.fromDate ? crDate(x.fromDate) : "—"], ["To", x.toDate ? crDate(x.toDate) : "Open-ended"]);
         if (x.byFamily) f.push(["Raised by", (x.raisedByName || "Their family") + " · the parent is emailed your reply"]);
-        const approve = pay ? (canMoney ? {
-          l: "Approve", tone: "primary", form: () => ({ title: "Approve this payment", submit: "Approve and post", intro: "The amount you post is what arrived, not necessarily what was claimed.",
-            values: { amount: String(x.amount || ""), why: "" },
-            fields: [{ id: "amount", l: "Amount to post (₦)", req: true, num: true, money: true, im: "decimal" }, { id: "why", l: "Your reply", type: "textarea", max: 2000, help: "The member reads this." }] }),
-          run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || "", Number(String(v.amount).replace(/[^\d.]/g, ""))); return { text: "Payment posted · " + x.fullName }; },
+        const det = x.kind === "details" || x.kind === "familydetails";
+        const rd = det ? (x.reading || { changes: [], asked: [] }) : null;
+        if (det) {
+          rd.changes.forEach(c => f.push([c.label, (c.current || "nothing") + " → " + c.proposed + (c.warn ? " · " + c.warn : "")]));
+          rd.asked.forEach(a => f.push([a.label, "Named, but no new value given — ask for it"]));
+        }
+        const approve = det ? {
+          l: rd.changes.length ? "Change it" : "Change details", tone: "primary", form: () => crReqDetailsForm(x),
+          run: async (it, v) => { const r = await crReqDetailsSend(x, v); if (r.fieldErrors) throw Object.assign(new Error("bad_value"), { data: { message: Object.values(r.fieldErrors)[0] } }); return { text: "Changed and approved · " + x.fullName }; },
+        } : pay ? (canMoney ? {
+          /* One form with Requests' drawer (crPayApproveForm, cr-tab-members.jsx): a line per way it arrived, each its own ledger entry. */
+          l: "Approve", tone: "primary", form: () => Object.assign({ title: "Approve this payment", submit: "Post the payment",
+            intro: "Post what arrived, one line per way it came — each becomes its own ledger entry with its own reference." + (payNote ? " The lines are filled in from what they wrote; check each one." : "") },
+            (f => Object.assign(f, { values: Object.assign(f.values, { why: crReqDraftApprove(x, crPayGuess(x).map(p => ({ method: p.method, amount: +p.amount || 0 })).filter(p => p.amount)) }) }))(crPayApproveForm(x))),
+          run: async (it, v) => { const parts = crPayParts(v); if (!parts.length) throw Object.assign(new Error("no_amount"), { data: { message: "Enter the amount that arrived." } });
+            await NGGApi.admin.requests.decide(x.requestId, true, v.why || "", crPayTotal(parts), parts); return { text: fmtMoney(crPayTotal(parts)) + " posted · " + x.fullName }; },
         } : null) : {
-          l: "Approve", tone: "primary", note: CR_REASON_NOTE("Your reply", "The member reads this.", false),
+          l: "Approve", tone: "primary", note: Object.assign(CR_REASON_NOTE("Your reply", "The member reads this — a drafted reply; edit it or send it.", false), { dflt: crReqDraftApprove(x) }),
           run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Approved · " + x.fullName }; },
         };
         return crItem({
           id: "req:" + x.requestId, cat: "requests", kind: (x.kindLabel || "Member request") + (x.byFamily ? " · From their family account" : ""), icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
-          title: x.subject || x.kindLabel, body: x.body || "", search: [x.requestId, x.displayId, x.memberId, x.centre, x.reference].join(" "),
-          facts: f, thread: x.body ? [{ who: x.byFamily ? (x.raisedByName || "Their family") : (x.fullName || "Member"), at: x.createdAt, body: x.body, mine: false }] : null,
+          title: x.subject || x.kindLabel, body: x.body || payNote, search: [x.requestId, x.displayId, x.memberId, x.centre, x.reference].join(" "),
+          facts: f, thread: (x.body || payNote) ? [{ who: x.byFamily ? (x.raisedByName || "Their family") : (x.fullName || "Member"), at: x.createdAt, body: x.body || payNote, mine: false }] : null,
           note: pay && !canMoney ? "Approving a payment needs the Fees permission." : "",
-          actions: [approve, { l: "Decline", note: CR_REASON_NOTE("Why it is declined", "Say why — the member reads this."), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: "Declined, with your reason" }; } }].filter(Boolean),
+          actions: [approve, { l: "Decline", note: Object.assign(CR_REASON_NOTE("Why it is declined", "A drafted reason for this kind of request — edit it to fit."),
+            { dflt: ((CR_REQ_DECLINE[x.kind] || CR_REQ_DECLINE_ANY)[0] || [0, 0, () => ""])[2](x) }), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: "Declined, with your reason" }; } }].filter(Boolean),
         });
       });
     },
@@ -609,7 +627,8 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
   const noteAction = typeof mode === "number" ? it.actions[mode] : null;
   const choose = (a, i) => {
     setErr("");
-    if (a.note) { setMode(i); setText(""); setTimeout(() => taRef.current && taRef.current.focus(), 0); return; }
+    // A note may start from a drafted message (`dflt`) — a reply in full sentences, edited rather than typed.
+    if (a.note) { setMode(i); setText(a.note.dflt || ""); setTimeout(() => taRef.current && taRef.current.focus(), 0); return; }
     act(it, a);
   };
   React.useEffect(() => {

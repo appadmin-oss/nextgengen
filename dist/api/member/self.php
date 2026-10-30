@@ -41,7 +41,7 @@ if ($method === 'GET') {
         rate_limit_check('member.request', $s['mid']);
         $res = gs_call('member.request.create', ['memberId' => $s['mid'],
             'kind' => $b['kind'] ?? '', 'subject' => $b['subject'] ?? '', 'body' => $b['body'] ?? '',
-            'amount' => $b['amount'] ?? null, 'reference' => $b['reference'] ?? '',
+            'amount' => $b['amount'] ?? null, 'reference' => $b['reference'] ?? '', 'parts' => is_array($b['parts'] ?? null) ? $b['parts'] : null,
             'proofUrl' => $b['proofUrl'] ?? '', 'paidAt' => $b['paidAt'] ?? '',
             'fromDate' => $b['fromDate'] ?? '', 'toDate' => $b['toDate'] ?? '',
             'refEntryId' => $b['refEntryId'] ?? '', 'ip' => client_ip(), 'fromMember' => true]);

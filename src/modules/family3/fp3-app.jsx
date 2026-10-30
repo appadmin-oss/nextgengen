@@ -748,25 +748,53 @@ function Fp3Ahead({ c, w }) {
 function Fp3Paid({ c, w }) {
   const F = w.fees, first = w.member.first, N = n => c.naira(n), asked = !!F.asked;
   const [open, setOpen] = React.useState(false);
-  const [amount, setAmount] = React.useState(F.payable ? String(F.payable) : "");
-  const [ref, setRef] = React.useState(""), [when, setWhen] = React.useState(() => new Date().toISOString().slice(0, 10));
+  /* One line per way it was paid. A parent who sent ₦10,000 by transfer and
+     handed ₦2,000 to a coordinator had one Reference box, wrote the story in
+     it, and the desk could match neither. Each line now has its own amount and
+     its own proof: a transfer's reference, or who took the cash. */
+  const blank = m => ({ method: m || "transfer", amount: "", ref: "" });
+  const [lines, setLines] = React.useState(() => [Object.assign(blank(), { amount: F.payable ? String(F.payable) : "" })]);
+  const [when, setWhen] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [busy, setBusy] = React.useState(false), [err, setErr] = React.useState("");
+  /* The receipt: a photo of the transfer screen or the cash receipt. There was
+     no place to give one, so the desk matched a claim to the statement by the
+     reference alone — and cash had nothing at all. Stored by the same uploader
+     as school reports (the site's own photo store). */
+  const [proof, setProof] = React.useState(null), [pct, setPct] = React.useState(0);
+  const pickProof = e => {
+    const f0 = e.target.files && e.target.files[0]; if (!f0) return;
+    if (!/^image\//.test(f0.type)) return setErr("Choose a photo or screenshot of the receipt.");
+    if (f0.size > 10 * 1024 * 1024) return setErr("That picture is over 10 MB. Take a screenshot instead.");
+    setProof(f0); setErr("");
+  };
+  const setLine = (i, k, v) => { setLines(ls => ls.map((l, j) => j === i ? Object.assign({}, l, { [k]: v }) : l)); setErr(""); };
   if (F.claim) return (
     <section className="fp3x-card" aria-label="Payment being checked">
       <div className="fp3x-card-h"><span className="fp3x-ic is-ok" aria-hidden="true"><i className="ph ph-hourglass-medium"/></span>
         <div><h2>Your payment is being checked</h2><p>{N(F.claim.amount)}{F.claim.reference ? " · ref " + F.claim.reference : ""}, told to the centre {F.claim.when}. The desk matches it to the bank statement and the receipt is emailed. Please don’t pay it twice.</p></div></div>
     </section>
   );
+  const total = lines.reduce((n, l) => n + (Math.round(Number(String(l.amount).replace(/[^\d.]/g, ""))) || 0), 0);
   const send = e => {
     e.preventDefault();
-    const amt = Math.round(Number(String(amount).replace(/[^\d.]/g, "")));
-    if (!(amt > 0)) return setErr("How much did you pay?");
-    if (ref.trim().length < 3) return setErr("Give the transfer reference or the receipt number, so the desk can find it.");
+    const parts = [];
+    for (const l of lines) {
+      const amt = Math.round(Number(String(l.amount).replace(/[^\d.]/g, "")));
+      if (!(amt > 0)) { if (lines.length > 1 && !l.amount && !l.ref.trim()) continue; return setErr("How much was paid " + (l.method === "cash" ? "in cash" : l.method === "pos" ? "by POS" : "by transfer") + "?"); }
+      if (l.method === "cash" && l.ref.trim().length < 2) return setErr("Who took the cash of " + N(amt) + "? Their name lets the desk confirm it.");
+      if (l.method !== "cash" && l.ref.trim().length < 3) return setErr("Give the reference for the " + N(amt) + (l.method === "pos" ? " POS payment" : " transfer") + ", so the desk can find it on the statement.");
+      parts.push({ method: l.method, amount: amt, reference: l.method === "cash" ? "" : l.ref.trim(), receivedBy: l.method === "cash" ? l.ref.trim() : "" });
+    }
+    if (!parts.length) return setErr("How much did you pay?");
     if (busy || !c.can()) return;
     setBusy(true); setErr("");
-    NGGApi.family.act("request", { linkId: w.linkId, kind: "payment", amount: amt, reference: ref.trim(), paidAt: when })
-      .then(() => { setBusy(false); c.toast("Sent. The centre checks it against the statement and emails the receipt."); c.loadWard(w.linkId); })
-      .catch(er => { setBusy(false); setErr(fp3Err(er)); });
+    (async () => {
+      let proofUrl = "";
+      if (proof) { const st = await NGGApi.family.uploadReport(await NGGApi.documentToDataUrl(proof), x => setPct(Math.round(x * 100))); proofUrl = st.url || ""; }
+      return NGGApi.family.act("request", { linkId: w.linkId, kind: "payment", amount: parts.reduce((n, p) => n + p.amount, 0), parts, paidAt: when, proofUrl });
+    })()
+      .then(() => { setBusy(false); setPct(0); c.toast("Sent. The centre checks it against the statement and emails the receipt."); c.loadWard(w.linkId); })
+      .catch(er => { setBusy(false); setPct(0); setErr(fp3Err(er)); });
   };
   return (
     <section className={"fp3x-card" + (asked ? " is-asked" : "")} aria-labelledby={"fp3x-pd-" + w.linkId}>
@@ -779,11 +807,31 @@ function Fp3Paid({ c, w }) {
       </div>
       {!open ? <button type="button" className="fp3x-ghost" aria-expanded="false" onClick={() => setOpen(true)}>I’ve paid</button> :
       <form className="fp3x-form" onSubmit={send} noValidate>
-        <label><span>Amount paid (₦)</span><input inputMode="numeric" autoComplete="off" value={amount} onChange={e => { setAmount(e.target.value); setErr(""); }}/></label>
-        <label><span>Reference or receipt number</span><input autoComplete="off" value={ref} onChange={e => { setRef(e.target.value); setErr(""); }} placeholder="e.g. TRF 2026 10 27 1234"/></label>
+        {lines.map((l, i) => (
+          <fieldset key={i} className="fp3x-payline">
+            <legend>{lines.length > 1 ? "Payment " + (i + 1) : "How you paid"}</legend>
+            <div className="fp3x-seg" role="radiogroup" aria-label={"How payment " + (i + 1) + " was made"}>
+              {[["transfer", "Transfer"], ["cash", "Cash"], ["pos", "POS"]].map(o => (
+                <button key={o[0]} type="button" role="radio" aria-checked={l.method === o[0]} onClick={() => setLine(i, "method", o[0])}>{o[1]}</button>
+              ))}
+            </div>
+            <label><span>Amount (₦)</span><input inputMode="numeric" autoComplete="off" value={l.amount} onChange={e => setLine(i, "amount", e.target.value)}/></label>
+            <label><span>{l.method === "cash" ? "Who took the cash" : l.method === "pos" ? "POS receipt number" : "Transfer reference"}</span>
+              <input autoComplete="off" value={l.ref} onChange={e => setLine(i, "ref", e.target.value)} maxLength={l.method === "cash" ? 80 : 60}
+                placeholder={l.method === "cash" ? "e.g. Mrs Awolaja, Egbeda coordinator" : "e.g. 210882705917985177"}/></label>
+            {lines.length > 1 && <button type="button" className="fp3x-ghost" onClick={() => setLines(ls => ls.filter((x, j) => j !== i))}>Remove this payment</button>}
+          </fieldset>
+        ))}
+        {lines.length < 3 && <button type="button" className="fp3x-ghost" onClick={() => setLines(ls => ls.concat([blank(lines[0].method === "cash" ? "transfer" : "cash")]))}>
+          <i className="ph ph-plus" aria-hidden="true"/> Paid part another way</button>}
+        {lines.length > 1 && <p className="fp3x-fine" aria-live="polite">Total {N(total)}</p>}
+        <label className="fp3x-file"><span>Photo of the receipt <em>(helps the desk find it faster)</em></span>
+          <input type="file" accept="image/*" onChange={pickProof}/>
+          <b aria-live="polite"><i className={"ph " + (proof ? "ph-file-check" : "ph-camera")} aria-hidden="true"/> {proof ? proof.name : "Take a photo or choose a screenshot"}</b>
+        </label>
         <label><span>Date paid</span><input type="date" value={when} max={new Date().toISOString().slice(0, 10)} onChange={e => setWhen(e.target.value)}/></label>
         {err && <p className="fp3x-err" role="alert">{err}</p>}
-        <div className="fp3x-row"><button type="submit" className="fp3x-go" disabled={busy}>{busy ? "Sending…" : "Tell the centre"}</button><button type="button" className="fp3x-ghost" onClick={() => { setOpen(false); setErr(""); }}>Cancel</button></div>
+        <div className="fp3x-row"><button type="submit" className="fp3x-go" disabled={busy}>{busy ? (pct ? "Uploading… " + pct + "%" : "Sending…") : "Tell the centre"}</button><button type="button" className="fp3x-ghost" onClick={() => { setOpen(false); setErr(""); }}>Cancel</button></div>
       </form>}
     </section>
   );

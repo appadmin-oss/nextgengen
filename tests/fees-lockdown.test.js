@@ -98,41 +98,44 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
     const refused = php(`echo json_encode(backend_dispatch('admin.fees.settle', ['requesterId' => '${ADMIN}', 'memberId' => '${MEM}', 'reason' => 'Imported: paid before', 'date' => gmdate('Y-m-d')]));`, ['bootstrap']);
     chk('…and the server refuses it to a super admin, writing nothing', JSON.parse(refused).error === 'retired' && payable() === before);
 
-    // ── The one-time clearance ──
+    // ── The one-time clearance: the whole account, never what was imported ──
     php(`fees_post('${MEM}', 'fine', 2500, ['periodKey' => 'fs:fine1', 'method' => 'other', 'note' => 'Old register']);
          db_insert('members', ['memberId'=>'NGG-FS-K2','fullName'=>'Kemi Fined','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','joinDate'=>gmdate('Y-m-d'),'createdAt'=>now_iso(),'updatedAt'=>now_iso()]);
-         fees_post('NGG-FS-K2', 'fine', 1000, ['periodKey' => 'fs:fine2', 'method' => 'other', 'note' => 'Old register']);`, ['bootstrap']);
-    const finesOwed = () => Number(php(`echo fees_unpaid_of(db_row("SELECT * FROM members WHERE memberId = '${MEM}'"), ['fine']) + fees_unpaid_of(db_row("SELECT * FROM members WHERE memberId = 'NGG-FS-K2'"), ['fine']);`, ['bootstrap']));
-    chk('two active members owe old fines', finesOwed() === 3500);
+         fees_post('NGG-FS-K2', 'fine', 1000, ['periodKey' => 'fs:fine2', 'method' => 'other', 'note' => 'Old register']);
+         fees_post('NGG-FS-K2', 'fine', 1500, ['periodKey' => 'bulkfine:fs-imported', 'method' => 'late', 'note' => 'Uploaded register']);`, ['bootstrap']);
+    const k2 = () => Number(php(`echo fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-FS-K2'"))['payable'];`, ['bootstrap']));
+    const whole = before + 2500 + 1000;
+    chk('two active members owe: years of dues and an old fine, a fine, and a fine that was imported', payable() === before + 2500 && k2() === 2500);
     await P.goto(BASE + '/control/money/conduct', { waitUntil: 'domcontentloaded' });
     await waitForBoot(P);
-    chk('Conduct & fines offers the super admin the one-time clearance', await until(P, () => /Clear the unpaid fines of every active member — once/.test(document.body.innerText), null, 60000));
-    await P.click('button:has-text("Clear the unpaid fines of every active member")');
-    chk('the preview lists each account and the total before anything happens',
-      await until(P, () => /2 active members with unpaid fines — ₦3,500 in all/.test(document.body.innerText) && /Kemi Fined/.test(document.body.innerText)) && finesOwed() === 3500);
-    await P.click('button:has-text("Clear these fines, once")');
+    chk('Conduct & fines offers the super admin the one-time clearance of every account', await until(P, () => /Clear every active member’s account — once/.test(document.body.innerText), null, 60000));
+    await P.click('button:has-text("Clear every active member’s account")');
+    const money = n => '₦' + n.toLocaleString('en-US');
+    chk('the preview is the whole account by kind, and names the imported charge that stays owed',
+      await until(P, (w) => document.body.innerText.includes('2 accounts to clear — ' + w) && /dues ₦/.test(document.body.innerText) && /₦1,500 of imported charges stays owed/.test(document.body.innerText), money(whole))
+      && /Kemi Fined/.test(await P.evaluate(() => document.body.innerText)) && payable() === before + 2500);
+    await P.click('button:has-text("Clear these accounts, once")');
     await P.waitForSelector('[role="dialog"]');
     const dlg = '[role="dialog"]';
-    await P.fill(dlg + ' textarea', 'Fines carried over from the paper register, cleared by board decision');
+    await P.fill(dlg + ' textarea', 'Balances carried over from the paper register, cleared by board decision');
     const inputs = await P.$$(dlg + ' input');
-    await inputs[0].fill('CLEAR ALL FINES');
+    await inputs[0].fill('CLEAR ALL ACCOUNTS');
     await inputs[1].fill('000000');
     await P.click(dlg + ' button[type="submit"]');
     chk('a wrong authenticator code is refused on the form, and nothing is cleared',
-      await until(P, () => /not the current code/.test(document.querySelector('[role="dialog"]')?.innerText || '')) && finesOwed() === 3500);
+      await until(P, () => /not the current code/.test(document.querySelector('[role="dialog"]')?.innerText || '')) && payable() === before + 2500);
     const code = php(`echo totp_code('JBSWY3DPEHPK3PXP', intdiv(time(), 30));`, ['bootstrap']);
     await inputs[1].fill(code);
     await P.click(dlg + ' button[type="submit"]');
-    const okRun = await until(P, () => /₦3,500 of fines cleared across 2 members\. This is now locked\./.test(document.body.innerText));
+    const okRun = await until(P, (w) => document.body.innerText.includes(w + ' cleared across 2 accounts. Imported charges are still owed. This is now locked.'), money(whole));
     if (!okRun) console.error('   body: ' + (await P.evaluate(() => document.body.innerText)).slice(0, 900).replace(/\s+/g, ' '));
-    const k2 = () => Number(php(`echo fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-FS-K2'"))['payable'];`, ['bootstrap']));
-    chk('with the current code it clears every unpaid fine and says it is locked (each account down by exactly its fines)', okRun && k2() === 0 && payable() === before);
-    chk('…the dues are still owed', payable() === before && before > 40000);
+    chk('with the current code it clears the dues, membership and fines, and says it is locked', okRun && payable() === 0);
+    chk('…and the imported fine is still owed in full', k2() === 1500);
     await P.reload({ waitUntil: 'domcontentloaded' });
     await waitForBoot(P);
     chk('reloaded, the screen shows the record of the one run and no way to run it again',
-      await until(P, () => /One-time clearance/.test(document.body.innerText) && /Used .+ — 2 members, ₦3,500/.test(document.body.innerText) && /can never be run again/.test(document.body.innerText), null, 60000)
-      && !(await P.$('button:has-text("Clear the unpaid fines of every active member")')));
+      await until(P, (w) => /One-time clearance/.test(document.body.innerText) && document.body.innerText.includes('2 accounts, ' + w) && /can never be run again/.test(document.body.innerText), money(whole), 60000)
+      && !(await P.$('button:has-text("Clear every active member’s account")')));
     const again = JSON.parse(php(`echo json_encode(backend_dispatch('admin.fees.finesClearOnce', ['requesterId' => '${ADMIN}', 'mode' => 'preview']));`, ['bootstrap']));
     chk('…and the server refuses it for good', again.error === 'already_used');
     chk('no page errors', errs.length === 0);

@@ -135,6 +135,233 @@ function member_excuses(array $m): array {
             'fine' => $fine];   // ₦ for an absence nobody asked about; 0 when member enforcement is off
 }
 
+/* ── A payment, one line per way it was paid ─────────────────────────────────
+   A family paid ₦10,000 by transfer and ₦2,000 in cash to a coordinator, and
+   the claim had one Reference box: the sentence went in it, and approving
+   posted one ₦12,000 "claim" whose reference was a paragraph — so the bank
+   statement could not be matched and the cash had no name against it. A claim
+   now carries its parts, and approving posts ONE LEDGER ENTRY PER PART with
+   its own method and reference. */
+const MEMBER_PAYMENT_METHODS = ['transfer' => 'Bank transfer', 'cash' => 'Cash', 'pos' => 'POS', 'other' => 'Other'];
+const MEMBER_PAYMENT_PARTS_MAX = 4;
+
+/**
+ * Normalise a claim's parts. $strict (a family's claim) requires the reference
+ * of a transfer or POS payment and who took the cash — the two facts the desk
+ * matches against; the desk's own approval may leave them out.
+ * Returns ['parts' => [...], 'total' => int] or ['error' => code, 'detail' => text].
+ */
+function member_payment_parts($raw, bool $strict): array {
+    if (!is_array($raw)) return ['parts' => [], 'total' => 0];
+    $out = []; $total = 0;
+    foreach (array_values($raw) as $i => $x) {
+        if (!is_array($x)) continue;
+        /* As a family writes it — "10,000", "₦10,000", "10k". fees_money() reads
+           the comma in "10,000" as a decimal point, which made ₦10,000 ₦10. */
+        $amount = is_string($x['amount'] ?? null) ? fees_fine_amount((string)$x['amount']) : fees_money($x['amount'] ?? null, 0);
+        $ref = trim(mb_substr(preg_replace('/\s+/', ' ', (string)($x['reference'] ?? '')), 0, 60));
+        $who = trim(mb_substr(preg_replace('/\s+/', ' ', (string)($x['receivedBy'] ?? '')), 0, 80));
+        if ($amount <= 0 && $ref === '' && $who === '') continue;   // an empty line, not a bad one
+        $method = (string)($x['method'] ?? '');
+        if (!isset(MEMBER_PAYMENT_METHODS[$method])) return ['error' => 'bad_method', 'detail' => 'Say how each amount was paid.'];
+        if ($amount <= 0) return ['error' => 'bad_amount', 'detail' => 'Give the amount for each way you paid.'];
+        if ($strict && in_array($method, ['transfer', 'pos'], true) && mb_strlen($ref) < 3)
+            return ['error' => 'need_reference', 'detail' => 'Give the reference for the ' . strtolower(MEMBER_PAYMENT_METHODS[$method]) . ' of ' . fees_money_text($amount) . ', so the desk can find it on the statement.'];
+        if ($strict && $method === 'cash' && mb_strlen($who) < 2)
+            return ['error' => 'need_receiver', 'detail' => 'Say who took the cash of ' . fees_money_text($amount) . '.'];
+        $out[] = ['method' => $method, 'amount' => $amount, 'reference' => $ref, 'receivedBy' => $method === 'cash' ? $who : ''];
+        $total += $amount;
+    }
+    if (count($out) > MEMBER_PAYMENT_PARTS_MAX) return ['error' => 'too_many_parts', 'detail' => 'At most ' . MEMBER_PAYMENT_PARTS_MAX . ' ways in one claim.'];
+    return ['parts' => $out, 'total' => $total];
+}
+/** One part, in words: "Bank transfer ₦10,000 · ref 2108…" / "Cash ₦2,000 · to Mrs Awolaja". */
+function member_payment_part_text(array $x): string {
+    return (MEMBER_PAYMENT_METHODS[$x['method']] ?? $x['method']) . ' ' . fees_money_text((int)$x['amount'])
+        . ($x['reference'] !== '' ? ' · ref ' . $x['reference'] : '') . (($x['receivedBy'] ?? '') !== '' ? ' · to ' . $x['receivedBy'] : '');
+}
+
+/* ── Reading a "correct my details" request ─────────────────────────────────
+   Members and parents write these as they speak: "Date of birth: 08/06/2013.
+   Phone number: 08098190961", or just "Parent phone number". The desk used to
+   read the sentence, open the record in another tab, find the field and type
+   it in. This reads the text for WHICH field and WHAT value, beside what the
+   record holds now, so the desk checks a proposal and applies it in one press
+   (admin_request_apply_details) — and when a field is named with no new value,
+   it says so, so the reply can ask for it instead of guessing. Never applied
+   by itself: a person confirms every change. */
+const MEMBER_DETAIL_FIELDS = [
+    // Most specific first: "parent phone" must not be read as the member's phone.
+    'parentPhone' => ['Parent’s phone', '/\b(parent|guardian|mum|mom|mother|dad|father|daddy|mummy)(\'?s)?\s*(phone|number|tel|mobile|line|contact)/i'],
+    'parentEmail' => ['Parent’s email', '/\b(parent|guardian|mum|mom|mother|dad|father)(\'?s)?\s*e-?mail/i'],
+    'parentName'  => ['Parent’s name', '/\b(parent|guardian|mum|mom|mother|dad|father)(\'?s)?\s*name/i'],
+    'dob'         => ['Date of birth', '/\b(date of birth|d\.?o\.?b|birth\s*day|birth\s*date|born)\b/i'],
+    'email'       => ['Email', '/\be-?mail/i'],
+    'phone'       => ['Phone', '/\b(phone|mobile|tel|telephone|line|whatsapp)(\s*(number|no))?\b|^\s*number\b/i'],
+    'school'      => ['School', '/\b(school|college)\b/i'],
+    'fullName'    => ['Name', '/\b(full\s*name|surname|first\s*name|last\s*name|middle\s*name|my\s*name|name|spelling)\b/i'],
+];
+
+/** A value as the record would hold it, or null when it is not a value of that kind. */
+function member_detail_value(string $field, string $v): ?string {
+    $v = trim(preg_replace('/\s+/', ' ', $v), " .,;:-\t");
+    if ($v === '') return null;
+    if ($field === 'dob') {
+        // Day first, as dates are written here: 08/06/2013 is the 8th of June.
+        if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})$/', $v, $m)) [$y, $mo, $d] = [(int)$m[1], (int)$m[2], (int)$m[3]];
+        elseif (preg_match('/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/', $v, $m)) [$d, $mo, $y] = [(int)$m[1], (int)$m[2], (int)$m[3] < 100 ? 2000 + (int)$m[3] : (int)$m[3]];
+        elseif (($t = strtotime(preg_replace('/(\d)(st|nd|rd|th)\b/i', '$1', $v) . ' 12:00 UTC')) !== false) [$y, $mo, $d] = array_map('intval', explode('-', gmdate('Y-n-j', $t)));
+        else return null;
+        return checkdate($mo, $d, $y) && $y >= 1950 && $y <= (int)gmdate('Y') ? sprintf('%04d-%02d-%02d', $y, $mo, $d) : null;
+    }
+    if ($field === 'phone' || $field === 'parentPhone') {
+        $digits = preg_replace('/[^\d+]/', '', $v);
+        // One shape on the record: +234 809… and 234809… are 0809…, as the rest of the roster is written.
+        if (preg_match('/^\+?234(\d{10})$/', $digits, $x)) $digits = '0' . $x[1];
+        return preg_match('/^\+?\d{10,14}$/', $digits) ? $digits : null;
+    }
+    if ($field === 'email' || $field === 'parentEmail') return filter_var($v, FILTER_VALIDATE_EMAIL) ? strtolower($v) : null;
+    if (preg_match('/\d{5,}|@/', $v)) return null;   // a name or a school is not a number or an address
+    return mb_strlen($v) >= 2 && mb_strlen($v) <= 120 ? $v : null;
+}
+
+/**
+ * ['changes' => [{field,label,current,proposed,warn?}], 'asked' => [{field,label,current}]].
+ * $kind 'familydetails' is a PARENT writing: "my phone number" is theirs, not the child's.
+ */
+function member_details_read(string $text, array $m, string $kind = 'details'): array {
+    $changes = []; $asked = [];
+    $pieces = preg_split('/\n|;|\s{2,}|\.\s+(?=[A-Za-z])|,\s+(?=(?:and\s+)?(?:my\s+|the\s+|his\s+|her\s+)?[A-Za-z\' ]{2,30}(?::|\bis\b|\bshould\b))/u', $text) ?: [];
+    foreach ($pieces as $piece) {
+        $piece = trim($piece); if ($piece === '') continue;
+        $label = $piece; $value = '';
+        if (preg_match('/^(.{2,60}?)\s*(?::|=|–|—|\bis\b|\bshould\s+(?:be|read)\b|\bto\s+be\b|\bto\b|\bas\b)\s*(.+)$/iu', $piece, $mm)) { $label = $mm[1]; $value = $mm[2]; }
+        else foreach (MEMBER_DETAIL_FIELDS as [$nm, $re0]) {
+            // "dob 8th June 2013": the label straight before the value, no colon.
+            if (preg_match($re0, $piece, $hit, PREG_OFFSET_CAPTURE) && $hit[0][1] === 0) { $label = $hit[0][0]; $value = trim(substr($piece, strlen($hit[0][0]))); break; }
+        }
+        foreach (MEMBER_DETAIL_FIELDS as $field => [$name, $re]) {
+            if (!preg_match($re, $label)) continue;
+            if ($kind === 'familydetails') $field = ['phone' => 'parentPhone', 'email' => 'parentEmail'][$field] ?? $field;
+            $name = MEMBER_DETAIL_FIELDS[$field][0];
+            $cur = (string)($m[$field] ?? '');
+            $val = $value !== '' ? member_detail_value($field, $value) : null;
+            if ($val !== null) { if ($val !== $cur) $changes[$field] = ['field' => $field, 'label' => $name, 'current' => $cur, 'proposed' => $val]; }
+            elseif (!isset($changes[$field])) $asked[$field] = ['field' => $field, 'label' => $name, 'current' => $cur, 'wrote' => $value];
+            break;
+        }
+    }
+    foreach (array_keys($changes) as $f) unset($asked[$f]);
+    /* What a person checking it would notice. A child's date of birth outside
+       the programme's ages is a slipped year far more often than a fact; a
+       number or address another member already has is usually a sibling's — or
+       a typo landing on somebody else. Said, never decided. */
+    foreach ($changes as $f => &$c) {
+        if ($f === 'dob') {
+            $age = (int)floor((time() - (int)strtotime($c['proposed'] . ' 12:00 UTC')) / 31557600);
+            if ($age < 5 || $age > 25) $c['warn'] = 'That makes them ' . $age . ' — check the year.';
+        } elseif (in_array($f, ['phone', 'email', 'parentPhone', 'parentEmail'], true)) {
+            $col = in_array($f, ['phone', 'parentPhone'], true) ? ['phone', 'parentPhone'] : ['email', 'parentEmail'];
+            $o = db_row('SELECT fullName FROM members WHERE memberId <> ? AND (' . $col[0] . ' = ? OR ' . $col[1] . ' = ?) LIMIT 1', [(string)$m['memberId'], $c['proposed'], $c['proposed']]);
+            if ($o) $c['warn'] = 'Also on ' . (string)$o['fullName'] . '’s record — a sibling, or a typo?';
+        }
+    }
+    unset($c);
+    return ['changes' => array_values($changes), 'asked' => array_values($asked)];
+}
+
+/**
+ * admin.requests.applyDetails — apply a details correction and approve it, in
+ * one step. The record is changed through admin_members_upsert, so every rule
+ * on a member's fields (and the approval queue for a club admin) still holds;
+ * only when that succeeds is the request approved, with a reply that says
+ * exactly what changed.
+ */
+function admin_request_apply_details(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $rid = trim((string)($p['requestId'] ?? ''));
+    $r = db_row('SELECT * FROM member_requests WHERE requestId = ? LIMIT 1', [$rid]);
+    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    if (!in_array((string)$r['kind'], ['details', 'familydetails'], true)) return ['ok' => false, 'error' => 'not_details'];
+    if ((string)$r['status'] !== 'open') return ['ok' => false, 'error' => 'already_decided'];
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]);
+    if (!$m) return ['ok' => false, 'error' => 'member_not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)($m['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
+    $in = is_array($p['changes'] ?? null) ? $p['changes'] : [];
+    $data = []; $said = [];
+    foreach ($in as $field => $val) {
+        if (!isset(MEMBER_DETAIL_FIELDS[$field])) return ['ok' => false, 'error' => 'bad_field', 'detail' => 'That is not a detail this can change: ' . $field . '.'];
+        $v = member_detail_value((string)$field, (string)$val);
+        if ($v === null) return ['ok' => false, 'error' => 'bad_value', 'field' => $field, 'detail' => MEMBER_DETAIL_FIELDS[$field][0] . ': “' . $val . '” is not a valid ' . strtolower(MEMBER_DETAIL_FIELDS[$field][0]) . '.'];
+        if ($v === (string)($m[$field] ?? '')) continue;
+        $data[$field] = $v;
+        $said[] = MEMBER_DETAIL_FIELDS[$field][0] . ' → ' . ($field === 'dob' ? gmdate('j M Y', (int)strtotime($v . ' 12:00 UTC')) : $v);
+    }
+    if (!$data) return ['ok' => false, 'error' => 'nothing_to_change', 'detail' => 'Every value given is what the record already holds.'];
+    $up = admin_members_upsert(['requesterId' => $p['requesterId'] ?? '', 'data' => ['memberId' => (string)$m['memberId']] + $data, 'ip' => $p['ip'] ?? '']);
+    if (empty($up['ok'])) return $up;
+    $reply = trim((string)($p['reply'] ?? ''));
+    $reply = ($reply !== '' ? $reply . "\n\n" : '') . 'Updated on your record: ' . implode('; ', $said) . '.';
+    $d = admin_request_decide(['requesterId' => $p['requesterId'] ?? '', 'requestId' => $rid, 'approve' => true, 'decision' => $reply, 'ip' => $p['ip'] ?? '']);
+    if (empty($d['ok'])) return $d;
+    audit('member.details.applied', (string)($g['requester']['memberId'] ?? ''), (string)$m['memberId'], ['requestId' => $rid, 'fields' => array_keys($data)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'changed' => array_keys($data), 'reply' => $reply];
+}
+
+/**
+ * Tell the member about their request — and the parent who raised it, at the
+ * address they signed in with. One place, so a decision and a message from the
+ * desk reach the same people in the same words.
+ */
+function member_request_tell(array $r, string $title, string $what, string $body): void {
+    $mm = db_row('SELECT memberId, fullName, email FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]);
+    if ($mm) notify_people([$mm], [
+        'kind' => 'request', 'eyebrow' => 'NGG · Your requests', 'title' => $title,
+        'intro' => 'Your request “' . (string)$r['subject'] . '” ' . $what, 'body' => $body,
+        'linkPage' => 'dashboard', 'ctaPath' => '/dashboard/requests', 'ctaLabel' => 'See your requests →']);
+    if (str_starts_with((string)($r['raisedBy'] ?? ''), 'guardian:') && function_exists('family_mail')) {
+        $gr = db_row('SELECT email FROM guardians WHERE guardianId = ? AND status = ? LIMIT 1', [substr((string)$r['raisedBy'], 9), 'active']);
+        if ($gr) family_mail((string)$gr['email'], $title, [
+            'title' => $title,
+            'intro' => '“' . (string)$r['subject'] . '” for ' . (string)($mm['fullName'] ?? 'your ward') . ' ' . $what,
+            'bodyHtml' => $body !== '' ? '<p style="margin:0 0 10px">' . nl2br(esc_html($body)) . '</p>' : '',
+            'ctaLabel' => 'Open the family account →', 'ctaUrl' => family_origin() . '/family']);
+    }
+}
+
+/** The longest one message from the desk may be. */
+const MEMBER_COMMENT_MAX = 2000;
+/** How many messages one request may carry — a request, not a chat. */
+const MEMBER_COMMENTS_MAX = 30;
+
+/**
+ * admin.requests.comment — write to the member about their request without
+ * deciding it: "We can see ₦10,000 but not the ₦2,000 cash — who took it?"
+ * Kept on the request (both sides see it), and sent to them as a message.
+ */
+function admin_request_comment(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $rid = trim((string)($p['requestId'] ?? ''));
+    $r = db_row('SELECT * FROM member_requests WHERE requestId = ? LIMIT 1', [$rid]);
+    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    $owner = (string)$r['memberId'] !== '' ? db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]) : null;
+    if (!admin_centre_allowed($g['requester'], (string)($owner['centre'] ?? ($r['centre'] ?? '')))) return ['ok' => false, 'error' => 'out_of_scope'];
+    if ((string)$r['status'] === 'withdrawn') return ['ok' => false, 'error' => 'withdrawn', 'detail' => 'They withdrew this request, so nobody would read a message on it.'];
+    if ((string)$r['memberId'] === '') return ['ok' => false, 'error' => 'anonymous', 'detail' => 'This was sent without a name, so a message reaches nobody.'];
+    $text = trim(mb_substr((string)($p['text'] ?? ''), 0, MEMBER_COMMENT_MAX));
+    if (mb_strlen($text) < 2) return ['ok' => false, 'error' => 'empty', 'detail' => 'Write the message.'];
+    $list = (array)(json_decode((string)($r['comments'] ?? ''), true) ?: []);
+    if (count($list) >= MEMBER_COMMENTS_MAX) return ['ok' => false, 'error' => 'too_many', 'detail' => 'This request already has ' . MEMBER_COMMENTS_MAX . ' messages. Decide it, or call the family.'];
+    $by = (string)($g['requester']['memberId'] ?? '');
+    $first = explode(' ', trim((string)($g['requester']['fullName'] ?? '')))[0] ?? '';
+    $list[] = ['at' => now_iso(), 'by' => $by, 'byName' => $first !== '' ? $first . ' at the NGG desk' : 'The NGG desk', 'text' => $text];
+    db_update('member_requests', ['comments' => json_encode($list, JSON_UNESCAPED_UNICODE), 'updatedAt' => now_iso()], ['id' => (int)$r['id']]);
+    member_request_tell($r, 'A message about your request', 'has a message from the desk.', $text);
+    audit('member.request.comment', $by, $rid, ['kind' => (string)$r['kind'], 'chars' => mb_strlen($text)], (string)($p['ip'] ?? ''));
+    $after = db_row('SELECT * FROM member_requests WHERE id = ? LIMIT 1', [(int)$r['id']]);
+    return ['ok' => true, 'request' => member_request_public($after ?: [])];
+}
+
 /** Body length. Long enough to explain a circumstance, short enough that the
  *  column is a request and not a correspondence archive. */
 const MEMBER_REQUEST_BODY_MAX = 2000;
@@ -174,6 +401,10 @@ function member_request_public(array $r): array
         'body'      => (string)($r['body'] ?? ''),
         'amount'    => (int)($r['amount'] ?? 0),
         'reference' => (string)($r['reference'] ?? ''),
+        'parts'     => array_map(static fn($x) => $x + ['methodLabel' => MEMBER_PAYMENT_METHODS[$x['method'] ?? ''] ?? (string)($x['method'] ?? '')],
+                         (array)(json_decode((string)($r['parts'] ?? ''), true) ?: [])),
+        'comments'  => array_values(array_map(static fn($c) => ['at' => (string)($c['at'] ?? ''), 'byName' => (string)($c['byName'] ?? 'The NGG desk'), 'text' => (string)($c['text'] ?? '')],
+                         (array)(json_decode((string)($r['comments'] ?? ''), true) ?: []))),
         'proofUrl'  => (string)($r['proofUrl'] ?? ''),
         'paidAt'    => (string)($r['paidAt'] ?? ''),
         'fromDate'  => (string)($r['fromDate'] ?? ''),
@@ -402,10 +633,18 @@ function member_request_create(array $p): array
     ];
 
     if ($kind === 'payment') {
-        $amount = fees_money($p['amount'] ?? null, 0);
+        $pp = member_payment_parts($p['parts'] ?? null, true);
+        if (isset($pp['error'])) return ['ok' => false, 'error' => $pp['error'], 'detail' => $pp['detail']];
+        $amount = $pp['parts'] ? $pp['total'] : fees_money($p['amount'] ?? null, 0);
         if ($amount <= 0) return ['ok' => false, 'error' => 'bad_amount', 'detail' => 'How much did you pay?'];
         $row['amount'] = $amount;
         $row['reference'] = trim(substr((string)($p['reference'] ?? ''), 0, 120));
+        if ($pp['parts']) {
+            $row['parts'] = json_encode($pp['parts'], JSON_UNESCAPED_UNICODE);
+            // The searchable reference is the parts' own references, not a sentence.
+            $refs = array_values(array_filter(array_map(static fn($x) => $x['reference'], $pp['parts'])));
+            if ($refs) $row['reference'] = mb_substr(implode(' · ', $refs), 0, 120);
+        }
         $row['paidAt'] = substr(trim((string)($p['paidAt'] ?? '')), 0, 10);
         /* An uploaded receipt, if there is one. Stored as the URL the upload
            path already returned — this never accepts raw bytes, so the one
@@ -734,7 +973,12 @@ function admin_requests_list(array $p): array
     if ($gids) foreach (db_all('SELECT guardianId, fullName, email FROM guardians WHERE guardianId IN (' . implode(',', array_fill(0, count($gids), '?')) . ')', $gids) as $gr) {
         $gNames['guardian:' . $gr['guardianId']] = trim((string)$gr['fullName']) !== '' ? (string)$gr['fullName'] : (string)$gr['email'];
     }
-    $rows = array_map(static fn($r) => member_request_public($r) + [
+    /* A details correction is read against the record it would change — one
+       query for the page's members, not one per row. */
+    $dIds = array_values(array_unique(array_map(static fn($r) => (string)$r['memberId'], array_filter($raw, static fn($r) => in_array((string)$r['kind'], ['details', 'familydetails'], true)))));
+    $dRows = $dIds ? array_column(db_all('SELECT memberId, fullName, email, phone, dob, parentName, parentEmail, parentPhone, school FROM members WHERE memberId IN (' . implode(',', array_fill(0, count($dIds), '?')) . ')', $dIds), null, 'memberId') : [];
+    $rows = array_map(static fn($r) => member_request_public($r) + (isset($dRows[(string)$r['memberId']]) && in_array((string)$r['kind'], ['details', 'familydetails'], true)
+        ? ['reading' => member_details_read(trim((string)($r['subject'] ?? '') . "\n" . (string)($r['body'] ?? '')), $dRows[(string)$r['memberId']] + ['memberId' => (string)$r['memberId']], (string)$r['kind'])] : []) + [
         'memberId' => (string)$r['memberId'], 'fullName' => (string)($r['fullName'] ?? ''), 'displayId' => (string)($r['displayId'] ?? ''),
         'centre' => (string)(($r['mCentre'] ?? '') !== '' ? $r['mCentre'] : ($r['centre'] ?? '')), 'decidedBy' => (string)($r['decidedBy'] ?? ''),
         'decidedByName' => (string)($staffNames[(string)($r['decidedBy'] ?? '')] ?? ''), 'ledgerEntryId' => (string)($r['ledgerEntryId'] ?? ''),
@@ -839,7 +1083,28 @@ function admin_request_decide(array $p): array
        being approved. An admin may correct the amount they actually found on
        the statement — approving a claim for ₦6,000 when ₦5,000 arrived should
        post ₦5,000, not argue with the member first. */
-    if ($approve && (string)$r['kind'] === 'payment' && function_exists('fees_post')) {
+    /* Posted part by part when the desk says how it arrived: one ledger entry
+       each, with its own method and reference, so a transfer can be found on
+       the statement and the cash has the name of who took it. */
+    $parts = null;
+    if ($approve && (string)$r['kind'] === 'payment' && is_array($p['parts'] ?? null)) {
+        $pp = member_payment_parts($p['parts'], false);
+        if (isset($pp['error'])) return ['ok' => false, 'error' => $pp['error'], 'detail' => $pp['detail']];
+        if ($pp['parts']) $parts = $pp['parts'];
+    }
+    if ($parts && function_exists('fees_post')) {
+        $ids = [];
+        foreach ($parts as $k => $x) {
+            $entry = fees_post((string)$r['memberId'], 'payment', (int)$x['amount'], [
+                'note' => 'Payment confirmed from member claim ' . $rid . ' — ' . member_payment_part_text($x),
+                'method' => $x['method'], 'reference' => $x['reference'] !== '' ? $x['reference'] : ($x['receivedBy'] !== '' ? 'cash to ' . $x['receivedBy'] : ''), 'by' => $by,
+            ]);
+            if ($entry) { $ids[] = (string)$entry['entryId']; $parts[$k]['entryId'] = (string)$entry['entryId']; }
+        }
+        $patch['ledgerEntryId'] = implode(',', $ids);
+        $patch['amount'] = array_sum(array_map(static fn($x) => (int)$x['amount'], $parts));
+        $patch['parts'] = json_encode($parts, JSON_UNESCAPED_UNICODE);
+    } elseif ($approve && (string)$r['kind'] === 'payment' && function_exists('fees_post')) {
         $amount = fees_money($p['amount'] ?? null, (int)$r['amount']);
         if ($amount > 0) {
             $entry = fees_post((string)$r['memberId'], 'payment', $amount, [
@@ -872,22 +1137,9 @@ function admin_request_decide(array $p): array
     /* The member is told. A queue whose decisions arrive silently is one they
        have to keep checking, which is the failure mode self-service exists to
        remove. */
-    $mm = db_row('SELECT memberId, fullName, email FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]);
-    if ($mm) notify_people([$mm], [
-        'kind' => 'request', 'eyebrow' => 'NGG · Your requests',
-        'title' => (MEMBER_REQUEST_KINDS[(string)$r['kind']] ?? 'Request') . ' — ' . ($approve ? 'approved' : 'declined'),
-        'intro' => 'Your request “' . (string)$r['subject'] . '” has been ' . ($approve ? 'approved.' : 'declined.'),
-        'body' => $reason !== '' ? $reason : ($approve ? 'Your request has been approved.' : 'Your request was declined.'),
-        'linkPage' => 'dashboard', 'ctaPath' => '/dashboard/requests', 'ctaLabel' => 'See your requests →']);
-    /* …and so is the parent who raised it, at the address they signed in with. */
-    if (str_starts_with((string)($r['raisedBy'] ?? ''), 'guardian:') && function_exists('family_mail')) {
-        $gr = db_row('SELECT email FROM guardians WHERE guardianId = ? AND status = ? LIMIT 1', [substr((string)$r['raisedBy'], 9), 'active']);
-        if ($gr) family_mail((string)$gr['email'], (MEMBER_REQUEST_KINDS[(string)$r['kind']] ?? 'Request') . ' — ' . ($approve ? 'approved' : 'declined'), [
-            'title' => 'Your request was ' . ($approve ? 'approved' : 'declined'),
-            'intro' => '“' . (string)$r['subject'] . '” for ' . (string)($mm['fullName'] ?? 'your ward') . ' has been ' . ($approve ? 'approved.' : 'declined.'),
-            'bodyHtml' => $reason !== '' ? '<p style="margin:0 0 10px">' . nl2br(esc_html($reason)) . '</p>' : '',
-            'ctaLabel' => 'Open the family account →', 'ctaUrl' => family_origin() . '/family']);
-    }
+    member_request_tell($r, (MEMBER_REQUEST_KINDS[(string)$r['kind']] ?? 'Request') . ' — ' . ($approve ? 'approved' : 'declined'),
+        'has been ' . ($approve ? 'approved.' : 'declined.'),
+        $reason !== '' ? $reason : ($approve ? 'Your request has been approved.' : 'Your request was declined.'));
     $after = db_row('SELECT * FROM member_requests WHERE id = ? LIMIT 1', [(int)$r['id']]);
     return ['ok' => true, 'request' => member_request_public($after ?: [])];
 }

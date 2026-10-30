@@ -8455,6 +8455,7 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-note-text > span:first-child { font-size: 14px; line-height: 1.45; color: var(--cr-text); text-wrap: pretty; }
 .cr-note.is-quote .cr-note-text > span:first-child { font-size: 18px; }
 .cr-note-sub { font-size: 12.5px; color: var(--cr-muted-3); }
+.cr-prose.cr-prose-empty { color: var(--cr-muted-3); font-size: 13px; }
 
 /* ── Conduct & fines (cr-tab-conduct.jsx) ──────────────────────────────────
    The upload's empty state, the check's summary bar, and the dates control.
@@ -16590,6 +16591,17 @@ button.m9x-ev-sum { cursor: pointer; }
 .fp3x-err { margin: 0; padding: 10px 14px; border-radius: 12px; background: #fdeaea; color: #a12a2a; }
 .fp3x-form { display: grid; gap: 12px; }
 .fp3x-form label { display: grid; gap: 6px; }
+/* One payment line: how it was paid, the amount, and its proof (fp3-app.jsx Fp3Paid). */
+.fp3x-payline { margin: 0; padding: 12px; border: 1px solid #e2e0d8; border-radius: 14px; display: grid; gap: 10px; min-width: 0; }
+.fp3x-payline legend { padding: 0 6px; font-weight: 600; font-size: 14px; }
+.fp3x-seg { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: #f1efe9; }
+.fp3x-seg button { flex: 1; min-height: 44px; border: 0; border-radius: 10px; background: transparent; font: inherit; font-size: 14px; font-weight: 600; color: #3a3a40; }
+.fp3x-seg button[aria-checked="true"] { background: #fff; color: #0b0b0c; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.fp3x-file { position: relative; }
+.fp3x-file span em { font-style: normal; font-weight: 400; color: #5d5d63; }
+.fp3x-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.fp3x-file b { min-height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border: 1.5px dashed #c9c7bf; border-radius: 12px; font-weight: 500; color: #3a3a40; overflow-wrap: anywhere; }
+.fp3x-file:focus-within b { outline: 2px solid #0b0b0c; outline-offset: 2px; }
 .fp3x-form label span { font-weight: 600; font-size: 14px; }
 .fp3x-form input { min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid #c9c7bf; background: #fff; }
 .fp3x-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
