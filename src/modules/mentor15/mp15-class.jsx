@@ -122,16 +122,16 @@ function Mp15CStars({ centre, say, onOpenChild }) {
         {!all.length ? <p className="m15c-empty">No children in this list yet.</p> : !rows.length ? <p className="m15c-empty">Nobody matches “{q}”.</p> : (
           <table className="m15c-table">
             <thead><tr>
-              <th scope="col" className="m15c-chk"><input type="checkbox" aria-label="Select all shown" checked={allOn}
+              <th scope="col" className="m15c-chk"><label className="m15c-hit"><input type="checkbox" aria-label="Select all shown" checked={allOn}
                 ref={el => { if (el) el.indeterminate = !allOn && rows.some(s => sel[s.studentId]); }}
-                onChange={() => { const n = { ...sel }; rows.forEach(s => { n[s.studentId] = !allOn; }); setSel(n); }}/></th>
+                onChange={() => { const n = { ...sel }; rows.forEach(s => { n[s.studentId] = !allOn; }); setSel(n); }}/></label></th>
               <th scope="col">Child</th><th scope="col">Today</th><th scope="col">Presence this week</th><th scope="col"><span className="m15x-sr">Notes</span></th>
             </tr></thead>
             <tbody>{rows.map(s => {
               const p = presence(s);
               return (
                 <tr key={s.studentId}>
-                  <td className="m15c-chk"><input type="checkbox" aria-label={"Select " + s.fullName} checked={!!sel[s.studentId]} onChange={() => setSel({ ...sel, [s.studentId]: !sel[s.studentId] })}/></td>
+                  <td className="m15c-chk"><label className="m15c-hit"><input type="checkbox" aria-label={"Select " + s.fullName} checked={!!sel[s.studentId]} onChange={() => setSel({ ...sel, [s.studentId]: !sel[s.studentId] })}/></label></td>
                   <td><button type="button" className="m15c-name" aria-label={(onOpenChild && s.kind === "member" ? "Open the record for " : "Notes on ") + s.fullName} onClick={() => onOpenChild && s.kind === "member" ? onOpenChild(s.studentId) : setOpen({ kind: "notes", s })}>
                     <span className="m15c-av" aria-hidden="true">{(s.fullName || "?").split(/\s+/).map(w => w[0]).slice(0, 2).join("")}</span>
                     <span><b>{s.fullName}</b><small>{s.track || "—"}</small></span></button></td>

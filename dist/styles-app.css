@@ -10301,6 +10301,8 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m15c-table tr:last-child td { border-bottom: 0; }
 .m15c-chk { width: 28px; }
 .m15c-chk input { width: 18px; height: 18px; accent-color: #0b0b0c; }
+/* The box is 18px; the label round it is the target, 44px square, so a thumb that lands beside the box still ticks it. */
+.m15c-hit { display: inline-grid; place-items: center; width: 44px; height: 44px; margin: -13px; cursor: pointer; }
 .m15c-right { text-align: right; }
 .m15c-num { font-variant-numeric: tabular-nums; font-family: var(--m15-mono, "Geist Mono", ui-monospace, monospace); }
 .m15c-name { display: flex; align-items: center; gap: 10px; border: 0; background: none; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; min-width: 0; }
@@ -10368,10 +10370,18 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 }
 @container (max-width: 640px) {
   .m15c-table thead { display: none; }
-  .m15c-table tr { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 6px 8px; padding: 10px 0; border-bottom: 1px solid #f1f1ef; }
-  .m15c-table td { padding: 0; border: 0; }
-  .m15c-table td:nth-child(3), .m15c-table td:nth-child(4) { grid-column: 2 / 4; }
-  .m15c-table td:nth-child(5) { grid-row: 1; grid-column: 3; }
+  /* A child per card: name across the top (wrapping, never running under the
+     notes button), the two actions side by side under it at full width. */
+  .m15c-table tr { display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; padding: 12px 0; border-bottom: 1px solid #f1f1ef; align-items: center; }
+  .m15c-table td { padding: 0; border: 0; min-width: 0; }
+  .m15c-table td:nth-child(2) { grid-column: 2 / 4; }
+  .m15c-table td:nth-child(3) { grid-row: 2; grid-column: 2; }
+  .m15c-table td:nth-child(4) { grid-row: 2; grid-column: 3 / 5; }
+  .m15c-table td:nth-child(3) > .m15c-btn, .m15c-table td:nth-child(4) > .m15c-btn { width: 100%; }
+  .m15c-table td:nth-child(5) { grid-row: 1; grid-column: 4; }
+  .m15c-name { width: 100%; }
+  .m15c-name > span:last-child { min-width: 0; }
+  .m15c-name b { white-space: normal; overflow-wrap: anywhere; }
   .m15c-kpis { grid-template-columns: 1fr; }
   .m15c-q-row { grid-template-columns: 1fr; }
 }
@@ -12740,6 +12750,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .cp3-d180fa8{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 14px;border:0;border-bottom:1px solid #f1f1ef;background:#fff;text-align:left}
 .cp3-2ac3d4a{height:24px;padding:0 8px;border-radius:999px;background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:12px;font-weight:500;display:inline-flex;align-items:center;white-space:nowrap}
 .cp3-0922e4d{margin:0;font-size:13.5px;color:#4a4a50}
+.cp3-4d8313a{font-size:15px;font-weight:500}
 .cp3-b6c7a9d{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 14px;border:1px solid #ececea;border-radius:16px;background:#fff;text-align:left}
 .cp3-4708efd{width:40px;height:40px;border-radius:50%;background:#efefed;font-size:13px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
 .cp3-ab3f1e3{flex:1;display:flex;flex-direction:column}
@@ -14216,7 +14227,10 @@ button.m9x-ev-sum { cursor: pointer; }
   font: 600 14px 'Geist', system-ui, sans-serif; text-decoration: none; cursor: pointer; }
 .m9x-start-go:focus-visible, .m9x-start-hide:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
 .m9x-start-hide { align-self: flex-start; min-height: 44px; padding: 0 4px; border: 0; background: none; color: #3f3f46; font: 500 14px 'Geist', system-ui, sans-serif; text-decoration: underline; cursor: pointer; }
-@container (max-width: 420px) { .m9x-start-i { flex-wrap: wrap; } .m9x-start-go { margin-left: 34px; } }
+/* On a phone the step's words take the row and its button goes under them:
+   flex-wrap alone never wrapped, because a min-width: 0 text column shrinks
+   to let the button sit beside it, three words a line. */
+@container (max-width: 420px) { .m9x-start-i { flex-wrap: wrap; } .m9x-start-tx { flex: 1 1 calc(100% - 34px); } .m9x-start-go { margin-left: 34px; } }
 
 /* Member portal · My mentor. The next-session banner stacks rather than
    truncates: label, the date (which may wrap), the countdown in the reading
@@ -16578,6 +16592,8 @@ button.m9x-ev-sum { cursor: pointer; }
 .hc-way i { font-size: 24px; }
 .hc-way span { color: #4a4a50; font-size: 14px; }
 .hc-safe a { color: inherit; font-weight: 600; }
+/* The safeguarding line is a sentence, so it is a paragraph: its phone number and email are links inside it, not buttons. */
+.hc-safe-t { margin: 0; flex: 1 1 240px; min-width: 0; }
 .sup-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* ============================================================================
    THE LEARN APP (/learn, page-learn.jsx)
@@ -16886,7 +16902,7 @@ button.m9x-ev-sum { cursor: pointer; }
      sides, 72px below, 22px between its parts), so it takes the same column and
      sits the header's own gap below it rather than its closing padding. */
   max-width: 1200px; margin: -50px auto 0; padding: 0 32px 56px; }
-.cw.is-phone { padding: 0 16px 40px; }
+.cw.is-phone { margin: 0; padding: 0 0 40px; }  /* inside the phone <main>, which already holds the 16px gutter */
 .cw *, .cw *::before, .cw *::after { box-sizing: border-box; }
 .cw-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .cw-scope { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 8px 12px; border-radius: 10px; background: var(--cw-soft); border: 1px solid var(--cw-line); color: var(--cw-muted); font-size: 13px; width: fit-content; }
@@ -17332,4 +17348,76 @@ button.m9x-ev-sum { cursor: pointer; }
 @container (max-width: 420px) {
   .lrn-prog, .lrn-chero { grid-template-columns: minmax(0, 1fr); justify-items: start; }
   .lrn-upnext-t { font-size: 21px; }
+}
+
+/* ============================================================================
+   Portals on a touch screen: one floor, one field size (2026-10-29).
+
+   tests/portals-phone.test.js signs in to every portal on live data and walks
+   every destination its navigation offers at 360px and 390px. Its first run
+   found 700-odd controls under the 44px touch floor — segmented tabs, filter
+   chips, "Add" buttons, the Saturday value chips a mentor taps forty times a
+   morning — and fields set at 12.5–15px, which iOS answers by zooming the page
+   into the field and not zooming back out. The portals are drawn from compiled
+   designs (each class generated from a design's inline style), so the floor
+   cannot be fixed design by design without forking them; it is set here, once,
+   for touch pointers only. A mouse keeps the designs' denser sizes.
+
+   Not a blanket on everything: inline links inside text stay text, a control
+   hidden from assistive tech is not a target, and a checkbox is hit through
+   its label. Specificity comes from the :is() list and the :not()s, never from an
+   importance flag.
+   ========================================================================== */
+@media (pointer: coarse) {
+  :is(.m9-app, .m15-app, .i6-app, .fp3-app, .cp3-app, .ss3-app, .sd3-app, .cm3-app, .lrn-app)
+    :is(button, [role="tab"], select):not([aria-hidden="true"]):not([tabindex="-1"]) { min-height: 44px; }
+  :is(.m9-app, .m15-app, .i6-app, .fp3-app, .cp3-app, .ss3-app, .sd3-app, .cm3-app, .lrn-app)
+    :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]), select, textarea) { font-size: 16px; }
+  :is(.m9-app, .m15-app, .i6-app, .fp3-app, .cp3-app, .ss3-app, .sd3-app, .cm3-app, .lrn-app)
+    :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]), select) { min-height: 44px; }
+  /* A link that stands alone is a control; one inside a sentence is text. */
+  :is(.m9-app, .m15-app, .i6-app, .fp3-app, .cp3-app, .ss3-app, .sd3-app, .cm3-app, .lrn-app) a[href]:not(p a):not(li a):not(span a) { min-height: 44px; }
+}
+
+/* Mentor portal, Mentees on a phone: a child's name is the row. The design's
+   narrow grid (check · name · flags) gave the flag chip the width it wanted
+   and the name what was left, so "Oluwatolu…" sat beside "One-to-one
+   overdue". The flags go under the name, the name wraps rather than
+   truncating, and the search and the sort each get the full width. */
+@container (max-width: 600px) {
+  .m15-app .m15-9b17b89 { grid-template-columns: 40px minmax(0, 1fr); row-gap: 2px; padding: 8px 14px 10px 6px; }
+  .m15-app .m15-9b17b89 > .m15-0b2b64b { grid-column: 2; justify-content: flex-start; padding-left: 46px; }
+  .m15-app .m15-9b17b89 .m15-5949b3a { white-space: normal; overflow-wrap: anywhere; }
+  .m15-app .m15-768764a > .m15-f782820 { flex: 1 1 calc(100% - 56px); max-width: none; min-width: 0; }
+  .m15-app .m15-768764a > .m15-97445a8 { display: none; }
+  .m15-app .m15-768764a > .m15-eca4a53 { flex: 1 1 100%; }
+}
+
+/* Club portal on a phone. Its <main> is a scrolling flex column, and a box
+   that clips (the "Needs you" and "Status by group" lists are rounded cards
+   with overflow hidden) has a minimum height of zero there — so the column
+   squeezed them to fit the screen and the last rows were cut off inside
+   their own card instead of the page scrolling. Nothing in that column may
+   shrink; the column scrolls. */
+.cp3-app .cp3-4fe69f6 > * { flex-shrink: 0; }
+
+/* Member portal, My course on a phone: a lesson's title is the row. Week,
+   icon, title and state on one line left the title three words wide; the
+   state ("To catch up", "Done 80%") goes under the title instead. */
+@container (max-width: 600px) {
+  .m9-app .m9-efc4855 { display: grid; grid-template-columns: 40px 22px minmax(0, 1fr); column-gap: 10px; row-gap: 2px; align-items: start; padding: 10px 14px; }
+  .m9-app .m9-efc4855 > .m9-18477a2 { width: auto; padding-top: 2px; }
+  .m9-app .m9-efc4855 > .m9-71241bc { grid-column: 3; text-align: left; }
+}
+/* The skip link sits outside every portal's root, so the touch floor above
+   does not reach it; it is a real target the moment it is focused. */
+@media (pointer: coarse) { .skip-link { min-height: 44px; display: inline-flex; align-items: center; } }
+
+/* Community, the quote carousel's position dots on a touch screen: each dot
+   is a button, so it takes the 44px floor — and its fill took all of it, a
+   black pill the height of a thumb in the middle of the card. The button
+   keeps the tall hit area; the dot is drawn inside it, 8px, as designed. */
+@media (pointer: coarse) {
+  .cm3-app .cm3-e3d8434 { position: relative; background: transparent; }
+  .cm3-app .cm3-e3d8434::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 8px; margin-top: -4px; border-radius: 999px; background: var(--dc-background, #0b0b0c); }
 }

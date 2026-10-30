@@ -24,8 +24,8 @@
    ========================================================================== */
 
 const CW_VIEWS = [
-  ["wifi", "Overview", "wifi-high", 1], ["wifi-gateways", "Gateways", "broadcast", 1], ["wifi-regions", "Regions", "map-trifold", 0],
-  ["wifi-speed", "Speed tests", "gauge", 1], ["wifi-usage", "Data used", "chart-bar", 1], ["wifi-access", "Who gets on", "user-check", 1], ["wifi-setup", "Setup", "book-open", 0],
+  ["wifi", "Overview", "wifi-high", 1], ["wifi-gateways", "Gateways", "broadcast", 1], ["wifi-regions", "Regions", "map-trifold", 1],
+  ["wifi-speed", "Speed tests", "gauge", 1], ["wifi-usage", "Data used", "chart-bar", 1], ["wifi-access", "Who gets on", "user-check", 1], ["wifi-setup", "Setup", "book-open", 1],
 ];
 const CW_META = {
   wifi: ["Wi-Fi", "How the Wi-Fi at your centres is doing: who is online, how often gateways are there, how fast the lines are, and what needs you."],

@@ -691,6 +691,7 @@ class Cp3Portal extends React.Component {
     out.moreGroups = NAVG.map(g => ({ h: g[0] || "Overview", items: g[1].filter(n => !CP3_TABS.some(t => t[0] === n[0])).map((n, i) => { const b = badge[n[0]]; const ok = !!n[3];
       return { l: n[1], icon: "ph ph-" + n[2], ok, off: !ok, ariaOff: ok ? undefined : "true", fg: ok ? "#0b0b0c" : "#8a8a90", bt: i ? "1px solid #f1f1ef" : "0", hasBadge: !!(ok && b && b[0]), badge: b ? cap99(b[0]) : 0, bb: b ? b[1] : "", bf: b ? b[2] : "",
         onClick: () => ok ? this.go(n[0]) : this.toast("Open the portal on a computer to use " + n[1].toLowerCase() + ".") }; }) })).filter(g => g.items.length);
+    out.moreHasOff = out.moreGroups.some(g => g.items.some(n => n.off));
 
     /* ── access ── */
     const AC = B.access; out.accessOpen = !!S.accessOpen; out.openAccess = () => this.setState({ accessOpen: true, exportOpen: false }); out.closeAccess = () => this.setState({ accessOpen: false });
@@ -698,7 +699,7 @@ class Cp3Portal extends React.Component {
     const can = AC.can.slice(); can.splice(3, 0, ["Announcements", isAdm ? "Write, approve and send to members and guardians" : "Draft and submit. An admin approves before anything is sent"]);
     out.accCan = can.map(x => ({ h: x[0], s: lockC ? x[1] + ", for " + lockC + " only" : x[1] }));
     out.accCannot = AC.cannot.map(x => ({ h: x[0], s: "Ask " + x[1] }));
-    out.meName = B.me.name; out.meRole = B.me.roleLabel;
+    out.meName = B.me.name; out.meRole = B.me.roleLabel; out.meIni = String(B.me.name || "?").trim().split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
     out.accAlign = isPhone ? "flex-end" : "center"; out.accPad = isPhone ? "0" : "16px"; out.accRadius = isPhone ? "24px 24px 0 0" : "18px";
 
     /* ── permissions ── */
@@ -782,7 +783,7 @@ class Cp3Portal extends React.Component {
       const PA = CP3_PAGE_ACTS[sec];
       const paOk = PA && !(PA[1] === "curriculum" && !B.me.canCurriculum) && !((PA[1] === "rota" || PA[1] === "desks") && !B.me.canCheckin) && !(PA[1] === "conduct" && lockC);
       out.hasPageAct = !!paOk && !isPhone; out.pageActL = PA ? PA[0] : ""; out.pageActClick = () => paOk && this.openGForm(PA[1]);
-      out.phonePageAct = !!paOk && isPhone && (sec === "roster");
+      out.phonePageAct = !!paOk && isPhone && sec !== "roster";
       const gd = S.gDetail; const srcSec = gd ? gd.sec : sec; const rowsOf = k => ((S.gData[k] || {}).rows || []);
       out.hasGDetail = !!(gd && gd.sec === sec && CP3_DECIDE[sec]);
       if (out.hasGDetail) {

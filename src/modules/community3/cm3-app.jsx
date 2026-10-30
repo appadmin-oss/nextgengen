@@ -91,8 +91,14 @@ class Cm3App extends React.Component {
     const check = () => {
       this.dockRaf = 0;
       const el = this.promptRef.current;
-      const on = !!el && el.getBoundingClientRect().bottom < this.dockTop;
-      if (on !== !!this.state.dockOn) this.setState({ dockOn: on });
+      const r = el ? el.getBoundingClientRect() : null;
+      const on = !!r && r.bottom < this.dockTop;
+      /* The pencil button floated over the post box while the box was on
+         screen, covering the end of what a child was typing. It is for when
+         the box is NOT in view (below the fold); scrolled past, the dock
+         takes over. */
+      const vis = !!r && r.bottom > this.dockTop && r.top < window.innerHeight;
+      if (on !== !!this.state.dockOn || vis !== !!this.state.promptVis) this.setState({ dockOn: on, promptVis: vis });
     };
     /* The scroller's own top edge, not the window's: on a phone the feed scrolls under a header. */
     this.dockTop = 0;
@@ -103,6 +109,10 @@ class Cm3App extends React.Component {
       if (!this.dockRaf) this.dockRaf = requestAnimationFrame(check);
     };
     document.addEventListener("scroll", this.onDockScr, true);
+    /* Asked again after every render too: the post box arrives with the
+       feed's data, after the first scroll listener could have seen it. */
+    this.dockCheck = () => { if (!this.dockRaf) this.dockRaf = requestAnimationFrame(check); };
+    this.dockCheck();
   }
 
 
@@ -281,6 +291,7 @@ class Cm3App extends React.Component {
   /* A task counts as seen the first time its card is on screen, which is what
      the instructor's "Not seen since…" line reads. Sent once per task. */
   componentDidUpdate() {
+    if (this.dockCheck) this.dockCheck();
     const s = this.state;
     const onHw = s.view === "homework" || (s.view === "channel" && s.chTab === "homework");
     /* The People tab is everyone who has posted in the channel (the server's
@@ -1032,7 +1043,7 @@ class Cm3App extends React.Component {
       ...compV, closeComp: () => set({ comp: null }), submit: () => this.submit(),
       modalAlign: narrow ? "flex-end" : "center", modalPad: narrow ? "0" : "24px", modalR: narrow ? "20px 20px 0 0" : "16px",
       reportOpen: !!rp, reasons, reportSafety: !!rp && rp.reason === "safety", reportOff: !(rp && rp.reason), reportBtnBg: rp && rp.reason ? (rp.reason === "safety" ? "#b42318" : "#0b0b0c") : "#b9b9b4", closeReport: () => set({ report: null }), sendReport: () => this.sendReport(),
-      ...VW, tabbar, showFab: onFeed && !s.dockOn, cardOpen: !!pc.name, pc, closeCard: () => set({ card: null }), stop: e => e.stopPropagation(),
+      ...VW, tabbar, showFab: onFeed && !s.dockOn && !s.promptVis, cardOpen: !!pc.name, pc, closeCard: () => set({ card: null }), stop: e => e.stopPropagation(),
       hasToast: !!s.toast, toast: s.toast, toastBottom: narrow ? "86px" : "24px",
       editEl, moreEl: onFeed && s.hasMore ? React.createElement("button", { className: "cm3x-more", onClick: () => this.loadFeed(false), disabled: s.loading }, s.loading ? "Loading…" : "Show older posts") : null,
       undoEl: s.toastUndo ? React.createElement("button", { className: "cm3x-undo", onClick: () => { s.toastUndo(); this.setState({ toast: "", toastUndo: null }); } }, "Undo") : null

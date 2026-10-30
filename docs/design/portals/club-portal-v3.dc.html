@@ -790,6 +790,7 @@ button,input,select,textarea{font:inherit;color:inherit}
         </div>
       </sc-if>
       <sc-if value="{{ isGen }}">
+        <sc-if value="{{ phonePageAct }}"><button onClick="{{ pageActClick }}" style="height:48px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;"><i class="ph ph-plus" aria-hidden="true"></i>{{ pageActL }}</button></sc-if>
         <sc-if value="{{ gHasTabs }}"><div style="display:flex; gap:8px; overflow-x:auto; margin:0 -16px; padding:0 16px;"><sc-for list="{{ gTabs }}" as="t" hint-placeholder-count="4"><button aria-pressed="{{ t.on }}" onClick="{{ t.onClick }}" style="height:44px; padding:0 14px; border-radius:999px; border:{{ t.border }}; background:#fff; font-size:14px; font-weight:500; white-space:nowrap; flex-shrink:0;">{{ t.l }} <span style="color:#6b6b72;">{{ t.n }}</span></button></sc-for></div></sc-if>
         <div style="display:flex; align-items:center; gap:8px; height:48px; padding:0 14px; border:1px solid #d6d6d3; border-radius:14px;"><i class="ph ph-magnifying-glass" aria-hidden="true" style="font-size:18px; color:#6b6b72;"></i><input type="search" enterkeyhint="search" value="{{ gq }}" onChange="{{ onGQ }}" placeholder="Search" aria-label="Search this list" style="border:0; outline:none; flex:1; min-width:0; font-size:16px; background:transparent;"></div>
         <div style="border:1px solid #ececea; border-radius:16px; overflow:hidden;">
@@ -798,6 +799,157 @@ button,input,select,textarea{font:inherit;color:inherit}
           <sc-if value="{{ gEmpty }}"><div style="padding:28px; text-align:center; color:#6b6b72;">{{ gEmptyText }}</div></sc-if>
         </div>
         <sc-if value="{{ gHasNote }}"><p style="margin:0; font-size:13.5px; color:#4a4a50;">{{ gNote }}</p></sc-if>
+      </sc-if>
+      <sc-if value="{{ trnIsList }}">
+        <button onClick="{{ trnNew }}" style="height:48px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;"><i class="ph ph-plus" aria-hidden="true"></i>Host a tournament</button>
+        <div style="border:1px solid #ececea; border-radius:16px; overflow:hidden;">
+          <sc-for list="{{ trnRows }}" as="r" hint-placeholder-count="4"><button onClick="{{ r.onClick }}" style="display:flex; align-items:center; gap:12px; width:100%; min-height:68px; padding:10px 14px; border:0; border-bottom:1px solid #f1f1ef; background:#fff; text-align:left;"><span style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;"><span style="font-size:15px; font-weight:500;">{{ r.name }}</span><span style="font-size:13px; color:#6b6b72;">{{ r.when }} · {{ r.centre }} · {{ r.entrants }} entered</span></span><span style="display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 9px; border-radius:999px; background:{{ r.sbg }}; color:{{ r.sfg }}; font-size:12px; font-weight:500; white-space:nowrap;"><span style="width:6px; height:6px; border-radius:50%; background:{{ r.sdot }};"></span>{{ r.st }}</span></button></sc-for>
+          <sc-if value="{{ trnEmpty }}"><div style="padding:28px; text-align:center; color:#6b6b72;">{{ trnEmptyText }}</div></sc-if>
+        </div>
+      </sc-if>
+      <sc-if value="{{ trnIsNew }}">
+        <button onClick="{{ trnBack }}" style="align-self:flex-start; display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 10px; margin-left:-10px; border:0; border-radius:8px; background:transparent; cursor:pointer; font-size:13.5px; color:#4a4a50;" style-hover="background:#f4f4f3"><i class="ph ph-arrow-left" aria-hidden="true"></i>All tournaments</button>
+        <div style="border:1px solid #ececea; border-radius:16px; overflow:hidden; max-width:880px; width:100%;">
+          <div style="padding:18px 22px 14px; border-bottom:1px solid #f1f1ef; display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px;"><h2 style="margin:0; font-size:18px; font-weight:600; white-space:nowrap;">Host a tournament</h2><span style="font-size:13px; color:#6b6b72; white-space:nowrap;">Step {{ tw.step }} of 4 · {{ tw.label }}</span></div>
+            <ol aria-label="Progress" style="list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px;">
+              <sc-for list="{{ tw.steps }}" as="s" hint-placeholder-count="4"><li aria-current="{{ s.cur }}"><button onClick="{{ s.onClick }}" style="width:100%; border:0; background:transparent; padding:0; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:6px;"><span style="height:4px; border-radius:999px; background:{{ s.bg }};"></span><span style="font-size:12.5px; color:{{ s.fg }}; font-weight:{{ s.fw }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ s.l }}</span></button></li></sc-for>
+            </ol>
+          </div>
+          <div style="padding:22px; display:flex; flex-direction:column; gap:22px;">
+            <sc-if value="{{ tw.s0 }}">
+              <fieldset style="border:0; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;"><legend style="font-size:15px; font-weight:600; padding:0; margin-bottom:10px;">What kind of event?</legend>
+                <div role="radiogroup" aria-label="Format" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">
+                  <sc-for list="{{ tw.formats }}" as="o" hint-placeholder-count="5"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.onClick }}" style="border-radius:12px; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:3px; padding:14px; border:{{ o.border }}; background:{{ o.bg }};"><b style="font-size:14px; font-weight:600;">{{ o.l }}</b><span style="font-size:12.5px; color:#4a4a50; text-wrap:pretty;">{{ o.s }}</span><span style="font-size:12px; color:#6b6b72; margin-top:4px;">{{ o.best }}</span></button></sc-for>
+                </div>
+              </fieldset>
+              <fieldset style="border:0; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;"><legend style="font-size:15px; font-weight:600; padding:0; margin-bottom:10px;">How long does each player get?</legend>
+                <div role="radiogroup" aria-label="Time control" style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <sc-for list="{{ tw.tcs }}" as="o" hint-placeholder-count="5"><button role="radio" aria-checked="{{ o.on }}" aria-disabled="{{ o.dis }}" onClick="{{ o.onClick }}" style="border-radius:12px; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:3px; padding:10px 14px; min-width:96px; border:{{ o.border }}; background:#fff; color:{{ o.fg }};"><b style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ o.l }}</b><span style="font-size:12px; color:#6b6b72;">{{ o.s }}</span></button></sc-for>
+                </div>
+                <span style="font-size:12.5px; color:#6b6b72;">{{ tw.tcNote }}</span>
+              </fieldset>
+              <fieldset style="border:0; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;"><legend style="font-size:15px; font-weight:600; padding:0; margin-bottom:10px;">Which game?</legend>
+                <div role="radiogroup" aria-label="Variant" style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <sc-for list="{{ tw.variants }}" as="o" hint-placeholder-count="4"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.onClick }}" style="border-radius:12px; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:3px; padding:10px 14px; border:{{ o.border }}; background:#fff;"><b style="font-size:14px; font-weight:600; white-space:nowrap;">{{ o.l }}</b><span style="font-size:12px; color:#6b6b72; white-space:nowrap;">{{ o.s }}</span></button></sc-for>
+                </div>
+                <span style="font-size:13px; color:#4a4a50;">{{ tw.vRule }}</span>
+                <button role="switch" aria-checked="{{ tw.rated }}" aria-disabled="{{ tw.ratedLocked }}" onClick="{{ tw.onRated }}" style="align-self:flex-start; display:inline-flex; align-items:center; gap:10px; border:0; background:transparent; padding:0; cursor:pointer; font-size:13.5px;"><span style="width:36px; height:20px; border-radius:999px; background:{{ tw.ratedTrack }}; position:relative; flex-shrink:0;"><span style="position:absolute; top:2px; left:{{ tw.ratedKnob }}; width:16px; height:16px; border-radius:50%; background:#fff;"></span></span><b style="font-weight:500;">Rated</b><span style="color:#6b6b72;">{{ tw.ratedNote }}</span></button>
+              </fieldset>
+            </sc-if>
+            <sc-if value="{{ tw.s1 }}">
+              <fieldset style="border:0; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;"><legend style="font-size:15px; font-weight:600; padding:0; margin-bottom:10px;">Who can enter?</legend>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;"><sc-for list="{{ tw.kinds }}" as="o" hint-placeholder-count="4"><button aria-pressed="{{ o.on }}" onClick="{{ o.onClick }}" style="height:36px; padding:0 14px; border-radius:999px; border:{{ o.border }}; background:#fff; cursor:pointer; font-size:13.5px; font-weight:500; white-space:nowrap;">{{ o.l }}</button></sc-for></div>
+              </fieldset>
+              <div style="display:flex; flex-direction:column; gap:8px;"><span style="font-size:13.5px; font-weight:500;">Programme</span>
+                <div role="radiogroup" aria-label="Programme" style="display:inline-flex; align-self:flex-start; padding:3px; border-radius:10px; background:#f4f4f3; gap:2px;"><sc-for list="{{ tw.progs }}" as="o" hint-placeholder-count="3"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.onClick }}" style="height:30px; padding:0 12px; border:0; border-radius:8px; background:{{ o.bg }}; box-shadow:{{ o.sh }}; cursor:pointer; font-size:13px; font-weight:500; white-space:nowrap;">{{ o.l }}</button></sc-for></div>
+              </div>
+              <sc-if value="{{ tw.showCentres }}"><div style="display:flex; flex-direction:column; gap:8px;"><span style="font-size:13.5px; font-weight:500;">Centres in the cup</span><div style="display:flex; gap:8px; flex-wrap:wrap;"><sc-for list="{{ tw.centres }}" as="o" hint-placeholder-count="3"><button aria-pressed="{{ o.on }}" onClick="{{ o.onClick }}" style="height:36px; padding:0 14px; border-radius:999px; border:{{ o.border }}; background:#fff; cursor:pointer; font-size:13.5px; font-weight:500;">{{ o.l }}</button></sc-for></div><span style="font-size:12.5px; color:#6b6b72;">Each runs its own knockout. The champions meet in a final, so a child at a small centre can win without meeting a big one in round one.</span></div></sc-if>
+              <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px;">
+                <label style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:13.5px; font-weight:500; white-space:nowrap;">Lowest rating</span><input type="number" min="0" step="50" value="{{ tw.minR }}" onChange="{{ tw.onMinR }}" style="height:38px; padding:0 12px; border:1px solid #d6d6d3; border-radius:10px; font-size:15px;"><span style="font-size:12px; color:#6b6b72;">0 for no floor</span></label>
+                <label style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:13.5px; font-weight:500; white-space:nowrap;">Highest rating</span><input type="number" min="0" step="50" value="{{ tw.maxR }}" onChange="{{ tw.onMaxR }}" style="height:38px; padding:0 12px; border:1px solid #d6d6d3; border-radius:10px; font-size:15px;"><span style="font-size:12px; color:#6b6b72;">0 for no ceiling</span></label>
+                <sc-if value="{{ tw.showRounds }}"><label style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:13.5px; font-weight:500; white-space:nowrap;">Rounds</span><input type="number" min="0" max="15" value="{{ tw.rounds }}" onChange="{{ tw.onRounds }}" style="height:38px; padding:0 12px; border:1px solid #d6d6d3; border-radius:10px; font-size:15px;"><span style="font-size:12px; color:#6b6b72;">0 and it’s worked out from the entry list</span></label></sc-if>
+              </div>
+            </sc-if>
+            <sc-if value="{{ tw.s2 }}">
+              <div style="display:flex; flex-direction:column; gap:10px;"><span style="font-size:15px; font-weight:600;">When does it run?</span>
+                <div role="radiogroup" aria-label="When" style="display:inline-flex; align-self:flex-start; padding:3px; border-radius:10px; background:#f4f4f3; gap:2px;"><sc-for list="{{ tw.whens }}" as="o" hint-placeholder-count="2"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.onClick }}" style="height:32px; padding:0 14px; border:0; border-radius:8px; background:{{ o.bg }}; box-shadow:{{ o.sh }}; cursor:pointer; font-size:13.5px; font-weight:500; white-space:nowrap;">{{ o.l }}</button></sc-for></div>
+                <span style="font-size:13px; color:#4a4a50; max-width:620px;">{{ tw.whenNote }}</span>
+              </div>
+              <sc-if value="{{ tw.isSched }}">
+                <label style="display:flex; flex-direction:column; gap:6px; max-width:320px;"><span style="font-size:13.5px; font-weight:500;">Starts <span style="color:#6b6b72; font-weight:400;">· Lagos time</span></span><input type="datetime-local" value="{{ tw.startsAt }}" onChange="{{ tw.onStarts }}" style="height:38px; padding:0 12px; border:1px solid #d6d6d3; border-radius:10px; font-size:15px;"></label>
+                <div style="display:flex; flex-direction:column; gap:8px;"><span style="font-size:13.5px; font-weight:500;">And runs for</span>
+                  <div role="radiogroup" aria-label="Length" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:8px;"><sc-for list="{{ tw.durs }}" as="o" hint-placeholder-count="6"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.onClick }}" style="border-radius:12px; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:3px; padding:10px 12px; border:{{ o.border }}; background:#fff;"><b style="font-size:13.5px; font-weight:600; white-space:nowrap;">{{ o.l }}</b><span style="font-size:12px; color:#6b6b72;">{{ o.s }}</span></button></sc-for></div>
+                  <span style="font-size:12.5px; color:#4a4a50;">{{ tw.endsLine }}</span>
+                </div>
+              </sc-if>
+            </sc-if>
+            <sc-if value="{{ tw.s3 }}">
+              <label style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:13.5px; font-weight:500;">Name it <span style="color:#a12a2a;">*</span></span><input value="{{ tw.name }}" onChange="{{ tw.onName }}" placeholder="e.g. Egbeda Saturday Blitz" style="height:42px; padding:0 12px; border:1px solid #d6d6d3; border-radius:10px; font-size:16px;"></label>
+              <label style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:13.5px; font-weight:500;">A line about it <span style="color:#6b6b72; font-weight:400;">· optional</span></span><textarea value="{{ tw.desc }}" onChange="{{ tw.onDesc }}" rows="3" placeholder="Who it’s for, what to bring, anything players should know." style="padding:10px 12px; border:1px solid #d6d6d3; border-radius:10px; font-size:15px; resize:vertical;"></textarea></label>
+              <div style="border:1px solid #ececea; border-radius:12px; overflow:hidden;">
+                <div style="padding:10px 14px; background:#fafaf9; font-size:13px; font-weight:600; border-bottom:1px solid #ececea;">You’re about to host</div>
+                <sc-for list="{{ tw.summary }}" as="x" hint-placeholder-count="5"><div style="display:grid; grid-template-columns:110px minmax(0, 1fr); gap:12px; padding:9px 14px; border-top:1px solid #f1f1ef; font-size:13.5px;"><span style="color:#6b6b72;">{{ x.l }}</span><span>{{ x.v }}</span></div></sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ tw.hasErr }}"><div role="alert" style="display:flex; flex-direction:column; gap:4px; padding:10px 14px; border-radius:10px; background:#fdeaea; color:#a12a2a; font-size:13.5px;"><sc-for list="{{ tw.errs }}" as="e" hint-placeholder-count="1"><span>{{ e }}</span></sc-for></div></sc-if>
+          </div>
+          <div style="padding:14px 22px; border-top:1px solid #f1f1ef; display:flex; gap:8px; align-items:center;">
+            <button onClick="{{ trnBack }}" style="height:36px; padding:0 14px; border:1px solid #e2e2df; border-radius:10px; background:#fff; cursor:pointer; font-size:13.5px; font-weight:500; white-space:nowrap;">Cancel</button>
+            <span style="flex:1;"></span>
+            <sc-if value="{{ tw.notFirst }}"><button onClick="{{ tw.back }}" style="height:36px; padding:0 14px; border:1px solid #e2e2df; border-radius:10px; background:#fff; cursor:pointer; font-size:13.5px; font-weight:500; white-space:nowrap;">Back</button></sc-if>
+            <button onClick="{{ tw.next }}" style="height:36px; padding:0 16px; border:0; border-radius:10px; color:#fff; cursor:pointer; font-size:13.5px; font-weight:600; white-space:nowrap; background:#0b0b0c;">{{ tw.nextL }}</button>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ trnIsDetail }}">
+        <button onClick="{{ trnBack }}" style="align-self:flex-start; display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 10px; margin-left:-10px; border:0; border-radius:8px; background:transparent; cursor:pointer; font-size:13.5px; color:#4a4a50;" style-hover="background:#f4f4f3"><i class="ph ph-arrow-left" aria-hidden="true"></i>All tournaments</button>
+        <div style="display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap;">
+          <div style="flex:1 1 360px; min-width:0; display:flex; flex-direction:column; gap:4px;">
+            <div style="display:flex; align-items:center; gap:10px; min-width:0;"><h2 style="margin:0; font-size:20px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ td.name }}</h2><span style="height:24px; padding:0 9px; border-radius:999px; background:{{ td.sbg }}; color:{{ td.sfg }}; font-size:12px; font-weight:500; display:inline-flex; align-items:center; white-space:nowrap;">{{ td.st }}</span></div>
+            <span style="font-size:13px; color:#5d5d63; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ td.sub }}</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3, auto); gap:28px;">
+            <sc-for list="{{ td.kpis }}" as="k" hint-placeholder-count="3"><div style="display:flex; flex-direction:column; gap:2px;"><span style="font-size:12.5px; color:#5d5d63; white-space:nowrap;">{{ k.l }}</span><span style="font-size:22px; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap;">{{ k.v }}</span></div></sc-for>
+          </div>
+        </div>
+
+        <sc-if value="{{ td.isOpen }}">
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap:16px; align-items:start;">
+            <section style="border:1px solid #ececea; border-radius:14px; overflow:hidden;">
+              <div style="padding:12px 14px; border-bottom:1px solid #f1f1ef; display:flex; flex-direction:column; gap:10px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><h3 style="margin:0; font-size:14px; font-weight:600; white-space:nowrap;">Add players</h3><button onClick="{{ td.addTop }}" style="height:30px; padding:0 10px; border:1px solid #e2e2df; border-radius:8px; background:#fff; cursor:pointer; font-size:12.5px; font-weight:500; white-space:nowrap;">Invite everyone who can enter</button></div>
+                <div style="display:flex; align-items:center; gap:8px; height:36px; padding:0 10px; border:1px solid #e7e7e5; border-radius:10px;"><i class="ph ph-magnifying-glass" aria-hidden="true" style="color:#6b6b72;"></i><input value="{{ trnQ }}" onChange="{{ onTrnQ }}" placeholder="Search a member by name or ID" aria-label="Search members to enter" style="border:0; outline:none; flex:1; min-width:0; background:transparent; font-size:13.5px;"></div>
+                <span style="font-size:12px; color:#6b6b72;">Players can also enter themselves from the chess screen.</span>
+              </div>
+              <sc-for list="{{ td.cands }}" as="c" hint-placeholder-count="0"><div style="display:flex; align-items:center; gap:10px; padding:8px 14px; border-top:1px solid #f1f1ef;"><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><span style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ c.name }}</span><span style="font-size:12px; color:#6b6b72; white-space:nowrap;">{{ c.sub }}</span></span><button onClick="{{ c.onAdd }}" style="height:30px; padding:0 12px; border:0; border-radius:8px; background:#0b0b0c; color:#fff; cursor:pointer; font-size:12.5px; font-weight:500;">Enter</button></div></sc-for>
+              <sc-if value="{{ td.noCands }}"><div style="padding:14px; font-size:13px; color:#6b6b72;">No active member matches, or they’re already in.</div></sc-if>
+            </section>
+            <section style="border:1px solid #ececea; border-radius:14px; overflow:hidden;">
+              <div style="padding:12px 14px; border-bottom:1px solid #f1f1ef; display:flex; align-items:center; justify-content:space-between; gap:10px;"><h3 style="margin:0; font-size:14px; font-weight:600; white-space:nowrap;">Entered · seeded by rating</h3></div>
+              <div style="max-height:360px; overflow:auto;">
+                <sc-for list="{{ td.entrants }}" as="e" hint-placeholder-count="4"><div style="display:flex; align-items:center; gap:12px; padding:7px 14px; border-top:1px solid #f1f1ef; font-size:13.5px;"><span style="width:24px; color:#6b6b72; font-variant-numeric:tabular-nums;">{{ e.seed }}</span><span style="flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ e.name }} <span style="color:#6b6b72; font-size:12px;">{{ e.sub }}</span></span><span style="font-variant-numeric:tabular-nums; color:#4a4a50;">{{ e.rating }}</span><button onClick="{{ e.onRemove }}" aria-label="Remove {{ e.name }}" style="width:28px; height:28px; border:0; border-radius:7px; background:transparent; cursor:pointer; color:#6b6b72;" style-hover="background:#f4f4f3"><i class="ph ph-x" aria-hidden="true"></i></button></div></sc-for>
+              </div>
+              <div style="padding:12px 14px; border-top:1px solid #f1f1ef; display:flex; align-items:center; gap:12px; flex-wrap:wrap;"><span style="flex:1 1 220px; font-size:12.5px; color:#4a4a50;">{{ td.drawWhy }}</span><button onClick="{{ td.draw }}" aria-disabled="{{ td.drawDis }}" style="height:36px; padding:0 16px; border:0; border-radius:10px; color:#fff; cursor:pointer; font-size:13.5px; font-weight:600; white-space:nowrap; background:{{ td.drawBg }};">Draw round 1</button></div>
+            </section>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ td.hasGames }}">
+          <section style="border:1px solid #ececea; border-radius:14px; overflow:hidden;">
+            <div style="padding:12px 14px; border-bottom:1px solid #f1f1ef; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+              <h3 style="margin:0; font-size:14px; font-weight:600; white-space:nowrap; flex:1;">{{ td.roundL }}</h3>
+              <sc-if value="{{ td.isRunning }}"><span style="font-size:12.5px; color:#5d5d63; white-space:nowrap;">{{ td.nextWhy }}</span><button onClick="{{ td.next }}" style="height:36px; padding:0 16px; border:0; border-radius:10px; color:#fff; cursor:pointer; font-size:13.5px; font-weight:600; white-space:nowrap; background:{{ td.nextBg }}; height:32px;">{{ td.nextL }}</button></sc-if>
+            </div>
+            <sc-if value="{{ td.hasKoNote }}"><div style="padding:8px 14px; font-size:12.5px; color:#7a5600; background:#fdf2d8;">{{ td.koNote }}</div></sc-if>
+            <div style="max-height:420px; overflow:auto;">
+              <sc-for list="{{ td.games }}" as="g" hint-placeholder-count="4">
+                <div style="display:grid; grid-template-columns:44px minmax(0, 1fr) auto minmax(0, 1fr); gap:12px; align-items:center; padding:8px 14px; border-top:1px solid #f1f1ef; font-size:13.5px;">
+                  <span style="color:#6b6b72; font-variant-numeric:tabular-nums;">{{ g.board }}</span>
+                  <span style="display:flex; flex-direction:column; min-width:0;"><span style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><span aria-hidden="true" style="display:inline-block; width:9px; height:9px; border:1px solid #9a9aa0; border-radius:2px; margin-right:6px;"></span>{{ g.w }}</span><span style="font-size:12px; color:#6b6b72;">{{ g.wr }}</span></span>
+                  <span style="display:flex; justify-content:center;">
+                    <sc-if value="{{ g.hasOpts }}"><span role="group" aria-label="Result for board {{ g.board }}" style="display:inline-flex; gap:4px;"><sc-for list="{{ g.opts }}" as="o" hint-placeholder-count="3"><button aria-pressed="{{ o.on }}" onClick="{{ o.onClick }}" style="height:30px; min-width:44px; padding:0 8px; border:1px solid #d6d6d3; border-radius:8px; background:{{ o.bg }}; color:{{ o.fg }}; cursor:pointer; font-size:13px; font-weight:600; font-variant-numeric:tabular-nums;">{{ o.l }}</button></sc-for></span></sc-if>
+                    <sc-if value="{{ td.isDone }}"><b style="font-variant-numeric:tabular-nums;">{{ g.res }}</b></sc-if>
+                    <sc-if value="{{ g.isBye }}"><span style="font-size:12.5px; color:#6b6b72;">Bye</span></sc-if>
+                  </span>
+                  <span style="display:flex; flex-direction:column; min-width:0; text-align:right;"><span style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ g.b }}<span aria-hidden="true" style="display:inline-block; width:9px; height:9px; background:#0b0b0c; border-radius:2px; margin-left:6px;"></span></span><span style="font-size:12px; color:#6b6b72;">{{ g.br }}</span></span>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ td.hasStand }}">
+          <section style="border:1px solid #ececea; border-radius:14px; overflow:hidden;">
+            <div style="padding:12px 14px; border-bottom:1px solid #f1f1ef; display:flex; align-items:center; justify-content:space-between; gap:12px;"><h3 style="margin:0; font-size:14px; font-weight:600; white-space:nowrap;">Standings</h3><span style="font-size:12.5px; color:#6b6b72;">{{ td.standNote }}</span></div>
+            <div style="max-height:420px; overflow:auto;">
+              <table style="width:100%; border-collapse:collapse; font-size:13.5px;">
+                <thead><tr><th scope="col" style="position:sticky; top:0; background:#fafaf9; text-align:left; padding:8px 14px; font-weight:500; color:#5d5d63; font-size:12.5px; border-bottom:1px solid #ececea; width:56px;">#</th><th scope="col" style="position:sticky; top:0; background:#fafaf9; text-align:left; padding:8px 14px; font-weight:500; color:#5d5d63; font-size:12.5px; border-bottom:1px solid #ececea;">Player</th><th scope="col" style="position:sticky; top:0; background:#fafaf9; text-align:right; padding:8px 14px; font-weight:500; color:#5d5d63; font-size:12.5px; border-bottom:1px solid #ececea;">Points</th><th scope="col" style="position:sticky; top:0; background:#fafaf9; text-align:right; padding:8px 14px; font-weight:500; color:#5d5d63; font-size:12.5px; border-bottom:1px solid #ececea;">Played</th><th scope="col" style="position:sticky; top:0; background:#fafaf9; text-align:right; padding:8px 14px; font-weight:500; color:#5d5d63; font-size:12.5px; border-bottom:1px solid #ececea;">Rating</th></tr></thead>
+                <tbody><sc-for list="{{ td.standings }}" as="s" hint-placeholder-count="5"><tr><td style="padding:7px 14px; border-bottom:1px solid #f1f1ef; font-variant-numeric:tabular-nums;"><span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:8px; height:8px; border-radius:50%; background:{{ s.medal }};"></span>{{ s.rank }}</span></td><td style="padding:7px 14px; border-bottom:1px solid #f1f1ef; white-space:nowrap;">{{ s.name }} <span style="color:#6b6b72; font-size:12px;">{{ s.sub }}</span></td><td style="padding:7px 14px; border-bottom:1px solid #f1f1ef; text-align:right; font-weight:600; font-variant-numeric:tabular-nums;">{{ s.score }}</td><td style="padding:7px 14px; border-bottom:1px solid #f1f1ef; text-align:right; font-variant-numeric:tabular-nums; color:#4a4a50;">{{ s.played }}</td><td style="padding:7px 14px; border-bottom:1px solid #f1f1ef; text-align:right; font-variant-numeric:tabular-nums; color:#4a4a50;">{{ s.rating }}</td></tr></sc-for></tbody>
+              </table>
+            </div>
+          </section>
+        </sc-if>
       </sc-if>
       <sc-if value="{{ isMore }}">
         <button onClick="{{ openAccess }}" style="display:flex; align-items:center; gap:12px; width:100%; min-height:64px; padding:10px 14px; border:1px solid #ececea; border-radius:16px; background:#fff; text-align:left;"><span style="width:40px; height:40px; border-radius:50%; background:#efefed; font-size:13px; font-weight:600; display:inline-flex; align-items:center; justify-content:center;">TA</span><span style="flex:1; display:flex; flex-direction:column;"><span style="font-size:15px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Tunde Akin</span><span style="font-size:13px; color:#6b6b72;">Club coordinator · see what you can do</span></span><i class="ph ph-caret-right" aria-hidden="true" style="color:#9a9aa0;"></i></button>
@@ -809,7 +961,7 @@ button,input,select,textarea{font:inherit;color:inherit}
             </div>
           </section>
         </sc-for>
-        <p style="margin:0; font-size:13px; color:#6b6b72; padding:0 4px;">Greyed-out tools work best on a bigger screen. Open the portal on a computer to use them.</p>
+        <sc-if value="{{ moreHasOff }}"><p style="margin:0; font-size:13px; color:#6b6b72; padding:0 4px;">Greyed-out tools work best on a bigger screen. Open the portal on a computer to use them.</p></sc-if>
       </sc-if>
       <sc-if value="{{ isComp }}">
         <sc-for list="{{ comp }}" as="c" hint-placeholder-count="3">

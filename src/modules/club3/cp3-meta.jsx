@@ -6,17 +6,22 @@
    ========================================================================== */
 
 /* The sidebar: [id, label, icon, works on a phone]. One list; the sidebar,
-   the phone's More sheet and the command palette are all drawn from it. */
+   the phone's More sheet and the command palette are all drawn from it.
+   Every Club section works on a phone: the generic sections draw as a list
+   with a detail sheet and their page action as a full-width button, and
+   Tournaments has its own phone screens. The owner's reading of the greyed
+   "Computer" rows was that the portal was "terrible on a mobile"; a tool a
+   coordinator cannot reach at the centre on a Saturday is not there. */
 const CP3_NAV = [
   [null, [["home", "Dashboard", "squares-four", 1]]],
   ["Members", [["roster", "Roster", "users", 1], ["promote", "Promote", "arrow-fat-line-up", 1], ["permissions", "Permissions", "shield-check", 1],
-    ["applications", "Applications", "envelope-simple", 0], ["approvals", "Approvals", "check-circle", 1], ["requests", "Member requests", "hand", 1],
-    ["families", "Families", "house-line", 0], ["idcards", "ID cards", "identification-card", 0]]],
-  ["Care", [["companion", "Check-ins", "heart", 1], ["mentorship", "Mentorship", "users-three", 1], ["behaviour", "Behaviour", "pulse", 1], ["conduct", "Conduct & fines", "scales", 0]]],
-  ["Programme", [["timetable", "Timetable", "calendar-blank", 1], ["curriculum", "Curriculum", "books", 0], ["tournaments", "Tournaments", "trophy", 0]]],
+    ["applications", "Applications", "envelope-simple", 1], ["approvals", "Approvals", "check-circle", 1], ["requests", "Member requests", "hand", 1],
+    ["families", "Families", "house-line", 1], ["idcards", "ID cards", "identification-card", 1]]],
+  ["Care", [["companion", "Check-ins", "heart", 1], ["mentorship", "Mentorship", "users-three", 1], ["behaviour", "Behaviour", "pulse", 1], ["conduct", "Conduct & fines", "scales", 1]]],
+  ["Programme", [["timetable", "Timetable", "calendar-blank", 1], ["curriculum", "Curriculum", "books", 1], ["tournaments", "Tournaments", "trophy", 1]]],
   ["Comms", [["announce", "Announcements", "megaphone", 1]]],
   ["Gate", [["desks", "Check-in desks", "scan", 1], ["rota", "Duty rota", "clock", 1]]],
-  ["Team & centres", [["team", "Team", "identification-badge", 1], ["centres", "Centres", "map-pin", 1], ["volunteers", "Volunteers", "hand-heart", 0], ["staffact", "Staff activity", "activity", 0]]],
+  ["Team & centres", [["team", "Team", "identification-badge", 1], ["centres", "Centres", "map-pin", 1], ["volunteers", "Volunteers", "hand-heart", 1], ["staffact", "Staff activity", "activity", 1]]],
   /* The centres' Wi-Fi, for the systems people who hold `network`
      (cp3-wifi.jsx): seven sections, drawn in this portal's own design. */
   ["Wi-Fi", CW_VIEWS],

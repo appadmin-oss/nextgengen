@@ -4504,3 +4504,76 @@ in that repo's `docs/HANDOFF.md`, 29 Oct 2026.
   unrepeated failure on the first run, clean on the rerun); build OK;
   no-important OK. Theatrecrafts.com timed out today though it loaded earlier;
   left in, worth rechecking.
+
+## The portals on a phone, measured signed in on live data (2026-10-29)
+
+The owner: "the portals are terrible on a mobile". Neither responsive suite could
+have seen it — `responsive.test.js` is the public site, and
+`responsive-staff.test.js` mounts each surface with no data (its header says so).
+
+- **New suite, `tests/portals-phone.test.js`** (`npm run test:portalsphone`, in
+  `test:all`). It seeds a small real programme (long names, a mentor and two
+  mentees, an instructor's class, a week of lessons, a guardian with two
+  children, a Summer edition), signs in as each person, and walks every
+  destination each portal's own navigation offers — top tabs, the tabs inside
+  them, and every row of a "More" page — at 360px and 390px: member, Learn,
+  Community, mentor, instructor, family, Club and Summer School. It measures
+  clipping and the touch floor (the shared probe), fields under 16px (iOS zooms
+  into them), and content left under a fixed bottom bar. Destinations are
+  discovered, never listed. `PP_SHOTS=dir` writes a screenshot of each.
+- **First run: 211 destinations; ~700 controls under 44px, ~130 fields under
+  16px.** The portals are compiled designs, so the floor is one rule for touch
+  pointers (`@media (pointer: coarse)`, styles-app.css "Portals on a touch
+  screen"), not 700 edits to generated classes. A mouse keeps the designs'
+  density.
+- **Club portal: nothing is "Computer only" any more.** Applications, Families,
+  ID cards, Conduct & fines, Curriculum, Tournaments, Volunteers, Staff
+  activity, Wi-Fi regions and setup were greyed out on a phone. The generic
+  sections already had a phone list and detail sheet; what was missing was the
+  page action (`phonePageAct`, now every section but Roster, drawn as a
+  full-width button in the design) and Tournaments, which existed only in the
+  desktop branch — the design now has its phone list, and the wizard and detail
+  in the phone `<main>`. The "Greyed-out tools" note shows only if something is.
+- **Compiler fault: only the FIRST `<main>` got the controller's slots**
+  (`v.mainSlot` / `v.mainSlotEnd`). The Club design has two (desktop and
+  phone), so on a phone there was no loading bar, no error-with-retry, and the
+  Wi-Fi screens drew blank. Every `<main>` is slotted now.
+- **Compiler fault: a lone `{{ value }}` lost the space before or after it**
+  ("7students", "Members7"): the whole-text match trimmed it. The space is kept
+  wherever there is a sibling for it to separate, emitted as its own child so
+  an element value is never flattened into a string. All eight designs were
+  recompiled; the stylesheet output is byte-identical and only spacing moved
+  in the views.
+- **Layout faults the probe cannot measure, seen in the screenshots and fixed:**
+  the Club phone column squeezed its clipped cards (`overflow: hidden` gives a
+  flex item a zero minimum), cutting the last "Needs you" rows — nothing in
+  that column shrinks now; the embedded roster had no side gutter on a phone
+  (`padX`); the mentor's Mentees row truncated the name to fit a status chip,
+  and the Class row ran the name under the notes button — both put the name
+  first and the chips/buttons under it; the member's Getting started steps and
+  My course lessons squeezed their text beside a button or state, which now
+  wrap underneath; the Wi-Fi workspace carried its desktop -50px margin into
+  the phone column.
+- **The Club's More page greeted every coordinator as "TA"** — the design's
+  sample initials (Tunde Akin) were still in the markup beside the real name.
+  `cp3-subs.json` now maps them to `{{ meIni }}`, from the signed-in person.
+- **The sweep's own traps, fixed in the suite:** the site scrolls smoothly, so
+  a scroll set from script had not moved when the next line measured (it
+  reported Learn's Review as running under its bar); and a More row that opens
+  a sheet ("Your access") is closed with Escape before the next row, or every
+  later row is measured underneath it.
+- **Community on a phone:** the quote carousel's position dot drew as a black
+  pill a thumb tall (an 8px dot button given the 44px floor, filled to the
+  full height); the button keeps the tall hit area and the dot is drawn inside
+  it. The pencil button floated over the post box while the box was on screen,
+  covering what a child was typing; it now shows only while the box is out of
+  view (scrolled past, the slim dock takes over).
+- **/support:** the safeguarding line's phone number and email failed the
+  public touch floor (16px links) — they are links inside a sentence, which
+  is now marked up as the paragraph it is (WCAG 2.5.8's inline exception).
+- **Baseline, recorded before committing (same failures on the last commit,
+  run in a clean worktree):** instructor-v6 "Today … the Saturday formation
+  day" (time-of-day dependent: "Musing" is not on the Thursday-night Today);
+  family-ui times out after "…and the /pay page names it as paying ahead"
+  (line 309); community-v3 "a code post opens in the editor with its source".
+  None is caused by this change; each is a fact for the next agent.

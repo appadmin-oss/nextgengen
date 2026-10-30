@@ -172,9 +172,20 @@ function emitNode(n, scope, ind) {
     if (!n.text.trim()) return n.text.includes('\n') ? null : JSON.stringify(' ');
     const t = n.text.replace(/\s*\n\s*/g, ' ');
     const r = interp(t, scope);
-    return r.raw ? 'dcT(' + r.js + ')' : r.js;
+    if (!r.raw) return r.js;
+    /* A lone {{ value }} beside a sibling keeps the space the markup put
+       between them: `<b>{{ n }}</b> {{ unit }}` is "7 students", not
+       "7students". The space only exists where there is a sibling for it to
+       separate, so a value alone in its element is not padded. */
+    const lead = /^\s/.test(t) && !n.first, trail = /\s$/.test(t) && !n.last;
+    /* The space is its own child, never concatenated: the value may be an
+       element (a controller-supplied box), which a string would flatten. */
+    if (lead || trail) return (lead ? '" ", ' : '') + 'dcT(' + r.js + ')' + (trail ? ', " "' : '');
+    return 'dcT(' + r.js + ')';
   }
   if (SKIP.has(n.tag)) return null;
+  const mark = ks => ks.forEach((k, i) => { if (k.text !== undefined) { k.first = i === 0; k.last = i === ks.length - 1; } });
+  if (n.kids) mark(n.kids);
   const kids = () => n.kids.map(k => emitNode(k, scope, ind + 1)).filter(Boolean);
   const A = Object.fromEntries(n.attrs);
   if (n.tag === 'sc-if') {
@@ -256,7 +267,11 @@ function emitNode(n, scope, ind) {
     const box = props.filter(x => /^"(className|style)":/.test(x));
     return 'h("div", ' + (box.length ? '{ ' + box.join(', ') + ' }' : 'null') + ', dcImport(v.dcImports, ' + nm + ', { ' + own.join(', ') + ' }))';
   }
-  if (n.tag === 'main' && !mainSlotted) { mainSlotted = true; ks.unshift('dcT(v.mainSlot)'); ks.push('dcT(v.mainSlotEnd)'); }
+  /* EVERY <main>, not the first: a design with a desktop and a phone branch
+     has one <main> in each and only one is ever drawn. Slotting the first
+     alone left the Club portal's phone with no loading bar, no error and a
+     blank Wi-Fi screen — the slot's screens existed and nothing drew them. */
+  if (n.tag === 'main') { mainSlotted = true; ks.unshift('dcT(v.mainSlot)'); ks.push('dcT(v.mainSlotEnd)'); }
   return 'h(' + JSON.stringify(n.tag) + ', ' + (props.length ? '{ ' + props.join(', ') + ' }' : 'null') + (ks.length ? ', ' + ks.join(', ') : '') + ')';
 }
 

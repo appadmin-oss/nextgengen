@@ -304,7 +304,7 @@ function HelpCentrePage({ setPage }) {
         </div>
       </section>
       {phone ? <section className="sup-safe hc-safe" aria-label="Safeguarding"><i className="ph ph-shield-check" aria-hidden="true"/>
-        <span>Worried about a child’s safety? Don’t wait for a case. Call <a href={"tel:" + phone.phone}>{phone.phoneDisplay}</a> or email <a href={"mailto:" + phone.email}>{phone.email}</a>. If a child is in danger now, call the police.</span></section> : null}
+        <p className="hc-safe-t">Worried about a child’s safety? Don’t wait for a case. Call <a href={"tel:" + phone.phone}>{phone.phoneDisplay}</a> or email <a href={"mailto:" + phone.email}>{phone.email}</a>. If a child is in danger now, call the police.</p></section> : null}
     </div>
   </main>;
 }

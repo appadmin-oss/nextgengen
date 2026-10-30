@@ -1686,6 +1686,14 @@ Summer School centres never appear here.
   password is shown once), Duty rota. **Team & centres:** Team, Centres,
   Volunteers, Staff activity.
 - On a phone the bottom bar holds Home, Roster, Timetable, Check-ins and More.
+- **Every Club tool works on a phone.** Applications, Families, ID cards,
+  Conduct & fines, Curriculum, Tournaments, Volunteers, Staff activity and the
+  Wi-Fi regions and setup used to show as greyed-out "Computer" rows under
+  More. Each now opens on the phone as a list: tap a row for its detail and
+  decisions, and the list's own action (Add a rule, Add a course, Add a shift,
+  Open a desk …) is the black button at the top. Tournaments has its own phone
+  screens for hosting one, adding players and entering results. A loading bar
+  or an error with **Try again** now shows on the phone too.
 
 **Conduct & fines.** Each rule (late, absent, equipment …) has an amount, an
 on/off switch and an optional **cap per term**. A rule that is off posts
@@ -3144,7 +3152,24 @@ new line).
 
 **Messages on a phone** keep only what is needed: the next session is one row (tap it to prepare), quick replies appear only when there is a message to answer, and the safety note is one line.
 
-**Rows of tabs scroll sideways on a phone** instead of wrapping onto a second
+**Every portal on a touch screen.** On a phone or tablet every button, tab,
+filter chip and drop-down in the member, mentor, instructor, family, Club,
+Summer School, Community and Learn portals is at least a fingertip tall (44
+points), and every text box uses 16-point text, so an iPhone no longer zooms
+the page into a field and leaves it zoomed. Long names wrap instead of being
+cut off: the mentor's Mentees and Class lists put a child's status and buttons
+under the name, and a lesson's state sits under its title in My course.
+
+- On a phone the bottom bar holds Home, Roster, Timetable, Check-ins and More.
+- **Every Club tool works on a phone.** Applications, Families, ID cards,
+  Conduct & fines, Curriculum, Tournaments, Volunteers, Staff activity and the
+  Wi-Fi regions and setup used to show as greyed-out "Computer" rows under
+  More. Each now opens on the phone as a list: tap a row for its detail and
+  decisions, and the list's own action (Add a rule, Add a course, Add a shift,
+  Open a desk …) is the black button at the top. Tournaments has its own phone
+  screens for hosting one, adding players and entering results. A loading bar
+  or an error with **Try again** now shows on the phone too.
+ instead of wrapping onto a second
 line: the Mentor, Companion and area tabs (My mentor / Companion / Community)
 in all three portals, the mentor portal's Saturday tabs, the quick replies, and
 the Control Room's tab rows. A fade at the edge shows there is more to swipe

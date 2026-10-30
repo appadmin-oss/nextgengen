@@ -260,7 +260,7 @@ class Sd3Directory extends React.Component {
     }
     const listUnit = reg ? "on this register" : n === 1 ? "student" : "students";
     return Object.assign(base0, {
-      rootH: P.embedded ? "100%" : "100vh", embedReg: !!P.embedded && R.reg, showKeys: isDesk && !P.embedded, standalone: !P.embedded, headPad: P.embedded ? "0 0 10px" : "14px 20px 10px", padX: P.embedded ? "0" : "20px",
+      rootH: P.embedded ? "100%" : "100vh", embedReg: !!P.embedded && R.reg, showKeys: isDesk && !P.embedded, standalone: !P.embedded, headPad: P.embedded ? "0 0 10px" : "14px 20px 10px", padX: P.embedded ? (isMob ? "16px" : "0") : "20px",
       scopeL: R.scopeL, scopeN: fmt(scoped.length), canReg: R.reg, reg, notReg: !reg,
       toggleReg: () => this.setState(s => ({ reg: !s.reg, view: !s.reg ? "all" : s.view, sel: {} })),
       regBtnL: reg ? "Close register" : "Take register · " + NEXT, regBorder: reg ? "#0b0b0c" : "#e2e2df", regBg: reg ? "#0b0b0c" : "#fff", regFg: reg ? "#fff" : "#0b0b0c",
