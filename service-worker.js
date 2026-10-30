@@ -249,7 +249,8 @@ self.addEventListener('push', (event) => {
   const opts = {
     body: String(d.body || '').slice(0, 240),
     icon: '/assets/icons/icon-192.png',
-    badge: '/assets/icons/icon-192.png',
+    // Android draws the status-bar badge from transparency alone: a white silhouette, not the full-colour icon.
+    badge: '/assets/icons/badge-96.png',
     data: { url: typeof d.url === 'string' && d.url.charAt(0) === '/' && d.url.charAt(1) !== '/' ? d.url : '/' },
     timestamp: Number(d.ts) || Date.now(),
   };
@@ -257,7 +258,7 @@ self.addEventListener('push', (event) => {
      reply on one request updates it); renotify makes the replacement buzz. */
   if (d.tag) { opts.tag = String(d.tag).slice(0, 64); opts.renotify = true; }
   // Something urgent stays on screen until it is dealt with.
-  if (d.urgent) opts.requireInteraction = true;
+  if (d.urgent) { opts.requireInteraction = true; opts.vibrate = [200, 100, 200]; }
   event.waitUntil((async () => {
     await self.registration.showNotification(title, opts);
     // An open tab refreshes its bell rather than waiting for its next poll.

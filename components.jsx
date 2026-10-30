@@ -4406,21 +4406,62 @@ const NGG_PUSH_SURFACE_WORDS = {
   admin:  { what: "When something new lands in the inbox — requests, messages, applications, approvals — on this device.", home: "/control/inbox" },
 };
 
-/** Can this device receive push at all, and if not, why — in a word the card turns into a sentence. */
+/**
+ * Can this device receive push at all, and if not, why — in a word the card
+ * turns into a sentence. Every platform that can is let through; every one
+ * that cannot gets the one thing that would fix it, because "this browser
+ * can't" is not an answer a parent on an iPhone can act on:
+ *   iPhone/iPad, iOS 16.4+  only from NGG on the Home Screen (Safari's rule)
+ *   iPhone, older iOS       not possible until iOS is updated
+ *   in-app browsers         WhatsApp/Instagram/Facebook pages cannot; open it in the real browser
+ *   Brave                   push is off by default (checked when subscribing)
+ *   everything else         Chrome, Edge, Firefox, Opera, Samsung Internet, Safari 16+ on Mac
+ */
 function nggPushEnv() {
   const n = typeof navigator !== "undefined" ? navigator : {}, w = typeof window !== "undefined" ? window : {};
-  const ios = /iPhone|iPad|iPod/.test(n.userAgent || "") || (n.platform === "MacIntel" && n.maxTouchPoints > 1);
+  const ua = n.userAgent || "";
+  const ios = /iPhone|iPad|iPod/.test(ua) || (n.platform === "MacIntel" && n.maxTouchPoints > 1);
   const standalone = !!((w.matchMedia && w.matchMedia("(display-mode: standalone)").matches) || n.standalone === true);
+  const inApp = /FBAN|FBAV|FB_IAB|Instagram|WhatsApp|Line\/|Snapchat|musical_ly|TikTok|Twitter|LinkedInApp|; wv\)/i.test(ua);
+  const iosVer = (ua.match(/OS (\d+)[_.](\d+)/) || []).slice(1).map(Number);
+  const has = "serviceWorker" in n && "PushManager" in w && "Notification" in w;
+  if (inApp && !has) return { ok: false, why: "in_app" };
   if (!w.isSecureContext) return { ok: false, why: "unsupported" };
-  if (!("serviceWorker" in n) || !("PushManager" in w) || !("Notification" in w)) return { ok: false, why: ios && !standalone ? "ios_install" : "unsupported" };
+  if (!has) {
+    if (ios && iosVer.length && (iosVer[0] < 16 || (iosVer[0] === 16 && iosVer[1] < 4))) return { ok: false, why: "ios_old" };
+    if (ios && !standalone) return { ok: false, why: /CriOS|FxiOS|EdgiOS/.test(ua) ? "ios_other_browser" : "ios_install" };
+    if (/Macintosh/.test(ua) && /Version\/(\d+)/.test(ua) && +ua.match(/Version\/(\d+)/)[1] < 16) return { ok: false, why: "safari_old" };
+    return { ok: false, why: "unsupported" };
+  }
   if (w.Notification.permission === "denied") return { ok: false, why: "denied" };
-  return { ok: true, why: "", permission: w.Notification.permission };
+  return { ok: true, why: "", permission: w.Notification.permission, ios, standalone };
 }
 const NGG_PUSH_WHY = {
-  ios_install: "On an iPhone or iPad, notifications work once NGG is on your Home Screen. Tap Share, then “Add to Home Screen”, open NGG from there and come back here.",
-  denied: "Notifications are blocked for this site in your browser. Open the site’s settings (the icon to the left of the address), allow Notifications, then reload this page.",
-  unsupported: "This browser can’t receive notifications. Chrome, Edge, Firefox or Safari can.",
+  ios_install: "On an iPhone or iPad, notifications work from NGG on your Home Screen. In Safari, tap Share, then “Add to Home Screen”, open NGG from the new icon, and turn them on there.",
+  ios_other_browser: "On an iPhone or iPad, notifications only work from NGG on your Home Screen. Open this page in Safari, tap Share, then “Add to Home Screen”, and turn them on from the new icon.",
+  ios_old: "This iPhone or iPad needs iOS 16.4 or later for notifications. Update it in Settings → General → Software Update, then add NGG to your Home Screen.",
+  safari_old: "This version of Safari can’t receive notifications. Update macOS (Safari 16 or later), or use Chrome, Edge or Firefox.",
+  in_app: "This page is open inside another app (WhatsApp, Instagram, Facebook…), which can’t receive notifications. Open it in Chrome or Safari — the menu (⋯) has “Open in browser”.",
+  brave: "Brave keeps notifications off until you allow its push service. Open brave://settings/privacy, turn on “Use Google services for push messaging”, then press Turn on again.",
+  service: "The browser couldn’t reach its notification service. Check your connection and press Turn on again; if it keeps failing, try Chrome or Firefox.",
+  denied: "Notifications are blocked for this site in your browser. Open the site’s settings (the icon to the left of the address), allow Notifications, then reload this page. On a phone: Settings → Apps → your browser → Notifications.",
+  unsupported: "This browser can’t receive notifications. Chrome, Edge, Firefox, Samsung Internet or Safari can.",
 };
+/** Notification.requestPermission, on browsers that answer by promise AND the older Safari that answers by callback. */
+function nggPushAsk() {
+  return new Promise(resolve => {
+    let done = false; const fin = p => { if (!done) { done = true; resolve(p); } };
+    try { const r = Notification.requestPermission(fin); if (r && typeof r.then === "function") r.then(fin, () => fin("default")); }
+    catch (_) { fin(Notification.permission || "default"); }
+  });
+}
+/** A subscription's keys, from toJSON or — where a browser leaves them out — read off the object. */
+function nggPushSubJson(sub) {
+  const j = sub.toJSON ? sub.toJSON() : {};
+  if (j && j.keys && j.keys.p256dh && j.keys.auth) return { endpoint: j.endpoint || sub.endpoint, keys: j.keys };
+  const k = n => { try { const b = new Uint8Array(sub.getKey(n)); let s = ""; b.forEach(x => { s += String.fromCharCode(x); }); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); } catch (_) { return ""; } };
+  return { endpoint: sub.endpoint, keys: { p256dh: k("p256dh"), auth: k("auth") } };
+}
 
 function nggPushKey(b64u) {
   const s = String(b64u || "").replace(/-/g, "+").replace(/_/g, "/"), pad = "=".repeat((4 - s.length % 4) % 4);
@@ -4428,8 +4469,15 @@ function nggPushKey(b64u) {
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
   return out;
 }
+/* Safari and older Firefox do not expose the key a subscription was made
+   with. Unknown is treated as the same: answering "different" would
+   unsubscribe and resubscribe on every visit, minting a new address each time. */
 function nggPushSameKey(sub, key) {
-  try { const a = new Uint8Array(sub.options.applicationServerKey); return a.length === key.length && a.every((x, i) => x === key[i]); } catch (_) { return false; }
+  try {
+    const k = sub && sub.options && sub.options.applicationServerKey;
+    if (!k) return true;
+    const a = new Uint8Array(k); return a.length === key.length && a.every((x, i) => x === key[i]);
+  } catch (_) { return true; }
 }
 async function nggPushReg() {
   let reg = await navigator.serviceWorker.getRegistration("/");
@@ -4446,14 +4494,25 @@ async function nggPushEnable(surface, publicKey) {
   const env = nggPushEnv();
   if (!env.ok) throw Object.assign(new Error(env.why), { why: env.why });
   if (!publicKey) throw Object.assign(new Error("unavailable"), { why: "unavailable" });
-  const perm = await Notification.requestPermission();
+  // Asked first, inside the press: Safari refuses a permission prompt that is not the direct result of one.
+  const perm = await nggPushAsk();
   if (perm !== "granted") throw Object.assign(new Error(perm), { why: perm === "denied" ? "denied" : "dismissed" });
   const reg = await nggPushReg();
   const key = nggPushKey(publicKey);
   let sub = await reg.pushManager.getSubscription();
   if (sub && !nggPushSameKey(sub, key)) { try { await sub.unsubscribe(); } catch (_) {} sub = null; }
-  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
-  await NGGApi.push.subscribe(surface, sub.toJSON());
+  if (!sub) {
+    try { sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }); }
+    catch (e) {
+      /* Brave refuses with a push-service error until its own setting is
+         on; any other browser failing here could not reach its service. */
+      let brave = false; try { brave = !!(navigator.brave && await navigator.brave.isBrave()); } catch (_) {}
+      throw Object.assign(new Error("service"), { why: brave ? "brave" : e && e.name === "NotAllowedError" ? "denied" : "service" });
+    }
+  }
+  const json = nggPushSubJson(sub);
+  if (!json.keys.p256dh || !json.keys.auth) throw Object.assign(new Error("service"), { why: "service" });
+  await NGGApi.push.subscribe(surface, json);
   try { localStorage.removeItem("ngg.push.snooze." + surface); } catch (_) {}
   // The page that just turned it on starts reporting presence at once (nggPushBoot).
   try { window.dispatchEvent(new CustomEvent("ngg:push-changed", { detail: { surface, on: true } })); } catch (_) {}

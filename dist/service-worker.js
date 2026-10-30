@@ -18,7 +18,7 @@
      deploy shows up without anybody hunting for a hard refresh.
    ================================================================ */
 
-const CACHE_VERSION = 'ngg-e8b046fda5';
+const CACHE_VERSION = 'ngg-0fa870cd5d';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
@@ -42,7 +42,7 @@ const PRECACHE = [
   '/photos.5db77ca07f.js',
   '/api-client.91cc1554db.js',
   '/outbox.042a8c9122.js',
-  '/app.c2f77ff98c.min.js',
+  '/app.fe61a81a24.min.js',
   '/vendor/react.production.min.js',
   '/vendor/react-dom.production.min.js',
   '/assets/logo.png',
@@ -249,7 +249,8 @@ self.addEventListener('push', (event) => {
   const opts = {
     body: String(d.body || '').slice(0, 240),
     icon: '/assets/icons/icon-192.png',
-    badge: '/assets/icons/icon-192.png',
+    // Android draws the status-bar badge from transparency alone: a white silhouette, not the full-colour icon.
+    badge: '/assets/icons/badge-96.png',
     data: { url: typeof d.url === 'string' && d.url.charAt(0) === '/' && d.url.charAt(1) !== '/' ? d.url : '/' },
     timestamp: Number(d.ts) || Date.now(),
   };
@@ -257,7 +258,7 @@ self.addEventListener('push', (event) => {
      reply on one request updates it); renotify makes the replacement buzz. */
   if (d.tag) { opts.tag = String(d.tag).slice(0, 64); opts.renotify = true; }
   // Something urgent stays on screen until it is dealt with.
-  if (d.urgent) opts.requireInteraction = true;
+  if (d.urgent) { opts.requireInteraction = true; opts.vibrate = [200, 100, 200]; }
   event.waitUntil((async () => {
     await self.registration.showNotification(title, opts);
     // An open tab refreshes its bell rather than waiting for its next poll.

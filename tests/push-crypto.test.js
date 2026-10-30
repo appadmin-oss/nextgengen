@@ -69,7 +69,7 @@ async function decrypt(body, uaKeys, uaPubRaw, auth) {
       'jwt' => push_jwt('https://fcm.googleapis.com/fcm/send/abc:def', $pem),
       'pub' => $pub,
       'okHosts' => array_map('push_endpoint_ok', ['https://fcm.googleapis.com/fcm/send/x', 'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://web.push.apple.com/QG',
-                                                   'https://wns2-bl2p.notify.windows.com/w/?token=x']),
+                                                   'https://wns2-bl2p.notify.windows.com/w/?token=x', 'https://jmt17.google.com/fcm/send/x']),
       'badHosts' => array_map('push_endpoint_ok', ['http://fcm.googleapis.com/x', 'https://169.254.169.254/latest', 'https://evil.example/fcm.googleapis.com',
                                                     'https://fcm.googleapis.com.evil.example/x', 'https://localhost/x']),
     ]);`;

@@ -61,7 +61,7 @@ const PUSH_DROP_AFTER_FAILS = 8;
 /** Only real push services are ever POSTed to — a subscription is a URL the
  *  CLIENT chose, and without this list it is a way to make this server send
  *  requests anywhere. */
-const PUSH_HOSTS = ['/^fcm\.googleapis\.com$/', '/^[a-z0-9.-]+\.googleapis\.com$/', '/^updates\.push\.services\.mozilla\.com$/',
+const PUSH_HOSTS = ['/^fcm\.googleapis\.com$/', '/^[a-z0-9.-]+\.googleapis\.com$/', '/^[a-z0-9-]+\.google\.com$/', '/^updates\.push\.services\.mozilla\.com$/',
                     '/^[a-z0-9.-]+\.push\.services\.mozilla\.com$/', '/^web\.push\.apple\.com$/', '/^[a-z0-9.-]+\.push\.apple\.com$/',
                     '/^[a-z0-9.-]+\.notify\.windows\.com$/', '/^[a-z0-9.-]+\.wns\.windows\.com$/'];
 

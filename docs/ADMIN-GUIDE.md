@@ -3986,10 +3986,21 @@ email a parent gets from the family account) can arrive as a notification.
 - **Staff:** **Account menu → Notifications**, or the prompt at the top of the Inbox.
 - **Send a test** confirms it works on that device. **Turn off here** stops
   that device; **Turn off everywhere** stops all of them.
-- **iPhone and iPad:** notifications only work once NGG is on the Home Screen
-  (Share → *Add to Home Screen*, then open NGG from there). The card says so.
-- **Blocked in the browser:** the card says how to allow it again (the icon to
-  the left of the address → Notifications → Allow).
+- **Which devices.** Android phones (Chrome, Samsung Internet, Opera, Firefox —
+  Tecno, Infinix, Samsung, Pixel alike), Windows, Mac and Linux computers
+  (Chrome, Edge, Firefox, Safari 16+), and iPhone/iPad on iOS 16.4 or later.
+  Where a device cannot, the card says the one thing that fixes it:
+
+  | Device | What the card says |
+  |---|---|
+  | iPhone/iPad in Safari | Share → *Add to Home Screen*, open NGG from the icon, turn on there |
+  | iPhone in Chrome or Firefox | open the page in Safari, then add it to the Home Screen |
+  | iPhone on iOS older than 16.4 | update iOS (Settings → General → Software Update) |
+  | A page opened inside WhatsApp, Instagram or Facebook | open it in Chrome or Safari (⋯ → *Open in browser*) |
+  | Brave | turn on *Use Google services for push messaging* in Brave's privacy settings |
+  | Safari 15 or older on a Mac | update macOS, or use Chrome/Edge/Firefox |
+  | Notifications blocked for the site | allow them in the site settings (or the phone's app settings) |
+
 
 **What keeps it from being a nuisance** — each is automatic:
 

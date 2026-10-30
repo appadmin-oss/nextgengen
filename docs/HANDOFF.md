@@ -4971,3 +4971,30 @@ whose keys the test holds, catches what the server would have POSTed
 over CDP. `tests/inbox-actions.test.js` drives the Inbox. PHP suite: 51 new push /
 staff-inbox / inbox checks; quiet hours and the email throttle were disabled on
 purpose and the suite named both.
+
+## 2026-10-30 (late) — Merged the parallel branch; push checked device by device
+
+**Merge.** `claude/vibrant-cray-3gmdum` (volunteer pay, CACENTRE centres and
+sessions, Make.com, the NGG volunteer door, Afrovanguard feeds) merged in. Both
+branches had numbered migrations from 199: this one's 199–203 kept (already shipped
+in zips), the parallel 199–202 renumbered 204–207 in SQLite and MySQL, with a
+step-back in `db_migrate` for a database that ran the parallel ladder (has
+`volunteer_pay`/`absence_asks`, no `push_subscriptions` → re-run from 199). Checked
+both directions reach 207. `api/tests/run.php` was rebuilt block by block against the
+common ancestor — the textual merge had doubled 121 test blocks. The parallel
+"Settled up to a date" test stays out: that bulk action is retired here as a fraud
+path. Two of its rule breaks fixed on the way in (a `!important`, a native
+`confirm()` in Wi-Fi).
+
+**Push on every device.** Asked: "Ensure the push notification is compatible on all
+devices." What each platform needed: older Safari answers the permission prompt by
+callback (`nggPushAsk` takes both); Safari and older Firefox hide a subscription's
+key, which the rotation check read as "changed" and would have re-subscribed on
+every visit — unknown now means unchanged; keys are read off the subscription where
+`toJSON` omits them; Brave's disabled push service, in-app browsers (WhatsApp,
+Instagram, Facebook), iPhone on Chrome, iOS below 16.4 and Safari 15 each get their
+own instruction instead of "unsupported"; Android gets a monochrome badge
+(`assets/icons/badge-96.png`) instead of a white square; urgent alerts vibrate;
+`*.google.com` push endpoints are allowed. `tests/push-devices.test.js` (32) runs
+the detection over real user agents with each device's real capabilities; two
+breaks planted, both caught.
