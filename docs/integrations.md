@@ -17,6 +17,10 @@ a one-way projection.
 | `registration.created` / `registration.verified` | Summer desk registers / parent consents |
 | `attendance.marked` | Any source: QR gate, manual admin, inbound webhook |
 | `behaviour.flagged` | The behaviour monitor raises a wellbeing flag |
+| `safeguarding.flag` / `safeguarding.acknowledged` | The same flag without the child's name; somebody took it (`docs/make.md`) |
+| `edition.milestone` | A Summer School edition reached a date (six weeks out … ended) |
+| `absence.reason` | A guardian said why a child was away |
+| `private.attendance.absences` / `private.registration.stalled` | Guardians' numbers, for one named destination only (`docs/make.md`) |
 | `test.ping` | The admin "Send test" button |
 
 Subscriptions accept exact kinds, prefixes (`attendance.*`) or `*`.
@@ -116,3 +120,9 @@ verification falls back to email-only.
 The other app POSTs to `/api/hooks/attendance.php` — full spec lives in
 `docs/attendance-webhook.md` (same HMAC scheme as §2, ours to publish,
 theirs to implement).
+
+## 6 · Make.com
+
+Outbound through §2's signed webhooks; back in through `/api/hooks/make.php`,
+signed the same way with `hooks.make_secret`. Scenarios, actions and events:
+`docs/make.md`.

@@ -47,7 +47,8 @@ function admin_integrations_list(array $p): array {
             'lastError' => (string)($lastErr['lastError'] ?? ''),
         ];
     }
-    return ['ok' => true, 'integrations' => array_map('integration_public', $rows), 'log' => $log, 'health' => $health];
+    return ['ok' => true, 'integrations' => array_map('integration_public', $rows), 'log' => $log, 'health' => $health,
+        'make' => function_exists('make_admin_view') ? make_admin_view() : null];
 }
 
 /** Requeue stalled deliveries (failed + dead) so a fixed URL/secret can re-push

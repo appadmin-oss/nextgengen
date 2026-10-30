@@ -34,6 +34,16 @@ const CONSENT_TYPES = [
     'trips'         => ['p' => 2, 'label' => 'Off-site activities'],
     'comms'         => ['p' => 2, 'label' => 'Program updates by SMS/email'],
 ];
+/* Consents a MEMBER's ledger holds beyond the Summer form's. Kept out of
+ * CONSENT_TYPES on purpose: that list IS the Summer parent form, the desk and
+ * self-registration — every clause on it is put to every family and written as
+ * declined when left unticked. Sharing a child's details with Afrovanguard is
+ * asked of one member's guardian, when that member is put forward for NGV, so
+ * it lives here; consent_record() accepts both lists. `guardian` = the row's
+ * actor must be the guardian who decided, never the staff member recording it. */
+const MEMBER_CONSENT_TYPES = [
+    'ngv_transfer' => ['p' => 2, 'guardian' => true, 'label' => "Share my child's details with Afrovanguard's NextGen Vanguard"],
+];
 const FORM_FIELD_TYPES = ['text', 'longtext', 'email', 'phone', 'number', 'date', 'choice', 'multi', 'yesno', 'file', 'section', 'info'];
 /* The ages the programme takes. Named once because three places need to agree:
  * the date-of-birth validator, the record it writes, and the message a family
@@ -2915,7 +2925,7 @@ function admin_centres_list(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $canWrite = in_array('people', member_effective_caps($g['requester']), true);
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, summerLeadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt, programmes FROM centres ORDER BY name");
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, summerLeadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt, programmes, cacLocationId, cacCalendar, cacSyncedAt FROM centres ORDER BY name");
     // A scoped admin's directory is their centres.
     $scopeNames = admin_centre_names_in_scope($g['requester']);
     if ($scopeNames !== null) $rows = array_values(array_filter($rows, static fn($r) => in_array((string)$r['name'], $scopeNames, true)));
@@ -2966,6 +2976,9 @@ function admin_centres_list(array $p): array {
             // So the screen can show a read-only directory rather than buttons
             // that 403. The server still refuses either way.
             'canWrite' => $canWrite,
+            /* Once CACENTRE's list has arrived, centres are added, renamed and
+               retired there; the screen says so instead of offering it. */
+            'cacentre' => function_exists('cac_locations_active') && cac_locations_active() ? (setting_get('cacLocations') ?: null) : null,
             'summerEditionId' => (string)$c['cohortId']];
 }
 
@@ -3077,6 +3090,19 @@ function admin_centres_upsert(array $p): array {
     if (!preg_match('/^#[0-9a-fA-F]{6}$/', $color)) return ['ok' => false, 'error' => 'bad_color'];
     $id = (string)($d['centreId'] ?? '');
     $existing = $id !== '' ? db_row('SELECT * FROM centres WHERE centreId = ?', [$id]) : null;
+    /* CACENTRE decides the places (domain/cac-locations.php). Once its list
+       has arrived, a centre is not added here, and a linked centre's name and
+       status are CACENTRE's: they change there and arrive here. Everything
+       else about the centre is NGG's to edit. */
+    if (!$existing && function_exists('cac_locations_active') && cac_locations_active()) {
+        return ['ok' => false, 'error' => 'managed_by_cacentre', 'detail' => 'Centres come from CACENTRE’s locations. Add the place in CACENTRE → Attendance → Desks and settings → Locations; it appears here within minutes.'];
+    }
+    if ($existing && centre_is_cac_managed($existing)) {
+        if ($name !== (string)$existing['name']) return ['ok' => false, 'error' => 'managed_by_cacentre', 'detail' => (string)$existing['name'] . ' is a CACENTRE location. Rename it in CACENTRE → Attendance → Desks and settings → Locations; NGG follows.'];
+        if (array_key_exists('status', $d) && (string)$d['status'] !== (string)$existing['status']) {
+            return ['ok' => false, 'error' => 'managed_by_cacentre', 'detail' => 'Whether ' . $existing['name'] . ' is open is decided in CACENTRE.'];
+        }
+    }
     // The code is the printed ID prefix — it must stay unique across centres.
     $clash = db_row('SELECT centreId FROM centres WHERE code = ? LIMIT 1', [$code]);
     if ($clash && (!$existing || $clash['centreId'] !== $id)) return ['ok' => false, 'error' => 'code_taken'];
@@ -3248,6 +3274,9 @@ function admin_centres_delete(array $p): array {
     $c = $id !== '' ? db_row('SELECT * FROM centres WHERE centreId = ?', [$id]) : null;
     if (!$c) return ['ok' => false, 'error' => 'not_found'];
     if (!admin_centre_allowed($g['requester'], (string)$c['name'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    if (centre_is_cac_managed($c)) {
+        return ['ok' => false, 'error' => 'managed_by_cacentre', 'detail' => (string)$c['name'] . ' is a CACENTRE location. Take it off CACENTRE’s list and it is retired here.'];
+    }
     $name = (string)$c['name'];
     $uses = [
         'members'       => (int)(db_row("SELECT COUNT(*) c FROM members WHERE centre = ?", [$name])['c'] ?? 0),
@@ -3900,15 +3929,15 @@ function consent_handle_for(string $subjectId): string {
  */
 const CONSENT_STATUSES = ['granted', 'declined', 'withdrawn'];
 
-function consent_record(string $subjectId, string $type, string $status, string $method, string $actorName): array {
-    if (!isset(CONSENT_TYPES[$type])) return ['ok' => false, 'error' => 'bad_type'];
+function consent_record(string $subjectId, string $type, string $status, string $method, string $actorName, string $recordedById = ''): array {
+    if (!isset(CONSENT_TYPES[$type]) && !isset(MEMBER_CONSENT_TYPES[$type])) return ['ok' => false, 'error' => 'bad_type'];
     if (!in_array($status, CONSENT_STATUSES, true)) return ['ok' => false, 'error' => 'bad_status'];
     $method = trim($method);
     if ($method === '') return ['ok' => false, 'error' => 'method_required'];
     db_insert('consents', [
         'studentId' => $subjectId, 'type' => $type, 'status' => $status,
         'method' => mb_substr($method, 0, 60), 'actorName' => mb_substr(trim($actorName), 0, 120),
-        'createdAt' => now_iso(),
+        'recordedById' => $recordedById, 'createdAt' => now_iso(),
     ]);
     /* Withdrawing site visibility takes a published testimonial off the home
        page, and that page is cached. The read already re-checks consent on

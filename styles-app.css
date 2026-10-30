@@ -148,6 +148,13 @@
 .chip-lime { background: var(--lime); color: var(--lime-ink); }
 .chip-coral { background: var(--coral); color: white; }
 .chip-plum { background: var(--plum); color: white; }
+/* A centre that follows CACENTRE's locations list (domain/cac-locations.php). */
+.chip-cac { margin-left: 8px; background: var(--navy-900); color: white; }
+.chip-cac-not { margin-left: 8px; background: rgba(12, 20, 50, 0.06); color: var(--ink-700); }
+.centres-cac-note { max-width: 72ch; background: rgba(12, 20, 50, 0.04); border: 1px solid rgba(12, 20, 50, 0.12); border-radius: 10px; padding: 10px 12px; }
+.centre-cac-fixed { flex: 1 1 200px; }
+.centre-cac-lbl { display: block; font-size: 12px; font-weight: 600; color: var(--ink-700); margin-bottom: 4px; }
+.centre-cac-val { margin: 0; min-height: 38px; display: flex; align-items: center; gap: 8px; color: var(--ink-900); }
 
 /* Cards — soft, intentional shadow */
 .card {
@@ -1889,6 +1896,11 @@ body.cm-app .fab-top { display: none; }
   gap: 14px;
 }
 @media (max-width: 820px) { .admin-sessions-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.admin-sessions-source { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 0 0 16px; padding: 12px 16px; border-radius: 14px; background: var(--cream-50); border: 1px solid var(--line, #e6e2d6); font-size: 14px; }
+.admin-sessions-note { margin: 0 0 12px; font-size: 14px; color: var(--ink-500); }
+.admin-session-dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
+.admin-session-dl dt { font-weight: 700; }
+.admin-session-dl dd { margin: 0; }
 .admin-session-card {
   background: var(--cream-50);
   border: 2px solid transparent;
@@ -8216,6 +8228,78 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-mp-note > span { flex: 1 1 260px; }
 .cr-mp-note.is-warn { background: var(--cr-warn-bg); color: var(--cr-warn-fg); border-color: transparent; }
 /* Settings → API keys: one card per outside service */
+.cr-keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; }
+.cr-key { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.cr-key.is-on { box-shadow: inset 3px 0 0 var(--cr-ok-dot); }
+.cr-key-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cr-key-head b { font-size: 15px; }
+.cr-key-what { margin: 0; font-size: 13px; color: var(--cr-muted-2); }
+.cr-key-fields { margin: 0; display: grid; gap: 6px; font-size: 13px; }
+.cr-key-fields > div { display: flex; justify-content: space-between; gap: 12px; }
+.cr-key-fields dt { color: var(--cr-muted-2); }
+.cr-key-fields dd { margin: 0; display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.cr-key-src { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--cr-neutral-bg); color: var(--cr-neutral-fg); }
+.cr-key-res { margin: 0; display: flex; align-items: flex-start; gap: 6px; font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--cr-neutral-bg); color: var(--cr-neutral-fg); }
+.cr-key-res.is-ok { background: var(--cr-ok-bg); color: var(--cr-ok-fg); }
+.cr-key-res.is-bad { background: var(--cr-bad-bg); color: var(--cr-bad-fg); }
+.cr-key-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+.cr-key-link { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+/* Settings → Integrations → Make.com: three numbered steps, a key shown once
+   inline, and the scenario guide (cr-tab-system.jsx, CrSyMake). */
+.cr-mk { display: flex; flex-direction: column; gap: 12px; container-type: inline-size; }
+.cr-mk-panel { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.cr-mk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.cr-mk-head > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cr-mk-head b { font-size: 15px; }
+.cr-mk-what { font-size: 13px; color: var(--cr-muted-2); font-weight: 400; }
+.cr-mk-hint { font-size: 12.5px; color: var(--cr-muted-3); margin: 0; }
+.cr-mk-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cr-mk-step { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 14px 0; border-top: 1px solid var(--cr-line); }
+.cr-mk-step:first-child { border-top: 0; padding-top: 4px; }
+.cr-mk-num { width: 32px; height: 32px; border-radius: var(--cr-r-pill); display: grid; place-items: center; font-size: 13px; font-weight: 600; background: var(--cr-s2); color: var(--cr-muted); font-variant-numeric: tabular-nums; }
+.cr-mk-step.is-done .cr-mk-num { background: var(--cr-ok-bg); color: var(--cr-ok-fg); }
+.cr-mk-step-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cr-mk-step-body > b { font-size: 14px; }
+.cr-mk-state { font-size: 13px; color: var(--cr-text); overflow-wrap: anywhere; }
+.cr-mk-state code, .cr-mk-url { font-family: var(--cr-mono); font-size: 12.5px; }
+.cr-mk-step-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.cr-mk-jobs { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; max-width: 460px; }
+.cr-mk-jobs li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.cr-mk-dot { width: 8px; height: 8px; border-radius: var(--cr-r-pill); background: var(--cr-ok-dot); }
+.cr-mk-jobs .is-late .cr-mk-dot { background: var(--cr-warn-dot); }
+.cr-mk-when { color: var(--cr-muted-3); font-variant-numeric: tabular-nums; }
+.cr-mk-jobs .is-late .cr-mk-when { color: var(--cr-warn-fg); }
+.cr-mk-reveal { padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--cr-gold-bg); border-color: transparent; color: var(--cr-gold-fg); outline: none; }
+.cr-mk-reveal:focus-visible { box-shadow: 0 0 0 2px var(--cr-gold); }
+.cr-mk-reveal .cr-mk-hint { color: var(--cr-gold-fg); }
+.cr-mk-reveal-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.cr-mk-reveal-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
+.cr-mk-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; }
+.cr-mk-copy-l { grid-column: 1 / -1; font-size: 12.5px; color: var(--cr-muted-2); }
+.cr-mk-reveal .cr-mk-copy-l { color: var(--cr-gold-fg); }
+.cr-mk-code { font-family: var(--cr-mono); font-size: 12.5px; padding: 8px 10px; border-radius: var(--cr-r-sm); background: var(--cr-bg); color: var(--cr-ink); border: 1px solid var(--cr-line-2); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.cr-mk-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--cr-line); }
+.cr-mk-sc { border-top: 1px solid var(--cr-line); }
+.cr-mk-sc:first-of-type { border-top: 0; }
+.cr-mk-sc > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 12px 0; min-height: 44px; }
+.cr-mk-sc > summary::-webkit-details-marker { display: none; }
+.cr-mk-sc > summary > .ph { font-size: 18px; margin-top: 1px; color: var(--cr-muted); }
+.cr-mk-sc > summary > span:not(.cr-pill) { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cr-mk-sc > summary b { font-size: 14px; }
+.cr-mk-sc > summary:focus-visible { outline: 2px solid var(--cr-ink); outline-offset: 2px; border-radius: var(--cr-r-sm); }
+.cr-mk-sc[open] > summary b { text-decoration: underline; text-underline-offset: 3px; }
+.cr-mk-sc-body { padding: 0 0 14px 30px; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; color: var(--cr-text); }
+.cr-mk-sc-body p { margin: 0; }
+.cr-mk-sc-body ol { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.cr-mk-sc-body code { font-family: var(--cr-mono); font-size: 12.5px; overflow-wrap: anywhere; }
+@container (max-width: 560px) {
+  .cr-mk-step { grid-template-columns: 32px minmax(0, 1fr); }
+  .cr-mk-step-acts { grid-column: 2; justify-content: flex-start; }
+  .cr-mk-sc > summary { grid-template-columns: 20px minmax(0, 1fr); }
+  .cr-mk-sc > summary .cr-pill { grid-column: 2; justify-self: start; }
+  .cr-mk-sc-body { padding-left: 0; }
+}
+
 .cr-mp-note.is-bad { background: var(--cr-bad-bg); color: var(--cr-bad-fg); border-color: transparent; }
 .cr-mp-note code { font-family: var(--cr-mono); font-size: 12.5px; }
 .cr-mp-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -12227,6 +12311,11 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-wifi-dl > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: 12px; background: #fafaf8; border: 1px solid #ecebe6; }
 .m9x-wifi-dl dt { min-width: 84px; font-size: 13px; color: #4a4a50; }
 .m9x-wifi-dl dd { margin: 0; font-size: 15px; color: #0b0b0c; }
+/* Volunteer pay (mp9-more.jsx Mp9VolWallet): one line a day, the excluded ones quieter. */
+.m9x-vp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.m9x-vp-day { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 10px 12px; border-radius: 12px; background: #fafaf8; border: 1px solid #ecebe6; font-size: 14px; color: #0b0b0c; }
+.m9x-vp-day.is-out { color: #4a4a50; }
+.m9x-vp-when { font-size: 13px; color: #4a4a50; }
 .m9x-wifi-v { display: flex; align-items: center; gap: 6px; font-family: var(--mono, ui-monospace, monospace); font-size: 17px; letter-spacing: .04em; }
 .m9x-wifi-b { font: inherit; cursor: pointer; min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: #0b0b0c; }
 .m9x-wifi-b:hover { background: #efeee9; }
@@ -12235,6 +12324,16 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-wifi-new { font: inherit; cursor: pointer; min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #0b0b0c; background: #fff; color: #0b0b0c; font-weight: 600; margin-right: 10px; }
 .m9x-wifi-new:disabled { cursor: not-allowed; border-color: #c9c8c2; color: #6b6b72; }
 .m9x-wifi-left { font-size: 13px; color: #4a4a50; }
+/* Me → Wi-Fi: the password the member chooses (mp9-more.jsx, Mp9Wifi). */
+.m9x-wifi-form { display: grid; gap: 10px; max-width: 30rem; margin: 4px 0 0; }
+.m9x-wifi-lbl { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: #0b0b0c; }
+.m9x-wifi-field { display: flex; align-items: center; gap: 6px; }
+.m9x-wifi-inp { flex: 1 1 auto; width: 100%; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid #4a4a50; background: #fff; color: #0b0b0c; font: inherit; font-size: 16px; }
+.m9x-wifi-inp:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
+.m9x-wifi-bad { margin: 0; padding: 10px 12px; border-radius: 12px; background: #fafaf8; border: 1px solid #b0361c; color: #b0361c; font-size: 14px; }
+.m9x-wifi-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.m9x-wifi-acts .m9x-wifi-new { margin-right: 0; }
+.m9x-wifi-first { font-weight: 600; }
 
 /* Instructor portal: the assignment desk sits in the page's column, not under the sidebar's edge. */
 .ip6-asd { box-sizing: border-box; max-width: 960px; margin: 0 auto; padding: 0 40px 56px; }

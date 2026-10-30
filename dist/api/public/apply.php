@@ -63,6 +63,9 @@ if ($kind === 'teen') {
     $payload['centre']  = v_safe_text($body['centre'] ?? '', 80);
     $payload['faculty'] = v_safe_text($body['faculty'] ?? '', 80);
     $payload['visibilityConsent'] = !empty($body['visibilityConsent']) ? 1 : 0;
+    // 'anchor' = an NGG (year-round) volunteer from /join/volunteer; anything
+    // else is the Summer School's seasonal form.
+    $payload['program'] = (string)($body['program'] ?? '') === 'anchor' ? 'anchor' : '';
     $payload['courses'] = is_array($body['courses'] ?? null)
         ? array_slice(array_map(fn($c) => v_safe_text((string)$c, 60), $body['courses']), 0, 8)
         : [];

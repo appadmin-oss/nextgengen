@@ -141,6 +141,31 @@ function behaviour_gate(array $p): array {
     return admin_cap_gate($p, 'summer');
 }
 
+/**
+ * Raise a wellbeing/safeguarding flag — the one way every surface does it.
+ *
+ * `behaviour.flagged` carries the child's name, for the staff Chat space that
+ * has always had it. `safeguarding.flag` is its twin for an escalation ladder
+ * outside NGG (Make, a phone tree): a reference, the severity, the centre and
+ * a link — no name, no note. Whoever acts signs in to read who and what.
+ * Recording the flag is what lets that ladder ask "has anybody got this?".
+ */
+function behaviour_flag_emit(array $payload): void {
+    event_emit('behaviour.flagged', $payload);
+    try {
+        $ref = (string)($payload['ref'] ?? '');
+        if ($ref === '') return;
+        $sid = (string)($payload['subjectId'] ?? '');
+        $centre = (string)(db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [$sid])['centre']
+            ?? db_row('SELECT centre FROM summer_students WHERE studentId = ? LIMIT 1', [$sid])['centre'] ?? '');
+        $flag = ['ref' => $ref, 'source' => substr((string)($payload['source'] ?? 'behaviour'), 0, 40),
+            'category' => (string)($payload['category'] ?? ''), 'severity' => (string)($payload['severity'] ?? ''),
+            'centre' => $centre, 'flaggedAt' => now_iso()];
+        db_insert('safeguarding_flags', $flag);
+        event_emit('safeguarding.flag', $flag + ['adminUrl' => rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/nextadmin?s=behaviour']);
+    } catch (\Throwable $e) { /* the staff alert above has already gone */ }
+}
+
 function admin_behaviour_log(array $p): array {
     $g = behaviour_gate($p); if (!$g['ok']) return $g;
     $subjectId = trim((string)($p['subjectId'] ?? ''));
@@ -183,7 +208,7 @@ function admin_behaviour_log(array $p): array {
     // Wellbeing risk pages the admins NOW (Chat space etc.), name included —
     // internal destinations only; the payload never reaches student surfaces.
     if ($cls['category'] === 'wellbeing' || $cls['severity'] === 'urgent') {
-        event_emit('behaviour.flagged', ['ref' => $logId, 'subject' => $subjectName, 'subjectId' => $subjectId,
+        behaviour_flag_emit(['ref' => $logId, 'subject' => $subjectName, 'subjectId' => $subjectId,
             'category' => $cls['category'], 'severity' => $cls['severity'], 'by' => (string)$g['requester']['fullName']]);
     }
     return ['ok' => true, 'logId' => $logId, 'category' => $cls['category'], 'severity' => $cls['severity'], 'aiSource' => $cls['aiSource']];
@@ -206,6 +231,23 @@ function admin_behaviour_list(array $p): array {
         foreach (db_all("SELECT memberId id, centre FROM members WHERE memberId IN ($ph)", $ids) as $r) $centreOf[(string)$r['id']] = (string)$r['centre'];
         foreach (db_all("SELECT studentId id, centre FROM summer_students WHERE studentId IN ($ph)", $ids) as $r) $centreOf[(string)$r['id']] = (string)$r['centre'];
         $rows = array_values(array_filter($rows, static fn($r) => in_array($centreOf[(string)$r['subjectId']] ?? '', $names, true)));
+    }
+
+    /* Who took each flag outside NGG (Make's escalation ladder) — one grouped
+       read for the page, so the screen says it was picked up at 21:40 by the
+       safeguarding lead rather than looking unanswered. */
+    if ($rows) {
+        $refs = array_values(array_unique(array_column($rows, 'logId')));
+        $ph = implode(',', array_fill(0, count($refs), '?'));
+        $ack = [];
+        foreach (db_all("SELECT ref, ackAt, ackBy, ackChannel FROM safeguarding_flags WHERE ackAt <> '' AND ref IN ($ph)", $refs) as $a) $ack[(string)$a['ref']] = $a;
+        foreach ($rows as &$r) {
+            $a = $ack[(string)$r['logId']] ?? null;
+            $r['ackAt'] = $a ? (string)$a['ackAt'] : '';
+            $r['ackBy'] = $a ? (string)$a['ackBy'] : '';
+            $r['ackChannel'] = $a ? (string)$a['ackChannel'] : '';
+        }
+        unset($r);
     }
 
     // 30-day trend: counts per category + open flags — the M&E feed.

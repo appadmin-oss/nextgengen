@@ -4200,19 +4200,23 @@ const CONSENT_METHODS = ["Paper form", "Parent portal", "By phone", "In person",
 function MemberConsentEditor({ member }) {
   const [state, setState] = React.useState(member.consent || {});
   const [method, setMethod] = React.useState(CONSENT_METHODS[0]);
+  const [guardian, setGuardian] = React.useState("");
   const [busy, setBusy] = React.useState("");
 
-  const record = async (type, status) => {
+  /* `guardianOnly` rows record the guardian's own decision, so the ledger
+     names the guardian — never the staff member pressing the button. */
+  const record = async (type, status, guardianOnly) => {
+    if (guardianOnly && guardian.trim().length < 3) { toast.error("Enter the guardian's name first."); return; }
     setBusy(type + status);
     try {
-      const r = await NGGApi.admin.members.consent(member.memberId, type, status, method);
+      const r = await NGGApi.admin.members.consent(member.memberId, type, status, method, guardianOnly ? guardian.trim() : undefined);
       setState(Object.assign({}, state, r.consent, { mayName: r.mayName }));
       toast.success(status === "granted" ? "Consent recorded." : "Refusal recorded.", "Saved");
     } catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(""); }
   };
 
-  const row = (type, label, note) => {
+  const row = (type, label, note, guardianOnly) => {
     const cur = state[type];
     const st = cur && cur.status;
     return (
@@ -4234,9 +4238,9 @@ function MemberConsentEditor({ member }) {
         </div>
         <div style={{ display: "flex", gap: 6, flex: "none" }}>
           <button type="button" className={"btn btn-sm" + (st === "granted" ? " btn-primary" : " btn-ghost")}
-            disabled={!!busy} onClick={() => record(type, "granted")}>{busy === type + "granted" ? "…" : "Granted"}</button>
+            disabled={!!busy} onClick={() => record(type, "granted", guardianOnly)}>{busy === type + "granted" ? "…" : "Granted"}</button>
           <button type="button" className={"btn btn-sm" + (st === "declined" ? " btn-primary" : " btn-ghost")}
-            disabled={!!busy} onClick={() => record(type, "declined")}>{busy === type + "declined" ? "…" : "Declined"}</button>
+            disabled={!!busy} onClick={() => record(type, "declined", guardianOnly)}>{busy === type + "declined" ? "…" : "Declined"}</button>
         </div>
       </div>
     );
@@ -4257,6 +4261,12 @@ function MemberConsentEditor({ member }) {
       </label>
       {row("site_visibility", "Feature on our website", "Their first name and last initial may be shown.")}
       {row("media", "Photos & media", "Their photograph may be published — needs the one above as well.")}
+      <label className="admin-field">
+        <span>Guardian who gave it (for the NGV row)</span>
+        <input className="admin-input" value={guardian} onChange={e => setGuardian(e.target.value)} placeholder="The guardian's full name"/>
+      </label>
+      {row("ngv_transfer", "Share with NextGen Vanguard",
+           "Share my child's details with Afrovanguard's NextGen Vanguard. Needed before a member under 18 can be promoted to NGV.", true)}
     </div>
   );
 }
@@ -4728,18 +4738,43 @@ function CheckinDesks() { return <GateLinks scope="checkin"/>; }
 function AdminSessions() {
   const [year, setYear] = React.useState(new Date().getFullYear());
   const [list, setList] = React.useState(null);
+  const [source, setSource] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
-  const load = () => NGGApi.admin.sessions.list(year).then(r => setList(r.sessions || [])).catch(e => { toast.error(e.code || e.message); setList([]); });
+  const [syncing, setSyncing] = React.useState(false);
+  const load = () => NGGApi.admin.sessions.list(year).then(r => { setList(r.sessions || []); setSource(r.source || null); }).catch(e => { toast.error(e.code || e.message); setList([]); });
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [year]);
+  // CACENTRE keeps the one calendar; NGG fills its sessions from it (sessions_sync).
+  const fromCac = !!(source && source.fromCacentre);
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      const r = await NGGApi.admin.sessions.sync();
+      if (r.sync && r.sync.ok === false) toast.error("CACENTRE did not answer: " + (r.sync.error || "try again later"));
+      else toast.success("Sessions brought in from CACENTRE");
+      load();
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setSyncing(false); }
+  };
   return (
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Sessions · {year}</h2>
-        <div style={{display:"flex", gap:8}}>
+        <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
           <button className="btn btn-ghost btn-sm" onClick={() => setYear(y => y - 1)}>◀ {year - 1}</button>
           <button className="btn btn-ghost btn-sm" onClick={() => setYear(y => y + 1)}>{year + 1} ▶</button>
         </div>
       </div>
+      {source && !source.off && (
+        <div className="admin-sessions-source" role="status">
+          {fromCac
+            ? <span>Kept on CACENTRE, the one calendar for every site{source.syncedAt ? " · brought in " + fmtDate(source.syncedAt) : ""}.{source.error ? " Last try failed: " + source.error : ""}</span>
+            : <span>Edited here until CACENTRE answers{source.error ? " (" + source.error + ")" : ""}. After that, sessions are changed on CACENTRE.</span>}
+          <span style={{display:"flex", gap:8, flexWrap:"wrap"}}>
+            <button className="btn btn-ghost btn-sm" onClick={syncNow} disabled={syncing}>{syncing ? "Syncing…" : "Sync now"}</button>
+            {source.editUrl && <a className="btn btn-primary btn-sm" href={source.editUrl} target="_blank" rel="noopener noreferrer">Edit in CACENTRE ↗</a>}
+          </span>
+        </div>
+      )}
       {list === null ? <div className="dash-spinner"/> :
         <div className="admin-sessions-grid">
           {list.map(s => (
@@ -4753,20 +4788,22 @@ function AdminSessions() {
           ))}
         </div>
       }
-      {editing && <AdminSessionEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
+      {editing && <AdminSessionEditor data={editing} readOnly={fromCac} editUrl={source && source.editUrl} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
     </div>
   );
 }
 
-function AdminSessionEditor({ data, onClose, onSaved }) {
+function AdminSessionEditor({ data, readOnly, editUrl, onClose, onSaved }) {
   const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
   const save = async (e) => {
-    e.preventDefault(); setBusy(true);
+    e.preventDefault();
+    if (readOnly) return;
+    setBusy(true);
     try { await NGGApi.admin.sessions.upsert(d); onSaved(); }
-    catch (e) { toast.error(e.code || e.message); }
+    catch (e) { toast.error(e.code === "sessions_on_cacentre" ? "Sessions are kept on CACENTRE — change them there." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   return (
@@ -4776,17 +4813,28 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
           <h3 {...headingProps}>{d.sessionId} · {d.year}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
-        <div className="admin-fields">
-          <Field label="Display name" value={d.name||""} onChange={v => set("name", v)}/>
-          <Field label="Start date" value={d.startDate||""} onChange={v => set("startDate", v)} type="date" required/>
-          <Field label="End date"   value={d.endDate||""}   onChange={v => set("endDate", v)}   type="date" required/>
-          <Field label="Theme" value={d.theme||""} onChange={v => set("theme", v)} placeholder='"Build the room." etc.'/>
-          <Field label="Cover image URL" value={d.coverUrl||""} onChange={v => set("coverUrl", v)}/>
-          <FieldTextarea label="Internal notes" value={d.notes||""} onChange={v => set("notes", v)}/>
-        </div>
+        {readOnly
+          ? <div className="admin-fields">
+              <p className="admin-sessions-note">This session comes from CACENTRE. Change its dates, name, theme or cover there; every site picks the change up within ten minutes.</p>
+              <dl className="admin-session-dl">
+                <dt>Name</dt><dd>{d.name}</dd>
+                <dt>Dates</dt><dd>{fmtDate(d.startDate)} — {fmtDate(d.endDate)}</dd>
+                <dt>Theme</dt><dd>{d.theme || "—"}</dd>
+              </dl>
+            </div>
+          : <div className="admin-fields">
+              <Field label="Display name" value={d.name||""} onChange={v => set("name", v)}/>
+              <Field label="Start date" value={d.startDate||""} onChange={v => set("startDate", v)} type="date" required/>
+              <Field label="End date"   value={d.endDate||""}   onChange={v => set("endDate", v)}   type="date" required/>
+              <Field label="Theme" value={d.theme||""} onChange={v => set("theme", v)} placeholder='"Build the room." etc.'/>
+              <Field label="Cover image URL" value={d.coverUrl||""} onChange={v => set("coverUrl", v)}/>
+              <FieldTextarea label="Internal notes" value={d.notes||""} onChange={v => set("notes", v)}/>
+            </div>}
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
-          <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>{readOnly ? "Close" : "Cancel"}</button>
+          {readOnly
+            ? (editUrl && <a className="btn btn-primary" href={editUrl} target="_blank" rel="noopener noreferrer">Edit in CACENTRE ↗</a>)
+            : <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>}
         </div>
       </form>
     </div>
@@ -8552,7 +8600,7 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
       const via = Array.isArray(r.sent) && r.sent.length ? " · ID sent by " + r.sent.join(" + ") : "";
       toast.success((r.already ? "Already an NGV · " : "Promoted to NGV · ") + r.volunteerId + via);
       await load(); onChanged && onChanged();
-    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+    } catch (e) { toast.error(e.code === "guardian_consent_required" && e.detail ? e.detail : (e.code || e.message)); } finally { setBusy(false); }
   };
   const resendNgvId = async () => {
     setBusy(true);
@@ -8744,7 +8792,7 @@ function MemberRecordPanel({ memberId, tab }) {
       <Kv items={[["Standing", c.state + (c.until ? " until " + c.until : "")], ["Lates (term)", c.lates], ["Absences", c.absences + (c.absenceLimit ? " / " + c.absenceLimit : "")], ["Fines owed", fmtMoney(c.finesOwed)]]}/>
       {c.awaitingReview && <div className="admin-hint mr-warn">A sanction is waiting for review.</div>}
       <div className="admin-detail-h">Infractions</div>
-      {c.infractions.length === 0 ? none("None recorded.") : c.infractions.map(x => <div className="admin-detail-row" key={x.id}><span className={x.voidedAt ? "mr-void" : ""}><span className="mono">{x.date}</span> · {x.kind}{x.note ? " — " + x.note : ""}</span>{x.voidedAt && <span className="chip">voided</span>}</div>)}
+      {c.infractions.length === 0 ? none("None recorded.") : c.infractions.map(x => <div className="admin-detail-row" key={x.id}><span className={x.voidedAt ? "mr-void" : ""}><span className="mono">{x.date}</span> · {x.kind}{x.note ? " — " + x.note : ""}{x.guardianReason ? " · " + guardianReasonText(x.guardianReason) : ""}</span>{x.voidedAt && <span className="chip">voided</span>}</div>)}
       <div className="admin-detail-h">Sanctions</div>
       {c.sanctions.length === 0 ? none("None.") : c.sanctions.map(x => <div className="admin-detail-row" key={x.id}><span><span className="mono">{String(x.issuedAt || "").slice(0, 10)}</span> · {x.kind}{x.amount ? " · " + fmtMoney(x.amount) : ""}{x.reason ? " — " + x.reason : ""}</span><span className="chip">{x.status}</span></div>)}
     </div>;
@@ -10600,7 +10648,7 @@ function AdminVolunteers({ crCtx } = {}) {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState("");
-  const [tab, setTab] = useAdminTab("pending", React.useCallback(t => t === "pending" || t === "roster" || t === "needs", []));
+  const [tab, setTab] = useAdminTab("pending", React.useCallback(t => t === "pending" || t === "roster" || t === "needs" || t === "ngg-activities", []));
   const [q, setQ] = React.useState("");
   const [vCentre, setVCentre] = React.useState("");
   /* Which programme — filtered on the server, above the roster's cap.
@@ -10656,8 +10704,10 @@ function AdminVolunteers({ crCtx } = {}) {
     if (vCentre) return c === vCentre;
     return true;
   };
+  const nggCount = all.filter(v => v.programme === "ngg").length;
   const roster = all.filter(v => {
     if (!inCentre(v)) return false;
+    if (vProg && (v.programme || "summer") !== vProg) return false;
     if (!q.trim()) return true;
     const s = (v.fullName + " " + v.volunteerId + " " + v.email + " " + v.role).toLowerCase();
     return s.includes(q.trim().toLowerCase());
@@ -10685,9 +10735,11 @@ function AdminVolunteers({ crCtx } = {}) {
         <button className={"admin-tab" + (tab === "pending" ? " is-active" : "")} onClick={() => setTab("pending")}>Review queue{pending.length ? " · " + pending.length : ""}</button>
         <button className={"admin-tab" + (tab === "roster" ? " is-active" : "")} onClick={() => setTab("roster")}>Roster · {(data && (data.volunteers || []).length) || 0}</button>
         <button className={"admin-tab" + (tab === "needs" ? " is-active" : "")} onClick={() => setTab("needs")}>Needs &amp; /v-status</button>
+        <button className={"admin-tab" + (tab === "ngg-activities" ? " is-active" : "")} onClick={() => setTab("ngg-activities")}>NGG activities</button>
       </div>
 
       {tab === "needs" ? <VolunteerNeedsEditor/> :
+        tab === "ngg-activities" ? <AcademyCatalogue source="ngg-volunteer"/> :
         err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         data === null ? <div className="dash-spinner"/> :
 
@@ -10722,6 +10774,11 @@ function AdminVolunteers({ crCtx } = {}) {
                 {centreOpts.map(c => <option key={c} value={c}>{c} · {all.filter(v => (v.centre || "").trim() === c).length}</option>)}
                 {noCentre > 0 && <option value={VOL_NO_CENTRE}>⚠ No centre on file · {noCentre}</option>}
               </select>
+              <select className="admin-select" value={vProg} onChange={e => setVProg(e.target.value)} aria-label="Filter volunteers by programme">
+                <option value="">Summer + NGG · {all.length}</option>
+                <option value="ngg">NGG (year-round) · {nggCount}</option>
+                <option value="summer">Summer (seasonal) · {all.length - nggCount}</option>
+              </select>
               {noCentre > 0 && vCentre !== VOL_NO_CENTRE &&
                 <button className="btn btn-ghost btn-sm" onClick={() => setVCentre(VOL_NO_CENTRE)}>⚠ {noCentre} with no centre</button>}
             </div>
@@ -10737,7 +10794,7 @@ function AdminVolunteers({ crCtx } = {}) {
                   {roster.map(v => (
                     <React.Fragment key={v.volunteerId}>
                     <tr>
-                      <td><div className="admin-cell-name">{v.fullName}</div><div className="mono admin-cell-sub">{v.volunteerId} · {v.email}</div></td>
+                      <td><div className="admin-cell-name">{v.fullName} {progChip(v.programme)}</div><div className="mono admin-cell-sub">{v.volunteerId} · {v.email}</div></td>
                       <td>{roleChip(v.role)}</td>
                       <td>{progChip(v.programme)}</td>
                       <td className="mono" style={{ fontSize: 12 }}>{v.centre || "—"}</td>
@@ -11015,7 +11072,8 @@ function AdminSettings() {
       <div className="admin-fields" style={{ maxWidth: 520 }}>
         <FieldCheckbox label="Teen applications open" value={s.applications_open} onChange={v => setS(o => ({ ...o, applications_open: v }))}/>
         <FieldCheckbox label="Mentor applications open" value={s.mentor_applications_open} onChange={v => setS(o => ({ ...o, mentor_applications_open: v }))}/>
-        <FieldCheckbox label="Volunteer registration open" value={s.volunteer_applications_open} onChange={v => setS(o => ({ ...o, volunteer_applications_open: v }))}/>
+        <FieldCheckbox label="Summer volunteer registration open (/volunteer — the summer season only)" value={s.volunteer_applications_open} onChange={v => setS(o => ({ ...o, volunteer_applications_open: v }))}/>
+        <FieldCheckbox label="NGG volunteer registration open (/join/volunteer — all year)" value={s.ngg_volunteer_applications_open !== false} onChange={v => setS(o => ({ ...o, ngg_volunteer_applications_open: v }))}/>
         <FieldCheckbox label="Text volunteer IDs by SMS (when phone on file)" value={s.volunteer_sms_notify} onChange={v => setS(o => ({ ...o, volunteer_sms_notify: v }))}/>
         <FieldCheckbox label="Email a state note on check-in (award-focus when doing well, a nudge otherwise)" value={s.checkin_state_emails} onChange={v => setS(o => ({ ...o, checkin_state_emails: v }))}/>
         <FieldCheckbox label="Email NGG members the Quote of the Week every Monday (the same quote as their Anchor Journal)" value={s.qotw_mail} onChange={v => setS(o => ({ ...o, qotw_mail: v }))}/>
@@ -11469,6 +11527,9 @@ function AdminCentres() {
   const [centres, setCentres] = React.useState(null);
   const [leadOptions, setLeadOptions] = React.useState([]);
   const [canWrite, setCanWrite] = React.useState(true);
+  /* Set once CACENTRE's locations list has arrived: centres are then added,
+     renamed and retired in CACENTRE, and arrive here (domain/cac-locations.php). */
+  const [cac, setCac] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [q, setQ] = React.useState("");
   const [d, setD] = React.useState({ name: "", code: "", color: "#76B043", capacity: "", programmes: "ngg" });
@@ -11479,7 +11540,7 @@ function AdminCentres() {
   const [busy, setBusy] = React.useState(false);
   const [openId, setOpenId] = React.useState("");   // "" | "<id>:edit" | "<id>:map"
   const load = () => NGGApi.admin.registration.centres()
-    .then(r => { setCentres(r.centres || []); setLeadOptions(r.leadOptions || []); setCanWrite(r.canWrite !== false); setErr(""); })
+    .then(r => { setCentres(r.centres || []); setLeadOptions(r.leadOptions || []); setCanWrite(r.canWrite !== false); setCac(r.cacentre || null); setErr(""); })
     .catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   // A centre added from the Control Room's own "Add a centre" form appears here at once.
@@ -11579,8 +11640,16 @@ function AdminCentres() {
           to add or amend one.
         </p>
       )}
-      {canWrite && <h3 className="admin-h3">Add a centre</h3>}
-      {canWrite && (
+      {cac && (
+        <p className="admin-hint centres-cac-note" role="status">
+          <b>Centres come from CACENTRE.</b> Its locations list is the only list of places: a location added, renamed or
+          taken off in CACENTRE → Attendance → Desks and settings → Locations is added, renamed (with every record that
+          names it) or retired here within minutes. The code, colour, address, lead and page are still set here.
+          {cac.at ? <> Last update from CACENTRE: <span className="mono">{fmtDateTime(cac.at)}</span>.</> : null}
+        </p>
+      )}
+      {canWrite && !cac && <h3 className="admin-h3">Add a centre</h3>}
+      {canWrite && !cac && (
         <form onSubmit={add} className="admin-filters" style={{ alignItems: "center" }} aria-label="Add a centre">
           <input className="admin-input" placeholder="Centre name" aria-label="New centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
           <input className="admin-input" placeholder="CODE" aria-label="New centre code (1–4 letters, the printed ID prefix)" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
@@ -11629,6 +11698,9 @@ function AdminCentres() {
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 4, background: c.color, border: "1px solid rgba(0,0,0,0.1)", flex: "0 0 auto" }}/><b>{c.name}</b> <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>{c.code}</span></span>
                 {c.status === "retired" && <span className="chip status-archived" style={{ marginLeft: 8 }} title="Kept so existing records still resolve; no longer offered anywhere">retired</span>}
                 {c.status === "archived" && <span className="chip status-archived" style={{ marginLeft: 8 }}>archived</span>}
+                {c.cacLocationId
+                  ? <span className="chip chip-cac" title="A CACENTRE location: its name and whether it is open are set in CACENTRE">From CACENTRE</span>
+                  : cac ? <span className="chip chip-cac-not" title="Not on CACENTRE's locations list. Retire it here, or add it in CACENTRE.">Not a CACENTRE location</span> : null}
                 <span className="chip" style={{ marginLeft: 8 }} title="Which programme's forms, desks and lists offer this centre">{centreProgrammes(c).length === 2 ? "NGG + Summer" : centreProgrammes(c)[0] === "ngg" ? "NGG Club only" : "Summer only"}</span>
                 {c.pageStatus === "published"
                   ? <a className="chip chip-lime" href={"/centres/" + (c.slug || "")} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, textDecoration: "var(--rs-textdecoration-47, none)" }}>page live ↗</a>
@@ -11657,7 +11729,7 @@ function AdminCentres() {
                   <button className="btn btn-ghost btn-sm" aria-expanded={openId === c.centreId + ":map"} onClick={() => toggle(c, "map")}>{openId === c.centreId + ":map" ? "Close" : "Map"}</button>
                   <button className="btn btn-ghost btn-sm" aria-expanded={openId === c.centreId + ":summer"} onClick={() => toggle(c, "summer")}
                     title="Where Summer School meets, when it is not the Club's building">{openId === c.centreId + ":summer" ? "Close" : (c.summerLat != null || c.summerAddress ? "Summer venue ✓" : "Summer venue")}</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>
+                  {!c.cacLocationId && <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>}
                 </> : <span className="admin-cell-sub">read-only</span>}
               </td>
             </tr>
@@ -11756,10 +11828,14 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
       <div>
         <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 8 }}>IDENTITY</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end" }}>
-          {field("name", "Centre name", { max: 80, min: 200 })}
+          {c.cacLocationId
+            ? <div className="centre-cac-fixed"><span className="centre-cac-lbl">Centre name</span><p className="centre-cac-val">{c.name} <span className="chip chip-cac">From CACENTRE</span></p></div>
+            : field("name", "Centre name", { max: 80, min: 200 })}
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Code</span><input className="admin-input" value={f.code} maxLength={4} onChange={e => set("code", e.target.value.toUpperCase())} style={{ width: 90 }}/></div>
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Colour</span><input type="color" value={f.color} onChange={e => set("color", e.target.value)} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/></div>
-          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="archived">Archived</option></select></div>
+          {c.cacLocationId
+            ? <div className="centre-cac-fixed"><span className="centre-cac-lbl">Status</span><p className="centre-cac-val">{f.status === "active" ? "Open" : "Retired"} — set in CACENTRE</p></div>
+            : <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="archived">Archived</option></select></div>}
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Capacity</span><input className="admin-input" type="number" min="0" placeholder="0 = ∞" value={f.capacity} onChange={e => set("capacity", e.target.value)} style={{ width: 120 }}/></div>
         </div>
         <fieldset className="centre-progs">

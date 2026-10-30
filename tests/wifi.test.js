@@ -108,7 +108,8 @@ function cleanup() {
     // The gateway's own fetch, over HTTP, with its key in a header.
     const feed = async (id, key, q) => { const r = await fetch(BASE + '/api/hooks/wifi-feed.php' + (q || ''), { headers: { 'X-NGG-Gateway': id, 'X-NGG-Key': key } }); return { status: r.status, text: await r.text() }; };
     const f0 = await feed(keys[0][0], keys[0][1], '?since=0&os=7.16.2');
-    chk('a gateway fetches its list over HTTP with its key in a header', f0.status === 200 && /^#ngg-wifi;v=\d+;full=1;/.test(f0.text) && /\nu;026-101;\d{6};ngg-member;add\n/.test(f0.text) && /#end\n$/.test(f0.text));
+    chk('a gateway fetches its list over HTTP with its key in a header', f0.status === 200 && /^#ngg-wifi;v=\d+;full=1;/.test(f0.text) && /#end\n$/.test(f0.text));
+    chk('…and a member who has not chosen a Wi-Fi password yet is not on it: nobody is handed a PIN', !/\nu;026-101;/.test(f0.text));
     chk('a suspended member is not on it', !/026-112/.test(f0.text));
     const fb = await feed(keys[0][0], 'nope');
     chk('a wrong key is a 401 with a word the router can log', fb.status === 401 && fb.text.trim() === '#error;bad_key');
@@ -234,6 +235,9 @@ function cleanup() {
     await shot(P, 'wifi-cr-regions');
 
     console.log('Wi-Fi inside the Club portal, in its own design');
+    /* Each page runs the in-page Babel pass over the whole app; finished ones
+       are closed so the next one is not starved and never mounts. */
+    await P.context().close().catch(() => {});
     const C = await open(ADMIN, true, '/club-admin?s=wifi');
     await C.waitForSelector('.cw-stats', { timeout: 40000 });
     await C.waitForFunction(() => /Most online at once/.test(document.body.innerText) && document.querySelector('.cw-chart svg'), null, { timeout: 60000 });
@@ -295,9 +299,11 @@ function cleanup() {
     await waitForBoot(C);
     await C.waitForSelector('.cw-test', { timeout: 40000 });
     await shot(C, 'wifi-club-6-speed');
+    await C.context().close().catch(() => {});
     const K = await open(CLUB, true, '/club-admin');
     await K.waitForFunction(() => /Roster/.test(document.body.innerText), null, { timeout: 30000 }).catch(() => {});
     chk('a club coordinator without network does not see Wi-Fi', !/\bSpeed tests\b/.test(await K.innerText('body')));
+    await K.context().close().catch(() => {});
     const N = await open('NGG-WF-NADM', true, '/club-admin?s=wifi-gateways');
     await N.waitForSelector('.cw-table.is-rows tbody tr, .cw-empty', { timeout: 40000 });
     const nb = await N.innerText('.cw');
@@ -305,13 +311,35 @@ function cleanup() {
     await shot(N, 'wifi-club-7-own-centre');
 
     console.log('the member’s Me → Wi-Fi');
+    await N.context().close().catch(() => {});
+    /* A fresh browser for the member: after four admin pages, each compiling
+       the whole app in the page with Babel, the dev-mode browser was found
+       closed partway through compiling the fifth (no page error, no crash
+       event). The production bundle is compiled once and is not affected. */
+    await browser.close().catch(() => {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const M = await open(MEMBER, false, '/dashboard/me', 420, 900);
     await M.waitForSelector('.m9x-wifi', { timeout: 30000 });
     await M.waitForFunction(() => /Username/.test((document.querySelector('.m9x-wifi') || {}).innerText || ''), null, { timeout: 20000 });
     const w = await M.innerText('.m9x-wifi');
-    chk('a member sees their username, with the PIN hidden until asked', /026-101/.test(w) && /••••••/.test(w));
-    await M.click('.m9x-wifi [aria-label="Show your PIN"]');
-    chk('…and shown when asked', /\d{6}/.test(await M.innerText('.m9x-wifi')));
+    chk('a member sees their username, and no PIN anywhere — they choose a password', /026-101/.test(w) && !/PIN/.test(w) && /Set your Wi-Fi password/.test(w));
+    await M.fill('#m9x-wifi-pw', 'short1'); await M.fill('#m9x-wifi-pw2', 'short1');
+    await M.click('.m9x-wifi-form button[type=submit]');
+    chk('a short password is refused on the spot, with the reason', /at least 8 characters/.test(await M.innerText('.m9x-wifi-bad')));
+    await M.fill('#m9x-wifi-pw', 'Ada-wifi-2026'); await M.fill('#m9x-wifi-pw2', 'Ada-wifi-2027');
+    await M.click('.m9x-wifi-form button[type=submit]');
+    chk('two different passwords are caught before anything is sent', /not the same/.test(await M.innerText('.m9x-wifi-bad')));
+    await M.fill('#m9x-wifi-pw2', 'Ada-wifi-2026');
+    await shot(M, 'wifi-member-set');
+    await M.click('.m9x-wifi-form button[type=submit]');
+    await M.waitForFunction(() => /Change your Wi-Fi password/.test((document.querySelector('.m9x-wifi') || {}).innerText || ''), null, { timeout: 15000 });
+    const saved = php(`$a = db_row("SELECT a.pinSealed FROM wifi_accounts a JOIN members m ON m.memberId = a.subjectId WHERE m.displayId = '026-101'"); echo wifi_pin_open((string)$a['pinSealed']);`, ['bootstrap']);
+    const after = await M.innerText('.m9x-wifi');
+    chk('a good password is saved for the routers, and never shown back on the screen', saved.trim() === 'Ada-wifi-2026' && !/Ada-wifi-2026/.test(after) && /Password\s*Your own, set/.test(after) && /2 changes left today/.test(after));
+    chk('the fields are emptied once it is saved', await M.inputValue('#m9x-wifi-pw') === '' && await M.inputValue('#m9x-wifi-pw2') === '');
+    php(`wifi_lines_forget('Egbeda');`, ['bootstrap']);
+    const f9 = await feed(keys[0][0], keys[0][1], '?since=0&full=1');
+    chk('…and at the next fetch the router’s list carries the password they chose', /\nu;026-101;Ada-wifi-2026;ngg-member;(add|set)\n/.test(f9.text));
     chk('…and the data they have used, which only they and the staff see', /Data you’ve used/.test(await M.innerText('.m9x-wifi')) && /301 MB/.test(await M.innerText('.m9x-wifi')));
     await shot(M, 'wifi-member-card');
     // A monthly allowance of 200 MB: over it, the member is told, and their Wi-Fi is slow until the 1st.

@@ -70,6 +70,7 @@ const ROUTES = [
   // ── Intake ───────────────────────────────────────────────────────────────
   { id: "join",        title: "Apply · NGG",                               desc: "Apply to the NGG Club or Summer School. We save as you go." },
   { id: "volunteer",   title: "Volunteer registration · NGG",              desc: "Register to volunteer — as an admin, a mentor, or an instructor teaching a course." },
+  { id: "ngg-volunteer", title: "Volunteer with NGG · All year",           desc: "Serve Next Generation Genius all year — mentoring, club sessions, events, media and operations. Four short steps." },
   /* Direct Apply: the public, gate-scoped sign-up a centre hands to a family
      (`/apply?g=…`). A real page with a real title — and noindexed, because it
      collects a child's identity and the address is meant to be given out, not
@@ -286,11 +287,13 @@ function pageFromPath() {
   // old Card Studio's address and is kept as an alias: it is in bookmarks.
   if (seg === "cards") return "id-cards";
   if (seg === "club" && (window.location.pathname || "").replace(/^\/+|\/+$/g, "").split("/")[1] === "id-cards") return "id-cards";
+  if (seg === "join" && (window.location.pathname || "").replace(/\/+$/, "").split("/")[2] === "volunteer") return "ngg-volunteer";
   return PAGE_IDS.includes(seg) ? seg : "_notfound";
 }
 function pathForPage(page) {
   if (page === "admin") return "/control";
   if (page === "id-cards") return "/club/id-cards";
+  if (page === "ngg-volunteer") return "/join/volunteer";
   return page === "home" ? "/" : "/" + page;
 }
 
@@ -427,6 +430,7 @@ function App() {
     parents:   <ParentsPage   setPage={setPage}/>,
     volunteers:<VolunteersPage setPage={setPage}/>,
     volunteer: <VolunteerRegisterPage setPage={setPage}/>,
+    "ngg-volunteer": <NggVolunteerPage setPage={setPage}/>,
     mentors:   <MentorsPage    setPage={setPage}/>,
     join:      <JoinPage      setPage={setPage}/>,
     policies:  <PoliciesPage  setPage={setPage}/>,

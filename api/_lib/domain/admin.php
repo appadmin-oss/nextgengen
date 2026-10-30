@@ -16,6 +16,9 @@ function admin_gate(array $p): array {
     if (admin_role_scoped($requester['role']) && admin_centre_names_in_scope($requester) === null) {
         return ['ok' => false, 'error' => 'scope_required', 'detail' => 'This role needs a centre. Ask a super admin to set one under Access & roles.'];
     }
+    // Read live, so a staff account suspended or deactivated mid-session stops here.
+    $st = strtolower((string)($requester['status'] ?? ''));
+    if (in_array($st, ['suspended', 'inactive', 'deleted'], true)) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'account_' . $st];
     return ['ok' => true, 'requester' => $requester];
 }
 
@@ -299,12 +302,28 @@ function admin_member_consent(array $p): array {
     $sg = admin_member_scope_gate($g['requester'], $mid);
     if (!$sg['ok']) return $sg;
     $m = $sg['member'];
-    $r = consent_record($mid, (string)($p['type'] ?? ''), (string)($p['status'] ?? ''),
-                        (string)($p['method'] ?? ''), (string)($g['requester']['fullName'] ?? 'Staff'));
+    $type = (string)($p['type'] ?? '');
+    $actor = (string)($g['requester']['fullName'] ?? 'Staff');
+    /* A guardian's own decision (MEMBER_CONSENT_TYPES 'guardian'): the row
+       names the guardian who gave it. Staff are the witness, recorded as
+       recordedById, and are never written down as having consented. */
+    if (!empty(MEMBER_CONSENT_TYPES[$type]['guardian'])) {
+        $actor = trim((string)($p['guardianName'] ?? ''));
+        if (mb_strlen($actor) < 3) return ['ok' => false, 'error' => 'guardian_name_required'];
+    }
+    $r = consent_record($mid, $type, (string)($p['status'] ?? ''), (string)($p['method'] ?? ''), $actor,
+                        (string)($g['requester']['memberId'] ?? ''));
     if (empty($r['ok'])) return $r;
     audit('admin.member.consent', $g['requester']['memberId'], $mid,
           ['type' => (string)($p['type'] ?? ''), 'status' => (string)($p['status'] ?? ''),
            'method' => (string)($p['method'] ?? '')], (string)($p['ip'] ?? ''));
+    /* A guardian withdrawing the NGV share for a child already sent there:
+       Afrovanguard withdraws them too. Adults never needed it, so theirs
+       changes nothing. */
+    if ($type === NGV_TRANSFER_CONSENT && (string)($p['status'] ?? '') !== 'granted'
+        && (string)($m['ngvVolunteerId'] ?? '') !== '' && ngv_is_minor((string)($m['dob'] ?? ''))) {
+        ngv_portal_revoke($mid, (string)$m['ngvVolunteerId'], 'consent_withdrawn');
+    }
     return ['ok' => true, 'consent' => consent_state($mid), 'mayName' => consent_may_publish($mid)['mayName']];
 }
 
@@ -816,12 +835,19 @@ function admin_members_upsert(array $p): array {
         // A replaced photo replaces; the old file does not linger (photo_supersede).
         if (array_key_exists('photoUrl', $patch) && function_exists('photo_supersede'))
             photo_supersede('member', (string)$existing['memberId'], (string)($existing['photoUrl'] ?? ''), (string)$patch['photoUrl'], (string)$g['requester']['memberId']);
+        // Suspended, deactivated or re-roled: every session they hold was issued
+        // on the old standing, so it ends now rather than when the cookie does.
+        $roleChanged = $newRole !== null && $newRole !== strtolower((string)$existing['role']);
+        $lockedOut = $newStat !== null && $newStat !== strtolower((string)$existing['status'])
+            && in_array($newStat, MEMBER_BULK_LOCKOUT_STATUSES, true);
+        $revoked = ($roleChanged || $lockedOut) ? member_sessions_revoke_all($memberId) : 0;
         // Newly promoted to a staff tier → send an invite/onboarding email.
         $wasStaff = is_admin_role((string)$existing['role']);
         if ($newRole !== null && !$wasStaff && in_array($newRole, staff_role_names(), true)) {
             staff_invite_email($memberId, $newRole);
         }
-        audit('admin.member.update', $g['requester']['memberId'], $memberId, ['keys' => array_keys($patch)], (string)($p['ip'] ?? ''));
+        audit('admin.member.update', $g['requester']['memberId'], $memberId,
+              ['keys' => array_keys($patch)] + ($revoked ? ['sessionsRevoked' => $revoked] : []), (string)($p['ip'] ?? ''));
         event_emit('member.updated', ['memberId' => $memberId] + (db_row('SELECT memberId, fullName, email, phone, type, status, role, centre, track, cohort, school, parentName, parentEmail, parentPhone FROM members WHERE memberId = ?', [$memberId]) ?: []));
         return ['ok' => true, 'memberId' => $memberId];
     }
@@ -1001,6 +1027,9 @@ function admin_mentors_upsert(array $p): array {
 
 function admin_sessions_upsert(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
+    /* CACENTRE keeps the calendar (sessions_sync): an edit here would be
+       overwritten at the next sync, so it is refused with where to go. */
+    if (sessions_from_cacentre()) return ['ok' => false, 'error' => 'sessions_on_cacentre', 'editUrl' => sessions_source_status()['editUrl']];
     $data = $p['data'] ?? [];
     $sessionId = trim((string)($data['sessionId'] ?? ''));
     $cols = ['code','year','name','startDate','endDate','theme','isActive','coverUrl','notes'];
@@ -1019,6 +1048,13 @@ function admin_sessions_upsert(array $p): array {
     cache_invalidate('sessions');
     audit('admin.session.create', $g['requester']['memberId'], $patch['sessionId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'sessionId' => $patch['sessionId']];
+}
+
+/** Fetch the calendar from CACENTRE now, whatever the throttle says. */
+function admin_sessions_sync(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $r = sessions_sync(true);
+    return ['ok' => true, 'sync' => $r, 'source' => sessions_source_status()];
 }
 
 // ── Anchor missions ──────────────────────────────────────────────────────

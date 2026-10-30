@@ -131,6 +131,17 @@ function cleanup() {
     await pg.click('form[aria-label^="Make Kemi Adewale"] button[type=submit]');
     await pg.waitForFunction(() => /now a member/.test(document.body.innerText), null, { timeout: 30000 });
     chk('…and the member joins the centre chosen', q(`db_row("SELECT centre FROM members WHERE fullName = 'Kemi Adewale'")`).centre === 'Ikeja');
+
+    // CACENTRE's locations decide the places (domain/cac-locations.php): the directory says so.
+    php(`echo json_encode(cac_locations_sync(['version' => 'v1-e2e00000', 'tz' => 'Africa/Lagos', 'locations' => [
+      ['id' => 'L0123456789', 'name' => 'Egbeda', 'status' => 'active', 'aliases' => [], 'calendar' => null]]]));`, ['bootstrap']);
+    await pg.goto(BASE + '/control/members/centres', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(pg);
+    await pg.waitForSelector('.centres-cac-note', { timeout: 60000 });
+    const dir = await pg.innerText('main, body');
+    chk('Centres: once CACENTRE’s list has arrived, the directory says the places come from CACENTRE, and which centre is one',
+      /Centres come from CACENTRE/.test(dir) && (await pg.$$('.chip-cac')).length >= 1 && /Not a CACENTRE location/i.test(dir));
+    chk('…and offers no Add a centre, which the server would refuse', (await pg.$$('button:has-text("Add a centre"), form[aria-label="Add a centre"]')).length === 0);
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

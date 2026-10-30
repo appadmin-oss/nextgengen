@@ -843,6 +843,64 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   to Summer records, unknown ones created retired. Control Room → Summer School
   → Past editions.
 
+## 2026-10-22 — NGG's centres follow CACENTRE's locations
+
+- CACENTRE's locations list is the one list of places. CACENTRE publishes it to
+  its gate (`PUT /v1/admin/locations`); the gate offers it to NGG at
+  `api/hooks/gate.php` `{op:"locations", version, tz, locations}`, signed with
+  `hooks.attendance_secret`, and retries every five minutes until NGG answers
+  `{ok:true}` for that version.
+- `domain/cac-locations.php` `cac_locations_sync`: validated whole, one
+  transaction, one audit event (`centre.cacentre_sync`). A location is linked to
+  a centre by its id (`centres.cacLocationId`, migration 137), first by id,
+  then by exact name or a former name (`aliases`). New → created with
+  `cac_centre_code()` (never `ST`, never all digits). Renamed → the centre and
+  every table in `CAC_CENTRE_NAMED_BY` follow (a row that would collide with a
+  one-per-day unique key keeps the old name, counted as `kept`). Removed →
+  retired. The calendar is kept in `cacCalendar` for reading only.
+- `admin_centres_upsert` refuses a new centre once the list has arrived, and a
+  linked centre's name or status; `admin_centres_delete` refuses a linked
+  centre (`managed_by_cacentre`). Code, colour, page and the rest are still NGG's.
+- `hooks_attendance` stores the check-in's location in `attendance.centre`
+  (migration 137), by the location id when NGG has it.
+- Lateness is NGG's: `gate_person_punctuality()` adds `punctuality`
+  `{resumption, grace_minutes}` (or null: attendance off, member policy off, or
+  not their programme day) to every person the gate resolves, and the gate
+  grades the scan by it instead of the desk's location hours.
+- Tests: `api/tests/run.php` "cacentre:" block; CACENTRE's
+  `tests/integration/gate-e2e.php` drives a rename from CACENTRE through the
+  real gate into NGG and the portal.
+
+## 2026-10-29 — Make.com: the processes that wait on a person
+
+- `domain/make.php`, one signed door `api/hooks/make.php`
+  (`hooks.make_secret`, same HMAC as the attendance hook; empty = 404), op
+  `hooks.make`, `action`: `absence.reason`, `safeguarding.ack`,
+  `safeguarding.status`, `registration.status`, `editions`, `impact`, `jobs`.
+- Out: `private.attendance.absences` (hourly after the sweep, one per centre
+  per day; built only when a destination names it; each absence asked once —
+  `absence_asks.infractionId` unique; no number → `no_contact`),
+  `private.registration.stalled` (guardian number + the same verify link),
+  `safeguarding.flag` (every `behaviour.flagged` now goes through
+  `behaviour_flag_emit()`, which also records `safeguarding_flags` and emits
+  the nameless twin), `edition.milestone` (`edition_milestones`, once each,
+  an overtaken one skipped).
+- A guardian's reason sits beside the absence (`absence_reasons_attach`, the
+  conduct screens show it); it never voids it. Acknowledgements show in the
+  Behaviour drawer; a log marked reviewed counts as acknowledged.
+- Migration 138. Tests: `api/tests/run.php` "make:" block;
+  `tests/make-hook.test.js` (signature, staleness, actions over real HTTP).
+- Why: shared hosting cannot keep time on a quiet weekend, hear a reply, or
+  wait days for a person. Make does those; every rule stays here.
+- Set up on screen, not in config.php: Settings → Integrations → Make.com
+  (`admin.make.secret|cron|connect|off`, through `/admin/integrations.php`).
+  NGG makes both keys (`mk_…`, `ck_…`), returns each once and stores them
+  sealed in `settings.make_link`; `make_secret()` and `cron_key_effective()`
+  read them first and config.php second, so `api/hooks/make.php` and
+  `api/public/cron.php` need no file edit. Connect accepts only a
+  `hook.*.make.com` address and keeps one destination subscribed to
+  `MAKE_EVENTS`. Tests: "make ui:" in run.php, `tests/make-ui.test.js` in a
+  browser, `tests/make-hook.test.js` against a key made on screen.
 
 ## 2026-10-09 — Mentorship: Anchor Pods (handoff v5 + NGGC Commitment Policy)
 
@@ -4505,6 +4563,24 @@ in that repo's `docs/HANDOFF.md`, 29 Oct 2026.
   no-important OK. Theatrecrafts.com timed out today though it loaded earlier;
   left in, worth rechecking.
 
+## 2026-10-30 — gate-lookup merged into the volunteer-pay line
+
+Two branches had built the same things twice. What the merge kept:
+
+- **Programme of a volunteer**: one `volunteer_programme()` (summer | ngg | both,
+  `VOL_PROGRAMMES`). An application's programme is its `programme` column;
+  NGG's own door (`/join/volunteer`, program=anchor) sends none and gets `ngg`.
+  Afrovanguard sees `ngg` and `both`. Promotion from Summer is the "Bring into
+  NGG" panel; `admin.volunteers.programme` stays as an op and accepts all three.
+- **Migration 202** is gate-lookup's 122 (`programmeAt`), renumbered on top of 201.
+- **Revocations to Afrovanguard**: one `ngv_portal_revoke()`; the re-sync queues
+  announcements AND revocations, then delivers within the 15s budget (shared
+  hosting kills a long inline loop), holding minors without consent.
+- **Reset codes**: only the newest code counts; a miss counts on the code, the
+  reset lock and the account; an older (retired) code reads `expired`, not a miss;
+  a locked account says `account_locked` first.
+- **NGG volunteer activities** editor is a `CATALOGUE_SOURCES` entry
+  (`ngg-volunteer`), not a second catalogue component.
 ## The portals on a phone, measured signed in on live data (2026-10-29)
 
 The owner: "the portals are terrible on a mobile". Neither responsive suite could

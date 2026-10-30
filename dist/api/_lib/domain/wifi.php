@@ -225,6 +225,29 @@ function wifi_pin_open(string $sealed): string {
     $pt = openssl_decrypt(substr($raw, 28), 'aes-256-gcm', wifi_cipher_key(), OPENSSL_RAW_DATA, substr($raw, 0, 12), substr($raw, 12, 16));
     return $pt === false ? '' : $pt;
 }
+/** The fewest and most characters a Wi-Fi password may have. Must match CACENTRE's Wifi::PASSWORD_MIN/MAX. */
+const WIFI_PASSWORD_MIN = 8;
+const WIFI_PASSWORD_MAX = 64;
+
+/**
+ * Null when a password somebody chose will work on every router, else the
+ * reason in words. The same rules as CACENTRE's Wifi::passwordProblem, so a
+ * password set here keeps working when the centre moves there. Printable
+ * characters only and never a semicolon: the router's list is
+ * semicolon-separated (wifi_render), so one would cut it.
+ */
+function wifi_password_problem(string $pw, string $username = ''): ?string {
+    $n = strlen($pw);
+    if ($n < WIFI_PASSWORD_MIN) return 'Use at least ' . WIFI_PASSWORD_MIN . ' characters.';
+    if ($n > WIFI_PASSWORD_MAX) return 'Use at most ' . WIFI_PASSWORD_MAX . ' characters.';
+    if (!preg_match('/^[\x21-\x7e]+$/', $pw)) return 'Use letters, numbers and symbols only, with no spaces.';
+    if (str_contains($pw, ';')) return 'A semicolon (;) can’t be used in a Wi-Fi password.';
+    if ($username !== '' && strcasecmp($pw, $username) === 0) return 'Your password can’t be your sign-in name.';
+    if (preg_match('/^(.)\1+$/', $pw) || (preg_match('/^\d+$/', $pw) && $n < 10)) return 'That is too easy to guess. Mix letters and numbers.';
+    return null;
+}
+
+/** No longer used to issue anything: kept for older callers' signatures only. */
 function wifi_pin_new(): string { return str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT); }
 
 /* ── Who is who ───────────────────────────────────────────────────────── */
@@ -314,7 +337,8 @@ function wifi_accounts_existing(array $subjects): array {
 }
 
 /**
- * The accounts for these subjects, made where missing (with a PIN) and given
+ * The accounts for these subjects, made where missing (with no password: each
+ * person chooses their own, and is on no router until they do) and given
  * the current sign-in name where the printed ID has since been minted.
  */
 function wifi_accounts_ensure(array $subjects): array {
@@ -326,8 +350,8 @@ function wifi_accounts_ensure(array $subjects): array {
         if (!isset($out[$k])) {
             if (db_row('SELECT id FROM wifi_accounts WHERE username = ? LIMIT 1', [$username])) $username = $id;   // never two people on one name
             try {
-                db_insert('wifi_accounts', ['subjectType' => $type, 'subjectId' => $id, 'username' => $username, 'pinSealed' => wifi_pin_seal(wifi_pin_new()),
-                    'pinSetAt' => $now, 'createdAt' => $now, 'updatedAt' => $now]);
+                db_insert('wifi_accounts', ['subjectType' => $type, 'subjectId' => $id, 'username' => $username, 'pinSealed' => '',
+                    'pinSetAt' => '', 'createdAt' => $now, 'updatedAt' => $now]);
             } catch (Throwable $e) { /* a concurrent fetch made it first */ }
             $row = db_row('SELECT * FROM wifi_accounts WHERE subjectType = ? AND subjectId = ? LIMIT 1', [$type, $id]);
             if ($row) $out[$k] = $row;
@@ -677,7 +701,10 @@ function wifi_view(?array $acc, array $d, string $centre, bool $withPin, string 
     $profile = $why !== '' ? '' : $d['profile'];
     return [
         'username' => $acc ? (string)$acc['username'] : '',
-        'pin' => $withPin && $acc && $access !== 'off' ? wifi_pin_open((string)$acc['pinSealed']) : '',
+        /* A password the person chose is never sent back, even to them. */
+        'pin' => '',
+        'hasPassword' => $acc !== null && (string)$acc['pinSealed'] !== '' && wifi_pin_open((string)$acc['pinSealed']) !== '',
+        'passwordMin' => WIFI_PASSWORD_MIN,
         'pinSetAt' => $acc ? (string)$acc['pinSetAt'] : '',
         'access' => $access, 'profile' => $profile, 'limits' => $profile !== '' ? ($cfg['profiles'][$profile] ?? null) : null,
         'case' => $case, 'why' => WIFI_CASE_WORDS[$case] ?? '',
@@ -695,14 +722,27 @@ function wifi_subject_lists_forget(string $type, string $id): void {
     wifi_lines_forget((string)($row['centre'] ?? ''));
 }
 
-/** Reset a PIN, at most WIFI_PIN_RESETS_PER_DAY a day (for the member and the desk alike). */
-function wifi_pin_reset(array $acc, string $by, string $ip = ''): array {
+/**
+ * Set the Wi-Fi password somebody chose, at most WIFI_PIN_RESETS_PER_DAY
+ * changes a day. Sealed, never readable back; the routers get it at their next
+ * fetch, so the kept lists for their centres are dropped.
+ */
+function wifi_password_set(array $acc, string $pw, string $by, string $ip = ''): array {
+    if (($why = wifi_password_problem($pw, (string)$acc['username'])) !== null) return ['ok' => false, 'error' => 'weak_password', 'message' => $why];
     $today = gmdate('Y-m-d');
     $n = (string)$acc['pinResetDay'] === $today ? (int)$acc['pinResets'] : 0;
-    if ($n >= WIFI_PIN_RESETS_PER_DAY) return ['ok' => false, 'error' => 'too_many_resets', 'message' => 'A Wi-Fi PIN can be changed ' . WIFI_PIN_RESETS_PER_DAY . ' times a day. Try again tomorrow.'];
-    db_update('wifi_accounts', ['pinSealed' => wifi_pin_seal(wifi_pin_new()), 'pinSetAt' => now_iso(), 'pinResetDay' => $today, 'pinResets' => $n + 1, 'updatedAt' => now_iso()], ['id' => (int)$acc['id']]);
+    if ($n >= WIFI_PIN_RESETS_PER_DAY) return ['ok' => false, 'error' => 'too_many_resets', 'message' => 'A Wi-Fi password can be changed ' . WIFI_PIN_RESETS_PER_DAY . ' times a day. Try again tomorrow.'];
+    db_update('wifi_accounts', ['pinSealed' => wifi_pin_seal($pw), 'pinSetAt' => now_iso(), 'pinResetDay' => $today, 'pinResets' => $n + 1, 'updatedAt' => now_iso()], ['id' => (int)$acc['id']]);
     wifi_subject_lists_forget((string)$acc['subjectType'], (string)$acc['subjectId']);
-    audit('wifi.pin.reset', $by, (string)$acc['subjectType'] . ':' . (string)$acc['subjectId'], ['resetsToday' => $n + 1], $ip);
+    audit('wifi.password.set', $by, (string)$acc['subjectType'] . ':' . (string)$acc['subjectId'], ['changesToday' => $n + 1], $ip);
+    return ['ok' => true];
+}
+
+/** The desk clears a password: it stops at each router's next fetch, and the person chooses a new one. */
+function wifi_password_clear(array $acc, string $by, string $ip = ''): array {
+    db_update('wifi_accounts', ['pinSealed' => '', 'pinSetAt' => '', 'updatedAt' => now_iso()], ['id' => (int)$acc['id']]);
+    wifi_subject_lists_forget((string)$acc['subjectType'], (string)$acc['subjectId']);
+    audit('wifi.password.clear', $by, (string)$acc['subjectType'] . ':' . (string)$acc['subjectId'], [], $ip);
     return ['ok' => true];
 }
 
@@ -717,27 +757,30 @@ function member_wifi_get(array $p): array {
     return ['ok' => true, 'wifi' => wifi_view_member($m, true)];
 }
 
-function member_wifi_reset(array $p): array {
+/** member.wifi.password {password}: the member sets their own Wi-Fi password, here or at CACENTRE. */
+function member_wifi_password(array $p): array {
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $pw = (string)($p['password'] ?? '');
     if (wifi_cac_serves((string)($m['centre'] ?? ''), wifi_is_staff($m))) {
-        try { $v = wifi_cac_member_view($m, 'newPin'); }
+        try { $v = wifi_cac_member_view($m, 'setPassword', $pw); }
         catch (Throwable $e) {
             $why = $e->getMessage();
             if ($why === 'wifi_off') return ['ok' => false, 'error' => 'wifi_off', 'message' => 'You don’t have Wi-Fi access right now.'];
-            if (str_starts_with($why, 'A Wi-Fi PIN can be changed')) return ['ok' => false, 'error' => 'too_many_resets', 'message' => $why];
+            if (str_starts_with($why, 'msg:')) return ['ok' => false, 'error' => 'weak_password', 'message' => substr($why, 4)];
             return ['ok' => false, 'error' => 'cacentre_unreachable', 'message' => 'CACENTRE, which runs the Wi-Fi, couldn’t be reached. Try again in a minute.'];
         }
-        audit('wifi.pin.reset', (string)$m['memberId'], 'member:' . (string)$m['memberId'], ['at' => 'cacentre'], (string)($p['ip'] ?? ''));
+        audit('wifi.password.set', (string)$m['memberId'], 'member:' . (string)$m['memberId'], ['at' => 'cacentre'], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'wifi' => $v];
     }
     $v = wifi_view_member($m, false);
     if ($v['access'] === 'off') return ['ok' => false, 'error' => 'wifi_off', 'message' => $v['why']];
-    $acc = db_row("SELECT * FROM wifi_accounts WHERE subjectType = 'member' AND subjectId = ? LIMIT 1", [(string)$m['memberId']]);
-    if (!$acc) return ['ok' => false, 'error' => 'not_found'];
-    $r = wifi_pin_reset($acc, (string)$m['memberId'], (string)($p['ip'] ?? ''));
+    $username = wifi_username_for('member', $m);
+    $acc = $username !== '' ? wifi_account_one('member', (string)$m['memberId'], $username) : null;
+    if (!$acc) return ['ok' => false, 'error' => 'no_id', 'message' => 'You get Wi-Fi once your NGG ID number is printed.'];
+    $r = wifi_password_set($acc, $pw, (string)$m['memberId'], (string)($p['ip'] ?? ''));
     if (!$r['ok']) return $r;
-    return ['ok' => true, 'wifi' => wifi_view_member($m, true)];
+    return ['ok' => true, 'wifi' => wifi_view_member($m, false)];
 }
 
 /* ── The desk: one person's Wi-Fi ─────────────────────────────────────── */
@@ -771,16 +814,23 @@ function wifi_view_subject(string $type, array $row): array {
 
 function admin_wifi_member(array $p): array {
     $g = wifi_subject_gate($p); if (!$g['ok']) return $g;
-    return ['ok' => true, 'wifi' => wifi_view_subject($g['type'], $g['row'])];
+    return ['ok' => true, 'wifi' => wifi_cac_desk($g['type'], $g['row'], wifi_view_subject($g['type'], $g['row']))];
 }
 
-/** op: override {access, why} | clear | resetPin. (`op`, because the route's `action` names this whole op.) */
+/**
+ * op: override {access, why} | clear | clearPassword | setPassword {password}.
+ * (`op`, because the route's `action` names this whole op.) A member sets
+ * their own password in the app, so the desk can only clear one; a Summer
+ * School participant may have no app, so the desk sets theirs with them.
+ */
 function admin_wifi_member_set(array $p): array {
     $g = wifi_subject_gate($p); if (!$g['ok']) return $g;
     $me = (string)$g['requester']['memberId'];
     if ($g['type'] === 'member' && $g['id'] === $me) return ['ok' => false, 'error' => 'own_account'];
     $action = (string)($p['op'] ?? '');
-    if (!in_array($action, ['override', 'clear', 'resetPin'], true)) return ['ok' => false, 'error' => 'bad_action'];
+    if ($action === 'resetPin') $action = 'clearPassword';   // an older screen's word for it
+    if (!in_array($action, ['override', 'clear', 'clearPassword', 'setPassword'], true)) return ['ok' => false, 'error' => 'bad_action'];
+    if ($action === 'setPassword' && $g['type'] !== 'summer') return ['ok' => false, 'error' => 'own_password', 'message' => 'Members set their own Wi-Fi password in the app, under Me → Wi-Fi. You can clear it so they choose a new one.'];
     if ($action === 'override') {
         if (!in_array((string)($p['access'] ?? ''), WIFI_ACCESS, true)) return ['ok' => false, 'error' => 'bad_access'];
         if (trim((string)($p['why'] ?? '')) === '') return ['ok' => false, 'error' => 'reason_required'];
@@ -791,8 +841,29 @@ function admin_wifi_member_set(array $p): array {
     if (!$acc) return ['ok' => false, 'error' => 'failed'];
     $ip = (string)($p['ip'] ?? '');
     $subject = $g['type'] . ':' . $g['id'];
-    if ($action === 'resetPin') {
-        $r = wifi_pin_reset($acc, $me, $ip); if (!$r['ok']) return $r;
+    /* Where CACENTRE runs the centre's Wi-Fi, "clear" is a new starting
+       password from CACENTRE, which the desk reads out to them: clearing NGG's
+       copy would change nothing the router reads. */
+    if ($action === 'clearPassword' && wifi_cac_serves((string)($g['row']['centre'] ?? ''), $g['type'] === 'member' && wifi_is_staff($g['row']))) {
+        $v = wifi_cac_desk($g['type'], $g['row'], wifi_view_subject($g['type'], $g['row']), 'newStartCode');
+        if (($v['cacentreError'] ?? '') !== '') return ['ok' => false, 'error' => 'cacentre_unreachable', 'message' => 'CACENTRE, which runs the Wi-Fi, couldn’t be reached. Try again in a minute.'];
+        audit('wifi.password.start', $me, $subject, ['at' => 'cacentre'], $ip);
+        return ['ok' => true, 'wifi' => $v];
+    }
+    if ($action === 'clearPassword') {
+        $r = wifi_password_clear($acc, $me, $ip); if (!$r['ok']) return $r;
+    } elseif ($action === 'setPassword') {
+        /* Where the centre's router has moved to CACENTRE, the password has to
+           live there: it is the list that router reads. */
+        if (wifi_cac_serves((string)($g['row']['centre'] ?? ''), false)) {
+            $pw = (string)($p['password'] ?? '');
+            if (($why = wifi_password_problem($pw, $username)) !== null) return ['ok' => false, 'error' => 'weak_password', 'message' => $why];
+            $r = wifi_cac_card('summer-' . $g['id'], 'setPassword', $pw);
+            if (empty($r['ok'])) return ['ok' => false, 'error' => in_array((string)($r['error'] ?? ''), ['weak', 'too_many'], true) ? 'weak_password' : 'cacentre_unreachable', 'message' => (string)($r['message'] ?? 'CACENTRE, which runs the Wi-Fi, couldn’t be reached. Try again in a minute.')];
+            audit('wifi.password.set', $me, $subject, ['at' => 'cacentre'], $ip);
+        } else {
+            $r = wifi_password_set($acc, (string)($p['password'] ?? ''), $me, $ip); if (!$r['ok']) return $r;
+        }
     } elseif ($action === 'override') {
         $why = substr(trim((string)$p['why']), 0, 255);
         db_update('wifi_accounts', ['override' => (string)$p['access'], 'overrideWhy' => $why, 'overrideBy' => $me, 'overrideAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => (int)$acc['id']]);
@@ -804,7 +875,7 @@ function admin_wifi_member_set(array $p): array {
         audit('wifi.override.clear', $me, $subject, ['was' => (string)$acc['override']], $ip);
         wifi_subject_lists_forget($g['type'], $g['id']);
     }
-    return ['ok' => true, 'wifi' => wifi_view_subject($g['type'], $g['row'])];
+    return ['ok' => true, 'wifi' => wifi_cac_desk($g['type'], $g['row'], wifi_view_subject($g['type'], $g['row']))];
 }
 
 /* ── Systems: the access table, the profiles and the gateways ─────────────
@@ -1085,7 +1156,7 @@ function admin_wifi_lookup(array $p): array {
     }
     foreach (db_all("SELECT * FROM summer_students WHERE LOWER(displayId) LIKE ? OR LOWER(studentId) LIKE ? OR LOWER(fullName) LIKE ? ORDER BY fullName LIMIT 8", [$like, $like, $like]) as $s) {
         if (!admin_centre_allowed($g['requester'], (string)($s['centre'] ?? ''))) continue;
-        $v = wifi_view_subject('summer', $s); $v['pin'] = '';
+        $v = wifi_view_subject('summer', $s);
         $out[] = ['subjectType' => 'summer', 'subjectId' => (string)$s['studentId'], 'name' => (string)$s['fullName'], 'centre' => (string)($s['centre'] ?? ''),
                   'canChange' => in_array('summer', $caps, true)] + $v;
     }

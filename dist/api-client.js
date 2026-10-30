@@ -1068,9 +1068,12 @@
          ask them to pay, or to confirm a payment they already made. */
       familyAsks:   () => request('/member/fees.php?view=family'),
       askParent:    () => request('/member/fees.php', { body: { action: 'nudge' } }),
-      // The centre's Wi-Fi: sign-in name, PIN, why access is limited or off; a new PIN (3 a day).
+      // The centre's Wi-Fi: sign-in name, whether a password is set, why access is limited or off;
+      // the password the member chooses (3 changes a day), in the body, never echoed back.
       wifi:         () => request('/member/wifi.php'),
-      wifiReset:    () => request('/member/wifi.php', { body: { action: 'reset' } }),
+      wifiPassword: (password) => request('/member/wifi.php', { body: { action: 'password', password } }),
+      // Their volunteer wallet, when they volunteer with NGG (domain/volunteer-pay.php); null when they don't.
+      volunteerPay: () => request('/member/volunteer-pay.php'),
       /* Self-service. No memberId travels in any of these — the server reads it
          from the session, which is what keeps them from being an enumeration
          endpoint over children. */
@@ -1459,7 +1462,7 @@
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
         // Record a guardian's publication decision. `method` is how it was
         // obtained (paper form, phone, in person) and the server requires it.
-        consent:       (memberId, type, status, method) => request('/admin/members.php', { body: { action: 'consent', memberId, type, status, method } }),
+        consent:       (memberId, type, status, method, guardianName) => request('/admin/members.php', { body: { action: 'consent', memberId, type, status, method, guardianName } }),
         paperConsents: (apply) => request('/admin/members.php', { body: { action: 'paperConsents', apply: !!apply } }),
         remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
         // Promote an NGG member into the NGV / volunteer tier — auto-provisions
@@ -1583,6 +1586,7 @@
       sessions: {
         list:   (year) => request('/admin/sessions.php' + qs({ year })),
         upsert: (data) => request('/admin/sessions.php', { body: data }),
+        sync:   () => request('/admin/sessions.php', { body: { sync: true } }),
       },
       missions: {
         list:   () => request('/admin/missions.php'),
@@ -2031,6 +2035,18 @@
         member: (subjectType, subjectId) => request('/admin/wifi.php' + qs({ view: 'member', subjectType, subjectId })),
         memberSet: (subjectType, subjectId, op, extra) => request('/admin/wifi.php', { body: Object.assign({ action: 'member', subjectType, subjectId, op }, extra || {}) }),
       },
+      /* Volunteer pay (domain/volunteer-pay.php): the rules, a pay period, one
+         volunteer's wallet, excluding or restoring a day, and paying a period. */
+      volpay: {
+        settings:    () => request('/admin/volunteer-pay.php'),
+        settingsSet: (data) => request('/admin/volunteer-pay.php', { body: { action: 'settings', data } }),
+        period:      (period) => request('/admin/volunteer-pay.php' + qs({ view: 'period', period })),
+        volunteer:   (volunteerId) => request('/admin/volunteer-pay.php' + qs({ view: 'volunteer', volunteerId })),
+        accrue:      () => request('/admin/volunteer-pay.php', { body: { action: 'accrue' } }),
+        day:         (volunteerId, day, op, reason) => request('/admin/volunteer-pay.php', { body: { action: 'day', volunteerId, day, op, reason } }),
+        pay:         (period, volunteerIds, method, reference) => request('/admin/volunteer-pay.php', { body: { action: 'pay', period, volunteerIds, method, reference } }),
+        voidPayout:  (payoutId, reason) => request('/admin/volunteer-pay.php', { body: { action: 'void', payoutId, reason } }),
+      },
       fees: {
         settings:    () => request('/admin/fees.php'),
         settingsSet: (data) => request('/admin/fees.php', { body: { action: 'settings', data } }),
@@ -2192,6 +2208,10 @@
         safeguard: (volunteerId, status) => request('/admin/volunteers.php', { body: { action: 'safeguard', volunteerId, status } }),
         // Portal access, granted per person by a super admin. caps ⊆ ['summer','club'].
         caps:      (volunteerId, caps) => request('/admin/volunteers.php', { body: { action: 'caps', volunteerId, caps } }),
+        programme: (volunteerId, programme, opts) => request('/admin/volunteers.php', { body: { action: 'programme', volunteerId, programme, note: (opts && opts.note) || '', notify: !(opts && opts.notify === false) } }),
+        nggCatalogue:      () => request('/admin/volunteers.php?view=ngg_catalogue'),
+        nggCatalogueSet:   (catalogue) => request('/admin/volunteers.php', { body: { action: 'ngg_catalogue_set', catalogue } }),
+        nggCatalogueReset: () => request('/admin/volunteers.php', { body: { action: 'ngg_catalogue_set', reset: true } }),
         update:  (volunteerId, data) => request('/admin/volunteers.php', { body: { action: 'update', volunteerId, data } }),
         academy: (volunteerId, on) => request('/admin/volunteers.php', { body: { action: 'academy', volunteerId, on: !!on } }),
         /* Summer School → NGG: the open NGG centres nearest their Summer venue,
@@ -2362,6 +2382,11 @@
         dispatch: () => request('/admin/integrations.php', { body: { action: 'dispatch' } }),
         retry:    (integrationId = "") => request('/admin/integrations.php', { body: { action: 'retry', integrationId } }),
         syncMembers: () => request('/admin/integrations.php', { body: { action: 'sync_members' } }),
+        // Make.com, set up on screen (domain/make.php). Keys come back once.
+        makeSecret:  () => request('/admin/integrations.php', { body: { action: 'make_secret' } }),
+        makeCron:    () => request('/admin/integrations.php', { body: { action: 'make_cron' } }),
+        makeConnect: (url) => request('/admin/integrations.php', { body: { action: 'make_connect', url } }),
+        makeOff:     () => request('/admin/integrations.php', { body: { action: 'make_off' } }),
       },
       settings: {
         get: () => request('/admin/settings.php'),

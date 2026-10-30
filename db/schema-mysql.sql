@@ -4756,3 +4756,105 @@ CREATE TABLE IF NOT EXISTS push_queue (
 ALTER TABLE notifications ADD COLUMN groupCount INT NOT NULL DEFAULT 0;
 ALTER TABLE applications ADD COLUMN messages TEXT NULL;
 INSERT INTO schema_version (version) VALUES (203) ON DUPLICATE KEY UPDATE version = version;
+
+-- 204 (was 199 on the parallel branch): CACENTRE's locations decide NGG's centres (domain/cac-locations.php), and
+-- a check-in through the gate records which location it was at.
+ALTER TABLE centres ADD COLUMN cacLocationId VARCHAR(16) NOT NULL DEFAULT '';
+ALTER TABLE centres ADD COLUMN cacCalendar TEXT NULL;
+ALTER TABLE centres ADD COLUMN cacSyncedAt VARCHAR(32) NOT NULL DEFAULT '';
+CREATE INDEX idx_centres_cac ON centres (cacLocationId);
+ALTER TABLE attendance ADD COLUMN centre VARCHAR(80) NOT NULL DEFAULT '';
+ALTER TABLE attendance ADD COLUMN centreId VARCHAR(64) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (204) ON DUPLICATE KEY UPDATE version = version;
+
+-- 205 (was 200 on the parallel branch): the processes that wait on a person (domain/make.php) — the question
+-- asked about each absence and the guardian's answer, each safeguarding flag
+-- and who took it, and which Summer School dates have been announced.
+CREATE TABLE IF NOT EXISTS absence_asks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  ref VARCHAR(24) NOT NULL UNIQUE,
+  infractionId INT NOT NULL,
+  personId VARCHAR(64) NOT NULL,
+  personType VARCHAR(16) NOT NULL DEFAULT 'student',
+  date VARCHAR(10) NOT NULL,
+  centre VARCHAR(80) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'asked',
+  reason VARCHAR(16) NOT NULL DEFAULT '',
+  note VARCHAR(300) NOT NULL DEFAULT '',
+  channel VARCHAR(24) NOT NULL DEFAULT '',
+  messageId VARCHAR(120) NOT NULL DEFAULT '',
+  askedAt VARCHAR(32) NOT NULL DEFAULT '',
+  answeredAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE INDEX uq_absask_infraction (infractionId),
+  INDEX idx_absask_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS safeguarding_flags (
+  ref VARCHAR(64) NOT NULL PRIMARY KEY,
+  source VARCHAR(40) NOT NULL DEFAULT '',
+  category VARCHAR(24) NOT NULL DEFAULT '',
+  severity VARCHAR(16) NOT NULL DEFAULT '',
+  centre VARCHAR(80) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  flaggedAt VARCHAR(32) NOT NULL DEFAULT '',
+  ackAt VARCHAR(32) NOT NULL DEFAULT '',
+  ackBy VARCHAR(80) NOT NULL DEFAULT '',
+  ackChannel VARCHAR(24) NOT NULL DEFAULT '',
+  ackMessageId VARCHAR(120) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS edition_milestones (
+  cohortId VARCHAR(64) NOT NULL,
+  milestone VARCHAR(24) NOT NULL,
+  firedAt VARCHAR(32) NOT NULL DEFAULT '',
+  PRIMARY KEY (cohortId, milestone)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO schema_version (version) VALUES (205) ON DUPLICATE KEY UPDATE version = version;
+
+-- 206 (was 201 on the parallel branch) — volunteer pay (domain/volunteer-pay.php)
+CREATE TABLE IF NOT EXISTS volunteer_pay (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  volunteerId VARCHAR(64) NOT NULL,
+  day VARCHAR(10) NOT NULL,
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'earned',
+  amount INT NOT NULL DEFAULT 0,
+  rate INT NOT NULL DEFAULT 0,
+  reason VARCHAR(40) NOT NULL DEFAULT '',
+  activity VARCHAR(80) NOT NULL DEFAULT '',
+  periodKey VARCHAR(16) NOT NULL DEFAULT '',
+  payoutId VARCHAR(40) NOT NULL DEFAULT '',
+  decidedAt VARCHAR(32) NOT NULL DEFAULT '',
+  overrideBy VARCHAR(64) NOT NULL DEFAULT '',
+  overrideReason VARCHAR(300) NOT NULL DEFAULT '',
+  overrideAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE INDEX uq_volpay_day (volunteerId, day),
+  INDEX idx_volpay_period (periodKey, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS volunteer_payouts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  payoutId VARCHAR(40) NOT NULL,
+  volunteerId VARCHAR(64) NOT NULL,
+  periodKey VARCHAR(16) NOT NULL,
+  amount INT NOT NULL DEFAULT 0,
+  days INT NOT NULL DEFAULT 0,
+  method VARCHAR(24) NOT NULL DEFAULT '',
+  reference VARCHAR(120) NOT NULL DEFAULT '',
+  paidAt VARCHAR(32) NOT NULL DEFAULT '',
+  paidBy VARCHAR(64) NOT NULL DEFAULT '',
+  voidedAt VARCHAR(32) NOT NULL DEFAULT '',
+  voidedBy VARCHAR(64) NOT NULL DEFAULT '',
+  voidReason VARCHAR(300) NOT NULL DEFAULT '',
+  UNIQUE INDEX uq_volpayout (payoutId),
+  INDEX idx_volpayout_vol (volunteerId, periodKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO schema_version (version) VALUES (206) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 207 (was 202 on the parallel branch) · Volunteer programme: when it was set, and an index (from gate-lookup, where it was 122; backfill in NGG_MYSQL_ROW_FIXUPS) ──
+ALTER TABLE volunteers ADD COLUMN programmeAt VARCHAR(40) DEFAULT '';
+CREATE INDEX idx_vol_programme ON volunteers(programme);
+
+INSERT INTO schema_version (version) VALUES (207) ON DUPLICATE KEY UPDATE version = version;

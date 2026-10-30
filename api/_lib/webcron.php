@@ -242,6 +242,8 @@ function web_cron_run(): void {
                    suspension here is off there within the quarter hour. Does
                    nothing until WIFI_SECRET_NGG is set. */
                 if (web_cron_due('wifi_cac', web_cron_cfg('wifi_cac', WIFI_CAC_EVERY)) && function_exists('wifi_cac_tick')) web_cron_guard('wifi_cacentre', fn() => wifi_cac_tick());
+                /* Volunteer pay: each finished day decided once (domain/volunteer-pay.php). Hourly. */
+                if (web_cron_due('volpay', web_cron_cfg('volpay', 3600)) && function_exists('volpay_tick')) web_cron_guard('volunteer_pay', fn() => volpay_tick());
                 if (web_cron_due('dirpush', web_cron_cfg('dirpush', 3600)) && function_exists('dirpush_tick')) web_cron_guard('directory_push', fn() => dirpush_tick());
             } finally { @flock($lock, LOCK_UN); }
         }
@@ -379,6 +381,7 @@ function web_cron_reminders(): void {
             if (!$already) {
                 audit('registration.stalled', null, (string)$s['studentId'], ['hours' => (int)$ageH], '');
                 event_emit('registration.stalled', ['ref' => (string)$s['studentId'], 'name' => (string)$s['fullName'], 'hoursPending' => (int)$ageH]);
+                if (function_exists('make_registration_stalled_emit')) make_registration_stalled_emit($s, (int)$ageH);
             }
         }
     }
@@ -418,8 +421,7 @@ function web_cron_maintenance(): void {
     $cutoff = gmdate('Y-m-d\TH:i:s\Z', time() - 24 * 3600);
     db_exec('DELETE FROM auth_sessions WHERE expiresAt < ?', [$cutoff]);
     if (function_exists('ensure_year')) ensure_year((int)gmdate('Y'));
-    $maxId = (int)(db_row('SELECT MAX(id) m FROM audit_log')['m'] ?? 0);
-    if ($maxId > 5000) db_exec('DELETE FROM audit_log WHERE id <= ?', [$maxId - 5000]);
+    audit_prune();   // sign-in noise past its age only — see AUDIT_NOISE_EVENTS
     if (function_exists('ops_prune')) ops_prune(30);
     // Expired brute-force locks. Left alone the table grows one row per code or
     // gate ever guessed at, and a lock nobody is serving is just a stale row.
@@ -439,6 +441,10 @@ function web_cron_maintenance(): void {
     // (person, kind, date) means a double run cannot become a double strike.
     if (function_exists('policy_sweep_absences')) policy_sweep_absences();
     if (function_exists('policy_sweep_member_absences')) policy_sweep_member_absences();
+    // Then ask guardians about the absences just logged, and announce any
+    // Summer School date that has arrived (domain/make.php). No-ops unless an
+    // integration subscribes; guarded inside so a fault costs nothing else.
+    if (function_exists('make_run')) make_run();
     /* Locally-held images nothing references any more — a rejected application,
      * a duplicate registration, an original replaced by a retake. The store is
      * write-on-intake and an intake can be refused after the bytes have landed,

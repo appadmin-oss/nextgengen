@@ -45,7 +45,9 @@ const CW_ERR = {
   out_of_scope: "That centre isn’t one you look after.", network_wide_only: "Only somebody who looks after every centre can do that.",
   bad_centre: "Choose a centre that is in use.", bad_platform: "Choose what the gateway is.", bad_profile: "Check the speeds, devices and hours.",
   name_taken: "There is already a region with that name.", name_required: "Give the region a name.", not_network: "They need the network capability first (Access & roles).",
-  too_many_resets: "That PIN has been changed three times today. Try again tomorrow.", reason_required: "Say why, so the next person to look knows.",
+  too_many_resets: "That password has been changed three times today. Try again tomorrow.",
+  weak_password: "That password won’t do: at least 8 characters, no spaces or semicolons, not the sign-in name.",
+  own_password: "Members set their own Wi-Fi password in the app. You can clear it so they choose a new one.", reason_required: "Say why, so the next person to look knows.",
   own_account: "Somebody else changes your own Wi-Fi.", too_many: "That is more than one press can do. Choose fewer.", rate_limited: "Too many tests in a few minutes. Try again in ten.",
 };
 const CW_BULK_ERR = { out_of_scope: "At a centre you don’t look after", not_found: "Removed since" };
@@ -202,7 +204,7 @@ function CwFormDialog({ f, ui }) {
         : x.type === "chips" ? <div className="cw-chips" role="radiogroup" aria-label={x.l}>{x.opts.map(o => <button key={o[0]} type="button" role="radio" aria-checked={v[x.id] === o[0]} className={"cw-chip" + (v[x.id] === o[0] ? " is-on" : "")} onClick={() => set(x.id, o[0])}>{o[1]}</button>)}</div>
         : x.type === "checks" ? <div className="cw-checks">{x.opts.length ? x.opts.map(o => { const on = (v[x.id] || []).indexOf(o[0]) !== -1; return <label key={o[0]} className="cw-check"><input type="checkbox" checked={on} onChange={() => set(x.id, on ? v[x.id].filter(y => y !== o[0]) : (v[x.id] || []).concat([o[0]]))}/><span>{o[1]}</span></label>; }) : <span className="cw-help">{x.empty || "Nothing to choose from."}</span>}</div>
         : x.type === "switch" ? <button id={"cwf-" + x.id} type="button" role="switch" aria-checked={!!v[x.id]} className="cw-switch" onClick={() => set(x.id, !v[x.id])}><span/></button>
-        : <input id={"cwf-" + x.id} value={v[x.id] == null ? "" : v[x.id]} placeholder={x.ph || ""} maxLength={x.max || undefined} inputMode={x.num ? "numeric" : undefined} onChange={e => set(x.id, e.target.value)}/>}
+        : <input id={"cwf-" + x.id} type={x.type === "password" ? "password" : "text"} autoComplete={x.type === "password" ? "new-password" : undefined} value={v[x.id] == null ? "" : v[x.id]} placeholder={x.ph || ""} maxLength={x.max || undefined} inputMode={x.num ? "numeric" : undefined} onChange={e => set(x.id, e.target.value)}/>}
       {fe[x.id] ? <span className="cw-ferr" role="alert">{fe[x.id]}</span> : x.help ? <span className="cw-help">{x.help}</span> : null}
     </div>)}
     {err ? <div className="cw-error" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{err}</span></div> : null}
@@ -686,7 +688,7 @@ function CwAccess({ ctx }) {
   const look = async e => { e.preventDefault(); if (q.trim().length < 2) return; setBusy(true); try { setRes((await NGGApi.admin.wifi.lookup(q.trim())).results || []); } catch (er) { ui.toast(cwErr(er, "Couldn’t look them up."), true); } finally { setBusy(false); } };
   const all = base.scope.all;
   return <>
-    <CwCard title="Why can’t somebody get on?" sub="Their printed ID, record id or name. You see whether they have Wi-Fi and why — never their PIN.">
+    <CwCard title="Why can’t somebody get on?" sub="Their printed ID, record id or name. You see whether they have Wi-Fi and why — never their password.">
       <form className="cw-lookup" role="search" onSubmit={look}><CwSearch value={q} onChange={setQ} ph="e.g. 026-014 or Ada"/><button type="submit" className="cw-btn is-primary" disabled={busy || q.trim().length < 2}>{busy ? "Looking…" : "Look them up"}</button></form>
       {res == null ? null : !res.length ? <CwEmpty>Nobody found at your centres. Try their printed ID.</CwEmpty> :
         <ul className="cw-list" aria-live="polite">{res.map(x => { const a = CW_ACCESS.find(y => y[0] === x.access) || [x.access, x.access];
@@ -710,15 +712,16 @@ function CwAccess({ ctx }) {
 
 function cwPersonForm(ctx, x) {
   const { ui } = ctx;
-  ui.form({ title: x.name + "’s Wi-Fi", submit: "Save", intro: "Wi-Fi follows the record. Set it by hand only for the exceptions; it never undoes a suspension. To give them a new PIN, choose that below.",
+  ui.form({ title: x.name + "’s Wi-Fi", submit: "Save", intro: "Wi-Fi follows the record. Set it by hand only for the exceptions; it never undoes a suspension. " + (x.subjectType === "summer" ? "A participant’s Wi-Fi password is set here, typed with them." : "Members choose their own Wi-Fi password in the app; you can clear it so they choose a new one."),
     values: { op: "override", access: x.override ? x.override.access : x.access, why: "" },
     fields: [
-      { id: "op", l: "What to do", type: "chips", opts: [["override", "Set by hand"]].concat(x.override ? [["clear", "Clear the hand-set access"]] : [], x.access !== "off" ? [["resetPin", "Give a new PIN"]] : []) },
+      { id: "op", l: "What to do", type: "chips", opts: [["override", "Set by hand"]].concat(x.override ? [["clear", "Clear the hand-set access"]] : [], x.hasPassword ? [["clearPassword", "Clear their password"]] : [], x.subjectType === "summer" && x.access !== "off" ? [["setPassword", x.hasPassword ? "Change their password" : "Set their password"]] : []) },
+      { id: "password", l: "Password, typed with them", type: "password", max: 64, when: v => v.op === "setPassword", check: (w, v) => v.op !== "setPassword" ? "" : String(w || "").length < 8 ? "Use at least 8 characters." : /[\s;]/.test(String(w)) ? "Leave out spaces and semicolons." : "" },
       { id: "access", l: "Wi-Fi", type: "chips", opts: CW_ACCESS, when: v => v.op === "override" },
       { id: "why", l: "Why", max: 255, ph: "e.g. Alumni mentor on Saturdays", when: v => v.op === "override", check: (w, v) => v.op === "override" && !String(w || "").trim() ? "Say why, so the next person to look knows." : "" },
     ],
-    onSubmit: async v => { try { return await NGGApi.admin.wifi.memberSet(x.subjectType, x.subjectId, v.op, v.op === "override" ? { access: v.access, why: v.why } : null); } catch (e) { throw new Error(cwErr(e, "Couldn’t save.")); } },
-    done: (v) => ui.toast(v.op === "resetPin" ? "New PIN made. They see it in the app under Me → Wi-Fi." : "Saved · " + x.name) });
+    onSubmit: async v => { try { return await NGGApi.admin.wifi.memberSet(x.subjectType, x.subjectId, v.op, v.op === "override" ? { access: v.access, why: v.why } : v.op === "setPassword" ? { password: v.password } : null); } catch (e) { throw new Error(cwErr(e, "Couldn’t save.")); } },
+    done: (v) => ui.toast(v.op === "clearPassword" ? "Password cleared. They choose a new one" + (x.subjectType === "summer" ? " with you." : " in the app under Me → Wi-Fi.") : v.op === "setPassword" ? "Password set · " + x.name : "Saved · " + x.name) });
 }
 
 /* The network's table and default speeds (somebody who sees every centre). */

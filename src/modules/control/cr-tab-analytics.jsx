@@ -321,6 +321,7 @@ function crAnBehOpen(ctx, l) {
     stats: [["Status", l.status === "reviewed" ? "Reviewed" : "Open"], ["Severity", sev[0]], ["Logged", crAgo(l.createdAt)]],
     fields: [["Category", crAnCap(l.category)], ["Observer", l.observerName || l.observerId], ["Logged", crDate(l.createdAt, true)],
       ["Triage", l.aiSource === "manual" ? "Chosen by the observer" : l.aiSource === "ai" ? "AI" : l.aiSource ? "Rules" : ""],
+      ["Acknowledged", l.ackAt ? crDate(l.ackAt, true) + " · " + l.ackBy + (l.ackChannel ? " (" + l.ackChannel + ")" : "") : ""],
       ["Reviewed", l.reviewedAt ? crDate(l.reviewedAt, true) + (l.reviewedBy ? " · " + l.reviewedBy : "") : ""]],
     sections: [{ h: "Observation", text: l.note || "" }],
     actions: l.status === "open" ? [{ l: "Mark reviewed", primary: true, run: async () => {

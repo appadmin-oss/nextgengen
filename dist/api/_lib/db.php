@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 203;
+const NGG_SCHEMA_TARGET = 207;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -55,6 +55,20 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
      WHERE (level IS NULL OR level = '')
        AND INSTR(notes, '[roster-import]') > 0
        AND INSTR(notes, 'Level ') > 0
+";
+
+/**
+ * 122 — which programme a volunteer serves. NGG when they came in through an
+ * NGG (anchor) application, or were made a volunteer straight from an NGG
+ * member record; Summer otherwise. Fills blanks only.
+ */
+const NGG_BACKFILL_VOLUNTEER_PROGRAMME = "
+    UPDATE volunteers SET programme = 'ngg'
+     WHERE (programme IS NULL OR programme = '')
+       AND ( applicationId IN (SELECT id FROM applications WHERE program = 'anchor')
+          OR ( (applicationId IS NULL OR applicationId = 0)
+               AND memberId IN (SELECT memberId FROM members WHERE UPPER(type) = 'NGG') ) );
+    UPDATE volunteers SET programme = 'summer' WHERE programme IS NULL OR programme = '';
 ";
 
 /**
@@ -178,6 +192,17 @@ const NGG_MYSQL_ROW_FIXUPS = [
     'members.level' => NGG_BACKFILL_MEMBER_LEVELS,
     /* 115 — the member's division, out of their track. */
     'members.division' => NGG_BACKFILL_MEMBER_DIVISION,
+    /* 122 — Summer or NGG, for every volunteer. */
+    'volunteers.programme.ngg' => "
+        UPDATE volunteers SET programme = 'ngg'
+         WHERE (programme IS NULL OR programme = '')
+           AND ( applicationId IN (SELECT id FROM applications WHERE program = 'anchor')
+              OR ( (applicationId IS NULL OR applicationId = 0)
+                   AND memberId IN (SELECT memberId FROM members WHERE UPPER(type) = 'NGG') ) )
+    ",
+    'volunteers.programme.summer' => "
+        UPDATE volunteers SET programme = 'summer' WHERE programme IS NULL OR programme = ''
+    ",
 ];
 
 function db_conn(): PDO {
@@ -576,9 +601,31 @@ function db_migrate(PDO $db): void {
 
     $db->exec("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)");
     $current = (int)($db->query('SELECT IFNULL(MAX(version),0) FROM schema_version')->fetchColumn() ?: 0);
+    /* Two branches once both numbered a 137 and a 138: one for CACENTRE's
+     * locations and Make.com (now 204 and 205), one for Mentorship. A database
+     * that ran the first pair has a 138 and no mentor_matches, and reading only
+     * MAX(version) would skip the Mentorship pair for ever. Step it back so
+     * 137 onward run again; every statement tolerates "already applied". */
+    if ($current >= 137 && $current < 199
+        && $db->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='absence_asks'")->fetchColumn()
+        && !$db->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='mentor_matches'")->fetchColumn()) {
+        $current = 136;
+    }
     /* Nothing to do is the normal case — every request after the first deploy.
      * Returning here skips building sixty-odd migration strings, asserting the
      * ladder and looping over all of them, on every single request. */
+    /* Two branches again, both from 199: this one's fee freeze, clearance
+     * lock, volunteer thanks, payment lines and push (199–203), and the
+     * parallel one's CACENTRE centres, absence asks, volunteer pay and
+     * volunteer programme (now 204–207). A database that ran the parallel
+     * ladder has their tables and no push_subscriptions; step it back to 198
+     * so 199 onward run again — every statement tolerates "already applied". */
+    if ($current >= 199 && $current < 204
+        && ($db->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='volunteer_pay'")->fetchColumn()
+            || $db->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='absence_asks'")->fetchColumn())
+        && !$db->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='push_subscriptions'")->fetchColumn()) {
+        $current = 198;
+    }
     if ($current === NGG_SCHEMA_TARGET) return;
 
     $migrations = [
@@ -5889,6 +5936,75 @@ function db_migrate(PDO $db): void {
                waitlist or a refusal is now said, not just set. */
             ALTER TABLE applications ADD COLUMN messages TEXT DEFAULT '';
         ",
+        /* 204 (was 199 on the parallel branch) — CACENTRE's locations decide NGG's centres (domain/cac-locations.php).
+         * A centre is linked to its location by the location's id, which stays
+         * when the name changes; the location's calendar is kept for reading.
+         * And a check-in through the gate records which location it was at. */
+        204 => "ALTER TABLE centres ADD COLUMN cacLocationId TEXT NOT NULL DEFAULT '';
+                ALTER TABLE centres ADD COLUMN cacCalendar TEXT NOT NULL DEFAULT '';
+                ALTER TABLE centres ADD COLUMN cacSyncedAt TEXT NOT NULL DEFAULT '';
+                ALTER TABLE attendance ADD COLUMN centre TEXT NOT NULL DEFAULT '';
+                ALTER TABLE attendance ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+                CREATE INDEX IF NOT EXISTS idx_centres_cac ON centres(cacLocationId);",
+        /* 205 (was 200 on the parallel branch) — the processes that wait on a person (domain/make.php): the
+         * question asked about each absence and the guardian's answer, each
+         * safeguarding flag and who took it, and which Summer School dates
+         * have already been announced. */
+        205 => "CREATE TABLE IF NOT EXISTS absence_asks (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ref TEXT UNIQUE NOT NULL,
+                  infractionId INTEGER NOT NULL,
+                  personId TEXT NOT NULL, personType TEXT NOT NULL DEFAULT 'student',
+                  date TEXT NOT NULL, centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '',
+                  status TEXT NOT NULL DEFAULT 'asked',
+                  reason TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+                  channel TEXT NOT NULL DEFAULT '', messageId TEXT NOT NULL DEFAULT '',
+                  askedAt TEXT NOT NULL DEFAULT '', answeredAt TEXT NOT NULL DEFAULT ''
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_absask_infraction ON absence_asks(infractionId);
+                CREATE INDEX IF NOT EXISTS idx_absask_date ON absence_asks(date);
+                CREATE TABLE IF NOT EXISTS safeguarding_flags (
+                  ref TEXT PRIMARY KEY,
+                  source TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', severity TEXT NOT NULL DEFAULT '',
+                  centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', flaggedAt TEXT NOT NULL DEFAULT '',
+                  ackAt TEXT NOT NULL DEFAULT '', ackBy TEXT NOT NULL DEFAULT '',
+                  ackChannel TEXT NOT NULL DEFAULT '', ackMessageId TEXT NOT NULL DEFAULT ''
+                );
+                CREATE TABLE IF NOT EXISTS edition_milestones (
+                  cohortId TEXT NOT NULL, milestone TEXT NOT NULL, firedAt TEXT NOT NULL DEFAULT '',
+                  PRIMARY KEY (cohortId, milestone)
+                );",
+        /* 206 (was 201 on the parallel branch) — volunteer pay (domain/volunteer-pay.php): one row per volunteer
+         * per programme day they were present, decided once with the rate then
+         * in force — earned, or excluded with the reason — and the payouts that
+         * settle a pay period. Whole naira, like member_ledger. */
+        206 => "CREATE TABLE IF NOT EXISTS volunteer_pay (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  volunteerId TEXT NOT NULL, day TEXT NOT NULL, centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '',
+                  status TEXT NOT NULL DEFAULT 'earned', amount INTEGER NOT NULL DEFAULT 0, rate INTEGER NOT NULL DEFAULT 0,
+                  reason TEXT NOT NULL DEFAULT '', activity TEXT NOT NULL DEFAULT '', periodKey TEXT NOT NULL DEFAULT '',
+                  payoutId TEXT NOT NULL DEFAULT '', decidedAt TEXT NOT NULL DEFAULT '',
+                  overrideBy TEXT NOT NULL DEFAULT '', overrideReason TEXT NOT NULL DEFAULT '', overrideAt TEXT NOT NULL DEFAULT ''
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_volpay_day ON volunteer_pay(volunteerId, day);
+                CREATE INDEX IF NOT EXISTS idx_volpay_period ON volunteer_pay(periodKey, status);
+                CREATE TABLE IF NOT EXISTS volunteer_payouts (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  payoutId TEXT NOT NULL UNIQUE, volunteerId TEXT NOT NULL, periodKey TEXT NOT NULL,
+                  amount INTEGER NOT NULL DEFAULT 0, days INTEGER NOT NULL DEFAULT 0,
+                  method TEXT NOT NULL DEFAULT '', reference TEXT NOT NULL DEFAULT '',
+                  paidAt TEXT NOT NULL DEFAULT '', paidBy TEXT NOT NULL DEFAULT '',
+                  voidedAt TEXT NOT NULL DEFAULT '', voidedBy TEXT NOT NULL DEFAULT '', voidReason TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_volpayout_vol ON volunteer_payouts(volunteerId, periodKey);",
+        /* 207 (was 202 on the parallel branch) — from the gate-lookup branch, where it was 122: when a
+         * volunteer's programme was last set (promotion from Summer to NGG), an
+         * index on programme, and the programme of any volunteer row that has
+         * none (an anchor application or an NGG member ⇒ ngg, else summer). */
+        207 => "
+            ALTER TABLE volunteers ADD COLUMN programmeAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_vol_programme ON volunteers(programme);
+        " . NGG_BACKFILL_VOLUNTEER_PROGRAMME,
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

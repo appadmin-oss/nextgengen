@@ -2942,9 +2942,18 @@ const CATALOGUE_SOURCES = {
     hint: <>The courses the <b>NGG Club</b> teaches, by faculty — what the NGG join form offers, what lessons are filed under and what the timetable schedules. Summer School keeps its own catalogue under <b>Summer School → Structure</b>; changing this list does not change Summer's. A course with lessons or classes on the timetable stays usable even if you take it off here.</>,
     resetTitle: "Copy Summer School's catalogue over this list?", resetBody: "The Club's list will be replaced by Summer School's current catalogue. Lessons and timetable classes are not touched.",
   },
+  /* What NGG volunteers can sign up for at /join/volunteer — NGG's own areas and
+     activities, all year, separate from Summer School's courses. */
+  "ngg-volunteer": {
+    load: () => NGGApi.admin.volunteers.nggCatalogue(), save: (c) => NGGApi.admin.volunteers.nggCatalogueSet(c), reset: () => NGGApi.admin.volunteers.nggCatalogueReset(),
+    hint: <>What NGG volunteers can sign up for on <a href="/join/volunteer" target="_blank" rel="noreferrer">/join/volunteer</a> — NGG runs all year, so these are its own areas and activities, separate from the Summer School's courses (Summer School → Structure → Academy catalogue).</>,
+    resetTitle: "Reset to the seeded activities?", resetBody: "Your custom areas and activities will be replaced by the built-in default.",
+    unit: { group: "area", groups: "areas", item: "activity", groupEg: "Area (e.g. Mentoring)" },
+  },
 };
 function AcademyCatalogue({ source = "summer" }) {
   const src = CATALOGUE_SOURCES[source] || CATALOGUE_SOURCES.summer;
+  const U = src.unit || { group: "faculty", groups: "faculties", item: "course", groupEg: "Faculty name (e.g. Music)" };
   const [canEdit, setCanEdit] = React.useState(true);
   const [inUse, setInUse] = React.useState([]);
   const [rows, setRows] = React.useState(null);   // [{faculty, courses:[]}]
@@ -2977,10 +2986,10 @@ function AcademyCatalogue({ source = "summer" }) {
     const clean = rows
       .map(r => ({ faculty: r.faculty.trim(), courses: r.courses.map(c => c.trim()).filter(Boolean) }))
       .filter(r => r.faculty !== "" && r.courses.length > 0);
-    if (!clean.length) { toast.error("Add at least one faculty with one course."); return; }
+    if (!clean.length) { toast.error("Add at least one " + U.group + " with one " + U.item + "."); return; }
     setBusy(true);
-    try { const r = await src.save(clean); toast.success((source === "club" ? "Club courses saved — " : "Catalogue saved — ") + (r.faculties || clean.length) + " faculties live now."); load(); }
-    catch (e) { toast.error(e.code === "catalogue_empty" ? "Add at least one faculty with one course." : (e.code || e.message)); }
+    try { const r = await src.save(clean); toast.success((source === "club" ? "Club courses saved — " : "Catalogue saved — ") + (r.faculties || clean.length) + " " + U.groups + " live now."); load(); }
+    catch (e) { toast.error(e.code === "catalogue_empty" ? "Add at least one " + U.group + " with one " + U.item + "." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   const reset = async () => {
@@ -3001,11 +3010,11 @@ function AcademyCatalogue({ source = "summer" }) {
         {rows.map((r, i) => (
           <div key={i} className="admin-card" style={{ padding: 16, border: "var(--rs-border-109, 1px solid rgba(12, 20, 50, 0.12))", borderRadius: 12 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
-              <input className="admin-input" value={r.faculty} placeholder="Faculty name (e.g. Music)" onChange={e => setFacultyName(i, e.target.value)} style={{ fontWeight: 700, flex: 1, minWidth: 180 }}/>
-              <button className="btn btn-ghost btn-sm" onClick={() => removeFaculty(i)} title="Remove this faculty">✕ Faculty</button>
+              <input className="admin-input" value={r.faculty} placeholder={U.groupEg} onChange={e => setFacultyName(i, e.target.value)} style={{ fontWeight: 700, flex: 1, minWidth: 180 }}/>
+              <button className="btn btn-ghost btn-sm" onClick={() => removeFaculty(i)} title={"Remove this " + U.group}>✕ {U.group[0].toUpperCase() + U.group.slice(1)}</button>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-              {r.courses.length === 0 ? <span className="admin-cell-sub" style={{ fontSize: 12.5 }}>No courses yet — add the first below.</span> :
+              {r.courses.length === 0 ? <span className="admin-cell-sub" style={{ fontSize: 12.5 }}>No {U.item === "course" ? "courses" : "activities"} yet — add the first below.</span> :
                 r.courses.map(c => (
                   <span key={c} className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                     {c}<button onClick={() => removeCourse(i, c)} title="Remove" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-500)", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
@@ -3013,16 +3022,16 @@ function AcademyCatalogue({ source = "summer" }) {
                 ))}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <input className="admin-input" placeholder="Add a course…" value={draftCourse[i] || ""}
+              <input className="admin-input" placeholder={"Add a " + U.item + "…"} value={draftCourse[i] || ""}
                 onChange={e => setDraftCourse(d => ({ ...d, [i]: e.target.value }))}
                 onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCourse(i); } }} style={{ flex: 1, minWidth: 160 }}/>
-              <button className="btn btn-ghost btn-sm" onClick={() => addCourse(i)}>+ Course</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => addCourse(i)}>+ {U.item[0].toUpperCase() + U.item.slice(1)}</button>
             </div>
           </div>
         ))}
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
-        <button className="btn btn-ghost btn-sm" onClick={addFaculty}>+ Add faculty</button>
+        <button className="btn btn-ghost btn-sm" onClick={addFaculty}>+ Add {U.group}</button>
         <div style={{ flex: 1 }}/>
         {customised && canEdit && <button className="btn btn-ghost btn-sm" onClick={reset} disabled={busy}>{source === "club" ? "Copy Summer's catalogue" : "Reset to default"}</button>}
         {canEdit && <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !dirty}>{busy ? "Saving…" : dirty ? (source === "club" ? "Save Club courses" : "Save catalogue") : "Saved"}</button>}

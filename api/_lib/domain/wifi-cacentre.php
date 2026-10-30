@@ -28,9 +28,9 @@
  * `wifi.roster` for the people and NGG's say, `wifi.card` for one member's
  * Wi-Fi to show on their own dashboard. There is no Wi-Fi key of its own.
  *
- * PINS STAY ON THE MEMBER'S DASHBOARD. CACENTRE holds them and decides; the
- * member still opens Me → Wi-Fi in this app, which asks CACENTRE for their
- * card (wifi_cac_member_view) — nobody is sent to another site for a PIN.
+ * PASSWORDS ARE SET ON THE MEMBER'S DASHBOARD. The member opens Me → Wi-Fi in
+ * this app and chooses their own; the app passes it to CACENTRE, which holds
+ * it sealed and never sends it back (wifi_cac_member_view). There are no PINs.
  */
 
 /** Must match WifiStore::ROSTER_MAX at CACENTRE: one push carries at most this many. */
@@ -79,14 +79,7 @@ function wifi_cac_people(): array {
     $acc = wifi_accounts_existing($subjects);
 
     $out = [];
-    foreach ($members as $m) {
-        $id = (string)$m['memberId']; $staff = wifi_is_staff($m);
-        $d = wifi_access_for($m, ['settings' => wifi_settings((string)$m['centre']), 'policy' => $policy[$id] ?? null, 'feesOwing' => !empty($owing[$id]),
-            'account' => $acc['member|' . $id] ?? null, 'usage' => null]);
-        $out[] = ['id' => $id, 'kind' => $staff ? 'staff' : 'member', 'name' => trim((string)$m['fullName']), 'email' => strtolower(trim((string)$m['email'])),
-            'printedId' => wifi_username_for('member', $m), 'homeSite' => $staff ? '' : ($codes[(string)$m['centre']] ?? ''),
-            'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => ''];
-    }
+    foreach ($members as $m) $out[] = wifi_cac_member_row($m, $codes, $policy, $owing, $acc);
     foreach ($parts as $s) {
         $id = (string)$s['studentId']; $ed = $eds[(string)$s['cohortId']] ?? null;
         $d = wifi_access_for_participant($s, $ed, ['settings' => wifi_settings((string)$s['centre']), 'account' => $acc['summer|' . $id] ?? null, 'today' => $today, 'usage' => null]);
@@ -95,6 +88,27 @@ function wifi_cac_people(): array {
             'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => (string)($ed['endDate'] ?? '')];
     }
     return $out;
+}
+
+/** One member's roster row: the same row the push sends, built for one person. */
+function wifi_cac_member_row(array $m, array $codes, array $policy, array $owing, array $acc): array {
+    $id = (string)$m['memberId']; $staff = wifi_is_staff($m);
+    $d = wifi_access_for($m, ['settings' => wifi_settings((string)$m['centre']), 'policy' => $policy[$id] ?? null, 'feesOwing' => !empty($owing[$id]),
+        'account' => $acc['member|' . $id] ?? null, 'usage' => null]);
+    return ['id' => $id, 'kind' => $staff ? 'staff' : 'member', 'name' => trim((string)$m['fullName']), 'email' => strtolower(trim((string)$m['email'])),
+        'printedId' => wifi_username_for('member', $m), 'homeSite' => $staff ? '' : ($codes[(string)$m['centre']] ?? ''),
+        'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => ''];
+}
+
+/** The row for one member, read fresh, for CACENTRE to add them at once if it has not been sent them yet. */
+function wifi_cac_me(array $m): ?array {
+    if (!member_is_ngg($m) && !wifi_is_staff($m)) return null;
+    $id = (string)$m['memberId'];
+    $c = db_row('SELECT code FROM centres WHERE name = ? LIMIT 1', [(string)($m['centre'] ?? '')]);
+    $codes = [(string)($m['centre'] ?? '') => strtolower(trim((string)($c['code'] ?? '')))];
+    $policy = function_exists('policy_states_for') ? policy_states_for([$id], 'member') : [];
+    $acc = wifi_accounts_existing([['member', $id, '']]);
+    return wifi_cac_member_row($m, $codes, $policy, wifi_fees_owing([$id]), $acc);
 }
 
 /**
@@ -124,7 +138,50 @@ function wifi_cac_push(string $by = 'cron'): array {
 /** The web-cron tick: nothing at all until a key is set. */
 function wifi_cac_tick(): array {
     if (!wifi_cac_ready()) return ['skipped' => 'no key'];
-    return wifi_cac_push('cron');
+    $r = wifi_cac_push('cron');
+    try { $r['startMail'] = wifi_cac_mail_starts(); } catch (Throwable $e) { $r['startMail'] = ['ok' => false, 'error' => $e->getMessage()]; }
+    return $r;
+}
+
+/**
+ * Starting passwords CACENTRE could not email (its mail failing, or its own
+ * tick not running), sent by NGG with NGG's own mail to the member — or, for
+ * a Summer School participant, to their parent — and reported back so nobody
+ * is sent it twice. Three failed sends in a row stop the run: NGG's mail is
+ * down too, and the rest wait for the next tick.
+ */
+function wifi_cac_mail_starts(): array {
+    $r = wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', ['op' => 'startPending'], 20);
+    if (empty($r['ok'])) return ['ok' => false, 'error' => (string)($r['error'] ?? 'unreachable')];
+    $sent = []; $failed = 0; $failRun = 0;
+    foreach ((array)($r['people'] ?? []) as $x) {
+        if ($failRun >= 3) break;
+        $id = (string)($x['id'] ?? ''); $user = (string)($x['username'] ?? ''); $code = (string)($x['code'] ?? '');
+        if ($id === '' || $user === '' || $code === '') continue;
+        if (str_starts_with($id, 'summer-')) {
+            $s = db_row('SELECT fullName, parentEmail FROM summer_students WHERE studentId = ? LIMIT 1', [substr($id, 7)]);
+            [$to, $name, $forChild] = [(string)($s['parentEmail'] ?? ''), (string)($s['fullName'] ?? ''), true];
+        } else {
+            $m = db_row('SELECT fullName, email FROM members WHERE memberId = ? LIMIT 1', [$id]);
+            [$to, $name, $forChild] = [(string)($m['email'] ?? ''), (string)($m['fullName'] ?? ''), false];
+        }
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL)) continue;
+        $e = static fn(string $v): string => htmlspecialchars($v, ENT_QUOTES, 'UTF-8');
+        $first = trim(explode(' ', trim($name))[0] ?? '');
+        $html = '<p>Hello' . ($forChild ? '' : ($first !== '' ? ' ' . $e($first) : '')) . ',</p>'
+              . '<p>' . ($forChild ? $e($name !== '' ? $name : 'Your child') . ' is' : 'You are') . ' on the Wi-Fi at the NGG centres, which CACENTRE runs. Keep this email: these are needed to sign in, and there is no internet until then.</p>'
+              . '<p>Username: <b>' . $e($user) . '</b><br>Starting password: <b>' . $e($code) . '</b></p>'
+              . '<p>Join the centre’s Wi-Fi, and when the sign-in page opens, type both exactly as they are here. '
+              . ($forChild ? 'Ask the centre team if you need a new one.' : 'You can keep this password, or choose your own in the NGG app under Me → Wi-Fi. Never share it: anything done on the Wi-Fi with it counts as you.') . '</p>';
+        if (send_mail($to, 'Wi-Fi sign-in for ' . ($forChild && $name !== '' ? $name : 'you'), $html)) { $sent[] = ['id' => $id, 'code' => $code]; $failRun = 0; }
+        else { $failed++; $failRun++; }
+    }
+    $marked = 0;
+    if ($sent) {
+        $c = wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', ['op' => 'startSent', 'sent' => $sent], 20);
+        $marked = (int)($c['marked'] ?? 0);
+    }
+    return ['ok' => true, 'sent' => count($sent), 'failed' => $failed, 'marked' => $marked];
 }
 
 /** Only somebody who sees every centre's Wi-Fi speaks for all of NGG's people. */
@@ -168,9 +225,34 @@ function wifi_cac_serves(string $centre, bool $staff): bool {
     return !$live;
 }
 
-/** CACENTRE's card for one of NGG's people. op: show | newPin. */
-function wifi_cac_card(string $localId, string $op = 'show'): array {
-    return wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', ['id' => $localId, 'op' => $op === 'newPin' ? 'newPin' : 'show'], 15);
+/**
+ * CACENTRE's card for one of NGG's people. op: show | setPassword (with the
+ * password they chose, signed into the POST body — never a URL). `me` is their
+ * own roster row, so CACENTRE adds a person it has not been sent yet at once.
+ */
+function wifi_cac_card(string $localId, string $op = 'show', string $password = '', ?array $me = null): array {
+    $claims = ['id' => $localId, 'op' => in_array($op, ['setPassword', 'newStartCode'], true) ? $op : 'show'];
+    if ($op === 'setPassword') $claims['password'] = $password;
+    if ($me !== null) $claims['me'] = $me;
+    return wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', $claims, 15);
+}
+
+/**
+ * The desk's view of one person where CACENTRE runs their centre's Wi-Fi:
+ * NGG's own view, with CACENTRE's sign-in name and password state over it —
+ * the starting password staff hand over at registration, until the person
+ * chooses their own. `newStartCode` makes a new one (somebody who forgot
+ * theirs). CACENTRE unreachable leaves NGG's view, saying so.
+ */
+function wifi_cac_desk(string $type, array $row, array $view, string $op = 'show'): array {
+    $staff = $type === 'member' && wifi_is_staff($row);
+    if (!wifi_cac_serves((string)($row['centre'] ?? ''), $staff)) return $view;
+    $localId = $type === 'summer' ? 'summer-' . (string)$row['studentId'] : (string)$row['memberId'];
+    $r = wifi_cac_card($localId, $op, '', $type === 'member' ? wifi_cac_me($row) : null);
+    $c = !empty($r['ok']) && is_array($r['card'] ?? null) ? $r['card'] : null;
+    if ($c === null) return $view + ['cacentre' => true, 'cacentreError' => empty($r['ok']) ? 'unreachable' : 'not_listed', 'startCode' => '', 'ownPassword' => false];
+    return array_merge($view, ['cacentre' => true, 'cacentreError' => '', 'username' => (string)$c['username'], 'hasPassword' => !empty($c['hasPassword']),
+        'pinSetAt' => (string)($c['pinSetAt'] ?? ''), 'startCode' => (string)($c['startCode'] ?? ''), 'ownPassword' => !empty($c['ownPassword'])]);
 }
 
 /** CACENTRE's case names, as the member screen already reads them. */
@@ -182,12 +264,16 @@ const WIFI_CAC_CASES = ['over_limit' => 'overLimit', 'on' => 'member'];
  * be reached — the caller says so with a retry, never an NGG PIN that the
  * routers no longer know.
  */
-function wifi_cac_member_view(array $m, string $op = 'show'): array {
-    $r = wifi_cac_card((string)$m['memberId'], $op);
-    if (empty($r['ok'])) throw new RuntimeException((string)($r['error'] ?? 'cacentre_unreachable'));
+function wifi_cac_member_view(array $m, string $op = 'show', string $password = ''): array {
+    $r = wifi_cac_card((string)$m['memberId'], $op, $password, wifi_cac_me($m));
+    if (empty($r['ok'])) {
+        /* CACENTRE's own sentence for a password it refused says what to change. */
+        if (in_array((string)($r['error'] ?? ''), ['weak', 'too_many'], true) && (string)($r['message'] ?? '') !== '') throw new RuntimeException('msg:' . (string)$r['message']);
+        throw new RuntimeException((string)($r['error'] ?? 'cacentre_unreachable'));
+    }
     $c = $r['card'] ?? null;
-    if (!is_array($c)) return ['username' => '', 'pin' => '', 'pinSetAt' => '', 'access' => 'off', 'profile' => '', 'limits' => null, 'case' => 'not_listed',
-        'why' => 'Not on CACENTRE’s Wi-Fi list yet; it is sent every 15 minutes', 'override' => null, 'resetsLeft' => 0, 'centre' => (string)($m['centre'] ?? ''),
+    if (!is_array($c)) return ['username' => '', 'pin' => '', 'hasPassword' => false, 'passwordMin' => WIFI_PASSWORD_MIN, 'pinSetAt' => '', 'access' => 'off', 'profile' => '', 'limits' => null, 'case' => 'not_listed',
+        'why' => 'Not on CACENTRE’s Wi-Fi list', 'override' => null, 'resetsLeft' => 0, 'centre' => (string)($m['centre'] ?? ''),
         'centreHasWifi' => false, 'usage' => null, 'source' => 'cacentre'];
     /* CACENTRE words a reason for its staff ("Next Generation Genius has no
        Wi-Fi for them: Suspended…"). On the member's own screen NGG's part is
@@ -197,7 +283,9 @@ function wifi_cac_member_view(array $m, string $op = 'show'): array {
     if ($why === 'On') $why = '';
     $sp = is_array($c['speed'] ?? null) ? $c['speed'] : null;
     $u = is_array($c['usage'] ?? null) ? $c['usage'] : null;
-    return ['username' => (string)$c['username'], 'pin' => (string)($c['pin'] ?? ''), 'pinSetAt' => (string)($c['pinSetAt'] ?? ''),
+    return ['username' => (string)$c['username'], 'pin' => '', 'hasPassword' => !empty($c['hasPassword']), 'passwordMin' => WIFI_PASSWORD_MIN, 'pinSetAt' => (string)($c['pinSetAt'] ?? ''),
+        /* The starting password CACENTRE made, until they choose their own (never their own). */
+        'startCode' => (string)($c['startCode'] ?? ''), 'ownPassword' => !empty($c['ownPassword']),
         'access' => in_array($c['access'] ?? '', WIFI_ACCESS, true) ? (string)$c['access'] : 'off', 'profile' => '',
         'limits' => $sp ? ['down' => (int)$sp['down'], 'devices' => (int)$sp['devices'], 'hours' => (string)($sp['hours'] ?? '')] : null,
         'case' => WIFI_CAC_CASES[(string)($c['case'] ?? '')] ?? (string)($c['case'] ?? ''), 'why' => $why,

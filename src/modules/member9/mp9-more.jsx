@@ -913,7 +913,7 @@ Object.assign(Mp9Portal.prototype, {
       onDone={(msg) => { this.setState({ handIn: null }); this.refresh(["dash", "today"]); this.toast(msg); }}/> : null;
     const rest = this.slotEndInner();
     // The view switch goes after the profile, never above the area's tabs: on a phone it pushed them off the first screen.
-    const view = s.scr === "me" ? <>{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{this.viewSwitch()}</> : null;
+    const view = s.scr === "me" ? <>{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{typeof Mp9VolWallet === "function" ? <Mp9VolWallet/> : null}{this.viewSwitch()}</> : null;
     return handEl || view ? <>{view}{rest}{handEl}</> : rest;
   },
   slotEndInner() {
@@ -1004,19 +1004,34 @@ function mp9Greeting() { const h = new Date().getHours(); return h < 12 ? "morni
    criterion on the growth scale, the strength their mentor saw and one next
    step. The ratings and the mentor's staff note never reach this screen. */
 const MP9_EVAL_TONE = { "Not yet": "is-0", "Emerging": "is-1", "Demonstrated": "is-2", "Strong": "is-3" };
-/* Me → Wi-Fi (domain/wifi.php): the member's sign-in name and Wi-Fi PIN for
-   their centre, and in plain words why access is limited or off. The PIN is
-   hidden until asked for — this screen is shown on phones in a room full of
-   people. Three new PINs a day; loading, an honest error with a retry, and
-   the state where the centre has no Wi-Fi yet are all said. */
+/* Me → Wi-Fi (domain/wifi.php): the member's sign-in name, and a Wi-Fi
+   password they choose here and type twice. It is never shown back, so this
+   screen holds nothing a person behind them could read. The routers let this
+   app open before a phone has signed in to the Wi-Fi, so a first-timer sets
+   their password on the spot. Three changes a day; loading, an honest error
+   with a retry, and the state where the centre has no Wi-Fi yet are all said. */
+function mp9WifiProblem(a, b, username) {
+  if (a.length < 8) return "Use at least 8 characters.";
+  if (a.length > 64) return "Use at most 64 characters.";
+  if (/\s/.test(a)) return "Leave out spaces.";
+  if (a.indexOf(";") !== -1) return "A semicolon (;) can’t be used in a Wi-Fi password.";
+  if (username && a.toLowerCase() === String(username).toLowerCase()) return "Your password can’t be your sign-in name.";
+  if (a !== b) return "The two passwords are not the same.";
+  return "";
+}
 function Mp9Wifi({ toast }) {
-  const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [show, setShow] = React.useState(false), [busy, setBusy] = React.useState(false);
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [busy, setBusy] = React.useState(false);
+  const [pw, setPw] = React.useState(""), [pw2, setPw2] = React.useState(""), [show, setShow] = React.useState(false), [bad, setBad] = React.useState("");
   const load = () => { setErr(""); NGGApi.member.wifi().then(r => setD(r.wifi || null)).catch(e => setErr((e && (e.code || e.message)) || "error")); };
   React.useEffect(load, []);
-  const reset = async () => {
-    setBusy(true);
-    try { const r = await NGGApi.member.wifiReset(); setD(r.wifi); setShow(true); toast("New Wi-Fi PIN ready. Devices signed in with the old one stay signed in until they leave."); }
-    catch (e) { toast((e && e.data && e.data.message) || "Couldn’t change your PIN. Try again later."); }
+  const save = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    const why = mp9WifiProblem(pw, pw2, d && d.username);
+    if (why) { setBad(why); return; }
+    setBad(""); setBusy(true);
+    try { const r = await NGGApi.member.wifiPassword(pw); setD(r.wifi); setPw(""); setPw2(""); setShow(false); toast("Saved. Your password works on the centre’s Wi-Fi within a few minutes."); }
+    catch (e2) { setBad((e2 && e2.data && e2.data.message) || "Your password wasn’t saved. Try again."); }
     finally { setBusy(false); }
   };
   const copy = t => { try { navigator.clipboard.writeText(t); toast("Copied"); } catch (_) { toast("Couldn’t copy. Write it down instead."); } };
@@ -1037,26 +1052,74 @@ function Mp9Wifi({ toast }) {
       : u.dayMb || u.monthMb ? "When you reach an allowance your Wi-Fi slows down until it resets. Only you and the NGG team see these figures."
       : "Only you and the NGG team see these figures. They count what you download and upload, never which sites."}</p>
   </div> : null;
+  const set = d && d.hasPassword;
+  /* The starting password CACENTRE made: shown until they choose their own,
+     which they may, or never need to. */
+  const start = d && d.startCode;
   return <section className="m9x-slot m9x-view m9x-wifi" aria-labelledby="m9x-wifi-h">
     <h2 id="m9x-wifi-h" className="m9x-view-h"><i className="ph ph-wifi-high" aria-hidden="true"/> Wi-Fi at the centre</h2>
     {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{err === "cacentre_unreachable" ? "CACENTRE, which runs the Wi-Fi, couldn’t be reached just now." : "Your Wi-Fi details couldn’t load (" + err + ")."}</span><button type="button" onClick={load}>Try again</button></div>
       : !d ? <div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div>
       : !on ? <>{d.case === "overLimit" ? <p className="m9x-view-p">You’ve used your Wi-Fi data allowance, so the Wi-Fi is off for you {overWhen}.</p>
-        : <p className="m9x-view-p">{d.case === "no_id" ? "You get Wi-Fi once your NGG ID number is printed." : d.case === "not_listed" ? "Your Wi-Fi details are on their way from CACENTRE, which runs the Wi-Fi. Look again in a quarter of an hour." : "You don’t have Wi-Fi access right now" + (d.why ? ": " + d.why.toLowerCase() + "." : ".")} Ask the team at your centre if you think this is wrong.</p>}{usage}</>
+        : <p className="m9x-view-p">{d.case === "no_id" ? "You get Wi-Fi once your NGG ID number is printed." : d.case === "not_listed" ? "You aren’t on the Wi-Fi list yet." : "You don’t have Wi-Fi access right now" + (d.why ? ": " + d.why.toLowerCase() + "." : ".")} Ask the team at your centre if you think this is wrong.</p>}{usage}</>
       : <>
-        {!d.centreHasWifi ? <p className="m9x-view-p">Wi-Fi isn’t set up at your centre yet. These details will work as soon as it is.</p>
-          : <p className="m9x-view-p">Join the centre’s Wi-Fi, and when the sign-in page opens, use these.{d.access === "limited" ? " Your access is limited for now" + (d.why ? " (" + d.why.toLowerCase() + ")" : "") + "." : ""}</p>}
+        {start ? <p className="m9x-view-p m9x-wifi-first">Join the centre’s Wi-Fi and, when the sign-in page opens, use your username and the starting password below. You can keep it, or choose your own.</p>
+          : !set ? <p className="m9x-view-p m9x-wifi-first">Choose a Wi-Fi password below. Then join the centre’s Wi-Fi and, when the sign-in page opens, use your username and this password.</p>
+          : !d.centreHasWifi ? <p className="m9x-view-p">Wi-Fi isn’t set up at your centre yet. Your details will work as soon as it is.</p>
+          : <p className="m9x-view-p">Join the centre’s Wi-Fi, and when the sign-in page opens, use your username and the password you set.{d.access === "limited" ? " Your access is limited for now" + (d.why ? " (" + d.why.toLowerCase() + ")" : "") + "." : ""}</p>}
         <dl className="m9x-wifi-dl">
           <div><dt>Username</dt><dd className="m9x-wifi-v">{d.username}<button type="button" className="m9x-wifi-b" onClick={() => copy(d.username)} aria-label="Copy your Wi-Fi username"><i className="ph ph-copy" aria-hidden="true"/></button></dd></div>
-          <div><dt>PIN</dt><dd className="m9x-wifi-v">{show ? d.pin : "••••••"}
-            <button type="button" className="m9x-wifi-b" onClick={() => setShow(x => !x)} aria-pressed={show ? "true" : "false"} aria-label={show ? "Hide your PIN" : "Show your PIN"}><i className={"ph " + (show ? "ph-eye-slash" : "ph-eye")} aria-hidden="true"/></button>
-            {show ? <button type="button" className="m9x-wifi-b" onClick={() => copy(d.pin)} aria-label="Copy your PIN"><i className="ph ph-copy" aria-hidden="true"/></button> : null}</dd></div>
+          {start ? <div><dt>Starting password</dt><dd className="m9x-wifi-v">{d.startCode}<button type="button" className="m9x-wifi-b" onClick={() => copy(d.startCode)} aria-label="Copy your starting password"><i className="ph ph-copy" aria-hidden="true"/></button></dd></div>
+            : <div><dt>Password</dt><dd>{set ? "Your own, set" + (d.pinSetAt ? " on " + mp9Date(d.pinSetAt) : "") : "Not set yet"}</dd></div>}
           {lim ? <div><dt>Speed</dt><dd>Up to {lim.down} Mbit/s · {lim.devices === 1 ? "one device" : lim.devices + " devices"} at a time{lim.hours ? " · " + lim.hours.replace("-", "–") : ""}</dd></div> : null}
         </dl>
         {usage}
-        <p className="m9x-wifi-note">Your PIN is only for the Wi-Fi. Never tell anyone else your PIN — anything done on the Wi-Fi with it counts as you.</p>
-        <button type="button" className="m9x-wifi-new" onClick={reset} disabled={busy || d.resetsLeft < 1} aria-describedby="m9x-wifi-left">{busy ? "Making a new PIN…" : "Get a new PIN"}</button>
-        <span id="m9x-wifi-left" className="m9x-wifi-left">{d.resetsLeft < 1 ? "You’ve changed it three times today. Try again tomorrow." : d.resetsLeft + " left today"}</span>
+        <form className="m9x-wifi-form" onSubmit={save} noValidate>
+          <h3 className="m9x-wifi-u-h">{start ? "Choose your own password" : set ? "Change your Wi-Fi password" : "Set your Wi-Fi password"}</h3>
+          <label className="m9x-wifi-lbl" htmlFor="m9x-wifi-pw">Password
+            <span className="m9x-wifi-field"><input id="m9x-wifi-pw" className="m9x-wifi-inp" type={show ? "text" : "password"} value={pw} onChange={e => setPw(e.target.value)} minLength={8} maxLength={64} autoComplete="new-password" required aria-describedby="m9x-wifi-rules"/>
+              <button type="button" className="m9x-wifi-b" onClick={() => setShow(x => !x)} aria-pressed={show ? "true" : "false"} aria-label={show ? "Hide what you typed" : "Show what you typed"}><i className={"ph " + (show ? "ph-eye-slash" : "ph-eye")} aria-hidden="true"/></button></span></label>
+          <label className="m9x-wifi-lbl" htmlFor="m9x-wifi-pw2">Type it again
+            <input id="m9x-wifi-pw2" className="m9x-wifi-inp" type={show ? "text" : "password"} value={pw2} onChange={e => setPw2(e.target.value)} minLength={8} maxLength={64} autoComplete="new-password" required/></label>
+          <p id="m9x-wifi-rules" className="m9x-wifi-note">At least 8 characters, no spaces or semicolons, and not your username. Use it only for the Wi-Fi and never tell anyone: anything done on the Wi-Fi with it counts as you.</p>
+          {bad ? <p className="m9x-wifi-bad" role="alert">{bad}</p> : null}
+          <div className="m9x-wifi-acts">
+            <button type="submit" className="m9x-wifi-new" disabled={busy || d.resetsLeft < 1} aria-describedby="m9x-wifi-left">{busy ? "Saving…" : set && !start ? "Change password" : "Set password"}</button>
+            <span id="m9x-wifi-left" className="m9x-wifi-left">{d.resetsLeft < 1 ? "You’ve changed it three times today. Try again tomorrow." : d.resetsLeft + (d.resetsLeft === 1 ? " change" : " changes") + " left today"}</span>
+          </div>
+        </form>
+      </>}
+  </section>;
+}
+
+/* ── Volunteer pay ─────────────────────────────────────────────────────────
+   A member who volunteers with NGG sees what they have earned for each day
+   they were present and active, each day they were not paid for and why, and
+   what has been paid (domain/volunteer-pay.php). Nothing is drawn for anybody
+   who does not volunteer. */
+function Mp9VolWallet() {
+  const [w, setW] = React.useState(undefined), [err, setErr] = React.useState(false);
+  const load = () => { setErr(false); NGGApi.member.volunteerPay().then(r => setW(r.wallet || null)).catch(() => setErr(true)); };
+  React.useEffect(load, []);
+  if (w === null) return null;
+  const naira = n => "₦" + (+n || 0).toLocaleString("en-NG");
+  return <section className="m9x-slot m9x-view m9x-vp" aria-labelledby="m9x-vp-h">
+    <h2 id="m9x-vp-h" className="m9x-view-h"><i className="ph ph-wallet" aria-hidden="true"/> Volunteer pay</h2>
+    {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>Your volunteer pay couldn’t load.</span><button type="button" onClick={load}>Try again</button></div>
+      : w === undefined ? <div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div>
+      : <>
+        <p className="m9x-view-p">{w.on ? "You earn " + naira(w.rate) + " for each programme day you are present and active. It is paid " + w.frequencyText.toLowerCase() + ", after each period ends." : "Volunteer pay is paused. What you have already earned is kept."}</p>
+        <dl className="m9x-wifi-dl">
+          <div><dt>Owed to you</dt><dd className="m9x-wifi-v">{naira(w.owed)}</dd></div>
+          <div><dt>Earned in all</dt><dd>{naira(w.earned)} · {w.daysEarned === 1 ? "1 day" : w.daysEarned + " days"}</dd></div>
+          <div><dt>Paid to you</dt><dd>{naira(w.paid)}</dd></div>
+        </dl>
+        {w.days.length ? <ul className="m9x-vp-list" aria-label="Your days">
+          {w.days.slice(0, 30).map(x => <li key={x.day} className={"m9x-vp-day" + (x.status === "earned" ? "" : " is-out")}>
+            <span className="m9x-vp-when">{mp9Date(x.day)}</span>
+            <span className="m9x-vp-what">{x.status === "earned" ? naira(x.amount) + (x.paid ? " · paid" : "") : "Not paid: " + (x.override ? x.override.reason : x.reasonText.toLowerCase())}</span>
+          </li>)}
+        </ul> : <p className="m9x-wifi-note">No days yet. A day is counted once it is over.</p>}
       </>}
   </section>;
 }

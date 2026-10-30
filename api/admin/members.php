@@ -142,7 +142,7 @@ if ($method === 'POST') {
         // `method` says how it was obtained and is required by the domain layer.
         $res = gs_call('admin.members.consent', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '',
             'type' => $body['type'] ?? '', 'status' => $body['status'] ?? '', 'method' => $body['method'] ?? '',
-            'ip' => client_ip()]);
+            'guardianName' => $body['guardianName'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'paperConsents') {
         // Every permission, granted on the paper form, for imported members still missing one.
         $res = gs_call('admin.members.paperConsents', ['requesterId' => $s['mid'], 'apply' => !empty($body['apply']), 'ip' => client_ip()]);

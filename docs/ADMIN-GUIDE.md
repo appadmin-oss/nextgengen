@@ -411,7 +411,10 @@ one read, so moving between them costs nothing:
 - **Attendance**: the last 60 days, with lates (and by how many minutes) and
   the absences the nightly sweep recorded.
 - **Conduct**: their standing, lates, absences against the limit, fines owed,
-  infractions and sanctions.
+  infractions and sanctions. When a guardian has answered "why were they
+  away?" on WhatsApp, their answer is beside the absence — "Guardian says:
+  Sick (whatsapp)". It explains the absence; it does not remove it. Void the
+  absence yourself if the reason excuses it.
 - **Fees**: balance, payable now and recent ledger entries. Only for `fees`.
 - **Curriculum**: how far through their course they are, what is overdue and
   what comes next.
@@ -422,6 +425,8 @@ one read, so moving between them costs nothing:
 
 A tab you have no permission for says so. "Not part of your access" is not the
 same as an empty ledger, and the screen never shows one as the other.
+Setting **Suspended** or **Inactive**, or changing somebody's role, signs
+them out on every device at once. A suspended account cannot sign back in.
 
 ### Acting on one member
 
@@ -494,6 +499,38 @@ so "who suspended forty people on Tuesday" has a readable answer.
 **Members → Centres.** A centre is a place. Adding, editing and retiring one
 needs the *Members* (`people`) permission. **Add a centre** is at the top of
 the page.
+
+### Centres come from CACENTRE
+
+CACENTRE owns the buildings, so **CACENTRE's locations list is the one list of
+places** (CACENTRE → *Attendance → Desks and settings → Locations*). The
+CACENTRE gate sends that list to NGG whenever it changes, and NGG's centres
+follow it. You will see a note at the top of this page once the list has
+arrived, and a **From CACENTRE** chip on each centre that comes from it.
+
+| In CACENTRE you… | In NGG this happens |
+|---|---|
+| add a location | a centre is added, with a code made from its name (change the code here before any card is printed) |
+| rename a location | the same centre is renamed, and every member, participant, volunteer and other record that names it moves with it |
+| take a location off the list | the centre is retired here (never deleted) |
+| change a location's days, hours or terms | kept on the centre for reference; NGG's own attendance policy still decides lateness and NGG's days |
+
+What you can no longer do here, once the list has arrived: **add** a centre,
+**rename** a CACENTRE centre, change whether it is **open**, or **remove** it.
+The screen and the server both refuse (`managed_by_cacentre`) and say where to
+do it instead. Everything else is still NGG's: the **code**, the **colour**,
+the address and map, the lead, the contacts, the public page, and which
+programmes run there.
+
+A centre NGG already had is matched to its CACENTRE location by name (or a
+name the location had before), so its code, colour and every record keep
+working. A centre NGG has that CACENTRE does not shows **Not a CACENTRE
+location**: retire it here, or ask CACENTRE to add it.
+
+**Check-ins through the CACENTRE gate** now record which location the person
+came in at (the *centre* on the attendance record). The gate also judges
+lateness at the desk by **NGG's own policy** (resumption and grace from
+*Settings → Attendance*), so the desk shows what NGG records.
 
 **NGG centres and Summer School centres are separate records.** NGG is where a
 member belongs for years; Summer School is a season. In October 2026 the two
@@ -980,6 +1017,42 @@ reference or amount at verification. Every step is in the audit log.
 
 Bank details printed on the invoice are set from the **Bank** button on the
 same screen (a 10-digit account number).
+
+### Volunteer pay
+
+**Control Room → Money → Volunteer pay** (the Fees capability). An active NGG
+volunteer earns a fixed amount for each programme day they are present **and**
+active. Everything below is set on that tab.
+
+- **Amount per day** — what one day earns. Changing it never changes a day
+  already decided: each day keeps the amount of its own day.
+- **Counting from** — no day before this date is ever paid. Left empty, it is
+  the day pay is switched on, so switching on does not pay the whole history.
+- **Which days count** — programme days only (the volunteer's Club or Summer
+  School calendar), or any day they check in.
+- **Being active** — present is not enough when "Require activity" is on: at
+  least one chosen activity must be recorded that day: checked out at the end,
+  completed the attendance duty, earned volunteer points, or led a class session.
+- **When a day is excluded** — later than N minutes, past the red line, a half
+  day, no check-out, safeguarding not cleared. An excluded day is kept with its
+  reason, and the volunteer sees it.
+- **Pay period** — weekly, every two weeks or monthly, and the most days paid in
+  one period (0 = no limit; days over it are kept as excluded).
+
+A day is decided once it is over, by the hourly job or "Decide finished days
+now". Open a volunteer to see their days: exclude an earned day, or restore an
+excluded one, with the reason (never once paid). A period can be paid once it
+has ended: pay the volunteers outside the system first, then "Pay this period"
+records it with how and the reference (a bank transfer needs its reference). A
+payout recorded by mistake can be voided from the volunteer's wallet; its days
+are owed again. A volunteer who is also an NGG member sees their own pay on
+**Me** in the app.
+
+A volunteer who is also an Afrovanguard member sees the same pay on their
+Afrovanguard **Wallet**, beside (never inside) what they owe Afrovanguard.
+Afrovanguard asks NGG for it at `api/hooks/afrovanguard-pay.php`, signed with
+the secret the two sites already share (`afrovanguard.ngv_webhook_secret` here,
+`NGG_WEBHOOK_SECRET` there), and matches the volunteer by email.
 
 ### Promoting into the Club
 
@@ -3095,6 +3168,26 @@ Change, Test and Remove act on that one service.
   `AIza`. Both work. Leave the model blank: the key uses the newest Gemini
   model Google lets it use, and moves on by itself when one is retired.
 
+### Make.com
+
+Make.com is set up from **Settings → Integrations → Make.com**: work down the three numbered steps — signing key, Make's webhook
+(then **Send test**), scheduler addresses. Each key is shown once, on the
+panel, until you press **I've copied it**; afterwards only how it ends.
+The scenarios to build in Make are listed under the steps, each saying which
+step it still needs, with its build steps and an example to copy. Replacing a
+key stops the old one at once. **Turn off** refuses Make's calls and pauses its
+events; making a new signing key turns both back on. The scenarios themselves
+are in `docs/make.md`.
+
+Once it runs, three things show up in the Control Room:
+
+- guardians' answers about absences, beside each absence on the Conduct tab;
+- on the Behaviour monitor, who acknowledged a safeguarding flag, when, and
+  through what — the escalation stops as soon as somebody does, or as soon as
+  the log is marked reviewed here;
+- nothing else. Make never consents for a parent, never voids an absence and
+  never issues or lifts a sanction.
+
 The **Photo framing** keys (two Gemini keys: one measures every headshot, the
 other checks photos and backs it up) and the table of which provider answers
 each AI feature are on the same page.
@@ -3473,6 +3566,7 @@ their supporting role. The child sees "Also helping you: … · Coding".
 | A child cannot remember their sign-in question | Their second step | **Members › Sign-in security** → their row → *Let them in for 10 minutes*, or *Reset* |
 | "No phone on your record" at the card door | The volunteer record has no phone, so the card can never be checked | Use *Email me a sign-in code instead*, or add their phone |
 | A screen looks empty | Almost always a filter | **Clear all filters** |
+| "Guardian consent required" on **Promote to NGV** | The member is under 18, or has no date of birth on file. Promotion shares their details with Afrovanguard | Record the guardian's decision under **Publication consent → Share with NextGen Vanguard**, with the guardian's name and how it was given. Then promote |
 
 ---
 

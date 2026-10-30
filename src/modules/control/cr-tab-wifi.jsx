@@ -32,7 +32,9 @@ const CR_WF_ERR = {
   bad_centre: "Choose a centre that is in use.",
   bad_profile: "Check the speeds, devices and hours.",
   case_locked: "Suspended, evicted and inactive records are always off.",
-  too_many_resets: "That PIN has been changed three times today. Try again tomorrow.",
+  too_many_resets: "That password has been changed three times today. Try again tomorrow.",
+  weak_password: "That password won’t do: at least 8 characters, no spaces or semicolons, not the sign-in name.",
+  own_password: "Members set their own Wi-Fi password in the app. You can clear it so they choose a new one.",
   reason_required: "Say why, so the next person to look knows.",
   own_account: "Somebody else changes your own Wi-Fi.",
   no_printed_id: "They need a printed ID number first.",
@@ -128,28 +130,28 @@ function crWfEdit(ctx, d, g, centre) {
 /* Moving a router to CACENTRE, which runs the Wi-Fi (domain/wifi-cacentre.php).
    Shown only once NGG is connected: the steps, then one press here to say it
    is done. Marked moved, NGG stops watching it and its centre's members see
-   CACENTRE's PIN at once; "Back to NGG" undoes it with a full list. */
+   the password they set, kept by CACENTRE; "Back to NGG" undoes it with a full list. */
 function crWfCacMoveSteps(c, g) {
   if (!c || !c.configured || g.movedAt) return null;
   const code = (c.sites || {})[g.centre] || "";
   return { h: "Moving it to CACENTRE", rows: [
     ["1 · At CACENTRE", "Admin → Wi-Fi → Sites & routers. Add a site with the code " + (code ? "“" + code + "”" : "of this centre’s card code, in small letters") + " if it isn’t there, then Add a router for it."],
     ["2 · On this router", "Paste the one line CACENTRE shows. It removes NGG’s script and users and installs CACENTRE’s; nobody is cut off for more than a minute."],
-    ["3 · Here", "Press “It now runs from CACENTRE”. NGG stops watching it, and members at " + g.centre + " see CACENTRE’s PIN in the app at once."],
+    ["3 · Here", "Press “It now runs from CACENTRE”. NGG stops watching it, and members at " + g.centre + " use the password they set, now kept by CACENTRE."],
   ] };
 }
 function crWfCacMoveAct(ctx, c, g) {
   if (!c || !c.configured) return null;
   if (g.movedAt) return { l: "Back to NGG", run: async () => {
     const ok = await ctx.confirm({ title: "Put " + crWfName(g) + " back on NGG?", cta: "Back to NGG",
-      body: "Only if NGG’s setup is on the router again. NGG sends it a full list at its next fetch, and members at " + g.centre + " see NGG’s PIN again." });
+      body: "Only if NGG’s setup is on the router again. NGG sends it a full list at its next fetch, and members at " + g.centre + " sign in here again with the password they set." });
     if (!ok) return;
     try { await NGGApi.admin.wifi.gatewayMoved(g.gatewayId, true); ctx.toast(crWfName(g) + " is back on NGG."); ctx.closeDrawer(); ctx.reload(); }
     catch (e) { ctx.toast(crWfErr(e, "Couldn’t change it."), null, true); }
   } };
   return { l: "It now runs from CACENTRE", run: async () => {
     const ok = await ctx.confirm({ title: crWfName(g) + " runs from CACENTRE now?", cta: "It runs from CACENTRE",
-      body: "Press this once CACENTRE’s one line has been pasted on the router. NGG stops watching it, and members at " + g.centre + " see CACENTRE’s PIN in the app from now on. If NGG’s script is in fact still on it, it keeps its people and logs that it has moved." });
+      body: "Press this once CACENTRE’s one line has been pasted on the router. NGG stops watching it, and members at " + g.centre + " use the password they set, now kept by CACENTRE. If NGG’s script is in fact still on it, it keeps its people and logs that it has moved." });
     if (!ok) return;
     try { await NGGApi.admin.wifi.gatewayMoved(g.gatewayId, false); ctx.toast(crWfName(g) + " runs from CACENTRE now."); ctx.closeDrawer(); ctx.reload(); }
     catch (e) { ctx.toast(crWfErr(e, "Couldn’t change it."), null, true); }
@@ -301,19 +303,33 @@ function crWfSpeedTest(ctx, d) {
 /* ── Who gets on ──────────────────────────────────────────────────────────── */
 
 /* One person: what they have and why, and — for whoever owns their record —
-   a hand-set override with a reason, or a new PIN. */
+   a hand-set override with a reason, clearing their Wi-Fi password so they
+   choose a new one, or — for a Summer School participant, who may have no
+   app — setting one with them. Members set their own in the app. */
 function crWfPerson(ctx, x) {
+  /* From the lookup, a record owner first reads the person whole: where
+     CACENTRE runs the centre's Wi-Fi, that brings the starting password the
+     desk hands over at registration. */
+  if (x.canChange && x.cacentre === undefined && !x.read) {
+    return NGGApi.admin.wifi.member(x.subjectType, x.subjectId)
+      .then(r => crWfPerson(ctx, Object.assign({}, x, r.wifi, { pin: "", read: true })))
+      .catch(() => crWfPerson(ctx, Object.assign({}, x, { read: true })));
+  }
   const acc = CR_WF_ACCESS.find(a => a[0] === x.access) || [x.access, x.access];
   const ov = x.override;
   const act = async (op, extra, msg) => {
-    try { const r = await NGGApi.admin.wifi.memberSet(x.subjectType, x.subjectId, op, extra); ctx.toast(msg); crWfPerson(ctx, Object.assign({}, x, r.wifi, { pin: "" })); }
+    try { const r = await NGGApi.admin.wifi.memberSet(x.subjectType, x.subjectId, op, extra); ctx.toast(typeof msg === "function" ? msg(r.wifi || {}) : msg); crWfPerson(ctx, Object.assign({}, x, r.wifi, { pin: "", read: true })); }
     catch (e) { ctx.toast(crWfErr(e, "Couldn’t change it."), null, true); }
   };
+  const pwField = !x.cacentre ? ["Wi-Fi password", x.hasPassword ? "Set" + (x.pinSetAt ? " · " + crDate(x.pinSetAt, true) : "") : "Not set yet"]
+    : x.cacentreError ? ["Wi-Fi password", x.cacentreError === "not_listed" ? "Not on CACENTRE’s Wi-Fi list yet" : "CACENTRE couldn’t be reached just now"]
+    : x.startCode ? ["Starting password", x.startCode + " — give it to them in person"]
+    : ["Wi-Fi password", x.ownPassword ? "Their own" + (x.pinSetAt ? " · set " + crDate(x.pinSetAt, true) : "") : "Not set yet"];
   ctx.drawer({
     title: x.name, sub: (x.subjectType === "summer" ? "Summer School participant" : "Member") + " · " + (x.centre || "no centre"),
     stats: [["Wi-Fi", acc[1]], ["Sign-in name", x.username || "—"], ["Centre has Wi-Fi", x.centreHasWifi ? "Yes" : "Not yet"]],
     fields: [["Why", x.why || "—"], x.limits ? ["Speed", x.limits.down + " Mbit/s down · " + x.limits.up + " up · " + crPlural(x.limits.devices, "device") + (x.limits.hours ? " · " + x.limits.hours : "")] : null,
-      ["PIN last set", x.pinSetAt ? crDate(x.pinSetAt, true) : "—"], ov ? ["Set by hand", ov.access + " — “" + ov.why + "” · " + crDate(ov.at)] : null].filter(Boolean),
+      pwField, ov ? ["Set by hand", ov.access + " — “" + ov.why + "” · " + crDate(ov.at)] : null].filter(Boolean),
     sections: [
       { h: "Where this comes from", text: "Wi-Fi follows the record: status, conduct, role and — for Summer School — the edition’s dates. To change why somebody is off, change the record. A hand-set override is for the exceptions, and never undoes a suspension." },
       !x.canChange ? { h: "Changing it", text: "Changing somebody’s Wi-Fi is done by whoever looks after their record (" + (x.subjectType === "summer" ? "Summer School" : "People") + ")." } : null,
@@ -329,7 +345,21 @@ function crWfPerson(ctx, x) {
           done: (v, r) => { setTimeout(() => crWfPerson(ctx, Object.assign({}, x, r.wifi, { pin: "" })), 50); return "Saved · " + x.name; } });
       } },
       ov ? { l: "Clear the override", run: () => act("clear", null, "Override cleared · " + x.name) } : null,
-      x.access !== "off" ? { l: "Give them a new PIN", run: () => act("resetPin", null, "New PIN made. " + x.name + " sees it in the app under Me → Wi-Fi.") } : null,
+      x.cacentre && !x.cacentreError && x.access !== "off" ? { l: "New starting password", run: async () => {
+        const ok = await ctx.confirm({ title: "Make a new starting password for " + x.name + "?", body: "The one they have now stops working within a few minutes.", cta: "Make a new one", danger: true });
+        if (!ok) return;
+        act("clearPassword", null, w => w.startCode ? "New starting password for " + x.name + ": " + w.startCode : "Done · " + x.name);
+      } }
+      : !x.cacentre && x.hasPassword ? { l: "Clear their password", run: () => act("clearPassword", null, "Password cleared. " + x.name + " chooses a new one" + (x.subjectType === "summer" ? " with you." : " in the app under Me → Wi-Fi.")) } : null,
+      x.subjectType === "summer" && x.access !== "off" ? { l: x.hasPassword ? "Change their password…" : "Set their password…", run: () => {
+        ctx.closeDrawer();
+        ctx.form({ title: "Wi-Fi password for " + x.name, submit: "Save", busyLabel: "Saving…",
+          intro: "Type it with them, so only they know it. At least 8 characters, no spaces or semicolons. It is never shown again.",
+          values: { password: "" },
+          fields: [{ id: "password", l: "Password", type: "password", req: true, max: 64, check: w => String(w || "").length < 8 ? "Use at least 8 characters." : /[\s;]/.test(String(w)) ? "Leave out spaces and semicolons." : "" }],
+          onSubmit: async v => { try { return await NGGApi.admin.wifi.memberSet(x.subjectType, x.subjectId, "setPassword", { password: v.password }); } catch (e) { throw new Error(crWfErr(e, "Couldn’t save.")); } },
+          done: (v, r) => { setTimeout(() => crWfPerson(ctx, Object.assign({}, x, r.wifi, { pin: "" })), 50); return "Password set · " + x.name; } });
+      } } : null,
     ].filter(Boolean) : [],
   });
 }
@@ -337,7 +367,7 @@ function crWfPerson(ctx, x) {
 function crWfLookup(ctx) {
   ctx.form({
     title: "Why can’t somebody get on?", submit: "Look them up", busyLabel: "Looking…",
-    intro: "Their printed ID, record id or name. You see whether they have Wi-Fi, and why — never their PIN.",
+    intro: "Their printed ID, record id or name. You see whether they have Wi-Fi, and why — never their password.",
     values: { q: "" },
     fields: [{ id: "q", l: "Who", req: true, ph: "e.g. 026-014 or Ada", max: 60 }],
     onSubmit: async v => NGGApi.admin.wifi.lookup(String(v.q).trim()),
@@ -522,7 +552,7 @@ function crWfCacBlock(ctx, c) {
   if (!c) return null;
   const act = c.canSend && c.configured ? { l: "Send now", run: () => crWfCacPush(ctx) } : undefined;
   if (!c.configured) return { type: "note", span: 6, icon: "buildings", text: "CACENTRE runs the Wi-Fi for the estate. NGG isn’t sending its people there yet.",
-    sub: "It goes over the connection NGG already has with CACENTRE for the person directory, which isn’t set up here: DIR_PUSH_SECRET_NGG (api/config.php → dir_push_secret), the same value at CACENTRE. Until then the gateways and members’ PINs stay NGG’s." };
+    sub: "It goes over the connection NGG already has with CACENTRE for the person directory, which isn’t set up here: DIR_PUSH_SECRET_NGG (api/config.php → dir_push_secret), the same value at CACENTRE. Until then the gateways and members’ Wi-Fi passwords stay NGG’s." };
   const L = c.last;
   if (!L) return { type: "note", span: 6, icon: "buildings", text: "CACENTRE runs the Wi-Fi. NGG’s people are sent there every " + Math.round(c.every / 60) + " minutes; nothing has been sent yet.", act };
   const unknown = Object.keys(L.unknownSites || {});
@@ -530,7 +560,7 @@ function crWfCacBlock(ctx, c) {
   return { type: "note", span: 6, icon: "buildings", tone: L.refused || unknown.length ? "warn" : "ok",
     text: "CACENTRE runs the Wi-Fi. Sent " + crAgo(L.at) + ": " + crNum(L.sent) + " people with NGG’s say about each" + (L.gone ? ", " + crNum(L.gone) + " no longer on NGG’s list withdrawn" : "") + (L.refused ? "; " + crNum(L.refused) + " refused (" + (L.refusals || []).slice(0, 3).map(x => x.id + ": " + x.error).join(", ") + ")" : "") + ".",
     sub: (unknown.length ? "CACENTRE has no site for " + unknown.map(k => k.toUpperCase() + " (" + crNum(L.unknownSites[k]) + ")").join(", ") + ": add each there with the centre’s card code; until then those people sign in at the hubs only. " : "")
-      + (L.full ? "" : "The list was sent in parts, so nobody was withdrawn. ") + "Suspensions, overrides and the access table here become NGG’s say; CACENTRE never gives more than NGG does. Members still see their PIN under Me → Wi-Fi, fetched from CACENTRE once their centre’s router has moved.", act };
+      + (L.full ? "" : "The list was sent in parts, so nobody was withdrawn. ") + "Suspensions, overrides and the access table here become NGG’s say; CACENTRE never gives more than NGG does. Members still set their password under Me → Wi-Fi, kept by CACENTRE once their centre’s router has moved.", act };
 }
 
 Object.assign(CR_TAB_DEFS, {
@@ -731,7 +761,7 @@ Object.assign(CR_TAB_DEFS, {
     blocks: (d, ctx) => {
       crWfCtx.current = ctx;
       return [
-        { type: "note", span: 6, icon: "lock-key", text: "Members sign in with their printed ID and a 6-digit Wi-Fi PIN, which they see in the app under Me → Wi-Fi and can change three times a day. The PIN is only for the Wi-Fi.",
+        { type: "note", span: 6, icon: "lock-key", text: "Members sign in with their printed ID and a Wi-Fi password they choose in the app under Me → Wi-Fi, which opens on the centre’s Wi-Fi before they sign in. They can change it three times a day; nobody else ever sees it.",
           sub: "Somebody can’t get on? Look them up: it says whether they are on the list and why." },
         d.forms.access,
         d.forms.speeds,

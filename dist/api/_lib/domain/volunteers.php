@@ -179,6 +179,7 @@ function volunteer_public(array $v, bool $withAttendance = false): array {
         'photoUrl' => (string)($v['photoUrl'] ?? ''),
         'status' => $v['status'],
         'safeguardingCleared' => (string)($v['safeguarding'] ?? 'pending') === 'cleared',
+        'programme' => volunteer_programme($v),
     ];
     if ($withAttendance) {
         $rows = db_all('SELECT date, checkInAt, method FROM attendance WHERE studentId = ? ORDER BY date DESC LIMIT 60', [$v['volunteerId']]);
@@ -634,7 +635,7 @@ function admin_volunteers_list(array $p): array {
     unset($a);
     /* photoUrl is on the row because the editor shows it: without it the
        photo read as empty, and a save wrote that empty back over the picture. */
-    $roster = db_all("SELECT volunteerId, memberId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, visibilityConsent, token, status, safeguarding, capsExtra, dob, photoUrl, honorific, academyClearedAt, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
+    $roster = db_all("SELECT volunteerId, memberId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, programmeAt, visibilityConsent, token, status, safeguarding, capsExtra, dob, photoUrl, honorific, academyClearedAt, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
     // Who is ALSO on the mentor roster, in one read: an instructor can mentor too.
     $mentorOf = [];
     foreach (db_all("SELECT mentorId, memberId, volunteerId, lower(email) e FROM mentors WHERE status = 'active'") as $r)
@@ -658,6 +659,40 @@ function admin_volunteers_list(array $p): array {
     }
     return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster, 'programmes' => VOL_PROGRAMMES, 'scoped' => $scope !== null,
         'titles' => STAFF_HONORIFICS, 'titleDefault' => STAFF_HONORIFIC_DEFAULT];
+}
+
+/**
+ * Move a volunteer between programmes — chiefly a Summer volunteer promoted to
+ * an NGG volunteer. Audited; the volunteer is told by email on a promotion
+ * unless the admin unticks it. Moving back to Summer is allowed (a mistake
+ * undone) and says nothing to the volunteer.
+ */
+function admin_volunteer_programme_set(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $volunteerId = (string)($p['volunteerId'] ?? '');
+    $to = (string)($p['programme'] ?? '');
+    if (!in_array($to, VOL_PROGRAMMES, true)) return ['ok' => false, 'error' => 'bad_programme'];
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    $from = volunteer_programme($v);
+    if ($from === $to) return ['ok' => true, 'already' => true, 'volunteerId' => $volunteerId, 'programme' => $to];
+    db_update('volunteers', ['programme' => $to, 'programmeAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => (int)$v['id']]);
+    $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 500);
+    audit('volunteer.programme', $g['requester']['memberId'], $volunteerId, ['from' => $from, 'to' => $to, 'note' => $note], (string)($p['ip'] ?? ''));
+    $emailed = false;
+    $email = trim((string)($v['email'] ?? ''));
+    if ($from === 'summer' && $to !== 'summer' && ($p['notify'] ?? true) !== false && $email !== '' && function_exists('intake_acknowledge')) {
+        $first = (string)($v['firstName'] ?? '') ?: (explode(' ', (string)$v['fullName'])[0] ?: 'there');
+        intake_acknowledge($email, 'You are now an NGG volunteer — Next Generation Genius', [
+            'title' => 'Welcome to NGG',
+            'intro' => 'Congratulations, ' . $first . '.',
+            'bodyHtml' => '<p style="margin:0 0 12px">Your service with the Summer School has carried you forward: you now volunteer with <b>Next Generation Genius</b> itself, through the year.</p>'
+                . '<p style="margin:0">Your volunteer ID (' . esc_html($volunteerId) . ') stays the same, and so does your record of hours.</p>',
+            'footNote' => 'Volunteer ' . $volunteerId . ' — promoted from the Summer School.',
+        ]);
+        $emailed = true;
+    }
+    return ['ok' => true, 'volunteerId' => $volunteerId, 'programme' => $to, 'from' => $from, 'emailed' => $emailed];
 }
 
 /** Edit an active volunteer's data — name, contact, role, centre, faculty,
@@ -894,6 +929,7 @@ function admin_volunteer_approve(array $p): array {
         'centre' => (string)($a['centre'] ?? ''), 'faculty' => (string)($a['faculty'] ?? ''),
         'visibilityConsent' => (int)($a['visibilityConsent'] ?? 0), 'programme' => volunteer_programme($a),
         'token' => $token, 'photoUrl' => (string)($a['photoUrl'] ?? ''),
+        'programmeAt' => now_iso(),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
     db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned', 'studentId' => $volunteerId, 'assignedName' => (string)$a['name'], 'createdAt' => now_iso(), 'assignedAt' => now_iso(), 'expiresAt' => volunteer_card_expiry(volunteer_programme($a), (string)$c['cohortId'])]);
@@ -934,6 +970,16 @@ function admin_member_promote_ngv(array $p): array {
     if (!$sg['ok']) return $sg;
     $m = $sg['member'];
     if ((string)($m['type'] ?? '') !== 'NGG') return ['ok' => false, 'error' => 'not_ngg'];
+    /* Promotion hands the child's details to Afrovanguard (ngv-portal.php), so
+       a minor — or anybody whose age we cannot tell — needs their guardian's
+       recorded consent first. Checked before the re-press branch too: that
+       path re-sends the same details. */
+    $gc = ngv_guardian_consent($m);
+    if ($gc['minor'] && $gc['guardianConsent']['status'] !== 'granted') {
+        return ['ok' => false, 'error' => 'guardian_consent_required',
+                'detail' => 'Under 18 (or no date of birth on file): record the guardian\'s consent to "' . MEMBER_CONSENT_TYPES[NGV_TRANSFER_CONSENT]['label']
+                          . '" under Publication consent on this member, then promote.'];
+    }
 
     // Already promoted? Keep the one record — re-activate + re-link, never mint
     // a second volunteer row for the same person.
@@ -944,6 +990,9 @@ function admin_member_promote_ngv(array $p): array {
     if ($existing) {
         if ((string)$existing['status'] !== 'active') db_update('volunteers', ['status' => 'active', 'updatedAt' => now_iso()], ['id' => (int)$existing['id']]);
         if ((string)($existing['memberId'] ?? '') === '') db_update('volunteers', ['memberId' => $memberId, 'updatedAt' => now_iso()], ['id' => (int)$existing['id']]);
+        // An NGG member made a volunteer serves NGG, whatever brought them in
+        // first; somebody who already serves both keeps serving both.
+        if (!in_array((string)($existing['programme'] ?? ''), ['ngg', 'both'], true)) db_update('volunteers', ['programme' => 'ngg', 'programmeAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => (int)$existing['id']]);
         db_update('members', ['ngvVolunteerId' => (string)$existing['volunteerId'], 'ngvAt' => (string)($m['ngvAt'] ?? '') ?: now_iso(), 'updatedAt' => now_iso()], ['memberId' => $memberId]);
         $resent = !empty($p['sendId']) ? volunteer_send_id((string)$existing['volunteerId']) : null;
         /* Re-promoted, or a card resent: make sure the NGV account exists too
@@ -982,6 +1031,7 @@ function admin_member_promote_ngv(array $p): array {
         'fullName' => (string)$m['fullName'], 'email' => strtolower(trim((string)($m['email'] ?? ''))), 'phone' => (string)($m['phone'] ?? ''),
         'role' => $role, 'courses' => volunteer_promote_courses($m, $p), 'centre' => (string)($m['centre'] ?? ''), 'faculty' => '', 'programme' => 'ngg',
         'token' => $token, 'photoUrl' => (string)($m['photoUrl'] ?? ''),
+        'programmeAt' => now_iso(),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
     db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned',
@@ -1045,7 +1095,7 @@ function admin_member_demote_ngv(array $p): array {
     event_emit('member.demoted.ngv', ['memberId' => $memberId, 'volunteerId' => $doneVid]);
     /* And Afrovanguard, where they are a participant with a card: told, so
        they stop being one there too (domain/ngv-portal.php). */
-    $portal = function_exists('ngv_portal_revoke') ? ngv_portal_revoke($memberId) : ['status' => 'not_configured'];
+    $portal = function_exists('ngv_portal_revoke') ? ngv_portal_revoke($memberId, $doneVid, 'demoted') : ['status' => 'not_configured'];
     return ['ok' => true, 'demoted' => true, 'volunteerId' => $doneVid, 'ngvPortal' => $portal['status']];
 }
 

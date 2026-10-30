@@ -7,8 +7,8 @@
  *   0 2 * * * php /home/USER/public_html/api/tools/run-jobs.php >/dev/null 2>&1
  *
  * Jobs: publish scheduled posts, expire promos, GC expired auth challenges,
- * ensure the current year's sessions exist, trim the audit log, and (if a
- * Sheets mirror is configured) push a fresh snapshot.
+ * ensure the current year's sessions exist, prune old sign-in noise from the
+ * audit log, and (if a Sheets mirror is configured) push a fresh snapshot.
  */
 declare(strict_types=1);
 
@@ -42,11 +42,9 @@ $log['auth_gc'] = db_exec('DELETE FROM auth_sessions WHERE expiresAt < ?', [$cut
 // 4) Recompute session activeness / seed the current year.
 $log['sessions_seeded'] = ensure_year((int)gmdate('Y'));
 
-// 5) Trim the audit log to the last 5000 rows.
-$maxId = (int)(db_row('SELECT MAX(id) m FROM audit_log')['m'] ?? 0);
-if ($maxId > 5000) {
-    $log['audit_trimmed'] = db_exec('DELETE FROM audit_log WHERE id <= ?', [$maxId - 5000]);
-}
+// 5) Drop sign-in noise older than its retention age; everything else is kept
+//    (the rule lives in one place: AUDIT_NOISE_EVENTS in _lib/util.php).
+$log['audit_trimmed'] = audit_prune();
 
 // 6) Roll any desk password that has reached its rotation interval.
 require_once $root . '/_lib/mailer.php';
@@ -58,6 +56,12 @@ require_once $root . '/_lib/domain/summer.php';
 require_once $root . '/_lib/domain/policy.php';
 $log['policy_sweep'] = policy_sweep_absences();
 $log['policy_sweep_member'] = policy_sweep_member_absences();
+// 7a) Ask guardians about those absences; announce Summer School dates (domain/make.php).
+require_once $root . '/_lib/bus.php';
+require_once $root . '/_lib/sms.php';
+require_once $root . '/_lib/domain/make.php';
+$log['make_absences'] = make_absences_run();
+$log['make_milestones'] = make_edition_milestones_run();
 
 // 7b) Close any Summer School edition whose season has ended.
 require_once $root . '/_lib/domain/summer-editions.php';

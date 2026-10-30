@@ -24,7 +24,8 @@
  * one twice in a minute costs a no-op, not a double charge.
  *
  * ── Access ───────────────────────────────────────────────────────────────────
- * Set $CONFIG['cron_key'] to a long random string. With it unset this endpoint
+ * Make the key in Control Room → Settings → Integrations → Make.com (or set
+ * $CONFIG['cron_key'] to a long random string). With none this endpoint
  * is OFF and answers 404 — indistinguishable from not being deployed, because a
  * 403 tells a scanner the door exists. The key is compared with hash_equals and
  * the endpoint is rate-limited, so guessing it is not cheaper than guessing a
@@ -41,7 +42,7 @@ require_once __DIR__ . '/../_lib/bootstrap.php';
 
 header('Cache-Control: no-store');
 
-$configured = trim((string)($CONFIG['cron_key'] ?? ''));
+$configured = cron_key_effective();   // made on screen (Settings → Integrations → Make.com), or config.php
 $given = (string)($_GET['key'] ?? ($_SERVER['HTTP_X_NGG_CRON_KEY'] ?? ''));
 
 /* Unset means not deployed, as far as the outside world is concerned. */

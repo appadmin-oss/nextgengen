@@ -406,7 +406,7 @@ function remark_add(array $p): array {
      * raising it — and a second event name would need every integration
      * reconfigured before anyone saw one. */
     if ($safeguarding) {
-        event_emit('behaviour.flagged', [
+        behaviour_flag_emit([
             'ref' => $id, 'subject' => (string)$s['fullName'], 'subjectId' => (string)$s['studentId'],
             'category' => (string)$cls['category'], 'severity' => (string)$cls['severity'],
             'by' => (string)($g['mentor']['fullName'] ?? $me['fullName'] ?? ''),

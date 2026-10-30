@@ -82,6 +82,7 @@ const CR_PAGES = {
   money: { label: "Money", icon: "wallet", tabs: [
     { id: "membership", label: "Membership payments", desc: "Joining invoices: Paystack, and offline payments a second person checks against their evidence.", cap: "fees" },
     { id: "fees", label: "Dues & arrears", desc: "Every naira owed, paid and waived, with the reason kept on the account.", cap: "fees" },
+    { id: "volpay", label: "Volunteer pay", desc: "What active volunteers earn for each programme day they are present and active, the rules that decide it, and paying each period.", cap: "fees" },
     { id: "conduct", label: "Conduct & fines", desc: "The fine rules, uploading fines, the compliance board, the policy and the programme calendars.", cap: ["fees", "people", "summer"] },
     { id: "donations", label: "Donations", desc: "Gifts received through Paystack and bank transfer.", cap: "settings" },
   ] },
