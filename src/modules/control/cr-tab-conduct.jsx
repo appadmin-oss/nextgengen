@@ -572,20 +572,25 @@ function crCfHeld(ctx, h) {
       crCfRefresh(ctx);
     } catch (e) { ctx.toast(crCfIntegErr(e, "Couldn’t decide that day."), null, true); }
   };
-  const open = h.status === "held";
+  const open = h.status === "held", out = h.cause === "checkout", where = h.centre || "this centre";
   ctx.drawer({
     title: crCfDay(h.date) + " · " + (h.centre || "No centre"), name: h.centre || "Held day",
-    sub: (CR_CF_PTYPE[h.personType] || h.personType) + " · " + (open ? "Held — nobody marked absent" : h.status === "counted" ? "Counted" : "Closed"),
-    stats: [["Expected", crNum(h.expected)], ["Checked in", crNum(h.present)], ["Logged", open ? "—" : crNum(h.logged)]],
+    sub: (CR_CF_PTYPE[h.personType] || h.personType) + " · " + (open ? (out ? "Sign-outs held — nobody marked absent" : "Held — nobody marked absent") : h.status === "counted" ? "Counted" : "Closed"),
+    stats: out ? [["Signed in", crNum(h.expected)], ["Signed out", crNum(h.present)], ["Logged", open ? "—" : crNum(h.logged)]]
+      : [["Expected", crNum(h.expected)], ["Checked in", crNum(h.present)], ["Logged", open ? "—" : crNum(h.logged)]],
     sections: [
-      { h: "Why it was held", text: h.why || "No check-ins arrived from this centre." },
-      { h: "What to decide", text: open ? "If the centre did not meet, or the check-ins were lost on the way, say so and nobody is marked absent. If it met and these people really were not there, count it: the absences are logged now, under your name, and the usual consequences follow."
-        : "Decided " + crCfDay(h.decidedAt) + "." },
+      { h: "Why it was held", text: h.why || (out ? "No sign-outs arrived from this centre." : "No check-ins arrived from this centre.") },
+      { h: "What to decide", text: !open ? "Decided " + crCfDay(h.decidedAt) + "."
+        : out ? "People came, and not one sign-out reached NGG — almost always the sign-outs not being sent, not a whole centre walking out. If they left properly, say so and nobody is marked absent. If they really left without signing out, count it: each is logged an incomplete day, under your name, and the usual consequences follow. A sign-out that arrives later still clears it."
+        : "If the centre did not meet, or the check-ins were lost on the way, say so and nobody is marked absent. If it met and these people really were not there, count it: the absences are logged now, under your name, and the usual consequences follow." },
     ],
-    actions: open ? [
-      { l: "Nobody is absent — it didn’t meet, or the check-ins were lost", run: decide("closed", "Mark nobody absent for " + crCfDay(h.date) + "?", "The day is closed for " + (h.centre || "this centre") + ". It is never counted later.", "Nobody is absent") },
-      { l: "It met — count the absences", run: decide("count", "Count " + crCfDay(h.date) + " at " + (h.centre || "this centre") + "?", "Everyone expected who has no check-in for that day is logged absent, under your name, and the thresholds re-checked — warnings, the Dormant Track and absence fines follow.", "Count the absences") },
-    ] : [],
+    actions: !open ? [] : out ? [
+      { l: "Nobody is absent — the sign-outs were lost", run: decide("closed", "Mark nobody absent for " + crCfDay(h.date) + "?", "Nobody at " + where + " is counted for a missing sign-out that day. It is never counted later.", "Nobody is absent") },
+      { l: "They left without signing out — count it", run: decide("count", "Count the missing sign-outs at " + where + "?", "Everyone who signed in that day and has no sign-out is logged an incomplete day, under your name, and the thresholds re-checked — warnings, the Dormant Track and absence fines follow.", "Count them") },
+    ] : [
+      { l: "Nobody is absent — it didn’t meet, or the check-ins were lost", run: decide("closed", "Mark nobody absent for " + crCfDay(h.date) + "?", "The day is closed for " + where + ". It is never counted later.", "Nobody is absent") },
+      { l: "It met — count the absences", run: decide("count", "Count " + crCfDay(h.date) + " at " + where + "?", "Everyone expected who has no check-in for that day is logged absent, under your name, and the thresholds re-checked — warnings, the Dormant Track and absence fines follow.", "Count the absences") },
+    ],
   });
 }
 function crCfUnmatched(ctx, u) {
@@ -624,9 +629,9 @@ function crCfIntegrityBlocks(d, ctx) {
   out.push.apply(out, crCfRepairBlocks(d, ctx));
   if (held.length) out.push({ type: "note", span: 6, icon: "hand-palm", tone: "warn",
     text: crPlural(held.length, "day") + " held — nobody was marked absent",
-    sub: "No check-ins arrived from these centres, so the nightly check did not call everybody absent. Open each and say what the day was." });
+    sub: "No check-ins, or no sign-outs, arrived from these centres, so the nightly check did not call everybody absent. Open each and say what the day was." });
   if (held.length) out.push({ type: "list", span: 6, title: "Held days", rows: held.map(h => ({ icon: "hand-palm", onClick: () => crCfHeld(ctx, h),
-    t: crCfDay(h.date) + " · " + (h.centre || "No centre"), s: (CR_CF_PTYPE[h.personType] || h.personType) + " · " + crNum(h.present) + " of " + crNum(h.expected) + " checked in", m: "Decide" })) });
+    t: crCfDay(h.date) + " · " + (h.centre || "No centre"), s: (CR_CF_PTYPE[h.personType] || h.personType) + " · " + (h.cause === "checkout" ? crNum(h.present) + " of " + crNum(h.expected) + " who came signed out" : crNum(h.present) + " of " + crNum(h.expected) + " checked in"), m: "Decide" })) });
   if (unm.length) out.push({ type: "list", span: 6, title: "Check-ins that named nobody (" + crNum(unm.length) + ")",
     rows: unm.slice(0, 60).map(u => ({ icon: "question", onClick: () => crCfUnmatched(ctx, u),
       t: (u.name || u.ref || u.value || "Card code") + " · " + crCfDay(u.date), s: ["Sent as " + (u.ref || u.value || "a card code"), u.centre, u.source].filter(Boolean).join(" · "), m: "Match" })),
@@ -646,13 +651,13 @@ function crCfRepairForm(ctx) {
   const iso = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? "" : "Choose a date.";
   ctx.form({
     title: "Repair absences", submit: "Preview", busyLabel: "Working it out…",
-    intro: "For a period when check-ins were not reaching NGG. Only absences the nightly check logged are touched — never one a person logged — and with them the warnings, Dormant Track, proposed evictions and absence fines they caused. Imported fines and dues are not touched. You see everything first.",
+    intro: "For a period when check-ins or sign-outs were not reaching NGG. Only absences the nightly check logged are touched — never one a person logged — and with them the warnings, Dormant Track, proposed evictions and absence fines they caused. Imported fines and dues are not touched. You see everything first.",
     values: { from: P ? P.from : crCfIsoDay(-30), to: P ? P.to : crCfIsoDay(-1), mode: P ? P.mode : "outage", types: P ? P.types : types.map(t => t[0]), centre: P ? P.centre : "" },
     fields: [
       { id: "from", l: "From", type: "date", req: true, check: iso },
       { id: "to", l: "To", type: "date", req: true, check: (v, vals) => iso(v) || (vals && vals.from && v < vals.from ? "The end comes after the start." : "") },
-      { id: "mode", l: "Which days", type: "chips", req: true, opts: [["outage", "Only centre-days where check-ins clearly didn’t arrive"], ["all", "Every absence the check logged"]],
-        help: "“Clearly didn’t arrive” is a centre-day where fewer than one in five of the people expected checked in." },
+      { id: "mode", l: "Which days", type: "chips", req: true, opts: [["outage", "Only centre-days where check-ins or sign-outs clearly didn’t arrive"], ["all", "Every absence the check logged"]],
+        help: "“Clearly didn’t arrive”: fewer than one in five of the people expected checked in — or, for a missing sign-out, fewer than one in five of those who came have a sign-out." },
       { id: "types", l: "Who", type: "multi", req: true, opts: types, check: v => (v || []).length ? "" : "Choose at least one." },
       { id: "centre", l: "One centre only", max: 80, ph: "Leave empty for every centre you look after" },
     ],
@@ -661,12 +666,12 @@ function crCfRepairForm(ctx) {
       try { const r = await NGGApi.admin.policy.repair(opts); ctx.setData(x => Object.assign({}, x, { repairPlan: Object.assign({}, r, opts) })); return r; }
       catch (e) { const c = e && ((e.data && e.data.error) || e.code); if (c === "bad_dates") return { fieldErrors: { to: crCfIntegErr(e) } }; throw Object.assign(new Error(c || "failed"), { data: { message: crCfIntegErr(e, "Couldn’t work that out.") } }); }
     },
-    done: (v, r) => r.infractions ? crPlural(r.infractions, "absence") + " across " + crPlural(r.people, "person", "people") + " would be undone." : "Nothing the check logged matches that.",
+    done: (v, r) => r.infractions ? crPlural(r.absences, "absence") + " across " + crPlural(r.people, "person", "people") + " would be undone." : "Nothing the check logged matches that.",
   });
 }
 function crCfRepairRun(ctx) {
   const P = ctx.data.repairPlan; if (!P || !P.infractions) return;
-  const n = P.infractions, ppl = P.people;   // read before the form: what is agreed is what runs
+  const n = P.absences, ppl = P.people;   // read before the form: what is agreed is what runs
   ctx.form({
     title: "Undo " + crPlural(n, "absence") + " for " + crPlural(ppl, "person", "people"), submit: "Undo them", busyLabel: "Repairing…",
     intro: "Each absence is voided with your reason, and each person’s standing is worked out again: what no longer holds is lifted, and its absence fine taken off their account (a paid one becomes credit). Imported fines and dues stay exactly as they are. This is recorded in the audit log.",
@@ -679,36 +684,37 @@ function crCfRepairRun(ctx) {
     },
     done: (v, r) => {
       ctx.setData(x => Object.assign({}, x, { repairPlan: null, repairDone: r })); crCfRefresh(ctx);
-      return crPlural(r.voided, "absence") + " undone · " + crPlural(r.lifted, "consequence") + " lifted" + (r.stillDormant ? " · " + crNum(r.stillDormant) + " still Dormant on other entries" : "") + ".";
+      return crPlural(r.absences, "absence") + " undone · " + crPlural(r.lifted, "consequence") + " lifted" + (r.stillDormant ? " · " + crNum(r.stillDormant) + " still Dormant on other entries" : "") + ".";
     },
   });
 }
 function crCfRepairBlocks(d, ctx) {
   const P = d.repairPlan, done = d.repairDone, out = [];
   if (done && !P) out.push({ type: "note", span: 6, icon: "check-circle", tone: "ok",
-    text: crPlural(done.voided, "absence") + " undone for " + crPlural(done.people, "person", "people") + " · " + crPlural(done.lifted, "consequence") + " lifted.",
+    text: crPlural(done.absences, "absence") + " undone for " + crPlural(done.people, "person", "people") + " · " + crPlural(done.lifted, "consequence") + " lifted.",
     sub: (done.stillDormant ? crNum(done.stillDormant) + " are still on the Dormant Track because of other entries — open them below. " : "Nobody is left Dormant by those days. ")
       + (done.importedUntouched ? crPlural(done.importedUntouched, "imported fine or due", "imported fines and dues") + " were left exactly as they were." : "No imported fines or dues were involved."),
     act: { l: "Done", run: () => ctx.setData(x => Object.assign({}, x, { repairDone: null })) } });
   if (!P) return out;
   const chosen = (P.groups || []).filter(g => P.mode === "all" || g.outage);
   out.push({ type: "note", span: 6, icon: P.infractions ? "first-aid-kit" : "info", tone: P.infractions ? "warn" : null,
-    text: P.infractions ? crPlural(P.infractions, "absence") + " the check logged, across " + crPlural(P.people, "person", "people") + " — " + crPlural(P.chosenGroups, "centre-day") + ", " + crCfDay(P.from) + " to " + crCfDay(P.to) + "."
+    text: P.infractions ? crPlural(P.absences, "absence") + (P.noSignOut ? " and " + crPlural(P.noSignOut, "missing sign-out") : "") + " the check logged, across " + crPlural(P.people, "person", "people") + " — " + crPlural(P.chosenGroups, "centre-day") + ", " + crCfDay(P.from) + " to " + crCfDay(P.to) + "."
       : "No absences the check logged match this period" + (P.mode === "outage" ? " where check-ins clearly didn’t arrive" : "") + ".",
     sub: P.infractions ? [crPlural(P.sanctionedNow, "person is", "people are") + " warned, Dormant or proposed for eviction now",
       P.absenceFines ? crPlural(P.absenceFines, "absence fine") + " (" + fmtMoney(P.absenceFineTotal) + (P.absenceFinesPaid ? ", " + crNum(P.absenceFinesPaid) + " already paid — those become credit" : "") + ") lifted with them" : "no absence fines on those days",
       P.importedUntouched ? crPlural(P.importedUntouched, "imported fine or due", "imported fines and dues") + " on their accounts stay exactly as they are" : "no imported fines or dues on their accounts",
       P.outOfScope ? crNum(P.outOfScope) + " outside your centres are left for whoever looks after them" : ""].filter(Boolean).join(" · ") + "."
-      : P.mode === "outage" && P.groupCount ? crPlural(P.groupCount, "centre-day") + " had absences, but enough people checked in that it looks real. Choose “Every absence the check logged” to include them." : "Nothing to repair.",
+      : P.mode === "outage" && P.groupCount ? crPlural(P.groupCount, "centre-day") + " had absences, but enough check-ins and sign-outs arrived that it looks real. Choose “Every absence the check logged” to include them." : "Nothing to repair.",
     act: P.infractions ? { l: "Undo these absences…", run: () => crCfRepairRun(ctx) } : { l: "Change the period", run: () => crCfRepairForm(ctx) } });
   if ((P.groups || []).length) out.push({ type: "table", span: 6, title: "Centre-days in the period", nosel: true, search: "Search by centre",
     sub: P.mode === "outage" ? "Only the rows marked “Feed failed” are undone." : "Every row is undone.",
-    cols: ["Day", "Centre", "Who", { l: "Checked in", num: true }, { l: "Marked absent", num: true }, "Reading"],
-    rows: P.groups.map(g => ({ key: g.date + g.centre + g.personType, cells: [
+    cols: ["Day", "Centre", "Who", "Missing", { l: "Checked in", num: true }, { l: "Signed out", num: true }, { l: "Marked absent", num: true }, "Reading"],
+    rows: P.groups.map(g => ({ key: g.date + g.centre + g.personType + g.cause, cells: [
       { k: "text", t: crCfDay(g.date) }, { k: "text", t: g.centre || "—" }, { k: "text", t: CR_CF_PTYPE[g.personType] || g.personType },
-      { k: "num", t: crNum(g.checkins), v: g.checkins }, { k: "num", t: crNum(g.people), v: g.people },
+      { k: "text", t: g.cause === "checkout" ? "Sign-out" : "Check-in" },
+      { k: "num", t: crNum(g.checkins), v: g.checkins }, { k: "num", t: crNum(g.checkouts || 0), v: g.checkouts || 0 }, { k: "num", t: crNum(g.people), v: g.people },
       { k: "status", t: g.outage ? "Feed failed" : "Looks real", tone: g.outage ? "warn" : "neutral", s: P.mode === "all" || g.outage ? "undone" : "kept" }] })),
-    filters: ["Reading", "Who"] });
+    filters: ["Reading", "Missing", "Who"] });
   out.push({ type: "list", span: 6, rows: [{ icon: "x", onClick: () => ctx.setData(x => Object.assign({}, x, { repairPlan: null })), t: "Close the preview", s: "Nothing has changed." }] });
   return out;
 }
@@ -743,8 +749,8 @@ function crCfPolicyForm(pol, ctx) {
     { h: "Enforcement", help: "The Institutional Policy & Operational Blueprint, applied automatically: absences logged for closed programme days, lateness measured against the time below, and warnings, dormancy, suspension, fines and eviction issued by the thresholds. A suspended or evicted person is refused at the scanner.", rows: [
       { id: "enabled", l: "Enforce for Summer School", c: "toggle", value: !!P.enabled, help: "Participants, volunteers, mentors and instructors." },
       { id: "member.enabled", l: "Enforce for NGG members", c: "toggle", value: !!g(P.member, "enabled", false), help: "A separate switch, on the member calendar." },
-      { id: "outageBrake", l: "Hold a day when check-ins did not arrive", c: "toggle", value: P.outageBrake !== false,
-        help: "A centre where nobody checked in (three or more expected), or a day when fewer than one in ten checked in anywhere, is held for a person to decide instead of marking everybody absent. Leave it on." },
+      { id: "outageBrake", l: "Hold a day when check-ins or sign-outs did not arrive", c: "toggle", value: P.outageBrake !== false,
+        help: "A centre where nobody checked in (three or more expected) — or where people signed in and not one sign-out arrived — or a day when almost nobody did either anywhere, is held for a person to decide instead of marking everybody absent. Leave it on." },
       { id: "checkoutRequired", l: "Summer: a day with no scan out is an absence", c: "toggle", value: !!P.checkoutRequired },
       { id: "musing.enabled", l: "Missing the Musing Period makes it a half-day", c: "toggle", value: !!g(P.musing, "enabled", false) },
       { id: "musing.endsAt", l: "Musing Period ends", c: "input", type: "time", value: g(P.musing, "endsAt", "") },

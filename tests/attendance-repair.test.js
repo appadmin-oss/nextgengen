@@ -99,6 +99,9 @@ async function pageFor(memberId, viewport) {
       + `policy_settings_save(['enabled'=>true,'autoEnforce'=>true,'outageBrake'=>true,'member'=>['enabled'=>true,'absenceLimit'=>2,'absenceFine'=>1000,'checkoutRequired'=>false]], 'NGG-AR-ADM');`
       // The weeks CACENTRE's check-ins were not read: every Ikotun member marked absent on two days.
       + `foreach (['NGG-AR-1','NGG-AR-2','NGG-AR-3','NGG-AR-4'] as $id) { foreach ([$d(10), $d(9)] as $day) policy_log($id, 'member', 'absence', $day, 'No check-in on a member programme day.'); policy_apply($id, 'member'); }`
+      // …and the day that actually happened: everybody came through the gate, no sign-out reached NGG.
+      + `foreach (['NGG-AR-1','NGG-AR-2','NGG-AR-3','NGG-AR-4'] as $id) { db_insert('attendance', ['cohortId'=>'','studentId'=>$id,'token'=>'','date'=>$d(12),'checkInAt'=>$d(12).'T08:00:00Z','checkOutAt'=>'','method'=>'gate','centre'=>'Ikotun','createdAt'=>now_iso()]);`
+      + `  policy_log($id, 'member', 'no_checkout', $d(12), 'Signed in but never signed out.'); policy_log($id, 'member', 'absence', $d(12), 'Incomplete day — no sign-out.'); policy_apply($id, 'member'); }`
       // Money brought over from the old records: must not move.
       + `fees_post('NGG-AR-1', 'fine', 3000, ['periodKey'=>'bulkfine:old-2026','note'=>'Imported fine','by'=>'import']);`
       + `fees_post('NGG-AR-1', 'dues', 2000, ['periodKey'=>'import:2026-08','note'=>'Imported dues','by'=>'import']);`
@@ -146,18 +149,19 @@ async function pageFor(memberId, viewport) {
     await P.fill(dlg + ' input#crf-personId', 'NGG-AR-4');
     await P.click(dlg + ' button[type="submit"]');
     chk('matching it records the check-in and undoes that day’s absence', await until(() => /Recorded for Ada Eze · their absence that day is undone/.test(document.body.innerText))
-      && php(`echo db_row("SELECT method FROM attendance WHERE studentId = 'NGG-AR-4'")['method'] ?? '';`) === 'matched');
+      && php(`echo db_row("SELECT method FROM attendance WHERE studentId = 'NGG-AR-4' AND method = 'matched'")['method'] ?? '';`) === 'matched');
 
     // ── The repair ──
     await P.click('button:has-text("Repair absences")');
     await P.waitForSelector(dlg);
     chk('the repair form says what it leaves alone before anything runs', /Imported fines and dues are not touched/.test(await P.locator(dlg).innerText()));
     await P.click(dlg + ' button[type="submit"]');
-    chk('the preview counts the absences and people', await until(() => /8 absences the check logged, across 4 people/.test(document.body.innerText)));
+    chk('the preview counts the absences and people', await until(() => /12 absences and 4 missing sign-outs the check logged, across 4 people — 3 centre-days/.test(document.body.innerText)));
     let t = await text();
-    chk('…the Dormant Track and the absence fines it would lift', /4 people are warned, Dormant or proposed for eviction now/.test(t) && /8 absence fines \(₦8,000\) lifted with them/.test(t));
+    chk('…the Dormant Track and the absence fines it would lift', /4 people are warned, Dormant or proposed for eviction now/.test(t) && /12 absence fines \(₦12,000\) lifted with them/.test(t));
     chk('…that the imported fine and dues stay exactly as they are', /2 imported fines and dues on their accounts stay exactly as they are/.test(t));
-    chk('…and each centre-day, read as a failed feed', /Centre-days in the period/.test(t) && (await P.locator('tr:has-text("Feed failed")').count()) === 2);
+    chk('…and each centre-day, read as a failed feed', /Centre-days in the period/.test(t) && (await P.locator('tr:has-text("Feed failed")').count()) === 3);
+    chk('…the day everybody came and no sign-out arrived is shown as missing sign-outs, 4 in and 0 out', (await P.locator('tr:has-text("Sign-out"):has-text("Feed failed")').count()) === 1);
     await P.screenshot({ path: path.join(SHOTS, 'preview.png'), fullPage: true });
     chk('nothing changed on a preview', php(`echo db_row("SELECT COUNT(*) c FROM sanctions WHERE kind = 'dormant' AND status = 'active' AND personId LIKE 'NGG-AR-%'")['c'];`) === '4');
     await P.click('button:has-text("Undo these absences…")');
@@ -166,7 +170,7 @@ async function pageFor(memberId, viewport) {
     chk('a reason is required', await until(() => /Enter why|Say why/.test(document.querySelector('form[role="dialog"]')?.innerText || '')));
     await P.fill(dlg + ' textarea#crf-reason', 'CACENTRE check-ins were not recognised');
     await P.click(dlg + ' button[type="submit"]');
-    chk('the run reports what it undid', await until(() => /8 absences undone for 4 people/.test(document.body.innerText)));
+    chk('the run reports what it undid', await until(() => /12 absences undone for 4 people/.test(document.body.innerText)));
     const after = JSON.parse(php(`echo json_encode(['dormant' => (int)db_row("SELECT COUNT(*) c FROM sanctions WHERE kind = 'dormant' AND status = 'active' AND personId LIKE 'NGG-AR-%'")['c'],
       'fines' => (int)db_row("SELECT COUNT(*) c FROM sanctions WHERE kind = 'fine' AND tier >= 500000 AND status IN ('pending','active') AND personId LIKE 'NGG-AR-%'")['c'],
       'imported' => db_all("SELECT entryId, amount, voidedAt FROM member_ledger WHERE memberId = 'NGG-AR-1' AND (periodKey LIKE 'bulkfine:%' OR periodKey LIKE 'import:%') ORDER BY entryId"),
@@ -181,7 +185,7 @@ async function pageFor(memberId, viewport) {
 
     // ── The brake is a setting the operator can see ──
     await P.click('[aria-label="Conduct view"] button:has-text("Policy")');
-    chk('the Policy form shows the brake, on', await until(() => /Hold a day when check-ins did not arrive/.test(document.body.innerText)));
+    chk('the Policy form shows the brake, on', await until(() => /Hold a day when check-ins or sign-outs did not arrive/.test(document.body.innerText)));
 
     // ── Phone ──
     const M = await pageFor('NGG-AR-ADM', { width: 390, height: 844 });

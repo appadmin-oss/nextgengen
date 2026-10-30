@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 209;
+const NGG_SCHEMA_TARGET = 210;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6048,6 +6048,15 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS uq_atthold_day ON attendance_held_days(date, centre, personType);
             CREATE INDEX IF NOT EXISTS idx_atthold_status ON attendance_held_days(status);
+        ",
+
+        /* 210 — a held day says WHAT did not arrive. Check-ins arrived and the
+           sign-outs did not (the CACENTRE gate had departures to NGG switched
+           off): everybody "signed in but never signed out", every one an
+           absence. `cause` = checkin | checkout, so deciding the day counts the
+           right thing — the missing arrivals, or the missing departures. */
+        210 => "
+            ALTER TABLE attendance_held_days ADD COLUMN cause TEXT NOT NULL DEFAULT 'checkin';
         ",
     ];
 

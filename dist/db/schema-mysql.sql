@@ -4913,3 +4913,8 @@ CREATE TABLE IF NOT EXISTS attendance_held_days (
   KEY idx_atthold_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (209) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 210 · A held day says what did not arrive: the check-ins, or the sign-outs ──
+ALTER TABLE attendance_held_days ADD COLUMN cause VARCHAR(16) NOT NULL DEFAULT 'checkin';
+
+INSERT INTO schema_version (version) VALUES (210) ON DUPLICATE KEY UPDATE version = version;

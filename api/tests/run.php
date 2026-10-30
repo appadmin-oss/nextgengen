@@ -35608,5 +35608,73 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM centres WHERE centreId IN ('CEN-RP-E','CEN-RP-I')"); db_exec("DELETE FROM attendance_held_days WHERE centre LIKE 'Rp %'"); db_exec("DELETE FROM attendance_unmatched WHERE refKey = 'CAC-PERSON-777'");
 })();
 
+
+// ── CACENTRE delivered every arrival and no departure: the sign-out half ─────
+(function () {
+    $now = now_iso(); $SU = 'NGG-2025-0099';
+    $keep = []; foreach (['policy', 'memberProgramme', 'policy_member_swept_through', 'policy_member_checkout_since'] as $k) $keep[$k] = setting_raw($k);
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true, 'outageBrake' => true, 'member' => ['enabled' => true, 'absenceLimit' => 2, 'latenessCap' => 30,
+        'postSuspensionLateness' => 30, 'fine' => 5000, 'suspensionDays' => 14, 'lateRedline' => '23:59', 'absenceFine' => 1000, 'checkoutRequired' => true]], 'test');
+    member_programme_settings_save(['enabled' => true, 'startDate' => gmdate('Y-m-d', strtotime('-60 days')), 'endDate' => gmdate('Y-m-d', strtotime('+30 days')), 'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'test');
+    $today = attendance_today(); $ago = fn($n) => gmdate('Y-m-d', strtotime($today . ' UTC') - $n * 86400);
+    $d1 = $ago(2);
+    setting_set('policy_member_checkout_since', $ago(50), 'system');
+    // Ikeja: four came, and not one sign-out arrived. Oshodi: four came, three signed out, one did not.
+    for ($i = 1; $i <= 8; $i++) {
+        $id = 'NGG-CO-' . $i;
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Co Member ' . $i, 'email' => 'co' . $i . '@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+            'centre' => $i <= 4 ? 'Co Ikeja' : 'Co Oshodi', 'createdAt' => $now, 'updatedAt' => $now]);
+        db_insert('attendance', ['cohortId' => '', 'studentId' => $id, 'token' => '', 'date' => $d1, 'checkInAt' => $d1 . 'T08:00:00Z',
+            'checkOutAt' => $i >= 5 && $i <= 7 ? $d1 . 'T14:30:00Z' : '', 'method' => 'gate', 'centre' => $i <= 4 ? 'Co Ikeja' : 'Co Oshodi', 'createdAt' => $now]);
+    }
+    db_exec("UPDATE members SET status = 'zz_co_hold' WHERE status = 'active' AND type = 'NGG' AND memberId NOT LIKE 'NGG-CO-%'");
+    setting_set('policy_member_swept_through', $ago(3), 'system');
+    policy_sweep_member_absences($d1);
+    db_exec("UPDATE members SET status = 'active' WHERE status = 'zz_co_hold'");
+    $inc = fn($id, $d) => (bool)db_row("SELECT 1 FROM infractions WHERE personId = ? AND date = ? AND kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id, $d]);
+    $h = db_row("SELECT * FROM attendance_held_days WHERE date = ? AND centre = 'Co Ikeja' AND personType = 'member'", [$d1]);
+    chk('sign-outs · a centre where everybody came and no sign-out arrived is HELD, as sign-outs', $h && $h['cause'] === 'checkout' && (int)$h['expected'] === 4 && (int)$h['present'] === 0
+        && str_contains((string)$h['why'], 'No sign-outs arrived from Co Ikeja'));
+    chk('sign-outs · …and nobody there is counted an incomplete day', !$inc('NGG-CO-1', $d1) && !$inc('NGG-CO-4', $d1)
+        && !db_row("SELECT 1 FROM infractions WHERE personId LIKE 'NGG-CO-%' AND kind = 'no_checkout' AND personId IN ('NGG-CO-1','NGG-CO-2','NGG-CO-3','NGG-CO-4')"));
+    chk('sign-outs · where the sign-outs did arrive, the one who left without signing out is still counted', $inc('NGG-CO-8', $d1) && !$inc('NGG-CO-5', $d1)
+        && !db_row("SELECT 1 FROM attendance_held_days WHERE date = ? AND centre = 'Co Oshodi'", [$d1]));
+    $ints = admin_attendance_integrity(['requesterId' => $SU]);
+    $mine = array_values(array_filter($ints['held'], fn($x) => $x['centre'] === 'Co Ikeja'));
+    chk('sign-outs · the desk is told the held day is about sign-outs', $mine && $mine[0]['cause'] === 'checkout');
+    $r = admin_attendance_held_decide(['requesterId' => $SU, 'id' => (int)$h['id'], 'decision' => 'count']);
+    chk('sign-outs · "they left without signing out" logs an incomplete day for each, as the person deciding', !empty($r['ok']) && $r['logged'] === 4 && $inc('NGG-CO-2', $d1)
+        && (string)db_row("SELECT byId FROM infractions WHERE personId = 'NGG-CO-2' AND date = ? AND kind = 'absence'", [$d1])['byId'] === $SU);
+    hooks_attendance(['source' => 'cacentre-gate', 'events' => [['ref' => 'NGG-CO-2', 'date' => $d1, 'scannedAt' => $d1 . 'T14:40:00Z', 'action' => 'out']]]);
+    chk('sign-outs · …and a sign-out that arrives afterwards still clears it', !$inc('NGG-CO-2', $d1));
+
+    // The weeks before the brake: every Ikeja day logged "incomplete", the Dormant Track followed.
+    foreach ([$ago(9), $ago(8)] as $d) {
+        for ($i = 1; $i <= 4; $i++) {
+            $id = 'NGG-CO-' . $i;
+            db_insert('attendance', ['cohortId' => '', 'studentId' => $id, 'token' => '', 'date' => $d, 'checkInAt' => $d . 'T08:00:00Z', 'checkOutAt' => '', 'method' => 'gate', 'centre' => 'Co Ikeja', 'createdAt' => $now]);
+            policy_log($id, 'member', 'no_checkout', $d, 'Signed in but never signed out.');
+            policy_log($id, 'member', 'absence', $d, 'Incomplete day — no sign-out.');
+        }
+    }
+    foreach (['NGG-CO-1', 'NGG-CO-3', 'NGG-CO-4'] as $id) policy_apply($id, 'member');
+    chk('sign-outs · before the repair: Dormant on days they were present for', policy_state('NGG-CO-3', 'member')['state'] === 'dormant');
+    $pv = admin_policy_absence_repair(['requesterId' => $SU, 'from' => $ago(9), 'to' => $ago(8), 'types' => ['member'], 'mode' => 'outage']);
+    $g = array_values(array_filter($pv['groups'], fn($x) => $x['centre'] === 'Co Ikeja'));
+    chk('repair · a day everybody checked in and nobody signed out reads as a failed feed, not as real', count($g) === 2 && $g[0]['cause'] === 'checkout'
+        && $g[0]['checkins'] === 4 && $g[0]['checkouts'] === 0 && $g[0]['outage'] === true);
+    $ap = admin_policy_absence_repair(['requesterId' => $SU, 'from' => $ago(9), 'to' => $ago(8), 'types' => ['member'], 'mode' => 'outage', 'apply' => true, 'reason' => 'CACENTRE sign-outs were switched off']);
+    chk('repair · the incomplete days and their no-sign-out entries are undone', !empty($ap['applied']) && $ap['voided'] === 16 && !$inc('NGG-CO-3', $ago(9)));
+    chk('repair · …and nobody is Dormant for days they were there', policy_state('NGG-CO-3', 'member')['state'] !== 'dormant' && policy_state('NGG-CO-1', 'member')['state'] !== 'dormant');
+    // A real incomplete day — most of the centre signed out — is not a failed feed.
+    $pv2 = admin_policy_absence_repair(['requesterId' => $SU, 'from' => $d1, 'to' => $d1, 'types' => ['member'], 'mode' => 'outage']);
+    $o = array_values(array_filter($pv2['groups'], fn($x) => $x['centre'] === 'Co Oshodi'));
+    chk('repair · where three of four signed out, the fourth\'s incomplete day reads as real and is kept', count($o) === 1 && $o[0]['outage'] === false && $o[0]['checkouts'] === 3);
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'attendance' => 'studentId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-CO-%'");
+    db_exec("DELETE FROM attendance_held_days WHERE centre LIKE 'Co %'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

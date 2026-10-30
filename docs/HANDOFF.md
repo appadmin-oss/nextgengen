@@ -5068,3 +5068,45 @@ each lands through the late-arrival path and cleans up after itself.
 
 Tests: PHP suite block "CACENTRE check-ins …" (29 checks; disabling the brake
 fails five of them), `tests/attendance-repair.test.js` (21, in `test:all`).
+
+## 2026-10-30 (later) — correction: it was the CHECK-OUTS, not the check-ins
+
+The owner corrected the entry above: check-ins from CACENTRE worked; check-outs
+did not. Both are true of the code, and the second is the cause of the mass
+Dormant Track.
+
+**Root cause, on the gate side.** The fix written on 2026-10-28 (cacentre-site
+branch `claude/gate-ngg-checkouts`: `"checkouts": true` in NGG's `ISSUERS`
+entry, and `POST /v1/admin/backfill-checkouts` up to 31 days) was **never merged
+into cacentre-site `main`, and so never deployed**. The live gate still has
+`"checkouts": false` (`gate/src/gate.ts` `destinations()` drops every NGG
+departure). Every member came through the gate, signed in, and — with
+`member.checkoutRequired` on — was logged "Signed in but never signed out" +
+"Incomplete day — no sign-out" every programme day: a ₦1,000 absence fine each
+day and the Dormant Track at the limit. Weekdays are not member programme days,
+which is why it surfaced on Saturdays first (the 2026-10-28 entry).
+
+**What the 30 Oct NGG work missed, now fixed.** The brake and the repair judged
+"the feed failed" by counting CHECK-INS — and on these days everybody had
+checked in. So the repair's default mode read every one of them as "Looks
+real" and would have undone nothing.
+- `policy_outage_hold(..., $cause)` + `policy_checkout_hold()`: a centre with
+  ≥3 who signed in and 0 sign-outs (or a day with ≥10 in and <10% out) is held
+  as `cause = 'checkout'` (migration **210**), in both sweeps; nobody there is
+  logged incomplete. A centre where most signed out still has its real
+  incomplete days counted.
+- Deciding a sign-out hold `count` logs `no_checkout` + "Incomplete day…" under
+  the decider's name; a later sign-out still voids it (`policy_checkout_landed`
+  matches the note, not the author).
+- The repair groups by what was missing (`cause`): a sign-out group is an
+  outage when fewer than one in five of those who CAME have a sign-out. The
+  preview shows check-ins and sign-outs per centre-day, and counts absences and
+  missing-sign-out entries separately (it had called both "absences").
+
+**To do, in this order:** deploy NGG; merge cacentre-site
+`claude/gate-ngg-checkouts` into `main` and deploy the gate (Actions → gate →
+Run workflow, plan *free*); press *Send NGG the check-outs it missed … last 31
+days*; then Compliance → Repair absences for whatever is older than 31 days.
+
+Tests: PHP block "the sign-out half" (11; disabling the departure brake fails
+4, judging every group by check-ins fails 3); `attendance-repair.test.js` 22.

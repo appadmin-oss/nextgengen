@@ -1762,22 +1762,29 @@ with its resolution, when the conditions are not met).
 needs a person when the check-in feed fails:
 
 - **Held days.** The nightly check no longer marks a whole centre absent when
-  no check-ins arrived from it. A centre where nobody checked in (three or more
+  nothing arrived from it. A centre where nobody checked in (three or more
   people expected), or a day when fewer than one in ten checked in anywhere, is
-  **held** instead, and nobody is marked absent. Open it and choose **Nobody
-  is absent** (the centre did not meet, or the check-ins were lost — it is
-  never counted later) or **It met — count the absences** (they are logged now,
-  under your name, and the usual warnings and fines follow). The brake is
-  **Hold a day when check-ins did not arrive** under Policy; leave it on.
+  **held** instead, and nobody is marked absent. The same goes for
+  **sign-outs**: a centre where people signed in and not one sign-out arrived
+  (or a day when almost nobody's did) is held, rather than counting everybody
+  an incomplete day. Open it and choose **Nobody is absent** (the centre did
+  not meet, or the check-ins or sign-outs were lost — it is never counted
+  later) or count it (the absences or incomplete days are logged now, under
+  your name, and the usual warnings and fines follow; a sign-out that arrives
+  later still clears an incomplete day). The brake is **Hold a day when
+  check-ins or sign-outs did not arrive** under Policy; leave it on.
 - **Check-ins that named nobody.** A check-in from CACENTRE or a desk that NGG
   cannot match to anybody is kept, not dropped. Open it, **Match to a person…**
   by their ID, and the check-in is recorded for that day — if they had been
   marked absent for it, that absence and whatever it caused is undone. Or
   **Set aside**.
-- **Repair absences** (top right). For a period when check-ins were not
-  arriving: choose the dates, **only centre-days where check-ins clearly
-  didn't arrive** (fewer than one in five expected checked in) or **every
-  absence the check logged**, and who. The preview lists each centre-day, how
+- **Repair absences** (top right). For a period when check-ins or sign-outs
+  were not arriving: choose the dates, **only centre-days where check-ins or
+  sign-outs clearly didn't arrive** (fewer than one in five expected checked
+  in — or, for a missing sign-out, fewer than one in five of those who came
+  have one) or **every absence the check logged**, and who. Each row says what
+  was **missing** — a check-in or a sign-out — so a day everybody came and
+  nobody's sign-out arrived reads as the feed, not as truancy. The preview lists each centre-day, how
   many absences and people, how many are warned or Dormant now, the absence
   fines it would lift, and the **imported fines and dues it will not touch**.
   **Undo these absences…** asks for a reason; each absence is voided with it,
@@ -1787,10 +1794,11 @@ needs a person when the check-in feed fails:
   audit log. An absence a person logged is never touched, and nor is any fine
   or due that came from the old records or an upload.
 
-**A check-in that arrives late undoes the absence.** If CACENTRE re-sends
-check-ins for days already checked, each one recorded voids that day's
-absence (with the reason kept) and lifts what it caused. Ask CACENTRE to
-re-send its check-ins for the period it failed; the repair covers whatever
+**A check-in or sign-out that arrives late undoes the absence.** If CACENTRE
+re-sends days already checked, each check-in voids that day's absence and
+each sign-out voids that day's incomplete day (with the reason kept), and
+what they caused is lifted. CACENTRE's gate can re-send up to 31 days of
+sign-outs (*Send NGG the check-outs it missed*); the repair covers whatever
 cannot be re-sent.
 
 **Policy.** One form, saved with the bar at the bottom: whether the policy is

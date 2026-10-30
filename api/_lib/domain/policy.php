@@ -744,8 +744,16 @@ const POLICY_OUTAGE_DAY_SHARE = 0.1;    // …and fewer than this share present 
  * Decide which centres' absences for $date the check may count. $due:
  * centre => [ids expected that day]; $present: id => anything, for those who
  * checked in. Records each held centre-day once. Returns the centres held.
+ *
+ * $cause 'checkout' asks the same question of DEPARTURES: $due is who signed
+ * in, $present who signed out. That is the failure that actually happened —
+ * the CACENTRE gate delivered every arrival and, with check-outs to NGG
+ * switched off, no departure, so a whole centre "signed in but never signed
+ * out" and each of them took an absence. A centre where people came and not
+ * one of them left is the feed, not the children.
  */
-function policy_outage_hold(string $date, string $type, array $due, array $present): array {
+function policy_outage_hold(string $date, string $type, array $due, array $present, string $cause = 'checkin'): array {
+    $out = $cause === 'checkout';
     if (empty(policy_settings()['outageBrake'])) return [];
     $held = []; $totalDue = 0; $totalIn = 0; $byCentre = [];
     foreach ($due as $centre => $ids) {
@@ -755,19 +763,38 @@ function policy_outage_hold(string $date, string $type, array $due, array $prese
     $dayWide = $totalDue >= POLICY_OUTAGE_DAY_MIN && $totalIn < $totalDue * POLICY_OUTAGE_DAY_SHARE;
     foreach ($byCentre as $centre => [$n, $in]) {
         $why = '';
-        if ($dayWide) $why = 'Almost nobody checked in anywhere: ' . $totalIn . ' of ' . $totalDue . ' expected.';
-        elseif ($n >= POLICY_OUTAGE_CENTRE_MIN && $in === 0) $why = 'No check-ins arrived from ' . ($centre !== '' ? $centre : 'members with no centre') . ': 0 of ' . $n . ' expected.';
+        $where = $centre !== '' ? $centre : 'people with no centre';
+        if ($dayWide) $why = $out ? 'Almost nobody signed out anywhere: ' . $totalIn . ' of ' . $totalDue . ' who signed in.'
+                                  : 'Almost nobody checked in anywhere: ' . $totalIn . ' of ' . $totalDue . ' expected.';
+        elseif ($n >= POLICY_OUTAGE_CENTRE_MIN && $in === 0) $why = $out ? 'No sign-outs arrived from ' . $where . ': 0 of ' . $n . ' who signed in.'
+                                                                          : 'No check-ins arrived from ' . $where . ': 0 of ' . $n . ' expected.';
         if ($why === '') continue;
         $held[$centre] = true;
         try {
             if (!db_row('SELECT id FROM attendance_held_days WHERE date = ? AND centre = ? AND personType = ? LIMIT 1', [$date, (string)$centre, $type])) {
                 db_insert('attendance_held_days', ['date' => $date, 'centre' => (string)$centre, 'personType' => $type, 'expected' => $n, 'present' => $in,
-                    'why' => mb_substr($why, 0, 240), 'status' => 'held', 'createdAt' => now_iso()]);
+                    'why' => mb_substr($why, 0, 240), 'status' => 'held', 'cause' => $out ? 'checkout' : 'checkin', 'createdAt' => now_iso()]);
             }
         } catch (\Throwable $e) { error_log('[policy_outage_hold] ' . $e->getMessage()); }
     }
-    if ($held) audit('policy.day_held', 'system', $date, ['type' => $type, 'centres' => array_keys($held), 'dayWide' => $dayWide]);
+    if ($held) audit('policy.day_held', 'system', $date, ['type' => $type, 'cause' => $out ? 'checkout' : 'checkin', 'centres' => array_keys($held), 'dayWide' => $dayWide]);
     return $held;
+}
+
+/** The departures half of the brake, for one day: of the centres not already
+ *  held for missing arrivals, who signed in (by centre) and who of them signed
+ *  out. $present: id => checkOutAt ('' when none). */
+function policy_checkout_hold(string $date, string $type, array $due, array $present, array $alreadyHeld): array {
+    $in = []; $outP = [];
+    foreach ($due as $centre => $ids) {
+        if (isset($alreadyHeld[$centre])) continue;
+        foreach ($ids as $id) {
+            if (!array_key_exists($id, $present)) continue;
+            $in[$centre][] = $id;
+            if ((string)$present[$id] !== '') $outP[$id] = true;
+        }
+    }
+    return $in ? policy_outage_hold($date, $type, $in, $outP, 'checkout') : [];
 }
 
 /** Live (non-voided) infraction counts by kind for one person. */
@@ -1258,7 +1285,8 @@ function policy_sweep_absences(?string $upto = null): array {
                 if (programme_is_day($d, $type === 'student' ? participant_calendar_for($id, $cfg, $groupDays) : $cfg)) $due[(string)$row['centre']][] = $id;
             }
             $held = policy_outage_hold($d, $type, $due, $present);
-            $heldDays += count($held);
+            $outHeld = !empty($pol['checkoutRequired']) ? policy_checkout_hold($d, $type, $due, $present, $held) : [];
+            $heldDays += count($held) + count($outHeld);
             foreach ($rows as $row) {
                 $id = (string)$row[$key];
                 // Their own calendar: a participant's group may meet on other days.
@@ -1266,7 +1294,7 @@ function policy_sweep_absences(?string $upto = null): array {
                 if (isset($held[(string)$row['centre']])) continue;
                 if (!array_key_exists($id, $present)) {
                     if (policy_log($id, $type, 'absence', $d, 'No check-in scan on a programme day.')) $absences++;
-                } elseif (!empty($pol['checkoutRequired']) && $present[$id] === '') {
+                } elseif (!empty($pol['checkoutRequired']) && $present[$id] === '' && !isset($outHeld[(string)$row['centre']])) {
                     // Scanned in, never scanned out. Logged as its own fact so
                     // the ledger says what actually happened, and as an absence
                     // because the blueprint counts a missing scan as one.
@@ -1341,7 +1369,8 @@ function policy_sweep_member_absences(?string $upto = null): array {
             $due[(string)($row['centre'] ?? '')][] = (string)$row['memberId'];
         }
         $held = policy_outage_hold($d, 'member', $due, $present);
-        $heldDays += count($held);
+        $outHeld = $since !== '' && $d >= $since ? policy_checkout_hold($d, 'member', $due, $present, $held) : [];
+        $heldDays += count($held) + count($outHeld);
         foreach ($members as $row) {
             $id = (string)$row['memberId'];
             if (!programme_is_day($d, member_calendar_for($row, $cal, $centreDays))) continue;   // not their centre's day
@@ -1350,7 +1379,7 @@ function policy_sweep_member_absences(?string $upto = null): array {
             if (function_exists('member_absence_cover') && member_absence_cover($id, $d) === 'academic') continue;
             if (!array_key_exists($id, $present)) {
                 if (policy_log($id, 'member', 'absence', $d, 'No check-in on a member programme day.')) $absences++;
-            } elseif ($since !== '' && $d >= $since && $present[$id] === '') {
+            } elseif ($since !== '' && $d >= $since && $present[$id] === '' && !isset($outHeld[(string)($row['centre'] ?? '')])) {
                 // Signed in, never signed out — left before closing time, or
                 // walked past the desk. The day was not completed.
                 policy_log($id, 'member', 'no_checkout', $d, 'Signed in but never signed out.');
@@ -1751,7 +1780,7 @@ function admin_attendance_integrity(array $p): array {
             if ((string)$h['centre'] !== '' && !admin_centre_allowed($g['requester'], (string)$h['centre'])) continue;
             $held[] = ['id' => (int)$h['id'], 'date' => (string)$h['date'], 'centre' => (string)$h['centre'], 'personType' => (string)$h['personType'],
                        'expected' => (int)$h['expected'], 'present' => (int)$h['present'], 'why' => (string)$h['why'], 'status' => (string)$h['status'],
-                       'logged' => (int)$h['logged'], 'decidedAt' => (string)$h['decidedAt']];
+                       'logged' => (int)$h['logged'], 'decidedAt' => (string)$h['decidedAt'], 'cause' => (string)($h['cause'] ?? 'checkin')];
         }
     }
     $unm = [];
@@ -1788,18 +1817,26 @@ function admin_attendance_held_decide(array $p): array {
         elseif ($type === 'volunteer') $rows = db_all("SELECT volunteerId id, centre FROM volunteers WHERE status = 'active' AND COALESCE(centre,'') = ?", [$centre]);
         else $rows = db_all("SELECT studentId id, centre FROM summer_students WHERE status = 'active' AND COALESCE(centre,'') = ?", [$centre]);
         $present = [];
-        foreach (db_all('SELECT studentId FROM attendance WHERE date = ?', [$date]) as $r) $present[(string)$r['studentId']] = true;
+        foreach (db_all('SELECT studentId, checkOutAt FROM attendance WHERE date = ?', [$date]) as $r) $present[(string)$r['studentId']] = (string)($r['checkOutAt'] ?? '');
+        $byDepartures = (string)($h['cause'] ?? 'checkin') === 'checkout';
         $cal = $type === 'member' ? member_programme_settings() : programme_settings();
         $centreDays = $type === 'member' ? centre_meet_days_map() : null;
         $groupDays = $type === 'student' ? participant_group_days_map() : null;
         foreach ($rows as $r) {
             $id = (string)$r['id'];
-            if (isset($present[$id])) continue;
+            /* A day held for missing ARRIVALS counts those with no check-in; one
+               held for missing DEPARTURES counts those who came and have no
+               sign-out — the "Incomplete" note, so a sign-out that arrives
+               later still clears it (policy_checkout_landed). */
+            if ($byDepartures ? (!array_key_exists($id, $present) || $present[$id] !== '') : array_key_exists($id, $present)) continue;
             $calFor = $type === 'member' ? member_calendar_for(['memberId' => $id, 'centre' => $r['centre']], $cal, $centreDays)
                     : ($type === 'student' ? participant_calendar_for($id, $cal, $groupDays) : $cal);
             if (!programme_is_day($date, $calFor)) continue;
             if ($type === 'member' && function_exists('member_absence_cover') && member_absence_cover($id, $date) === 'academic') continue;
-            if (policy_log($id, $type, 'absence', $date, 'No check-in — counted by staff after the day was held.', $by)) { $logged++; policy_apply($id, $type); }
+            if ($byDepartures) {
+                policy_log($id, $type, 'no_checkout', $date, 'Signed in but never signed out — counted by staff after the day was held.', $by);
+                if (policy_log($id, $type, 'absence', $date, 'Incomplete day — no sign-out; counted by staff after the day was held.', $by)) { $logged++; policy_apply($id, $type); }
+            } elseif (policy_log($id, $type, 'absence', $date, 'No check-in — counted by staff after the day was held.', $by)) { $logged++; policy_apply($id, $type); }
         }
     }
     db_update('attendance_held_days', ['status' => $decision === 'count' ? 'counted' : 'closed', 'logged' => $logged, 'decidedBy' => $by, 'decidedAt' => now_iso()], ['id' => (int)$h['id']]);
@@ -1857,8 +1894,10 @@ function admin_attendance_unmatched_match(array $p): array {
  * fines and every other ledger entry are not touched — the run reports them,
  * so the operator can see they were left alone.
  *
- *   mode  outage  only centre-days where check-ins clearly did not arrive
- *                 (fewer than a fifth of the expected people checked in)
+ *   mode  outage  only centre-days where the feed clearly failed: for a
+ *                 missing arrival, fewer than a fifth of the expected people
+ *                 checked in; for a missing sign-out, fewer than a fifth of
+ *                 those who checked in have a sign-out
  *         all     every absence the check logged in the period
  *   apply false → a preview: the centre-days, how many, who, what lifts.
  */
@@ -1871,7 +1910,7 @@ function admin_policy_absence_repair(array $p): array {
     $mode = (string)($p['mode'] ?? 'outage') === 'all' ? 'all' : 'outage';
     $onlyCentre = trim((string)($p['centre'] ?? ''));
     $ph = implode(',', array_fill(0, count($types), '?'));
-    $rows = db_all("SELECT id, personId, personType, kind, date FROM infractions
+    $rows = db_all("SELECT id, personId, personType, kind, date, note FROM infractions
                     WHERE personType IN ($ph) AND kind IN ('absence','no_checkout') AND byId = 'system' AND " . policy_sweep_note_sql() . "
                       AND (voidedAt IS NULL OR voidedAt = '') AND date >= ? AND date <= ? ORDER BY date",
                    array_merge($types, [$from, $to]));
@@ -1885,19 +1924,24 @@ function admin_policy_absence_repair(array $p): array {
         foreach (db_all("SELECT $key k, fullName, COALESCE(centre,'') c FROM $table WHERE $key IN (" . implode(',', array_fill(0, count($chunk), '?')) . ')', $chunk) as $x)
             $centreOf[$t . ':' . $x['k']] = ['centre' => (string)$x['c'], 'name' => (string)$x['fullName']];
     }
-    // Who checked in, per day — so a centre-day can be read as an outage or not.
+    // Who checked in and who signed out, per day — so a centre-day can be read as an outage or not.
     $checkins = [];
     $dates = array_values(array_unique(array_map(static fn($r) => (string)$r['date'], $rows)));
     foreach (array_chunk($dates, 200) as $chunk) {
-        foreach (db_all('SELECT studentId, date FROM attendance WHERE date IN (' . implode(',', array_fill(0, count($chunk), '?')) . ')', $chunk) as $a) $checkins[(string)$a['date']][(string)$a['studentId']] = true;
+        foreach (db_all('SELECT studentId, date, checkOutAt FROM attendance WHERE date IN (' . implode(',', array_fill(0, count($chunk), '?')) . ')', $chunk) as $a) $checkins[(string)$a['date']][(string)$a['studentId']] = (string)($a['checkOutAt'] ?? '') !== '';
     }
     $groups = []; $outOfScope = 0;
     foreach ($rows as $r) {
         $t = (string)$r['personType']; $who = $centreOf[$t . ':' . $r['personId']] ?? ['centre' => '', 'name' => ''];
         if ($onlyCentre !== '' && $who['centre'] !== $onlyCentre) continue;
         if (!admin_centre_allowed($g['requester'], $who['centre'])) { $outOfScope++; continue; }
-        $k = $r['date'] . '|' . $who['centre'] . '|' . $t;
-        $groups[$k] = $groups[$k] ?? ['date' => (string)$r['date'], 'centre' => $who['centre'], 'personType' => $t, 'absences' => 0, 'people' => [], 'ids' => [], 'checkins' => 0];
+        /* What the check said was missing: the arrival ("No check-in…") or the
+           departure (no_checkout, "Incomplete…"). They fail separately — the
+           gate delivered every arrival and no departure — so each is judged
+           against its own evidence. */
+        $cause = (string)$r['kind'] === 'no_checkout' || str_starts_with((string)$r['note'], 'Incomplete') ? 'checkout' : 'checkin';
+        $k = $r['date'] . '|' . $who['centre'] . '|' . $t . '|' . $cause;
+        $groups[$k] = $groups[$k] ?? ['date' => (string)$r['date'], 'centre' => $who['centre'], 'personType' => $t, 'cause' => $cause, 'absences' => 0, 'people' => [], 'ids' => [], 'checkins' => 0, 'checkouts' => 0];
         if ((string)$r['kind'] === 'absence') $groups[$k]['absences']++;
         $groups[$k]['people'][(string)$r['personId']] = true;
         $groups[$k]['ids'][] = (int)$r['id'];
@@ -1908,14 +1952,23 @@ function admin_policy_absence_repair(array $p): array {
         [$table, $key] = $tbl[$gr['personType']];
         $ck = $gr['personType'] . '|' . $gr['centre'];
         if (!isset($peopleAt[$ck])) $peopleAt[$ck] = array_column(db_all("SELECT $key k FROM $table WHERE COALESCE(centre,'') = ?", [$gr['centre']]), 'k');
-        $in = 0; foreach ($peopleAt[$ck] as $pid) if (isset($checkins[$gr['date']][(string)$pid])) $in++;
-        $groups[$k]['checkins'] = $in;
-        $expected = $in + count($gr['people']);
-        $groups[$k]['outage'] = $expected > 0 && $in * 5 < $expected;
+        $in = 0; $outN = 0;
+        foreach ($peopleAt[$ck] as $pid) {
+            if (!isset($checkins[$gr['date']][(string)$pid])) continue;
+            $in++; if ($checkins[$gr['date']][(string)$pid]) $outN++;
+        }
+        $groups[$k]['checkins'] = $in; $groups[$k]['checkouts'] = $outN;
+        if ($gr['cause'] === 'checkout') {
+            // Of those who came, fewer than one in five has a sign-out: the departures did not arrive.
+            $groups[$k]['outage'] = $in > 0 && $outN * 5 < $in;
+        } else {
+            $expected = $in + count($gr['people']);
+            $groups[$k]['outage'] = $expected > 0 && $in * 5 < $expected;
+        }
     }
     $chosen = array_filter($groups, static fn($gr) => $mode === 'all' || $gr['outage']);
-    $voidIds = []; $people = [];
-    foreach ($chosen as $gr) { foreach ($gr['ids'] as $i) $voidIds[] = $i; foreach (array_keys($gr['people']) as $pid) $people[$gr['personType'] . ':' . $pid] = true; }
+    $voidIds = []; $people = []; $absenceN = 0;
+    foreach ($chosen as $gr) { foreach ($gr['ids'] as $i) $voidIds[] = $i; foreach (array_keys($gr['people']) as $pid) $people[$gr['personType'] . ':' . $pid] = true; $absenceN += $gr['absences']; }
     // What it does NOT touch, said out loud: the money imported from the old records.
     $memberIds = array_values(array_map(static fn($k) => substr($k, 7), array_filter(array_keys($people), static fn($k) => str_starts_with($k, 'member:'))));
     $imported = 0;
@@ -1945,9 +1998,9 @@ function admin_policy_absence_repair(array $p): array {
     $list = array_values(array_map(static function ($gr) {
         unset($gr['ids']); $gr['people'] = count($gr['people']); return $gr;
     }, $groups));
-    usort($list, static fn($a, $b) => strcmp($b['date'], $a['date']) ?: strcmp($a['centre'], $b['centre']));
+    usort($list, static fn($a, $b) => strcmp($b['date'], $a['date']) ?: strcmp($a['centre'], $b['centre']) ?: strcmp($a['cause'], $b['cause']));
     $summary = ['mode' => $mode, 'from' => $from, 'to' => $to, 'groups' => array_slice($list, 0, 400), 'groupCount' => count($list),
-                'chosenGroups' => count($chosen), 'infractions' => count($voidIds), 'people' => count($people), 'sanctionedNow' => $sanctioned,
+                'chosenGroups' => count($chosen), 'infractions' => count($voidIds), 'absences' => $absenceN, 'noSignOut' => count($voidIds) - $absenceN, 'people' => count($people), 'sanctionedNow' => $sanctioned,
                 'absenceFines' => $fines, 'absenceFineTotal' => $fineTotal, 'absenceFinesPaid' => $paid,
                 'importedUntouched' => $imported, 'outOfScope' => $outOfScope, 'max' => POLICY_REPAIR_MAX];
     if (empty($p['apply'])) return ['ok' => true, 'preview' => true] + $summary;
