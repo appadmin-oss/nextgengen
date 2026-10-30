@@ -35962,6 +35962,70 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('notice · a draft may be deleted; what went out may not', (backend_dispatch('admin.notices.delete', ['requesterId' => $ADM, 'noticeId' => $id])['error'] ?? '') === 'not_draft');
     chk('notice · the member’s list shows it, read and acknowledged', ($ml = member_notices(['memberId' => 'NGG-NT-1'])['notices'][0] ?? null) && $ml['noticeId'] === $id && $ml['read'] && $ml['acked']);
 
+    // ── The gaps closed on 30 Oct ──
+    $Pn = ['subject' => 'Fees for the new term', 'body' => 'The fee for the new term is due by Friday.', 'org' => '', 'kind' => '', 'signoff' => ''];
+    chk('notice · the audience count is a count, and agrees with the list it counts', notice_reach_count(['audience' => 'Nt Centre']) === 3 && notice_reach_count(['audience' => 'all']) === count(notice_members(['audience' => 'all'])));
+    // A notice for families only is not the child's to read.
+    $fo = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'audience' => 'Nt Centre', 'reach' => 'guardians', 'needsAck' => true] + $Pn);
+    $fid = $fo['notice']['noticeId'];
+    db_insert('push_subscriptions', ['subId' => 'PS-NT-1', 'subjectKey' => 'g:GRD-NT-1', 'endpoint' => 'https://push.example.org/nt', 'endpointHash' => 'nt-ep-hash', 'p256dh' => 'x', 'auth' => 'y', 'surface' => 'family', 'createdAt' => $now]);
+    $fp = backend_dispatch('admin.notices.publish', ['requesterId' => $ADM, 'noticeId' => $fid]);
+    chk('notice · families only: no member feed item, the family inbox once, and a PUSH to the parent’s phone', !empty($fp['ok']) && $fp['stats']['members'] === 0 && $fp['stats']['families'] === 1
+        && !db_row("SELECT 1 FROM notifications WHERE linkRef = ?", [$fid]) && (bool)db_row("SELECT 1 FROM push_queue WHERE subjectKey = 'g:GRD-NT-1' AND tag = ?", ['notice:' . $fid]));
+    chk('notice · …and the child cannot open it, nor find it in their list', (member_notice(['memberId' => 'NGG-NT-1', 'noticeId' => $fid])['error'] ?? '') === 'not_found'
+        && !in_array($fid, array_column(member_notices(['memberId' => 'NGG-NT-1'])['notices'], 'noticeId'), true));
+    chk('notice · …while the parent reads it for both children', ($ff = family_notice(['guardianId' => 'GRD-NT-1', 'noticeId' => $fid])) && !empty($ff['ok']) && count($ff['reader']['for']) === 2);
+    db_exec("UPDATE push_queue SET status = 'sent' WHERE subjectKey = 'g:GRD-NT-1'");
+    $frm = backend_dispatch('admin.notices.remind', ['requesterId' => $ADM, 'noticeId' => $fid]);
+    chk('notice · the reminder for a families-only notice goes to the parents — unread again, pushed — and to no child', $frm['reminded'] === 0 && $frm['families'] === 1
+        && (string)db_row("SELECT readAt FROM guardian_notices WHERE guardianId = 'GRD-NT-1' AND refId = ?", [$fid])['readAt'] === ''
+        && !db_row("SELECT 1 FROM notifications WHERE linkRef = ?", [$fid]) && (bool)db_row("SELECT 1 FROM push_queue WHERE subjectKey = 'g:GRD-NT-1' AND status = 'queued' AND title LIKE 'Reminder:%'"));
+    chk('notice · an announcement (no letterhead) is titled by its subject — no “SUBJECT:”', notice_title(notice_get($fid)) === 'Fees for the new term' && notice_title(['org' => 'STS', 'kind' => '', 'subject' => 'X']) === 'SUBJECT: X');
+    // A members-only notice is no family's.
+    $mo = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'audience' => 'Nt Centre', 'reach' => 'members'] + $Pn);
+    backend_dispatch('admin.notices.publish', ['requesterId' => $ADM, 'noticeId' => $mo['notice']['noticeId']]);
+    chk('notice · a members-only notice is not opened from a family account', (family_notice(['guardianId' => 'GRD-NT-1', 'noticeId' => $mo['notice']['noticeId']])['error'] ?? '') === 'not_found');
+    // Two people editing one draft.
+    $d1 = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'audience' => 'Nt Centre'] + $Pn)['notice'];
+    $base = $d1['updatedAt'];
+    db_exec("UPDATE notices SET body = 'Somebody else’s words.', updatedAt = '2099-01-01T00:00:00Z' WHERE noticeId = ?", [$d1['noticeId']]);
+    $st = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'noticeId' => $d1['noticeId'], 'baseUpdatedAt' => $base, 'audience' => 'Nt Centre'] + $Pn);
+    chk('notice · a save over somebody else’s newer words is refused, with theirs attached', ($st['error'] ?? '') === 'stale' && $st['notice']['body'] === 'Somebody else’s words.'
+        && notice_get($d1['noticeId'])['body'] === 'Somebody else’s words.');
+    $fz = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'noticeId' => $d1['noticeId'], 'baseUpdatedAt' => $base, 'force' => true, 'audience' => 'Nt Centre'] + $Pn);
+    chk('notice · …unless the writer chooses to keep their own', !empty($fz['ok']) && $fz['notice']['body'] === $Pn['body'] && isset($fz['notice']['reachMembers']));
+    // Acknowledgement cannot be asked for after it went out.
+    $cr = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'noticeId' => $mo['notice']['noticeId'], 'needsAck' => true, 'correctionNote' => 'Typo in the date', 'audience' => 'Nt Centre'] + $Pn);
+    chk('notice · a correction cannot add an acknowledgement nobody was asked to sign', !empty($cr['ok']) && $cr['notice']['needsAck'] === false);
+    // Later.
+    chk('notice · a schedule in the past, or beyond 60 days, is refused', (backend_dispatch('admin.notices.schedule', ['requesterId' => $ADM, 'noticeId' => $d1['noticeId'], 'at' => '2020-01-01T09:00'])['error'] ?? '') === 'past'
+        && (backend_dispatch('admin.notices.schedule', ['requesterId' => $ADM, 'noticeId' => $d1['noticeId'], 'at' => (new DateTime('+90 days', push_tz()))->format('Y-m-d\TH:i')])['error'] ?? '') === 'too_far');
+    $sc = backend_dispatch('admin.notices.schedule', ['requesterId' => $ADM, 'noticeId' => $d1['noticeId'], 'at' => (new DateTime('+2 days', push_tz()))->format('Y-m-d\TH:i')]);
+    chk('notice · a draft is scheduled for later, by the person who set it, and stays a draft', !empty($sc['ok']) && $sc['notice']['status'] === 'draft' && $sc['notice']['scheduledAt'] !== '' && $sc['notice']['scheduledBy'] === $ADM);
+    chk('notice · …nothing goes before its minute', notice_schedule_run()['published'] === 0 && notice_get($d1['noticeId'])['status'] === 'draft');
+    db_exec("UPDATE notices SET scheduledAt = ? WHERE noticeId = ?", [gmdate('Y-m-d\TH:i:s\Z', time() - 30), $d1['noticeId']]);
+    $run = notice_schedule_run();
+    $pub = notice_get($d1['noticeId']);
+    chk('notice · …and at its minute it is published, as the person who scheduled it, through the same publish', $run['published'] === 1 && $pub['status'] === 'published' && $pub['publishedBy'] === $ADM && $pub['scheduledAt'] === ''
+        && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE linkRef = ?", [$d1['noticeId']])['c'] === 3 && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'notice.publish.scheduled' AND subject = ?", [$d1['noticeId']]));
+    $d2 = backend_dispatch('admin.notices.save', ['requesterId' => 'NGG-NT-ED', 'audience' => 'Nt Centre'] + $Pn)['notice'];
+    backend_dispatch('admin.notices.schedule', ['requesterId' => 'NGG-NT-ED', 'noticeId' => $d2['noticeId'], 'at' => (new DateTime('+1 day', push_tz()))->format('Y-m-d\TH:i')]);
+    db_exec("UPDATE notices SET scheduledAt = ? WHERE noticeId = ?", [gmdate('Y-m-d\TH:i:s\Z', time() - 30), $d2['noticeId']]);
+    db_exec("UPDATE members SET status = 'suspended' WHERE memberId = 'NGG-NT-ED'");
+    $run2 = notice_schedule_run();
+    chk('notice · somebody whose access was taken away does not speak through a timer: held, unscheduled, recorded', $run2['held'] === 1 && notice_get($d2['noticeId'])['status'] === 'draft'
+        && notice_get($d2['noticeId'])['scheduledAt'] === '' && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'notice.schedule.held' AND subject = ?", [$d2['noticeId']]));
+    // A test to yourself; what the email queue did.
+    $t1 = backend_dispatch('admin.notices.test', ['requesterId' => $ADM, 'noticeId' => $d2['noticeId']]);
+    backend_dispatch('admin.notices.test', ['requesterId' => $ADM, 'noticeId' => $d2['noticeId']]);
+    chk('notice · a test email goes to the person asking (or says plainly it could not), twice a minute at most', (!empty($t1['ok']) ? $t1['to'] === 'ngg-nt-adm@example.org' : ($t1['error'] ?? '') === 'mail_failed')
+        && (backend_dispatch('admin.notices.test', ['requesterId' => $ADM, 'noticeId' => $d2['noticeId']])['error'] ?? '') === 'too_soon');
+    $R2 = backend_dispatch('admin.notices.readers', ['requesterId' => $ADM, 'noticeId' => $id]);
+    chk('notice · the desk sees what the email queue actually did', is_array($R2['mail']) && $R2['mail']['cancelled'] + $R2['mail']['sent'] + $R2['mail']['failed'] + $R2['mail']['queued'] === 7);
+    foreach ([$fid, $mo['notice']['noticeId'], $d1['noticeId'], $d2['noticeId']] as $x) foreach (['notice_reads', 'notice_mail', 'notices'] as $t) db_exec("DELETE FROM $t WHERE noticeId = ?", [$x]);
+    db_exec("DELETE FROM notifications WHERE linkPage = 'notice' AND memberId LIKE 'NGG-NT-%'");
+    db_exec("DELETE FROM push_queue WHERE subjectKey = 'g:GRD-NT-1'"); db_exec("DELETE FROM push_subscriptions WHERE subId = 'PS-NT-1'");
+
     foreach (['notice_reads' => "noticeId = '$id'", 'notice_mail' => "noticeId = '$id'", 'notices' => "noticeId = '$id'", 'notifications' => "linkRef = '$id'", 'guardian_notices' => "guardianId = 'GRD-NT-1'",
               'guardian_wards' => "guardianId = 'GRD-NT-1'", 'guardians' => "guardianId = 'GRD-NT-1'", 'members' => "memberId LIKE 'NGG-NT-%'", 'centres' => "centreId = 'CEN-NT-1'"] as $t => $w2) db_exec("DELETE FROM $t WHERE $w2");
 })();

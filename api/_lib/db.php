@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 211;
+const NGG_SCHEMA_TARGET = 212;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6096,6 +6096,17 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS uq_notice_mail ON notice_mail(noticeId, email);
             CREATE INDEX IF NOT EXISTS idx_notice_mail_status ON notice_mail(status, id);
+        ",
+
+        /* 212 — a notice published LATER (domain/notices.php notice_schedule_run).
+           "No class this Saturday" is written on Thursday and meant for Friday
+           evening; without a time the desk had to remember to come back. A
+           draft carries the moment it goes and who set it; the webcron tick
+           publishes it as that person, through the same publish as the button. */
+        212 => "
+            ALTER TABLE notices ADD COLUMN scheduledAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE notices ADD COLUMN scheduledBy TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_notices_sched ON notices(status, scheduledAt);
         ",
     ];
 

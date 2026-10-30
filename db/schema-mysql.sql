@@ -4974,3 +4974,10 @@ CREATE TABLE IF NOT EXISTS notice_mail (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (211) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 212 · A notice published later: when, and who set it ──
+ALTER TABLE notices ADD COLUMN scheduledAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE notices ADD COLUMN scheduledBy VARCHAR(64) NOT NULL DEFAULT '';
+CREATE INDEX idx_notices_sched ON notices (status, scheduledAt);
+
+INSERT INTO schema_version (version) VALUES (212) ON DUPLICATE KEY UPDATE version = version;

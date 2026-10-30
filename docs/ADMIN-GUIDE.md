@@ -2136,6 +2136,35 @@ announcement and a full management notice use the same editor.
    that it was withdrawn and why, and unsent emails are cancelled. A published
    notice is never deleted.
 
+**Publish later.** In the Sending panel, **When → Publish later…** takes a
+date and a time (Lagos time, up to 60 days ahead). The draft then goes out by
+itself at that minute, as it stands then — keep editing until then. The bar
+shows the time; **Don't schedule it** takes it away again, and **Publish
+now…** still sends it at once. If the person who scheduled it has lost the
+right to publish by then, it is not sent: it stays a draft and the audit log
+says why.
+
+**Who it reaches.** *Members and their families* goes to each member's feed
+and each family account; *Members only* to the members alone; *Families only*
+to the parents alone — the child cannot open a families-only notice, nor see
+it in their list. Parents get a push notification on their phone when a
+notice arrives in their family inbox. **Remind** follows the same choice: a
+families-only reminder goes to the parents (the notice comes back to the top
+of their inbox, unread), never to the children.
+
+**While writing.** If the connection drops, the editor says *Not saved* and
+saves by itself when it is back. If two people edit the same notice, the
+second save is stopped — nobody's words are overwritten silently — and the
+editor offers **Load their version** or **Keep mine**. Closing the tab with
+unsaved words asks first. Once a notice has gone out, who it is for, whether
+it is emailed, and whether it asks for an acknowledgement are fixed.
+
+**On a notice's page:** **Send me a test email** (the notice as its email, to
+your own address only), **Duplicate as a new draft** (same words and
+audience, for next week's version), the email figures (sent, still to send,
+failed after three tries) when it was emailed, and **Export who has read it
+(CSV)** to chase by phone.
+
 **Copy for WhatsApp** gives the notice back in WhatsApp's own marks to paste
 into a group. Members and parents read it at **/notice/…** (signed in;
 parents through their family account), where they can also **print or save

@@ -608,3 +608,25 @@ No new table. `circle_links` (the old code-and-token portal) are all
 adult's link: a family link (`GW-…`) or a mentor (`MT-<mentorId>`), with
 `role` parent | mentor (old rows may still say `teacher`).
 
+
+## `notices`, `notice_reads`, `notice_mail` (migrations 211, 212)
+
+Official notices and announcements (`domain/notices.php`).
+
+- `notices` — one row per notice: `noticeId` (`NTC-YYYY-xxxx`), the parts
+  `org`, `kind` (the letterhead; both empty ⇒ an announcement, no
+  "SUBJECT:"), `subject`, `body` (WhatsApp text — the stored form; the editor
+  serialises to it and `notice_html` draws it), `signoff`; who for:
+  `audience` (`all` | a programme | a centre name), `reach` (`both` |
+  `members` | `guardians`), `needsAck`, `emailOn`; lifecycle: `status`
+  (`draft` | `published` | `withdrawn`), `publishedBy/At`,
+  `correctedBy/At`, `correctionNote`, `withdrawnBy/At`, `withdrawReason`,
+  `remindedAt`, `stats` (JSON of what publish delivered), `updatedAt` (the
+  editor's stale-write check); **212:** `scheduledAt` (UTC ISO; a draft with
+  one is published by the webcron tick at that minute) and `scheduledBy`
+  (whom it is published as).
+- `notice_reads` — one row per reader per notice: `readerKey` `m:<memberId>`
+  or `g:<guardianId>:<memberId>` (a parent reads for each child), `memberId`,
+  `readAt`, `ackAt`, `ackName`. Unique on (`noticeId`, `readerKey`).
+- `notice_mail` — the email queue: one row per address per notice, `status`
+  `queued` | `sent` | `failed` (after 3 attempts) | `cancelled` (withdrawn).

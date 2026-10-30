@@ -12,7 +12,8 @@ if ($method === 'GET') {
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $map = ['parse' => 'admin.notices.parse', 'preview' => 'admin.notices.preview', 'save' => 'admin.notices.save', 'delete' => 'admin.notices.delete',
-            'publish' => 'admin.notices.publish', 'withdraw' => 'admin.notices.withdraw', 'remind' => 'admin.notices.remind'];
+            'publish' => 'admin.notices.publish', 'withdraw' => 'admin.notices.withdraw', 'remind' => 'admin.notices.remind',
+            'schedule' => 'admin.notices.schedule', 'test' => 'admin.notices.test'];
     $action = (string)($b['action'] ?? '');
     if (!isset($map[$action])) json_error('unknown_action', 400);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));

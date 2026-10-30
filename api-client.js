@@ -1704,6 +1704,10 @@
         publish:  (noticeId) => request('/admin/notices.php', { body: { action: 'publish', noticeId } }),
         withdraw: (noticeId, reason) => request('/admin/notices.php', { body: { action: 'withdraw', noticeId, reason } }),
         remind:   (noticeId) => request('/admin/notices.php', { body: { action: 'remind', noticeId } }),
+        /** Publish later: `at` is Lagos local "YYYY-MM-DDTHH:MM"; empty clears it. */
+        schedule: (noticeId, at) => request('/admin/notices.php', { body: { action: 'schedule', noticeId, at: at || '' } }),
+        /** The notice as its email, to the person asking. */
+        test:     (noticeId) => request('/admin/notices.php', { body: { action: 'test', noticeId } }),
       },
       anchor: {
         get:      () => request('/admin/anchor.php'),

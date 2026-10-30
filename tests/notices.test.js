@@ -146,7 +146,7 @@ async function pageFor(memberId, viewport) {
     await P.keyboard.press('Enter');
     await P.click('.nte-tool[aria-label="Bold"]');
     await P.keyboard.type('Bring your ID card.');
-    chk('the toolbar says what the caret is in (Bold pressed while typing bold)', await P.getAttribute('.nte-tool[aria-label="Bold"]', 'aria-pressed') === 'true');
+    chk('the toolbar says what the caret is in (Bold pressed while typing bold)', await until(P, () => document.querySelector('.nte-tool[aria-label="Bold"]').getAttribute('aria-pressed') === 'true', null, 5000));
     chk('…and what is typed is saved as WhatsApp bold, at the end of the body', await until(P, () => /^Saved/.test(document.querySelector('.nte-state').innerText), null, 20000)
       && /\*Bring your ID card\.\*\s*$/.test(php(`echo db_row("SELECT body FROM notices LIMIT 1")['body'];`)));
     await P.screenshot({ path: path.join(SHOTS, 'editor-official.png') });
@@ -227,6 +227,38 @@ async function pageFor(memberId, viewport) {
     await P.keyboard.press('Control+s');
     chk('one line is enough: Ctrl+S saves it as a draft with no letterhead and no sign-off', await until(P, () => /\/edit$/.test(location.pathname) && /^Saved/.test(document.querySelector('.nte-state').innerText), null, 20000)
       && php(`$n = db_row("SELECT * FROM notices WHERE subject = 'No class this Saturday'"); echo $n && $n['org'] === '' && $n['signoff'] === '' && $n['body'] === 'The centre is closed for repairs. See you next week.' ? 'y' : 'n';`) === 'y');
+    const sid = php(`echo db_row("SELECT noticeId FROM notices WHERE subject = 'No class this Saturday'")['noticeId'];`);
+    // The toolbar is one tab stop, walked with the arrows.
+    await P.focus('.nte-tool[aria-label="Bold"]');
+    await P.keyboard.press('ArrowRight');
+    chk('the formatting toolbar is one tab stop, and the arrows walk it', await P.evaluate(() => document.activeElement.getAttribute('aria-label') === 'Italic'
+      && document.querySelectorAll('.nte-tools button[tabindex="0"]').length === 1));
+    // Publish later.
+    await P.click('.nte-side button:has-text("Publish later…")');
+    await P.fill('#nte-time', '18:00');
+    await P.click('.nte-side button:has-text("Schedule it")');
+    chk('“Publish later…” schedules it: the bar shows the time, the draft carries it', await until(P, () => !!document.querySelector('.nte-sched') && /Goes out by itself/.test(document.querySelector('.nte-side').innerText), null, 20000)
+      && /T17:00:00Z$/.test(php(`echo db_row("SELECT scheduledAt FROM notices WHERE noticeId = '${sid}'")['scheduledAt'];`))
+      && (await P.locator('.nte-bar button:has-text("Publish now…")').count()) === 1);
+    await P.click('.nte-side button:has-text("Don’t schedule it")');
+    chk('…and “Don’t schedule it” takes the time away again; it stays a draft', await until(P, () => !document.querySelector('.nte-sched'), null, 20000)
+      && php(`echo db_row("SELECT scheduledAt FROM notices WHERE noticeId = '${sid}'")['scheduledAt'];`) === '');
+    // The connection drops while writing.
+    await P.context().setOffline(true);
+    await P.click('#nte-body');
+    await P.keyboard.press('End');
+    await P.keyboard.type(' Thanks.');
+    chk('a save that fails on the connection says so, keeps the words, and does not pretend', await until(P, () => /connection failed/.test(document.body.innerText), null, 20000));
+    await P.context().setOffline(false);
+    chk('…and saves by itself when the connection is back', await until(P, () => /^Saved/.test(document.querySelector('.nte-state').innerText) && !/connection failed/.test(document.body.innerText), null, 30000)
+      && /Thanks\.$/.test(php(`echo db_row("SELECT body FROM notices WHERE noticeId = '${sid}'")['body'];`)));
+    // Somebody else saves the same draft.
+    php(`db_exec("UPDATE notices SET body = 'The centre is closed for repairs. See you next week.', updatedAt = '2099-01-01T00:00:00Z' WHERE noticeId = '${sid}'");`);
+    await P.keyboard.type(' Bring water.');
+    chk('a save over somebody else’s newer words is stopped, and says so — nothing is overwritten', await until(P, () => /Somebody else changed this notice/.test(document.body.innerText), null, 20000)
+      && php(`echo db_row("SELECT body FROM notices WHERE noticeId = '${sid}'")['body'];`) === 'The centre is closed for repairs. See you next week.');
+    await P.click('.nte-banner button:has-text("Load their version")');
+    chk('…“Load their version” puts their words on the page', await until(P, () => document.querySelector('#nte-body').innerText.trim() === 'The centre is closed for repairs. See you next week.' && !/Somebody else changed/.test(document.body.innerText)));
     await P.screenshot({ path: path.join(SHOTS, 'editor-short.png') });
     await P.click('.nte-bar button:has-text("Publish…")');
     await P.waitForSelector('[role="alertdialog"]');
@@ -238,6 +270,16 @@ async function pageFor(memberId, viewport) {
     await waitForBoot(M);
     chk('a member reads it as an announcement: its title, its sentence, no “Subject:” banner', await until(M, () => /No class this Saturday/.test(document.body.innerText) && /closed for repairs/.test(document.body.innerText), null, 60000)
       && !/Subject:/.test(await text(M)) && (await M.locator('.nt-head.is-plain').count()) === 1);
+
+    // From the published notice: a copy for next week, and the readers as a sheet.
+    await until(P, id2 => location.pathname === '/control/comms/broadcast/' + id2, id2, 20000);
+    const [dl] = await Promise.all([P.waitForEvent('download', { timeout: 20000 }).catch(() => null), P.click('button:has-text("Export who has read it (CSV)")')]);
+    chk('the readers export as a CSV, to chase from', !!dl && /notice-.*-readers/.test(dl.suggestedFilename()));
+    await P.click('button:has-text("Duplicate as a new draft")');
+    chk('“Duplicate as a new draft” opens a copy in the editor — a new draft, nothing sent', await until(P, () => /\/broadcast\/NTC-[^/]+\/edit$/.test(location.pathname) && (document.querySelector('.nte textarea[aria-label="Title"]') || {}).value === 'No class this Saturday', null, 20000)
+      && php(`echo (int)db_row("SELECT COUNT(*) c FROM notices WHERE subject = 'No class this Saturday' AND status = 'draft'")['c'];`) === '1');
+    await P.click('.nte-bar button:has-text("Notices")');
+    await until(P, () => !document.querySelector('.nte'));
 
     // ── The editor on a phone ──
     const Q = await pageFor('NGG-NT-ADM', { width: 390, height: 844 });

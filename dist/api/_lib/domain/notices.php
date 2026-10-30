@@ -190,21 +190,47 @@ function notice_members(array $n): array {
     }
     return $out;
 }
-/** Is this member in the notice's audience? */
+/**
+ * How many members a notice reaches — the figure the publish confirm states.
+ * A count, grouped by role so staff can be left out by the same test as
+ * notice_members(), without loading up to five thousand rows: the editor asks
+ * on every autosave.
+ */
+function notice_reach_count(array $n): int {
+    $aud = admin_broadcast_audience((string)$n['audience']) ?? ['kind' => 'all', 'key' => ''];
+    $where = "status = 'active'"; $args = [];
+    if ($aud['kind'] === 'centre') { $where .= ' AND centre = ?'; $args[] = $aud['key']; }
+    elseif ($aud['kind'] === 'type') { $where .= ' AND type = ?'; $args[] = $aud['key']; }
+    $c = 0;
+    foreach (db_all("SELECT role, COUNT(*) c FROM members WHERE $where GROUP BY role", $args) as $r) if (!is_admin_role((string)$r['role'])) $c += (int)$r['c'];
+    return $c;
+}
+/**
+ * Is this member a reader of the notice? Staff read every notice. A notice for
+ * FAMILIES ONLY is not the child's to read — a fee letter, a safeguarding
+ * note — so it is neither in their feed (publish never sends it there) nor
+ * openable from their list or its address.
+ */
 function notice_for_member(array $n, string $memberId): bool {
     $m = db_row('SELECT memberId, centre, type, status, role FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     if (!$m) return false;
     if (is_admin_role((string)($m['role'] ?? ''))) return true;   // staff may read every notice
+    if ((string)($n['reach'] ?? 'both') === 'guardians') return false;
+    return notice_in_audience($n, $m);
+}
+/** Is this member (row) inside the notice's audience — everyone, a programme or a centre? Reach is not this question. */
+function notice_in_audience(array $n, array $m): bool {
     $aud = admin_broadcast_audience((string)$n['audience']) ?? ['kind' => 'all', 'key' => ''];
     if ($aud['kind'] === 'centre') return (string)$m['centre'] === $aud['key'];
     if ($aud['kind'] === 'type') return (string)$m['type'] === $aud['key'];
     return true;
 }
-/** The children of this guardian the notice is for. */
+/** The children of this guardian the notice is for. A members-only notice is for no family. */
 function notice_wards_for(array $n, string $guardianId): array {
+    if ((string)($n['reach'] ?? 'both') === 'members') return [];
     $out = [];
-    foreach (db_all("SELECT w.memberId, m.fullName FROM guardian_wards w JOIN members m ON m.memberId = w.memberId WHERE w.guardianId = ? AND w.status = 'active'", [$guardianId]) as $w)
-        if (notice_for_member($n, (string)$w['memberId'])) $out[] = ['memberId' => (string)$w['memberId'], 'fullName' => (string)$w['fullName']];
+    foreach (db_all("SELECT w.memberId, m.fullName, m.centre, m.type, m.role FROM guardian_wards w JOIN members m ON m.memberId = w.memberId WHERE w.guardianId = ? AND w.status = 'active' AND m.status = 'active'", [$guardianId]) as $w)
+        if (!is_admin_role((string)($w['role'] ?? '')) && notice_in_audience($n, $w)) $out[] = ['memberId' => (string)$w['memberId'], 'fullName' => (string)$w['fullName']];
     return $out;
 }
 
@@ -225,7 +251,8 @@ function notice_public(array $n): array {
 function notice_admin(array $n, ?array $counts = null): array {
     return notice_public($n) + ['body' => (string)$n['body'], 'audience' => (string)$n['audience'], 'reach' => (string)$n['reach'],
             'emailOn' => (bool)(int)$n['emailOn'], 'createdAt' => (string)$n['createdAt'], 'updatedAt' => (string)$n['updatedAt'],
-            'stats' => safe_json((string)$n['stats']) ?: null, 'remindedAt' => (string)$n['remindedAt']]
+            'stats' => safe_json((string)$n['stats']) ?: null, 'remindedAt' => (string)$n['remindedAt'],
+            'scheduledAt' => (string)($n['scheduledAt'] ?? ''), 'scheduledBy' => (string)($n['scheduledBy'] ?? '')]
         + ($counts ?? []);
 }
 /** Readers and acknowledgements, for one notice or many, in two grouped queries. */
@@ -245,7 +272,7 @@ function notice_counts(array $ids): array {
 
 /** notice_admin() with how many it reaches and who has read it — what the editor's Publish confirm reads. */
 function notice_admin_counted(array $n): array {
-    return notice_admin($n, ['reachMembers' => count(notice_members($n))] + (notice_counts([(string)$n['noticeId']])[(string)$n['noticeId']] ?? ['readers' => 0, 'acked' => 0]));
+    return notice_admin($n, ['reachMembers' => notice_reach_count($n)] + (notice_counts([(string)$n['noticeId']])[(string)$n['noticeId']] ?? ['readers' => 0, 'acked' => 0]));
 }
 
 /** Validate the parts the desk sends. ['ok'=>false,…] or the clean row fields. */
@@ -286,7 +313,7 @@ function admin_notices_list(array $p): array {
     $out = [];
     foreach ($rows as $n) {
         $k = (string)$n['audience'];
-        if (!isset($reach[$k])) $reach[$k] = count(notice_members($n));
+        if (!isset($reach[$k])) $reach[$k] = notice_reach_count($n);
         $out[] = notice_admin($n, ['reachMembers' => $reach[$k]] + ($counts[(string)$n['noticeId']] ?? ['readers' => 0, 'acked' => 0]));
     }
     $aud = function_exists('admin_broadcast_history') ? (admin_broadcast_history($p)['audiences'] ?? []) : [];
@@ -315,11 +342,21 @@ function admin_notices_save(array $p): array {
     $n = notice_get($id);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     if ((string)$n['status'] === 'withdrawn') return ['ok' => false, 'error' => 'withdrawn', 'detail' => 'A withdrawn notice is not edited. Write a new one.'];
+    /* Two people (or one person in two tabs) editing the same notice: the
+       editor says which version it started from, and a save over somebody
+       else's newer words is refused with theirs attached — never a silent
+       last-write-wins. `force` is the writer choosing to keep their own. */
+    $base = trim((string)($p['baseUpdatedAt'] ?? ''));
+    if ($base !== '' && $base !== (string)$n['updatedAt'] && empty($p['force']))
+        return ['ok' => false, 'error' => 'stale', 'detail' => 'Somebody else changed this notice after you opened it.', 'notice' => notice_admin_counted($n)];
     if ((string)$n['status'] === 'published') {
         $note = trim(mb_substr((string)($p['correctionNote'] ?? ''), 0, 240));
         if (mb_strlen($note) < 5) return ['ok' => false, 'error' => 'note_required', 'field' => 'correctionNote', 'detail' => 'Say what was corrected — readers are shown it.'];
-        // Who it is for is fixed once it has gone out: re-addressing a sent notice is a new notice.
-        $row = array_diff_key($c['row'], ['audience' => 1, 'reach' => 1, 'emailOn' => 1]);
+        /* Who it is for, and what it asked of them, are fixed once it has gone
+           out: re-addressing a sent notice is a new notice, and an
+           acknowledgement asked for afterwards would reach nobody's inbox as
+           something to sign. */
+        $row = array_diff_key($c['row'], ['audience' => 1, 'reach' => 1, 'emailOn' => 1, 'needsAck' => 1]);
         db_update('notices', $row + ['correctedBy' => $by, 'correctedAt' => $now, 'correctionNote' => $note, 'updatedAt' => $now], ['noticeId' => $id]);
         audit('notice.correct', $by, $id, ['note' => $note], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'notice' => notice_admin_counted(notice_get($id)), 'corrected' => true];
@@ -348,15 +385,22 @@ function admin_notices_delete(array $p): array {
 function admin_notices_publish(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
     $n = notice_get((string)($p['noticeId'] ?? '')); if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    return notice_publish_run($n, (string)$g['requester']['memberId'], (string)($p['ip'] ?? ''));
+}
+/**
+ * The one publish — the button's and the schedule's. Everything after the
+ * gate: validate, claim, deliver, count, audit.
+ */
+function notice_publish_run(array $n, string $by, string $ip, bool $scheduled = false): array {
     if ((string)$n['status'] !== 'draft') return ['ok' => false, 'error' => 'already_published', 'detail' => 'This notice has already gone out.'];
     $c = notice_clean($n + ['needsAck' => (int)$n['needsAck'], 'emailOn' => (int)$n['emailOn']]); if (!$c['ok']) return $c;
     $members = notice_members($n);
     if (count($members) > NOTICE_AUDIENCE_MAX) return ['ok' => false, 'error' => 'too_many', 'detail' => 'A notice reaches at most ' . NOTICE_AUDIENCE_MAX . ' members at once; choose a programme or a centre.'];
     if (!$members) return ['ok' => false, 'error' => 'nobody', 'detail' => 'Nobody is in that audience.'];
-    $by = (string)$g['requester']['memberId']; $now = $now0 = now_iso();
+    $now = $now0 = now_iso();
     $id = (string)$n['noticeId'];
-    // Claimed first: a second press finds it published and stops here.
-    if (db_exec("UPDATE notices SET status = 'published', publishedBy = ?, publishedAt = ?, updatedAt = ? WHERE noticeId = ? AND status = 'draft'", [$by, $now, $now, $id]) !== 1)
+    // Claimed first: a second press (or the schedule's tick racing the button) finds it published and stops here.
+    if (db_exec("UPDATE notices SET status = 'published', publishedBy = ?, publishedAt = ?, updatedAt = ?, scheduledAt = '' WHERE noticeId = ? AND status = 'draft'", [$by, $now, $now, $id]) !== 1)
         return ['ok' => false, 'error' => 'already_published', 'detail' => 'This notice has already gone out.'];
     $title = mb_substr(((string)$n['kind'] !== '' ? notice_unmark((string)$n['kind']) . ': ' : 'Notice: ') . (string)$n['subject'], 0, 200);
     $excerpt = notice_excerpt((string)$n['body']);
@@ -377,7 +421,10 @@ function admin_notices_publish(array $p): array {
             foreach (db_all("SELECT DISTINCT g.guardianId FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId WHERE w.status = 'active' AND COALESCE(g.status,'active') = 'active' AND w.memberId IN ("
                 . implode(',', array_fill(0, count($chunk), '?')) . ')', $chunk) as $r) $gIds[(string)$r['guardianId']] = true;
         }
-        foreach (array_keys($gIds) as $gid) if (function_exists('family_notice_add') && family_notice_add($gid, 'notice', $id, $title, $excerpt, (string)$n['signoff'])) $stats['families']++;
+        foreach (array_keys($gIds) as $gid) if (function_exists('family_notice_add') && family_notice_add($gid, 'notice', $id, $title, $excerpt, (string)$n['signoff'])) {
+            $stats['families']++;
+            notice_family_push($gid, $n, $title, (int)$n['needsAck'] ? 'Please read it and confirm you have understood it.' : $excerpt);
+        }
         // A notice that asks for an acknowledgement is one the family inbox asks them to sign — and signing it is the acknowledgement.
         if ((int)$n['needsAck']) db_exec("UPDATE guardian_notices SET sign = 1 WHERE kind = 'notice' AND refId = ?", [$id]);
     }
@@ -398,8 +445,103 @@ function admin_notices_publish(array $p): array {
         }
     }
     db_update('notices', ['stats' => json_encode($stats)], ['noticeId' => $id]);
-    audit('notice.publish', $by, $id, ['audience' => (string)$n['audience'], 'reach' => $reach] + $stats, (string)($p['ip'] ?? ''));
+    audit($scheduled ? 'notice.publish.scheduled' : 'notice.publish', $by, $id, ['audience' => (string)$n['audience'], 'reach' => $reach] + $stats, $ip);
     return ['ok' => true, 'notice' => notice_admin(notice_get($id)), 'stats' => $stats];
+}
+
+/**
+ * A push to a parent's phone for a notice in their family inbox. The inbox
+ * row is what they read; without this a parent learnt of a management notice
+ * only by opening the app, or by an email the desk may not have sent.
+ */
+function notice_family_push(string $gid, array $n, string $title, string $body): void {
+    if (!function_exists('push_dispatch')) return;
+    $id = (string)$n['noticeId'];
+    push_dispatch('g:' . $gid, ['title' => $title, 'body' => $body, 'url' => '/notice/' . rawurlencode($id), 'tag' => 'notice:' . $id, 'kind' => 'notice', 'surface' => 'family']);
+}
+
+/* ── Later ────────────────────────────────────────────────────────────────── */
+
+const NOTICE_SCHEDULE_MAX_DAYS = 60;
+
+/**
+ * admin.notices.schedule — publish a draft at a set time (`at`, Lagos local
+ * "YYYY-MM-DDTHH:MM"), or clear the time (`at` empty). It is checked the way
+ * the button checks it — something to say, somebody to say it to — now, not
+ * at 6pm on Friday when nobody is watching.
+ */
+function admin_notices_schedule(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $n = notice_get((string)($p['noticeId'] ?? '')); if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$n['status'] !== 'draft') return ['ok' => false, 'error' => 'already_published', 'detail' => 'This notice has already gone out.'];
+    $by = (string)$g['requester']['memberId'];
+    $at = trim((string)($p['at'] ?? ''));
+    if ($at === '') {
+        db_update('notices', ['scheduledAt' => '', 'scheduledBy' => '', 'updatedAt' => now_iso()], ['noticeId' => (string)$n['noticeId']]);
+        audit('notice.unschedule', $by, (string)$n['noticeId'], [], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'notice' => notice_admin_counted(notice_get((string)$n['noticeId']))];
+    }
+    $tz = function_exists('push_tz') ? push_tz() : new DateTimeZone('Africa/Lagos');
+    $dt = DateTime::createFromFormat('Y-m-d\TH:i', substr($at, 0, 16), $tz);
+    if (!$dt) return ['ok' => false, 'error' => 'bad_time', 'field' => 'at', 'detail' => 'Choose a date and a time.'];
+    $ts = $dt->getTimestamp();
+    if ($ts < time() + 120) return ['ok' => false, 'error' => 'past', 'field' => 'at', 'detail' => 'Choose a time at least two minutes from now — or publish it now.'];
+    if ($ts > time() + NOTICE_SCHEDULE_MAX_DAYS * 86400) return ['ok' => false, 'error' => 'too_far', 'field' => 'at', 'detail' => 'At most ' . NOTICE_SCHEDULE_MAX_DAYS . ' days ahead.'];
+    $c = notice_clean($n + ['needsAck' => (int)$n['needsAck'], 'emailOn' => (int)$n['emailOn']]); if (!$c['ok']) return $c;
+    $N = notice_reach_count($n);
+    if ($N < 1) return ['ok' => false, 'error' => 'nobody', 'detail' => 'Nobody is in that audience.'];
+    if ($N > NOTICE_AUDIENCE_MAX) return ['ok' => false, 'error' => 'too_many', 'detail' => 'A notice reaches at most ' . NOTICE_AUDIENCE_MAX . ' members at once; choose a programme or a centre.'];
+    $iso = gmdate('Y-m-d\TH:i:s\Z', $ts);
+    db_update('notices', ['scheduledAt' => $iso, 'scheduledBy' => $by, 'updatedAt' => now_iso()], ['noticeId' => (string)$n['noticeId']]);
+    audit('notice.schedule', $by, (string)$n['noticeId'], ['at' => $iso], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'notice' => notice_admin_counted(notice_get((string)$n['noticeId']))];
+}
+
+/**
+ * The webcron tick: every scheduled draft whose minute has come is published
+ * as the person who scheduled it — if they may still publish. Somebody whose
+ * access was taken away in the meantime does not get to speak through a
+ * timer; the notice stays a draft, its time cleared, and the reason recorded.
+ */
+function notice_schedule_run(int $limit = 5): array {
+    $out = ['published' => 0, 'held' => 0];
+    foreach (db_all("SELECT * FROM notices WHERE status = 'draft' AND scheduledAt <> '' AND scheduledAt <= ? ORDER BY scheduledAt LIMIT " . max(1, $limit), [now_iso()]) as $n) {
+        $by = (string)$n['scheduledBy'];
+        $who = $by !== '' ? db_row("SELECT * FROM members WHERE memberId = ? AND status = 'active' LIMIT 1", [$by]) : null;
+        $may = $who && in_array('content', member_effective_caps($who), true);
+        if (!$may) {
+            db_update('notices', ['scheduledAt' => '', 'updatedAt' => now_iso()], ['noticeId' => (string)$n['noticeId']]);
+            audit('notice.schedule.held', $by, (string)$n['noticeId'], ['why' => 'scheduler_no_longer_allowed'], '');
+            $out['held']++; continue;
+        }
+        $r = notice_publish_run($n, $by, '', true);
+        if (!empty($r['ok'])) $out['published']++;
+        else {
+            // Refused at its minute (nobody in the audience any more, say): it stays a draft, unscheduled, with why on the record.
+            db_update('notices', ['scheduledAt' => '', 'updatedAt' => now_iso()], ['noticeId' => (string)$n['noticeId']]);
+            audit('notice.schedule.held', $by, (string)$n['noticeId'], ['why' => (string)($r['error'] ?? 'refused')], '');
+            $out['held']++;
+        }
+    }
+    return $out;
+}
+
+/**
+ * admin.notices.test — the notice as its email, to the person asking, before
+ * anybody else gets it. Drafts included: that is the point. Twice a minute at most.
+ */
+function admin_notices_test(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $n = notice_get((string)($p['noticeId'] ?? '')); if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    $to = strtolower(trim((string)($g['requester']['email'] ?? '')));
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'no_email', 'detail' => 'Your account has no email address to send the test to.'];
+    // The audit trail is the clock: two tests a minute per person, so a stuck button cannot fill an inbox.
+    $recent = (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'notice.test' AND actorId = ? AND at >= ?", [(string)$g['requester']['memberId'], gmdate('Y-m-d\TH:i:s\Z', time() - 60)])['c'] ?? 0);
+    if ($recent >= 2) return ['ok' => false, 'error' => 'too_soon', 'detail' => 'Two tests a minute at most.'];
+    $ok = false;
+    try { $ok = function_exists('send_mail') && (bool)send_mail($to, '[Test] ' . notice_title($n), notice_email_html($n)); } catch (Throwable $e) { $ok = false; }
+    audit('notice.test', (string)$g['requester']['memberId'], (string)$n['noticeId'], ['ok' => $ok], (string)($p['ip'] ?? ''));
+    return $ok ? ['ok' => true, 'to' => $to] : ['ok' => false, 'error' => 'mail_failed', 'detail' => 'The test email could not be sent — email may not be set up on this site.'];
 }
 
 /** admin.notices.withdraw — taken back, with the reason; readers are told it was withdrawn rather than finding nothing. */
@@ -438,7 +580,11 @@ function admin_notices_readers(array $p): array {
         $rows[] = ['memberId' => $mid, 'fullName' => (string)$m['fullName'], 'centre' => (string)$m['centre']] + $r;
         $tot['members']++; if ($r['readAt'] !== '') $tot['read']++; if ($r['ackAt'] !== '') $tot['acked']++;
     }
-    return ['ok' => true, 'rows' => $rows, 'totals' => $tot, 'needsAck' => (bool)(int)$n['needsAck'], 'remindedAt' => (string)$n['remindedAt']];
+    // What the email queue actually did — "N emails on their way" at publish said nothing about whether they arrived.
+    $mail = ['queued' => 0, 'sent' => 0, 'failed' => 0, 'cancelled' => 0];
+    foreach (db_all('SELECT status, COUNT(*) c FROM notice_mail WHERE noticeId = ? GROUP BY status', [(string)$n['noticeId']]) as $m2) $mail[(string)$m2['status']] = (int)$m2['c'];
+    return ['ok' => true, 'rows' => $rows, 'totals' => $tot, 'needsAck' => (bool)(int)$n['needsAck'], 'remindedAt' => (string)$n['remindedAt'],
+            'reach' => (string)$n['reach'], 'mail' => (int)$n['emailOn'] ? $mail : null];
 }
 
 /**
@@ -456,17 +602,35 @@ function admin_notices_remind(array $p): array {
     $ack = (int)$n['needsAck'];
     $left = array_values(array_filter($r['rows'], static fn($x) => $ack ? $x['ackAt'] === '' : $x['readAt'] === ''));
     $id = (string)$n['noticeId'];
-    $sent = 0;
-    foreach ($left as $x) {
+    $reach = (string)$n['reach'];
+    $title = 'Reminder: ' . (string)$n['subject'];
+    $body = $ack ? 'Please read this notice and confirm you have understood it.' : notice_excerpt((string)$n['body']);
+    $sent = 0; $fam = 0;
+    /* The reminder goes where the notice went: to the members' feed unless it
+       was for families only, and to the parents of those members unless it was
+       for members only — the family inbox item comes back to the top, unread,
+       with a push. A families-only notice reminded the CHILDREN before. */
+    if ($reach !== 'guardians') foreach ($left as $x) {
         try {
-            push_notification($x['memberId'], ['kind' => 'notice', 'title' => 'Reminder: ' . (string)$n['subject'], 'body' => $ack ? 'Please read this notice and confirm you have understood it.' : notice_excerpt((string)$n['body']),
+            push_notification($x['memberId'], ['kind' => 'notice', 'title' => $title, 'body' => $body,
                 'linkPage' => 'notice', 'linkRef' => $id, 'actionLabel' => $ack ? 'Read and acknowledge' : 'Read the notice', 'url' => '/notice/' . rawurlencode($id), 'groupKey' => 'notice:' . $id]);
             $sent++;
         } catch (Throwable $e) { error_log('[notice.remind] ' . $e->getMessage()); }
     }
+    if ($reach !== 'members' && $left) {
+        $gIds = [];
+        foreach (array_chunk(array_column($left, 'memberId'), 400) as $chunk)
+            foreach (db_all("SELECT DISTINCT w.guardianId FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId WHERE w.status = 'active' AND COALESCE(g.status,'active') = 'active' AND w.memberId IN ("
+                . implode(',', array_fill(0, count($chunk), '?')) . ')', $chunk) as $g2) $gIds[(string)$g2['guardianId']] = true;
+        foreach (array_keys($gIds) as $gid) {
+            db_exec("UPDATE guardian_notices SET readAt = '', createdAt = ? WHERE guardianId = ? AND kind = 'notice' AND refId = ? AND COALESCE(signedAt,'') = ''", [now_iso(), $gid, $id]);
+            notice_family_push($gid, $n, $title, $body);
+            $fam++;
+        }
+    }
     db_update('notices', ['remindedAt' => now_iso()], ['noticeId' => $id]);
-    audit('notice.remind', (string)$g['requester']['memberId'], $id, ['sent' => $sent], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'reminded' => $sent];
+    audit('notice.remind', (string)$g['requester']['memberId'], $id, ['sent' => $sent, 'families' => $fam], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'reminded' => $sent, 'families' => $fam];
 }
 
 /* ── Readers ──────────────────────────────────────────────────────────────── */

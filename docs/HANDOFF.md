@@ -5192,3 +5192,39 @@ are not this long". `NoticeEditor` (cr-tab-comms.jsx) replaces it:
 - `tests/notices.test.js`: 36 checks — paste, round trip, toolbar state,
   autosave, preview, publish, correction, a one-line announcement, the phone
   sheet.
+
+## 2026-10-30 — Notices: the gap pass
+
+An audit of the notices feature end to end found, and this closes:
+
+- **Families got no push.** Publish put the notice in the family inbox and
+  never told the phone. `notice_family_push()` now dispatches `g:<id>` at
+  publish and at remind.
+- **"Families only" was readable by the child** — from their notice list and
+  from `/notice/<id>`. `notice_for_member()` refuses it for non-staff;
+  `notice_in_audience()` is the audience-only test the family side uses, and
+  a members-only notice is no family's.
+- **Remind ignored reach**: a families-only notice reminded the CHILDREN and
+  never the parents. It now follows reach — the parent's inbox item returns
+  unread with a push.
+- **Silent last-write-wins.** The editor sends `baseUpdatedAt`; a save over a
+  newer version is refused `stale` with theirs attached ("Load their version"
+  / "Keep mine" = `force`). Also fixed: after one failed save, the client's
+  save chain stayed rejected and every later save was skipped.
+- **Acknowledgement after the fact.** A correction could switch needsAck on,
+  which no family inbox had been asked to sign. Fixed once published, with
+  audience, reach and email.
+- **Autosave did a 5,000-row load** to count the audience; it is a grouped
+  count now (`notice_reach_count`).
+- New: **publish later** (migration 212 `scheduledAt`/`scheduledBy`,
+  `admin.notices.schedule`, webcron `notice_sched` → `notice_schedule_run`,
+  published through `notice_publish_run` — the button's own path — as the
+  scheduler, and held if they lost `content`); **test email to yourself**
+  (`admin.notices.test`, twice a minute, the audit log as the clock); **email
+  delivery figures** on the readers op; **readers CSV**; **duplicate**.
+- Editor: retry on reconnect (15s or the `online` event), a beforeunload
+  guard, a confirm before leaving words that cannot be saved yet, a roving
+  tabindex toolbar, a characters-left warning near the 40,000 limit, a
+  warning and refusal for an empty audience, z-index 42 so Control Room forms
+  and confirms layer above it.
+- Tests: PHP +17 checks; `tests/notices.test.js` 45 checks.

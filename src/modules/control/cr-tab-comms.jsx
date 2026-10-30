@@ -156,6 +156,8 @@ const NT_TOOLS = [
   { id: "redo", icon: "arrow-clockwise", l: "Redo", k: "Ctrl+Y", cmd: "redo", plain: true },
 ];
 
+const NT_BTNS = NT_TOOLS.filter(t => !t.sep);
+
 function NoticeEditor({ d, ctx, id }) {
   const n0 = React.useMemo(() => id ? (d.notices || []).find(x => x.noticeId === id) || null : null, []);   // read once: the page is the editor's from here
   const R = d.reachLabels || {}, lh = d.lastLetterhead || {};
@@ -174,6 +176,10 @@ function NoticeEditor({ d, ctx, id }) {
   const [prev, setPrev] = React.useState(null);
   const [sheet, setSheet] = React.useState(false);
   const [errs, setErrs] = React.useState({});
+  const [conflict, setConflict] = React.useState(null);   // somebody else's newer version, when a save was refused as stale
+  const [sched, setSched] = React.useState(n0 ? n0.scheduledAt || "" : "");
+  const [when, setWhen] = React.useState(null);           // the schedule being chosen: { date, time, err, busy }
+  const [ti, setTi] = React.useState(0);                  // the toolbar button that holds the tab stop (roving tabindex)
   const bodyRef = React.useRef(null), subjRef = React.useRef(null), rangeRef = React.useRef(null);
   const ver = React.useRef(0), chain = React.useRef(Promise.resolve()), last = React.useRef(n0), live = React.useRef({});
   live.current = { f, head, sign, body, nid, note, pub };
@@ -186,17 +192,19 @@ function NoticeEditor({ d, ctx, id }) {
   const payload = () => {
     const L = live.current, v = L.f;
     return { noticeId: L.nid || undefined, org: L.head ? v.org : "", kind: L.head ? v.kind : "", subject: v.subject, signoff: L.sign ? v.signoff : "", body: L.body,
-      audience: v.audience, reach: v.reach, needsAck: !!v.needsAck, emailOn: !!v.emailOn, correctionNote: L.pub ? L.note : undefined };
+      audience: v.audience, reach: v.reach, needsAck: !!v.needsAck, emailOn: !!v.emailOn, correctionNote: L.pub ? L.note : undefined,
+      baseUpdatedAt: last.current ? last.current.updatedAt : undefined };
   };
   const valid = () => { const L = live.current; return L.f.subject.trim().length >= 3 && L.body.trim().length >= 2; };
   /* One save at a time, in order: the first save of a new notice creates it, and every later one must name it. */
-  const doSave = () => {
+  const doSave = force => {
     const mine = ++ver.current;
-    chain.current = chain.current.then(async () => {
+    chain.current = chain.current.catch(() => {}).then(async () => {
       if (mine !== ver.current) return last.current;   // a later change will save the newer text
       setSave({ s: "saving" });
       try {
-        const r = await NGGApi.admin.notices.save(payload());
+        const r = await NGGApi.admin.notices.save(Object.assign(payload(), force ? { force: true } : {}));
+        setConflict(null);
         const n = r.notice; last.current = n;
         if (!live.current.nid) { setNid(n.noticeId); live.current.nid = n.noticeId; ctx.setSub(n.noticeId + "/edit"); }
         ctx.setData(x => Object.assign({}, x, { notices: [n].concat((x.notices || []).filter(y => y.noticeId !== n.noticeId)) }));
@@ -204,9 +212,11 @@ function NoticeEditor({ d, ctx, id }) {
         setSave(mine === ver.current ? { s: "saved", at: Date.now() } : { s: "dirty" });
         return n;
       } catch (e) {
-        const fld = e && e.data && e.data.field;
+        const D = (e && e.data) || {}, fld = D.field;
+        if (D.error === "stale" && D.notice) { setConflict(D.notice); setSave({ s: "error", msg: "Changed by somebody else" }); throw e; }
         if (fld) setErrs({ [fld]: crNtErr(e) });
-        setSave({ s: "error", msg: crNtErr(e, "Couldn’t save it.") });
+        /* A refusal about the words waits for the writer; anything else (the connection, the server) is tried again by itself. */
+        setSave({ s: "error", msg: crNtErr(e, "Couldn’t save it."), retry: !fld && !D.error });
         throw e;
       }
     });
@@ -225,6 +235,22 @@ function NoticeEditor({ d, ctx, id }) {
     ctx.setDirty("notice-editor", unsaved ? { n: 1, save: () => pub ? Promise.resolve() : doSave(), discard: () => {} } : null);
   }, [save.s, pub]);
   React.useEffect(() => () => ctx.setDirty("notice-editor", null), []);
+  /* A save that failed on the connection tries again by itself — in fifteen seconds, or the moment the browser is back online. */
+  React.useEffect(() => {
+    if (pub || save.s !== "error" || !save.retry || conflict) return;
+    const again = () => { if (valid()) doSave().catch(() => {}); };
+    const t = setTimeout(again, 15000);
+    window.addEventListener("online", again);
+    return () => { clearTimeout(t); window.removeEventListener("online", again); };
+  }, [save, pub, conflict]);
+  /* Closing the tab or reloading with words not yet saved asks the browser's own question. */
+  React.useEffect(() => {
+    const busy = save.s === "dirty" || save.s === "saving" || save.s === "error" || (save.s === "new" && (live.current.body.trim() || live.current.f.subject.trim()));
+    if (!busy) return;
+    const h = e => { e.preventDefault(); e.returnValue = ""; return ""; };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [save.s, body, f.subject]);
 
   const set = (k, v) => { setF(x => Object.assign({}, x, { [k]: v })); setErrs(e => Object.assign({}, e, { [k]: "" })); changed(); };
   const readBody = () => { const el = bodyRef.current; if (!el) return; const t = ntSerialize(el); el.classList.toggle("is-empty", !el.textContent.trim() && !el.querySelector("li,br+br")); if (t !== live.current.body) { setBody(t); live.current.body = t; setErrs(e => Object.assign({}, e, { body: "" })); changed(); } };
@@ -317,6 +343,7 @@ function NoticeEditor({ d, ctx, id }) {
   };
   const publish = async () => {
     if (!need()) return;
+    if (audN === 0) { setSheet(true); ctx.toast("Nobody is in that audience — choose another before publishing.", null, true); return; }
     let n;
     try { n = (save.s === "saved" && last.current) ? last.current : await doSave(); } catch (_) { return; }
     if (await crNtPublish(ctx, n)) ctx.setSub(n.noticeId);
@@ -326,9 +353,56 @@ function NoticeEditor({ d, ctx, id }) {
     try { await doSave(); ctx.toast("Corrected. Readers see the change and your note."); ctx.setDirty("notice-editor", null); ctx.setSub(live.current.nid); ctx.reload(); } catch (_) {}
   };
   const leave = async () => {
-    if (!pub && (save.s === "dirty") && valid()) { try { await doSave(); } catch (_) { return; } }
+    if (!pub && (save.s === "dirty" || save.s === "error") && valid() && !conflict) { try { await doSave(); } catch (_) { return; } }
+    const L = live.current, words = L.body.trim() || L.f.subject.trim();
+    if (words && ((!valid() && !pub && save.s !== "saved") || conflict || (pub && save.s === "dirty"))) {
+      const ok = await ctx.confirm({ title: "Leave without saving?", cta: "Leave", danger: true, cancel: "Keep writing",
+        body: conflict ? "Your version was not saved: somebody else changed this notice." : pub ? "Your correction has not been saved." : "It cannot be saved yet: it needs a title of at least three letters and something to say." });
+      if (!ok) return;
+    }
     ctx.setDirty("notice-editor", null);
     ctx.setSub(live.current.nid || "");
+  };
+
+  /* Somebody else's newer version: take it, or keep yours (which then overwrites theirs, knowingly). */
+  const takeTheirs = () => {
+    const n = conflict; if (!n) return;
+    last.current = n; ver.current++;
+    setF(x => Object.assign({}, x, { org: n.org, kind: n.kind, subject: n.subject, signoff: n.signoff, audience: n.audience, reach: n.reach, needsAck: !!n.needsAck, emailOn: !!n.emailOn }));
+    setHead(!!(n.org || n.kind)); setSign(!!n.signoff); setSched(n.scheduledAt || "");
+    if (bodyRef.current) bodyRef.current.innerHTML = n.html || "";
+    setBody(n.body); live.current.body = n.body;
+    setConflict(null); setSave({ s: "saved" });
+    ctx.setData(x => Object.assign({}, x, { notices: [n].concat((x.notices || []).filter(y => y.noticeId !== n.noticeId)) }));
+  };
+  const keepMine = () => { last.current = conflict; setConflict(null); doSave(true).catch(() => {}); };
+
+  /* Publishing later. The time is Lagos time, as the desk reads a clock. */
+  const openWhen = () => {
+    const t = new Date(Date.now() + 86400000);
+    const p2 = x => String(x).padStart(2, "0");
+    setWhen({ date: t.getFullYear() + "-" + p2(t.getMonth() + 1) + "-" + p2(t.getDate()), time: "18:00", err: "" });
+  };
+  const doSchedule = async () => {
+    if (!need()) return;
+    if (!when.date || !when.time) { setWhen(w => Object.assign({}, w, { err: "Choose a date and a time." })); return; }
+    setWhen(w => Object.assign({}, w, { busy: true, err: "" }));
+    let n;
+    try { n = (save.s === "saved" && last.current) ? last.current : await doSave(); } catch (_) { setWhen(w => Object.assign({}, w, { busy: false })); return; }
+    try {
+      const r = await NGGApi.admin.notices.schedule(n.noticeId, when.date + "T" + when.time);
+      last.current = r.notice; setSched(r.notice.scheduledAt); setWhen(null);
+      ctx.setData(x => Object.assign({}, x, { notices: [r.notice].concat((x.notices || []).filter(y => y.noticeId !== r.notice.noticeId)) }));
+      ctx.toast("Scheduled for " + crDate(r.notice.scheduledAt, true) + ". It goes out by itself; edits until then go with it.");
+    } catch (e) { setWhen(w => Object.assign({}, w, { busy: false, err: crNtErr(e, "Couldn’t schedule it.") })); }
+  };
+  const unschedule = async () => {
+    try {
+      const r = await NGGApi.admin.notices.schedule(live.current.nid, "");
+      last.current = r.notice; setSched("");
+      ctx.setData(x => Object.assign({}, x, { notices: [r.notice].concat((x.notices || []).filter(y => y.noticeId !== r.notice.noticeId)) }));
+      ctx.toast("No longer scheduled. It stays a draft.");
+    } catch (e) { ctx.toast(crNtErr(e, "Couldn’t change the schedule."), null, true); }
   };
 
   /* Ctrl+S saves now — the habit every writer has — wherever the caret is in the editor. */
@@ -338,6 +412,14 @@ function NoticeEditor({ d, ctx, id }) {
       if (pub) { correct(); return; }
       if (valid()) doSave().catch(() => {}); else need();
     }
+  };
+  /* The toolbar is one tab stop; the arrows move along it, Home and End to its ends (the WAI toolbar pattern). */
+  const toolKey = e => {
+    const k = e.key, n = NT_BTNS.length;
+    const to = k === "ArrowRight" ? (ti + 1) % n : k === "ArrowLeft" ? (ti - 1 + n) % n : k === "Home" ? 0 : k === "End" ? n - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault(); setTi(to);
+    const b = e.currentTarget.querySelectorAll("button")[to]; if (b) b.focus();
   };
   const aud = d.audiences || [], audN = (aud.find(a => a.id === f.audience) || {}).n;
   const audName = crNtAud(d, f.audience);
@@ -350,8 +432,9 @@ function NoticeEditor({ d, ctx, id }) {
     <div className="nte-side-in">
       <div className="nte-sum" aria-live="polite">
         <CrIcon n={pub ? "megaphone" : "paper-plane-tilt"}/>
-        <span><b>{pub ? "Sent to " + audName : "To " + audName}</b><em>{pub ? (R[f.reach] || "") : reachLine}{extras ? <><br/>{extras}</> : null}</em></span>
+        <span><b>{pub ? "Sent to " + audName : "To " + audName}</b><em>{pub ? (R[f.reach] || "") : reachLine}{extras ? <><br/>{extras}</> : null}{sched && !pub ? <><br/>Goes out by itself {crDate(sched, true)}</> : null}</em></span>
       </div>
+      {!pub && audN === 0 && <p className="nte-err nte-side-warn" role="alert">Nobody is in this audience yet — it could not be published.</p>}
       <section className="nte-sec" aria-labelledby="nte-who">
         <h2 id="nte-who" className="nte-sec-h">Who it is for</h2>
         {pub ? <p className="nte-fixed">{crNtAud(d, f.audience)} · {R[f.reach] || f.reach}<span>Fixed once it has gone out — re-addressing it would be a new notice.</span></p> : <>
@@ -368,9 +451,27 @@ function NoticeEditor({ d, ctx, id }) {
       </section>
       <section className="nte-sec" aria-labelledby="nte-how">
         <h2 id="nte-how" className="nte-sec-h">Delivery</h2>
-        <div className="nte-row"><span><b>Ask them to acknowledge it</b><em>Readers confirm they have read and understood it, and you see who has not.</em></span><CrSwitch on={f.needsAck} label="Ask readers to acknowledge it" onChange={v => set("needsAck", v)}/></div>
+        <div className="nte-row"><span><b>Ask them to acknowledge it</b><em>{pub ? "Fixed once it has gone out — nobody was asked to sign it then." : "Readers confirm they have read and understood it, and you see who has not."}</em></span><CrSwitch on={f.needsAck} disabled={pub} label="Ask readers to acknowledge it" onChange={v => set("needsAck", v)}/></div>
         <div className="nte-row"><span><b>Email it as well</b><em>{pub ? "Fixed once it has gone out." : "Every member and family address, once each."}</em></span><CrSwitch on={f.emailOn} disabled={pub} label="Email it as well" onChange={v => set("emailOn", v)}/></div>
       </section>
+      {!pub && <section className="nte-sec" aria-labelledby="nte-when">
+        <h2 id="nte-when" className="nte-sec-h">When</h2>
+        {sched && !when ? <>
+          <p className="nte-fixed">Goes out by itself <b>{crDate(sched, true)}</b><span>Edits you make until then go out with it.</span></p>
+          <div className="nte-chips"><button type="button" className="cr-btn is-sm" onClick={openWhen}>Change the time</button><button type="button" className="cr-btn is-sm" onClick={unschedule}>Don’t schedule it</button></div>
+        </> : when ? <div className="nte-when" role="group" aria-label="Publish later">
+          <div className="nte-when-row">
+            <label className="nte-lbl" htmlFor="nte-date">Date<input id="nte-date" type="date" className="cr-input nte-input" value={when.date} onChange={e => setWhen(w => Object.assign({}, w, { date: e.target.value, err: "" }))}/></label>
+            <label className="nte-lbl" htmlFor="nte-time">Time<input id="nte-time" type="time" className="cr-input nte-input" value={when.time} onChange={e => setWhen(w => Object.assign({}, w, { time: e.target.value, err: "" }))}/></label>
+          </div>
+          <span className="nte-hint">Lagos time. Up to 60 days ahead.</span>
+          {when.err && <p className="nte-err" role="alert">{when.err}</p>}
+          <div className="nte-chips"><button type="button" className="cr-btn is-sm is-primary" disabled={when.busy} onClick={doSchedule}>{when.busy ? "Scheduling…" : "Schedule it"}</button><button type="button" className="cr-btn is-sm" onClick={() => setWhen(null)}>Cancel</button></div>
+        </div> : <>
+          <p className="nte-fixed">When you press Publish.<span>Or set a time and it goes out by itself.</span></p>
+          <div className="nte-chips"><button type="button" className="cr-btn is-sm" onClick={openWhen}><CrIcon n="clock"/>Publish later…</button></div>
+        </>}
+      </section>}
       {pub && <section className="nte-sec" aria-labelledby="nte-cor">
         <h2 id="nte-cor" className="nte-sec-h">The correction</h2>
         <label className="nte-lbl" htmlFor="nte-note">What was corrected <i>(readers are shown it)</i></label>
@@ -396,16 +497,21 @@ function NoticeEditor({ d, ctx, id }) {
         <button type="button" className="cr-btn is-sm nte-back" onClick={leave}><CrIcon n="arrow-left"/>Notices</button>
         <span className={"nte-state is-" + save.s} role="status" aria-live="polite">{save.s === "saving" ? <CrIcon n="circle-notch"/> : save.s === "saved" ? <CrIcon n="check"/> : save.s === "error" ? <CrIcon n="warning-circle"/> : null}{saveText}</span>
         <span className="nte-grow"/>
-        <span className="nte-count" aria-live="off">{crPlural(words, "word")}</span>
+        {sched && !pub && <span className="nte-sched" title={"Goes out by itself " + crDate(sched, true)}><CrIcon n="clock"/>{crDate(sched, true)}</span>}
+        <span className={"nte-count" + (body.length > (d.max || 40000) * 0.9 ? " is-warn" : "")} aria-live="off">{body.length > (d.max || 40000) * 0.9 ? crNum((d.max || 40000) - body.length) + " characters left" : crPlural(words, "word")}</span>
         <button type="button" className="cr-btn is-sm" aria-pressed={view === "preview"} onClick={showPreview}><CrIcon n={view === "preview" ? "pencil-simple" : "eye"}/>{view === "preview" ? "Back to writing" : "Preview"}</button>
         <button type="button" className="cr-btn is-sm nte-sheet-btn" aria-expanded={sheet} aria-controls="nte-side" onClick={() => setSheet(s => !s)}><CrIcon n="paper-plane-tilt"/><span className="nte-sheet-l">To {audName}</span></button>
         {pub ? <button type="button" className="cr-btn is-primary is-sm" onClick={correct} disabled={save.s === "saving"}>Save the correction</button>
-          : <button type="button" className="cr-btn is-primary is-sm" onClick={publish} disabled={save.s === "saving"}>Publish…</button>}
+          : <button type="button" className="cr-btn is-primary is-sm" onClick={publish} disabled={save.s === "saving" || !!conflict}>{sched ? "Publish now…" : "Publish…"}</button>}
       </div>
+      {conflict && <div className="nte-banner is-bad" role="alert"><CrIcon n="warning-circle"/><span className="nte-grow">Somebody else changed this notice while you were writing{conflict.updatedAt ? " (" + crDate(conflict.updatedAt, true) + ")" : ""}. Your words are still on the page, not saved.</span>
+        <button type="button" className="cr-btn is-sm" onClick={takeTheirs}>Load their version</button><button type="button" className="cr-btn is-sm" onClick={keepMine}>Keep mine</button></div>}
+      {!conflict && save.s === "error" && save.retry && <div className="nte-banner is-bad" role="alert"><CrIcon n="wifi-slash"/><span className="nte-grow">Not saved — the connection failed. It will try again by itself; your words stay on the page.</span><button type="button" className="cr-btn is-sm" onClick={() => doSave().catch(() => {})}>Try now</button></div>}
       {pub && <div className="nte-banner" role="note"><CrIcon n="info"/>It has gone out. Change what needs changing, say what you corrected, and save: readers see that it was corrected, when, and your note.</div>}
-      {view === "edit" && <div className="nte-format"><div className="nte-tools" role="toolbar" aria-label="Formatting" aria-controls="nte-body">
+      {view === "edit" && <div className="nte-format"><div className="nte-tools" role="toolbar" aria-label="Formatting" aria-controls="nte-body" onKeyDown={toolKey}>
         {NT_TOOLS.map((t, i) => t.sep ? <span key={i} className="nte-sep" aria-hidden="true"/> :
           <button key={t.id} type="button" className={"nte-tool" + (t.label ? " is-label" : "")} title={t.l + " (" + t.k + ")"} aria-label={t.l} aria-pressed={t.plain ? undefined : !!fmt[t.id]}
+            tabIndex={NT_BTNS.indexOf(t) === ti ? 0 : -1} onFocus={() => setTi(NT_BTNS.indexOf(t))}
             onMouseDown={e => e.preventDefault()} onClick={() => run(t)}><CrIcon n={t.icon}/>{t.label ? <span>{t.l}</span> : null}</button>)}
       </div></div>}
       <div className="nte-work">
@@ -470,9 +576,9 @@ function crNtWithdraw(ctx, n) {
 }
 async function crNtRemind(ctx, n, left) {
   const ok = await ctx.confirm({ title: "Remind " + crPlural(left, "member") + "?", cta: "Send the reminder",
-    body: "A reminder goes to the feed of each member who has not " + (n.needsAck ? "acknowledged" : "read") + " it yet — and nobody else. One a day at most." });
+    body: "A reminder goes " + (n.reach === "guardians" ? "to the parents of each member" : n.reach === "members" ? "to the feed of each member" : "to each member, and their parents,") + " who has not " + (n.needsAck ? "acknowledged" : "read") + " it yet — and nobody else. One a day at most." });
   if (!ok) return;
-  try { const r = await NGGApi.admin.notices.remind(n.noticeId); ctx.toast("Reminded " + crPlural(r.reminded, "member") + "."); crNtReaders(ctx, n.noticeId); ctx.reload(); }
+  try { const r = await NGGApi.admin.notices.remind(n.noticeId); ctx.toast("Reminded " + [r.reminded ? crPlural(r.reminded, "member") : "", r.families ? crPlural(r.families, "family", "families") : ""].filter(Boolean).join(" and ") + "." ); crNtReaders(ctx, n.noticeId); ctx.reload(); }
   catch (e) { ctx.toast(crNtErr(e, "Couldn’t send the reminder."), null, true); }
 }
 async function crNtReaders(ctx, id) {
@@ -493,6 +599,28 @@ function crNtWantReaders(ctx, id) {
 async function crNtCopy(ctx, n) {
   try { await navigator.clipboard.writeText(n.whatsapp); ctx.toast("Copied for WhatsApp."); } catch (_) { ctx.toast("Couldn’t copy — select the text on the notice’s page instead.", null, true); }
 }
+/** A copy of a notice as a new draft — the same parts and audience, nothing of its history — opened in the editor. */
+async function crNtDuplicate(ctx, n) {
+  try {
+    const r = await NGGApi.admin.notices.save({ org: n.org, kind: n.kind, subject: n.subject, body: n.body, signoff: n.signoff, audience: n.audience, reach: n.reach, needsAck: !!n.needsAck, emailOn: !!n.emailOn });
+    ctx.setData(x => Object.assign({}, x, { notices: [r.notice].concat(x.notices || []) }));
+    ctx.setSub(r.notice.noticeId + "/edit");
+    ctx.toast("A copy, as a new draft. Nothing has been sent.");
+  } catch (e) { ctx.toast(crNtErr(e, "Couldn’t copy it."), null, true); }
+}
+async function crNtTest(ctx, n) {
+  try { const r = await NGGApi.admin.notices.test(n.noticeId); ctx.toast("Test email sent to " + r.to + "."); }
+  catch (e) { ctx.toast(crNtErr(e, "Couldn’t send the test."), null, true); }
+}
+async function crNtUnschedule(ctx, n) {
+  try { await NGGApi.admin.notices.schedule(n.noticeId, ""); ctx.toast("No longer scheduled. It stays a draft."); ctx.reload(); }
+  catch (e) { ctx.toast(crNtErr(e, "Couldn’t change the schedule."), null, true); }
+}
+/** Who it is for, as a sheet to chase from: name, centre, read, acknowledged, and by whom. */
+function crNtCsv(n, R) {
+  downloadCsv("notice-" + n.noticeId + "-readers", (R.rows || []).map(r => Object.assign({ member: r.fullName, memberId: r.memberId, centre: r.centre || "", read: r.readAt || "" },
+    R.needsAck ? { acknowledged: r.ackAt || "", acknowledgedBy: r.ackAt ? (r.ackBy === "parent" ? "parent" : "member") : "" } : {})));
+}
 /** The address's notice: /…/broadcast/<id> opens it, /…/broadcast/<id>/edit (or /new) writes it. */
 function crNtRoute(sub) { const p = String(sub || "").split("/"); return { id: p[0] === "new" ? "" : p[0], edit: p[0] === "new" || p[1] === "edit" }; }
 function crNtDetail(d, ctx) {
@@ -501,19 +629,22 @@ function crNtDetail(d, ctx) {
   if (!R && n.status !== "draft") crNtWantReaders(ctx, n.noticeId);
   const out = [];
   const acts = n.status === "draft" ? [
-    { l: "Publish…", run: () => crNtPublish(ctx, n) }, { l: "Edit", run: () => crNtEdit(ctx, n) },
+    { l: n.scheduledAt ? "Publish now…" : "Publish…", run: () => crNtPublish(ctx, n) }, { l: "Edit", run: () => crNtEdit(ctx, n) },
     { l: "Delete the draft", run: async () => { if (!(await ctx.confirm({ title: "Delete this draft?", cta: "Delete", danger: true, body: "It has not gone to anybody." }))) return; try { await NGGApi.admin.notices.del(n.noticeId); crNtOpen(ctx, null, true); } catch (e) { ctx.toast(crNtErr(e), null, true); } } },
   ] : n.status === "published" ? [
     { l: "Correct…", run: () => crNtEdit(ctx, n) }, { l: "Withdraw…", run: () => crNtWithdraw(ctx, n) },
   ] : [];
   out.push({ type: "note", span: 6, icon: n.status === "draft" ? "pencil-simple" : n.status === "published" ? "megaphone" : "prohibit", tone: st[1] === "bad" ? "bad" : null,
     text: st[0] + " · " + crNtAud(d, n.audience) + " · " + ((d.reachLabels || {})[n.reach] || "") + (n.needsAck ? " · asks for acknowledgement" : "") + (n.emailOn ? " · by email too" : ""),
-    sub: n.status === "draft" ? "Check the parts below — the letterhead, the subject, the body and the sign-off — then publish. Nobody has it yet."
+    sub: n.status === "draft" ? (n.scheduledAt ? "Scheduled: it goes out by itself " + crDate(n.scheduledAt, true) + ", as it stands then. Nobody has it yet." : "Check it below, then publish. Nobody has it yet.")
       : n.status === "published" ? "Published " + crDate(n.publishedAt) + (n.stats ? " to " + crPlural(n.stats.members || 0, "member") + " and " + crPlural(n.stats.families || 0, "family account") + (n.stats.emailsQueued ? ", " + crNum(n.stats.emailsQueued) + " emails" : "") : "") + "." + (n.correctedAt ? " Corrected " + crDate(n.correctedAt) + "." : "")
       : "Withdrawn " + crDate(n.withdrawnAt) + ": " + n.withdrawReason,
     act: acts[0] ? { l: acts[0].l, run: acts[0].run } : null });
   out.push({ type: "list", span: 6, rows: acts.slice(1).map(a => ({ icon: /Delete|Withdraw/.test(a.l) ? "prohibit" : "pencil-simple", t: a.l, onClick: a.run }))
+    .concat(n.status === "draft" && n.scheduledAt ? [{ icon: "clock-counter-clockwise", t: "Don’t schedule it", s: "It stays a draft until somebody publishes it.", onClick: () => crNtUnschedule(ctx, n) }] : [])
     .concat([{ icon: "whatsapp-logo", t: "Copy for WhatsApp", s: "The notice in WhatsApp’s own marks, ready to paste into a group.", onClick: () => crNtCopy(ctx, n) }])
+    .concat([{ icon: "envelope-simple", t: "Send me a test email", s: "The notice as its email, to your own address only.", onClick: () => crNtTest(ctx, n) }])
+    .concat([{ icon: "copy", t: "Duplicate as a new draft", s: "Same words and audience; for next week’s version.", onClick: () => crNtDuplicate(ctx, n) }])
     .concat(n.status !== "draft" ? [{ icon: "arrow-square-out", t: "Open it as members see it", s: "/notice/" + n.noticeId, onClick: () => window.open("/notice/" + encodeURIComponent(n.noticeId), "_blank", "noopener") }] : [])
     .concat([{ icon: "x", t: "Close", onClick: () => crNtOpen(ctx, null) }]) });
   out.push({ type: "custom", span: 6, title: n.status === "draft" ? "Preview — exactly what they will read" : "The notice", render: () => <NoticeDoc n={n} level={2}/> });
@@ -525,7 +656,12 @@ function crNtDetail(d, ctx) {
       out.push({ type: "kpis", span: 6, items: [{ l: "For", v: crNum(T.members), dn: "members" }, { l: "Read", v: crNum(T.read), dn: T.members ? Math.round(T.read * 100 / T.members) + "%" : "—" }]
         .concat(R.needsAck ? [{ l: "Acknowledged", v: crNum(T.acked), dn: T.members ? Math.round(T.acked * 100 / T.members) + "%" : "—" }] : [])
         .concat([{ l: R.needsAck ? "Not yet acknowledged" : "Not yet read", v: crNum(left), dn: R.remindedAt ? "reminded " + crDate(R.remindedAt) : "" }]) });
-      if (n.status === "published" && left > 0) out.push({ type: "list", span: 6, rows: [{ icon: "bell-ringing", t: "Remind the " + crPlural(left, "member") + " who " + (R.needsAck ? "have not acknowledged it" : "have not read it"), s: "Only them, and once a day at most.", onClick: () => crNtRemind(ctx, n, left) }] });
+      if (R.mail) out.push({ type: "kpis", span: 6, items: [{ l: "Emails sent", v: crNum(R.mail.sent) }, { l: "Still to send", v: crNum(R.mail.queued), dn: R.mail.queued ? "a batch a minute" : "" },
+        { l: "Failed", v: crNum(R.mail.failed), dn: R.mail.failed ? "after three tries" : "" }].concat(R.mail.cancelled ? [{ l: "Cancelled", v: crNum(R.mail.cancelled), dn: "withdrawn" }] : []) });
+      const who = R.reach === "guardians" ? "families of the " : "";
+      if (n.status === "published" && left > 0) out.push({ type: "list", span: 6, rows: [{ icon: "bell-ringing", t: "Remind the " + who + crPlural(left, "member") + " who " + (R.needsAck ? "have not acknowledged it" : "have not read it"),
+        s: R.reach === "guardians" ? "Their parents, in the family app — once a day at most." : R.reach === "members" ? "Only them, and once a day at most." : "Them and their parents, and nobody else — once a day at most.", onClick: () => crNtRemind(ctx, n, left) }] });
+      if ((R.rows || []).length) out.push({ type: "list", span: 6, rows: [{ icon: "download-simple", t: "Export who has read it (CSV)", s: "To chase by phone, or for the record.", onClick: () => crNtCsv(n, R) }] });
       out.push({ type: "table", span: 6, title: "Who has read it", nosel: true, search: "Search by name or centre",
         cols: ["Member", "Centre", "Read", R.needsAck ? "Acknowledged" : "—"].filter(x => x !== "—"),
         rows: (R.rows || []).map(r => ({ key: r.memberId, cells: [
@@ -563,18 +699,18 @@ Object.assign(CR_TAB_DEFS, {
       const pub = N.filter(n => n.status === "published");
       const out = crNtDetail(d, ctx);
       out.push({ type: "kpis", span: 6, items: [
-        { l: "Notices published", v: crNum(pub.length) }, { l: "Drafts", v: crNum(N.filter(n => n.status === "draft").length) },
+        { l: "Notices published", v: crNum(pub.length) }, { l: "Drafts", v: crNum(N.filter(n => n.status === "draft").length), dn: N.some(n => n.status === "draft" && n.scheduledAt) ? crNum(N.filter(n => n.status === "draft" && n.scheduledAt).length) + " scheduled" : "" },
         { l: "Waiting on acknowledgement", v: crNum(pub.filter(n => n.needsAck).reduce((a, n) => a + Math.max(0, (n.reachMembers || 0) - (n.acked || 0)), 0)), dn: "members, across notices" },
       ] });
       out.push({ type: "table", span: 6, title: "Notices", nosel: true, search: "Search notices",
         sub: "Open one to check it, publish it, see who has read it, remind the rest, correct or withdraw it.",
         cols: [{ l: "Subject", wrap: true }, "For", "Status", { l: "Read", num: true }, { l: "Acknowledged", num: true }, "When"],
-        rows: N.map(n => { const st = CR_NT_STATUS[n.status] || [n.status, "neutral"]; return { key: n.noticeId, open: () => crNtOpen(ctx, n.noticeId), cells: [
+        rows: N.map(n => { const st = n.status === "draft" && n.scheduledAt ? ["Scheduled", "warn"] : CR_NT_STATUS[n.status] || [n.status, "neutral"]; return { key: n.noticeId, open: () => crNtOpen(ctx, n.noticeId), cells: [
           { k: "strong", t: n.subject, s: [n.org, n.kind].filter(Boolean).join(" · ") }, { k: "text", t: name(n.audience) },
           { k: "status", t: st[0], tone: st[1] },
           { k: "num", t: n.status === "draft" ? "—" : crNum(n.readers || 0) + " / " + crNum(n.reachMembers || 0), v: n.readers || 0 },
           { k: "num", t: n.needsAck && n.status !== "draft" ? crNum(n.acked || 0) : "—", v: n.acked || 0 },
-          { k: "text", t: crDate(n.publishedAt || n.updatedAt) },
+          { k: "text", t: n.status === "draft" && n.scheduledAt ? crDate(n.scheduledAt, true) : crDate(n.publishedAt || n.updatedAt) },
         ] }; }),
         filters: ["Status", "For"], emptyText: "No notices yet. “New notice” takes a whole management notice, pasted as it was written." });
       out.push({ type: "list", span: 6, title: "Quick messages", empty: "None sent. A quick message is one line in members’ notification feeds.",
