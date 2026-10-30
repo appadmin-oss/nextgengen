@@ -4626,3 +4626,8 @@ Also: the Training fees list includes inactive members who owe (filter
 their frozen terms at the next accrual run. On the default this means
 ₦300,000 each (with the write-off or top-up above), and an inactive member
 with no MOU will show what they owe.
+- **After merging the training-fee commit (8acc5ec7):** the PHP suite reads
+  5955/2 — "fee: the balance ceiling counts real money — the ₦300,000 place
+  does not stop the dues" and "portal: reading an entry marks it read". Both
+  fail identically on 8acc5ec7 alone (checked in a clean worktree), so they
+  belong to that work, not to the portals change; left for its session.
