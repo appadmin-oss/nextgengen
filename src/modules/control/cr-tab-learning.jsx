@@ -475,23 +475,57 @@ Object.assign(CR_TAB_DEFS, {
   assignments: crPanel(() => <AssignmentDesk api={NGGApi.admin.assignments.desk()}/>),
   anchor: crPanel(() => <AdminAnchor/>),
   timetable: crPanel(() => <AdminTimetable/>),
-  /* The Saturday Formation Schedule (domain/saturday-formation.php): one
-     table, read by the mentor, member, instructor and family portals and by
-     the day's reminders. Editing a block changes all of them. */
+  /* The Saturday Formation Schedule (domain/saturday-formation.php): read by
+     the mentor, member, instructor and family portals and by the day's
+     reminders. There is a main day, and versions of it: a centre's own day,
+     one Saturday everywhere, one Saturday at one centre. The URL tail names
+     the version being edited (/control/learning/formation/centre:CEN-EG), so
+     a refresh or a shared link opens the same one. */
   formation: {
     skeleton: ["table"],
-    load: async () => NGGApi.admin.formation.list(),
-    blocks: (d, ctx) => [{
-      type: "note", span: 6, icon: "calendar-star",
-      text: "Each block's part is shown only to its reader. Reminders go at each block's start on Saturday; families who take check-in news get the plan at 8:00, a not-arrived notice at 8:45 and the close at 2:00." + (d.lastSaturday ? " Last Saturday (" + d.lastSaturday + "): " + (d.sent || []).reduce((n, x) => n + Number(x.n), 0) + " sent." : ""),
-    }, {
-      type: "table", span: 6, title: "The day", sub: "Think. Create. Lead. Serve.", nosel: true,
-      cols: ["Time", "Block", "Flow", "Readers"],
-      rows: (d.blocks || []).map(b => ({ key: b.key, open: () => crFormationEdit(ctx, b), cells: [
-        { k: "mono", t: b.start + "–" + b.end }, { k: "person", t: b.title, s: b.purpose }, { k: "text", t: b.flow },
-        { k: "text", t: ["member", "mentor", "instructor", "admin"].filter(a => ((b.for || {})[a] || []).length).concat((b.for || {}).parent ? ["parent"] : []).join(" · ") || "—" }] })),
-      emptyText: "No blocks.",
-    }],
+    load: async ctx => NGGApi.admin.formation.list(ctx.sub || ""),
+    actions: (d, ctx) => {
+      const can = ctx.can("content"), why = can ? "" : "Needs the content permission.";
+      return [
+        { l: "Add a block", icon: "plus", primary: true, disabled: !can, why, run: () => crFmAdd(ctx, d) },
+        { l: "Move the day", icon: "clock", disabled: !can, why, run: () => crFmShift(ctx, d) },
+        { l: "Change one Saturday", icon: "calendar-dot", disabled: !can, why, run: () => crFmVersion(ctx, d, "date") },
+        { l: "A centre’s own day", icon: "map-pin", disabled: !can || !(d.centres || []).length, why: why || "No centres yet.", run: () => crFmVersion(ctx, d, "centre") },
+        { l: "Mark a Saturday off", icon: "calendar-x", disabled: !can, why, run: () => crFmOff(ctx, d, null) },
+        d.scope ? { l: "Remove this version", icon: "trash", disabled: !can, why, run: () => crFmDrop(ctx, d) } : null,
+      ].filter(Boolean);
+    },
+    blocks: (d, ctx) => {
+      const checks = d.checks || [], bad = checks.filter(c => c.level === "error"), gaps = checks.filter(c => c.level !== "error");
+      const sent = (d.sent || []).reduce((n, x) => n + Number(x.n), 0);
+      const readers = b => ["member", "mentor", "instructor", "admin"].filter(a => ((b.for || {})[a] || []).length).concat((b.for || {}).parent ? ["parent"] : []).join(" · ") || "—";
+      const kinds = d.kinds || {};
+      return [{
+        type: "note", span: 6, icon: bad.length ? "warning" : "calendar-star", tone: bad.length ? "bad" : undefined,
+        text: d.label + (d.hours ? " · " + d.hours : "") + (bad.length ? ". " + bad.map(c => c.text).join(" ") : ""),
+        sub: (d.scope ? "Applies instead of the main day there. " : "Every centre and Saturday without its own version follows this day. ")
+          + "Changing a block’s end moves the blocks after it with it. Families get the plan an hour before the day starts, a not-arrived notice 45 minutes in and the close at its end."
+          + (gaps.length ? " " + gaps.map(c => c.text).join(" ") : "")
+          + (d.lastSaturday ? " Last Saturday (" + crDate(d.lastSaturday) + "): " + crNum(sent) + " sent." : ""),
+      }, (d.versions || []).length > 1 ? {
+        type: "cards", span: 6, title: "Versions of the day", sub: "Choose one to see and change it",
+        cards: d.versions.map(v => ({ icon: v.kind === "main" ? "calendar" : v.kind === "centre" ? "map-pin" : "calendar-dot", title: v.label,
+          sub: v.kind === "main" ? "The main day" : v.kind === "centre" ? "This centre, every Saturday" : v.past ? "Has passed" : "This Saturday only",
+          tag: v.scope === d.scope ? "Showing" : "", tone: "gold", meta: [], onClick: () => crFmGo(ctx, v.scope) })),
+      } : null, {
+        type: "table", span: 6, title: "The day", sub: "Think. Create. Lead. Serve. Open a block to change, move, copy or remove it.", nosel: true,
+        cols: ["Time", "Block", { l: "What it is for", sort: false }, { l: "Readers", sort: false }],
+        rows: (d.blocks || []).map((b, i) => ({ key: b.key, open: () => crFmBlock(ctx, d, b, i), cells: [
+          { k: "mono", t: b.start + "–" + b.end }, { k: "person", t: b.title, s: b.purpose }, { k: "text", t: kinds[b.kind || ""] || "General", s: b.flow },
+          { k: "text", t: readers(b) }] })),
+        emptyText: "No blocks in this version of the day.",
+      }, (d.offDays || []).length ? {
+        type: "list", span: 6, title: "Saturdays off and notes", sub: "Nothing is sent on a Saturday off; every portal says so, with the note",
+        rows: d.offDays.map(o => ({ icon: o.off ? "calendar-x" : "note", t: crDate(o.date) + " · " + (o.centre || "Every centre"), s: o.note, m: o.off ? "Off" : "Note",
+          onClick: ctx.can("content") ? () => crFmOff(ctx, d, o) : undefined })),
+        empty: "",
+      } : null].filter(Boolean);
+    },
   },
   /* Opportunities (domain/opportunities.php): what the Member Portal's
      Opportunities screen offers. A member sees the open ones that fit their
@@ -676,34 +710,156 @@ Object.assign(CR_TAB_DEFS, {
   divisions: crPanel(ctx => <CrDivisions ctx={ctx}/>),
 });
 
-/* One block of the Saturday schedule: its times and words, and each reader's
-   part (one point per line). The server checks the times and the lengths. */
-function crFormationEdit(ctx, b) {
+/* ── The Saturday formation editor ────────────────────────────────────────
+   Every write names the version (`scope`) it changes, then the editor reads
+   that version again: the server has moved the blocks after it, and the
+   screen shows what the server holds, not what was typed. */
+const CR_FM_TIME = v => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v || "")) ? "" : "Use 24-hour time, like 08:30.";
+function crFmGo(ctx, scope) {
+  return NGGApi.admin.formation.list(scope || "").then(r => { ctx.setData(r); ctx.setSub(r.scope || ""); },
+    e => ctx.toast(crErr(e, "Couldn’t open that version of the day."), null, true));
+}
+/** Run one formation op, toast what it did, and show the day as the server now has it. */
+async function crFmRun(ctx, d, action, args, said) {
+  const r = await NGGApi.admin.formation.act(action, Object.assign({ scope: d.scope || "" }, args));
+  await crFmGo(ctx, r && r.scope != null && action === "version.create" ? r.scope : d.scope);
+  if (r && r.unchanged) ctx.toast("Nothing changed.");
+  else ctx.toast(typeof said === "function" ? said(r || {}) : said);
+  return r;
+}
+const crFmMoved = r => r && r.moved ? " " + crNum(r.moved) + (r.moved === 1 ? " block after it moved too." : " blocks after it moved too.") : "";
+const crFmKinds = d => Object.keys(d.kinds || { "": "General" }).map(k => [k, d.kinds[k]]);
+
+/* One block in a drawer: what it is, and every act on it. */
+function crFmBlock(ctx, d, b, i) {
+  const can = ctx.can("content"), last = (d.blocks || []).length - 1, why = can ? "" : "Needs the content permission.";
+  const mins = (+b.end.slice(0, 2) * 60 + +b.end.slice(3)) - (+b.start.slice(0, 2) * 60 + +b.start.slice(3));
+  const act = (action, args, said) => () => { ctx.closeDrawer(); return crFmRun(ctx, d, action, Object.assign({ key: b.key }, args), said).catch(e => ctx.toast(crErr(e, "Couldn’t change the day."), null, true)); };
+  const F = b.for || {};
+  ctx.drawer({
+    title: b.title, sub: d.label + " · " + b.start + "–" + b.end, icon: "calendar-star",
+    stats: [["Starts", b.start], ["Minutes", crNum(mins)], ["For", (d.kinds || {})[b.kind || ""] || "General"]],
+    fields: [["Flow", b.flow || "—"], ["Purpose", b.purpose || "—"], ["Key line", b.quote || "—"]],
+    sections: [["member", "Members"], ["mentor", "Mentors"], ["instructor", "Instructors"], ["admin", "Admin"]].map(([a, h]) => ({ h, list: (F[a] || []).map(t => ({ icon: "check", t })), empty: "Nothing for " + h.toLowerCase() + "." }))
+      .concat([{ h: "Families", text: F.parent || "Families are not told about this block." }]),
+    actions: [
+      { l: "Change this block", primary: true, disabled: !can, why, run: () => { ctx.closeDrawer(); crFormationEdit(ctx, d, b); } },
+      { l: "Move up", disabled: !can || i === 0, why: why || "It is the first block.", run: act("move", { dir: "up" }, b.title + " now comes earlier. The day still ends when it did.") },
+      { l: "Move down", disabled: !can || i === last, why: why || "It is the last block.", run: act("move", { dir: "down" }, b.title + " now comes later. The day still ends when it did.") },
+      { l: "Duplicate", disabled: !can, why, run: () => { ctx.closeDrawer(); return crFmRun(ctx, d, "add", { copyOf: b.key }, r => "Copied after " + b.title + "." + crFmMoved(r)).catch(e => ctx.toast(crErr(e, "Couldn’t copy the block."), null, true)); } },
+      { l: "Remove this block", disabled: !can || last === 0, why: why || "A day needs at least one block.", run: act("remove", {}, r => b.title + " removed." + (r.moved ? " The blocks after it moved up to fill its time." : "")) },
+    ],
+  });
+}
+
+/* One block's times and words, its kind, and each reader's part (one point per
+   line). With "move the blocks after it", a new end carries the rest of the
+   day with it; without, a time that runs into the next block is refused. */
+function crFormationEdit(ctx, d, b) {
   const F = b.for || {}; const lines = a => (F[a] || []).join("\n");
   ctx.form({
-    title: b.title, intro: b.start + "–" + b.end + " · " + b.flow, submit: "Save block", busyLabel: "Saving…",
-    values: { start: b.start, end: b.end, title: b.title, flow: b.flow, purpose: b.purpose, quote: b.quote || "",
+    title: b.title, intro: d.label + " · " + b.start + "–" + b.end, submit: "Save block", busyLabel: "Saving…",
+    values: { start: b.start, end: b.end, ripple: true, title: b.title, kind: b.kind || "", flow: b.flow, purpose: b.purpose, quote: b.quote || "",
               member: lines("member"), mentor: lines("mentor"), instructor: lines("instructor"), admin: lines("admin"), parent: F.parent || "" },
     fields: [
-      { id: "start", l: "Starts (HH:MM)", req: true, check: v => /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use 24-hour time, like 08:30." },
-      { id: "end", l: "Ends (HH:MM)", req: true, check: v => /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use 24-hour time, like 10:00." },
-      { id: "title", l: "Block", req: true }, { id: "flow", l: "Formation flow word" }, { id: "purpose", l: "Purpose", type: "textarea" },
-      { id: "quote", l: "Key question or line", type: "textarea" },
+      { id: "start", l: "Starts (HH:MM)", req: true, check: CR_FM_TIME },
+      { id: "end", l: "Ends (HH:MM)", req: true, check: CR_FM_TIME },
+      { id: "ripple", l: "Move the blocks after it too", type: "switch", help: "Keeps every later block’s length and the gaps between them." },
+      { id: "title", l: "Block", req: true, max: 120 },
+      { id: "kind", l: "What it is for", type: "select", opts: crFmKinds(d), help: "Reminders follow this: classes reach instructors, the mentor breakout sets the mentors’ window, members are not reminded at check-in." },
+      { id: "flow", l: "Formation flow word", max: 60 }, { id: "purpose", l: "Purpose", type: "textarea", max: 400 },
+      { id: "quote", l: "Key question or line", type: "textarea", max: 300 },
       { id: "member", l: "Members: what they do (one per line)", type: "textarea" },
       { id: "mentor", l: "Mentors: what they watch for (one per line)", type: "textarea" },
       { id: "instructor", l: "Instructors (one per line)", type: "textarea" },
       { id: "admin", l: "Admin: what must be ready (one per line)", type: "textarea" },
-      { id: "parent", l: "What families are told", type: "textarea" },
+      { id: "parent", l: "What families are told", type: "textarea", max: 400 },
     ],
     onSubmit: async v => {
       const split = t => String(t || "").split("\n").map(x => x.trim()).filter(Boolean);
-      const r = await NGGApi.admin.formation.save({ key: b.key, start: v.start, end: v.end, title: v.title, flow: v.flow, purpose: v.purpose, quote: v.quote,
+      const r = await NGGApi.admin.formation.save({ scope: d.scope || "", key: b.key, start: v.start, end: v.end, ripple: !!v.ripple, title: v.title, kind: v.kind || "",
+        flow: v.flow, purpose: v.purpose, quote: v.quote,
         for: { member: split(v.member), mentor: split(v.mentor), instructor: split(v.instructor), admin: split(v.admin), parent: String(v.parent || "").trim() } });
-      ctx.reload(); ctx.toast(r && r.unchanged ? "Nothing changed." : "Saved. Every portal shows the new " + v.title + ".");
+      await crFmGo(ctx, d.scope);
       return r;
     },
+    done: (v, r) => r && r.unchanged ? "Nothing changed." : "Saved. Every portal on this day shows the new " + v.title + "." + crFmMoved(r),
+  });
+}
+
+/* A new block, after the one chosen; its length pushes the rest of the day on. */
+function crFmAdd(ctx, d) {
+  const bs = d.blocks || [];
+  ctx.form({
+    title: "Add a block", intro: d.label, submit: "Add", busyLabel: "Adding…",
+    values: { title: "", after: bs.length ? bs[bs.length - 1].key : "", minutes: "30", kind: "" },
+    fields: [
+      { id: "title", l: "Block", req: true, max: 120, ph: "Guest talk" },
+      { id: "after", l: "Comes after", type: "select", opts: bs.map(b => [b.key, b.start + " · " + b.title]) },
+      { id: "minutes", l: "Minutes", type: "number", req: true, im: "numeric", check: v => +v >= 5 && +v <= 600 ? "" : "Between 5 and 600 minutes." },
+      { id: "kind", l: "What it is for", type: "select", opts: crFmKinds(d) },
+    ],
+    onSubmit: async v => crFmRun(ctx, d, "add", { title: v.title, after: v.after, minutes: +v.minutes, kind: v.kind || "" }, r => v.title + " added." + crFmMoved(r)),
     done: () => null,
   });
+}
+
+/* The whole day earlier or later: "we start at 9 this term". */
+function crFmShift(ctx, d) {
+  const bs = d.blocks || [];
+  if (!bs.length) return;
+  ctx.form({
+    title: "Move the day", intro: d.label + " · now " + d.hours, submit: "Move", busyLabel: "Moving…",
+    values: { startAt: bs[0].start, from: bs[0].key },
+    fields: [
+      { id: "from", l: "From", type: "select", opts: bs.map((b, i) => [b.key, i === 0 ? "The whole day" : b.title + " and everything after it"]) },
+      { id: "startAt", l: "Starts at (HH:MM)", req: true, check: CR_FM_TIME, help: "Every block keeps its length; the server moves them together and refuses a move past midnight." },
+    ],
+    onSubmit: async v => crFmRun(ctx, d, "shift", { startAt: v.startAt, from: v.from }, r => crNum(r.moved || 0) + " blocks moved " + Math.abs(r.minutes || 0) + " minutes " + ((r.minutes || 0) > 0 ? "later." : "earlier.")),
+    done: () => null,
+  });
+}
+
+/* A version of the day: one Saturday (everywhere or at one centre), or a centre's own day. It starts as a copy of what was in force there. */
+function crFmVersion(ctx, d, kind) {
+  const cs = (d.centres || []).map(c => [c.id, c.name]);
+  ctx.form({
+    title: kind === "date" ? "Change one Saturday" : "A centre’s own day",
+    intro: kind === "date" ? "That Saturday starts as a copy of the day in force there. Change it; every other Saturday stays as it is." : "The centre’s day starts as a copy of the main day and is used there every Saturday until it is removed.",
+    submit: "Create", busyLabel: "Creating…",
+    values: { date: d.nextSaturday || "", centre: kind === "date" ? "" : (cs[0] || [""])[0] },
+    fields: (kind === "date" ? [{ id: "date", l: "Saturday", type: "date", req: true, check: v => v && new Date(v + "T12:00:00Z").getUTCDay() === 6 ? "" : "Choose a Saturday." }] : [])
+      .concat([{ id: "centre", l: "Centre", type: "select", opts: (kind === "date" ? [["", "Every centre"]] : []).concat(cs), req: kind !== "date" }]),
+    onSubmit: async v => crFmRun(ctx, d, "version.create", { scope: kind === "date" ? "date:" + v.date + (v.centre ? "@" + v.centre : "") : "centre:" + v.centre },
+      r => (r.label || "That version") + " is ready, copied from " + (r.from || "the main day") + "."),
+    done: () => null,
+  });
+}
+
+/* A Saturday off (nothing is sent; every portal says so) or a note families read, everywhere or at one centre. */
+function crFmOff(ctx, d, o) {
+  ctx.form({
+    title: o ? crDate(o.date) + " · " + (o.centre || "Every centre") : "Mark a Saturday off", submit: "Save", busyLabel: "Saving…",
+    intro: "On a Saturday off nothing is sent, and the member, mentor, instructor and family portals say there is no NGG that day. Clear the note and switch it on again to put it back.",
+    values: o ? { date: o.date, centre: o.centreId, off: o.off, note: o.note } : { date: d.nextSaturday || "", centre: "", off: true, note: "" },
+    fields: [
+      { id: "date", l: "Saturday", type: "date", req: true, check: v => v && new Date(v + "T12:00:00Z").getUTCDay() === 6 ? "" : "Choose a Saturday." },
+      { id: "centre", l: "Centre", type: "select", opts: [["", "Every centre"]].concat((d.centres || []).map(c => [c.id, c.name])) },
+      { id: "off", l: "No NGG that Saturday", type: "switch" },
+      { id: "note", l: "What families and members read", type: "textarea", max: 300, ph: "The hall is being painted; we are back on the 16th.", help: "Needed for a Saturday off: the server refuses one without it, on this field." },
+    ],
+    onSubmit: async v => crFmRun(ctx, d, "day.set", { date: v.date, centre: v.centre || "", off: !!v.off, note: v.note || "" },
+      v.off ? crDate(v.date) + " is off" + (v.centre ? " at that centre." : " everywhere.") : String(v.note || "").trim() ? "Note saved for " + crDate(v.date) + "." : crDate(v.date) + " is back on."),
+    done: () => null,
+  });
+}
+
+/* Remove a version: that Saturday or centre goes back to what applied before. Irreversible, so it asks. */
+async function crFmDrop(ctx, d) {
+  const ok = await ctx.confirm({ title: "Remove " + d.label + "?", body: "Its blocks are deleted and that " + (String(d.scope).indexOf("date:") === 0 ? "Saturday" : "centre") + " follows the day that applied before it. This cannot be undone.", cta: "Remove this version", danger: true });
+  if (!ok) return;
+  try { await NGGApi.admin.formation.act("version.delete", { scope: d.scope }); await crFmGo(ctx, ""); ctx.toast(d.label + " removed."); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t remove that version."), null, true); }
 }
 
 /* ── Course health (learning/course-health) ────────────────────────────────

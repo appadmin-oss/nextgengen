@@ -2052,9 +2052,31 @@ between 8pm and 8am wait and go at 8am; the child answers in their own chat,
 and the answer comes back into the same conversation.
 
 **Saturday Formation Schedule** (Control Room → Learning → Saturday formation, `content`):
-the 8:00–2:00 day, block by block, with what members do, what mentors watch for, what
+the Saturday, block by block, with what members do, what mentors watch for, what
 instructors deliver, what admin must have ready and what families are told. Every portal
-and the Saturday reminders read this one table; edit a block and they all change. On the
+and the Saturday reminders read it; change a block and they all change.
+
+| You want to… | Do this |
+|---|---|
+| Change a block's time, name or words | Open the block → **Change this block**. With **Move the blocks after it too** on (the default), a later end moves the rest of the day with it, keeping every length and gap. Off, a time that runs into the next block is refused and named. |
+| Add a block | **Add a block**: its name, what it comes after, how many minutes. The blocks after it move later by its length. |
+| Remove, reorder or copy a block | Open the block → **Remove this block** (the blocks after it move up), **Move up** / **Move down** (the two swap places; the day still ends when it did), **Duplicate**. |
+| Start the day at a different time | **Move the day**: the whole day, or from one block on, to a new start. Nothing may run past midnight or move more than five hours at once. |
+| Give one centre a different day | **A centre's own day**: a copy of the main day, used at that centre every Saturday until you remove it. |
+| Change one Saturday only | **Change one Saturday**: that Saturday everywhere, or at one centre. It starts as a copy of the day in force there. |
+| Cancel a Saturday | **Mark a Saturday off**, everywhere or at one centre, with a line families read. Nothing is sent that day and every portal says so. A note without "off" is shown above that Saturday's plan. |
+
+Which day applies at a centre on a Saturday is the first that exists of: that
+Saturday at that centre → that Saturday everywhere → the centre's own day → the
+main day. **Versions of the day** lists them; the address names the one on
+screen, so a link opens it. A centre-scoped admin changes only their own
+centres' days. **What it is for** on each block (check-in, mentor breakout,
+classes, break, close) decides the reminders: members are not reminded at
+check-in, instructors are reminded at the classes block, the mentor breakout
+sets the mentors' planning window. Families who take check-in news get the plan
+an hour before the day starts (never before 8:00), a not-arrived notice 45
+minutes in and the close at the day's end, all by their child's centre's day.
+On the
 Saturday register a mentor ticks, per child, the values seen and the duties: On time
 (the gate's arrival time is shown), Assignment in, Checked out — and can **Add detail**: one line
 (up to 500 characters) of what they saw, saved with the register. It shows under the child's name,
@@ -2063,7 +2085,8 @@ opens their profile; **Go to the weekly review** takes the mentor straight to Af
 
 **The Saturday plan (Before).** The mentor's part of the day is the
 **Musing & mentor breakout** block of the formation schedule (8:30–10:00 by
-default), so its window — and what follows it — come from Control Room →
+default; the block whose kind is *Mentor breakout*, at the mentor's centre, that
+Saturday), so its window — and what follows it — come from Control Room →
 Learning → Saturday formation, never from a fixed number. The *Pod huddle*
 always opens it (the register is taken there) and the *Close* always ends it;
 between them the mentor times every item in five-minute steps, moves items up

@@ -32,7 +32,7 @@ const MP9_NEED = {
 const MP9_LOADERS = {
   today: () => NGGApi.member.today(), dash: () => NGGApi.member.dashboard(), mine: () => NGGApi.member.pod.read("mine"),
   chat: () => NGGApi.member.chat(), notifs: () => NGGApi.member.notifications(), state: () => NGGApi.member.stateGet(MP9_STATE_KEYS),
-  form: () => NGGApi.public.formation("member"), courage: () => NGGApi.member.courage(), mom: () => NGGApi.member.momentum(),
+  form: self => NGGApi.public.formation("member", { centre: (self && self.me && self.me().centre) || "" }), courage: () => NGGApi.member.courage(), mom: () => NGGApi.member.momentum(),
   jm: () => NGGApi.member.journalMine(0), res: () => NGGApi.member.results(""), comp: () => NGGApi.member.companion(),
   cur: () => NGGApi.member.curriculum(), tt: () => NGGApi.member.timetable(), opps: () => NGGApi.member.opps(),
   feed: () => NGGApi.member.community.feed("all", "latest", 0), rec: () => NGGApi.member.records(), circle: () => NGGApi.member.circle(),
@@ -259,7 +259,7 @@ class Mp9Portal extends React.Component {
   load(key) {
     const fn = MP9_LOADERS[key]; if (!fn) return Promise.resolve(null);
     this.setState(s => ({ ld: { ...s.ld, [key]: true }, er: { ...s.er, [key]: null } }));
-    return fn().then(r => { this.setState(s => ({ d: { ...s.d, [key]: r }, ld: { ...s.ld, [key]: false } })); return r; })
+    return fn(this).then(r => { this.setState(s => ({ d: { ...s.d, [key]: r }, ld: { ...s.ld, [key]: false } })); return r; })
       .catch(e => { this.setState(s => ({ ld: { ...s.ld, [key]: false }, er: { ...s.er, [key]: e } })); return null; });
   }
   refresh(keys) { (keys || []).forEach(k => this.load(k)); }

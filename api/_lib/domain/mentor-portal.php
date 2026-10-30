@@ -1556,7 +1556,7 @@ function member_mp_saturday(array $p): array {
     foreach ($reg as $sid => $r) $prefill[$sid] = mp_eval_prefill($r);
     return ['ok' => true, 'date' => $date, 'agenda' => $row && $row['agendaJson'] !== '' ? json_decode((string)$row['agendaJson'], true) : MP_AGENDA_DEFAULT,
         'oneToOnes' => $picks, 'sharedAt' => (string)($row['sharedAt'] ?? ''), 'registerClosedAt' => (string)($row['registerClosedAt'] ?? ''),
-        'window' => mp_breakout_window(), 'after' => mp_breakout_next(), 'agendaDefault' => MP_AGENDA_DEFAULT, 'agendaMax' => MP_AGENDA_MAX, 'oneToOnesMax' => MP_ONE_TO_ONES_MAX,
+        'window' => mp_breakout_window($date, $g), 'after' => mp_breakout_next($date, $g), 'agendaDefault' => MP_AGENDA_DEFAULT, 'agendaMax' => MP_AGENDA_MAX, 'oneToOnesMax' => MP_ONE_TO_ONES_MAX,
         'lead' => $g['lead'] ? mp_first((string)($g['lead']['fullName'] ?? '')) : '',
         'activities' => MP_ACTIVITIES, 'values' => MP_VALUES, 'checks' => MP_CHECKS, 'levels' => MP_LEVELS,
         'mentees' => array_map(static fn($m) => ['id' => $m['id'], 'name' => $m['name'], 'first' => $m['first'], 'initials' => $m['initials'], 'contactDays' => $m['flags']['contactDays']], $ms),
@@ -1573,20 +1573,35 @@ const MP_AGENDA_FIXED = ['Pod huddle', 'One-to-ones', 'Close'];
 const MP_AGENDA_MAX = 12;
 const MP_ONE_TO_ONES_MAX = 6;
 
+/**
+ * The formation day a mentor works to that Saturday: their centre's version
+ * of it (a changed Saturday, the centre's own day, or the main day), so the
+ * breakout window moves when the timetable does.
+ */
+function mp_formation_blocks(string $date = '', array $g = []): array {
+    if (!function_exists('sf_day')) return [];
+    if (!sf_is_saturday($date)) return sf_blocks();
+    $centre = '';
+    if (($g['mentorId'] ?? '') !== '') $centre = (string)(db_row('SELECT centre FROM mentors WHERE mentorId = ?', [(string)$g['mentorId']])['centre'] ?? '');
+    return sf_day($date, sf_centre_id($centre))['blocks'];
+}
+/** The breakout block: the block whose kind is the mentor breakout (the seeded day calls it `musing`). */
+function mp_breakout_index(array $blocks): int {
+    foreach ($blocks as $i => $x) if (($x['kind'] ?? '') === 'mentor') return $i;
+    foreach ($blocks as $i => $x) if ($x['key'] === 'musing') return $i;
+    return -1;
+}
 /** The breakout window from the formation schedule: start, end, minutes. */
-function mp_breakout_window(): array {
-    $b = null;
-    if (function_exists('sf_blocks')) foreach (sf_blocks() as $x) if ($x['key'] === 'musing') { $b = $x; break; }
+function mp_breakout_window(string $date = '', array $g = []): array {
+    $bs = mp_formation_blocks($date, $g); $i = mp_breakout_index($bs); $b = $i >= 0 ? $bs[$i] : null;
     $start = (string)($b['start'] ?? '08:30'); $end = (string)($b['end'] ?? '10:00');
     $mins = (int)round((strtotime('2000-01-01T' . $end . ':00Z') - strtotime('2000-01-01T' . $start . ':00Z')) / 60);
     return ['start' => $start, 'end' => $end, 'minutes' => $mins > 0 ? $mins : 90, 'title' => (string)($b['title'] ?? 'Musing & mentor breakout')];
 }
 /** What follows the breakout, so an overrun can say what it eats into. */
-function mp_breakout_next(): string {
-    if (!function_exists('sf_blocks')) return '';
-    $seen = false;
-    foreach (sf_blocks() as $x) { if ($seen) return (string)$x['title']; if ($x['key'] === 'musing') $seen = true; }
-    return '';
+function mp_breakout_next(string $date = '', array $g = []): string {
+    $bs = mp_formation_blocks($date, $g); $i = mp_breakout_index($bs);
+    return $i >= 0 && isset($bs[$i + 1]) ? (string)$bs[$i + 1]['title'] : '';
 }
 
 /** saturdayPlan — the agenda and the one-to-ones, validated whole before anything is written. */
@@ -1622,7 +1637,7 @@ function member_mp_saturday_plan(array $p): array {
     db_upsert('mentor_saturdays', ['mentorId' => $key, 'onDate' => $date, 'agendaJson' => json_encode($items), 'oneToOnesJson' => json_encode($want),
         'registerClosedAt' => '', 'sharedAt' => !empty($p['share']) ? $now : '', 'updatedAt' => $now], ['mentorId', 'onDate'],
         ['agendaJson' => json_encode($items), 'oneToOnesJson' => json_encode($want), 'updatedAt' => $now] + (!empty($p['share']) ? ['sharedAt' => $now] : []));
-    $w = mp_breakout_window(); $total = array_sum(array_column($items, 'minutes'));
+    $w = mp_breakout_window($date, $g); $total = array_sum(array_column($items, 'minutes'));
     $sharedTo = '';
     if (!empty($p['share']) && $g['lead']) {
         $names = []; foreach (db_all('SELECT memberId, fullName FROM members WHERE memberId IN (' . ($want ? implode(',', array_fill(0, count($want), '?')) : "''") . ')', $want) as $r) $names[] = mp_first((string)$r['fullName']);

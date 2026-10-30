@@ -4774,3 +4774,26 @@ ALTER TABLE volunteer_payouts ADD COLUMN fineAv INT NOT NULL DEFAULT 0;
 ALTER TABLE volunteer_payouts ADD COLUMN bankLine VARCHAR(200) NOT NULL DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (203) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 204 · Saturday formation, versioned: main day, a centre's own, one Saturday; and Saturdays off ──
+CREATE TABLE IF NOT EXISTS saturday_formation_blocks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  scope VARCHAR(80) NOT NULL DEFAULT '', blockKey VARCHAR(40) NOT NULL, sort INT DEFAULT 0,
+  startTime VARCHAR(5) NOT NULL, endTime VARCHAR(5) NOT NULL, title VARCHAR(160) NOT NULL, flow VARCHAR(80) DEFAULT '',
+  purpose TEXT, quote TEXT, forJson MEDIUMTEXT, kind VARCHAR(16) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '', updatedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY uq_sfb (scope, blockKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO saturday_formation_blocks (scope, blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson, kind, updatedAt, updatedBy)
+  SELECT '', blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson,
+         CASE blockKey WHEN 'checkin' THEN 'checkin' WHEN 'musing' THEN 'mentor' WHEN 'division' THEN 'classes' WHEN 'break' THEN 'break' WHEN 'close' THEN 'close' ELSE '' END,
+         updatedAt, updatedBy
+    FROM saturday_formation WHERE status = 'active';
+CREATE TABLE IF NOT EXISTS saturday_formation_dates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  onDate VARCHAR(10) NOT NULL, centreId VARCHAR(64) NOT NULL DEFAULT '', off TINYINT NOT NULL DEFAULT 0, note VARCHAR(300) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '', updatedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY uq_sfd (onDate, centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (204) ON DUPLICATE KEY UPDATE version = version;

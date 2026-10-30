@@ -1350,7 +1350,7 @@
         submit:  (t, photoUrl, submissionId) => request('/public/reshoot.php', { body: { t, photoUrl, submissionId: submissionId || '' } }),
       },
       timetable: (centre) => request('/public/timetable.php' + qs({ centre: centre || '' })),
-      formation: (audience) => request('/public/formation.php' + qs({ audience: audience || 'member' })),
+      formation: (audience, opts) => request('/public/formation.php' + qs(Object.assign({ audience: audience || 'member' }, opts || {}))),
       timetableSave: (body) => request('/public/timetable-save.php', { body }),
       timetableLoad: (k) => request('/public/timetable-save.php' + qs({ k })),
       timetableTerm: () => request('/public/timetable-term.php'),
@@ -1482,8 +1482,11 @@
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
       },
       formation: {
-        list: () => request('/admin/formation.php'),
+        list: (scope) => request('/admin/formation.php' + qs({ scope: scope || '' })),
         save: (block) => request('/admin/formation.php', { body: Object.assign({ action: 'save' }, block || {}) }),
+        /* One op per verb on one route: add, remove, move, shift, version.create,
+           version.delete, day.set — every one names its `scope` (the version). */
+        act: (action, args) => request('/admin/formation.php', { body: Object.assign({}, args || {}, { action: action }) }),
       },
       /* Opportunities shown to members (Learning → Opportunities). Capability: content. */
       /* Sign-in & security (domain/mfa.php): who has a second step, the policy per kind, and the desk's actions. */

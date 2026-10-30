@@ -7232,7 +7232,7 @@ function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
         because a list of who has been missed is worth more than a list of
         everybody, and below the tabs because it belongs to this class. */}
     {/* NGG's Saturday, the instructor's or mentor's part of each block. Not for Summer School: its day is its own. */}
-    {programme === "ngg" && !embedded && typeof FormationDay === "function" && <FormationDay audience={role === "instructor" ? "instructor" : "mentor"} compact={true}/>}
+    {programme === "ngg" && !embedded && typeof FormationDay === "function" && <FormationDay audience={role === "instructor" ? "instructor" : "mentor"} centre={data.centre || m.centre || ""} compact={true}/>}
     <MentorReviewsDue centre={data.centre || m.centre || ""} scope={scope} programme={programme} onOpenChild={setChildOn}/>
     {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No {roleMeta.they} here yet.</p>}
 

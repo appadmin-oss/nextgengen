@@ -375,7 +375,7 @@ Object.assign(Mp9Portal.prototype, {
     const Mst = M ? ((s.mState || {})[M.missionId] || M.status || "todo") : "todo";
     const evSent = !!M && (Mst !== "todo" && Mst !== "rejected");
     return {
-      sat: { date: satIso ? mp9Date(satIso, { weekday: "long", day: "numeric", month: "long" }) : "Saturday", time: f.hours || "8:00am – 2:00pm", theme: f.theme || "Think. Create. Lead. Serve.", room: me.centre + " centre" },
+      sat: { date: satIso ? mp9Date(satIso, { weekday: "long", day: "numeric", month: "long" }) : "Saturday", time: f.off ? "No NGG this Saturday" : f.hours || "8:00am – 2:00pm", theme: f.theme || "Think. Create. Lead. Serve.", room: me.centre + " centre" },
       plan: (f.blocks || []).map(b => ({ t: b.start, a: b.title + ((b.for && b.for.member && b.for.member[0]) ? " · " + b.for.member[0] : "") })).concat(f.blocks && f.blocks.length ? [] : [{ t: "", a: f.error ? "The plan couldn’t load." : "The Saturday plan isn’t published yet." }]),
       ch: M ? { t: M.title, cat: M.type || "Mission", due: "Before Saturday", d: M.prompt || "", builds: [] } : { t: "No mission this week", cat: "Mission", due: "", d: "When the week’s mission opens, it shows here.", builds: [] },
       builds: M ? [M.type || "Reflect", (M.xp || 0) + " XP", M.estimatedMin ? "About " + M.estimatedMin + " min" : ""].filter(Boolean) : [],
@@ -930,7 +930,7 @@ Object.assign(Mp9Portal.prototype, {
     const evals = (s.scr === "growth" || s.scr === "sat")
       ? <Mp9Evals data={this.dd("evals")} err={s.er.evals} busy={!!s.ld.evals} retry={() => this.load("evals")} latestOnly={s.scr === "sat"} mentor={this.mentorInfo().first}/> : null;
     // The formation day is the staff-edited schedule with the member's own part (tests/mentor-v15); it sits in the column.
-    if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" compact={true}/>{evals}</div>;
+    if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" centre={this.me().centre || ""} compact={true}/>{evals}</div>;
     if (evals) return <div className="m9x-slot">{evals}</div>;
     return null;
   },

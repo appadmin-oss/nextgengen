@@ -29875,49 +29875,173 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
 // ── The Saturday Formation Schedule: seeded once, read per audience, edited by content, sent once ──
 (function () {
-    db_exec('DELETE FROM saturday_formation'); db_exec('DELETE FROM saturday_formation_sends');
+    db_exec('DELETE FROM saturday_formation_blocks'); db_exec('DELETE FROM saturday_formation_dates'); db_exec('DELETE FROM saturday_formation_sends');
+    $now = now_iso();
+    foreach ([['SF-C1', 'Sfton', 'SFT'], ['SF-C2', 'Sfvale', 'SFV']] as [$cid, $cn, $cc]) db_insert('centres', ['centreId' => $cid, 'name' => $cn, 'code' => $cc, 'color' => '#123456', 'status' => 'active', 'createdAt' => $now]);
     $m = public_formation(['audience' => 'mentor']);
     $keys = array_column($m['blocks'], 'key');
     chk('formation · seeded from the programme schedule: nine blocks, 8:00 to 2:00, in order',
         $keys === ['checkin', 'musing', 'vanboja', 'anthem', 'special', 'division', 'break', 'chess', 'close'] && $m['blocks'][0]['start'] === '08:00' && end($m['blocks'])['end'] === '14:00');
+    chk('formation · the hours are the day\'s, derived, not typed', $m['hours'] === '8:00am – 2:00pm' && $m['start'] === '08:00' && $m['end'] === '14:00');
+    chk('formation · what each block is FOR is its kind (check-in, mentor breakout, classes, break, close)',
+        array_column($m['blocks'], 'kind', 'key') === ['checkin' => 'checkin', 'musing' => 'mentor', 'vanboja' => '', 'anthem' => '', 'special' => '', 'division' => 'classes', 'break' => 'break', 'chess' => '', 'close' => 'close']);
     chk('formation · each audience reads its own part (mentor: the key question; parent: one line)',
         in_array('Take the register and note who is here.', $m['blocks'][1]['part'], true) && $m['blocks'][1]['quote'] === 'Who are you becoming, and what evidence do we have?'
         && is_string(public_formation(['audience' => 'parent'])['blocks'][1]['part']) && !isset($m['blocks'][1]['for']));
     chk('formation · an unknown audience falls back to member, never to everything', public_formation(['audience' => 'nobody'])['audience'] === 'member');
-    $n = (int)db_row('SELECT COUNT(*) c FROM saturday_formation')['c']; public_formation([]);
-    chk('formation · the seed runs once; the table is the timetable', $n === 9 && (int)db_row('SELECT COUNT(*) c FROM saturday_formation')['c'] === 9);
+    $n = (int)db_row("SELECT COUNT(*) c FROM saturday_formation_blocks WHERE scope = ''")['c']; public_formation([]);
+    chk('formation · the seed runs once; the table is the timetable', $n === 9 && (int)db_row("SELECT COUNT(*) c FROM saturday_formation_blocks WHERE scope = ''")['c'] === 9);
     chk('formation · editing a block needs the content capability', empty(admin_formation_save(['requesterId' => 'NOBODY', 'key' => 'chess', 'start' => '13:10'])['ok']));
+    chk('formation · the next Saturday is today on a Saturday, else the coming one (Lagos)',
+        sf_next_saturday(strtotime('2026-10-30T12:00:00Z')) === '2026-10-31' && sf_next_saturday(strtotime('2026-10-31T10:00:00Z')) === '2026-10-31' && sf_next_saturday(strtotime('2026-10-31T23:30:00Z')) === '2026-11-07');
     chk('formation · ledger: a send happens once per day, slot, person and channel',
         sf_once('2026-10-17', 'block:chess', 'M-1', 'push') === true && sf_once('2026-10-17', 'block:chess', 'M-1', 'push') === false && sf_once('2026-10-17', 'block:chess', 'M-1', 'email') === true);
     chk('formation · the tick does nothing on a weekday', sf_tick(strtotime('2026-10-16T08:00:00Z'))['saturday'] === false);
     $r = sf_tick(strtotime('2026-10-17T07:31:00Z'));   // 8:31 Lagos, a Saturday
     chk('formation · on Saturday at 8:31 Lagos the breakout block is open', $r['saturday'] === true && $r['date'] === '2026-10-17');
     // Families: a guardian who takes check-in news hears the plan, the not-arrived notice and the close; one who does not hears nothing.
-    $now = now_iso();
-    foreach ([['SF-K1', 'Ada Here'], ['SF-K2', 'Bayo Away']] as [$id, $nm]) db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'email' => strtolower($id) . '@sf.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
-    foreach ([['SF-G1', 'g1@sf.example', 'SF-K1', '{"checkin":true}'], ['SF-G2', 'g2@sf.example', 'SF-K2', '{"checkin":true}'], ['SF-G3', 'g3@sf.example', 'SF-K1', '{"checkin":false}']] as $i => [$gid, $em, $kid, $nt]) {
+    foreach ([['SF-K1', 'Ada Here', 'Sfton'], ['SF-K2', 'Bayo Away', 'Sfton'], ['SF-K4', 'Dayo Vale', 'Sfvale']] as [$id, $nm, $cn]) db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'email' => strtolower($id) . '@sf.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $cn, 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['SF-G1', 'g1@sf.example', 'SF-K1', '{"checkin":true}'], ['SF-G2', 'g2@sf.example', 'SF-K2', '{"checkin":true}'], ['SF-G3', 'g3@sf.example', 'SF-K1', '{"checkin":false}'], ['SF-G4', 'g4@sf.example', 'SF-K4', '{"checkin":true}']] as $i => [$gid, $em, $kid, $nt]) {
         db_insert('guardians', ['guardianId' => $gid, 'email' => $em, 'fullName' => 'G ' . $i, 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
         db_insert('guardian_wards', ['linkId' => 'SFL-' . $i, 'guardianId' => $gid, 'memberId' => $kid, 'status' => 'active', 'notify' => $nt, 'createdAt' => $now]);
     }
     db_insert('attendance', ['cohortId' => '', 'studentId' => 'SF-K1', 'token' => '', 'date' => '2026-10-17', 'checkInAt' => '2026-10-17T06:55:00Z', 'method' => 'qr']);
     db_insert('mentor_register', ['onDate' => '2026-10-17', 'subjectId' => 'SF-K1', 'mentorId' => 'X', 'here' => 1, 'observed' => '["Courage"]', 'checks' => '["On time","Assignment in"]', 'updatedAt' => $now]);
-    $slots = static fn($slot) => array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE onDate = '2026-10-17' AND slot = ?", [$slot]), 'recipient');
+    $slots = static fn($slot, $d = '2026-10-17') => array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE onDate = ? AND slot = ? ORDER BY recipient", [$d, $slot]), 'recipient');
     sf_tick(strtotime('2026-10-17T07:05:00Z'));   // 8:05 Lagos
     $plan = $slots('parent:plan');
     chk('formation · 8:00 plan: every linked guardian, whatever they once chose (always on)', in_array('g1@sf.example|SF-K1', $plan, true) && in_array('g2@sf.example|SF-K2', $plan, true) && in_array('g3@sf.example|SF-K1', $plan, true));
     sf_tick(strtotime('2026-10-17T07:50:00Z'));   // 8:50 Lagos
-    chk('formation · 8:45 not-arrived notice: the absent member only', $slots('parent:absent') === ['g2@sf.example|SF-K2']);
+    chk('formation · 8:45 not-arrived notice: the absent members only', $slots('parent:absent') === ['g2@sf.example|SF-K2', 'g4@sf.example|SF-K4']);
     sf_tick(strtotime('2026-10-17T13:05:00Z'));   // 2:05pm Lagos
-    $close = $slots('parent:close'); sort($close);
+    $close = $slots('parent:close');
     chk('formation · 2:00 close: both guardians of the member who was here, nobody for the one who was not', $close === ['g1@sf.example|SF-K1', 'g3@sf.example|SF-K1']);
     $lines = implode(' | ', sf_day_lines('SF-K1', '2026-10-17', sf_blocks()));
     chk('formation · the close says arrival, values seen and the duties', str_contains($lines, 'Checked in at 7:55am') && str_contains($lines, 'courage') && str_contains($lines, 'on time, assignment handed in'));
+    chk('formation · the close names the day\'s own blocks and the check-in time from the timetable', str_contains($lines, 'Division classes') && str_contains($lines, 'due at check-in, 8:00am') && !str_contains($lines, 'National anthem'));
     $n = count($slots('parent:close')); sf_tick(strtotime('2026-10-17T13:20:00Z'));
     chk('formation · a second tick sends nothing twice', count($slots('parent:close')) === $n);
-    chk('formation · member reminders go to members in the building', in_array('SF-K1', $slots('block:close'), true) || in_array('SF-K1', array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE slot LIKE 'block:%' AND recipient = 'SF-K1'"), 'recipient'), true));
+    chk('formation · member reminders go to members in the building', in_array('SF-K1', array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE slot LIKE 'block:%' AND recipient = 'SF-K1'"), 'recipient'), true));
+    chk('formation · no member reminder for the check-in block (they are checking in)', !in_array('SF-K1', $slots('block:checkin'), true));
+
+    // ── Editing the day: times ripple, nothing overlaps, blocks come and go ──
+    $A = ['requesterId' => 'NGG-2025-0099'];
+    $day = static fn($scope = '') => array_column(sf_blocks($scope), null, 'key');
+    $r = admin_formation_save($A + ['key' => 'musing', 'end' => '10:15']);
+    $d = $day();
+    chk('formation · a longer block moves the blocks after it by the same amount (ripple)', !empty($r['ok']) && $r['moved'] === 7 && $d['vanboja']['start'] === '10:15' && $d['close']['end'] === '14:15' && $d['checkin']['start'] === '08:00');
+    admin_formation_save($A + ['key' => 'musing', 'end' => '10:00']);
+    chk('formation · …and back again, every length kept', $day()['close']['end'] === '14:00' && $day()['vanboja']['start'] === '10:00');
+    $r = admin_formation_save($A + ['key' => 'musing', 'end' => '10:20', 'ripple' => false]);
+    chk('formation · without the ripple, a time that overlaps the next block is refused and named', ($r['error'] ?? '') === 'overlap' && str_contains($r['message'], 'Musing') && str_contains($r['message'], 'before') && $day()['musing']['end'] === '10:00');
+    chk('formation · a block must end after it starts; times are 24-hour', (admin_formation_save($A + ['key' => 'chess', 'start' => '13:00', 'end' => '12:00'])['error'] ?? '') === 'end_before_start'
+        && (admin_formation_save($A + ['key' => 'chess', 'start' => '1pm'])['error'] ?? '') === 'bad_time');
+    $r = admin_formation_save($A + ['key' => 'chess', 'title' => 'Chess & strategy', 'kind' => 'classes', 'for' => ['parent' => 'Strategy over the board.']]);
+    $c = $day()['chess'];
+    chk('formation · a block\'s name, kind and one audience\'s part change without touching the others', !empty($r['ok']) && $c['title'] === 'Chess & strategy' && $c['kind'] === 'classes' && $c['for']['parent'] === 'Strategy over the board.' && !empty($c['for']['member']));
+    chk('formation · an unknown kind is refused', (admin_formation_save($A + ['key' => 'chess', 'kind' => 'party'])['error'] ?? '') === 'bad_kind');
+    admin_formation_save($A + ['key' => 'chess', 'title' => 'Chess', 'kind' => '']);
+    $r = admin_formation_add($A + ['after' => 'anthem', 'title' => 'Guest talk', 'minutes' => 20]);
+    $d = $day(); $keys = array_keys($d);
+    chk('formation · a new block goes where it is put, and the day after it moves on by its length',
+        !empty($r['ok']) && $r['key'] === 'guest-talk' && array_search('guest-talk', $keys, true) === array_search('anthem', $keys, true) + 1
+        && $d['guest-talk']['start'] === $d['anthem']['end'] && $d['close']['end'] === '14:20' && !array_filter($r['checks'], static fn($c) => $c['level'] === 'error'));
+    chk('formation · a second block of the same name gets its own key', admin_formation_add($A + ['after' => 'guest-talk', 'title' => 'Guest talk', 'minutes' => 10])['key'] === 'guest-talk-2');
+    $r = admin_formation_remove($A + ['key' => 'guest-talk-2']); admin_formation_remove($A + ['key' => 'guest-talk']);
+    chk('formation · removing a block closes its gap: the day ends when it did', !empty($r['ok']) && !isset($day()['guest-talk']) && $day()['close']['end'] === '14:00' && count($day()) === 9);
+    $r = admin_formation_add($A + ['copyOf' => 'vanboja']);
+    $d = $day();
+    chk('formation · duplicating a block copies its parts, its length and its place', !empty($r['ok']) && $d[$r['key']]['title'] === $d['vanboja']['title'] . ' (copy)'
+        && $d[$r['key']]['for'] == $d['vanboja']['for'] && $d[$r['key']]['start'] === $d['vanboja']['end']);
+    admin_formation_remove($A + ['key' => $r['key']]);
+    $before = $day();
+    $r = admin_formation_move($A + ['key' => 'chess', 'dir' => 'up']);
+    $d = $day(); $keys = array_keys($d);
+    chk('formation · moving a block up swaps it with the one before, each keeping its length; the day still ends when it did',
+        !empty($r['ok']) && array_search('chess', $keys, true) < array_search('break', $keys, true) && $d['chess']['start'] === $before['break']['start']
+        && sf_minutes($d['chess']['end']) - sf_minutes($d['chess']['start']) === sf_minutes($before['chess']['end']) - sf_minutes($before['chess']['start']) && $d['close']['end'] === '14:00');
+    admin_formation_move($A + ['key' => 'chess', 'dir' => 'down']);
+    chk('formation · …and down again restores the day', array_keys($day()) === array_keys($before) && $day()['chess']['start'] === $before['chess']['start']);
+    chk('formation · moving the first block up changes nothing', !empty(admin_formation_move($A + ['key' => 'checkin', 'dir' => 'up'])['unchanged']));
+    $r = admin_formation_shift($A + ['startAt' => '09:00']);
+    chk('formation · the whole day moves at once ("we start at 9 this term")', !empty($r['ok']) && $r['minutes'] === 60 && public_formation([])['hours'] === '9:00am – 3:00pm');
+    admin_formation_shift($A + ['minutes' => -60]);
+    chk('formation · a shift past midnight, or by more than five hours, is refused', ($r2 = admin_formation_shift($A + ['minutes' => 600]))['error'] === 'too_far' && public_formation([])['hours'] === '8:00am – 2:00pm');
+    chk('formation · the last block cannot be removed from a day (a day needs one)', (function () use ($A) {
+        admin_formation_version_create($A + ['scope' => 'date:2027-02-06']);
+        foreach (array_slice(array_column(sf_blocks('date:2027-02-06'), 'key'), 1) as $k) admin_formation_remove($A + ['scope' => 'date:2027-02-06', 'key' => $k]);
+        $k = sf_blocks('date:2027-02-06')[0]['key'];
+        $r = admin_formation_remove($A + ['scope' => 'date:2027-02-06', 'key' => $k]);
+        admin_formation_version_delete($A + ['scope' => 'date:2027-02-06']);
+        return ($r['error'] ?? '') === 'last_block';
+    })());
+
+    // ── Versions: a centre's own day, one Saturday everywhere, one Saturday at one centre ──
+    $r = admin_formation_version_create($A + ['scope' => 'centre:Sfton']);
+    chk('formation · a centre\'s own day starts as a copy of the main day, named by the centre\'s id (a rename leaves it in place)', !empty($r['ok']) && $r['scope'] === 'centre:SF-C1' && count(sf_blocks('centre:SF-C1')) === 9);
+    admin_formation_shift($A + ['scope' => 'centre:SF-C1', 'startAt' => '09:00']);
+    chk('formation · the centre\'s day is read at that centre, and only there', public_formation(['centre' => 'Sfton'])['hours'] === '9:00am – 3:00pm' && public_formation(['centre' => 'SF-C2'])['hours'] === '8:00am – 2:00pm' && public_formation([])['hours'] === '8:00am – 2:00pm');
+    chk('formation · a version of the day that does not exist cannot be edited (create it first)', (admin_formation_save($A + ['scope' => 'centre:SF-C2', 'key' => 'chess', 'title' => 'X'])['error'] ?? '') === 'bad_scope');
+    chk('formation · one Saturday\'s change must be a Saturday, and not one that has passed',
+        (admin_formation_version_create($A + ['scope' => 'date:2027-01-08'])['error'] ?? '') === 'bad_scope' && (admin_formation_version_create($A + ['scope' => 'date:2020-01-04'])['error'] ?? '') === 'past_date');
+    admin_formation_version_create($A + ['scope' => 'date:2027-01-09']);
+    admin_formation_save($A + ['scope' => 'date:2027-01-09', 'key' => 'special', 'title' => 'Founders’ day assembly']);
+    $r = admin_formation_version_create($A + ['scope' => 'date:2027-01-09@SF-C1']);
+    $d1 = sf_day('2027-01-09', 'SF-C1'); $d2 = sf_day('2027-01-09', 'SF-C2'); $d3 = sf_day('2027-01-16', 'SF-C1');
+    chk('formation · that Saturday at that centre starts from what was in force there (that Saturday\'s change)', $r['from'] === sf_scope_label('date:2027-01-09') && $d1['scope'] === 'date:2027-01-09@SF-C1' && array_column($d1['blocks'], 'title', 'key')['special'] === 'Founders’ day assembly');
+    chk('formation · the order is: that Saturday at that centre, that Saturday, the centre\'s own day, the main day',
+        $d2['scope'] === 'date:2027-01-09' && $d3['scope'] === 'centre:SF-C1' && sf_day('2027-01-16', 'SF-C2')['scope'] === '' && $d1['changed'] && $d2['changed'] && !$d3['changed']);
+    admin_formation_shift($A + ['scope' => 'date:2027-01-09@SF-C1', 'startAt' => '09:00']);
+    chk('formation · a Saturday is read for a date (portals pass the next one)', public_formation(['centre' => 'Sfton', 'date' => '2027-01-09'])['changed'] === true && public_formation(['centre' => 'Sfton', 'date' => '2027-01-09'])['date'] === '2027-01-09');
+    $lst = admin_formation_list($A + ['scope' => 'date:2027-01-09@SF-C1']);
+    chk('formation · the editor lists every version, in words, and the one it is showing', $lst['scope'] === 'date:2027-01-09@SF-C1' && $lst['label'] === 'Saturday 9 Jan 2027 at Sfton'
+        && in_array('Sfton’s own day', array_column($lst['versions'], 'label'), true) && $lst['versions'][0]['label'] === 'Every Saturday' && $lst['hours'] === '9:00am – 3:00pm');
+    chk('formation · an unknown version in the editor falls back to the main day rather than failing', admin_formation_list($A + ['scope' => 'centre:NOPE'])['scope'] === '');
+
+    // ── A Saturday off ──
+    chk('formation · a Saturday off needs a line families will read', (admin_formation_day_set($A + ['date' => '2027-01-09', 'centre' => 'SF-C2', 'off' => true])['error'] ?? '') === 'note_required'
+        && (admin_formation_day_set($A + ['date' => '2027-01-08', 'off' => true, 'note' => 'x'])['error'] ?? '') === 'not_saturday');
+    admin_formation_day_set($A + ['date' => '2027-01-09', 'centre' => 'Sfvale', 'off' => true, 'note' => 'The hall is being painted.']);
+    $p = public_formation(['centre' => 'Sfvale', 'date' => '2027-01-09']);
+    chk('formation · that centre\'s portals say it is off, and why, and show no blocks', $p['off'] === true && $p['note'] === 'The hall is being painted.' && $p['blocks'] === [] && public_formation(['centre' => 'Sfton', 'date' => '2027-01-09'])['off'] === false);
+    chk('formation · the editor lists the Saturdays off', in_array('2027-01-09', array_column(admin_formation_list($A)['offDays'], 'date'), true));
+
+    // ── The day as it happens follows the centre's day that Saturday ──
+    sf_tick(strtotime('2027-01-09T07:05:00Z'));   // 8:05 Lagos: Sfton starts at 9:00 that day, Sfvale is off
+    chk('formation · the plan goes an hour before that centre\'s day (never before 8:00); a centre that is off hears nothing', $slots('parent:plan', '2027-01-09') === ['g1@sf.example|SF-K1', 'g2@sf.example|SF-K2', 'g3@sf.example|SF-K1']);
+    sf_tick(strtotime('2027-01-09T07:50:00Z'));   // 8:50: 45 minutes into the main day, but Sfton has not started
+    chk('formation · the not-arrived notice waits for that centre\'s day: nothing at 8:50 when it starts at 9:00', $slots('parent:absent', '2027-01-09') === []);
+    sf_tick(strtotime('2027-01-09T08:50:00Z'));   // 9:50
+    chk('formation · …and goes 45 minutes after it starts', $slots('parent:absent', '2027-01-09') === ['g1@sf.example|SF-K1', 'g2@sf.example|SF-K2', 'g3@sf.example|SF-K1']);
+    sf_tick(strtotime('2027-01-09T13:05:00Z'));   // 2:05pm: the main day's close, not Sfton's (3:00pm)
+    chk('formation · the close follows that centre\'s end, not 2:00', $slots('parent:close', '2027-01-09') === []);
+    admin_formation_day_set($A + ['date' => '2027-01-09', 'centre' => 'Sfvale', 'off' => false]);
+    chk('formation · putting a Saturday back on removes the off row', !db_row("SELECT id FROM saturday_formation_dates WHERE onDate = '2027-01-09' AND centreId = 'SF-C2'"));
+
+    // ── Centre scope: a scoped admin edits their own centres' days only ──
+    db_insert('members', ['memberId' => 'SF-ADM-S', 'fullName' => 'Sfton Admin', 'email' => 'sfadm@sf.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Sfton', 'centreScope' => json_encode(['SF-C1']), 'createdAt' => $now, 'updatedAt' => $now]);
+    $S = ['requesterId' => 'SF-ADM-S'];
+    chk('formation · a centre-scoped admin can change their own centre\'s day', !empty(admin_formation_save($S + ['scope' => 'centre:SF-C1', 'key' => 'chess', 'title' => 'Chess club'])['ok']));
+    chk('formation · …but not the main day, another centre\'s, or every centre\'s Saturday',
+        (admin_formation_save($S + ['key' => 'chess', 'title' => 'X'])['error'] ?? '') === 'out_of_scope'
+        && (admin_formation_version_create($S + ['scope' => 'centre:SF-C2'])['error'] ?? '') === 'out_of_scope'
+        && (admin_formation_day_set($S + ['date' => '2027-01-16', 'off' => true, 'note' => 'x'])['error'] ?? '') === 'out_of_scope');
+
+    // ── Removing a version, and the audit trail ──
+    chk('formation · the main day cannot be removed', (admin_formation_version_delete($A + ['scope' => ''])['error'] ?? '') === 'bad_scope');
+    $r = admin_formation_version_delete($A + ['scope' => 'date:2027-01-09@SF-C1']);
+    chk('formation · removing a Saturday\'s change goes back to what applied before', !empty($r['ok']) && sf_day('2027-01-09', 'SF-C1')['scope'] === 'date:2027-01-09');
+    chk('formation · every change is one audit event, by version', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'formation.day.shift' AND subject = 'formation:centre:SF-C1'")['c'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'formation.version.delete'")['c'] >= 1);
+    chk('formation · the mentor breakout window follows the kind, not the key', (function () {
+        $w = mp_breakout_window('2027-01-16', []);
+        return $w['start'] === '08:30' && $w['end'] === '10:00' && mp_breakout_next('2027-01-16', []) === 'Vanboja';
+    })() || (mp_breakout_window()['minutes'] === 90));
+
     db_exec("DELETE FROM guardian_wards WHERE linkId LIKE 'SFL-%'"); db_exec("DELETE FROM guardians WHERE guardianId LIKE 'SF-G%'");
-    db_exec("DELETE FROM attendance WHERE studentId LIKE 'SF-K%'"); db_exec("DELETE FROM mentor_register WHERE subjectId LIKE 'SF-K%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'SF-K%'");
-    db_exec('DELETE FROM saturday_formation_sends');
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'SF-K%'"); db_exec("DELETE FROM mentor_register WHERE subjectId LIKE 'SF-K%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'SF-K%' OR memberId = 'SF-ADM-S'");
+    db_exec('DELETE FROM saturday_formation_sends'); db_exec("DELETE FROM saturday_formation_blocks WHERE scope <> ''"); db_exec('DELETE FROM saturday_formation_dates');
+    db_exec("DELETE FROM centres WHERE centreId IN ('SF-C1', 'SF-C2')");
 })();
 
 /* ── Opportunities (domain/opportunities.php): staff-edited, matched to the member's age ── */

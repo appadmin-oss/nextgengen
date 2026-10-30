@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 203;
+const NGG_SCHEMA_TARGET = 204;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5900,6 +5900,36 @@ function db_migrate(PDO $db): void {
             ALTER TABLE volunteer_payouts ADD COLUMN fineNgg INTEGER NOT NULL DEFAULT 0;
             ALTER TABLE volunteer_payouts ADD COLUMN fineAv INTEGER NOT NULL DEFAULT 0;
             ALTER TABLE volunteer_payouts ADD COLUMN bankLine TEXT NOT NULL DEFAULT '';
+        ",
+        /* 204 — the Saturday formation, versioned (domain/saturday-formation.php).
+         * One row per block per VERSION of the day: the main day (scope ''), a
+         * centre's own day ('centre:<centreId>'), one Saturday everywhere
+         * ('date:YYYY-MM-DD') or at one centre ('date:YYYY-MM-DD@<centreId>').
+         * saturday_formation had blockKey UNIQUE, which cannot hold versions;
+         * its rows are copied in as the main day and it is left unread. `kind`
+         * names what a block is for (check-in, mentor breakout, classes, break,
+         * close), so reminders follow the block rather than a fixed key or time.
+         * saturday_formation_dates: a Saturday that is off (no NGG), with a note. */
+        204 => "
+            CREATE TABLE IF NOT EXISTS saturday_formation_blocks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scope TEXT NOT NULL DEFAULT '', blockKey TEXT NOT NULL, sort INTEGER DEFAULT 0,
+              startTime TEXT NOT NULL, endTime TEXT NOT NULL, title TEXT NOT NULL, flow TEXT DEFAULT '',
+              purpose TEXT DEFAULT '', quote TEXT DEFAULT '', forJson TEXT DEFAULT '', kind TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sfb ON saturday_formation_blocks(scope, blockKey);
+            INSERT INTO saturday_formation_blocks (scope, blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson, kind, updatedAt, updatedBy)
+              SELECT '', blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson,
+                     CASE blockKey WHEN 'checkin' THEN 'checkin' WHEN 'musing' THEN 'mentor' WHEN 'division' THEN 'classes' WHEN 'break' THEN 'break' WHEN 'close' THEN 'close' ELSE '' END,
+                     updatedAt, updatedBy
+                FROM saturday_formation WHERE status = 'active';
+            CREATE TABLE IF NOT EXISTS saturday_formation_dates (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              onDate TEXT NOT NULL, centreId TEXT NOT NULL DEFAULT '', off INTEGER NOT NULL DEFAULT 0, note TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sfd ON saturday_formation_dates(onDate, centreId);
         ",
     ];
 

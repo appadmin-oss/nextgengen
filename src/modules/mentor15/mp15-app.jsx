@@ -701,8 +701,8 @@ class Mp15Portal extends React.Component {
     const S = this.state; const cls = 'm15x-slot m15x-end' + (narrow ? ' is-narrow' : '');
     const need = { week: ['week'], sat: ['satNext'] }[S.scr];
     if (need && need.some(k => S.ld[k] || S.er[k] || !S.d[k])) return null;
-    if (S.scr === 'week') return <div className={cls}><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
-    if (S.scr === 'sat') return <div className={cls}><FormationDay audience="mentor" compact={true}/></div>;
+    if (S.scr === 'week') return <div className={cls}><FormationDay audience="mentor" centre={S.centre || ''} compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
+    if (S.scr === 'sat') return <div className={cls}><FormationDay audience="mentor" centre={S.centre || ''} compact={true}/></div>;
     if (S.scr === 'projects') return <div className={cls}><Mp15Projects act={(a, b, ok) => this.act(a, b, ok).then(r => { if (r) this.refresh(['role']); return r; })} today={this.today()}/></div>;
     if (S.scr === 'mentors' && S.supFor) { const m = ((S.d.team || {}).mentors || []).find(x => x.mentorId === S.supFor);
       if (m) return <div className={cls}><Mp15SupNotes key={m.mentorId} m={m} onClose={() => this.setState({ supFor: null })}

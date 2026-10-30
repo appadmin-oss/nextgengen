@@ -4604,3 +4604,29 @@ Two branches had built the same things twice. What the merge kept:
   email when asked or when there is no app. Excluded days are app-only, one item
   per period (`groupKey`), never an email a day.
 
+
+## 2026-10-30 — the Saturday formation is editable, per centre and per Saturday
+
+- **Versions of the day** (migration 204, `saturday_formation_blocks.scope`):
+  `''` the main day, `centre:<centreId>`, `date:<Saturday>`,
+  `date:<Saturday>@<centreId>`; `sf_day($date, $centreId)` resolves them in that
+  order, most specific first, and is the one resolver every reader uses.
+  Centres are keyed by id, so a CACENTRE rename leaves their day in place. The
+  old `saturday_formation` table is copied once and left unread.
+- **Saturdays off** (`saturday_formation_dates`): everywhere or at one centre,
+  with a note families read. Nothing is sent; portals say so.
+- **Times are the day's.** A save refuses an overlap unless it ripples; add,
+  remove and move keep the day's end; `shift` moves the whole day. The hours,
+  the parent plan/absent/close times and the reminders follow the version in
+  force at the child's or mentor's centre that Saturday. Nothing is pinned to
+  8:00 or 2:00 any more, except that no family email goes before 8:00.
+- **What a block is for is its `kind`** (`checkin`, `mentor`, `classes`,
+  `break`, `close`), not its key: the reminders and `mp_breakout_window()` read
+  the kind (falling back to the seeded `musing`), so a renamed or re-keyed
+  block keeps working.
+- One route, one op per verb (`admin.formation.add/remove/move/shift/
+  version.create/version.delete/day.set`), capability `content`, centre-scoped,
+  one audit event each, `cache_invalidate('formation')`.
+- The family email lost its inline `style` attributes.
+- Tests: the formation section of `api/tests/run.php`;
+  `tests/formation-editor.test.js` (in `test:all`, `npm run test:formation`).

@@ -10504,6 +10504,10 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .sf-p { margin: 0; color: #4a4a50; }
 .sf-body blockquote { margin: 8px 0 0; padding: 10px 12px; border-radius: 12px; background: #f4f4f2; font-weight: 500; }
 .sf-logic { margin: 10px 0 0; font-size: 12.5px; color: #6b6b72; }
+/* A changed Saturday or a Saturday off, said above the day (public.formation: changed, off, note). */
+.sf-day { --sf-note-ink: #7a5600; --sf-note-bg: #fdf6e3; --sf-off-ink: #b0361c; --sf-off-bg: #fdeeea; }
+.sf-note { margin: 0 0 8px; padding: 10px 12px; border-radius: 12px; background: var(--sf-note-bg); color: var(--sf-note-ink); font-size: 14px; line-height: 1.45; }
+.sf-note.is-off { background: var(--sf-off-bg); color: var(--sf-off-ink); }
 @container (max-width: 520px) { .sf-body { padding-left: 0; } .sf-fl { display: none; } }
 /* /mentor: the choice between the NGG and Summer School portals. */
 .m15x-hub { min-height: 100vh; display: flex; justify-content: center; padding: 64px 16px; background: #f4f4f2; font-family: 'Geist', system-ui, sans-serif; color: #0b0b0c; }
