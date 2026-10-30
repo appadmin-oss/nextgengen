@@ -15,6 +15,7 @@ if ($method === 'GET') {
     elseif ($view === 'arrears')  $res = gs_call('admin.fees.arrears', ['requesterId' => $mid, 'limit' => $_GET['limit'] ?? '']);
     elseif ($view === 'training') $res = gs_call('admin.fees.training', ['requesterId' => $mid, 'filter' => $_GET['filter'] ?? '',
                                     'sort' => $_GET['sort'] ?? '', 'q' => $_GET['q'] ?? '', 'limit' => $_GET['limit'] ?? '']);
+    elseif ($view === 'fineRules') $res = gs_call('admin.fees.fineRules', ['requesterId' => $mid]);
     elseif ($view === 'lookup')   $res = gs_call('admin.fees.lookup', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '']);
     else                          $res = gs_call('admin.fees.settings.get', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
@@ -29,6 +30,7 @@ if ($method === 'GET') {
         'charge'    => 'admin.fees.charge',
         'fineImport' => 'admin.fees.fineImport',
         'finesClearOnce' => 'admin.fees.finesClearOnce',
+        'fineRuleSave' => 'admin.fees.fineRuleSave',
         'waive'     => 'admin.fees.waive',
         'settle'    => 'admin.fees.settle',
         'accrue'    => 'admin.fees.accrue',

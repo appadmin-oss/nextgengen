@@ -197,6 +197,8 @@ function web_cron_run(): void {
                 if (web_cron_due('accrue', web_cron_cfg('accrue', 86400)))       web_cron_guard('fees_accrue', 'web_cron_accrue');
                 // An edition whose season has ended closes, and its Summer-only centres retire with it.
                 if (web_cron_due('editions', web_cron_cfg('editions', 21600)) && function_exists('summer_editions_close_elapsed')) web_cron_guard('editions_close', fn() => summer_editions_close_elapsed());
+                // The thank-yous a closed season queued for its volunteers, a batch a minute (summer-editions.php).
+                if (web_cron_due('vol_thanks', web_cron_cfg('vol_thanks', 60)) && function_exists('summer_thanks_drain')) web_cron_guard('vol_thanks', fn() => summer_thanks_drain());
                 // Mentorship's adaptive rules (R1–R8): nudges for a mentor or a lead, never a child.
                 if (web_cron_due('mentorship', web_cron_cfg('mentorship', 21600)) && function_exists('ms_rules_run')) web_cron_guard('mentorship_rules', fn() => ms_rules_run());
                 // Mentor Portal jobs (AUTOMATIONS.md): each runs at its own Lagos time;

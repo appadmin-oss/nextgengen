@@ -1,0 +1,691 @@
+/* ============================================================================
+   Control Room v2 — Money › Conduct & fines. Filled into CR_TAB_DEFS.
+
+   ONE home for fines. They used to be in three places that did not know about
+   each other: the rules (amount, cap, on/off) only in the Club portal, the
+   upload under Dues & arrears, and the calendars, thresholds and compliance
+   board in the v1 `SummerPolicy` screen mounted whole into this tab. So an
+   operator reading "capped" on an upload could not see or change the cap from
+   the screen that said it, and the tab looked like a different product.
+
+   Views, by the URL tail (ctx.sub), each offered only to whoever holds what
+   its server ops gate on:
+     ""            Fines        fees            the rules, the upload, the one-time clearance
+     compliance    Compliance   people|summer   the board, and one person's record
+     policy        Policy       summer          the enforcement thresholds
+     calendar      Calendars    summer          the Summer and member programme days
+
+   /control/money/fees/fines (the upload's old address) forwards here — see
+   CR_SUB_ALIASES in cr-pages.jsx. Every rule this screen states is the
+   server's; nothing here is enforced only in the browser.
+   ========================================================================== */
+/** The most fines one register cell may stand for. Mirrors FEES_FINE_COUNT_MAX (fees.php), which refuses past it. */
+const CR_CF_COUNT_MAX = 20;
+const CR_CF_VIEWS = [["", "Fines", ["fees"]], ["compliance", "Compliance", ["people", "summer"]], ["policy", "Policy", ["summer"]], ["calendar", "Calendars", ["summer"]]];
+const CR_CF_DOW = [[1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "Sat"], [7, "Sun"]];
+
+/* ── Reading a fines sheet the way a person would ──────────────────────────
+   Registers arrive as they were kept: a title line or two above the headings,
+   "S/N" and "Names" for columns, one column per kind of fine ("Late",
+   "Absent", "Total"), a TOTAL line at the bottom, a sheet per centre. The old
+   reader took row one as the headings and looked for exact words, so a
+   register with a title above it read as "no column for who is being fined".
+   This finds the heading row, recognises a heading by what it means, splits a
+   row with a column per kind into one fine per kind, and skips totals — and
+   then SAYS how it read the file, so nobody has to trust it blind. Every
+   matching decision is still the server's (fees.php, admin_fees_fine_import). */
+const CR_CF_FINE_REASON_COLS = [["late", /\blate|lateness|tard/], ["absent", /absen|missed|truan/], ["equipment", /equip|damage|lost|broke/], ["conduct", /conduct|behaviou?r|indisciplin|misconduct/]];
+function crCfFineHeadKey(h) { return String(h || "").toLowerCase().replace(/[₦#]/g, " naira ").replace(/\((n|ngn|naira)\)|\[(n|ngn)\]/g, " naira ").replace(/[^a-z0-9@/ ]+/g, " ").replace(/\s+/g, " ").trim(); }
+/** What a heading means: a field, ["byReason", code], or null. */
+function crCfFineField(h) {
+  const k = crCfFineHeadKey(h);
+  if (!k) return null;
+  if (/^(s ?\/? ?n|sn|no|serial|s no|sno|#)$/.test(k)) return "serial";
+  if (/e ?mail/.test(k)) return "email";
+  if (/^(id|member|card|member no|member number|member id|memberid|display id|displayid|reg no|registration no|registration number|ngg id|ngg no|card no|card number|id no|id number)$/.test(k) || /\b(member|reg|registration|card|ngg) ?(id|no|number)\b/.test(k)) return "member";
+  if (/centre|center|branch|location|venue/.test(k)) return "centre";
+  if (/\b(date|day|when)\b/.test(k) || k === "on") return "date";
+  if (/reason|offen[cs]e|violation|category|why|^type$|^kind$/.test(k)) return "reason";
+  if (/note|comment|remark|detail|description/.test(k)) return "note";
+  if (/name|pupil|student|child|learner|member name/.test(k)) return "name";
+  if (/total|grand|^sum$/.test(k)) return "total";
+  const byR = CR_CF_FINE_REASON_COLS.find(x => x[1].test(k));
+  if (byR) return ["byReason", byR[0]];
+  if (/amount|fine|naira|ngn|owed|owing|balance|outstanding|charge|due|^n$/.test(k)) return "amount";
+  return null;
+}
+const CR_CF_FINE_WHO = ["member", "name", "email"];
+/** One sheet (a grid of strings) → fines rows, and a plain account of how it was read. */
+function crCfFineSheet(grid, sheetName) {
+  let best = null;
+  for (let i = 0; i < Math.min(20, grid.length); i++) {
+    const map = (grid[i] || []).map(crCfFineField);
+    const fields = new Set(map.filter(Boolean).map(f => Array.isArray(f) ? "byReason" : f));
+    const who = CR_CF_FINE_WHO.some(f => fields.has(f)), money = ["amount", "total", "byReason"].some(f => fields.has(f));
+    const score = fields.size + (who ? 3 : 0) + (money ? 3 : 0);
+    if (!best || score > best.score) best = { i, map, score, who, money };
+  }
+  if (!best || !best.who || !best.money) return { rows: [], how: { sheet: sheetName, unreadable: true, who: !!(best && best.who), money: !!(best && best.money) } };
+  const head = grid[best.i], map = best.map;
+  const col = f => map.findIndex(x => x === f);
+  const reasonCols = map.map((x, k) => Array.isArray(x) ? [k, x[1]] : null).filter(Boolean);
+  const amountCol = col("amount") >= 0 ? col("amount") : col("total");
+  const headKey = head.map(crCfFineHeadKey).join("|");
+  const rows = []; let totals = 0, repeats = 0, countedCells = 0;
+  const cell = (r, f) => { const k = col(f); return k >= 0 ? String(r[k] == null ? "" : r[k]).trim() : ""; };
+  for (let i = best.i + 1; i < grid.length; i++) {
+    const r = grid[i] || [];
+    if (!r.some(c => String(c || "").trim() !== "")) continue;
+    if (r.map(crCfFineHeadKey).join("|") === headKey) { repeats++; continue; }   // the heading repeated at a page break
+    if (r.slice(0, 4).some(c => /^(grand\s*)?(sub-?)?total\b|^sum\b/i.test(String(c || "").trim()))) { totals++; continue; }
+    const base = { member: cell(r, "member"), name: cell(r, "name"), email: cell(r, "email"), reason: cell(r, "reason"), date: cell(r, "date"), note: cell(r, "note"),
+      centre: cell(r, "centre") || (col("centre") < 0 && sheetName && !/^sheet\s*\d+$/i.test(sheetName) ? sheetName : ""), src: (sheetName ? sheetName + " · " : "") + "row " + (i + 1) };
+    if (/^\d{5}(\.\d+)?$/.test(base.date)) base.date = new Date(Date.UTC(1899, 11, 30) + Math.floor(+base.date) * 86400000).toISOString().slice(0, 10);
+    // One column per kind of fine: one fine per filled column, its kind the reason. The total is then only a sum, and ignored.
+    const split = reasonCols.map(([k, code]) => [String(r[k] == null ? "" : r[k]).trim(), code, k]).filter(([v]) => v !== "" && !/^(0+(\.0+)?|-|—|nil|null|none|n\/a)$/i.test(v));
+    /* Under a kind with no money in its heading, a tick is one fine and a small
+       whole number is how many ("Late: 3"), each at the rule's standard amount —
+       a register counts lates, it rarely prices them. "Late (₦)" is money. */
+    const counts = k => !/\b(naira|amount|fine|fines|ngn|n)\b/.test(crCfFineHeadKey(head[k]));
+    if (split.length) split.forEach(([v, code, k]) => {
+      const tick = /^(✓|✔|√|x|yes|y|true)$/i.test(v), n = /^\d{1,2}$/.test(v) ? +v : 0;
+      const each = tick ? { amount: "", count: 1 } : counts(k) && n >= 1 && n <= CR_CF_COUNT_MAX ? { amount: "", count: n } : { amount: v };
+      if (each.count) countedCells++;
+      rows.push(Object.assign({}, base, each, { reason: base.reason || code, src: base.src + " · " + code }));
+    });
+    else rows.push(Object.assign({}, base, { amount: amountCol >= 0 ? String(r[amountCol] == null ? "" : r[amountCol]).trim() : "" }));
+  }
+  const used = map.map((f, k) => f && f !== "serial" ? [head[k], Array.isArray(f) ? f[1] + " fines" : f] : null).filter(Boolean);
+  const ignored = head.filter((h, k) => String(h || "").trim() && (!map[k] || map[k] === "serial" || (map[k] === "total" && reasonCols.length)));
+  return { rows, how: { sheet: sheetName, headerRow: best.i + 1, used, ignored, totals, repeats, split: reasonCols.length > 0, counted: countedCells } };
+}
+const CR_CF_FINE_TEMPLATE = "member,name,email,amount,reason,date,note\n026-014,,,2000,late,2026-10-04,\n,Ada Okafor,okafor.family@example.com,5000,conduct,04/10/2026,Fighting during break\n";
+const CR_CF_FINE_ERR = {
+  ambiguous: "more than one member matches", no_match: "no member matches", member_required: "no member given",
+  not_ngg_member: "not an NGG member", out_of_scope: "outside your centres", bad_amount: "amount unreadable",
+  reason_required: "no reason", note_required: "say why", bad_date: "date unreadable", duplicate_in_file: "repeated in this file",
+  post_failed: "could not be posted", no_amount: "no fine on this row", date_in_future: "dated in the future — day and month swapped?",
+  rule_off: "that rule is switched off", cap_reached: "that rule’s cap for this term is already reached",
+  no_standard_amount: "no amount, and that rule has no standard amount — write the figure", bad_count: "more than " + 20 + " in one cell",
+};
+const CR_CF_MATCHED = { id: "ID", email: "email", "email+centre": "email + centre", "email+name": "email + name", name: "name only", "name+centre": "name + centre",
+  name_any: "name, words reordered", "name_any+centre": "name reordered + centre", name_part: "name, part of it", "name_part+centre": "part of the name + centre" };
+
+/* The sheet readers are the curriculum import's (cr-tab-learning.jsx): one CSV
+   and one .xlsx reader in the Control Room, not two. Every sheet of a
+   workbook is read; a sheet with nothing like a register on it is reported,
+   not guessed at. */
+async function crCfReadFines(file) {
+  if (/\.(xls|numbers|pdf|docx?)$/i.test(file.name)) throw Object.assign(new Error("bad_file"), { data: { message: "That file type can’t be read here. Save it as .xlsx or CSV." } });
+  const sheets = /\.xlsx$/i.test(file.name) ? await crCurXlsxGrids(await file.arrayBuffer()) : [{ name: "", grid: crCurParseCsv(await file.text(), true) }];
+  const read = sheets.map(sh => crCfFineSheet(sh.grid, sheets.length > 1 ? sh.name : ""));
+  return { rows: [].concat(...read.map(x => x.rows)), how: read.map(x => x.how) };
+}
+/** How the file was read, in a sentence a coordinator can check against the sheet. */
+function crCfFineHow(how) {
+  return (how || []).map(h => {
+    const where = h.sheet ? "Sheet “" + h.sheet + "”: " : "";
+    if (h.unreadable) return where + "not read — no " + (!h.who ? "column for who" : "column for the amount") + " was found.";
+    return where + "headings on row " + h.headerRow + " — " + h.used.map(u => "“" + u[0] + "” as " + u[1]).join(", ")
+      + (h.ignored.length ? "; ignored " + h.ignored.map(x => "“" + x + "”").join(", ") : "")
+      + (h.split ? "; a column per kind of fine, so each filled one is its own fine" : "")
+      + (h.counted ? "; " + crPlural(h.counted, "cell") + " ticked or counted rather than priced, so the rule’s standard amount is used" : "")
+      + (h.totals ? "; " + crPlural(h.totals, "total line") + " skipped" : "") + (h.repeats ? "; " + crPlural(h.repeats, "repeated heading") + " skipped" : "") + ".";
+  }).join(" ");
+}
+
+function crCfDownload(name, text) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+
+/** A short date for a range ("1 Sep"), the year only when it is not this one. */
+function crCfDay(iso) { return iso ? crDate(String(iso).slice(0, 10) + "T12:00:00").replace(/^[A-Za-z]{3} /, "") : "—"; }
+/** One member's money account lives in Dues & arrears; a fines row opens it there. */
+function crCfAccount(ctx, memberId) { ctx.go("money", "fees", "account/" + encodeURIComponent(memberId)); }
+/** After a write: the rules, the clearance status and the board, refetched quietly. */
+async function crCfRefresh(ctx) {
+  const [rules, once, board] = await Promise.all([
+    ctx.can("fees") ? NGGApi.admin.fees.fineRules().catch(() => null) : null,
+    ctx.can("fees") ? NGGApi.admin.fees.finesClearOnce("status").catch(() => null) : null,
+    ctx.can(["people", "summer"]) ? NGGApi.admin.policy.board().catch(() => null) : null,
+  ]);
+  ctx.setData(x => Object.assign({}, x, rules ? { rules } : null, once ? { once } : null, board ? { board } : null));
+}
+
+/* ══ Fines: the upload ═══════════════════════════════════════════════════════ */
+/** Read a file, check it on the server, keep the check. Shared by the form and a dropped file. */
+async function crCfCheckFile(ctx, file, defaultReason) {
+  const read = await crCfReadFines(file);
+  const rows = read.rows, how = read.how;
+  if (!rows.length) {
+    const why = how.find(h => h.unreadable);
+    return { fieldErrors: { file: why ? (why.who ? "That sheet has no column for the amount. Name a column “Fine” or “Amount” (or one per kind: “Late”, “Absent”…)." : "That sheet has no column for who is being fined. Name a column “Name”, “Member ID” or “Email”.") : "No fines found in that file." } };
+  }
+  const rs = String(defaultReason || "").trim();
+  const sent = rows.map(r => r.reason || !rs ? r : Object.assign({}, r, { reason: rs }));
+  let res;
+  try { res = await NGGApi.admin.fees.fineImport(crCfStrip(sent), { dryRun: true }); }
+  catch (e) { if (e && (e.code === "too_many" || (e.data && e.data.error === "too_many"))) return { fieldErrors: { file: "That is more than " + crNum((e.data && e.data.max) || 500) + " fines in one file. Split it." } }; throw e; }
+  ctx.setData(x => Object.assign({}, x, { finePlan: { rows: sent, res, name: file.name, how } }));
+  return res;
+}
+/** `src` is where a row sits in the sheet — for the operator, never for the server. */
+function crCfStrip(rows) { return rows.map(r => { const o = Object.assign({}, r); delete o.src; return o; }); }
+function crCfFineCheck(ctx) {
+  ctx.form({
+    title: "Upload fines", submit: "Check the file", busyLabel: "Checking…",
+    intro: "Excel (.xlsx) or CSV, as the register was kept — every sheet is read. Members are found by ID, then email, then name; a name two members share is settled by the centre, never guessed. Nothing is charged until you have checked each row and pressed Post.",
+    fields: [
+      { id: "file", l: "File", type: "file", req: true, accept: ".csv,.xlsx,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      { id: "reason", l: "Reason for rows that give none", max: 120, ph: "late, absent, conduct — or “Outstanding fine, term 1”", help: "Only used where a row has no reason and no note that names one." },
+    ],
+    onSubmit: v => crCfCheckFile(ctx, v.file, v.reason),
+    done: (v, r) => "Checked · " + crCfFineTally(r.tally, true),
+  });
+}
+function crCfFineTally(t, dry) {
+  t = t || {};
+  return crNum(t.fine) + (dry ? " to post (" : " posted (") + fmtMoney(t.total || 0) + ") · " + crNum(t.already) + " already posted · " + crNum(t.skipped || 0) + " with no fine · " + crNum(t.failed) + " refused";
+}
+async function crCfFinePost(ctx) {
+  const p = ctx.data.finePlan; if (!p) return;
+  const t = p.res.tally;   // read before the confirm: what is agreed is what runs
+  const ok = await ctx.confirm({ title: "Post " + crPlural(t.fine, "fine") + " — " + fmtMoney(t.total) + "?", cta: "Post fines",
+    body: crCfFineTally(t, true) + " (refused rows are not posted). Each fine lands on the member’s account and in their next reminder." });
+  if (!ok) return;
+  try {
+    const r = await NGGApi.admin.fees.fineImport(crCfStrip(p.rows), { digest: p.res.digest });
+    ctx.setData(x => Object.assign({}, x, { finePlan: { rows: p.rows, res: r, name: p.name, how: p.how } }));
+    ctx.toast(crNum(r.tally.fine) + " posted · " + fmtMoney(r.tally.total) + (r.tally.failed ? " · " + crNum(r.tally.failed) + " refused" : ""), null, !!r.tally.failed);
+    crCfRefresh(ctx);
+  } catch (e) {
+    ctx.toast(e && (e.code === "import_changed" || (e.data && e.data.error === "import_changed")) ? "The file changed since it was checked. Check it again." : crErr(e, "Couldn’t post the fines. Nothing was written."), null, true);
+  }
+}
+
+/* The empty state of the upload: what it takes, what happens, and the one
+   action. A file may also be dropped on it — a convenience, never the only
+   way in: "Choose a file" does everything a drop does. */
+function CrCfDrop({ ctx }) {
+  const [over, setOver] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const drop = async e => {
+    e.preventDefault(); setOver(false);
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!f || busy) return;
+    setBusy(true);
+    try {
+      const r = await crCfCheckFile(ctx, f, "");
+      if (r && r.fieldErrors) ctx.toast(r.fieldErrors.file, null, true);
+      else ctx.toast("Checked · " + crCfFineTally(r.tally, true));
+    } catch (x) { ctx.toast(crErr(x, "Couldn’t read that file."), null, true); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className={"cr-cf-drop" + (over ? " is-over" : "")} onDragOver={e => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={drop}>
+      <span className="cr-cf-drop-ico" aria-hidden="true"><CrIcon n="file-arrow-up"/></span>
+      <div className="cr-cf-drop-t">
+        <b>Upload a fines register</b>
+        <span>Excel or CSV, exactly as it was kept. A title above the headings, a column per kind of fine, ticks or counts, and TOTAL lines are all fine.</span>
+      </div>
+      <ol className="cr-cf-steps" aria-label="What happens">
+        <li><span>1</span>Read and matched to members</li>
+        <li><span>2</span>You check every row</li>
+        <li><span>3</span>Post — once</li>
+      </ol>
+      <div className="cr-cf-drop-acts">
+        <button type="button" className="cr-btn is-primary" onClick={() => crCfFineCheck(ctx)} disabled={busy} aria-busy={busy || undefined}><CrIcon n="upload-simple"/>{busy ? "Checking…" : "Choose a file"}</button>
+        <button type="button" className="cr-btn" onClick={() => crCfDownload("ngg-fines-template.csv", CR_CF_FINE_TEMPLATE)}><CrIcon n="download-simple"/>Template</button>
+      </div>
+    </div>
+  );
+}
+
+/* The check, summarised: the file, what will happen to its rows, and the
+   decision. One bar, not a stack of tinted notes. */
+function CrCfCheckBar({ ctx, p }) {
+  const t = p.res.tally || {}, dry = !!p.res.dryRun;
+  const [how, setHow] = React.useState(false);
+  const parts = [
+    [dry ? "To post" : "Posted", crNum(t.fine), fmtMoney(t.total || 0), t.fine ? "ok" : ""],
+    ["Already posted", crNum(t.already || 0), "", ""],
+    ["No fine", crNum(t.skipped || 0), "", ""],
+    ["Refused", crNum(t.failed || 0), t.failed ? "fix in the file" : "", t.failed ? "bad" : ""],
+  ];
+  return (
+    <div className="cr-cf-check">
+      <div className="cr-cf-check-top">
+        <span className="cr-cf-check-ico" aria-hidden="true"><CrIcon n={dry ? "file-magnifying-glass" : "check-circle"}/></span>
+        <div className="cr-cf-check-t">
+          <b>{p.name}</b>
+          <span>{dry ? (t.fine ? "Checked — nothing is charged until you post." : "Checked — there is nothing to post.") : "Posted. Each fine is on the member’s account and in their next reminder."}</span>
+        </div>
+        <div className="cr-cf-check-acts">
+          {dry && t.fine > 0 && <button type="button" className="cr-btn is-primary" onClick={() => crCfFinePost(ctx)}>Post {crPlural(t.fine, "fine")}</button>}
+          <button type="button" className="cr-btn" onClick={() => crCfFineCheck(ctx)}>{dry ? "Check another file" : "Upload another"}</button>
+          <button type="button" className="cr-iconbtn" aria-label="Close the check" onClick={() => ctx.setData(x => Object.assign({}, x, { finePlan: null }))}><CrIcon n="x"/></button>
+        </div>
+      </div>
+      <dl className="cr-cf-tally" aria-live="polite">
+        {parts.map(x => <div key={x[0]} className={x[3] ? "cr-t-" + x[3] : undefined}><dt>{x[0]}</dt><dd><b>{x[1]}</b>{x[2] && <span>{x[2]}</span>}</dd></div>)}
+      </dl>
+      {p.how && p.how.length > 0 && (
+        <div className="cr-cf-how">
+          <button type="button" className="cr-linkbtn" aria-expanded={how} onClick={() => setHow(!how)}>
+            <CrIcon n={how ? "caret-down" : "caret-right"}/>How the file was read
+          </button>
+          {how && <p>{crCfFineHow(p.how)}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function crCfUploadBlocks(d, ctx) {
+  const p = d.finePlan;
+  if (!p) return [{ type: "custom", span: 6, title: "Upload fines", render: () => <CrCfDrop ctx={ctx}/> }];
+  const dry = !!p.res.dryRun, out = [{ type: "custom", span: 6, title: dry ? "Check before posting" : "Posted", render: () => <CrCfCheckBar ctx={ctx} p={p}/> }];
+  const capped = (p.res.rows || []).filter(r => r.capped && r.verdict === "fine");
+  if (capped.length) out.push({ type: "note", span: 6, icon: "scales", tone: "warn", text: crPlural(capped.length, "fine") + " will post less than the sheet says, because a rule below caps that kind per term.",
+    sub: "The amount in the list is what will really post; the sheet’s figure is under it." });
+  const src = r => ((p.rows || [])[r.row - 1] || {}).src || "Row " + r.row;
+  const verdict = r => r.verdict === "skipped" ? ["No fine", "neutral"] : r.verdict === "failed" ? ["Refused", "bad"]
+    : r.verdict === "fine" ? [(dry ? "To post" : "Posted") + (r.capped ? " · capped" : ""), r.capped ? "warn" : "ok"] : ["Already posted", "neutral"];
+  out.push({ type: "table", span: 6, title: "Row by row", nosel: true,
+    sub: "Weak matches (by name only) say so — check those against the sheet.",
+    cols: [{ l: "In the sheet", wrap: true }, { l: "Member", wrap: true }, "Matched by", { l: "Amount", num: true }, { l: "Reason", wrap: true }, "Result"],
+    rows: (p.res.rows || []).map(r => ({ key: "r" + r.row, open: r.memberId ? () => crCfAccount(ctx, r.memberId) : undefined, cells: [
+      { k: "text", t: src(r), v: r.row },
+      { k: "text", t: r.fullName || "—", s: (r.displayId || r.memberId || "") + (r.candidates && r.candidates.length ? (r.displayId || r.memberId ? " · " : "") + "Could be: " + r.candidates.slice(0, 3).map(c => c.fullName + " (" + (c.displayId || c.memberId) + ")").join(", ") + (r.candidates.length > 3 ? " and " + crNum(r.candidates.length - 3) + " more" : "") : "") },
+      { k: "text", t: r.matchedBy ? (CR_CF_MATCHED[r.matchedBy] || r.matchedBy) : "", s: /^name/.test(r.matchedBy || "") ? "Weak — check it" : "" },
+      { k: "num", t: r.amount ? fmtMoney(r.amount) : "", v: r.amount || 0, s: r.standard ? crNum(r.standard) + " × " + fmtMoney(r.each) + " standard" : r.capped ? "sheet: " + fmtMoney(r.asked) : "" },
+      { k: "text", t: r.reasonLabel ? r.reasonLabel + (r.date ? " · " + r.date : "") : r.error ? (CR_CF_FINE_ERR[r.error] || String(r.error).replace(/_/g, " ")) : "", s: r.reasonLabel ? (r.note || "") : "" },
+      { k: "status", t: verdict(r)[0], tone: verdict(r)[1] },
+    ] })),
+    filters: ["Result"], search: "Search the rows" });
+  return out;
+}
+
+/* ══ Fines: the rules ════════════════════════════════════════════════════════ */
+const CR_CF_RULE_ERR = { kind_taken: "Another rule already covers that kind of fine — edit that one.", cap_below_fine: "The cap must be at least the standard amount.",
+  bad_name: "Give the rule a name of at least three letters.", bad_amount: "Enter a whole number of naira.", bad_cap: "Enter a whole number of naira.", not_found: "That rule no longer exists." };
+function crCfRuleEdit(ctx, R, rule) {
+  const kinds = (R.kinds || []).filter(k => !k[2] || (rule && rule.reason === k[0])).map(k => [k[0], k[1]]);
+  const whole = v => v === "" || /^\d+$/.test(String(v).trim()) ? "" : "A whole number of naira, or leave it empty.";
+  ctx.form({
+    title: rule ? rule.name : "Add a rule", submit: rule ? "Save the rule" : "Add the rule", busyLabel: "Saving…",
+    intro: "A rule says what a kind of fine normally costs and the most it may add up to in a term. Changes apply to fines posted from now on; fines already on accounts keep their amounts.",
+    values: rule ? { name: rule.name, reason: rule.reason, whenText: rule.whenText, amount: rule.amount ? String(rule.amount) : "", capTerm: rule.capTerm ? String(rule.capTerm) : "", active: !!rule.active }
+      : { name: "", reason: "", whenText: "", amount: "", capTerm: "", active: true },
+    fields: [
+      { id: "name", l: "Rule", req: true, max: 160, ph: "Late attendance" },
+      { id: "reason", l: "Applies to", type: "select", ph: "No particular kind — a written rule, fined per case", opts: kinds,
+        help: "Fines of this kind — from the desk, the policy or an upload — follow this rule's cap and switch." },
+      { id: "whenText", l: "When it applies", max: 200, ph: "Arriving after the lateness threshold" },
+      { id: "amount", l: "Standard amount (₦)", im: "numeric", max: 9, check: whole, help: "Used when a register ticks or counts a fine instead of pricing it. Empty: set per case." },
+      { id: "capTerm", l: "Most per member per term (₦)", im: "numeric", max: 9, check: whole, help: "Fines past it post only what is left. Empty: no cap." },
+      { id: "active", l: "Switched on", type: "switch", help: "Off: fines of this kind are refused, not posted at ₦0 by surprise." },
+    ],
+    onSubmit: async v => {
+      try {
+        return await NGGApi.admin.fees.fineRuleSave({ ruleId: rule ? rule.ruleId : "", name: v.name.trim(), reason: v.reason || "", whenText: (v.whenText || "").trim(),
+          amount: v.amount === "" ? 0 : parseInt(v.amount, 10), capTerm: v.capTerm === "" ? 0 : parseInt(v.capTerm, 10), active: !!v.active });
+      } catch (e) {
+        const c = e && ((e.data && e.data.error) || e.code), m = CR_CF_RULE_ERR[c];
+        const at = { kind_taken: "reason", cap_below_fine: "capTerm", bad_name: "name", bad_amount: "amount", bad_cap: "capTerm" }[c];
+        if (at) return { fieldErrors: { [at]: m } };
+        throw e;
+      }
+    },
+    done: (v, r) => { crCfRefresh(ctx); return r.unchanged ? "Nothing changed." : r.created ? "Rule added." : "Saved. Fines posted from now on follow it."; },
+  });
+}
+/* A table, not cards: the rules grow with the programme (a rule per kind of
+   fine, plus written rules fined per case), and a card per rule stopped
+   being scannable at four. Search, filter by state, sort by any column. */
+function crCfRuleTable(d, ctx) {
+  const R = d.rules;
+  return {
+    type: "table", span: 6, title: "Fine rules", nosel: true,
+    sub: "What each kind of fine normally costs, and the most it may add up to in a term. Open a rule to change it.",
+    action: "Add a rule", onAction: () => crCfRuleEdit(ctx, R, null),
+    cols: [{ l: "Rule", wrap: true }, "Applies to", { l: "Standard", num: true }, { l: "Cap a term", num: true }, { l: "This term", num: true }, "State"],
+    rows: (R.rules || []).map(r => ({ key: r.ruleId, open: () => crCfRuleEdit(ctx, R, r), cells: [
+      { k: "strong", t: r.name, s: r.whenText || "" },
+      { k: "text", t: r.reasonLabel || "Written rule — per case" },
+      { k: "num", t: r.amount ? fmtMoney(r.amount) : "Per case", v: r.amount || 0 },
+      { k: "num", t: r.capTerm ? fmtMoney(r.capTerm) : "None", v: r.capTerm || 0 },
+      { k: "num", t: r.reason ? crNum(r.thisTerm.n) : "—", v: r.reason ? r.thisTerm.n : -1, s: r.reason && r.thisTerm.n ? fmtMoney(r.thisTerm.total) : "" },
+      { k: "status", t: r.active ? "On" : "Off", tone: r.active ? "ok" : "neutral" },
+    ] })),
+    search: "Search the rules", filters: ["State", "Applies to"],
+    emptyText: "No rules yet. Add one.",
+  };
+}
+
+/* ══ Fines: the one-time clearance ══════════════════════════════════════════
+   Every active member's unpaid fines, cleared ONCE (fees.php,
+   admin_fees_fines_clear_once): super admin, a current authenticator code,
+   the typed phrase and a reason, applied exactly as previewed; afterwards the
+   server refuses it for ever and this screen shows the record of the run. */
+const CR_CF_CLEAR_ERR = { already_used: "Fines have already been cleared once. It cannot be done again.", bad_code: "That is not the current code from your authenticator app.",
+  totp_required: "Set up an authenticator app on your own account first (Account → Security).", phrase_mismatch: "Type the phrase exactly as shown.",
+  reason_required: "Say why, in a sentence.", too_many_attempts: "Too many wrong codes. Wait fifteen minutes, then try again.", import_changed: "The fines changed since the preview. Preview again.", forbidden: "Only a super admin can do this." };
+function crCfClearErr(e, fb) { const c = e && ((e.data && e.data.error) || e.code); return CR_CF_CLEAR_ERR[c] || crErr(e, fb); }
+async function crCfClearPreview(ctx) {
+  try { const r = await NGGApi.admin.fees.finesClearOnce("preview"); ctx.setData(x => Object.assign({}, x, { clearPlan: r })); }
+  catch (e) { ctx.toast(crCfClearErr(e, "Couldn’t work out whose fines would be cleared."), null, true); }
+}
+function crCfClearRun(ctx) {
+  const plan = ctx.data.clearPlan; if (!plan) return;
+  const phrase = plan.phrase || "CLEAR ALL FINES";
+  ctx.form({
+    title: "Clear the fines of " + crPlural(plan.members, "active member") + " — " + fmtMoney(plan.total), submit: "Clear them, once", busyLabel: "Clearing…",
+    intro: "This waives every unpaid fine on the accounts listed, records why, and then locks itself for good: nobody, you included, can run it again. Dues, membership and the training fee are not touched. Fines issued after today are owed as normal.",
+    values: { reason: "", phrase: "", code: "" },
+    fields: [
+      { id: "reason", l: "Why", type: "textarea", rows: 2, req: true, max: 240, ph: "Fines carried over from the paper register before this system, cleared by decision of the board" },
+      { id: "phrase", l: "Type " + phrase + " to confirm", req: true, max: 40, ph: phrase, check: v => v.trim() === phrase ? "" : "Type " + phrase + " exactly." },
+      { id: "code", l: "Code from your authenticator app", req: true, im: "numeric", max: 6, ph: "6 digits", check: v => /^\d{6}$/.test(v.trim()) ? "" : "Six digits." },
+    ],
+    onSubmit: async v => {
+      try { return await NGGApi.admin.fees.finesClearOnce("run", { digest: plan.digest, reason: v.reason.trim(), phrase: v.phrase.trim(), code: v.code.trim() }); }
+      catch (e) {
+        const c = e && ((e.data && e.data.error) || e.code);
+        if (c === "bad_code") return { fieldErrors: { code: CR_CF_CLEAR_ERR.bad_code } };
+        if (c === "phrase_mismatch") return { fieldErrors: { phrase: CR_CF_CLEAR_ERR.phrase_mismatch } };
+        if (c === "reason_required") return { fieldErrors: { reason: CR_CF_CLEAR_ERR.reason_required } };
+        throw Object.assign(new Error(c || "failed"), { data: { message: crCfClearErr(e, "Couldn’t clear the fines. Nothing was written.") } });
+      }
+    },
+    done: (v, r) => { ctx.setData(x => Object.assign({}, x, { once: { used: true, lock: r.lock, canRun: false }, clearPlan: null })); crCfRefresh(ctx); return fmtMoney(r.total) + " of fines cleared across " + crPlural(r.members, "member") + ". This is now locked."; },
+  });
+}
+function crCfClearBlocks(d, ctx) {
+  const o = d.once; if (!o) return [];
+  if (o.used && o.lock) {
+    const l = o.lock;
+    return [{ type: "list", span: 6, title: "One-time clearance", rows: [{ icon: "lock-simple",
+      t: "Used " + crDate(l.usedAt) + " by " + (l.usedByName || l.usedBy) + " — " + crPlural(l.members, "member") + ", " + fmtMoney(l.total),
+      s: "Why: " + (l.reason || "—") + ". It can never be run again; every cleared fine stays on its account with the waiver beside it." }] }];
+  }
+  if (!o.canRun) return [];
+  const p = d.clearPlan;
+  if (!p) return [{ type: "list", span: 6, title: "One-time clearance", rows: [{ icon: "broom", onClick: () => crCfClearPreview(ctx),
+    t: "Clear the unpaid fines of every active member — once",
+    s: "For fines carried over from before this system. You see every account first; it needs a reason, a typed phrase and your authenticator code, then locks for good.",
+    m: "Preview" }] }];
+  return [
+    { type: "note", span: 6, icon: p.members ? "warning" : "check-circle", tone: p.members ? "warn" : "ok",
+      text: p.members ? crPlural(p.members, "active member") + " with unpaid fines — " + fmtMoney(p.total) + " in all." : "No active member has an unpaid fine. There is nothing to clear.",
+      sub: p.members ? "Only unpaid fines are cleared; a fine already paid stays paid. The run applies exactly this list." : "Nothing is locked: it stays available until it is used.",
+      act: p.members ? { l: "Clear these fines, once…", run: () => crCfClearRun(ctx) } : { l: "Close", run: () => ctx.setData(x => Object.assign({}, x, { clearPlan: null })) } },
+    p.members ? { type: "table", span: 6, title: "Fines that would be cleared", nosel: true, search: "Search the list",
+      cols: ["Member", "Centre", { l: "Unpaid fines", num: true }],
+      rows: (p.rows || []).map(r => ({ key: r.memberId, open: () => crCfAccount(ctx, r.memberId), cells: [
+        { k: "person", t: r.fullName, s: r.displayId || r.memberId }, { k: "text", t: r.centre || "—" }, { k: "num", t: fmtMoney(r.amount), v: r.amount }] })) } : null,
+  ].filter(Boolean);
+}
+
+function crCfFinesBlocks(d, ctx) {
+  if (d.rulesErr || !d.rules) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the fine rules.", sub: crErr(d.rulesErr, ""), act: { l: "Try again", run: () => ctx.reload() } }];
+  const R = d.rules, on = (R.rules || []).filter(r => r.active), capped = on.filter(r => r.capTerm > 0), o = d.once || {};
+  const out = [{ type: "kpis", span: 6, items: [
+    { l: "Fines this term", v: crNum(R.thisTerm.n), dn: fmtMoney(R.thisTerm.total) },
+    { l: "Rules on", v: crNum(on.length) + " of " + crNum((R.rules || []).length), dn: capped.length ? crPlural(capped.length, "capped kind") : "None capped" },
+    { l: "This term", v: crCfDay(R.term.from), dn: "to " + crCfDay(R.term.to) },
+    { l: "One-time clearance", v: o.used ? "Used" : o.canRun ? "Available" : "Locked", dn: o.used && o.lock ? crCfDay(o.lock.usedAt) : o.canRun ? "Super admin only" : "Super admin only" },
+  ] }];
+  return out.concat(crCfUploadBlocks(d, ctx), [crCfRuleTable(d, ctx)], crCfClearBlocks(d, ctx));
+}
+
+/* ══ Compliance: the board and one person's record ═════════════════════════ */
+const CR_CF_STATE = { clear: ["In good standing", "ok"], good: ["In good standing", "ok"], warned: ["Warned", "warn"], dormant: ["Dormant", "warn"],
+  suspended: ["Suspended", "bad"], evicted: ["Evicted", "bad"], pending_eviction: ["Eviction proposed", "bad"] };
+const CR_CF_TYPE = { student: "Participant", volunteer: "Volunteer", member: "NGG member" };
+const CR_CF_INFRACTION = { absence: "Absent", absent: "Absent", late: "Late", tardy: "Tardy", half_day: "Half-day — missed the Musing Period", checkout_missing: "No sign-out",
+  idcard_missing: "No ID card", idcard_lost: "Lost ID card", review_missed: "Missed Review Time", misconduct: "Misconduct" };
+function crCfWord(k, map) { return (map && map[k]) || String(k || "").replace(/_/g, " ").replace(/^./, c => c.toUpperCase()); }
+function crCfState(s) { return CR_CF_STATE[s] || [s ? String(s).replace(/_/g, " ").replace(/^./, c => c.toUpperCase()) : "In good standing", "neutral"]; }
+async function crCfPerson(ctx, row) {
+  let p;
+  try { p = await NGGApi.admin.policy.person(row.personId, row.personType); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t open that record."), null, true); return; }
+  const st = p.state || {}, again = () => { crCfPerson(ctx, row); crCfRefresh(ctx); };
+  const sState = crCfState(st.state);
+  const close = (s, status, l) => ({ l, run: async () => {
+    try { await NGGApi.admin.policy.update(s.id, status); ctx.toast(l + " · done"); again(); } catch (e) { ctx.toast(crErr(e, "Couldn’t update that."), null, true); }
+  } });
+  const sanctionAct = s => s.status === "pending" && s.kind === "fine" ? close(s, "paid", "Mark paid")
+    : s.status === "active" && s.kind === "suspension" ? close(s, "served", "Mark served")
+    : s.status === "active" && s.kind === "dormant" ? close(s, "cleared", "Clear") : null;
+  const log = (kind, label) => async () => {
+    const ok = await ctx.confirm({ title: label + "?", body: "Logged against " + row.fullName + " for today, and the thresholds re-checked.", cta: "Log it" });
+    if (!ok) return;
+    try {
+      const r = await NGGApi.admin.policy.infraction(row.personId, row.personType, kind, "", "");
+      ctx.toast(r.alreadyLogged ? "Already logged for today." : r.temporaryCard ? "Logged — issue a temporary Volunteer Emergency Card for today only." : "Logged.");
+      again();
+    } catch (e) { ctx.toast(crErr(e, "Couldn’t log that."), null, true); }
+  };
+  const voidOne = i => () => ctx.form({
+    title: "Void this entry", submit: "Void it", busyLabel: "Voiding…",
+    intro: "Voiding says it should never have been logged. It stays on the record, struck through, with your reason — and any sanction it caused is lifted at once.",
+    fields: [{ id: "reason", l: "Why", req: true, max: 240, ph: "Scanner was down that morning" }],
+    onSubmit: v => NGGApi.admin.policy.void(i.id, v.reason.trim()),
+    done: () => { setTimeout(again, 0); return "Voided. Anything it caused has been lifted."; },
+  });
+  const reinstate = async () => {
+    try { const r = await NGGApi.admin.policy.reinstate(row.personId, row.personType, {}); ctx.toast(r.reinstated ? "Reinstated." : "Done."); again(); }
+    catch (e) {
+      const unmet = (e && e.data && e.data.unmet) || [];
+      if (!unmet.length) { ctx.toast(crErr(e, "Couldn’t reinstate."), null, true); return; }
+      ctx.form({
+        title: "Reinstatement conditions are not met", submit: "Override by council resolution", busyLabel: "Reinstating…",
+        intro: unmet.map(u => u.detail).join(" · ") + ". Only the Governing Council may override this, and the resolution is recorded.",
+        fields: [{ id: "why", l: "Council resolution or reason", type: "textarea", rows: 2, req: true, max: 400 }],
+        onSubmit: v => NGGApi.admin.policy.reinstate(row.personId, row.personType, { councilOverride: true, overrideReason: v.why.trim() }),
+        done: () => { setTimeout(again, 0); return "Reinstated by council override."; },
+      });
+    }
+  };
+  ctx.drawer({
+    title: row.fullName, name: row.fullName, sub: (CR_CF_TYPE[row.personType] || row.personType) + " · " + row.personId + " · " + sState[0],
+    stats: [["Fines owed", st.finesOwed ? fmtMoney(st.finesOwed) : "None"], ["Absences", (st.absences || 0) + " of " + (st.absenceLimit || "—")], ["Lates", (st.lates || 0) + " of " + (st.latenessCap || "—")]],
+    sections: [
+      st.reason ? { h: "Why", text: st.reason + (st.awardsEligible === false ? " Awards are frozen until this is resolved." : "") } : null,
+      { h: "Consequences", empty: "None.", list: (p.sanctions || []).map(s => ({ icon: s.kind === "fine" ? "coins" : s.kind === "suspension" ? "pause-circle" : s.kind === "evicted" || s.kind === "eviction" ? "door-open" : "flag",
+        t: crCfWord(s.kind) + (Number(s.amount) > 0 ? " · " + fmtMoney(s.amount) : ""),
+        s: [s.reason, crCfDay(s.issuedAt) + (s.endsAt ? " → " + crCfDay(s.endsAt) : "")].filter(Boolean).join(" · "), m: crCfWord(s.status), act: sanctionAct(s) })) },
+      { h: "What they are based on", empty: "Nothing logged.", tip: "Void a wrong entry and everything it caused is lifted immediately.",
+        list: (p.infractions || []).map(i => ({ icon: i.voidedAt ? "prohibit" : "dot-outline", t: crCfWord(i.kind, CR_CF_INFRACTION),
+          s: i.voidedAt ? "Voided — " + (i.voidReason || "") : i.note || "", m: crCfDay(i.date), act: i.voidedAt ? null : { l: "Void", run: voidOne(i) } })) },
+    ],
+    actions: [
+      { l: "No ID card today", run: log("idcard_missing", "Log: arrived without their ID card") },
+      { l: "Lost ID card", run: log("idcard_lost", "Log: lost ID card") },
+      row.personType === "volunteer" ? { l: "Missed Review Time", run: log("review_missed", "Log: missed Review Time") } : null,
+      st.state === "evicted" ? { l: "Reinstate…", run: reinstate } : null,
+    ],
+  });
+}
+function crCfComplianceBlocks(d, ctx) {
+  if (d.boardErr || !d.board) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the compliance board.", sub: crErr(d.boardErr, ""), act: { l: "Try again", run: () => ctx.reload() } }];
+  const b = d.board, t = b.tally || {}, out = [];
+  if (!b.policyEnabled) out.push({ type: "note", span: 6, icon: "pause-circle", text: "Enforcement is off, so nothing new is logged or issued. What is below was recorded while it was on.",
+    act: ctx.can("summer") ? { l: "Open Policy", run: () => ctx.setSub("policy") } : null });
+  out.push({ type: "kpis", span: 6, items: [
+    { l: "Warned", v: crNum(t.warned || 0) }, { l: "Dormant", v: crNum(t.dormant || 0) }, { l: "Suspended", v: crNum(t.suspended || 0) },
+    { l: "Evicted", v: crNum(t.evicted || 0) }, { l: "Policy fines owed", v: fmtMoney(t.finesOwed || 0) },
+  ] });
+  out.push({ type: "table", span: 6, title: "Everyone with something on record", nosel: true, sub: "Open a row for the record behind it — and to void a wrong entry.",
+    cols: ["Person", "Standing", { l: "Absences", num: true }, { l: "Lates", num: true }, { l: "Fines owed", num: true }, "Awards"],
+    rows: (b.board || []).map(r => { const s = crCfState(r.state); return { key: r.personType + ":" + r.personId, open: () => crCfPerson(ctx, r), cells: [
+      { k: "person", t: r.fullName, s: (CR_CF_TYPE[r.personType] || r.personType) + " · " + r.personId },
+      { k: "status", t: s[0], tone: s[1], s: r.until ? "until " + crCfDay(r.until) : "" },
+      { k: "num", t: r.absences + " / " + r.absenceLimit, v: +r.absences || 0 },
+      { k: "num", t: r.lates + " / " + r.latenessCap, v: +r.lates || 0 },
+      { k: "num", t: r.finesOwed ? fmtMoney(r.finesOwed) : "—", v: +r.finesOwed || 0 },
+      { k: "status", t: r.awardsEligible ? "Eligible" : "Frozen", tone: r.awardsEligible ? "ok" : "neutral" },
+    ] }; }),
+    search: "Search by name or ID", filters: ["Standing", "Awards"],
+    emptyText: "Nobody has anything on record." + (b.policyEnabled ? "" : " Enforcement is off.") });
+  return out;
+}
+
+/* ══ Policy: the thresholds ══════════════════════════════════════════════════
+   One form, one save. Row ids are paths into the policy object
+   ("student.absenceLimit"), so the save rebuilds the object from them and the
+   server — which clamps every value (policy_settings_save) — gets one shape. */
+function crCfNest(groups, vals) {
+  const out = {};
+  groups.forEach(g => g.rows.forEach(r => {
+    const v = vals[r.id], path = r.id.split(".");
+    const val = r.c === "toggle" ? !!v : r.type === "number" ? (v === "" ? null : parseInt(v, 10)) : v;
+    if (val === null) return;
+    let o = out; path.slice(0, -1).forEach(k => { o = o[k] = o[k] || {}; }); o[path[path.length - 1]] = val;
+  }));
+  return out;
+}
+function crCfPolicyForm(pol, ctx) {
+  const P = pol || {}, g = (o, k, dflt) => o && o[k] != null ? o[k] : dflt;
+  const int = (min, max) => v => { const n = Number(v); return v === "" || !Number.isInteger(n) ? "Enter a whole number." : n < min ? "At least " + min + "." : n > max ? "At most " + crNum(max) + "." : ""; };
+  const money = int(0, 10000000);
+  const ladder = (k, o) => [
+    { id: k + ".lateRedline", l: "Late after", c: "input", type: "time", value: g(o, "lateRedline", ""), help: "Arriving after this is late." },
+    { id: k + ".absenceLimit", l: "Absences allowed", c: "input", type: "number", im: "numeric", value: String(g(o, "absenceLimit", "")), check: int(1, 60) },
+    { id: k + ".latenessCap", l: "Lates before a suspension", c: "input", type: "number", im: "numeric", value: String(g(o, "latenessCap", "")), check: int(1, 60) },
+    { id: k + ".suspensionDays", l: "Suspension length (days)", c: "input", type: "number", im: "numeric", value: String(g(o, "suspensionDays", "")), check: int(1, 365) },
+    { id: k + ".postSuspensionLateness", l: "Lates after a suspension before a fine", c: "input", type: "number", im: "numeric", value: String(g(o, "postSuspensionLateness", "")), check: int(1, 60) },
+    { id: k + ".fine", l: "That fine (₦)", c: "input", type: "number", im: "numeric", value: String(g(o, "fine", 0)), check: money },
+  ];
+  const groups = [
+    { h: "Enforcement", help: "The Institutional Policy & Operational Blueprint, applied automatically: absences logged for closed programme days, lateness measured against the time below, and warnings, dormancy, suspension, fines and eviction issued by the thresholds. A suspended or evicted person is refused at the scanner.", rows: [
+      { id: "enabled", l: "Enforce for Summer School", c: "toggle", value: !!P.enabled, help: "Participants, volunteers, mentors and instructors." },
+      { id: "member.enabled", l: "Enforce for NGG members", c: "toggle", value: !!g(P.member, "enabled", false), help: "A separate switch, on the member calendar." },
+      { id: "checkoutRequired", l: "Summer: a day with no scan out is an absence", c: "toggle", value: !!P.checkoutRequired },
+      { id: "musing.enabled", l: "Missing the Musing Period makes it a half-day", c: "toggle", value: !!g(P.musing, "enabled", false) },
+      { id: "musing.endsAt", l: "Musing Period ends", c: "input", type: "time", value: g(P.musing, "endsAt", "") },
+    ] },
+    { h: "Summer School participants", rows: ladder("student", P.student) },
+    { h: "Volunteers, mentors and instructors", rows: ladder("volunteer", P.volunteer) },
+    { h: "NGG members", help: "Members have an account, so they are held to more: every late can be fined from the first, an absence nobody asked about is fined, and a day with no sign-out counts as an absence.", rows: ladder("member", P.member).concat([
+      { id: "member.lateFine", l: "Fine for every late (₦)", c: "input", type: "number", im: "numeric", value: String(g(P.member, "lateFine", 500)), check: money, help: "0 switches it off. The Late rule under Fines can cap it per term." },
+      { id: "member.absenceFine", l: "Fine for an absence nobody asked about (₦)", c: "input", type: "number", im: "numeric", value: String(g(P.member, "absenceFine", 1000)), check: money, help: "A request still waiting is not fined until the desk decides; approved leave is excused." },
+      { id: "member.tardyIsLate", l: "No grace band — after resumption is late", c: "toggle", value: g(P.member, "tardyIsLate", true) !== false },
+      { id: "member.checkoutRequired", l: "A day with no sign-out is an absence", c: "toggle", value: g(P.member, "checkoutRequired", true) !== false },
+      { id: "confirmEviction", l: "An admin confirms a member’s eviction", c: "toggle", value: P.confirmEviction !== false, help: "The last absence proposes eviction for review instead of expelling automatically." },
+    ]) },
+    { h: "ID cards and reinstatement", rows: [
+      { id: "idCard.secondOffenceFine", l: "ID card not worn, second time (₦)", c: "input", type: "number", im: "numeric", value: String(g(P.idCard, "secondOffenceFine", 0)), check: money },
+      { id: "idCard.lostFine", l: "Lost ID card (₦)", c: "input", type: "number", im: "numeric", value: String(g(P.idCard, "lostFine", 0)), check: money },
+      { id: "reinstatement.coolOffDays", l: "After an eviction, wait (days)", c: "input", type: "number", im: "numeric", value: String(g(P.reinstatement, "coolOffDays", 0)), check: int(0, 3650) },
+      { id: "reinstatement.fine", l: "Reinstatement fine (₦)", c: "input", type: "number", im: "numeric", value: String(g(P.reinstatement, "fine", 0)), check: money },
+      { id: "reinstatement.training", l: "Reinstatement training", c: "input", value: g(P.reinstatement, "training", ""), max: 200 },
+    ] },
+  ];
+  return { type: "form", span: 6, key: "conduct-policy", groups,
+    save: async (patch, vals) => { await NGGApi.admin.policy.save(null, crCfNest(groups, vals), null); ctx.reload(); } };
+}
+function crCfPolicyBlocks(d, ctx) {
+  if (d.polErr || !d.pol) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the policy.", sub: crErr(d.polErr, ""), act: { l: "Try again", run: () => ctx.reload() } }];
+  const out = [], pr = d.pol.programme || {};
+  if (!pr.enabled && (d.pol.policy || {}).enabled) out.push({ type: "note", span: 6, icon: "warning", tone: "warn",
+    text: "Enforcement is on but there is no Summer calendar, so every date counts as a session — weekends included.", act: { l: "Set the calendar", run: () => ctx.setSub("calendar") } });
+  out.push(crCfPolicyForm(d.pol.policy, ctx));
+  return out;
+}
+
+/* ══ Calendars: which days count ═════════════════════════════════════════════ */
+function crCfCalNote(cal, prog, who) {
+  if (!prog.enabled) return { type: "note", span: 6, icon: "warning", tone: "warn", text: "No " + who + " calendar.",
+    sub: "Every date counts — Sundays, holidays, long after the term ends — and the absence sweep does nothing. Switch it on below." };
+  const next = (cal.upcoming || []).slice(0, 6).map(crCfDay).join(" · ");
+  return { type: "note", span: 6, icon: cal.isProgrammeDay ? "calendar-check" : "calendar-blank",
+    text: cal.isProgrammeDay ? "Today is a " + who + " day — " + crNum(cal.elapsed) + " of " + crNum(cal.total) + " have run." : "Today is not a " + who + " day." + (cal.nextDay ? " Next: " + crCfDay(cal.nextDay) + "." : " The window has ended."),
+    sub: [prog.derivedFromSession ? (who === "Summer" ? "No dates are typed in, so it runs for the edition’s own season and moves with the next one by itself." : "No dates are typed in, so a member day is any weekday below inside a term in Sessions.") : "",
+      next ? "Coming up: " + next : "", "Swept through " + (cal.sweptThrough ? crCfDay(cal.sweptThrough) : "—") + "."].filter(Boolean).join(" ") };
+}
+function crCfCalForm(key, title, prog, which, ctx) {
+  const P = prog || {};
+  return { type: "form", span: 6, key, groups: [{ h: title, help: which === "summer" ? "Which days participants are expected. Absence, attendance rates and guardian alerts all read this." : "Year-round NGG members. Separate from Summer School.", rows: [
+    { id: "enabled", l: "Use this calendar", c: "toggle", value: !!P.enabled },
+    { id: "startDate", l: "Starts", c: "input", type: "date", value: P.startDate || "", help: P.derivedFromSession ? "From the season — type a date only to override it." : "" },
+    { id: "endDate", l: "Ends", c: "input", type: "date", value: P.endDate || "" },
+    { id: "weekdays", l: "Meets on", c: "multi", opts: CR_CF_DOW, value: (P.weekdays || []).map(Number) },
+    { id: "holidays", l: "Cancelled days", c: "dates", value: P.holidays || [], help: "A day that would run, but doesn’t." },
+    { id: "extraDays", l: "Extra days", c: "dates", value: P.extraDays || [], help: "A day that wouldn’t run, but does." },
+  ] }],
+    /* Only what changed is sent: dates the season supplied are not stored as
+       an admin's choice, which would freeze the calendar to this edition. */
+    /* The server reads a missing `enabled` as OFF (programme_settings_save), so
+       the switch always travels with the patch — saving one weekday turned the
+       whole calendar off until it did. */
+    save: async (patch, vals) => { const send = Object.assign({ enabled: !!vals.enabled }, patch);
+      await NGGApi.admin.policy.save(which === "summer" ? send : null, null, which === "member" ? send : null); ctx.reload(); } };
+}
+function crCfCalendarBlocks(d, ctx) {
+  if (d.polErr || !d.pol) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the calendars.", sub: crErr(d.polErr, ""), act: { l: "Try again", run: () => ctx.reload() } }];
+  const p = d.pol;
+  return [crCfCalNote(p.calendar || {}, p.programme || {}, "Summer"), crCfCalForm("conduct-cal-summer", "Summer School days", p.programme, "summer", ctx),
+    crCfCalNote(p.memberCalendar || {}, p.memberProgramme || {}, "member"), crCfCalForm("conduct-cal-member", "NGG member days", p.memberProgramme, "member", ctx)];
+}
+
+async function crCfSweep(ctx) {
+  try {
+    const r = await NGGApi.admin.policy.sweep();
+    ctx.toast(r.skipped ? "Nothing to sweep — " + (r.skipped === "policy_disabled" ? "enforcement is off." : "there is no programme calendar.") : crPlural(r.days, "day") + " swept · " + crPlural(r.absences, "absence") + " logged");
+    crCfRefresh(ctx);
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t run the sweep."), null, true); }
+}
+
+Object.assign(CR_TAB_DEFS, {
+  conduct: {
+    skeleton: ["kpis", "table"],
+    load: async ctx => {
+      const safe = p => p.then(ok => ({ ok }), err => ({ err }));
+      const fees = ctx.can("fees"), summer = ctx.can("summer"), board = ctx.can(["people", "summer"]);
+      const [rules, once, pol, brd] = await Promise.all([
+        fees ? safe(NGGApi.admin.fees.fineRules()) : null,
+        fees ? safe(NGGApi.admin.fees.finesClearOnce("status")) : null,
+        summer ? safe(NGGApi.admin.policy.settings()) : null,
+        board ? safe(NGGApi.admin.policy.board()) : null,
+      ]);
+      const prev = ctx.data || {};
+      return { rules: rules && rules.ok, rulesErr: rules && rules.err, once: once && once.ok, pol: pol && pol.ok, polErr: pol && pol.err,
+        board: brd && brd.ok, boardErr: brd && brd.err, finePlan: prev.finePlan || null, clearPlan: prev.clearPlan || null };
+    },
+    actions: (d, ctx) => {
+      const v = crCfView(ctx), out = [];
+      if (v === "") {
+        out.push({ l: "Upload fines", icon: "upload-simple", primary: true, run: () => crCfFineCheck(ctx) });
+        if (d.rules) out.push({ l: "Add a rule", icon: "plus", run: () => crCfRuleEdit(ctx, d.rules, null) });
+      }
+      if ((v === "policy" || v === "calendar") && ctx.can("summer")) out.push({ l: "Run the absence sweep now", icon: "broom", run: () => crCfSweep(ctx) });
+      if (v === "compliance") out.push({ l: "Refresh", icon: "arrows-clockwise", run: () => crCfRefresh(ctx) });
+      return out;
+    },
+    blocks: (d, ctx) => {
+      const views = CR_CF_VIEWS.filter(x => ctx.can(x[2]));
+      const v = crCfView(ctx);
+      /* custom: a view switcher bound to the URL tail, the same control as Dues & arrears'. */
+      const pick = x => { ctx.closeDrawer(); ctx.setSub(x); };
+      const opts = views.map(x => [x[0], x[1]]);
+      const out = views.length > 1 ? [{ type: "custom", span: 6, render: (c, phone) => <CrSeg label="Conduct view" value={v} options={opts} onChange={pick} full={phone}/> }] : [];
+      const body = v === "compliance" ? crCfComplianceBlocks(d, ctx) : v === "policy" ? crCfPolicyBlocks(d, ctx) : v === "calendar" ? crCfCalendarBlocks(d, ctx) : crCfFinesBlocks(d, ctx);
+      return out.concat(body);
+    },
+    facts: d => [d.rules ? (d.rules.thisTerm.n + " fines this term, " + fmtMoney(d.rules.thisTerm.total) + "; " + (d.rules.rules || []).filter(r => r.active).length + " rules on.") : "",
+      d.board ? (d.board.board || []).length + " people with something on record; enforcement " + (d.board.policyEnabled ? "on" : "off") + "." : ""].filter(Boolean).join(" "),
+  },
+});
+/** The open view: the URL tail if this person may see it, else the first they may. */
+function crCfView(ctx) {
+  const views = CR_CF_VIEWS.filter(x => ctx.can(x[2]));
+  const want = views.find(x => x[0] === (ctx.sub || ""));
+  return want ? want[0] : views.length ? views[0][0] : "";
+}

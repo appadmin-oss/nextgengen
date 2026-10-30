@@ -2398,6 +2398,105 @@ function fees_fine_rule_room(string $memberId, string $reason, string $note, arr
     return ['off' => false, 'left' => max(0, $left - ($usedInFile[$memberId . '|' . $k] ?? 0)), 'rule' => $k];
 }
 
+/* ── The Club's conduct rules, from the money side ─────────────────────────
+   One rule per kind of fine (late, absent, equipment, conduct): an amount a
+   fine of that kind is "normally", a cap per term, and a switch. They used to
+   be editable only from the Club portal, while the fines they govern were
+   uploaded from Dues & arrears — so an operator looking at "capped" on an
+   upload had no way to see or change the cap from the screen that showed it.
+   These two ops are the Control Room's door to the SAME rows; the Club
+   portal's own toggle still works and reads the same table. A rule that has
+   governed fines is never deleted, only switched off: posted fines point at
+   its kind, and "why was this capped in March" must still have an answer. */
+const FEES_RULE_KINDS = ['late', 'absent', 'equipment', 'conduct'];
+/** The most fines one register cell may stand for ("Late: 3" is three lates). */
+const FEES_FINE_COUNT_MAX = 20;
+
+/** The standard amount a rule sets for ONE fine of this kind; 0 when there is none. */
+function fees_fine_rule_amount(string $reason): int {
+    if (!in_array($reason, FEES_RULE_KINDS, true)) return 0;
+    if (function_exists('cp_rules_seed')) cp_rules_seed();
+    try { $r = db_row('SELECT amount FROM conduct_rules WHERE reason = ? ORDER BY id LIMIT 1', [$reason]); } catch (Throwable $e) { return 0; }
+    return $r ? max(0, (int)$r['amount']) : 0;
+}
+
+/** admin.fees.fineRules — every rule, with what it has governed this term. */
+function admin_fees_fine_rules(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    if (function_exists('cp_rules_seed')) cp_rules_seed();
+    [$from, $to] = function_exists('cp_term_bounds') ? cp_term_bounds('') : [gmdate('Y-01-01'), gmdate('Y-12-31')];
+    // One pass over this term's fines, not one per rule (the Club portal's reader looped).
+    $by = []; $all = ['n' => 0, 'total' => 0];
+    foreach (db_all("SELECT amount, method, note FROM member_ledger WHERE kind = 'fine' AND COALESCE(voidedAt,'') = '' AND substr(createdAt,1,10) BETWEEN ? AND ?", [$from, $to]) as $e) {
+        $k = function_exists('conduct_rule_key') ? conduct_rule_key(['method' => $e['method'], 'note' => $e['note']]) : '';
+        $by[$k]['n'] = ($by[$k]['n'] ?? 0) + 1; $by[$k]['total'] = ($by[$k]['total'] ?? 0) + (int)$e['amount'];
+        $all['n']++; $all['total'] += (int)$e['amount'];
+    }
+    $rules = [];
+    foreach (db_all('SELECT * FROM conduct_rules ORDER BY id') as $r) {
+        $k = (string)$r['reason'];
+        $rules[] = ['ruleId' => (string)$r['ruleId'], 'reason' => $k, 'reasonLabel' => $k !== '' ? (FEES_FINE_REASONS[$k] ?? $k) : '',
+            'name' => (string)$r['name'], 'whenText' => (string)$r['whenText'], 'amount' => (int)$r['amount'], 'capTerm' => (int)$r['capTerm'],
+            'active' => (bool)(int)$r['active'], 'updatedAt' => (string)($r['updatedAt'] ?? ''),
+            'thisTerm' => $k !== '' ? ['n' => $by[$k]['n'] ?? 0, 'total' => $by[$k]['total'] ?? 0] : ['n' => 0, 'total' => 0]];
+    }
+    $taken = array_values(array_filter(array_map(static fn($r) => $r['reason'], $rules)));
+    return ['ok' => true, 'rules' => $rules, 'term' => ['from' => $from, 'to' => $to], 'thisTerm' => $all,
+            'kinds' => array_map(static fn($k) => [$k, FEES_FINE_REASONS[$k], in_array($k, $taken, true)], FEES_RULE_KINDS),
+            'amountMax' => FEES_AMOUNT_MAX, 'countMax' => FEES_FINE_COUNT_MAX];
+}
+
+/**
+ * admin.fees.fineRuleSave — create a rule, or change one. Only fines posted
+ * from now on are affected; a fine already on an account keeps its amount.
+ */
+function admin_fees_fine_rule_save(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $by = (string)($g['requester']['memberId'] ?? '');
+    if (function_exists('cp_rules_seed')) cp_rules_seed();
+    $id = is_scalar($p['ruleId'] ?? null) ? trim((string)$p['ruleId']) : '';
+    $cur = $id !== '' ? db_row('SELECT * FROM conduct_rules WHERE ruleId = ?', [$id]) : null;
+    if ($id !== '' && !$cur) return ['ok' => false, 'error' => 'not_found'];
+    $str = static fn($k, $d) => array_key_exists($k, $p) && is_scalar($p[$k]) ? trim((string)$p[$k]) : $d;
+    $int = static function ($k, $d) use ($p) {
+        if (!array_key_exists($k, $p) || $p[$k] === '' || $p[$k] === null) return $d;
+        return is_numeric($p[$k]) && (float)$p[$k] === floor((float)$p[$k]) ? (int)$p[$k] : -1;
+    };
+    $next = [
+        'name' => $str('name', $cur ? (string)$cur['name'] : ''),
+        'whenText' => $str('whenText', $cur ? (string)$cur['whenText'] : ''),
+        'reason' => $str('reason', $cur ? (string)$cur['reason'] : ''),
+        'amount' => $int('amount', $cur ? (int)$cur['amount'] : 0),
+        'capTerm' => $int('capTerm', $cur ? (int)$cur['capTerm'] : 0),
+        'active' => array_key_exists('active', $p) ? (!empty($p['active']) && $p['active'] !== 'false' ? 1 : 0) : ($cur ? (int)$cur['active'] : 1),
+    ];
+    // The whole payload is checked before anything is written.
+    if (mb_strlen($next['name']) < 3 || mb_strlen($next['name']) > 160) return ['ok' => false, 'error' => 'bad_name'];
+    if (mb_strlen($next['whenText']) > 200) return ['ok' => false, 'error' => 'bad_when'];
+    if ($next['reason'] !== '' && !in_array($next['reason'], FEES_RULE_KINDS, true)) return ['ok' => false, 'error' => 'bad_kind'];
+    if ($next['amount'] < 0 || $next['amount'] > FEES_AMOUNT_MAX) return ['ok' => false, 'error' => 'bad_amount', 'max' => FEES_AMOUNT_MAX];
+    if ($next['capTerm'] < 0 || $next['capTerm'] > FEES_AMOUNT_MAX) return ['ok' => false, 'error' => 'bad_cap', 'max' => FEES_AMOUNT_MAX];
+    if ($next['capTerm'] > 0 && $next['amount'] > $next['capTerm']) return ['ok' => false, 'error' => 'cap_below_fine'];
+    // conduct_rule_allow() reads the FIRST rule of a kind, so a second one would govern nothing while looking live.
+    if ($next['reason'] !== '') {
+        $other = db_row('SELECT ruleId FROM conduct_rules WHERE reason = ? AND ruleId <> ? LIMIT 1', [$next['reason'], $id]);
+        if ($other) return ['ok' => false, 'error' => 'kind_taken', 'ruleId' => (string)$other['ruleId']];
+    }
+    if ($cur) {
+        $was = ['name' => (string)$cur['name'], 'whenText' => (string)$cur['whenText'], 'reason' => (string)$cur['reason'],
+                'amount' => (int)$cur['amount'], 'capTerm' => (int)$cur['capTerm'], 'active' => (int)$cur['active']];
+        $diff = array_keys(array_filter($next, static fn($v, $k) => $was[$k] !== $v, ARRAY_FILTER_USE_BOTH));
+        if (!$diff) return ['ok' => true, 'unchanged' => true, 'ruleId' => $id];
+        db_update('conduct_rules', $next + ['updatedAt' => now_iso()], ['ruleId' => $id]);
+        audit('fees.rule.save', $by, $id, ['changed' => $diff, 'from' => array_intersect_key($was, array_flip($diff)), 'to' => array_intersect_key($next, array_flip($diff))], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'ruleId' => $id, 'changed' => $diff];
+    }
+    $id = 'RULE-' . strtoupper(rand_hex(4));
+    db_insert('conduct_rules', $next + ['ruleId' => $id, 'createdBy' => $by, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    audit('fees.rule.create', $by, $id, $next, (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'ruleId' => $id, 'created' => true];
+}
+
 /**
  * admin.fees.fineImport — rows: [{member, name, email, amount, reason, note, date}].
  * dryRun: true returns per-row verdicts and a digest and writes nothing; the
@@ -2422,8 +2521,15 @@ function admin_fees_fine_import(array $p): array {
     foreach ($rows as $i => $r) {
         $r = is_array($r) ? $r : [];
         $v = ['row' => $i + 1, 'verdict' => 'failed'];
-        // A sheet's "Null", "-" or empty cell means no fine, not a bad one.
-        if (in_array(strtolower($str($r, 'amount')), ['', 'null', 'nil', 'none', '-', '—', 'n/a', 'na', '0'], true)) {
+        /* A sheet's "Null", "-" or empty cell means no fine, not a bad one —
+           unless the row says WHAT the fine is for: "Late" ticked, or "Late: 3"
+           in a register, is three late fines at the rule's standard amount. */
+        $blank = in_array(strtolower($str($r, 'amount')), ['', 'null', 'nil', 'none', '-', '—', 'n/a', 'na'], true);
+        $count = (int)($r['count'] ?? 0);
+        // A written 0 is somebody saying "no fine" — never a cue for the standard amount.
+        if (preg_match('/^[₦#]?\s*0+(\.0+)?$/u', $str($r, 'amount'))) { $v['verdict'] = 'skipped'; $plan[] = $v + ['error' => 'no_amount', 'fullName' => $str($r, 'name')]; continue; }
+        if ($count < 0 || $count > FEES_FINE_COUNT_MAX) { $plan[] = $v + ['error' => 'bad_count', 'fullName' => $str($r, 'name'), 'max' => FEES_FINE_COUNT_MAX]; continue; }
+        if ($blank && $count === 0 && $str($r, 'reason') === '') {
             $v['verdict'] = 'skipped'; $plan[] = $v + ['error' => 'no_amount', 'fullName' => $str($r, 'name')]; continue;
         }
         $match = fees_fine_match($str($r, 'member'), $str($r, 'name'), $str($r, 'email'), $str($r, 'centre') !== '' ? $str($r, 'centre') : $defCentre);
@@ -2433,8 +2539,6 @@ function admin_fees_fine_import(array $p): array {
                'matchedBy' => $match['by']];
         if (!member_is_ngg($m)) { $plan[] = $v + ['error' => 'not_ngg_member']; continue; }
         if (!admin_centre_allowed($req, (string)($m['centre'] ?? ''))) { $plan[] = $v + ['error' => 'out_of_scope']; continue; }
-        $amount = fees_fine_amount($str($r, 'amount'));
-        if ($amount <= 0 || $amount > FEES_AMOUNT_MAX) { $plan[] = $v + ['error' => 'bad_amount']; continue; }
         $note = mb_substr($str($r, 'note'), 0, 200);
         $reason = fees_fine_reason_code($str($r, 'reason'));
         /* No reason column, but a note that says it ("came 40 minutes late"):
@@ -2447,6 +2551,17 @@ function admin_fees_fine_import(array $p): array {
             $reason = 'other';
         }
         if ($reason === 'other' && $note === '') { $plan[] = $v + ['error' => 'note_required']; continue; }
+        $standard = 0;
+        if ($blank) {
+            // No figure: the rule's standard amount, once per fine the cell stands for.
+            $each = fees_fine_rule_amount($reason);
+            if ($each <= 0) { $plan[] = $v + ['error' => 'no_standard_amount', 'detail' => $reason]; continue; }
+            $standard = max(1, $count);
+            $amount = $each * $standard;
+        } else {
+            $amount = fees_fine_amount($str($r, 'amount'));
+        }
+        if ($amount <= 0 || $amount > FEES_AMOUNT_MAX) { $plan[] = $v + ['error' => 'bad_amount']; continue; }
         $date = fees_fine_date($str($r, 'date'));
         if ($date === null) { $plan[] = $v + ['error' => 'bad_date']; continue; }
         // A fine for a day that has not come is a typing slip (04/10 for 10/04), not a fine.
@@ -2476,7 +2591,8 @@ function admin_fees_fine_import(array $p): array {
         $v['verdict'] = $exists ? 'already' : 'fine';
         $plan[] = $v + ['amount' => $amount, 'reason' => $reason,
                         'reasonLabel' => FEES_FINE_REASONS[$reason], 'note' => $note, 'date' => $date, '_key' => $key]
-                     + ($capped ? ['capped' => true, 'asked' => $asked] : []);
+                     + ($capped ? ['capped' => true, 'asked' => $asked] : [])
+                     + ($standard ? ['standard' => $standard, 'each' => intdiv($asked, $standard)] : []);
     }
     $tally = ['fine' => 0, 'already' => 0, 'skipped' => 0, 'failed' => 0, 'total' => 0];
     foreach ($plan as $x) { $tally[$x['verdict']]++; if ($x['verdict'] === 'fine') $tally['total'] += $x['amount']; }

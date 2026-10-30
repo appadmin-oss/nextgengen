@@ -62,6 +62,7 @@ $log['policy_sweep_member'] = policy_sweep_member_absences();
 // 7b) Close any Summer School edition whose season has ended.
 require_once $root . '/_lib/domain/summer-editions.php';
 $log['editions_closed'] = summer_editions_close_elapsed();
+for ($i = 0; $i < 50; $i++) { $t = summer_thanks_drain(); $log["volunteers_thanked"] = ($log["volunteers_thanked"] ?? 0) + $t["sent"]; if ($t["sent"] + $t["failed"] + $t["noEmail"] === 0) break; }
 
 // 8) Push the Sheets mirror if configured.
 if (trim((string)($CONFIG['apps_script_url'] ?? '')) !== '') {

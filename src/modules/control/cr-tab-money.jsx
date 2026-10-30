@@ -1,28 +1,13 @@
 /* ============================================================================
    Control Room v2 — the money tabs. Filled into CR_TAB_DEFS (see cr-pages.jsx).
 
-   PROGRESS (for a resumed run): conduct ✓ built · donations ✓ built ·
-   fees ✓ built (account actions verified; views being verified).
-
-   Conduct & fines: v1 mounted `SummerPolicy` (page-portals.jsx) and nothing
-   else, so this mounts the same component — one renderer, never two.
+   Dues & arrears, membership payments and donations. Conduct & fines — the
+   rules, the fines upload, the one-time clearance, the compliance board, the
+   policy and the calendars — is its own file, cr-tab-conduct.jsx.
 
    Donations: v1 AdminDonations — the Paystack ledger (admin_donations_list,
    gated `settings`, the newest 500), what it raised, and a CSV export.
    ========================================================================== */
-
-/* ── Conduct & fines ── */
-Object.assign(CR_TAB_DEFS, {
-  conduct: {
-    skeleton: ["table"],
-    load: async () => ({}),
-    /* custom: the calendar + policy editor already exists as SummerPolicy and
-       is still mounted by the Summer School portal. Rebuilding it as blocks
-       would be a second renderer of the same screen (CLAUDE.md §11). */
-    blocks: () => [{ type: "custom", span: 6, render: () => <SummerPolicy/> }],
-    actions: () => [],
-  },
-});
 
 /* ── Donations ── */
 const CR_MO_DON_CAP = 500;   // admin_donations_list returns the newest 500
@@ -84,7 +69,10 @@ Object.assign(CR_TAB_DEFS, {
    entry is edited or deleted — a mistake is voided with its reason, a mercy is
    a waiver with its reason. Every number this tab enforces or states comes from
    the server's `bounds` (admin_fees_settings_get), never from this file. */
-const CR_MO_VIEWS = [["", "Who owes"], ["training", "Training fees"], ["fines", "Upload fines"], ["reminders", "Reminders"], ["amounts", "Amounts"]];
+/* "fines" was a view here until fines got one home in Conduct & fines
+   (cr-tab-conduct.jsx); /control/money/fees/fines is forwarded there by
+   crResolve (cr-pages.jsx), because it is in bookmarks and in the guide. */
+const CR_MO_VIEWS = [["", "Who owes"], ["training", "Training fees"], ["reminders", "Reminders"], ["amounts", "Amounts"]];
 const CR_MO_KIND = { membership: "Membership fee", dues: "Monthly dues", training: "Training fee", fine: "Fine", adjustment: "Adjustment", payment: "Payment received", writeoff: "Written off", waiver: "Waived" };
 const CR_MO_SETTING = { membershipFee: "Membership fee", monthlyDues: "Monthly dues", trainingFee: "Training fee" };
 /* Mirrors FEES_FINE_REASONS on the server, which validates; this only names them. */
@@ -101,112 +89,6 @@ const CR_MO_ENTRY_ERR = {
 function crMoErr(e, fb) { const c = e && ((e.data && e.data.error) || e.code || e.message); return CR_MO_ENTRY_ERR[c] || crErr(e, fb); }
 const CR_MO_TRAIN_FILTERS = [["all", "Everybody"], ["training", "In training"], ["service", "Serving"], ["complete", "Complete"], ["paused", "Credit paused"], ["stopped", "Credit stopped"], ["nojoin", "No join date"]];
 const CR_MO_TRAIN_SORTS = [["charged", "Most charged"], ["remaining", "Most still to cover"], ["earned", "Most earned off"], ["month", "Furthest in"], ["name", "Name"]];
-/* ── Reading a fines sheet the way a person would ──────────────────────────
-   Registers arrive as they were kept: a title line or two above the headings,
-   "S/N" and "Names" for columns, one column per kind of fine ("Late",
-   "Absent", "Total"), a TOTAL line at the bottom, a sheet per centre. The old
-   reader took row one as the headings and looked for exact words, so a
-   register with a title above it read as "no column for who is being fined".
-   This finds the heading row, recognises a heading by what it means, splits a
-   row with a column per kind into one fine per kind, and skips totals — and
-   then SAYS how it read the file, so nobody has to trust it blind. Every
-   matching decision is still the server's (fees.php, admin_fees_fine_import). */
-const CR_MO_FINE_REASON_COLS = [["late", /\blate|lateness|tard/], ["absent", /absen|missed|truan/], ["equipment", /equip|damage|lost|broke/], ["conduct", /conduct|behaviou?r|indisciplin|misconduct/]];
-function crMoFineHeadKey(h) { return String(h || "").toLowerCase().replace(/[₦#]/g, " naira ").replace(/\((n|ngn|naira)\)|\[(n|ngn)\]/g, " naira ").replace(/[^a-z0-9@/ ]+/g, " ").replace(/\s+/g, " ").trim(); }
-/** What a heading means: a field, ["byReason", code], or null. */
-function crMoFineField(h) {
-  const k = crMoFineHeadKey(h);
-  if (!k) return null;
-  if (/^(s ?\/? ?n|sn|no|serial|s no|sno|#)$/.test(k)) return "serial";
-  if (/e ?mail/.test(k)) return "email";
-  if (/^(id|member|card|member no|member number|member id|memberid|display id|displayid|reg no|registration no|registration number|ngg id|ngg no|card no|card number|id no|id number)$/.test(k) || /\b(member|reg|registration|card|ngg) ?(id|no|number)\b/.test(k)) return "member";
-  if (/centre|center|branch|location|venue/.test(k)) return "centre";
-  if (/\b(date|day|when)\b/.test(k) || k === "on") return "date";
-  if (/reason|offen[cs]e|violation|category|why|^type$|^kind$/.test(k)) return "reason";
-  if (/note|comment|remark|detail|description/.test(k)) return "note";
-  if (/name|pupil|student|child|learner|member name/.test(k)) return "name";
-  if (/total|grand|^sum$/.test(k)) return "total";
-  const byR = CR_MO_FINE_REASON_COLS.find(x => x[1].test(k));
-  if (byR) return ["byReason", byR[0]];
-  if (/amount|fine|naira|ngn|owed|owing|balance|outstanding|charge|due|^n$/.test(k)) return "amount";
-  return null;
-}
-const CR_MO_FINE_WHO = ["member", "name", "email"];
-/** One sheet (a grid of strings) → fines rows, and a plain account of how it was read. */
-function crMoFineSheet(grid, sheetName) {
-  let best = null;
-  for (let i = 0; i < Math.min(20, grid.length); i++) {
-    const map = (grid[i] || []).map(crMoFineField);
-    const fields = new Set(map.filter(Boolean).map(f => Array.isArray(f) ? "byReason" : f));
-    const who = CR_MO_FINE_WHO.some(f => fields.has(f)), money = ["amount", "total", "byReason"].some(f => fields.has(f));
-    const score = fields.size + (who ? 3 : 0) + (money ? 3 : 0);
-    if (!best || score > best.score) best = { i, map, score, who, money };
-  }
-  if (!best || !best.who || !best.money) return { rows: [], how: { sheet: sheetName, unreadable: true, who: !!(best && best.who), money: !!(best && best.money) } };
-  const head = grid[best.i], map = best.map;
-  const col = f => map.findIndex(x => x === f);
-  const reasonCols = map.map((x, k) => Array.isArray(x) ? [k, x[1]] : null).filter(Boolean);
-  const amountCol = col("amount") >= 0 ? col("amount") : col("total");
-  const headKey = head.map(crMoFineHeadKey).join("|");
-  const rows = []; let totals = 0, repeats = 0;
-  const cell = (r, f) => { const k = col(f); return k >= 0 ? String(r[k] == null ? "" : r[k]).trim() : ""; };
-  for (let i = best.i + 1; i < grid.length; i++) {
-    const r = grid[i] || [];
-    if (!r.some(c => String(c || "").trim() !== "")) continue;
-    if (r.map(crMoFineHeadKey).join("|") === headKey) { repeats++; continue; }   // the heading repeated at a page break
-    if (r.slice(0, 4).some(c => /^(grand\s*)?(sub-?)?total\b|^sum\b/i.test(String(c || "").trim()))) { totals++; continue; }
-    const base = { member: cell(r, "member"), name: cell(r, "name"), email: cell(r, "email"), reason: cell(r, "reason"), date: cell(r, "date"), note: cell(r, "note"),
-      centre: cell(r, "centre") || (col("centre") < 0 && sheetName && !/^sheet\s*\d+$/i.test(sheetName) ? sheetName : ""), src: (sheetName ? sheetName + " · " : "") + "row " + (i + 1) };
-    if (/^\d{5}(\.\d+)?$/.test(base.date)) base.date = new Date(Date.UTC(1899, 11, 30) + Math.floor(+base.date) * 86400000).toISOString().slice(0, 10);
-    // One column per kind of fine: one fine per filled column, its kind the reason. The total is then only a sum, and ignored.
-    const split = reasonCols.map(([k, code]) => [String(r[k] == null ? "" : r[k]).trim(), code]).filter(([v]) => v !== "" && !/^(0+(\.0+)?|-|—|nil|null|none|n\/a)$/i.test(v));
-    if (split.length) split.forEach(([v, code]) => rows.push(Object.assign({}, base, { amount: v, reason: base.reason || code, src: base.src + " · " + code })));
-    else rows.push(Object.assign({}, base, { amount: amountCol >= 0 ? String(r[amountCol] == null ? "" : r[amountCol]).trim() : "" }));
-  }
-  const used = map.map((f, k) => f && f !== "serial" ? [head[k], Array.isArray(f) ? f[1] + " fines" : f] : null).filter(Boolean);
-  const ignored = head.filter((h, k) => String(h || "").trim() && (!map[k] || map[k] === "serial" || (map[k] === "total" && reasonCols.length)));
-  return { rows, how: { sheet: sheetName, headerRow: best.i + 1, used, ignored, totals, repeats, split: reasonCols.length > 0 } };
-}
-const CR_MO_FINE_TEMPLATE = "member,name,email,amount,reason,date,note\n026-014,,,2000,late,2026-10-04,\n,Ada Okafor,okafor.family@example.com,5000,conduct,04/10/2026,Fighting during break\n";
-const CR_MO_FINE_ERR = {
-  ambiguous: "more than one member matches", no_match: "no member matches", member_required: "no member given",
-  not_ngg_member: "not an NGG member", out_of_scope: "outside your centres", bad_amount: "amount unreadable",
-  reason_required: "no reason", note_required: "say why", bad_date: "date unreadable", duplicate_in_file: "repeated in this file",
-  post_failed: "could not be posted", no_amount: "no fine on this row", date_in_future: "dated in the future — day and month swapped?",
-  rule_off: "that rule is switched off in Conduct & fines", cap_reached: "that rule's cap for this term is already reached",
-};
-const CR_MO_MATCHED = { id: "ID", email: "email", "email+centre": "email + centre", "email+name": "email + name", name: "name only", "name+centre": "name + centre",
-  name_any: "name, words reordered", "name_any+centre": "name reordered + centre", name_part: "name, part of it", "name_part+centre": "part of the name + centre" };
-
-/* The sheet readers are the curriculum import's (cr-tab-learning.jsx): one CSV
-   and one .xlsx reader in the Control Room, not two. Every sheet of a
-   workbook is read; a sheet with nothing like a register on it is reported,
-   not guessed at. */
-async function crMoReadFines(file) {
-  if (/\.(xls|numbers|pdf|docx?)$/i.test(file.name)) throw Object.assign(new Error("bad_file"), { data: { message: "That file type can’t be read here. Save it as .xlsx or CSV." } });
-  const sheets = /\.xlsx$/i.test(file.name) ? await crCurXlsxGrids(await file.arrayBuffer()) : [{ name: "", grid: crCurParseCsv(await file.text(), true) }];
-  const read = sheets.map(sh => crMoFineSheet(sh.grid, sheets.length > 1 ? sh.name : ""));
-  return { rows: [].concat(...read.map(x => x.rows)), how: read.map(x => x.how) };
-}
-/** How the file was read, in a sentence a coordinator can check against the sheet. */
-function crMoFineHow(how) {
-  return (how || []).map(h => {
-    const where = h.sheet ? "Sheet “" + h.sheet + "”: " : "";
-    if (h.unreadable) return where + "not read — no " + (!h.who ? "column for who" : "column for the amount") + " was found.";
-    return where + "headings on row " + h.headerRow + " — " + h.used.map(u => "“" + u[0] + "” as " + u[1]).join(", ")
-      + (h.ignored.length ? "; ignored " + h.ignored.map(x => "“" + x + "”").join(", ") : "")
-      + (h.split ? "; a column per kind of fine, so each filled one is its own fine" : "")
-      + (h.totals ? "; " + crPlural(h.totals, "total line") + " skipped" : "") + (h.repeats ? "; " + crPlural(h.repeats, "repeated heading") + " skipped" : "") + ".";
-  }).join(" ");
-}
-
-function crMoDownload(name, text) {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
-  a.download = name; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
-
 const crMoCtx = { current: null };
 function crMoAcctId(sub) { const m = /^account\/(.+)$/.exec(sub || ""); return m ? decodeURIComponent(m[1]) : ""; }
 
@@ -351,53 +233,6 @@ async function crMoAccrue(ctx) {
       + (a.atCap ? " " + crPlural(a.atCap, "account") + " at the ceiling were not charged further." : "") + (a.noJoinDate ? " " + crPlural(a.noJoinDate, "member") + " with no join date were skipped." : ""), null, !!a.atCap);
     await crMoRefresh(ctx);
   } catch (e) { ctx.toast(crMoErr(e, "Couldn’t bring charges up to date."), null, true); }
-}
-
-/* ── Fines import: check, then post what was checked ── */
-function crMoFineCheck(ctx) {
-  ctx.form({
-    title: "Upload fines", submit: "Check the file", busyLabel: "Checking…",
-    intro: "An Excel workbook (.xlsx) or a CSV, as the register was kept: a title above the headings, “S/N” and “Names”, a column per kind of fine and a TOTAL line are all fine, and every sheet of a workbook is read. A member is found by printed ID or member number first (also written inside the name, like “Ada Okafor (026-014)”), then email, then name — a name shared by two members is settled by the centre column or the sheet’s name, never guessed. Uploading the same sheet twice fines nobody twice. Nothing is posted until you have read the check and pressed Post.",
-    fields: [
-      { id: "file", l: "File", type: "file", req: true, accept: ".csv,.xlsx,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
-      { id: "reason", l: "Reason for rows that give none", max: 120, ph: "late, absent, conduct — or words such as “Outstanding fine, term 1”", help: "Used only on rows with no reason (and no note that names one), and checked with them." },
-    ],
-    onSubmit: async v => {
-      const read = await crMoReadFines(v.file);
-      const rows = read.rows, how = read.how;
-      if (!rows.length) {
-        const why = how.find(h => h.unreadable);
-        return { fieldErrors: { file: why ? (why.who ? "That sheet has no column for the amount. Name a column “Fine” or “Amount” (or one per kind: “Late”, “Absent”…)." : "That sheet has no column for who is being fined. Name a column “Name”, “Member ID” or “Email”.") : "No fines found in that file." } };
-      }
-      const rs = String(v.reason || "").trim();
-      const sent = rows.map(r => r.reason || !rs ? r : Object.assign({}, r, { reason: rs }));
-      let res;
-      try { res = await NGGApi.admin.fees.fineImport(sent.map(r => { const o = Object.assign({}, r); delete o.src; return o; }), { dryRun: true }); }
-      catch (e) { if (e && (e.code === "too_many" || (e.data && e.data.error === "too_many"))) return { fieldErrors: { file: "That is more than " + crNum((e.data && e.data.max) || 500) + " fines in one file. Split it." } }; throw e; }
-      ctx.setData(x => Object.assign({}, x, { finePlan: { rows: sent, res, name: v.file.name, how } }));
-      return res;
-    },
-    done: (v, r) => "Checked · " + crMoFineTally(r.tally, true),
-  });
-}
-function crMoFineTally(t, dry) {
-  t = t || {};
-  return crNum(t.fine) + (dry ? " to post (" : " posted (") + fmtMoney(t.total || 0) + ") · " + crNum(t.already) + " already posted · " + crNum(t.skipped || 0) + " with no fine · " + crNum(t.failed) + " refused";
-}
-async function crMoFinePost(ctx) {
-  const p = ctx.data.finePlan; if (!p) return;
-  const t = p.res.tally;   // read before the confirm: what is agreed is what runs
-  const ok = await ctx.confirm({ title: "Post " + crPlural(t.fine, "fine") + " — " + fmtMoney(t.total) + "?", cta: "Post fines",
-    body: crMoFineTally(t, true) + " (refused rows are not posted). Each fine lands on the member’s account and in their next reminder." });
-  if (!ok) return;
-  try {
-    const r = await NGGApi.admin.fees.fineImport(p.rows.map(x => { const o = Object.assign({}, x); delete o.src; return o; }), { digest: p.res.digest });
-    ctx.setData(x => Object.assign({}, x, { finePlan: { rows: p.rows, res: r, name: p.name, how: p.how } }));
-    ctx.toast(crNum(r.tally.fine) + " posted · " + fmtMoney(r.tally.total) + (r.tally.failed ? " · " + crNum(r.tally.failed) + " refused" : ""), null, !!r.tally.failed);
-    await crMoRefresh(ctx);
-  } catch (e) {
-    ctx.toast(e && (e.code === "import_changed" || (e.data && e.data.error === "import_changed")) ? "The file changed since it was checked. Check it again." : crErr(e, "Couldn’t post the fines. Nothing was written."), null, true);
-  }
 }
 
 /* ── Reminders: who, and how many, before the send ── */
@@ -581,101 +416,6 @@ function crMoTrainingBlocks(d, ctx) {
   return out;
 }
 
-/* ── Every active member's fines, cleared ONCE (fees.php, admin_fees_fines_clear_once) ──
-   Super admin only, a current authenticator code, the typed phrase and a
-   reason, applied exactly as previewed; afterwards the server refuses it for
-   ever and this screen shows the record of the one run instead. */
-const CR_MO_CLEAR_ERR = { already_used: "Fines have already been cleared once. It cannot be done again.", bad_code: "That is not the current code from your authenticator app.",
-  totp_required: "Set up an authenticator app on your own account first (Account → Security).", phrase_mismatch: "Type the phrase exactly as shown.",
-  reason_required: "Say why, in a sentence.", too_many_attempts: "Too many wrong codes. Wait fifteen minutes, then try again.", import_changed: "The fines changed since the preview. Preview again.", forbidden: "Only a super admin can do this." };
-function crMoClearErr(e, fb) { const c = e && ((e.data && e.data.error) || e.code); return CR_MO_CLEAR_ERR[c] || crErr(e, fb); }
-async function crMoClearPreview(ctx) {
-  try { const r = await NGGApi.admin.fees.finesClearOnce("preview"); ctx.setData(x => Object.assign({}, x, { clearPlan: r })); }
-  catch (e) { ctx.toast(crMoClearErr(e, "Couldn’t work out whose fines would be cleared."), null, true); }
-}
-function crMoClearRun(ctx) {
-  const plan = ctx.data.clearPlan; if (!plan) return;
-  const phrase = plan.phrase || "CLEAR ALL FINES";
-  ctx.form({
-    title: "Clear the fines of " + crPlural(plan.members, "active member") + " — " + fmtMoney(plan.total), submit: "Clear them, once", busyLabel: "Clearing…",
-    intro: "This waives every unpaid fine on the accounts listed, records why, and then locks itself for good: nobody, you included, can run it again. Dues, membership and the training fee are not touched. Fines issued after today are owed as normal.",
-    values: { reason: "", phrase: "", code: "" },
-    fields: [
-      { id: "reason", l: "Why", type: "textarea", rows: 2, req: true, max: 240, ph: "Fines carried over from the paper register before this system, cleared by decision of the board" },
-      { id: "phrase", l: "Type " + phrase + " to confirm", req: true, max: 40, ph: phrase, check: v => v.trim() === phrase ? "" : "Type " + phrase + " exactly." },
-      { id: "code", l: "Code from your authenticator app", req: true, im: "numeric", max: 6, ph: "6 digits", check: v => /^\d{6}$/.test(v.trim()) ? "" : "Six digits." },
-    ],
-    onSubmit: async v => {
-      try { return await NGGApi.admin.fees.finesClearOnce("run", { digest: plan.digest, reason: v.reason.trim(), phrase: v.phrase.trim(), code: v.code.trim() }); }
-      catch (e) {
-        const c = e && ((e.data && e.data.error) || e.code);
-        if (c === "bad_code") return { fieldErrors: { code: CR_MO_CLEAR_ERR.bad_code } };
-        if (c === "phrase_mismatch") return { fieldErrors: { phrase: CR_MO_CLEAR_ERR.phrase_mismatch } };
-        if (c === "reason_required") return { fieldErrors: { reason: CR_MO_CLEAR_ERR.reason_required } };
-        throw Object.assign(new Error(c || "failed"), { data: { message: crMoClearErr(e, "Couldn’t clear the fines. Nothing was written.") } });
-      }
-    },
-    done: (v, r) => { ctx.setData(x => Object.assign({}, x, { once: { used: true, lock: r.lock, canRun: false }, clearPlan: null })); crMoRefresh(crMoCtx.current || ctx); return fmtMoney(r.total) + " of fines cleared across " + crPlural(r.members, "member") + ". This is now locked."; },
-  });
-}
-function crMoClearBlocks(d, ctx) {
-  const o = d.once; if (!o) return [];
-  if (o.used && o.lock) {
-    const l = o.lock;
-    return [{ type: "note", span: 6, icon: "lock-simple", text: "Fines were cleared once for every active member — " + crDate(l.usedAt) + ", by " + (l.usedByName || l.usedBy) + ": " + crPlural(l.members, "member") + ", " + fmtMoney(l.total) + ".",
-      sub: "Why: " + (l.reason || "—") + " This can never be run again. Every cleared fine stays on its account with the waiver beside it." }];
-  }
-  if (!o.canRun) return [];
-  const p = d.clearPlan;
-  if (!p) return [{ type: "note", span: 6, icon: "broom", tone: "gold", text: "Clear the fines of every active member — once.",
-    sub: "For fines carried over from before this system. You will see every account and amount first. Running it needs a reason, a typed phrase and a code from your authenticator app, and afterwards it is locked away for good.",
-    act: { l: "See whose fines would be cleared", run: () => crMoClearPreview(ctx) } }];
-  return [
-    { type: "note", span: 6, icon: p.members ? "warning" : "check-circle", tone: p.members ? "warn" : "ok",
-      text: p.members ? crPlural(p.members, "active member") + " with unpaid fines — " + fmtMoney(p.total) + " in all." : "No active member has an unpaid fine. There is nothing to clear.",
-      sub: p.members ? "Read the list. Only unpaid fines are cleared; a fine already paid stays paid. The run applies exactly this list." : "Nothing is locked: it stays available until it is used.",
-      act: p.members ? { l: "Clear these fines, once…", run: () => crMoClearRun(ctx) } : { l: "Close", run: () => ctx.setData(x => Object.assign({}, x, { clearPlan: null })) } },
-    p.members ? { type: "table", span: 6, title: "Fines that would be cleared", nosel: true, search: "Search the list",
-      cols: ["Member", "Centre", { l: "Unpaid fines", num: true }],
-      rows: (p.rows || []).map(r => ({ key: r.memberId, open: () => crMoOpen(ctx, r.memberId), cells: [
-        { k: "person", t: r.fullName, s: r.displayId || r.memberId }, { k: "text", t: r.centre || "—" }, { k: "num", t: fmtMoney(r.amount), v: r.amount }] })) } : null,
-  ].filter(Boolean);
-}
-
-function crMoFinesBlocks(d, ctx) {
-  const p = d.finePlan, out = crMoClearBlocks(d, ctx);
-  if (!p) {
-    out.push({ type: "note", span: 6, icon: "upload-simple", text: "Upload a sheet of fines — the register a coordinator kept on paper, typed up.",
-      sub: "Each row is matched to one member and shown before anybody is charged. A name or email shared by two members is refused unless the centre settles it, never guessed. Reasons: late, absent, equipment, conduct, or anything else (kept as the written reason) — read from a reason column, a column per kind, or the note. The check shows what the Club's conduct rules will really let post.",
-      act: { l: "Upload fines", run: () => crMoFineCheck(ctx) } });
-    return out;
-  }
-  const t = p.res.tally || {}, dry = !!p.res.dryRun;
-  out.push({ type: "note", span: 6, icon: t.failed ? "warning-circle" : "check-circle", tone: t.failed ? "warn" : "ok",
-    text: (dry ? "Checked “" : "Posted from “") + p.name + "”: " + crMoFineTally(t, dry) + ".",
-    sub: dry ? (t.fine ? "Nothing is posted until you press Post. Refused rows are listed with the reason; fix them in the file and check it again, or post the rest." : "There is nothing to post: every row is already posted, empty or refused.") : "Each fine is on the member’s account and in their next reminder.",
-    act: dry && t.fine ? { l: "Post " + crPlural(t.fine, "fine"), run: () => crMoFinePost(ctx) } : { l: "Upload another file", run: () => crMoFineCheck(ctx) } });
-  if (p.how && p.how.length) out.push({ type: "note", span: 6, icon: "table", text: "How the file was read", sub: crMoFineHow(p.how) });
-  const capped = (p.res.rows || []).filter(r => r.capped && r.verdict === "fine");
-  if (capped.length) out.push({ type: "note", span: 6, icon: "scales", tone: "warn", text: crPlural(capped.length, "fine") + " will post less than the sheet says.",
-    sub: "A conduct rule caps that kind of fine per term (Conduct & fines). The amount shown is what will really post; the sheet’s figure is beside it." });
-  const src = r => ((p.rows || [])[r.row - 1] || {}).src || "Row " + r.row;
-  const verdict = r => r.verdict === "skipped" ? ["Skipped: no fine", "neutral"] : r.verdict === "failed" ? ["Refused: " + (CR_MO_FINE_ERR[r.error] || String(r.error || "").replace(/_/g, " ")), "bad"]
-    : r.verdict === "fine" ? [(dry ? "To post" : "Posted") + (r.capped ? " (capped)" : ""), r.capped ? "warn" : "ok"] : ["Already posted", "neutral"];
-  out.push({ type: "table", span: 6, title: "The check, row by row", nosel: true,
-    cols: [{ l: "In the sheet", wrap: true }, { l: "Member", wrap: true }, "Matched by", { l: "Amount", num: true }, { l: "Reason", wrap: true }, "Result"],
-    rows: (p.res.rows || []).map(r => ({ key: "r" + r.row, cells: [
-      { k: "text", t: src(r), v: r.row },
-      { k: "text", t: r.fullName || "—", s: (r.displayId || r.memberId || "") + (r.candidates && r.candidates.length ? (r.displayId || r.memberId ? " · " : "") + "Could be: " + r.candidates.slice(0, 3).map(c => c.fullName + " (" + (c.displayId || c.memberId) + ")").join(", ") + (r.candidates.length > 3 ? " and " + crNum(r.candidates.length - 3) + " more" : "") : "") },
-      { k: "text", t: r.matchedBy ? (CR_MO_MATCHED[r.matchedBy] || r.matchedBy) : "", s: /^name/.test(r.matchedBy || "") ? "Weak match — check it" : "" },
-      { k: "num", t: r.amount ? fmtMoney(r.amount) : "", v: r.amount || 0 },
-      { k: "text", t: r.reasonLabel ? r.reasonLabel + (r.date ? " · " + r.date : "") : "", s: (r.capped ? "The sheet said " + fmtMoney(r.asked) + "; the rule’s cap allows this. " : "") + (r.note || "") },
-      { k: "status", t: verdict(r)[0], tone: verdict(r)[1] },
-    ] })),
-    filters: ["Result"], search: "Search the rows" });
-  return out;
-}
-
 function crMoRemindBlocks(d, ctx) {
   const cfg = d.cfg, p = d.prev, out = [];
   if (!cfg.enabled || !cfg.remindEnabled) {
@@ -775,8 +515,7 @@ Object.assign(CR_TAB_DEFS, {
   fees: {
     skeleton: ["kpis", "table"],
     load: async ctx => {
-      const [s, up, once] = await Promise.all([NGGApi.admin.fees.settings(), NGGApi.admin.fees.upratePreview().catch(() => null),
-        NGGApi.admin.fees.finesClearOnce("status").catch(() => null)]);
+      const [s, up] = await Promise.all([NGGApi.admin.fees.settings(), NGGApi.admin.fees.upratePreview().catch(() => null)]);
       const B = s.bounds || {};
       const arr = await NGGApi.admin.fees.arrears(B.arrearsPage);
       const id = crMoAcctId(ctx.sub);
@@ -784,8 +523,7 @@ Object.assign(CR_TAB_DEFS, {
       const prev = ctx.data && ctx.data.prev;
       const d = { cfg: s.fees, B, defaults: s.defaults || {}, arr, acct, rev: 0,
         up: up ? Object.assign({}, up.uprate, { maxPct: up.maxPct }) : null,
-        finePlan: (ctx.data && ctx.data.finePlan) || null, prev: prev || null, trainServer: crMoTrainServer(),
-        once: once || null, clearPlan: (ctx.data && ctx.data.clearPlan) || null };
+        prev: prev || null, trainServer: crMoTrainServer() };
       d.amountsForm = crMoAmountsForm(d.cfg, B, d.defaults);
       return d;
     },
@@ -803,11 +541,6 @@ Object.assign(CR_TAB_DEFS, {
         return out;
       }
       out.push({ l: "Bring charges up to date", icon: "arrows-clockwise", disabled: !d.cfg.enabled, why: "Dues are switched off — nothing is charged.", run: () => crMoAccrue(ctx) });
-      if (ctx.sub === "fines") {
-        out.push({ l: "Upload fines", icon: "upload-simple", run: () => crMoFineCheck(ctx) });
-        if (d.finePlan) out.push({ l: "Discard the check", icon: "x", run: () => ctx.setData(x => Object.assign({}, x, { finePlan: null })) });
-        out.push({ l: "Download template", icon: "download-simple", run: () => crMoDownload("ngg-fines-template.csv", CR_MO_FINE_TEMPLATE) });
-      }
       return out;
     },
     blocks: (d, ctx) => {
@@ -823,7 +556,7 @@ Object.assign(CR_TAB_DEFS, {
       const up = d.up;
       if (up && up.enabled && up.due && Object.keys(up.changes || {}).length && view !== "amounts")
         out.push({ type: "note", span: 6, icon: "trend-up", tone: "gold", text: "Amounts last raised " + (up.lastAt ? crPlural(up.monthsSince, "month") + " ago" : "never") + " — a review is due.", act: { l: "Review the amounts", run: () => ctx.setSub("amounts") } });
-      const body = view === "training" ? crMoTrainingBlocks(d, ctx) : view === "fines" ? crMoFinesBlocks(d, ctx) : view === "reminders" ? crMoRemindBlocks(d, ctx) : view === "amounts" ? crMoAmountsBlocks(d, ctx) : crMoOwesBlocks(d, ctx);
+      const body = view === "training" ? crMoTrainingBlocks(d, ctx) : view === "reminders" ? crMoRemindBlocks(d, ctx) : view === "amounts" ? crMoAmountsBlocks(d, ctx) : crMoOwesBlocks(d, ctx);
       return out.concat(body);
     },
     facts: d => "Payable " + fmtMoney((d.arr && d.arr.totalPayable) || 0) + " across " + crPlural((d.arr && d.arr.matched) || 0, "member") + ". Dues " + (d.cfg.enabled ? "on" : "off") + "; monthly dues " + fmtMoney(d.cfg.monthlyDues) + ", training fee " + fmtMoney(d.cfg.trainingFee) + ".",

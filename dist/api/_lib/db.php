@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 200;
+const NGG_SCHEMA_TARGET = 201;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5816,6 +5816,25 @@ function db_migrate(PDO $db): void {
               reason TEXT DEFAULT '',
               digest TEXT DEFAULT ''
             );
+        ",
+        201 => "
+            /* ONE THANK-YOU PER VOLUNTEER PER SEASON. Queued when the season
+               closes — the UNIQUE key means the nightly close and a coordinator's
+               close cannot queue anybody twice — then sent in batches
+               (summer_thanks_drain): 'queued' → 'sending' (claimed by one
+               sender) → 'sent', 'failed' (tried again, three times at most) or
+               'no_email' (nothing to send to, said rather than hidden). */
+            CREATE TABLE volunteer_thanks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              cohortId TEXT NOT NULL,
+              volunteerId TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'queued',
+              attempts INTEGER DEFAULT 0,
+              sessions INTEGER DEFAULT 0,
+              sentAt TEXT DEFAULT '',
+              createdAt TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX idx_volthanks ON volunteer_thanks(cohortId, volunteerId);
         ",
     ];
 

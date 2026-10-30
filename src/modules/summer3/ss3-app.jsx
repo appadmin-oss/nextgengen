@@ -684,12 +684,32 @@ class Ss3Portal extends React.Component {
       const closed = e.status === "closed" || e.status === "archived", archived = e.status === "archived";
       const steps = isCur ? [
         ["1", "Close the season", "Every desk stops taking check-ins. Do it after the last session" + (e.endDate ? " on " + ss3Day(e.endDate) : "") + ".", e.status === "active", "Close " + e.name, () => this.setState({ modal: "close", mRes: null }), closed, "Closed"],
-        ["2", "Issue certificates", "One per child still active at the end. Each guardian gets a link anyone can check.", closed && !archived, "Issue certificates", () => {
-          this.S().issueCerts("active", e.editionId).then(r => this.toast(f(r.issued) + " certificates issued of " + f(r.considered) + " children.")).catch(x => this.fail(x)); }, false, ""],
-        ["3", "Archive & roll up", "Each child’s attendance is saved onto their record. Daily scans are kept.", closed && !archived, "Archive the season", () => {
+        /* The press used to give no sign it had been made: no working state, a
+           toast easy to miss, and the step never marked done — so it read as a
+           button that does nothing, and was pressed again. It now says
+           "Issuing…" while it runs, reports the count, and shows what has been
+           issued from the server's own count, so a reload tells the same story. */
+        /* Automatic: closing queues a thank-you to every volunteer of the season
+           (summer-editions.php, summer_thanks_queue), sent in batches. This step
+           only says how far it has got, and who could not be reached. */
+        (() => { const t = e.thanks || {}, left = t.queued || 0;
+          const said = t.total ? f(t.sent) + " of " + f(t.total) + " volunteers thanked" + (left ? ", " + f(left) + " still sending" : "") + (t.noEmail ? " · " + f(t.noEmail) + " with no email" : "") + (t.failed ? " · " + f(t.failed) + " not delivered" : "") + "."
+            : "Every volunteer of the season is sent a thank-you, with the sessions they gave, when it closes.";
+          return ["2", "Thank the volunteers", said, false, "", null, t.total > 0 && !left, f(t.sent || 0) + " thanked"]; })(),
+        ["3", "Issue certificates", "One per child still active at the end. Each guardian gets a link anyone can check.", closed && !archived && !(e.certified > 0 && e.certified >= e.participants),
+          S.certBusy === e.editionId ? "Issuing…" : e.certified > 0 ? "Issue " + f(Math.max(0, e.participants - e.certified)) + " more" : "Issue certificates", () => {
+          if (S.certBusy) return;
+          this.setState({ certBusy: e.editionId });
+          this.S().issueCerts("active", e.editionId).then(r => {
+            this.setState({ certBusy: "" });
+            this.toast(r.issued ? f(r.issued) + (r.issued === 1 ? " certificate" : " certificates") + " issued. Each guardian has been sent the link." : "No new certificates — every active child already has one.");
+            this.loadFor("editions");
+          }).catch(x => { this.setState({ certBusy: "" }); this.fail(x); }); },
+          e.certified > 0 && e.certified >= e.participants, f(e.certified) + " issued"],
+        ["4", "Archive & roll up", "Each child’s attendance is saved onto their record. Daily scans are kept.", closed && !archived, "Archive the season", () => {
           this.ask("Archive " + e.name + "?", "Each child’s attendance is rolled up onto their record. The season can’t be reopened afterwards.", "Archive the season",
             () => this.S().archive(e.editionId, false).then(() => { this.boot(); return e.name + " archived."; })); }, archived, "Archived"],
-        ["4", "Move graduates into NGG", "Pick each child’s NGG centre, nearest first, then send the family one joining invoice.", true, "Open Into NGG", () => this.go("tongg"), false, ""],
+        ["5", "Move graduates into NGG", "Pick each child’s NGG centre, nearest first, then send the family one joining invoice.", true, "Open Into NGG", () => this.go("tongg"), false, ""],
       ].map(s => ({ n: s[0], l: s[1], d: s[2], canRun: !!s[3], cta: s[4], run: s[5], done: !!s[6], doneL: s[7], nbg: s[6] ? "#22a05a" : s[3] ? "#0b0b0c" : "#ececea", nfg: s[6] || s[3] ? "#fff" : "#6b6b72" })) : [];
       return { name: e.name, dates: e.startDate ? ss3Day(e.startDate) + " – " + ss3Day(e.endDate) : "No dates yet", state: st[0], sbg: st[1][0], sfg: st[1][1], stats: stats.map(s => ({ l: s[0], v: s[1] })),
         hasSteps: isCur, steps, hasNote: !!e.notes, note: e.notes, bd: isCur ? "#0b0b0c" : "#ececea", bg: "#fff" };
@@ -878,11 +898,11 @@ class Ss3Portal extends React.Component {
     }
     if (md === "close") {
       const ed = B.edition;
-      out.mTitle = "Close " + (ed ? ed.name : "the season") + "?"; out.mBody = "Every desk stops taking check-ins straight away. You can still issue certificates and archive afterwards. Do this after the last session.";
+      out.mTitle = "Close " + (ed ? ed.name : "the season") + "?"; out.mBody = "Every desk stops taking check-ins straight away, and every volunteer of the season is sent a thank-you. You can still issue certificates and archive afterwards. Do this after the last session.";
       out.mGoL = "Close the season";
       out.mGo = () => {
         this.setState({ busy: true });
-        this.S().editionStatus(ed.id, "closed").then(() => { this.setState({ busy: false, modal: null }); this.toast(ed.name + " closed. Desks have stopped taking check-ins."); this.boot(); })
+        this.S().editionStatus(ed.id, "closed").then(r => { this.setState({ busy: false, modal: null }); this.toast(ed.name + " closed. Desks have stopped taking check-ins" + (r && r.volunteersThanked ? ", and " + ss3Fmt(r.volunteersThanked) + " volunteers are being thanked." : ".")); this.boot(); })
           .catch(e => finish(ss3Err(e), "bad"));
       };
     }

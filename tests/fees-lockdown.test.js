@@ -104,10 +104,10 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
          fees_post('NGG-FS-K2', 'fine', 1000, ['periodKey' => 'fs:fine2', 'method' => 'other', 'note' => 'Old register']);`, ['bootstrap']);
     const finesOwed = () => Number(php(`echo fees_unpaid_of(db_row("SELECT * FROM members WHERE memberId = '${MEM}'"), ['fine']) + fees_unpaid_of(db_row("SELECT * FROM members WHERE memberId = 'NGG-FS-K2'"), ['fine']);`, ['bootstrap']));
     chk('two active members owe old fines', finesOwed() === 3500);
-    await P.goto(BASE + '/control/money/fees/fines', { waitUntil: 'domcontentloaded' });
+    await P.goto(BASE + '/control/money/conduct', { waitUntil: 'domcontentloaded' });
     await waitForBoot(P);
-    chk('Upload fines offers the super admin the one-time clearance', await until(P, () => /Clear the fines of every active member — once/.test(document.body.innerText), null, 60000));
-    await P.click('button:has-text("See whose fines would be cleared")');
+    chk('Conduct & fines offers the super admin the one-time clearance', await until(P, () => /Clear the unpaid fines of every active member — once/.test(document.body.innerText), null, 60000));
+    await P.click('button:has-text("Clear the unpaid fines of every active member")');
     chk('the preview lists each account and the total before anything happens',
       await until(P, () => /2 active members with unpaid fines — ₦3,500 in all/.test(document.body.innerText) && /Kemi Fined/.test(document.body.innerText)) && finesOwed() === 3500);
     await P.click('button:has-text("Clear these fines, once")');
@@ -131,8 +131,8 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
     await P.reload({ waitUntil: 'domcontentloaded' });
     await waitForBoot(P);
     chk('reloaded, the screen shows the record of the one run and no way to run it again',
-      await until(P, () => /Fines were cleared once for every active member/.test(document.body.innerText) && /can never be run again/.test(document.body.innerText), null, 60000)
-      && !(await P.$('button:has-text("See whose fines would be cleared")')));
+      await until(P, () => /One-time clearance/.test(document.body.innerText) && /Used .+ — 2 members, ₦3,500/.test(document.body.innerText) && /can never be run again/.test(document.body.innerText), null, 60000)
+      && !(await P.$('button:has-text("Clear the unpaid fines of every active member")')));
     const again = JSON.parse(php(`echo json_encode(backend_dispatch('admin.fees.finesClearOnce', ['requesterId' => '${ADMIN}', 'mode' => 'preview']));`, ['bootstrap']));
     chk('…and the server refuses it for good', again.error === 'already_used');
     chk('no page errors', errs.length === 0);

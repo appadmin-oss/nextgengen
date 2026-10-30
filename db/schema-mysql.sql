@@ -4685,3 +4685,17 @@ CREATE TABLE IF NOT EXISTS fees_once_locks (
   digest VARCHAR(64) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (200) ON DUPLICATE KEY UPDATE version = version;
+
+-- 201: one thank-you per volunteer per Summer School season (summer-editions.php)
+CREATE TABLE IF NOT EXISTS volunteer_thanks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  cohortId VARCHAR(64) NOT NULL,
+  volunteerId VARCHAR(64) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'queued',
+  attempts INT NOT NULL DEFAULT 0,
+  sessions INT NOT NULL DEFAULT 0,
+  sentAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL,
+  UNIQUE KEY idx_volthanks (cohortId, volunteerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (201) ON DUPLICATE KEY UPDATE version = version;

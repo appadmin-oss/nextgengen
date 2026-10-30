@@ -99,9 +99,105 @@ function summer_editions_close_elapsed(?string $today = null): array {
         db_update('summer_cohorts', ['status' => 'closed', 'updatedAt' => now_iso()], ['cohortId' => (string)$r['cohortId']]);
         audit('summer.edition.status', 'system', (string)$r['cohortId'], ['from' => 'active', 'to' => 'closed', 'why' => 'season ended ' . $r['endDate']], '');
         $closed[] = (string)$r['cohortId'];
+        summer_thanks_queue((string)$r['cohortId']);
     }
     $retired = $closed ? summer_centres_retire_unused() : [];
+    if ($closed) summer_thanks_drain(SUMMER_THANKS_INLINE);
     return ['closed' => $closed, 'centresRetired' => $retired];
+}
+
+/* ── Thanking the volunteers when a season closes ────────────────────────────
+   A Summer School runs on its volunteers, and the season used to end for them
+   in silence: the desk stopped scanning their card and nothing else happened.
+   Closing an edition — by the nightly job when its dates have passed, or by a
+   coordinator — now thanks EVERY volunteer of that season: everyone on the
+   Summer roster (Summer-only or Club-and-Summer) who has not been archived,
+   and anybody else who checked in during the season's dates, because a Club
+   volunteer who gave their Saturdays to Summer School served it too.
+
+   Queued, not sent in the request: a season has hundreds of volunteers and a
+   shared host gives a request seconds. The close sends the first batch, the
+   web-cron the rest. One row per volunteer per season (UNIQUE), so closing,
+   reopening and closing again thanks nobody twice. */
+const SUMMER_THANKS_INLINE = 25;
+const SUMMER_THANKS_BATCH = 40;
+const SUMMER_THANKS_TRIES = 3;
+
+/** Queue the thank-you for every volunteer of one season. Returns how many were queued now. */
+function summer_thanks_queue(string $cohortId): int {
+    $e = db_row('SELECT cohortId, startDate, endDate FROM summer_cohorts WHERE cohortId = ? LIMIT 1', [$cohortId]);
+    if (!$e) return 0;
+    $from = (string)($e['startDate'] ?? ''); $to = (string)($e['endDate'] ?? '');
+    $ids = [];
+    foreach (db_all("SELECT volunteerId FROM volunteers WHERE COALESCE(status,'active') <> 'archived' AND COALESCE(programme,'summer') IN ('summer','both','')") as $v) $ids[(string)$v['volunteerId']] = true;
+    if ($from !== '' && $to !== '') {
+        foreach (db_all('SELECT DISTINCT a.studentId FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId WHERE a.date BETWEEN ? AND ?', [$from, $to]) as $a) $ids[(string)$a['studentId']] = true;
+    }
+    $n = 0; $now = now_iso();
+    foreach (array_keys($ids) as $vid) {
+        if (db_row('SELECT id FROM volunteer_thanks WHERE cohortId = ? AND volunteerId = ?', [$cohortId, $vid])) continue;
+        try { db_insert('volunteer_thanks', ['cohortId' => $cohortId, 'volunteerId' => $vid, 'status' => 'queued', 'createdAt' => $now]); $n++; }
+        catch (Throwable $x) { /* the other closer queued them first — that is the point of the key */ }
+    }
+    if ($n) audit('summer.thanks.queued', 'system', $cohortId, ['volunteers' => $n], '');
+    return $n;
+}
+
+/** Send the next queued thank-yous, oldest first. Each row is claimed before its email goes. */
+function summer_thanks_drain(int $limit = SUMMER_THANKS_BATCH): array {
+    $rows = db_all("SELECT * FROM volunteer_thanks WHERE status = 'queued' OR (status = 'failed' AND attempts < ?) ORDER BY id LIMIT " . max(1, (int)$limit), [SUMMER_THANKS_TRIES]);
+    $sent = 0; $failed = 0; $none = 0;
+    foreach ($rows as $r) {
+        if (!db_exec("UPDATE volunteer_thanks SET status = 'sending', attempts = attempts + 1 WHERE id = ? AND status = ?", [(int)$r['id'], (string)$r['status']])) continue;
+        $res = summer_thanks_send_one((string)$r['cohortId'], (string)$r['volunteerId']);
+        db_update('volunteer_thanks', ['status' => $res['status'], 'sessions' => $res['sessions'], 'sentAt' => $res['status'] === 'sent' ? now_iso() : ''], ['id' => (int)$r['id']]);
+        if ($res['status'] === 'sent') $sent++; elseif ($res['status'] === 'no_email') $none++; else $failed++;
+    }
+    return ['sent' => $sent, 'failed' => $failed, 'noEmail' => $none];
+}
+
+/** The email itself: by name, with what they gave this season when it was recorded. */
+function summer_thanks_send_one(string $cohortId, string $volunteerId): array {
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
+    $e = db_row('SELECT * FROM summer_cohorts WHERE cohortId = ? LIMIT 1', [$cohortId]);
+    if (!$v || !$e) return ['status' => 'failed', 'sessions' => 0];
+    $from = (string)($e['startDate'] ?? ''); $to = (string)($e['endDate'] ?? '');
+    $sessions = $from !== '' && $to !== '' ? (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ? AND date BETWEEN ? AND ?', [$volunteerId, $from, $to])['c'] ?? 0) : 0;
+    $email = trim((string)($v['email'] ?? ''));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) return ['status' => 'no_email', 'sessions' => $sessions];
+    $name = trim((string)($v['firstName'] ?? '')) ?: (explode(' ', trim((string)$v['fullName']))[0] ?? '');
+    $season = trim((string)($e['name'] ?? '')) ?: ('Summer School ' . substr($from ?: (string)$e['cohortId'], 0, 4));
+    $children = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND status IN ('active','graduated','promoted')", [$cohortId])['c'] ?? 0);
+    $hours = $sessions * (function_exists('volunteer_session_hours') ? volunteer_session_hours() : 4);
+    $gave = $sessions > 0
+        ? '<p style="margin:0 0 10px">You showed up for <b>' . $sessions . ' session' . ($sessions === 1 ? '' : 's') . '</b> — about ' . $hours . ' hours of your time' . ($children > 0 ? ', for ' . number_format($children) . ' children' : '') . '. Every one of them was noticed.</p>'
+        : '<p style="margin:0 0 10px">Whether you were at the desk every Saturday or helped where you could, ' . ($children > 0 ? number_format($children) . ' children had a summer' : 'the season happened') . ' because people like you gave their time.</p>';
+    $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . ((string)($v['token'] ?? '') !== '' ? '/q/' . $v['token'] : '');
+    $html = email_template([
+        'eyebrow' => $season,
+        'title' => 'Thank you, ' . esc_html($name ?: 'friend'),
+        'preheader' => $season . ' has closed. Thank you for everything you gave it.',
+        'intro' => esc_html($season) . ' has closed, and before anything else we want to say thank you.',
+        'bodyHtml' => $gave
+            . '<p style="margin:0 0 10px">The patience at the gate, the lessons, the early mornings and the quiet help nobody saw — that is what the children will remember, even when they cannot say who it was.</p>'
+            . '<p style="margin:0">Your service record and any certificates you have earned stay on your volunteer profile.</p>',
+        'ctaLabel' => $url !== '' && (string)($v['token'] ?? '') !== '' ? 'Open my volunteer profile →' : '',
+        'ctaUrl' => (string)($v['token'] ?? '') !== '' ? $url : '',
+        'footNote' => 'With gratitude, from everyone at Next Generation Genius.',
+    ]);
+    $ok = function_exists('send_mail') && @send_mail($email, 'Thank you for ' . $season, $html);
+    if ($ok) event_emit('volunteer.thanked', ['ref' => $volunteerId, 'name' => (string)$v['fullName'], 'cohortId' => $cohortId, 'sessions' => $sessions]);
+    return ['status' => $ok ? 'sent' : 'failed', 'sessions' => $sessions];
+}
+
+/** How the thank-yous for one season stand, for the Editions screen. */
+function summer_thanks_status(string $cohortId): array {
+    $out = ['queued' => 0, 'sent' => 0, 'failed' => 0, 'noEmail' => 0, 'total' => 0];
+    foreach (db_all('SELECT status, COUNT(*) c FROM volunteer_thanks WHERE cohortId = ? GROUP BY status', [$cohortId]) as $r) {
+        $k = ['queued' => 'queued', 'sending' => 'queued', 'sent' => 'sent', 'failed' => 'failed', 'no_email' => 'noEmail'][(string)$r['status']] ?? 'queued';
+        $out[$k] += (int)$r['c']; $out['total'] += (int)$r['c'];
+    }
+    return $out;
 }
 
 /**
@@ -169,6 +265,11 @@ function summer_edition_row(array $e): array {
         'groups'        => $count("SELECT COUNT(*) c FROM summer_groups WHERE cohortId = ?", [$id]),
         'participants'  => $count("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND status = 'active'", [$id]),
         'waitlisted'    => $count("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND status = 'waitlisted'", [$id]),
+        /* Children still active who already hold a completion certificate, so
+           the season-end step can say "issued" rather than offering the same
+           press again with nothing on screen to show it ever worked. */
+        'thanks'        => summer_thanks_status($id),
+        'certified'     => $count("SELECT COUNT(DISTINCT c.studentId) c FROM student_certs c JOIN summer_students s ON s.studentId = c.studentId WHERE s.cohortId = ? AND s.status = 'active'", [$id]),
         /* The number that says whether the grouping work has actually been
            done. An edition with 300 participants and 280 grouped is fine; one
            with 300 and 0 means nobody has been placed in a class yet, and no
@@ -340,6 +441,9 @@ function admin_summer_edition_status(array $p): array {
     }
     // An edition closed by hand ends its centres the same way the nightly close does.
     $retired = $status === 'closed' && (string)$e['status'] === 'active' ? summer_centres_retire_unused() : [];
+    // And it thanks the season's volunteers — every one, once (summer_thanks_queue).
+    $thanked = 0;
+    if ($status === 'closed' && (string)$e['status'] === 'active') { $thanked = summer_thanks_queue($id); summer_thanks_drain(SUMMER_THANKS_INLINE); }
     // And going live brings back the Summer-only venues its groups meet at.
     $revived = [];
     if ($status === 'active') {
@@ -351,7 +455,7 @@ function admin_summer_edition_status(array $p): array {
     }
     audit('summer.edition.status', $g['requester']['memberId'], $id,
         ['from' => (string)$e['status'], 'to' => $status, 'demoted' => $demoted, 'centresRetired' => $retired, 'centresRevived' => $revived], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'editionId' => $id, 'status' => $status, 'demoted' => (int)$demoted, 'centresRetired' => $retired, 'centresRevived' => $revived];
+    return ['ok' => true, 'editionId' => $id, 'status' => $status, 'demoted' => (int)$demoted, 'centresRetired' => $retired, 'centresRevived' => $revived, 'volunteersThanked' => $thanked];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -4691,3 +4691,78 @@ intelligent."
   the Control Room v2 screen (it still drove the old `.fine-imp` markup and
   could not have passed) on a two-sheet register: 14/0.
   `tests/fees-lockdown.test.js`: 12/0.
+
+## 2026-10-30 — Conduct & fines rebuilt as one home for fines; volunteers thanked when a season closes; the certificates press answers
+
+**Conduct & fines (Money).** The tab mounted the v1 `SummerPolicy` screen whole
+(the old design), while fines lived in three places that did not know about
+each other: the rules only in the Club portal, the upload under Dues &
+arrears, the calendars/thresholds/board in that v1 screen. Rebuilt in the
+Control Room's blocks as `src/modules/control/cr-tab-conduct.jsx` (in `ORDER`
+and `index.html` after cr-tab-money), four views by URL tail, each offered
+only to whoever holds what its ops gate on:
+`""` Fines (`fees`) · `compliance` (`people|summer`) · `policy` (`summer`) ·
+`calendar` (`summer`). Tab cap is now `["fees","people","summer"]`.
+- **Fines**: kpis (this term's fines, rules on, the term, the clearance), the
+  upload (an empty state with one action, a drop area as a convenience only),
+  the check as ONE summary bar (file, to post / already / no fine / refused,
+  Post, and "How the file was read" collapsed) instead of a stack of tinted
+  notes, the row table, the rule cards, and the one-time clearance as a quiet
+  row. The rules are a searchable, filterable TABLE (owner: "there's going to be
+  a lot"), not cards. The upload and clearance code moved here from cr-tab-money.jsx
+  (`crMo*` → `crCf*`); Dues & arrears lost its "Upload fines" view.
+  `/control/money/fees/fines` forwards via the new `CR_SUB_ALIASES` in
+  `crResolve` (cr-pages.jsx) — retire by aliasing.
+- **Rules from the money side**: `admin.fees.fineRules` (one pass over the
+  term's fines, not one query per rule) and `admin.fees.fineRuleSave`
+  (`fees`; whole payload validated first; `cap_below_fine`, `kind_taken` —
+  `conduct_rule_allow` reads the FIRST rule of a kind, so a second would govern
+  nothing while looking live; `unchanged`; audited `fees.rule.save` with
+  from/to). The Club portal's toggle still writes the same rows.
+- **Standard amounts in the upload**: a tick or a count (≤ `FEES_FINE_COUNT_MAX`
+  20) under a per-kind column whose heading has no money word, or a blank amount
+  on a row that names its reason, posts `count × rule amount` (`standard`,
+  `each` on the verdict; `no_standard_amount`, `bad_count`). A written 0 is
+  always "no fine".
+- **Compliance** record is a CR drawer (consequences with mark paid / served /
+  clear, entries with Void-with-reason, manual ID-card logs, reinstate with a
+  council-override form). **Policy** is one form block; ids are paths
+  (`student.absenceLimit`) rebuilt by `crCfNest`. **Calendars** are two form
+  blocks; the form block gained `c: "multi"` (weekdays) and `c: "dates"`
+  (`CrDatesControl`), and `num` table cells gained an optional second line.
+- **A real fault found by the screenshots**: `programme_settings_save` and
+  `member_programme_settings_save` read a missing `enabled` as OFF, so a
+  calendar save carrying only the changed weekday switched the whole calendar
+  off. The save now always sends the switch with the patch; the suite asserts
+  the calendar stays on.
+- `SummerPolicy` / `PolicyPersonModal` deleted; the Summer workspace's
+  "Programme & policy" panel is `SummerPolicyMoved`, linking to the three views.
+  ui-smoke's policy block is retired, and every promise it held is now held by
+  `tests/conduct-tab.test.js` (22/0, real server, `npm run test:conduct`, in
+  `test:all`).
+
+**Volunteers thanked when a season closes** (owner: "ALL volunteers should be
+sent an appreciation"). Migration **201** `volunteer_thanks` (UNIQUE cohortId +
+volunteerId; queued → sending → sent | failed (3 tries) | no_email). Both close
+paths queue it — `summer_editions_close_elapsed` (nightly/web-cron) and
+`admin_summer_edition_status` active→closed — and send `SUMMER_THANKS_INLINE`
+at once; the web-cron (`vol_thanks`, every minute) and run-jobs send the rest.
+Who: every non-archived Summer/Both volunteer, plus any volunteer who checked in
+during the season's dates. The email is by name, with the sessions given that
+season. Editions carry `thanks` counts; the season steps show "N of M thanked"
+and who has no email. PHP: 9 checks.
+
+**Issue certificates gave no sign of being pressed** (owner screenshot). It now
+reads "Issuing…" while running, toasts the count (or that every child already
+has one), and shows "N issued" from the editions list's new `certified` count,
+so a reload tells the same story. The certificate's own design waits on the
+design the owner is sending.
+
+Tests: PHP 5996 passed / 2 failed (the two pre-existing failures from 8acc5ec7,
+noted above); fines-upload 16/0 (enters through the old address); fees-lockdown
+12/0; conduct-tab 22/0.
+
+Also: `naira` stays a shared global in page-portals.jsx (page-admin.jsx's v1
+fees screen uses it — removing it broke ui-smoke); `.cr-seg` buttons are 44px
+on a coarse pointer. Final runs: ui-smoke 649/0, responsive-staff 4/0,
+control-room 51/0, conduct-tab 22/0, routes 60/0, admin-bulk 44/0, build 31/0.

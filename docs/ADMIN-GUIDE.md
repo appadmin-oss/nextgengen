@@ -677,7 +677,8 @@ and history stay in the Control Room (below).
 
 - **Editions & groups** — the important one. See below.
 - **Academy catalogue** — Summer School's academies and courses for the season. The NGG Club keeps its **own** course list under **Curriculum → Courses**; editing one never changes the other.
-- **Programme & policy** — the rules of the season.
+- **Programme & policy** — now in **Money → Conduct & fines** (the calendars,
+  the policy and the compliance board); this panel links there.
 
 ### Intake — getting children in
 
@@ -702,6 +703,22 @@ a participant in: it says *season ended* or *season hasn't started*, with the
 date. Cards issued for an edition expire on its end date. The night after the
 end date, the edition moves to **Closed** by itself. Archive it from Records
 when you are ready.
+
+**Closing a season thanks its volunteers.** The moment an edition closes —
+by itself after its end date, or with **Close the season** in Editions &
+certificates — every volunteer of that season is sent a thank-you by email:
+everyone on the Summer roster (Summer-only or Club-and-Summer) who has not been
+archived, and any Club volunteer who checked in during the season's dates. Each
+is thanked by name, with the sessions they gave that season. It happens once per
+person per season — closing again sends nothing twice. The first few go
+straight away and the rest within minutes; a message that did not go is tried
+again (three times in all). Editions & certificates shows how far it has got
+(*N of M volunteers thanked*) and how many have no email address on file, so
+those people can be thanked in person.
+
+**Issue certificates** now says *Issuing…* while it works and reports how many
+were issued; once every child still active has one, the step shows *N issued*
+instead of the button.
 
 **The volunteer at the door** has a guide on the desk itself (*Volunteer guide*, under the camera) and a printable copy in `docs/VOLUNTEER-DESK-GUIDE.md`. A *Do not admit* result stays up until they press OK.
 
@@ -1570,12 +1587,62 @@ words. The member's panel and this drawer are drawn by one component from one
 server answer, so they cannot disagree. On a day or week rate, "still to come"
 reaches as far as the meeting calendar is set.
 
+### Conduct & fines — one home for fines
+
+**Money → Conduct & fines** is where fines live, start to finish. It has four
+views, and each person sees only those their permissions reach:
+
+| View | Needs | What it holds |
+|---|---|---|
+| **Fines** | `fees` | This term's fines at a glance, **Upload fines**, the **fine rules**, and the one-time clearance |
+| **Compliance** | `people` or `summer` | Everybody with something on record, and each person's record |
+| **Policy** | `summer` | The thresholds: absences allowed, lates, suspension, the fines the policy issues |
+| **Calendars** | `summer` | Which days count — the Summer School days and the NGG member days |
+
+Dues & arrears is about money owed and paid; it no longer has an upload.
+Old links to *Dues & arrears → Upload fines* open Conduct & fines. In Summer
+School, *Programme & policy* now points here too.
+
+**Fine rules.** A table you can search and filter — one row per rule (Late attendance, Missed sessions,
+Equipment, Conduct, and any written rule) with its **standard amount**, its **cap per member per
+term**, how many fines it has governed this term, and **On/Off**. Open a row
+to change it, or **Add a rule**. A rule that is **off** refuses fines of its
+kind (from the desk, the policy or an upload); a **cap** posts only what is
+left of it in the term. The standard amount is what a register's **tick** or
+**count** costs (see the upload below). A cap smaller than the standard amount
+is refused. Changes apply to fines posted from then on — a fine already on an
+account keeps its amount — and every change is in the audit log. Rules are
+switched off, never deleted, so a fine posted under one can always be explained.
+
+**Compliance.** Totals (warned, dormant, suspended, evicted, policy fines owed)
+and everybody with a consequence on record, worst first. Open a row for the
+record: the **consequences** (a fine can be marked paid, a suspension served, a
+dormancy cleared) and **what they are based on** — each logged absence, late
+and ID-card entry. A wrong entry is **voided** with a reason; it stays on the
+record, struck through, and everything it caused is lifted at once. The record
+also logs *No ID card today*, *Lost ID card*, and for volunteers *Missed Review
+Time*; an evicted person can be **reinstated** (a Governing Council override,
+with its resolution, when the conditions are not met).
+
+**Policy.** One form, saved with the bar at the bottom: whether the policy is
+enforced for Summer School and, separately, for NGG members; the lateness time
+and the ladder (absences allowed, lates before a suspension, its length, the
+fine after it) for participants, for volunteers/mentors/instructors and for
+members; the members' stricter fines (every late, an unexplained absence); ID
+cards and reinstatement. **Run the absence sweep now** is at the top.
+
+**Calendars.** For each calendar: whether today counts and the next day that
+does, then **Use this calendar**, the start and end, the weekdays it **meets
+on**, **cancelled days** and **extra days** (add a date, remove one with ×).
+With no dates typed in, the Summer calendar follows the edition's own season.
+Switching a calendar off makes every date count — the warning above it says so.
+
 ### Clearing every active member's fines — once
 
-**Dues & arrears → Upload fines**, at the top, for a **super admin** only. For
+**Conduct & fines → Fines**, at the bottom, for a **super admin** only. For
 fines carried over from before this system. It can be used **one time, ever**:
 
-1. **See whose fines would be cleared** lists every active NGG member with an
+1. **Clear the unpaid fines of every active member — once** (Preview) lists every active NGG member with an
    unpaid fine and the amount, and the total. Nothing has happened yet.
 2. **Clear these fines, once…** asks for a reason, the phrase **CLEAR ALL FINES**
    typed exactly, and the current 6-digit code from **your authenticator app**
@@ -1594,7 +1661,7 @@ posted.
 
 ### Uploading a sheet of fines
 
-**Dues & fees → Upload fines** (needs the `fees` permission). For a register
+**Conduct & fines → Fines → Upload fines** (needs the `fees` permission). For a register
 of fines kept on paper or in a spreadsheet — as it was kept; it does not need
 retyping into a template.
 
@@ -1605,9 +1672,14 @@ retyping into a template.
    *Email*, *Fine (₦)*, *Amount owed*, *Offence*, *Date*, *Remarks*, *Centre*.
    "S/N" is ignored. A sheet with **a column per kind of fine** (Late, Absent,
    Equipment, Conduct) becomes one fine per filled column, and its *Total* column
-   and any **TOTAL** line are not fines. The check opens with **How the file was
-   read**, naming each column it used and each one it ignored — read it against
-   your sheet. If the sheet has **no reason** anywhere, type one reason for every
+   and any **TOTAL** line are not fines. Under a kind of fine whose heading
+   has no money in it, a **tick** (✓, x, yes) is one fine and a **small number**
+   is how many ("Late: 3" is three late fines), each at that rule's **standard
+   amount**; "Late (₦)" is read as money. A row that names its reason but leaves
+   the amount empty also takes the standard amount; a written **0** is always "no
+   fine". The check's summary has **How the file was read** — open it and read
+   it against your sheet: it names each column used and ignored, and how many
+   cells were ticked or counted. If the sheet has **no reason** anywhere, type one reason for every
    row ("Outstanding fine, term 1"). A PDF cannot be read — in Excel or Google
    Sheets choose *File → Download → CSV* or save as .xlsx.
 2. **Check the file.** Every row says which member it matched and **how** —
@@ -1633,7 +1705,10 @@ retyping into a template.
    - Reasons: *late*, *absent*, *equipment*, *conduct*, also read from a
      sentence ("came 40 minutes late", "did not attend") in the reason or the
      note; anything else is kept as the written reason.
-   - **Conduct & fines rules are applied in the check.** A rule switched off
+   - A standard amount shows under the figure: *3 × ₦500 standard*. A kind whose
+     rule has no standard amount is refused ("write the figure"); more than 20 in
+     one cell is refused.
+   - **The fine rules are applied in the check.** A rule switched off
      refuses its rows ("that rule is switched off"); a rule with a cap per term
      shows the amount that will really post, marked *capped*, with the sheet's
      figure beside it. What you post is what the check showed.
@@ -1759,7 +1834,8 @@ Summer School centres never appear here.
   or an error with **Try again** now shows on the phone too.
 
 **Conduct & fines.** Each rule (late, absent, equipment …) has an amount, an
-on/off switch and an optional **cap per term**. A rule that is off posts
+on/off switch and an optional **cap per term** (the same rules as Control Room →
+Money → Conduct & fines, where they can also be edited). A rule that is off posts
 nothing; a capped rule never takes a member past its cap in a term — the last
 fine is reduced to fit, and once the cap is reached nothing more is posted.
 Guardians see every line. Only admins and club admins change rules; a centre

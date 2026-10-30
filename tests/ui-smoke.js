@@ -436,7 +436,7 @@ function unzipDocumentXml(buf) {
 <script>
   var b = new URLSearchParams(location.search).get('board');
   var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'photo' ? 'PhotoEditor'
-            : b === 'policy' ? 'SummerPolicy' : b === 'att' ? 'SummerAttendance' : b === 'kiosk' ? 'SummerKiosk'
+            : b === 'att' ? 'SummerAttendance' : b === 'kiosk' ? 'SummerKiosk'
             : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : b === 'centre' ? 'CentreDetail'
             : b === 'builder' ? 'SummerFormBuilder' : b === 'gatereg' ? 'GateRegister'
             : b === 'arcade' ? 'CmArcade'
@@ -2396,61 +2396,13 @@ function unzipDocumentXml(buf) {
       /Generate password/.test(await gkText()) && /own password/i.test(await gkText()));
     await gk.close();
 
-    /* ── Programme & policy: the screen that decides which days count ─────
-       Mounted against a term where TODAY is cancelled, because that is the
-       state the calendar exists to handle and the one the banner has to say
-       out loud — before this, a closed day marked the whole cohort absent. */
-    const pol = await browser.newPage();
-    const polErrs = [];
-    pol.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) polErrs.push(m.text()); });
-    pol.on('pageerror', e => polErrs.push(String(e.message)));
-    await pol.goto(BASE + '/tests/_boards_fixture.html?board=policy&mode=ok', { waitUntil: 'networkidle' });
-    await pol.waitForTimeout(700);
-    const polMountErrs = await pol.evaluate(() => window.__errors);
-    ok('programme & policy mounts with no script error', polErrs.length === 0 && polMountErrs.length === 0);
-    if (polErrs.length || polMountErrs.length) console.error('       ', polErrs.concat(polMountErrs).slice(0, 3).join(' | '));
-    const polBody = await pol.evaluate(() => document.body.innerText);
-    ok('…and says today is not a programme day, with the next session',
-      /not a programme day/i.test(polBody) && /2026-07-20/.test(polBody));
-    ok('…offers the term window and the weekday picker',
-      await pol.locator('input[type=date]').count() >= 2
-      // Scope to the summer-programme picker: the page now also carries a member-
-      // programme picker, so an unscoped "Mon" matches two buttons.
-      && await pol.getByRole('group', { name: 'Summer programme days' }).getByRole('button', { name: 'Mon', exact: true }).count() === 1);
-    const dowOn = await pol.evaluate(() => {
-      const g = document.querySelector('[role="group"][aria-label="Summer programme days"]');
-      return g ? Array.from(g.querySelectorAll('[aria-pressed="true"]')).map(b => b.textContent.trim()) : [];
-    });
-    ok('…shows Mon–Fri selected and the weekend off (' + dowOn.join(',') + ')',
-      dowOn.join(',') === 'Mon,Tue,Wed,Thu,Fri');
-    ok('…lists the cancelled and added dates', /2026-07-15/.test(polBody) && /2026-07-11/.test(polBody));
-    ok('…renders the compliance board worst-state first',
-      polBody.indexOf('Evicted Person') < polBody.indexOf('Suspended Person')
-      && polBody.indexOf('Suspended Person') < polBody.indexOf('Warned Person'));
-    ok('…totals the outstanding fines in naira', /₦15,000/.test(polBody));
-    ok('…names the Part VI redlines for both member types',
-      (await pol.locator('input[type=time]').count()) >= 2 && /Redline 08:30/.test(polBody) && /Redline 09:00/.test(polBody));
-
-    // Turning a weekday off has to reach the save payload, not just the chip.
-    await pol.getByRole('group', { name: 'Summer programme days' }).getByRole('button', { name: 'Fri', exact: true }).click();
-    await pol.getByRole('button', { name: /Save programme/ }).click();
-    await pol.waitForTimeout(200);
-    const saved = await pol.evaluate(() => window.__saved);
-    ok('turning a weekday off is what gets saved',
-      saved.length === 1 && saved[0].programme.weekdays.join(',') === '1,2,3,4');
-
-    // The record drawer is where a wrongly logged absence gets corrected.
-    await pol.getByRole('button', { name: 'Record' }).first().click();
-    await pol.waitForTimeout(300);
-    const drawer = await pol.evaluate(() => {
-      const el = document.querySelector('.admin-drawer-panel');
-      return el ? el.innerText : '';
-    });
-    ok('the compliance record opens with the ledger and the sanctions',
-      /Absence 2 of 2/.test(drawer) && /2026-07-07/.test(drawer) && /₦5,000/.test(drawer));
-    ok('…marks an already-voided fact as voided rather than hiding it', /Voided — Wrong student/.test(drawer));
-    ok('…offers the manual ID-card infractions', /No ID card today/.test(drawer) && /Lost ID card/.test(drawer));
-    await pol.close();
+    /* ── Programme & policy ── moved: the v1 SummerPolicy screen was rebuilt
+       as Money › Conduct & fines (cr-tab-conduct.jsx), and every promise this
+       block held it to — today's programme day and the next one, the window and
+       the weekday picker, the cancelled and added dates, a weekday turned off
+       being what is saved, the board worst-first, the record with its voided
+       entries and the manual ID-card logs — is held against the new screen by
+       tests/conduct-tab.test.js, on a real server. */
 
     /* ── Attendance dashboard ─────────────────────────────────────────────
        The screen a coordinator reads every morning. It had no idea whether the

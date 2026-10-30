@@ -8282,6 +8282,8 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-seg button[aria-checked="true"] { background: var(--cr-bg); box-shadow: var(--cr-sh-seg); }
 .cr-seg.is-full { display: flex; }
 .cr-seg.is-full button { flex: 1; }
+/* A fingertip needs 44px whatever the width; a mouse is fine at 30 (§9). */
+@media (pointer: coarse) { .cr-seg button { height: 44px; padding: 0 14px; } }
 .cr-input { height: 36px; padding: 0 12px; border: 1px solid var(--cr-line-3); border-radius: var(--cr-r); font-size: 14px; background: var(--cr-bg); min-width: 0; }
 .cr-input.is-row { width: min(340px, 50%); }
 .cr-select { height: 36px; padding: 0 32px 0 12px; border: 1px solid var(--cr-line-3); border-radius: var(--cr-r); font-size: 14px; background: var(--cr-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 256 256'%3E%3Cpath fill='%230b0b0c' d='M213.7 101.7l-80 80a8 8 0 0 1-11.4 0l-80-80a8 8 0 0 1 11.4-11.4L128 164.7l74.3-74.4a8 8 0 0 1 11.4 11.4z'/%3E%3C/svg%3E") no-repeat right 12px center; appearance: none; -webkit-appearance: none; max-width: min(340px, 60%); }
@@ -8453,6 +8455,66 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-note-text > span:first-child { font-size: 14px; line-height: 1.45; color: var(--cr-text); text-wrap: pretty; }
 .cr-note.is-quote .cr-note-text > span:first-child { font-size: 18px; }
 .cr-note-sub { font-size: 12.5px; color: var(--cr-muted-3); }
+
+/* ── Conduct & fines (cr-tab-conduct.jsx) ──────────────────────────────────
+   The upload's empty state, the check's summary bar, and the dates control.
+   Neutral surfaces throughout: colour is spent only on a real verdict (a
+   refused row, a cap), so the one tone on screen means something. Layout
+   follows the block's own width (a container), never the window's. */
+.cr-cf-drop { container-type: inline-size; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "ico text acts" "ico steps acts"; gap: 6px 18px; align-items: center;
+  padding: 22px 24px; border: 1.5px dashed var(--cr-line-strong); border-radius: var(--cr-r-lg); background: var(--cr-s1); transition: border-color .15s, background .15s; }
+.cr-cf-drop.is-over { border-color: var(--cr-ink); background: var(--cr-bg); }
+.cr-cf-drop-ico { grid-area: ico; width: 48px; height: 48px; border-radius: var(--cr-r); background: var(--cr-bg); border: 1px solid var(--cr-line); display: inline-flex; align-items: center; justify-content: center; font-size: 22px; color: var(--cr-ink); }
+.cr-cf-drop-t { grid-area: text; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cr-cf-drop-t b { font-size: 15px; font-weight: 600; color: var(--cr-ink); }
+.cr-cf-drop-t span { font-size: 13px; line-height: 1.45; color: var(--cr-muted-3); text-wrap: pretty; }
+.cr-cf-steps { grid-area: steps; list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--cr-muted); }
+.cr-cf-steps li { display: inline-flex; align-items: center; gap: 7px; }
+.cr-cf-steps li span { width: 18px; height: 18px; border-radius: var(--cr-r-pill); background: var(--cr-bg); border: 1px solid var(--cr-line-3); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--cr-ink); }
+.cr-cf-drop-acts { grid-area: acts; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+@container (max-width: 620px) {
+  .cr-cf-drop { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "ico text" "steps steps" "acts acts"; }
+  .cr-cf-drop-acts { justify-content: flex-start; }
+}
+
+.cr-cf-check { container-type: inline-size; border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); background: var(--cr-bg); overflow: hidden; }
+.cr-cf-check-top { display: flex; align-items: center; gap: 14px; padding: 16px 18px; }
+.cr-cf-check-ico { width: 40px; height: 40px; flex: none; border-radius: var(--cr-r); background: var(--cr-s2); display: inline-flex; align-items: center; justify-content: center; font-size: 19px; color: var(--cr-ink); }
+.cr-cf-check-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cr-cf-check-t b { font-size: 14.5px; font-weight: 600; color: var(--cr-ink); overflow-wrap: anywhere; }
+.cr-cf-check-t span { font-size: 13px; color: var(--cr-muted-3); }
+.cr-cf-check-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.cr-cf-tally { margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--cr-line-4); }
+.cr-cf-tally > div { padding: 12px 18px; border-left: 1px solid var(--cr-line-4); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cr-cf-tally > div:first-child { border-left: 0; }
+.cr-cf-tally dt { font-size: 12px; color: var(--cr-muted-3); }
+.cr-cf-tally dd { margin: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cr-cf-tally dd b { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--cr-ink); }
+.cr-cf-tally dd span { font-size: 12.5px; color: var(--cr-muted-3); }
+.cr-cf-tally > .cr-t-ok dd b, .cr-cf-tally > .cr-t-bad dd b { color: var(--t-fg); }
+.cr-cf-how { padding: 10px 18px 12px; border-top: 1px solid var(--cr-line-4); background: var(--cr-s1); }
+.cr-cf-how p { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--cr-muted); }
+@container (max-width: 620px) {
+  .cr-cf-check-top { flex-wrap: wrap; }
+  .cr-cf-check-acts { width: 100%; justify-content: flex-start; }
+  .cr-cf-tally { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cr-cf-tally > div:nth-child(3) { border-left: 0; }
+  .cr-cf-tally > div:nth-child(n+3) { border-top: 1px solid var(--cr-line-4); }
+}
+
+/* The form block's list-of-dates and several-of-a-set controls. */
+.cr-frow-ctl { max-width: 60%; }
+.cr-frow > .cr-wrap.cr-frow-ctl { justify-content: flex-end; }
+.cr-dates { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.cr-dates-add { display: flex; gap: 8px; align-items: center; }
+.cr-dates-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.cr-chip.is-date { height: 30px; padding: 0 4px 0 11px; font-variant-numeric: tabular-nums; }
+.cr-dates-x { width: 24px; height: 24px; border: 0; border-radius: var(--cr-r-pill); background: transparent; display: inline-flex; align-items: center; justify-content: center; color: var(--cr-muted-3); }
+.cr-dates-x:hover { background: var(--cr-s2); color: var(--cr-ink); }
+.cr-pfrow.is-stack { flex-direction: column; align-items: stretch; }
+.cr-pfrow.is-stack .cr-frow-ctl { max-width: none; }
+.cr-pfrow.is-stack .cr-dates, .cr-pfrow.is-stack .cr-dates-list { align-items: flex-start; justify-content: flex-start; }
+
 /* A note's action is a real tap target — the one control in the block, and
    often the way out of an empty or failed state. `is-sm` draws it at 30px,
    which is under this codebase's 44px floor (CLAUDE.md §9); the sweep never
@@ -8722,6 +8784,7 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-c-text { display: flex; flex-direction: column; }
 .cr-c-text span:first-child { color: var(--cr-text); }
 .cr-c-text span + span { font-size: 12px; color: var(--cr-muted-3); }
+.cr-c-text.is-num { align-items: flex-end; }
 .cr-tbl td.cr-c-wrap { white-space: normal; max-width: 360px; min-width: 160px; }
 .cr-tempty { padding: 36px; text-align: center; color: var(--cr-muted-3); font-size: 13.5px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .cr-tempty .cr-btn { height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; }

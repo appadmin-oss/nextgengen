@@ -17484,8 +17484,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('fines upload: two Olumide Fashola-Iges are ambiguous — the centre settles it', ($amb['error'] ?? '') === 'ambiguous' && ($byC['member']['memberId'] ?? '') === 'FUP-3' && $byC['by'] === 'name+centre');
     $SU = 'NGG-2025-0099';
     db_exec("DELETE FROM conduct_rules WHERE ruleId IN ('FUP-R1','FUP-R2')");
-    $keep = db_all("SELECT * FROM conduct_rules WHERE reason IN ('late','absent')");
-    db_exec("DELETE FROM conduct_rules WHERE reason IN ('late','absent')");
+    if (function_exists('cp_rules_seed')) cp_rules_seed();
+    $keep = db_all("SELECT * FROM conduct_rules WHERE reason IN ('late','absent','equipment')");
+    db_exec("DELETE FROM conduct_rules WHERE reason IN ('late','absent','equipment')");
+    db_exec("DELETE FROM conduct_rules WHERE ruleId = 'FUP-R3'");
+    db_insert('conduct_rules', ['ruleId' => 'FUP-R3', 'reason' => 'equipment', 'name' => 'Equipment', 'amount' => 0, 'capTerm' => 0, 'active' => 1, 'createdAt' => $now]);
     db_insert('conduct_rules', ['ruleId' => 'FUP-R1', 'reason' => 'late', 'name' => 'Late', 'amount' => 500, 'capTerm' => 3000, 'active' => 1, 'createdAt' => $now]);
     db_insert('conduct_rules', ['ruleId' => 'FUP-R2', 'reason' => 'absent', 'name' => 'Absent', 'amount' => 500, 'capTerm' => 0, 'active' => 0, 'createdAt' => $now]);
     $rows = [['name' => 'Kemi Late Rule', 'amount' => '2000', 'reason' => 'late', 'date' => '01/10/2026'], ['name' => 'Kemi Late Rule', 'amount' => '2000', 'reason' => 'late', 'date' => '02/10/2026'],
@@ -17502,7 +17505,43 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $a = backend_dispatch('admin.fees.fineImport', ['requesterId' => $SU, 'rows' => $rows, 'digest' => $d['digest']]);
     $kemi = (int)db_row("SELECT COALESCE(SUM(amount),0) s FROM member_ledger WHERE memberId = 'FUP-4' AND kind = 'fine'")['s'];
     chk('fines upload: what posts is what the check said (₦3,000 of late fines under the ₦3,000 cap)', !empty($a['ok']) && $kemi === 3000 && $a['tally']['total'] === $d['tally']['total']);
-    db_exec("DELETE FROM conduct_rules WHERE ruleId IN ('FUP-R1','FUP-R2')");
+    /* A register that ticks a kind of fine, or counts them, instead of writing a figure. */
+    $rows2 = [['name' => 'Zainab Oyelaran-Mbah', 'amount' => '', 'count' => 3, 'reason' => 'late', 'date' => '05/10/2026'],
+              ['name' => 'Zainab Oyelaran-Mbah', 'amount' => '', 'reason' => 'equipment', 'note' => 'lost a chess clock'],
+              ['name' => 'Zainab Oyelaran-Mbah', 'amount' => '0', 'reason' => 'late', 'date' => '06/10/2026'],
+              ['name' => 'Zainab Oyelaran-Mbah', 'amount' => '', 'count' => 40, 'reason' => 'late'],
+              ['name' => 'Zainab Oyelaran-Mbah', 'amount' => '', 'reason' => 'absent']];
+    $d2 = backend_dispatch('admin.fees.fineImport', ['requesterId' => $SU, 'rows' => $rows2, 'dryRun' => true]);
+    $w = $d2['rows'] ?? [];
+    chk('fines upload: "Late: 3" with no figure is three fines at the rule\'s standard amount, and says so',
+        ($w[0]['verdict'] ?? '') === 'fine' && ($w[0]['amount'] ?? 0) === 1500 && ($w[0]['standard'] ?? 0) === 3 && ($w[0]['each'] ?? 0) === 500);
+    chk('fines upload: no figure and a rule with no standard amount is refused by name', ($w[1]['error'] ?? '') === 'no_standard_amount');
+    chk('fines upload: a written 0 is "no fine", never the standard amount', ($w[2]['verdict'] ?? '') === 'skipped' && ($w[2]['error'] ?? '') === 'no_amount');
+    chk('fines upload: a count beyond 20 is refused rather than read as twenty-odd fines', ($w[3]['error'] ?? '') === 'bad_count');
+    chk('fines upload: a standard amount under a rule that is off is still refused as off', ($w[4]['error'] ?? '') === 'rule_off');
+
+    /* The rules, edited from the money side. */
+    $R = backend_dispatch('admin.fees.fineRules', ['requesterId' => $SU]);
+    $late = array_values(array_filter($R['rules'] ?? [], static fn($x) => $x['ruleId'] === 'FUP-R1'))[0] ?? [];
+    chk('fine rules: listed with what each governed this term', !empty($R['ok']) && ($late['thisTerm']['n'] ?? 0) >= 2 && ($late['thisTerm']['total'] ?? 0) >= 3000 && ($R['thisTerm']['n'] ?? 0) >= 2);
+    chk('fine rules: a cap below the fine is refused', (backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $SU, 'ruleId' => 'FUP-R1', 'amount' => 5000])['error'] ?? '') === 'cap_below_fine');
+    chk('fine rules: a second rule for the same kind is refused — only the first would ever govern',
+        (backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $SU, 'name' => 'Late again', 'reason' => 'late', 'amount' => 100])['error'] ?? '') === 'kind_taken');
+    chk('fine rules: a short name and a fractional amount are refused before any write',
+        (backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $SU, 'ruleId' => 'FUP-R1', 'name' => 'x'])['error'] ?? '') === 'bad_name'
+        && (backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $SU, 'ruleId' => 'FUP-R1', 'amount' => '50.5'])['error'] ?? '') === 'bad_amount');
+    db_exec("DELETE FROM audit_log WHERE event IN ('fees.rule.save','fees.rule.create')");
+    $s1 = backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $SU, 'ruleId' => 'FUP-R1', 'amount' => 600, 'active' => true]);
+    $s2 = backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $SU, 'ruleId' => 'FUP-R1', 'amount' => 600]);
+    chk('fine rules: a change names what changed, is audited once, and the same change again is "unchanged"',
+        !empty($s1['ok']) && ($s1['changed'] ?? []) === ['amount'] && !empty($s2['unchanged']) && (int)db_row("SELECT amount FROM conduct_rules WHERE ruleId = 'FUP-R1'")['amount'] === 600
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'fees.rule.save'")['c'] === 1);
+    chk('fine rules: the new standard amount is what the next upload uses', (backend_dispatch('admin.fees.fineImport', ['requesterId' => $SU, 'rows' => [$rows2[0]], 'dryRun' => true])['rows'][0]['each'] ?? 0) === 600);
+    $c1 = backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $SU, 'name' => 'Phones in class', 'whenText' => 'A written rule; fined per case', 'amount' => 0]);
+    chk('fine rules: a rule for no particular kind can be added, and is audited', !empty($c1['created']) && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'fees.rule.create'")['c'] === 1);
+    db_exec('DELETE FROM conduct_rules WHERE ruleId = ?', [$c1['ruleId'] ?? '']);
+    db_exec("DELETE FROM audit_log WHERE event IN ('fees.rule.save','fees.rule.create')");
+    db_exec("DELETE FROM conduct_rules WHERE ruleId IN ('FUP-R1','FUP-R2','FUP-R3')");
     foreach ($keep as $k) { unset($k['id']); db_insert('conduct_rules', $k); }
     db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'FUP-%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'FUP-%'");
     db_exec("DELETE FROM audit_log WHERE event = 'fees.fine.import'");
@@ -24436,10 +24475,55 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('season: nothing is written for a refused scan', !db_row("SELECT id FROM attendance WHERE studentId LIKE 'SS-SEAS-%'"));
 
     db_exec("UPDATE summer_cohorts SET status = 'active' WHERE cohortId = 'SUM-SEAS-OLD'");
+    $GLOBALS['__mail_sink'] = [];   // closing a season now thanks its volunteers (asserted below)
     $cl = summer_editions_close_elapsed('2026-10-03');
+    unset($GLOBALS['__mail_sink']);
     chk('season: the nightly job closes an edition whose season ended — closed, not archived',
         in_array('SUM-SEAS-OLD', $cl['closed'], true) && db_row("SELECT status FROM summer_cohorts WHERE cohortId = 'SUM-SEAS-OLD'")['status'] === 'closed');
     chk('season: the nightly job is wired', str_contains((string)file_get_contents(__DIR__ . '/../tools/run-jobs.php'), 'summer_editions_close_elapsed()'));
+
+    db_exec("DELETE FROM volunteer_thanks WHERE cohortId = 'SUM-SEAS-OLD'");
+
+    /* ── Closing a season thanks every one of its volunteers, once ── */
+    $now = now_iso();
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VT-%'"); db_exec("DELETE FROM attendance WHERE studentId LIKE 'VT-%'");
+    db_exec("DELETE FROM summer_cohorts WHERE cohortId = 'SUM-THX'"); db_exec("DELETE FROM volunteer_thanks WHERE cohortId = 'SUM-THX'");
+    db_insert('summer_cohorts', ['cohortId' => 'SUM-THX', 'year' => 2026, 'name' => 'Thanks Season', 'startDate' => '2026-07-01', 'endDate' => '2026-08-15', 'status' => 'active', 'createdAt' => $now]);
+    foreach ([['VT-1', 'summer', 'ada.thx@example.org', 'active'], ['VT-2', 'both', '', 'active'], ['VT-3', 'ngg', 'bola.thx@example.org', 'active'],
+              ['VT-4', 'ngg', 'chi.thx@example.org', 'active'], ['VT-5', 'summer', 'dayo.thx@example.org', 'archived']] as [$id, $prog, $em, $st])
+        db_insert('volunteers', ['volunteerId' => $id, 'fullName' => 'Vol ' . $id, 'firstName' => 'Vol' . substr($id, 3), 'email' => $em, 'role' => 'mentor', 'programme' => $prog, 'status' => $st, 'token' => 'tok-' . strtolower($id), 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (['2026-07-04', '2026-07-11'] as $dt) db_insert('attendance', ['cohortId' => 'SUM-THX', 'studentId' => 'VT-1', 'date' => $dt, 'checkInAt' => $dt . 'T08:00:00Z']);
+    db_insert('attendance', ['cohortId' => 'SUM-THX', 'studentId' => 'VT-3', 'date' => '2026-07-18', 'checkInAt' => '2026-07-18T08:00:00Z']);
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'VT-4', 'date' => '2026-10-03', 'checkInAt' => '2026-10-03T08:00:00Z']);
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('admin.summer.edition.status', ['requesterId' => $A, 'editionId' => 'SUM-THX', 'status' => 'closed']);
+    for ($i = 0; $i < 200 && db_row("SELECT id FROM volunteer_thanks WHERE status = 'queued' LIMIT 1"); $i++) summer_thanks_drain(500);
+    $T = []; foreach (db_all("SELECT * FROM volunteer_thanks WHERE cohortId = 'SUM-THX' AND volunteerId LIKE 'VT-%'") as $x) $T[$x['volunteerId']] = $x;
+    $mailTo = static fn($e) => array_values(array_filter($GLOBALS['__mail_sink'], static fn($m) => $m['to'] === $e));
+    chk('thanks: closing the season queues a thank-you and says how many', !empty($r['ok']) && ($r['volunteersThanked'] ?? 0) >= 3);
+    chk('thanks: a Summer volunteer is thanked by name, with the sessions they gave that season',
+        ($T['VT-1']['status'] ?? '') === 'sent' && (int)$T['VT-1']['sessions'] === 2 && count($mailTo('ada.thx@example.org')) === 1
+        && str_contains($mailTo('ada.thx@example.org')[0]['subject'], 'Thanks Season') && str_contains($mailTo('ada.thx@example.org')[0]['html'], '2 sessions')
+        && str_contains($mailTo('ada.thx@example.org')[0]['html'], 'Vol1'));
+    chk('thanks: a Club volunteer who served during the season is thanked too', ($T['VT-3']['status'] ?? '') === 'sent');
+    chk('thanks: a volunteer with no email is recorded as such, not silently skipped', ($T['VT-2']['status'] ?? '') === 'no_email');
+    chk('thanks: a Club-only volunteer who never served the season, and an archived one, are not', !isset($T['VT-4']) && !isset($T['VT-5']) && !$mailTo('chi.thx@example.org'));
+    $sink = count($GLOBALS['__mail_sink']);
+    chk('thanks: the season cannot thank anybody twice', summer_thanks_queue('SUM-THX') === 0 && summer_thanks_drain(500)['sent'] === 0 && count($GLOBALS['__mail_sink']) === $sink);
+    $st = summer_thanks_status('SUM-THX');
+    chk('thanks: the Editions screen gets how it stands', $st['sent'] >= 2 && $st['noEmail'] >= 1 && $st['queued'] === 0
+        && (array_values(array_filter(backend_dispatch('admin.summer.editions', ['requesterId' => $A])['editions'] ?? [], static fn($e) => $e['editionId'] === 'SUM-THX'))[0]['thanks']['sent'] ?? 0) === $st['sent']);
+    db_exec("UPDATE volunteer_thanks SET status = 'queued', attempts = 0 WHERE cohortId = 'SUM-THX' AND volunteerId = 'VT-1'");
+    $GLOBALS['__mail_fail'] = true; summer_thanks_drain(500); unset($GLOBALS['__mail_fail']);
+    $f1 = db_row("SELECT status, attempts FROM volunteer_thanks WHERE cohortId = 'SUM-THX' AND volunteerId = 'VT-1'");
+    summer_thanks_drain(500);
+    $f2 = db_row("SELECT status, attempts FROM volunteer_thanks WHERE cohortId = 'SUM-THX' AND volunteerId = 'VT-1'");
+    chk('thanks: an email that did not go is tried again on the next run', $f1['status'] === 'failed' && $f2['status'] === 'sent' && (int)$f2['attempts'] === 2);
+    chk('thanks: the web-cron sends the rest', str_contains((string)file_get_contents(__DIR__ . '/../_lib/webcron.php'), 'summer_thanks_drain()'));
+    unset($GLOBALS['__mail_sink']);
+    db_exec("DELETE FROM volunteer_thanks WHERE cohortId = 'SUM-THX'"); db_exec("DELETE FROM summer_cohorts WHERE cohortId = 'SUM-THX'");
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VT-%'"); db_exec("DELETE FROM attendance WHERE studentId LIKE 'VT-%'");
+    db_exec("DELETE FROM audit_log WHERE event = 'summer.thanks.queued'");
 
     db_exec("DELETE FROM qr_codes WHERE token LIKE 'SUMQR-SEAS%'");
     db_exec("DELETE FROM summer_students WHERE studentId LIKE 'SS-SEAS-%'");

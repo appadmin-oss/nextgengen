@@ -82,7 +82,7 @@ const CR_PAGES = {
   money: { label: "Money", icon: "wallet", tabs: [
     { id: "membership", label: "Membership payments", desc: "Joining invoices: Paystack, and offline payments a second person checks against their evidence.", cap: "fees" },
     { id: "fees", label: "Dues & arrears", desc: "Every naira owed, paid and waived, with the reason kept on the account.", cap: "fees" },
-    { id: "conduct", label: "Conduct & fines", desc: "Clear rules, transparent records, no humiliation.", cap: ["people", "summer"] },
+    { id: "conduct", label: "Conduct & fines", desc: "The fine rules, uploading fines, the compliance board, the policy and the programme calendars.", cap: ["fees", "people", "summer"] },
     { id: "donations", label: "Donations", desc: "Gifts received through Paystack and bank transfer.", cap: "settings" },
   ] },
   checkin: { label: "Check-in", icon: "qr-code", tabs: [
@@ -204,11 +204,17 @@ function crNavFor(has) {
  * (from ?s=<section>&t=<tab>, a portal's cross-link, or a bookmark). Unknown
  * pages and tabs fall back rather than erroring — a stale link shows Home.
  */
+/* A view that moved to another tab keeps its address: "page/tab/view" → where it lives now. */
+const CR_SUB_ALIASES = {
+  "money/fees/fines": { page: "money", tab: "conduct", sub: "" },   // the fines upload moved to Conduct & fines
+};
 function crResolve(parts) {
   const [a, b, ...rest] = (parts || []).filter(Boolean);
   if (!a) return { page: "home", tab: "home", sub: "" };
   if (CR_PAGES[a]) {
     const tab = CR_PAGES[a].tabs.find(t => t.id === b);
+    const moved = tab && rest.length ? CR_SUB_ALIASES[a + "/" + tab.id + "/" + rest[0]] : null;
+    if (moved) return Object.assign({}, moved);
     return { page: a, tab: tab ? tab.id : CR_PAGES[a].tabs[0].id, sub: tab ? rest.join("/") : [b].concat(rest).filter(Boolean).join("/") };
   }
   if (CR_TAB_INDEX[a]) return { page: CR_TAB_INDEX[a].page, tab: a, sub: [b].concat(rest).filter(Boolean).join("/") };

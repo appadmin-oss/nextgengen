@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* ============================================================================
    Uploading a sheet of fines, end to end: real PHP server, real session, the
-   real screen (Control Room → Money → Dues & arrears → Upload fines).
+   real screen (Control Room → Money → Conduct & fines), reached through the
+   upload's OLD address (/control/money/fees/fines), which must still land here.
 
    The sheet is the kind the programme actually keeps, not a tidy template:
    a workbook with a sheet per centre, a title above the headings, "S/N" and
@@ -15,6 +16,8 @@
        a shared name; an unknown name is refused; nothing posts on the check.
      · A conduct rule that caps a kind of fine is shown in the check — the
        figure that will really post — and that is what posts.
+     · A count under a kind ("Late: 2") is that many fines at the rule's
+       standard amount, and the check says so.
      · Post fines writes exactly the rows that passed; the same file checked
        again reports every fine as already posted.
 
@@ -127,7 +130,7 @@ async function contextFor(memberId, admin, viewport) {
     const sheets = {
       Egbeda: [['NGG EGBEDA — FINES REGISTER, TERM 1'], [], ['S/N', 'Names', 'Late', 'Absent', 'Total', 'Remarks'],
         [1, 'Chidi Okafor', 1000, 500, 1500, ''], [2, 'Tunde Bello', '', 2000, 2000, 'missed two Saturdays'],
-        [3, 'Daniel Mobolaji', 1000, '', 1000, ''], [4, 'Nobody We Know', 500, '', 500, ''], ['', 'TOTAL', 2500, 2500, 5000, '']],
+        [3, 'Daniel Mobolaji', 2, '', 1000, ''], [4, 'Nobody We Know', 500, '', 500, ''], ['', 'TOTAL', 2500, 2500, 5000, '']],
       Ayobo: [['Name of child', 'Fine (₦)', 'Offence', 'Date'],
         ['Tunde Bello', '#2,000', 'fighting during break', '4th October, 2026'], ['Akintola Naomi (026-777)', '1k', 'Late', '04/10/2026'],
         ['Chidi Okafor (026-501)', '₦1,000', 'came late', '05/10/2026']],
@@ -151,7 +154,10 @@ async function contextFor(memberId, admin, viewport) {
 
     await ap.goto(BASE + '/control/money/fees/fines', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ap);
-    await until(() => /Upload a sheet of fines/.test(document.body.innerText), null, 60000);
+    chk('the upload’s old address lands on Conduct & fines', await until(() => /Upload a fines register/.test(document.body.innerText), null, 60000)
+      && /\/control\/money\/conduct$/.test(new URL(ap.url()).pathname));
+    if (process.env.DUMP) { console.error(ap.url(), errs, (await body()).slice(0, 1500)); }
+    const how = async () => { const b = await ap.$('button:has-text("How the file was read")[aria-expanded="false"]'); if (b) await b.click(); };
     const check = async () => {
       await ap.click('button:has-text("Upload fines") >> nth=0');
       await ap.waitForSelector('[role="dialog"] input[type=file]', { state: 'attached' });
@@ -160,14 +166,17 @@ async function contextFor(memberId, admin, viewport) {
       return until(() => /How the file was read/.test(document.body.innerText) && !document.querySelector('[role="dialog"]'), null, 30000);
     };
     chk('the workbook is read and checked', await check());
+    await how();
     let t = await body();
     chk('it says how each sheet was read: headings found under the title, a column per kind of fine, the TOTAL line skipped',
-      /Sheet “Egbeda”: headings on row 3/.test(t) && /a column per kind of fine/.test(t) && /1 total line skipped/.test(t) && /Sheet “Ayobo”: headings on row 1/.test(t));
+      /Sheet “Egbeda”: headings on row 3/.test(t) && /a column per kind of fine/.test(t) && /1 total line skipped/.test(t) && /Sheet “Ayobo”: headings on row 1/.test(t)
+      && /1 cell ticked or counted/.test(t));
+    chk('“2” under Late is two late fines at the rule’s standard ₦500, and the check says so', /2 × ₦500 standard/.test(t));
     chk('a row with Late and Absent filled becomes two fines; the Total column is not a third', /Egbeda · row 4 · late/.test(t) && /Egbeda · row 4 · absent/.test(t));
     chk('two Tunde Bellos: the sheet’s centre settles which one', /name \+ centre/.test(t));
     chk('a name with a middle name missing still matches, as a weak match to check', /Daniel Ayomide Mobolaji/.test(t) && /part of it/.test(t));
     chk('an ID written inside the name is used, and an unknown person is refused', /Chidi Okafor/.test(t) && /no member matches/i.test(t));
-    chk('the late-fine cap is shown before posting: what will really post, and what the sheet said', /\(capped\)/.test(t) && /the rule’s cap allows this/.test(t));
+    chk('the late-fine cap is shown before posting: what will really post, and what the sheet said', /To post · capped/.test(t) && /sheet: ₦/.test(t));
     chk('nothing is posted by the check', ledger().length === 0);
     await ap.screenshot({ path: path.join(SHOTS, 'checked.png'), fullPage: true });
     await ap.click('button:has-text("Post ") >> nth=0');

@@ -72,6 +72,7 @@ const ORDER = [
   'src/modules/control/cr-tab-security.jsx',
   'src/modules/control/cr-tab-programme.jsx',
   'src/modules/control/cr-tab-money.jsx',
+  'src/modules/control/cr-tab-conduct.jsx',
   'src/modules/learn/assign-desk.jsx',
   'src/modules/gate/face-check.jsx',
   'src/modules/tools/tools-core.jsx',

@@ -215,6 +215,32 @@ function CrCards({ b, phone }) {
 }
 
 /* ── form: edits are held here and reported up, so the unsaved bar is the shell's ── */
+/* A list of single dates (holidays, extra days): add one with the date
+   field, remove one with its ×. Sorted and de-duplicated, so the value is the
+   set and saving twice is "unchanged". Nothing needs a drag or a calendar
+   widget the keyboard cannot reach. */
+function CrDatesControl({ r, value, onChange }) {
+  const [d, setD] = React.useState("");
+  const add = () => { if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return; onChange(Array.from(new Set(value.concat([d]))).sort()); setD(""); };
+  return (
+    <div className="cr-dates cr-frow-ctl">
+      <div className="cr-dates-add">
+        <input type="date" className="cr-input" aria-label={r.addLabel || "Date to add to " + r.l} value={d} onChange={e => setD(e.target.value)}
+               onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add(); } }} disabled={r.disabled}/>
+        <button type="button" className="cr-btn is-sm" onClick={add} disabled={!d || r.disabled}>Add</button>
+      </div>
+      {value.length > 0 && (
+        <ul className="cr-dates-list" aria-label={r.l}>
+          {value.map(x => (
+            <li key={x} className="cr-chip is-date"><span>{crDate(x + "T12:00:00")}</span>
+              <button type="button" className="cr-dates-x" aria-label={"Remove " + crDate(x + "T12:00:00") + " from " + r.l} onClick={() => onChange(value.filter(y => y !== x))} disabled={r.disabled}><CrIcon n="x"/></button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 function CrFormBlock({ b, ctx, phone }) {
   /* Re-based on the stored VALUES, not on the block object: blocks() runs on
      every shell render — including the one the unsaved bar causes — so keying
@@ -253,12 +279,27 @@ function CrFormBlock({ b, ctx, phone }) {
     if (r.c === "segmented") return <CrSeg label={r.l} value={v} options={r.opts} onChange={x => set(r.id, x)}/>;
     if (r.c === "select") return <select className="cr-select" aria-label={r.l} value={v == null ? "" : v} onChange={e => set(r.id, e.target.value)} disabled={r.disabled}>{r.opts.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select>;
     if (r.c === "textarea") return <textarea className="cr-textarea" aria-label={r.l} rows={r.rows || 3} value={v == null ? "" : v} onChange={e => set(r.id, e.target.value)} maxLength={r.max} disabled={r.disabled}/>;
+    /* Several of a fixed set (the weekdays a programme meets). Kept in the
+       options' own order, so Monday-then-Saturday and Saturday-then-Monday are
+       the same value and not "1 change" to save. */
+    if (r.c === "multi") return (
+      <div className="cr-wrap cr-frow-ctl" role="group" aria-label={r.l}>
+        {r.opts.map(o => {
+          const on = (v || []).includes(o[0]);
+          return <button key={o[0]} type="button" className="cr-chip" role="checkbox" aria-checked={on} disabled={r.disabled}
+                         onClick={() => set(r.id, r.opts.map(x => x[0]).filter(k => k === o[0] ? !on : (v || []).includes(k)))}>{o[1]}</button>;
+        })}
+      </div>
+    );
+    if (r.c === "dates") return <CrDatesControl r={r} value={v || []} onChange={x => set(r.id, x)}/>;
     return <input className="cr-input is-row" aria-label={r.l} type={r.type || "text"} inputMode={r.im} value={v == null ? "" : v} onChange={e => set(r.id, r.type === "number" ? e.target.value : e.target.value)} placeholder={r.ph} maxLength={r.max} disabled={r.disabled} aria-invalid={errs[r.id] ? true : undefined}/>;
   };
   const shown = v => {
     const r = v;
     const x = vals[r.id];
     if (r.c === "select" || r.c === "segmented") { const o = r.opts.find(o => o[0] === x); return o ? o[1] : ""; }
+    if (r.c === "multi") return r.opts.filter(o => (x || []).includes(o[0])).map(o => o[1]).join(", ") || "None";
+    if (r.c === "dates") return (x || []).length ? crPlural(x.length, "date") : "None";
     return x == null || x === "" ? "Not set" : String(x);
   };
   /* On a phone, a field that is not a switch opens its own screen (§5). */
@@ -275,6 +316,12 @@ function CrFormBlock({ b, ctx, phone }) {
           {g.h && <span className="cr-pfgroup-h">{g.h}</span>}
           <div className="cr-pbox">
             {g.rows.map(r => {
+              if (r.c === "multi" || r.c === "dates") return (
+                <div key={r.id} className="cr-pfrow is-stack">
+                  <div className="cr-frow-l"><b>{r.l}</b>{(errs[r.id] || r.help) && <span className={errs[r.id] ? "cr-frow-err" : ""}>{errs[r.id] || r.help}</span>}</div>
+                  {control(r)}
+                </div>
+              );
               const Tag = r.c === "toggle" ? "div" : "button";
               return (
                 <Tag key={r.id} type={r.c === "toggle" ? undefined : "button"} className="cr-pfrow" style={r.c === "toggle" ? undefined : { width: "100%", border: 0, borderTop: "1px solid var(--cr-line-4)", background: "var(--cr-bg)", textAlign: "left" }} onClick={r.c === "toggle" ? undefined : () => editPhone(r)}>
@@ -368,7 +415,8 @@ function crCellNode(c, col) {
   if (c.k === "status") return <CrPill tone={c.tone} t={c.t}/>;
   if (c.k === "progress") { const p = Number(c.pct) || 0; return <span className="cr-prog"><span className="cr-prog-track"><span className={"cr-prog-fill" + (p < 60 ? " is-low" : p < 80 ? " is-mid" : "")} style={{ width: Math.max(0, Math.min(100, p)) + "%" }}/></span><span>{c.t != null ? c.t : p + "%"}</span></span>; }
   if (c.k === "mono") return <span className="cr-c-mono">{c.t}</span>;
-  if (c.k === "num") return <span className="cr-c-num">{c.t}</span>;
+  /* A figure may carry how it was reached under it ("3 × ₦500 standard"). */
+  if (c.k === "num") return c.s ? <span className="cr-c-text is-num"><span className="cr-c-num">{c.t}</span><span>{c.s}</span></span> : <span className="cr-c-num">{c.t}</span>;
   if (c.k === "strong") return <span className="cr-c-text"><span className="cr-c-strong">{c.t}</span>{c.s && <span>{c.s}</span>}</span>;
   return <span className="cr-c-text"><span>{c.t}</span>{c.s && <span>{c.s}</span>}</span>;
 }
