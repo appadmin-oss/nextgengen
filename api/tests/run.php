@@ -35676,5 +35676,63 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM attendance_held_days WHERE centre LIKE 'Co %'");
 })();
 
+
+// ── Money brought over by upload: dues are dues, and a wrong one can be corrected ──
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'IM ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-IM-ADM', ['role' => 'super_admin']); $mk('NGG-IM-ED', ['role' => 'editor']);
+    $mk('NGG-IM-1', ['displayId' => '026-97751']); $mk('NGG-IM-2', ['displayId' => '026-97752']);
+    $mk('NGG-IM-LEAD', ['role' => 'admin', 'centreScope' => '["Ikotun"]']);
+
+    chk('imported · a row whose author says import is imported (the ledger column is createdBy)', fees_entry_imported(['periodKey' => 'x', 'method' => '', 'createdBy' => 'import:old-books'])
+        && !fees_entry_imported(['periodKey' => 'x', 'method' => 'late', 'createdBy' => 'NGG-IM-ADM']));
+
+    // One register line with a fine AND dues AND membership, as the browser now sends it.
+    $rows = [
+        ['member' => '026-97751', 'amount' => '1,000', 'reason' => 'late', 'date' => '2026-10-04'],
+        ['member' => '026-97751', 'kind' => 'dues', 'amount' => '₦3,000', 'date' => '2026-09-30', 'note' => 'Sept'],
+        ['member' => '026-97751', 'kind' => 'membership', 'amount' => '5000'],
+        ['member' => '026-97752', 'kind' => 'dues', 'amount' => '-'],
+    ];
+    $dry = backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-IM-ADM', 'rows' => $rows, 'dryRun' => true]);
+    $bk = $dry['tally']['byKind'] ?? [];
+    chk('imported · the check says how much is fines, dues and membership, apart', !empty($dry['ok']) && ($bk['fine']['total'] ?? 0) === 1000 && ($bk['dues']['total'] ?? 0) === 3000
+        && ($bk['membership']['total'] ?? 0) === 5000 && $dry['tally']['skipped'] === 1);
+    $ap = backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-IM-ADM', 'rows' => $rows, 'digest' => $dry['digest']]);
+    $d = db_row("SELECT * FROM member_ledger WHERE memberId = 'NGG-IM-1' AND kind = 'dues'");
+    chk('imported · dues are posted as DUES, not as a fine, and marked imported', !empty($ap['ok']) && $d && (int)$d['amount'] === 3000 && str_starts_with((string)$d['periodKey'], 'import:dues:')
+        && fees_entry_imported($d) && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-IM-1' AND kind = 'fine'")['c'] === 1);
+    chk('imported · membership too', (bool)db_row("SELECT 1 FROM member_ledger WHERE memberId = 'NGG-IM-1' AND kind = 'membership' AND amount = 5000 AND periodKey LIKE 'import:membership:%'"));
+    $again = backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-IM-ADM', 'rows' => $rows, 'dryRun' => true]);
+    chk('imported · uploading the same register again posts nothing twice', $again['tally']['fine'] === 0 && $again['tally']['already'] === 3);
+
+    // The old way: dues read as a fine. Listed, flagged, and corrected.
+    $old = fees_post('NGG-IM-2', 'fine', 4000, ['periodKey' => 'bulkfine:olddues1', 'method' => 'other', 'by' => 'NGG-IM-ADM', 'note' => 'Other (say why) — Outstanding dues, term 1']);
+    db_update('member_ledger', ['createdAt' => '2026-09-01T10:00:00Z'], ['entryId' => $old['entryId']]);
+    $own = fees_post('NGG-IM-2', 'fine', 500, ['method' => 'late', 'by' => 'NGG-IM-ADM', 'note' => 'Late arrival']);
+    $m2 = db_row("SELECT * FROM members WHERE memberId = 'NGG-IM-2'"); $before = fees_balance($m2)['outstanding'];
+    chk('imported · only the fees desk may see what was brought over', (backend_dispatch('admin.fees.imported', ['requesterId' => 'NGG-IM-ED'])['error'] ?? '') === 'forbidden');
+    $L = backend_dispatch('admin.fees.imported', ['requesterId' => 'NGG-IM-ADM']);
+    $mine = array_values(array_filter($L['rows'], fn($r) => $r['memberId'] === 'NGG-IM-2'));
+    chk('imported · the list shows what an upload brought over, and nothing the desk typed', count($mine) === 1 && $mine[0]['entryId'] === $old['entryId'] && $mine[0]['looksLikeDues'] === true);
+    chk('imported · a reason is required to correct one', (backend_dispatch('admin.fees.importReclass', ['requesterId' => 'NGG-IM-ADM', 'entryIds' => [$old['entryId']], 'to' => 'dues'])['error'] ?? '') === 'reason_required');
+    $rc = backend_dispatch('admin.fees.importReclass', ['requesterId' => 'NGG-IM-ADM', 'entryIds' => [$old['entryId'], $own['entryId'], $d['entryId'], 'FEE-NOPE'], 'to' => 'dues', 'reason' => 'The term-1 register had a Dues column']);
+    $by = array_column($rc['results'], null, 'entryId');
+    chk('imported · the imported fine becomes dues; one the desk typed is refused; dues already dues are unchanged; an unknown id is named', $rc['reclassified'] === 1
+        && $by[$own['entryId']]['error'] === 'not_imported' && !empty($by[$d['entryId']]['unchanged']) && $by['FEE-NOPE']['error'] === 'not_found');
+    $was = db_row('SELECT voidedAt, voidReason FROM member_ledger WHERE entryId = ?', [$old['entryId']]);
+    $now2 = db_row('SELECT * FROM member_ledger WHERE entryId = ?', [$by[$old['entryId']]['newEntryId']]);
+    chk('imported · the fine is voided with the reason and the same amount stands as dues, on the same day', (string)$was['voidedAt'] !== '' && str_contains((string)$was['voidReason'], 'term-1 register')
+        && $now2['kind'] === 'dues' && (int)$now2['amount'] === 4000 && substr((string)$now2['createdAt'], 0, 10) === '2026-09-01' && fees_entry_imported($now2));
+    chk('imported · …and what the family owes has not moved', fees_balance($m2)['outstanding'] === $before);
+    chk('imported · one audit event for the correction', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'fees.import.reclass'")['c'] === 1);
+    $sc = backend_dispatch('admin.fees.importReclass', ['requesterId' => 'NGG-IM-LEAD', 'entryIds' => [$now2['entryId']], 'to' => 'fine', 'reason' => 'checking the scope']);
+    chk('imported · a centre-scoped desk cannot correct another centre\'s charge', ($sc['results'][0]['error'] ?? '') === 'out_of_scope' || ($sc['error'] ?? '') === 'forbidden');
+
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-IM-%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-IM-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

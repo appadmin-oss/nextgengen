@@ -1800,7 +1800,10 @@ function fees_fines_clear_lock(): ?array {
  * the owner's rule is that what was imported stays owed, whatever is cleared.
  */
 function fees_entry_imported(array $e): bool {
-    $pk = (string)($e['periodKey'] ?? ''); $by = (string)($e['byId'] ?? $e['by'] ?? ''); $m = (string)($e['method'] ?? '');
+    /* `createdBy` is the ledger's column. This read `byId`/`by` only — neither
+       exists on a member_ledger row — so a row marked imported by its author
+       alone was treated as the system's own and could be cleared or waived. */
+    $pk = (string)($e['periodKey'] ?? ''); $by = (string)($e['createdBy'] ?? $e['byId'] ?? $e['by'] ?? ''); $m = (string)($e['method'] ?? '');
     return str_starts_with($pk, 'bulkfine:') || str_starts_with($pk, 'import:') || $m === 'import' || str_starts_with($by, 'import');
 }
 /**
@@ -2467,6 +2470,9 @@ function fees_fine_rule_room(string $memberId, string $reason, string $note, arr
 const FEES_RULE_KINDS = ['late', 'absent', 'equipment', 'conduct'];
 /** The most fines one register cell may stand for ("Late: 3" is three lates). */
 const FEES_FINE_COUNT_MAX = 20;
+/** What a register may bring over besides fines, and how each is written on the account. */
+const FEES_IMPORT_KINDS = ['fine', 'dues', 'membership'];
+const FEES_IMPORT_KIND_LABELS = ['fine' => 'Fine', 'dues' => 'Dues brought over', 'membership' => 'Membership brought over'];
 
 /** The standard amount a rule sets for ONE fine of this kind; 0 when there is none. */
 function fees_fine_rule_amount(string $reason): int {
@@ -2596,6 +2602,29 @@ function admin_fees_fine_import(array $p): array {
         if (!member_is_ngg($m)) { $plan[] = $v + ['error' => 'not_ngg_member']; continue; }
         if (!admin_centre_allowed($req, (string)($m['centre'] ?? ''))) { $plan[] = $v + ['error' => 'out_of_scope']; continue; }
         $note = mb_substr($str($r, 'note'), 0, 200);
+        /* Dues and membership brought over in the same register. A "Dues"
+           column used to be read as the fine's amount, so arrears were posted
+           as FINES — and where a sheet had a Fines column too, one of the two
+           was silently dropped. They are their own kind of charge: no conduct
+           reason, no conduct rule, and keyed `import:` so every guard that
+           leaves imported money alone (fees_entry_imported) knows them. */
+        $kind = in_array($str($r, 'kind'), FEES_IMPORT_KINDS, true) ? $str($r, 'kind') : 'fine';
+        if ($kind !== 'fine') {
+            $amount = fees_fine_amount($str($r, 'amount'));
+            if ($blank || $amount <= 0 || $amount > FEES_AMOUNT_MAX) { $plan[] = $v + ['kind' => $kind] + ($blank ? ['verdict' => 'skipped', 'error' => 'no_amount'] : ['error' => 'bad_amount']); continue; }
+            $date = fees_fine_date($str($r, 'date'));
+            if ($date === null) { $plan[] = $v + ['kind' => $kind, 'error' => 'bad_date']; continue; }
+            if ($date !== '' && $date > $today) { $plan[] = $v + ['kind' => $kind, 'error' => 'date_in_future', 'date' => $date]; continue; }
+            $key = 'import:' . $kind . ':' . substr(hash('sha256', implode("\x1f", [$m['memberId'], $kind, $amount, $date, mb_strtolower($note)])), 0, 20);
+            if (isset($seen[$key])) { $plan[] = $v + ['kind' => $kind, 'error' => 'duplicate_in_file', 'detail' => 'same as row ' . $seen[$key]]; continue; }
+            $seen[$key] = $i + 1;
+            $exists = db_row("SELECT entryId FROM member_ledger WHERE memberId = ? AND kind = ? AND periodKey = ? AND COALESCE(voidedAt,'') = '' LIMIT 1",
+                             [(string)$m['memberId'], $kind, $key]);
+            $v['verdict'] = $exists ? 'already' : 'fine';
+            $plan[] = $v + ['kind' => $kind, 'amount' => $amount, 'reason' => $kind, 'reasonLabel' => FEES_IMPORT_KIND_LABELS[$kind],
+                            'note' => $note, 'date' => $date, '_key' => $key];
+            continue;
+        }
         $reason = fees_fine_reason_code($str($r, 'reason'));
         /* No reason column, but a note that says it ("came 40 minutes late"):
            the note names the reason and stays as the note. */
@@ -2645,13 +2674,19 @@ function admin_fees_fine_import(array $p): array {
             }
         }
         $v['verdict'] = $exists ? 'already' : 'fine';
-        $plan[] = $v + ['amount' => $amount, 'reason' => $reason,
+        $plan[] = $v + ['kind' => 'fine', 'amount' => $amount, 'reason' => $reason,
                         'reasonLabel' => FEES_FINE_REASONS[$reason], 'note' => $note, 'date' => $date, '_key' => $key]
                      + ($capped ? ['capped' => true, 'asked' => $asked] : [])
                      + ($standard ? ['standard' => $standard, 'each' => intdiv($asked, $standard)] : []);
     }
-    $tally = ['fine' => 0, 'already' => 0, 'skipped' => 0, 'failed' => 0, 'total' => 0];
-    foreach ($plan as $x) { $tally[$x['verdict']]++; if ($x['verdict'] === 'fine') $tally['total'] += $x['amount']; }
+    $tally = ['fine' => 0, 'already' => 0, 'skipped' => 0, 'failed' => 0, 'total' => 0, 'byKind' => []];
+    foreach ($plan as $x) {
+        $tally[$x['verdict']]++;
+        if ($x['verdict'] !== 'fine') continue;
+        $tally['total'] += $x['amount'];
+        $k = (string)($x['kind'] ?? 'fine');
+        $tally['byKind'][$k] = ['n' => ($tally['byKind'][$k]['n'] ?? 0) + 1, 'total' => ($tally['byKind'][$k]['total'] ?? 0) + $x['amount']];
+    }
     $digest = members_import_digest(array_map(static fn($x) => array_diff_key($x, ['_key' => 1]), $plan), ['kind' => 'fines']);
     $public = static fn($list) => array_map(static fn($x) => array_diff_key($x, ['_key' => 1]), $list);
     if ($dry) return ['ok' => true, 'dryRun' => true, 'digest' => $digest, 'tally' => $tally, 'rows' => $public($plan), 'max' => FEES_FINE_IMPORT_MAX];
@@ -2661,10 +2696,14 @@ function admin_fees_fine_import(array $p): array {
     foreach ($plan as &$x) {
         if ($x['verdict'] !== 'fine') continue;
         $label = $x['reasonLabel'] . ($x['date'] !== '' ? ' (' . $x['date'] . ')' : '');
-        $e = fees_post($x['memberId'], 'fine', $x['amount'], ['periodKey' => $x['_key'], 'method' => $x['reason'], 'by' => $by,
+        $kind = (string)($x['kind'] ?? 'fine');
+        $e = fees_post($x['memberId'], $kind, $x['amount'], ['periodKey' => $x['_key'], 'method' => $kind === 'fine' ? $x['reason'] : 'import', 'by' => $by,
             'note' => $x['note'] !== '' ? $label . ' — ' . $x['note'] : $label]);
         if ($e) { $x['entryId'] = (string)$e['entryId']; $posted++; }
-        else { $x['verdict'] = 'failed'; $x['error'] = 'post_failed'; $tally['fine']--; $tally['failed']++; $tally['total'] -= $x['amount']; }
+        else {
+            $x['verdict'] = 'failed'; $x['error'] = 'post_failed'; $tally['fine']--; $tally['failed']++; $tally['total'] -= $x['amount'];
+            $tally['byKind'][$kind]['n']--; $tally['byKind'][$kind]['total'] -= $x['amount'];
+        }
     }
     unset($x);
     // One event for the run, with what was refused — not one per row.
@@ -2672,3 +2711,95 @@ function admin_fees_fine_import(array $p): array {
         'total' => $tally['total'], 'rows' => count($rows), 'digest' => $digest], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'dryRun' => false, 'digest' => $digest, 'tally' => $tally, 'rows' => $public($plan)];
 }
+
+/* ══ Money brought over by upload, and correcting what it was ══════════════
+   A register uploaded before 30 Oct 2026 read a "Dues" column as the fine's
+   amount, so arrears sit on accounts as FINES — counted against the conduct
+   rules' caps, named "fine" on every statement and reminder, and in the
+   policy's "fines owed". Nothing can tell those rows apart from real fines
+   but a person who knows the register, so this lists everything brought over
+   by upload and lets the fees desk say what each one was. The correction is
+   a void with its reason and a new charge of the right kind for the same
+   amount on the same day — the account's total never moves, and both rows
+   stay on the record. */
+const FEES_RECLASS_MAX = 500;
+/** SQL that picks the rows fees_entry_imported() calls imported — kept beside it so the two cannot drift. */
+function fees_imported_sql(string $a = ''): string {
+    $c = $a !== '' ? $a . '.' : '';
+    return "({$c}periodKey LIKE 'bulkfine:%' OR {$c}periodKey LIKE 'import:%' OR {$c}method = 'import' OR {$c}createdBy LIKE 'import%')";
+}
+/** A fine whose own words say it was dues — offered first, never decided for the desk. */
+function fees_import_looks_like_dues(array $e): bool {
+    return (string)$e['kind'] === 'fine' && (bool)preg_match('/\b(dues?|monthly|subscriptions?|levy|levies|arrears?)\b/i', (string)$e['note'] . ' ' . (string)$e['method']);
+}
+
+/** admin.fees.imported — every charge brought over by upload, newest first. */
+function admin_fees_imported(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $rows = db_all("SELECT l.entryId, l.memberId, l.kind, l.amount, l.periodKey, l.note, l.method, l.createdAt, l.createdBy, l.voidedAt, l.voidReason,
+                           m.fullName, m.displayId, COALESCE(m.centre,'') centre
+                    FROM member_ledger l JOIN members m ON m.memberId = l.memberId
+                    WHERE l.direction = 'charge' AND l.kind IN ('fine','dues','membership') AND " . fees_imported_sql('l') . "
+                    ORDER BY l.id DESC LIMIT 3000");
+    $out = []; $tot = ['fine' => ['n' => 0, 'total' => 0], 'dues' => ['n' => 0, 'total' => 0], 'membership' => ['n' => 0, 'total' => 0]]; $looks = 0; $outOfScope = 0;
+    foreach ($rows as $r) {
+        if (!admin_centre_allowed($g['requester'], (string)$r['centre'])) { $outOfScope++; continue; }
+        $live = trim((string)$r['voidedAt']) === '';
+        if ($live) { $tot[(string)$r['kind']]['n']++; $tot[(string)$r['kind']]['total'] += (int)$r['amount']; }
+        $l = $live && fees_import_looks_like_dues($r); if ($l) $looks++;
+        $out[] = ['entryId' => (string)$r['entryId'], 'memberId' => (string)$r['memberId'], 'fullName' => (string)$r['fullName'], 'displayId' => (string)$r['displayId'],
+                  'centre' => (string)$r['centre'], 'kind' => (string)$r['kind'], 'amount' => (int)$r['amount'], 'note' => (string)$r['note'],
+                  'createdAt' => (string)$r['createdAt'], 'live' => $live, 'voidReason' => (string)$r['voidReason'],
+                  'reclassified' => str_starts_with((string)$r['periodKey'], 'import:reclass:'), 'looksLikeDues' => $l];
+    }
+    return ['ok' => true, 'rows' => $out, 'totals' => $tot, 'looksLikeDues' => $looks, 'outOfScope' => $outOfScope, 'max' => FEES_RECLASS_MAX];
+}
+
+/**
+ * admin.fees.importReclass — {entryIds, to: fine|dues|membership, reason}.
+ * Every row is checked before anything is written; each is answered on its
+ * own (reclassified, unchanged, or refused with why); one audit event.
+ */
+function admin_fees_import_reclass(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $ids = array_values(array_unique(array_filter(array_map(static fn($x) => is_scalar($x) ? trim((string)$x) : '', (array)($p['entryIds'] ?? [])))));
+    if (!$ids) return ['ok' => false, 'error' => 'nothing_selected'];
+    if (count($ids) > FEES_RECLASS_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => FEES_RECLASS_MAX, 'detail' => 'At most ' . FEES_RECLASS_MAX . ' at a time.'];
+    $to = (string)($p['to'] ?? '');
+    if (!in_array($to, FEES_IMPORT_KINDS, true)) return ['ok' => false, 'error' => 'bad_kind'];
+    $why = trim(mb_substr((string)($p['reason'] ?? ''), 0, 200));
+    if (mb_strlen($why) < 5) return ['ok' => false, 'error' => 'reason_required', 'detail' => 'Say why — it is written on both rows.'];
+    $by = (string)$g['requester']['memberId'];
+    $results = []; $go = [];
+    foreach ($ids as $id) {
+        $e = db_row('SELECT l.*, COALESCE(m.centre,\'\') centre FROM member_ledger l JOIN members m ON m.memberId = l.memberId WHERE l.entryId = ? LIMIT 1', [$id]);
+        if (!$e) { $results[] = ['entryId' => $id, 'ok' => false, 'error' => 'not_found']; continue; }
+        if (!admin_centre_allowed($g['requester'], (string)$e['centre'])) { $results[] = ['entryId' => $id, 'ok' => false, 'error' => 'out_of_scope']; continue; }
+        if (trim((string)$e['voidedAt']) !== '') { $results[] = ['entryId' => $id, 'ok' => false, 'error' => 'voided']; continue; }
+        if ((string)$e['direction'] !== 'charge' || !in_array((string)$e['kind'], FEES_IMPORT_KINDS, true) || !fees_entry_imported($e)) { $results[] = ['entryId' => $id, 'ok' => false, 'error' => 'not_imported']; continue; }
+        if ((string)$e['kind'] === $to) { $results[] = ['entryId' => $id, 'ok' => true, 'unchanged' => true]; continue; }
+        $go[] = $e;
+    }
+    $done = 0; $moved = 0;
+    foreach ($go as $e) {
+        $id = (string)$e['entryId'];
+        try { $r = db_tx(function () use ($e, $to, $why, $by, $id) {
+            db_update('member_ledger', ['voidedAt' => now_iso(), 'voidedBy' => $by, 'voidReason' => mb_substr('Reclassified as ' . $to . ': ' . $why, 0, 240)], ['entryId' => $id]);
+            $new = fees_post((string)$e['memberId'], $to, (int)$e['amount'], ['periodKey' => 'import:reclass:' . $id, 'method' => 'import', 'by' => $by,
+                'note' => mb_substr(FEES_IMPORT_KIND_LABELS[$to] . ' (was recorded as ' . $e['kind'] . ') — ' . (string)$e['note'], 0, 240)]);
+            // A fine is still governed by its rule; if the rule would post less, the correction is refused whole.
+            if (!$new || (int)$new['amount'] !== (int)$e['amount']) throw new RuntimeException('rule_capped');
+            // Same day as the original, so what payments are counted against does not move.
+            db_update('member_ledger', ['createdAt' => (string)$e['createdAt']], ['entryId' => (string)$new['entryId']]);
+            return (string)$new['entryId'];
+        }); } catch (Throwable $ex) { $r = null; }
+        if (is_string($r)) { $results[] = ['entryId' => $id, 'ok' => true, 'newEntryId' => $r]; $done++; $moved += (int)$e['amount']; }
+    }
+    // A correction that threw was rolled back whole: answer those rows rather than lose them.
+    $answered = array_column($results, 'entryId');
+    foreach ($go as $e) if (!in_array((string)$e['entryId'], $answered, true)) $results[] = ['entryId' => (string)$e['entryId'], 'ok' => false, 'error' => 'rule_capped'];
+    $refused = count(array_filter($results, static fn($x) => empty($x['ok'])));
+    audit('fees.import.reclass', $by, '', ['to' => $to, 'reclassified' => $done, 'amount' => $moved, 'refused' => $refused, 'asked' => count($ids), 'reason' => $why], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'reclassified' => $done, 'amount' => $moved, 'refused' => $refused, 'results' => $results];
+}
+

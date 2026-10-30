@@ -2068,6 +2068,8 @@
         // Settled up to a date: clears unpaid membership and dues to it, and stops them being charged again.
         // Clearing dues up to a date was retired (fraud path); the one sanctioned clearance is fines, once.
         fineRules: () => request('/admin/fees.php' + qs({ view: 'fineRules' })),
+        imported:  () => request('/admin/fees.php' + qs({ view: 'imported' })),
+        importReclass: (entryIds, to, reason) => request('/admin/fees.php', { body: { action: 'importReclass', entryIds, to, reason } }),
         fineRuleSave: (rule) => request('/admin/fees.php', { body: Object.assign({ action: 'fineRuleSave' }, rule) }),
         finesClearOnce: (mode, extra) => request('/admin/fees.php', { body: Object.assign({ action: 'finesClearOnce', mode }, extra || {}) }),
         accrue:      (limit) => request('/admin/fees.php', { body: { action: 'accrue', limit } }),

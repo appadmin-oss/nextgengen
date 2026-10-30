@@ -34,6 +34,12 @@ const CR_CF_DOW = [[1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [
    row with a column per kind into one fine per kind, and skips totals — and
    then SAYS how it read the file, so nobody has to trust it blind. Every
    matching decision is still the server's (fees.php, admin_fees_fine_import). */
+/* Money a register carries that is NOT a fine. A "Dues" column used to fall
+   through to the amount pattern below (it matches "due"), so arrears were
+   posted as fines — and with a Fines column beside it, one of the two was
+   dropped without a word. Each is its own kind of charge now. */
+const CR_CF_FINE_KIND_COLS = [["dues", /\bdues\b|\bmonthly (fee|fees|dues|levy)\b|\bsubscriptions?\b|\blev(y|ies)\b|\barrears?\b/], ["membership", /\bmembership\b|\bregistration fees?\b/]];
+const CR_CF_KIND_WORD = { fine: "Fine", dues: "Dues", membership: "Membership" };
 const CR_CF_FINE_REASON_COLS = [["late", /\blate|lateness|tard/], ["absent", /absen|missed|truan/], ["equipment", /equip|damage|lost|broke/], ["conduct", /conduct|behaviou?r|indisciplin|misconduct/]];
 function crCfFineHeadKey(h) { return String(h || "").toLowerCase().replace(/[₦#]/g, " naira ").replace(/\((n|ngn|naira)\)|\[(n|ngn)\]/g, " naira ").replace(/[^a-z0-9@/ ]+/g, " ").replace(/\s+/g, " ").trim(); }
 /** What a heading means: a field, ["byReason", code], or null. */
@@ -49,6 +55,8 @@ function crCfFineField(h) {
   if (/note|comment|remark|detail|description/.test(k)) return "note";
   if (/name|pupil|student|child|learner|member name/.test(k)) return "name";
   if (/total|grand|^sum$/.test(k)) return "total";
+  const byK = CR_CF_FINE_KIND_COLS.find(x => x[1].test(k));
+  if (byK) return ["byKind", byK[0]];
   const byR = CR_CF_FINE_REASON_COLS.find(x => x[1].test(k));
   if (byR) return ["byReason", byR[0]];
   if (/amount|fine|naira|ngn|owed|owing|balance|outstanding|charge|due|^n$/.test(k)) return "amount";
@@ -60,15 +68,16 @@ function crCfFineSheet(grid, sheetName) {
   let best = null;
   for (let i = 0; i < Math.min(20, grid.length); i++) {
     const map = (grid[i] || []).map(crCfFineField);
-    const fields = new Set(map.filter(Boolean).map(f => Array.isArray(f) ? "byReason" : f));
-    const who = CR_CF_FINE_WHO.some(f => fields.has(f)), money = ["amount", "total", "byReason"].some(f => fields.has(f));
+    const fields = new Set(map.filter(Boolean).map(f => Array.isArray(f) ? f[0] : f));
+    const who = CR_CF_FINE_WHO.some(f => fields.has(f)), money = ["amount", "total", "byReason", "byKind"].some(f => fields.has(f));
     const score = fields.size + (who ? 3 : 0) + (money ? 3 : 0);
     if (!best || score > best.score) best = { i, map, score, who, money };
   }
   if (!best || !best.who || !best.money) return { rows: [], how: { sheet: sheetName, unreadable: true, who: !!(best && best.who), money: !!(best && best.money) } };
   const head = grid[best.i], map = best.map;
   const col = f => map.findIndex(x => x === f);
-  const reasonCols = map.map((x, k) => Array.isArray(x) ? [k, x[1]] : null).filter(Boolean);
+  const reasonCols = map.map((x, k) => Array.isArray(x) && x[0] === "byReason" ? [k, x[1]] : null).filter(Boolean);
+  const kindCols = map.map((x, k) => Array.isArray(x) && x[0] === "byKind" ? [k, x[1]] : null).filter(Boolean);
   const amountCol = col("amount") >= 0 ? col("amount") : col("total");
   const headKey = head.map(crCfFineHeadKey).join("|");
   const rows = []; let totals = 0, repeats = 0, countedCells = 0;
@@ -93,9 +102,15 @@ function crCfFineSheet(grid, sheetName) {
       if (each.count) countedCells++;
       rows.push(Object.assign({}, base, each, { reason: base.reason || code, src: base.src + " · " + code }));
     });
-    else rows.push(Object.assign({}, base, { amount: amountCol >= 0 ? String(r[amountCol] == null ? "" : r[amountCol]).trim() : "" }));
+    else if (amountCol >= 0 || !kindCols.length) rows.push(Object.assign({}, base, { amount: amountCol >= 0 ? String(r[amountCol] == null ? "" : r[amountCol]).trim() : "" }));
+    /* Dues and membership on the same line are charges of their own kind, beside the fines — never instead of them. */
+    kindCols.forEach(([k, code]) => {
+      const v = String(r[k] == null ? "" : r[k]).trim();
+      if (v === "" || /^(0+(\.0+)?|-|—|nil|null|none|n\/a)$/i.test(v)) return;
+      rows.push(Object.assign({}, base, { kind: code, amount: v, reason: "", src: base.src + " · " + code }));
+    });
   }
-  const used = map.map((f, k) => f && f !== "serial" ? [head[k], Array.isArray(f) ? f[1] + " fines" : f] : null).filter(Boolean);
+  const used = map.map((f, k) => f && f !== "serial" ? [head[k], Array.isArray(f) ? (f[0] === "byKind" ? f[1] + " (not a fine)" : f[1] + " fines") : f] : null).filter(Boolean);
   const ignored = head.filter((h, k) => String(h || "").trim() && (!map[k] || map[k] === "serial" || (map[k] === "total" && reasonCols.length)));
   return { rows, how: { sheet: sheetName, headerRow: best.i + 1, used, ignored, totals, repeats, split: reasonCols.length > 0, counted: countedCells } };
 }
@@ -293,21 +308,88 @@ function crCfUploadBlocks(d, ctx) {
   const capped = (p.res.rows || []).filter(r => r.capped && r.verdict === "fine");
   if (capped.length) out.push({ type: "note", span: 6, icon: "scales", tone: "warn", text: crPlural(capped.length, "fine") + " will post less than the sheet says, because a rule below caps that kind per term.",
     sub: "The amount in the list is what will really post; the sheet’s figure is under it." });
+  const bk = (p.res.tally || {}).byKind || {}, other = ["dues", "membership"].filter(k => bk[k] && bk[k].n);
+  if (other.length) out.push({ type: "note", span: 6, icon: "info",
+    text: other.map(k => fmtMoney(bk[k].total) + " of " + CR_CF_KIND_WORD[k].toLowerCase() + " (" + crPlural(bk[k].n, "row") + ")").join(" and ") + (dry ? " will be" : " was") + " posted as " + other.map(k => CR_CF_KIND_WORD[k].toLowerCase()).join(" and ") + ", not as fines.",
+    sub: "They are kept apart from fines on the account and on every statement, and they are marked as brought over, so nothing that clears or repairs fines touches them." });
   const src = r => ((p.rows || [])[r.row - 1] || {}).src || "Row " + r.row;
   const verdict = r => r.verdict === "skipped" ? ["No fine", "neutral"] : r.verdict === "failed" ? ["Refused", "bad"]
     : r.verdict === "fine" ? [(dry ? "To post" : "Posted") + (r.capped ? " · capped" : ""), r.capped ? "warn" : "ok"] : ["Already posted", "neutral"];
   out.push({ type: "table", span: 6, title: "Row by row", nosel: true,
     sub: "Weak matches (by name only) say so — check those against the sheet.",
-    cols: [{ l: "In the sheet", wrap: true }, { l: "Member", wrap: true }, "Matched by", { l: "Amount", num: true }, { l: "Reason", wrap: true }, "Result"],
+    cols: [{ l: "In the sheet", wrap: true }, { l: "Member", wrap: true }, "Matched by", "Kind", { l: "Amount", num: true }, { l: "Reason", wrap: true }, "Result"],
     rows: (p.res.rows || []).map(r => ({ key: "r" + r.row, open: r.memberId ? () => crCfAccount(ctx, r.memberId) : undefined, cells: [
       { k: "text", t: src(r), v: r.row },
       { k: "text", t: r.fullName || "—", s: (r.displayId || r.memberId || "") + (r.candidates && r.candidates.length ? (r.displayId || r.memberId ? " · " : "") + "Could be: " + r.candidates.slice(0, 3).map(c => c.fullName + " (" + (c.displayId || c.memberId) + ")").join(", ") + (r.candidates.length > 3 ? " and " + crNum(r.candidates.length - 3) + " more" : "") : "") },
       { k: "text", t: r.matchedBy ? (CR_CF_MATCHED[r.matchedBy] || r.matchedBy) : "", s: /^name/.test(r.matchedBy || "") ? "Weak — check it" : "" },
+      { k: "text", t: CR_CF_KIND_WORD[r.kind || "fine"] || "Fine" },
       { k: "num", t: r.amount ? fmtMoney(r.amount) : "", v: r.amount || 0, s: r.standard ? crNum(r.standard) + " × " + fmtMoney(r.each) + " standard" : r.capped ? "sheet: " + fmtMoney(r.asked) : "" },
       { k: "text", t: r.reasonLabel ? r.reasonLabel + (r.date ? " · " + r.date : "") : r.error ? (CR_CF_FINE_ERR[r.error] || String(r.error).replace(/_/g, " ")) : "", s: r.reasonLabel ? (r.note || "") : "" },
       { k: "status", t: verdict(r)[0], tone: verdict(r)[1] },
     ] })),
-    filters: ["Result"], search: "Search the rows" });
+    filters: ["Result", "Kind"], search: "Search the rows" });
+  return out;
+}
+
+/* ══ Fines: what was brought over by upload ═════════════════════════════════
+   Every charge an upload put on an account (admin.fees.imported), and the one
+   correction it may need: arrears read as fines before the upload knew a Dues
+   column. Fines whose own words say dues are offered first; the desk decides.
+   A correction voids the row with the reason and posts the same amount, same
+   day, as what it really was — the account's total does not move. */
+function crCfReclass(ctx, keys, to) {
+  const n = keys.length, word = CR_CF_KIND_WORD[to].toLowerCase();
+  ctx.form({
+    title: "Record " + crPlural(n, "charge") + " as " + word, submit: "Record as " + word, busyLabel: "Correcting…",
+    intro: "Each one is voided with your reason and posted again, the same amount on the same day, as " + word + ". What the family owes does not change; what it is called does — on the account, on statements and in reminders. Both rows stay on the record.",
+    values: { reason: "" },
+    fields: [{ id: "reason", l: "Why", type: "textarea", rows: 2, req: true, max: 200, ph: "The October register’s Dues column was read as fines",
+      check: v => v.trim().length >= 5 ? "" : "Say why, in a sentence." }],
+    onSubmit: v => NGGApi.admin.fees.importReclass(keys, to, v.reason.trim()),
+    done: (v, r) => { setTimeout(() => crCfImportedLoad(ctx), 0); return crPlural(r.reclassified, "charge") + " now " + word + (r.refused ? " · " + crNum(r.refused) + " refused" : "") + "."; },
+  });
+  return false;
+}
+async function crCfImportedLoad(ctx) {
+  ctx.setData(x => Object.assign({}, x, { imported: Object.assign({}, x.imported, { loading: true, err: null }) }));
+  try { const r = await NGGApi.admin.fees.imported(); ctx.setData(x => Object.assign({}, x, { imported: { open: true, data: r } })); }
+  catch (e) { ctx.setData(x => Object.assign({}, x, { imported: { open: true, err: e } })); }
+}
+function crCfImportedBlocks(d, ctx) {
+  const I = d.imported;
+  if (!I || !I.open) return [{ type: "list", span: 6, title: "Brought over by upload", rows: [{ icon: "tray-arrow-down", onClick: () => crCfImportedLoad(ctx),
+    t: "See every fine, due and membership charge an upload put on an account",
+    s: "And correct one that was recorded as the wrong kind — a register’s dues read as fines before the upload knew a Dues column.", m: "Open" }] }];
+  if (I.loading && !I.data) return [{ type: "note", span: 6, icon: "hourglass", text: "Loading what was brought over…" }];
+  if (I.err) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load what was brought over.", sub: crErr(I.err, ""), act: { l: "Try again", run: () => crCfImportedLoad(ctx) } }];
+  const D = I.data, T = D.totals || {}, live = (D.rows || []).filter(r => r.live);
+  const out = [{ type: "kpis", span: 6, items: [
+    { l: "Fines brought over", v: fmtMoney((T.fine || {}).total || 0), dn: crPlural((T.fine || {}).n || 0, "charge") },
+    { l: "Dues brought over", v: fmtMoney((T.dues || {}).total || 0), dn: crPlural((T.dues || {}).n || 0, "charge") },
+    { l: "Membership brought over", v: fmtMoney((T.membership || {}).total || 0), dn: crPlural((T.membership || {}).n || 0, "charge") },
+    { l: "Fines that read like dues", v: crNum(D.looksLikeDues || 0), dn: D.looksLikeDues ? "Check them below" : "None found" },
+  ] }];
+  if (D.looksLikeDues) out.push({ type: "note", span: 6, icon: "lightbulb", tone: "warn",
+    text: crPlural(D.looksLikeDues, "fine says", "fines say") + " dues, monthly, subscription or arrears in its own words.",
+    sub: "Filter “Reads like” to see them. Nothing is changed until you select rows and choose “These are dues”." });
+  out.push({ type: "table", span: 6, title: "Every charge brought over", search: "Search by name, ID or note",
+    cols: ["Member", "Kind", { l: "Amount", num: true }, { l: "As written", wrap: true }, "Reads like", "Brought over"],
+    rows: live.map(r => ({ key: r.entryId, open: () => crCfAccount(ctx, r.memberId), cells: [
+      { k: "person", t: r.fullName, s: (r.displayId || r.memberId) + (r.centre ? " · " + r.centre : "") },
+      { k: "text", t: CR_CF_KIND_WORD[r.kind] || r.kind, s: r.reclassified ? "corrected" : "" },
+      { k: "num", t: fmtMoney(r.amount), v: r.amount },
+      { k: "text", t: r.note || "—" },
+      { k: "status", t: r.looksLikeDues ? "Dues" : "As recorded", tone: r.looksLikeDues ? "warn" : "neutral" },
+      { k: "text", t: crCfDay(r.createdAt) },
+    ] })),
+    filters: ["Kind", "Reads like"],
+    bulk: [
+      { l: "These are dues", max: D.max, run: keys => crCfReclass(ctx, keys, "dues") },
+      { l: "These are membership", max: D.max, run: keys => crCfReclass(ctx, keys, "membership") },
+      { l: "These are fines", max: D.max, run: keys => crCfReclass(ctx, keys, "fine") },
+    ],
+    emptyText: "No upload has put anything on an account yet." });
+  if (D.outOfScope) out.push({ type: "note", span: 6, icon: "info", text: crNum(D.outOfScope) + " more are at centres outside yours." });
   return out;
 }
 
@@ -446,7 +528,7 @@ function crCfFinesBlocks(d, ctx) {
     { l: "This term", v: crCfDay(R.term.from), dn: "to " + crCfDay(R.term.to) },
     { l: "One-time clearance", v: o.used ? "Used" : o.canRun ? "Available" : "Locked", dn: o.used && o.lock ? crCfDay(o.lock.usedAt) : o.canRun ? "Super admin only" : "Super admin only" },
   ] }];
-  return out.concat(crCfUploadBlocks(d, ctx), [crCfRuleTable(d, ctx)], crCfClearBlocks(d, ctx));
+  return out.concat(crCfUploadBlocks(d, ctx), [crCfRuleTable(d, ctx)], crCfImportedBlocks(d, ctx), crCfClearBlocks(d, ctx));
 }
 
 /* ══ Compliance: the board and one person's record ═════════════════════════ */
@@ -972,7 +1054,7 @@ Object.assign(CR_TAB_DEFS, {
       const prev = ctx.data || {};
       return { rules: rules && rules.ok, rulesErr: rules && rules.err, once: once && once.ok, pol: pol && pol.ok, polErr: pol && pol.err,
         board: brd && brd.ok, boardErr: brd && brd.err, integ: integ && integ.ok, integErr: integ && integ.err,
-        finePlan: prev.finePlan || null, clearPlan: prev.clearPlan || null, repairPlan: prev.repairPlan || null };
+        finePlan: prev.finePlan || null, clearPlan: prev.clearPlan || null, repairPlan: prev.repairPlan || null, imported: prev.imported || null };
     },
     actions: (d, ctx) => {
       const v = crCfView(ctx), out = [];

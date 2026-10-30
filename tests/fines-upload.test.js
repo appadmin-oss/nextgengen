@@ -134,6 +134,9 @@ async function contextFor(memberId, admin, viewport) {
       Ayobo: [['Name of child', 'Fine (₦)', 'Offence', 'Date'],
         ['Tunde Bello', '#2,000', 'fighting during break', '4th October, 2026'], ['Akintola Naomi (026-777)', '1k', 'Late', '04/10/2026'],
         ['Chidi Okafor (026-501)', '₦1,000', 'came late', '05/10/2026']],
+      /* Fines and dues side by side. "Dues" used to be read as the fine's amount, so arrears went up as fines —
+         and with a Fines column beside it, one of the two was dropped without a word. */
+      Ikotun: [['Name', 'Fines', 'Offence', 'Outstanding dues'], ['Naomi Akintola', 500, 'conduct', '₦3,000']],
     };
     const strs = [];
     const si = t => { const k = strs.indexOf(t); if (k >= 0) return k; strs.push(t); return strs.length - 1; };
@@ -190,6 +193,12 @@ async function contextFor(memberId, admin, viewport) {
     chk('Tunde Bello at Ayobo got the Ayobo sheet’s fine and Tunde Bello at Egbeda the Egbeda one',
       posted.some(r => r.memberId === 'NGG-FU-3' && r.amount === 2000) && posted.some(r => r.memberId === 'NGG-FU-2' && r.amount === 2000));
     chk('the same workbook checked again fines nobody twice', await check() && /already posted/.test(await body()) && !(await ap.$('button:has-text("Post ")')) && ledger().length === posted.length);
+    chk('a Dues column is posted as dues, beside the fine on the same line — not as a fine, and not dropped',
+      Number(php(`echo (int)db_row("SELECT COALESCE(SUM(amount),0) s FROM member_ledger WHERE memberId = 'NGG-FU-5' AND kind = 'dues' AND periodKey LIKE 'import:dues:%'")['s'];`, ['bootstrap'])) === 3000
+      && posted.some(r => r.memberId === 'NGG-FU-5' && r.amount === 500));
+    await ap.click('.cr-list-row:has-text("Brought over by upload"), .cr-list-row:has-text("See every fine, due and membership charge")');
+    chk('“Brought over by upload” lists the dues apart from the fines', await until(() => /Dues brought over/.test(document.body.innerText) && /Every charge brought over/.test(document.body.innerText), null, 20000)
+      && /₦3,000/.test(await body()));
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {
