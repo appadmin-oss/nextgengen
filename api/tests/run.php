@@ -17369,6 +17369,115 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     else db_exec("DELETE FROM settings WHERE settingKey = 'fees'");
 })();
 
+/* ── Volunteer pay (domain/volunteer-pay.php) ──────────────────────────────
+ * An active volunteer earns the admin's amount for each programme day they
+ * are present and active. What this guards: a day is decided once, with the
+ * rate of that day, and never twice however often the run is repeated; each
+ * exclusion the admin switches on excludes, and says why; the day cap per pay
+ * period; a period is paid only once it has ended, once, and a payout can be
+ * undone; the volunteer sees their own wallet; money stays behind `fees`.
+ */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    $keep = setting_get('volunteerPay');
+    $vols = ['VOL-PAY-1', 'VOL-PAY-2', 'VOL-PAY-3', 'VOL-PAY-4'];
+    $in = "'" . implode("','", $vols) . "'";
+    $clean = function () use ($in) {
+        foreach (['volunteer_pay', 'volunteer_payouts', 'attendance_duty', 'volunteer_points'] as $t) db_exec("DELETE FROM $t WHERE volunteerId IN ($in)");
+        db_exec("DELETE FROM attendance WHERE studentId IN ($in, 'NGG-PAY-M3')");
+        db_exec("DELETE FROM volunteers WHERE volunteerId IN ($in)");
+        db_exec("DELETE FROM members WHERE memberId = 'NGG-PAY-M3'");
+    };
+    $clean();
+    $mon = gmdate('Y-m-d', strtotime('monday last week'));
+    $d = fn(int $n) => gmdate('Y-m-d', strtotime($mon . ' +' . $n . ' days'));
+    $vol = fn(string $id, string $status, string $sg, string $mid = '') => db_insert('volunteers', ['volunteerId' => $id, 'fullName' => 'Pay ' . $id, 'email' => strtolower($id) . '@example.com',
+        'role' => 'facilitator', 'status' => $status, 'safeguarding' => $sg, 'programme' => 'ngg', 'centre' => 'Egbeda', 'memberId' => $mid, 'createdAt' => now_iso()]);
+    $vol('VOL-PAY-1', 'active', 'cleared'); $vol('VOL-PAY-2', 'inactive', 'cleared'); $vol('VOL-PAY-3', 'active', 'cleared', 'NGG-PAY-M3'); $vol('VOL-PAY-4', 'active', 'cleared');
+    db_insert('members', ['memberId' => 'NGG-PAY-M3', 'fullName' => 'Pay Member', 'email' => 'paym3@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $att = fn(string $who, string $day, array $x = []) => db_insert('attendance', $x + ['studentId' => $who, 'date' => $day, 'checkInAt' => $day . 'T08:00:00Z', 'method' => 'test', 'status' => 'present', 'checkOutAt' => '', 'lateMinutes' => 0]);
+    $att('VOL-PAY-1', $d(2), ['checkOutAt' => $d(2) . 'T15:00:00Z']);           // checked out: earned
+    $att('VOL-PAY-1', $d(3));                                                   // present, nothing else: no activity
+    $att('VOL-PAY-1', $d(4), ['lateMinutes' => 50, 'status' => 'late']);       // duty done, but 50 minutes late
+    db_insert('attendance_duty', ['date' => $d(4), 'centre' => 'Egbeda', 'volunteerId' => 'VOL-PAY-1', 'completedAt' => $d(4) . 'T12:00:00Z']);
+    $att('VOL-PAY-2', $d(2), ['checkOutAt' => $d(2) . 'T15:00:00Z']);           // not an active volunteer
+    $att('NGG-PAY-M3', $d(5));                                                  // checked in as the member they also are
+    db_insert('volunteer_points', ['volunteerId' => 'VOL-PAY-3', 'kind' => 'help', 'points' => 5, 'date' => $d(5)]);
+    $att('VOL-PAY-4', $d(0), ['checkOutAt' => $d(0) . 'T15:00:00Z']);
+    $att('VOL-PAY-4', $d(1), ['checkOutAt' => $d(1) . 'T15:00:00Z']);           // second day in the week: over the cap of 1
+    $att('VOL-PAY-1', gmdate('Y-m-d'), ['checkOutAt' => gmdate('Y-m-d') . 'T15:00:00Z']); // today: not over yet
+
+    $set = fn(array $o) => backend_dispatch('admin.volpay.settings.set', ['requesterId' => $ADM, 'data' => $o]);
+    chk('volunteer pay · switching on needs an amount', ($set(['enabled' => true, 'amount' => 0])['error'] ?? '') === 'amount_required');
+    $r = $set(['enabled' => true, 'amount' => 2500, 'frequency' => 'weekly', 'maxDaysPerPeriod' => 1, 'days' => 'any', 'requireActivity' => true,
+               'activities' => ['checkout', 'duty', 'points', 'session'], 'lateAfterMin' => 30, 'startDate' => '']);
+    chk('volunteer pay · switched on with no start date, it starts today, so history is never paid at once', ($r['settings']['startDate'] ?? '') === gmdate('Y-m-d'));
+    $set(['startDate' => $mon]);
+    chk('volunteer pay · money is the fees capability: no requester, no settings', (backend_dispatch('admin.volpay.settings.get', ['requesterId' => ''])['ok'] ?? true) === false);
+
+    chk('volunteer pay · pay periods: monthly, weekly from Monday, fortnights from a fixed Monday',
+        volpay_period('2026-10-29', 'monthly')[0] === 'M2026-10' && volpay_period('2026-10-29', 'weekly') === ['W2026-10-26', '2026-10-26', '2026-11-01']
+        && volpay_period('2026-10-29', 'fortnightly')[0] === volpay_period('2026-10-20', 'fortnightly')[0] && volpay_period_of_key('F2026-10-19')[1] === '2026-11-01');
+
+    $cfg = volpay_settings(); $V = ['status' => 'active', 'safeguarding' => 'cleared'];
+    chk('volunteer pay · each exclusion the admin switches on excludes, and names itself',
+        volpay_decide($cfg, ['checkOutAt' => 'x'], $V, ['checkout'], true)[0] === 'earned'
+        && volpay_decide($cfg, [], ['status' => 'active', 'safeguarding' => 'pending'], ['duty'], true)[1] === 'not_cleared'
+        && volpay_decide(['days' => 'programme'] + $cfg, [], $V, ['duty'], false)[1] === 'not_programme_day'
+        && volpay_decide($cfg, ['redline' => 1], $V, ['duty'], true)[1] === 'redline'
+        && volpay_decide($cfg, ['halfDay' => 1], $V, ['duty'], true)[1] === 'half_day'
+        && volpay_decide(['excludeNoCheckout' => true] + $cfg, [], $V, ['duty'], true)[1] === 'no_checkout'
+        && volpay_decide(['excludeRedline' => false] + $cfg, ['redline' => 1], $V, ['duty'], true)[0] === 'earned');
+
+    $a = backend_dispatch('admin.volpay.accrue', ['requesterId' => $ADM]);
+    $row = fn(string $v, string $day) => db_row('SELECT status, reason, amount FROM volunteer_pay WHERE volunteerId = ? AND day = ?', [$v, $day]);
+    chk('volunteer pay · present and active earns the day’s amount', ($row('VOL-PAY-1', $d(2)) ?? [])['amount'] === 2500 && $row('VOL-PAY-1', $d(2))['status'] === 'earned');
+    chk('volunteer pay · present with no activity earns nothing, and says why', ($row('VOL-PAY-1', $d(3))['reason'] ?? '') === 'no_activity');
+    chk('volunteer pay · activity does not outweigh arriving later than the admin allows', ($row('VOL-PAY-1', $d(4))['reason'] ?? '') === 'late');
+    chk('volunteer pay · somebody no longer an active volunteer earns nothing', ($row('VOL-PAY-2', $d(2))['reason'] ?? '') === 'not_active');
+    chk('volunteer pay · checked in as the member they also are, they still earn', ($row('VOL-PAY-3', $d(5))['status'] ?? '') === 'earned');
+    chk('volunteer pay · the most days paid in one period is held to', ($row('VOL-PAY-4', $d(0))['status'] ?? '') === 'earned' && ($row('VOL-PAY-4', $d(1))['reason'] ?? '') === 'period_cap');
+    chk('volunteer pay · today is not decided until it is over', $row('VOL-PAY-1', gmdate('Y-m-d')) === null);
+    chk('volunteer pay · run again, nothing is decided twice', (backend_dispatch('admin.volpay.accrue', ['requesterId' => $ADM])['decided'] ?? -1) === 0 && !empty($a['ok'])
+        && (int)db_row("SELECT COUNT(*) n FROM volunteer_pay WHERE volunteerId IN ($in)")['n'] === 7);
+    $set(['amount' => 4000]);
+    chk('volunteer pay · a new rate never rewrites a day already earned', $row('VOL-PAY-1', $d(2))['amount'] === 2500);
+
+    $wk = volpay_period($d(2), 'weekly')[0];
+    $per = backend_dispatch('admin.volpay.period', ['requesterId' => $ADM, 'period' => $wk]);
+    $mine = array_values(array_filter($per['rows'] ?? [], fn($r) => in_array($r['volunteerId'], ['VOL-PAY-1', 'VOL-PAY-2', 'VOL-PAY-3', 'VOL-PAY-4'], true)));
+    chk('volunteer pay · the period shows each volunteer’s days and amount, and that it has ended',
+        !empty($per['ended']) && count($mine) === 4 && array_sum(array_column($mine, 'unpaid')) === 7500);
+
+    $day = fn(string $op, string $v, string $dd, string $why) => backend_dispatch('admin.volpay.day.set', ['requesterId' => $ADM, 'volunteerId' => $v, 'day' => $dd, 'op' => $op, 'reason' => $why]);
+    chk('volunteer pay · excluding a day by hand needs the reason', ($day('exclude', 'VOL-PAY-3', $d(5), '')['error'] ?? '') === 'reason_required');
+    $day('restore', 'VOL-PAY-1', $d(3), 'Ran the robotics table all morning');
+    chk('volunteer pay · an admin restores a day the rules excluded, at that day’s rate, with the reason kept',
+        $row('VOL-PAY-1', $d(3))['amount'] === 2500 && db_row("SELECT overrideReason FROM volunteer_pay WHERE volunteerId = 'VOL-PAY-1' AND day = ?", [$d(3)])['overrideReason'] === 'Ran the robotics table all morning');
+
+    $pay = fn(array $ids, string $per, string $m = 'transfer', string $ref = 'TRF-1') => backend_dispatch('admin.volpay.pay', ['requesterId' => $ADM, 'period' => $per, 'volunteerIds' => $ids, 'method' => $m, 'reference' => $ref]);
+    chk('volunteer pay · a period still running cannot be paid', ($pay(['VOL-PAY-1'], volpay_period(gmdate('Y-m-d'), 'weekly')[0])['error'] ?? '') === 'period_open');
+    chk('volunteer pay · a transfer needs its reference', ($pay(['VOL-PAY-1'], $wk, 'transfer', '')['error'] ?? '') === 'reference_required');
+    $p1 = $pay(['VOL-PAY-1', 'VOL-PAY-2'], $wk);
+    $res = array_column($p1['results'] ?? [], null, 'volunteerId');
+    chk('volunteer pay · paying settles each volunteer’s earned days of the period, as one payout; nothing owed is reported unchanged',
+        ($res['VOL-PAY-1']['amount'] ?? 0) === 5000 && ($res['VOL-PAY-1']['days'] ?? 0) === 2 && ($res['VOL-PAY-2']['state'] ?? '') === 'unchanged');
+    chk('volunteer pay · paid once: a second run pays nothing', ($pay(['VOL-PAY-1'], $wk)['results'][0]['state'] ?? '') === 'unchanged');
+    chk('volunteer pay · a paid day cannot be excluded', ($day('exclude', 'VOL-PAY-1', $d(2), 'wrong')['error'] ?? '') === 'already_paid');
+    $w = backend_dispatch('admin.volpay.volunteer', ['requesterId' => $ADM, 'volunteerId' => 'VOL-PAY-1'])['wallet'] ?? [];
+    chk('volunteer pay · the wallet: nothing owed after payment, 5,000 earned and paid', ($w['owed'] ?? -1) === 0 && $w['earned'] === 5000 && $w['paid'] === 5000);
+    backend_dispatch('admin.volpay.payout.void', ['requesterId' => $ADM, 'payoutId' => $res['VOL-PAY-1']['payoutId'], 'reason' => 'Paid to the wrong account']);
+    $w = backend_dispatch('admin.volpay.volunteer', ['requesterId' => $ADM, 'volunteerId' => 'VOL-PAY-1'])['wallet'] ?? [];
+    chk('volunteer pay · a voided payout leaves its days owed again', ($w['owed'] ?? 0) === 5000 && $w['paid'] === 0 && !empty($w['payouts'][0]['void']));
+
+    $own = backend_dispatch('member.volpay', ['memberId' => 'NGG-PAY-M3']);
+    chk('volunteer pay · a member who volunteers sees their own wallet, without staff references', ($own['wallet']['owed'] ?? 0) === 2500 && ($own['wallet']['volunteerId'] ?? '') === 'VOL-PAY-3');
+    chk('volunteer pay · a member who does not volunteer has none', array_key_exists('wallet', backend_dispatch('member.volpay', ['memberId' => $ADM])) && backend_dispatch('member.volpay', ['memberId' => $ADM])['wallet'] === null);
+
+    $clean();
+    if (is_array($keep)) setting_set('volunteerPay', $keep, 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'volunteerPay'");
+})();
+
 /* ── Settled up to a date: imported members who do not owe their back-dues ── */
 (function () {
     $SU = 'NGG-2025-0099';

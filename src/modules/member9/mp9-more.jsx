@@ -911,7 +911,7 @@ Object.assign(Mp9Portal.prototype, {
       onDone={(msg) => { this.setState({ handIn: null }); this.refresh(["dash", "today"]); this.toast(msg); }}/> : null;
     const rest = this.slotEndInner();
     // The view switch goes after the profile, never above the area's tabs: on a phone it pushed them off the first screen.
-    const view = s.scr === "me" ? <>{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{this.viewSwitch()}</> : null;
+    const view = s.scr === "me" ? <>{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{typeof Mp9VolWallet === "function" ? <Mp9VolWallet/> : null}{this.viewSwitch()}</> : null;
     return handEl || view ? <>{view}{rest}{handEl}</> : rest;
   },
   slotEndInner() {
@@ -1086,6 +1086,38 @@ function Mp9Wifi({ toast }) {
             <span id="m9x-wifi-left" className="m9x-wifi-left">{d.resetsLeft < 1 ? "You’ve changed it three times today. Try again tomorrow." : d.resetsLeft + (d.resetsLeft === 1 ? " change" : " changes") + " left today"}</span>
           </div>
         </form>
+      </>}
+  </section>;
+}
+
+/* ── Volunteer pay ─────────────────────────────────────────────────────────
+   A member who volunteers with NGG sees what they have earned for each day
+   they were present and active, each day they were not paid for and why, and
+   what has been paid (domain/volunteer-pay.php). Nothing is drawn for anybody
+   who does not volunteer. */
+function Mp9VolWallet() {
+  const [w, setW] = React.useState(undefined), [err, setErr] = React.useState(false);
+  const load = () => { setErr(false); NGGApi.member.volunteerPay().then(r => setW(r.wallet || null)).catch(() => setErr(true)); };
+  React.useEffect(load, []);
+  if (w === null) return null;
+  const naira = n => "₦" + (+n || 0).toLocaleString("en-NG");
+  return <section className="m9x-slot m9x-view m9x-vp" aria-labelledby="m9x-vp-h">
+    <h2 id="m9x-vp-h" className="m9x-view-h"><i className="ph ph-wallet" aria-hidden="true"/> Volunteer pay</h2>
+    {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>Your volunteer pay couldn’t load.</span><button type="button" onClick={load}>Try again</button></div>
+      : w === undefined ? <div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div>
+      : <>
+        <p className="m9x-view-p">{w.on ? "You earn " + naira(w.rate) + " for each programme day you are present and active. It is paid " + w.frequencyText.toLowerCase() + ", after each period ends." : "Volunteer pay is paused. What you have already earned is kept."}</p>
+        <dl className="m9x-wifi-dl">
+          <div><dt>Owed to you</dt><dd className="m9x-wifi-v">{naira(w.owed)}</dd></div>
+          <div><dt>Earned in all</dt><dd>{naira(w.earned)} · {w.daysEarned === 1 ? "1 day" : w.daysEarned + " days"}</dd></div>
+          <div><dt>Paid to you</dt><dd>{naira(w.paid)}</dd></div>
+        </dl>
+        {w.days.length ? <ul className="m9x-vp-list" aria-label="Your days">
+          {w.days.slice(0, 30).map(x => <li key={x.day} className={"m9x-vp-day" + (x.status === "earned" ? "" : " is-out")}>
+            <span className="m9x-vp-when">{mp9Date(x.day)}</span>
+            <span className="m9x-vp-what">{x.status === "earned" ? naira(x.amount) + (x.paid ? " · paid" : "") : "Not paid: " + (x.override ? x.override.reason : x.reasonText.toLowerCase())}</span>
+          </li>)}
+        </ul> : <p className="m9x-wifi-note">No days yet. A day is counted once it is over.</p>}
       </>}
   </section>;
 }

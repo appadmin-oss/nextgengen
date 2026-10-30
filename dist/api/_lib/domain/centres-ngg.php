@@ -120,6 +120,7 @@ const CENTRE_NAME_TABLES = [
     'tournament_invites',
     'tournament_pairings',
     'v3_scores',
+    'volunteer_pay',
     'volunteers',
     'wifi_gateways',
     'wifi_profile_overrides',

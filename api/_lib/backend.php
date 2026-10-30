@@ -542,6 +542,15 @@ function backend_dispatch(string $op, array $args = []): array {
             /* Member obligations — membership fee, monthly dues, training fee.
              * All gated on `people`: a fees screen is a roster screen, not a
              * separate permission somebody could be granted by accident. */
+            /* Volunteer pay (domain/volunteer-pay.php): money, so `fees`. */
+            'admin.volpay.settings.get'   => 'admin_volpay_settings_get',
+            'admin.volpay.settings.set'   => 'admin_volpay_settings_set',
+            'admin.volpay.accrue'         => 'admin_volpay_accrue',
+            'admin.volpay.period'         => 'admin_volpay_period',
+            'admin.volpay.volunteer'      => 'admin_volpay_volunteer',
+            'admin.volpay.day.set'        => 'admin_volpay_day_set',
+            'admin.volpay.pay'            => 'admin_volpay_pay',
+            'admin.volpay.payout.void'    => 'admin_volpay_payout_void',
             'admin.fees.settings.get'     => 'admin_fees_settings_get',
             'admin.fees.settings.set'     => 'admin_fees_settings_set',
             'admin.fees.member'           => 'admin_fees_member',
@@ -798,6 +807,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.fees'                 => 'member_fees_account',
             'member.wifi.get'             => 'member_wifi_get',
             'member.wifi.password'        => 'member_wifi_password',
+            'member.volpay'               => 'member_volpay',
             'member.fees.pay'             => 'member_fees_pay',
             'admin.media.usage'           => 'admin_media_usage',
             'admin.media.account'         => 'admin_media_account',

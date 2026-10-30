@@ -236,6 +236,8 @@ function web_cron_run(): void {
                    suspension here is off there within the quarter hour. Does
                    nothing until WIFI_SECRET_NGG is set. */
                 if (web_cron_due('wifi_cac', web_cron_cfg('wifi_cac', WIFI_CAC_EVERY)) && function_exists('wifi_cac_tick')) web_cron_guard('wifi_cacentre', fn() => wifi_cac_tick());
+                /* Volunteer pay: each finished day decided once (domain/volunteer-pay.php). Hourly. */
+                if (web_cron_due('volpay', web_cron_cfg('volpay', 3600)) && function_exists('volpay_tick')) web_cron_guard('volunteer_pay', fn() => volpay_tick());
                 if (web_cron_due('dirpush', web_cron_cfg('dirpush', 3600)) && function_exists('dirpush_tick')) web_cron_guard('directory_push', fn() => dirpush_tick());
             } finally { @flock($lock, LOCK_UN); }
         }

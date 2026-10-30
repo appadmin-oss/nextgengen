@@ -1072,6 +1072,8 @@
       // the password the member chooses (3 changes a day), in the body, never echoed back.
       wifi:         () => request('/member/wifi.php'),
       wifiPassword: (password) => request('/member/wifi.php', { body: { action: 'password', password } }),
+      // Their volunteer wallet, when they volunteer with NGG (domain/volunteer-pay.php); null when they don't.
+      volunteerPay: () => request('/member/volunteer-pay.php'),
       /* Self-service. No memberId travels in any of these — the server reads it
          from the session, which is what keeps them from being an enumeration
          endpoint over children. */
@@ -2015,6 +2017,18 @@
         },
         member: (subjectType, subjectId) => request('/admin/wifi.php' + qs({ view: 'member', subjectType, subjectId })),
         memberSet: (subjectType, subjectId, op, extra) => request('/admin/wifi.php', { body: Object.assign({ action: 'member', subjectType, subjectId, op }, extra || {}) }),
+      },
+      /* Volunteer pay (domain/volunteer-pay.php): the rules, a pay period, one
+         volunteer's wallet, excluding or restoring a day, and paying a period. */
+      volpay: {
+        settings:    () => request('/admin/volunteer-pay.php'),
+        settingsSet: (data) => request('/admin/volunteer-pay.php', { body: { action: 'settings', data } }),
+        period:      (period) => request('/admin/volunteer-pay.php' + qs({ view: 'period', period })),
+        volunteer:   (volunteerId) => request('/admin/volunteer-pay.php' + qs({ view: 'volunteer', volunteerId })),
+        accrue:      () => request('/admin/volunteer-pay.php', { body: { action: 'accrue' } }),
+        day:         (volunteerId, day, op, reason) => request('/admin/volunteer-pay.php', { body: { action: 'day', volunteerId, day, op, reason } }),
+        pay:         (period, volunteerIds, method, reference) => request('/admin/volunteer-pay.php', { body: { action: 'pay', period, volunteerIds, method, reference } }),
+        voidPayout:  (payoutId, reason) => request('/admin/volunteer-pay.php', { body: { action: 'void', payoutId, reason } }),
       },
       fees: {
         settings:    () => request('/admin/fees.php'),

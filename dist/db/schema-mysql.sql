@@ -4714,3 +4714,44 @@ CREATE TABLE IF NOT EXISTS edition_milestones (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO schema_version (version) VALUES (200) ON DUPLICATE KEY UPDATE version = version;
+
+-- 201 — volunteer pay (domain/volunteer-pay.php)
+CREATE TABLE IF NOT EXISTS volunteer_pay (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  volunteerId VARCHAR(64) NOT NULL,
+  day VARCHAR(10) NOT NULL,
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'earned',
+  amount INT NOT NULL DEFAULT 0,
+  rate INT NOT NULL DEFAULT 0,
+  reason VARCHAR(40) NOT NULL DEFAULT '',
+  activity VARCHAR(80) NOT NULL DEFAULT '',
+  periodKey VARCHAR(16) NOT NULL DEFAULT '',
+  payoutId VARCHAR(40) NOT NULL DEFAULT '',
+  decidedAt VARCHAR(32) NOT NULL DEFAULT '',
+  overrideBy VARCHAR(64) NOT NULL DEFAULT '',
+  overrideReason VARCHAR(300) NOT NULL DEFAULT '',
+  overrideAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE INDEX uq_volpay_day (volunteerId, day),
+  INDEX idx_volpay_period (periodKey, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS volunteer_payouts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  payoutId VARCHAR(40) NOT NULL,
+  volunteerId VARCHAR(64) NOT NULL,
+  periodKey VARCHAR(16) NOT NULL,
+  amount INT NOT NULL DEFAULT 0,
+  days INT NOT NULL DEFAULT 0,
+  method VARCHAR(24) NOT NULL DEFAULT '',
+  reference VARCHAR(120) NOT NULL DEFAULT '',
+  paidAt VARCHAR(32) NOT NULL DEFAULT '',
+  paidBy VARCHAR(64) NOT NULL DEFAULT '',
+  voidedAt VARCHAR(32) NOT NULL DEFAULT '',
+  voidedBy VARCHAR(64) NOT NULL DEFAULT '',
+  voidReason VARCHAR(300) NOT NULL DEFAULT '',
+  UNIQUE INDEX uq_volpayout (payoutId),
+  INDEX idx_volpayout_vol (volunteerId, periodKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO schema_version (version) VALUES (201) ON DUPLICATE KEY UPDATE version = version;

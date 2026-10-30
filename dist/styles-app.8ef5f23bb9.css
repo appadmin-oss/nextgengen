@@ -12232,6 +12232,11 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-wifi-dl > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: 12px; background: #fafaf8; border: 1px solid #ecebe6; }
 .m9x-wifi-dl dt { min-width: 84px; font-size: 13px; color: #4a4a50; }
 .m9x-wifi-dl dd { margin: 0; font-size: 15px; color: #0b0b0c; }
+/* Volunteer pay (mp9-more.jsx Mp9VolWallet): one line a day, the excluded ones quieter. */
+.m9x-vp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.m9x-vp-day { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 10px 12px; border-radius: 12px; background: #fafaf8; border: 1px solid #ecebe6; font-size: 14px; color: #0b0b0c; }
+.m9x-vp-day.is-out { color: #4a4a50; }
+.m9x-vp-when { font-size: 13px; color: #4a4a50; }
 .m9x-wifi-v { display: flex; align-items: center; gap: 6px; font-family: var(--mono, ui-monospace, monospace); font-size: 17px; letter-spacing: .04em; }
 .m9x-wifi-b { font: inherit; cursor: pointer; min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: #0b0b0c; }
 .m9x-wifi-b:hover { background: #efeee9; }

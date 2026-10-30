@@ -975,6 +975,36 @@ reference or amount at verification. Every step is in the audit log.
 Bank details printed on the invoice are set from the **Bank** button on the
 same screen (a 10-digit account number).
 
+### Volunteer pay
+
+**Control Room → Money → Volunteer pay** (the Fees capability). An active NGG
+volunteer earns a fixed amount for each programme day they are present **and**
+active. Everything below is set on that tab.
+
+- **Amount per day** — what one day earns. Changing it never changes a day
+  already decided: each day keeps the amount of its own day.
+- **Counting from** — no day before this date is ever paid. Left empty, it is
+  the day pay is switched on, so switching on does not pay the whole history.
+- **Which days count** — programme days only (the volunteer's Club or Summer
+  School calendar), or any day they check in.
+- **Being active** — present is not enough when "Require activity" is on: at
+  least one chosen activity must be recorded that day: checked out at the end,
+  completed the attendance duty, earned volunteer points, or led a class session.
+- **When a day is excluded** — later than N minutes, past the red line, a half
+  day, no check-out, safeguarding not cleared. An excluded day is kept with its
+  reason, and the volunteer sees it.
+- **Pay period** — weekly, every two weeks or monthly, and the most days paid in
+  one period (0 = no limit; days over it are kept as excluded).
+
+A day is decided once it is over, by the hourly job or "Decide finished days
+now". Open a volunteer to see their days: exclude an earned day, or restore an
+excluded one, with the reason (never once paid). A period can be paid once it
+has ended: pay the volunteers outside the system first, then "Pay this period"
+records it with how and the reference (a bank transfer needs its reference). A
+payout recorded by mistake can be voided from the volunteer's wallet; its days
+are owed again. A volunteer who is also an NGG member sees their own pay on
+**Me** in the app.
+
 ### Promoting into the Club
 
 The **promotable** list is the Summer School participants who look ready:

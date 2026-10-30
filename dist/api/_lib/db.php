@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 200;
+const NGG_SCHEMA_TARGET = 201;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5830,6 +5830,29 @@ function db_migrate(PDO $db): void {
                   cohortId TEXT NOT NULL, milestone TEXT NOT NULL, firedAt TEXT NOT NULL DEFAULT '',
                   PRIMARY KEY (cohortId, milestone)
                 );",
+        /* 201 — volunteer pay (domain/volunteer-pay.php): one row per volunteer
+         * per programme day they were present, decided once with the rate then
+         * in force — earned, or excluded with the reason — and the payouts that
+         * settle a pay period. Whole naira, like member_ledger. */
+        201 => "CREATE TABLE IF NOT EXISTS volunteer_pay (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  volunteerId TEXT NOT NULL, day TEXT NOT NULL, centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '',
+                  status TEXT NOT NULL DEFAULT 'earned', amount INTEGER NOT NULL DEFAULT 0, rate INTEGER NOT NULL DEFAULT 0,
+                  reason TEXT NOT NULL DEFAULT '', activity TEXT NOT NULL DEFAULT '', periodKey TEXT NOT NULL DEFAULT '',
+                  payoutId TEXT NOT NULL DEFAULT '', decidedAt TEXT NOT NULL DEFAULT '',
+                  overrideBy TEXT NOT NULL DEFAULT '', overrideReason TEXT NOT NULL DEFAULT '', overrideAt TEXT NOT NULL DEFAULT ''
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_volpay_day ON volunteer_pay(volunteerId, day);
+                CREATE INDEX IF NOT EXISTS idx_volpay_period ON volunteer_pay(periodKey, status);
+                CREATE TABLE IF NOT EXISTS volunteer_payouts (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  payoutId TEXT NOT NULL UNIQUE, volunteerId TEXT NOT NULL, periodKey TEXT NOT NULL,
+                  amount INTEGER NOT NULL DEFAULT 0, days INTEGER NOT NULL DEFAULT 0,
+                  method TEXT NOT NULL DEFAULT '', reference TEXT NOT NULL DEFAULT '',
+                  paidAt TEXT NOT NULL DEFAULT '', paidBy TEXT NOT NULL DEFAULT '',
+                  voidedAt TEXT NOT NULL DEFAULT '', voidedBy TEXT NOT NULL DEFAULT '', voidReason TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_volpayout_vol ON volunteer_payouts(volunteerId, periodKey);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
