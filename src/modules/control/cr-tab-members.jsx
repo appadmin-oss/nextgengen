@@ -723,16 +723,6 @@ function CrMbRecHead({ ctx, phone }) {
   );
 }
 
-function crMbSettle(ctx, id, name) {
-  ctx.form({
-    title: "Clear dues · " + name, submit: "Clear them",
-    intro: "Payments already made count first; only what is still unpaid on membership and dues for periods on or before the date is cleared. Fines and the programme’s training cost are not touched.",
-    values: { date: new Date().toISOString().slice(0, 10), reason: "" },
-    fields: [{ id: "date", l: "Settled up to", type: "date", req: true }, { id: "reason", l: "Why", type: "textarea", req: true, max: 240, ph: "Imported member: paid before joining this system" }],
-    onSubmit: async v => NGGApi.admin.fees.settle(id, v.date, v.reason),
-    done: (v, r) => { crMbRecReload(ctx, id); return r && r.unchanged ? "Nothing to clear — already settled to that date." : (r && r.cleared ? fmtMoney(r.cleared) + " cleared · " : "") + "settled up to " + crDate(v.date) + "."; },
-  });
-}
 function crMbStatusSet(ctx, m, status) {
   return async () => {
     const was = m.status;
@@ -981,10 +971,10 @@ function crMbRecBlocks(d, ctx) {
     const mm = (rec.detail || {}).member || {}, settled = String(mm.feesSettledThrough || "");
     return out.concat([
       { type: "kpis", span: 6, items },
-      ctx.can("fees") ? { type: "note", span: 6, icon: settled ? "check-circle" : "receipt-x", tone: settled ? "ok" : undefined,
-        text: settled ? "Membership and dues settled up to " + crDate(settled) + "." : "Owes dues from before this system? An imported member who had paid can be settled up to a date.",
-        sub: settled ? "Nothing on or before that day is charged again. Settle again with a later date if more has been paid outside the system." : "Clears unpaid membership and dues on or before the date, with your reason on the ledger, and stops them being charged again. Fines are not touched.",
-        act: { l: settled ? "Settle to a later date" : "Clear dues they don’t owe", run: () => crMbSettle(ctx, rec.id, mm.fullName || rec.id) } } : null,
+      /* "Clear dues they don't owe" lived here and was retired (fraud path; fees.php,
+         admin_fees_settle). A date settled before then is still honoured and shown. */
+      settled ? { type: "note", span: 6, icon: "check-circle", tone: "ok", text: "Membership and dues settled up to " + crDate(settled) + ".",
+        sub: "Recorded before clearing dues was withdrawn. Nothing on or before that day is charged again." } : null,
       { type: "list", span: 6, title: "Ledger", sub: f.phase ? "Tenure phase: " + f.phase : "", action: ctx.can("fees") ? "Open Dues & arrears" : undefined, onAction: () => ctx.go("money", "fees"), empty: "No ledger entries yet.",
         rows: (f.recent || []).map(e => ({ icon: e.direction === "credit" ? "arrow-down-left" : "arrow-up-right", t: e.kind + (e.note ? " — " + e.note : "") + (e.voided ? " (voided)" : ""), s: crDate(e.date), m: (e.direction === "credit" ? "−" : "+") + fmtMoney(e.amount) })) },
     ]);
@@ -1150,14 +1140,6 @@ Object.assign(CR_TAB_DEFS, {
           payload: v => ({ consentType: v.consentType, consentStatus: v.consentStatus }) }) },
         ctx.can("fees") ? { l: "Dues reminders", max: 500, run: crMemBulk(ctx, "remindersOff", "Dues reminders", { id: "off", l: "Monthly reminders", type: "chips", req: true, opts: [["1", "Off — don’t remind these families"], ["0", "On — remind them as normal"]] }, "updated",
           { values: { off: "1" }, intro: "Off is a per-family opt-out. It stops the reminder only; the obligation and the balance are unchanged.", payload: v => ({ off: v.off === "1" ? 1 : 0 }) }) } : null,
-        /* Imported members arrive owing years of dues they paid before this system: settle them up to a date (fees_settle_through). */
-        ctx.can("fees") ? { l: "Clear dues they don’t owe", max: 500, run: crMemBulk(ctx, "feesSettled", "Clear dues they don’t owe", [
-            { id: "date", l: "Settled up to", type: "date", req: true, help: "Membership and dues for any period on or before this day are cleared, and never charged again. Today is usual." },
-            { id: "reason", l: "Why", type: "textarea", req: true, max: 240, ph: "Imported members: paid before they joined this system", help: "Kept on each account’s ledger with the waiver." },
-          ], "settled",
-          { values: { date: new Date().toISOString().slice(0, 10), reason: "" }, intro: "For members whose membership and dues are already paid, or who were never meant to owe them. Payments already made count first; only what is still unpaid on those periods is cleared. Fines and the programme’s training cost are not touched.",
-            payload: v => ({ date: v.date, reason: v.reason }),
-            extra: r => r.cleared ? " · " + fmtMoney(r.cleared) + " cleared" : "" }) } : null,
         { l: "Export selected", run: async keys => { await crMbExport(ctx, keys); return false; } },
       ].filter(Boolean);
       if (d.suggest) out.push({ key: "suggest", type: "custom", span: 6, render: c => <CrMbSuggest s={d.suggest} ctx={c}/> });

@@ -2032,7 +2032,8 @@
         fineImport:  (rows, opts) => request('/admin/fees.php', { body: Object.assign({ action: 'fineImport', rows }, opts || {}) }),
         waive:       (memberId, amount, reason) => request('/admin/fees.php', { body: { action: 'waive', memberId, amount, reason } }),
         // Settled up to a date: clears unpaid membership and dues to it, and stops them being charged again.
-        settle:      (memberId, date, reason) => request('/admin/fees.php', { body: { action: 'settle', memberId, date, reason } }),
+        // Clearing dues up to a date was retired (fraud path); the one sanctioned clearance is fines, once.
+        finesClearOnce: (mode, extra) => request('/admin/fees.php', { body: Object.assign({ action: 'finesClearOnce', mode }, extra || {}) }),
         accrue:      (limit) => request('/admin/fees.php', { body: { action: 'accrue', limit } }),
         remindPreview: () => request('/admin/fees.php', { body: { action: 'remindPreview' } }),
         remindRun:     (limit) => request('/admin/fees.php', { body: { action: 'remindRun', limit } }),

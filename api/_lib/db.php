@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 199;
+const NGG_SCHEMA_TARGET = 200;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5031,7 +5031,7 @@ function db_migrate(PDO $db): void {
          * are known to be paid outside this system (an imported member who
          * had paid, or a family the programme decided owes nothing to that
          * date). fees_accrue_member never charges a period on or before it,
-         * and fees_settle_through() clears what was already charged. */
+         * and the retired fees_settle_through() cleared what was already charged. */
         168 => "
             ALTER TABLE members ADD COLUMN feesSettledThrough TEXT DEFAULT '';
         ",
@@ -5801,6 +5801,21 @@ function db_migrate(PDO $db): void {
               recordedAt TEXT DEFAULT ''
             );
             CREATE INDEX idx_msl_member ON member_status_log(memberId, since, id);
+        ",
+        200 => "
+            /* POWERS THAT MAY BE USED ONCE. The key is the primary key, so the
+               insert that claims a lock is what makes a run the only one; no op
+               deletes from this table (fees.php, admin_fees_fines_clear_once:
+               every active member's fines cleared once, then never again). */
+            CREATE TABLE fees_once_locks (
+              lockKey TEXT PRIMARY KEY,
+              usedAt TEXT NOT NULL,
+              usedBy TEXT NOT NULL,
+              members INTEGER DEFAULT 0,
+              total INTEGER DEFAULT 0,
+              reason TEXT DEFAULT '',
+              digest TEXT DEFAULT ''
+            );
         ",
     ];
 

@@ -70,8 +70,11 @@ function members_bulk_actions(): array {
         'courses'     => ['cap' => 'people', 'needs' => 'courses', 'staffSafe' => true,  'label' => 'Set courses'],
         'consent'     => ['cap' => 'people', 'needs' => 'consent', 'staffSafe' => true,  'label' => 'Record consent'],
         'remindersOff'=> ['cap' => 'fees',   'needs' => 'onoff',   'staffSafe' => true,  'label' => 'Dues reminders'],
-        // Clears dues they do not owe: delegates to fees_settle_through(), the single-member implementation.
-        'feesSettled' => ['cap' => 'fees',   'needs' => 'settle',  'staffSafe' => true,  'label' => 'Settled up to a date'],
+        /* 'feesSettled' (clear dues up to a date, for many members at once) was
+           RETIRED on 2026-10-30: anybody holding `fees` could wipe a roster's
+           debts with a sentence of reason, which is a fraud path, not a tool.
+           It is not in this table, so it is unknown_action. Do not restore it;
+           the one sanctioned clearance is admin.fees.finesClearOnce. */
     ];
 }
 
@@ -140,12 +143,7 @@ function admin_members_bulk(array $p): array {
         }
     } elseif ($action === 'remindersOff') {
         $value = !empty($p['off']) ? 1 : 0;
-    } elseif ($action === 'feesSettled') {
-        $v = fees_settle_validate($p['date'] ?? '', $p['reason'] ?? '');
-        if (!$v['ok']) return $v;
-        $value = ['date' => $v['date'], 'reason' => $v['reason']];
     }
-    $cleared = 0;
 
     $scopeNames = admin_centre_names_in_scope($me);
     $now = now_iso();
@@ -174,15 +172,6 @@ function admin_members_bulk(array $p): array {
         }
 
         try {
-            if ($action === 'feesSettled') {
-                $full = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
-                $r = fees_settle_through($full, $value['date'], $value['reason'], (string)$me['memberId'], (string)($p['ip'] ?? ''));
-                if (empty($r['ok'])) { $results[] = ['id' => $mid, 'name' => $name, 'ok' => false, 'error' => (string)($r['error'] ?? 'refused')]; $refused++; continue; }
-                if (!empty($r['unchanged'])) { $results[] = ['id' => $mid, 'name' => $name, 'ok' => true, 'unchanged' => true]; continue; }
-                $cleared += (int)$r['cleared'];
-                $results[] = ['id' => $mid, 'name' => $name, 'ok' => true, 'cleared' => (int)$r['cleared']];
-                $applied++; continue;
-            }
             if ($action === 'courses') {
                 $full = db_row('SELECT courses, track FROM members WHERE memberId = ? LIMIT 1', [$mid]) ?: [];
                 $cur = member_courses_of($full);
@@ -237,10 +226,10 @@ function admin_members_bulk(array $p): array {
     audit('admin.members.bulk', (string)$me['memberId'], $action, [
         'requested' => count($ids), 'applied' => $applied, 'refused' => $refused,
         'value' => is_array($value) ? $value : (string)$value,
-    ] + ($action === 'feesSettled' ? ['cleared' => $cleared] : []), (string)($p['ip'] ?? ''));
+    ], (string)($p['ip'] ?? ''));
 
     return ['ok' => true, 'action' => $action, 'applied' => $applied, 'refused' => $refused,
-            'requested' => count($ids), 'results' => $results] + ($action === 'feesSettled' ? ['cleared' => $cleared] : []);
+            'requested' => count($ids), 'results' => $results];
 }
 
 /**

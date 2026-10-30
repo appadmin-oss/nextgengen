@@ -1274,7 +1274,7 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     /* Membership renews on the anniversary of joining. The 'once' key from the
        one-off era is still what a 0-month cycle posts, so a deployment that
        never wanted a subscription keeps exactly the row it already has. */
-    // Settled up to a date (fees_settle_through): nothing on or before it is charged again.
+    // Settled up to a date (recorded before that tool was retired): nothing on or before it is charged again.
     $settled = substr(trim((string)($member['feesSettledThrough'] ?? '')), 0, 10);
     if ((int)$cfg['membershipFee'] > 0) {
         foreach (fees_membership_periods($ten['start'], $asOf ?? gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) {
@@ -1689,24 +1689,26 @@ function admin_fees_waive(array $p): array {
             'clamped' => $amount < $asked, 'balance' => fees_balance($m)];
 }
 
-/* ── Settled up to a date ───────────────────────────────────────────────────
+/* ── Settled up to a date: RETIRED (2026-10-30) ─────────────────────────────
  *
- * Imported members arrive with a join date years back, so the accrual charges
- * every month and every membership year since — money they paid before this
- * system existed, or never owed. A waiver alone does not fix that: the next
- * accrual has nothing telling it those months are settled. This records the
- * date (members.feesSettledThrough), stops the accrual charging any
- * membership or dues period on or before it, and clears what was already
- * charged for those periods with ONE waiver that carries the reason.
+ * "Clear dues they don't owe" let anybody holding `fees` write off a member's
+ * membership and dues up to a date — one at a time from the account, or five
+ * hundred at a time from the roster — with nothing but a typed sentence as the
+ * reason. The owner's reading: "This should not be available to anybody. It
+ * would cause fraud." An instrument that turns a debt into nothing on one
+ * person's say-so is the shape a fraud takes, whoever is holding it.
  *
- * What is cleared is exact, not "the balance": payments and waivers are
- * applied to the oldest real charges first (the usual order), and only the
- * membership and dues still unpaid for periods on or before the date are
- * waived. Fines are conduct, not dues, and stay; the training fee is never
- * asked for, so it is not touched. The waiver's key is the date, so running it
- * twice does not clear twice.
+ * So both doors are shut on the server, not hidden on the screen: the bulk
+ * action is gone from members_bulk_actions(), and admin.fees.settle answers
+ * `retired` to everybody, the super admin included. What already happened
+ * stands: `members.feesSettledThrough` dates recorded before the retirement
+ * are still honoured by the accrual (fees_accrue_member), and their waivers
+ * stay on the ledger, because rewriting history is not the fix for a tool
+ * that could rewrite history.
+ *
+ * The one sanctioned clearance is fines, once, for every active member:
+ * admin.fees.finesClearOnce below.
  */
-const FEES_SETTLE_REASON_MAX = 240;
 /** The calendar day each real charge belongs to, for oldest-first allocation. */
 function fees_charge_day(array $e, array $memberDues): string {
     $k = (string)$e['kind']; $pk = (string)($e['periodKey'] ?? '');
@@ -1714,66 +1716,164 @@ function fees_charge_day(array $e, array $memberDues): string {
     if ($k === 'membership' && isset($memberDues[$pk])) return $memberDues[$pk];
     return substr((string)($e['createdAt'] ?? ''), 0, 10);
 }
-/** What is unpaid on membership and dues for periods on or before $date (payments applied oldest first). */
-function fees_unpaid_through(array $member, string $date, ?array $cfg = null): int {
+/**
+ * What is still unpaid on charges of the given kinds, payments and waivers
+ * applied to the oldest real charges first (the order every screen uses).
+ * $through limits it to charges on or before a day; null is all of them.
+ */
+function fees_unpaid_of(array $member, array $kinds, ?string $through = null, ?array $cfg = null, ?array $entries = null): int {
     $cfg = $cfg ?? fees_settings();
     $ten = fees_tenure($member, $cfg);
     $memberDues = [];
     if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
     $charges = []; $credit = 0;
-    foreach (fees_entries((string)$member['memberId']) as $e) {
+    foreach ($entries ?? fees_entries((string)$member['memberId']) as $e) {
         if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
         $kind = (string)$e['kind'];
-        if ((string)$e['direction'] === 'charge') { if ($kind !== 'training') $charges[] = ['kind' => $kind, 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues)]; }
+        if ((string)$e['direction'] === 'charge') { if ($kind !== 'training') $charges[] = ['kind' => $kind, 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)]; }
         elseif ($kind !== 'writeoff') $credit += (int)$e['amount'];
     }
-    usort($charges, static fn($a, $b) => [$a['day'], $a['kind']] <=> [$b['day'], $b['kind']]);
+    usort($charges, static fn($a, $b) => [$a['day'], $a['id']] <=> [$b['day'], $b['id']]);
     $unpaid = 0;
     foreach ($charges as $c) {
         $take = min($credit, $c['amount']); $credit -= $take;
         $left = $c['amount'] - $take;
-        if ($left > 0 && in_array($c['kind'], ['membership', 'dues'], true) && $c['day'] !== '' && $c['day'] <= $date) $unpaid += $left;
+        if ($left > 0 && in_array($c['kind'], $kinds, true) && ($through === null || ($c['day'] !== '' && $c['day'] <= $through))) $unpaid += $left;
     }
     return $unpaid;
 }
-/** The one implementation: record the date, clear what is unpaid up to it. */
-function fees_settle_through(array $member, string $date, string $reason, string $by, string $ip = ''): array {
-    $id = (string)$member['memberId'];
-    $had = substr(trim((string)($member['feesSettledThrough'] ?? '')), 0, 10);
-    $amount = fees_unpaid_through($member, $date);
-    $entryId = '';
-    if ($amount > 0) {
-        $e = fees_post($id, 'waiver', $amount, ['periodKey' => 'settle:' . $date, 'note' => mb_substr('Settled up to ' . $date . ': ' . $reason, 0, 240), 'by' => $by]);
-        if (!$e) return ['ok' => false, 'error' => 'post_failed'];
-        $entryId = (string)$e['entryId'];
-    }
-    $moved = $had === '' || $date > $had;
-    if ($moved) db_update('members', ['feesSettledThrough' => $date, 'updatedAt' => now_iso()], ['memberId' => $id]);
-    if (!$amount && !$moved) return ['ok' => true, 'unchanged' => true, 'cleared' => 0, 'settledThrough' => $had];
-    // A line on this member's record, like a single edit, whichever way it was made.
-    audit('fees.settle', $by, $id, ['through' => $date, 'from' => $had, 'cleared' => $amount, 'entryId' => $entryId, 'reason' => $reason], $ip);
-    return ['ok' => true, 'cleared' => $amount, 'entryId' => $entryId, 'settledThrough' => $moved ? $date : $had];
-}
-/** Check a settle payload once, before any row is touched. */
-function fees_settle_validate($date, $reason): array {
-    $date = trim((string)$date); $reason = trim((string)preg_replace('/\s+/u', ' ', (string)$reason));
-    if ($date === '') $date = gmdate('Y-m-d');
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !strtotime($date . 'T00:00:00Z')) return ['ok' => false, 'error' => 'bad_date'];
-    if ($date > gmdate('Y-m-d')) return ['ok' => false, 'error' => 'date_in_future', 'detail' => 'Settled up to a day that has not come yet would excuse dues not yet charged.'];
-    if (mb_strlen($reason) < 4) return ['ok' => false, 'error' => 'reason_required', 'detail' => 'Say why, so anyone reading the account later knows.'];
-    return ['ok' => true, 'date' => $date, 'reason' => mb_substr($reason, 0, FEES_SETTLE_REASON_MAX)];
-}
-/** admin.fees.settle — one member, from their account. */
+/** admin.fees.settle — retired. Kept as an op so an old screen gets a reason, not unknown_op. */
 function admin_fees_settle(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
-    $id = trim((string)($p['memberId'] ?? ''));
-    $sg = fees_scope_gate($g['requester'], $id); if (!$sg['ok']) return $sg;
-    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
-    if (!$m) return ['ok' => false, 'error' => 'not_found'];
-    $v = fees_settle_validate($p['date'] ?? '', $p['reason'] ?? ''); if (!$v['ok']) return $v;
-    $r = fees_settle_through($m, $v['date'], $v['reason'], (string)$g['requester']['memberId'], (string)($p['ip'] ?? ''));
-    if (empty($r['ok'])) return $r;
-    return $r + ['balance' => fees_balance(db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]))];
+    audit('fees.settle.refused', (string)$g['requester']['memberId'], trim((string)($p['memberId'] ?? '')), ['why' => 'retired'], (string)($p['ip'] ?? ''));
+    return ['ok' => false, 'error' => 'retired',
+            'detail' => 'Clearing dues up to a date has been withdrawn: it let one person wipe a debt on their own say-so. Record a payment, or a waiver with its reason.'];
+}
+
+/* ══ Clear every active member's fines — ONCE, then never again ══════════════
+ *
+ * The owner wants the fines carried over from before this system cleared for
+ * every active member, and then the power gone. Everything below is about the
+ * second half, because a clearance that can be run twice is a standing
+ * write-off button with a nicer name.
+ *
+ *  · WHO. A super admin (by role — a granted `fees` cap is not enough), with
+ *    no centre scope, typing a CURRENT code from their own authenticator app
+ *    with the request: a stolen session cookie alone cannot run it.
+ *  · WHAT. Every member who is NGG and `active`, the fines still unpaid on
+ *    their account (payments applied oldest first, so a fine already paid is
+ *    not "cleared" a second time). Dues, membership and the training fee are
+ *    not touched. One waiver per member, keyed `fines-cleared:once`.
+ *  · CHECK, THEN APPLY WHAT WAS CHECKED. The preview returns the members, the
+ *    total and a digest; the run recomputes and refuses on any difference,
+ *    and needs the typed phrase and a reason.
+ *  · ONCE. The run first INSERTs the single row `fines_clear` into
+ *    `fees_once_locks` (migration 200), whose key is the primary key, inside
+ *    the same transaction as the waivers. A second run — a double press, two
+ *    tabs, a replayed request — fails on that insert and writes nothing. No op
+ *    deletes from that table; there is no "unlock".
+ *  · SEEN. One audit event with the count and the total, and the lock row
+ *    itself is shown to every `fees` holder afterwards: who, when, how many,
+ *    how much, and why.
+ *
+ * Fines posted AFTER the run are ordinary fines and stay owed; the ledger
+ * keeps every cleared fine (a waiver beside it), so re-uploading an old sheet
+ * still reports "already posted" rather than fining the family again.
+ */
+const FEES_FINES_CLEAR_LOCK = 'fines_clear';
+const FEES_FINES_CLEAR_PHRASE = 'CLEAR ALL FINES';
+function fees_fines_clear_lock(): ?array {
+    try { $r = db_row('SELECT * FROM fees_once_locks WHERE lockKey = ? LIMIT 1', [FEES_FINES_CLEAR_LOCK]); }
+    catch (Throwable $e) { return null; }
+    if (!$r) return null;
+    $who = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [(string)$r['usedBy']]);
+    return ['usedAt' => (string)$r['usedAt'], 'usedBy' => (string)$r['usedBy'], 'usedByName' => (string)($who['fullName'] ?? ''),
+            'members' => (int)$r['members'], 'total' => (int)$r['total'], 'reason' => (string)$r['reason']];
+}
+/** Who would be cleared, and of how much. One ledger read for everybody. */
+function fees_fines_clear_plan(): array {
+    $cfg = fees_settings();
+    $ms = array_values(array_filter(db_all("SELECT * FROM members WHERE status = 'active' ORDER BY fullName"), 'member_is_ngg'));
+    $byId = [];
+    if ($ms) {
+        foreach (array_chunk(array_column($ms, 'memberId'), 400) as $chunk) {
+            $ph = implode(',', array_fill(0, count($chunk), '?'));
+            foreach (db_all("SELECT * FROM member_ledger WHERE memberId IN ($ph) ORDER BY id", $chunk) as $e) $byId[(string)$e['memberId']][] = $e;
+        }
+    }
+    $rows = []; $total = 0;
+    foreach ($ms as $m) {
+        $id = (string)$m['memberId'];
+        $amt = fees_unpaid_of($m, ['fine'], null, $cfg, $byId[$id] ?? []);
+        if ($amt <= 0) continue;
+        $rows[] = ['memberId' => $id, 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? ''), 'amount' => $amt];
+        $total += $amt;
+    }
+    $digest = substr(hash('sha256', json_encode(array_map(static fn($r) => [$r['memberId'], $r['amount']], $rows))), 0, 32);
+    return ['rows' => $rows, 'members' => count($rows), 'total' => $total, 'digest' => $digest];
+}
+/** Gate: super admin by role, unscoped, with a current authenticator code when acting. */
+function fees_fines_clear_gate(array $p, bool $acting): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $me = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$g['requester']['memberId']]) ?: $g['requester'];
+    if (strtolower((string)($me['role'] ?? '')) !== 'super_admin') return ['ok' => false, 'error' => 'forbidden', 'detail' => 'super_admin_only'];
+    if (admin_centre_names_in_scope($me) !== null) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'scoped'];
+    if ($acting) {
+        if (trim((string)($me['totpSecret'] ?? '')) === '') return ['ok' => false, 'error' => 'totp_required', 'detail' => 'Set up an authenticator app on your account first.'];
+        /* Five wrong codes in fifteen minutes and it stops answering for the
+           rest of them: a stolen session must not be able to walk the code
+           space. Each miss is on the audit log, which is also the counter. */
+        $since = gmdate('Y-m-d\TH:i:s\Z', time() - 900);
+        $misses = (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'fees.fines.clear_badcode' AND actorId = ? AND at >= ?", [(string)$me['memberId'], $since])['c'] ?? 0);
+        if ($misses >= 5) return ['ok' => false, 'error' => 'too_many_attempts', 'detail' => 'Too many wrong codes. Wait fifteen minutes.'];
+        $code = preg_replace('/\D+/', '', (string)($p['code'] ?? ''));
+        if (strlen($code) !== 6 || !totp_verify((string)$me['totpSecret'], $code, 1)) {
+            audit('fees.fines.clear_badcode', (string)$me['memberId'], '', [], (string)($p['ip'] ?? ''));
+            return ['ok' => false, 'error' => 'bad_code', 'detail' => 'That code is not the current one from your authenticator app.'];
+        }
+    }
+    return ['ok' => true, 'requester' => $me];
+}
+/** admin.fees.finesClearOnce — {mode: status|preview|run}. */
+function admin_fees_fines_clear_once(array $p): array {
+    $mode = (string)($p['mode'] ?? 'status');
+    if ($mode === 'status') {
+        $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+        $lock = fees_fines_clear_lock();
+        $me = db_row('SELECT role, centreScope FROM members WHERE memberId = ? LIMIT 1', [(string)$g['requester']['memberId']]) ?: [];
+        return ['ok' => true, 'used' => $lock !== null, 'lock' => $lock,
+                'canRun' => $lock === null && strtolower((string)($me['role'] ?? '')) === 'super_admin', 'phrase' => FEES_FINES_CLEAR_PHRASE];
+    }
+    $acting = $mode === 'run';
+    $g = fees_fines_clear_gate($p, $acting); if (!$g['ok']) return $g;
+    $by = (string)$g['requester']['memberId'];
+    if (($lock = fees_fines_clear_lock()) !== null) return ['ok' => false, 'error' => 'already_used', 'lock' => $lock];
+    $plan = fees_fines_clear_plan();
+    if ($mode === 'preview') return ['ok' => true, 'members' => $plan['members'], 'total' => $plan['total'], 'digest' => $plan['digest'], 'rows' => array_slice($plan['rows'], 0, 1000), 'phrase' => FEES_FINES_CLEAR_PHRASE];
+    if ($mode !== 'run') return ['ok' => false, 'error' => 'bad_mode'];
+    if (trim((string)($p['phrase'] ?? '')) !== FEES_FINES_CLEAR_PHRASE) return ['ok' => false, 'error' => 'phrase_mismatch', 'detail' => 'Type ' . FEES_FINES_CLEAR_PHRASE . ' exactly.'];
+    $reason = trim((string)preg_replace('/\s+/u', ' ', (string)($p['reason'] ?? '')));
+    if (mb_strlen($reason) < 10) return ['ok' => false, 'error' => 'reason_required', 'detail' => 'Say why, in a sentence. It is kept with the record of this run.'];
+    if ((string)($p['digest'] ?? '') !== $plan['digest']) return ['ok' => false, 'error' => 'import_changed', 'detail' => 'The fines changed since the preview. Preview again.'];
+    $pdo = db_conn(); $now = now_iso();
+    try {
+        $pdo->beginTransaction();
+        // The lock FIRST: its primary key is what makes this run the only one.
+        db_insert('fees_once_locks', ['lockKey' => FEES_FINES_CLEAR_LOCK, 'usedAt' => $now, 'usedBy' => $by,
+            'members' => $plan['members'], 'total' => $plan['total'], 'reason' => mb_substr($reason, 0, 240), 'digest' => $plan['digest']]);
+        foreach ($plan['rows'] as $r) {
+            $e = fees_post($r['memberId'], 'waiver', $r['amount'], ['periodKey' => 'fines-cleared:once', 'by' => $by,
+                'note' => mb_substr('Fines cleared for every active member (' . substr($now, 0, 10) . '): ' . $reason, 0, 240)]);
+            if (!$e) throw new RuntimeException('post_failed:' . $r['memberId']);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        if (fees_fines_clear_lock() !== null) return ['ok' => false, 'error' => 'already_used', 'lock' => fees_fines_clear_lock()];
+        return ['ok' => false, 'error' => 'post_failed', 'detail' => 'Nothing was written.'];
+    }
+    audit('fees.fines.clear_once', $by, '', ['members' => $plan['members'], 'total' => $plan['total'], 'reason' => $reason, 'digest' => $plan['digest']], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'members' => $plan['members'], 'total' => $plan['total'], 'lock' => fees_fines_clear_lock()];
 }
 
 /**
@@ -2107,9 +2207,11 @@ function admin_fees_arrears(array $p): array {
  */
 const FEES_FINE_IMPORT_MAX = 500;
 
-/** Reason words a sheet actually contains, mapped onto the fixed vocabulary. */
+/** Reason words a sheet actually contains, mapped onto the fixed vocabulary.
+ *  An exact word first, then a word INSIDE the cell ("came late to class",
+ *  "broke the projector"), because a register is written in sentences. */
 function fees_fine_reason_code(string $raw): ?string {
-    $r = strtolower(trim($raw));
+    $r = strtolower(trim(preg_replace('/\s+/', ' ', $raw)));
     if ($r === '') return null;
     if (isset(FEES_FINE_REASONS[$r])) return $r;
     foreach (FEES_FINE_REASONS as $code => $label) if (strtolower($label) === $r) return $code;
@@ -2117,23 +2219,46 @@ function fees_fine_reason_code(string $raw): ?string {
             'absence' => 'absent', 'absent without notice' => 'absent', 'missed' => 'absent', 'missed session' => 'absent',
             'damage' => 'equipment', 'damaged' => 'equipment', 'lost' => 'equipment', 'lost equipment' => 'equipment',
             'misconduct' => 'conduct', 'behaviour' => 'conduct', 'behavior' => 'conduct', 'indiscipline' => 'conduct'];
-    return $syn[$r] ?? null;
+    if (isset($syn[$r])) return $syn[$r];
+    $words = [
+        'late'      => ['/\blate\b/', '/\blateness\b/', '/\btard/', '/\bcame in at\b/', '/\bafter (the )?bell\b/'],
+        'absent'    => ['/\babsen/', '/\bmissed\b/', '/\btruan/', '/\bdid not (come|attend|show)/', '/\bdidn.?t (come|attend|show)/', '/\bno.?show\b/', '/\bskipped\b/'],
+        /* Only the things the programme lends: "broke a window" is damage, but
+           not to equipment, and stays a written reason for a person to read. */
+        'equipment' => ['/\bequipment\b/', '/\blaptop/', '/\bprojector/', '/\btablet/', '/\bcharger/', '/\bheadphone/', '/\bkeyboard/', '/\bmouse\b/', '/\bcamera/', '/\bcomputer/', '/\bchess (set|board|clock)/'],
+        'conduct'   => ['/\bconduct\b/', '/\bbehavio/', '/\bfight/', '/\brude\b/', '/\bdisrespect/', '/\bbully/', '/\bindisciplin/', '/\bnoise/', '/\bphone\b/', '/\buniform\b/', '/\bdisobe/'],
+    ];
+    $hits = [];
+    foreach ($words as $code => $res) foreach ($res as $re) if (preg_match($re, $r)) { $hits[$code] = true; break; }
+    // Exactly one kind named: that is the reason. Two ("late and rude") is a person's call, so it stays written.
+    return count($hits) === 1 ? array_key_first($hits) : null;
 }
 
-/** "₦5,000", "5000", "5k", "N5,000.00" → whole naira, or 0 when unreadable. */
+/** "₦5,000", "5000", "5k", "N5,000.00", "#2,000", "2000 naira", "2,000/-" → whole naira, or 0 when unreadable.
+ *  "#" is how a Nigerian keyboard writes the naira sign. */
 function fees_fine_amount(string $raw): int {
-    $s = strtolower(str_replace([',', ' ', '₦'], '', trim($raw)));
+    $s = strtolower(str_replace([',', ' ', "\u{00a0}", '₦', '#'], '', trim($raw)));
+    $s = preg_replace('#(/-|=)$#', '', $s);
+    $s = preg_replace('/(naira|ngn)$/', '', $s);
     $s = preg_replace('/^(ngn|n)/', '', $s);
     if (preg_match('/^(\d+(?:\.\d+)?)k$/', $s, $m)) return (int)round((float)$m[1] * 1000);
     return preg_match('/^\d+(?:\.\d{1,2})?$/', $s) ? (int)round((float)$s) : 0;
 }
 
-/** A sheet's date as YYYY-MM-DD — ISO, or the day-first form Nigerian sheets use. */
+/** A sheet's date as YYYY-MM-DD — ISO, the day-first form Nigerian sheets use
+ *  (04/10/2026, 4.10.26), the written forms ("4 Oct 2026", "4th October, 2026",
+ *  "Oct 4, 2026", "Saturday 4 October 2026") and an Excel day number. */
 function fees_fine_date(string $raw): ?string {
-    $s = trim($raw);
+    $s = trim(preg_replace('/\s+/', ' ', $raw));
     if ($s === '') return '';
-    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $s, $m)) [$y, $mo, $d] = [(int)$m[1], (int)$m[2], (int)$m[3]];
-    elseif (preg_match('#^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$#', $s, $m)) [$d, $mo, $y] = [(int)$m[1], (int)$m[2], (int)$m[3]];
+    $mon = ['jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6, 'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12];
+    $yy = static fn($y) => $y < 100 ? 2000 + $y : $y;
+    $l = strtolower(preg_replace('/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s+/i', '', $s));
+    if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ t].*)?$/', $l, $m)) [$y, $mo, $d] = [(int)$m[1], (int)$m[2], (int)$m[3]];
+    elseif (preg_match('#^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$#', $l, $m)) [$d, $mo, $y] = [(int)$m[1], (int)$m[2], $yy((int)$m[3])];
+    elseif (preg_match('/^(\d{1,2})(?:st|nd|rd|th)?(?: of)? ([a-z]{3})[a-z]*\.?,? (\d{2}|\d{4})$/', $l, $m) && isset($mon[$m[2]])) [$d, $mo, $y] = [(int)$m[1], $mon[$m[2]], $yy((int)$m[3])];
+    elseif (preg_match('/^([a-z]{3})[a-z]*\.? (\d{1,2})(?:st|nd|rd|th)?,? (\d{2}|\d{4})$/', $l, $m) && isset($mon[$m[1]])) [$d, $mo, $y] = [(int)$m[2], $mon[$m[1]], $yy((int)$m[3])];
+    elseif (preg_match('/^\d{5}(?:\.\d+)?$/', $l)) return gmdate('Y-m-d', (int)round(((float)$l - 25569) * 86400));
     else return null;
     return checkdate($mo, $d, $y) ? sprintf('%04d-%02d-%02d', $y, $mo, $d) : null;
 }
@@ -2141,10 +2266,14 @@ function fees_fine_date(string $raw): ?string {
 /**
  * Who a sheet row means. Returns ['member' => row, 'by' => how] or
  * ['error' => code, 'candidates' => [...]] — never a guess.
+ *
+ * $centre, when the sheet has a centre column (or the operator named one for
+ * the whole file), is a TIE-BREAKER only: two Ada Okafors at different centres
+ * become one at Egbeda. It never turns a non-match into a match.
  */
-function fees_fine_match(string $ref, string $name, string $email): array {
+function fees_fine_match(string $ref, string $name, string $email, string $centre = ''): array {
     $ref = trim($ref); $name = trim(preg_replace('/\s+/', ' ', $name)); $email = strtolower(trim($email));
-    $shape = static fn($m) => ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? '')];
+    $shape = static fn($m) => ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? '')];
     $live = "COALESCE(status,'') NOT IN ('merged','deleted')";
     /* A Summer account sharing a parent's email or a name is not a reason to
        call an NGG member ambiguous; but when only a Summer account matches, it
@@ -2153,6 +2282,28 @@ function fees_fine_match(string $ref, string $name, string $email): array {
         $ngg = array_values(array_filter($rows, 'member_is_ngg'));
         return $ngg ?: $rows;
     };
+    $cen = mb_strtolower(trim($centre));
+    // Narrow by centre only when it leaves exactly the people at that centre.
+    $atCentre = static function (array $rows) use ($cen): array {
+        if ($cen === '' || count($rows) < 2) return $rows;
+        $here = array_values(array_filter($rows, static fn($m) => mb_strtolower(trim((string)($m['centre'] ?? ''))) === $cen));
+        return $here ?: $rows;
+    };
+    $one = static function (array $rows, string $by) use ($atCentre, $shape, $cen): ?array {
+        if (count($rows) === 1) return ['member' => $rows[0], 'by' => $by];
+        if (count($rows) > 1) {
+            $n = $atCentre($rows);
+            if (count($n) === 1) return ['member' => $n[0], 'by' => $by . '+centre'];
+            return ['error' => 'ambiguous', 'candidates' => array_map($shape, array_slice($n, 0, 5))];
+        }
+        return null;
+    };
+    /* A register often writes the number inside the name: "Ada Okafor (026-014)",
+       "026-014 Ada Okafor". The number is the identifier; the rest is the name. */
+    if ($ref === '' && $name !== '' && preg_match('/\b(\d{3}-\d{3}|NGG-[A-Z0-9-]+)\b/i', $name, $m)) {
+        $ref = $m[1];
+        $name = trim(preg_replace('/\s*[\(\[]?\s*' . preg_quote($m[1], '/') . '\s*[\)\]]?\s*/i', ' ', $name));
+    }
     if ($ref !== '') {
         // An identifier — member number, printed ID or a card's own format.
         $hit = function_exists('checkin_member_resolve') ? checkin_member_resolve($ref) : null;
@@ -2163,27 +2314,36 @@ function fees_fine_match(string $ref, string $name, string $email): array {
     if ($email !== '') {
         $rows = $prefer(db_all("SELECT * FROM members WHERE lower(email) = ? AND $live", [$email]));
         if ($name !== '') {
-            $rows2 = array_values(array_filter($rows, static fn($m) => mb_strtolower(trim((string)$m['fullName'])) === mb_strtolower($name)));
+            $rows2 = array_values(array_filter($rows, static fn($m) => fees_fine_name_key((string)$m['fullName']) === fees_fine_name_key($name)));
             if (count($rows2) === 1) return ['member' => $rows2[0], 'by' => 'email+name'];
         }
-        if (count($rows) === 1) return ['member' => $rows[0], 'by' => 'email'];
         // Siblings share a parent's email: more than one means ask, not pick.
-        if (count($rows) > 1) return ['error' => 'ambiguous', 'candidates' => array_map($shape, array_slice($rows, 0, 5))];
+        if (($r = $one($rows, 'email')) !== null) return $r;
     }
     if ($name !== '') {
         $rows = $prefer(db_all("SELECT * FROM members WHERE lower(trim(fullName)) = ? AND $live LIMIT 12", [mb_strtolower($name)]));
-        if (count($rows) === 1) return ['member' => $rows[0], 'by' => 'name'];
-        if (count($rows) > 1) return ['error' => 'ambiguous', 'candidates' => array_map($shape, array_slice($rows, 0, 5))];
+        if (($r = $one($rows, 'name')) !== null) return $r;
         /* Sheets typed by hand write "Mobolaji Daniel" for Daniel Mobolaji, and
            mark rows with "*". The same words in any order still has to point at
-           exactly one person; a near miss ("Ounfayo" for Ogunfayo) is offered
-           as a candidate and never charged. */
+           exactly one person. */
         $key = fees_fine_name_key($name);
         if ($key !== '') {
             $idx = fees_fine_name_index();
-            $rows = $prefer($idx['byKey'][$key] ?? []);
-            if (count($rows) === 1) return ['member' => $rows[0], 'by' => 'name_any'];
-            if (count($rows) > 1) return ['error' => 'ambiguous', 'candidates' => array_map($shape, array_slice($rows, 0, 5))];
+            if (($r = $one($prefer($idx['byKey'][$key] ?? []), 'name_any')) !== null) return $r;
+            /* "Ada Okafor" for Ada Chioma Okafor: every word the sheet wrote is
+               one of the member's, at least two of them, and only one member
+               fits. A one-word name ("Ada") is never enough. */
+            $want = explode(' ', $key);
+            if (count($want) >= 2) {
+                $fit = [];
+                foreach ($idx['byKey'] as $k => $list) {
+                    $have = explode(' ', $k);
+                    if (count($have) > count($want) && !array_diff($want, $have)) foreach ($list as $m) $fit[] = $m;
+                }
+                if (($r = $one($prefer($fit), 'name_part')) !== null) return $r;
+            }
+            /* A near miss ("Ounfayo" for Ogunfayo) is offered as a candidate
+               and never charged. */
             $near = [];
             foreach ($idx['byKey'] as $k => $list) {
                 if (abs(strlen($k) - strlen($key)) > 3) continue;
@@ -2220,6 +2380,25 @@ function fees_fine_name_index(bool $reset = false): array {
 }
 
 /**
+ * Room under a Club conduct rule for one more fine — the same reading
+ * conduct_rule_allow() makes when the fine is posted, plus what earlier rows
+ * of the same file have already used. ['off' => bool, 'left' => int|null
+ * (null: no cap), 'rule' => key].
+ */
+function fees_fine_rule_room(string $memberId, string $reason, string $note, array $usedInFile): array {
+    $none = ['off' => false, 'left' => null, 'rule' => ''];
+    if (!function_exists('conduct_rule_key')) return $none;
+    $k = conduct_rule_key(['method' => $reason, 'note' => $note]); if ($k === '') return $none;
+    try { $r = db_row('SELECT * FROM conduct_rules WHERE reason = ? ORDER BY id LIMIT 1', [$k]); } catch (Throwable $e) { return $none; }
+    if (!$r) return $none;
+    if (!(int)$r['active']) return ['off' => true, 'left' => 0, 'rule' => $k];
+    if ((int)$r['capTerm'] <= 0) return ['off' => false, 'left' => null, 'rule' => $k];
+    $big = FEES_AMOUNT_MAX * 100;
+    $left = conduct_rule_allow($memberId, $big, ['method' => $reason, 'note' => $note]);
+    return ['off' => false, 'left' => max(0, $left - ($usedInFile[$memberId . '|' . $k] ?? 0)), 'rule' => $k];
+}
+
+/**
  * admin.fees.fineImport — rows: [{member, name, email, amount, reason, note, date}].
  * dryRun: true returns per-row verdicts and a digest and writes nothing; the
  * apply must carry that digest back.
@@ -2234,9 +2413,12 @@ function admin_fees_fine_import(array $p): array {
     $by = (string)($req['memberId'] ?? '');
     $str = static fn($r, $k) => is_scalar($r[$k] ?? null) ? trim((string)$r[$k]) : '';
 
+    // A centre named for the whole file breaks ties between members of the same name.
+    $defCentre = is_scalar($p['centre'] ?? null) ? trim((string)$p['centre']) : '';
+    $today = gmdate('Y-m-d');
     // Validate and match every row before anything is written.
     fees_fine_name_index(true);
-    $plan = []; $seen = [];
+    $plan = []; $seen = []; $ruleUsed = [];
     foreach ($rows as $i => $r) {
         $r = is_array($r) ? $r : [];
         $v = ['row' => $i + 1, 'verdict' => 'failed'];
@@ -2244,7 +2426,7 @@ function admin_fees_fine_import(array $p): array {
         if (in_array(strtolower($str($r, 'amount')), ['', 'null', 'nil', 'none', '-', '—', 'n/a', 'na', '0'], true)) {
             $v['verdict'] = 'skipped'; $plan[] = $v + ['error' => 'no_amount', 'fullName' => $str($r, 'name')]; continue;
         }
-        $match = fees_fine_match($str($r, 'member'), $str($r, 'name'), $str($r, 'email'));
+        $match = fees_fine_match($str($r, 'member'), $str($r, 'name'), $str($r, 'email'), $str($r, 'centre') !== '' ? $str($r, 'centre') : $defCentre);
         if (isset($match['error'])) { $plan[] = $v + ['error' => $match['error'], 'candidates' => $match['candidates']]; continue; }
         $m = $match['member'];
         $v += ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
@@ -2255,6 +2437,9 @@ function admin_fees_fine_import(array $p): array {
         if ($amount <= 0 || $amount > FEES_AMOUNT_MAX) { $plan[] = $v + ['error' => 'bad_amount']; continue; }
         $note = mb_substr($str($r, 'note'), 0, 200);
         $reason = fees_fine_reason_code($str($r, 'reason'));
+        /* No reason column, but a note that says it ("came 40 minutes late"):
+           the note names the reason and stays as the note. */
+        if ($reason === null && $str($r, 'reason') === '' && $note !== '') $reason = fees_fine_reason_code($note);
         if ($reason === null) {
             // An unknown word is kept as the written reason rather than lost.
             if ($str($r, 'reason') === '' && $note === '') { $plan[] = $v + ['error' => 'reason_required']; continue; }
@@ -2264,14 +2449,34 @@ function admin_fees_fine_import(array $p): array {
         if ($reason === 'other' && $note === '') { $plan[] = $v + ['error' => 'note_required']; continue; }
         $date = fees_fine_date($str($r, 'date'));
         if ($date === null) { $plan[] = $v + ['error' => 'bad_date']; continue; }
+        // A fine for a day that has not come is a typing slip (04/10 for 10/04), not a fine.
+        if ($date !== '' && $date > $today) { $plan[] = $v + ['error' => 'date_in_future', 'date' => $date]; continue; }
         $key = 'bulkfine:' . substr(hash('sha256', implode("\x1f", [$m['memberId'], $reason, $amount, $date, mb_strtolower($note)])), 0, 20);
         if (isset($seen[$key])) { $plan[] = $v + ['error' => 'duplicate_in_file', 'detail' => 'same as row ' . $seen[$key]]; continue; }
         $seen[$key] = $i + 1;
         $exists = db_row("SELECT entryId FROM member_ledger WHERE memberId = ? AND kind = 'fine' AND periodKey = ? AND COALESCE(voidedAt,'') = '' LIMIT 1",
                          [(string)$m['memberId'], $key]);
+        /* The Club's conduct rules apply to every fine at the moment it is
+           posted (fees_post → conduct_rule_allow): a rule switched off posts
+           nothing, a capped rule posts what is left of its cap this term. The
+           check used to promise the sheet's figure and the post then reported
+           "could not be posted" with no reason, or posted less than shown. So
+           the rule is asked here, with the earlier rows of this same file
+           counted against the cap, and the verdict says what will really post. */
+        $asked = $amount; $capped = false;
+        if (!$exists) {
+            $room = fees_fine_rule_room((string)$m['memberId'], $reason, $note, $ruleUsed);
+            if ($room['off']) { $plan[] = $v + ['error' => 'rule_off', 'detail' => $room['rule']]; continue; }
+            if ($room['left'] !== null) {
+                if ($room['left'] <= 0) { $plan[] = $v + ['error' => 'cap_reached', 'detail' => $room['rule']]; continue; }
+                if ($room['left'] < $amount) { $amount = $room['left']; $capped = true; }
+                $ruleUsed[(string)$m['memberId'] . '|' . $room['rule']] = ($ruleUsed[(string)$m['memberId'] . '|' . $room['rule']] ?? 0) + $amount;
+            }
+        }
         $v['verdict'] = $exists ? 'already' : 'fine';
         $plan[] = $v + ['amount' => $amount, 'reason' => $reason,
-                        'reasonLabel' => FEES_FINE_REASONS[$reason], 'note' => $note, 'date' => $date, '_key' => $key];
+                        'reasonLabel' => FEES_FINE_REASONS[$reason], 'note' => $note, 'date' => $date, '_key' => $key]
+                     + ($capped ? ['capped' => true, 'asked' => $asked] : []);
     }
     $tally = ['fine' => 0, 'already' => 0, 'skipped' => 0, 'failed' => 0, 'total' => 0];
     foreach ($plan as $x) { $tally[$x['verdict']]++; if ($x['verdict'] === 'fine') $tally['total'] += $x['amount']; }

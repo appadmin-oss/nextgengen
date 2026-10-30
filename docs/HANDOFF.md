@@ -4631,3 +4631,63 @@ with no MOU will show what they owe.
   does not stop the dues" and "portal: reading an entry marks it read". Both
   fail identically on 8acc5ec7 alone (checked in a clean worktree), so they
   belong to that work, not to the portals change; left for its session.
+
+## Clearing dues retired; every active member's fines cleared once; a fines upload that reads registers (2026-10-30)
+
+The owner, on Members → a record → Fees: "This should not be available to
+anybody. Make it more secure. It would cause fraud. I want to be able to clear
+the fines of all active members, after that the feature should be completely
+locked away. I also need you to correct the fines upload, make it more
+intelligent."
+
+- **"Clear dues they don't owe" is retired on the server, for everybody.**
+  `admin.fees.settle` answers `retired` (and audits the attempt as
+  `fees.settle.refused`); the bulk action `feesSettled` is gone from
+  `members_bulk_actions()` (so `unknown_action`); `fees_settle_through()` and
+  its validator are deleted; the button, the bulk action and `NGGApi...settle`
+  are gone. Dates already in `members.feesSettledThrough` are still honoured
+  by the accrual and shown on the record — history is not rewritten.
+- **`admin.fees.finesClearOnce`** (fees.php): `status` | `preview` | `run`.
+  Super admin by ROLE (a granted `fees` cap is not enough), unscoped, a CURRENT
+  TOTP code from their own `totpSecret` with the run, the phrase `CLEAR ALL
+  FINES`, a reason of 10+ characters, and the preview's digest. It waives each
+  active NGG member's unpaid fines (`fees_unpaid_of`, payments oldest-first —
+  the same allocation the old settle used, now general over kinds) with one
+  waiver keyed `fines-cleared:once`. The ONCE is a row in `fees_once_locks`
+  (migration 200), primary key `fines_clear`, inserted FIRST in the same
+  transaction as the waivers: a double press, a second tab or a replayed
+  request fails on the key and writes nothing. Five wrong codes in fifteen
+  minutes and it refuses even the right one (`too_many_attempts`; each miss is
+  `fees.fines.clear_badcode` on the audit log, which is the counter). No op deletes from that table
+  (a PHP test sweeps the domain files for it). Afterwards every `fees` holder
+  sees the record (who, when, how many, how much, why). UI: Dues & arrears →
+  Upload fines, top. E2E: `tests/fees-lockdown.test.js` (replaces
+  `fees-settle-ui.test.js`; `npm run test:feeslock`).
+- **The fines upload had a real fault:** `fees_post()` applies the Club's
+  conduct rules to every fine (`conduct_rule_allow`), so a rule switched off
+  posted nothing and a capped rule posted less — after a check that had
+  promised the sheet's figure. The post then said "could not be posted" with
+  no reason, or posted less than shown. The check now asks the rule
+  (`fees_fine_rule_room`), counting earlier rows of the same file against the
+  cap: `rule_off` / `cap_reached` refusals, or `capped` with `asked`.
+- **The upload reads a register as kept** (cr-tab-money.jsx `crMoFineSheet`):
+  heading row found in the first 20 rows by meaning (`crMoFineField`), every
+  sheet of a workbook (`crCurXlsxGrids`, rows at their real row numbers), a
+  column per kind of fine split into one fine each (Total then ignored), TOTAL
+  lines and repeated headings skipped, the sheet's name as a centre hint, and a
+  "How the file was read" note listing every column used and ignored. Each
+  result row says where it came from ("Egbeda · row 4 · late"). CSV delimiter
+  sniffed over the first ten lines, not the title line.
+  Server: `#`/`naira`/`/-` amounts; written dates (`4th October, 2026`, `Oct 4
+  2026`, `4/10/26`, Excel day numbers); a future date refused
+  (`date_in_future`); a reason read from a sentence in the reason or the note
+  (one kind only — "late and rude" stays written); a centre (column, sheet
+  name or the request's `centre`) as a TIE-BREAKER only (`name+centre`); an ID
+  written inside the name; `name_part` when every written word is one of a
+  single member's (two words minimum). "Broke a window" stays a written reason:
+  equipment means the things the programme lends.
+- **Tests:** PHP — the settle retirement (3), the clearance (17), the upload
+  (12); the old settle block removed. `tests/fines-upload.test.js` rewritten for
+  the Control Room v2 screen (it still drove the old `.fine-imp` markup and
+  could not have passed) on a two-sheet register: 14/0.
+  `tests/fees-lockdown.test.js`: 12/0.

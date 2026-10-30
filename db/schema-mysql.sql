@@ -4673,3 +4673,15 @@ CREATE TABLE IF NOT EXISTS member_status_log (
   KEY idx_msl_member (memberId, since, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (199) ON DUPLICATE KEY UPDATE version = version;
+
+-- 200: powers that may be used once (every active member's fines cleared once)
+CREATE TABLE IF NOT EXISTS fees_once_locks (
+  lockKey VARCHAR(64) NOT NULL PRIMARY KEY,
+  usedAt VARCHAR(32) NOT NULL,
+  usedBy VARCHAR(64) NOT NULL,
+  members INT NOT NULL DEFAULT 0,
+  total BIGINT NOT NULL DEFAULT 0,
+  reason TEXT,
+  digest VARCHAR(64) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (200) ON DUPLICATE KEY UPDATE version = version;

@@ -887,17 +887,14 @@ and emails the family **one invoice**:
 The fees must be switched on under Dues & arrears; with them off the member is
 still accepted and the screen says no invoice went.
 
-**Members who don't owe their back-dues** (imported members especially: their
-join date is years back, so every membership year and month since is charged,
-though they paid before this system existed). Select them in **Members →
-Roster** and use **Clear dues they don’t owe**, or open one member's record →
-**Fees** → the same button. Give the date they are settled up to (today is
-usual) and why. What is still unpaid on membership and dues for periods on or
-before that date is cleared with one waiver carrying your reason — payments
-already made count first — and those periods are never charged again. Fines and
-the programme's training cost are not touched. Running it again changes nothing;
-settle to a later date if more was paid outside the system. Needs the Fees
-permission; each account gets a line in its history, and the run one audit event.
+**Clearing dues is no longer possible.** "Clear dues they don’t owe" (from the
+roster or a member's record) was withdrawn on 30 October 2026: it let one person
+wipe a family's debt with a sentence of reason, which is how a fraud would look.
+Nobody can use it, the super admin included. A member whose dues were settled to
+a date before then still shows "Membership and dues settled up to …" on their
+Fees, and those periods are still never charged. To take money off an account
+now: record the payment that was made, or waive a specific amount with its
+reason (Money → the member's account).
 
 The family pays through the link (Paystack), or by bank transfer or cash.
 
@@ -1573,19 +1570,45 @@ words. The member's panel and this drawer are drawn by one component from one
 server answer, so they cannot disagree. On a day or week rate, "still to come"
 reaches as far as the meeting calendar is set.
 
+### Clearing every active member's fines — once
+
+**Dues & arrears → Upload fines**, at the top, for a **super admin** only. For
+fines carried over from before this system. It can be used **one time, ever**:
+
+1. **See whose fines would be cleared** lists every active NGG member with an
+   unpaid fine and the amount, and the total. Nothing has happened yet.
+2. **Clear these fines, once…** asks for a reason, the phrase **CLEAR ALL FINES**
+   typed exactly, and the current 6-digit code from **your authenticator app**
+   (set one up on your own account first; five wrong codes lock it for fifteen
+   minutes). It clears exactly the list you saw;
+   if any fine changed since, it asks you to look again.
+3. Each account gets one waiver for its unpaid fines, with your reason. Dues,
+   membership and the training cost are not touched, and fines issued afterwards
+   are owed as normal.
+
+Afterwards the screen shows, to everyone with the Fees permission, when it was
+run, by whom, for how many members, how much and why — and it can never be run
+again, by anybody. The fines themselves stay on each account with the waiver
+beside them, so uploading an old register again still reports them as already
+posted.
+
 ### Uploading a sheet of fines
 
 **Dues & fees → Upload fines** (needs the `fees` permission). For a register
-of fines kept on paper or in a spreadsheet.
+of fines kept on paper or in a spreadsheet — as it was kept; it does not need
+retyping into a template.
 
 1. **Choose your sheet** — an **Excel workbook (.xlsx)** or a **CSV** (commas,
-   semicolons or tabs). Or download the CSV template. Columns are found by
-   their heading: *member* (printed ID or member number), *name*, *email*,
-   *amount* (or **Fine**), *reason*, *date* and *note*; common headings ("Member
-   No", "Comments", "Offence", "Outstanding fine") are recognised and any other
-   column (a subscription or commitment fee, say) is ignored. If the sheet has
-   **no reason column**, type one reason for every row ("Outstanding fine,
-   term 1") in the box that appears. A PDF cannot be read — in Excel or Google
+   semicolons or tabs). Every sheet of a workbook is read (a sheet per centre is
+   fine). The screen finds the **heading row** itself, even under a title, and
+   recognises headings by meaning: *Names*, *Name of child*, *Member No*,
+   *Email*, *Fine (₦)*, *Amount owed*, *Offence*, *Date*, *Remarks*, *Centre*.
+   "S/N" is ignored. A sheet with **a column per kind of fine** (Late, Absent,
+   Equipment, Conduct) becomes one fine per filled column, and its *Total* column
+   and any **TOTAL** line are not fines. The check opens with **How the file was
+   read**, naming each column it used and each one it ignored — read it against
+   your sheet. If the sheet has **no reason** anywhere, type one reason for every
+   row ("Outstanding fine, term 1"). A PDF cannot be read — in Excel or Google
    Sheets choose *File → Download → CSV* or save as .xlsx.
 2. **Check the file.** Every row says which member it matched and **how** —
    by ID, by email + name, by email, or by **name only** (shown in bold: give it
@@ -1598,10 +1621,22 @@ of fines kept on paper or in a spreadsheet.
      this row"), not refused.
    - An email that two siblings share, or a name two members carry, is
      **refused** and the candidates are listed — fix the row with the printed ID.
-   - Amounts may be written `5000`, `₦5,000` or `5k`. Dates may be
-     `2026-10-04` or `04/10/2026` (day first).
-   - Reasons: *late*, *absent*, *equipment*, *conduct*; anything else is kept
-     as the written reason.
+   - A **centre** column, or the sheet's own name ("Egbeda"), settles two
+     members of the same name at different centres (*name + centre*).
+   - A printed ID written inside the name — "Ada Okafor (026-014)" — is used.
+     A name missing a middle name ("Ada Okafor" for Ada Chioma Okafor) matches
+     when it fits exactly one member, as *name, part of it* — a weak match.
+   - Amounts may be written `5000`, `₦5,000`, `#5,000`, `5,000 naira`,
+     `5,000/-` or `5k`. Dates may be `2026-10-04`, `04/10/2026` (day first),
+     `4/10/26`, `4th October, 2026` or `Oct 4 2026`. A date that has not come
+     yet is refused (day and month swapped, usually).
+   - Reasons: *late*, *absent*, *equipment*, *conduct*, also read from a
+     sentence ("came 40 minutes late", "did not attend") in the reason or the
+     note; anything else is kept as the written reason.
+   - **Conduct & fines rules are applied in the check.** A rule switched off
+     refuses its rows ("that rule is switched off"); a rule with a cap per term
+     shows the amount that will really post, marked *capped*, with the sheet's
+     figure beside it. What you post is what the check showed.
    - Summer School participants cannot be fined here — they have no ledger.
 3. **Post fines.** Each fine lands on the member's account and in their next
    reminder. Up to **500** rows a file.

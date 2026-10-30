@@ -17382,61 +17382,131 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     else db_exec("DELETE FROM settings WHERE settingKey = 'fees'");
 })();
 
-/* ── Settled up to a date: imported members who do not owe their back-dues ── */
+/* ── Clearing dues up to a date is RETIRED (fraud path), on the server, for everybody ── */
 (function () {
     $SU = 'NGG-2025-0099';
-    $keepFees = setting_get('fees');
-    backend_dispatch('admin.fees.settings.set', ['requesterId' => $SU, 'data' => ['enabled' => true, 'membershipFee' => 5000, 'membershipEveryMonths' => 12,
-        'monthlyDues' => 1000, 'trainingFee' => 0, 'balanceCap' => 0, 'remindEnabled' => false]]);
     $now = now_iso();
-    foreach (['STL-A' => 'Imported Ada', 'STL-B' => 'Imported Bola', 'STL-C' => 'Imported Chidi'] as $id => $n) {
-        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]); db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
-        db_insert('members', ['memberId' => $id, 'fullName' => $n, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'joinDate' => '2024-01-10', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_exec("DELETE FROM members WHERE memberId = 'STL-A'"); db_exec("DELETE FROM member_ledger WHERE memberId = 'STL-A'");
+    db_insert('members', ['memberId' => 'STL-A', 'fullName' => 'Imported Ada', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'joinDate' => '2024-01-10', 'createdAt' => $now, 'updatedAt' => $now]);
+    fees_post('STL-A', 'dues', 3000, ['periodKey' => '2024-02', 'by' => 'test']);
+    $r = backend_dispatch('admin.fees.settle', ['requesterId' => $SU, 'memberId' => 'STL-A', 'reason' => 'Imported: paid before', 'date' => gmdate('Y-m-d')]);
+    chk('retired: admin.fees.settle refuses even a super admin, and writes nothing to the ledger',
+        ($r['error'] ?? '') === 'retired' && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'STL-A' AND kind = 'waiver'")['c'] === 0
+        && (string)db_row("SELECT feesSettledThrough f FROM members WHERE memberId = 'STL-A'")['f'] === '');
+    chk('retired: the refusal is on the audit log', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'fees.settle.refused' AND subject = 'STL-A'"));
+    $b = backend_dispatch('admin.members.bulk', ['requesterId' => $SU, 'action' => 'feesSettled', 'memberIds' => ['STL-A'], 'date' => '', 'reason' => 'Imported']);
+    chk('retired: the bulk "clear dues" action no longer exists', ($b['error'] ?? '') === 'unknown_action' && !isset(members_bulk_actions()['feesSettled']));
+    db_exec("DELETE FROM member_ledger WHERE memberId = 'STL-A'"); db_exec("DELETE FROM members WHERE memberId = 'STL-A'");
+    db_exec("DELETE FROM audit_log WHERE event = 'fees.settle.refused'");
+})();
+
+/* ── Every active member's fines cleared ONCE, then locked for ever ── */
+(function () {
+    $now = now_iso();
+    $mk = function ($id, $role, $extra = []) use ($now) {
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]); db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_insert('members', $extra + ['memberId' => $id, 'fullName' => 'Clr ' . $id, 'email' => strtolower($id) . '@clr.example', 'type' => 'NGG', 'status' => 'active', 'role' => $role, 'centre' => 'Egbeda', 'joinDate' => gmdate('Y-m-d'), 'createdAt' => $now, 'updatedAt' => $now]);
+    };
+    $secret = 'JBSWY3DPEHPK3PXP';
+    $mk('CLR-SU', 'super_admin', ['totpSecret' => $secret]);
+    $mk('CLR-SU2', 'super_admin');                      // a super admin with no authenticator
+    $mk('CLR-FEE', 'admin', ['capsExtra' => '["fees"]']); // holds `fees`, not super
+    $mk('CLR-A', 'member'); $mk('CLR-B', 'member'); $mk('CLR-C', 'member', ['status' => 'inactive']); $mk('CLR-D', 'member');
+    fees_post('CLR-A', 'fine', 2000, ['periodKey' => 'clr:a1', 'method' => 'other', 'note' => 'x']);
+    fees_post('CLR-A', 'dues', 1500, ['periodKey' => '2026-01']);
+    fees_post('CLR-B', 'fine', 5000, ['periodKey' => 'clr:b1', 'method' => 'other', 'note' => 'x']);
+    fees_post('CLR-B', 'payment', 5000, ['note' => 'paid the fine']);     // B's fine is paid: nothing to clear
+    fees_post('CLR-C', 'fine', 7000, ['periodKey' => 'clr:c1', 'method' => 'other', 'note' => 'x']);   // inactive: not touched
+    $code = fn() => totp_code($secret, intdiv(time(), 30));
+    $go = fn($who, $x) => backend_dispatch('admin.fees.finesClearOnce', ['requesterId' => $who] + $x);
+    $st = $go('CLR-FEE', ['mode' => 'status']);
+    chk('fines clear: a fees holder sees it is unused but cannot run it', !empty($st['ok']) && $st['used'] === false && $st['canRun'] === false);
+    chk('fines clear: only a super admin may preview or run it', ($go('CLR-FEE', ['mode' => 'preview'])['detail'] ?? '') === 'super_admin_only');
+    $pv = $go('CLR-SU', ['mode' => 'preview']);
+    $mine = array_values(array_filter($pv['rows'] ?? [], fn($r) => str_starts_with($r['memberId'], 'CLR-')));
+    chk('fines clear: the preview names active members with UNPAID fines only (a paid fine, dues and an inactive member are not in it)',
+        !empty($pv['ok']) && count($mine) === 1 && $mine[0]['memberId'] === 'CLR-A' && $mine[0]['amount'] === 2000);
+    $base = ['mode' => 'run', 'digest' => $pv['digest'], 'phrase' => FEES_FINES_CLEAR_PHRASE, 'reason' => 'Fines carried over from the paper register'];
+    chk('fines clear: a super admin with no authenticator is refused', ($go('CLR-SU2', $base + ['code' => '123456'])['error'] ?? '') === 'totp_required');
+    chk('fines clear: a wrong authenticator code is refused', ($go('CLR-SU', $base + ['code' => '000000'])['error'] ?? '') === 'bad_code');
+    for ($i = 0; $i < 4; $i++) $go('CLR-SU', $base + ['code' => '000000']);
+    chk('fines clear: five wrong codes and even the right one is refused for fifteen minutes', ($go('CLR-SU', $base + ['code' => $code()])['error'] ?? '') === 'too_many_attempts');
+    db_exec("DELETE FROM audit_log WHERE event = 'fees.fines.clear_badcode'");
+    chk('fines clear: the typed phrase must match', ($go('CLR-SU', ['phrase' => 'clear all fines', 'code' => $code()] + $base)['error'] ?? '') === 'phrase_mismatch');
+    chk('fines clear: a reason is required', ($go('CLR-SU', ['reason' => 'ok', 'code' => $code()] + $base)['error'] ?? '') === 'reason_required');
+    chk('fines clear: a stale preview is refused', ($go('CLR-SU', ['digest' => 'x', 'code' => $code()] + $base)['error'] ?? '') === 'import_changed');
+    chk('fines clear: nothing was written by any refusal', (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE periodKey = 'fines-cleared:once'")['c'] === 0 && fees_fines_clear_lock() === null);
+    $r = $go('CLR-SU', $base + ['code' => $code()]);
+    $bal = fn($id) => fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$id]));
+    chk('fines clear: the run clears exactly the unpaid fines; dues stay owed',
+        !empty($r['ok']) && $r['total'] === $pv['total'] && $bal('CLR-A')['payable'] === 1500 && $bal('CLR-C')['payable'] === 7000);
+    chk('fines clear: the cleared fine stays on the ledger with one waiver beside it',
+        (bool)db_row("SELECT 1 FROM member_ledger WHERE memberId = 'CLR-A' AND kind = 'fine' AND COALESCE(voidedAt,'') = ''")
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'CLR-A' AND periodKey = 'fines-cleared:once'")['c'] === 1);
+    $lock = fees_fines_clear_lock();
+    chk('fines clear: the lock records who, how many, how much and why', $lock && $lock['usedBy'] === 'CLR-SU' && $lock['total'] === $pv['total'] && str_contains($lock['reason'], 'paper register'));
+    fees_post('CLR-D', 'fine', 1000, ['periodKey' => 'clr:d1', 'method' => 'other', 'note' => 'after']);
+    $again = $go('CLR-SU', $base + ['code' => $code(), 'digest' => ($go('CLR-SU', ['mode' => 'preview'])['digest'] ?? '')]);
+    chk('fines clear: it can never run again — preview and run both refuse, and a later fine stays owed',
+        ($again['error'] ?? '') === 'already_used' && ($go('CLR-SU', ['mode' => 'preview'])['error'] ?? '') === 'already_used' && $bal('CLR-D')['payable'] === 1000);
+    $st = $go('CLR-FEE', ['mode' => 'status']);
+    chk('fines clear: afterwards every fees holder sees the record of the one run', $st['used'] === true && $st['canRun'] === false && ($st['lock']['usedBy'] ?? '') === 'CLR-SU');
+    chk('fines clear: one audit event for the run', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'fees.fines.clear_once'")['c'] === 1);
+    chk('fines clear: no op is registered that could remove the lock', !preg_match('/DELETE\s+FROM\s+fees_once_locks/i', implode('', array_map('file_get_contents', glob(__DIR__ . '/../_lib/domain/*.php')))));
+    // Test-only cleanup, so later suites see the ledger they built.
+    db_exec("DELETE FROM member_ledger WHERE periodKey = 'fines-cleared:once'"); db_exec('DELETE FROM fees_once_locks');
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'CLR-%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'CLR-%'");
+    db_exec("DELETE FROM audit_log WHERE event = 'fees.fines.clear_once'");
+})();
+
+/* ── The fines upload reads a register the way a person would ── */
+(function () {
+    chk('fines upload: amounts as written — #2,000, 2000 naira, ₦ 2,000.00, 2,000/-, 5k',
+        fees_fine_amount('#2,000') === 2000 && fees_fine_amount('2000 naira') === 2000 && fees_fine_amount('₦ 2,000.00') === 2000
+        && fees_fine_amount('2,000/-') === 2000 && fees_fine_amount('5k') === 5000 && fees_fine_amount('two') === 0);
+    chk('fines upload: dates as written — 4th October, 2026; Oct 4 2026; Saturday 4 Oct 2026; 04/10/26; an Excel day number',
+        fees_fine_date('4th October, 2026') === '2026-10-04' && fees_fine_date('Oct 4 2026') === '2026-10-04' && fees_fine_date('Saturday 4 Oct 2026') === '2026-10-04'
+        && fees_fine_date('04/10/26') === '2026-10-04' && fees_fine_date('46299') === '2026-10-04' && fees_fine_date('soon') === null);
+    chk('fines upload: a reason read from a sentence, and two kinds in one sentence left to a person',
+        fees_fine_reason_code('came 40 minutes late') === 'late' && fees_fine_reason_code('cracked the projector screen') === 'equipment'
+        && fees_fine_reason_code('did not attend') === 'absent' && fees_fine_reason_code('late and rude') === null);
+    $now = now_iso();
+    foreach (['FUP-1' => ['Zainab Ifeoluwa Oyelaran-Mbah', 'Egbeda'], 'FUP-2' => ['Olumide Fashola-Ige', 'Egbeda'], 'FUP-3' => ['Olumide Fashola-Ige', 'Ayobo'], 'FUP-4' => ['Kemi Late Rule', 'Egbeda']] as $id => [$n, $c]) {
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]); db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => $n, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $c, 'displayId' => '', 'createdAt' => $now, 'updatedAt' => $now]);
     }
-    $row = fn($id) => db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
-    foreach (['STL-A', 'STL-B', 'STL-C'] as $id) fees_accrue_member($row($id));
-    fees_post('STL-A', 'payment', 2000, ['note' => 'Cash', 'by' => $SU]);
-    fees_post('STL-A', 'fine', 500, ['note' => 'Late', 'by' => $SU, 'periodKey' => 'fine:test']);
-    $bal = fees_balance($row('STL-A'));
-    chk('settle: an imported member with a 2024 join date is charged every membership year and month since', (int)($bal['byKind']['membership'] ?? 0) === 15000 && (int)($bal['byKind']['dues'] ?? 0) > 30000 && $bal['payable'] > 40000);
-    $set = fn($x) => backend_dispatch('admin.fees.settle', ['requesterId' => $SU] + $x);
-    chk('settle: a reason is required, and a date to come is refused', ($set(['memberId' => 'STL-A', 'reason' => ''])['error'] ?? '') === 'reason_required'
-        && ($set(['memberId' => 'STL-A', 'reason' => 'Paid before', 'date' => gmdate('Y-m-d', time() + 3 * 86400)])['error'] ?? '') === 'date_in_future');
-    $before = $bal['payable'];
-    $r = $set(['memberId' => 'STL-A', 'reason' => 'Imported: paid before joining this system']);
-    chk('settle: membership and dues still unpaid are cleared exactly (the payment counted first); the fine stays',
-        !empty($r['ok']) && $r['cleared'] === $before - 500 && $r['balance']['payable'] === 500 && $r['settledThrough'] === gmdate('Y-m-d'));
-    $w = db_row("SELECT * FROM member_ledger WHERE memberId = 'STL-A' AND kind = 'waiver' ORDER BY id DESC LIMIT 1");
-    chk('settle: one waiver on the ledger, carrying the date and the reason', $w && (int)$w['amount'] === $before - 500 && str_contains((string)$w['note'], 'Settled up to ' . gmdate('Y-m-d') . ': Imported: paid before'));
-    $n0 = (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'STL-A'")['c'];
-    fees_accrue_member($row('STL-A'));
-    chk('settle: the next accrual charges nothing on or before the date — the dues do not come back',
-        (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'STL-A'")['c'] === $n0 && fees_balance($row('STL-A'))['payable'] === 500);
-    chk('settle: running it again clears nothing twice (unchanged)', !empty($set(['memberId' => 'STL-A', 'reason' => 'Again please'])['unchanged']));
-    // Partial: settled to the end of 2025 only — 2026's membership year and months stay owed.
-    $r = $set(['memberId' => 'STL-B', 'reason' => 'Paid to the end of 2025', 'date' => '2025-12-31']);
-    $owed26 = 0; foreach (fees_entries('STL-B') as $e) if ($e['direction'] === 'charge' && (($e['kind'] === 'dues' && $e['periodKey'] >= '2026-01') || ($e['kind'] === 'membership' && $e['periodKey'] === 'y3'))) $owed26 += (int)$e['amount'];
-    chk('settle: to an earlier date, only the periods up to it are cleared', !empty($r['ok']) && $owed26 > 0 && $r['balance']['payable'] === $owed26);
-    chk('settle: an earlier date than the one recorded changes nothing', !empty($set(['memberId' => 'STL-B', 'reason' => 'Older date', 'date' => '2025-06-30'])['unchanged']));
-    // In bulk, through the member desk's one bulk op.
-    db_exec("DELETE FROM members WHERE memberId IN ('STL-PPL','STL-FEE')");
-    db_insert('members', ['memberId' => 'STL-PPL', 'fullName' => 'People Admin', 'email' => 'stl-ppl@afrovanguard.org.ng', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
-    $bulk = fn($who, $x) => backend_dispatch('admin.members.bulk', ['requesterId' => $who, 'action' => 'feesSettled', 'memberIds' => ['STL-C', 'STL-A', 'NGG-NOPE', $who]] + $x);
-    chk('settle (bulk): it needs the fees permission, not people', ($bulk('STL-PPL', ['date' => '', 'reason' => 'Imported'])['error'] ?? '') === 'forbidden');
-    chk('settle (bulk): the payload is checked before any row', ($bulk($SU, ['reason' => ''])['error'] ?? '') === 'reason_required'
-        && fees_balance($row('STL-C'))['payable'] > 40000);
-    $c0 = fees_balance($row('STL-C'))['payable'];
-    $b = $bulk($SU, ['date' => '', 'reason' => 'Imported roster: paid before this system']);
-    $v = array_column($b['results'] ?? [], null, 'id');
-    chk('settle (bulk): per-row verdicts — cleared, already settled, not found, own account — and the total cleared',
-        !empty($b['ok']) && ($v['STL-C']['cleared'] ?? 0) === $c0 && !empty($v['STL-A']['unchanged']) && ($v['NGG-NOPE']['error'] ?? '') === 'not_found'
-        && ($v[$SU]['error'] ?? '') === 'own_account' && $b['applied'] === 1 && $b['cleared'] === $c0 && fees_balance($row('STL-C'))['payable'] === 0);
-    chk('settle (bulk): one audit event for the run, and a line on each settled member\'s record',
-        (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'admin.members.bulk' AND subject = 'feesSettled'")['c'] === 1
-        && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'fees.settle' AND subject = 'STL-C'"));
-    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'STL-%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'STL-%'");
-    db_exec("DELETE FROM audit_log WHERE event IN ('fees.settle') OR (event = 'admin.members.bulk' AND subject = 'feesSettled')");
-    setting_set('fees', $keepFees, 'test');
+    fees_fine_name_index(true);
+    $m = fees_fine_match('', 'Zainab Oyelaran-Mbah', '');
+    chk('fines upload: "Zainab Oyelaran-Mbah" finds Zainab Ifeoluwa Oyelaran-Mbah (every word hers, only one fits) — marked as part of the name', ($m['member']['memberId'] ?? '') === 'FUP-1' && $m['by'] === 'name_part');
+    chk('fines upload: a single word is never enough', isset(fees_fine_match('', 'Zainab', '')['error']));
+    $amb = fees_fine_match('', 'Olumide Fashola-Ige', '');
+    $byC = fees_fine_match('', 'Olumide Fashola-Ige', '', 'Ayobo');
+    chk('fines upload: two Olumide Fashola-Iges are ambiguous — the centre settles it', ($amb['error'] ?? '') === 'ambiguous' && ($byC['member']['memberId'] ?? '') === 'FUP-3' && $byC['by'] === 'name+centre');
+    $SU = 'NGG-2025-0099';
+    db_exec("DELETE FROM conduct_rules WHERE ruleId IN ('FUP-R1','FUP-R2')");
+    $keep = db_all("SELECT * FROM conduct_rules WHERE reason IN ('late','absent')");
+    db_exec("DELETE FROM conduct_rules WHERE reason IN ('late','absent')");
+    db_insert('conduct_rules', ['ruleId' => 'FUP-R1', 'reason' => 'late', 'name' => 'Late', 'amount' => 500, 'capTerm' => 3000, 'active' => 1, 'createdAt' => $now]);
+    db_insert('conduct_rules', ['ruleId' => 'FUP-R2', 'reason' => 'absent', 'name' => 'Absent', 'amount' => 500, 'capTerm' => 0, 'active' => 0, 'createdAt' => $now]);
+    $rows = [['name' => 'Kemi Late Rule', 'amount' => '2000', 'reason' => 'late', 'date' => '01/10/2026'], ['name' => 'Kemi Late Rule', 'amount' => '2000', 'reason' => 'late', 'date' => '02/10/2026'],
+             ['name' => 'Kemi Late Rule', 'amount' => '1000', 'reason' => 'absent'], ['name' => 'Zainab Oyelaran-Mbah', 'amount' => '#1,500', 'note' => 'fighting at break'],
+             ['name' => 'Olumide Fashola-Ige', 'amount' => '500', 'reason' => 'late', 'centre' => 'Egbeda'], ['name' => 'Olumide Fashola-Ige', 'amount' => '500', 'reason' => 'late', 'centre' => 'Ayobo', 'date' => '01/01/2099']];
+    $d = backend_dispatch('admin.fees.fineImport', ['requesterId' => $SU, 'rows' => $rows, 'dryRun' => true]);
+    $v = $d['rows'] ?? [];
+    chk('fines upload: the check says what the conduct rule will really post — the cap shared across rows of the same file',
+        ($v[0]['verdict'] ?? '') === 'fine' && ($v[0]['amount'] ?? 0) === 2000 && ($v[1]['amount'] ?? 0) === 1000 && !empty($v[1]['capped']) && ($v[1]['asked'] ?? 0) === 2000);
+    chk('fines upload: a rule switched off is refused in the check, not "could not be posted" after', ($v[2]['error'] ?? '') === 'rule_off');
+    chk('fines upload: the reason read from the note; the name matched by part', ($v[3]['reason'] ?? '') === 'conduct' && ($v[3]['matchedBy'] ?? '') === 'name_part');
+    chk('fines upload: a centre column settles a shared name', ($v[4]['memberId'] ?? '') === 'FUP-2' && ($v[4]['matchedBy'] ?? '') === 'name+centre');
+    chk('fines upload: a date that has not come is refused', ($v[5]['error'] ?? '') === 'date_in_future');
+    $a = backend_dispatch('admin.fees.fineImport', ['requesterId' => $SU, 'rows' => $rows, 'digest' => $d['digest']]);
+    $kemi = (int)db_row("SELECT COALESCE(SUM(amount),0) s FROM member_ledger WHERE memberId = 'FUP-4' AND kind = 'fine'")['s'];
+    chk('fines upload: what posts is what the check said (₦3,000 of late fines under the ₦3,000 cap)', !empty($a['ok']) && $kemi === 3000 && $a['tally']['total'] === $d['tally']['total']);
+    db_exec("DELETE FROM conduct_rules WHERE ruleId IN ('FUP-R1','FUP-R2')");
+    foreach ($keep as $k) { unset($k['id']); db_insert('conduct_rules', $k); }
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'FUP-%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'FUP-%'");
+    db_exec("DELETE FROM audit_log WHERE event = 'fees.fine.import'");
+    fees_fine_name_index(true);
 })();
 
 /* ── M4: the dues ledger is gated by its own `fees` capability, not `people` ──

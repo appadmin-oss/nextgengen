@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 /* ============================================================================
-   Clearing dues a member does not owe (Members → a record → Fees), end to end.
+   Money that one person cannot make disappear, end to end.
 
-   Imported members arrive with years of membership and dues charged from an
-   old join date. "Clear dues they don't owe" settles them up to a date
-   (fees_settle_through): unpaid membership and dues on or before it are
-   waived with a reason, and the accrual never charges those periods again.
+   1. "Clear dues they don't owe" is gone (retired 2026-10-30 as a fraud path):
+      a member's Fees part no longer offers it, and the server refuses it.
+   2. Every active member's fines can be cleared ONCE (Dues & arrears →
+      Upload fines): a super admin previews the accounts, then runs it with a
+      reason, the typed phrase and a code from their authenticator app. After
+      that the screen shows the record of the run and nothing else — reloaded,
+      and to the server — for ever.
 
-   Run:  node tests/fees-settle-ui.test.js
+   Run:  node tests/fees-lockdown.test.js
    ========================================================================== */
 'use strict';
 
@@ -51,7 +54,7 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
 
 (async () => {
   const chromium = loadChromium();
-  if (!chromium) { console.log('⏭  fees settle: skipped (playwright not installed)'); process.exit(0); }
+  if (!chromium) { console.log('⏭  fees lockdown: skipped (playwright not installed)'); process.exit(0); }
   if (fs.existsSync(CFG)) { console.error('api/config.php already exists — refusing to overwrite. Move it aside and re-run.'); process.exit(2); }
   fs.writeFileSync(CFG, `<?php return [
     'db' => ['dsn' => '', 'sqlite_path' => ${JSON.stringify(DB)}],
@@ -89,18 +92,49 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
     await waitForBoot(P);
     await P.waitForSelector('[aria-label="Part of the record"]', { timeout: 60000 });
     await P.click('[aria-label="Part of the record"] >> text=Fees');
-    chk('the Fees part offers to clear dues they don’t owe', await until(P, () => /Owes dues from before this system/.test(document.body.innerText), null, 20000));
-    await P.click('button:has-text("Clear dues they don’t owe")');
+    await until(P, () => /Outstanding/.test(document.body.innerText), null, 20000);
+    const feesText = await P.evaluate(() => document.body.innerText);
+    chk('a member’s Fees part no longer offers to clear dues', !/Clear dues they don’t owe|Owes dues from before this system|Settle to a later date/.test(feesText));
+    const refused = php(`echo json_encode(backend_dispatch('admin.fees.settle', ['requesterId' => '${ADMIN}', 'memberId' => '${MEM}', 'reason' => 'Imported: paid before', 'date' => gmdate('Y-m-d')]));`, ['bootstrap']);
+    chk('…and the server refuses it to a super admin, writing nothing', JSON.parse(refused).error === 'retired' && payable() === before);
+
+    // ── The one-time clearance ──
+    php(`fees_post('${MEM}', 'fine', 2500, ['periodKey' => 'fs:fine1', 'method' => 'other', 'note' => 'Old register']);
+         db_insert('members', ['memberId'=>'NGG-FS-K2','fullName'=>'Kemi Fined','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','joinDate'=>gmdate('Y-m-d'),'createdAt'=>now_iso(),'updatedAt'=>now_iso()]);
+         fees_post('NGG-FS-K2', 'fine', 1000, ['periodKey' => 'fs:fine2', 'method' => 'other', 'note' => 'Old register']);`, ['bootstrap']);
+    const finesOwed = () => Number(php(`echo fees_unpaid_of(db_row("SELECT * FROM members WHERE memberId = '${MEM}'"), ['fine']) + fees_unpaid_of(db_row("SELECT * FROM members WHERE memberId = 'NGG-FS-K2'"), ['fine']);`, ['bootstrap']));
+    chk('two active members owe old fines', finesOwed() === 3500);
+    await P.goto(BASE + '/control/money/fees/fines', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(P);
+    chk('Upload fines offers the super admin the one-time clearance', await until(P, () => /Clear the fines of every active member — once/.test(document.body.innerText), null, 60000));
+    await P.click('button:has-text("See whose fines would be cleared")');
+    chk('the preview lists each account and the total before anything happens',
+      await until(P, () => /2 active members with unpaid fines — ₦3,500 in all/.test(document.body.innerText) && /Kemi Fined/.test(document.body.innerText)) && finesOwed() === 3500);
+    await P.click('button:has-text("Clear these fines, once")');
     await P.waitForSelector('[role="dialog"]');
-    await P.click('[role="dialog"] button[type="submit"]');
-    chk('a reason is required on the form', await until(P, () => /Enter why/.test(document.querySelector('[role="dialog"]').innerText)));
-    await P.fill('[role="dialog"] textarea', 'Imported member: paid before joining this system');
-    await P.click('[role="dialog"] button[type="submit"]');
-    chk('saving says what was cleared and to when', await until(P, () => /cleared · settled up to/.test(document.body.innerText)));
-    chk('…the account owes nothing now', payable() === 0);
-    chk('the record says it is settled, and offers a later date', await until(P, () => /Membership and dues settled up to/.test(document.body.innerText) && /Settle to a later date/.test(document.body.innerText), null, 20000));
-    php(`fees_accrue_member(db_row("SELECT * FROM members WHERE memberId = '${MEM}'"));`, ['bootstrap']);
-    chk('the next accrual does not bring the dues back', payable() === 0);
+    const dlg = '[role="dialog"]';
+    await P.fill(dlg + ' textarea', 'Fines carried over from the paper register, cleared by board decision');
+    const inputs = await P.$$(dlg + ' input');
+    await inputs[0].fill('CLEAR ALL FINES');
+    await inputs[1].fill('000000');
+    await P.click(dlg + ' button[type="submit"]');
+    chk('a wrong authenticator code is refused on the form, and nothing is cleared',
+      await until(P, () => /not the current code/.test(document.querySelector('[role="dialog"]')?.innerText || '')) && finesOwed() === 3500);
+    const code = php(`echo totp_code('JBSWY3DPEHPK3PXP', intdiv(time(), 30));`, ['bootstrap']);
+    await inputs[1].fill(code);
+    await P.click(dlg + ' button[type="submit"]');
+    const okRun = await until(P, () => /₦3,500 of fines cleared across 2 members\. This is now locked\./.test(document.body.innerText));
+    if (!okRun) console.error('   body: ' + (await P.evaluate(() => document.body.innerText)).slice(0, 900).replace(/\s+/g, ' '));
+    const k2 = () => Number(php(`echo fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-FS-K2'"))['payable'];`, ['bootstrap']));
+    chk('with the current code it clears every unpaid fine and says it is locked (each account down by exactly its fines)', okRun && k2() === 0 && payable() === before);
+    chk('…the dues are still owed', payable() === before && before > 40000);
+    await P.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(P);
+    chk('reloaded, the screen shows the record of the one run and no way to run it again',
+      await until(P, () => /Fines were cleared once for every active member/.test(document.body.innerText) && /can never be run again/.test(document.body.innerText), null, 60000)
+      && !(await P.$('button:has-text("See whose fines would be cleared")')));
+    const again = JSON.parse(php(`echo json_encode(backend_dispatch('admin.fees.finesClearOnce', ['requesterId' => '${ADMIN}', 'mode' => 'preview']));`, ['bootstrap']));
+    chk('…and the server refuses it for good', again.error === 'already_used');
     chk('no page errors', errs.length === 0);
     if (errs.length) console.log(errs.slice(0, 5));
   } catch (e) {

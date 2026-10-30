@@ -558,6 +558,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.fees.training'         => 'admin_fees_training',
             'admin.fees.charge'           => 'admin_fees_charge',
             'admin.fees.fineImport'       => 'admin_fees_fine_import',
+            'admin.fees.finesClearOnce'   => 'admin_fees_fines_clear_once',
             'admin.fees.waive'            => 'admin_fees_waive',
             'admin.fees.lookup'           => 'admin_fees_lookup',
             'admin.policy.day.toggle'     => 'admin_policy_day_toggle',

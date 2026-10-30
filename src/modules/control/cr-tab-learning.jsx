@@ -10,13 +10,15 @@
    importRows) because this host's firewall refuses a body of thousands.
    ========================================================================== */
 
-function crCurParseCsv(text) {
+function crCurParseCsv(text, asGrid) {
   const rows = []; let row = [], cell = "", q = false;
   const s = String(text || "").replace(/^﻿/, "");
   /* Excel saves "CSV" with semicolons where the comma is the decimal mark, and
      some sheets are pasted as tabs. The header line says which. */
-  const first = s.split(/\r?\n/, 1)[0] || "";
-  const cnt = (ch) => first.split(ch).length - 1;
+  /* Read from the first ten lines, not the first: a register often opens with
+     a title line ("EGBEDA FINES — TERM 1") that has no separators at all. */
+  const head10 = s.split(/\r?\n/, 10);
+  const cnt = (ch) => Math.max(0, ...head10.map(l => l.split(ch).length - 1));
   const sep = cnt(",") >= cnt(";") && cnt(",") >= cnt("\t") ? "," : (cnt(";") >= cnt("\t") ? ";" : "\t");
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
@@ -30,42 +32,61 @@ function crCurParseCsv(text) {
   }
   if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
   const clean = rows.filter(r => r.some(c => String(c).trim() !== ""));
+  // As a grid, every line keeps its place (blank ones empty), so row numbers are the sheet's own.
+  if (asGrid) return rows.map(r => r.map(c => String(c).trim()));
   if (!clean.length) return [];
   const head = clean[0].map(h => String(h).trim().toLowerCase().replace(/\s+/g, "_"));
   return clean.slice(1).map(r => { const o = {}; head.forEach((h, k) => { o[h] = (r[k] ?? "").trim(); }); return o; });
 }
 
-async function crCurXlsxRows(buf) {
+/* Every sheet of a workbook as a grid of trimmed strings, in the workbook's
+   own order: [{ name, grid }]. A register kept one sheet per centre or per
+   term is one file, not five. */
+async function crCurXlsxGrids(buf) {
   const JSZip = await loadVendor("jszip");
   const zip = await JSZip.loadAsync(buf);
   const xml = async (p) => { const f = zip.file(p); return f ? new DOMParser().parseFromString(await f.async("string"), "application/xml") : null; };
   const shared = [];
   const ss = await xml("xl/sharedStrings.xml");
   if (ss) Array.from(ss.getElementsByTagName("si")).forEach(si => shared.push(Array.from(si.getElementsByTagName("t")).map(t => t.textContent).join("")));
-  // The first sheet in the workbook's own order, not whichever file is sheet1.
-  let path = "xl/worksheets/sheet1.xml";
   const wb = await xml("xl/workbook.xml"), rels = await xml("xl/_rels/workbook.xml.rels");
-  const firstSheet = wb && wb.getElementsByTagName("sheet")[0];
-  if (firstSheet && rels) {
-    const rid = firstSheet.getAttribute("r:id") || firstSheet.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
-    const rel = Array.from(rels.getElementsByTagName("Relationship")).find(r => r.getAttribute("Id") === rid);
-    if (rel) { const t = rel.getAttribute("Target").replace(/^\//, ""); path = t.startsWith("xl/") ? t : "xl/" + t; }
-  }
-  const sheet = await xml(path);
-  if (!sheet) throw new Error("That workbook has no sheet I can read.");
+  const sheets = wb ? Array.from(wb.getElementsByTagName("sheet")) : [];
+  const pathOf = sh => {
+    const rid = sh.getAttribute("r:id") || sh.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
+    const rel = rels && Array.from(rels.getElementsByTagName("Relationship")).find(r => r.getAttribute("Id") === rid);
+    if (!rel) return null;
+    const t = rel.getAttribute("Target").replace(/^\//, ""); return t.startsWith("xl/") ? t : "xl/" + t;
+  };
+  const list = sheets.length ? sheets.map(sh => ({ name: sh.getAttribute("name") || "", path: pathOf(sh) })).filter(x => x.path) : [{ name: "Sheet1", path: "xl/worksheets/sheet1.xml" }];
   const colIdx = (ref) => { let n = 0; for (const ch of String(ref).replace(/\d+/g, "")) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; };
-  const grid = Array.from(sheet.getElementsByTagName("row")).map(r => {
-    const out = [];
-    Array.from(r.getElementsByTagName("c")).forEach(c => {
-      const t = c.getAttribute("t"), v = c.getElementsByTagName("v")[0];
-      let val = "";
-      if (t === "s") val = shared[+((v && v.textContent) || 0)] || "";
-      else if (t === "inlineStr") val = Array.from(c.getElementsByTagName("t")).map(x => x.textContent).join("");
-      else val = v ? v.textContent : "";
-      out[colIdx(c.getAttribute("r"))] = String(val).trim();
+  const out = [];
+  for (const it of list) {
+    const sheet = await xml(it.path);
+    if (!sheet) continue;
+    /* Rows sit at their REAL row numbers (an empty row stays an empty array),
+       so "row 14" on screen is row 14 in the spreadsheet the person has open. */
+    const grid = [];
+    Array.from(sheet.getElementsByTagName("row")).forEach((r, k) => {
+      const at = Math.max(0, (parseInt(r.getAttribute("r"), 10) || (k + 1)) - 1);
+      const row = [];
+      Array.from(r.getElementsByTagName("c")).forEach(c => {
+        const t = c.getAttribute("t"), v = c.getElementsByTagName("v")[0];
+        let val = "";
+        if (t === "s") val = shared[+((v && v.textContent) || 0)] || "";
+        else if (t === "inlineStr") val = Array.from(c.getElementsByTagName("t")).map(x => x.textContent).join("");
+        else val = v ? v.textContent : "";
+        row[colIdx(c.getAttribute("r"))] = String(val).trim();
+      });
+      grid[at] = Array.from(row, x => x || "");
     });
-    return Array.from(out, x => x || "");
-  }).filter(r => r.some(x => x !== ""));
+    out.push({ name: it.name, grid: Array.from(grid, r => r || []) });
+  }
+  if (!out.length) throw new Error("That workbook has no sheet I can read.");
+  return out;
+}
+/* The first sheet, its first row taken as the headings (the curriculum import's shape). */
+async function crCurXlsxRows(buf) {
+  const grid = (await crCurXlsxGrids(buf))[0].grid.filter(r => r.some(x => x !== ""));
   if (!grid.length) return [];
   const head = grid[0].map(h => String(h).trim().toLowerCase().replace(/\s+/g, "_"));
   return grid.slice(1).map(r => { const o = {}; head.forEach((h, k) => { if (h) o[h] = (r[k] ?? "").trim(); }); return o; });
