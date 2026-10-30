@@ -4998,3 +4998,73 @@ own instruction instead of "unsupported"; Android gets a monochrome badge
 `*.google.com` push endpoints are allowed. `tests/push-devices.test.js` (32) runs
 the detection over real user agents with each device's real capabilities; two
 breaks planted, both caught.
+
+## 2026-10-30 — volunteer pay: bank details, fines off pay, the Summer bug
+
+- **Only NGG volunteers earn** (`volpay_serves_ngg()`: programme `ngg` or
+  `both`). The accrual used to decide a day for every volunteer and read a row
+  with no programme as NGG; `volunteer_programme()` reads it as Summer, and so
+  now does pay. Afrovanguard's lookup had the same bug (`programme IS NULL OR
+  programme != 'summer'`) and showed Summer volunteers an NGG pay card.
+- **Fines come off a payout, down to ₦0**, owner's decision: "ALL fines from
+  volunteers, afrovanguard members, ngvs". NGG's own first (member_ledger,
+  method `volunteer_pay`), then Afrovanguard's over its `integrations/ngg-fines.php`
+  door (purpose `fines.`), two requests a run whatever its size. Afrovanguard
+  unreachable ⇒ its fines stay owed there. A void puts both back, Afrovanguard
+  first, and is refused if it cannot. `volunteer_payouts` keeps gross, fineNgg,
+  fineAv and the bank line (migration 203).
+- **Bank details** on `volunteers` (migration 203), set by the volunteer (app or
+  Afrovanguard) or the fees desk; every change told to the volunteer. A missing
+  account is warned about at payout, not refused: refusing would have stopped
+  every payout on the day this shipped.
+- **Notifications** via `volpay_notify()`: in the app when they are a member,
+  email when asked or when there is no app. Excluded days are app-only, one item
+  per period (`groupKey`), never an email a day.
+
+
+## 2026-10-30 — CACENTRE check-ins not recognised: everybody Dormant
+
+**What happened.** The CACENTRE gate's attendance punches name a member by their
+secure card code (MEMQR-…), their printed number (`026-014`) or their id in
+whatever case the desk had. `hooks_attendance` matched only the internal
+`NGG-…` id, answered every other punch `unknown` and dropped it. The nightly
+check then found no check-in for anybody at those centres and logged an absence
+per person per day: warnings, the Dormant Track at the limit, and the ₦1,000
+member absence fine, day after day.
+
+**Fixed, in four places.**
+- `hooks_attendance_person()` resolves every way the gate names somebody: a
+  MEMQR token (in `token` or in `ref`), `format`+`value`, SUMQR / `qr_codes`,
+  a volunteer token, a participant/volunteer/member id in any case, a printed
+  `displayId`, a `member_cards.code`, following merges. A punch that still
+  names nobody goes to `attendance_unmatched` (migration 209), never the floor.
+- A punch for a day already checked calls `policy_checkin_landed()`: the
+  check's absence that day is voided and the person re-lifted. And
+  `policy_checkout_landed()` now RE-LIFTS (it called `policy_apply`, which
+  only ever issues — a late sign-out never lifted the Dormant Track it caused).
+- **The outage brake** (`policy_outage_hold`, setting `outageBrake`, on by
+  default): a centre with ≥3 expected and 0 present, or a day with ≥10
+  expected and <10% present, is held in `attendance_held_days` (migration 209)
+  for a person to decide (`closed` | `count`), instead of being swept. The
+  PHP suite switches it off at its top, because the old absence fixtures are
+  exactly whole centres with nobody checked in.
+- **`policy_relift` was wrong about absence fines in both directions**: it
+  skipped a pending fine, so voiding an absence left its ₦1,000 owed; and an
+  absence fine's tier (500000+day) fell into the ID-card branch, so any relift
+  could lift one that still held. It now reads the day from the tier and keeps
+  the fine exactly while a live, uncovered absence exists that day.
+
+**The repair** (`admin.policy.absence.repair`, Compliance → Repair absences):
+preview then apply, reason required, ≤20,000 a run, one audit event. Only
+`byId = 'system'` entries with one of the check's notes (`POLICY_SWEEP_NOTES`)
+are candidates — a person's entry is never touched — and imported money
+(`fees_entry_imported`: `bulkfine:`, `import:`, method `import`) is counted
+and reported as untouched, never voided. Centre-scoped admins see and repair
+their own centres (`outOfScope` counts the rest).
+
+**Not recoverable from NGG's side:** punches answered `unknown` before this
+were not stored. CACENTRE should re-send its check-ins for the failed period;
+each lands through the late-arrival path and cleans up after itself.
+
+Tests: PHP suite block "CACENTRE check-ins …" (29 checks; disabling the brake
+fails five of them), `tests/attendance-repair.test.js` (21, in `test:all`).

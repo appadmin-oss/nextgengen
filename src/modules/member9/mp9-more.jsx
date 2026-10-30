@@ -1094,26 +1094,42 @@ function Mp9Wifi({ toast }) {
 
 /* ── Volunteer pay ─────────────────────────────────────────────────────────
    A member who volunteers with NGG sees what they have earned for each day
-   they were present and active, each day they were not paid for and why, and
-   what has been paid (domain/volunteer-pay.php). Nothing is drawn for anybody
-   who does not volunteer. */
+   they were present and active, each day they were not paid for and why, what
+   has been paid and what fines each payment took off, and where they are paid
+   (domain/volunteer-pay.php). Nothing is drawn for anybody who does not
+   volunteer. */
 function Mp9VolWallet() {
   const [w, setW] = React.useState(undefined), [err, setErr] = React.useState(false);
   const load = () => { setErr(false); NGGApi.member.volunteerPay().then(r => setW(r.wallet || null)).catch(() => setErr(true)); };
   React.useEffect(load, []);
   if (w === null) return null;
   const naira = n => "₦" + (+n || 0).toLocaleString("en-NG");
+  const live = (w && w.payouts || []).filter(p => !p.void);
   return <section className="m9x-slot m9x-view m9x-vp" aria-labelledby="m9x-vp-h">
     <h2 id="m9x-vp-h" className="m9x-view-h"><i className="ph ph-wallet" aria-hidden="true"/> Volunteer pay</h2>
     {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>Your volunteer pay couldn’t load.</span><button type="button" onClick={load}>Try again</button></div>
       : w === undefined ? <div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div>
       : <>
-        <p className="m9x-view-p">{w.on ? "You earn " + naira(w.rate) + " for each programme day you are present and active. It is paid " + w.frequencyText.toLowerCase() + ", after each period ends." : "Volunteer pay is paused. What you have already earned is kept."}</p>
+        <p className="m9x-view-p">{w.on ? "You earn " + naira(w.rate) + " for each programme day you are present and active. It is paid " + w.frequencyText.toLowerCase() + ", after each period ends." : "Volunteer pay is paused. What you have already earned is kept."}
+          {w.finesDeducted ? " Any fines you owe, NGG’s or Afrovanguard’s, come off a payment first." : ""}</p>
         <dl className="m9x-wifi-dl">
           <div><dt>Owed to you</dt><dd className="m9x-wifi-v">{naira(w.owed)}</dd></div>
           <div><dt>Earned in all</dt><dd>{naira(w.earned)} · {w.daysEarned === 1 ? "1 day" : w.daysEarned + " days"}</dd></div>
           <div><dt>Paid to you</dt><dd>{naira(w.paid)}</dd></div>
+          {w.finesTaken > 0 ? <div><dt>Fines taken off</dt><dd>{naira(w.finesTaken)}</dd></div> : null}
+          {w.finesDeducted && w.finesOwedNgg > 0 ? <div><dt>NGG fines owed</dt><dd>{naira(w.finesOwedNgg)}, taken off your next payment</dd></div> : null}
         </dl>
+        <Mp9VolBank bank={w.bank} onSaved={load}/>
+        {live.length ? <>
+          <h3 className="m9x-wifi-u-h">Payments</h3>
+          <ul className="m9x-vp-list" aria-label="Your payments">
+            {live.slice(0, 12).map(p => <li key={p.payoutId} className="m9x-vp-day">
+              <span className="m9x-vp-when">{p.period}</span>
+              <span className="m9x-vp-what">{naira(p.amount)} paid{p.fineNgg + p.fineAv > 0 ? " · " + naira(p.gross) + " earned, " + naira(p.fineNgg + p.fineAv) + " for fines" : ""}{p.bankLine ? " · to " + p.bankLine : p.methodText ? " · " + p.methodText.toLowerCase() : ""}</span>
+            </li>)}
+          </ul>
+        </> : null}
+        <h3 className="m9x-wifi-u-h">Days</h3>
         {w.days.length ? <ul className="m9x-vp-list" aria-label="Your days">
           {w.days.slice(0, 30).map(x => <li key={x.day} className={"m9x-vp-day" + (x.status === "earned" ? "" : " is-out")}>
             <span className="m9x-vp-when">{mp9Date(x.day)}</span>
@@ -1122,6 +1138,43 @@ function Mp9VolWallet() {
         </ul> : <p className="m9x-wifi-note">No days yet. A day is counted once it is over.</p>}
       </>}
   </section>;
+}
+
+/* Where NGG pays them. Shown as the bank and the last four digits; the full
+   number is typed, never shown back. Every change is told to them by email. */
+function Mp9VolBank({ bank, onSaved }) {
+  const b = bank || {};
+  const [open, setOpen] = React.useState(false), [busy, setBusy] = React.useState(false), [bad, setBad] = React.useState(""), [done, setDone] = React.useState("");
+  const [f, setF] = React.useState({ bankName: "", accountNumber: "", accountName: "" });
+  const set = k => e => setF(x => Object.assign({}, x, { [k]: e.target.value }));
+  const save = e => {
+    e.preventDefault(); setBad(""); setDone("");
+    if (!/^\d{10}$/.test(f.accountNumber.replace(/[\s-]/g, ""))) { setBad("An account number is 10 digits."); return; }
+    setBusy(true);
+    NGGApi.member.volunteerBank(f)
+      .then(() => { setDone("Saved. We’ve emailed you to confirm the change."); setOpen(false); setF({ bankName: "", accountNumber: "", accountName: "" }); onSaved(); })
+      .catch(er => setBad((er && er.data && er.data.message) || "That couldn’t be saved. Try again."))
+      .finally(() => setBusy(false));
+  };
+  return <div className="m9x-vp-bank">
+    <h3 className="m9x-wifi-u-h">Where we pay you</h3>
+    <p className="m9x-wifi-note">{b.set ? b.bankName + " ••••" + b.last4 + " · " + b.accountName : "No bank details yet. Add them so NGG can pay you by transfer."}</p>
+    {done ? <p className="m9x-wifi-note" role="status">{done}</p> : null}
+    {!open ? <button type="button" className="m9x-wifi-new" onClick={() => setOpen(true)} aria-expanded="false">{b.set ? "Change bank details" : "Add bank details"}</button>
+      : <form className="m9x-wifi-form" onSubmit={save} noValidate>
+        <label className="m9x-wifi-lbl" htmlFor="m9x-vp-bank">Bank
+          <input id="m9x-vp-bank" className="m9x-wifi-inp" value={f.bankName} onChange={set("bankName")} maxLength={80} autoComplete="off" required/></label>
+        <label className="m9x-wifi-lbl" htmlFor="m9x-vp-acct">Account number
+          <input id="m9x-vp-acct" className="m9x-wifi-inp" value={f.accountNumber} onChange={set("accountNumber")} inputMode="numeric" maxLength={13} autoComplete="off" required/></label>
+        <label className="m9x-wifi-lbl" htmlFor="m9x-vp-name">Name on the account
+          <input id="m9x-vp-name" className="m9x-wifi-inp" value={f.accountName} onChange={set("accountName")} maxLength={120} autoComplete="name" required/></label>
+        {bad ? <p className="m9x-wifi-bad" role="alert">{bad}</p> : null}
+        <div className="m9x-wifi-acts">
+          <button type="submit" className="m9x-wifi-new" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+          <button type="button" className="m9x-wifi-new" onClick={() => { setOpen(false); setBad(""); }}>Cancel</button>
+        </div>
+      </form>}
+  </div>;
 }
 
 /* ── Ask my parent ─────────────────────────────────────────────────────────

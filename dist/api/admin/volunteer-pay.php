@@ -16,7 +16,7 @@ if ($method === 'GET') {
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $map = ['settings' => 'admin.volpay.settings.set', 'accrue' => 'admin.volpay.accrue', 'day' => 'admin.volpay.day.set',
-            'pay' => 'admin.volpay.pay', 'void' => 'admin.volpay.payout.void'];
+            'pay' => 'admin.volpay.pay', 'void' => 'admin.volpay.payout.void', 'bank' => 'admin.volpay.bank.set'];
     $action = (string)($b['action'] ?? '');
     if (!isset($map[$action])) json_error('bad_action', 400);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));

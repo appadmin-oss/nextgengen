@@ -52,28 +52,19 @@ function hooks_attendance(array $p): array {
         if ($date === '') $date = $hasScanTime ? attendance_today($scanTs) : attendance_today();
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) { $results[] = ['ref' => $ref, 'status' => 'bad_date']; continue; }
 
-        // Resolve who this is: QR token → summer student → member → handle.
-        $student = null; $cohortId = ''; $name = ''; $sid = ''; $isMember = false;
-        /* Volunteers too: a volunteer's card and id are in the same key space as
-           a student's, and a hook that only looked up students answered
-           "unknown" for every volunteer an app or the CACENTRE gate reported. */
-        $volunteer = null;
-        if ($token !== '') {
-            $qr = db_row("SELECT studentId FROM qr_codes WHERE token = ? AND studentId != '' LIMIT 1", [$token]);
-            if ($qr) $student = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
-            if ($qr && !$student) $volunteer = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$qr['studentId']]);
-        } elseif ($ref !== '') {
-            $student = db_row('SELECT * FROM summer_students WHERE studentId = ? OR handle = ? LIMIT 1', [$ref, strtolower($ref)]);
-            if (!$student) $volunteer = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$ref]);
-            if (!$student && !$volunteer) {
-                // A merged-away id checks in its survivor, not the retired record.
-                $m = member_follow_merge(db_row('SELECT memberId, fullName, type, status FROM members WHERE memberId = ? LIMIT 1', [$ref]));
-                if ($m) { $sid = (string)$m['memberId']; $name = (string)$m['fullName']; $isMember = ((string)$m['type'] === 'NGG'); }
-            }
+        // Who this is — one resolver for every way a person can be named (hooks_attendance_person).
+        $who = hooks_attendance_person($ref, $token, $e);
+        $student = $who['student']; $volunteer = $who['volunteer'];
+        $sid = $who['sid']; $cohortId = $who['cohortId']; $name = $who['name']; $isMember = $who['isMember'];
+        if ($sid === '') {
+            /* Kept, not dropped. An unknown punch was answered and forgotten, so
+               a member whose card the gate named by its card code or printed
+               number was "absent" the next morning with nothing anywhere to
+               show they had come. Staff match it later (policy.php ·
+               admin_attendance_unmatched_match) and the absence goes with it. */
+            hooks_attendance_unmatched($source, $ref, $token, $date, $scanIso, $e);
+            $results[] = ['ref' => $ref ?: $token, 'status' => 'unknown']; $unknown++; continue;
         }
-        if ($volunteer) { $sid = (string)$volunteer['volunteerId']; $name = (string)$volunteer['fullName']; }
-        if ($student) { $sid = (string)$student['studentId']; $cohortId = (string)$student['cohortId']; $name = (string)$student['fullName']; }
-        if ($sid === '') { $results[] = ['ref' => $ref ?: $token, 'status' => 'unknown']; $unknown++; continue; }
 
         /* A check-out, from the CACENTRE gate (or any sender that says so).
          * Stamped on the day's row and nothing else: it never creates one,
@@ -147,6 +138,12 @@ function hooks_attendance(array $p): array {
             $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue;
         }
         if ($applyMember) policy_on_checkin($sid, 'member', $date, $punc);
+        /* An arrival for a day the nightly check has already judged — the gate
+           re-sending, a back-fill, a terminal that was offline — undoes the
+           absence it logged, and whatever that absence caused. */
+        if ($date < attendance_today() && function_exists('policy_checkin_landed')) {
+            policy_checkin_landed($sid, $isMember ? 'member' : ($volunteer ? 'volunteer' : 'student'), $date, 'hook:' . $source);
+        }
         event_emit('attendance.marked', ['memberId' => $sid, 'name' => $name, 'date' => $date, 'source' => 'webhook:' . $source]);
         if ($isMember && $date === attendance_today($scanTs) && ($mrow = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$sid]))) {
             checkin_member_email($mrow, 'in', $scanTs, $punc ?: []);
@@ -156,6 +153,81 @@ function hooks_attendance(array $p): array {
     }
     audit('hook.attendance', null, $source, ['marked' => $marked, 'already' => $already, 'unknown' => $unknown], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'marked' => $marked, 'already' => $already, 'unknown' => $unknown, 'results' => $results];
+}
+
+/**
+ * Who a check-in names, by every name the gate or an app can give a person:
+ *   token  a Summer/volunteer QR (SUMQR-…), or a member's secure card (MEMQR-…)
+ *   ref    a participant id or handle, a volunteer id, a member id (NGG-…,
+ *          any case), a member's printed number (026-014), or a card code
+ *          sent in the ref field
+ *   format + value  an older printed card the gate decoded by one of NGG's
+ *          card formats — the same pair hooks_gate_resolve() takes
+ * The gate's lookup already accepted all of these; the hook that records the
+ * check-in accepted only the internal id, so a punch naming the card was
+ * "unknown" and the member was absent. One resolver now, for both.
+ *
+ * @return array{sid:string, cohortId:string, name:string, isMember:bool, student:?array, volunteer:?array}
+ */
+function hooks_attendance_person(string $ref, string $token, array $e): array {
+    $out = ['sid' => '', 'cohortId' => '', 'name' => '', 'isMember' => false, 'student' => null, 'volunteer' => null];
+    $member = static function (?array $m) use (&$out): bool {
+        $m = $m ? member_follow_merge($m) : null;   // a merged-away id checks in its survivor
+        if (!$m) return false;
+        $out['sid'] = (string)$m['memberId']; $out['name'] = (string)$m['fullName'];
+        $out['isMember'] = (string)($m['type'] ?? 'NGG') !== 'Summer';
+        return true;
+    };
+    $tok = strtoupper(trim($token));
+    if ($tok === '' && stripos($ref, 'MEMQR-') === 0) { $tok = strtoupper(trim($ref)); $ref = ''; }
+    $format = trim((string)($e['format'] ?? ''));
+    if ($format !== '' && function_exists('member_card_lookup')) {
+        $hit = member_card_lookup(null, $format, (string)($e['value'] ?? $ref));
+        if ($hit && $member($hit['member'])) return $out;
+    }
+    if ($tok !== '') {
+        // A replaced card still means the person came: the check-in counts.
+        if (strpos($tok, 'MEMQR-') === 0) { $hit = function_exists('member_card_lookup') ? member_card_lookup($tok) : null; if ($hit) $member($hit['member']); return $out; }
+        $qr = db_row("SELECT studentId FROM qr_codes WHERE token = ? AND studentId != '' LIMIT 1", [$tok]) ?: db_row("SELECT studentId FROM qr_codes WHERE token = ? AND studentId != '' LIMIT 1", [trim($token)]);
+        if ($qr) {
+            $out['student'] = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
+            if (!$out['student']) $out['volunteer'] = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$qr['studentId']]);
+        } else {
+            $out['volunteer'] = db_row("SELECT * FROM volunteers WHERE token = ? AND status = 'active' LIMIT 1", [trim($token)]);
+        }
+    } elseif ($ref !== '') {
+        $out['student'] = db_row('SELECT * FROM summer_students WHERE studentId = ? OR handle = ? LIMIT 1', [$ref, strtolower($ref)]);
+        if (!$out['student']) $out['volunteer'] = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$ref]);
+        if (!$out['student'] && !$out['volunteer']) {
+            $u = strtoupper($ref);
+            $found = $member(db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ref]) ?: db_row('SELECT * FROM members WHERE UPPER(memberId) = ? LIMIT 1', [$u]));
+            // The printed number on the card (026-014), however the gate spaced it.
+            if (!$found && preg_match('/^\d{3}\s*-\s*\d{2,5}$/', $ref)) {
+                $found = $member(db_row("SELECT * FROM members WHERE displayId = ? AND COALESCE(type,'NGG') <> 'Summer' LIMIT 1", [preg_replace('/\s+/', '', $ref)]));
+            }
+            if (!$found && function_exists('member_card_lookup')) {
+                // A card code sent as the ref: any printed card NGG recorded with that code.
+                $c = db_row("SELECT memberId FROM member_cards WHERE code = ? LIMIT 1", [$u]);
+                if ($c) $member(db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$c['memberId']]));
+            }
+        }
+    }
+    if ($out['volunteer']) { $out['sid'] = (string)$out['volunteer']['volunteerId']; $out['name'] = (string)$out['volunteer']['fullName']; }
+    if ($out['student']) { $out['sid'] = (string)$out['student']['studentId']; $out['cohortId'] = (string)$out['student']['cohortId']; $out['name'] = (string)$out['student']['fullName']; }
+    return $out;
+}
+
+/** A check-in naming nobody NGG knows, kept for the desk to match (one row per name per day). */
+function hooks_attendance_unmatched(string $source, string $ref, string $token, string $date, string $scanIso, array $e): void {
+    try {
+        $key = mb_substr($ref !== '' ? $ref : $token, 0, 120);
+        if ($key === '') return;
+        if (db_row("SELECT id FROM attendance_unmatched WHERE refKey = ? AND date = ? LIMIT 1", [$key, $date])) return;
+        db_insert('attendance_unmatched', ['source' => mb_substr($source, 0, 48), 'refKey' => $key, 'ref' => mb_substr($ref, 0, 120), 'token' => mb_substr($token, 0, 120),
+            'format' => mb_substr((string)($e['format'] ?? ''), 0, 40), 'value' => mb_substr((string)($e['value'] ?? ''), 0, 120),
+            'name' => mb_substr((string)($e['name'] ?? ''), 0, 120), 'date' => $date, 'scannedAt' => $scanIso, 'centre' => hooks_event_centre($e),
+            'action' => strtolower((string)($e['action'] ?? 'in')) === 'out' ? 'out' : 'in', 'status' => 'open', 'createdAt' => now_iso()]);
+    } catch (\Throwable $ex) { error_log('[hooks_attendance_unmatched] ' . $ex->getMessage()); }
 }
 
 /* ══ The CACENTRE gate ══════════════════════════════════════════════════════

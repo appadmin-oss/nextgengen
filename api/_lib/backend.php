@@ -561,6 +561,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.volpay.day.set'        => 'admin_volpay_day_set',
             'admin.volpay.pay'            => 'admin_volpay_pay',
             'admin.volpay.payout.void'    => 'admin_volpay_payout_void',
+            'admin.volpay.bank.set'       => 'admin_volpay_bank_set',
             'admin.fees.settings.get'     => 'admin_fees_settings_get',
             'admin.fees.settings.set'     => 'admin_fees_settings_set',
             'admin.fees.member'           => 'admin_fees_member',
@@ -591,6 +592,13 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.policy.sanction.update' => 'admin_policy_sanction_update',
             'admin.policy.reinstate'      => 'admin_policy_reinstate',
             'admin.policy.sweep'          => 'admin_policy_sweep',
+            /* Attendance integrity (policy.php): the outage brake's held days,
+               check-ins that named nobody, and the repair for absences the check
+               logged while check-ins were not arriving. */
+            'admin.attendance.integrity'       => 'admin_attendance_integrity',
+            'admin.attendance.held.decide'     => 'admin_attendance_held_decide',
+            'admin.attendance.unmatched.match' => 'admin_attendance_unmatched_match',
+            'admin.policy.absence.repair'      => 'admin_policy_absence_repair',
             // NGG Club coordinator (Summer → Club bridge)
             // Club portal v3 (domain/club-portal.php) — gate `club`, NGG centres only, scoped per row.
             'admin.clubp.boot'          => 'admin_clubp_boot',
@@ -821,6 +829,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.wifi.get'             => 'member_wifi_get',
             'member.wifi.password'        => 'member_wifi_password',
             'member.volpay'               => 'member_volpay',
+            'member.volpay.bank'          => 'member_volpay_bank',
             'member.fees.pay'             => 'member_fees_pay',
             'admin.media.usage'           => 'admin_media_usage',
             'admin.media.account'         => 'admin_media_account',

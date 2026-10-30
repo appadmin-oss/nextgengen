@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 207;
+const NGG_SCHEMA_TARGET = 209;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6005,6 +6005,50 @@ function db_migrate(PDO $db): void {
             ALTER TABLE volunteers ADD COLUMN programmeAt TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_vol_programme ON volunteers(programme);
         " . NGG_BACKFILL_VOLUNTEER_PROGRAMME,
+        /* 208 (was 203 on the parallel branch) — volunteer pay, part two: where a volunteer is paid (their own
+         * bank details, set by them or the fees desk), and what each payout
+         * took off for fines — NGG's own and Afrovanguard's — so the gross,
+         * the deductions and the money sent are each on the record. */
+        208 => "
+            ALTER TABLE volunteers ADD COLUMN bankName TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN bankAccountNumber TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN bankAccountName TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN bankUpdatedAt TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN bankUpdatedBy TEXT DEFAULT '';
+            ALTER TABLE volunteer_payouts ADD COLUMN gross INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE volunteer_payouts ADD COLUMN fineNgg INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE volunteer_payouts ADD COLUMN fineAv INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE volunteer_payouts ADD COLUMN bankLine TEXT NOT NULL DEFAULT '';
+        ",
+
+        /* 209 — when the attendance feed fails, nobody is punished for it
+           (policy.php, hooks.php). attendance_unmatched keeps every check-in
+           that named nobody NGG knew (it used to be answered and forgotten),
+           for the desk to match. attendance_held_days records a centre-day the
+           nightly check refused to count: zero check-ins from a centre where
+           members were expected reads as a feed that failed, not a centre that
+           stayed home — held until a person says which. */
+        209 => "
+            CREATE TABLE IF NOT EXISTS attendance_unmatched (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              source TEXT NOT NULL DEFAULT '', refKey TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '', token TEXT NOT NULL DEFAULT '',
+              format TEXT NOT NULL DEFAULT '', value TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '',
+              date TEXT NOT NULL, scannedAt TEXT NOT NULL DEFAULT '', centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', action TEXT NOT NULL DEFAULT 'in',
+              status TEXT NOT NULL DEFAULT 'open', matchedId TEXT NOT NULL DEFAULT '', decidedBy TEXT NOT NULL DEFAULT '', decidedAt TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_attunm_ref_day ON attendance_unmatched(refKey, date);
+            CREATE INDEX IF NOT EXISTS idx_attunm_status ON attendance_unmatched(status, date);
+            CREATE TABLE IF NOT EXISTS attendance_held_days (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              date TEXT NOT NULL, centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', personType TEXT NOT NULL DEFAULT 'member',
+              expected INTEGER NOT NULL DEFAULT 0, present INTEGER NOT NULL DEFAULT 0, why TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'held', logged INTEGER NOT NULL DEFAULT 0,
+              decidedBy TEXT NOT NULL DEFAULT '', decidedAt TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_atthold_day ON attendance_held_days(date, centre, personType);
+            CREATE INDEX IF NOT EXISTS idx_atthold_status ON attendance_held_days(status);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

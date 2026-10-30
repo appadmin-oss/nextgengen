@@ -80,6 +80,8 @@ const CENTRE_NAME_TABLES = [
     'assignments',
     'attendance',
     'attendance_duty',
+    'attendance_held_days',
+    'attendance_unmatched',
     'awards',
     'club_announcements',
     'club_class_sessions',

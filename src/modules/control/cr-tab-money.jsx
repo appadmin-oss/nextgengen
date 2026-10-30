@@ -818,8 +818,10 @@ Object.assign(CR_TAB_DEFS, {
 const CR_VP_STATE = { unpaid: ["To pay", "warn"], paid: ["Paid", "ok"], nothing: ["Nothing earned", "neutral"] };
 const CR_VP_ERR = { amount_required: "Set the amount a volunteer earns each day before switching volunteer pay on.", activity_required: "Choose at least one activity that counts, or stop requiring one.",
   period_open: "This period hasn’t ended yet. It can be paid once it has.", reference_required: "Give the transfer reference.", already_paid: "That day is paid. Void the payout first.",
-  reason_required: "Say why. It is kept with the day, and the volunteer sees it.", too_many: "Too many volunteers for one payment run.", own_account: "You can’t change your own pay." };
-function crVpErr(e, fb) { const c = e && ((e.data && e.data.error) || e.code); return CR_VP_ERR[c] || crErr(e, fb); }
+  reason_required: "Say why. It is kept with the day, and the volunteer sees it.", too_many: "Too many volunteers for one payment run.", own_account: "You can’t change your own pay.",
+  av_unreachable: "Afrovanguard couldn’t be reached to put its fine back. Nothing was changed; try again." };
+function crVpErr(e, fb) { const c = e && ((e.data && e.data.error) || e.code); return CR_VP_ERR[c] || (e && e.data && e.data.message) || crErr(e, fb); }
+function crVpBank(b) { return b && b.set ? b.bankName + " ••••" + b.last4 + " · " + b.accountName : "No bank details"; }
 const crVpCtx = { current: null };
 
 function crVpForm(d) {
@@ -848,6 +850,9 @@ function crVpForm(d) {
         { id: "excludeNoCheckout", l: "Exclude a day with no check-out", c: "toggle", value: !!s.excludeNoCheckout },
         { id: "excludeUncleared", l: "Exclude anyone whose safeguarding is not cleared", c: "toggle", value: !!s.excludeUncleared },
       ] },
+      { h: "Fines", help: "When a period is paid, fines the volunteer owes come off first, down to ₦0: NGG’s own, then Afrovanguard’s (NGV and Vanguard Quest). What is left of a fine stays owed for the next payment. The volunteer is told what was taken.", rows: [
+        { id: "deductFines", l: "Take fines off pay", c: "toggle", value: s.deductFines !== false },
+      ] },
     ],
     save: async (patch, all) => {
       const send = {};
@@ -875,14 +880,24 @@ function crVpWallet(ctx, v) {
       onSubmit: async val => { try { return await NGGApi.admin.volpay.day(who.volunteerId, x.day, op, val.reason); } catch (e) { throw new Error(crVpErr(e, "Couldn’t change the day.")); } },
       done: () => { setTimeout(open, 50); ctx.reload(); return op === "exclude" ? "Day excluded" : "Day restored"; },
     });
-    const voidPo = po => ctx.form({ title: "Void payout " + po.payoutId, submit: "Void the payout", intro: "Its days are owed again. Only for a payout recorded by mistake.",
+    const bankForm = () => ctx.form({ title: "Bank details for " + who.name, submit: "Save",
+      intro: "Where NGG pays them. The volunteer is emailed at once about any change, so they can stop one they did not make.",
+      values: { bankName: (w.bank && w.bank.bankName) || "", accountNumber: (w.bank && w.bank.accountNumber) || "", accountName: (w.bank && w.bank.accountName) || "" },
+      fields: [{ id: "bankName", l: "Bank", req: true, max: 80 }, { id: "accountNumber", l: "Account number", req: true, max: 10, im: "numeric", help: "10 digits." },
+        { id: "accountName", l: "Name on the account", req: true, max: 120 }],
+      onSubmit: async val => { try { return await NGGApi.admin.volpay.bank(who.volunteerId, val); } catch (e) { throw new Error(crVpErr(e, "Couldn’t save the bank details.")); } },
+      done: () => { setTimeout(open, 50); ctx.reload(); return "Bank details saved"; } });
+    const voidPo = po => ctx.form({ title: "Void payout " + po.payoutId, submit: "Void the payout", intro: "Its days are owed again, and any fines it took are owed again — NGG’s and Afrovanguard’s. Only for a payout recorded by mistake.",
       values: { reason: "" }, fields: [{ id: "reason", l: "Why", type: "textarea", req: true, max: 300 }],
       onSubmit: async val => { try { return await NGGApi.admin.volpay.voidPayout(po.payoutId, val.reason); } catch (e) { throw new Error(crVpErr(e, "Couldn’t void it.")); } },
       done: () => { setTimeout(open, 50); ctx.reload(); return "Payout voided"; } });
     ctx.drawer({
       title: who.name, sub: [who.volunteerId, who.centre, who.status !== "active" ? who.status : ""].filter(Boolean).join(" · "), icon: "wallet",
       stats: [["Owed", fmtMoney(w.owed)], ["Earned in all", fmtMoney(w.earned)], ["Paid", fmtMoney(w.paid)]],
-      fields: [["Days earned", crNum(w.daysEarned)], ["Days excluded", crNum(w.daysExcluded)], ["Paid", w.frequencyText + ", at " + fmtMoney(w.rate) + " a day"]],
+      fields: [["Days earned", crNum(w.daysEarned)], ["Days excluded", crNum(w.daysExcluded)], ["Paid", w.frequencyText + ", at " + fmtMoney(w.rate) + " a day"],
+        ["Bank", w.bank && w.bank.set ? w.bank.bankName + " · " + w.bank.accountNumber + " · " + w.bank.accountName + (w.bank.recent ? " (changed " + crDate(w.bank.updatedAt) + ")" : "") : "No bank details"],
+        ["NGG fines owed", fmtMoney(w.finesOwedNgg || 0)], ["Fines taken off pay", fmtMoney(w.finesTaken || 0)]],
+      actions: [{ l: w.bank && w.bank.set ? "Change bank details" : "Add bank details", icon: "bank", run: () => bankForm() }],
       sections: [
         { h: "Days", empty: "No days decided yet.", list: w.days.map(x => ({
           icon: x.status === "earned" ? (x.paid ? "check-circle" : "coins") : "minus-circle",
@@ -890,7 +905,9 @@ function crVpWallet(ctx, v) {
           s: [x.status === "excluded" ? x.reasonText : "", x.override ? "By hand: " + x.override.reason : "", x.activity.length ? "Did: " + x.activity.map(a => ((d => d && d[a])(crVpCtx.acts) || a).toLowerCase()).join(", ") : "", x.centre].filter(Boolean).join(" · "),
           act: x.paid ? null : { l: x.status === "earned" ? "Exclude" : "Restore", run: () => dayAct(x, x.status === "earned" ? "exclude" : "restore") } })) },
         { h: "Payouts", empty: "Nothing paid yet.", list: w.payouts.map(po => ({ icon: po.void ? "prohibit" : "hand-coins",
-          t: po.period + " · " + fmtMoney(po.amount) + " for " + crPlural(po.days, "day"), s: [po.methodText, po.reference ? "ref " + po.reference : "", crDate(po.paidAt), po.void ? "Voided: " + po.voidReason : ""].filter(Boolean).join(" · "),
+          t: po.period + " · " + fmtMoney(po.amount) + " for " + crPlural(po.days, "day"),
+          s: [po.fineNgg + po.fineAv > 0 ? fmtMoney(po.gross) + " earned, " + (po.fineNgg ? fmtMoney(po.fineNgg) + " NGG fines" : "") + (po.fineNgg && po.fineAv ? " + " : "") + (po.fineAv ? fmtMoney(po.fineAv) + " Afrovanguard fines" : "") + " taken off" : "",
+              po.bankLine ? "to " + po.bankLine : po.methodText, po.reference ? "ref " + po.reference : "", crDate(po.paidAt), po.void ? "Voided: " + po.voidReason : ""].filter(Boolean).join(" · "),
           act: po.void ? null : { l: "Void", run: () => voidPo(po) } })) },
       ],
     });
@@ -898,11 +915,19 @@ function crVpWallet(ctx, v) {
   return open();
 }
 
+/* A bank change in the last two days is said before anybody is paid into it. */
+function crVpRecent(d, ids) {
+  const n = (d.period.rows || []).filter(r => ids.includes(r.volunteerId) && r.bank && r.bank.recent).length;
+  return n ? crPlural(n, "volunteer") + " changed their bank details in the last two days: check before paying." : "";
+}
+
 function crVpPay(ctx, d, ids) {
   const p = d.period;
   ctx.form({
     title: "Pay " + p.label, submit: "Record the payment",
-    intro: "Records that " + crPlural(ids.length, "volunteer") + " " + (ids.length === 1 ? "was" : "were") + " paid their earned days of this period. It doesn’t send money: pay them first, then record it here.",
+    intro: "Records that " + crPlural(ids.length, "volunteer") + " " + (ids.length === 1 ? "was" : "were") + " paid their earned days of this period. It doesn’t send money: pay them first, then record it here."
+      + (d.settings.deductFines !== false ? " Fines they owe come off first — NGG’s, then Afrovanguard’s — so pay each the amount on their line after fines." : "")
+      + (crVpRecent(d, ids) ? " " + crVpRecent(d, ids) : ""),
     values: { method: "transfer", reference: "" },
     fields: [{ id: "method", l: "How it was paid", type: "chips", req: true, opts: Object.keys(d.methods || {}).map(k => [k, d.methods[k]]) },
       { id: "reference", l: "Reference", max: 120, help: "The transfer reference. Needed for a bank transfer." }],
@@ -910,8 +935,10 @@ function crVpPay(ctx, d, ids) {
       try { return await NGGApi.admin.volpay.pay(p.period, ids, v.method, v.reference); }
       catch (e) { if ((e.data && e.data.error) === "reference_required") return { fieldErrors: { reference: crVpErr(e) } }; throw new Error(crVpErr(e, "Couldn’t record the payment.")); }
     },
-    done: (v, r) => { ctx.reload(); const ref = (r.results || []).filter(x => x.state === "refused").length;
-      return crPlural(r.paid || 0, "volunteer") + " paid · " + fmtMoney(r.total || 0) + (ref ? " · " + ref + " refused" : "") + ((r.ran || 0) - (r.paid || 0) - ref > 0 ? " · " + ((r.ran || 0) - (r.paid || 0) - ref) + " had nothing owed" : ""); },
+    done: (v, r) => { ctx.reload(); const ref = (r.results || []).filter(x => x.state === "refused"), noBank = r.noBank || 0;
+      if (r.avMessage) ctx.toast(r.avMessage, null, true);
+      return crPlural(r.paid || 0, "volunteer") + " paid · " + fmtMoney(r.total || 0) + (r.fines ? " · " + fmtMoney(r.fines) + " fines taken off" : "")
+        + (ref.length ? " · " + ref.length + " refused" : "") + (noBank ? " · " + noBank + " had no bank details on record" : "") + ((r.ran || 0) - (r.paid || 0) - ref.length > 0 ? " · " + ((r.ran || 0) - (r.paid || 0) - ref.length) + " had nothing owed" : ""); },
   });
 }
 
@@ -942,12 +969,15 @@ Object.assign(CR_TAB_DEFS, {
         : <CrSeg label="Pay period" value={p.period} options={p.periods.slice(0, 6)} onChange={v => { ctx.closeDrawer(); ctx.setSub(v); }}/> });
       out.push({ type: "kpis", span: 6, title: p.label, sub: p.current ? "The period running now · it can be paid after " + crDate(p.end) : p.ended ? "Ended " + crDate(p.end) : "", items: [
         { l: "To pay", v: fmtMoney(t.unpaid || 0), tone: "flat" }, { l: "Earned", v: fmtMoney(t.earned || 0), tone: "flat" },
-        { l: "Volunteers", v: crNum(t.people || 0), tone: "flat" }, { l: "Days earned · excluded", v: crNum(t.daysEarned || 0) + " · " + crNum(t.daysExcluded || 0), tone: "flat" } ] });
+        { l: "Volunteers", v: crNum(t.people || 0), tone: "flat" }, { l: "Days earned · excluded", v: crNum(t.daysEarned || 0) + " · " + crNum(t.daysExcluded || 0), tone: "flat" },
+        { l: "Fines held for Afrovanguard", v: fmtMoney(d.avFinesHeld || 0), tone: "flat", s: "Taken off pay for Afrovanguard’s fines: hand it over" } ] });
       out.push({ type: "table", span: 6, title: "Volunteers in this period", sub: "Open one for their days, to exclude or restore a day, and their payouts",
-        cols: ["Volunteer", { l: "Days earned", num: true }, { l: "Excluded", num: true }, { l: "Earned", num: true }, { l: "To pay", num: true }, "State"],
+        cols: ["Volunteer", { l: "Days earned", num: true }, { l: "Excluded", num: true }, { l: "Earned", num: true }, { l: "To pay", num: true }, { l: "NGG fines", num: true }, "Bank", "State"],
         rows: (p.rows || []).map(r => { const st = CR_VP_STATE[r.state] || [r.state, "neutral"]; return { key: r.volunteerId, open: () => crVpWallet(ctx, r), cells: [
           { k: "person", t: r.name, s: [r.volunteerId, r.centre].filter(Boolean).join(" · ") }, { k: "num", t: crNum(r.earnedDays), v: r.earnedDays }, { k: "num", t: crNum(r.excludedDays), v: r.excludedDays },
-          { k: "num", t: fmtMoney(r.amount), v: r.amount }, { k: "num", t: fmtMoney(r.unpaid), v: r.unpaid }, { k: "status", t: st[0], tone: st[1] } ] }; }),
+          { k: "num", t: fmtMoney(r.amount), v: r.amount }, { k: "num", t: fmtMoney(r.unpaid), v: r.unpaid }, { k: "num", t: fmtMoney(r.finesNgg || 0), v: r.finesNgg || 0 },
+          { k: "text", t: r.bank && r.bank.set ? r.bank.bankName + " ••••" + r.bank.last4 + (r.bank.recent ? " · changed recently" : "") : "None yet" },
+          { k: "status", t: st[0], tone: st[1] } ] }; }),
         search: "Search volunteers", filters: ["State"],
         bulk: p.ended ? [{ l: "Pay the selected", max: d.payMax, run: async keys => { const owed = (p.rows || []).filter(r => keys.includes(r.volunteerId) && r.unpaid > 0).map(r => r.volunteerId); if (!owed.length) { ctx.toast("Nothing is owed to the volunteers selected."); return false; } crVpPay(ctx, d, owed); return false; } }] : [],
         emptyText: d.settings.enabled ? "No volunteer has a decided day in this period yet. A day is decided once it is over." : "Nothing yet: volunteer pay is switched off." });

@@ -4858,3 +4858,58 @@ ALTER TABLE volunteers ADD COLUMN programmeAt VARCHAR(40) DEFAULT '';
 CREATE INDEX idx_vol_programme ON volunteers(programme);
 
 INSERT INTO schema_version (version) VALUES (207) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 208 (was 203 on the parallel branch) · Volunteer pay: bank details, and what each payout took off for fines ──
+ALTER TABLE volunteers ADD COLUMN bankName VARCHAR(80) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN bankAccountNumber VARCHAR(20) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN bankAccountName VARCHAR(120) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN bankUpdatedAt VARCHAR(40) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN bankUpdatedBy VARCHAR(64) DEFAULT '';
+ALTER TABLE volunteer_payouts ADD COLUMN gross INT NOT NULL DEFAULT 0;
+ALTER TABLE volunteer_payouts ADD COLUMN fineNgg INT NOT NULL DEFAULT 0;
+ALTER TABLE volunteer_payouts ADD COLUMN fineAv INT NOT NULL DEFAULT 0;
+ALTER TABLE volunteer_payouts ADD COLUMN bankLine VARCHAR(200) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (208) ON DUPLICATE KEY UPDATE version = version;
+
+-- 209: when the attendance feed fails, nobody is punished for it (policy.php, hooks.php)
+CREATE TABLE IF NOT EXISTS attendance_unmatched (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  source VARCHAR(48) NOT NULL DEFAULT '',
+  refKey VARCHAR(120) NOT NULL,
+  ref VARCHAR(120) NOT NULL DEFAULT '',
+  token VARCHAR(120) NOT NULL DEFAULT '',
+  format VARCHAR(40) NOT NULL DEFAULT '',
+  value VARCHAR(120) NOT NULL DEFAULT '',
+  name VARCHAR(120) NOT NULL DEFAULT '',
+  date VARCHAR(10) NOT NULL,
+  scannedAt VARCHAR(32) NOT NULL DEFAULT '',
+  centre VARCHAR(80) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  action VARCHAR(8) NOT NULL DEFAULT 'in',
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  matchedId VARCHAR(64) NOT NULL DEFAULT '',
+  decidedBy VARCHAR(64) NOT NULL DEFAULT '',
+  decidedAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_attunm_ref_day (refKey, date),
+  KEY idx_attunm_status (status, date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS attendance_held_days (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  date VARCHAR(10) NOT NULL,
+  centre VARCHAR(80) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  personType VARCHAR(16) NOT NULL DEFAULT 'member',
+  expected INT NOT NULL DEFAULT 0,
+  present INT NOT NULL DEFAULT 0,
+  why VARCHAR(255) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'held',
+  logged INT NOT NULL DEFAULT 0,
+  decidedBy VARCHAR(64) NOT NULL DEFAULT '',
+  decidedAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_atthold_day (date, centre, personType),
+  KEY idx_atthold_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (209) ON DUPLICATE KEY UPDATE version = version;

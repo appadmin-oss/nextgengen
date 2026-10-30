@@ -1054,6 +1054,40 @@ Afrovanguard asks NGG for it at `api/hooks/afrovanguard-pay.php`, signed with
 the secret the two sites already share (`afrovanguard.ngv_webhook_secret` here,
 `NGG_WEBHOOK_SECRET` there), and matches the volunteer by email.
 
+**Who is paid.** NGG volunteers only — those serving the Club (`ngg`) or both.
+A Summer School volunteer, and any volunteer record with no programme set,
+earns nothing here and gets no pay card on Afrovanguard.
+
+**Fines come off the pay** (on by default; "Take fines off pay" under Fines).
+When a period is paid, each volunteer's fines come off first, down to ₦0, and
+whatever is left of a fine stays owed for the next payment:
+
+1. NGG's own fines on the member record they also have. Settled on their
+   ledger as a payment, method `volunteer_pay`, with the payout as reference.
+2. Then Afrovanguard's fines (NGV and Vanguard Quest), matched by email.
+   NGG now holds that money for Afrovanguard: the tab shows the running total
+   as **Fines held for Afrovanguard** — hand it over. If Afrovanguard cannot be
+   reached, its fines are left owed there and the run says so; nobody is
+   charged twice.
+
+Pay each volunteer the amount on their line **after** fines. Voiding a payout
+puts both kinds of fine back; if Afrovanguard cannot be reached the void is
+refused and nothing changes — try again.
+
+**Bank details.** A volunteer adds where they are paid on **Me** in the app or
+on their Afrovanguard Wallet; the desk can add them from the volunteer's wallet
+("Add bank details"). Account numbers are 10 digits. The volunteer is emailed
+and told in the app about **every** change, whoever made it, and the pay table
+marks a change in the last two days ("changed recently") — check before paying
+into it. A transfer to somebody with no bank details on record is recorded, and
+the run says how many had none.
+
+**What the volunteer is told.** When they are paid: the amount, the days, what
+fines were taken off and where it went (email and app). When a day is not paid:
+in the app, one notice per pay period that updates as days are added. When the
+desk excludes or restores a day, when a payout is voided, and when their bank
+details change.
+
 ### Promoting into the Club
 
 The **promotable** list is the Summer School participants who look ready:
@@ -1723,6 +1757,41 @@ record, struck through, and everything it caused is lifted at once. The record
 also logs *No ID card today*, *Lost ID card*, and for volunteers *Missed Review
 Time*; an evicted person can be **reinstated** (a Governing Council override,
 with its resolution, when the conditions are not met).
+
+**When check-ins did not reach NGG.** Above the board, Compliance shows what
+needs a person when the check-in feed fails:
+
+- **Held days.** The nightly check no longer marks a whole centre absent when
+  no check-ins arrived from it. A centre where nobody checked in (three or more
+  people expected), or a day when fewer than one in ten checked in anywhere, is
+  **held** instead, and nobody is marked absent. Open it and choose **Nobody
+  is absent** (the centre did not meet, or the check-ins were lost — it is
+  never counted later) or **It met — count the absences** (they are logged now,
+  under your name, and the usual warnings and fines follow). The brake is
+  **Hold a day when check-ins did not arrive** under Policy; leave it on.
+- **Check-ins that named nobody.** A check-in from CACENTRE or a desk that NGG
+  cannot match to anybody is kept, not dropped. Open it, **Match to a person…**
+  by their ID, and the check-in is recorded for that day — if they had been
+  marked absent for it, that absence and whatever it caused is undone. Or
+  **Set aside**.
+- **Repair absences** (top right). For a period when check-ins were not
+  arriving: choose the dates, **only centre-days where check-ins clearly
+  didn't arrive** (fewer than one in five expected checked in) or **every
+  absence the check logged**, and who. The preview lists each centre-day, how
+  many absences and people, how many are warned or Dormant now, the absence
+  fines it would lift, and the **imported fines and dues it will not touch**.
+  **Undo these absences…** asks for a reason; each absence is voided with it,
+  everybody's standing is worked out again (warnings, the Dormant Track and
+  proposed evictions that no longer hold are lifted; their absence fines come
+  off the account, a paid one becoming credit), and one entry goes in the
+  audit log. An absence a person logged is never touched, and nor is any fine
+  or due that came from the old records or an upload.
+
+**A check-in that arrives late undoes the absence.** If CACENTRE re-sends
+check-ins for days already checked, each one recorded voids that day's
+absence (with the reason kept) and lifts what it caused. Ask CACENTRE to
+re-send its check-ins for the period it failed; the repair covers whatever
+cannot be re-sent.
 
 **Policy.** One form, saved with the bar at the bottom: whether the policy is
 enforced for Summer School and, separately, for NGG members; the lateness time

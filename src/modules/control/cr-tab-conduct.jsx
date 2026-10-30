@@ -148,12 +148,13 @@ function crCfDay(iso) { return iso ? crDate(String(iso).slice(0, 10) + "T12:00:0
 function crCfAccount(ctx, memberId) { ctx.go("money", "fees", "account/" + encodeURIComponent(memberId)); }
 /** After a write: the rules, the clearance status and the board, refetched quietly. */
 async function crCfRefresh(ctx) {
-  const [rules, once, board] = await Promise.all([
+  const [rules, once, board, integ] = await Promise.all([
     ctx.can("fees") ? NGGApi.admin.fees.fineRules().catch(() => null) : null,
     ctx.can("fees") ? NGGApi.admin.fees.finesClearOnce("status").catch(() => null) : null,
     ctx.can(["people", "summer"]) ? NGGApi.admin.policy.board().catch(() => null) : null,
+    ctx.can(["people", "summer"]) ? NGGApi.admin.policy.integrity().catch(() => null) : null,
   ]);
-  ctx.setData(x => Object.assign({}, x, rules ? { rules } : null, once ? { once } : null, board ? { board } : null));
+  ctx.setData(x => Object.assign({}, x, rules ? { rules } : null, once ? { once } : null, board ? { board } : null, integ ? { integ, integErr: null } : null));
 }
 
 /* ══ Fines: the upload ═══════════════════════════════════════════════════════ */
@@ -520,7 +521,7 @@ async function crCfPerson(ctx, row) {
 }
 function crCfComplianceBlocks(d, ctx) {
   if (d.boardErr || !d.board) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the compliance board.", sub: crErr(d.boardErr, ""), act: { l: "Try again", run: () => ctx.reload() } }];
-  const b = d.board, t = b.tally || {}, out = [];
+  const b = d.board, t = b.tally || {}, out = crCfIntegrityBlocks(d, ctx);
   if (!b.policyEnabled) out.push({ type: "note", span: 6, icon: "pause-circle", text: "Enforcement is off, so nothing new is logged or issued. What is below was recorded while it was on.",
     act: ctx.can("summer") ? { l: "Open Policy", run: () => ctx.setSub("policy") } : null });
   out.push({ type: "kpis", span: 6, items: [
@@ -539,6 +540,176 @@ function crCfComplianceBlocks(d, ctx) {
     ] }; }),
     search: "Search by name or ID", filters: ["Standing", "Awards"],
     emptyText: "Nobody has anything on record." + (b.policyEnabled ? "" : " Enforcement is off.") });
+  return out;
+}
+
+/* ══ Compliance: when check-ins do not arrive ═══════════════════════════════
+   The nightly check calls a person absent when no check-in reached NGG for a
+   programme day. When the check-in desk's feed fails (CACENTRE naming people
+   in a way NGG did not read), that is everybody — and the absences turn into
+   warnings, the Dormant Track and absence fines. Three tools, all on the
+   server's own rules (policy.php, "Attendance integrity"):
+     held days      the check now HOLDS a centre where nobody checked in rather
+                    than marking it absent; a person says what the day was
+     unmatched      a check-in that named nobody is kept, not dropped; match it
+                    to a person and their absence that day is undone
+     repair         void the check's absences over a period and everything they
+                    caused — never a person's entry, never imported money */
+const CR_CF_PTYPE = { member: "NGG members", student: "Participants", volunteer: "Volunteers" };
+function crCfIntegErr(e, fb) {
+  const c = e && ((e.data && e.data.error) || e.code);
+  return ({ already_decided: "Somebody already dealt with this.", out_of_scope: "That centre is outside your scope.", forbidden: "You can’t act on that kind of person.",
+    not_found: "Nobody with that ID.", reason_required: "Say why, in a sentence.", nothing_to_do: "No absences the check logged match this. Preview again.",
+    bad_dates: "Choose a start and an end date, the start first.", too_many: "That is more than one run may change. Choose a shorter period." })[c] || crErr(e, fb);
+}
+function crCfHeld(ctx, h) {
+  const decide = (decision, title, body, cta) => async () => {
+    const ok = await ctx.confirm({ title, body, cta }); if (!ok) return;
+    try {
+      const r = await NGGApi.admin.policy.heldDecide(h.id, decision);
+      ctx.closeDrawer();
+      ctx.toast(decision === "count" ? crPlural(r.logged, "absence") + " logged for " + crCfDay(h.date) + "." : crCfDay(h.date) + " at " + (h.centre || "every centre") + " — nobody marked absent.");
+      crCfRefresh(ctx);
+    } catch (e) { ctx.toast(crCfIntegErr(e, "Couldn’t decide that day."), null, true); }
+  };
+  const open = h.status === "held";
+  ctx.drawer({
+    title: crCfDay(h.date) + " · " + (h.centre || "No centre"), name: h.centre || "Held day",
+    sub: (CR_CF_PTYPE[h.personType] || h.personType) + " · " + (open ? "Held — nobody marked absent" : h.status === "counted" ? "Counted" : "Closed"),
+    stats: [["Expected", crNum(h.expected)], ["Checked in", crNum(h.present)], ["Logged", open ? "—" : crNum(h.logged)]],
+    sections: [
+      { h: "Why it was held", text: h.why || "No check-ins arrived from this centre." },
+      { h: "What to decide", text: open ? "If the centre did not meet, or the check-ins were lost on the way, say so and nobody is marked absent. If it met and these people really were not there, count it: the absences are logged now, under your name, and the usual consequences follow."
+        : "Decided " + crCfDay(h.decidedAt) + "." },
+    ],
+    actions: open ? [
+      { l: "Nobody is absent — it didn’t meet, or the check-ins were lost", run: decide("closed", "Mark nobody absent for " + crCfDay(h.date) + "?", "The day is closed for " + (h.centre || "this centre") + ". It is never counted later.", "Nobody is absent") },
+      { l: "It met — count the absences", run: decide("count", "Count " + crCfDay(h.date) + " at " + (h.centre || "this centre") + "?", "Everyone expected who has no check-in for that day is logged absent, under your name, and the thresholds re-checked — warnings, the Dormant Track and absence fines follow.", "Count the absences") },
+    ] : [],
+  });
+}
+function crCfUnmatched(ctx, u) {
+  const after = () => { ctx.closeDrawer(); crCfRefresh(ctx); };
+  const types = ((ctx.data.integ || {}).types || ["member"]).map(t => [t, CR_CF_TYPE[t] || t]);
+  const match = () => ctx.form({
+    title: "Whose check-in was this?", submit: "Record it", busyLabel: "Recording…",
+    intro: "The check-in desk sent “" + (u.ref || u.token || u.value || "?") + "”" + (u.name ? " (" + u.name + ")" : "") + " for " + crCfDay(u.date) + ". Give the person’s ID: the check-in is recorded for that day, and if they were marked absent for it, that absence — and anything it caused — is undone.",
+    values: { personType: types[0] ? types[0][0] : "member" },
+    fields: [
+      { id: "personType", l: "Who", type: "chips", req: true, opts: types },
+      { id: "personId", l: "Their ID", req: true, max: 60, ph: "NGG-2024-0012, or a participant or volunteer ID" },
+    ],
+    onSubmit: async v => {
+      try { return await NGGApi.admin.policy.unmatched(u.id, v.personId.trim(), v.personType, false); }
+      catch (e) { const c = e && ((e.data && e.data.error) || e.code); if (c === "not_found") return { fieldErrors: { personId: "Nobody with that ID." } }; throw Object.assign(new Error(c || "failed"), { data: { message: crCfIntegErr(e, "Couldn’t record that.") } }); }
+    },
+    done: (v, r) => { setTimeout(after, 0); return "Recorded for " + r.fullName + (r.absenceUndone ? " · their absence that day is undone" : "") + "."; },
+  });
+  const dismiss = async () => {
+    const ok = await ctx.confirm({ title: "Set this check-in aside?", body: "It stays in the record as set aside and nobody is credited with it.", cta: "Set aside" }); if (!ok) return;
+    try { await NGGApi.admin.policy.unmatched(u.id, "", "", true); ctx.toast("Set aside."); after(); }
+    catch (e) { ctx.toast(crCfIntegErr(e, "Couldn’t set that aside."), null, true); }
+  };
+  ctx.drawer({
+    title: u.name || u.ref || "Unknown check-in", name: u.name || u.ref || "?", sub: "Check-" + (u.action === "out" ? "out" : "in") + " · " + crCfDay(u.date) + (u.centre ? " · " + u.centre : ""),
+    stats: [["Sent as", u.ref || u.value || (u.token ? "Card code" : "—")], ["From", u.source || "—"], ["At", u.scannedAt ? crDate(u.scannedAt) : crCfDay(u.date)]],
+    sections: [{ h: "Why it is here", text: "The check-in desk named somebody NGG could not find — by ID, card code or printed number. It was kept rather than dropped, so nobody is marked absent for a check-in that did happen." }],
+    actions: [{ l: "Match to a person…", run: match }, { l: "Set aside", run: dismiss }],
+  });
+}
+function crCfIntegrityBlocks(d, ctx) {
+  if (d.integErr) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the attendance checks.", sub: crErr(d.integErr, ""), act: { l: "Try again", run: () => ctx.reload() } }];
+  const I = d.integ; if (!I) return [];
+  const out = [], held = (I.held || []).filter(h => h.status === "held"), unm = I.unmatched || [];
+  out.push.apply(out, crCfRepairBlocks(d, ctx));
+  if (held.length) out.push({ type: "note", span: 6, icon: "hand-palm", tone: "warn",
+    text: crPlural(held.length, "day") + " held — nobody was marked absent",
+    sub: "No check-ins arrived from these centres, so the nightly check did not call everybody absent. Open each and say what the day was." });
+  if (held.length) out.push({ type: "list", span: 6, title: "Held days", rows: held.map(h => ({ icon: "hand-palm", onClick: () => crCfHeld(ctx, h),
+    t: crCfDay(h.date) + " · " + (h.centre || "No centre"), s: (CR_CF_PTYPE[h.personType] || h.personType) + " · " + crNum(h.present) + " of " + crNum(h.expected) + " checked in", m: "Decide" })) });
+  if (unm.length) out.push({ type: "list", span: 6, title: "Check-ins that named nobody (" + crNum(unm.length) + ")",
+    rows: unm.slice(0, 60).map(u => ({ icon: "question", onClick: () => crCfUnmatched(ctx, u),
+      t: (u.name || u.ref || u.value || "Card code") + " · " + crCfDay(u.date), s: ["Sent as " + (u.ref || u.value || "a card code"), u.centre, u.source].filter(Boolean).join(" · "), m: "Match" })),
+    empty: "Every check-in found its person." });
+  return out;
+}
+
+/* The repair: a period, a preview of every centre-day it would touch, then a
+   reason and the run. Mirrors the one-time clearance: what is previewed is
+   what runs (the same inputs, re-read on the server), and it says out loud
+   what it leaves alone — imported fines and dues, and anything a person logged. */
+function crCfIsoDay(off) { const t = new Date(Date.now() + off * 864e5); return t.toISOString().slice(0, 10); }
+function crCfRepairForm(ctx) {
+  const types = ((ctx.data.integ || {}).types || []).map(t => [t, CR_CF_PTYPE[t] || t]);
+  if (!types.length) { ctx.toast("You can’t repair absences for anybody.", null, true); return; }
+  const P = ctx.data.repairPlan;
+  const iso = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? "" : "Choose a date.";
+  ctx.form({
+    title: "Repair absences", submit: "Preview", busyLabel: "Working it out…",
+    intro: "For a period when check-ins were not reaching NGG. Only absences the nightly check logged are touched — never one a person logged — and with them the warnings, Dormant Track, proposed evictions and absence fines they caused. Imported fines and dues are not touched. You see everything first.",
+    values: { from: P ? P.from : crCfIsoDay(-30), to: P ? P.to : crCfIsoDay(-1), mode: P ? P.mode : "outage", types: P ? P.types : types.map(t => t[0]), centre: P ? P.centre : "" },
+    fields: [
+      { id: "from", l: "From", type: "date", req: true, check: iso },
+      { id: "to", l: "To", type: "date", req: true, check: (v, vals) => iso(v) || (vals && vals.from && v < vals.from ? "The end comes after the start." : "") },
+      { id: "mode", l: "Which days", type: "chips", req: true, opts: [["outage", "Only centre-days where check-ins clearly didn’t arrive"], ["all", "Every absence the check logged"]],
+        help: "“Clearly didn’t arrive” is a centre-day where fewer than one in five of the people expected checked in." },
+      { id: "types", l: "Who", type: "multi", req: true, opts: types, check: v => (v || []).length ? "" : "Choose at least one." },
+      { id: "centre", l: "One centre only", max: 80, ph: "Leave empty for every centre you look after" },
+    ],
+    onSubmit: async v => {
+      const opts = { from: v.from, to: v.to, mode: v.mode, types: v.types, centre: v.centre.trim() };
+      try { const r = await NGGApi.admin.policy.repair(opts); ctx.setData(x => Object.assign({}, x, { repairPlan: Object.assign({}, r, opts) })); return r; }
+      catch (e) { const c = e && ((e.data && e.data.error) || e.code); if (c === "bad_dates") return { fieldErrors: { to: crCfIntegErr(e) } }; throw Object.assign(new Error(c || "failed"), { data: { message: crCfIntegErr(e, "Couldn’t work that out.") } }); }
+    },
+    done: (v, r) => r.infractions ? crPlural(r.infractions, "absence") + " across " + crPlural(r.people, "person", "people") + " would be undone." : "Nothing the check logged matches that.",
+  });
+}
+function crCfRepairRun(ctx) {
+  const P = ctx.data.repairPlan; if (!P || !P.infractions) return;
+  const n = P.infractions, ppl = P.people;   // read before the form: what is agreed is what runs
+  ctx.form({
+    title: "Undo " + crPlural(n, "absence") + " for " + crPlural(ppl, "person", "people"), submit: "Undo them", busyLabel: "Repairing…",
+    intro: "Each absence is voided with your reason, and each person’s standing is worked out again: what no longer holds is lifted, and its absence fine taken off their account (a paid one becomes credit). Imported fines and dues stay exactly as they are. This is recorded in the audit log.",
+    values: { reason: "" },
+    fields: [{ id: "reason", l: "Why", type: "textarea", rows: 2, req: true, max: 240, ph: "CACENTRE check-ins were not recognised, so the nightly check marked these days absent",
+      check: v => v.trim().length >= 5 ? "" : "Say why, in a sentence." }],
+    onSubmit: async v => {
+      try { return await NGGApi.admin.policy.repair({ from: P.from, to: P.to, mode: P.mode, types: P.types, centre: P.centre, apply: true, reason: v.reason.trim() }); }
+      catch (e) { const c = e && ((e.data && e.data.error) || e.code); if (c === "reason_required") return { fieldErrors: { reason: crCfIntegErr(e) } }; throw Object.assign(new Error(c || "failed"), { data: { message: crCfIntegErr(e, "Couldn’t repair. Nothing was changed.") } }); }
+    },
+    done: (v, r) => {
+      ctx.setData(x => Object.assign({}, x, { repairPlan: null, repairDone: r })); crCfRefresh(ctx);
+      return crPlural(r.voided, "absence") + " undone · " + crPlural(r.lifted, "consequence") + " lifted" + (r.stillDormant ? " · " + crNum(r.stillDormant) + " still Dormant on other entries" : "") + ".";
+    },
+  });
+}
+function crCfRepairBlocks(d, ctx) {
+  const P = d.repairPlan, done = d.repairDone, out = [];
+  if (done && !P) out.push({ type: "note", span: 6, icon: "check-circle", tone: "ok",
+    text: crPlural(done.voided, "absence") + " undone for " + crPlural(done.people, "person", "people") + " · " + crPlural(done.lifted, "consequence") + " lifted.",
+    sub: (done.stillDormant ? crNum(done.stillDormant) + " are still on the Dormant Track because of other entries — open them below. " : "Nobody is left Dormant by those days. ")
+      + (done.importedUntouched ? crPlural(done.importedUntouched, "imported fine or due", "imported fines and dues") + " were left exactly as they were." : "No imported fines or dues were involved."),
+    act: { l: "Done", run: () => ctx.setData(x => Object.assign({}, x, { repairDone: null })) } });
+  if (!P) return out;
+  const chosen = (P.groups || []).filter(g => P.mode === "all" || g.outage);
+  out.push({ type: "note", span: 6, icon: P.infractions ? "first-aid-kit" : "info", tone: P.infractions ? "warn" : null,
+    text: P.infractions ? crPlural(P.infractions, "absence") + " the check logged, across " + crPlural(P.people, "person", "people") + " — " + crPlural(P.chosenGroups, "centre-day") + ", " + crCfDay(P.from) + " to " + crCfDay(P.to) + "."
+      : "No absences the check logged match this period" + (P.mode === "outage" ? " where check-ins clearly didn’t arrive" : "") + ".",
+    sub: P.infractions ? [crPlural(P.sanctionedNow, "person is", "people are") + " warned, Dormant or proposed for eviction now",
+      P.absenceFines ? crPlural(P.absenceFines, "absence fine") + " (" + fmtMoney(P.absenceFineTotal) + (P.absenceFinesPaid ? ", " + crNum(P.absenceFinesPaid) + " already paid — those become credit" : "") + ") lifted with them" : "no absence fines on those days",
+      P.importedUntouched ? crPlural(P.importedUntouched, "imported fine or due", "imported fines and dues") + " on their accounts stay exactly as they are" : "no imported fines or dues on their accounts",
+      P.outOfScope ? crNum(P.outOfScope) + " outside your centres are left for whoever looks after them" : ""].filter(Boolean).join(" · ") + "."
+      : P.mode === "outage" && P.groupCount ? crPlural(P.groupCount, "centre-day") + " had absences, but enough people checked in that it looks real. Choose “Every absence the check logged” to include them." : "Nothing to repair.",
+    act: P.infractions ? { l: "Undo these absences…", run: () => crCfRepairRun(ctx) } : { l: "Change the period", run: () => crCfRepairForm(ctx) } });
+  if ((P.groups || []).length) out.push({ type: "table", span: 6, title: "Centre-days in the period", nosel: true, search: "Search by centre",
+    sub: P.mode === "outage" ? "Only the rows marked “Feed failed” are undone." : "Every row is undone.",
+    cols: ["Day", "Centre", "Who", { l: "Checked in", num: true }, { l: "Marked absent", num: true }, "Reading"],
+    rows: P.groups.map(g => ({ key: g.date + g.centre + g.personType, cells: [
+      { k: "text", t: crCfDay(g.date) }, { k: "text", t: g.centre || "—" }, { k: "text", t: CR_CF_PTYPE[g.personType] || g.personType },
+      { k: "num", t: crNum(g.checkins), v: g.checkins }, { k: "num", t: crNum(g.people), v: g.people },
+      { k: "status", t: g.outage ? "Feed failed" : "Looks real", tone: g.outage ? "warn" : "neutral", s: P.mode === "all" || g.outage ? "undone" : "kept" }] })),
+    filters: ["Reading", "Who"] });
+  out.push({ type: "list", span: 6, rows: [{ icon: "x", onClick: () => ctx.setData(x => Object.assign({}, x, { repairPlan: null })), t: "Close the preview", s: "Nothing has changed." }] });
   return out;
 }
 
@@ -572,6 +743,8 @@ function crCfPolicyForm(pol, ctx) {
     { h: "Enforcement", help: "The Institutional Policy & Operational Blueprint, applied automatically: absences logged for closed programme days, lateness measured against the time below, and warnings, dormancy, suspension, fines and eviction issued by the thresholds. A suspended or evicted person is refused at the scanner.", rows: [
       { id: "enabled", l: "Enforce for Summer School", c: "toggle", value: !!P.enabled, help: "Participants, volunteers, mentors and instructors." },
       { id: "member.enabled", l: "Enforce for NGG members", c: "toggle", value: !!g(P.member, "enabled", false), help: "A separate switch, on the member calendar." },
+      { id: "outageBrake", l: "Hold a day when check-ins did not arrive", c: "toggle", value: P.outageBrake !== false,
+        help: "A centre where nobody checked in (three or more expected), or a day when fewer than one in ten checked in anywhere, is held for a person to decide instead of marking everybody absent. Leave it on." },
       { id: "checkoutRequired", l: "Summer: a day with no scan out is an absence", c: "toggle", value: !!P.checkoutRequired },
       { id: "musing.enabled", l: "Missing the Musing Period makes it a half-day", c: "toggle", value: !!g(P.musing, "enabled", false) },
       { id: "musing.endsAt", l: "Musing Period ends", c: "input", type: "time", value: g(P.musing, "endsAt", "") },
@@ -783,15 +956,17 @@ Object.assign(CR_TAB_DEFS, {
     load: async ctx => {
       const safe = p => p.then(ok => ({ ok }), err => ({ err }));
       const fees = ctx.can("fees"), summer = ctx.can("summer"), board = ctx.can(["people", "summer"]);
-      const [rules, once, pol, brd] = await Promise.all([
+      const [rules, once, pol, brd, integ] = await Promise.all([
         fees ? safe(NGGApi.admin.fees.fineRules()) : null,
         fees ? safe(NGGApi.admin.fees.finesClearOnce("status")) : null,
         summer ? safe(NGGApi.admin.policy.settings()) : null,
         board ? safe(NGGApi.admin.policy.board()) : null,
+        board ? safe(NGGApi.admin.policy.integrity()) : null,
       ]);
       const prev = ctx.data || {};
       return { rules: rules && rules.ok, rulesErr: rules && rules.err, once: once && once.ok, pol: pol && pol.ok, polErr: pol && pol.err,
-        board: brd && brd.ok, boardErr: brd && brd.err, finePlan: prev.finePlan || null, clearPlan: prev.clearPlan || null };
+        board: brd && brd.ok, boardErr: brd && brd.err, integ: integ && integ.ok, integErr: integ && integ.err,
+        finePlan: prev.finePlan || null, clearPlan: prev.clearPlan || null, repairPlan: prev.repairPlan || null };
     },
     actions: (d, ctx) => {
       const v = crCfView(ctx), out = [];
@@ -802,7 +977,10 @@ Object.assign(CR_TAB_DEFS, {
       /* The whole rule book as one formal PDF, from every view that shows rules. */
       if (v !== "compliance") out.push({ l: "Export the rules (PDF)", icon: "file-pdf", run: () => crCfRulesPdf(ctx, d).catch(e => ctx.toast(crErr(e, "Couldn’t make the document."), null, true)) });
       if ((v === "policy" || v === "calendar") && ctx.can("summer")) out.push({ l: "Run the absence sweep now", icon: "broom", run: () => crCfSweep(ctx) });
-      if (v === "compliance") out.push({ l: "Refresh", icon: "arrows-clockwise", run: () => crCfRefresh(ctx) });
+      if (v === "compliance") {
+        out.push({ l: "Repair absences", icon: "first-aid-kit", run: () => crCfRepairForm(ctx) });
+        out.push({ l: "Refresh", icon: "arrows-clockwise", run: () => crCfRefresh(ctx) });
+      }
       return out;
     },
     blocks: (d, ctx) => {

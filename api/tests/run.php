@@ -122,6 +122,11 @@ function chk(string $label, bool $cond): void {
 
 // ── Migration ──
 db_conn();
+/* The outage brake (policy.php · policy_outage_hold) holds a centre-day where
+   nobody checked in. The legacy blocks below test the absence RULES on
+   fixtures where whole centres never check in, so the brake is off for them;
+   the brake's own tests switch it on. */
+if (function_exists('policy_settings_save')) policy_settings_save(['outageBrake' => false], 'test');
 chk('schema at target', (int)db_row('SELECT MAX(version) v FROM schema_version')['v'] === NGG_SCHEMA_TARGET);
 
 // ── Proper migrator: ladder integrity, idempotency, SQLite⇄MySQL parity ──
@@ -17557,13 +17562,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 (function () {
     $ADM = 'NGG-2025-0099';
     $keep = setting_get('volunteerPay');
-    $vols = ['VOL-PAY-1', 'VOL-PAY-2', 'VOL-PAY-3', 'VOL-PAY-4'];
+    $vols = ['VOL-PAY-1', 'VOL-PAY-2', 'VOL-PAY-3', 'VOL-PAY-4', 'VOL-PAY-5'];
     $in = "'" . implode("','", $vols) . "'";
     $clean = function () use ($in) {
         foreach (['volunteer_pay', 'volunteer_payouts', 'attendance_duty', 'volunteer_points'] as $t) db_exec("DELETE FROM $t WHERE volunteerId IN ($in)");
         db_exec("DELETE FROM attendance WHERE studentId IN ($in, 'NGG-PAY-M3')");
         db_exec("DELETE FROM volunteers WHERE volunteerId IN ($in)");
         db_exec("DELETE FROM members WHERE memberId = 'NGG-PAY-M3'");
+        db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-PAY-M3'");
+        db_exec("DELETE FROM notifications WHERE memberId = 'NGG-PAY-M3'");
     };
     $clean();
     $mon = gmdate('Y-m-d', strtotime('monday last week'));
@@ -17661,6 +17668,69 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('volunteer pay · Afrovanguard is given the pay of the volunteer with that email', ($av['wallet']['volunteerId'] ?? '') === 'VOL-PAY-3' && ($av['wallet']['owed'] ?? 0) === 2500);
     chk('volunteer pay · a volunteer id whose email does not agree is not believed', (volpay_for_afrovanguard(['email' => 'vol-pay-3@example.com', 'volunteerId' => 'VOL-PAY-1'])['wallet']['volunteerId'] ?? '') === 'VOL-PAY-3');
     chk('volunteer pay · nobody with that email: no wallet, not an error', volpay_for_afrovanguard(['email' => 'nobody@example.com'])['wallet'] === null);
+
+    /* Summer School volunteers are not paid here, and a row with no programme is a Summer one. */
+    db_insert('volunteers', ['volunteerId' => 'VOL-PAY-5', 'fullName' => 'Summer Only', 'email' => 'vol-pay-5@example.com', 'role' => 'facilitator', 'status' => 'active',
+        'safeguarding' => 'cleared', 'programme' => null, 'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+    $att('VOL-PAY-5', $d(2), ['checkOutAt' => $d(2) . 'T15:00:00Z']);
+    volpay_accrue();
+    chk('volunteer pay · a volunteer with no programme (a Summer one) earns nothing', !db_row("SELECT id FROM volunteer_pay WHERE volunteerId = 'VOL-PAY-5'"));
+    chk('volunteer pay · …and Afrovanguard is not shown an NGG pay card for them', volpay_for_afrovanguard(['email' => 'vol-pay-5@example.com'])['wallet'] === null
+        && volpay_for_afrovanguard(['email' => 'vol-pay-5@example.com', 'volunteerId' => 'VOL-PAY-5'])['wallet'] === null);
+
+    /* Bank details: theirs to set, checked, shown masked to them and whole to the desk, and every change told. */
+    $bank = fn(array $b) => backend_dispatch('member.volpay.bank', ['memberId' => 'NGG-PAY-M3'] + $b);
+    chk('volunteer pay · an account number is ten digits', ($bank(['bankName' => 'GTBank', 'accountNumber' => '12345', 'accountName' => 'Pay Member'])['error'] ?? '') === 'bad_account_number');
+    $bk = $bank(['bankName' => 'GTBank', 'accountNumber' => '0123 456 789', 'accountName' => 'Pay Member']);
+    chk('volunteer pay · a volunteer sets where they are paid; they see the bank and the last four digits only', !empty($bk['ok']) && ($bk['bank']['last4'] ?? '') === '6789' && ($bk['bank']['accountNumber'] ?? 'x') === '');
+    chk('volunteer pay · …the desk sees the whole number, flagged as a recent change',
+        (($w3 = backend_dispatch('admin.volpay.volunteer', ['requesterId' => $ADM, 'volunteerId' => 'VOL-PAY-3'])['wallet']['bank'] ?? [])['accountNumber'] ?? '') === '0123456789' && !empty($w3['recent']));
+    chk('volunteer pay · …and the volunteer is told of the change in the app', (bool)db_row("SELECT id FROM notifications WHERE memberId = 'NGG-PAY-M3' AND title = 'Your NGG pay details were changed'"));
+    chk('volunteer pay · somebody who is not an NGG volunteer cannot set pay details', (backend_dispatch('member.volpay.bank', ['memberId' => $ADM, 'bankName' => 'GTBank', 'accountNumber' => '0123456789', 'accountName' => 'X'])['error'] ?? '') === 'not_a_volunteer');
+    chk('volunteer pay · Afrovanguard can set them for the volunteer it found by email, nobody else',
+        !empty(volpay_bank_from_afrovanguard(['email' => 'vol-pay-1@example.com', 'bankName' => 'Access Bank', 'accountNumber' => '1112223334', 'accountName' => 'Pay One'])['ok'])
+        && (volpay_bank_from_afrovanguard(['email' => 'vol-pay-5@example.com', 'bankName' => 'Access Bank', 'accountNumber' => '1112223334', 'accountName' => 'Summer'])['error'] ?? '') === 'not_a_volunteer');
+
+    /* Fines come off the pay: NGG's first, then Afrovanguard's, down to ₦0, the rest still owed. */
+    db_insert('member_ledger', ['entryId' => 'FEE-VPFINE1', 'memberId' => 'NGG-PAY-M3', 'kind' => 'fine', 'direction' => 'charge', 'amount' => 1000, 'periodKey' => 'fine:vptest', 'createdAt' => now_iso()]);
+    chk('volunteer pay · NGG fines owed are known before paying', volpay_ngg_fines_owed('NGG-PAY-M3') === 1000);
+    $calls = [];
+    $GLOBALS['__volpay_av_mock'] = function (string $op, array $pl) use (&$calls) {
+        $calls[] = [$op, $pl];
+        if ($op === 'owed') return ['ok' => true, 'owing' => ['vol-pay-3@example.com' => 1000, 'vol-pay-4@example.com' => 9000]];
+        if ($op === 'settle') { $o = []; foreach ($pl['items'] as $it) $o[$it['reference']] = $it['amount']; return ['ok' => true, 'settled' => $o]; }
+        if ($op === 'unsettle') return ['ok' => true, 'voided' => 1];
+        return ['ok' => false];
+    };
+    $pf = $pay(['VOL-PAY-3', 'VOL-PAY-4'], $wk);
+    $rf = array_column($pf['results'] ?? [], null, 'volunteerId');
+    chk('volunteer pay · fines come off a payout: ₦2,500 earned, ₦1,000 NGG fine, ₦1,000 Afrovanguard fine, ₦500 paid',
+        ($rf['VOL-PAY-3']['gross'] ?? 0) === 2500 && ($rf['VOL-PAY-3']['fineNgg'] ?? 0) === 1000 && ($rf['VOL-PAY-3']['fineAv'] ?? 0) === 1000 && ($rf['VOL-PAY-3']['amount'] ?? 0) === 500);
+    chk('volunteer pay · a fine bigger than the pay takes it to ₦0, never below, and the rest stays owed there',
+        ($rf['VOL-PAY-4']['amount'] ?? -1) === 0 && ($rf['VOL-PAY-4']['fineAv'] ?? 0) === 2500);
+    chk('volunteer pay · Afrovanguard is asked twice for the whole run, not once a volunteer', count($calls) === 2 && $calls[0][0] === 'owed' && $calls[1][0] === 'settle');
+    chk('volunteer pay · the NGG fine is settled on the ledger, against the payout, and is no longer owed',
+        (bool)db_row("SELECT id FROM member_ledger WHERE memberId = 'NGG-PAY-M3' AND kind = 'payment' AND method = 'volunteer_pay' AND reference = ? AND amount = 1000", [$rf['VOL-PAY-3']['payoutId'] ?? '']) && volpay_ngg_fines_owed('NGG-PAY-M3') === 0);
+    chk('volunteer pay · the volunteer is told what was paid and what was taken off', (bool)db_row("SELECT id FROM notifications WHERE memberId = 'NGG-PAY-M3' AND title = 'NGG has paid you ₦500' AND body LIKE '%₦1,000 for NGG fines and ₦1,000 for Afrovanguard fines%'"));
+    chk('volunteer pay · the payout keeps where it was sent', (db_row('SELECT bankLine FROM volunteer_payouts WHERE payoutId = ?', [$rf['VOL-PAY-3']['payoutId'] ?? ''])['bankLine'] ?? '') === 'GTBank ••••6789 · Pay Member');
+    chk('volunteer pay · the desk is shown what it holds for Afrovanguard', volpay_av_fines_held() >= 3500 && (backend_dispatch('admin.volpay.settings.get', ['requesterId' => $ADM])['avFinesHeld'] ?? 0) >= 3500);
+
+    $GLOBALS['__volpay_av_mock'] = fn($op, $pl) => ['ok' => false, 'error' => 'av_unreachable'];
+    chk('volunteer pay · a payout that took an Afrovanguard fine is not voided while Afrovanguard cannot put it back',
+        (backend_dispatch('admin.volpay.payout.void', ['requesterId' => $ADM, 'payoutId' => $rf['VOL-PAY-3']['payoutId'], 'reason' => 'x'])['error'] ?? '') === 'av_unreachable'
+        && (db_row('SELECT voidedAt FROM volunteer_payouts WHERE payoutId = ?', [$rf['VOL-PAY-3']['payoutId']])['voidedAt'] ?? 'x') === '');
+    $GLOBALS['__volpay_av_mock'] = function (string $op, array $pl) use (&$calls) { $calls[] = [$op, $pl]; return ['ok' => true, 'voided' => 1]; };
+    backend_dispatch('admin.volpay.payout.void', ['requesterId' => $ADM, 'payoutId' => $rf['VOL-PAY-3']['payoutId'], 'reason' => 'Paid twice']);
+    chk('volunteer pay · voiding it puts both fines back: NGG’s on the ledger, Afrovanguard’s by reference',
+        volpay_ngg_fines_owed('NGG-PAY-M3') === 1000 && end($calls)[0] === 'unsettle' && end($calls)[1]['reference'] === $rf['VOL-PAY-3']['payoutId']);
+    $GLOBALS['__volpay_av_mock'] = fn($op, $pl) => ['ok' => false, 'error' => 'av_unreachable'];
+    $pu = $pay(['VOL-PAY-3'], $wk);
+    chk('volunteer pay · Afrovanguard unreachable: its fines are left owed there, NGG’s still come off, and the desk is told',
+        ($pu['results'][0]['fineAv'] ?? -1) === 0 && ($pu['results'][0]['fineNgg'] ?? 0) === 1000 && ($pu['avFines'] ?? '') === 'unreachable');
+    unset($GLOBALS['__volpay_av_mock']);
+    $pv = backend_dispatch('admin.volpay.period', ['requesterId' => $ADM, 'period' => $wk]);
+    $pr = array_column($pv['rows'] ?? [], null, 'volunteerId');
+    chk('volunteer pay · the period list carries each volunteer’s bank and NGG fines, in grouped reads', isset($pr['VOL-PAY-3']['bank']['last4'], $pr['VOL-PAY-3']['finesNgg']));
 
     $clean();
     if (is_array($keep)) setting_set('volunteerPay', $keep, 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'volunteerPay'");
@@ -35409,6 +35479,133 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     unset($GLOBALS['__mail_sink']);
     db_exec("DELETE FROM applications WHERE email = 'apply.ibx@example.org'"); db_exec("DELETE FROM contact_messages WHERE ref = 'MSG-IBX1'");
     foreach (['NGG-IBX-ADM', 'NGG-IBX-KID'] as $x) db_exec('DELETE FROM members WHERE memberId = ?', [$x]);
+})();
+
+
+// ── CACENTRE check-ins that NGG did not recognise: the fix, the brake, the repair ──
+(function () {
+    $now = now_iso(); $SU = 'NGG-2025-0099';
+    $keepPol = setting_raw('policy'); $keepCal = setting_raw('memberProgramme'); $keepCur = setting_raw('policy_member_swept_through');
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true, 'outageBrake' => true, 'member' => ['enabled' => true, 'absenceLimit' => 2, 'latenessCap' => 30,
+        'postSuspensionLateness' => 30, 'fine' => 5000, 'suspensionDays' => 14, 'lateRedline' => '23:59', 'absenceFine' => 1000, 'checkoutRequired' => false]], 'test');
+    member_programme_settings_save(['enabled' => true, 'startDate' => gmdate('Y-m-d', strtotime('-60 days')), 'endDate' => gmdate('Y-m-d', strtotime('+30 days')), 'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'test');
+    $today = attendance_today(); $ago = fn($n) => gmdate('Y-m-d', strtotime($today . ' UTC') - $n * 86400);
+    $d1 = $ago(2); $d2 = $ago(9); $d3 = $ago(8); $d4 = $ago(7);
+    foreach (['CEN-RP-E' => ['Rp Egbeda', 'RE'], 'CEN-RP-I' => ['Rp Ikotun', 'RI']] as $cid => [$nm, $code]) db_insert('centres', ['centreId' => $cid, 'name' => $nm, 'code' => $code, 'status' => 'active', 'createdAt' => $now]);
+    for ($i = 1; $i <= 9; $i++) db_insert('members', ['memberId' => 'NGG-RP-' . $i, 'fullName' => 'Rp Member ' . $i, 'email' => 'rp' . $i . '@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => $i <= 5 ? 'Rp Egbeda' : 'Rp Ikotun', 'displayId' => '026-9' . sprintf('%02d', $i), 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('member_cards', ['memberId' => 'NGG-RP-1', 'kind' => 'secure', 'code' => 'MEMQR-RPTESTCARD1', 'status' => 'active', 'issuedAt' => $now]);
+    db_insert('member_cards', ['memberId' => 'NGG-RP-4', 'kind' => 'secure', 'code' => 'MEMQR-RPTESTCARD4', 'status' => 'active', 'issuedAt' => $now]);
+
+    // 1. Every way the gate names a member is recognised.
+    $r = hooks_attendance(['source' => 'cacentre', 'events' => [
+        ['token' => 'MEMQR-RPTESTCARD1', 'date' => $d1], ['ref' => '026-902', 'date' => $d1], ['ref' => 'ngg-rp-3', 'date' => $d1],
+        ['ref' => 'memqr-rptestcard4', 'date' => $d1], ['ref' => 'CAC-PERSON-777', 'date' => $d1, 'name' => 'Somebody New']]]);
+    $in = array_column(db_all("SELECT studentId FROM attendance WHERE date = ? AND studentId LIKE 'NGG-RP-%' ORDER BY studentId", [$d1]), 'studentId');
+    chk('cacentre · a check-in naming the secure card, the printed number, the id in any case or the card in the ref field is recorded',
+        $r['marked'] === 4 && $in === ['NGG-RP-1', 'NGG-RP-2', 'NGG-RP-3', 'NGG-RP-4']);
+    $u = db_row("SELECT * FROM attendance_unmatched WHERE refKey = 'CAC-PERSON-777'");
+    chk('cacentre · a check-in naming nobody is kept for the desk, not forgotten', $r['unknown'] === 1 && $u && $u['date'] === $d1 && $u['name'] === 'Somebody New' && $u['status'] === 'open');
+
+    // 2. The brake: a centre where nobody checked in is held; a real absence elsewhere is counted.
+    db_exec("UPDATE members SET status = 'zz_rp_hold' WHERE status = 'active' AND type = 'NGG' AND memberId NOT LIKE 'NGG-RP-%'");
+    setting_set('policy_member_swept_through', $ago(3), 'system');
+    $sw = policy_sweep_member_absences($d1);
+    $absOn = fn($id, $d) => (bool)db_row("SELECT 1 FROM infractions WHERE personId = ? AND kind = 'absence' AND date = ? AND (voidedAt IS NULL OR voidedAt = '')", [$id, $d]);
+    chk('brake · at the centre that checked in, the one member who did not is absent', $absOn('NGG-RP-5', $d1) && !$absOn('NGG-RP-1', $d1));
+    $held = db_row("SELECT * FROM attendance_held_days WHERE date = ? AND centre = 'Rp Ikotun' AND personType = 'member'", [$d1]);
+    chk('brake · a centre where nobody checked in is HELD, and nobody there is absent', $held && (int)$held['expected'] === 4 && (int)$held['present'] === 0
+        && !$absOn('NGG-RP-6', $d1) && !$absOn('NGG-RP-9', $d1) && ($sw['held'] ?? 0) >= 1);
+    chk('brake · the held day says why', str_contains((string)$held['why'], 'No check-ins arrived from Rp Ikotun'));
+    chk('brake · a day when almost nobody checked in anywhere is held everywhere',
+        array_keys(policy_outage_hold($ago(30), 'member', ['A' => ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'], 'B' => ['b1', 'b2', 'b3', 'b4', 'b5', 'b6']], ['a1' => 1])) === ['A', 'B']);
+    chk('brake · …but a small centre (fewer than ' . POLICY_OUTAGE_CENTRE_MIN . ' expected) with nobody in is not', policy_outage_hold($ago(31), 'member', ['S' => ['s1', 's2'], 'T' => ['t1', 't2', 't3', 't4']], ['t1' => 1, 't2' => 1]) === []);
+    db_exec("UPDATE members SET status = 'active' WHERE status = 'zz_rp_hold'");
+
+    // 3. A check-in that arrives after the night's check undoes the absence — and its fine.
+    $fine = db_row("SELECT * FROM sanctions WHERE personId = 'NGG-RP-5' AND kind = 'fine' AND tier = ?", [500000 + intdiv((int)strtotime($d1 . ' 00:00:00 UTC'), 86400)]);
+    $led = $fine ? db_row("SELECT * FROM member_ledger WHERE memberId = 'NGG-RP-5' AND periodKey = ?", ['sanction-' . $fine['id']]) : null;
+    chk('fine · the absence carried the ₦1,000 absence fine, on the account', $fine && (int)$fine['amount'] === 1000 && $led && (string)$led['voidedAt'] === '');
+    hooks_attendance(['source' => 'cacentre', 'events' => [['ref' => 'NGG-RP-5', 'date' => $d1]]]);
+    $f2 = db_row('SELECT status FROM sanctions WHERE id = ?', [(int)$fine['id']]);
+    $l2 = db_row('SELECT voidedAt FROM member_ledger WHERE entryId = ?', [(string)$led['entryId']]);
+    chk('late arrival · the absence is voided, with why', !$absOn('NGG-RP-5', $d1)
+        && str_contains((string)db_row("SELECT voidReason FROM infractions WHERE personId = 'NGG-RP-5' AND date = ?", [$d1])['voidReason'], 'arrived after'));
+    chk('late arrival · …and the fine is lifted and off the account', $f2['status'] === 'lifted' && (string)$l2['voidedAt'] !== '');
+
+    // 4. Matching an unmatched check-in records it and undoes an absence.
+    policy_log('NGG-RP-7', 'member', 'absence', $d4, 'No check-in on a member programme day.'); policy_apply('NGG-RP-7', 'member');
+    $uid = (int)db_row("SELECT id FROM attendance_unmatched WHERE refKey = 'CAC-PERSON-777'")['id'];
+    db_update('attendance_unmatched', ['date' => $d4], ['id' => $uid]);
+    $m = admin_attendance_unmatched_match(['requesterId' => $SU, 'id' => $uid, 'personId' => 'NGG-RP-7', 'personType' => 'member']);
+    chk('unmatched · matching it to a person records the check-in and undoes that day\'s absence', !empty($m['ok']) && $m['absenceUndone'] === 1
+        && (bool)db_row("SELECT 1 FROM attendance WHERE studentId = 'NGG-RP-7' AND date = ?", [$d4]) && !$absOn('NGG-RP-7', $d4));
+    chk('unmatched · …once', (admin_attendance_unmatched_match(['requesterId' => $SU, 'id' => $uid, 'personId' => 'NGG-RP-7'])['error'] ?? '') === 'already_decided');
+
+    // 5. A held day is decided by a person.
+    $hc = admin_attendance_held_decide(['requesterId' => $SU, 'id' => (int)$held['id'], 'decision' => 'closed']);
+    chk('held · "the centre did not meet" logs nothing, for good', !empty($hc['ok']) && $hc['logged'] === 0 && !$absOn('NGG-RP-6', $d1)
+        && db_row('SELECT status FROM attendance_held_days WHERE id = ?', [(int)$held['id']])['status'] === 'closed');
+    db_insert('attendance_held_days', ['date' => $ago(4), 'centre' => 'Rp Ikotun', 'personType' => 'member', 'expected' => 4, 'present' => 0, 'why' => 't', 'status' => 'held', 'createdAt' => $now]);
+    $h2 = (int)db_row("SELECT id FROM attendance_held_days WHERE date = ? AND centre = 'Rp Ikotun'", [$ago(4)])['id'];
+    $hc = admin_attendance_held_decide(['requesterId' => $SU, 'id' => $h2, 'decision' => 'count']);
+    chk('held · "it met, count it" logs the absences of those still without a check-in, as the person deciding', !empty($hc['ok']) && $hc['logged'] === 4
+        && (string)db_row("SELECT byId FROM infractions WHERE personId = 'NGG-RP-6' AND date = ?", [$ago(4)])['byId'] === $SU);
+
+    // 6. The repair: the weeks when every check-in was lost.
+    foreach (['NGG-RP-6', 'NGG-RP-8', 'NGG-RP-9'] as $id) {
+        foreach ([$d2, $d3] as $d) policy_log($id, 'member', 'absence', $d, 'No check-in on a member programme day.');
+        policy_apply($id, 'member');
+    }
+    policy_log('NGG-RP-8', 'member', 'absence', $ago(10), 'Seen leaving before the session', $SU);   // a person logged this one
+    policy_apply('NGG-RP-8', 'member');
+    fees_post('NGG-RP-9', 'fine', 3000, ['periodKey' => 'bulkfine:old-2026', 'note' => 'Imported fine', 'by' => 'import']);
+    fees_post('NGG-RP-9', 'dues', 2000, ['periodKey' => 'import:2026-08', 'note' => 'Imported dues', 'by' => 'import']);
+    $imported = db_all("SELECT entryId, voidedAt FROM member_ledger WHERE memberId = 'NGG-RP-9' AND periodKey IN ('bulkfine:old-2026','import:2026-08')");
+    chk('repair · before: the lost weeks put them on the Dormant Track', policy_state('NGG-RP-9', 'member')['state'] === 'dormant' && policy_state('NGG-RP-8', 'member')['state'] === 'dormant');
+    $pv = admin_policy_absence_repair(['requesterId' => $SU, 'from' => $d2, 'to' => $d3, 'types' => ['member'], 'mode' => 'outage']);
+    $grp = array_values(array_filter($pv['groups'], fn($g) => $g['centre'] === 'Rp Ikotun'));
+    chk('repair · the preview shows each centre-day, its check-ins and that it was an outage', !empty($pv['preview']) && count($grp) === 2 && $grp[0]['checkins'] === 0 && $grp[0]['outage'] === true);
+    chk('repair · …who, how many, the fines they carried, and the imported money it will not touch', $pv['people'] >= 3 && $pv['infractions'] >= 6 && $pv['absenceFines'] >= 6
+        && $pv['absenceFineTotal'] >= 6000 && $pv['importedUntouched'] >= 2 && $pv['sanctionedNow'] >= 3);
+    chk('repair · nothing changes on a preview', policy_state('NGG-RP-9', 'member')['state'] === 'dormant');
+    chk('repair · a reason is required to apply', (admin_policy_absence_repair(['requesterId' => $SU, 'from' => $d2, 'to' => $d3, 'types' => ['member'], 'apply' => true])['error'] ?? '') === 'reason_required');
+    $lead = 'NGG-RP-LEAD';
+    db_insert('members', ['memberId' => $lead, 'fullName' => 'Rp Lead', 'email' => 'rplead@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'centre_lead', 'centreScope' => '["Rp Egbeda"]', 'createdAt' => $now, 'updatedAt' => $now]);
+    $sc = admin_policy_absence_repair(['requesterId' => $lead, 'from' => $d2, 'to' => $d3, 'types' => ['member']]);
+    chk('repair · a centre lead sees and repairs only their own centre', !empty($sc['ok']) && $sc['outOfScope'] >= 6 && !array_filter($sc['groups'], fn($g) => $g['centre'] === 'Rp Ikotun'));
+    $ap = admin_policy_absence_repair(['requesterId' => $SU, 'from' => $d2, 'to' => $d3, 'types' => ['member'], 'mode' => 'outage', 'apply' => true, 'reason' => 'CACENTRE check-ins were not recognised']);
+    chk('repair · applied: the absences are voided with the reason', !empty($ap['applied']) && $ap['voided'] >= 6
+        && str_contains((string)db_row("SELECT voidReason FROM infractions WHERE personId = 'NGG-RP-9' AND date = ?", [$d2])['voidReason'], 'CACENTRE check-ins were not recognised'));
+    chk('repair · …and nobody is Dormant any more because of them', policy_state('NGG-RP-9', 'member')['state'] !== 'dormant' && policy_state('NGG-RP-6', 'member')['state'] !== 'dormant');
+    $tiers = array_map(fn($d) => 500000 + intdiv((int)strtotime($d . ' 00:00:00 UTC'), 86400), [$d2, $d3]);
+    $rf = db_all("SELECT id, status FROM sanctions WHERE personId = 'NGG-RP-9' AND kind = 'fine' AND tier IN (?, ?)", $tiers);
+    $rl = $rf ? db_all("SELECT voidedAt FROM member_ledger WHERE periodKey IN (?, ?)", array_map(fn($f) => 'sanction-' . $f['id'], $rf)) : [];
+    chk('repair · …the absence fines for those days are lifted and off the account', count($rf) === 2 && !array_filter($rf, fn($f) => $f['status'] !== 'lifted')
+        && count($rl) === 2 && !array_filter($rl, fn($l) => (string)$l['voidedAt'] === ''));
+    $kept = db_row("SELECT status FROM sanctions WHERE personId = 'NGG-RP-9' AND kind = 'fine' AND tier = ?", [500000 + intdiv((int)strtotime($ago(4) . ' 00:00:00 UTC'), 86400)]);
+    chk('repair · …while the fine for a day staff decided to count stays', $kept && $kept['status'] === 'pending');
+    $after = db_all("SELECT entryId, voidedAt FROM member_ledger WHERE memberId = 'NGG-RP-9' AND periodKey IN ('bulkfine:old-2026','import:2026-08')");
+    chk('repair · the imported fine and the imported dues are exactly as they were', $after === $imported && count($after) === 2 && $after[0]['voidedAt'] === '' && $after[1]['voidedAt'] === '');
+    chk('repair · an absence a PERSON logged stays', $absOn('NGG-RP-8', $ago(10)));
+    chk('repair · run again, there is nothing left to do', (admin_policy_absence_repair(['requesterId' => $SU, 'from' => $d2, 'to' => $d3, 'types' => ['member'], 'apply' => true, 'reason' => 'again and again'])['error'] ?? '') === 'nothing_to_do');
+
+    // 7. A sign-out that lands late lifts what its absence caused (it used to only re-issue).
+    policy_settings_save(['member' => ['checkoutRequired' => true]], 'test');
+    foreach ([$ago(20), $ago(21)] as $d) { policy_log('NGG-RP-3', 'member', 'no_checkout', $d, 'Signed in but never signed out.'); policy_log('NGG-RP-3', 'member', 'absence', $d, 'Incomplete day — no sign-out.'); }
+    policy_apply('NGG-RP-3', 'member');
+    $wasDormant = policy_state('NGG-RP-3', 'member')['state'] === 'dormant';
+    policy_checkout_landed('NGG-RP-3', 'member', $ago(20));
+    chk('late sign-out · now lifts the Dormant Track its absence caused', $wasDormant && policy_state('NGG-RP-3', 'member')['state'] !== 'dormant');
+
+    $ints = admin_attendance_integrity(['requesterId' => $SU]);
+    chk('integrity · the desk sees held days and what is still unmatched', !empty($ints['ok']) && is_array($ints['held']) && is_array($ints['unmatched']) && in_array('member', $ints['types'], true));
+
+    foreach (['policy' => $keepPol, 'memberProgramme' => $keepCal, 'policy_member_swept_through' => $keepCur] as $k => $v) {
+        if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]);
+    }
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'attendance' => 'studentId', 'member_cards' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-RP-%'");
+    db_exec("DELETE FROM centres WHERE centreId IN ('CEN-RP-E','CEN-RP-I')"); db_exec("DELETE FROM attendance_held_days WHERE centre LIKE 'Rp %'"); db_exec("DELETE FROM attendance_unmatched WHERE refKey = 'CAC-PERSON-777'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

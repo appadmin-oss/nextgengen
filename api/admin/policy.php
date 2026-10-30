@@ -9,6 +9,7 @@ $mid = $s['mid'];
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'settings');
     if ($view === 'board')       $res = gs_call('admin.policy.board', ['requesterId' => $mid]);
+    elseif ($view === 'integrity') $res = gs_call('admin.attendance.integrity', ['requesterId' => $mid]);
     elseif ($view === 'person')  $res = gs_call('admin.policy.person', ['requesterId' => $mid, 'personId' => $_GET['personId'] ?? '', 'personType' => $_GET['personType'] ?? '']);
     else                         $res = gs_call('admin.policy.settings', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
@@ -23,6 +24,9 @@ if ($method === 'GET') {
         'sanctionUpdate' => 'admin.policy.sanction.update',
         'reinstate'      => 'admin.policy.reinstate',
         'sweep'          => 'admin.policy.sweep',
+        'heldDecide'     => 'admin.attendance.held.decide',
+        'unmatchedMatch' => 'admin.attendance.unmatched.match',
+        'repair'         => 'admin.policy.absence.repair',
     ];
     if (!isset($map[$action])) json_error('unknown_action', 400);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));
