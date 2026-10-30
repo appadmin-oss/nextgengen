@@ -1074,6 +1074,7 @@
       wifiPassword: (password) => request('/member/wifi.php', { body: { action: 'password', password } }),
       // Their volunteer wallet, when they volunteer with NGG (domain/volunteer-pay.php); null when they don't.
       volunteerPay: () => request('/member/volunteer-pay.php'),
+      volunteerBank: (d) => request('/member/volunteer-pay.php', { body: { action: 'bank', bankName: d.bankName, accountNumber: d.accountNumber, accountName: d.accountName } }),
       /* Self-service. No memberId travels in any of these — the server reads it
          from the session, which is what keeps them from being an enumeration
          endpoint over children. */
@@ -2030,6 +2031,7 @@
         day:         (volunteerId, day, op, reason) => request('/admin/volunteer-pay.php', { body: { action: 'day', volunteerId, day, op, reason } }),
         pay:         (period, volunteerIds, method, reference) => request('/admin/volunteer-pay.php', { body: { action: 'pay', period, volunteerIds, method, reference } }),
         voidPayout:  (payoutId, reason) => request('/admin/volunteer-pay.php', { body: { action: 'void', payoutId, reason } }),
+        bank:        (volunteerId, d) => request('/admin/volunteer-pay.php', { body: Object.assign({ action: 'bank', volunteerId }, d) }),
       },
       fees: {
         settings:    () => request('/admin/fees.php'),

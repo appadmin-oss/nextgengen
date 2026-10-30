@@ -1013,6 +1013,40 @@ Afrovanguard asks NGG for it at `api/hooks/afrovanguard-pay.php`, signed with
 the secret the two sites already share (`afrovanguard.ngv_webhook_secret` here,
 `NGG_WEBHOOK_SECRET` there), and matches the volunteer by email.
 
+**Who is paid.** NGG volunteers only — those serving the Club (`ngg`) or both.
+A Summer School volunteer, and any volunteer record with no programme set,
+earns nothing here and gets no pay card on Afrovanguard.
+
+**Fines come off the pay** (on by default; "Take fines off pay" under Fines).
+When a period is paid, each volunteer's fines come off first, down to ₦0, and
+whatever is left of a fine stays owed for the next payment:
+
+1. NGG's own fines on the member record they also have. Settled on their
+   ledger as a payment, method `volunteer_pay`, with the payout as reference.
+2. Then Afrovanguard's fines (NGV and Vanguard Quest), matched by email.
+   NGG now holds that money for Afrovanguard: the tab shows the running total
+   as **Fines held for Afrovanguard** — hand it over. If Afrovanguard cannot be
+   reached, its fines are left owed there and the run says so; nobody is
+   charged twice.
+
+Pay each volunteer the amount on their line **after** fines. Voiding a payout
+puts both kinds of fine back; if Afrovanguard cannot be reached the void is
+refused and nothing changes — try again.
+
+**Bank details.** A volunteer adds where they are paid on **Me** in the app or
+on their Afrovanguard Wallet; the desk can add them from the volunteer's wallet
+("Add bank details"). Account numbers are 10 digits. The volunteer is emailed
+and told in the app about **every** change, whoever made it, and the pay table
+marks a change in the last two days ("changed recently") — check before paying
+into it. A transfer to somebody with no bank details on record is recorded, and
+the run says how many had none.
+
+**What the volunteer is told.** When they are paid: the amount, the days, what
+fines were taken off and where it went (email and app). When a day is not paid:
+in the app, one notice per pay period that updates as days are added. When the
+desk excludes or restores a day, when a payout is voided, and when their bank
+details change.
+
 ### Promoting into the Club
 
 The **promotable** list is the Summer School participants who look ready:

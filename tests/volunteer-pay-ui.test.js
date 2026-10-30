@@ -122,6 +122,16 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
       const t = (document.querySelector('.m9x-vp') || {}).innerText || '';
       return /Volunteer pay/.test(t) && /₦6,000/.test(t) && /Not paid: present, but no activity recorded/.test(t) && /paid/.test(t);
     }, null, 60000));
+    chk('they are asked where to be paid', await until(M, () => /Where we pay you/.test(document.querySelector('.m9x-vp').innerText) && /No bank details yet/.test(document.querySelector('.m9x-vp').innerText)));
+    await M.click('.m9x-vp-bank button:has-text("Add bank details")');
+    await M.fill('#m9x-vp-bank', 'GTBank'); await M.fill('#m9x-vp-acct', '12345'); await M.fill('#m9x-vp-name', 'Tobi Adeyemi');
+    await M.click('.m9x-vp-bank button[type="submit"]');
+    chk('a short account number is refused on the spot, with the reason', await until(M, () => /10 digits/.test((document.querySelector('.m9x-vp-bank [role="alert"]') || {}).innerText || '')));
+    await M.fill('#m9x-vp-acct', '0123456789');
+    await M.click('.m9x-vp-bank button[type="submit"]');
+    chk('saved, it shows the bank and the last four digits only, and says they were emailed', await until(M, () => {
+      const t = document.querySelector('.m9x-vp-bank').innerText; return /GTBank ••••6789 · Tobi Adeyemi/.test(t) && !/0123456789/.test(t) && /emailed you/.test(t); }));
+    chk('…and it is on their record', php(`echo json_encode(db_all("SELECT bankAccountNumber FROM volunteers WHERE bankAccountNumber <> ''"));`, ['bootstrap']) === '[{"bankAccountNumber":"0123456789"}]');
     chk('no page errors', errs.length === 0);
     if (errs.length) console.log(errs.slice(0, 5));
   } catch (e) {

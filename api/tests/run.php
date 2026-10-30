@@ -17543,13 +17543,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 (function () {
     $ADM = 'NGG-2025-0099';
     $keep = setting_get('volunteerPay');
-    $vols = ['VOL-PAY-1', 'VOL-PAY-2', 'VOL-PAY-3', 'VOL-PAY-4'];
+    $vols = ['VOL-PAY-1', 'VOL-PAY-2', 'VOL-PAY-3', 'VOL-PAY-4', 'VOL-PAY-5'];
     $in = "'" . implode("','", $vols) . "'";
     $clean = function () use ($in) {
         foreach (['volunteer_pay', 'volunteer_payouts', 'attendance_duty', 'volunteer_points'] as $t) db_exec("DELETE FROM $t WHERE volunteerId IN ($in)");
         db_exec("DELETE FROM attendance WHERE studentId IN ($in, 'NGG-PAY-M3')");
         db_exec("DELETE FROM volunteers WHERE volunteerId IN ($in)");
         db_exec("DELETE FROM members WHERE memberId = 'NGG-PAY-M3'");
+        db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-PAY-M3'");
+        db_exec("DELETE FROM notifications WHERE memberId = 'NGG-PAY-M3'");
     };
     $clean();
     $mon = gmdate('Y-m-d', strtotime('monday last week'));
@@ -17647,6 +17649,69 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('volunteer pay · Afrovanguard is given the pay of the volunteer with that email', ($av['wallet']['volunteerId'] ?? '') === 'VOL-PAY-3' && ($av['wallet']['owed'] ?? 0) === 2500);
     chk('volunteer pay · a volunteer id whose email does not agree is not believed', (volpay_for_afrovanguard(['email' => 'vol-pay-3@example.com', 'volunteerId' => 'VOL-PAY-1'])['wallet']['volunteerId'] ?? '') === 'VOL-PAY-3');
     chk('volunteer pay · nobody with that email: no wallet, not an error', volpay_for_afrovanguard(['email' => 'nobody@example.com'])['wallet'] === null);
+
+    /* Summer School volunteers are not paid here, and a row with no programme is a Summer one. */
+    db_insert('volunteers', ['volunteerId' => 'VOL-PAY-5', 'fullName' => 'Summer Only', 'email' => 'vol-pay-5@example.com', 'role' => 'facilitator', 'status' => 'active',
+        'safeguarding' => 'cleared', 'programme' => null, 'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+    $att('VOL-PAY-5', $d(2), ['checkOutAt' => $d(2) . 'T15:00:00Z']);
+    volpay_accrue();
+    chk('volunteer pay · a volunteer with no programme (a Summer one) earns nothing', !db_row("SELECT id FROM volunteer_pay WHERE volunteerId = 'VOL-PAY-5'"));
+    chk('volunteer pay · …and Afrovanguard is not shown an NGG pay card for them', volpay_for_afrovanguard(['email' => 'vol-pay-5@example.com'])['wallet'] === null
+        && volpay_for_afrovanguard(['email' => 'vol-pay-5@example.com', 'volunteerId' => 'VOL-PAY-5'])['wallet'] === null);
+
+    /* Bank details: theirs to set, checked, shown masked to them and whole to the desk, and every change told. */
+    $bank = fn(array $b) => backend_dispatch('member.volpay.bank', ['memberId' => 'NGG-PAY-M3'] + $b);
+    chk('volunteer pay · an account number is ten digits', ($bank(['bankName' => 'GTBank', 'accountNumber' => '12345', 'accountName' => 'Pay Member'])['error'] ?? '') === 'bad_account_number');
+    $bk = $bank(['bankName' => 'GTBank', 'accountNumber' => '0123 456 789', 'accountName' => 'Pay Member']);
+    chk('volunteer pay · a volunteer sets where they are paid; they see the bank and the last four digits only', !empty($bk['ok']) && ($bk['bank']['last4'] ?? '') === '6789' && ($bk['bank']['accountNumber'] ?? 'x') === '');
+    chk('volunteer pay · …the desk sees the whole number, flagged as a recent change',
+        (($w3 = backend_dispatch('admin.volpay.volunteer', ['requesterId' => $ADM, 'volunteerId' => 'VOL-PAY-3'])['wallet']['bank'] ?? [])['accountNumber'] ?? '') === '0123456789' && !empty($w3['recent']));
+    chk('volunteer pay · …and the volunteer is told of the change in the app', (bool)db_row("SELECT id FROM notifications WHERE memberId = 'NGG-PAY-M3' AND title = 'Your NGG pay details were changed'"));
+    chk('volunteer pay · somebody who is not an NGG volunteer cannot set pay details', (backend_dispatch('member.volpay.bank', ['memberId' => $ADM, 'bankName' => 'GTBank', 'accountNumber' => '0123456789', 'accountName' => 'X'])['error'] ?? '') === 'not_a_volunteer');
+    chk('volunteer pay · Afrovanguard can set them for the volunteer it found by email, nobody else',
+        !empty(volpay_bank_from_afrovanguard(['email' => 'vol-pay-1@example.com', 'bankName' => 'Access Bank', 'accountNumber' => '1112223334', 'accountName' => 'Pay One'])['ok'])
+        && (volpay_bank_from_afrovanguard(['email' => 'vol-pay-5@example.com', 'bankName' => 'Access Bank', 'accountNumber' => '1112223334', 'accountName' => 'Summer'])['error'] ?? '') === 'not_a_volunteer');
+
+    /* Fines come off the pay: NGG's first, then Afrovanguard's, down to ₦0, the rest still owed. */
+    db_insert('member_ledger', ['entryId' => 'FEE-VPFINE1', 'memberId' => 'NGG-PAY-M3', 'kind' => 'fine', 'direction' => 'charge', 'amount' => 1000, 'periodKey' => 'fine:vptest', 'createdAt' => now_iso()]);
+    chk('volunteer pay · NGG fines owed are known before paying', volpay_ngg_fines_owed('NGG-PAY-M3') === 1000);
+    $calls = [];
+    $GLOBALS['__volpay_av_mock'] = function (string $op, array $pl) use (&$calls) {
+        $calls[] = [$op, $pl];
+        if ($op === 'owed') return ['ok' => true, 'owing' => ['vol-pay-3@example.com' => 1000, 'vol-pay-4@example.com' => 9000]];
+        if ($op === 'settle') { $o = []; foreach ($pl['items'] as $it) $o[$it['reference']] = $it['amount']; return ['ok' => true, 'settled' => $o]; }
+        if ($op === 'unsettle') return ['ok' => true, 'voided' => 1];
+        return ['ok' => false];
+    };
+    $pf = $pay(['VOL-PAY-3', 'VOL-PAY-4'], $wk);
+    $rf = array_column($pf['results'] ?? [], null, 'volunteerId');
+    chk('volunteer pay · fines come off a payout: ₦2,500 earned, ₦1,000 NGG fine, ₦1,000 Afrovanguard fine, ₦500 paid',
+        ($rf['VOL-PAY-3']['gross'] ?? 0) === 2500 && ($rf['VOL-PAY-3']['fineNgg'] ?? 0) === 1000 && ($rf['VOL-PAY-3']['fineAv'] ?? 0) === 1000 && ($rf['VOL-PAY-3']['amount'] ?? 0) === 500);
+    chk('volunteer pay · a fine bigger than the pay takes it to ₦0, never below, and the rest stays owed there',
+        ($rf['VOL-PAY-4']['amount'] ?? -1) === 0 && ($rf['VOL-PAY-4']['fineAv'] ?? 0) === 2500);
+    chk('volunteer pay · Afrovanguard is asked twice for the whole run, not once a volunteer', count($calls) === 2 && $calls[0][0] === 'owed' && $calls[1][0] === 'settle');
+    chk('volunteer pay · the NGG fine is settled on the ledger, against the payout, and is no longer owed',
+        (bool)db_row("SELECT id FROM member_ledger WHERE memberId = 'NGG-PAY-M3' AND kind = 'payment' AND method = 'volunteer_pay' AND reference = ? AND amount = 1000", [$rf['VOL-PAY-3']['payoutId'] ?? '']) && volpay_ngg_fines_owed('NGG-PAY-M3') === 0);
+    chk('volunteer pay · the volunteer is told what was paid and what was taken off', (bool)db_row("SELECT id FROM notifications WHERE memberId = 'NGG-PAY-M3' AND title = 'NGG has paid you ₦500' AND body LIKE '%₦1,000 for NGG fines and ₦1,000 for Afrovanguard fines%'"));
+    chk('volunteer pay · the payout keeps where it was sent', (db_row('SELECT bankLine FROM volunteer_payouts WHERE payoutId = ?', [$rf['VOL-PAY-3']['payoutId'] ?? ''])['bankLine'] ?? '') === 'GTBank ••••6789 · Pay Member');
+    chk('volunteer pay · the desk is shown what it holds for Afrovanguard', volpay_av_fines_held() >= 3500 && (backend_dispatch('admin.volpay.settings.get', ['requesterId' => $ADM])['avFinesHeld'] ?? 0) >= 3500);
+
+    $GLOBALS['__volpay_av_mock'] = fn($op, $pl) => ['ok' => false, 'error' => 'av_unreachable'];
+    chk('volunteer pay · a payout that took an Afrovanguard fine is not voided while Afrovanguard cannot put it back',
+        (backend_dispatch('admin.volpay.payout.void', ['requesterId' => $ADM, 'payoutId' => $rf['VOL-PAY-3']['payoutId'], 'reason' => 'x'])['error'] ?? '') === 'av_unreachable'
+        && (db_row('SELECT voidedAt FROM volunteer_payouts WHERE payoutId = ?', [$rf['VOL-PAY-3']['payoutId']])['voidedAt'] ?? 'x') === '');
+    $GLOBALS['__volpay_av_mock'] = function (string $op, array $pl) use (&$calls) { $calls[] = [$op, $pl]; return ['ok' => true, 'voided' => 1]; };
+    backend_dispatch('admin.volpay.payout.void', ['requesterId' => $ADM, 'payoutId' => $rf['VOL-PAY-3']['payoutId'], 'reason' => 'Paid twice']);
+    chk('volunteer pay · voiding it puts both fines back: NGG’s on the ledger, Afrovanguard’s by reference',
+        volpay_ngg_fines_owed('NGG-PAY-M3') === 1000 && end($calls)[0] === 'unsettle' && end($calls)[1]['reference'] === $rf['VOL-PAY-3']['payoutId']);
+    $GLOBALS['__volpay_av_mock'] = fn($op, $pl) => ['ok' => false, 'error' => 'av_unreachable'];
+    $pu = $pay(['VOL-PAY-3'], $wk);
+    chk('volunteer pay · Afrovanguard unreachable: its fines are left owed there, NGG’s still come off, and the desk is told',
+        ($pu['results'][0]['fineAv'] ?? -1) === 0 && ($pu['results'][0]['fineNgg'] ?? 0) === 1000 && ($pu['avFines'] ?? '') === 'unreachable');
+    unset($GLOBALS['__volpay_av_mock']);
+    $pv = backend_dispatch('admin.volpay.period', ['requesterId' => $ADM, 'period' => $wk]);
+    $pr = array_column($pv['rows'] ?? [], null, 'volunteerId');
+    chk('volunteer pay · the period list carries each volunteer’s bank and NGG fines, in grouped reads', isset($pr['VOL-PAY-3']['bank']['last4'], $pr['VOL-PAY-3']['finesNgg']));
 
     $clean();
     if (is_array($keep)) setting_set('volunteerPay', $keep, 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'volunteerPay'");

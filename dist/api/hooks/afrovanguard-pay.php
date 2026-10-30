@@ -9,6 +9,7 @@
  *   X-NGG-Timestamp: unix seconds (±300 s)
  *   X-NGG-Signature: sha256=hex(HMAC_SHA256(secret, "volunteer_pay." + ts + "." + body))
  * Body: {op: "wallet", email, volunteerId?}
+ *     | {op: "bank_set", email, volunteerId?, bankName, accountNumber, accountName}
  * With no secret configured the endpoint does not exist.
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
@@ -25,7 +26,10 @@ if (!volpay_av_signature_ok($secret, (string)($_SERVER['HTTP_X_NGG_TIMESTAMP'] ?
 }
 $body = json_decode($raw, true);
 if (!is_array($body)) json_error('bad_json', 422);
-if ((string)($body['op'] ?? '') !== 'wallet') json_error('unknown_op', 400);
-$res = volpay_for_afrovanguard($body);
+$op = (string)($body['op'] ?? '');
+if ($op === 'wallet') $res = volpay_for_afrovanguard($body);
+elseif ($op === 'bank_set') $res = volpay_bank_from_afrovanguard($body);
+else json_error('unknown_op', 400);
+if (empty($res['ok'])) json_error((string)($res['error'] ?? 'failed'), 422, (string)($res['message'] ?? ''));
 unset($res['ok']);
 json_ok($res);

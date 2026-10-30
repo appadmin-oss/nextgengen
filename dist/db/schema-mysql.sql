@@ -4761,3 +4761,16 @@ ALTER TABLE volunteers ADD COLUMN programmeAt VARCHAR(40) DEFAULT '';
 CREATE INDEX idx_vol_programme ON volunteers(programme);
 
 INSERT INTO schema_version (version) VALUES (202) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 203 · Volunteer pay: bank details, and what each payout took off for fines ──
+ALTER TABLE volunteers ADD COLUMN bankName VARCHAR(80) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN bankAccountNumber VARCHAR(20) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN bankAccountName VARCHAR(120) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN bankUpdatedAt VARCHAR(40) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN bankUpdatedBy VARCHAR(64) DEFAULT '';
+ALTER TABLE volunteer_payouts ADD COLUMN gross INT NOT NULL DEFAULT 0;
+ALTER TABLE volunteer_payouts ADD COLUMN fineNgg INT NOT NULL DEFAULT 0;
+ALTER TABLE volunteer_payouts ADD COLUMN fineAv INT NOT NULL DEFAULT 0;
+ALTER TABLE volunteer_payouts ADD COLUMN bankLine VARCHAR(200) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (203) ON DUPLICATE KEY UPDATE version = version;

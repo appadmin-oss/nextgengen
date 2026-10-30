@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 202;
+const NGG_SCHEMA_TARGET = 203;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5886,6 +5886,21 @@ function db_migrate(PDO $db): void {
             ALTER TABLE volunteers ADD COLUMN programmeAt TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_vol_programme ON volunteers(programme);
         " . NGG_BACKFILL_VOLUNTEER_PROGRAMME,
+        /* 203 — volunteer pay, part two: where a volunteer is paid (their own
+         * bank details, set by them or the fees desk), and what each payout
+         * took off for fines — NGG's own and Afrovanguard's — so the gross,
+         * the deductions and the money sent are each on the record. */
+        203 => "
+            ALTER TABLE volunteers ADD COLUMN bankName TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN bankAccountNumber TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN bankAccountName TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN bankUpdatedAt TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN bankUpdatedBy TEXT DEFAULT '';
+            ALTER TABLE volunteer_payouts ADD COLUMN gross INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE volunteer_payouts ADD COLUMN fineNgg INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE volunteer_payouts ADD COLUMN fineAv INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE volunteer_payouts ADD COLUMN bankLine TEXT NOT NULL DEFAULT '';
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

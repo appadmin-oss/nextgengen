@@ -4581,3 +4581,26 @@ Two branches had built the same things twice. What the merge kept:
   a locked account says `account_locked` first.
 - **NGG volunteer activities** editor is a `CATALOGUE_SOURCES` entry
   (`ngg-volunteer`), not a second catalogue component.
+
+## 2026-10-30 — volunteer pay: bank details, fines off pay, the Summer bug
+
+- **Only NGG volunteers earn** (`volpay_serves_ngg()`: programme `ngg` or
+  `both`). The accrual used to decide a day for every volunteer and read a row
+  with no programme as NGG; `volunteer_programme()` reads it as Summer, and so
+  now does pay. Afrovanguard's lookup had the same bug (`programme IS NULL OR
+  programme != 'summer'`) and showed Summer volunteers an NGG pay card.
+- **Fines come off a payout, down to ₦0**, owner's decision: "ALL fines from
+  volunteers, afrovanguard members, ngvs". NGG's own first (member_ledger,
+  method `volunteer_pay`), then Afrovanguard's over its `integrations/ngg-fines.php`
+  door (purpose `fines.`), two requests a run whatever its size. Afrovanguard
+  unreachable ⇒ its fines stay owed there. A void puts both back, Afrovanguard
+  first, and is refused if it cannot. `volunteer_payouts` keeps gross, fineNgg,
+  fineAv and the bank line (migration 203).
+- **Bank details** on `volunteers` (migration 203), set by the volunteer (app or
+  Afrovanguard) or the fees desk; every change told to the volunteer. A missing
+  account is warned about at payout, not refused: refusing would have stopped
+  every payout on the day this shipped.
+- **Notifications** via `volpay_notify()`: in the app when they are a member,
+  email when asked or when there is no app. Excluded days are app-only, one item
+  per period (`groupKey`), never an email a day.
+
