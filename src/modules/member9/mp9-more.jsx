@@ -1051,6 +1051,9 @@ function Mp9Wifi({ toast }) {
       : "Only you and the NGG team see these figures. They count what you download and upload, never which sites."}</p>
   </div> : null;
   const set = d && d.hasPassword;
+  /* The starting password CACENTRE made: shown until they choose their own,
+     which they may, or never need to. */
+  const start = d && d.startCode;
   return <section className="m9x-slot m9x-view m9x-wifi" aria-labelledby="m9x-wifi-h">
     <h2 id="m9x-wifi-h" className="m9x-view-h"><i className="ph ph-wifi-high" aria-hidden="true"/> Wi-Fi at the centre</h2>
     {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{err === "cacentre_unreachable" ? "CACENTRE, which runs the Wi-Fi, couldn’t be reached just now." : "Your Wi-Fi details couldn’t load (" + err + ")."}</span><button type="button" onClick={load}>Try again</button></div>
@@ -1058,17 +1061,19 @@ function Mp9Wifi({ toast }) {
       : !on ? <>{d.case === "overLimit" ? <p className="m9x-view-p">You’ve used your Wi-Fi data allowance, so the Wi-Fi is off for you {overWhen}.</p>
         : <p className="m9x-view-p">{d.case === "no_id" ? "You get Wi-Fi once your NGG ID number is printed." : d.case === "not_listed" ? "You aren’t on the Wi-Fi list yet." : "You don’t have Wi-Fi access right now" + (d.why ? ": " + d.why.toLowerCase() + "." : ".")} Ask the team at your centre if you think this is wrong.</p>}{usage}</>
       : <>
-        {!set ? <p className="m9x-view-p m9x-wifi-first">Choose a Wi-Fi password below. Then join the centre’s Wi-Fi and, when the sign-in page opens, use your username and this password.</p>
+        {start ? <p className="m9x-view-p m9x-wifi-first">Join the centre’s Wi-Fi and, when the sign-in page opens, use your username and the starting password below. You can keep it, or choose your own.</p>
+          : !set ? <p className="m9x-view-p m9x-wifi-first">Choose a Wi-Fi password below. Then join the centre’s Wi-Fi and, when the sign-in page opens, use your username and this password.</p>
           : !d.centreHasWifi ? <p className="m9x-view-p">Wi-Fi isn’t set up at your centre yet. Your details will work as soon as it is.</p>
           : <p className="m9x-view-p">Join the centre’s Wi-Fi, and when the sign-in page opens, use your username and the password you set.{d.access === "limited" ? " Your access is limited for now" + (d.why ? " (" + d.why.toLowerCase() + ")" : "") + "." : ""}</p>}
         <dl className="m9x-wifi-dl">
           <div><dt>Username</dt><dd className="m9x-wifi-v">{d.username}<button type="button" className="m9x-wifi-b" onClick={() => copy(d.username)} aria-label="Copy your Wi-Fi username"><i className="ph ph-copy" aria-hidden="true"/></button></dd></div>
-          <div><dt>Password</dt><dd>{set ? "Set" + (d.pinSetAt ? " on " + mp9Date(d.pinSetAt) : "") : "Not set yet"}</dd></div>
+          {start ? <div><dt>Starting password</dt><dd className="m9x-wifi-v">{d.startCode}<button type="button" className="m9x-wifi-b" onClick={() => copy(d.startCode)} aria-label="Copy your starting password"><i className="ph ph-copy" aria-hidden="true"/></button></dd></div>
+            : <div><dt>Password</dt><dd>{set ? "Your own, set" + (d.pinSetAt ? " on " + mp9Date(d.pinSetAt) : "") : "Not set yet"}</dd></div>}
           {lim ? <div><dt>Speed</dt><dd>Up to {lim.down} Mbit/s · {lim.devices === 1 ? "one device" : lim.devices + " devices"} at a time{lim.hours ? " · " + lim.hours.replace("-", "–") : ""}</dd></div> : null}
         </dl>
         {usage}
         <form className="m9x-wifi-form" onSubmit={save} noValidate>
-          <h3 className="m9x-wifi-u-h">{set ? "Change your Wi-Fi password" : "Set your Wi-Fi password"}</h3>
+          <h3 className="m9x-wifi-u-h">{start ? "Choose your own password" : set ? "Change your Wi-Fi password" : "Set your Wi-Fi password"}</h3>
           <label className="m9x-wifi-lbl" htmlFor="m9x-wifi-pw">Password
             <span className="m9x-wifi-field"><input id="m9x-wifi-pw" className="m9x-wifi-inp" type={show ? "text" : "password"} value={pw} onChange={e => setPw(e.target.value)} minLength={8} maxLength={64} autoComplete="new-password" required aria-describedby="m9x-wifi-rules"/>
               <button type="button" className="m9x-wifi-b" onClick={() => setShow(x => !x)} aria-pressed={show ? "true" : "false"} aria-label={show ? "Hide what you typed" : "Show what you typed"}><i className={"ph " + (show ? "ph-eye-slash" : "ph-eye")} aria-hidden="true"/></button></span></label>
@@ -1077,7 +1082,7 @@ function Mp9Wifi({ toast }) {
           <p id="m9x-wifi-rules" className="m9x-wifi-note">At least 8 characters, no spaces or semicolons, and not your username. Use it only for the Wi-Fi and never tell anyone: anything done on the Wi-Fi with it counts as you.</p>
           {bad ? <p className="m9x-wifi-bad" role="alert">{bad}</p> : null}
           <div className="m9x-wifi-acts">
-            <button type="submit" className="m9x-wifi-new" disabled={busy || d.resetsLeft < 1} aria-describedby="m9x-wifi-left">{busy ? "Saving…" : set ? "Change password" : "Set password"}</button>
+            <button type="submit" className="m9x-wifi-new" disabled={busy || d.resetsLeft < 1} aria-describedby="m9x-wifi-left">{busy ? "Saving…" : set && !start ? "Change password" : "Set password"}</button>
             <span id="m9x-wifi-left" className="m9x-wifi-left">{d.resetsLeft < 1 ? "You’ve changed it three times today. Try again tomorrow." : d.resetsLeft + (d.resetsLeft === 1 ? " change" : " changes") + " left today"}</span>
           </div>
         </form>

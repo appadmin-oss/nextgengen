@@ -307,17 +307,29 @@ function crWfSpeedTest(ctx, d) {
    choose a new one, or — for a Summer School participant, who may have no
    app — setting one with them. Members set their own in the app. */
 function crWfPerson(ctx, x) {
+  /* From the lookup, a record owner first reads the person whole: where
+     CACENTRE runs the centre's Wi-Fi, that brings the starting password the
+     desk hands over at registration. */
+  if (x.canChange && x.cacentre === undefined && !x.read) {
+    return NGGApi.admin.wifi.member(x.subjectType, x.subjectId)
+      .then(r => crWfPerson(ctx, Object.assign({}, x, r.wifi, { pin: "", read: true })))
+      .catch(() => crWfPerson(ctx, Object.assign({}, x, { read: true })));
+  }
   const acc = CR_WF_ACCESS.find(a => a[0] === x.access) || [x.access, x.access];
   const ov = x.override;
   const act = async (op, extra, msg) => {
-    try { const r = await NGGApi.admin.wifi.memberSet(x.subjectType, x.subjectId, op, extra); ctx.toast(msg); crWfPerson(ctx, Object.assign({}, x, r.wifi, { pin: "" })); }
+    try { const r = await NGGApi.admin.wifi.memberSet(x.subjectType, x.subjectId, op, extra); ctx.toast(typeof msg === "function" ? msg(r.wifi || {}) : msg); crWfPerson(ctx, Object.assign({}, x, r.wifi, { pin: "", read: true })); }
     catch (e) { ctx.toast(crWfErr(e, "Couldn’t change it."), null, true); }
   };
+  const pwField = !x.cacentre ? ["Wi-Fi password", x.hasPassword ? "Set" + (x.pinSetAt ? " · " + crDate(x.pinSetAt, true) : "") : "Not set yet"]
+    : x.cacentreError ? ["Wi-Fi password", x.cacentreError === "not_listed" ? "Not on CACENTRE’s Wi-Fi list yet" : "CACENTRE couldn’t be reached just now"]
+    : x.startCode ? ["Starting password", x.startCode + " — give it to them in person"]
+    : ["Wi-Fi password", x.ownPassword ? "Their own" + (x.pinSetAt ? " · set " + crDate(x.pinSetAt, true) : "") : "Not set yet"];
   ctx.drawer({
     title: x.name, sub: (x.subjectType === "summer" ? "Summer School participant" : "Member") + " · " + (x.centre || "no centre"),
     stats: [["Wi-Fi", acc[1]], ["Sign-in name", x.username || "—"], ["Centre has Wi-Fi", x.centreHasWifi ? "Yes" : "Not yet"]],
     fields: [["Why", x.why || "—"], x.limits ? ["Speed", x.limits.down + " Mbit/s down · " + x.limits.up + " up · " + crPlural(x.limits.devices, "device") + (x.limits.hours ? " · " + x.limits.hours : "")] : null,
-      ["Wi-Fi password", x.hasPassword ? "Set" + (x.pinSetAt ? " · " + crDate(x.pinSetAt, true) : "") : "Not set yet"], ov ? ["Set by hand", ov.access + " — “" + ov.why + "” · " + crDate(ov.at)] : null].filter(Boolean),
+      pwField, ov ? ["Set by hand", ov.access + " — “" + ov.why + "” · " + crDate(ov.at)] : null].filter(Boolean),
     sections: [
       { h: "Where this comes from", text: "Wi-Fi follows the record: status, conduct, role and — for Summer School — the edition’s dates. To change why somebody is off, change the record. A hand-set override is for the exceptions, and never undoes a suspension." },
       !x.canChange ? { h: "Changing it", text: "Changing somebody’s Wi-Fi is done by whoever looks after their record (" + (x.subjectType === "summer" ? "Summer School" : "People") + ")." } : null,
@@ -333,7 +345,11 @@ function crWfPerson(ctx, x) {
           done: (v, r) => { setTimeout(() => crWfPerson(ctx, Object.assign({}, x, r.wifi, { pin: "" })), 50); return "Saved · " + x.name; } });
       } },
       ov ? { l: "Clear the override", run: () => act("clear", null, "Override cleared · " + x.name) } : null,
-      x.hasPassword ? { l: "Clear their password", run: () => act("clearPassword", null, "Password cleared. " + x.name + " chooses a new one" + (x.subjectType === "summer" ? " with you." : " in the app under Me → Wi-Fi.")) } : null,
+      x.cacentre && !x.cacentreError && x.access !== "off" ? { l: "New starting password", run: () => {
+        if (!window.confirm("Make a new starting password for " + x.name + "? The one they have now stops working within a few minutes.")) return;
+        act("clearPassword", null, w => w.startCode ? "New starting password for " + x.name + ": " + w.startCode : "Done · " + x.name);
+      } }
+      : !x.cacentre && x.hasPassword ? { l: "Clear their password", run: () => act("clearPassword", null, "Password cleared. " + x.name + " chooses a new one" + (x.subjectType === "summer" ? " with you." : " in the app under Me → Wi-Fi.")) } : null,
       x.subjectType === "summer" && x.access !== "off" ? { l: x.hasPassword ? "Change their password…" : "Set their password…", run: () => {
         ctx.closeDrawer();
         ctx.form({ title: "Wi-Fi password for " + x.name, submit: "Save", busyLabel: "Saving…",

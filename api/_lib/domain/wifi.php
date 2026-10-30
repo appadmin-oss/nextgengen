@@ -814,7 +814,7 @@ function wifi_view_subject(string $type, array $row): array {
 
 function admin_wifi_member(array $p): array {
     $g = wifi_subject_gate($p); if (!$g['ok']) return $g;
-    return ['ok' => true, 'wifi' => wifi_view_subject($g['type'], $g['row'])];
+    return ['ok' => true, 'wifi' => wifi_cac_desk($g['type'], $g['row'], wifi_view_subject($g['type'], $g['row']))];
 }
 
 /**
@@ -841,6 +841,15 @@ function admin_wifi_member_set(array $p): array {
     if (!$acc) return ['ok' => false, 'error' => 'failed'];
     $ip = (string)($p['ip'] ?? '');
     $subject = $g['type'] . ':' . $g['id'];
+    /* Where CACENTRE runs the centre's Wi-Fi, "clear" is a new starting
+       password from CACENTRE, which the desk reads out to them: clearing NGG's
+       copy would change nothing the router reads. */
+    if ($action === 'clearPassword' && wifi_cac_serves((string)($g['row']['centre'] ?? ''), $g['type'] === 'member' && wifi_is_staff($g['row']))) {
+        $v = wifi_cac_desk($g['type'], $g['row'], wifi_view_subject($g['type'], $g['row']), 'newStartCode');
+        if (($v['cacentreError'] ?? '') !== '') return ['ok' => false, 'error' => 'cacentre_unreachable', 'message' => 'CACENTRE, which runs the Wi-Fi, couldn’t be reached. Try again in a minute.'];
+        audit('wifi.password.start', $me, $subject, ['at' => 'cacentre'], $ip);
+        return ['ok' => true, 'wifi' => $v];
+    }
     if ($action === 'clearPassword') {
         $r = wifi_password_clear($acc, $me, $ip); if (!$r['ok']) return $r;
     } elseif ($action === 'setPassword') {
@@ -866,7 +875,7 @@ function admin_wifi_member_set(array $p): array {
         audit('wifi.override.clear', $me, $subject, ['was' => (string)$acc['override']], $ip);
         wifi_subject_lists_forget($g['type'], $g['id']);
     }
-    return ['ok' => true, 'wifi' => wifi_view_subject($g['type'], $g['row'])];
+    return ['ok' => true, 'wifi' => wifi_cac_desk($g['type'], $g['row'], wifi_view_subject($g['type'], $g['row']))];
 }
 
 /* ── Systems: the access table, the profiles and the gateways ─────────────

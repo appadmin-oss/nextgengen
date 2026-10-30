@@ -335,7 +335,7 @@ function cleanup() {
     await M.waitForFunction(() => /Change your Wi-Fi password/.test((document.querySelector('.m9x-wifi') || {}).innerText || ''), null, { timeout: 15000 });
     const saved = php(`$a = db_row("SELECT a.pinSealed FROM wifi_accounts a JOIN members m ON m.memberId = a.subjectId WHERE m.displayId = '026-101'"); echo wifi_pin_open((string)$a['pinSealed']);`, ['bootstrap']);
     const after = await M.innerText('.m9x-wifi');
-    chk('a good password is saved for the routers, and never shown back on the screen', saved.trim() === 'Ada-wifi-2026' && !/Ada-wifi-2026/.test(after) && /Password\s*Set/.test(after) && /2 changes left today/.test(after));
+    chk('a good password is saved for the routers, and never shown back on the screen', saved.trim() === 'Ada-wifi-2026' && !/Ada-wifi-2026/.test(after) && /Password\s*Your own, set/.test(after) && /2 changes left today/.test(after));
     chk('the fields are emptied once it is saved', await M.inputValue('#m9x-wifi-pw') === '' && await M.inputValue('#m9x-wifi-pw2') === '');
     php(`wifi_lines_forget('Egbeda');`, ['bootstrap']);
     const f9 = await feed(keys[0][0], keys[0][1], '?since=0&full=1');
