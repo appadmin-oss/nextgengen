@@ -4371,3 +4371,290 @@ function TelegramPageFallback({ setPage }) {
 }
 
 Object.assign(window, { TelegramConnect, TelegramPage });
+
+/* ============================================================================
+   Push notifications — the client half (server: api/_lib/domain/push.php).
+
+   One set of parts for all three places a person can be reached: the member
+   portal, the family account and the Control Room (`surface`). The SERVER
+   decides whether a message buzzes a phone — quiet hours, muted topics, "they
+   are looking at the portal right now" — so this side only has to:
+
+   · say plainly whether this device CAN be reached, and if not, the one
+     thing that would fix it (an iPhone needs NGG on the Home Screen; a
+     blocked site needs the browser's site settings) — never a dead button;
+   · ask at a moment the person can see the point (NggPushNudge), never on
+     page load, and take "not now" for two weeks;
+   · keep the server's record of this device true (nggPushBoot re-registers a
+     subscription the browser rotated or that moved to another account);
+   · tell the server while the portal is in front of somebody, so their
+     phone does not buzz for what is already on their screen.
+   ========================================================================== */
+const NGG_PUSH_SNOOZE_DAYS = 14;
+const NGG_PUSH_SURFACE_WORDS = {
+  member: { what: "Answers to your requests, messages from your mentor, results and reminders — on this device, without opening NGG.", home: "/dashboard" },
+  family: { what: "When your child checks in or out, when the centre answers you, and anything about fees — on this phone, without signing in.", home: "/family" },
+  admin:  { what: "When something new lands in the inbox — requests, messages, applications, approvals — on this device.", home: "/control/inbox" },
+};
+
+/** Can this device receive push at all, and if not, why — in a word the card turns into a sentence. */
+function nggPushEnv() {
+  const n = typeof navigator !== "undefined" ? navigator : {}, w = typeof window !== "undefined" ? window : {};
+  const ios = /iPhone|iPad|iPod/.test(n.userAgent || "") || (n.platform === "MacIntel" && n.maxTouchPoints > 1);
+  const standalone = !!((w.matchMedia && w.matchMedia("(display-mode: standalone)").matches) || n.standalone === true);
+  if (!w.isSecureContext) return { ok: false, why: "unsupported" };
+  if (!("serviceWorker" in n) || !("PushManager" in w) || !("Notification" in w)) return { ok: false, why: ios && !standalone ? "ios_install" : "unsupported" };
+  if (w.Notification.permission === "denied") return { ok: false, why: "denied" };
+  return { ok: true, why: "", permission: w.Notification.permission };
+}
+const NGG_PUSH_WHY = {
+  ios_install: "On an iPhone or iPad, notifications work once NGG is on your Home Screen. Tap Share, then “Add to Home Screen”, open NGG from there and come back here.",
+  denied: "Notifications are blocked for this site in your browser. Open the site’s settings (the icon to the left of the address), allow Notifications, then reload this page.",
+  unsupported: "This browser can’t receive notifications. Chrome, Edge, Firefox or Safari can.",
+};
+
+function nggPushKey(b64u) {
+  const s = String(b64u || "").replace(/-/g, "+").replace(/_/g, "/"), pad = "=".repeat((4 - s.length % 4) % 4);
+  const raw = atob(s + pad), out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+function nggPushSameKey(sub, key) {
+  try { const a = new Uint8Array(sub.options.applicationServerKey); return a.length === key.length && a.every((x, i) => x === key[i]); } catch (_) { return false; }
+}
+async function nggPushReg() {
+  let reg = await navigator.serviceWorker.getRegistration("/");
+  if (!reg) reg = await navigator.serviceWorker.register("/service-worker.js", { updateViaCache: "none" });
+  if (!reg.active) await new Promise(res => { const sw = reg.installing || reg.waiting; if (!sw) return res(); sw.addEventListener("statechange", () => { if (sw.state === "activated") res(); }); setTimeout(res, 8000); });
+  return reg;
+}
+async function nggPushCurrent() {
+  try { if (!("serviceWorker" in navigator)) return null; const reg = await navigator.serviceWorker.getRegistration("/"); return reg && reg.pushManager ? await reg.pushManager.getSubscription() : null; } catch (_) { return null; }
+}
+
+/** Ask, subscribe this device, and tell the server. Throws with a `why` the card can say. */
+async function nggPushEnable(surface, publicKey) {
+  const env = nggPushEnv();
+  if (!env.ok) throw Object.assign(new Error(env.why), { why: env.why });
+  if (!publicKey) throw Object.assign(new Error("unavailable"), { why: "unavailable" });
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw Object.assign(new Error(perm), { why: perm === "denied" ? "denied" : "dismissed" });
+  const reg = await nggPushReg();
+  const key = nggPushKey(publicKey);
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && !nggPushSameKey(sub, key)) { try { await sub.unsubscribe(); } catch (_) {} sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  await NGGApi.push.subscribe(surface, sub.toJSON());
+  try { localStorage.removeItem("ngg.push.snooze." + surface); } catch (_) {}
+  // The page that just turned it on starts reporting presence at once (nggPushBoot).
+  try { window.dispatchEvent(new CustomEvent("ngg:push-changed", { detail: { surface, on: true } })); } catch (_) {}
+  return sub;
+}
+async function nggPushDisable(surface, everywhere) {
+  const sub = await nggPushCurrent();
+  await NGGApi.push.unsubscribe(surface, sub ? sub.endpoint : "", !!everywhere);
+  if (sub) { try { await sub.unsubscribe(); } catch (_) {} }
+}
+
+/**
+ * Once per portal visit: keep the server's record of this device true, and
+ * report presence while the page is in front of somebody. The Control Room
+ * always reports (it also decides whether an inbox email is needed); a
+ * portal only when the person has a device to spare a buzz on. Returns the
+ * cleanup.
+ */
+function nggPushBoot(surface) {
+  let stop = false, timer = null, last = 0;
+  const ping = () => {
+    if (stop || document.visibilityState !== "visible") return;
+    const now = Date.now(); if (now - last < 45000) return; last = now;
+    NGGApi.push.seen(surface).catch(() => {});
+  };
+  const onVis = () => ping();
+  let pinging = false;
+  const startPing = () => {
+    if (pinging || stop) return; pinging = true;
+    document.addEventListener("visibilitychange", onVis); window.addEventListener("focus", onVis);
+    timer = setInterval(ping, 60000); last = 0; ping();
+  };
+  const onChanged = e => { if (e && e.detail && e.detail.on && e.detail.surface === surface) startPing(); };
+  window.addEventListener("ngg:push-changed", onChanged);
+  const onMsg = e => { if (e && e.data && e.data.type === "ngg:push") { try { window.dispatchEvent(new CustomEvent("ngg:push", { detail: e.data })); } catch (_) {} } };
+  (async () => {
+    const sub = await nggPushCurrent();
+    let prefs = null;
+    try { prefs = await NGGApi.push.prefs(surface, sub ? sub.endpoint : ""); } catch (_) { return; }
+    if (stop || !prefs) return;
+    // A device the browser renewed, or one last used by somebody else here: register it again.
+    const env = nggPushEnv();
+    if (sub && env.ok && env.permission === "granted" && prefs.publicKey && (!prefs.thisDevice || !nggPushSameKey(sub, nggPushKey(prefs.publicKey)))) {
+      try { await nggPushEnable(surface, prefs.publicKey); } catch (_) {}
+    }
+    if (stop) return;
+    if (surface === "admin" || (prefs.devices || []).length) startPing();
+  })();
+  try { if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", onMsg); } catch (_) {}
+  return () => {
+    stop = true; if (timer) clearInterval(timer);
+    document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", onVis); window.removeEventListener("ngg:push-changed", onChanged);
+    try { if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("message", onMsg); } catch (_) {}
+  };
+}
+function useNggPush(surface) { React.useEffect(() => nggPushBoot(surface), [surface]); }
+
+/* ── The settings card ──────────────────────────────────────────────────── */
+
+function NggPushCard({ surface, compact, title }) {
+  const sf = surface || "member";
+  const words = NGG_PUSH_SURFACE_WORDS[sf] || NGG_PUSH_SURFACE_WORDS.member;
+  const [st, setSt] = React.useState({ loading: true });
+  const [busy, setBusy] = React.useState("");
+  const [note, setNote] = React.useState("");
+  const [open, setOpen] = React.useState(!compact);
+  const env = nggPushEnv();
+  const load = React.useCallback(async () => {
+    setSt(x => Object.assign({}, x, { loading: true, error: "" }));
+    try {
+      const sub = await nggPushCurrent();
+      const r = await NGGApi.push.prefs(sf, sub ? sub.endpoint : "");
+      setSt({ loading: false, data: r, on: !!(sub && r.thisDevice) });
+    } catch (e) { setSt({ loading: false, error: (e && (e.detail || e.message)) || "We couldn’t check your notifications." }); }
+  }, [sf]);
+  React.useEffect(() => { load(); }, [load]);
+  const d = st.data || {};
+  const prefs = d.prefs || {};
+  const save = async patch => {
+    const next = Object.assign({}, prefs, patch);
+    setSt(x => Object.assign({}, x, { data: Object.assign({}, x.data, { prefs: next }) }));
+    setNote("Saving…");
+    try { const r = await NGGApi.push.savePrefs(sf, next); setSt(x => Object.assign({}, x, { data: Object.assign({}, x.data, { prefs: r.prefs }) })); setNote("Saved."); }
+    catch (e) { setNote((e && e.detail) || "That didn’t save. Try again."); setSt(x => Object.assign({}, x, { data: Object.assign({}, x.data, { prefs }) })); }
+  };
+  const turnOn = async () => {
+    setBusy("on"); setNote("");
+    try { await nggPushEnable(sf, d.publicKey); await load(); setNote("Notifications are on for this device."); }
+    catch (e) {
+      const why = e && e.why;
+      setNote(why === "dismissed" ? "Nothing changed — the browser’s question was closed. Press Turn on again when you’re ready."
+        : NGG_PUSH_WHY[why] || (e && e.detail) || "We couldn’t turn them on here. Try again, or try another browser.");
+      await load();
+    }
+    setBusy("");
+  };
+  const turnOff = async everywhere => {
+    setBusy(everywhere ? "all" : "off"); setNote("");
+    try { await nggPushDisable(sf, everywhere); await load(); setNote(everywhere ? "Turned off on every device." : "Turned off on this device."); }
+    catch (e) { setNote((e && e.detail) || "That didn’t work. Try again."); }
+    setBusy("");
+  };
+  const test = async () => {
+    setBusy("test"); setNote("");
+    try { const r = await NGGApi.push.test(sf); setNote(r.sent ? "Sent to " + (r.sent === 1 ? "1 device" : r.sent + " devices") + ". It should appear in a few seconds." + (r.failed ? " " + r.failed + " didn’t answer." : "") : "No device answered. Turn notifications off and on again here."); }
+    catch (e) { setNote((e && e.detail) || (e && e.code === "rate_limited" ? "That’s a lot of tests — wait a few minutes." : "The test didn’t send. Try again.")); }
+    setBusy("");
+  };
+  const topics = d.topics || [];
+  const others = (d.devices || []).filter(x => !x.thisOne);
+  const muted = prefs.muted || [];
+
+  return (
+    <section className={"ngp" + (compact ? " is-compact" : "")} aria-labelledby={"ngp-h-" + sf}>
+      <div className="ngp-head">
+        <span className="ngp-ic" aria-hidden="true"><i className={"ph " + (st.on ? "ph-bell-ringing" : "ph-bell-slash")}/></span>
+        <div className="ngp-head-t">
+          <h3 id={"ngp-h-" + sf} className="ngp-h">{title || "Notifications on this device"}</h3>
+          <p className="ngp-sub">{st.loading ? "Checking…" : st.error ? "Couldn’t check" : !d.available ? "Not available yet" : !env.ok ? "Can’t be turned on here" : st.on ? "On" + (prefs.quiet ? " · quiet " + prefs.quietFrom + "–" + prefs.quietTo : "") : "Off"}</p>
+        </div>
+        {compact && !st.loading && !st.error ? <button type="button" className="ngp-link" aria-expanded={open ? "true" : "false"} onClick={() => setOpen(!open)}>{open ? "Hide" : "Settings"}</button> : null}
+      </div>
+
+      {st.loading ? <div className="ngp-skel" role="status" aria-label="Checking notifications"><span/><span/></div>
+      : st.error ? <div className="ngp-state" role="alert"><p>{st.error}</p><button type="button" className="ngp-btn" onClick={load}>Try again</button></div>
+      : !d.available ? <p className="ngp-p">This server can’t send notifications yet. Email and the bell in the portal still work.</p>
+      : <>
+        {!env.ok ? <p className="ngp-p ngp-why" role="note">{NGG_PUSH_WHY[env.why] || NGG_PUSH_WHY.unsupported}</p>
+        : !st.on ? <div className="ngp-off">
+            <p className="ngp-p">{words.what}</p>
+            <button type="button" className="ngp-btn is-primary" onClick={turnOn} disabled={!!busy}>{busy === "on" ? "Turning on…" : "Turn on notifications"}</button>
+          </div>
+        : <div className="ngp-row">
+            <button type="button" className="ngp-btn" onClick={test} disabled={!!busy}>{busy === "test" ? "Sending…" : "Send a test"}</button>
+            <button type="button" className="ngp-btn" onClick={() => turnOff(false)} disabled={!!busy}>{busy === "off" ? "Turning off…" : "Turn off here"}</button>
+          </div>}
+
+        {open && (st.on || others.length || sf === "admin") ? <div className="ngp-prefs">
+          <div className="ngp-pref">
+            <div><b>Quiet hours</b><small>Nothing buzzes in this window; it waits and arrives as one summary when it ends. Urgent alerts still come through — {sf === "admin" ? "a safeguarding concern" : "a child checking in or out, a safeguarding message"}.</small></div>
+            <button type="button" className={"ngp-sw" + (prefs.quiet ? " is-on" : "")} aria-pressed={prefs.quiet ? "true" : "false"} aria-label="Quiet hours" onClick={() => save({ quiet: !prefs.quiet })}><span/></button>
+          </div>
+          {prefs.quiet ? <div className="ngp-times">
+            <label>From <input type="time" value={prefs.quietFrom || "21:00"} onChange={e => save({ quietFrom: e.target.value })}/></label>
+            <label>Until <input type="time" value={prefs.quietTo || "07:00"} onChange={e => save({ quietTo: e.target.value })}/></label>
+          </div> : null}
+          <fieldset className="ngp-topics">
+            <legend>What reaches {sf === "family" ? "this phone" : "this device"}</legend>
+            {topics.map(t => { const on = !muted.includes(t.id); return (
+              <div key={t.id} className="ngp-pref">
+                <span>{t.label}</span>
+                <button type="button" className={"ngp-sw" + (on ? " is-on" : "")} aria-pressed={on ? "true" : "false"} aria-label={t.label}
+                  onClick={() => save({ muted: on ? muted.concat([t.id]) : muted.filter(x => x !== t.id) })}><span/></button>
+              </div>); })}
+          </fieldset>
+          {sf === "admin" ? <div className="ngp-pref">
+            <div><b>Email me about new inbox items</b><small>At most one email every half hour for each part of the inbox, and none while you’re in the Control Room.</small></div>
+            <button type="button" className={"ngp-sw" + (prefs.inboxEmail ? " is-on" : "")} aria-pressed={prefs.inboxEmail ? "true" : "false"} aria-label="Email me about new inbox items" onClick={() => save({ inboxEmail: !prefs.inboxEmail })}><span/></button>
+          </div> : null}
+          {others.length ? <div className="ngp-devs">
+            <p className="ngp-p">{st.on ? "Also on " : "On "}{others.map(x => x.device).join(", ")}.</p>
+            <button type="button" className="ngp-link" onClick={() => turnOff(true)} disabled={!!busy}>{busy === "all" ? "Turning off…" : "Turn off everywhere"}</button>
+          </div> : null}
+        </div> : null}
+      </>}
+      <p className="ngp-note" role="status" aria-live="polite">{note}</p>
+    </section>
+  );
+}
+
+/**
+ * The ask, at a moment the person can see the point of it. Shown only when
+ * the device can be reached, the browser has not been asked yet, the person
+ * has no device on, and they did not say "not now" in the last two weeks.
+ */
+function NggPushNudge({ surface, text }) {
+  const sf = surface || "member";
+  const words = NGG_PUSH_SURFACE_WORDS[sf] || NGG_PUSH_SURFACE_WORDS.member;
+  const [show, setShow] = React.useState(false);
+  const [key, setKey] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+  const snoozeKey = "ngg.push.snooze." + sf;
+  React.useEffect(() => {
+    let live = true;
+    const env = nggPushEnv();
+    if (!env.ok || env.permission !== "default") return undefined;
+    try { const t = Number(localStorage.getItem(snoozeKey) || 0); if (t && Date.now() - t < NGG_PUSH_SNOOZE_DAYS * 864e5) return undefined; } catch (_) {}
+    NGGApi.push.prefs(sf, "").then(r => { if (live && r && r.available && !(r.devices || []).length) { setKey(r.publicKey); setShow(true); } }, () => {});
+    return () => { live = false; };
+  }, [sf]);
+  if (!show) return null;
+  const later = () => { try { localStorage.setItem(snoozeKey, String(Date.now())); } catch (_) {} setShow(false); };
+  const on = async () => {
+    setBusy(true); setMsg("");
+    try { await nggPushEnable(sf, key); setMsg("Done — notifications are on. Change what you get any time in settings."); setTimeout(() => setShow(false), 4000); }
+    catch (e) { setMsg(e && e.why === "dismissed" ? "No problem — nothing was turned on." : NGG_PUSH_WHY[e && e.why] || "That didn’t work on this browser."); if (e && e.why === "dismissed") later(); }
+    setBusy(false);
+  };
+  return (
+    <aside className="ngp-nudge" aria-label="Turn on notifications">
+      <span className="ngp-ic" aria-hidden="true"><i className="ph ph-bell-ringing"/></span>
+      <div className="ngp-nudge-t"><b>Get these on your {sf === "admin" ? "device" : "phone"}</b><small>{text || words.what}</small>
+        <span className="ngp-note" role="status" aria-live="polite">{msg}</span></div>
+      <div className="ngp-row">
+        <button type="button" className="ngp-btn is-primary" onClick={on} disabled={busy}>{busy ? "Turning on…" : "Turn on"}</button>
+        <button type="button" className="ngp-btn" onClick={later} disabled={busy}>Not now</button>
+      </div>
+    </aside>
+  );
+}
+
+Object.assign(window, { NggPushCard, NggPushNudge, nggPushBoot, useNggPush, nggPushEnv, nggPushEnable, nggPushDisable });

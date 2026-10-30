@@ -1947,6 +1947,29 @@ notification **and** an email with a link straight to the right screen:
 | The request is decided | the member — by email as well as in the app |
 | A parent asks to connect through the record's parent email | staff with `people` whose centre scope includes the child |
 | A request a parent raised is decided | the member, **and** the parent at their family-account address |
+| Anything new in the Inbox — a contact message, an application, an approval, a member request, a comment, a photo to review, a testimonial | everyone who can act on that part of the Inbox (see *New items in the Inbox* below) |
+
+### New items in the Inbox: the bell, a push and an email
+
+Everyone who can act on a new Inbox item is told three ways, sized so that a
+busy morning is one alert, not forty:
+
+- **The bell** holds **one** item per part of the Inbox that counts up —
+  “4 new member requests” — rather than four alerts. Reading it starts the
+  count again.
+- **A push notification**, on every device where you turned notifications on
+  (**Account → Notifications**). It updates in place rather than stacking.
+- **An email** — the first one, then **at most one every half hour** for each
+  part of the Inbox, saying how many are waiting. **No email while you are in
+  the Control Room** — you can see it arrive. Switch inbox email off under
+  **Account → Notifications → Email me about new inbox items**.
+
+Who counts as “can act on it”: the same permission the Inbox tab needs
+(Messages: `inbox`; Applications, Approvals, Member requests: `people`;
+Comments, Photo review, Testimonials: `content`), and a centre-scoped admin
+hears only about their own centres. The person who caused the item is never
+told about it. A family's own Summer sign-up photo is reviewed with the sign-up
+at the desk, so it does not alert anyone separately.
 
 ### Family accounts — parents and guardians
 
@@ -3855,3 +3878,71 @@ exam and certificate pages that were repeated on every lesson now appear once,
 on the first lesson of each level, marked *For the whole course* (the
 qualifications themselves live in Credentials); and every lesson keeps at
 least two materials. An edited lesson keeps its own materials.
+
+## Push notifications — on phones, without opening the portal
+
+Members, parents and staff can have their messages arrive on their phone or
+computer like any app's. Everything that already reaches the bell (and every
+email a parent gets from the family account) can arrive as a notification.
+
+**Turning it on**
+- **Member:** the bell → **Get these on your phone** → **Turn on notifications**.
+- **Parent:** **Account → Notifications on this device**, or the **Turn on**
+  prompt on Today.
+- **Staff:** **Account menu → Notifications**, or the prompt at the top of the Inbox.
+- **Send a test** confirms it works on that device. **Turn off here** stops
+  that device; **Turn off everywhere** stops all of them.
+- **iPhone and iPad:** notifications only work once NGG is on the Home Screen
+  (Share → *Add to Home Screen*, then open NGG from there). The card says so.
+- **Blocked in the browser:** the card says how to allow it again (the icon to
+  the left of the address → Notifications → Allow).
+
+**What keeps it from being a nuisance** — each is automatic:
+
+| Rule | What happens |
+|---|---|
+| Quiet hours (default 9pm–7am) | Nothing buzzes. What arrived is held and comes as **one** “While you were away” summary when they end. Change or switch off in the card. |
+| Urgent | A child checking in or out, a safeguarding message, a duty, a security notice — never held, never muted, stays on screen until dealt with. |
+| Already looking | Somebody with that portal open in front of them sees it there; their phone does not buzz too. |
+| Bursts | After three in ten minutes, the rest wait and arrive together as one. |
+| Same thing again | The third reply on one request updates the notification; it does not stack three. |
+| Topics | Each person can mute what they don't want (payments, learning, community…). Muting never mutes something urgent. |
+| Dead devices | A device the browser says is gone is forgotten; one that keeps failing is dropped after eight tries. |
+
+Tapping a notification opens the page it is about, reusing an open NGG tab.
+The words travel encrypted end to end: Google, Apple or Mozilla carry them but
+cannot read them.
+
+## The Inbox: every item can be acted on from where it is
+
+Each kind of item now opens with what matters and the action already drafted:
+
+- **Messages.** The pane says whether the sender is already with us (“Parent of
+  Tobi Adewale (NGG · Egbeda)”), with **Open Tobi's record** one press away. The
+  reply box starts with a **drafted reply** that fits what they asked — fees,
+  signing in, an ID card, session times, applying, mentoring, partnership — and
+  knows when the sender is a parent (it will not tell a parent how to apply for
+  a child who is already a member). Edit it, then Send. A message that mentions
+  a child being hurt, bullied, missing or unsafe goes to the top with a note to
+  read it first.
+- **Applications.**
+  - **Ask for something** drafts an email asking for whatever is missing — the
+    photo, the date of birth, the centre, a phone number — sends it, and keeps
+    the application in the Inbox, marked as in hand, with the request in its
+    thread.
+  - **Waitlist** and **Reject** now **tell the family**, in a drafted message you
+    can edit (empty it to change only the status). What was said is kept on the
+    application.
+  - The pane says if the address is already a member or a parent, how many
+    times it has applied before, and if the age is outside 10–17.
+- **Approvals (family links).** **Decline** starts from a drafted, kind reason;
+  **Open the child's record** is beside it.
+- **Comments.** A comment that shares a phone number, an email or a social
+  handle is flagged (“On a children's site that stays hidden: reject it”) and
+  Approve stops being the highlighted button. Links and all-capitals are noted.
+- **Testimonials.** Words with contact details are flagged and cannot be
+  published from here.
+- **Photo review.** **Ask for reshoot** starts from what the check found (“it is
+  too dark, it is blurry”) in words a family can act on; **Open their record** is
+  on member photos.
+

@@ -345,6 +345,7 @@ function push_notification(string $memberId, array $n): void {
         'actionLabel' => mb_substr((string)($n['actionLabel'] ?? ''), 0, 60),
     ];
     if (isset($n['linkRef'])) $row['linkRef'] = (string)$n['linkRef'];
+    if (isset($n['groupCount'])) $row['groupCount'] = max(0, (int)$n['groupCount']);
     /* A running thing keeps ONE live item: the same groupKey updates the row
        in place and makes it unread again, rather than stacking a new alert
        for every step (Saturday's timetable sent one per block). */
@@ -354,10 +355,24 @@ function push_notification(string $memberId, array $n): void {
         if ($have) {
             db_update('notifications', $row, ['notifId' => (string)$have['notifId']]);
             db_exec('DELETE FROM notification_state WHERE memberId = ? AND notifId = ?', [$memberId, (string)$have['notifId']]);
+            push_notification_push($memberId, $row, $n, $group);
             return;
         }
     }
     db_insert('notifications', $row + ['notifId' => 'N-' . gmdate('Y') . '-' . rand_hex(4), 'groupKey' => $group]);
+    push_notification_push($memberId, $row, $n, $group);
+}
+
+/* The bell is also a push (domain/push.php decides whether, and when): every
+   in-app notification reaches the person's phone without them opening the
+   portal. A grouped item keeps one notification on the phone too — its tag
+   is the group. `push => false` keeps one off the phone. */
+function push_notification_push(string $memberId, array $row, array $n, string $group): void {
+    if (($n['push'] ?? true) === false || !function_exists('push_dispatch') || $memberId === '' || $memberId === '*') return;
+    push_dispatch('m:' . $memberId, ['title' => (string)$row['title'], 'body' => (string)$row['body'], 'kind' => (string)$row['kind'],
+        'page' => (string)$row['linkPage'], 'url' => (string)($n['url'] ?? push_member_url((string)$row['linkPage'])),
+        'tag' => (string)($n['tag'] ?? ($group !== '' ? $group : '')), 'surface' => (string)($n['surface'] ?? ((string)$row['linkPage'] === 'admin' ? 'admin' : 'member')),
+        'urgent' => !empty($n['urgent'])]);
 }
 
 /**
@@ -415,7 +430,8 @@ function notify_people(array $members, array $n): int {
         $mid = (string)($m['memberId'] ?? '');
         if ($mid === '') continue;
         try { push_notification($mid, ['kind' => $n['kind'] ?? 'approval', 'title' => mb_substr((string)($n['title'] ?? ''), 0, 160),
-            'body' => mb_substr((string)($n['body'] ?? ''), 0, 600), 'linkPage' => (string)($n['linkPage'] ?? '')]); } catch (\Throwable $e) {}
+            'body' => mb_substr((string)($n['body'] ?? ''), 0, 600), 'linkPage' => (string)($n['linkPage'] ?? ''),
+            'urgent' => !empty($n['urgent'])] + ((string)($n['ctaPath'] ?? '') !== '' ? ['url' => (string)$n['ctaPath']] : [])); } catch (\Throwable $e) {}
         $email = trim((string)($m['email'] ?? ''));
         if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) && function_exists('send_mail') && function_exists('email_template')) {
             $html = email_template(['title' => (string)($n['title'] ?? ''), 'eyebrow' => (string)($n['eyebrow'] ?? 'NGG Control Room'),

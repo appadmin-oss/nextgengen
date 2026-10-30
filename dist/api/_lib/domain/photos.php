@@ -1111,6 +1111,19 @@ function photo_process(string $assetId): array {
     ];
     if ($needsHuman) {
         $row['status'] = 'pending_review';
+        /* A family's own Summer sign-up is reviewed as a whole at the sign-up
+           desk, photo included — and must not make anything send mail before
+           a human has looked at it (selfreg_submit holds this alert while it
+           runs; a re-check later finds the row already self_pending).
+           Everything else waits in Photo review, so the people who clear it
+           are told. */
+        $selfPending = !empty($GLOBALS['__photo_alert_hold']) || ((string)$a['subjectType'] === 'student'
+            && (string)(db_row('SELECT regStatus FROM summer_students WHERE studentId = ? LIMIT 1', [(string)$a['subjectId']])['regStatus'] ?? '') === 'self_pending');
+        if (!$selfPending && function_exists('staff_inbox_alert')) {
+            $nm = photo_subject_names([$a])[(string)$a['subjectType'] . ':' . (string)$a['subjectId']] ?? ['name' => '', 'centre' => ''];
+            staff_inbox_alert('photos', ['who' => (string)$nm['name'], 'centre' => (string)$nm['centre'],
+                'what' => 'Headshot needs a person to check' . ($issues ? ': ' . mb_substr(implode('; ', array_map('strval', array_slice((array)$issues, 0, 2))), 0, 120) : '')]);
+        }
     } else {
         $row['status'] = 'approved'; $row['autoApproved'] = 1;
         $row['reviewedBy'] = 'ai-auto'; $row['reviewedAt'] = now_iso();
@@ -1984,6 +1997,8 @@ function photo_change_request_create(array $p): array {
         'via' => (string)($p['via'] ?? 'member'), 'requestedBy' => $memberId, 'requestedAt' => $now, 'status' => 'pending',
     ]);
     audit('photo.change.requested', $memberId, 'member:' . $memberId, ['requestId' => $id, 'replaced' => count($prev)], (string)($p['ip'] ?? ''));
+    if (function_exists('staff_inbox_alert')) staff_inbox_alert('photos', ['who' => (string)$m['fullName'], 'centre' => (string)($m['centre'] ?? ''), 'exclude' => [$memberId],
+        'what' => 'Asks to change their ID photo' . ($reason !== '' ? ': ' . $reason : '')]);
     $row = db_row('SELECT * FROM photo_change_requests WHERE requestId = ? LIMIT 1', [$id]);
     return ['ok' => true, 'request' => photo_change_public($row), 'replaced' => count($prev)];
 }

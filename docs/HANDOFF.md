@@ -4825,3 +4825,73 @@ account (imported fine stays owed; a payment never pays an import). New
 `tests/requests-desk.test.js` (15/0, `npm run test:reqdesk`, in `test:all`)
 seeded with the two reported requests as written. `fees-lockdown` 12/0 on the new
 rule; `conduct-tab` 23/0 with the PDF download.
+
+## 2026-10-30 (evening) — Push notifications; the staff hear about new Inbox items; every Inbox item actionable
+
+**Asked:** "Enable push notifications so people do not have to always go to their
+portal to see messages. Make it intelligent." · "The admin should also get notified
+via email and push for new inboxes." · "I need ALL the inbox messages to be
+actionable and smarter."
+
+**Push (domain/push.php, migration 203).** Standard Web Push, done with PHP's own
+OpenSSL because the host has no Node and no shell: VAPID ES256 (RFC 8292) and
+aes128gcm payload encryption (RFC 8291). The server's key pair is made on first
+use and kept SEALED in settings (`ai_ui_seal`); `push.vapid_*` in config pins one
+for multi-server deployments. Subscribers are `m:<memberId>` (members and staff) or
+`g:<guardianId>` (family accounts); one browser endpoint is one person, so a shared
+tablet follows whoever signed in last.
+
+Attached at the two roads every alert already takes, so no caller has to remember
+it: `push_notification()` (the bell, 60 call sites) and `family_mail()` (every email
+to a parent). `push => false` keeps one off the phone.
+
+The intelligence is server-side and is rows in `push_queue`, not timers:
+quiet hours (default 21:00–07:00 Lagos, held and summarised), a short fixed urgent
+list that is never held or muted (safeguarding, security, check-in/out, duty),
+"already looking" (the portal reports presence while visible; nothing buzzes for
+what is on screen, per surface), burst collapse (after 3 in 10 minutes, the rest
+arrive as one), tag collapse (same thing again replaces), mutable topics, and dead
+subscriptions pruned (404/410, or 8 failures). Sending happens after the response
+(`fastcgi_finish_request`) or on the web-cron tick (`push`, 60s; `push_gc` daily).
+Endpoints are allow-listed to the real push services — a subscription is a URL the
+client chose, and without the list it is SSRF.
+
+Client: `NggPushCard`, `NggPushNudge`, `nggPushBoot` in components.jsx — mounted in
+the member's Notifications panel, the family account (Account card; the ask on
+Today), and the Control Room (Account → Notifications; the ask at the top of the
+Inbox). The card says plainly when a device cannot be reached and the one thing
+that fixes it (iPhone needs the Home Screen; a blocked site needs site settings).
+`nggPushBoot` re-registers a subscription the browser rotated; the service worker
+cannot post to the API itself (CSRF), which is why the page does it.
+
+**Staff alerts (`staff_inbox_alert`).** Contact messages and applications used to
+email ONE shared intake address; comments, testimonials and photos told nobody;
+requests, feedback, approvals and family links emailed every eligible person once
+per item. All nine now go through one function: a counting bell item per Inbox view
+("4 new member requests"), a push with the same tag, and an email throttled to one
+per half hour per view, none while the person is in the Control Room, and an
+opt-out. Recipients are the Inbox tab's own capability plus centre scope; the
+person who caused it is excluded. `selfreg_submit` holds the photo alert while it
+runs — a public sign-up link must not cause mail before a human has looked (the
+existing test caught this).
+
+**Inbox.** Messages and applications now know who the address is (one batched
+`inbox_known_by_email`), messages start with a drafted reply chosen from what they
+asked (fees, signing in, card, times, applying, mentoring, partnership — and it does
+not tell a parent to apply for a child already a member), urgent wording floats an
+item and says why, applications can **Ask for something** (emailed, kept in
+`applications.messages`, item stays, status → reviewing), Waitlist/Reject now TELL
+the family in drafted words, comments and testimonials flag contact details (a
+phone number on a children's site), reshoot notes start from what the photo check
+found, and each item has "Open their record". Two new action kinds in the pane:
+`go` (navigate, never resolves the item) and `keep` (acts, item stays).
+
+Tests: `tests/push-crypto.test.js` (17/0) opens PHP's output with an independent
+RFC 8291 reader in Node WebCrypto and verifies the VAPID signature — broken twice on
+purpose (nonce label, DER signature) and it failed both times.
+`tests/push-e2e.test.js` (24) drives all three portals with a faked PushManager
+whose keys the test holds, catches what the server would have POSTed
+(`push.test_sink`) and decrypts it, and delivers a push into the real service worker
+over CDP. `tests/inbox-actions.test.js` drives the Inbox. PHP suite: 51 new push /
+staff-inbox / inbox checks; quiet hours and the email throttle were disabled on
+purpose and the suite named both.

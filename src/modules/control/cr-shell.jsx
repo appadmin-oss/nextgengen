@@ -283,6 +283,7 @@ function CrPhoneMenu({ S, nav, ctx }) {
             <div className="cr-pmenu-density"><span>Density</span><CrSeg label="Density" full value={S.density} onChange={S.setDensity} options={CR_DENSITY_IDS.map(k => [k, k[0].toUpperCase() + k.slice(1)])}/></div>
           </div>
           <div className="cr-pmenu-card">
+            {S.openNotifications && <button type="button" className="cr-prow is-56" onClick={S.openNotifications}><CrIcon n="bell"/><span className="cr-prow-t"><b>Notifications</b></span></button>}
             <button type="button" className="cr-prow is-56" onClick={S.lock}><CrIcon n="lock-simple"/><span className="cr-prow-t"><b>Lock Control Room</b></span></button>
             <a href="/" className="cr-prow is-56" target="_blank" rel="noopener" style={{ textDecoration: "var(--rs-textdecoration-47, none)" }}><CrIcon n="arrow-square-out"/><span className="cr-prow-t"><b>View public site</b></span></a>
             {S.portals.filter(pt => !pt.current).map(pt => <button key={pt.l} type="button" className="cr-prow is-56" onClick={pt.run}><CrIcon n={pt.icon}/><span className="cr-prow-t"><b>{pt.l}</b></span></button>)}

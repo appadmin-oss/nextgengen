@@ -246,6 +246,14 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.requests.list'     => 'admin_requests_list',
             'admin.requests.decide'   => 'admin_request_decide',
             'admin.requests.applyDetails' => 'admin_request_apply_details',
+            /* Push notifications (domain/push.php). The subject is always the
+               caller's own, set by the route from the session. */
+            'push.subscribe'   => 'push_subscribe',
+            'push.unsubscribe' => 'push_unsubscribe',
+            'push.prefs'       => 'push_prefs_get',
+            'push.prefs.save'  => 'push_prefs_save',
+            'push.seen'        => 'push_seen',
+            'push.test'        => 'push_test',
             'admin.requests.comment'      => 'admin_request_comment',
             'admin.members.consent'   => 'admin_member_consent',
             'admin.members.duplicates' => 'admin_members_duplicates',
@@ -920,6 +928,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.mentor.support'    => 'admin_mentor_support',
             'admin.applications.list' => 'admin_applications_list',
             'admin.applications.status' => 'admin_applications_set_status',
+            'admin.applications.message' => 'admin_applications_message',
             'admin.volunteers.list'     => 'admin_volunteers_list',
             'admin.volunteers.approve'  => 'admin_volunteer_approve',
             'admin.volunteers.update'   => 'admin_volunteer_update',

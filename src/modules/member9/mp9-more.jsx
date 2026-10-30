@@ -1314,6 +1314,8 @@ function Mp9Notifications({ items, loading, error, retry, isRead, unreadOnly, se
             </li>; })}</ul>
           </section>)}
       </div>
+      {/* The same messages, on their phone (components.jsx · NggPushCard). */}
+      {typeof NggPushCard === "function" ? <div className="m9n-push"><NggPushCard surface="member" compact title="Get these on your phone"/></div> : null}
     </div>
   </>;
 }

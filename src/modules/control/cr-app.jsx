@@ -101,6 +101,15 @@ function CrRoom({ auth, setPage, unlockNote }) {
   const [menu, setMenu] = React.useState(false);
   const [ask, setAsk] = React.useState(false);
   const [say, toastNode] = useCrToast();
+  /* Push and presence for staff (components.jsx): this device's registration
+     kept true, and "they are in the Control Room" so inbox email and phone
+     alerts hold off while they can see the inbox arrive. */
+  React.useEffect(() => typeof nggPushBoot === "function" ? nggPushBoot("admin") : undefined, []);
+  const openNotifications = () => {
+    setAcct(false); setMenu(false);
+    setDrawer({ title: "Notifications", icon: "bell", sub: "How the Control Room reaches you when you’re not looking at it",
+      sections: [{ node: typeof NggPushCard === "function" ? <div className="cr-push-wrap"><NggPushCard surface="admin" title="On this device"/></div> : null }] });
+  };
   const phone = W < CR_BP.phone;
   useCrBack(cmd, () => setCmd(false), phone);
   useCrBack(!!form, () => setForm(null), phone);
@@ -293,7 +302,7 @@ function CrRoom({ auth, setPage, unlockNote }) {
     canAsk, ask, toggleAsk: () => setAsk(a => !a),
     acct, toggleAcct: () => setAcct(a => !a),
     menu, openMenu: () => setMenu(true), closeMenu: () => setMenu(false),
-    dirty, density, setDensity, lock, signOut, endsShort: ends.short,
+    dirty, density, setDensity, lock, signOut, endsShort: ends.short, openNotifications,
   };
   const tabs = crTabsFor(cur.page, has);
   const layered = cmd || form || drawer || confirmQ;
@@ -302,7 +311,7 @@ function CrRoom({ auth, setPage, unlockNote }) {
       {phone ? <CrPhone S={S} nav={nav} tabs={tabs} ctx={ctx}/> : <CrDesktop S={S} nav={nav} tabs={tabs} ctx={ctx} L={L}/>}
       {typeof GuideTour === "function" && <GuideTour portal="control"/>}
       {phone && ask && <CrAsk where={CR_PAGES[cur.page].label} facts={tabState.facts} mode="overlay" onClose={() => setAsk(false)}/>}
-      {acct && !phone && <CrAccountMenu me={me} ends={ends.long} density={density} setDensity={setDensity} onLock={lock} onSignOut={signOut} onClose={() => setAcct(false)}
+      {acct && !phone && <CrAccountMenu me={me} ends={ends.long} density={density} setDensity={setDensity} onLock={lock} onSignOut={signOut} onNotifications={openNotifications} onClose={() => setAcct(false)}
         onShortcuts={() => { setAcct(false); say("⌘K search · ⌘J analyst · [ sidebar · J/K and 1–9 in Inbox · Esc close"); }}/>}
       {drawer && <CrDrawer d={drawer} phone={phone} onClose={() => setDrawer(null)}/>}
       {form && <CrFormSheet f={form} phone={phone} onClose={() => setForm(null)} toast={say}/>}

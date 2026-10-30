@@ -83,6 +83,8 @@ function family_link(string $gid, string $linkId): ?array {
 function family_mail(string $to, string $subject, array $tpl): void {
     if (family_email_norm($to) === '' || !function_exists('send_mail') || !function_exists('email_template')) return;
     @send_mail($to, $subject, email_template($tpl + ['eyebrow' => 'NGG · Family account']));
+    // …and the same news on their phone, for a parent who turned notifications on (domain/push.php).
+    if (function_exists('push_family_from_mail')) push_family_from_mail($to, $subject, $tpl);
 }
 
 // ── Sign-in ─────────────────────────────────────────────────────────────────
@@ -284,11 +286,9 @@ function family_ward_add(array $p): array {
         family_tell_ward($m, $who, $rel);
     } else {
         $centre = (string)($m['centre'] ?? '');
-        notify_people(staff_with_cap('people', [], static fn($s) => admin_centre_allowed($s, $centre)), [
-            'kind' => 'approval', 'title' => 'A family account is asking to connect',
-            'intro' => $who . ' asked to connect to ' . (string)$m['fullName'] . ' as their ' . strtolower(FAMILY_RELATIONSHIPS[$rel]) . '.',
-            'body' => 'Their address matches the parent email on ' . (string)$m['fullName'] . "'s record. Confirm the relationship before approving.\n\nDecide it in Control Room → People → Families.",
-            'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=families', 'ctaLabel' => 'Review it →']);
+        staff_inbox_alert('approvals', ['centre' => $centre, 'who' => $who,
+            'what' => 'Asks to connect to ' . (string)$m['fullName'] . ' as their ' . strtolower(FAMILY_RELATIONSHIPS[$rel]),
+            'body' => 'Their address matches the parent email on ' . (string)$m['fullName'] . "'s record. Confirm the relationship before approving."]);
     }
     return ['ok' => true, 'link' => family_link_public($row, $m)];
 }

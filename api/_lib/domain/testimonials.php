@@ -207,6 +207,8 @@ function member_testimonial_give(array $p): array {
         db_insert('testimonials', $row + ['tid' => $tid, 'createdAt' => now_iso()]);
     }
     if (function_exists('cache_invalidate')) cache_invalidate('testimonials');
+    if (function_exists('staff_inbox_alert')) staff_inbox_alert('testimonials', ['who' => (string)$m['fullName'], 'exclude' => [(string)$m['memberId']],
+        'centre' => (string)($m['centre'] ?? ''), 'what' => ($existing ? 'Changed their words: ' : '') . mb_substr($body, 0, 160)]);
     return ['ok' => true, 'tid' => $tid, 'status' => 'new'];
 }
 

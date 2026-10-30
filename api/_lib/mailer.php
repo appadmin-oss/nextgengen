@@ -43,6 +43,12 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
     // Test seam: simulate a relay failure (auth must degrade, not dead-end).
     if (!empty($GLOBALS['__mail_fail'])) { $GLOBALS['__mail_last_error'] = 'forced_test_failure'; return false; }
     // Test seam: capture instead of send when a sink is registered.
+    /* The browser suites' sink: a file, because those run the app under
+       php -S where the in-process sink above cannot be reached. Test configs only. */
+    if (!empty($CONFIG['mail']['test_sink'])) {
+        @file_put_contents((string)$CONFIG['mail']['test_sink'], json_encode(['to' => $to, 'subject' => $subject, 'html' => $html]) . "\n", FILE_APPEND | LOCK_EX);
+        return true;
+    }
     if (isset($GLOBALS['__mail_sink']) && is_array($GLOBALS['__mail_sink'])) {
         $GLOBALS['__mail_sink'][] = ['to' => $to, 'subject' => $subject, 'html' => $html];
         return true;

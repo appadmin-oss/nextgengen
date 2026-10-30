@@ -1359,6 +1359,17 @@
       membershipPay:     (token) => request('/public/membership-pay.php', { body: { action: 'init', token } }),
       membershipVerify:  (token, reference) => request('/public/membership-pay.php', { body: { action: 'verify', token, reference } }),
     },
+    /* Push notifications (api/auth/push.php). `surface` picks WHICH session
+       is read — member, family or admin — never whose; the server takes the
+       person from that session. */
+    push: {
+      prefs:       (surface, endpoint) => request('/auth/push.php?surface=' + encodeURIComponent(surface || 'member') + (endpoint ? '&endpoint=' + encodeURIComponent(endpoint) : '')),
+      subscribe:   (surface, sub) => request('/auth/push.php', { body: { action: 'subscribe', surface, sub } }),
+      unsubscribe: (surface, endpoint, all) => request('/auth/push.php', { body: { action: 'unsubscribe', surface, endpoint: endpoint || '', all: !!all } }),
+      savePrefs:   (surface, prefs) => request('/auth/push.php', { body: { action: 'prefs', surface, prefs } }),
+      seen:        (surface) => request('/auth/push.php', { body: { action: 'seen', surface } }),
+      test:        (surface) => request('/auth/push.php', { body: { action: 'test', surface } }),
+    },
     /* Family accounts — a parent's own sign-in (its own cookie; never a member session). */
     family: {
       /* Support cases from the Family account — the same contract as the member's. */
@@ -1756,7 +1767,8 @@
       mentorSupport: (data) => request('/admin/mentor-support.php', { body: data }),
       applications: {
         list:    (q) => request('/admin/applications.php' + qs(q || {})),
-        status:  (id, status) => request('/admin/applications.php', { body: { id, status } }),
+        status:  (id, status, message) => request('/admin/applications.php', { body: { id, status, message: message || '' } }),
+        message: (id, message) => request('/admin/applications.php', { body: { action: 'message', id, message } }),
         // `startDate` prices the first month's commitment fee (only the meeting days left are charged).
         convert: (id, startDate) => request('/admin/applications.php', { body: { action: 'convert', id, startDate: startDate || '' } }),
         update:  (id, data) => request('/admin/applications.php', { body: { action: 'update', id, data } }),

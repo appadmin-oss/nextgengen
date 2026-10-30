@@ -396,7 +396,12 @@ function selfreg_submit(array $p): array {
      * array_merge, not `+`: the union operator keeps the LEFT operand's key, so
      * with `photoUrl` now arriving on $p an inline submission would have handed
      * gate_register the empty hosted URL instead of the image. */
-    $res = gate_register(array_merge($p, ['selfServe' => true, 'photoUrl' => $photo !== '' ? $photo : $hostedIn]));
+    /* …nor anybody at all: the photo is checked with the whole sign-up at the
+       review desk, so the photo pipeline's "needs a person" alert is held for
+       the length of this call (photos.php reads the flag). */
+    $GLOBALS['__photo_alert_hold'] = true;
+    try { $res = gate_register(array_merge($p, ['selfServe' => true, 'photoUrl' => $photo !== '' ? $photo : $hostedIn])); }
+    finally { unset($GLOBALS['__photo_alert_hold']); }
     if (empty($res['ok'])) return $res;
     $studentId = (string)$res['studentId'];
 

@@ -19,6 +19,8 @@ function crDrawerSec(s, i, phone) {
         ? <div className="cr-pbox cr-pfields">{s.rows.map((f, j) => <div key={j}><span>{f[0]}</span><b>{val(f)}</b></div>)}</div>
         : <dl className="cr-dl">{s.rows.map((f, j) => <React.Fragment key={j}><dt>{f[0]}</dt><dd>{val(f)}</dd></React.Fragment>)}</dl>)}
       {s.text && <p className="cr-prose" style={{ fontSize: phone ? 15 : 13.5 }}>{s.text}</p>}
+      {/* A section that IS a component (the notifications card), not data to lay out. */}
+      {s.node || null}
       {/* A heading over nothing reads as a failed load: say what is not there. */}
       {!s.text && !s.list && !s.rows && !s.code && s.empty && <p className="cr-prose cr-prose-empty">{s.empty}</p>}
       {s.code && <pre className="cr-code" tabIndex={0} aria-label={s.codeLabel || "Commands"}>{s.code}</pre>}
@@ -390,7 +392,7 @@ function CrAsk({ where, facts, mode, onClose }) {
 }
 
 /* ── Account menu (§2.2) ── */
-function CrAccountMenu({ me, ends, density, setDensity, onLock, onShortcuts, onSignOut, onClose }) {
+function CrAccountMenu({ me, ends, density, setDensity, onLock, onShortcuts, onNotifications, onSignOut, onClose }) {
   const ref = React.useRef(null);
   useCrTrap(ref, true);
   return (
@@ -402,6 +404,7 @@ function CrAccountMenu({ me, ends, density, setDensity, onLock, onShortcuts, onS
           {ends && <span><CrIcon n="key"/>{ends}</span>}
         </div>
         <div className="cr-acct-density"><span>Density</span><CrSeg label="Density" full value={density} onChange={setDensity} options={CR_DENSITY_IDS.map(k => [k, k[0].toUpperCase() + k.slice(1)])}/></div>
+        {onNotifications && <button type="button" role="menuitem" className="cr-menuitem" onClick={onNotifications}><CrIcon n="bell"/>Notifications</button>}
         <button type="button" role="menuitem" className="cr-menuitem" onClick={onLock}><CrIcon n="lock-simple"/>Lock Control Room</button>
         <button type="button" role="menuitem" className="cr-menuitem" onClick={onShortcuts}><CrIcon n="keyboard"/>Keyboard shortcuts</button>
         <button type="button" role="menuitem" className="cr-menuitem is-danger" onClick={onSignOut}><CrIcon n="sign-out"/>Sign out</button>

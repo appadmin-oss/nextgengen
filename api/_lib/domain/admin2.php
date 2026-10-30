@@ -826,6 +826,23 @@ function admin_applications_list(array $p): array {
         foreach ($rows as &$r) if ($r['details']) $r['agreements'] = $agree['APP:' . $r['ref']] ?? (object)[];
         unset($r);
     }
+    /* Already ours? An address already on a member record, and how many
+       times it has applied before — both answered for the page in two reads. */
+    $emails = array_map(static fn($r) => (string)($r['email'] ?? ''), $rows);
+    $known = inbox_known_by_email($emails);
+    $lower = array_values(array_unique(array_filter(array_map(static fn($e) => strtolower(trim($e)), $emails))));
+    $times = [];
+    if ($lower) {
+        $ph = implode(',', array_fill(0, count($lower), '?'));
+        foreach (db_all("SELECT lower(email) e, COUNT(*) c FROM applications WHERE lower(email) IN ($ph) GROUP BY lower(email)", $lower) as $x) $times[(string)$x['e']] = (int)$x['c'];
+    }
+    foreach ($rows as &$r) {
+        $e = strtolower(trim((string)($r['email'] ?? '')));
+        $r['known'] = $known[$e] ?? null;
+        $r['earlierApps'] = max(0, ($times[$e] ?? 1) - 1);
+        $r['messages'] = json_decode((string)($r['messages'] ?? ''), true) ?: [];
+    }
+    unset($r);
     return ['ok' => true, 'applications' => $rows];
 }
 
@@ -834,10 +851,59 @@ function admin_applications_set_status(array $p): array {
     $id = (int)($p['id'] ?? 0);
     $status = (string)($p['status'] ?? '');
     if (!in_array($status, ['new', 'reviewing', 'accepted', 'rejected', 'waitlist'], true)) return ['ok' => false, 'error' => 'bad_status'];
-    $n = db_update('applications', ['status' => $status], ['id' => $id]);
-    if (!$n) return ['ok' => false, 'error' => 'not_found'];
-    audit('admin.application.status', $g['requester']['memberId'], (string)$id, ['status' => $status], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    $a = db_row('SELECT * FROM applications WHERE id = ? LIMIT 1', [$id]);
+    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    $message = trim(mb_substr((string)($p['message'] ?? ''), 0, APPLICATION_MESSAGE_MAX));
+    db_update('applications', ['status' => $status], ['id' => $id]);
+    /* A waitlist or a refusal the applicant never hears about is a family
+       still waiting by the phone. With a message, they are told, in the
+       desk's words, and the message is kept on the application. */
+    $told = $message !== '' ? application_tell($a, $g['requester'], $status, $message) : false;
+    audit('admin.application.status', $g['requester']['memberId'], (string)$id, ['status' => $status, 'told' => $told], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'told' => $told];
+}
+
+const APPLICATION_MESSAGE_MAX = 2000;
+const APPLICATION_MESSAGES_MAX = 20;
+
+/** Email the applicant and keep what was said on the application. */
+function application_tell(array $a, array $by, string $what, string $message): bool {
+    $list = json_decode((string)($a['messages'] ?? ''), true) ?: [];
+    if (count($list) >= APPLICATION_MESSAGES_MAX) return false;
+    $email = strtolower(trim((string)($a['email'] ?? '')));
+    $sent = false;
+    if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) && function_exists('send_mail') && function_exists('email_template')) {
+        $ref = function_exists('intake_reference') ? intake_reference((string)($a['kind'] ?? 'teen'), (int)$a['id']) : '';
+        $subject = ['waitlist' => 'Your NGG application: on the waiting list', 'rejected' => 'Your NGG application', 'accepted' => 'Your NGG application: accepted',
+                    'ask' => 'About your NGG application: one thing we need', 'reviewing' => 'About your NGG application'][$what] ?? 'About your NGG application';
+        $sent = (bool)@send_mail($email, $subject, email_template(['eyebrow' => 'Next Generation Genius · Applications', 'title' => $subject,
+            'bodyHtml' => '<p style="margin:0 0 10px">' . nl2br(esc_html($message)) . '</p>',
+            'footNote' => ($ref !== '' ? 'Reference ' . $ref . '. ' : '') . 'Reply to this email if you have a question.']));
+    }
+    $list[] = ['at' => now_iso(), 'by' => (string)($by['memberId'] ?? ''), 'byName' => explode(' ', trim((string)($by['fullName'] ?? '')))[0] ?? '',
+               'what' => $what, 'text' => $message, 'sent' => $sent];
+    db_update('applications', ['messages' => json_encode($list, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 'updatedAt' => now_iso()], ['id' => (int)$a['id']]);
+    return $sent;
+}
+
+/**
+ * admin.applications.message — ask the applicant for something (a photo, a
+ * date of birth, which centre) without deciding. A new application moves to
+ * "reviewing", so it reads as in hand, not untouched.
+ */
+function admin_applications_message(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $a = db_row('SELECT * FROM applications WHERE id = ? LIMIT 1', [(int)($p['id'] ?? 0)]);
+    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    $message = trim(mb_substr((string)($p['message'] ?? ''), 0, APPLICATION_MESSAGE_MAX));
+    if (mb_strlen($message) < 5) return ['ok' => false, 'error' => 'empty', 'detail' => 'Write what you need from them.'];
+    if (!filter_var(trim((string)($a['email'] ?? '')), FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'no_email', 'detail' => 'This application has no email address to write to. Call the number on it instead.'];
+    if (count(json_decode((string)($a['messages'] ?? ''), true) ?: []) >= APPLICATION_MESSAGES_MAX) return ['ok' => false, 'error' => 'too_many', 'detail' => 'This application already has ' . APPLICATION_MESSAGES_MAX . ' messages. Decide it, or call them.'];
+    $sent = application_tell($a, $g['requester'], 'ask', $message);
+    if ((string)$a['status'] === 'new') db_update('applications', ['status' => 'reviewing'], ['id' => (int)$a['id']]);
+    audit('admin.application.message', $g['requester']['memberId'], (string)$a['id'], ['sent' => $sent], (string)($p['ip'] ?? ''));
+    if (!$sent) return ['ok' => false, 'error' => 'not_sent', 'detail' => 'The email did not go. It is kept on the application; try again, or call them.'];
+    return ['ok' => true, 'sent' => true];
 }
 
 function admin_application_convert(array $p): array {
@@ -1069,6 +1135,35 @@ const CONTACT_REPLY_MAX = 5000;
  * address has sent, so whoever opens it knows whether this is a first contact
  * or the fourth. Both are one grouped query each, never one per message.
  */
+/**
+ * Who is this address, to us? For the inbox: a message or an application
+ * from somebody already on the books is answered differently — "your son's
+ * card" rather than "how to apply" — and the desk should be one press from
+ * their record. One query per table for a whole page, never one per row.
+ *
+ * @return array<string, array{kind:string, memberId:string, name:string, centre:string}>  lower(email) → who
+ */
+function inbox_known_by_email(array $emails): array {
+    $emails = array_values(array_unique(array_filter(array_map(static fn($e) => strtolower(trim((string)$e)), $emails), static fn($e) => $e !== '' && str_contains($e, '@'))));
+    if (!$emails) return [];
+    $ph = implode(',', array_fill(0, count($emails), '?'));
+    $out = [];
+    foreach (db_all("SELECT memberId, fullName, centre, type, lower(email) e, lower(COALESCE(parentEmail,'')) pe FROM members
+                     WHERE lower(email) IN ($ph) OR lower(COALESCE(parentEmail,'')) IN ($ph) ORDER BY id", array_merge($emails, $emails)) as $m) {
+        foreach ([[(string)$m['e'], 'member'], [(string)$m['pe'], 'parent']] as [$e, $kind]) {
+            if ($e === '' || !in_array($e, $emails, true) || isset($out[$e])) continue;
+            $out[$e] = ['kind' => $kind, 'memberId' => (string)$m['memberId'], 'name' => (string)$m['fullName'], 'centre' => (string)($m['centre'] ?? ''),
+                        'programme' => (string)($m['type'] ?? '') === 'Summer' ? 'Summer School' : 'NGG'];
+        }
+    }
+    try {
+        foreach (db_all("SELECT guardianId, fullName, lower(email) e FROM guardians WHERE lower(email) IN ($ph) AND status = 'active'", $emails) as $g) {
+            if (!isset($out[(string)$g['e']])) $out[(string)$g['e']] = ['kind' => 'guardian', 'memberId' => '', 'name' => (string)$g['fullName'], 'centre' => '', 'programme' => ''];
+        }
+    } catch (\Throwable $e) {}
+    return $out;
+}
+
 function admin_contact_list(array $p): array {
     $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;
     $where = []; $params = [];
@@ -1090,9 +1185,11 @@ function admin_contact_list(array $p): array {
             $eph = implode(',', array_fill(0, count($emails), '?'));
             foreach (db_all("SELECT lower(email) e, COUNT(*) c FROM contact_messages WHERE lower(email) IN ($eph) GROUP BY lower(email)", $emails) as $r) $byEmail[(string)$r['e']] = (int)$r['c'];
         }
+        $known = inbox_known_by_email($emails);
         foreach ($rows as &$r) {
             $r['replies'] = $replies[(int)$r['id']] ?? [];
             $r['earlier'] = max(0, ($byEmail[strtolower(trim((string)$r['email']))] ?? 1) - 1);
+            $r['known'] = $known[strtolower(trim((string)$r['email']))] ?? null;
         }
         unset($r);
     }

@@ -182,6 +182,11 @@ class Mp9Portal extends React.Component {
   markArea() { const r = this.rootRef.current, a = MP9_AREA_OF[this.state.scr] || "today", v = this.viewMode(); if (!r) return; if (r.dataset.area !== a) r.dataset.area = a; if (r.dataset.view !== v) r.dataset.view = v; }
   componentDidMount() {
     this.markArea();
+    /* Push: keep this device's registration true and say when the portal is
+       in front of them; a push that lands refreshes the bell (components.jsx). */
+    if (typeof nggPushBoot === "function") this._pushOff = nggPushBoot("member");
+    this._onPush = () => { if (this.dd("notifs")) this.load("notifs"); };
+    window.addEventListener("ngg:push", this._onPush);
     this.ro = new ResizeObserver(([e]) => this.setState({ w: e.contentRect.width }));
     if (this.rootRef.current) this.ro.observe(this.rootRef.current);
     MP9_CORE.forEach(k => this.load(k));
@@ -249,6 +254,7 @@ class Mp9Portal extends React.Component {
     if (ps.sheet && !this.state.sheet && this._sheetFrom) { const el = this._sheetFrom; this._sheetFrom = null; setTimeout(() => { try { el.focus(); } catch (_) {} }, 0); }
   }
   componentWillUnmount() {
+    if (this._pushOff) this._pushOff(); window.removeEventListener("ngg:push", this._onPush);
     clearInterval(this._tick); clearTimeout(this._t); this.ro && this.ro.disconnect();
     window.removeEventListener("keydown", this._k); window.removeEventListener("popstate", this._pop);
     window.removeEventListener("online", this._online); window.removeEventListener("offline", this._online);

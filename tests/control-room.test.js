@@ -125,8 +125,13 @@ function cleanup() {
     await P.waitForFunction(() => location.pathname === '/control/inbox/applications');
     chk('a view has its own address, and switching does not reload', (await P.$$('.cr-ib-row')).length === 2);
     const who = await selName();
+    /* Waitlisting SAYS so: pressing 2 opens the drafted message to the family
+       (cr-tab-inbox.jsx · crAppDraft), and sending it runs the decision. */
     await P.keyboard.press('2');
-    chk('pressing 2 runs the second decision (Waitlist) and offers Undo', await toastHas(P, /Waitlisted · [\s\S]*Undo/));
+    await P.waitForSelector('.cr-ib-pane .cr-ib-compose textarea', { timeout: 10000 });
+    chk('pressing 2 opens the second decision (Waitlist) with the message to the family drafted', /waiting list/.test(await P.inputValue('.cr-ib-pane .cr-ib-compose textarea')));
+    await P.click('.cr-ib-pane .cr-ib-compose-f button:has-text("Waitlist")');
+    chk('…sending it waitlists and offers Undo', await toastHas(P, /Waitlisted · [\s\S]*Undo/));
     const st = () => php(`echo db_row("SELECT status FROM applications WHERE name = '${who}'")['status'];`);
     chk('…and the server has it', st() === 'waitlist');
     chk('…the item leaves the list and the next is open', (await P.$$('.cr-ib-row')).length === 1 && (await selName()) !== who);

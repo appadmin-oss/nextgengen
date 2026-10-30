@@ -136,11 +136,9 @@ function approval_intercept(string $op, array $args): ?array {
     audit('approval.requested', $rid, $id, ['op' => $op, 'summary' => $summary], (string)($args['ip'] ?? ''));
     // Everybody who can decide it is told — in the app and by email.
     $who = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [$rid]);
-    notify_people(staff_with_cap('people', [$rid], static fn($m) => !approval_bound($m)), [
-        'kind' => 'approval', 'title' => 'Waiting for your approval: ' . mb_substr($summary, 0, 90),
-        'intro' => ((string)($who['fullName'] ?? $rid)) . ' (club admin) asked for this, and it needs a second admin before it happens.',
-        'body' => $summary . "\n\nApprove or reject it in Control Room → People → Approvals.",
-        'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=approvals', 'ctaLabel' => 'Review it →']);
+    staff_inbox_alert('approvals', ['exclude' => [$rid], 'filter' => static fn($m) => !approval_bound($m),
+        'who' => (string)($who['fullName'] ?? $rid), 'what' => mb_substr($summary, 0, 160),
+        'body' => 'They asked for this, and it needs a second admin before it happens.']);
     return ['ok' => false, 'error' => 'approval_pending', 'approvalId' => $id, 'summary' => $summary,
             'message' => 'Sent to an admin for approval. Nothing changes until it is approved.'];
 }

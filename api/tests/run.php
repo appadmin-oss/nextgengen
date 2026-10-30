@@ -23904,7 +23904,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         ($ex0['error'] ?? '') === 'need_rating' && !empty($ex['ok']) && $ex['request']['rating'] === 2 && $ex['request']['ratingLabel'] === 'Not great'
         && str_contains($ex['request']['subject'], 'Not great'));
     chk('feedback: a low rating reaches the desk as somebody to talk to, with the rating in it',
-        $exN && str_contains((string)$exN['title'], 'not great for them') && str_contains((string)$exN['body'], '2 of 5'));
+        $exN && str_contains((string)$exN['body'], 'not great for them') && str_contains((string)$exN['body'], 'somebody to talk to'));
     chk('feedback: a rating on any other topic is ignored', (int)($mk(['kind' => 'feedback', 'topic' => 'app', 'rating' => 5, 'body' => 'The upload button does nothing', 'anonymous' => true])['request']['rating'] ?? -1) === 0);
     db_exec("DELETE FROM member_requests WHERE kind = 'feedback' AND topic IN ('experience','app') AND memberId = ''");
     $dl = admin_requests_list(['requesterId' => $ADMIN, 'kind' => 'feedback', 'pageSize' => 100]);
@@ -26041,8 +26041,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $GLOBALS['__mail_sink'] = [];
     $q = backend_dispatch('admin.club.members.bulk', ['requesterId' => 'NGG-NT-CLUB', 'action' => 'status', 'status' => 'inactive', 'memberIds' => ['NGG-NT-T']]);
     chk('notify: a queued approval reaches an admin who can decide it — in the app and by email', ($q['error'] ?? '') === 'approval_pending'
-        && (bool)array_filter($inbox('NGG-NT-ADM'), fn($t) => strpos($t, 'Waiting for your approval') === 0) && count($mailTo('ngg-nt-adm@example.com')) === 1);
-    chk('notify: …the email links straight to Approvals', strpos((string)($mailTo('ngg-nt-adm@example.com')[0]['html'] ?? ''), '/nextadmin?s=approvals') !== false);
+        && (bool)array_filter($inbox('NGG-NT-ADM'), fn($t) => strpos($t, 'New approval') === 0) && count($mailTo('ngg-nt-adm@example.com')) === 1);
+    chk('notify: …the email links straight to Approvals', strpos((string)($mailTo('ngg-nt-adm@example.com')[0]['html'] ?? ''), '/control/inbox/approvals') !== false);
     chk('notify: …not the club admin who asked, nor staff who cannot decide', !$inbox('NGG-NT-CLUB') && !$inbox('NGG-NT-ED'));
     $GLOBALS['__mail_sink'] = [];
     backend_dispatch('admin.approvals.decide', ['requesterId' => 'NGG-NT-ADM', 'approvalId' => $q['approvalId'], 'decision' => 'reject', 'reason' => 'Speak to the parents first']);
@@ -26052,7 +26052,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // A member's request reaches the desk; the decision reaches the member by email too.
     $GLOBALS['__mail_sink'] = [];
     $rq = backend_dispatch('member.request.create', ['memberId' => 'NGG-NT-T', 'kind' => 'leave', 'subject' => 'Away for an exam', 'body' => 'One Saturday', 'fromDate' => '2026-11-07', 'toDate' => '2026-11-07']);
-    chk('notify: a member request reaches the people who decide it', !empty($rq['ok']) && (bool)array_filter($inbox('NGG-NT-ADM'), fn($t) => strpos($t, 'A member request is waiting') === 0));
+    chk('notify: a member request reaches the people who decide it', !empty($rq['ok']) && (bool)array_filter($inbox('NGG-NT-ADM'), fn($t) => strpos($t, 'New member request') === 0));
     $GLOBALS['__mail_sink'] = [];
     backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-NT-ADM', 'requestId' => $rq['request']['requestId'], 'approve' => true, 'decision' => 'Good luck with the exams']);
     chk('notify: …and the member hears the decision by email as well as in the app', count($mailTo('ngg-nt-t@example.com')) === 1
@@ -26111,7 +26111,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $GLOBALS['__mail_sink'] = [];
     $ask = backend_dispatch('family.ward.add', ['guardianId' => $gid, 'method' => 'record', 'memberId' => 'NGG-FA-SIB', 'relationship' => 'parent']);
     chk('family: asking through the record makes a pending link, not an active one', ($ask['link']['status'] ?? '') === 'pending');
-    chk('family: …and the desk is told, in the app and by email', (bool)array_filter($inbox('NGG-FA-ADM'), fn($t) => strpos($t, 'A family account is asking to connect') === 0)
+    chk('family: …and the desk is told, in the app and by email', (bool)array_filter($inbox('NGG-FA-ADM'), fn($t) => strpos($t, 'New approval') === 0)
         && count($mailTo('ngg-fa-adm@example.com')) === 1 && !$inbox('NGG-FA-SCOPED'));
     chk('family: a record that does not name this address cannot be asked for', (backend_dispatch('family.ward.add', ['guardianId' => $gid, 'method' => 'record', 'memberId' => 'NGG-FA-OTHER'])['error'] ?? '') === 'not_found');
     chk('family: a pending ward is not readable', (backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $ask['link']['linkId']])['error'] ?? '') === 'not_found');
@@ -26140,7 +26140,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $GLOBALS['__mail_sink'] = [];
     $rq = backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => '2026-11-07', 'toDate' => '2026-11-07', 'body' => 'Family wedding']);
     chk('family: a parent\'s absence notice lands in the desk\'s request queue', !empty($rq['ok']) && ($rq['request']['byFamily'] ?? false) === true
-        && (bool)array_filter($inbox('NGG-FA-ADM'), fn($t) => strpos($t, 'A member request is waiting') === 0));
+        && (bool)array_filter($inbox('NGG-FA-ADM'), fn($t) => (bool)preg_match('/^(New member request|\d+ new member requests)/', $t)));
     chk('family: a parent\'s payment claim needs the amount', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'payment'])['error'] ?? '') === 'bad_amount');
     $list = backend_dispatch('admin.requests.list', ['requesterId' => 'NGG-FA-ADM', 'status' => 'open']);
     $row = array_values(array_filter($list['requests'] ?? [], fn($x) => $x['requestId'] === $rq['request']['requestId']))[0] ?? [];
@@ -34147,6 +34147,268 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('lesson files · the list is for curriculum staff only', empty($r['ok']));
     db_exec("DELETE FROM curriculum_materials WHERE unitId = 'CUR-LOSTF'"); db_exec("DELETE FROM curriculum_units WHERE unitId = 'CUR-LOSTF'");
     unset($GLOBALS['__curriculum_file_dir']);
+})();
+
+
+// ── Push notifications: the rules that decide whether a phone buzzes (push.php) ──
+(function () {
+    $now = now_iso();
+    $mkSub = function (string $subject, string $host = 'https://fcm.googleapis.com/fcm/send/') {
+        $k = push_new_ec_key();
+        return push_subscribe(['subject' => $subject, 'surface' => 'member', 'sub' => ['endpoint' => $host . bin2hex(random_bytes(8)),
+            'keys' => ['p256dh' => push_b64u(push_key_raw($k)), 'auth' => push_b64u(random_bytes(16))]], 'userAgent' => 'Mozilla/5.0 (Linux; Android 14) Chrome/130']);
+    };
+    $sent = [];
+    $code = 201;
+    $GLOBALS['__push_transport'] = function ($url, $headers, $body) use (&$sent, &$code) { $sent[] = ['url' => $url, 'headers' => $headers, 'len' => strlen($body)]; return ['status' => $code]; };
+    $clear = function (string $s) { db_exec('DELETE FROM push_queue WHERE subjectKey = ?', [$s]); db_exec('DELETE FROM notify_prefs WHERE subjectKey = ?', [$s]); };
+    $setPrefs = function (string $s, array $q) { push_prefs_save(['subject' => $s, 'prefs' => $q]); };
+    $lagos = new DateTime('now', new DateTimeZone('Africa/Lagos'));
+    $hm = fn(int $mins) => (clone $lagos)->modify(($mins >= 0 ? '+' : '') . $mins . ' minutes')->format('H:i');
+
+    chk('push · a server key is made once and kept sealed, never in plain text', push_vapid() !== null
+        && str_starts_with((string)(setting_get('push_vapid')['sealed'] ?? ''), 'v1:') && !str_contains((string)setting_raw('push_vapid'), 'PRIVATE KEY'));
+
+    // Subscribing.
+    $r = push_subscribe(['subject' => 'm:NGG-PUSH-1', 'sub' => ['endpoint' => 'https://169.254.169.254/latest', 'keys' => ['p256dh' => 'x', 'auth' => 'y']]]);
+    chk('push · a subscription to anything but a real push service is refused', ($r['error'] ?? '') === 'bad_endpoint');
+    $r = push_subscribe(['subject' => 'm:NGG-PUSH-1', 'sub' => ['endpoint' => 'https://fcm.googleapis.com/fcm/send/a', 'keys' => ['p256dh' => 'AAAA', 'auth' => 'AAAA']]]);
+    chk('push · …and malformed browser keys are refused', ($r['error'] ?? '') === 'bad_keys');
+    $r = push_subscribe(['subject' => 'nobody', 'sub' => []]);
+    chk('push · a subject that is not a member or a family account is refused', ($r['error'] ?? '') === 'bad_subject');
+    $clear('m:NGG-PUSH-1'); db_exec("DELETE FROM push_subscriptions WHERE subjectKey LIKE 'm:NGG-PUSH-%' OR subjectKey LIKE 'g:GDN-PUSH%'");
+    chk('push · nobody subscribed: nothing is queued at all', push_dispatch('m:NGG-PUSH-1', ['title' => 'Hi']) === 'none'
+        && !db_row("SELECT 1 FROM push_queue WHERE subjectKey = 'm:NGG-PUSH-1'"));
+    $r = $mkSub('m:NGG-PUSH-1');
+    chk('push · a real subscription is kept', !empty($r['ok']) && $r['devices'] === 1);
+    $ep = (string)db_row("SELECT endpoint FROM push_subscriptions WHERE subjectKey = 'm:NGG-PUSH-1'")['endpoint'];
+    $k2 = push_new_ec_key();
+    push_subscribe(['subject' => 'm:NGG-PUSH-2', 'sub' => ['endpoint' => $ep, 'keys' => ['p256dh' => push_b64u(push_key_raw($k2)), 'auth' => push_b64u(random_bytes(16))]]]);
+    chk('push · one browser is one person: signing in as somebody else moves it to them', (int)db_row("SELECT COUNT(*) c FROM push_subscriptions WHERE endpoint = ?", [$ep])['c'] === 1
+        && (string)db_row("SELECT subjectKey FROM push_subscriptions WHERE endpoint = ?", [$ep])['subjectKey'] === 'm:NGG-PUSH-2');
+    db_exec("DELETE FROM push_subscriptions WHERE subjectKey LIKE 'm:NGG-PUSH-%'");
+    for ($i = 0; $i < 12; $i++) $mkSub('m:NGG-PUSH-1');
+    chk('push · at most ' . PUSH_MAX_DEVICES . ' devices a person; the oldest go', (int)db_row("SELECT COUNT(*) c FROM push_subscriptions WHERE subjectKey = 'm:NGG-PUSH-1'")['c'] === PUSH_MAX_DEVICES);
+    db_exec("DELETE FROM push_subscriptions WHERE subjectKey = 'm:NGG-PUSH-1'"); $mkSub('m:NGG-PUSH-1');
+
+    // Now, as itself.
+    $setPrefs('m:NGG-PUSH-1', ['quiet' => false]);
+    $sent = [];
+    $d = push_dispatch('m:NGG-PUSH-1', ['title' => 'Your request was answered', 'body' => 'Approved', 'kind' => 'request', 'url' => '/dashboard/records', 'tag' => 'req-1']);
+    $f = push_flush('m:NGG-PUSH-1');
+    $h = $sent[0]['headers'] ?? [];
+    chk('push · an ordinary message goes now, as itself', $d === 'queued' && $f['sent'] === 1 && count($sent) === 1);
+    chk('push · signed, encrypted, and given a lifetime and urgency', (bool)array_filter($h, fn($x) => str_starts_with($x, 'Authorization: vapid t=')) && in_array('Content-Encoding: aes128gcm', $h, true)
+        && in_array('TTL: 86400', $h, true) && in_array('Urgency: normal', $h, true) && in_array('Topic: req-1', $h, true));
+    chk('push · …and logged as sent', (bool)db_row("SELECT 1 FROM push_queue WHERE subjectKey = 'm:NGG-PUSH-1' AND status = 'sent' AND tag = 'req-1'"));
+
+    // Muted, unless urgent.
+    $clear('m:NGG-PUSH-1'); $setPrefs('m:NGG-PUSH-1', ['quiet' => false, 'muted' => ['money', 'attendance']]);
+    chk('push · a muted topic stays off the phone', push_dispatch('m:NGG-PUSH-1', ['title' => 'Dues are due', 'kind' => 'dues']) === 'muted');
+    chk('push · …but muting never mutes something urgent', push_dispatch('m:NGG-PUSH-1', ['title' => 'Checked in', 'kind' => 'checkin']) === 'queued');
+
+    // Looking at it already.
+    $clear('m:NGG-PUSH-1'); $setPrefs('m:NGG-PUSH-1', ['quiet' => false]);
+    push_seen(['subject' => 'm:NGG-PUSH-1', 'surface' => 'member']);
+    chk('push · someone with the portal open sees it there; the phone is not buzzed too', push_dispatch('m:NGG-PUSH-1', ['title' => 'Hello', 'surface' => 'member']) === 'active');
+    chk('push · …but being in a DIFFERENT portal does not count as seeing it', push_dispatch('m:NGG-PUSH-1', ['title' => 'New item', 'surface' => 'admin']) === 'queued');
+    db_update('notify_prefs', ['lastActiveAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 300)], ['subjectKey' => 'm:NGG-PUSH-1']);
+    chk('push · …and five minutes away from the screen is not looking', push_dispatch('m:NGG-PUSH-1', ['title' => 'Hello again', 'surface' => 'member']) === 'queued');
+
+    // Quiet hours: held, then one summary.
+    $clear('m:NGG-PUSH-1'); $setPrefs('m:NGG-PUSH-1', ['quiet' => true, 'quietFrom' => $hm(-60), 'quietTo' => $hm(60)]);
+    $a = push_dispatch('m:NGG-PUSH-1', ['title' => 'Assignment set', 'kind' => 'assignment']);
+    $b = push_dispatch('m:NGG-PUSH-1', ['title' => 'Results are out', 'kind' => 'results']);
+    $c = push_dispatch('m:NGG-PUSH-1', ['title' => 'Safeguarding: please call', 'kind' => 'safeguarding']);
+    $held = db_all("SELECT deliverAfter FROM push_queue WHERE subjectKey = 'm:NGG-PUSH-1' AND held = 1");
+    $end = push_quiet_end(push_prefs('m:NGG-PUSH-1'), time());
+    chk('push · in quiet hours an ordinary message is held until they end', $a === 'held' && $b === 'held' && count($held) === 2
+        && abs((strtotime((string)$held[0]['deliverAfter']) ?: 0) - $end) < 5 && $end > time() && $end - time() <= 3700);
+    chk('push · …and something urgent still goes straight away', $c === 'queued');
+    $sent = []; push_flush('m:NGG-PUSH-1');
+    chk('push · …so only the urgent one is sent now', count($sent) === 1);
+    db_exec("UPDATE push_queue SET deliverAfter = ? WHERE subjectKey = 'm:NGG-PUSH-1' AND status = 'queued'", [gmdate('Y-m-d\TH:i:s\Z', time() - 1)]);
+    $sent = []; $f = push_flush();
+    $sum = db_all("SELECT status FROM push_queue WHERE subjectKey = 'm:NGG-PUSH-1' AND held = 1");
+    chk('push · when quiet hours end, the held ones arrive as ONE notification', count($sent) === 1 && count($sum) === 2 && $sum[0]['status'] === 'sent' && $sum[1]['status'] === 'sent');
+    $comp = push_compose(db_all("SELECT * FROM push_queue WHERE subjectKey = 'm:NGG-PUSH-1' AND held = 1"));
+    chk('push · …titled as a summary, naming what is in it', $comp['title'] === 'While you were away: 2 new updates'
+        && str_contains($comp['body'], 'Assignment set') && str_contains($comp['body'], 'Results are out') && $comp['tag'] === 'ngg-summary');
+    chk('push · quiet hours that run across midnight are read the right way round',
+        push_in_quiet(['quiet' => true, 'quietFrom' => '21:00', 'quietTo' => '07:00'], (new DateTime('2026-10-30 23:30', push_tz()))->getTimestamp())
+        && push_in_quiet(['quiet' => true, 'quietFrom' => '21:00', 'quietTo' => '07:00'], (new DateTime('2026-10-31 06:59', push_tz()))->getTimestamp())
+        && !push_in_quiet(['quiet' => true, 'quietFrom' => '21:00', 'quietTo' => '07:00'], (new DateTime('2026-10-31 07:00', push_tz()))->getTimestamp())
+        && !push_in_quiet(['quiet' => true, 'quietFrom' => '21:00', 'quietTo' => '07:00'], (new DateTime('2026-10-31 12:00', push_tz()))->getTimestamp()));
+    $r = push_prefs_save(['subject' => 'm:NGG-PUSH-1', 'prefs' => ['quiet' => true, 'quietFrom' => '22:00', 'quietTo' => '22:00']]);
+    chk('push · quiet hours that start and end at the same minute are refused, with why', ($r['error'] ?? '') === 'quiet_empty' && !empty($r['detail']));
+    $q = push_prefs_clean(['quietFrom' => '25:99', 'muted' => ['money', 'DROP TABLE', 'inbox']]);
+    chk('push · nonsense in saved preferences falls back to the defaults', $q['quietFrom'] === '21:00' && $q['muted'] === ['money', 'inbox']);
+
+    // A burst: after three in ten minutes, the rest wait and arrive as one.
+    $clear('m:NGG-PUSH-1'); $setPrefs('m:NGG-PUSH-1', ['quiet' => false]);
+    $out = [];
+    for ($i = 1; $i <= 5; $i++) { $out[] = push_dispatch('m:NGG-PUSH-1', ['title' => 'Comment ' . $i, 'kind' => 'community']); push_flush('m:NGG-PUSH-1'); }
+    chk('push · a burst: the first three go, the rest wait out the window', $out === ['queued', 'queued', 'queued', 'held', 'held']);
+    $w = db_all("SELECT deliverAfter FROM push_queue WHERE subjectKey = 'm:NGG-PUSH-1' AND status = 'queued'");
+    chk('push · …until ten minutes after the first', count($w) === 2 && (strtotime((string)$w[0]['deliverAfter']) ?: 0) > time() + 500);
+
+    // The same thing again collapses into one.
+    $clear('m:NGG-PUSH-1'); $setPrefs('m:NGG-PUSH-1', ['quiet' => true, 'quietFrom' => $hm(-60), 'quietTo' => $hm(60)]);
+    push_dispatch('m:NGG-PUSH-1', ['title' => '2 new comments', 'tag' => 'post-9', 'kind' => 'community']);
+    push_dispatch('m:NGG-PUSH-1', ['title' => '3 new comments', 'tag' => 'post-9', 'kind' => 'community']);
+    $rows = db_all("SELECT title FROM push_queue WHERE subjectKey = 'm:NGG-PUSH-1'");
+    chk('push · the same thing twice before it went is one notification, with the latest words', count($rows) === 1 && $rows[0]['title'] === '3 new comments');
+
+    // Dead and failing devices.
+    $clear('m:NGG-PUSH-3'); $mkSub('m:NGG-PUSH-3'); $setPrefs('m:NGG-PUSH-3', ['quiet' => false]);
+    $code = 410; push_dispatch('m:NGG-PUSH-3', ['title' => 'x']); push_flush('m:NGG-PUSH-3');
+    chk('push · a device the push service says is gone is forgotten', !db_row("SELECT 1 FROM push_subscriptions WHERE subjectKey = 'm:NGG-PUSH-3'"));
+    $mkSub('m:NGG-PUSH-3'); $code = 500;
+    for ($i = 0; $i < PUSH_DROP_AFTER_FAILS - 1; $i++) push_send_subject('m:NGG-PUSH-3', ['title' => 'x', 'body' => '', 'url' => '/', 'tag' => 't']);
+    $s3 = db_row("SELECT failCount, lastError FROM push_subscriptions WHERE subjectKey = 'm:NGG-PUSH-3'");
+    chk('push · a failing device is kept, counting, with the reason', $s3 && (int)$s3['failCount'] === PUSH_DROP_AFTER_FAILS - 1 && str_starts_with((string)$s3['lastError'], '500'));
+    push_send_subject('m:NGG-PUSH-3', ['title' => 'x', 'body' => '', 'url' => '/', 'tag' => 't']);
+    chk('push · …and dropped after ' . PUSH_DROP_AFTER_FAILS . ' failures in a row', !db_row("SELECT 1 FROM push_subscriptions WHERE subjectKey = 'm:NGG-PUSH-3'"));
+    $code = 201;
+    chk('push · a link that is not one of our pages becomes the home page', push_url_clean('https://evil.example/x') === '/' && push_url_clean('//evil.example') === '/'
+        && push_url_clean('javascript:alert(1)') === '/' && push_url_clean('/dashboard/records') === '/dashboard/records');
+    chk('push · topics are read from the kind and the page', push_topic_of('dues') === 'money' && push_topic_of('mentor') === 'messages' && push_topic_of('x', 'money') === 'money'
+        && push_topic_of('approval') === 'inbox' && push_topic_of('checkin') === 'attendance' && push_topic_of('results') === 'learning');
+
+    // The bell is the road: an in-app notification reaches the phone.
+    $clear('m:NGG-PUSH-1'); $setPrefs('m:NGG-PUSH-1', ['quiet' => false]); $sent = [];
+    push_notification('NGG-PUSH-1', ['kind' => 'dues', 'title' => 'Your dues for November', 'body' => '₦2,000', 'linkPage' => 'money']);
+    $qr = db_row("SELECT url, topic FROM push_queue WHERE subjectKey = 'm:NGG-PUSH-1' ORDER BY id DESC LIMIT 1");
+    chk('push · every in-app notification is also offered to the phone, opening the right page', $qr && $qr['url'] === '/dashboard/account' && $qr['topic'] === 'money');
+    push_notification('NGG-PUSH-1', ['kind' => 'dues', 'title' => 'Not for the phone', 'push' => false]);
+    chk('push · …unless the caller says it is not for the phone', !db_row("SELECT 1 FROM push_queue WHERE subjectKey = 'm:NGG-PUSH-1' AND title = 'Not for the phone'"));
+    $r = push_test(['subject' => 'm:NGG-PUSH-1', 'surface' => 'member']);
+    chk('push · a test reaches every device now and says how many', !empty($r['ok']) && $r['sent'] === 1 && $r['devices'] === 1);
+    $r = push_prefs_get(['subject' => 'm:NGG-PUSH-1', 'surface' => 'member', 'endpoint' => (string)db_row("SELECT endpoint FROM push_subscriptions WHERE subjectKey = 'm:NGG-PUSH-1'")['endpoint']]);
+    chk('push · the settings say whether THIS device is on, and name each device plainly', !empty($r['ok']) && $r['thisDevice'] === true && $r['devices'][0]['device'] === 'Chrome on Android'
+        && !in_array('inbox', array_column($r['topics'], 'id'), true));
+
+    // Family email → family push.
+    db_exec("DELETE FROM guardians WHERE guardianId = 'GDN-PUSH01'");
+    db_insert('guardians', ['guardianId' => 'GDN-PUSH01', 'email' => 'push.parent@example.org', 'fullName' => 'Push Parent', 'status' => 'active', 'createdAt' => $now]);
+    $mkSub('g:GDN-PUSH01'); $setPrefs('g:GDN-PUSH01', ['quiet' => true, 'quietFrom' => $hm(-60), 'quietTo' => $hm(60)]);
+    $GLOBALS['__mail_sink'] = [];
+    family_mail('push.parent@example.org', 'Tobi checked in', ['title' => 'Tobi checked in at Egbeda', 'intro' => 'At 10:02.', 'ctaUrl' => family_origin() . '/family']);
+    $fq = db_row("SELECT * FROM push_queue WHERE subjectKey = 'g:GDN-PUSH01' ORDER BY id DESC LIMIT 1");
+    chk('push · a family email also reaches the parent\'s phone', $fq && $fq['title'] === 'Tobi checked in at Egbeda' && $fq['url'] === '/family' && count($GLOBALS['__mail_sink']) === 1);
+    chk('push · …and a child checking in is urgent: not held for quiet hours', $fq && (int)$fq['urgent'] === 1 && (int)$fq['held'] === 0);
+    family_mail('push.parent@example.org', 'The term newsletter', ['title' => 'The term newsletter', 'intro' => 'News.']);
+    chk('push · …while a newsletter waits for the morning', (int)(db_row("SELECT held FROM push_queue WHERE subjectKey = 'g:GDN-PUSH01' AND title = 'The term newsletter'")['held'] ?? 0) === 1);
+    $r = push_prefs_get(['subject' => 'g:GDN-PUSH01', 'surface' => 'family']);
+    chk('push · a family account is not offered the staff inbox or community', !array_diff(array_column($r['topics'], 'id'), PUSH_TOPICS_FAMILY));
+
+    // Staff: a new inbox item.
+    foreach (['NGG-PUSH-ADM', 'NGG-PUSH-LEAD', 'NGG-PUSH-ED'] as $x) db_exec('DELETE FROM members WHERE memberId = ?', [$x]);
+    db_insert('members', ['memberId' => 'NGG-PUSH-ADM', 'fullName' => 'Inbox Admin', 'email' => 'inbox.admin@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-PUSH-LEAD', 'fullName' => 'Lead Elsewhere', 'email' => 'lead.else@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'centre_lead', 'centreScope' => '["Ikeja"]', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-PUSH-ED', 'fullName' => 'Only Editor', 'email' => 'only.editor@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (['m:NGG-PUSH-ADM', 'm:NGG-PUSH-LEAD', 'm:NGG-PUSH-ED'] as $x) { $clear($x); db_exec('DELETE FROM notifications WHERE memberId = ?', [substr($x, 2)]); }
+    $GLOBALS['__mail_sink'] = [];
+    staff_inbox_alert('requests', ['who' => 'Ada Obi', 'what' => 'Payment: ₦12,000', 'centre' => 'Egbeda']);
+    $toAdm = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'inbox.admin@example.org'));
+    $mailTo = array_column($GLOBALS['__mail_sink'], 'to');
+    chk('staff inbox · whoever can act on it is told, by email', count($toAdm) === 1 && str_contains($toAdm[0]['subject'], 'Ada Obi'));
+    chk('staff inbox · …not a centre lead for another centre, nor somebody without the capability', !in_array('lead.else@example.org', $mailTo, true) && !in_array('only.editor@example.org', $mailTo, true));
+    $bell = db_row("SELECT * FROM notifications WHERE memberId = 'NGG-PUSH-ADM' AND groupKey = 'inbox:requests'");
+    chk('staff inbox · …and on the bell, opening the right inbox view', $bell && $bell['title'] === 'New member request · Ada Obi' && (int)$bell['groupCount'] === 1);
+    staff_inbox_alert('requests', ['who' => 'Bayo K', 'what' => 'Leave: 2 weeks', 'centre' => 'Egbeda']);
+    staff_inbox_alert('requests', ['who' => 'Chi E', 'what' => 'ID card', 'centre' => 'Egbeda']);
+    $bells = db_all("SELECT * FROM notifications WHERE memberId = 'NGG-PUSH-ADM' AND groupKey = 'inbox:requests'");
+    chk('staff inbox · three arrivals are ONE bell item that counts: "3 new member requests"', count($bells) === 1 && $bells[0]['title'] === '3 new member requests'
+        && str_contains((string)$bells[0]['body'], 'Chi E'));
+    chk('staff inbox · …and one email, not three, inside half an hour', count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'inbox.admin@example.org')) === 1);
+    db_insert('notification_state', ['memberId' => 'NGG-PUSH-ADM', 'notifId' => (string)$bells[0]['notifId'], 'readAt' => $now, 'dismissedAt' => '']);
+    staff_inbox_alert('requests', ['who' => 'Dayo F', 'what' => 'Appeal', 'centre' => 'Egbeda']);
+    $b2 = db_row("SELECT title FROM notifications WHERE memberId = 'NGG-PUSH-ADM' AND groupKey = 'inbox:requests'");
+    chk('staff inbox · once they have read it, the count starts again', $b2 && $b2['title'] === 'New member request · Dayo F');
+    $mailed = json_decode((string)db_row("SELECT mailed FROM notify_prefs WHERE subjectKey = 'm:NGG-PUSH-ADM'")['mailed'], true);
+    $mailed['requests'] = time() - STAFF_INBOX_MAIL_GAP - 5;
+    db_update('notify_prefs', ['mailed' => json_encode($mailed)], ['subjectKey' => 'm:NGG-PUSH-ADM']);
+    $GLOBALS['__mail_sink'] = [];
+    push_seen(['subject' => 'm:NGG-PUSH-ADM', 'surface' => 'admin']);
+    staff_inbox_alert('requests', ['who' => 'Efe G', 'what' => 'Details', 'centre' => 'Egbeda']);
+    chk('staff inbox · no email while they are sitting in the Control Room', !array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'inbox.admin@example.org'));
+    db_update('notify_prefs', ['lastActiveAt' => ''], ['subjectKey' => 'm:NGG-PUSH-ADM']);
+    staff_inbox_alert('requests', ['who' => 'Femi H', 'what' => 'Details', 'centre' => 'Egbeda']);
+    $m2 = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'inbox.admin@example.org'));
+    chk('staff inbox · after the half hour the next email says how many are waiting', count($m2) === 1 && preg_match('/^\d+ member requests are waiting$/', $m2[0]['subject']));
+    $setPrefs('m:NGG-PUSH-ADM', ['inboxEmail' => false]);
+    $mailed = json_decode((string)db_row("SELECT mailed FROM notify_prefs WHERE subjectKey = 'm:NGG-PUSH-ADM'")['mailed'], true); $mailed['messages'] = 0;
+    db_update('notify_prefs', ['mailed' => json_encode($mailed)], ['subjectKey' => 'm:NGG-PUSH-ADM']);
+    $GLOBALS['__mail_sink'] = [];
+    staff_inbox_alert('messages', ['who' => 'A visitor', 'what' => 'Hello']);
+    chk('staff inbox · somebody who switched inbox email off gets none, but still the bell', !array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'inbox.admin@example.org')
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-PUSH-ADM' AND groupKey = 'inbox:messages'"));
+    $mkSub('m:NGG-PUSH-ADM'); $setPrefs('m:NGG-PUSH-ADM', ['quiet' => false]); $clear('m:NGG-PUSH-ADM'); $setPrefs('m:NGG-PUSH-ADM', ['quiet' => false]);
+    staff_inbox_alert('applications', ['who' => 'New Applicant', 'what' => 'Anchor 12 application']);
+    $aq = db_row("SELECT * FROM push_queue WHERE subjectKey = 'm:NGG-PUSH-ADM' ORDER BY id DESC LIMIT 1");
+    chk('staff inbox · and a push, opening that inbox view, grouped by its tag', $aq && $aq['url'] === '/control/inbox/applications' && $aq['tag'] === 'inbox-applications' && $aq['topic'] === 'inbox');
+    $GLOBALS['__mail_sink'] = [];
+    public_contact(['name' => 'Kemi Visitor', 'email' => 'kemi.v@example.org', 'message' => 'Do you run sessions in Ikeja on Saturdays?', 'purpose' => 'general']);
+    chk('staff inbox · a contact message now reaches the people who answer, not just the shared mailbox',
+        (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-PUSH-ADM' AND groupKey = 'inbox:messages' AND body LIKE '%Ikeja%'"));
+
+    foreach (['NGG-PUSH-ADM', 'NGG-PUSH-LEAD', 'NGG-PUSH-ED'] as $x) { db_exec('DELETE FROM members WHERE memberId = ?', [$x]); db_exec('DELETE FROM notifications WHERE memberId = ?', [$x]); }
+    db_exec("DELETE FROM push_subscriptions WHERE subjectKey LIKE 'm:NGG-PUSH-%' OR subjectKey = 'g:GDN-PUSH01'");
+    db_exec("DELETE FROM push_queue WHERE subjectKey LIKE 'm:NGG-PUSH-%' OR subjectKey = 'g:GDN-PUSH01'");
+    db_exec("DELETE FROM notify_prefs WHERE subjectKey LIKE 'm:NGG-PUSH-%' OR subjectKey = 'g:GDN-PUSH01'");
+    db_exec("DELETE FROM guardians WHERE guardianId = 'GDN-PUSH01'");
+    unset($GLOBALS['__push_transport'], $GLOBALS['__mail_sink']);
+})();
+
+
+// ── The inbox knows who wrote, and a decision on an application is SAID (admin2.php) ──
+(function () {
+    $now = now_iso();
+    foreach (['NGG-IBX-ADM', 'NGG-IBX-KID'] as $x) db_exec('DELETE FROM members WHERE memberId = ?', [$x]);
+    db_insert('members', ['memberId' => 'NGG-IBX-ADM', 'fullName' => 'Inbox Admin', 'email' => 'ibx.adm@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-IBX-KID', 'fullName' => 'Tobi Known', 'email' => 'tobi.known@example.org', 'parentEmail' => 'Mum.Known@Example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $k = inbox_known_by_email(['mum.known@example.org', 'TOBI.KNOWN@example.org', 'stranger@example.org', '']);
+    chk('inbox · a parent\'s address is recognised as the parent of that member, whatever its case', ($k['mum.known@example.org']['kind'] ?? '') === 'parent' && $k['mum.known@example.org']['memberId'] === 'NGG-IBX-KID');
+    chk('inbox · …a member\'s own address as the member, and a stranger as nobody', ($k['tobi.known@example.org']['kind'] ?? '') === 'member' && !isset($k['stranger@example.org']));
+    db_exec("DELETE FROM contact_messages WHERE email IN ('mum.known@example.org', 'stranger@example.org')");
+    db_insert('contact_messages', ['ref' => 'MSG-IBX1', 'purpose' => 'general', 'name' => 'Mum Known', 'email' => 'mum.known@example.org', 'message' => 'How do I pay the dues for Tobi?', 'status' => 'new', 'createdAt' => $now]);
+    $l = admin_contact_list(['requesterId' => 'NGG-IBX-ADM']);
+    $row = array_values(array_filter($l['messages'] ?? [], fn($m) => $m['ref'] === 'MSG-IBX1'))[0] ?? null;
+    chk('inbox · a message carries who the sender already is, so the reply starts in the right place', $row && ($row['known']['name'] ?? '') === 'Tobi Known');
+
+    db_exec("DELETE FROM applications WHERE email = 'apply.ibx@example.org'");
+    $aid = db_insert('applications', ['kind' => 'teen', 'name' => 'Ada Applicant', 'firstName' => 'Ada', 'email' => 'apply.ibx@example.org', 'program' => 'anchor', 'status' => 'new', 'createdAt' => $now]);
+    db_insert('applications', ['kind' => 'teen', 'name' => 'Ada Applicant', 'email' => 'apply.ibx@example.org', 'program' => 'anchor', 'status' => 'rejected', 'createdAt' => $now]);
+    $GLOBALS['__mail_sink'] = [];
+    $r = admin_applications_message(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'message' => 'Please send a clear photo of Ada.']);
+    $a = db_row('SELECT status, messages FROM applications WHERE id = ?', [$aid]);
+    chk('applications · asking for something emails the applicant and keeps what was said', !empty($r['ok']) && count($GLOBALS['__mail_sink']) === 1
+        && $GLOBALS['__mail_sink'][0]['to'] === 'apply.ibx@example.org' && str_contains($GLOBALS['__mail_sink'][0]['html'], 'clear photo of Ada')
+        && (json_decode($a['messages'], true)[0]['what'] ?? '') === 'ask');
+    chk('applications · …and a new application reads as in hand', $a['status'] === 'reviewing');
+    $GLOBALS['__mail_fail'] = true;
+    $r = admin_applications_message(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'message' => 'Which centre is nearest to you?']);
+    unset($GLOBALS['__mail_fail']);
+    $kept = json_decode((string)db_row('SELECT messages FROM applications WHERE id = ?', [$aid])['messages'], true);
+    chk('applications · an email that fails is said to have failed — and the words are still kept', ($r['error'] ?? '') === 'not_sent' && !empty($r['detail'])
+        && count($kept) === 2 && $kept[1]['sent'] === false);
+    chk('applications · an empty ask is refused, with why', (admin_applications_message(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'message' => ' '])['error'] ?? '') === 'empty');
+    $GLOBALS['__mail_sink'] = [];
+    $r = admin_applications_set_status(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'status' => 'waitlist', 'message' => 'Ada is on our waiting list; we will email when a place opens.']);
+    chk('applications · waitlisting with a message tells the family, and says it did', !empty($r['ok']) && $r['told'] === true && count($GLOBALS['__mail_sink']) === 1
+        && str_contains($GLOBALS['__mail_sink'][0]['subject'], 'waiting list'));
+    $GLOBALS['__mail_sink'] = [];
+    $r = admin_applications_set_status(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'status' => 'rejected']);
+    chk('applications · with no message the status changes and nobody is written to', !empty($r['ok']) && $r['told'] === false && !$GLOBALS['__mail_sink']
+        && db_row('SELECT status FROM applications WHERE id = ?', [$aid])['status'] === 'rejected');
+    $list = admin_applications_list(['requesterId' => 'NGG-IBX-ADM']);
+    $me = array_values(array_filter($list['applications'] ?? [], fn($x) => (int)$x['id'] === (int)$aid))[0] ?? null;
+    chk('applications · the list says how often this address applied before, and what it was told', $me && $me['earlierApps'] === 1 && count($me['messages']) === 3);
+    chk('applications · a stranger\'s address is not "already with us"', $me && $me['known'] === null);
+    unset($GLOBALS['__mail_sink']);
+    db_exec("DELETE FROM applications WHERE email = 'apply.ibx@example.org'"); db_exec("DELETE FROM contact_messages WHERE ref = 'MSG-IBX1'");
+    foreach (['NGG-IBX-ADM', 'NGG-IBX-KID'] as $x) db_exec('DELETE FROM members WHERE memberId = ?', [$x]);
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

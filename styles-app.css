@@ -17496,3 +17496,62 @@ button.m9x-ev-sum { cursor: pointer; }
   .cm3-app .cm3-e3d8434 { position: relative; background: transparent; }
   .cm3-app .cm3-e3d8434::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 8px; margin-top: -4px; border-radius: 999px; background: var(--dc-background, #0b0b0c); }
 }
+
+/* ── Push notifications (NggPushCard / NggPushNudge, components.jsx) ──────────
+   One component in three portals (member, family, Control Room), all light
+   surfaces with near-black ink, so it carries its own quiet palette rather
+   than borrowing any one portal's tokens. Container-sized, not window-sized:
+   the card sits in a 400px panel in one portal and a wide page in another. */
+.ngp { --ngp-ink: #0b0b0c; --ngp-ink2: #55555c; --ngp-line: #e8e5dd; --ngp-soft: #f6f5f1;
+  container-type: inline-size; background: #fff; color: var(--ngp-ink); border: 1px solid var(--ngp-line);
+  border-radius: 16px; padding: 16px; display: grid; gap: 12px; font-size: 14px; line-height: 1.45; }
+.ngp.is-compact { border-radius: 12px; padding: 12px 14px; }
+.ngp button, .ngp input { font: inherit; }
+.ngp button:focus-visible, .ngp input:focus-visible, .ngp-nudge button:focus-visible { outline: 2px solid var(--ngp-ink, #0b0b0c); outline-offset: 2px; }
+.ngp-head { display: flex; align-items: center; gap: 12px; }
+.ngp-head-t { flex: 1; min-width: 0; }
+.ngp-ic { width: 36px; height: 36px; border-radius: 10px; background: var(--ngp-soft, #f6f5f1); display: grid; place-items: center; font-size: 18px; flex: none; }
+.ngp-h { margin: 0; font-size: 15px; font-weight: 650; }
+.ngp-sub { margin: 2px 0 0; font-size: 13px; color: var(--ngp-ink2); }
+.ngp-p { margin: 0; color: var(--ngp-ink2); }
+.ngp-why { background: var(--ngp-soft); border-radius: 10px; padding: 10px 12px; color: var(--ngp-ink); }
+.ngp-off { display: grid; gap: 10px; justify-items: start; }
+.ngp-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ngp-btn { min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--ngp-line, #e8e5dd); background: #fff; color: var(--ngp-ink, #0b0b0c); font-weight: 600; cursor: pointer; }
+.ngp-btn.is-primary { background: var(--ngp-ink, #0b0b0c); border-color: var(--ngp-ink, #0b0b0c); color: #fff; }
+.ngp-btn:disabled { opacity: .55; cursor: default; }
+.ngp-link { background: none; border: 0; padding: 4px 2px; color: var(--ngp-ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.ngp-prefs { display: grid; gap: 10px; border-top: 1px solid var(--ngp-line); padding-top: 12px; }
+.ngp-pref { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; }
+.ngp-pref > div { display: grid; gap: 2px; }
+.ngp-pref small { color: var(--ngp-ink2); font-size: 13px; }
+.ngp-sw { position: relative; width: 44px; height: 26px; flex: none; border-radius: 999px; border: 0; background: #85827a; cursor: pointer; padding: 0; }
+.ngp-sw span { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .15s ease; }
+.ngp-sw.is-on { background: var(--ngp-ink, #0b0b0c); }
+.ngp-sw.is-on span { transform: translateX(18px); }
+@media (prefers-reduced-motion: reduce) { .ngp-sw span { transition: none; } }
+.ngp-times { display: flex; flex-wrap: wrap; gap: 12px; }
+.ngp-times label { display: grid; gap: 4px; font-size: 13px; color: var(--ngp-ink2); }
+.ngp-times input { min-height: 40px; padding: 0 10px; border: 1px solid var(--ngp-line); border-radius: 10px; background: #fff; color: var(--ngp-ink); }
+.ngp-topics { border: 0; margin: 0; padding: 0; display: grid; gap: 4px; }
+.ngp-topics legend { padding: 0; margin-bottom: 4px; font-weight: 650; }
+.ngp-devs { display: grid; gap: 4px; justify-items: start; }
+.ngp-note { margin: 0; font-size: 13px; color: var(--ngp-ink2); min-height: 0; }
+.ngp-note:empty { display: none; }
+.ngp-state { display: grid; gap: 8px; justify-items: start; }
+.ngp-skel { display: grid; gap: 8px; }
+.ngp-skel span { height: 12px; border-radius: 6px; background: var(--ngp-soft); }
+.ngp-skel span:last-child { width: 60%; }
+@container (max-width: 340px) { .ngp-pref { align-items: flex-start; } .ngp-row .ngp-btn { flex: 1 1 100%; } }
+
+.ngp-nudge { --ngp-ink: #0b0b0c; --ngp-ink2: #55555c; --ngp-line: #e8e5dd; --ngp-soft: #fdf3dc;
+  container-type: inline-size; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; padding: 14px 16px;
+  border-radius: 16px; background: #fffaf0; border: 1px solid #f1dfb4; color: var(--ngp-ink); font-size: 14px; line-height: 1.45; }
+.ngp-nudge button { font: inherit; }
+.ngp-nudge-t { flex: 1 1 240px; display: grid; gap: 2px; min-width: 0; }
+.ngp-nudge-t small { color: var(--ngp-ink2); font-size: 13px; }
+@container (max-width: 420px) { .ngp-nudge .ngp-row { width: 100%; } .ngp-nudge .ngp-btn { flex: 1; } }
+.m9n-push { padding: 10px 16px 14px; border-top: 1px solid #ececea; }
+.fp3x-push { margin-top: 16px; }
+.cr-push-wrap { padding: 4px 0; }
+.cr-ib-push { padding: 8px 12px 0; }

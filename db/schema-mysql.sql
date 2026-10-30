@@ -4704,3 +4704,55 @@ INSERT INTO schema_version (version) VALUES (201) ON DUPLICATE KEY UPDATE versio
 ALTER TABLE member_requests ADD COLUMN parts TEXT NULL;
 ALTER TABLE member_requests ADD COLUMN comments TEXT NULL;
 INSERT INTO schema_version (version) VALUES (202) ON DUPLICATE KEY UPDATE version = version;
+
+-- 203: push notifications (domain/push.php)
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subId VARCHAR(32) NOT NULL,
+  subjectKey VARCHAR(96) NOT NULL,
+  endpoint TEXT NOT NULL,
+  endpointHash CHAR(64) NOT NULL,
+  p256dh VARCHAR(128) NOT NULL,
+  auth VARCHAR(64) NOT NULL,
+  surface VARCHAR(16) NOT NULL DEFAULT 'member',
+  userAgent VARCHAR(255) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  lastOkAt VARCHAR(32) NOT NULL DEFAULT '',
+  failCount INT NOT NULL DEFAULT 0,
+  lastError VARCHAR(255) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_pushsub_ep (endpointHash),
+  KEY idx_pushsub_subject (subjectKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS notify_prefs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectKey VARCHAR(96) NOT NULL,
+  prefs TEXT NULL,
+  lastActiveAt VARCHAR(32) NOT NULL DEFAULT '',
+  lastSurface VARCHAR(16) NOT NULL DEFAULT '',
+  mailed TEXT NULL,
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_notifyprefs_subject (subjectKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS push_queue (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectKey VARCHAR(96) NOT NULL,
+  title VARCHAR(255) NOT NULL DEFAULT '',
+  body TEXT NULL,
+  url VARCHAR(512) NOT NULL DEFAULT '',
+  tag VARCHAR(64) NOT NULL DEFAULT '',
+  kind VARCHAR(32) NOT NULL DEFAULT '',
+  topic VARCHAR(16) NOT NULL DEFAULT '',
+  surface VARCHAR(16) NOT NULL DEFAULT '',
+  urgent TINYINT NOT NULL DEFAULT 0,
+  held TINYINT NOT NULL DEFAULT 0,
+  deliverAfter VARCHAR(32) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'queued',
+  sentAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_pushq_due (status, deliverAfter),
+  KEY idx_pushq_subject (subjectKey, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE notifications ADD COLUMN groupCount INT NOT NULL DEFAULT 0;
+ALTER TABLE applications ADD COLUMN messages TEXT NULL;
+INSERT INTO schema_version (version) VALUES (203) ON DUPLICATE KEY UPDATE version = version;

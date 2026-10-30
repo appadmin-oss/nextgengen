@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 202;
+const NGG_SCHEMA_TARGET = 203;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5847,6 +5847,47 @@ function db_migrate(PDO $db): void {
             /* Messages between the desk and the member on one request, before or
                after it is decided: [{at, by, byName, text}] (admin_request_comment). */
             ALTER TABLE member_requests ADD COLUMN comments TEXT DEFAULT '';
+        ",
+
+        /* PUSH NOTIFICATIONS (domain/push.php). A subscription is one browser
+           on one device for one person (`m:<memberId>` or `g:<guardianId>`);
+           the endpoint is unique, keyed by its hash because it is too long to
+           index on MySQL. notify_prefs holds each person's quiet hours and
+           muted topics, when they were last looking at a portal (so the phone
+           does not buzz for what is on their screen), and when each inbox view
+           last emailed them. push_queue is every push decided, held or sent —
+           quiet hours, bursts and summaries are rows here, not timers. And the
+           bell's grouped item counts up ("4 new member requests"). */
+        203 => "
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subId TEXT NOT NULL, subjectKey TEXT NOT NULL, endpoint TEXT NOT NULL, endpointHash TEXT NOT NULL,
+              p256dh TEXT NOT NULL, auth TEXT NOT NULL, surface TEXT NOT NULL DEFAULT 'member', userAgent TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', lastOkAt TEXT NOT NULL DEFAULT '',
+              failCount INTEGER NOT NULL DEFAULT 0, lastError TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pushsub_ep ON push_subscriptions(endpointHash);
+            CREATE INDEX IF NOT EXISTS idx_pushsub_subject ON push_subscriptions(subjectKey);
+            CREATE TABLE IF NOT EXISTS notify_prefs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectKey TEXT NOT NULL, prefs TEXT NOT NULL DEFAULT '', lastActiveAt TEXT NOT NULL DEFAULT '',
+              lastSurface TEXT NOT NULL DEFAULT '', mailed TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_notifyprefs_subject ON notify_prefs(subjectKey);
+            CREATE TABLE IF NOT EXISTS push_queue (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectKey TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '',
+              tag TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '', topic TEXT NOT NULL DEFAULT '', surface TEXT NOT NULL DEFAULT '',
+              urgent INTEGER NOT NULL DEFAULT 0, held INTEGER NOT NULL DEFAULT 0, deliverAfter TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'queued', sentAt TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_pushq_due ON push_queue(status, deliverAfter);
+            CREATE INDEX IF NOT EXISTS idx_pushq_subject ON push_queue(subjectKey, status);
+            ALTER TABLE notifications ADD COLUMN groupCount INTEGER NOT NULL DEFAULT 0;
+            /* What the desk told an applicant, from the inbox (admin2.php,
+               application_tell): [{at, by, byName, what, text, sent}]. A
+               waitlist or a refusal is now said, not just set. */
+            ALTER TABLE applications ADD COLUMN messages TEXT DEFAULT '';
         ",
     ];
 

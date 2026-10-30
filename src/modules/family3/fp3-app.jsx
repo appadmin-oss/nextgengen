@@ -77,6 +77,8 @@ class Fp3Portal extends React.Component {
   /* ── lifecycle ─────────────────────────────────────────────────────── */
   componentDidMount() {
     const el = this.rootRef.current;
+    // Push: this phone's registration kept true, and presence while the account is open (components.jsx).
+    if (typeof nggPushBoot === "function") this._pushOff = nggPushBoot("family");
     this.ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => { const r = this.rootRef.current; const w = Math.round((r && r.getBoundingClientRect().width) || window.innerWidth); if (Math.abs(w - this.state.w) > 8) this.setState({ w }); }) : null;
     if (this.ro && el) this.ro.observe(el); else this.setState({ w: window.innerWidth });
     this.onKey = e => {
@@ -103,6 +105,7 @@ class Fp3Portal extends React.Component {
     } else this.boot();
   }
   componentWillUnmount() {
+    if (this._pushOff) this._pushOff();
     this.ro && this.ro.disconnect(); document.removeEventListener("keydown", this.onKey);
     window.removeEventListener("popstate", this.onPop); window.removeEventListener("online", this.onNet); window.removeEventListener("offline", this.onNet);
     window.removeEventListener("ngg:mfa-changed", this.onMfa); clearTimeout(this.tt);
@@ -329,6 +332,7 @@ class Fp3Portal extends React.Component {
       {typeof NggSupportDesk === "function" ? <div className="fp3x-support"><NggSupportDesk api={NGGApi.family.support} initialCase={supCase} source="family"
         safeguard={supPhone ? { text: "Call " + supPhone, onClick: () => { location.href = "tel:" + String(supTel || supPhone).replace(/[^+\d]/g, ""); } } : null}
         onCase={n => { try { const u = new URL(window.location.href); if (n) u.searchParams.set("case", n); else u.searchParams.delete("case"); window.history.replaceState({}, "", u.toString()); } catch (_) {} }}/></div> : null}
+      {typeof NggPushCard === "function" ? <div className="fp3x-push"><NggPushCard surface="family"/></div> : null}
       {typeof TelegramConnect === "function" ? <div className="fp3x-tg"><TelegramConnect/></div> : null}
     </React.Fragment> : null;
 
@@ -849,6 +853,8 @@ function Fp3TodayMore({ c, w }) {
   const evs = S.events ? c.events().slice(0, 3) : null;
   return (
     <div className="fp3x-more">
+      {/* Asked here, where a parent can see the point: their child's day. */}
+      {typeof NggPushNudge === "function" ? <NggPushNudge surface="family" text={"Know the moment " + first + " checks in or out, and when the centre answers you — on this phone, without signing in. Nights stay quiet."}/> : null}
       <Fp3Anchor c={c} linkId={w.linkId} first={first} role="parent" compact/>
       <section className="fp3x-card" aria-labelledby="fp3x-qa">
         <h2 id="fp3x-qa" className="fp3x-h">For {first}</h2>

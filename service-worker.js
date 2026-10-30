@@ -230,3 +230,70 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('message', (event) => {
   if (event.data === 'skipWaiting') self.skipWaiting();
 });
+
+/* ================================================================
+   Push notifications (api/_lib/domain/push.php).
+
+   The server has already decided whether this person should be buzzed at
+   all — quiet hours, muted topics, whether they were looking at the portal —
+   so a push that arrives here is always shown. Browsers require that anyway:
+   a push that shows nothing is treated as abuse and the permission is lost.
+
+   The payload names only our own pages; anything else opens the home page.
+   ================================================================ */
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; }
+  catch (_) { d = { title: 'Next Generation Genius', body: event.data ? event.data.text() : '' }; }
+  const title = String(d.title || 'Next Generation Genius').slice(0, 120);
+  const opts = {
+    body: String(d.body || '').slice(0, 240),
+    icon: '/assets/icons/icon-192.png',
+    badge: '/assets/icons/icon-192.png',
+    data: { url: typeof d.url === 'string' && d.url.charAt(0) === '/' && d.url.charAt(1) !== '/' ? d.url : '/' },
+    timestamp: Number(d.ts) || Date.now(),
+  };
+  /* A tag replaces the earlier notification for the same thing (the third
+     reply on one request updates it); renotify makes the replacement buzz. */
+  if (d.tag) { opts.tag = String(d.tag).slice(0, 64); opts.renotify = true; }
+  // Something urgent stays on screen until it is dealt with.
+  if (d.urgent) opts.requireInteraction = true;
+  event.waitUntil((async () => {
+    await self.registration.showNotification(title, opts);
+    // An open tab refreshes its bell rather than waiting for its next poll.
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const w of wins) { try { w.postMessage({ type: 'ngg:push', url: opts.data.url, tag: opts.tag || '' }); } catch (_) {} }
+  })());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin);
+  if (target.origin !== self.location.origin) return;
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const area = p => (p.split('/')[1] || '');
+    /* A tab already open on this portal is reused — focused and moved to the
+       page — rather than opening a second copy of the app beside it. */
+    const exact = wins.find(w => { try { return new URL(w.url).pathname === target.pathname; } catch (_) { return false; } });
+    const near = exact || wins.find(w => { try { return area(new URL(w.url).pathname) === area(target.pathname); } catch (_) { return false; } });
+    if (near) {
+      try { await near.focus(); } catch (_) {}
+      if (near.url !== target.href) { try { await near.navigate(target.href); } catch (_) {} }
+      return;
+    }
+    await self.clients.openWindow(target.href);
+  })());
+});
+
+/* The browser rotated this device's subscription. It is renewed with the same
+   key here; the server learns the new address the next time a portal opens
+   (nggPushSync in components.jsx re-registers a device it does not know) —
+   a worker cannot post to the API, which needs the page's CSRF token. */
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil((async () => {
+    if (event.newSubscription) return;
+    const key = event.oldSubscription && event.oldSubscription.options && event.oldSubscription.options.applicationServerKey;
+    if (key) { try { await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }); } catch (_) {} }
+  })());
+});

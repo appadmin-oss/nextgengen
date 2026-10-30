@@ -84,6 +84,11 @@ function rate_limit_default(string $op): ?array {
         /* Raising a request reaches a human and can attach a receipt. Twelve an
            hour is more than anybody needs and far less than a flood. */
         'member.request'     => ['max' => 12, 'window' => 3600],
+        /* Push: a test sends to every device a person has, so it is the one
+           worth a ceiling; subscribing is cheap but each row is a URL this
+           server will later POST to. */
+        'push.test'          => ['max' => 6,  'window' => 600],
+        'push.subscribe'     => ['max' => 20, 'window' => 3600],
         /* Scoped per MEMBER at the route (see api/member/community.php), not per
            IP alone. A centre is one address: thirty children in a computer room
            shared twelve posts a minute between them, and the thirteenth was

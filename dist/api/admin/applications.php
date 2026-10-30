@@ -12,11 +12,13 @@ if ($method === 'GET') {
         $res = gs_call('admin.application.convert', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'startDate' => (string)($b['startDate'] ?? ''), 'ip' => client_ip()]);
     } elseif ($act === 'update') {
         $res = gs_call('admin.application.update', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'data' => $b['data'] ?? [], 'ip' => client_ip()]);
+    } elseif ($act === 'message') {
+        $res = gs_call('admin.applications.message', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'message' => (string)($b['message'] ?? ''), 'ip' => client_ip()]);
     } elseif ($act === 'delete') {
         $res = gs_call('admin.application.delete', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'ip' => client_ip()]);
     } else {
-        $res = gs_call('admin.applications.status', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'status' => $b['status'] ?? '', 'ip' => client_ip()]);
+        $res = gs_call('admin.applications.status', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'status' => $b['status'] ?? '', 'message' => (string)($b['message'] ?? ''), 'ip' => client_ip()]);
     }
 } else { json_error('method_not_allowed', 405); }
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400, isset($res['detail']) ? (string)$res['detail'] : null);
 unset($res['ok']); json_ok($res);

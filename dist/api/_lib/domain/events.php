@@ -344,6 +344,7 @@ function post_comment_create(array $p): array {
     $first = explode(' ', trim((string)$m['fullName']))[0] ?: 'Member';
     db_insert('post_comments', ['commentId' => 'CM-' . strtoupper(rand_hex(6)), 'postId' => $postId, 'memberId' => $mid, 'memberName' => $first, 'body' => $body, 'status' => 'pending', 'createdAt' => now_iso()]);
     audit('post.comment', $mid, $postId, [], (string)($p['ip'] ?? ''));
+    if (function_exists('staff_inbox_alert')) staff_inbox_alert('comments', ['who' => (string)$m['fullName'], 'exclude' => [$mid], 'what' => mb_substr($body, 0, 160)]);
     return ['ok' => true, 'pending' => true];
 }
 
@@ -412,6 +413,10 @@ function public_contact(array $p): array {
         'footNote' => 'Reference ' . $ref . ' — you contacted Next Generation Genius.',
     ]);
 
+    // The shared mailbox above is one address; the people who answer are told personally (push.php).
+    if (function_exists('staff_inbox_alert')) staff_inbox_alert('messages', ['who' => $name,
+        'what' => ($subject !== '' ? $subject : ucfirst($purpose === 'general' ? 'a message' : $purpose)) . ' — ' . mb_substr($message, 0, 160),
+        'body' => mb_substr($message, 0, 600)]);
     audit('contact.received', null, $email, ['ref' => $ref, 'purpose' => $purpose], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'ref' => $ref];
 }
@@ -723,6 +728,9 @@ function public_apply(array $p): array {
     }
     // Notify the admissions inbox so applications don't sit unseen.
     $label = $kind === 'volunteer' ? ('volunteer · ' . $role) : ($kind === 'mentor' ? 'mentor' : ($program === 'summer' ? 'Summer' : 'Anchor 12'));
+    if (function_exists('staff_inbox_alert')) staff_inbox_alert('applications', ['who' => $name, 'centre' => (string)$centre,
+        'what' => ucfirst($label) . ' application' . ($centre !== '' ? ' · ' . $centre : '') . ($dobAge ? ' · age ' . (int)$dobAge : ''),
+        'body' => $why !== '' ? mb_substr((string)$why, 0, 400) : '']);
     intake_admin_alert("New {$label} application — {$name}", [
         'title' => 'New application',
         'intro' => "{$name} just applied.",

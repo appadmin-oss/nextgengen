@@ -39,6 +39,93 @@ const crDraftGet = id => { try { return localStorage.getItem(CR_DRAFT_KEY + id) 
 const crDraftSet = (id, v) => { try { if (v) localStorage.setItem(CR_DRAFT_KEY + id, v); else localStorage.removeItem(CR_DRAFT_KEY + id); } catch (_) {} };
 
 function crItem(o) { return Object.assign({ unread: false, urgent: false, facts: [], body: "", actions: [], search: "" }, o); }
+
+/* ── Reading an item: is it urgent, does it share contact details, who is it ──
+   Plain pattern reading, on the words as written, so the desk sees the thing
+   that matters before it scrolls: a child who mentions being hurt, a comment
+   that hands out a phone number on a children's site. A flag is a note to
+   look, never an automatic decision. */
+const CR_URGENT_RE = /\b(urgent(ly)?|emergency|safeguard\w*|abus\w*|hurt|injur\w*|missing|bull(y|ied|ying)|harass\w*|threat\w*|unsafe|police|hospital|scared|afraid)\b/i;
+const CR_CONTACT_RE = /(\+?234|\b0)[789][01]\d[\s-]?\d{3}[\s-]?\d{4}|[^\s@]+@[^\s@]+\.[a-z]{2,}|\b(whats\s?app|snap(chat)?|instagram|insta|tiktok|telegram|facebook)\b|(^|\s)@[a-z0-9_.]{3,}/i;
+const CR_LINK_RE = /https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|ng|io|me|ly)\b/i;
+function crSignals(text) {
+  const t = String(text || "");
+  const u = t.match(CR_URGENT_RE);
+  const letters = t.replace(/[^A-Za-z]/g, "");
+  return { urgent: !!u, word: u ? u[0].toLowerCase() : "", contact: CR_CONTACT_RE.test(t), link: CR_LINK_RE.test(t),
+           shouting: letters.length >= 20 && letters.replace(/[^A-Z]/g, "").length / letters.length > 0.7 };
+}
+const CR_URGENT_NOTE = w => "Mentions “" + w + "”. Read this first — if a child may be at risk, follow the safeguarding steps today, not in the queue.";
+/** "Parent of Tolu Ade (NGG · Egbeda)" — who an address already is to us (admin2.php · inbox_known_by_email). */
+function crKnownLine(k) {
+  if (!k) return "";
+  const where = [k.programme, k.centre].filter(Boolean).join(" · ");
+  return k.kind === "member" ? "Member: " + k.name + (where ? " (" + where + ")" : "")
+    : k.kind === "parent" ? "Parent of " + k.name + (where ? " (" + where + ")" : "")
+    : "Family account holder" + (k.name ? ": " + k.name : "");
+}
+function crOpenRecord(ctx, memberId, label) {
+  return memberId ? { l: label || "Open their record", go: () => ctx.go("members", "members", memberId) } : null;
+}
+
+/* What a message is about, from its words, so the reply can start in the
+   right place. Order matters: a parent asking about fees is about fees, not
+   about applying. */
+const CR_MSG_TOPICS = [
+  ["money",   /\b(fee|fees|dues|pay(ment|ing)?|paid|invoice|receipt|refund|account number|bank|transfer)\b/i],
+  ["login",   /\b(password|log ?in|sign ?in|can'?t (get|log|sign)|code|otp|portal|app (is|isn'?t|not))\b/i],
+  ["card",    /\b(id card|card|lanyard|badge)\b/i],
+  ["times",   /\b(what time|when (is|are|do)|saturday|session times?|schedule|timetable|resum\w*)\b/i],
+  ["apply",   /\b(apply|application|join|register|enrol\w*|admission|sign my (son|daughter|child) up)\b/i],
+  ["mentor",  /\b(mentor\w*|volunteer\w*)\b/i],
+  ["partner", /\b(partner\w*|sponsor\w*|collaborat\w*|donat\w*|support (the|your) (programme|work))\b/i],
+];
+function crMsgTopic(m) {
+  const t = (m.subject || "") + " " + (m.message || "");
+  const hit = CR_MSG_TOPICS.find(x => x[1].test(t));
+  return hit ? hit[0] : (m.purpose && m.purpose !== "general" ? m.purpose : "general");
+}
+/** A reply in full sentences, ready to edit. Never sent as it stands — it fills the box. */
+function crMsgDraft(m, me) {
+  const first = String(m.name || "").trim().split(/\s+/)[0] || "there";
+  const k = m.known, topic = crMsgTopic(m);
+  const sign = "\n\n" + (me && me.name ? me.name + "\n" : "") + "Next Generation Genius";
+  const child = k && k.kind === "parent" ? String(k.name || "").split(/\s+/)[0] : "";
+  const about = child ? " about " + child : "";
+  const open = "Hello " + first + ",\n\nThank you for writing to us" + about + ". ";
+  const body = {
+    money: child ? "I’m checking " + child + "’s account now. The family account at nextgenerationgenius.org/family shows every charge and payment, and if you paid by transfer or cash you can send the receipt from there with “I’ve paid” — it reaches us straight away. I’ll come back to you once I’ve looked."
+                 : "I’m looking into this now. If it is about a payment you made, please send the receipt (a screenshot is fine) by replying to this email, with the member’s name, and I’ll match it to their account.",
+    login: "Sorry it isn’t letting you in. Please try “Sign in with a code” on the sign-in page — we email a six-digit code, so no password is needed. If the code doesn’t arrive within five minutes, check spam, then reply here with the email address you use and I’ll check it on our side.",
+    card: child ? "I’m looking at " + child + "’s card now. If it is lost or damaged, you can ask for a replacement from the family account (Today → Replacement ID card), and if the details on it are wrong, tell me what should be printed and I’ll correct the record before it is reprinted."
+                : "Could you tell me the member’s full name and their centre? I’ll look at the card record and come back to you.",
+    times: "Our Saturday sessions run from 10am to 2pm at each centre. Please arrive ten minutes early for check-in. Each centre’s timetable is on the member and family accounts, and changes are announced there first.",
+    apply: k ? (child ? child + " is already with us, so there’s nothing to apply for. " : "You’re already with us, so there’s nothing to apply for. ") + "If you meant a second child, the form is at nextgenerationgenius.org/join — choose the programme and fill it in, and we confirm by email within a week."
+             : "Applications are made online at nextgenerationgenius.org/join — choose the programme, fill in the form, and we confirm by email within a week. If anything on the form is unclear, reply to this email and I’ll help.",
+    mentor: "Thank you for offering your time. The next step is a short conversation so we can understand your experience and the time you can give. Please reply with two times that suit you this week.",
+    partner: "I’ve shared your message with our programme lead, and we’ll be in touch within the week to arrange a call.",
+    media: "I’ve passed this to the person who looks after media, and they’ll come back to you directly.",
+    support: "I’m looking into this now and will come back to you shortly.",
+    general: "I’m looking into this now and will come back to you with an answer shortly.",
+  }[topic] || "I’m looking into this now and will come back to you shortly.";
+  return open + body + sign;
+}
+
+/* What the desk says to an applicant: drafted, edited, then emailed. */
+function crAppFirst(a) { return a.firstName || String(a.name || "").trim().split(/\s+/)[0] || "there"; }
+function crAppDraft(a, what, me) {
+  const first = crAppFirst(a), prog = a.program === "summer" ? "Summer School" : "Next Generation Genius";
+  const sign = "\n\n" + (me && me.name ? me.name + "\n" : "") + "Next Generation Genius";
+  if (what === "waitlist") return "Hello,\n\nThank you for " + first + "’s application to " + prog + (a.centre ? " at " + a.centre : "") + ". The places for this intake are full, so " + first + " is on our waiting list. We go through the list in order as places open, and we will email you the moment one does — there is nothing more you need to do." + sign;
+  if (what === "rejected") return "Hello,\n\nThank you for " + first + "’s application to " + prog + ". We’re not able to offer a place this time" + ((a.dobAge || a.age) && (+(a.dobAge || a.age) < 10 || +(a.dobAge || a.age) > 17) && a.kind === "teen" ? ", because the programme is for young people aged 10 to 17" : "") + ". You’re welcome to apply again for a future intake, and if you have any questions, reply to this email." + sign;
+  // ask: what is missing, in order of what blocks the most
+  const need = [];
+  if (!a.photoUrl) need.push("a clear, recent photo of " + first + " (face and shoulders, plain background) — it goes on their ID card");
+  if (!a.dob) need.push(first + "’s date of birth");
+  if (!a.centre && a.kind === "teen") need.push("which centre is nearest to you");
+  if (!a.phone) need.push("a phone number we can reach you on");
+  return "Hello,\n\nThank you for " + first + "’s application to " + prog + ". Before we can go on, we need " + (need.length ? (need.length === 1 ? need[0] : need.slice(0, -1).join(", ") + " and " + need[need.length - 1]) : "one more detail: [what you need]") + ". Please reply to this email with " + (need.length > 1 ? "them" : "it") + "." + sign;
+}
 function crMask(phone) { const s = String(phone || "").replace(/\s+/g, ""); return s.length > 6 ? s.slice(0, 4) + " ••• " + s.slice(-3) : s; }
 
 /* ── Sources: one per view; each knows its permission and its server calls ── */
@@ -52,31 +139,36 @@ const CR_INBOX_SOURCES = {
         const thread = [{ who: m.name || m.email, at: m.createdAt, body: m.message || "", mine: false }]
           .concat((m.replies || []).map(x => ({ who: x.sentByName || "Staff", at: x.sentAt, body: x.body, mine: true })));
         const set = (to, text) => async () => { await NGGApi.admin.contact.status(m.id, to); return { text, undo: () => NGGApi.admin.contact.status(m.id, m.status) }; };
+        const sig = crSignals((m.subject || "") + " " + (m.message || ""));
+        const topic = crMsgTopic(m);
+        const TOPIC_L = { money: "Money", login: "Signing in", card: "ID card", times: "Session times", apply: "Applying", mentor: "Mentoring", partner: "Partnership", media: "Media", support: "Support", general: "General" };
         return crItem({
           id: "msg:" + m.id, cat: "messages", kind: "Message", icon: "envelope-simple", who: m.name || m.email, at: m.createdAt,
-          unread: m.status === "new", urgent: m.purpose === "support",
+          unread: m.status === "new", urgent: m.purpose === "support" || sig.urgent,
           title: m.subject || (m.message || "").slice(0, 90), body: m.message || "",
-          search: [m.email, m.ref, CR_PURPOSE[m.purpose]].join(" "),
-          facts: [["Email", m.email || "—"], ["Phone", crMask(m.phone) || "—"], ["Topic", CR_PURPOSE[m.purpose] || m.purpose || "General"], ["Reference", m.ref || "—"]],
-          note: m.earlier > 0 ? "This address has written " + crPlural(m.earlier, "other time", "other times") + "." : "",
+          search: [m.email, m.ref, CR_PURPOSE[m.purpose], m.known && m.known.name].join(" "),
+          facts: [["Email", m.email || "—"], ["Phone", crMask(m.phone) || "—"], ["About", TOPIC_L[topic] + (CR_PURPOSE[m.purpose] && CR_PURPOSE[m.purpose] !== TOPIC_L[topic] && m.purpose !== "general" ? " · they chose " + CR_PURPOSE[m.purpose] : "")],
+            ["Already with us", m.known ? crKnownLine(m.known) : "Not that we can see"], ["Reference", m.ref || "—"]],
+          note: [sig.urgent ? CR_URGENT_NOTE(sig.word) : "", m.earlier > 0 ? "This address has written " + crPlural(m.earlier, "other time", "other times") + "." : ""].filter(Boolean).join(" "),
           thread,
           markRead: m.status === "new" ? () => NGGApi.admin.contact.status(m.id, "read") : null,
           reply: m.email ? {
-            to: m.email, purpose: m.purpose,
+            to: m.email, purpose: m.purpose, draft: crMsgDraft(m, ctx.me),
             vars: { first, name: m.name || "", ref: m.ref || "", me: ctx.me && ctx.me.name ? ctx.me.name + "\nNext Generation Genius" : "Next Generation Genius" },
             send: async (body, close) => {
               const x = await NGGApi.admin.contact.reply(m.id, body, close);
               return { text: (close ? "Replied and closed · " : "Reply sent · ") + (m.name || m.email), status: x.status, reply: x.reply };
             },
           } : null,
-          actions: [{ l: "Mark done", run: set("archived", "Done · " + (m.name || m.email)) }],
+          actions: [{ l: "Mark done", run: set("archived", "Done · " + (m.name || m.email)) },
+            crOpenRecord(ctx, m.known && m.known.memberId, m.known && m.known.kind === "parent" ? "Open " + String(m.known.name || "").split(" ")[0] + "’s record" : "Open their record")].filter(Boolean),
         });
       });
     },
   },
   applications: {
     cap: "people",
-    async load() {
+    async load(ctx) {
       const [r, rv] = await Promise.all([
         NGGApi.admin.applications.list({ status: "new" }),
         NGGApi.admin.applications.list({ status: "reviewing" }).catch(() => ({ applications: [] })),
@@ -84,6 +176,16 @@ const CR_INBOX_SOURCES = {
       return (r.applications || []).concat(rv.applications || []).filter(a => a.kind !== "volunteer").map(a => {
         const prog = a.program === "summer" ? "Summer School" : "NGG membership";
         const status = (to, label) => async () => { await NGGApi.admin.applications.status(a.id, to); return { text: label + " · " + a.name, undo: () => NGGApi.admin.applications.status(a.id, a.status || "new") }; };
+        /* Waitlisting or refusing SAYS so: the family is emailed the drafted
+           message (edit it first; empty it to change only the status). */
+        const tell = (to, l, label) => ({ l, note: { l: "Message to the family (emailed)", req: false, dflt: crAppDraft(a, to, ctx.me),
+            help: a.email ? "Sent to " + a.email + " and kept on the application. Empty it to change the status without writing." : "There is no email on this application — the status changes, and nobody is told. Call them." },
+          run: async (it, v) => { const r = await NGGApi.admin.applications.status(a.id, to, a.email ? (v.why || "") : "");
+            return { text: label + " · " + a.name + (r && r.told ? " · the family was emailed" : v.why && a.email ? " · the email didn’t go" : ""), undo: () => NGGApi.admin.applications.status(a.id, a.status || "new") }; } });
+        const ask = a.email ? { l: "Ask for something", keep: true, note: { l: "What you need (emailed)", req: true, dflt: crAppDraft(a, "ask", ctx.me),
+            help: "Sent to " + a.email + ". The application stays here, marked as in hand." },
+          run: async (it, v) => { await NGGApi.admin.applications.message(a.id, v.why);
+            return { text: "Asked · " + a.email, patch: { thread: (it.thread || []).concat([{ who: (ctx.me && ctx.me.name) || "You", at: new Date().toISOString(), body: v.why, mine: true }]) } }; } } : null;
         const actions = a.kind === "teen" ? [
           a.program === "summer" ? { l: "Accept & create member", tone: "primary",
             confirm: () => ({ title: "Create a member for " + a.name + "?", body: "They get a Summer School record. This can’t be undone from here.", cta: "Accept & create member" }),
@@ -105,28 +207,39 @@ const CR_INBOX_SOURCES = {
                 : inv.error === "fees_off" ? " · no invoice: membership fees are off" : inv.error ? " · no invoice (" + inv.error.replace(/_/g, " ") + ")" : "";
               return { text: "Member created · " + x.memberId + tail };
             } },
-          { l: "Waitlist", run: status("waitlist", "Waitlisted") },
-          { l: "Reject", run: status("rejected", "Rejected") },
+          tell("waitlist", "Waitlist", "Waitlisted"),
+          tell("rejected", "Reject", "Rejected"),
+          ask,
         ] : [
           { l: "Accept", tone: "primary", run: status("accepted", "Accepted") },
-          { l: "Waitlist", run: status("waitlist", "Waitlisted") },
-          { l: "Reject", run: status("rejected", "Rejected") },
+          tell("waitlist", "Waitlist", "Waitlisted"),
+          tell("rejected", "Reject", "Rejected"),
+          ask,
         ];
+        const rec = crOpenRecord(ctx, a.known && a.known.memberId, a.known && a.known.kind === "parent" ? "Open " + String(a.known.name || "").split(" ")[0] + "’s record" : "Open their record");
+        if (rec) actions.push(rec);
         return crItem({
           id: "app:" + a.id, cat: "applications", kind: "Application", icon: "user-plus", who: a.name || a.email || "Applicant", at: a.createdAt,
-          unread: a.status === "new", title: [prog, a.track || a.role].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
+          unread: a.status === "new", urgent: crSignals(a.why).urgent, title: [prog, a.track || a.role].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
           search: [a.email, a.centre, a.track, a.ref].join(" "),
-          facts: [["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.program === "summer" ? "" : (a.faculty || "—")], ["Course", a.track || (a.details && a.details.courseOther ? "Something else: " + a.details.courseOther : "—")], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]]
+          facts: [["Already with us", a.known ? crKnownLine(a.known) : ""], ["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.program === "summer" ? "" : (a.faculty || "—")], ["Course", a.track || (a.details && a.details.courseOther ? "Something else: " + a.details.courseOther : "—")], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]]
             .concat(crAppDetailFacts(a)).filter(f => f[1] !== ""),
-          note: a.photoUrl ? "" : "No photo yet — their ID card cannot print until one is uploaded.",
-          actions,
+          note: [
+            a.known ? (a.known.kind === "member" ? "Already a member: " + a.known.name + ". Accepting finds that record rather than making a second one." : crKnownLine(a.known) + " — a second child, or the same one again?") : "",
+            a.earlierApps > 0 ? "This address has applied " + crPlural(a.earlierApps, "time", "times") + " before." : "",
+            a.kind === "teen" && (a.dobAge || a.age) && (+(a.dobAge || a.age) < 10 || +(a.dobAge || a.age) > 17) ? "Age " + (a.dobAge || a.age) + " is outside 10–17." : "",
+            a.photoUrl ? "" : "No photo yet — their ID card cannot print until one is uploaded. “Ask for something” drafts the request.",
+          ].filter(Boolean).join(" "),
+          thread: (a.messages || []).length ? [{ who: a.name || "Applicant", at: a.createdAt, body: a.why || "(No message with the application.)", mine: false }]
+            .concat(a.messages.map(x => ({ who: x.byName || "Staff", at: x.at, body: x.text + (x.sent ? "" : "\n\n(Not emailed — no address, or the email failed.)"), mine: true }))) : null,
+          actions: actions.filter(Boolean),
         });
       });
     },
   },
   approvals: {
     cap: "people",
-    async load() {
+    async load(ctx) {
       const [ap, fam] = await Promise.all([NGGApi.admin.approvals.list("pending"), NGGApi.admin.families.list({ status: "pending" }).catch(() => ({ rows: [] }))]);
       const items = (ap.approvals || []).map(x => crItem({
         id: "apr:" + x.approvalId, cat: "approvals", kind: "Approval", icon: "seal-check", who: x.requesterName || x.requesterId, at: x.createdAt, unread: true,
@@ -149,8 +262,10 @@ const CR_INBOX_SOURCES = {
         note: f.recordParentEmail && f.guardianEmail && f.recordParentEmail.toLowerCase() !== f.guardianEmail.toLowerCase() ? "The email asking is not the guardian email on the child’s record. Check before approving." : "",
         actions: [
           { l: "Approve link", tone: "primary", run: async () => { const r = await NGGApi.admin.families.decide("approve", [f.linkId]); const bad = (r.results || []).find(x => !x.ok); if (bad) throw Object.assign(new Error(bad.error), { code: bad.error }); return { text: "Connected · the parent has been emailed" }; } },
-          { l: "Decline", note: CR_REASON_NOTE("Why it is declined", "The parent reads this."), run: async (it, v) => { const r = await NGGApi.admin.families.decide("refuse", [f.linkId], v.why); const bad = (r.results || []).find(x => !x.ok); if (bad) throw Object.assign(new Error(bad.error), { code: bad.error }); return { text: "Declined · the parent has been emailed" }; } },
-        ],
+          { l: "Decline", note: Object.assign(CR_REASON_NOTE("Why it is declined", "The parent reads this."), { dflt: "We couldn’t confirm that you are " + f.fullName + "’s " + String(f.relationshipLabel || "parent").toLowerCase() + " from our records. Please speak to the coordinator at " + (f.centre || "the centre") + " — bring ID, and they can connect your account in person." }),
+            run: async (it, v) => { const r = await NGGApi.admin.families.decide("refuse", [f.linkId], v.why); const bad = (r.results || []).find(x => !x.ok); if (bad) throw Object.assign(new Error(bad.error), { code: bad.error }); return { text: "Declined · the parent has been emailed" }; } },
+          crOpenRecord(ctx, f.memberId, "Open " + String(f.fullName || "").split(" ")[0] + "’s record"),
+        ].filter(Boolean),
       })));
       return items;
     },
@@ -223,21 +338,25 @@ const CR_INBOX_SOURCES = {
   },
   comments: {
     cap: "content",
-    async load() {
+    async load(ctx) {
       const r = await NGGApi.admin.comments("pending");
       return (r.comments || []).map(c => {
-        const link = /https?:\/\/|www\./i.test(c.body || "");
+        const sig = crSignals(c.body);
         return crItem({
-          id: "cmt:" + c.commentId, cat: "comments", kind: "Comment", icon: "chat-circle", who: c.memberName || "Member", at: c.createdAt, unread: true,
+          id: "cmt:" + c.commentId, cat: "comments", kind: "Comment", icon: "chat-circle", who: c.memberName || "Member", at: c.createdAt, unread: true, urgent: sig.urgent,
           title: "On “" + (c.postTitle || c.postSlug || c.postId) + "”", body: c.body || "", search: c.postTitle || c.postSlug || "",
           facts: [["Post", c.postTitle || c.postSlug || c.postId]],
           thread: [{ who: c.memberName || "Member", at: c.createdAt, body: c.body || "", mine: false }],
-          note: link ? "It contains a link. Check where it goes before approving." : "",
+          note: [sig.urgent ? CR_URGENT_NOTE(sig.word) : "",
+            sig.contact ? "It shares contact details — a phone number, an email or a social handle. On a children’s site that stays hidden: reject it." : "",
+            sig.link ? "It contains a link. Check where it goes before approving." : "",
+            sig.shouting ? "Written in capitals." : ""].filter(Boolean).join(" "),
           actions: [
-            { l: "Approve", tone: "primary", run: async () => { await NGGApi.admin.commentModerate(c.commentId, "approve"); return { text: "Approved · it’s on the post now", undo: () => NGGApi.admin.commentModerate(c.commentId, "reject") }; } },
+            { l: "Approve", tone: sig.contact ? undefined : "primary", run: async () => { await NGGApi.admin.commentModerate(c.commentId, "approve"); return { text: "Approved · it’s on the post now", undo: () => NGGApi.admin.commentModerate(c.commentId, "reject") }; } },
             { l: "Reject", run: async () => { await NGGApi.admin.commentModerate(c.commentId, "reject"); return { text: "Rejected · it stays hidden", undo: () => NGGApi.admin.commentModerate(c.commentId, "approve") }; } },
             { l: "Delete", confirm: () => ({ title: "Delete this comment?", body: "It is removed for good. This can’t be undone.", cta: "Delete", danger: true }), run: async () => { await NGGApi.admin.commentModerate(c.commentId, "delete"); return { text: "Deleted" }; } },
-          ],
+            crOpenRecord(ctx, c.memberId, "Open their record"),
+          ].filter(Boolean),
         });
       });
     },
@@ -250,13 +369,14 @@ const CR_INBOX_SOURCES = {
      the byline the MEMBER chose, never their full name. */
   testimonials: {
     cap: "content",
-    async load() {
+    async load(ctx) {
       const r = await NGGApi.admin.curriculum.testimonials("new");
       return (r.rows || []).map(t => {
         const ok = !!t.consent;
+        const sig = crSignals(t.body);
         const back = () => NGGApi.admin.curriculum.testimonialDecide(t.tid, "new", "");
         const actions = [];
-        if (ok) actions.push({ l: "Publish", tone: "primary", run: async () => {
+        if (ok && !sig.contact) actions.push({ l: "Publish", tone: "primary", run: async () => {
           await NGGApi.admin.curriculum.testimonialDecide(t.tid, "published", "");
           return { text: "Published · it is on the home page now", undo: back };
         } });
@@ -270,10 +390,12 @@ const CR_INBOX_SOURCES = {
           facts: [["Member", t.memberId + (t.centre ? " · " + t.centre : "")],
                   ["Goes out as", t.byline + " · " + (CR_TESTI_SHOW[t.showAs] || t.showAs)],
                   ["Consent", ok ? "Guardian granted “Feature on our website”" : "Not granted"]],
-          note: ok
-            ? "Publishing puts these words on the public home page under that byline — never their full name. They can take it back at any time, and withdrawing the consent takes it down on its own."
-            : "No Publish here: the guardian has not granted “Feature on our website”. Record that consent on the member first. The words are still worth reading.",
-          actions,
+          note: [sig.contact ? "It contains contact details or a social handle — leave it unpublished." : "",
+            sig.urgent ? CR_URGENT_NOTE(sig.word) : "",
+            ok ? "Publishing puts these words on the public home page under that byline — never their full name. They can take it back at any time, and withdrawing the consent takes it down on its own."
+               : "No Publish here: the guardian has not granted “Feature on our website”. Record that consent on the member first. The words are still worth reading."].filter(Boolean).join(" "),
+          urgent: sig.urgent,
+          actions: actions.concat([crOpenRecord(ctx, t.memberId, "Open their record")]).filter(Boolean),
         });
       });
     },
@@ -294,9 +416,10 @@ const CR_INBOX_SOURCES = {
           note: "Approving puts it on their profile and on the next ID card printed. A card already printed is not reissued.",
           actions: [
             { l: "Approve", tone: "primary", run: async () => { await NGGApi.admin.photos.changeDecide(q.requestId, "approve", ""); return { text: "New photo approved · " + who }; } },
-            { l: "Decline", note: { l: "Why (they see this)", req: true, ph: "Please send one with your face clear and a plain background.", help: "Their photo stays as it is, and they are told why." },
+            { l: "Decline", note: { l: "Why (they see this)", req: true, dflt: "Please send a new photo with your face clear, looking at the camera, against a plain background — it goes on your ID card.", help: "Their photo stays as it is, and they are told why." },
               run: async (it, v) => { await NGGApi.admin.photos.changeDecide(q.requestId, "decline", v.why); return { text: "Declined · " + who + " was told why" }; } },
-          ],
+            q.subjectType === "member" || !q.subjectType ? crOpenRecord(ctx, q.subjectId, "Open their record") : null,
+          ].filter(Boolean),
         });
       });
       return asks.concat((r.queue || []).map(p => {
@@ -309,6 +432,10 @@ const CR_INBOX_SOURCES = {
             run: async (it, v) => { await NGGApi.admin.photos.retake(p.assetId, v.why); return { text: "Reshoot requested · " + who }; } },
         ];
         if (ctx.can("people")) actions.push({ l: "Reject", note: CR_REASON_NOTE("Why it is rejected", "Kept on the photo’s record."), run: async (it, v) => { await NGGApi.admin.photos.reject(p.assetId, v.why); return { text: "Photo rejected · " + who }; } });
+        // The reshoot note starts from what the check found, in words a family can act on.
+        const fix = (fd.flags || []).map(f => ({ too_blurry: "it is blurry", low_resolution: "it is too small", too_dark: "it is too dark", no_face: "we can’t see a face", multiple_faces: "there is more than one person in it", not_a_child_headshot: "it isn’t a head-and-shoulders photo" })[f]).filter(Boolean);
+        actions[1].note.dflt = "Please retake the photo" + (fix.length ? " — " + fix.join(", ") : "") + ". Stand against a plain wall in good light, face the camera, and keep head and shoulders in the frame.";
+        if (p.subjectType === "member" && ctx.can("people")) actions.push(crOpenRecord(ctx, p.subjectId, "Open their record"));
         return crItem({
           id: "pho:" + p.assetId, cat: "photos", kind: "Headshot", icon: "image", who, at: p.createdAt, unread: p.status === "pending_review",
           title: "New headshot for an ID card", photoUrl: p.editedUrl || p.sourceUrl, search: [p.subjectId, p.subjectCentre].join(" "),
@@ -419,11 +546,23 @@ function CrInbox({ ctx, phone, data }) {
 
   /** Run one action on one item: optimistic, undoable where the server can undo. */
   const act = async (it, a, values) => {
+    // Going somewhere is not handling the item: it stays in the list.
+    if (a.go) { a.go(it); return false; }
     if (a.form && !values) {
       ctx.form(Object.assign({}, a.form(it), { onSubmit: async v => { await act(it, a, v); } }));
       return false;
     }
     if (a.confirm && !values) { const ok = await ctx.confirm(Object.assign({ cta: a.l, danger: crIsDanger(a.l) }, a.confirm(it))); if (!ok) return false; }
+    /* `keep`: an action that moves the item on without settling it (asking an
+       applicant for a photo) — it stays, and its thread shows what was said. */
+    if (a.keep) {
+      try {
+        const r = await a.run(it, values || {});
+        setItems(xs => xs.map(x => x.id === it.id ? Object.assign({}, x, { unread: false }, (r && r.patch) || {}) : x));
+        ctx.toast((r && r.text) || (a.l + " · " + it.who));
+        return true;
+      } catch (e) { ctx.toast(crErr(e, "Couldn’t " + a.l.toLowerCase() + ". Nothing changed."), null, true); return false; }
+    }
     advance(it.id); remove(it.id);
     try {
       const r = await a.run(it, values || {});
@@ -520,6 +659,8 @@ function CrInbox({ ctx, phone, data }) {
 
   const list = (
     <section className="cr-ib-list" aria-label={viewLabel}>
+      {/* Asked where it makes sense: the inbox, which is what it would tell them about. */}
+      {typeof NggPushNudge === "function" ? <div className="cr-ib-push"><NggPushNudge surface="admin" text="Know when something new lands here — a request, a message, an application — on this device, with quiet hours at night. No email while you’re already in the Control Room."/></div> : null}
       <div className="cr-ib-tools">
         <div className="cr-searchbox" role="search">
           <CrIcon n="magnifying-glass"/>
@@ -615,7 +756,10 @@ function CrInboxRow({ it, now, on, picked, showKind, onOpen, onPick }) {
 function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
   const sla = crInboxSla(it, now);
   const [mode, setMode] = React.useState(it.reply ? "reply" : null);     // "reply" | index of a note action
-  const [text, setText] = React.useState(() => (it.reply ? crDraftGet(it.id) : ""));
+  /* The reply box starts from the reply this item suggests (it.reply.draft),
+     unless the person already began one here — that is never thrown away. */
+  const startText = () => (it.reply ? (crDraftGet(it.id) || it.reply.draft || "") : "");
+  const [text, setText] = React.useState(startText);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
   const [tpl, setTpl] = React.useState(false);
@@ -645,6 +789,8 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
       if (noteAction.note.req && !body) { setErr("Enter " + noteAction.note.l.toLowerCase() + "."); return; }
       setBusy(true); const ok = await act(it, noteAction, { why: body }); setBusy(false);
       if (!ok) return;
+      // An action that keeps the item (an ask) returns the pane to its actions.
+      if (noteAction.keep) { setMode(it.reply ? "reply" : null); setText(startText()); }
       return;
     }
     if (!body) { setErr("Write the reply first."); return; }
@@ -653,7 +799,7 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
   };
   const onKey = e => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(e.shiftKey); }
-    if (e.key === "Escape" && noteAction) { e.stopPropagation(); setMode(it.reply ? "reply" : null); setText(it.reply ? crDraftGet(it.id) : ""); }
+    if (e.key === "Escape" && noteAction) { e.stopPropagation(); setMode(it.reply ? "reply" : null); setText(startText()); }
   };
   const templates = it.reply ? CR_INBOX_REPLIES.filter(t => !t.for || t.for === it.reply.purpose).concat(CR_INBOX_REPLIES.filter(t => t.for && t.for !== it.reply.purpose)) : [];
   const useTpl = t => { setText(crFillReply(t.t, it.reply.vars)); setTpl(false); setTimeout(() => taRef.current && taRef.current.focus(), 0); };
@@ -709,7 +855,7 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
                 <button type="button" className="cr-linkbtn" aria-haspopup="menu" aria-expanded={tpl} onClick={() => setTpl(v => !v)}><CrIcon n="lightning"/>Saved replies</button>
                 {tpl && <div className="cr-menu cr-ib-tpls" role="menu" aria-label="Saved replies">{templates.map((t, i) => <button key={i} type="button" role="menuitem" className="cr-menuitem" onClick={() => useTpl(t)}><span className="cr-grow">{t.l}</span>{t.for && t.for === it.reply.purpose && <span className="cr-ib-tag is-ok">Suggested</span>}</button>)}</div>}
               </div>}
-              {noteAction && <button type="button" className="cr-linkbtn" onClick={() => { setMode(it.reply ? "reply" : null); setText(it.reply ? crDraftGet(it.id) : ""); setErr(""); }}>Cancel</button>}
+              {noteAction && <button type="button" className="cr-linkbtn" onClick={() => { setMode(it.reply ? "reply" : null); setText(startText()); setErr(""); }}>Cancel</button>}
             </div>
             <textarea ref={taRef} className="cr-ib-ta" rows={phone ? 4 : 7} value={text} maxLength={noteAction ? 2000 : 5000}
               placeholder={noteAction ? (noteAction.note.ph || noteAction.note.help) : "Write a reply. It is emailed to them and kept here."}

@@ -706,15 +706,12 @@ function member_request_create(array $p): array
     audit('member.request.create', $id, $row['requestId'], ['kind' => $kind], (string)($p['ip'] ?? ''));
     /* The desk is told once, when it is raised. Not on every edit — a queue
        that pings is a queue that gets muted. */
-    // …and the people who can decide it, at the member's centre, in the app and by email.
+    // …and the people who can decide it, at the member's centre: the bell, a push, and an email (push.php).
     $centre = (string)($m['centre'] ?? '');
-    notify_people(staff_with_cap('people', [$id], static fn($s) => admin_centre_allowed($s, $centre)), [
-        'kind' => 'approval', 'title' => 'A member request is waiting: ' . (MEMBER_REQUEST_KINDS[$kind] ?? 'Request'),
-        'intro' => $row['raisedBy'] !== ''
-            ? (string)($p['raisedByName'] ?? 'A parent') . ' raised a request for ' . (string)$m['fullName'] . ' from their family account.'
-            : (string)$m['fullName'] . ' raised a request.',
-        'body' => $row['subject'] . ($row['body'] !== '' ? "\n\n" . mb_substr((string)$row['body'], 0, 400) : '') . "\n\nDecide it in Control Room → People → Member requests.",
-        'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=requests', 'ctaLabel' => 'Review it →']);
+    staff_inbox_alert('requests', ['centre' => $centre, 'exclude' => [$id],
+        'who' => (string)$m['fullName'] . ($row['raisedBy'] !== '' ? ' (from ' . (string)($p['raisedByName'] ?? 'their family') . ')' : ''),
+        'what' => (MEMBER_REQUEST_KINDS[$kind] ?? 'Request') . ': ' . $row['subject'],
+        'body' => $row['body'] !== '' ? mb_substr((string)$row['body'], 0, 400) : '']);
     if (function_exists('event_emit')) {
         event_emit('member.request.raised', ['requestId' => $row['requestId'], 'memberId' => $id,
             'kind' => $kind, 'subject' => $row['subject'], 'fullName' => (string)$m['fullName']]);
@@ -773,11 +770,10 @@ function member_feedback_create(array $p): array
     /* A child who says it is "not good" or "not great" is somebody to talk to,
        so the title says so rather than reading like one more suggestion. */
     $low = $rating > 0 && $rating <= 2;
-    notify_people(staff_with_cap('people', $anon ? [] : [$id], static fn($s) => admin_centre_allowed($s, $centre)), [
-        'kind' => 'approval', 'title' => ($low ? 'A member says NGG is ' . strtolower(MEMBER_FEEDBACK_RATINGS[$rating]) . ' for them' : 'New feedback from a member: ' . MEMBER_FEEDBACK_TOPICS[$topic]),
-        'intro' => $anon ? 'A member at ' . ($centre !== '' ? $centre : 'a centre') . ' sent this without their name.' : (string)$m['fullName'] . ' sent this.',
-        'body' => ($rating ? 'Rating: ' . $rating . ' of 5 (' . MEMBER_FEEDBACK_RATINGS[$rating] . ")\n" : '') . mb_substr($body !== '' ? $body : '(No words, just the rating.)', 0, 400) . "\n\nThank them or pass it on in Control Room → Inbox → Member requests.",
-        'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=requests', 'ctaLabel' => 'Read it →']);
+    staff_inbox_alert('requests', ['centre' => $centre, 'exclude' => $anon ? [] : [$id],
+        'who' => $anon ? 'A member at ' . ($centre !== '' ? $centre : 'a centre') . ' (no name)' : (string)$m['fullName'],
+        'what' => $low ? 'Says NGG is ' . strtolower(MEMBER_FEEDBACK_RATINGS[$rating]) . ' for them — somebody to talk to' : 'Feedback: ' . MEMBER_FEEDBACK_TOPICS[$topic],
+        'body' => ($rating ? 'Rating: ' . $rating . ' of 5 (' . MEMBER_FEEDBACK_RATINGS[$rating] . ")\n" : '') . mb_substr($body !== '' ? $body : '(No words, just the rating.)', 0, 400)]);
     $out = member_request_public($row);
     return ['ok' => true, 'request' => $out];
 }
