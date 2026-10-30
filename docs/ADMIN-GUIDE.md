@@ -1005,6 +1005,12 @@ payout recorded by mistake can be voided from the volunteer's wallet; its days
 are owed again. A volunteer who is also an NGG member sees their own pay on
 **Me** in the app.
 
+A volunteer who is also an Afrovanguard member sees the same pay on their
+Afrovanguard **Wallet**, beside (never inside) what they owe Afrovanguard.
+Afrovanguard asks NGG for it at `api/hooks/afrovanguard-pay.php`, signed with
+the secret the two sites already share (`afrovanguard.ngv_webhook_secret` here,
+`NGG_WEBHOOK_SECRET` there), and matches the volunteer by email.
+
 ### Promoting into the Club
 
 The **promotable** list is the Summer School participants who look ready:

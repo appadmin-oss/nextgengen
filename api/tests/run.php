@@ -17474,6 +17474,17 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('volunteer pay · a member who volunteers sees their own wallet, without staff references', ($own['wallet']['owed'] ?? 0) === 2500 && ($own['wallet']['volunteerId'] ?? '') === 'VOL-PAY-3');
     chk('volunteer pay · a member who does not volunteer has none', array_key_exists('wallet', backend_dispatch('member.volpay', ['memberId' => $ADM])) && backend_dispatch('member.volpay', ['memberId' => $ADM])['wallet'] === null);
 
+    /* Afrovanguard asking for one person's pay, to show on their wallet there. */
+    $sec = str_repeat('s', 40); $body = '{"op":"wallet","email":"vol-pay-3@example.com"}'; $ts = (string)time();
+    $sig = 'sha256=' . hash_hmac('sha256', 'volunteer_pay.' . $ts . '.' . $body, $sec);
+    chk('volunteer pay · Afrovanguard’s request is signed for this purpose only: right, stale, or another door’s signature',
+        volpay_av_signature_ok($sec, $ts, $body, $sig) && !volpay_av_signature_ok($sec, (string)(time() - 900), $body, 'sha256=' . hash_hmac('sha256', 'volunteer_pay.' . (time() - 900) . '.' . $body, $sec))
+        && !volpay_av_signature_ok($sec, $ts, $body, 'sha256=' . hash_hmac('sha256', 'volunteers.' . $ts . '.' . $body, $sec)) && !volpay_av_signature_ok('', $ts, $body, $sig));
+    $av = volpay_for_afrovanguard(['email' => ' VOL-PAY-3@Example.com ']);
+    chk('volunteer pay · Afrovanguard is given the pay of the volunteer with that email', ($av['wallet']['volunteerId'] ?? '') === 'VOL-PAY-3' && ($av['wallet']['owed'] ?? 0) === 2500);
+    chk('volunteer pay · a volunteer id whose email does not agree is not believed', (volpay_for_afrovanguard(['email' => 'vol-pay-3@example.com', 'volunteerId' => 'VOL-PAY-1'])['wallet']['volunteerId'] ?? '') === 'VOL-PAY-3');
+    chk('volunteer pay · nobody with that email: no wallet, not an error', volpay_for_afrovanguard(['email' => 'nobody@example.com'])['wallet'] === null);
+
     $clean();
     if (is_array($keep)) setting_set('volunteerPay', $keep, 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'volunteerPay'");
 })();

@@ -418,3 +418,43 @@ function member_volpay(array $p): array {
     if (!$v) return ['ok' => true, 'wallet' => null];
     return ['ok' => true, 'wallet' => volpay_wallet((string)$v['volunteerId'], false) + ['volunteerId' => (string)$v['volunteerId'], 'active' => (string)$v['status'] === 'active']];
 }
+
+/* ── Afrovanguard asking for one person's pay ─────────────────────────────── */
+
+/**
+ * The signature on a request from Afrovanguard for volunteer pay: the secret
+ * the two sites already share (afrovanguard.ngv_webhook_secret here,
+ * NGG_WEBHOOK_SECRET there), under this purpose only, so a signature made for
+ * another of NGG's doors is refused here and the other way round.
+ *   X-NGG-Timestamp: unix seconds (±300 s)
+ *   X-NGG-Signature: sha256=hex(HMAC_SHA256(secret, "volunteer_pay." + ts + "." + body))
+ */
+function volpay_av_signature_ok(string $secret, string $ts, string $raw, string $sig, ?int $now = null): bool {
+    if ($secret === '' || !preg_match('/^\d{9,11}$/', $ts) || abs(($now ?? time()) - (int)$ts) > 300) return false;
+    $want = 'sha256=' . hash_hmac('sha256', 'volunteer_pay.' . $ts . '.' . $raw, $secret);
+    return hash_equals($want, trim($sig));
+}
+
+/**
+ * {email, volunteerId?} → the wallet of the NGG volunteer with that email (an
+ * active record first), or null when there is none. Afrovanguard shows it on
+ * the member's own wallet page; it is never netted against what they owe
+ * Afrovanguard, because it is a different organisation's money.
+ */
+function volpay_for_afrovanguard(array $b): array {
+    $email = strtolower(trim((string)($b['email'] ?? '')));
+    $vid = trim((string)($b['volunteerId'] ?? ''));
+    $v = null;
+    if ($vid !== '') $v = db_row("SELECT volunteerId, fullName, status, centre, email FROM volunteers WHERE volunteerId = ? LIMIT 1", [$vid]);
+    /* A volunteer id from Afrovanguard is only believed when its email agrees,
+       so a stale or mistaken link cannot show one person another's pay. */
+    if ($v && $email !== '' && strtolower(trim((string)$v['email'])) !== $email) $v = null;
+    if (!$v && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $v = db_row("SELECT volunteerId, fullName, status, centre, email FROM volunteers WHERE LOWER(TRIM(email)) = ? AND (programme IS NULL OR programme != 'summer')
+                     ORDER BY status = 'active' DESC, createdAt DESC LIMIT 1", [$email]);
+    }
+    if (!$v) return ['ok' => true, 'wallet' => null];
+    return ['ok' => true, 'wallet' => volpay_wallet((string)$v['volunteerId'], false)
+        + ['volunteerId' => (string)$v['volunteerId'], 'centre' => (string)$v['centre'], 'active' => (string)$v['status'] === 'active']];
+}
+
