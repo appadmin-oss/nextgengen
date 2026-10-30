@@ -11,6 +11,12 @@ if ($method === 'GET') {
 }
 if ($method === 'POST') {
     $body = read_json_body();
+    if (!empty($body['sync'])) {
+        $res = gs_call('admin.sessions.sync', ['requesterId' => $s['mid']]);
+        if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+        unset($res['ok']);
+        json_ok($res);
+    }
     $res = gs_call('admin.sessions.upsert', [
         'requesterId' => $s['mid'],
         'data'        => $body,

@@ -8825,3 +8825,8 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .ngg-pick-t b { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .ngg-pick-t small { font-size: 13px; color: #4a4a50; }
 .ngg-pick-cancel { min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: transparent; color: #0b0b0c; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+
+/* Volunteers page: the closing call, two doors (NGG all year, or the one form) */
+.vol-cta-title { font-size: var(--rs-fsize-76, clamp(28px, 4vw, 44px)); margin: 0 0 10px; }
+.vol-cta-lede { color: var(--ink-700); font-size: 15px; margin: 0 0 22px; }
+.vol-cta-doors { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }

@@ -398,6 +398,8 @@ one read, so moving between them costs nothing:
 
 A tab you have no permission for says so. "Not part of your access" is not the
 same as an empty ledger, and the screen never shows one as the other.
+Setting **Suspended** or **Inactive**, or changing somebody's role, signs
+them out on every device at once. A suspended account cannot sign back in.
 
 ### Acting on one member
 
@@ -3331,6 +3333,7 @@ their supporting role. The child sees "Also helping you: … · Coding".
 | A child cannot remember their sign-in question | Their second step | **Members › Sign-in security** → their row → *Let them in for 10 minutes*, or *Reset* |
 | "No phone on your record" at the card door | The volunteer record has no phone, so the card can never be checked | Use *Email me a sign-in code instead*, or add their phone |
 | A screen looks empty | Almost always a filter | **Clear all filters** |
+| "Guardian consent required" on **Promote to NGV** | The member is under 18, or has no date of birth on file. Promotion shares their details with Afrovanguard | Record the guardian's decision under **Publication consent → Share with NextGen Vanguard**, with the guardian's name and how it was given. Then promote |
 
 ---
 

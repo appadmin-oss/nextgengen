@@ -4200,19 +4200,23 @@ const CONSENT_METHODS = ["Paper form", "Parent portal", "By phone", "In person",
 function MemberConsentEditor({ member }) {
   const [state, setState] = React.useState(member.consent || {});
   const [method, setMethod] = React.useState(CONSENT_METHODS[0]);
+  const [guardian, setGuardian] = React.useState("");
   const [busy, setBusy] = React.useState("");
 
-  const record = async (type, status) => {
+  /* `guardianOnly` rows record the guardian's own decision, so the ledger
+     names the guardian — never the staff member pressing the button. */
+  const record = async (type, status, guardianOnly) => {
+    if (guardianOnly && guardian.trim().length < 3) { toast.error("Enter the guardian's name first."); return; }
     setBusy(type + status);
     try {
-      const r = await NGGApi.admin.members.consent(member.memberId, type, status, method);
+      const r = await NGGApi.admin.members.consent(member.memberId, type, status, method, guardianOnly ? guardian.trim() : undefined);
       setState(Object.assign({}, state, r.consent, { mayName: r.mayName }));
       toast.success(status === "granted" ? "Consent recorded." : "Refusal recorded.", "Saved");
     } catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(""); }
   };
 
-  const row = (type, label, note) => {
+  const row = (type, label, note, guardianOnly) => {
     const cur = state[type];
     const st = cur && cur.status;
     return (
@@ -4234,9 +4238,9 @@ function MemberConsentEditor({ member }) {
         </div>
         <div style={{ display: "flex", gap: 6, flex: "none" }}>
           <button type="button" className={"btn btn-sm" + (st === "granted" ? " btn-primary" : " btn-ghost")}
-            disabled={!!busy} onClick={() => record(type, "granted")}>{busy === type + "granted" ? "…" : "Granted"}</button>
+            disabled={!!busy} onClick={() => record(type, "granted", guardianOnly)}>{busy === type + "granted" ? "…" : "Granted"}</button>
           <button type="button" className={"btn btn-sm" + (st === "declined" ? " btn-primary" : " btn-ghost")}
-            disabled={!!busy} onClick={() => record(type, "declined")}>{busy === type + "declined" ? "…" : "Declined"}</button>
+            disabled={!!busy} onClick={() => record(type, "declined", guardianOnly)}>{busy === type + "declined" ? "…" : "Declined"}</button>
         </div>
       </div>
     );
@@ -4257,6 +4261,12 @@ function MemberConsentEditor({ member }) {
       </label>
       {row("site_visibility", "Feature on our website", "Their first name and last initial may be shown.")}
       {row("media", "Photos & media", "Their photograph may be published — needs the one above as well.")}
+      <label className="admin-field">
+        <span>Guardian who gave it (for the NGV row)</span>
+        <input className="admin-input" value={guardian} onChange={e => setGuardian(e.target.value)} placeholder="The guardian's full name"/>
+      </label>
+      {row("ngv_transfer", "Share with NextGen Vanguard",
+           "Share my child's details with Afrovanguard's NextGen Vanguard. Needed before a member under 18 can be promoted to NGV.", true)}
     </div>
   );
 }
@@ -4728,18 +4738,43 @@ function CheckinDesks() { return <GateLinks scope="checkin"/>; }
 function AdminSessions() {
   const [year, setYear] = React.useState(new Date().getFullYear());
   const [list, setList] = React.useState(null);
+  const [source, setSource] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
-  const load = () => NGGApi.admin.sessions.list(year).then(r => setList(r.sessions || [])).catch(e => { toast.error(e.code || e.message); setList([]); });
+  const [syncing, setSyncing] = React.useState(false);
+  const load = () => NGGApi.admin.sessions.list(year).then(r => { setList(r.sessions || []); setSource(r.source || null); }).catch(e => { toast.error(e.code || e.message); setList([]); });
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [year]);
+  // CACENTRE keeps the one calendar; NGG fills its sessions from it (sessions_sync).
+  const fromCac = !!(source && source.fromCacentre);
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      const r = await NGGApi.admin.sessions.sync();
+      if (r.sync && r.sync.ok === false) toast.error("CACENTRE did not answer: " + (r.sync.error || "try again later"));
+      else toast.success("Sessions brought in from CACENTRE");
+      load();
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setSyncing(false); }
+  };
   return (
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Sessions · {year}</h2>
-        <div style={{display:"flex", gap:8}}>
+        <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
           <button className="btn btn-ghost btn-sm" onClick={() => setYear(y => y - 1)}>◀ {year - 1}</button>
           <button className="btn btn-ghost btn-sm" onClick={() => setYear(y => y + 1)}>{year + 1} ▶</button>
         </div>
       </div>
+      {source && !source.off && (
+        <div className="admin-sessions-source" role="status">
+          {fromCac
+            ? <span>Kept on CACENTRE, the one calendar for every site{source.syncedAt ? " · brought in " + fmtDate(source.syncedAt) : ""}.{source.error ? " Last try failed: " + source.error : ""}</span>
+            : <span>Edited here until CACENTRE answers{source.error ? " (" + source.error + ")" : ""}. After that, sessions are changed on CACENTRE.</span>}
+          <span style={{display:"flex", gap:8, flexWrap:"wrap"}}>
+            <button className="btn btn-ghost btn-sm" onClick={syncNow} disabled={syncing}>{syncing ? "Syncing…" : "Sync now"}</button>
+            {source.editUrl && <a className="btn btn-primary btn-sm" href={source.editUrl} target="_blank" rel="noopener noreferrer">Edit in CACENTRE ↗</a>}
+          </span>
+        </div>
+      )}
       {list === null ? <div className="dash-spinner"/> :
         <div className="admin-sessions-grid">
           {list.map(s => (
@@ -4753,20 +4788,22 @@ function AdminSessions() {
           ))}
         </div>
       }
-      {editing && <AdminSessionEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
+      {editing && <AdminSessionEditor data={editing} readOnly={fromCac} editUrl={source && source.editUrl} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
     </div>
   );
 }
 
-function AdminSessionEditor({ data, onClose, onSaved }) {
+function AdminSessionEditor({ data, readOnly, editUrl, onClose, onSaved }) {
   const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
   const save = async (e) => {
-    e.preventDefault(); setBusy(true);
+    e.preventDefault();
+    if (readOnly) return;
+    setBusy(true);
     try { await NGGApi.admin.sessions.upsert(d); onSaved(); }
-    catch (e) { toast.error(e.code || e.message); }
+    catch (e) { toast.error(e.code === "sessions_on_cacentre" ? "Sessions are kept on CACENTRE — change them there." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   return (
@@ -4776,17 +4813,28 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
           <h3 {...headingProps}>{d.sessionId} · {d.year}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
-        <div className="admin-fields">
-          <Field label="Display name" value={d.name||""} onChange={v => set("name", v)}/>
-          <Field label="Start date" value={d.startDate||""} onChange={v => set("startDate", v)} type="date" required/>
-          <Field label="End date"   value={d.endDate||""}   onChange={v => set("endDate", v)}   type="date" required/>
-          <Field label="Theme" value={d.theme||""} onChange={v => set("theme", v)} placeholder='"Build the room." etc.'/>
-          <Field label="Cover image URL" value={d.coverUrl||""} onChange={v => set("coverUrl", v)}/>
-          <FieldTextarea label="Internal notes" value={d.notes||""} onChange={v => set("notes", v)}/>
-        </div>
+        {readOnly
+          ? <div className="admin-fields">
+              <p className="admin-sessions-note">This session comes from CACENTRE. Change its dates, name, theme or cover there; every site picks the change up within ten minutes.</p>
+              <dl className="admin-session-dl">
+                <dt>Name</dt><dd>{d.name}</dd>
+                <dt>Dates</dt><dd>{fmtDate(d.startDate)} — {fmtDate(d.endDate)}</dd>
+                <dt>Theme</dt><dd>{d.theme || "—"}</dd>
+              </dl>
+            </div>
+          : <div className="admin-fields">
+              <Field label="Display name" value={d.name||""} onChange={v => set("name", v)}/>
+              <Field label="Start date" value={d.startDate||""} onChange={v => set("startDate", v)} type="date" required/>
+              <Field label="End date"   value={d.endDate||""}   onChange={v => set("endDate", v)}   type="date" required/>
+              <Field label="Theme" value={d.theme||""} onChange={v => set("theme", v)} placeholder='"Build the room." etc.'/>
+              <Field label="Cover image URL" value={d.coverUrl||""} onChange={v => set("coverUrl", v)}/>
+              <FieldTextarea label="Internal notes" value={d.notes||""} onChange={v => set("notes", v)}/>
+            </div>}
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
-          <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>{readOnly ? "Close" : "Cancel"}</button>
+          {readOnly
+            ? (editUrl && <a className="btn btn-primary" href={editUrl} target="_blank" rel="noopener noreferrer">Edit in CACENTRE ↗</a>)
+            : <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>}
         </div>
       </form>
     </div>
@@ -8552,7 +8600,7 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
       const via = Array.isArray(r.sent) && r.sent.length ? " · ID sent by " + r.sent.join(" + ") : "";
       toast.success((r.already ? "Already an NGV · " : "Promoted to NGV · ") + r.volunteerId + via);
       await load(); onChanged && onChanged();
-    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+    } catch (e) { toast.error(e.code === "guardian_consent_required" && e.detail ? e.detail : (e.code || e.message)); } finally { setBusy(false); }
   };
   const resendNgvId = async () => {
     setBusy(true);
@@ -10594,7 +10642,7 @@ function AdminVolunteers({ crCtx } = {}) {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState("");
-  const [tab, setTab] = useAdminTab("pending", React.useCallback(t => t === "pending" || t === "roster" || t === "needs", []));
+  const [tab, setTab] = useAdminTab("pending", React.useCallback(t => t === "pending" || t === "roster" || t === "needs" || t === "ngg-activities", []));
   const [q, setQ] = React.useState("");
   const [vCentre, setVCentre] = React.useState("");
   /* Which programme — filtered on the server, above the roster's cap.
@@ -10650,8 +10698,10 @@ function AdminVolunteers({ crCtx } = {}) {
     if (vCentre) return c === vCentre;
     return true;
   };
+  const nggCount = all.filter(v => v.programme === "ngg").length;
   const roster = all.filter(v => {
     if (!inCentre(v)) return false;
+    if (vProg && (v.programme || "summer") !== vProg) return false;
     if (!q.trim()) return true;
     const s = (v.fullName + " " + v.volunteerId + " " + v.email + " " + v.role).toLowerCase();
     return s.includes(q.trim().toLowerCase());
@@ -10679,9 +10729,11 @@ function AdminVolunteers({ crCtx } = {}) {
         <button className={"admin-tab" + (tab === "pending" ? " is-active" : "")} onClick={() => setTab("pending")}>Review queue{pending.length ? " · " + pending.length : ""}</button>
         <button className={"admin-tab" + (tab === "roster" ? " is-active" : "")} onClick={() => setTab("roster")}>Roster · {(data && (data.volunteers || []).length) || 0}</button>
         <button className={"admin-tab" + (tab === "needs" ? " is-active" : "")} onClick={() => setTab("needs")}>Needs &amp; /v-status</button>
+        <button className={"admin-tab" + (tab === "ngg-activities" ? " is-active" : "")} onClick={() => setTab("ngg-activities")}>NGG activities</button>
       </div>
 
       {tab === "needs" ? <VolunteerNeedsEditor/> :
+        tab === "ngg-activities" ? <AcademyCatalogue source="ngg-volunteer"/> :
         err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         data === null ? <div className="dash-spinner"/> :
 
@@ -10716,6 +10768,11 @@ function AdminVolunteers({ crCtx } = {}) {
                 {centreOpts.map(c => <option key={c} value={c}>{c} · {all.filter(v => (v.centre || "").trim() === c).length}</option>)}
                 {noCentre > 0 && <option value={VOL_NO_CENTRE}>⚠ No centre on file · {noCentre}</option>}
               </select>
+              <select className="admin-select" value={vProg} onChange={e => setVProg(e.target.value)} aria-label="Filter volunteers by programme">
+                <option value="">Summer + NGG · {all.length}</option>
+                <option value="ngg">NGG (year-round) · {nggCount}</option>
+                <option value="summer">Summer (seasonal) · {all.length - nggCount}</option>
+              </select>
               {noCentre > 0 && vCentre !== VOL_NO_CENTRE &&
                 <button className="btn btn-ghost btn-sm" onClick={() => setVCentre(VOL_NO_CENTRE)}>⚠ {noCentre} with no centre</button>}
             </div>
@@ -10731,7 +10788,7 @@ function AdminVolunteers({ crCtx } = {}) {
                   {roster.map(v => (
                     <React.Fragment key={v.volunteerId}>
                     <tr>
-                      <td><div className="admin-cell-name">{v.fullName}</div><div className="mono admin-cell-sub">{v.volunteerId} · {v.email}</div></td>
+                      <td><div className="admin-cell-name">{v.fullName} {progChip(v.programme)}</div><div className="mono admin-cell-sub">{v.volunteerId} · {v.email}</div></td>
                       <td>{roleChip(v.role)}</td>
                       <td>{progChip(v.programme)}</td>
                       <td className="mono" style={{ fontSize: 12 }}>{v.centre || "—"}</td>
@@ -11009,7 +11066,8 @@ function AdminSettings() {
       <div className="admin-fields" style={{ maxWidth: 520 }}>
         <FieldCheckbox label="Teen applications open" value={s.applications_open} onChange={v => setS(o => ({ ...o, applications_open: v }))}/>
         <FieldCheckbox label="Mentor applications open" value={s.mentor_applications_open} onChange={v => setS(o => ({ ...o, mentor_applications_open: v }))}/>
-        <FieldCheckbox label="Volunteer registration open" value={s.volunteer_applications_open} onChange={v => setS(o => ({ ...o, volunteer_applications_open: v }))}/>
+        <FieldCheckbox label="Summer volunteer registration open (/volunteer — the summer season only)" value={s.volunteer_applications_open} onChange={v => setS(o => ({ ...o, volunteer_applications_open: v }))}/>
+        <FieldCheckbox label="NGG volunteer registration open (/join/volunteer — all year)" value={s.ngg_volunteer_applications_open !== false} onChange={v => setS(o => ({ ...o, ngg_volunteer_applications_open: v }))}/>
         <FieldCheckbox label="Text volunteer IDs by SMS (when phone on file)" value={s.volunteer_sms_notify} onChange={v => setS(o => ({ ...o, volunteer_sms_notify: v }))}/>
         <FieldCheckbox label="Email a state note on check-in (award-focus when doing well, a nudge otherwise)" value={s.checkin_state_emails} onChange={v => setS(o => ({ ...o, checkin_state_emails: v }))}/>
         <FieldCheckbox label="Email NGG members the Quote of the Week every Monday (the same quote as their Anchor Journal)" value={s.qotw_mail} onChange={v => setS(o => ({ ...o, qotw_mail: v }))}/>

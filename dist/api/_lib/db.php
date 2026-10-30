@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 201;
+const NGG_SCHEMA_TARGET = 202;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -55,6 +55,20 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
      WHERE (level IS NULL OR level = '')
        AND INSTR(notes, '[roster-import]') > 0
        AND INSTR(notes, 'Level ') > 0
+";
+
+/**
+ * 122 — which programme a volunteer serves. NGG when they came in through an
+ * NGG (anchor) application, or were made a volunteer straight from an NGG
+ * member record; Summer otherwise. Fills blanks only.
+ */
+const NGG_BACKFILL_VOLUNTEER_PROGRAMME = "
+    UPDATE volunteers SET programme = 'ngg'
+     WHERE (programme IS NULL OR programme = '')
+       AND ( applicationId IN (SELECT id FROM applications WHERE program = 'anchor')
+          OR ( (applicationId IS NULL OR applicationId = 0)
+               AND memberId IN (SELECT memberId FROM members WHERE UPPER(type) = 'NGG') ) );
+    UPDATE volunteers SET programme = 'summer' WHERE programme IS NULL OR programme = '';
 ";
 
 /**
@@ -178,6 +192,17 @@ const NGG_MYSQL_ROW_FIXUPS = [
     'members.level' => NGG_BACKFILL_MEMBER_LEVELS,
     /* 115 — the member's division, out of their track. */
     'members.division' => NGG_BACKFILL_MEMBER_DIVISION,
+    /* 122 — Summer or NGG, for every volunteer. */
+    'volunteers.programme.ngg' => "
+        UPDATE volunteers SET programme = 'ngg'
+         WHERE (programme IS NULL OR programme = '')
+           AND ( applicationId IN (SELECT id FROM applications WHERE program = 'anchor')
+              OR ( (applicationId IS NULL OR applicationId = 0)
+                   AND memberId IN (SELECT memberId FROM members WHERE UPPER(type) = 'NGG') ) )
+    ",
+    'volunteers.programme.summer' => "
+        UPDATE volunteers SET programme = 'summer' WHERE programme IS NULL OR programme = ''
+    ",
 ];
 
 function db_conn(): PDO {
@@ -5853,6 +5878,14 @@ function db_migrate(PDO $db): void {
                   voidedAt TEXT NOT NULL DEFAULT '', voidedBy TEXT NOT NULL DEFAULT '', voidReason TEXT NOT NULL DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_volpayout_vol ON volunteer_payouts(volunteerId, periodKey);",
+        /* 202 — from the gate-lookup branch, where it was 122: when a
+         * volunteer's programme was last set (promotion from Summer to NGG), an
+         * index on programme, and the programme of any volunteer row that has
+         * none (an anchor application or an NGG member ⇒ ngg, else summer). */
+        202 => "
+            ALTER TABLE volunteers ADD COLUMN programmeAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_vol_programme ON volunteers(programme);
+        " . NGG_BACKFILL_VOLUNTEER_PROGRAMME,
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

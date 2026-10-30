@@ -4755,3 +4755,9 @@ CREATE TABLE IF NOT EXISTS volunteer_payouts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO schema_version (version) VALUES (201) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 202 · Volunteer programme: when it was set, and an index (from gate-lookup, where it was 122; backfill in NGG_MYSQL_ROW_FIXUPS) ──
+ALTER TABLE volunteers ADD COLUMN programmeAt VARCHAR(40) DEFAULT '';
+CREATE INDEX idx_vol_programme ON volunteers(programme);
+
+INSERT INTO schema_version (version) VALUES (202) ON DUPLICATE KEY UPDATE version = version;

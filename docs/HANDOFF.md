@@ -4562,3 +4562,22 @@ in that repo's `docs/HANDOFF.md`, 29 Oct 2026.
   unrepeated failure on the first run, clean on the rerun); build OK;
   no-important OK. Theatrecrafts.com timed out today though it loaded earlier;
   left in, worth rechecking.
+
+## 2026-10-30 — gate-lookup merged into the volunteer-pay line
+
+Two branches had built the same things twice. What the merge kept:
+
+- **Programme of a volunteer**: one `volunteer_programme()` (summer | ngg | both,
+  `VOL_PROGRAMMES`). An application's programme is its `programme` column;
+  NGG's own door (`/join/volunteer`, program=anchor) sends none and gets `ngg`.
+  Afrovanguard sees `ngg` and `both`. Promotion from Summer is the "Bring into
+  NGG" panel; `admin.volunteers.programme` stays as an op and accepts all three.
+- **Migration 202** is gate-lookup's 122 (`programmeAt`), renumbered on top of 201.
+- **Revocations to Afrovanguard**: one `ngv_portal_revoke()`; the re-sync queues
+  announcements AND revocations, then delivers within the 15s budget (shared
+  hosting kills a long inline loop), holding minors without consent.
+- **Reset codes**: only the newest code counts; a miss counts on the code, the
+  reset lock and the account; an older (retired) code reads `expired`, not a miss;
+  a locked account says `account_locked` first.
+- **NGG volunteer activities** editor is a `CATALOGUE_SOURCES` entry
+  (`ngg-volunteer`), not a second catalogue component.

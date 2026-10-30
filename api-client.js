@@ -1451,7 +1451,7 @@
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
         // Record a guardian's publication decision. `method` is how it was
         // obtained (paper form, phone, in person) and the server requires it.
-        consent:       (memberId, type, status, method) => request('/admin/members.php', { body: { action: 'consent', memberId, type, status, method } }),
+        consent:       (memberId, type, status, method, guardianName) => request('/admin/members.php', { body: { action: 'consent', memberId, type, status, method, guardianName } }),
         paperConsents: (apply) => request('/admin/members.php', { body: { action: 'paperConsents', apply: !!apply } }),
         remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
         // Promote an NGG member into the NGV / volunteer tier — auto-provisions
@@ -1571,6 +1571,7 @@
       sessions: {
         list:   (year) => request('/admin/sessions.php' + qs({ year })),
         upsert: (data) => request('/admin/sessions.php', { body: data }),
+        sync:   () => request('/admin/sessions.php', { body: { sync: true } }),
       },
       missions: {
         list:   () => request('/admin/missions.php'),
@@ -2188,6 +2189,10 @@
         safeguard: (volunteerId, status) => request('/admin/volunteers.php', { body: { action: 'safeguard', volunteerId, status } }),
         // Portal access, granted per person by a super admin. caps ⊆ ['summer','club'].
         caps:      (volunteerId, caps) => request('/admin/volunteers.php', { body: { action: 'caps', volunteerId, caps } }),
+        programme: (volunteerId, programme, opts) => request('/admin/volunteers.php', { body: { action: 'programme', volunteerId, programme, note: (opts && opts.note) || '', notify: !(opts && opts.notify === false) } }),
+        nggCatalogue:      () => request('/admin/volunteers.php?view=ngg_catalogue'),
+        nggCatalogueSet:   (catalogue) => request('/admin/volunteers.php', { body: { action: 'ngg_catalogue_set', catalogue } }),
+        nggCatalogueReset: () => request('/admin/volunteers.php', { body: { action: 'ngg_catalogue_set', reset: true } }),
         update:  (volunteerId, data) => request('/admin/volunteers.php', { body: { action: 'update', volunteerId, data } }),
         academy: (volunteerId, on) => request('/admin/volunteers.php', { body: { action: 'academy', volunteerId, on: !!on } }),
         /* Summer School → NGG: the open NGG centres nearest their Summer venue,

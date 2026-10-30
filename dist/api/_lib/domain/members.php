@@ -435,9 +435,15 @@ function member_export(array $p): array {
 /** Erase a member: scrub PII, anonymise the row, revoke sessions. Kept (not
  *  hard-deleted) for referential integrity of aggregate records. */
 function member_erase(string $mid, string $by, string $ip = ''): array {
-    $m = db_row('SELECT id, role FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    $m = db_row('SELECT id, role, ngvVolunteerId FROM members WHERE memberId = ? LIMIT 1', [$mid]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     if (strtolower((string)$m['role']) === 'super_admin') return ['ok' => false, 'error' => 'cannot_delete_super_admin'];
+    /* Ever put forward for NGV? Then Afrovanguard holds an account (or an
+       intake) for them, and an erasure here has to reach it. Read before the
+       scrub; sent after it. */
+    $ngvVid = (string)($m['ngvVolunteerId'] ?? '')
+        ?: (string)(db_row('SELECT volunteerId FROM volunteers WHERE memberId = ? ORDER BY id DESC LIMIT 1', [$mid])['volunteerId'] ?? '');
+    $wasNgv = $ngvVid !== '' || (bool)db_row('SELECT id FROM member_promotions WHERE memberId = ? LIMIT 1', [$mid]);
     db_update('members', [
         'fullName' => 'Deleted member', 'email' => '', 'phone' => '', 'photoUrl' => '', 'bio' => '',
         'socials' => '', 'parentName' => '', 'parentEmail' => '', 'parentPhone' => '', 'school' => '',
@@ -502,6 +508,9 @@ function member_erase(string $mid, string $by, string $ip = ''): array {
         'why' => 'Safeguarding record of an adult who worked with children; retained deliberately.',
     ] : [], $ip);
 
+    /* Ever put forward for NGV: Afrovanguard holds an account for them, and the
+       erasure has to reach it (ngv_portal_revoke). */
+    if ($wasNgv && function_exists('ngv_portal_revoke')) ngv_portal_revoke($mid, $ngvVid, 'erased');
     return ['ok' => true, 'volunteerRecordsKept' => count($volunteerIds)];
 }
 

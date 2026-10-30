@@ -320,6 +320,33 @@ function normalize_image_url($url): string {
 
 // ── Audit + notifications + settings ────────────────────────────────────────
 
+/* ── What the audit log keeps, and for how long — the one rule ─────────────
+ *
+ * It used to be cut to the newest 5,000 rows, and a sign-in request writes a
+ * row for anybody who types any identifier — so a few thousand junk requests
+ * flushed out who suspended whom, who changed a fee, who recorded a consent.
+ *
+ * Now nothing is pruned by count. Everything is kept indefinitely EXCEPT the
+ * high-volume sign-in noise named below, which is dropped once it is older
+ * than AUDIT_NOISE_RETAIN_DAYS. The list is exact names, not prefixes, so an
+ * event added later is kept until somebody decides otherwise here. Lockouts,
+ * new-device alerts, password changes, 2FA and every staff, money and consent
+ * event are not on it. */
+const AUDIT_NOISE_RETAIN_DAYS = 180;
+const AUDIT_NOISE_EVENTS = [
+    'login.request', 'login.mail_fail', 'login.success', 'login.pw.success', 'login.pw.fail', 'login.pw.locked',
+    'login.pw.suspended', 'login.fail.unknown', 'login.fail.bad_token', 'login.fail.expired', 'login.fail.replay',
+    'login.fail.suspended', 'login.otp.blocked_admin', 'logout', 'community.login',
+    'password.reset.request', 'password.reset.request.noop', 'password.reset.mail_fail', 'password.reset.fail.bad_token',
+];
+
+/** Apply the rule above. Returns how many rows went. Called by both maintenance paths. */
+function audit_prune(?int $now = null): int {
+    $cut = gmdate('Y-m-d\TH:i:s\Z', ($now ?? time()) - AUDIT_NOISE_RETAIN_DAYS * 86400);
+    $in = implode(',', array_fill(0, count(AUDIT_NOISE_EVENTS), '?'));
+    return db_exec("DELETE FROM audit_log WHERE event IN ($in) AND at < ?", array_merge(AUDIT_NOISE_EVENTS, [$cut]));
+}
+
 function audit(string $event, ?string $actorId, string $subject = '', array $meta = [], string $ip = ''): void {
     try {
         db_insert('audit_log', [
@@ -942,13 +969,132 @@ function iso_date($d): string {
     return gmdate('Y-m-d', $ts);
 }
 
+// ── Sessions are kept on CACENTRE ───────────────────────────────────────────
+//
+// CACENTRE keeps the one programme calendar for every site (its console →
+// Programme sessions; GET {CACENTRE}/api/programme-sessions.php). NGG keeps
+// its `sessions` table — fees, missions, mentor pairings and assignments are
+// all keyed by sessionId — but fills it from there:
+//
+//   · every SESSIONS_SYNC_EVERY seconds at most, on the way to reading a year;
+//   · each session CACENTRE sends is written by its sessionId (CODE-YEAR):
+//     code, year, name, dates, theme, cover. NGG's own notes are kept;
+//   · a session NGG has, in a year CACENTRE sent, that CACENTRE no longer
+//     lists is removed only while it has not started — one that has run
+//     carries fees and progress, and stays;
+//   · once a sync has succeeded, NGG stops seeding its own defaults and the
+//     Control Room's editor is closed: change sessions on CACENTRE.
+//
+// Until the first sync succeeds (CACENTRE not yet updated, or unreachable)
+// NGG works as it always did. setting sessions_source = 'local' turns the
+// sync off; sessions_source_url points it at another host.
+
+const SESSIONS_SYNC_EVERY = 600;
+const SESSIONS_SOURCE_DEFAULT = 'https://cacentre.afrovanguard.org.ng';
+
+function sessions_source_url(): string {
+    global $CONFIG;
+    $u = trim((string)(getenv('NGG_CACENTRE_URL') ?: ($CONFIG['cacentre']['url'] ?? '') ?: (setting_raw('sessions_source_url') ?? '') ?: SESSIONS_SOURCE_DEFAULT));
+    return rtrim($u, '/');
+}
+
+/** True once NGG takes its sessions from CACENTRE (a sync has succeeded, and it is not switched off). */
+function sessions_from_cacentre(): bool {
+    return (setting_raw('sessions_source') ?? '') !== 'local' && (setting_raw('sessions_synced_at') ?? '') !== '';
+}
+
+function sessions_source_status(): array {
+    return [
+        'fromCacentre' => sessions_from_cacentre(),
+        'off'          => (setting_raw('sessions_source') ?? '') === 'local',
+        'syncedAt'     => (string)(setting_raw('sessions_synced_at') ?? ''),
+        'error'        => (string)(setting_raw('sessions_sync_error') ?? ''),
+        'editUrl'      => sessions_source_url() . '/admin/programme-sessions.php',
+    ];
+}
+
+/** GET the calendar from CACENTRE. Tests set $GLOBALS['__sessions_http_mock'] = fn($url) => ?array. */
+function sessions_fetch(string $url): ?array {
+    if (isset($GLOBALS['__sessions_http_mock']) && is_callable($GLOBALS['__sessions_http_mock'])) return ($GLOBALS['__sessions_http_mock'])($url);
+    $p = parse_url($url);
+    if (($p['scheme'] ?? '') !== 'https' || empty($p['host']) || !function_exists('curl_init')) return null;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 4, CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_FOLLOWLOCATION => false, CURLOPT_HTTPHEADER => ['Accept: application/json'],
+        CURLOPT_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2,
+        CURLOPT_USERAGENT => 'NGG/1.0 (+sessions)',
+    ]);
+    $out = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if (!is_string($out) || $code !== 200) return null;
+    $d = json_decode($out, true);
+    return is_array($d) ? $d : null;
+}
+
+/**
+ * Bring the sessions table in line with CACENTRE. Throttled unless $force.
+ * Returns ['ok', 'written', 'removed', 'error'] (or ['ok'=>true,'skipped'=>true]).
+ */
+function sessions_sync(bool $force = false): array {
+    if ((setting_raw('sessions_source') ?? '') === 'local') return ['ok' => true, 'skipped' => true];
+    $tried = (int)(setting_raw('sessions_sync_tried') ?? 0);
+    if (!$force && $tried > time() - SESSIONS_SYNC_EVERY) return ['ok' => true, 'skipped' => true];
+    setting_set('sessions_sync_tried', (string)time(), 'sync');
+    $base = sessions_source_url();
+    $d = sessions_fetch($base . '/api/programme-sessions.php');
+    if (!is_array($d) || empty($d['ok']) || !is_array($d['sessions'] ?? null)) {
+        $why = is_array($d) ? (string)($d['error'] ?? 'refused') : 'CACENTRE did not answer at ' . $base;
+        setting_set('sessions_sync_error', $why, 'sync');
+        return ['ok' => false, 'error' => $why];
+    }
+    $written = 0; $removed = 0; $years = []; $seen = [];
+    $today = gmdate('Y-m-d');
+    foreach ($d['sessions'] as $r) {
+        if (!is_array($r)) continue;
+        $sid = (string)($r['session_id'] ?? ''); $start = (string)($r['start_date'] ?? ''); $end = (string)($r['end_date'] ?? '');
+        if (!preg_match('/^([A-Z][A-Z0-9]{1,15})-(\d{4})$/', $sid, $m) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end) || $end < $start) continue;
+        $cover = (string)($r['cover_url'] ?? '');
+        if ($cover !== '' && $cover[0] === '/') $cover = $base . $cover;
+        if ($cover !== '' && !preg_match('~^https://[^\s"<>]+$~', $cover)) $cover = '';
+        $row = [
+            'code' => $m[1], 'year' => (int)$m[2], 'name' => mb_substr((string)($r['name'] ?? '') ?: $m[1], 0, 80),
+            'startDate' => $start, 'endDate' => $end, 'theme' => mb_substr((string)($r['theme'] ?? ''), 0, 160), 'coverUrl' => $cover,
+            'isActive' => ($today >= $start && $today <= $end) ? 1 : 0,
+        ];
+        $have = db_row('SELECT * FROM sessions WHERE sessionId = ? LIMIT 1', [$sid]);
+        if ($have) {
+            $diff = array_filter($row, fn($v, $k) => (string)($have[$k] ?? '') !== (string)$v, ARRAY_FILTER_USE_BOTH);
+            if ($diff) { db_update('sessions', $diff + ['updatedAt' => now_iso()], ['id' => $have['id']]); $written++; }
+        } else {
+            db_insert('sessions', $row + ['sessionId' => $sid, 'notes' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+            $written++;
+        }
+        $years[(int)$m[2]] = true; $seen[$sid] = true;
+    }
+    foreach (array_keys($years) as $y) {
+        foreach (db_all('SELECT id, sessionId, startDate FROM sessions WHERE year = ?', [$y]) as $s) {
+            if (isset($seen[$s['sessionId']]) || iso_date($s['startDate']) <= $today) continue;
+            db_exec('DELETE FROM sessions WHERE id = ?', [$s['id']]);
+            $removed++;
+        }
+    }
+    setting_set('sessions_synced_at', now_iso(), 'sync');
+    setting_set('sessions_sync_error', '', 'sync');
+    if ($written || $removed) audit('sessions.sync', 'cacentre', $base, ['written' => $written, 'removed' => $removed], '');
+    return ['ok' => true, 'written' => $written, 'removed' => $removed, 'error' => ''];
+}
+
 function ensure_year(int $year): int {
+    sessions_sync();
     $existing = db_all('SELECT * FROM sessions WHERE year = ?', [$year]);
     $have = [];
     foreach ($existing as $s) $have[strtoupper((string)$s['code'])] = true;
 
     $created = 0;
-    foreach (SESSION_DEFAULTS as $code => $d) {
+    /* Kept on CACENTRE: its calendar decides which sessions a year has. */
+    foreach (sessions_from_cacentre() ? [] : SESSION_DEFAULTS as $code => $d) {
         if (!empty($have[$code])) continue;
         db_insert('sessions', [
             'sessionId' => $code . '-' . $year,
@@ -1054,6 +1200,9 @@ function session_current(): array {
         if ($today >= $start && $today <= $end) $current = $s;
         if ($today < $start && ($next === null || $start < iso_date($next['startDate']))) $next = $s;
     }
+    /* After the year's last session: next year's first, when NGG has it
+       (CACENTRE sends next year's calendar too). */
+    if ($next === null) $next = db_row('SELECT * FROM sessions WHERE year = ? AND startDate > ? ORDER BY startDate LIMIT 1', [$year + 1, $today]) ?: null;
     return [
         'current' => $current ? public_session($current) : null,
         'next' => $next ? public_session($next) : null,

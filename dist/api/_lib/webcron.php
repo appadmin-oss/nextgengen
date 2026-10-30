@@ -415,8 +415,7 @@ function web_cron_maintenance(): void {
     $cutoff = gmdate('Y-m-d\TH:i:s\Z', time() - 24 * 3600);
     db_exec('DELETE FROM auth_sessions WHERE expiresAt < ?', [$cutoff]);
     if (function_exists('ensure_year')) ensure_year((int)gmdate('Y'));
-    $maxId = (int)(db_row('SELECT MAX(id) m FROM audit_log')['m'] ?? 0);
-    if ($maxId > 5000) db_exec('DELETE FROM audit_log WHERE id <= ?', [$maxId - 5000]);
+    audit_prune();   // sign-in noise past its age only — see AUDIT_NOISE_EVENTS
     if (function_exists('ops_prune')) ops_prune(30);
     // Expired brute-force locks. Left alone the table grows one row per code or
     // gate ever guessed at, and a lock nobody is serving is just a stale row.
