@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 198;
+const NGG_SCHEMA_TARGET = 199;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5782,6 +5782,26 @@ function db_migrate(PDO $db): void {
                title. */
             ALTER TABLE curriculum_materials ADD COLUMN guide TEXT DEFAULT '';
         ",
+
+        199 => "
+            /* THE TRAINING FEE'S TERMS, PER MEMBER. The basis, the rate and the
+               two half lengths were read from today's settings for everybody,
+               so one edit to the service half moved every member's worked-off
+               figure overnight. They are frozen per member now (fees.php,
+               fees_freeze_terms). And WHEN a member's status changed was
+               recorded nowhere, so a member who left kept earning the fee off
+               by the calendar: member_status_log is that record. */
+            ALTER TABLE members ADD COLUMN feeTerms TEXT DEFAULT '';
+            CREATE TABLE member_status_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              status TEXT NOT NULL,
+              since TEXT NOT NULL,
+              source TEXT DEFAULT '',
+              recordedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_msl_member ON member_status_log(memberId, since, id);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
@@ -5865,7 +5885,9 @@ function db_insert(string $table, array $data): int {
     $ph = array_fill(0, count($cols), '?');
     $sql = 'INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', $ph) . ')';
     db_conn()->prepare($sql)->execute(array_values($data));
-    return (int)db_conn()->lastInsertId();
+    $newId = (int)db_conn()->lastInsertId();
+    if ($table === 'members' && function_exists('member_status_created')) member_status_created($data);
+    return $newId;
 }
 
 function db_update(string $table, array $data, array $where): int {
@@ -5876,8 +5898,15 @@ function db_update(string $table, array $data, array $where): int {
     foreach ($data as $k => $v) { $set[] = db_ident($k) . ' = ?'; $vals[] = $v; }
     $wh = []; foreach ($where as $k => $v) { $wh[] = db_ident($k) . ' = ?'; $vals[] = $v; }
     $sql = 'UPDATE ' . $table . ' SET ' . implode(',', $set) . ' WHERE ' . implode(' AND ', $wh);
+    /* A member's status is recorded WHEN it changes (member_status_log), here
+       rather than at each of the screens that set it, so no writer can forget.
+       The fee's write-down reads it: a member who left stops earning it off. */
+    $before = ($table === 'members' && array_key_exists('status', $data) && function_exists('member_status_changed'))
+        ? db_all('SELECT memberId, status, joinDate, createdAt FROM members WHERE ' . implode(' AND ', array_map(static fn($k) => db_ident($k) . ' = ?', array_keys($where))), array_values($where))
+        : null;
     $stmt = db_conn()->prepare($sql);
     $stmt->execute($vals);
+    if ($before) member_status_changed($before, (string)$data['status']);
     return $stmt->rowCount();
 }
 

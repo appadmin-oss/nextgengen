@@ -5385,8 +5385,8 @@ function unzipDocumentXml(buf) {
     if (fzTab) {
     await fz.waitForTimeout(250);
     const fzSet = await fz.evaluate(() => document.body.innerText);
-    ok('every amount is on the settings tab, 75k among them as a default',
-      /Training fee, per session/i.test(fzSet) && /Membership fee/i.test(fzSet) && /Monthly dues/i.test(fzSet));
+    ok('every amount is on the settings tab, the training fee among them as one total for the place by default',
+      /Training fee, for the whole place/i.test(fzSet) && /Once, as a fixed total for the place/i.test(fzSet) && /Membership fee/i.test(fzSet) && /Monthly dues/i.test(fzSet));
     /* THE MICROCOPY. Present, and saying the thing. */
     const micro = await fz.evaluate(() => {
       const els = Array.from(document.querySelectorAll('div'))

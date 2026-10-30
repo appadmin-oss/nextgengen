@@ -4660,3 +4660,16 @@ INSERT INTO schema_version (version) VALUES (197) ON DUPLICATE KEY UPDATE versio
 -- 198: one line telling the learner what to do with a lesson material
 ALTER TABLE curriculum_materials ADD COLUMN guide TEXT;
 INSERT INTO schema_version (version) VALUES (198) ON DUPLICATE KEY UPDATE version = version;
+
+-- 199: the training fee's terms frozen per member; when a member's status changed
+ALTER TABLE members ADD COLUMN feeTerms TEXT;
+CREATE TABLE IF NOT EXISTS member_status_log (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  since VARCHAR(10) NOT NULL,
+  source VARCHAR(32) NOT NULL DEFAULT '',
+  recordedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_msl_member (memberId, since, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (199) ON DUPLICATE KEY UPDATE version = version;

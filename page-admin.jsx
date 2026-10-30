@@ -9477,7 +9477,7 @@ function AdminFees() {
              showing a different number than was typed. */
           if (r.fees.remindEveryDays !== cfg.remindEveryDays) toast.success("Saved — reminder spacing raised to the " + r.fees.remindEveryDays + "-day minimum.");
           else toast.success("Saved."); }
-    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+    catch (e) { toast.error(e.code === "training_rate_required" ? (e.detail || "Changing what the training fee is charged per needs a new amount for it.") : (e.code || e.message)); } finally { setBusy(false); }
   };
   const openAcct = (memberId) => NGGApi.admin.fees.member(memberId)
     .then(r => setAcct(r.account)).catch(e => toast.error(e.code || e.message));
@@ -9742,7 +9742,8 @@ function AdminFees() {
           <label style={{ display: "block", marginBottom: 14 }}>
             <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Training fee is charged</span>
             <select className="admin-select" style={{ maxWidth: 260, display: "block", marginTop: 6 }}
-              value={cfg.trainingBasis || "session"} onChange={e => set("trainingBasis", e.target.value)}>
+              value={cfg.trainingBasis || "total"} onChange={e => set("trainingBasis", e.target.value)}>
+              <option value="total">Once, as a fixed total for the place</option>
               <option value="session">Once per session</option>
               <option value="day">For every day the programme meets</option>
               <option value="week">For every week the programme meets</option>
@@ -9752,15 +9753,20 @@ function AdminFees() {
                 ? "One charge for each meeting day inside a session's dates — using the weekdays, holidays and extra days set in Conduct & fines. A session already charged as a whole is never also charged by the day."
                 : cfg.trainingBasis === "week"
                 ? "One charge for each week (Monday to Sunday) with at least one meeting day inside a session's dates — the same calendar as by the day. A week already charged by the day is never charged again."
-                : "One charge for each programme session that started after they joined."}
+                : cfg.trainingBasis === "session"
+                ? "One charge for each training session (TONI, MEDI, DOMI) that started after they joined. Summer School is never charged as a training session."
+                : "One charge, the day they start, for the whole training place."}
+              {" "}Each member keeps the terms they started on: a change here applies to members who start after it. Changing this needs a new amount below, because the amount means something different on each.
             </div>
           </label>
-          {num("trainingFee", cfg.trainingBasis === "day" ? "Training fee, per meeting day" : cfg.trainingBasis === "week" ? "Training fee, per week" : "Training fee, per session",
+          {num("trainingFee", cfg.trainingBasis === "day" ? "Training fee, per meeting day" : cfg.trainingBasis === "week" ? "Training fee, per week" : cfg.trainingBasis === "session" ? "Training fee, per session" : "Training fee, for the whole place",
             cfg.trainingBasis === "day"
               ? "Charged for each day the programme meets, while they are in the training half."
               : cfg.trainingBasis === "week"
               ? "Charged for each week the programme meets, while they are in the training half."
-              : "Charged for each programme session that has started since they joined.",
+              : cfg.trainingBasis === "session"
+              ? "Charged for each training session that has started since they joined."
+              : "The whole cost of the training place. Earned off by the days they serve; what is not earned off is owed only if they leave before the MOU is complete.",
             /* THE MICROCOPY. Quiet, one line, no emphasis — and stating the
                condition rather than promising the outcome, because a member who
                leaves before the MOU is complete still owes it. */

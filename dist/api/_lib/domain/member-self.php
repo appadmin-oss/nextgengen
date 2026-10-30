@@ -250,6 +250,18 @@ function member_statement(array $p): array
         ];
     }
 
+    /* A member who left before completing owes what service had not earned
+       off. It is not a ledger row (it moves as nothing — it is the rest of a
+       charge already on the account), so it closes the statement as a line of
+       its own, and the payable total agrees with every other screen. */
+    $owed = (int)(fees_balance($m, $cfg)['trainingOwed'] ?? 0);
+    if ($owed > 0) {
+        $payable += $owed;
+        $lines[] = ['date' => gmdate('Y-m-d'), 'kind' => 'training', 'note' => 'Training fee not earned off — left before the MOU was complete',
+                    'charge' => $owed, 'credit' => 0, 'real' => true, 'void' => false, 'voidReason' => '',
+                    'runningPayable' => $payable, 'runningTotal' => $total];
+    }
+
     return ['ok' => true, 'enabled' => true,
             'currency' => (string)$cfg['currency'],
             'member' => ['fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),

@@ -456,18 +456,20 @@ class Mp9Portal extends React.Component {
   accVals() {
     const t = this.dd("today") || {}, a = t.account;
     if (!a) return { balance: mp9Naira(0), owes: false, clear: true, acc: { balFg: "#1d6b30", pillBg: "#e9f6ec", pill: "Nothing to pay", pillIcon: "ph-fill ph-check-circle",
-      stats: [{ k: "Account", v: "Nothing charged", s: "Your centre hasn’t set dues", fg: "#0b0b0c" }, { k: "Training fee", v: "Covered", s: "NGG pays it · you pay ₦0", fg: "#0b0b0c" }],
-      covered: "NGG pays your training fee in full. You only pay monthly dues and any fines." } };
+      stats: [{ k: "Account", v: "Nothing charged", s: "Your centre hasn’t set dues", fg: "#0b0b0c" }, { k: "Training fee", v: "Covered", s: "Covered while you serve", fg: "#0b0b0c" }],
+      covered: "NGG covers your training place while you serve. You only pay monthly dues and any fines — unless you leave before your MOU is complete, when the rest of the training fee is yours to pay." } };
     const owes = a.payable > 0;
     return { balance: mp9Naira(a.payable), owes, clear: !owes, acc: {
       balFg: owes ? "#b0361c" : "#1d6b30", pillBg: owes ? "#fdeeea" : "#e9f6ec", pill: owes ? (a.next ? "Due " + mp9Date(a.next.on, { weekday: "short", day: "numeric", month: "short" }) : "To pay now") : "All paid up", pillIcon: owes ? "ph-fill ph-clock" : "ph-fill ph-check-circle",
       stats: [
-        { k: "Training fee", v: a.trainingFee ? mp9Naira(a.trainingFee) : "Covered", s: "Covered by NGG · you pay ₦0", fg: "#0b0b0c" },
+        a.trainingOwed > 0
+          ? { k: "Training fee", v: mp9Naira(a.trainingOwed) + " owed", s: "You left before your MOU was complete", fg: "#b0361c" }
+          : { k: "Training fee", v: a.trainingFee ? mp9Naira(a.trainingFee) : "Covered", s: "Covered while you serve · owed only if you leave early", fg: "#0b0b0c" },
         { k: "Next dues", v: a.next ? mp9Naira(a.next.amount) : "None set", s: a.next ? mp9Date(a.next.on) + " · " + a.next.label : "", fg: "#0b0b0c" },
         { k: "Paid this year", v: mp9Naira(a.paidThisYear), s: "", fg: "#1d6b30" },
         { k: "Last payment", v: a.lastPayment ? mp9Naira(a.lastPayment.amount) : "None", s: a.lastPayment ? mp9Date(a.lastPayment.at) : "", fg: "#0b0b0c" },
         { k: "Fines", v: a.fines ? mp9Naira(a.fines) + " owed" : "None owed", s: "", fg: a.fines ? "#b0361c" : "#0b0b0c" },
-      ], covered: "NGG pays your training fee in full. You only pay monthly dues and any fines." } };
+      ], covered: "NGG covers your training place while you serve. You only pay monthly dues and any fines — unless you leave before your MOU is complete, when the rest of the training fee is yours to pay." } };
   }
   sgInfo() {
     const t = this.dd("today") || {}, o = t.safeguarding || null;

@@ -16194,9 +16194,9 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             'balanceCap' => 0, 'remindEnabled' => false], $o)]);
     $set([]);
 
-    chk('fees: every amount is admin-defined, clamped, and 75k is only a default', (function () use ($ADM) {
+    chk('fees: every amount is admin-defined, clamped, and ₦300,000 for the whole place is only a default', (function () use ($ADM) {
         $d = backend_dispatch('admin.fees.settings.get', ['requesterId' => $ADM]);
-        if (($d['defaults']['trainingFee'] ?? 0) !== 75000) return false;
+        if (($d['defaults']['trainingFee'] ?? 0) !== 300000 || ($d['defaults']['trainingBasis'] ?? '') !== 'total') return false;
         // A slipped keystroke cannot post a 900-million-naira charge.
         $r = backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM,
             'data' => ['monthlyDues' => 999999999999, 'trainingFee' => -5]]);
@@ -16264,8 +16264,12 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $acc = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account'];
         $b = $acc['balance'];
         if ((int)$b['trainingCharged'] <= 0) return false;
-        $expect = (int)floor($b['trainingCharged'] * (2 / 18));
-        if ((int)$b['trainingEarned'] !== $expect) return false;
+        /* Twenty months in (twenty and part of a twenty-first) — counted in the
+           days they served, so between two and three eighteenths, and exactly
+           the days' share. */
+        $t = $b['tenure'];
+        $expect = (int)floor($b['trainingCharged'] * ($t['servedDays'] / $t['serviceDays']));
+        if ((int)$b['trainingEarned'] !== $expect || $t['servedDays'] / $t['serviceDays'] < 2 / 18 || $t['servedDays'] / $t['serviceDays'] > 3 / 18) return false;
         // Earned is NOT the same as written off — nothing has been forgiven yet.
         if ((int)$b['trainingWrittenOff'] !== 0) return false;
         /* `payable` is REAL money only, and the training fee is not real money —
@@ -16285,7 +16289,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         fees_accrue_member($b);
         $bal = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-B'"));
         return $bal['tenure']['phase'] === 'training' && (int)$bal['trainingEarned'] === 0
-            && (int)$bal['payable'] === (int)$bal['outstanding'];
+            && (int)$bal['payable'] === (int)$bal['outstanding'] - (int)$bal['trainingCharged'];
     })());
 
     /* Accomplishing the MOU writes off whatever the training fee has left, and
@@ -16395,6 +16399,16 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['trainingBasis' => 'week', 'trainingFee' => 2000]]);
         chk('fees (week rate): the basis can be set to weekly', fees_settings()['trainingBasis'] === 'week');
         fees_post('NGG-FEE-DAY', 'training', 500, ['periodKey' => 'S-DAY-1:2026-01-03', 'by' => 'test']);   // charged by the day before the switch
+        /* A member already on the day rate keeps it: the switch is for members
+           who start after it. */
+        fees_accrue_member(db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-DAY'"), null, '2026-01-31');
+        chk('fees (week rate): a member who started on the day rate is not moved onto the week rate by the switch',
+            fees_member_terms(db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-DAY'"))['basis'] === 'day'
+            && !db_row("SELECT id FROM member_ledger WHERE memberId = 'NGG-FEE-DAY' AND periodKey LIKE 'S-DAY-1:W%'"));
+        // As if they started after the switch: unfrozen, with only the one day charge from before it.
+        db_exec("UPDATE members SET feeTerms = '' WHERE memberId = 'NGG-FEE-DAY'");
+        db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-FEE-DAY' AND periodKey <> 'S-DAY-1:2026-01-03'");
+        $m = db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-DAY'");
         fees_accrue_member($m, null, '2026-01-31');
         $wk = array_map(fn($x) => (string)$x['periodKey'], db_all("SELECT periodKey FROM member_ledger WHERE memberId = 'NGG-FEE-DAY' AND kind = 'training' AND periodKey LIKE 'S-DAY-1:W%' ORDER BY periodKey"));
         chk('fees (week rate): one charge per week the programme meets, at the week rate', $wk === ['S-DAY-1:W2026-01-12']
@@ -19625,8 +19639,10 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $ADM = 'NGG-2025-0099';
     $cfg = fees_settings();
     $save = $cfg;
-    fees_settings_save(['enabled' => true, 'trainingFee' => 75000, 'trainingMonths' => 18,
-                        'serviceMonths' => 18, 'membershipFee' => 0, 'monthlyDues' => 0, 'balanceCap' => 0], 'test');
+    /* The per-session basis, at a rate that is not the shipped ₦75,000 (that
+       exact pair reads as the fixed ₦300,000 total — fees_settings). */
+    setting_set('fees', ['enabled' => true, 'trainingFee' => 70000, 'trainingBasis' => 'session', 'trainingMonths' => 18,
+                         'serviceMonths' => 18, 'membershipFee' => 0, 'monthlyDues' => 0, 'balanceCap' => 0] + FEES_DEFAULTS, 'test');
 
     $joined = gmdate('Y-m-d', strtotime('-24 months'));
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TFEE%'");
@@ -19710,7 +19726,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     /* ── What the member's dashboard is handed ── */
     $acct = member_fees_account(['memberId' => 'NGG-TFEE-A']);
-    chk('the dashboard is told the fee per session', (int)($acct['account']['trainingFeePerSession'] ?? 0) === 75000);
+    chk('the dashboard is told the fee per session', (int)($acct['account']['trainingFeePerSession'] ?? 0) === 70000);
+    chk('…and the whole fee, which is what it shows as "the training fee"', (int)($acct['account']['trainingTotal'] ?? 0) >= 3 * 70000);
     $sched = $acct['account']['schedule'] ?? [];
     chk('…and the per-session schedule, one row per session inside the window',
         count(array_filter($sched, fn($x) => strpos((string)$x['sessionId'], 'TFS-') === 0)) === 3
@@ -19725,6 +19742,139 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TFEE%'");
     db_exec("DELETE FROM sessions WHERE sessionId LIKE 'TFS-%'");
     fees_settings_save($save, 'test');
+})();
+
+/* ── The training fee, as the programme quotes it (29 Oct 2026) ──────────
+ * Eight things an audit of this fee found, each reproduced against the old
+ * code before it was fixed. Every check below fails on that code.
+ */
+(function () {
+    $save = setting_get('fees');
+    setting_set('fees', ['enabled' => true, 'trainingFee' => 300000, 'trainingBasis' => 'total', 'trainingMonths' => 18,
+                         'serviceMonths' => 18, 'membershipFee' => 0, 'monthlyDues' => 0, 'balanceCap' => 0] + FEES_DEFAULTS, 'test');
+    $ago = fn(int $months, int $days = 0) => gmdate('Y-m-d', strtotime("-$months months -$days days"));
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-TF9-%'");
+    db_exec("DELETE FROM member_status_log WHERE memberId LIKE 'NGG-TF9-%'");
+    db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-TF9-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TF9-%'");
+    $mk = function (string $id, string $joined, array $extra = []) {
+        db_insert('members', $extra + ['memberId' => $id, 'fullName' => 'Fee ' . $id, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+            'joinDate' => $joined, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        return db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
+    };
+    $row = fn(string $id) => db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
+
+    // 1. One fixed total, whatever month they joined in.
+    $jan = $mk('NGG-TF9-JAN', $ago(5)); $oct = $mk('NGG-TF9-OCT', $ago(13));
+    fees_accrue_member($jan); fees_accrue_member($oct);
+    chk('fee: the default is ONE charge of ₦300,000 for the place, whatever month they joined',
+        (int)fees_balance($row('NGG-TF9-JAN'))['trainingCharged'] === 300000 && (int)fees_balance($row('NGG-TF9-OCT'))['trainingCharged'] === 300000);
+    chk('fee: …the shipped ₦75,000-per-session pair is read as that total, an admin\'s own choice is not',
+        (function () { $k = setting_get('fees');
+            setting_set('fees', ['trainingBasis' => 'session', 'trainingFee' => 75000] + $k, 'test'); $a = fees_settings();
+            setting_set('fees', ['trainingBasis' => 'session', 'trainingFee' => 60000] + $k, 'test'); $b = fees_settings();
+            setting_set('fees', $k, 'test');
+            return $a['trainingBasis'] === 'total' && $a['trainingFee'] === 300000 && $b['trainingBasis'] === 'session' && $b['trainingFee'] === 60000; })());
+    // A member charged per session before the switch: six sessions came to ₦450,000.
+    $leg = $mk('NGG-TF9-LEG', $ago(30));
+    foreach (range(1, 6) as $i) fees_post('NGG-TF9-LEG', 'training', 75000, ['periodKey' => 'LEGACY-' . $i, 'by' => 'test']);
+    fees_accrue_member($leg); fees_accrue_member($row('NGG-TF9-LEG'));
+    $bl = fees_balance($row('NGG-TF9-LEG'));
+    chk('fee: a member charged ₦450,000 by the session is held to the ₦300,000 total — by a keyed write-off, once',
+        (int)$bl['trainingCharged'] === 300000 && (int)$bl['trainingCapped'] === 150000
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-TF9-LEG' AND periodKey LIKE 'cap:training%'")['c'] === 1);
+    $two = $mk('NGG-TF9-TWO', $ago(8));
+    foreach (range(1, 2) as $i) fees_post('NGG-TF9-TWO', 'training', 75000, ['periodKey' => 'LEGACY-' . $i, 'by' => 'test']);
+    fees_accrue_member($two);
+    chk('fee: …and one charged two sessions is topped up to it, the charges already posted kept as they were',
+        (int)fees_balance($row('NGG-TF9-TWO'))['trainingCharged'] === 300000
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-TF9-TWO' AND periodKey LIKE 'LEGACY-%'")['c'] === 2);
+
+    // 3. Terms are frozen: a settings edit is for later members.
+    $frozenEarned = (int)fees_balance($row('NGG-TF9-LEG'))['trainingEarned'];
+    setting_set('fees', ['serviceMonths' => 6, 'trainingFee' => 500000] + setting_get('fees'), 'test');
+    $after = fees_balance($row('NGG-TF9-LEG'));
+    chk('fee: shortening the service half in the settings does not move a member already on the programme',
+        (int)$after['tenure']['serviceMonths'] === 18 && (int)$after['trainingEarned'] === $frozenEarned);
+    $late = $mk('NGG-TF9-LATE', $ago(1)); fees_accrue_member($late);
+    chk('fee: …it is what a member who starts after it signs up to',
+        (int)fees_member_terms($row('NGG-TF9-LATE'))['serviceMonths'] === 6 && (int)fees_balance($row('NGG-TF9-LATE'))['trainingCharged'] === 500000
+        && (int)fees_member_terms($row('NGG-TF9-LEG'))['rate'] === 300000);
+    setting_set('fees', ['serviceMonths' => 18, 'trainingFee' => 300000] + setting_get('fees'), 'test');
+
+    // 4 & 5. Leaving stops the earning, and what is not earned off is owed.
+    $stay = $mk('NGG-TF9-STAY', $ago(30)); $gone = $mk('NGG-TF9-GONE', $ago(30));
+    fees_accrue_member($stay); fees_accrue_member($gone);
+    db_exec("DELETE FROM member_status_log WHERE memberId = 'NGG-TF9-GONE'");
+    member_status_record('NGG-TF9-GONE', 'active', $ago(30), 'test');
+    member_status_record('NGG-TF9-GONE', 'inactive', $ago(10), 'test');
+    db_exec("UPDATE members SET status = 'inactive' WHERE memberId = 'NGG-TF9-GONE'");
+    $bs = fees_balance($row('NGG-TF9-STAY')); $bg = fees_balance($row('NGG-TF9-GONE'));
+    chk('fee: a member who left ten months ago earned it off only while they were serving',
+        (int)$bg['trainingEarned'] < (int)$bs['trainingEarned'] / 2 && (int)$bg['tenure']['servedMonths'] === 2);
+    chk('fee: …and what service had not earned off is real money now — owed, and in what they are asked for',
+        (int)$bg['trainingOwed'] === 300000 - (int)$bg['programmeCovered'] && (int)$bg['payable'] === (int)$bg['trainingOwed']
+        && (int)$bs['trainingOwed'] === 0 && (int)$bs['payable'] === 0);
+    db_exec("UPDATE members SET mouAt = ? WHERE memberId = 'NGG-TF9-GONE'", [now_iso()]);
+    chk('fee: …a member who completed the MOU owes none of it', (int)fees_balance($row('NGG-TF9-GONE'))['trainingOwed'] === 0);
+    db_exec("UPDATE members SET mouAt = '' WHERE memberId = 'NGG-TF9-GONE'");
+    $st = backend_dispatch('member.statement', ['memberId' => 'NGG-TF9-GONE']);
+    chk('fee: …and their statement closes on the same figure', !empty($st['ok']) && (int)$st['closingPayable'] === (int)$bg['payable']);
+
+    // The status log is written where the row is.
+    $sus = $mk('NGG-TF9-SUS', $ago(25));
+    db_exec("DELETE FROM member_status_log WHERE memberId = 'NGG-TF9-SUS'");
+    db_update('members', ['status' => 'suspended', 'updatedAt' => now_iso()], ['memberId' => 'NGG-TF9-SUS']);
+    $log = db_all("SELECT status, since, source FROM member_status_log WHERE memberId = 'NGG-TF9-SUS' ORDER BY id");
+    chk('status: a status written to a member row is recorded with the day, after their history so far',
+        count($log) === 2 && $log[0]['status'] === 'active' && $log[0]['since'] === $ago(25) && $log[1]['status'] === 'suspended' && $log[1]['since'] === gmdate('Y-m-d'));
+    chk('fee: a member suspended (a pause) owes nothing for it', (int)fees_balance($row('NGG-TF9-SUS'))['trainingOwed'] === 0);
+
+    // 7. A lifted suspension is not credited back.
+    $pa = $mk('NGG-TF9-PA', $ago(26)); $pb = $mk('NGG-TF9-PB', $ago(26));
+    db_insert('sanctions', ['personId' => 'NGG-TF9-PB', 'personType' => 'member', 'kind' => 'suspension', 'status' => 'cleared',
+        'reason' => 'test', 'startsAt' => $ago(5) . 'T00:00:00Z', 'endsAt' => $ago(2) . 'T00:00:00Z', 'clearedAt' => $ago(3) . 'T00:00:00Z',
+        'issuedAt' => $ago(5) . 'T00:00:00Z', 'issuedBy' => 'test']);
+    $da = (int)fees_tenure($row('NGG-TF9-PA'))['servedDays']; $db = (int)fees_tenure($row('NGG-TF9-PB'))['servedDays'];
+    $susDays = (int)round((strtotime($ago(3) . ' UTC') - strtotime($ago(5) . ' UTC')) / 86400);
+    chk('fee: a suspension lifted early is still not served — its days are never credited back',
+        $da - $db === $susDays && $susDays > 50);
+
+    // 6. The ceiling is on real money: the training fee does not stop the dues.
+    setting_set('fees', ['monthlyDues' => 5000, 'balanceCap' => 320000] + setting_get('fees'), 'test');
+    $cap = $mk('NGG-TF9-CAP', $ago(20)); fees_accrue_member($cap);
+    $bc = fees_balance($row('NGG-TF9-CAP'));
+    chk('fee: the balance ceiling counts real money — the ₦300,000 place does not stop the dues',
+        (int)($bc['byKind']['dues'] ?? 0) >= 20 * 5000 && empty($bc['atCap']) && (int)$bc['outstanding'] > 320000);
+    setting_set('fees', ['monthlyDues' => 0, 'balanceCap' => 0] + setting_get('fees'), 'test');
+
+    // Summer School is not a training session.
+    setting_set('fees', ['trainingBasis' => 'session', 'trainingFee' => 70000] + setting_get('fees'), 'test');
+    db_exec("DELETE FROM sessions WHERE sessionId LIKE 'TF9S-%'");
+    db_insert('sessions', ['sessionId' => 'TF9S-SUMMER', 'code' => 'SUMMER', 'name' => 'Summer', 'year' => (int)gmdate('Y'),
+        'startDate' => $ago(2), 'endDate' => $ago(1)]);
+    db_insert('sessions', ['sessionId' => 'TF9S-DOMI', 'code' => 'DOMI', 'name' => 'Domi', 'year' => (int)gmdate('Y'),
+        'startDate' => $ago(1), 'endDate' => $ago(0, 1)]);
+    $ses = $mk('NGG-TF9-SES', $ago(3)); fees_accrue_member($ses);
+    chk('fee: on the per-session basis, Summer School is not charged as a training session',
+        !db_row("SELECT id FROM member_ledger WHERE memberId = 'NGG-TF9-SES' AND periodKey = 'TF9S-SUMMER'")
+        && (bool)db_row("SELECT id FROM member_ledger WHERE memberId = 'NGG-TF9-SES' AND periodKey = 'TF9S-DOMI'"));
+    db_exec("DELETE FROM sessions WHERE sessionId LIKE 'TF9S-%'");
+
+    // 8. What the member is shown.
+    $acc = member_fees_account(['memberId' => 'NGG-TF9-JAN'])['account'] ?? [];
+    chk('fee: the member is shown the whole fee for the place, not a per-session rate',
+        (int)($acc['trainingTotal'] ?? 0) === 300000 && ($acc['trainingBasis'] ?? '') === 'total');
+    $mp9 = (string)file_get_contents(__DIR__ . '/../../src/modules/member9/mp9-app.jsx');
+    chk('fee: …and is no longer told "you pay ₦0" — it is covered while they serve, owed if they leave early',
+        !str_contains($mp9, 'you pay ₦0') && str_contains($mp9, 'owed only if you leave early') && str_contains($mp9, 'a.trainingOwed > 0'));
+
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-TF9-%'");
+    db_exec("DELETE FROM member_status_log WHERE memberId LIKE 'NGG-TF9-%'");
+    db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-TF9-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TF9-%'");
+    setting_set('fees', is_array($save) ? $save : [], 'test');
 })();
 
 /* ── Real money vs the cost of a free place ───────────────────────────────
@@ -26037,16 +26187,21 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // A week basis lists the weeks still to come off the meeting calendar.
     setting_set('memberProgramme', ['enabled' => true, 'startDate' => gmdate('Y-m-d', strtotime('-60 days')), 'endDate' => gmdate('Y-m-d', strtotime('+60 days')),
         'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
-    fees_settings_save(['trainingBasis' => 'week'] + fees_settings(), 'test');
-    // Weeks are only charged where the session was not already charged whole.
+    $refused = fees_settings_save(['trainingBasis' => 'week'] + fees_settings(), 'test');
+    chk('settings: switching what the training fee is charged per, with the same amount, is refused — it would turn a session rate into a week rate',
+        empty($refused['ok']) && ($refused['error'] ?? '') === 'training_rate_required' && fees_settings()['trainingBasis'] === 'session');
+    fees_settings_save(['trainingBasis' => 'week', 'trainingFee' => 2500] + fees_settings(), 'test');
+    // Weeks are only charged where the session was not already charged whole; and unfrozen, as a member starting now.
     db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-TW-NEW' AND kind = 'training'");
+    db_exec("UPDATE members SET feeTerms = '' WHERE memberId = 'NGG-TW-NEW'");
+    $new = db_row("SELECT * FROM members WHERE memberId = 'NGG-TW-NEW'");
     $ww = fees_training_watch($new);
     $mondays = array_column(array_filter($ww['rows'], fn($r) => $r['state'] === 'upcoming'), 'date');
     chk('watch (week rate): the weeks still to come are listed, one per week, each on its Monday', $ww['unit'] === 'week' && count($mondays) >= 7
         && count($mondays) === count(array_unique($mondays)) && !array_filter($mondays, fn($d) => gmdate('N', strtotime($d . ' UTC')) !== '1'));
     chk('watch (week rate): weeks that have happened but are not charged yet wait for the next run', $ww['due'] > 0
         && !array_filter($ww['rows'], fn($r) => $r['state'] === 'due' && $r['date'] > gmdate('Y-m-d')));
-    fees_settings_save(['trainingBasis' => 'session'] + fees_settings(), 'test');
+    fees_settings_save(['trainingBasis' => 'session', 'trainingFee' => 10000] + fees_settings(), 'test');
 
     // The desk's watch over everybody.
     fees_accrue_member($new);

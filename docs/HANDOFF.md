@@ -4577,3 +4577,52 @@ have seen it — `responsive.test.js` is the public site, and
   family-ui times out after "…and the /pay page names it as paying ahead"
   (line 309); community-v3 "a code post opens in the editor with its source".
   None is caused by this change; each is a fact for the next agent.
+
+---
+
+## 29 Oct 2026 — The training fee, fixed to what the programme quotes
+
+The owner confirmed the fee is ₦300,000 for the three years (the ₦75,000 was
+per session) and asked for the logic behind it fixed. An audit run against
+this code with a throwaway database found eight faults; each is fixed and each
+has a test in `api/tests/run.php` ("The training fee, as the programme quotes
+it") that fails on the old code.
+
+1. **No fixed total.** The per-session default came to ₦450,000 or ₦375,000
+   by join date, and billed Summer School as a training session. New default
+   basis `total`: one charge of ₦300,000. The untouched shipped pair
+   (session, ₦75,000) is read as that total in `fees_settings()`; a rate an
+   admin chose is kept. `session` skips `FEES_NON_TRAINING_SESSIONS` (SUMMER).
+   Members already charged per session are topped up to the total, or held to
+   it by a keyed `cap:training:*` write-off, which `fees_balance` subtracts
+   from the charge rather than counting as earned.
+2. **A basis switch kept the rate** (₦75,000 a session → a day, ₦5.25m).
+   `fees_settings_save` refuses it without a new amount
+   (`training_rate_required`); the settings screen says why.
+3. **Half-length edits rewrote everyone.** Terms are frozen per member
+   (`members.feeTerms`, `fees_freeze_terms` at first accrual,
+   `fees_member_terms`). Uprates and edits are for later members.
+4. **Leavers kept earning off by the calendar.** New `member_status_log`
+   (migration 199), written by `db_update`/`db_insert` whenever a member row's
+   status is written, so no screen can forget. Earned is now by **days served**
+   (`fees_serving_days`): active, not suspended, not evicted.
+5. **A leaver's balance was never payable.** `trainingOwed` (inactive or
+   evicted, MOU not done, not graduated) is in `payable`, reminders and the
+   statement.
+6. **The notional fee counted against the ceiling** and stopped dues after
+   ₦85,000. `atCap` reads real money only.
+7. **A lifted suspension was credited back.** Suspension days, from every
+   suspension that was in force, are never served.
+8. **Members saw ₦75,000 as the fee and "you pay ₦0".** `member.fees` adds
+   `trainingTotal`, `trainingBasis`, `trainingOwed`; the member portal shows
+   the whole fee, "covered while you serve · owed only if you leave early", and
+   the owed figure when there is one.
+
+Also: the Training fees list includes inactive members who owe (filter
+`owed`), with history and suspensions preloaded per chunk (no per-row reads);
+`member_status_log` is `KEEP_SURVIVOR` in the merge policy.
+
+**Figures that change on deploy:** every member's training charge moves to
+their frozen terms at the next accrual run. On the default this means
+₦300,000 each (with the write-off or top-up above), and an inactive member
+with no MOU will show what they owe.

@@ -290,6 +290,7 @@ function member_merge_policy(): array {
         'membership_invoices'    => 'BLOCK',          // a joining invoice and its receipt name one member
         'offline_payments'       => 'BLOCK',          // evidence of money paid for one member
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive
+        'member_status_log'      => 'KEEP_SURVIVOR',  // the survivor's dates are the ones their fee is earned off on
         'member_progress'        => 'MOVE_UNIQUE',
         'lesson_feedback'        => 'MOVE_UNIQUE',    // one tap per person per lesson; the survivor's stands
         'study_drills'           => 'MOVE',           // their practice history; both accounts' goes come with them
