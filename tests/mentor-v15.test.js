@@ -197,11 +197,11 @@ async function as(memberId, admin, viewport) {
     await mt.waitForFunction(() => /Musing/.test(document.querySelector('main').innerText), null, { timeout: 30000 });
     await mt.click('main .sf-more');
     const sat = await mt.innerText('main');
-    chk('Saturday shows the whole formation day and the 8:30 breakout', /Chess & strategic thinking/.test(sat) && /8:30/.test(sat));
+    chk('Saturday shows the whole formation day and the 9:30 breakout', /Chess & strategic thinking/.test(sat) && /9:30/.test(sat) && !/\b8:30\b/.test(sat));
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/sat.png' : path.join(TMP, 'sat.png'), fullPage: false });
     // The Saturday plan: time an item, add and name one of her own, pick a one-to-one — saved as she goes.
     const plan = () => q(`db_row("SELECT agendaJson, oneToOnesJson FROM mentor_saturdays WHERE mentorId = 'MEN-MS-1' ORDER BY id DESC LIMIT 1")`) || {};
-    chk('Plan: the window and the minutes come from the Saturday schedule', /8:30–10:00 · 90 of 90 min planned/.test(await mt.innerText('main .m15ag-sum')));
+    chk('Plan: the window and the minutes come from the Saturday schedule', /9:30–11:00 · 90 of 90 min planned/.test(await mt.innerText('main .m15ag-sum')));
     await mt.click('main button[aria-label="Five minutes less for Musing"]');
     await mt.click('main button:has-text("Add your own activity")');
     await mt.fill('main .m15ag-edit input >> nth=0', 'Debate: phones at school');

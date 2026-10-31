@@ -345,11 +345,13 @@ class Fp3Portal extends React.Component {
       out.nowL = fp3Date(T0.date) + " · " + T0.hm; out.acFs = phone ? "34px" : "40px";
       out.hello = (hr < 12 ? "Good morning, " : hr < 17 ? "Good afternoon, " : "Good evening, ") + (fp3First(gName) || "there");
       const t = w.today, first = w.member.first;
-      const s = t.status === "starting" ? ["neutral", "ph ph-flag-banner", "First Saturday: " + w.starting, "Doors open at 09:00 at the " + w.member.centre + " centre. " + first + "’s mentor is " + w.member.mentor + "."]
+      /* The hours come with the day (family_day_times): the doors and grace from the attendance settings, sign-out from its rule or the timetable's close. */
+      const doors = t.opensAt || "09:00", grace = t.grace != null ? t.grace : 10, outAt = t.signOutAt || t.dayEnd || "15:00";
+      const s = t.status === "starting" ? ["neutral", "ph ph-flag-banner", "First Saturday: " + w.starting, "Doors open at " + doors + " at the " + w.member.centre + " centre. " + first + "’s mentor is " + w.member.mentor + "."]
         : t.status === "off" ? ["neutral", "ph ph-calendar-blank", "No class today", "NGG meets on Saturdays at " + w.member.centre + ". You get a text when " + first + " checks in."]
-        : t.status === "present" ? ["ok", "ph ph-check-circle", "In since " + t.in, (t.out ? "Signed out at " + t.out + "." : "On time. Sign-out opens at 14:00, and you’ll get a text when " + first + " leaves.")]
-        : t.status === "late" ? ["warn", "ph ph-clock", "In since " + t.in + ", " + t.lateMinutes + " min late", "Doors open at 09:00 with 10 minutes’ grace. You’ll get a text at sign-out."]
-        : ["bad", "ph ph-door-open", "Not in yet", "Doors opened at 09:00. If " + first + " is away today, tell the centre."];
+        : t.status === "present" ? ["ok", "ph ph-check-circle", "In since " + t.in, (t.out ? "Signed out at " + t.out + "." : "On time. Sign-out opens at " + outAt + ", and you’ll get a text when " + first + " leaves.")]
+        : t.status === "late" ? ["warn", "ph ph-clock", "In since " + t.in + ", " + t.lateMinutes + " min late", "Doors open at " + doors + (grace ? " with " + grace + " minutes’ grace." : ".") + " You’ll get a text at sign-out."]
+        : ["bad", "ph ph-door-open", "Not in yet", "Doors opened at " + doors + ". If " + first + " is away today, tell the centre."];
       out.st = { bg: T[s[0]][0], fg: T[s[0]][1], icon: s[1], h: first + " · " + s[2], s: s[3] };
       const m = x => +String(x).split(":")[0] * 60 + +String(x).split(":")[1];
       const nowM = T0.mins;
@@ -414,7 +416,7 @@ class Fp3Portal extends React.Component {
       out.dayRules = (session
         ? [["ph ph-check-circle", "Absences with permission: " + ex.used + " of " + ex.max + " used this session" + (ex.ahead ? ", " + ex.ahead + " still ahead" : "") + ". Ask on the dashboard — asking is not approval until the centre says yes."]].concat(ex.recorded ? [["ph ph-warning", ex.recorded + " absence" + (ex.recorded === 1 ? "" : "s") + " without permission this session; " + ex.suspendAfter + " is a suspension."]] : []).concat(ex.rules || [])
         : (ex ? [["ph ph-calendar-x", "Absences: " + ex.used + " of " + ex.max + " allowed in the programme" + (ex.ahead ? ", " + ex.ahead + " of them still ahead" : "") + (ex.left ? ". " + ex.left + " left." : ". None left — a further absence starts a review, so speak to the centre in an emergency.")]].concat(ex.fine ? [["ph ph-receipt", "An absence nobody told the centre about is fined " + N(ex.fine) + ". If you’ve asked, nothing is charged until the centre answers."]] : []) : []).concat([["ph ph-door-open", "Doors open at 09:00. After 09:10 it counts as late."]]))
-        .concat([["ph ph-sign-in", "You get a text and email when " + first + " checks in, and again at sign-out."], ["ph ph-sign-out", "Sign-out opens at 14:00. Leaving earlier needs a coordinator, so collect them from the desk."], ["ph ph-warning", "Leaving without signing out counts as “no sign-out” and can be fined. You’ll be told the same day."]]).map(r => ({ icon: r[0], t: r[1] }));
+        .concat([["ph ph-sign-in", "You get a text and email when " + first + " checks in, and again at sign-out."], ["ph ph-sign-out", "Sign-out opens at " + ((w.today && (w.today.signOutAt || w.today.dayEnd)) || "15:00") + ". Leaving earlier needs a coordinator, so collect them from the desk."], ["ph ph-warning", "Leaving without signing out counts as “no sign-out” and can be fined. You’ll be told the same day."]]).map(r => ({ icon: r[0], t: r[1] }));
       out.leaveL = "Tell the centre " + first + " will be away"; out.newLeave = () => openSheet("leave");
     }
 

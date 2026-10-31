@@ -2442,9 +2442,16 @@ between 8pm and 8am wait and go at 8am; the child answers in their own chat,
 and the answer comes back into the same conversation.
 
 **Saturday Formation Schedule** (Control Room → Learning → Saturday formation, `content`):
-the 8:00–2:00 day, block by block, with what members do, what mentors watch for, what
-instructors deliver, what admin must have ready and what families are told. Every portal
-and the Saturday reminders read this one table; edit a block and they all change. On the
+the 9:00–3:00 day (moved an hour later on 30 Oct 2026, from 8:00–2:00), block by block,
+with what members do, what mentors watch for, what instructors deliver, what admin must have
+ready and what families are told. Every portal and the Saturday reminders read this one
+table; edit a block and they all change — including the families' three emails (the plan at
+the first block's start, the not-arrived notice 45 minutes in, the summary at the last
+block's end), "on time" on the mentor's register (checked in by the first block), and the
+hours the family app shows. The doors, the grace minutes and when sign-out opens are the
+**attendance settings** (Control Room → Settings), which the family app now reads rather
+than printing a fixed 09:00 and 14:00 — if sign-out is set to open at 14:00, move it to
+15:00 there so families are not let go before the day ends. On the
 Saturday register a mentor ticks, per child, the values seen and the duties: On time
 (the gate's arrival time is shown), Assignment in, Checked out — and can **Add detail**: one line
 (up to 500 characters) of what they saw, saved with the register. It shows under the child's name,
@@ -2452,7 +2459,7 @@ opens the weekly review ("Noted: …") and joins the child's timeline. A child's
 opens their profile; **Go to the weekly review** takes the mentor straight to After.
 
 **The Saturday plan (Before).** The mentor's part of the day is the
-**Musing & mentor breakout** block of the formation schedule (8:30–10:00 by
+**Musing & mentor breakout** block of the formation schedule (9:30–11:00 by
 default), so its window — and what follows it — come from Control Room →
 Learning → Saturday formation, never from a fixed number. The *Pod huddle*
 always opens it (the register is taken there) and the *Close* always ends it;

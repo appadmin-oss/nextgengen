@@ -18,8 +18,10 @@ declare(strict_types=1);
  *   every linked guardian (family notifications are always on) — the
  *   morning plan at 7:00, a not-arrived notice at 8:45 for a member with no
  *   check-in, and the close at 2:00 with what their child's day held.
- * Guardians are told by email only, inside 8am–8pm Lagos (the 7:00 plan waits
- * for 8:00), and a guardian who switched check-in news off hears nothing.
+ * Guardians are told by email only, inside 8am–8pm Lagos, and a guardian who
+ * switched check-in news off hears nothing. The day's times are the table's,
+ * never typed here: the plan goes at the first block's start, the
+ * not-arrived notice 45 minutes in, the close at the last block's end.
  * A tick serves at most SF_TICK_MAX recipients; the rest are served next tick.
  */
 
@@ -30,44 +32,44 @@ const SF_AUDIENCES = ['member', 'mentor', 'instructor', 'admin', 'parent'];
 /** The seed: the programme's own schedule, block by block. */
 function sf_blocks_seed(): array {
     return [
-        ['key' => 'checkin', 'start' => '08:00', 'end' => '08:30', 'title' => 'Assignment submission & check-in', 'flow' => 'Accountability', 'purpose' => 'Accountability and preparation.',
+        ['key' => 'checkin', 'start' => '09:00', 'end' => '09:30', 'title' => 'Assignment submission & check-in', 'flow' => 'Accountability', 'purpose' => 'Accountability and preparation.',
          'member' => ['Submit weekly assignments.', 'Present completed work where required.', 'Receive attendance/check-in confirmation.', 'Resolve outstanding submissions.', 'Prepare for the day’s activities.'],
          'mentor' => ['Check punctuality, assignment completion and general preparedness.'],
          'instructor' => ['Have last week’s assignments ready to receive and mark.'],
-         'admin' => ['Gate open with the check-in desk staffed by 7:50.', 'Outstanding submissions list ready for mentors.'],
+         'admin' => ['Gate open with the check-in desk staffed by 8:50.', 'Outstanding submissions list ready for mentors.'],
          'parent' => 'Your child checks in and hands in this week’s assignment. You’re told when they arrive.', 'quote' => ''],
-        ['key' => 'musing', 'start' => '08:30', 'end' => '10:00', 'title' => 'Musing & mentor breakout', 'flow' => 'Reflection', 'purpose' => 'Personal formation and reflection.',
+        ['key' => 'musing', 'start' => '09:30', 'end' => '11:00', 'title' => 'Musing & mentor breakout', 'flow' => 'Reflection', 'purpose' => 'Personal formation and reflection.',
          'member' => ['Review of the previous week', 'Anchor Journal', 'Personal timetable', 'Goals and commitments', 'Challenges and failures', 'Courage and difficult decisions', 'Community participation', 'Dues/fines and personal accountability', 'Chess development', 'Leadership behaviour', 'Questions, ideas and discoveries'],
          'mentor' => ['Take the register and note who is here.', 'Do not merely ask whether tasks were done: examine character, responsibility, courage and growth.', 'One-to-ones with the mentees who are due.', 'Record observations and the weekly review before Monday.'],
          'instructor' => [], 'admin' => ['Every mentor group has a mentor present; cover any gap from the lead.'],
          'parent' => 'Your child is with their mentor group, reviewing the week: their journal, goals, commitments and what they found hard.',
          'quote' => 'Who are you becoming, and what evidence do we have?'],
-        ['key' => 'vanboja', 'start' => '10:00', 'end' => '10:25', 'title' => 'Time out with Van BOJA', 'flow' => 'Leadership exposure', 'purpose' => 'Exposure, inspiration and direct leadership interaction.',
+        ['key' => 'vanboja', 'start' => '11:00', 'end' => '11:25', 'title' => 'Time out with Van BOJA', 'flow' => 'Leadership exposure', 'purpose' => 'Exposure, inspiration and direct leadership interaction.',
          'member' => ['Life', 'Leadership', 'Africa', 'Character', 'Creativity', 'Technology', 'Current affairs', 'Philosophy', 'Personal development', 'Bring one question of your own.'],
          'mentor' => ['Sit with your group; note who asks a question.'], 'instructor' => [], 'admin' => ['Hall set, sound checked, questions from members gathered.'],
          'parent' => 'A session with Van BOJA on life, leadership, Africa and ideas, with questions from the members.', 'quote' => ''],
-        ['key' => 'anthem', 'start' => '10:25', 'end' => '10:30', 'title' => 'NGG Anthem', 'flow' => 'Identity', 'purpose' => 'Identity, unity and collective commitment.',
+        ['key' => 'anthem', 'start' => '11:25', 'end' => '11:30', 'title' => 'NGG Anthem', 'flow' => 'Identity', 'purpose' => 'Identity, unity and collective commitment.',
          'member' => ['Come together to affirm the identity and values of NGG.'], 'mentor' => ['Model the anthem and the pledge.'], 'instructor' => [], 'admin' => [],
          'parent' => 'Everyone together for the NGG Anthem.', 'quote' => 'Cannot be bought. Cannot be bent. Cannot be broken.'],
-        ['key' => 'special', 'start' => '10:30', 'end' => '11:00', 'title' => 'Special class / content creation / general lecture', 'flow' => 'General exposure', 'purpose' => 'Exposure beyond the member’s regular division.',
+        ['key' => 'special', 'start' => '11:30', 'end' => '12:00', 'title' => 'Special class / content creation / general lecture', 'flow' => 'General exposure', 'purpose' => 'Exposure beyond the member’s regular division.',
          'member' => ['General lectures', 'Guest speakers', 'Special masterclasses', 'Content creation', 'Current affairs', 'Leadership lessons', 'Entrepreneurship', 'African history and culture', 'Technology exposure', 'Creative demonstrations', 'Inter-division projects'],
          'mentor' => ['Note what caught each mentee’s interest; bring it to the next one-to-one.'], 'instructor' => ['If you are this week’s speaker: 30 minutes, beyond your division, with something to do.'],
          'admin' => ['Speaker or masterclass confirmed by Thursday.'], 'parent' => 'A special class beyond their division: a guest, a masterclass or a project.', 'quote' => ''],
-        ['key' => 'division', 'start' => '11:00', 'end' => '12:30', 'title' => 'Division classes', 'flow' => 'Competence', 'purpose' => 'Deep competence development.',
+        ['key' => 'division', 'start' => '12:00', 'end' => '13:30', 'title' => 'Division classes', 'flow' => 'Competence', 'purpose' => 'Deep competence development.',
          'member' => ['Division 1 · Creative & Performing Arts', 'Division 2 · Media & Content Strategy', 'Division 3 · Technology & Applied Engineering', 'Division 4 · Business Strategy, Operations & Administration', 'Build your portfolio: what you can do, create, solve or lead.'],
          'mentor' => [], 'instructor' => ['Practical and project-driven, not merely theoretical.', 'Take the class register.', 'Every member leaves with something added to their portfolio.'],
          'admin' => ['Every division has its instructor and room.'], 'parent' => 'Your child is in their division class, building their portfolio by making things.', 'quote' => ''],
-        ['key' => 'break', 'start' => '12:30', 'end' => '13:00', 'title' => 'Break', 'flow' => 'Rest & community', 'purpose' => 'Rest, refreshment and informal community.',
+        ['key' => 'break', 'start' => '13:30', 'end' => '14:00', 'title' => 'Break', 'flow' => 'Rest & community', 'purpose' => 'Rest, refreshment and informal community.',
          'member' => ['Interact positively, build relationships and practise responsible communal behaviour.'], 'mentor' => ['Remain observant without turning the break into another classroom.'],
          'instructor' => [], 'admin' => ['Refreshments and the space supervised.'], 'parent' => 'Break: rest, food and time with friends.', 'quote' => ''],
-        ['key' => 'chess', 'start' => '13:00', 'end' => '13:45', 'title' => 'Chess & strategic thinking', 'flow' => 'Strategy', 'purpose' => 'Develop the strategic mind. Chess is compulsory for every NGG member.',
+        ['key' => 'chess', 'start' => '14:00', 'end' => '14:45', 'title' => 'Chess & strategic thinking', 'flow' => 'Strategy', 'purpose' => 'Develop the strategic mind. Chess is compulsory for every NGG member.',
          'member' => ['Concentration', 'Patience', 'Planning', 'Pattern recognition', 'Decision-making', 'Consequence awareness', 'Strategic thinking', 'Sacrifice', 'Resilience', 'Problem-solving', 'Explain why you made your moves.'],
          'mentor' => ['Connect chess behaviour to real-life leadership.', 'How do you make decisions when you cannot see the whole board?', 'Can you sacrifice something small for something greater?', 'What do you do after making a bad move?', 'Can you think three moves ahead?'],
          'instructor' => ['Chess instructors: ask every player to explain one move.'], 'admin' => ['Boards and clocks out.'], 'parent' => 'Chess, compulsory for every member: planning, patience and explaining their moves.', 'quote' => 'Can you think three moves ahead?'],
-        ['key' => 'close', 'start' => '13:45', 'end' => '14:00', 'title' => 'Cleaning & close', 'flow' => 'Service', 'purpose' => 'Responsibility and service. Cleaning is not punishment; it is leadership training.',
+        ['key' => 'close', 'start' => '14:45', 'end' => '15:00', 'title' => 'Cleaning & close', 'flow' => 'Service', 'purpose' => 'Responsibility and service. Cleaning is not punishment; it is leadership training.',
          'member' => ['Restore the space you used.', 'Area inspection', 'Mentor check-out', 'Outstanding announcements', 'Next-week reminders', 'Personal responsibility confirmation'],
          'mentor' => ['Inspect your group’s area and check every mentee out.', 'Give next week’s reminders.'], 'instructor' => ['Room restored and equipment returned.'],
-         'admin' => ['Announcements out; the site is closed by 2:15.'], 'parent' => 'The day closes with cleaning and check-out. You’ll get a short summary of their Saturday.',
+         'admin' => ['Announcements out; the site is closed by 3:15.'], 'parent' => 'The day closes with cleaning and check-out. You’ll get a short summary of their Saturday.',
          'quote' => 'If you use the space, you are responsible for the space.'],
     ];
 }
@@ -103,7 +105,8 @@ function sf_for(string $audience): array {
 /** public.formation — the day for one audience. Public (it is the programme's published schedule); cached under 'formation'. */
 function public_formation(array $p): array {
     $a = (string)($p['audience'] ?? 'member');
-    return ['ok' => true, 'theme' => 'Think. Create. Lead. Serve.', 'hours' => '8:00am – 2:00pm', 'audience' => in_array($a, SF_AUDIENCES, true) ? $a : 'member',
+    $B = sf_day_bounds();
+    return ['ok' => true, 'theme' => 'Think. Create. Lead. Serve.', 'hours' => sf_clock($B['start']) . ' – ' . sf_clock($B['end']), 'audience' => in_array($a, SF_AUDIENCES, true) ? $a : 'member',
             'logic' => 'Accountability → Reflection → Inspiration → Identity → Exposure → Competence → Strategy → Service', 'blocks' => sf_for($a)];
 }
 
@@ -167,6 +170,22 @@ function sf_here_today(string $date): array {
     return array_values(array_unique(array_merge($ids, array_column(db_all("SELECT subjectId FROM mentor_register WHERE onDate = ? AND here = 1", [$date]), 'subjectId'))));
 }
 function sf_minutes(string $hhmm): int { [$h, $m] = array_map('intval', explode(':', $hhmm . ':0')); return $h * 60 + $m; }
+/**
+ * The day's bounds as the schedule has them: the first block's start and the
+ * last block's end. Everything that names the day's hours — the family
+ * emails, punctuality, the public page — reads this, so moving the
+ * timetable moves all of it; a typed "8:00" here and there is how the day
+ * once started at 8:00 in one place and 9:00 in another.
+ */
+function sf_day_bounds(?array $blocks = null): array {
+    $blocks = $blocks ?? sf_blocks();
+    $st = array_map(static fn($b) => sf_minutes((string)$b['start']), $blocks);
+    $en = array_map(static fn($b) => sf_minutes((string)$b['end']), $blocks);
+    $a = $st ? min($st) : 9 * 60; $z = $en ? max($en) : 15 * 60;
+    return ['start' => $a, 'end' => $z, 'startHm' => sprintf('%02d:%02d', intdiv($a, 60), $a % 60), 'endHm' => sprintf('%02d:%02d', intdiv($z, 60), $z % 60)];
+}
+/** "9:00am", "3:00pm" — a minute of the day as families read a clock. */
+function sf_clock(int $min): string { $h = intdiv($min, 60) % 24; return (($h % 12) ?: 12) . ':' . sprintf('%02d', $min % 60) . ($h < 12 ? 'am' : 'pm'); }
 
 /**
  * Called by the web-cron. Returns what it sent, for the job log and the tests.
@@ -234,12 +253,13 @@ function sf_mail(string $to, string $subject, string $title, string $intro, arra
     if (function_exists('family_mail')) { family_mail($to, $subject, ['title' => $title, 'intro' => $intro, 'bodyHtml' => $html, 'ctaLabel' => 'Open the family account →', 'ctaUrl' => family_origin() . '/family', 'footNote' => $foot]); return true; }
     return (bool)send_mail($to, $subject, email_template(['title' => $title, 'intro' => $intro, 'bodyHtml' => $html, 'footNote' => $foot]));
 }
-/** The three family messages of a Saturday: the plan (from 8:00), not arrived (8:45), the close (2:00). */
+/** The three family messages of a Saturday: the plan (at the day's start), not arrived (45 minutes in), the close (at its end). */
 function sf_parents(string $date, int $min, array $blocks, int &$budget): array {
     $sent = [];
-    $morning = $min >= 8 * 60 && $min < 8 * 60 + 40;
-    $late = $min >= 8 * 60 + 45 && $min < 8 * 60 + 45 + SF_WINDOW_MIN;
-    $close = $min >= 14 * 60 && $min < 14 * 60 + 90;
+    $B = sf_day_bounds($blocks);
+    $morning = $min >= $B['start'] && $min < $B['start'] + 40;
+    $late = $min >= $B['start'] + 45 && $min < $B['start'] + 45 + SF_WINDOW_MIN;
+    $close = $min >= $B['end'] && $min < $B['end'] + 90;
     if (!$morning && !$late && !$close) return [];
     $gs = sf_guardians(); if (!$gs) return [];
     $here = array_flip(sf_here_today($date));
@@ -248,12 +268,12 @@ function sf_parents(string $date, int $min, array $blocks, int &$budget): array 
         if ($budget <= 0) break;
         $mid = $g['memberId']; $first = $g['first'] ?: 'Your child';
         if ($morning && sf_once($date, 'parent:plan', $g['email'] . '|' . $mid, 'email')) {
-            sf_mail($g['email'], 'Saturday at NGG for ' . $first . ': 8:00am – 2:00pm', 'Today at NGG', $first . '’s Saturday, block by block. Think. Create. Lead. Serve.',
+            sf_mail($g['email'], 'Saturday at NGG for ' . $first . ': ' . sf_clock($B['start']) . ' – ' . sf_clock($B['end']), 'Today at NGG', $first . '’s Saturday, block by block. Think. Create. Lead. Serve.',
                 array_map(static fn($b) => $b['start'] . ' · ' . $b['title'] . ($b['for']['parent'] ? ': ' . $b['for']['parent'] : ''), $blocks), $foot);
             $budget--; $sent[] = ['parent:plan', 'parent', $mid];
         }
         if ($late && !isset($here[$mid]) && sf_once($date, 'parent:absent', $g['email'] . '|' . $mid, 'email')) {
-            sf_mail($g['email'], $first . ' hasn’t checked in at NGG yet', 'Not checked in yet', $first . ' had not checked in at ' . $g['centre'] . ' by 8:45am. Saturday began at 8:00.',
+            sf_mail($g['email'], $first . ' hasn’t checked in at NGG yet', 'Not checked in yet', $first . ' had not checked in at ' . $g['centre'] . ' by ' . sf_clock($B['start'] + 45) . '. Saturday began at ' . sf_clock($B['start']) . '.',
                 ['If they are on their way, there is nothing to do.', 'If they are unwell or away today, let their mentor or the centre know.'], $foot);
             $budget--; $sent[] = ['parent:absent', 'parent', $mid];
         }

@@ -220,6 +220,22 @@ function family_notice_add(string $guardianId, string $kind, string $refId, stri
     } catch (Throwable $e) { return false; }
 }
 
+/**
+ * The hours a family is told about — the doors, the grace, when sign-out
+ * opens and when the day ends — read from where they are enforced (the
+ * attendance settings, the Saturday Formation Schedule), never typed into the
+ * family app: it said "Doors open at 09:00" and "Sign-out opens at 14:00"
+ * whatever the centre had set, and moving the timetable left it wrong.
+ */
+function family_day_times(): array {
+    $a = function_exists('attendance_settings') ? attendance_settings() : ['resumptionByType' => [], 'graceMinutes' => 10];
+    $by = (array)($a['resumptionByType'] ?? []);
+    $open = (string)($by['member'] ?? $by['default'] ?? '09:00');
+    $B = function_exists('sf_day_bounds') ? sf_day_bounds() : ['startHm' => '09:00', 'endHm' => '15:00'];
+    $close = function_exists('attendance_close_time') ? attendance_close_time('member') : '';
+    return ['opensAt' => $open, 'grace' => (int)($a['graceMinutes'] ?? 10), 'signOutAt' => $close, 'dayStart' => $B['startHm'], 'dayEnd' => $B['endHm']];
+}
+
 /** family.notices.read — mark one notice (id) or all of them (no id) read. Only the guardian's own. */
 function family_notices_read(array $p): array {
     $gid = (string)($p['guardianId'] ?? ''); $id = (string)($p['noticeId'] ?? '');
@@ -357,7 +373,8 @@ function family_ward(array $p): array {
                      'track' => (string)($m['track'] ?? ''), 'level' => (string)($m['level'] ?? ''), 'status' => (string)$m['status'],
                      'joinDate' => (string)($m['joinDate'] ?? ''), 'photoUrl' => (string)($m['photoUrl'] ?? '')],
         'today' => ['date' => $today, 'in' => $t ? substr((string)$t['checkInAt'], 11, 5) : '', 'out' => $t ? substr((string)($t['checkOutAt'] ?? ''), 11, 5) : '',
-                    'status' => $t ? (string)($t['status'] ?: 'present') : '', 'lateMinutes' => $t ? (int)$t['lateMinutes'] : 0],
+                    'status' => $t ? (string)($t['status'] ?: 'present') : '', 'lateMinutes' => $t ? (int)$t['lateMinutes'] : 0]
+                    + family_day_times(),
         'attendance' => ['present' => (int)($att['present'] ?? 0), 'daysRan' => (int)($att['daysRan'] ?? 0), 'rate' => $att['rate'] ?? null,
                          'rateKnown' => !empty($att['rateKnown']), 'recent' => array_slice($att['days'] ?? [], 0, 14),
                          'late' => array_map(static fn($r) => ['date' => (string)$r['date'], 'minutes' => (int)$r['lateMinutes']], $late)],

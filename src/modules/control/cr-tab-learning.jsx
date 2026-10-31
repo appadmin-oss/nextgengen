@@ -118,6 +118,14 @@ function crCurRowFromSheet(r) {
 const CR_CUR_TEMPLATE = "course,level,week,position,title,summary,objectives,body,duration,materials,check1,check1_options,check1_answer,check2,check2_answer,check2_rubric\n"
   + "Piano,Foundation,1,1,Finding middle C,Where the keyboard starts.,Find middle C; Play C major,\"Middle C sits in the centre of the keyboard.\n\n- Find the two black keys\n- C is just left of them\",30,https://example.org/c-major.pdf|Scale sheet,How many white keys in an octave?,5|7|8,7,Why curve your fingers?,Control and speed,Mentions control or speed\n";
 
+/** The Saturday's start, the not-arrived check (start + 45) and the close, as "9:00am" — read off the schedule's blocks, as the server's sf_day_bounds does. */
+function crSfBounds(blocks) {
+  const m = s => { const p = String(s || "").split(":"); return (+p[0] || 0) * 60 + (+p[1] || 0); };
+  const st = (blocks || []).map(b => m(b.start)), en = (blocks || []).map(b => m(b.end));
+  const a = st.length ? Math.min.apply(null, st) : 540, z = en.length ? Math.max.apply(null, en) : 900;
+  const clock = x => { const h = Math.floor(x / 60) % 24; return ((h % 12) || 12) + ":" + String(x % 60).padStart(2, "0") + (h < 12 ? "am" : "pm"); };
+  return { start: clock(a), late: clock(a + 45), end: clock(z) };
+}
 const CR_CUR_STATUS = { draft: ["Draft", "neutral"], published: ["Published", "ok"], retired: ["Retired", "bad"] };
 const CR_CUR_VERDICT = { create: ["New", "ok"], update: ["Updated", "gold"], unchanged: ["Unchanged", "neutral"], failed: ["Refused", "bad"] };
 
@@ -501,10 +509,11 @@ Object.assign(CR_TAB_DEFS, {
      the day's reminders. Editing a block changes all of them. */
   formation: {
     skeleton: ["table"],
+    // (crSfBounds: the day's start, start + 45 and end, read off the blocks — the server's sf_day_bounds, so the note moves with the timetable.)
     load: async () => NGGApi.admin.formation.list(),
     blocks: (d, ctx) => [{
       type: "note", span: 6, icon: "calendar-star",
-      text: "Each block's part is shown only to its reader. Reminders go at each block's start on Saturday; families who take check-in news get the plan at 8:00, a not-arrived notice at 8:45 and the close at 2:00." + (d.lastSaturday ? " Last Saturday (" + d.lastSaturday + "): " + (d.sent || []).reduce((n, x) => n + Number(x.n), 0) + " sent." : ""),
+      text: "Each block's part is shown only to its reader. Reminders go at each block's start on Saturday; families who take check-in news get the plan at " + crSfBounds(d.blocks).start + ", a not-arrived notice at " + crSfBounds(d.blocks).late + " and the close at " + crSfBounds(d.blocks).end + "." + (d.lastSaturday ? " Last Saturday (" + d.lastSaturday + "): " + (d.sent || []).reduce((n, x) => n + Number(x.n), 0) + " sent." : ""),
     }, {
       type: "table", span: 6, title: "The day", sub: "Think. Create. Lead. Serve.", nosel: true,
       cols: ["Time", "Block", "Flow", "Readers"],

@@ -103,7 +103,7 @@ function cp_centre_shape(array $c, array $roomsBy, array $leadBy): array {
     if (!$rooms) $rooms = ['Main hall'];
     return ['id' => $id, 'name' => (string)$c['name'], 'slug' => (string)($c['slug'] ?: centre_slugify((string)$c['name'])),
             'days' => $days ?: [6], 'daysSet' => (bool)$days,
-            'open' => $win ? tt_hhmm($win[0]) : '09:00', 'close' => $win ? tt_hhmm($win[1]) : '14:00', 'hoursSet' => (bool)$win,
+            'open' => $win ? tt_hhmm($win[0]) : '09:00', 'close' => $win ? tt_hhmm($win[1]) : '15:00', 'hoursSet' => (bool)$win,
             'rooms' => array_values($rooms), 'lead' => $leadBy[$id]['name'] ?? '', 'leadTone' => $leadBy[$id]['tone'] ?? 'bad',
             'leadState' => $leadBy[$id]['state'] ?? 'No lead'];
 }
@@ -499,7 +499,7 @@ function cp_rota_rows(array $x): array {
             $d = $have[$date] ?? null; $v = $d ? ($vols[(string)$d['volunteerId']] ?? null) : null;
             $out[] = ['id' => $date . '|' . $c['name'], 'date' => $date, 'centre' => (string)$c['name'],
                       'start' => $d && $d['startTime'] !== '' ? (string)$d['startTime'] : ($win ? tt_hhmm($win[0]) : '09:00'),
-                      'end' => $d && $d['endTime'] !== '' ? (string)$d['endTime'] : ($win ? tt_hhmm($win[1]) : '14:00'),
+                      'end' => $d && $d['endTime'] !== '' ? (string)$d['endTime'] : ($win ? tt_hhmm($win[1]) : '15:00'),
                       'who' => $v ? (string)$v['fullName'] : '', 'whoId' => $v ? (string)$v['volunteerId'] : '',
                       'cleared' => $v ? (string)$v['safeguarding'] === 'cleared' : false, 'stored' => (bool)$d];
         }
@@ -925,7 +925,7 @@ function cp_rota_times(string $date, string $centre, string $start = '', string 
     $have = db_row('SELECT startTime, endTime FROM attendance_duty WHERE date = ? AND centre = ?', [$date, $centre]);
     if (!$have) return;
     $s = $start !== '' ? $start : ((string)$have['startTime'] !== '' ? (string)$have['startTime'] : ($win ? tt_hhmm($win[0]) : '09:00'));
-    $e = $end !== '' ? $end : ((string)$have['endTime'] !== '' ? (string)$have['endTime'] : ($win ? tt_hhmm($win[1]) : '14:00'));
+    $e = $end !== '' ? $end : ((string)$have['endTime'] !== '' ? (string)$have['endTime'] : ($win ? tt_hhmm($win[1]) : '15:00'));
     db_update('attendance_duty', ['startTime' => $s, 'endTime' => $e], ['date' => $date, 'centre' => $centre]);
 }
 

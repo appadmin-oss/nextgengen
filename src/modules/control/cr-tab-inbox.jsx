@@ -29,7 +29,7 @@ const CR_INBOX_REPLIES = [
   { l: "How to apply", for: "apply", t: "Hello {first},\n\nThank you for your interest in NGG. Applications are made online at nextgenerationgenius.org/join — choose the programme, fill in the form, and we confirm by email within a week.\n\nIf anything on the form is unclear, reply to this email and I’ll help.\n\n{me}" },
   { l: "Mentoring next steps", for: "mentor", t: "Hello {first},\n\nThank you for offering to mentor with NGG. The next step is a short conversation so we can understand your experience and the time you can give. Please reply with two times that suit you this week.\n\n{me}" },
   { l: "Partnership", for: "partner", t: "Hello {first},\n\nThank you for reaching out about working together. I’ve shared your message with our programme lead, and we’ll be in touch within the week to arrange a call.\n\n{me}" },
-  { l: "Session times", for: "general", t: "Hello {first},\n\nOur Saturday sessions run from 10am to 2pm at each centre. Please arrive ten minutes early for check-in.\n\n{me}" },
+  { l: "Session times", for: "general", t: "Hello {first},\n\nOur Saturday sessions run from 9am to 3pm at each centre. Please arrive ten minutes early for check-in.\n\n{me}" },
   { l: "Support: fixed", for: "support", t: "Hello {first},\n\nThank you for letting us know. This is now fixed — please try again, and reply to this email if it still doesn’t work.\n\n{me}" },
 ];
 
@@ -99,7 +99,7 @@ function crMsgDraft(m, me) {
     login: "Sorry it isn’t letting you in. Please try “Sign in with a code” on the sign-in page — we email a six-digit code, so no password is needed. If the code doesn’t arrive within five minutes, check spam, then reply here with the email address you use and I’ll check it on our side.",
     card: child ? "I’m looking at " + child + "’s card now. If it is lost or damaged, you can ask for a replacement from the family account (Today → Replacement ID card), and if the details on it are wrong, tell me what should be printed and I’ll correct the record before it is reprinted."
                 : "Could you tell me the member’s full name and their centre? I’ll look at the card record and come back to you.",
-    times: "Our Saturday sessions run from 10am to 2pm at each centre. Please arrive ten minutes early for check-in. Each centre’s timetable is on the member and family accounts, and changes are announced there first.",
+    times: "Our Saturday sessions run from 9am to 3pm at each centre. Please arrive ten minutes early for check-in. Each centre’s timetable is on the member and family accounts, and changes are announced there first.",
     apply: k ? (child ? child + " is already with us, so there’s nothing to apply for. " : "You’re already with us, so there’s nothing to apply for. ") + "If you meant a second child, the form is at nextgenerationgenius.org/join — choose the programme and fill it in, and we confirm by email within a week."
              : "Applications are made online at nextgenerationgenius.org/join — choose the programme, fill in the form, and we confirm by email within a week. If anything on the form is unclear, reply to this email and I’ll help.",
     mentor: "Thank you for offering your time. The next step is a short conversation so we can understand your experience and the time you can give. Please reply with two times that suit you this week.",

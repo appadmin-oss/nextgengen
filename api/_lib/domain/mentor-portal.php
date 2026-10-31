@@ -45,7 +45,7 @@ const MP_DEFAULTS = ['overdueDays' => 14, 'stalledDays' => 21, 'familyDays' => 3
                      'supervisionDays' => 45, 'concernHours' => 24];
 const MP_LEVELS = ['Low', 'Steady', 'Strong', 'Exceptional'];
 const MP_VALUES = ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
-/* The Saturday Formation Schedule's mentor duties, ticked per child: 8:00 punctuality
+/* The Saturday Formation Schedule's mentor duties, ticked per child: punctuality (by the first block)
  * and assignment completion, and the 1:45 mentor check-out. */
 const MP_CHECKS = ['On time', 'Assignment in', 'Checked out'];
 const MP_NOTE_MAX = 500;
@@ -58,7 +58,7 @@ const MP_FOLLOWUP_STALE_DAYS = 9;
  * criteria. The scale is the growth scale the member sees, never a mark out of ten. */
 const MP_EVAL_SCALE = ['Not yet', 'Emerging', 'Demonstrated', 'Strong'];
 const MP_EVAL_CRITERIA = [
-    'punctuality'   => ['Punctuality', 'Here and checked in by 8:00am'],
+    'punctuality'   => ['Punctuality', 'Here and checked in by 9:00am, when the day starts'],
     'assignment'    => ['Assignment', 'The week’s assignment handed in at check-in'],
     'participation' => ['Participation', 'Took part in the huddle, the breakout and the class'],
     'respect'       => ['Respect', 'To peers, mentors and instructors'],
@@ -1538,9 +1538,10 @@ function member_mp_saturday(array $p): array {
     if ($ids) {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         foreach (db_all("SELECT subjectId, here, observed, checks, note FROM mentor_register WHERE onDate = ? AND subjectId IN ($ph)", array_merge([$date], $ids)) as $r) $reg[$r['subjectId']] = ['here' => (int)$r['here'] === 1, 'observed' => json_decode((string)$r['observed'], true) ?: [], 'checks' => json_decode((string)($r['checks'] ?? ''), true) ?: [], 'note' => (string)($r['note'] ?? '')];
-        /* The gate's check-in time answers "on time" for a child the mentor has not ticked: before 8:01 Lagos. */
+        /* The gate's check-in time answers "on time" for a child the mentor has not ticked: by the day's first block (the schedule's, not a typed hour). */
+        $dayStart = function_exists('sf_day_bounds') ? sf_day_bounds()['startHm'] : '09:00';
         foreach (db_all("SELECT studentId, MIN(checkInAt) t FROM attendance WHERE date = ? AND studentId IN ($ph) GROUP BY studentId", array_merge([$date], $ids)) as $r) {
-            $at = (string)$r['t']; $early = $at !== '' && gmdate('H:i', strtotime($at) + 3600) <= '08:00';
+            $at = (string)$r['t']; $early = $at !== '' && gmdate('H:i', strtotime($at) + 3600) <= $dayStart;
             if (!isset($reg[$r['studentId']])) $reg[$r['studentId']] = ['here' => true, 'observed' => [], 'checks' => $early ? ['On time'] : [], 'gate' => true];
             $reg[$r['studentId']]['arrivedAt'] = $at !== '' ? gmdate('H:i', strtotime($at) + 3600) : '';
         }
@@ -1779,7 +1780,7 @@ function mp_eval_validate($e): array {
 }
 /**
  * What the register already knows, as a starting point the mentor confirms:
- * on time (the mentor's tick or the gate's arrival by 8:00), the assignment
+ * on time (the mentor's tick or the gate's arrival by the first block), the assignment
  * handed in and the values seen; the register's detail line as the strength.
  * Never saved by itself.
  */

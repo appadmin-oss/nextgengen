@@ -377,7 +377,7 @@ Object.assign(Mp9Portal.prototype, {
     const Mst = M ? ((s.mState || {})[M.missionId] || M.status || "todo") : "todo";
     const evSent = !!M && (Mst !== "todo" && Mst !== "rejected");
     return {
-      sat: { date: satIso ? mp9Date(satIso, { weekday: "long", day: "numeric", month: "long" }) : "Saturday", time: f.hours || "8:00am – 2:00pm", theme: f.theme || "Think. Create. Lead. Serve.", room: me.centre + " centre" },
+      sat: { date: satIso ? mp9Date(satIso, { weekday: "long", day: "numeric", month: "long" }) : "Saturday", time: f.hours || "9:00am – 3:00pm", theme: f.theme || "Think. Create. Lead. Serve.", room: me.centre + " centre" },
       plan: (f.blocks || []).map(b => ({ t: b.start, a: b.title + ((b.for && b.for.member && b.for.member[0]) ? " · " + b.for.member[0] : "") })).concat(f.blocks && f.blocks.length ? [] : [{ t: "", a: f.error ? "The plan couldn’t load." : "The Saturday plan isn’t published yet." }]),
       ch: M ? { t: M.title, cat: M.type || "Mission", due: "Before Saturday", d: M.prompt || "", builds: [] } : { t: "No mission this week", cat: "Mission", due: "", d: "When the week’s mission opens, it shows here.", builds: [] },
       builds: M ? [M.type || "Reflect", (M.xp || 0) + " XP", M.estimatedMin ? "About " + M.estimatedMin + " min" : ""].filter(Boolean) : [],
@@ -961,7 +961,7 @@ Object.assign(Mp9Portal.prototype, {
       rootRef: this.rootRef, narrow, wide, outerPad: "0", frameW: "100%", frameH: "100%", frameR: "0", frameSh: "none",
       mainPad: narrow ? (end ? "16px 16px 0" : "16px 16px 28px") : (end ? "32px 40px 0" : "32px 40px 56px"), toastBottom: narrow ? "92px" : "24px",
       greeting: "Good " + mp9Greeting() + ", " + me.first,
-      me: { ...me, name: me.name || "…" }, mentor: { name: M.name, first: M.first, initials: M.initials, role: M.role, months: mine.mentor && mine.mentor.since ? Math.max(1, Math.round((Date.now() - new Date(mine.mentor.since + "T12:00:00Z")) / (30.4 * 864e5))) : 1, since: mine.mentor && mine.mentor.since ? mp9Date(mine.mentor.since, { month: "long", year: "numeric" }) : "this session", next: this.satDate() ? mp9Date(this.satDate(), { weekday: "short", day: "numeric", month: "short" }) + " · 8:30 at the centre" : "Saturday at the centre" },
+      me: { ...me, name: me.name || "…" }, mentor: { name: M.name, first: M.first, initials: M.initials, role: M.role, months: mine.mentor && mine.mentor.since ? Math.max(1, Math.round((Date.now() - new Date(mine.mentor.since + "T12:00:00Z")) / (30.4 * 864e5))) : 1, since: mine.mentor && mine.mentor.since ? mp9Date(mine.mentor.since, { month: "long", year: "numeric" }) : "this session", next: this.satDate() ? mp9Date(this.satDate(), { weekday: "short", day: "numeric", month: "short" }) + " · the mentor breakout at the centre" : "Saturday at the centre" },
       sessEnds: me.sessEnds,
       lastMsg: last ? "“" + last.body.slice(0, 140) + "”" : M.has ? "No message yet. Say hello." : "A mentor is matched to you by your centre.",
       kpis: [["Session", sess ? sess.name + " · week " + sess.weekOf + " of " + sess.totalWeeks : "Between sessions"], ["Level", "Level " + (stats.level || 1) + (((this.dd("mom") || {}).momentum || {}).levelName ? " · " + this.dd("mom").momentum.levelName : "")], ["Streak", (stats.streak || 0) + (stats.streak === 1 ? " day" : " days")]].map(([k, v]) => ({ k, v, fg: "#0b0b0c" })),

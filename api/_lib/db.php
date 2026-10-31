@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 212;
+const NGG_SCHEMA_TARGET = 213;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -48,6 +48,18 @@ const NGG_BACKFILL_MEMBER_DIVISION = "
         WHEN LOWER(track) IN ('business','admin','operations','finance','strategy') THEN 'business'
         ELSE division END
      WHERE (division IS NULL OR division = '') AND track IS NOT NULL AND track <> ''
+";
+
+/* 213 — the Saturday Formation Schedule an hour later, applied to each site's
+ * own table (see the ladder). A constant so the PHP suite runs the same SQL
+ * the migration runs, against a fixture. */
+const NGG_FORMATION_HOUR_LATER = "
+    UPDATE saturday_formation SET startTime = printf('%02d:%s', CAST(substr(startTime, 1, 2) AS INTEGER) + 1, substr(startTime, 4, 2))
+     WHERE startTime GLOB '[0-2][0-9]:[0-5][0-9]' AND CAST(substr(startTime, 1, 2) AS INTEGER) < 23;
+    UPDATE saturday_formation SET endTime = printf('%02d:%s', CAST(substr(endTime, 1, 2) AS INTEGER) + 1, substr(endTime, 4, 2))
+     WHERE endTime GLOB '[0-2][0-9]:[0-5][0-9]' AND CAST(substr(endTime, 1, 2) AS INTEGER) < 23;
+    UPDATE saturday_formation SET forJson = REPLACE(REPLACE(forJson, 'staffed by 7:50', 'staffed by 8:50'), 'closed by 2:15', 'closed by 3:15'),
+           updatedAt = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updatedBy = 'migration-213';
 ";
 
 const NGG_BACKFILL_MEMBER_LEVELS = "
@@ -101,6 +113,25 @@ const NGG_BACKFILL_VOLUNTEER_PROGRAMME = "
  * rather than doing it silently.
  */
 const NGG_MYSQL_ROW_FIXUPS = [
+    /* 213 — the Saturday Formation Schedule an hour later. A shift is not
+     * idempotent by itself (run twice, it is two hours), so it is guarded by a
+     * marker row written by the LAST statement of the three: a deploy that
+     * replays the fixups again finds the marker and moves nothing — even a
+     * block an admin has re-timed since. Order in this array is run order. */
+    'saturday_formation.hour_later.start' => "
+        UPDATE saturday_formation SET startTime = CONCAT(LPAD(CAST(SUBSTRING(startTime, 1, 2) AS UNSIGNED) + 1, 2, '0'), SUBSTRING(startTime, 3)),
+               endTime = IF(endTime REGEXP '^[0-2][0-9]:[0-5][0-9]$' AND CAST(SUBSTRING(endTime, 1, 2) AS UNSIGNED) < 23,
+                            CONCAT(LPAD(CAST(SUBSTRING(endTime, 1, 2) AS UNSIGNED) + 1, 2, '0'), SUBSTRING(endTime, 3)), endTime),
+               forJson = REPLACE(REPLACE(forJson, 'staffed by 7:50', 'staffed by 8:50'), 'closed by 2:15', 'closed by 3:15'),
+               updatedBy = 'migration-213'
+         WHERE startTime REGEXP '^[0-2][0-9]:[0-5][0-9]$' AND CAST(SUBSTRING(startTime, 1, 2) AS UNSIGNED) < 23
+           AND NOT EXISTS (SELECT 1 FROM settings WHERE settingKey = 'migration.formation_hour_later')
+    ",
+    'saturday_formation.hour_later.mark' => "
+        INSERT INTO settings (settingKey, settingValue, updatedAt, updatedBy)
+        SELECT 'migration.formation_hour_later', '\"213\"', DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-%dT%H:%i:%sZ'), 'migration-213' FROM DUAL
+         WHERE NOT EXISTS (SELECT 1 FROM settings WHERE settingKey = 'migration.formation_hour_later')
+    ",
     /* 193 — Anchor Circle joined the family account: the old code-and-token
      * links stop opening anything; their days and notes stay on the record. */
     'circle_links.moved' => "UPDATE circle_links SET status = 'moved' WHERE status = 'active'",
@@ -6108,6 +6139,17 @@ function db_migrate(PDO $db): void {
             ALTER TABLE notices ADD COLUMN scheduledBy TEXT NOT NULL DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_notices_sched ON notices(status, scheduledAt);
         ",
+
+        /* 213 — the Saturday Formation Schedule moves an hour later (owner,
+           30 Oct 2026): 9:00 to 3:00, in step with the doors opening at 9:00
+           and the rulebook's lateness bands from 9:30. The table IS the
+           timetable, so the shift is applied to what each site has — every
+           block, an hour on, whatever the site had edited it to — not to the
+           seed; a site never seeded is seeded at the new times. Times are
+           validated HH:MM on save, so the arithmetic is on two digits; a block
+           already at 23:xx is left alone rather than wrapped past midnight.
+           The two staff lines that typed a clock time move with it. */
+        213 => NGG_FORMATION_HOUR_LATER,
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

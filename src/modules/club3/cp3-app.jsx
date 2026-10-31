@@ -169,7 +169,7 @@ class Cp3Portal extends React.Component {
 
   /* ── helpers ───────────────────────────────────────────────────────── */
   B() { return this.state.boot; }
-  C(id) { return (this.B().centres || []).find(c => c.id === id) || { id, name: id, days: [6], open: "09:00", close: "14:00", rooms: ["Main hall"], slug: "" }; }
+  C(id) { return (this.B().centres || []).find(c => c.id === id) || { id, name: id, days: [6], open: "09:00", close: "15:00", rooms: ["Main hall"], slug: "" }; }
   CN(name) { return (this.B().centres || []).find(c => c.name === name); }
   lockC() { const b = this.B(); return b && b.me.scoped ? (b.me.centres[0] || "") : ""; }
   scopeName() { return this.lockC() || this.state.scope; }

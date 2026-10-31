@@ -5228,3 +5228,33 @@ An audit of the notices feature end to end found, and this closes:
   warning and refusal for an empty audience, z-index 42 so Control Room forms
   and confirms layer above it.
 - Tests: PHP +17 checks; `tests/notices.test.js` 45 checks.
+
+## 2026-10-30 — The Saturday Formation Schedule moves an hour later (9:00–3:00)
+
+Owner's request: "push the current NGG timetable (Saturday formation) forward
+by an hour". The doors already opened at 09:00 (attendance settings) and the
+rulebook's lateness bands start at 9:30, so the 8:00 formation start was the
+one out of step.
+
+- **The table is the timetable**, so the shift is applied to each site's own
+  rows, as edited: migration 213 (`NGG_FORMATION_HOUR_LATER`, SQLite ladder)
+  and `NGG_MYSQL_ROW_FIXUPS['saturday_formation.hour_later.*']` on MySQL —
+  the mirror cannot carry an UPDATE (the replay drops it; the suite's
+  "mysql mirror" check caught exactly that), and a fixup replays every
+  deploy, so the shift is guarded by a marker setting
+  (`migration.formation_hour_later`). A 23:xx block is not wrapped. The two
+  staff lines that typed a clock ("staffed by 7:50", "closed by 2:15") move
+  with it. Fresh installs seed at 09:00–15:00.
+- **Times that were typed now read the schedule**: `sf_day_bounds()` gives
+  the day's first start and last end; the families' plan / not-arrived /
+  close emails, their subject and body times, `public.formation`'s `hours`,
+  and the mentor register's "on time" (was a literal `08:00`) all use it.
+  The family app's "Doors open at 09:00" / "Sign-out opens at 14:00" read
+  `family_day_times()` (attendance settings + schedule). The mentor portal's
+  breakout time and the Control Room's formation note are derived too.
+- Static copy corrected: the inbox "Session times" template (said 10am–2pm),
+  the guide, the member's mentor agreement, the club portal's default centre
+  window (14:00 → 15:00).
+- **Not changed, on purpose:** the attendance settings (doors, grace,
+  sign-out) and the rulebook's lateness bands are admin-owned policy; the
+  guide tells the operator to move a 14:00 sign-out to 15:00 if one is set.

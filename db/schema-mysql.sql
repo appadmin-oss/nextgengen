@@ -4981,3 +4981,9 @@ ALTER TABLE notices ADD COLUMN scheduledBy VARCHAR(64) NOT NULL DEFAULT '';
 CREATE INDEX idx_notices_sched ON notices (status, scheduledAt);
 
 INSERT INTO schema_version (version) VALUES (212) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 213 · The Saturday Formation Schedule an hour later (9:00 to 3:00) ──
+-- The shift is a row change, which this file cannot carry (the replay runs only
+-- CREATE / ALTER / INSERT): it is NGG_MYSQL_ROW_FIXUPS 'saturday_formation.hour_later.*'
+-- in api/_lib/db.php, guarded by a marker so it moves each site's schedule once.
+INSERT INTO schema_version (version) VALUES (213) ON DUPLICATE KEY UPDATE version = version;

@@ -590,7 +590,7 @@ class Mp9Portal extends React.Component {
       /* Quick replies are for answering: shown while there is something to answer and nothing typed, gone once the child is writing. */
       showQuick: !(s.msg || "").trim() && cr.rec !== "rec" && cr.rec !== "done" && (!src.length || !src[src.length - 1].mine),
       hasQuietNote: !!c.quiet, onMsgKey: e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } },
-      agreement: ["Meet on Saturdays at the musing and mentor breakout (8:30)", "Messages through the portal only, 8am to 8pm", mine.goal ? "Work on: " + mine.goal.goal : "Agree one goal together, and check it every few weeks", "If something isn’t working, either of us tells the coordinator"],
+      agreement: ["Meet on Saturdays at the musing and mentor breakout", "Messages through the portal only, 8am to 8pm", mine.goal ? "Work on: " + mine.goal.goal : "Agree one goal together, and check it every few weeks", "If something isn’t working, either of us tells the coordinator"],
       feedback, fbReady: qs.length > 0 && fbCount === qs.length && !done, fbSent: done, fbNotSent: !done, fbLow: s.fbSent ? fbLow : false,
       sendFb: () => NGGApi.member.pod.act("relChild", { answers: qs.map((_, k) => (fbOpts.find(o => o[0] === s.fb[k]) || [0, 3])[1]) })
         .then(() => { this.setState({ fbSent: true }); this.refresh(["mine"]); }).catch(e => this.toast(mp9Err(e))),

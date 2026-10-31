@@ -73,7 +73,7 @@ const GUIDE_TOURS = {
   ] },
   family: { title: "Welcome to your family account", steps: [
     ["ph ph-hand-waving", "Your child at NGG", "See attendance, lessons, conduct, fees and what their mentor shares, for each child linked to you."],
-    ["ph ph-calendar-check", "Saturdays", "You get the plan at 8:00, a note if they have not arrived by 8:45, and how the day went at 2:00."],
+    ["ph ph-calendar-check", "Saturdays", "You get the plan when the day starts, a note if they have not arrived 45 minutes in, and how the day went at the close."],
     ["ph ph-chat-circle-text", "Tell the centre", { phone: "Tap the message button to tell the centre anything: an absence, a question or a worry. You can record a voice note instead of typing.",
       desktop: "Use the message button to tell the centre anything: an absence, a question or a worry." }],
     ["ph ph-device-mobile", "Keep it on your phone", { ios: "In Safari, tap Share, then “Add to Home Screen”. You will see your child’s Saturday in one tap.",

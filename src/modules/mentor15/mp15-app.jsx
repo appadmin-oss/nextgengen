@@ -22,7 +22,9 @@
 
 /* The Saturday evaluation's scale and criteria, as the server sends them (mentor-portal.php MP_EVAL_*); this copy is only the fallback before the read lands. */
 const MP15_EVAL_SCALE = ['Not yet', 'Emerging', 'Demonstrated', 'Strong'];
-const MP15_EVAL_CRITERIA = [['punctuality', 'Punctuality', 'Here and checked in by 8:00am'], ['assignment', 'Assignment', 'The week’s assignment handed in at check-in'],
+/** "09:30" → "9:30am": the schedule's time as a mentor reads a clock. (Not mp15Clock: that is the agenda's minutes-of-the-day formatter, below.) */
+function mp15Ampm(hm) { const p = String(hm || "").split(":"); const h = +p[0] || 0; return ((h % 12) || 12) + ":" + (p[1] || "00") + (h < 12 ? "am" : "pm"); }
+const MP15_EVAL_CRITERIA = [['punctuality', 'Punctuality', 'Here and checked in by 9:00am, when the day starts'], ['assignment', 'Assignment', 'The week’s assignment handed in at check-in'],
   ['participation', 'Participation', 'Took part in the huddle, the breakout and the class'], ['respect', 'Respect', 'To peers, mentors and instructors'],
   ['teamwork', 'Teamwork', 'Worked with others and helped them'], ['courage', 'Courage', 'Tried something hard or spoke up'],
   ['initiative', 'Initiative', 'Started things without being asked'], ['reflection', 'Reflection', 'Named what they learned and what is next']].map(([key, label, hint]) => ({ key, label, hint }));
@@ -410,8 +412,8 @@ class Mp15Portal extends React.Component {
                fg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#6b6b72', pts: pts.map((v, i) => ({ h: (v === null || v === undefined ? 0 : v) + '%', c: v === null || v === undefined ? '#f0efea' : i === pts.length - 1 ? '#0b0b0c' : '#d6d4cc' })) }; };
 
     const agenda = this.agendaNow();
-    /* The breakout's window is the Saturday schedule's, from the server (Musing & mentor breakout, 8:30–10:00 by default). */
-    const win = satN.window || { start: '08:30', end: '10:00', minutes: 90 };
+    /* The breakout's window is the Saturday schedule's, from the server (Musing & mentor breakout, 9:30–11:00 by default). */
+    const win = satN.window || { start: '09:30', end: '11:00', minutes: 90 };
     let t0 = (parseInt(win.start, 10) || 8) * 60 + (parseInt(String(win.start).slice(3), 10) || 0); const total = agenda.reduce((n, a) => n + a.m, 0);
     const LIB = satN.activities || [];
 
@@ -453,7 +455,7 @@ class Mp15Portal extends React.Component {
     const nTeam = ((D.team || {}).mentors || []).length;
     const subs = { module: 'Academy', goals: 'Every mentee’s goal, how close they are, and when it was last checked', sess: 'Every one-to-one, pod session and family contact you’ve logged',
       week: mp15Fmt(today, { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + N + ' mentees · ' + roleLabel.toLowerCase(), list: N + ' in your care · sorted by who needs you most', kid: '',
-      sat: 'Musing & mentor breakout at 8:30am · ' + mp15Fmt(S.step === 'before' ? (satN.date || this.satNextDate()) : this.satLastDate(), { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + all.length + ' mentees',
+      sat: 'Musing & mentor breakout at ' + mp15Ampm(win.start) + ' · ' + mp15Fmt(S.step === 'before' ? (satN.date || this.satNextDate()) : this.satLastDate(), { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + all.length + ' mentees',
       msg: unreadN + ' unread', growth: 'Last 8 Saturdays', academy: acMods.filter(modDone).length + ' of ' + acMods.length + ' modules complete', role: 'NGGC Mentorship Commitment and Conduct Policy', projects: 'Projects and activities, in groups, with a countdown to the finish', mentors: nTeam + ' mentors', concern: 'Goes straight to the safeguarding officer' };
     const pill = on => ({ bw: on ? '2px' : '1px', ring: on ? '#0b0b0c' : '#d6d4cc' });
     const chip = on => ({ line: on ? '#0b0b0c' : '#d6d4cc', bg: on ? '#0b0b0c' : '#fff', fg: on ? '#fff' : '#0b0b0c' });
@@ -1127,7 +1129,7 @@ function Mp15AcademyBar({ o, go }) {
 function mp15Clock(min) { return Math.floor(min / 60) + ':' + String(min % 60).padStart(2, '0'); }
 function Mp15Agenda({ items, win, after, mentees, picks, max, ooMax, save, sharedAt, lead, onItems, onPicks, onReset, onRetry, onShare }) {
   const [edit, setEdit] = React.useState(-1);
-  const start = (parseInt(win.start, 10) || 8) * 60 + (parseInt(String(win.start).slice(3), 10) || 0);
+  const start = (parseInt(win.start, 10) || 9) * 60 + (parseInt(String(win.start).slice(3), 10) || 0);
   const total = items.reduce((n, a) => n + a.m, 0), spare = win.minutes - total;
   const pinned = a => a.t === 'Pod huddle' || a.t === 'Close';
   const put = (i, patch) => onItems(items.map((a, j) => j === i ? { ...a, ...patch } : a));
