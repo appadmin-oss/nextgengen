@@ -126,13 +126,14 @@ function cleanup() {
     chk('a view has its own address, and switching does not reload', (await P.$$('.cr-ib-row')).length === 2);
     const who = await selName();
     await P.keyboard.press('2');
-    chk('pressing 2 runs the second decision (Waitlist) and offers Undo', await toastHas(P, /Waitlisted · [\s\S]*Undo/));
+    /* A waitlist tells the family at once (email and a text), so it is not
+       offered as undoable: the toast says it is done and who was told. */
+    chk('pressing 2 runs the second decision (Waitlist), with no Undo for a message already sent', await toastHas(P, /Waitlisted · /) && !(await P.$('.cr-toast-undo')));
     const st = () => php(`echo db_row("SELECT status FROM applications WHERE name = '${who}'")['status'];`);
     chk('…and the server has it', st() === 'waitlist');
     chk('…the item leaves the list and the next is open', (await P.$$('.cr-ib-row')).length === 1 && (await selName()) !== who);
-    await P.click('.cr-toast-undo');
-    await P.waitForTimeout(600);
-    chk('Undo puts it back, on the server too', st() === 'new' && (await P.$$('.cr-ib-row')).length === 2);
+    // It is not lost: a waitlisted child is still on the desk, marked so, after a reload.
+    php(`db_update('applications', ['status' => 'new'], ['name' => '${who}']);`);
 
     console.log('replying in the app');
     await P.click('.cr-ib-view[title="Messages"]');
