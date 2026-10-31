@@ -15,19 +15,23 @@ function crOverview(force) {
   return p;
 }
 
+/* Each row says what pressing it does (`act`, a verb) and why the queue
+   matters, and goes to the tab where that is DONE — never a bare "Review".
+   The wait of the oldest item is appended to the why, so the oldest-first
+   order explains itself. */
 const CR_ATTENTION = [
-  // [waiting key, label, sub(n, oldest), tone, cap, go]
-  ["applications", "Applications to review", "", "gold", "people", ["inbox", "applications"]],
-  ["unscreened", "Volunteers not yet screened", "Safeguarding check before their first shift", "bad", "people", ["mentors", "volunteers"]],
-  ["volunteers", "Volunteer applications", "", "neutral", "people", ["mentors", "volunteers"]],
-  ["approvals", "Approvals waiting", "A second admin has to decide these", "warn", "people", ["inbox", "approvals"]],
-  ["requests", "Member requests", "", "neutral", "people", ["inbox", "requests"]],
-  ["toGrade", "Submissions to grade", "", "neutral", "content", ["learning", "assignments"]],
-  ["missions", "Missions to verify", "", "neutral", "content", ["learning", "missions"]],
-  ["messages", "Unread messages", "", "neutral", "inbox", ["inbox", "messages"]],
-  ["photos", "Headshots waiting", "Blocking ID cards from printing", "neutral", "content", ["inbox", "photos"]],
-  ["comments", "Comments to moderate", "", "neutral", "content", ["inbox", "comments"]],
-  ["testimonials", "Testimonials to read", "What members said about their sessions", "neutral", "content", ["inbox", "testimonials"]],
+  // [waiting key, label, why, tone, cap, go, act]
+  ["applications", "Applications to review", "A family is waiting to hear whether their child has a place", "gold", "people", ["inbox", "applications"], "Accept or decline"],
+  ["unscreened", "Volunteers not yet screened", "Safeguarding check before their first shift", "bad", "people", ["mentors", "volunteers"], "Screen"],
+  ["volunteers", "Volunteer applications", "Somebody offered to help and has not been answered", "neutral", "people", ["mentors", "volunteers"], "Accept or decline"],
+  ["approvals", "Approvals waiting", "A second admin has to decide these", "warn", "people", ["inbox", "approvals"], "Approve or refuse"],
+  ["requests", "Member requests", "Changes a member or parent asked for. Nothing changes until somebody answers", "neutral", "people", ["inbox", "requests"], "Answer"],
+  ["toGrade", "Submissions to grade", "Members see no mark or feedback until it is graded", "neutral", "content", ["learning", "assignments"], "Grade"],
+  ["missions", "Missions to verify", "Points and progress land only once a mission is verified", "neutral", "content", ["learning", "missions"], "Verify"],
+  ["messages", "Unread messages", "From the contact form. Whoever wrote is waiting for a reply", "neutral", "inbox", ["inbox", "messages"], "Reply"],
+  ["photos", "Headshots waiting", "Blocking ID cards from printing", "neutral", "content", ["inbox", "photos"], "Pass or reject"],
+  ["comments", "Comments to moderate", "Hidden from the public site until approved", "neutral", "content", ["inbox", "comments"], "Moderate"],
+  ["testimonials", "Testimonials to read", "What members said about their sessions", "neutral", "content", ["inbox", "testimonials"], "Read"],
 ];
 
 function crAuditIcon(ev) {
@@ -74,12 +78,15 @@ Object.assign(CR_TAB_DEFS, {
       const ov = d.ov || {}, w = ov.waiting || {}, m = ov.members || {}, now = Date.now();
       const rows = CR_ATTENTION.filter(a => ctx.can(a[4]) && w[a[0]] && w[a[0]].n > 0).map(a => {
         const x = w[a[0]], age = x.oldest ? now - Date.parse(x.oldest) : 0;
-        return { n: x.n, l: a[1], s: a[2] || (x.oldest ? "Oldest has waited " + crAgo(x.oldest).replace(/m$/, " min").replace(/h$/, " h").replace(/d$/, " days").replace(/w$/, " weeks") : ""), tone: a[3], go: a[5], age };
+        const waited = x.oldest ? "Oldest has waited " + crAgo(x.oldest).replace(/m$/, " min").replace(/h$/, " h").replace(/d$/, " days").replace(/w$/, " weeks") : "";
+        return { n: x.n, l: a[1], s: [a[2], waited].filter(Boolean).join(". ") + (waited ? "." : ""), tone: a[3], go: a[5], act: a[6], age };
       });
       /* Image storage near or at its limit is work for whoever holds settings: it goes in Needs you, first. */
       const cl = d.health && d.health.health && d.health.health.checks && d.health.health.checks.cloudinary;
       if (cl && (cl.level === "high" || cl.level === "critical")) rows.unshift({ n: Math.round(cl.usedPercent || 0) + "%", l: cl.level === "critical" ? "Image storage is full — uploads are paused" : "Image storage is nearly full",
-        s: "Free space or upgrade the Cloudinary plan", tone: cl.level === "critical" ? "bad" : "warn", go: ["settings", "ops"], age: Infinity });
+        s: "Delete Cloudinary’s resized copies (every original is kept), or upgrade the plan", tone: cl.level === "critical" ? "bad" : "warn", act: "Free space",
+        /* The purge itself, behind its own typed confirm, then a toast with what was deleted and the new figure. */
+        onClick: () => crSyMediaPurge(ctx), age: Infinity });
       const hasHealth = !!d.health;
       const out = [{ type: "attention", span: hasHealth ? 4 : 6, title: "Needs you", sub: "Oldest first", rows, empty: "Nothing is waiting on you. New work appears here as it arrives." }];
       if (hasHealth) {

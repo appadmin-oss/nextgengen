@@ -378,7 +378,7 @@ function crWfLookup(ctx) {
         ctx.drawer({
           title: res.length ? crPlural(res.length, "person", "people") + " for “" + v.q + "”" : "Nobody found for “" + v.q + "”",
           sub: "Within your centres",
-          sections: [{ h: "People", list: res.map(x => ({ icon: x.access === "off" ? "wifi-slash" : "wifi-high", t: x.name + " · " + (x.username || x.subjectId), s: (CR_WF_ACCESS.find(a => a[0] === x.access) || [0, x.access])[1] + " — " + (x.why || ""), act: { l: "Open", run: () => crWfPerson(ctx, x) } })),
+          sections: [{ h: "People", list: res.map(x => ({ icon: x.access === "off" ? "wifi-slash" : "wifi-high", t: x.name + " · " + (x.username || x.subjectId), s: (CR_WF_ACCESS.find(a => a[0] === x.access) || [0, x.access])[1] + " — " + (x.why || ""), act: { l: "Open their Wi-Fi", run: () => crWfPerson(ctx, x) } })),
             empty: "Try their printed ID (e.g. 026-014) or part of their name." }],
           actions: [{ l: "Look up somebody else", primary: true, run: () => { ctx.closeDrawer(); crWfLookup(ctx); } }],
         });
@@ -581,6 +581,25 @@ function crWfCacBlock(ctx, c) {
       + (L.full ? "" : "The list was sent in parts, so nobody was withdrawn. ") + "Suspensions, overrides and the access table here become NGG’s say; CACENTRE never gives more than NGG does. Members still set their password under Me → Wi-Fi, kept by CACENTRE once their centre’s router has moved. Anybody without email is shown their starting password at the gate when they check in, or use Starting passwords to hand them out.", act };
 }
 
+/* What a gateway's first problem asks of whoever reads it, and where that is
+   done — keyed on the titles wifi_gateway_diagnose() writes. A gateway is
+   on a centre's network NGG cannot reach, so "silent" and "out of memory"
+   are fixed at the router: those open the gateway, whose drawer says what to
+   check. Anything that has a step here runs it. */
+function crWfFixFor(ctx, d, g, x) {
+  const t = String(x.title || "");
+  if (/^Not connected yet/.test(t)) return { act: "Run the setup", onClick: () => crWfGuide(ctx, g) };
+  if (/wrong key/.test(t)) return { act: "Rotate the key", onClick: () => crWfRotate(ctx, g) };
+  if (/^RouterOS/.test(t)) return { act: "Upgrade steps", onClick: () => crWfGuide(ctx, g) };
+  if (/^More promised/.test(t)) return { act: "Change speeds", onClick: () => ctx.go("wifi", "wifi-access") };
+  if (/^Slow line/.test(t) && g.platform === "mikrotik" && !g.testAsked) return { act: "Test the line", onClick: async () => {
+    try { await NGGApi.admin.wifi.testAtNextFetch(g.gatewayId); ctx.toast("Asked. " + crWfName(g) + " tests its line at its next fetch, within a few minutes."); ctx.reload(); }
+    catch (e) { ctx.toast(crWfErr(e, "Couldn’t ask for a test."), null, true); } } };
+  if (/^Silent/.test(t)) return { act: "What to check", onClick: () => crWfOpen(ctx, g) };
+  if (/reported a problem/.test(t)) return { act: "Read the error", onClick: () => crWfOpen(ctx, g) };
+  return { act: "Open gateway", onClick: () => crWfOpen(ctx, g) };
+}
+
 Object.assign(CR_TAB_DEFS, {
   wifi: {
     skeleton: ["kpis", "cards", "cards"],
@@ -616,8 +635,9 @@ Object.assign(CR_TAB_DEFS, {
           { l: "Need a look", v: crNum(bad.length + warn.length), dn: bad.length ? crNum(bad.length) + " not working" : "" },
           { l: "People on Wi-Fi", v: crNum(people), dn: "as the gateways last confirmed" },
         ] },
-        bad.length + warn.length ? { type: "attention", span: 6, title: "Needs a look", empty: "",
-          rows: bad.concat(warn).map(g => { const x = (g.diagnosis || []).find(y => y.tone !== "ok") || {}; return { n: 1, l: crWfName(g) + " · " + x.title, s: x.fix, tone: g.health === "bad" ? "bad" : "warn", onClick: () => crWfOpen(ctx, g) }; }) } : null,
+        bad.length + warn.length ? { type: "attention", span: 6, title: "Needs a look", sub: "Not working first", empty: "",
+          rows: bad.concat(warn).map(g => { const x = (g.diagnosis || []).find(y => y.tone !== "ok") || {};
+            return Object.assign({ n: 1, l: crWfName(g) + " · " + x.title, s: x.fix, tone: g.health === "bad" ? "bad" : "warn", age: g.health === "bad" ? 2 : 1 }, crWfFixFor(ctx, d, g, x)); }) } : null,
         { type: "cards", span: 6, title: "Centres", sub: "Each centre and its gateway", empty: "No centres yet. Add them under Members → Centres.",
           cards: (d.centres || []).map(c => byCentre[c] ? null : { icon: "wifi-slash", title: c, tag: "Not set up", tone: "neutral",
             sub: d.cacentre && d.cacentre.configured ? "No router yet. Routers are added at CACENTRE now, under the site code “" + ((d.cacentre.sites || {})[c] || "") + "”. Open to go there."

@@ -313,6 +313,28 @@ function cleanup() {
     await C.context().close();
     php(`db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-CR-%'");`, ['bootstrap']);
 
+    /* No attention row anywhere says only "Review". CrAttention still draws a
+       row declared without an `act`, but marks it [data-act-missing] — this is
+       what catches it. Home: a waiting message says Reply and opens Messages. */
+    php(`db_insert('contact_messages', ['ref'=>'CR-ACT-1','name'=>'A parent','email'=>'p@example.invalid','subject'=>'Hello','message'=>'Hi','status'=>'new','createdAt'=>now_iso()]);`, ['bootstrap']);
+    const H = await open(1366, 900, '/control');
+    await H.waitForFunction(() => /Unread messages/.test(document.body.innerText), null, { timeout: 30000 });
+    const hrows = await H.$$eval('.cr-att-row', r => r.map(x => x.innerText.replace(/\s+/g, ' ').trim()));
+    const msg = hrows.find(x => /Unread messages/.test(x)) || '';
+    chk('home: every "Needs you" row names what it does — none is a bare Review, none is missing its verb',
+      hrows.length > 0 && !hrows.some(x => /\bReview$/.test(x)) && !(await H.$('[data-act-missing]')));
+    chk('home: …a waiting message says Reply, and why it matters', /Reply$/.test(msg) && /waiting for a reply/.test(msg));
+    await H.click('.cr-att-row:has-text("Unread messages")');
+    await H.waitForFunction(() => /\/control\/inbox\/messages/.test(location.pathname), null, { timeout: 15000 }).catch(() => {});
+    chk('home: …Reply opens the Messages inbox, where it is answered', /\/control\/inbox\/messages/.test(new URL(H.url()).pathname));
+    await H.context().close();
+    php(`db_exec("DELETE FROM contact_messages WHERE ref = 'CR-ACT-1'");`, ['bootstrap']);
+    const M2 = await open(1366, 900, '/control/members');
+    await M2.waitForFunction(() => /Records needing attention/.test(document.body.innerText), null, { timeout: 30000 });
+    const mrows = await M2.$$eval('.cr-att-row', r => r.map(x => x.innerText.replace(/\s+/g, ' ').trim()));
+    chk('members dashboard: no attention row is a bare Review or missing its verb', !mrows.some(x => /\bReview$/.test(x)) && !(await M2.$('[data-act-missing]')));
+    await M2.context().close();
+
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

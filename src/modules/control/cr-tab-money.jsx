@@ -38,7 +38,8 @@ Object.assign(CR_TAB_DEFS, {
       const out = [];
       if (!d.enabled) out.push({ type: "note", span: 6, icon: "warning-circle", tone: "warn",
         text: "Donations are off. Nobody can give through the site until Paystack is set up.",
-        sub: "Set paystack.secret in api/config.php and point the Paystack webhook at /api/hooks/paystack.php." });
+        sub: "Add the Paystack secret key under Settings → API keys (or paystack.secret in api/config.php), and point the Paystack webhook at /api/hooks/paystack.php.",
+        act: ctx.can("settings") ? { l: "Add the Paystack key", run: () => ctx.go("settings", "keys") } : null });
       out.push({ type: "kpis", span: 6, items: [
         { l: "Raised", v: fmtMoney(d.totalPaid || 0), tone: "flat" },
         { l: "Paid gifts", v: crNum(paid.length) + (rows.length >= CR_MO_DON_CAP ? "+" : ""), tone: "flat" },

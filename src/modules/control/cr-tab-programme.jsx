@@ -260,9 +260,20 @@ Object.assign(CR_TAB_DEFS, {
           { l: "Scans through all desks", v: crNum(d.gates.reduce((n, g) => n + (Number(g.usedCount) || 0), 0)), tone: "flat" },
         ] },
       ];
-      if (due.length || locked.length) out.push({ type: "attention", span: 6, title: "Needs you", rows: [
-        { n: due.length, l: "Desk passwords due to rotate by hand", s: "No email is set, so they are flagged instead of rolled", tone: "warn", age: 2, onClick: () => crPgDeskOpen(ctx, due[0]) },
-        { n: locked.length, l: "Desks locked or expired", s: "They will not open until fixed", tone: "bad", age: 1, onClick: () => crPgDeskOpen(ctx, locked[0]) },
+      /* Each row is the fix, not the drawer it lives in. One desk: the fix
+         runs straight away (rotate asks first and shows the new password; an
+         expired link opens its validity; an expired password asks for a new
+         one). Several: the same fix for the first, and the line names the rest — a new
+         password is shown once per desk, so they are not rolled in a batch. */
+      const names = l => l.slice(0, 3).map(g => g.name).join(", ") + (l.length > 3 ? " and " + crNum(l.length - 3) + " more" : "");
+      const fixLocked = g => g.expired ? crPgDeskValidity(ctx, g) : crPgDeskPassword(ctx, g);
+      const allExpired = locked.every(g => g.expired), allPass = locked.every(g => !g.expired && g.passExpired);
+      if (due.length || locked.length) out.push({ type: "attention", span: 6, title: "Needs you", sub: "Most serious first", rows: [
+        { n: due.length, l: "Desk passwords due to rotate by hand", s: names(due) + ". No email is set, so they are flagged instead of rolled.", tone: "warn", age: 1,
+          act: due.length === 1 ? "Rotate password" : "Rotate the first", onClick: () => crPgDeskRotate(ctx, due[0]) },
+        { n: locked.length, l: "Desks locked or expired", s: names(locked) + ". The volunteers on the door cannot open them until fixed.", tone: "bad", age: 2,
+          act: locked.length > 1 ? "Fix the first" : allExpired ? "Extend the link" : allPass ? "Set a new password" : "Fix it",
+          onClick: () => fixLocked(locked[0]) },
       ] });
       out.push({
         type: "table", span: 6, title: "Check-in desks", sub: "The newest 50. Summer School sign-up and review links are in the Summer School portal.",

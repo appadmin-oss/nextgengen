@@ -767,7 +767,9 @@ Object.assign(CR_TAB_DEFS, {
           { l: "Missing something they need", v: crNum(sm.failing || 0), tone: sm.failing ? "down" : "flat" },
           { l: "Courses in all", v: crNum(sm.courses || 0) },
         ] },
-        sm.failing ? { type: "note", span: 6, icon: "warning-circle", tone: "warn", text: crPlural(sm.failing, "course") + " with children cannot be fully taught yet.", sub: "Open one to see what is missing and go straight to where it is fixed." } : null,
+        sm.failing ? { type: "note", span: 6, icon: "warning-circle", tone: "warn", text: crPlural(sm.failing, "course") + " with children cannot be fully taught yet.", sub: "Open one to see what is missing and go straight to where it is fixed.",
+          /* The first failing course opens on what it is missing — the table lists the failing first, so this is the top row. */
+          act: (() => { const f = rows.find(c => state(c)[1] === "bad"); return f ? { l: "Fix " + f.course, run: () => crChOpen(ctx, f) } : null; })() } : null,
         { type: "table", span: 6, title: "Every course", sub: "A course failing children is listed first.",
           cols: ["Course", "#Children", "#Instructors", "#Lessons", "#Class times", "Channel", { l: "What is missing", wrap: true }, "State"],
           rows: rows.map(c => { const st = state(c); return { key: c.course, open: () => crChOpen(ctx, c), cells: [
