@@ -120,12 +120,13 @@ function cleanup() {
     chk('Send test says plainly whether Make took it, and what to check if not',
       await pg.waitForFunction(() => /Make did not take it|Make received the test/.test(document.querySelectorAll('.cr-mk-step')[1]?.innerText || ''), null, { timeout: 30000 }).then(() => true, () => false));
 
-    await step(3).locator('button:has-text("Make addresses")').click();
+    await step(3).locator('button:has-text("Make the address")').click();
     await pg.waitForSelector('.cr-mk-reveal');
-    const urls = (await pg.innerText('.cr-mk-reveal')).match(/\/api\/public\/cron\.php\?key=ck_[0-9a-f]{48}&job=\w+/g) || [];
-    chk('the scheduler comes as four labelled addresses, each with its own copy button', urls.length === 4 && (await pg.$$('.cr-mk-reveal .cr-mk-copy button')).length === 4 && /Every 15 minutes — Reminders/.test(await pg.innerText('.cr-mk-reveal')));
-    const cron = await pg.evaluate(u => fetch(u).then(r => r.text().then(t => ({ s: r.status, t }))), BASE + urls[3]);
-    chk('…and the address works: the background job runs', cron.s === 200 && /accrue\s+ran/.test(cron.t));
+    const urls = (await pg.innerText('.cr-mk-reveal')).match(/\/api\/public\/cron\.php\?key=ck_[0-9a-f]{48}(?![&\w])/g) || [];
+    chk('the scheduler comes as ONE address, every minute, with the gate named', urls.length === 1 && (await pg.$$('.cr-mk-reveal .cr-mk-copy button')).length === 1
+      && /Every minute/.test(await pg.innerText('.cr-mk-reveal')) && /NGG_CRON_URL/.test(await pg.innerText('.cr-mk-reveal')));
+    const cron = await pg.evaluate(u => fetch(u).then(r => r.text().then(t => ({ s: r.status, t }))), BASE + urls[0]);
+    chk('…and the address works: what is due runs', cron.s === 200 && /took \d+ms/.test(cron.t));
     await pg.click('.cr-mk-reveal button:has-text("I’ve copied it")');
     await pg.waitForFunction(() => !document.querySelector('.cr-mk-reveal'), null, { timeout: 20000 });
     await pg.waitForSelector('.cr-mk-panel', { timeout: 20000 });

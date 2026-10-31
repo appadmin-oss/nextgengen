@@ -3387,8 +3387,14 @@ Change, Test and Remove act on that one service.
 ### Make.com
 
 Make.com is set up from **Settings → Integrations → Make.com**: work down the three numbered steps — signing key, Make's webhook
-(then **Send test**), scheduler addresses. Each key is shown once, on the
+(then **Send test**), the scheduler address. Each key is shown once, on the
 panel, until you press **I've copied it**; afterwards only how it ends.
+The scheduler address is ONE address that runs every background job that is
+due. Best, put it in the CACENTRE gate as the secret `NGG_CRON_URL` (Cloudflare
+→ the gate worker → Settings → Variables and Secrets): the gate calls it every
+minute and visitors' pages then do no background work. Otherwise one Make
+scenario or a cPanel cron, every minute. Older one-per-job addresses
+(`&job=…`) still work.
 The scenarios to build in Make are listed under the steps, each saying which
 step it still needs, with its build steps and an example to copy. Replacing a
 key stops the old one at once. **Turn off** refuses Make's calls and pauses its

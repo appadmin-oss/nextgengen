@@ -752,7 +752,7 @@ const CR_SY_MAKE_SCENARIOS = [
       "Map data.totals and data.centres into a Google Docs or Slides template and share it with the director."],
     body: "{\"action\":\"impact\"}" },
 ];
-const CR_SY_JOB_LABEL = { deliver: "Sending events", reminders: "Reminders", maint: "Absence check and upkeep", editions: "Season dates", accrue: "Fees" };
+const CR_SY_JOB_LABEL = { all: "Every background job that is due", deliver: "Sending events", reminders: "Reminders", maint: "Absence check and upkeep", editions: "Season dates", accrue: "Fees" };
 
 function crSyMakeState(m) {
   const done = [m.secretSet, !!(m.destination && m.destination.status === "active"), m.cronSet];
@@ -827,7 +827,7 @@ function CrSyMake({ ctx, make }) {
       body: "Every scheduled call using the old addresses stops at once — Make’s, and any cPanel cron or uptime monitor." }))) return;
     const r = await NGGApi.admin.integrations.makeCron();
     setM(r.make);
-    setReveal({ title: "Copy the scheduler addresses now", note: "One Make scenario per address: a Schedule trigger at the interval shown, then HTTP → Make a request (GET) to the address.",
+    setReveal({ title: "Copy the scheduler address now", note: "Best: put it in the CACENTRE gate as the secret NGG_CRON_URL (Cloudflare → the gate worker → Settings → Variables and Secrets) — the gate calls it every minute. Or one Make scenario: a Schedule trigger every minute, then HTTP → Make a request (GET) to it.",
       items: (r.urls || []).map(u => ({ l: u.every + " — " + (CR_SY_JOB_LABEL[u.job] || u.job), v: u.url })) });
   });
   const connect = () => ctx.form({
@@ -883,7 +883,7 @@ function CrSyMake({ ctx, make }) {
           </CrSyMakeStep>
 
           <CrSyMakeStep n={3} done={st.done[2]} title="Scheduler" what="Keeps the background jobs on time when nobody is visiting the site."
-            action={<button type="button" className={"cr-btn is-sm" + (st.done[0] && st.done[1] && !st.done[2] ? " is-primary" : "")} disabled={!m.sealed || !!busy} onClick={makeCron}>{busy === "cron" ? "Making…" : m.cronSet ? "Replace" : "Make addresses"}</button>}>
+            action={<button type="button" className={"cr-btn is-sm" + (st.done[0] && st.done[1] && !st.done[2] ? " is-primary" : "")} disabled={!m.sealed || !!busy} onClick={makeCron}>{busy === "cron" ? "Making…" : m.cronSet ? "Replace" : "Make the address"}</button>}>
             <ul className="cr-mk-jobs" aria-label="Background jobs">
               {jobs.map(j => (
                 <li key={j.job} className={j.stale ? "is-late" : "is-ok"}>
@@ -893,7 +893,7 @@ function CrSyMake({ ctx, make }) {
                 </li>
               ))}
             </ul>
-            {m.cronSet && late.length > 0 && <span className="cr-mk-state">Late jobs usually mean a scheduler scenario is off in Make, or its address was replaced here.</span>}
+            {m.cronSet && late.length > 0 && <span className="cr-mk-state">Late jobs usually mean nothing is calling the scheduler address: the gate’s NGG_CRON_URL is missing or old, or a Make scenario is off.</span>}
           </CrSyMakeStep>
         </ol>
 

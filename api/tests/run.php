@@ -34473,10 +34473,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && (int)db_row("SELECT COUNT(*) c FROM integrations WHERE name = 'Make.com'")['c'] === 1 && $c2['make']['destination']['url'] === 'https://hook.us1.make.com/other456');
 
     $k = backend_dispatch('admin.make.cron', $A);
-    $u = $k['urls'][1]['url'] ?? '';
+    $u = $k['urls'][0]['url'] ?? '';
     parse_str((string)parse_url($u, PHP_URL_QUERY), $q);
-    chk('make ui: the scheduler key is made here, and the addresses carry it', !empty($k['ok']) && count($k['urls']) === 4 && cron_key_effective() === ($q['key'] ?? '-')
-        && ($q['job'] ?? '') === 'reminders' && strpos(json_encode(setting_get('make_link')), (string)$q['key']) === false);
+    chk('make ui: the scheduler key is made here, and its one address carries it — every job that is due, every minute', !empty($k['ok']) && count($k['urls']) === 1 && cron_key_effective() === ($q['key'] ?? '-')
+        && !isset($q['job']) && $k['urls'][0]['every'] === 'Every minute' && strpos(json_encode(setting_get('make_link')), (string)$q['key']) === false);
 
     $off = backend_dispatch('admin.make.off', $A);
     chk('make ui: turning off closes the door and pauses the events, but keeps the scheduler', make_secret() === '' && $off['make']['destination']['status'] === 'paused' && cron_key_effective() !== '');
