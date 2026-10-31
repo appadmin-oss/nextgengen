@@ -286,6 +286,21 @@ function cleanup() {
     chk('the members search draws one focus ring, on its frame, not a second on the input inside it', ring.focused && ring.inner === 'none' && ring.frame !== 'none');
     await R.context().close();
 
+    /* Conduct and progression: each row says what it does and goes where that
+       is done — not "Review" on every row, opening a filtered list. */
+    php(`db_insert('sanctions', ['personId'=>'NGG-CR-1','personType'=>'member','kind'=>'fine','tier'=>1,'amount'=>2000,'status'=>'active','reason'=>'late','issuedAt'=>now_iso(),'issuedBy'=>'t']);
+         db_insert('sanctions', ['personId'=>'NGG-CR-2','personType'=>'member','kind'=>'suspension','tier'=>2,'status'=>'proposed','reason'=>'proposed','issuedAt'=>now_iso(),'issuedBy'=>'t']);`, ['bootstrap']);
+    const C = await open(1366, 900, '/control/members');
+    await C.waitForFunction(() => /Conduct and progression/.test(document.body.innerText), null, { timeout: 30000 });
+    const rows = await C.$$eval('.cr-att-row', r => r.map(x => x.innerText.replace(/\s+/g, ' ').trim()));
+    const decide = rows.find(x => /to decide/.test(x)) || '', owe = rows.find(x => /owing a fine/.test(x)) || '';
+    chk('conduct: a sanction to decide says Decide, and an owed fine says Collect with the amount', /Decide/.test(decide) && /Collect/.test(owe) && /₦2,000/.test(owe) && !rows.some(x => /^\d+ fined\b/.test(x)));
+    await C.click('.cr-att-row:has-text("to decide")');
+    await C.waitForFunction(() => /\/control\/money\/conduct/.test(location.pathname), null, { timeout: 15000 }).catch(() => {});
+    chk('conduct: …Decide opens Conduct & fines, where it is decided', /\/control\/money\/conduct/.test(new URL(C.url()).pathname));
+    await C.context().close();
+    php(`db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-CR-%'");`, ['bootstrap']);
+
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

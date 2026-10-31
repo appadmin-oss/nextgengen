@@ -1043,10 +1043,21 @@ function crMbDashBlocks(d, ctx) {
   const seg = k => () => ctx.setData(x => crMbWithSeg(x, k));
   const h = o.headline || {}, q = o.quality || {}, c = o.conduct, out = [];
   if (c) {
-    out.push({ type: "attention", span: 3, title: "Conduct and progression", sub: "Each opens the members it counts", empty: "No fines, suspensions or promotions recorded.", rows: [
-      { n: c.fined, l: "fined", tone: "warn", onClick: seg("fined") }, { n: c.finesOwedBy, l: "owing a fine · " + fmtMoney(c.finesOwed), tone: "warn", onClick: seg("fines_owed") },
-      { n: c.suspended, l: "suspended now", tone: "bad", onClick: seg("suspended") }, { n: c.evicted, l: "evicted", tone: "bad", onClick: seg("evicted") },
-      { n: c.awaitingReview, l: "with a sanction to decide", tone: "warn", onClick: seg("conduct_review") }, { n: c.promoted, l: "promoted to NGV", tone: "ok", onClick: seg("promoted_ngv") },
+    /* Each row goes where the thing is DONE, and says what that is. A row
+       that only filtered the roster ("Review" on all four) left the operator
+       holding a list and no way to act on it. "Fined" is gone from here: it is
+       the all-time count, the same people as "owing" plus the paid, and the
+       totals note below carries it. */
+    const can = k => !ctx.can || ctx.can(k);
+    out.push({ type: "attention", span: 3, title: "Conduct and progression", sub: "What needs deciding, collecting or lifting", empty: "No sanctions to decide, fines owed or suspensions.", rows: [
+      { n: c.awaitingReview, l: (c.awaitingReview === 1 ? "sanction" : "sanctions") + " to decide", s: "Proposed by the conduct policy. Confirm or waive each one.", tone: "warn", age: 3, act: "Decide",
+        onClick: () => ctx.go("money", "conduct") },
+      { n: c.finesOwedBy, l: "owing a fine", s: fmtMoney(c.finesOwed) + " outstanding. Record payments or waive.", tone: "warn", age: 2, act: can("fees") ? "Collect" : "See who",
+        onClick: can("fees") ? () => ctx.go("money", "fees") : seg("fines_owed") },
+      { n: c.suspended, l: "suspended now", s: "Lift early or extend on the compliance board.", tone: "bad", age: 1, act: "Manage",
+        onClick: () => ctx.go("money", "conduct") },
+      { n: c.evicted, l: "evicted", s: "No longer attending.", tone: "bad", act: "See who", onClick: seg("evicted") },
+      { n: c.promoted, l: "promoted to NGV", s: "Moved on to NextGen Vanguard.", tone: "ok", act: "See who", onClick: seg("promoted_ngv") },
     ] });
   }
   const QUAL = [["duplicate_groups", "possible duplicate records", null], ["minor_no_guardian", "children with no guardian contact", "minor_no_guardian"], ["no_email", "with no email", "no_email"],

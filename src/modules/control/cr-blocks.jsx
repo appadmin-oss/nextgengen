@@ -62,6 +62,7 @@ function CrAttention({ b, ctx, phone }) {
         <button key={i} type="button" className="cr-prow" onClick={() => go(r)}>
           <span className={"cr-att-n cr-t-" + crTone(r.tone)}>{crNum(r.n)}</span>
           <span className="cr-prow-t"><b style={{ whiteSpace: "normal" }}>{r.l}</b><span style={{ whiteSpace: "normal" }}>{r.s}</span></span>
+          {r.act ? <span className="cr-att-go">{r.act}</span> : null}
           <CrIcon n="caret-right"/>
         </button>
       ))}
@@ -73,7 +74,9 @@ function CrAttention({ b, ctx, phone }) {
         <button key={i} type="button" className="cr-att-row" onClick={() => go(r)}>
           <span className={"cr-att-n cr-t-" + crTone(r.tone)}>{crNum(r.n)}</span>
           <span className="cr-att-text"><b>{r.l}</b><span>{r.s}</span></span>
-          <span className="cr-att-go">Review<CrIcon n="arrow-right"/></span>
+          {/* The row's own verb when it has one ("Decide", "Collect"): a
+              button that says Review on every row tells nobody what happens. */}
+          <span className="cr-att-go">{r.act || "Review"}<CrIcon n="arrow-right"/></span>
         </button>
       ))}
     </div>
