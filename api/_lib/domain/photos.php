@@ -920,6 +920,91 @@ function admin_photos_lost(array $p): array {
             'dir' => photo_store_dir(), 'insideSite' => photo_store_inside_site()];
 }
 
+/* ── A lost file whose photo is still in Cloudinary ───────────────────────
+
+   The stored copy on this server is gone, but the same person's photo is often
+   still in Cloudinary: on the same record (an edited or earlier version), on
+   their member / participant / volunteer record, or in a photo-change request.
+   Cloudinary carries no person ID of its own, so the link is made from OUR
+   records: who the broken record belongs to, then every Cloudinary address we
+   hold for that same person. A person chooses (with a preview); only that one
+   record is changed, only where it named the missing file, and it is audited. */
+
+const PHOTO_CLOUD_RE = '#https://res\.cloudinary\.com/[A-Za-z0-9_-]+/image/[^\s"\'<>\\\\]+#';
+
+/** Every Cloudinary image address in a value (JSON-escaped slashes undone). */
+function photo_cloud_urls(string $v): array {
+    if (stripos($v, 'res.cloudinary.com') === false) return [];
+    preg_match_all(PHOTO_CLOUD_RE, str_replace('\/', '/', $v), $m);
+    return array_values(array_unique($m[0]));
+}
+
+/**
+ * For each missing photo, whose record it is and the Cloudinary photos we hold
+ * for that person: [{name, place, rowId, who, ids, candidates:[url]}].
+ * null when the schema could not be scanned.
+ */
+function photo_store_cloud_matches(): ?array {
+    $missing = photo_store_missing_map();
+    if ($missing === null) return null;
+    $ident = fn(string $s) => (bool)preg_match('/^[A-Za-z0-9_]+$/', $s);
+    $people = [['members', 'memberId'], ['summer_students', 'studentId'], ['volunteers', 'volunteerId']];
+    $out = [];
+    foreach ($missing as $name => $place) {
+        [$t, $c] = array_pad(explode('.', (string)$place, 2), 2, '');
+        if (!$ident($t) || !$ident($c)) continue;
+        try { $rows = db_all("SELECT * FROM $t WHERE $c LIKE ? LIMIT 5", ['%' . $name . '%']); } catch (Throwable $e) { continue; }
+        foreach ($rows as $row) {
+            if (!isset($row['id'])) continue;
+            $ids = []; foreach (['memberId', 'studentId', 'volunteerId', 'subjectId', 'personId'] as $k) if (!empty($row[$k])) $ids[] = (string)$row[$k];
+            $ids = array_values(array_unique($ids));
+            $cand = [];
+            foreach ($row as $v) if (is_string($v)) foreach (photo_cloud_urls($v) as $u) $cand[$u] = true;
+            $who = (string)($row['fullName'] ?? ($row['name'] ?? ''));
+            foreach ($ids as $pid) {
+                foreach ($people as [$pt, $pk]) {
+                    try { $pr = db_row("SELECT * FROM $pt WHERE $pk = ? LIMIT 1", [$pid]); } catch (Throwable $e) { $pr = null; }
+                    if (!$pr) continue;
+                    if ($who === '') $who = (string)($pr['fullName'] ?? '');
+                    foreach ($pr as $v) if (is_string($v)) foreach (photo_cloud_urls($v) as $u) $cand[$u] = true;
+                }
+                try { foreach (db_all("SELECT * FROM photo_change_requests WHERE subjectId = ? ORDER BY id DESC LIMIT 10", [$pid]) as $rq) foreach ($rq as $v) if (is_string($v)) foreach (photo_cloud_urls($v) as $u) $cand[$u] = true; }
+                catch (Throwable $e) { /* no such table here */ }
+            }
+            $out[] = ['name' => $name, 'place' => (string)$place, 'rowId' => (int)$row['id'], 'who' => $who, 'ids' => $ids, 'candidates' => array_slice(array_keys($cand), 0, 8)];
+        }
+    }
+    return $out;
+}
+
+/** admin.photos.cloud — the missing photos and the Cloudinary photos held for the same people. */
+function admin_photos_cloud(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $m = photo_store_cloud_matches();
+    if ($m === null) return ['ok' => false, 'error' => 'scan_failed'];
+    return ['ok' => true, 'items' => $m, 'withCandidates' => count(array_filter($m, static fn($x) => $x['candidates']))];
+}
+
+/** admin.photos.use_cloud — point one record at the Cloudinary photo chosen for it. */
+function admin_photos_use_cloud(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $name = (string)($p['name'] ?? ''); $place = (string)($p['place'] ?? ''); $rowId = (int)($p['rowId'] ?? 0); $url = (string)($p['url'] ?? '');
+    $m = photo_store_cloud_matches();
+    if ($m === null) return ['ok' => false, 'error' => 'scan_failed'];
+    $hit = null;
+    foreach ($m as $x) if ($x['name'] === $name && $x['place'] === $place && $x['rowId'] === $rowId && in_array($url, $x['candidates'], true)) $hit = $x;
+    if (!$hit) return ['ok' => false, 'error' => 'not_a_match', 'detail' => 'That photo is not one held for this record’s person, or the file is no longer missing.'];
+    [$t, $c] = explode('.', $place, 2);
+    $row = db_row("SELECT $c v FROM $t WHERE id = ? LIMIT 1", [$rowId]);
+    if (!$row) return ['ok' => false, 'error' => 'not_found'];
+    $new = preg_replace('#[^\s"\'<>,]*photo\.php(?:\?|%3[fF])p(?:=|%3[dD])' . preg_quote($name, '#') . '#', $url, (string)$row['v']);
+    if ($new === null || $new === (string)$row['v']) return ['ok' => false, 'error' => 'not_found'];
+    db_exec("UPDATE $t SET $c = ? WHERE id = ?", [$new, $rowId]);
+    if (function_exists('cache_delete')) { cache_delete('ops.photoLinks'); cache_delete('photos.missingNames'); }
+    audit('photos.use_cloud', (string)$g['requester']['memberId'], implode(',', $hit['ids']), ['name' => $name, 'place' => $place, 'rowId' => $rowId, 'url' => $url], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
 /** admin.photos.restore — one file from a backup: accepted only when its name is a missing photo and its bytes are that image type. */
 function admin_photos_restore(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;

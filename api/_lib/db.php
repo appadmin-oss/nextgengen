@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 213;
+const NGG_SCHEMA_TARGET = 215;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6150,6 +6150,44 @@ function db_migrate(PDO $db): void {
            already at 23:xx is left alone rather than wrapped past midnight.
            The two staff lines that typed a clock time move with it. */
         213 => NGG_FORMATION_HOUR_LATER,
+        // An appeal can be against a SANCTION (a warning, Dormant Track, a
+        // suspension, an eviction), not only a charge — and it records who
+        // reviewed it, who must not be the person who issued it.
+        214 => "ALTER TABLE member_requests ADD COLUMN refSanctionId INTEGER NOT NULL DEFAULT 0;",
+        /* What a member learnt OUTSIDE NGG (another site, an app, a school
+           club), logged by them with a video, screenshots or pictures and
+           notes, or brought in from a platform's report — and confirmed by an
+           instructor. And the kind of recognition staff give (academic,
+           consistency, …) on the awards a member is shown. */
+        215 => "
+            CREATE TABLE IF NOT EXISTS learning_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              entryId TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL,
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              platform TEXT NOT NULL DEFAULT '',
+              providerId TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL DEFAULT '',
+              progress TEXT NOT NULL DEFAULT '',
+              hours REAL NOT NULL DEFAULT 0,
+              doneOn TEXT NOT NULL DEFAULT '',
+              link TEXT NOT NULL DEFAULT '',
+              mediaJson TEXT NOT NULL DEFAULT '[]',
+              notes TEXT NOT NULL DEFAULT '',
+              source TEXT NOT NULL DEFAULT 'member',
+              status TEXT NOT NULL DEFAULT 'pending',
+              reviewedBy TEXT NOT NULL DEFAULT '',
+              reviewedAt TEXT NOT NULL DEFAULT '',
+              reviewNote TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_llog_member ON learning_log(memberId, doneOn);
+            CREATE INDEX IF NOT EXISTS idx_llog_status ON learning_log(status, centre);
+            ALTER TABLE awards ADD COLUMN category TEXT NOT NULL DEFAULT '';
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

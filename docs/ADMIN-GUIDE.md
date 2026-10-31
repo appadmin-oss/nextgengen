@@ -1981,12 +1981,13 @@ from which people may sign out. Leave one blank for no closing time.
   Somebody who leaves early has no sign-out for the day, which the conduct
   policy counts.
 - **A sign-out that arrives late still counts.** The nightly check counts a
-  day with a sign-in and no sign-out as an absence. If the sign-out reaches NGG
+  day with a sign-in and no sign-out as a **half-day** (two make one absence;
+  no absence fine). If the sign-out reaches NGG
   afterwards (a CACENTRE gate departure delivered late, or CACENTRE's
   **Send NGG the check-outs it missed … from the last 31 days**), it is stamped
-  at the time it happened and that day's "no sign-out" absence is voided, with
+  at the time it happened and that day's "no sign-out" half-day is voided, with
   the reason kept. A member's record shows such a day once: **No sign-out ·
-  counted absent** until the sign-out arrives, then **Present** with its time.
+  half-day** until the sign-out arrives, then **Present** with its time.
 - An admin in the Control Room kiosk can **Let them go early…** with a written
   reason (a sick child collected by a parent). It is recorded in the audit
   trail as an early sign-out. A check-in desk cannot do this.
@@ -3386,8 +3387,14 @@ Change, Test and Remove act on that one service.
 ### Make.com
 
 Make.com is set up from **Settings → Integrations → Make.com**: work down the three numbered steps — signing key, Make's webhook
-(then **Send test**), scheduler addresses. Each key is shown once, on the
+(then **Send test**), the scheduler address. Each key is shown once, on the
 panel, until you press **I've copied it**; afterwards only how it ends.
+The scheduler address is ONE address that runs every background job that is
+due. Best, put it in the CACENTRE gate as the secret `NGG_CRON_URL` (Cloudflare
+→ the gate worker → Settings → Variables and Secrets): the gate calls it every
+minute and visitors' pages then do no background work. Otherwise one Make
+scenario or a cPanel cron, every minute. Older one-per-job addresses
+(`&job=…`) still work.
 The scenarios to build in Make are listed under the steps, each saying which
 step it still needs, with its build steps and an example to copy. Replacing a
 key stops the old one at once. **Turn off** refuses Make's calls and pauses its
@@ -4266,3 +4273,43 @@ Each kind of item now opens with what matters and the action already drafted:
   too dark, it is blurry”) in words a family can act on; **Open their record** is
   on member photos.
 
+
+
+## Appeals
+
+A member (from Records) or a parent (from the family account) can appeal any
+decision on the record: a warning, the Dormant Track, a suspension, an
+eviction, a fine or a fee. It arrives in **Requests**.
+
+- **Overturn it** lifts the decision and everything it carried (its fine, a
+  suspension's re-entry fee). **Keep it** leaves it standing. Both need a
+  reason; the family reads it.
+- Whoever issued or confirmed the decision can't decide its appeal
+  ("somebody else reviews the appeal").
+- A proposed eviction can't be confirmed while its appeal is open.
+
+## Achievements and learning outside NGG
+
+**Achievements are worked out, not typed.** A member's Records page and the
+family's Growth page show them: days attended (10, 25, 50, 100, 200),
+sessions in a row and on time in a row, lessons completed, full marks, stars
+from instructors, confirmed outside learning, and a top-three place at their
+centre for attendance or lessons this month or last. A streak counts programme
+days; only a real absence breaks it, never a day away with permission or a
+day the gate was down. Staff add their own recognitions (academic,
+consistency, conduct, leadership, creativity, service, sport) from
+**Learning → How members are doing**, opening a member.
+
+**Learning outside NGG.** A member logs something they learnt on another site
+or app from **Records → Learning outside NGG**: what, where, how far, hours,
+and a video, screenshots or pictures, a link or notes. It waits in
+**Learning → How members are doing** until somebody with the Curriculum
+permission confirms it or sends it back with a note. Only confirmed entries
+count. **Bring in a report** takes a platform's progress export (CSV or Excel):
+rows are matched by printed ID, then by name; unmatched rows are listed, and
+nothing is added until you press Add. Report rows arrive confirmed.
+
+**How each member is doing** lists every active member in your centres:
+lessons done here, average score, outside learning and hours, days attended in
+the last 90, and when they last learnt anything. "Nothing learnt in 30 days"
+is the list to follow up.

@@ -28,6 +28,7 @@ if ($method === 'GET') {
         'heldDecide'     => 'admin.attendance.held.decide',
         'unmatchedMatch' => 'admin.attendance.unmatched.match',
         'repair'         => 'admin.policy.absence.repair',
+        'halfday'        => 'admin.policy.halfday.run',
         'freshStart'     => 'admin.policy.fresh_start',
         'correctivesDone' => 'admin.policy.correctives.done',
     ];

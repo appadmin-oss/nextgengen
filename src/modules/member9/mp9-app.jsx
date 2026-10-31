@@ -27,7 +27,7 @@ const MP9_NEED = {
   today: ["today", "dash", "mine", "chat", "form", "mom", "jm", "circle"], mentor: ["chat", "mine"], growth: ["mine", "courage", "mom", "jm", "evals"],
   results: ["res"], companion: ["comp"], sat: ["form", "dash", "evals"], learn: ["cur", "dash", "opps"], timetable: ["tt", "cur"],
   journal: ["jm", "chat"], opps: ["opps"], community: ["feed", "prj"], passport: ["rec"], me: ["circle", "sec", "rec"],
-  money: ["stmt", "comp9"], records: ["rec", "reqs"], help: [], more: [],
+  money: ["stmt", "comp9"], records: ["rec", "reqs", "comp9", "ach", "llog"], help: [], more: [],
 };
 const MP9_LOADERS = {
   today: () => NGGApi.member.today(), dash: () => NGGApi.member.dashboard(), mine: () => NGGApi.member.pod.read("mine"),
@@ -36,7 +36,7 @@ const MP9_LOADERS = {
   jm: () => NGGApi.member.journalMine(0), res: () => NGGApi.member.results(""), comp: () => NGGApi.member.companion(),
   cur: () => NGGApi.member.curriculum(), tt: () => NGGApi.member.timetable(), opps: () => NGGApi.member.opps(),
   feed: () => NGGApi.member.community.feed("all", "latest", 0), rec: () => NGGApi.member.records(), circle: () => NGGApi.member.circle(),
-  sec: () => NGGApi.member.security(), phc: () => NGGApi.member.photoChange.mine(), stmt: () => NGGApi.member.statement(), comp9: () => NGGApi.member.compliance(),
+  sec: () => NGGApi.member.security(), phc: () => NGGApi.member.photoChange.mine(), stmt: () => NGGApi.member.statement(), comp9: () => NGGApi.member.compliance(), ach: () => NGGApi.member.achievements(), llog: () => NGGApi.member.learning(),
   reqs: () => NGGApi.member.requests(), prj: () => NGGApi.member.projects(),
   // The mentor's Saturday evaluations of me: criteria, a strength and a next step — never their ratings or notes.
   evals: () => NGGApi.member.pod.read("evals"),

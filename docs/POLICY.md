@@ -50,7 +50,10 @@ that would go past the limit is refused with how many are left.
 
 ### 1.3 Check-in & AI verification
 - Every student scans their slip / student ID **IN and OUT** daily at the checkpoint.
-- Fail to scan → the AI logs a **full absence** for the day. No manual overrides.
+- Fail to scan IN → the AI logs a **full absence** for the day.
+- Scanned IN but not OUT → a **half-day**, not an absence (from 31 Oct 2026):
+  the child came. Two half-days count as one absence. A half-day carries no
+  absence fine. A sign-out that arrives late (a gate back-fill) clears it.
 - **Musing Period** is compulsory; late/missing it downgrades the day to a
   **half-day**, accelerating the dormancy track.
 
@@ -124,13 +127,38 @@ Decorum/silence before superiors and in strategy sessions. Talking over a
 superior, arguing directives in public, or bypassing the chain is a dishonour
 against the vision.
 
+### 3.2a Safeguarding comes before the chain
+The chain of command and §3.2 are for running the programme. They never apply
+to a child's safety. Any child, parent or volunteer who is worried about harm —
+abuse, bullying, an adult's behaviour, a child being unsafe at home or at a
+centre — may go **straight to anyone they trust**: a mentor, any admin, the
+safeguarding lead, or the executive portal. They do not have to go through the
+person they are worried about, or ask permission. Doing so is never a breach
+of honour or silence, and nobody may be sanctioned for raising a concern in
+good faith.
+
 ### 3.3 Crisis resolution (the safety valve)
 1. On-ground issues flow step-by-step up the chain.
 2. Formal escalation: document and transmit digitally to the executive portal
    (cacentre@afrovanguard.org.ng). No scenes on the floor.
 
+## Part IV-A — Appeals and review
+Any decision on a person's record can be appealed: a warning, the Dormant
+Track, a suspension, an eviction, a fine or a fee.
+- A member appeals from Records; a parent from the family account. They name
+  the decision and say what happened.
+- **A different person reviews it.** Whoever issued or confirmed the decision
+  cannot decide its appeal.
+- **A reason either way.** Overturned or kept, the family is told why.
+- **Overturned** lifts the decision and everything it carried: its fine comes
+  off the account (a paid one becomes credit), a suspension's re-entry fee goes
+  with it.
+- **An eviction is not confirmed while its appeal is open.**
+- One appeal per decision.
+
 ## Part IV — Reinstatement after eviction
-1. **365-day cool-off** — fully barred for one calendar year; no appeals.
+1. **365-day cool-off** — fully barred for one calendar year, once any appeal
+   (Part IV-A) has been decided.
 2. **Mandatory training** — pass **CIMC 1** (Community Influencing Master Class 1).
 3. **Reinstatement fine** — ₦10,000 before the AI profile / credentials reactivate.
 
@@ -242,8 +270,9 @@ thresholds → Stricter than Summer School**:
    account. This is in addition to the suspension ladder.
 2. **No grace band.** Arriving after resumption (plus any grace minutes) is
    late — there is no "tardy" in between for members.
-3. **A day with no sign-out is incomplete** and counts as an absence, as §1.3
-   does for Summer School. Sign-out opens at the closing time set in
+3. **A day with no sign-out is a half-day** (since 31 Oct 2026; it was a whole
+   absence before, and those days were converted). Two half-days count as one
+   absence. Sign-out opens at the closing time set in
    Settings, so leaving early means no sign-out. This applies from the day the
    rule first took effect; earlier days are not counted.
 

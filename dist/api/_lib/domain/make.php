@@ -392,12 +392,16 @@ function cron_key_effective(): string {
 function make_origin(): string {
     return rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
 }
+/**
+ * The scheduler's address. ONE, called every minute: it runs whatever is due,
+ * most overdue first, within 50 s (webcron.php, web_cron_tick), and while it is
+ * being called visitors' pages do no background work. The CACENTRE gate calls
+ * it once it holds it as the secret NGG_CRON_URL; a cPanel cron or one Make
+ * scenario can instead. The old one-per-job addresses (&job=…) still answer,
+ * so a scenario already set up keeps working.
+ */
 function make_cron_urls(string $key): array {
-    $base = make_origin() . '/api/public/cron.php?key=' . rawurlencode($key) . '&job=';
-    return [['job' => 'deliver', 'every' => 'Every 5 minutes', 'url' => $base . 'deliver'],
-            ['job' => 'reminders', 'every' => 'Every 15 minutes', 'url' => $base . 'reminders'],
-            ['job' => 'maint', 'every' => 'Every hour', 'url' => $base . 'maint'],
-            ['job' => 'accrue', 'every' => 'Every day, 02:00', 'url' => $base . 'accrue']];
+    return [['job' => 'all', 'every' => 'Every minute', 'url' => make_origin() . '/api/public/cron.php?key=' . rawurlencode($key)]];
 }
 
 /** The card's view: what is set, where from, how it ends — never a key. */

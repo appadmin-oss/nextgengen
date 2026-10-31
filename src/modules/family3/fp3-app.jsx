@@ -417,7 +417,7 @@ class Fp3Portal extends React.Component {
       out.dayRules = (session
         ? [["ph ph-check-circle", "Absences with permission: " + ex.used + " of " + ex.max + " used this session" + (ex.ahead ? ", " + ex.ahead + " still ahead" : "") + ". Ask on the dashboard — asking is not approval until the centre says yes."]].concat(ex.recorded ? [["ph ph-warning", ex.recorded + " absence" + (ex.recorded === 1 ? "" : "s") + " without permission this session; " + ex.suspendAfter + " is a suspension."]] : []).concat(ex.rules || [])
         : (ex ? [["ph ph-calendar-x", "Absences: " + ex.used + " of " + ex.max + " allowed in the programme" + (ex.ahead ? ", " + ex.ahead + " of them still ahead" : "") + (ex.left ? ". " + ex.left + " left." : ". None left — a further absence starts a review, so speak to the centre in an emergency.")]].concat(ex.fine ? [["ph ph-receipt", "An absence nobody told the centre about is fined " + N(ex.fine) + ". If you’ve asked, nothing is charged until the centre answers."]] : []) : []).concat([["ph ph-door-open", "Doors open at 09:00. After 09:10 it counts as late."]]))
-        .concat([["ph ph-sign-in", "You get a text and email when " + first + " checks in, and again at sign-out."], ["ph ph-sign-out", "Sign-out opens at " + ((w.today && (w.today.signOutAt || w.today.dayEnd)) || "15:00") + ". Leaving earlier needs a coordinator, so collect them from the desk."], ["ph ph-warning", "Leaving without signing out counts as “no sign-out” and can be fined. You’ll be told the same day."]]).map(r => ({ icon: r[0], t: r[1] }));
+        .concat([["ph ph-sign-in", "You get a text and email when " + first + " checks in, and again at sign-out."], ["ph ph-sign-out", "Sign-out opens at " + ((w.today && (w.today.signOutAt || w.today.dayEnd)) || "15:00") + ". Leaving earlier needs a coordinator, so collect them from the desk."], ["ph ph-warning", "Leaving without signing out makes it a half-day. Two half-days count as one absence."]]).map(r => ({ icon: r[0], t: r[1] }));
       out.leaveL = "Tell the centre " + first + " will be away"; out.newLeave = () => openSheet("leave");
     }
 
@@ -426,6 +426,9 @@ class Fp3Portal extends React.Component {
       out.lr = { done: String(L.completed), of: "of " + L.total + " lessons done · " + L.pct + "%", pct: L.pct + "%", hasOver: L.overdue > 0, overL: L.overdue + " overdue",
         next: L.next.map(u => ({ title: u.title, sub: u.course + " · week " + u.week + " · " + u.due, dc: u.overdue ? "#a12a2a" : "#6b6b72", icon: u.overdue ? "ph ph-warning-circle" : u.status === "in_progress" ? "ph ph-play-circle" : "ph ph-circle", ibg: u.overdue ? "#fdeaea" : u.status === "in_progress" ? "#fdf1d6" : "#efede8", ifg: u.overdue ? "#a12a2a" : u.status === "in_progress" ? "#6b4b00" : "#6b6b72" })),
         note: "Lessons are done on the member app. You can see what’s done, but not " + w.member.first + "’s answers." };
+      const AC = w.achievements || { items: [], next: [] };
+      out.fa = { lead: AC.items.length ? "Worked out from " + w.member.first + "’s attendance, lessons and what staff recognised." : "Achievements appear here as " + w.member.first + " attends, finishes lessons and is recognised.",
+        items: AC.items.map(x => ({ icon: "ph ph-" + (x.icon || "medal"), t: x.t, s: x.s || "" })), next: (AC.next || []).map(x => ({ icon: "ph ph-" + (x.icon || "flag"), t: x.t })) };
       const c = w.companion; const R = { on_track: ["On track", T.ok], watch: ["Worth watching", T.warn], at_risk: ["Needs support", T.bad], none: ["Not yet", T.neutral] }[c.rating] || ["Not yet", T.neutral];
       out.cm = { rating: R[0], bg: R[1][0], fg: R[1][1], dot: R[1][2], summary: c.summary || "The first weekly check-in comes after " + w.member.first + "’s first Saturday.", by: c.by, period: c.period };
       const k = w.conduct;
@@ -484,7 +487,7 @@ class Fp3Portal extends React.Component {
     }
 
     if (active && loaded && sec === "requests") {
-      out.reqKinds = [["leave", "ph ph-calendar-blank", "Tell the centre about an absence", "Before or after. They’re marked excused."], ["appeal", "ph ph-scales", "Appeal a charge", "A fine or fee you think is wrong"], ["idcard", "ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name"], ["academic", "ph ph-graduation-cap", "Academic leave", "Weeks away for exams or a school programme"], ["mentor", "ph ph-chat-teardrop-text", "Ask the mentor", "About growth, results or the plan"]]
+      out.reqKinds = [["leave", "ph ph-calendar-blank", "Tell the centre about an absence", "Before or after. They’re marked excused."], ["appeal", "ph ph-scales", "Appeal", "A decision, fine or fee you think is wrong"], ["idcard", "ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name"], ["academic", "ph ph-graduation-cap", "Academic leave", "Weeks away for exams or a school programme"], ["mentor", "ph ph-chat-teardrop-text", "Ask the mentor", "About growth, results or the plan"]]
         .filter(k => k[0] !== "mentor" || w.member.hasMentor)
         .map(k => ({ icon: k[1], l: k[2], s: k[3], onClick: () => openSheet(k[0], { fRef: (w.charges[0] || {}).id || "" }) }));
       const SM = { open: ["With the desk", T.warn], approved: ["Approved", T.ok], declined: ["Not approved", T.bad], withdrawn: ["Withdrawn", T.neutral] };
@@ -686,9 +689,14 @@ class Fp3Portal extends React.Component {
         out.shGo = () => { if (!S.fFrom || !S.fTo) return this.setState({ shErr: "Pick the first and the last day." }); if (S.fTo < S.fFrom) return this.setState({ shErr: "The last day can’t be before the first." }); if (S.fBody.trim().length < 10) return this.setState({ shErr: "Say what it’s for — the exams or the programme, and the school." }); req("academic", { subject: S.fBody.trim().slice(0, 60), body: S.fBody.trim(), fromDate: S.fFrom, toDate: S.fTo }, ["Sent to the centre", "The " + w.member.centre + " desk will reply in Messages → Requests. Until they answer, any absence in those dates is held, not fined."]); };
       }
       if (sh === "appeal") {
-        out.chargeOpts = w.charges.map(c => ({ v: c.id, l: c.label + " · " + c.when }));
-        Object.assign(out, { shTitle: "Appeal a charge", shLead: out.chargeOpts.length ? "Say what happened. The centre lead reads every appeal, and the charge is on hold while they decide." : "There are no charges on " + first + "’s account to appeal.", shBodyL: "What happened", shBodyPh: "e.g. I collected her early from the desk because of a family emergency.", shGoL: busyL("Send the appeal") });
-        out.shGo = () => { if (!out.chargeOpts.length) return this.closeSheet(); if (S.fBody.trim().length < 10) return this.setState({ shErr: "Tell the centre a little more, so they can decide fairly." }); const o = out.chargeOpts.find(x => x.v === S.fRef) || out.chargeOpts[0]; req("appeal", { subject: o.l.slice(0, 120), body: S.fBody.trim(), refEntryId: o.v }, ["Appeal sent", "The charge is on hold. You’ll get an email when the centre lead decides, usually within a week."]); };
+        /* A decision (a warning, Dormant Track, a suspension, an eviction, a fine) or a charge.
+           A decision is reviewed by somebody other than whoever made it. */
+        const dec = ((w.conduct && w.conduct.decisions) || []).filter(d => !d.underAppeal).map(d => ({ v: "s:" + d.id, l: d.what + (d.amount ? " · " + N(d.amount) : "") + " · " + (d.reason || "").slice(0, 60) }));
+        out.chargeOpts = dec.concat(w.charges.map(c => ({ v: c.id, l: c.label + " · " + c.when })));
+        Object.assign(out, { shTitle: "Appeal", shLead: out.chargeOpts.length ? "Pick the decision or charge, and say what happened. Somebody who didn’t make the decision reviews it, and tells you why either way." : "There is nothing on " + first + "’s record to appeal.", shBodyL: "What happened", shBodyPh: "e.g. I collected her early from the desk because of a family emergency.", shGoL: busyL("Send the appeal") });
+        out.shGo = () => { if (!out.chargeOpts.length) return this.closeSheet(); if (S.fBody.trim().length < 10) return this.setState({ shErr: "Tell the centre a little more, so they can decide fairly." }); const o = out.chargeOpts.find(x => x.v === S.fRef) || out.chargeOpts[0];
+          const isDec = String(o.v).indexOf("s:") === 0;
+          req("appeal", Object.assign({ subject: o.l.slice(0, 120), body: S.fBody.trim() }, isDec ? { refSanctionId: Number(String(o.v).slice(2)) } : { refEntryId: o.v }), ["Appeal sent", "You’ll get an email when it’s decided, with the reason. A decision under appeal isn’t confirmed while it waits."]); };
       }
       if (sh === "idcard") {
         out.cardWhy = [["lost", "Lost"], ["damaged", "Damaged"], ["name", "Wrong name or photo"]].map(rr => { const on = S.fWhy === rr[0]; return { l: rr[1], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#d9d6cd", onClick: () => this.setState({ fWhy: rr[0] }) }; });

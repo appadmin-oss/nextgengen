@@ -223,6 +223,11 @@ button{cursor:pointer}
             </div>
             <span style="font-size:12.5px; color:#6b6b72;">{{ lr.note }}</span>
           </section>
+          <section aria-labelledby="pg-a" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="pg-a" style="margin:0; font-size:16px; font-weight:600;">Achievements</h2><span style="font-size:13.5px; color:#4a4a50;">{{ fa.lead }}</span></div>
+            <sc-for list="{{ fa.items }}" as="a" hint-placeholder-count="3"><div style="display:flex; align-items:center; gap:12px;"><i class="{{ a.icon }}" aria-hidden="true" style="font-size:22px; color:#a07400;"></i><span style="flex:1; display:flex; flex-direction:column; gap:2px;"><span style="font-size:14.5px; font-weight:600;">{{ a.t }}</span><span style="font-size:13px; color:#6b6b72;">{{ a.s }}</span></span></div></sc-for>
+            <sc-for list="{{ fa.next }}" as="n" hint-placeholder-count="2"><div style="display:flex; align-items:center; gap:10px; color:#4a4a50;"><i class="{{ n.icon }}" aria-hidden="true" style="font-size:18px;"></i><span style="font-size:13.5px;">{{ n.t }}</span></div></sc-for>
+          </section>
           </sc-if>
           <sc-if value="{{ subMentor }}">
           <section aria-labelledby="pg-m" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">

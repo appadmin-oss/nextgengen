@@ -791,7 +791,7 @@ function TopNav({ page, setPage }) {
             <BrandLogo size={42}/>
             <div className="brand-word">
               <b>Next Generation Genius</b>
-              <span>Afrovanguard · est. 2024</span>
+              <span>Afrovanguard · est. 2023</span>
             </div>
           </a>
 
@@ -1213,7 +1213,7 @@ function Footer({ setPage, page }) {
                 <BrandLogo size={52}/>
                 <div>
                   <div className="footer-brand-line">Next Generation Genius</div>
-                  <div className="footer-brand-tag">An Afrovanguard movement · est. 2024</div>
+                  <div className="footer-brand-tag">An Afrovanguard movement · est. 2023</div>
                 </div>
               </div>
               <p>

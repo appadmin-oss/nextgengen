@@ -925,3 +925,125 @@ Object.assign(CR_TAB_DEFS, {
     },
   },
 });
+
+/* ============================================================================
+   How members are doing — learning here and outside NGG (domain/achievements.php).
+
+   Members log what they learnt on other sites and apps, with a video,
+   screenshots or pictures and notes; an instructor confirms it or sends it back
+   with a note the member reads. A platform's own progress report can be brought
+   in for a whole class: checked first (who it matched, who it could not), then
+   added, confirmed. Below, every member in the admin's centres: lessons done
+   here, average best score, outside learning and its hours, days attended in
+   the last 90, and when they last learnt anything.
+   ========================================================================== */
+const CR_LO_ST = { pending: ["Waiting", "warn"], confirmed: ["Confirmed", "ok"], returned: ["Sent back", "bad"] };
+/* A report's column, by any of the names platforms give it. */
+function crLoCol(r, names) { for (const n of names) { const k = Object.keys(r).find(x => x === n || x.replace(/[^a-z]/g, "") === n.replace(/[^a-z]/g, "")); if (k && String(r[k]).trim() !== "") return String(r[k]).trim(); } return ""; }
+function crLoReportRows(rows) {
+  return rows.map(r => ({
+    id: crLoCol(r, ["printed_id", "member_id", "id", "student_id", "ngg_id"]),
+    name: crLoCol(r, ["name", "full_name", "student", "learner", "student_name"]),
+    title: crLoCol(r, ["title", "course", "module", "lesson", "activity", "skill"]),
+    progress: crLoCol(r, ["progress", "percent", "completion", "score", "mastery"]),
+    hours: crLoCol(r, ["hours", "time_spent", "time"]).replace(/[^\d.]/g, ""),
+    doneOn: crLoCol(r, ["date", "completed", "done_on", "completed_on", "last_activity"]).slice(0, 10),
+    notes: crLoCol(r, ["notes", "note", "comment"]),
+  })).filter(r => (r.id || r.name) && r.title);
+}
+function crLoImport(ctx) {
+  ctx.form({
+    title: "Bring in a platform’s report", submit: "Check it", busyLabel: "Checking…",
+    intro: "A progress export from the outside platform (CSV or Excel). Each row is matched to a member by printed ID, or by name; anybody it can’t match is listed, never guessed. Nothing is added until you look at the check.",
+    values: { platform: "", file: null },
+    fields: [
+      { id: "platform", l: "Platform", req: true, ph: "e.g. Khan Academy, freeCodeCamp, Scratch", max: 120 },
+      { id: "file", l: "File", type: "file", req: true, accept: ".csv,.xlsx,text/csv", help: "Columns it reads: name or printed ID, and the course or module. Progress, hours, date and notes if it has them." },
+    ],
+    onSubmit: async v => {
+      const rows = crLoReportRows(await crCurReadFile(v.file));
+      if (!rows.length) return { fieldErrors: { file: "No rows with a name (or printed ID) and a course were found." } };
+      const r = await NGGApi.admin.learning.importRows(v.platform.trim(), rows, false);
+      ctx.setData(x => Object.assign({}, x, { loPlan: { platform: v.platform.trim(), rows, check: r } }));
+      return r;
+    },
+    done: (v, r) => crPlural(r.add, "row") + " would be added" + (r.refused ? " · " + crPlural(r.refused, "row") + " couldn’t be matched" : "") + ".",
+  });
+}
+function crLoReview(ctx, ids, decision) {
+  if (decision === "confirmed") return NGGApi.admin.learning.review(ids, "confirmed").then(r => { ctx.toast(crPlural(r.applied, "entry", "entries") + " confirmed" + (r.results.some(x => !x.ok) ? " · some refused" : "")); ctx.reload(); return r; });
+  return new Promise(res => ctx.form({
+    title: "Send back " + crPlural(ids.length, "entry", "entries"), submit: "Send back",
+    values: { note: "" }, fields: [{ id: "note", l: "What is missing", type: "textarea", req: true, max: 500, ph: "e.g. The video doesn’t show the finished project. Add a screenshot of the last step." }],
+    onSubmit: async v => { const r = await NGGApi.admin.learning.review(ids, "returned", v.note.trim()); ctx.reload(); res(r); return r; },
+    done: (v, r) => crPlural(r.applied, "entry", "entries") + " sent back, with your note.",
+  }));
+}
+Object.assign(CR_TAB_DEFS, {
+  outside: {
+    skeleton: ["kpis", "table"],
+    load: async () => {
+      const [p, c, r, ov] = await Promise.all([NGGApi.admin.learning.list("pending"), NGGApi.admin.learning.list("confirmed"), NGGApi.admin.learning.list("returned"), NGGApi.admin.learning.overview()]);
+      return { entries: [].concat(p.entries || [], c.entries || [], r.entries || []), counts: p.counts || {}, members: ov.members || [] };
+    },
+    facts: d => "Outside learning: " + crNum(d.counts.pending || 0) + " waiting for an instructor, " + crNum(d.counts.confirmed || 0) + " confirmed; " + crNum(d.members.length) + " members in view.",
+    actions: (d, ctx) => [{ l: "Bring in a report", icon: "upload-simple", primary: true, run: () => crLoImport(ctx), disabled: !ctx.can("curriculum"), why: "Needs the Curriculum permission." }],
+    blocks: (d, ctx) => {
+      const P = d.loPlan, out = [];
+      const quiet = d.members.filter(m => !m.lastLearnt || m.lastLearnt < crCfIsoDay(-30)).length;
+      out.push({ type: "kpis", span: 6, items: [
+        { l: "Waiting to be confirmed", v: crNum(d.counts.pending || 0), dn: "logged by members", tone: (d.counts.pending || 0) ? "warn" : "flat" },
+        { l: "Confirmed outside learning", v: crNum(d.counts.confirmed || 0), dn: "counts towards achievements" },
+        { l: "Members in view", v: crNum(d.members.length), dn: "active NGG members" },
+        { l: "Nothing learnt in 30 days", v: crNum(quiet), dn: "here or outside", tone: quiet ? "down" : "flat" },
+      ] });
+      if (P) {
+        const bad = (P.check.rows || []).filter(x => !x.ok);
+        out.push({ type: "note", span: 6, icon: "file-arrow-up", tone: bad.length ? "warn" : null,
+          text: P.platform + ": " + crPlural(P.check.add, "row") + " to add" + (bad.length ? ", " + crPlural(bad.length, "row") + " not matched" : "") + ".",
+          sub: bad.length ? bad.slice(0, 8).map(x => "Row " + x.row + ": " + (x.detail || x.error)).join(" · ") + (bad.length > 8 ? " · …" : "") : "Every row found its member. They arrive confirmed — the platform’s report is the evidence.",
+          act: P.check.add ? { l: "Add " + crPlural(P.check.add, "row"), run: async () => { const r = await NGGApi.admin.learning.importRows(P.platform, P.rows, true); ctx.setData(x => Object.assign({}, x, { loPlan: null })); ctx.toast(crPlural(r.add, "entry", "entries") + " added from " + P.platform); ctx.reload(); } }
+            : { l: "Close", run: () => ctx.setData(x => Object.assign({}, x, { loPlan: null })) } });
+      }
+      out.push({ type: "table", span: 6, title: "Learning outside NGG", sub: "Logged by members with a video, pictures or notes, or brought in from a report",
+        cols: ["Member", "What", "Where", "Evidence", "Status"], filters: ["Status"], search: true, emptyText: "Nothing logged yet. Members add it from Records → Learning outside NGG.",
+        bulk: ctx.can("curriculum") ? [{ l: "Confirm", max: 300, run: keys => crLoReview(ctx, keys, "confirmed") }, { l: "Send back…", max: 300, run: keys => crLoReview(ctx, keys, "returned") }] : [],
+        rows: d.entries.map(x => ({ key: x.entryId,
+          cells: [{ k: "person", t: x.fullName || x.memberId, s: [x.displayId, x.centre].filter(Boolean).join(" · ") }, { k: "text", t: x.title, s: [x.progress, x.hours ? x.hours + " h" : "", x.doneOn].filter(Boolean).join(" · ") },
+            { k: "text", t: x.platform, s: x.source === "report" ? "From a report" : "Logged by them" }, { k: "text", t: (x.media || []).length ? crPlural(x.media.length, "file") : x.link ? "A link" : "Notes" },
+            { k: "status", t: (CR_LO_ST[x.status] || [x.status])[0], tone: (CR_LO_ST[x.status] || [0, "flat"])[1] }],
+          open: () => ctx.drawer({ title: x.title, sub: (x.fullName || x.memberId) + " · " + x.platform, icon: "globe",
+            stats: [["Status", (CR_LO_ST[x.status] || [x.status])[0]], ["Hours", x.hours ? String(x.hours) : "—"], ["Done", x.doneOn ? crDate(x.doneOn) : "—"]],
+            fields: [["How far", x.progress || "—"], ["Link", x.link || "—"], ["Their notes", x.notes || "—"]].concat(x.reviewNote ? [["Instructor’s note", x.reviewNote]] : []),
+            sections: [{ h: "Video, screenshots and pictures", list: (x.media || []).map((m, i) => ({ icon: m.kind === "video" ? "video" : m.kind === "pdf" ? "file-pdf" : "image", t: (m.kind === "video" ? "Video " : m.kind === "pdf" ? "Document " : "Picture ") + (i + 1), s: m.url, onClick: () => window.open(m.url, "_blank", "noopener") })), empty: "None — notes or a link only." }],
+            actions: ctx.can("curriculum") && x.status !== "confirmed" ? [{ l: "Confirm", primary: true, run: () => crLoReview(ctx, [x.entryId], "confirmed").then(() => ctx.closeDrawer()) }].concat(x.status === "pending" ? [{ l: "Send back…", run: () => { ctx.closeDrawer(); crLoReview(ctx, [x.entryId], "returned"); } }] : []) : [] }) })) });
+      out.push({ type: "table", span: 6, title: "How each member is doing", sub: "Lessons here, outside learning, attendance in the last 90 days, and when they last learnt anything",
+        cols: ["Member", "#Lessons done", "#Average score", "#Outside", "#Days in 90", "Last learnt"], search: true, nosel: true,
+        emptyText: "No active NGG members in your centres.",
+        rows: d.members.map(m => ({ key: m.memberId,
+          cells: [{ k: "person", t: m.fullName, s: [m.displayId, m.centre, m.track].filter(Boolean).join(" · ") }, { k: "num", t: crNum(m.lessons), v: m.lessons },
+            { k: "num", t: m.avgPct === null ? "—" : m.avgPct + "%", v: m.avgPct === null ? -1 : m.avgPct },
+            { k: "num", t: crNum(m.outside) + (m.outsideHours ? " · " + m.outsideHours + " h" : "") + (m.waiting ? " · " + m.waiting + " waiting" : ""), v: m.outside },
+            { k: "num", t: crNum(m.days90), v: m.days90 }, { k: "text", t: m.lastLearnt ? crDate(m.lastLearnt) : "Never", s: !m.lastLearnt || m.lastLearnt < crCfIsoDay(-30) ? "Over a month ago" : "" }],
+          open: () => crLoMember(ctx, m) })) });
+      return out;
+    },
+  },
+});
+/* One member: their achievements, and a recognition given by staff. */
+async function crLoMember(ctx, m) {
+  let A; try { A = await NGGApi.admin.learning.achievements(m.memberId); } catch (e) { return ctx.toast(crErr(e, "Couldn’t open their achievements."), null, true); }
+  ctx.drawer({ title: m.fullName, sub: [m.displayId, m.centre].filter(Boolean).join(" · "), name: m.fullName,
+    stats: [["Days attended", crNum(A.stats.days)], ["Best streak", crNum(A.stats.bestStreak)], ["Lessons done", crNum(A.stats.lessons)]],
+    sections: [{ h: "Achievements", list: A.items.map(x => ({ icon: x.icon || "medal", t: x.t, s: x.s, m: x.kind === "award" && ctx.can("people") ? "Remove" : "",
+        onClick: x.kind === "award" && ctx.can("people") ? async () => { if (!(await ctx.confirm({ title: "Remove “" + x.t + "”?", body: "It comes off their record and their family’s view.", cta: "Remove", danger: true }))) return; await NGGApi.admin.learning.awardRemove(x.awardId); ctx.closeDrawer(); ctx.toast("Removed"); } : undefined })),
+      empty: "Nothing yet." }, { h: "Next", list: A.next.map(x => ({ icon: x.icon, t: x.t })), empty: "—" }],
+    actions: ctx.can("people") ? [{ l: "Give a recognition…", primary: true, run: () => { ctx.closeDrawer(); ctx.form({ title: "Recognise " + m.fullName, submit: "Give it",
+      intro: "It appears on their Records and their family’s Growth page.",
+      values: { name: "", category: "academic", period: "", note: "" },
+      fields: [{ id: "name", l: "For", req: true, max: 120, ph: "e.g. Best in Coding, Most consistent" }, { id: "category", l: "Kind", type: "select", req: true,
+        opts: [["academic", "Academic"], ["consistency", "Consistency"], ["conduct", "Conduct"], ["leadership", "Leadership"], ["creativity", "Creativity"], ["service", "Service"], ["sport", "Sport"], ["other", "Other"]] },
+        { id: "period", l: "When (optional)", max: 60, ph: "e.g. Term 1 2026, October" }, { id: "note", l: "Note (optional)", type: "textarea", max: 240 }],
+      onSubmit: v => NGGApi.admin.learning.award(m.memberId, { name: v.name.trim(), category: v.category, period: v.period.trim(), note: v.note.trim() }),
+      done: "Recognition given" }); } }] : [] });
+}
