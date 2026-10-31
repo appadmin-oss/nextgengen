@@ -1113,6 +1113,8 @@ chk('anchor applicant becomes NGG member', db_row('SELECT type FROM members WHER
 $summerAppId = db_row("SELECT id FROM applications WHERE email='summer1@example.com'")['id'];
 $convS = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $summerAppId]);
 chk('summer applicant becomes Summer member', db_row('SELECT type FROM members WHERE memberId=?', [$convS['memberId']])['type'] === 'Summer');
+chk('an accepted NGG applicant’s registration checklist starts at once (domain/registration-checklist.php); a Summer one gets none',
+    (bool)db_row('SELECT 1 FROM reg_checklists WHERE memberId = ?', [$convA['memberId']]) && !db_row('SELECT 1 FROM reg_checklists WHERE memberId = ?', [$convS['memberId']]));
 chk('invalid program falls back to anchor', (function () {
     backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Junk', 'lastName' => 'Prog', 'email' => 'junkprog@example.com', 'phone' => '08031110033', 'dob' => '2011-06-01', 'program' => 'bogus']);
     return db_row("SELECT program FROM applications WHERE email='junkprog@example.com'")['program'] === 'anchor';
@@ -1311,6 +1313,215 @@ chk('schools: a school the family typed joins the list once their child is accep
     $h = backend_dispatch('public.schools', ['q' => 'bright future model'])['schools'];
     return $h && $h[0]['name'] === 'Bright Future Model College, Egbeda';
 })());
+
+/* ── The registration checklist (domain/registration-checklist.php) ─────────
+ * Every new NGG member is helped to finish registering. What this guards: the
+ * automatic items are answered by the record and nothing else (evidence never
+ * ticks one); staff define, edit, reorder and retire their own items; the
+ * suggested supervisors are cleared, at the member's centre and not over the
+ * cap, each with reasons in words; the assignment re-derives all of that per
+ * row and refuses out of scope; evidence counts only of the declared type,
+ * fresh enough, from the assigned supervisor, and at the centre that day when
+ * the item says so; staff can reject and the item reopens; reminders go once.
+ * Its fixtures (two centres, check-ins on recent Saturdays) are rolled back at
+ * the end, so no later section sees them.
+ */
+(function () { $__db = db_conn(); $__db->beginTransaction(); try {
+    $SU = 'NGG-2025-0099';
+    $now = now_iso(); $today = attendance_today();
+    $C1 = 'CEN-RCL-1'; $C2 = 'CEN-RCL-2';
+    db_insert('centres', ['centreId' => $C1, 'name' => 'Rcl Town', 'code' => 'RT', 'color' => '#123456', 'status' => 'active', 'slug' => 'rcl-town', 'createdAt' => $now]);
+    db_insert('centres', ['centreId' => $C2, 'name' => 'Rcl Far', 'code' => 'RF', 'color' => '#654321', 'status' => 'active', 'slug' => 'rcl-far', 'createdAt' => $now]);
+    $mem = fn(string $id, string $name, string $centre, array $x = []) => db_insert('members', $x + ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.org',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $centre, 'createdAt' => $now, 'updatedAt' => $now]);
+    $mem('NGG-RCL-M1', 'Tobi Rcl', 'Rcl Town');
+    $mem('NGG-RCL-M2', 'Bisi Rcl', 'Rcl Town');
+    $mem('NGG-RCL-M3', 'Kunle Rcl', 'Rcl Far');
+    $mem('SUM-RCL-1', 'Summer Rcl', 'Rcl Town', ['type' => 'Summer']);
+    $mem('NGG-RCL-SC', 'Scoped Rcl', 'Rcl Far', ['role' => 'club_admin', 'centreScope' => json_encode([$C2])]);
+    $vol = fn(string $id, string $name, string $sg, array $x = []) => db_insert('volunteers', $x + ['volunteerId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.org',
+        'role' => 'mentor', 'status' => 'active', 'safeguarding' => $sg, 'programme' => 'ngg', 'centre' => 'Rcl Town', 'centreId' => $C1, 'createdAt' => $now]);
+    $vol('VOL-RCL-A', 'Amaka Rcl', 'cleared');
+    $vol('VOL-RCL-B', 'Bode Rcl', 'pending');
+    $vol('VOL-RCL-C', 'Chidi Rcl', 'cleared');
+    $vol('VOL-RCL-D', 'Dayo Rcl', 'cleared');
+    $vol('VOL-RCL-E', 'Efe Rcl', 'cleared', ['programme' => 'summer']);
+    $vol('VOL-RCL-F', 'Femi Rcl', 'cleared');
+    db_insert('mentors', ['mentorId' => 'MEN-RCL-1', 'fullName' => 'Femi Rcl', 'email' => 'vol-rcl-f@example.org', 'status' => 'active', 'centre' => 'Rcl Town', 'centreId' => $C1,
+        'programme' => 'ngg', 'volunteerId' => 'VOL-RCL-F', 'checkedAt' => $now, 'availability' => 'Saturday mornings', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentor_matches', ['matchId' => 'MM-RCL-1', 'memberId' => 'NGG-RCL-M1', 'mentorId' => 'MEN-RCL-1', 'centre' => 'Rcl Town', 'status' => 'active', 'updatedAt' => $now]);
+    $sats = rcl_saturdays($today, 6);
+    $att = fn(string $who, string $day, string $cid) => db_insert('attendance', ['cohortId' => '', 'studentId' => $who, 'date' => $day, 'checkInAt' => $day . 'T08:00:00Z',
+        'method' => 'test', 'status' => 'present', 'lateMinutes' => 0, 'centreId' => $cid, 'createdAt' => $now]);
+    // A: four of the last five Saturdays at Rcl Town (not the newest, which may be today). B and D: there too. F: once.
+    foreach ([1, 2, 3, 4] as $i) { $att('VOL-RCL-A', $sats[$i], $C1); $att('VOL-RCL-B', $sats[$i], $C1); }
+    $att('VOL-RCL-D', $sats[1], $C1); $att('VOL-RCL-F', $sats[2], $C1); $att('VOL-RCL-E', $sats[1], $C1);
+    $att('VOL-RCL-C', $sats[1], $C2);                                         // C was seen, but at another centre
+    for ($i = 0; $i < RCL_SUPERVISOR_MAX; $i++) db_insert('reg_checklists', ['memberId' => 'RCL-LOAD-' . $i, 'status' => 'open', 'supervisorId' => 'VOL-RCL-D', 'startedAt' => $now, 'updatedAt' => $now]);
+
+    // ── Automatic items: the record decides.
+    chk('regcheck: a Summer School account gets no checklist, an NGG member does',
+        !rcl_start(db_row("SELECT * FROM members WHERE memberId = 'SUM-RCL-1'"), $SU) && rcl_start(db_row("SELECT * FROM members WHERE memberId = 'NGG-RCL-M1'"), $SU)
+        && !rcl_start(db_row("SELECT * FROM members WHERE memberId = 'NGG-RCL-M1'"), $SU));
+    $b = fn(string $id) => rcl_build([db_row('SELECT * FROM members WHERE memberId = ?', [$id])])[$id];
+    $st = fn(string $id) => array_column($b($id)['items'], 'done', 'key');
+    $s0 = $st('NGG-RCL-M1');
+    chk('regcheck: a blank record leaves every automatic item open', !$s0['auto:guardian'] && !$s0['auto:consents'] && !$s0['auto:photo'] && !$s0['auto:dob']
+        && !$s0['auto:school'] && !$s0['auto:emergency'] && !$s0['auto:courses'] && !$s0['auto:idcard']);
+    chk('regcheck: the fee item is there exactly when membership fees are on', isset($s0['auto:fee']) === (bool)membership_fee_terms()['enabled']);
+    db_update('members', ['dob' => '2012-04-05', 'school' => 'Rcl Grammar', 'parentPhone' => '0803 111 2222', 'courses' => '["Chess"]', 'displayId' => '026-901'], ['memberId' => 'NGG-RCL-M1']);
+    db_insert('guardians', ['guardianId' => 'G-RCL-1', 'email' => 'g-rcl-1@example.org', 'fullName' => 'Mama Rcl', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-RCL-1', 'guardianId' => 'G-RCL-1', 'memberId' => 'NGG-RCL-M1', 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (['participation' => 'granted', 'medical' => 'granted', 'data' => 'granted', 'media' => 'declined'] as $t => $v)
+        db_insert('consents', ['studentId' => 'NGG-RCL-M1', 'type' => $t, 'status' => $v, 'method' => 'Paper form', 'actorName' => 'Mama Rcl', 'createdAt' => $now]);
+    chk('regcheck: a missing consent keeps consents open (the website answer is not given yet)', !$st('NGG-RCL-M1')['auto:consents']);
+    db_insert('consents', ['studentId' => 'NGG-RCL-M1', 'type' => 'site_visibility', 'status' => 'granted', 'method' => 'Paper form', 'actorName' => 'Mama Rcl', 'createdAt' => $now]);
+    db_insert('card_runs', ['runId' => 'RUN-RCL-P', 'kind' => 'member', 'mode' => 'proof', 'startedAt' => $now]);
+    db_insert('card_issues', ['runId' => 'RUN-RCL-P', 'subjectType' => 'member', 'subjectId' => 'NGG-RCL-M1', 'displayId' => '026-901', 'ok' => 1, 'at' => $now]);
+    $s1 = $st('NGG-RCL-M1');
+    chk('regcheck: guardian, consents, dob, school, emergency contact and courses pass from the record', $s1['auto:guardian'] && $s1['auto:consents'] && $s1['auto:dob']
+        && $s1['auto:school'] && $s1['auto:emergency'] && $s1['auto:courses']);
+    chk('regcheck: a proof is nobody’s card — the ID card item stays open', !$s1['auto:idcard']);
+    db_insert('card_runs', ['runId' => 'RUN-RCL-1', 'kind' => 'member', 'mode' => 'print', 'startedAt' => $now]);
+    db_insert('card_issues', ['runId' => 'RUN-RCL-1', 'subjectType' => 'member', 'subjectId' => 'NGG-RCL-M1', 'displayId' => '026-901', 'ok' => 1, 'at' => $now]);
+    chk('regcheck: a real printed card with the printed ID passes it', $st('NGG-RCL-M1')['auto:idcard']);
+    chk('regcheck: an emergency contact may be a collector instead of a parent phone', (function () use ($st, $now) {
+        db_insert('member_collectors', ['memberId' => 'NGG-RCL-M2', 'name' => 'Aunty', 'relation' => 'Aunt', 'phone' => '08030000000', 'createdAt' => $now]);
+        return $st('NGG-RCL-M2')['auto:emergency'] && !$st('NGG-RCL-M2')['auto:dob'];
+    })());
+
+    // ── Admin items: create, edit, reorder, retire, restore.
+    $save = fn(array $x, string $who = 'NGG-2025-0099') => backend_dispatch('admin.regcheck.item.save', ['requesterId' => $who] + $x);
+    chk('regcheck items: a member cannot define items (people only)', ($save(['title' => 'Nope'], 'NGG-RCL-M1')['error'] ?? '') === 'forbidden');
+    chk('regcheck items: a title of two letters is refused, in words', ($save(['title' => 'ab'])['error'] ?? '') === 'title_required' && ($save(['title' => 'ab'])['message'] ?? '') !== '');
+    chk('regcheck items: evidence is a photo, a document or a note', ($save(['title' => 'Video thing', 'evidence' => 'video'])['error'] ?? '') === 'bad_evidence');
+    chk('regcheck items: an age limit needs a file to date', ($save(['title' => 'Talk', 'evidence' => 'none', 'maxAgeDays' => 30])['error'] ?? '') === 'age_needs_file');
+    $I1 = $save(['title' => 'Proof of adress', 'help' => 'A utility bill.', 'evidence' => 'document', 'maxAgeDays' => 90])['item']['itemId'] ?? '';
+    $I2 = $save(['title' => 'Photo with their guardian at the centre', 'evidence' => 'photo', 'presence' => true, 'maxAgeDays' => 30])['item']['itemId'] ?? '';
+    $I3 = $save(['title' => 'Welcome talk given', 'evidence' => 'none', 'presence' => true])['item']['itemId'] ?? '';
+    $I4 = $save(['title' => 'Old form', 'evidence' => 'none'])['item']['itemId'] ?? '';
+    $ed = $save(['itemId' => $I1, 'title' => 'Proof of address', 'help' => 'A utility bill or a bank letter.', 'evidence' => 'document', 'maxAgeDays' => 90]);
+    chk('regcheck items: created and edited', $I1 && $I2 && $I3 && $I4 && ($ed['item']['title'] ?? '') === 'Proof of address' && ($ed['item']['maxAgeDays'] ?? 0) === 90);
+    backend_dispatch('admin.regcheck.item.move', ['requesterId' => $SU, 'itemId' => $I3, 'dir' => 'up']);
+    $order = array_column(rcl_items_active(), 'itemId');
+    chk('regcheck items: moved up one place', array_search($I3, $order, true) === array_search($I2, $order, true) - 1);
+    $ret = backend_dispatch('admin.regcheck.item.retire', ['requesterId' => $SU, 'itemId' => $I4, 'retire' => true]);
+    $list = backend_dispatch('admin.regcheck.items', ['requesterId' => $SU]);
+    $i4 = array_values(array_filter($list['items'], fn($i) => $i['itemId'] === $I4))[0] ?? [];
+    chk('regcheck items: retiring takes it off every checklist and keeps it, marked retired', !empty($ret['ok']) && !in_array($I4, array_column(rcl_items_active(), 'itemId'), true)
+        && ($i4['status'] ?? '') === 'retired' && ($i4['retiredAt'] ?? '') !== '' && !in_array($I4, array_column($b('NGG-RCL-M1')['items'], 'key'), true));
+    backend_dispatch('admin.regcheck.item.retire', ['requesterId' => $SU, 'itemId' => $I4, 'retire' => false]);
+    chk('regcheck items: and can be brought back', in_array($I4, array_column(rcl_items_active(), 'itemId'), true));
+    backend_dispatch('admin.regcheck.item.retire', ['requesterId' => $SU, 'itemId' => $I4]);
+    chk('regcheck items: one audit event per change', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event LIKE 'regcheck.item.%'")['c'] === 9);
+
+    // ── Suggestions.
+    $sg = backend_dispatch('admin.regcheck.suggest', ['requesterId' => $SU, 'memberIds' => ['NGG-RCL-M1']]);
+    $sid = array_column($sg['suggested'] ?? [], 'id');
+    $A = array_values(array_filter($sg['suggested'] ?? [], fn($x) => $x['id'] === 'VOL-RCL-A'))[0] ?? [];
+    $F = array_values(array_filter($sg['suggested'] ?? [], fn($x) => $x['id'] === 'VOL-RCL-F'))[0] ?? [];
+    chk('regcheck suggest: cleared NGG people seen at the centre are suggested', in_array('VOL-RCL-A', $sid, true) && in_array('VOL-RCL-F', $sid, true));
+    chk('regcheck suggest: an uncleared volunteer is never suggested, nor listed', !in_array('VOL-RCL-B', array_merge($sid, array_column($sg['others'], 'id'), array_column($sg['full'], 'id')), true));
+    chk('regcheck suggest: a Summer School volunteer is not eligible for an NGG member', !in_array('VOL-RCL-E', array_merge($sid, array_column($sg['others'], 'id')), true));
+    chk('regcheck suggest: someone with no presence at the centre (seen elsewhere) is not suggested, only listed to pick with a reason',
+        !in_array('VOL-RCL-C', $sid, true) && in_array('VOL-RCL-C', array_column($sg['others'], 'id'), true));
+    chk('regcheck suggest: someone at the cap is not suggested, and is named as full', !in_array('VOL-RCL-D', $sid, true) && in_array('VOL-RCL-D', array_column($sg['full'], 'id'), true));
+    chk('regcheck suggest: the reasons are words — Saturdays at the centre, workload, clearance',
+        str_contains($A['why'] ?? '', 'Checked in at Rcl Town on 4 of the last 5 Saturdays') && str_contains($A['why'] ?? '', 'No members to support yet') && str_contains($A['why'] ?? '', 'Safeguarding cleared'));
+    chk('regcheck suggest: the member’s own mentor is one person (mentor + volunteer), marked, with their stated availability',
+        !empty($F['existingMentor']) && str_contains($F['why'] ?? '', 'Already their mentor') && str_contains($F['why'] ?? '', 'Saturday mornings') && count(array_keys($sid, 'VOL-RCL-F', true)) === 1);
+    chk('regcheck suggest: the best placed comes first', ($sg['suggested'][0]['id'] ?? '') === 'VOL-RCL-A');
+    chk('regcheck suggest: members from two centres at once are refused', (backend_dispatch('admin.regcheck.suggest', ['requesterId' => $SU, 'memberIds' => ['NGG-RCL-M1', 'NGG-RCL-M3']])['error'] ?? '') === 'mixed_centres');
+
+    // ── Assignment re-checks everything, per row.
+    $as = fn(array $ids, string $sup, string $reason = '', string $who = 'NGG-2025-0099') => backend_dispatch('admin.regcheck.assign', ['requesterId' => $who, 'memberIds' => $ids, 'supervisorId' => $sup, 'reason' => $reason]);
+    $err = fn(array $r) => $r['results'][0]['error'] ?? ($r['error'] ?? '');
+    $aud0 = (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'regcheck.assign'")['c'];
+    chk('regcheck assign: an uncleared volunteer is refused whatever the screen sent', $err($as(['NGG-RCL-M1'], 'VOL-RCL-B')) === 'not_eligible');
+    chk('regcheck assign: someone at the cap is refused, the cap named', $err($as(['NGG-RCL-M1'], 'VOL-RCL-D')) === 'supervisor_full');
+    chk('regcheck assign: someone not seen at the centre needs a typed reason', $err($as(['NGG-RCL-M1'], 'VOL-RCL-C')) === 'not_present');
+    $withWhy = $as(['NGG-RCL-M1'], 'VOL-RCL-C', 'Covers the Saturday desk from next week');
+    $audW = db_row("SELECT meta FROM audit_log WHERE event = 'regcheck.assign' ORDER BY id DESC LIMIT 1");
+    chk('regcheck assign: with a reason they are assigned, and the reason is in the audit', ($withWhy['applied'] ?? 0) === 1 && str_contains((string)$audW['meta'], 'Covers the Saturday desk') && str_contains((string)$audW['meta'], 'notPresent'));
+    chk('regcheck assign: your own account is refused', $err($as([$SU], 'VOL-RCL-A')) === 'own_account');
+    $sc = $as(['NGG-RCL-M1', 'NGG-RCL-M3'], 'VOL-RCL-A', '', 'NGG-RCL-SC');
+    chk('regcheck assign: a scoped admin is refused per row out of scope, and A cannot supervise at Rcl Far', ($sc['results'][0]['error'] ?? '') === 'out_of_scope' && ($sc['results'][1]['error'] ?? '') === 'not_eligible' && ($sc['applied'] ?? -1) === 0);
+    $ok = $as(['NGG-RCL-M1', 'NGG-RCL-M2', 'SUM-RCL-1'], 'VOL-RCL-A');
+    chk('regcheck assign: A takes two members; a Summer account is refused by name', ($ok['applied'] ?? 0) === 2 && ($ok['results'][2]['error'] ?? '') === 'not_a_member'
+        && db_row("SELECT supervisorId FROM reg_checklists WHERE memberId = 'NGG-RCL-M2'")['supervisorId'] === 'VOL-RCL-A');
+    chk('regcheck assign: again is unchanged, reported as such', ($as(['NGG-RCL-M1'], 'VOL-RCL-A')['unchanged'] ?? 0) === 1);
+    chk('regcheck assign: one audit event per run', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'regcheck.assign'")['c'] === $aud0 + 8);
+    chk('regcheck assign: the supervisor is told', (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'VOL-RCL-A' AND title LIKE 'You are helping%'"));
+
+    // ── Evidence: verified, not declared.
+    $sub = fn(string $who, string $key, array $x = [], string $mid = 'NGG-RCL-M1') => backend_dispatch('member.regcheck.submit', ['requesterId' => $who, 'memberId' => $mid, 'itemKey' => $key] + $x);
+    $jpg = 'https://res.cloudinary.com/demo/image/upload/v1/evidence/rcl.jpg';
+    chk('regcheck evidence: only the assigned supervisor may submit', ($sub('VOL-RCL-C', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $today])['error'] ?? '') === 'not_assigned');
+    $auto = $sub('VOL-RCL-A', 'auto:photo', ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000]);
+    chk('regcheck evidence: a photo uploaded against an automatic item does not tick it — the record decides', ($auto['accepted'] ?? true) === false && !$st('NGG-RCL-M1')['auto:photo']
+        && db_row("SELECT verdict FROM reg_checklist_submissions WHERE memberId = 'NGG-RCL-M1' AND itemKey = 'auto:photo' ORDER BY id DESC LIMIT 1")['verdict'] === 'record_fails');
+    db_update('members', ['photoUrl' => $jpg], ['memberId' => 'NGG-RCL-M1']);
+    chk('regcheck evidence: once the record has it, checking again passes', ($sub('VOL-RCL-A', 'auto:photo')['accepted'] ?? false) === true && $st('NGG-RCL-M1')['auto:photo']);
+    $pdf = $sub('VOL-RCL-A', $I2, ['url' => 'https://res.cloudinary.com/demo/image/upload/v1/evidence/form.pdf', 'mime' => 'application/pdf', 'bytes' => 2000, 'capturedOn' => $today]);
+    chk('regcheck evidence: a PDF for a photo item is refused, saying what it is', ($pdf['error'] ?? '') === 'wrong_type' && str_contains($pdf['reason'] ?? '', 'a PDF'));
+    chk('regcheck evidence: a .jpg that says it is a PDF is refused', ($sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'application/pdf', 'bytes' => 2000, 'capturedOn' => $today])['error'] ?? '') === 'wrong_type');
+    chk('regcheck evidence: a file from somewhere else is refused', ($sub('VOL-RCL-A', $I2, ['url' => 'https://evil.example/x.jpg', 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $today])['error'] ?? '') === 'evidence_not_ours');
+    chk('regcheck evidence: too large is refused', ($sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => RCL_EVIDENCE_MAX_BYTES + 1, 'capturedOn' => $today])['error'] ?? '') === 'too_large');
+    $old = gmdate('Y-m-d', strtotime($today . 'T12:00:00Z') - 45 * 86400);
+    $stale = $sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $old]);
+    chk('regcheck evidence: older than the item allows is refused, with the age in words', ($stale['error'] ?? '') === 'stale' && str_contains($stale['reason'] ?? '', '45 days old'));
+    $np = $sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $today]);
+    chk('regcheck evidence: a presence item without a check-in at the centre today is refused', ($np['error'] ?? '') === 'not_present' && str_contains($np['reason'] ?? '', 'Rcl Town'));
+    db_exec("DELETE FROM attendance WHERE studentId = 'VOL-RCL-A' AND date = ?", [$today]);
+    $att('VOL-RCL-A', $today, $C2);
+    chk('regcheck evidence: a check-in at another centre that day does not count', ($sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $today])['error'] ?? '') === 'not_present');
+    db_exec("UPDATE attendance SET centreId = ? WHERE studentId = 'VOL-RCL-A' AND date = ?", [$C1, $today]);
+    $yes = $sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $today]);
+    chk('regcheck evidence: the right file, fresh, by the supervisor at the centre that day is verified', ($yes['accepted'] ?? false) === true
+        && db_row('SELECT status FROM reg_checklist_state WHERE memberId = ? AND itemId = ?', ['NGG-RCL-M1', $I2])['status'] === 'verified');
+    chk('regcheck evidence: a note item needs the note', ($sub('VOL-RCL-A', $I3)['error'] ?? '') === 'note_missing'
+        && ($sub('VOL-RCL-A', $I3, ['note' => 'Talked through the Saturday day with Tobi and his mother.'])['accepted'] ?? false) === true);
+    chk('regcheck evidence: a scanned bill as a PDF is a document', ($sub('VOL-RCL-A', $I1, ['url' => 'https://res.cloudinary.com/demo/image/upload/v1/evidence/bill.pdf', 'mime' => 'application/pdf', 'bytes' => 90000, 'capturedOn' => $today])['accepted'] ?? false) === true);
+    $refusals = db_all("SELECT verdict, reason FROM reg_checklist_submissions WHERE memberId = 'NGG-RCL-M1' AND verdict = 'refused'");
+    chk('regcheck evidence: every refused attempt is kept, each with its reason', count($refusals) >= 7 && !array_filter($refusals, fn($r) => trim((string)$r['reason']) === ''));
+
+    // ── Staff reject: the item reopens and the supervisor is told.
+    chk('regcheck reject: an automatic item cannot be rejected (correct the record instead)', (backend_dispatch('admin.regcheck.reject', ['requesterId' => $SU, 'memberId' => 'NGG-RCL-M1', 'itemKey' => 'auto:photo', 'reason' => 'Blurred'])['error'] ?? '') === 'record_decides');
+    chk('regcheck reject: needs a reason', (backend_dispatch('admin.regcheck.reject', ['requesterId' => $SU, 'memberId' => 'NGG-RCL-M1', 'itemKey' => $I2, 'reason' => 'x'])['error'] ?? '') === 'reason_required');
+    chk('regcheck reject: a scoped admin cannot reject outside their centres', (backend_dispatch('admin.regcheck.reject', ['requesterId' => 'NGG-RCL-SC', 'memberId' => 'NGG-RCL-M1', 'itemKey' => $I2, 'reason' => 'Face not visible'])['error'] ?? '') === 'out_of_scope');
+    $rj = backend_dispatch('admin.regcheck.reject', ['requesterId' => $SU, 'memberId' => 'NGG-RCL-M1', 'itemKey' => $I2, 'reason' => 'Face not visible in the photo']);
+    $i2 = array_values(array_filter($b('NGG-RCL-M1')['items'], fn($i) => $i['key'] === $I2))[0] ?? [];
+    chk('regcheck reject: the item reopens with the reason, and the supervisor is notified', !empty($rj['reopened']) && ($i2['status'] ?? '') === 'rejected' && ($i2['rejectReason'] ?? '') === 'Face not visible in the photo'
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'VOL-RCL-A' AND body = 'Face not visible in the photo'"));
+
+    // ── What the member, the family and the supervisor see.
+    $pr = backend_dispatch('member.regcheck.progress', ['requesterId' => 'NGG-RCL-M1']);
+    $json = json_encode($pr);
+    chk('regcheck progress: the member sees N of M, what is left, and the helper’s first name only', !empty($pr['started']) && $pr['total'] > $pr['done'] && in_array('Photo with their guardian at the centre', $pr['left'], true)
+        && $pr['helper'] === 'Amaka' && !str_contains($json, 'Amaka Rcl') && !str_contains($json, 'res.cloudinary.com'));
+    chk('regcheck progress: the guardian sees the same through their own link, nobody else’s', (backend_dispatch('family.regcheck', ['guardianId' => 'G-RCL-1', 'linkId' => 'GW-RCL-1'])['done'] ?? -1) === $pr['done']
+        && (backend_dispatch('family.regcheck', ['guardianId' => 'G-OTHER', 'linkId' => 'GW-RCL-1'])['error'] ?? '') === 'not_found');
+    $mine = backend_dispatch('member.regcheck.mine', ['requesterId' => 'VOL-RCL-A']);
+    chk('regcheck mine: the supervisor’s list has their two members, with whether they are at the centre today',
+        count($mine['members'] ?? []) === 2 && !empty(array_column($mine['members'], 'presentToday', 'memberId')['NGG-RCL-M1']));
+    $list = backend_dispatch('admin.regcheck.list', ['requesterId' => $SU, 'filter' => 'open', 'q' => 'rcl']);
+    chk('regcheck list: staff see open checklists with progress and supervisor; an unknown sort falls back', ($list['total'] ?? 0) >= 2
+        && in_array('Amaka Rcl', array_column($list['rows'], 'supervisorName'), true) && !empty(backend_dispatch('admin.regcheck.list', ['requesterId' => $SU, 'sort' => 'DROP TABLE'])['ok']));
+    chk('regcheck list: a scoped admin sees only their centres', !in_array('NGG-RCL-M1', array_column(backend_dispatch('admin.regcheck.list', ['requesterId' => 'NGG-RCL-SC', 'filter' => 'all'])['rows'] ?? [], 'memberId'), true));
+
+    // ── Reminders: once.
+    db_insert('guardians', ['guardianId' => 'G-RCL-2', 'email' => 'g-rcl-2@example.org', 'fullName' => 'Papa Rcl', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-RCL-2', 'guardianId' => 'G-RCL-2', 'memberId' => 'NGG-RCL-M2', 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    $t1 = rcl_tick(); $t2 = rcl_tick();
+    chk('regcheck reminders: the supervisor and the family are reminded once a week, however often the job runs',
+        (int)db_row("SELECT COUNT(*) c FROM reg_checklist_sends WHERE sendKey LIKE 'week:VOL-RCL-A:%'")['c'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM reg_checklist_sends WHERE sendKey LIKE 'family:NGG-RCL-M2:G-RCL-2:%'")['c'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['c'] === 1
+        && $t1['sent'] >= 2 && $t2['sent'] === 0);
+    chk('regcheck reminders: the family is told only what the family can do', str_contains((string)db_row("SELECT body FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['body'], 'Date of birth')
+        && !str_contains((string)db_row("SELECT body FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['body'], 'ID card printed'));
+    chk('regcheck: the web-cron schedules the job', str_contains((string)file_get_contents(dirname(__DIR__) . '/_lib/webcron.php'), "fn() => rcl_tick()"));
+} finally { if ($__db->inTransaction()) $__db->rollBack(); } })();
 
 // ── Contact form ──
 chk('contact stores message', !empty(backend_dispatch('public.contact', ['name' => 'Ada Visitor', 'email' => 'ada@example.com', 'message' => 'I would love to learn more about mentoring.', 'purpose' => 'mentor'])['ref']));
