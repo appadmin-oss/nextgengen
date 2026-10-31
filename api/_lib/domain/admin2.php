@@ -912,9 +912,14 @@ function admin_application_convert(array $p): array {
     if ((string)($a['program'] ?? '') === 'anchor' && ($ageNow < 10 || $ageNow > 17)) return ['ok' => false, 'error' => 'bad_age', 'message' => 'NGG members are 10 to 17. This applicant is ' . ($ageNow < 0 ? 'missing a date of birth' : $ageNow) . '.'];
     $centreIn = trim((string)($p['centre'] ?? '')) ?: trim((string)($a['centre'] ?? ''));
     if ($centreIn === '') return ['ok' => false, 'error' => 'centre_required', 'message' => 'Choose the centre this member will attend.'];
-    $cRow = db_row("SELECT name FROM centres WHERE lower(name) = ? AND status = 'active' LIMIT 1", [mb_strtolower($centreIn)]);
-    if (!$cRow) return ['ok' => false, 'error' => 'bad_centre', 'message' => $centreIn . ' is not an active centre.'];
-    $centreIn = (string)$cRow['name'];
+    /* A centre staff type in here must be a real one; the application's own
+       centre is kept as the family chose it (the form has always accepted a
+       centre name the directory does not list yet). */
+    if (trim((string)($p['centre'] ?? '')) !== '') {
+        $cRow = db_row("SELECT name FROM centres WHERE lower(name) = ? AND status = 'active' LIMIT 1", [mb_strtolower($centreIn)]);
+        if (!$cRow) return ['ok' => false, 'error' => 'bad_centre', 'message' => $centreIn . ' is not an active centre.'];
+        $centreIn = (string)$cRow['name'];
+    }
     if (!admin_centre_allowed($g['requester'], $centreIn)) return ['ok' => false, 'error' => 'out_of_scope'];
     $a['centre'] = $centreIn;
     // Don't double-provision.
