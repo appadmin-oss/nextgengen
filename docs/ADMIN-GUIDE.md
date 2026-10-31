@@ -975,6 +975,37 @@ back.
 The NGG join form asks for a **division first**, then a course inside it, and
 says what joining costs before anybody applies.
 
+### Reviewing applications (Inbox → Applications)
+
+| You want to… | Do this |
+|---|---|
+| Accept a child | **Accept & create member**: the start date, and the centre when the application names none. Each child is their own member, even when brothers and sisters applied from one parent's email. A declined application, or a child who is now outside 10 to 17, is refused with the reason. |
+| Put a child on the waiting list | **Waitlist**. The family is emailed and the main parent is texted. The application stays in the inbox, marked *Waitlisted*, and you accept it from there when a place opens. |
+| Decline | **Reject**, with an optional line the family reads in the email and text. |
+| See only your centres | A centre-limited admin sees, exports, accepts and declines their own centres' applicants only. |
+
+A family who sends the form again for the same child (same email and date of
+birth) is emailed a 6-digit code and must enter it before the application
+changes. Without it, anyone who knew the email and the birthday could replace
+a child's guardian and photo.
+
+### Volunteer registrations (Mentors → Volunteers)
+
+Both volunteer forms (Summer School at /volunteer, NGG all year at
+/join/volunteer) now ask for **two referees** and a signed **safeguarding
+declaration**. An applicant **under 18** names a parent or guardian who agrees.
+
+- The review shows the referees, the declaration and the guardian; under-18s
+  carry an *Under 18 · guardian* chip. Approving one asks you to confirm you
+  have **spoken to the guardian**; that is recorded as their consent.
+- Approval issues the ID, but a volunteer sees children (the instructor
+  roster, the mentor portal) only once **safeguarding is set to Cleared**.
+  Contact the referees before you clear them.
+- Somebody already volunteering for one programme who applies for the other
+  is a new application; approving it makes them serve **both**.
+- NGG's form only offers centres that run the Club. **Settings → Sign-ups**
+  now has a separate switch for NGG volunteer registration.
+
 ### Joining fees: the membership invoice
 
 Nothing is paid until a child is **accepted**. In **Inbox → Applications**,

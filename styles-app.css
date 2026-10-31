@@ -4584,6 +4584,7 @@ body[data-page="join"] .nav-apply { display: none; }
 .admin-row-click { cursor: pointer; }
 .admin-row-click:hover { background: #faf9f6; }
 .admin-detail { display: flex; flex-direction: column; gap: 18px; }
+.admin-prewrap { white-space: pre-wrap; }
 .admin-detail-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .admin-detail-stats { display: flex; gap: 10px; flex-wrap: wrap; }
 .admin-detail-stats > div { flex: 1; min-width: 72px; background: var(--paper); border: 1px solid var(--line, #e6e2d6); border-radius: 12px; padding: 12px; text-align: center; }

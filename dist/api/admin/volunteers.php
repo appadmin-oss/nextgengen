@@ -15,7 +15,7 @@ if ($method === 'GET') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
     $ip = client_ip();
-    if ($action === 'approve')      $res = gs_call('admin.volunteers.approve', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'ip' => $ip]);
+    if ($action === 'approve')      $res = gs_call('admin.volunteers.approve', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'guardianConfirmed' => !empty($b['guardianConfirmed']), 'ip' => $ip]);
     elseif ($action === 'decline')  $res = gs_call('admin.volunteers.decline', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'reason' => $b['reason'] ?? '', 'ip' => $ip]);
     elseif ($action === 'safeguard') $res = gs_call('admin.volunteers.safeguard', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'status' => $b['status'] ?? '', 'ip' => $ip]);
     elseif ($action === 'caps')      $res = gs_call('admin.volunteers.caps', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'caps' => $b['caps'] ?? [], 'ip' => $ip]);

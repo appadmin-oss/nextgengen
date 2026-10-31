@@ -77,17 +77,19 @@ const CR_INBOX_SOURCES = {
   applications: {
     cap: "people",
     async load() {
-      const [r, rv] = await Promise.all([
-        NGGApi.admin.applications.list({ status: "new" }),
-        NGGApi.admin.applications.list({ status: "reviewing" }).catch(() => ({ applications: [] })),
-      ]);
-      return (r.applications || []).concat(rv.applications || []).filter(a => a.kind !== "volunteer").map(a => {
+      /* New, under review and waitlisted: a waitlisted child stays on the desk
+         someone can accept them from, instead of vanishing when "Waitlist" is pressed. */
+      const r = await NGGApi.admin.applications.list({ status: "new,reviewing,waitlist" });
+      return (r.applications || []).filter(a => a.kind !== "volunteer").map(a => {
         const prog = a.program === "summer" ? "Summer School" : "NGG membership";
-        const status = (to, label) => async () => { await NGGApi.admin.applications.status(a.id, to); return { text: label + " · " + a.name, undo: () => NGGApi.admin.applications.status(a.id, a.status || "new") }; };
+        const wait = a.status === "waitlist";
+        // The family is told of a waitlist or a refusal (email, and a text to the main parent), so it is not undone quietly.
+        const status = (to, label) => async (it, v) => { const x = await NGGApi.admin.applications.status(a.id, to, (v && v.why) || ""); return { text: label + " · " + a.name + ((x.told || []).length ? " · family told by " + x.told.join(" and ") : "") }; };
+        const centreField = a.centre ? [] : [{ id: "centre", l: "Centre", req: true, help: "The application names no centre. Type the centre they will attend, as it is spelt in Centres." }];
         const actions = a.kind === "teen" ? [
           a.program === "summer" ? { l: "Accept & create member", tone: "primary",
-            confirm: () => ({ title: "Create a member for " + a.name + "?", body: "They get a Summer School record. This can’t be undone from here.", cta: "Accept & create member" }),
-            run: async () => { const x = await NGGApi.admin.applications.convert(a.id); return { text: x.existed ? a.name + " already had a record · " + x.memberId : "Member created · " + x.memberId }; } }
+            form: () => ({ title: "Create a member for " + a.name + "?", submit: "Accept & create member", intro: "They get a Summer School record. This can’t be undone from here.", values: {}, fields: centreField }),
+            run: async (it, v) => { const x = await NGGApi.admin.applications.convert(a.id, "", (v && v.centre) || ""); return { text: x.existed ? a.name + " already had a record · " + x.memberId : "Member created · " + x.memberId }; } }
           : { l: "Accept & create member", tone: "primary",
             /* An NGG place is paid for only once it is offered: accepting sends
                the family one invoice — the membership fee and the first
@@ -96,25 +98,25 @@ const CR_INBOX_SOURCES = {
             form: () => ({ title: "Accept " + a.name + " into NGG", submit: "Accept and send the invoice",
               intro: "They get an NGG record, a member ID and a card number. Their family is emailed one invoice to pay: the membership fee and the commitment fee for the meeting days left in their first month.",
               values: { start: new Date().toISOString().slice(0, 10) },
-              fields: [{ id: "start", l: "Start date", type: "date", req: true, help: "The first day they attend. Only the meeting days from this date are charged for the first month." }] }),
+              fields: [{ id: "start", l: "Start date", type: "date", req: true, help: "The first day they attend. Only the meeting days from this date are charged for the first month." }].concat(centreField) }),
             run: async (it, v) => {
-              const x = await NGGApi.admin.applications.convert(a.id, v.start);
+              const x = await NGGApi.admin.applications.convert(a.id, v.start, v.centre || "");
               if (x.existed) return { text: a.name + " already had a record · " + x.memberId };
               const inv = x.invoice || {};
               const tail = inv.invoiceId ? (inv.sent ? " · invoice " + fmtMoney(inv.total) + " sent to " + inv.to : " · invoice made, but the email didn’t go — resend it from Money → Membership payments")
                 : inv.error === "fees_off" ? " · no invoice: membership fees are off" : inv.error ? " · no invoice (" + inv.error.replace(/_/g, " ") + ")" : "";
               return { text: "Member created · " + x.memberId + tail };
             } },
-          { l: "Waitlist", run: status("waitlist", "Waitlisted") },
-          { l: "Reject", run: status("rejected", "Rejected") },
-        ] : [
+          wait ? null : { l: "Waitlist", run: status("waitlist", "Waitlisted") },
+          { l: "Reject", note: CR_REASON_NOTE("Why, in a line the family will read", "Optional. It goes in the email and the text message.", false), run: status("rejected", "Rejected") },
+        ].filter(Boolean) : [
           { l: "Accept", tone: "primary", run: status("accepted", "Accepted") },
           { l: "Waitlist", run: status("waitlist", "Waitlisted") },
           { l: "Reject", run: status("rejected", "Rejected") },
         ];
         return crItem({
           id: "app:" + a.id, cat: "applications", kind: "Application", icon: "user-plus", who: a.name || a.email || "Applicant", at: a.createdAt,
-          unread: a.status === "new", title: [prog, a.track || a.role].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
+          unread: a.status === "new", title: [prog, a.track || a.role, wait ? "Waitlisted" : ""].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
           search: [a.email, a.centre, a.track, a.ref].join(" "),
           facts: [["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.program === "summer" ? "" : (a.faculty || "—")], ["Course", a.track || (a.details && a.details.courseOther ? "Something else: " + a.details.courseOther : "—")], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]]
             .concat(crAppDetailFacts(a)).filter(f => f[1] !== ""),
