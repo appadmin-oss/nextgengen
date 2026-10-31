@@ -360,7 +360,7 @@ function crCfImportedBlocks(d, ctx) {
   const I = d.imported;
   if (!I || !I.open) return [{ type: "list", span: 6, title: "Brought over by upload", rows: [{ icon: "tray-arrow-down", onClick: () => crCfImportedLoad(ctx),
     t: "See every fine, due and membership charge an upload put on an account",
-    s: "And correct one that was recorded as the wrong kind — a register’s dues read as fines before the upload knew a Dues column.", m: "Open" }] }];
+    s: "And correct one that was recorded as the wrong kind — a register’s dues read as fines before the upload knew a Dues column.", m: "Show charges" }] }];
   if (I.loading && !I.data) return [{ type: "note", span: 6, icon: "hourglass", text: "Loading what was brought over…" }];
   if (I.err) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load what was brought over.", sub: crErr(I.err, ""), act: { l: "Try again", run: () => crCfImportedLoad(ctx) } }];
   const D = I.data, T = D.totals || {}, live = (D.rows || []).filter(r => r.live);

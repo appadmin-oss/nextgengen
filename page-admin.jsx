@@ -6995,7 +6995,7 @@ function AdminTournaments() {
                     ? <span className="chip chip-gold">{t.openMatches}</span>
                     : <span className="admin-cell-sub">none</span>}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setOpenId(t.tournamentId)}>Open</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setOpenId(t.tournamentId)}>Open tournament</button>
                   </td>
                 </tr>
               ))}
@@ -8039,7 +8039,7 @@ function AdminIntegrations() {
       setForm(blank); load();
     } catch (e) { toast.error(e.code || e.message, "Couldn't save"); } finally { setBusy(""); }
   };
-  const test = async (id) => { setBusy("t" + id); try { const r = await NGGApi.admin.integrations.test(id); r.delivered ? toast.success("Test delivered.", "OK") : toast.error(r.error || "No detail", "Test failed"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const test = async (id) => { setBusy("t" + id); try { const r = await NGGApi.admin.integrations.test(id); r.delivered ? toast.success("Test delivered.", "Integration test") : toast.error(r.error || "No detail", "Test failed"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
   const remove = async (id) => { if (!(await dialog.confirm({ title: "Delete this integration?",
     body: "Anything relying on it stops working immediately.", cta: "Delete", danger: true }))) return; try { await NGGApi.admin.integrations.remove(id); load(); } catch (e) { toast.error(e.code || e.message); } };
   const dispatch = async () => { setBusy("disp"); try { const r = await NGGApi.admin.integrations.dispatch(); toast.success("Attempted " + (r.attempted || 0) + ", delivered " + (r.delivered || 0) + ", failed " + (r.failed || 0) + ".", "Queue drained"); load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
@@ -10815,7 +10815,7 @@ function AdminVolunteers({ crCtx } = {}) {
                       <td className="mono" style={{ fontSize: 12 }}><a href={"/q/" + v.token} target="_blank" rel="noreferrer">/q/{(v.token || "").slice(0, 10)}…</a></td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {crCtx && <button className="btn btn-ghost btn-sm" onClick={() => crCtx.form(volunteerEditForm(v, volCentres, load, { list: data.titles, def: data.titleDefault }))}>Edit details</button>}
-                        <button className="btn btn-ghost btn-sm" aria-expanded={editId === v.volunteerId} onClick={() => setEditId(editId === v.volunteerId ? "" : v.volunteerId)}>{editId === v.volunteerId ? "Close" : "More"}</button>
+                        <button className="btn btn-ghost btn-sm" aria-expanded={editId === v.volunteerId} onClick={() => setEditId(editId === v.volunteerId ? "" : v.volunteerId)}>{editId === v.volunteerId ? "Close" : "Photo & portal access"}</button>
                         {(v.programme || "summer") === "summer" && v.status === "active" &&
                           <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === "ngg:" + v.volunteerId ? "" : "ngg:" + v.volunteerId)}>{editId === "ngg:" + v.volunteerId ? "Close" : "Bring into NGG"}</button>}
                         {v.safeguarding === "cleared"

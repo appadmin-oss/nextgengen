@@ -1265,7 +1265,7 @@ function CrSyKeyCard({ ctx, s, open, onToggle }) {
           return k ? <span className="cr-key-peek cr-mono">{k.kind === "secret" ? "•••• " + k.ending : k.value}</span> : null; })()}
         <CrPill tone={st.tone} t={st.t}/>
         {s.connected || s.setHere
-          ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Manage"}</button>
+          ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Manage key"}</button>
           : s.providers ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Set up"}</button>
           : <button type="button" className="cr-btn is-sm" onClick={() => crSyKeyEdit(ctx, s)}>Add key</button>}
       </div>
@@ -1677,7 +1677,7 @@ function crSyRoleForm(ctx, d, m) {
   const opts = crSyRoleOpts(d.reg, m.role);
   ctx.closeDrawer();
   ctx.form({
-    title: "Change role · " + (m.fullName || m.memberId), submit: "Continue",
+    title: "Change role · " + (m.fullName || m.memberId), submit: "Change role",
     intro: "A role is a fixed bundle of capabilities. You can only give roles that reach no further than your own.",
     values: { role: m.role },
     fields: [{ id: "role", l: "Role", type: "chips", req: true, opts: opts.concat([["member", "No staff access"]]),
@@ -1747,7 +1747,7 @@ function crSyStaffOpen(ctx, d, m) {
 function crSyGrant(ctx, d) {
   const opts = crSyRoleOpts(d.reg, null);
   ctx.form({
-    title: "Grant staff access", submit: "Continue", busyLabel: "Finding them…",
+    title: "Grant staff access", submit: "Find them", busyLabel: "Finding them…",
     intro: "Give a member a staff role. They get an email inviting them to sign in, and set up two-factor sign-in the first time they open the Control Room.",
     values: { who: "", role: "" },
     fields: [
@@ -1801,7 +1801,8 @@ Object.assign(CR_TAB_DEFS, {
           sub: "Nobody can grant a role that reaches further than their own, and the last active super admin can’t be demoted." },
         noCentre.length ? { type: "note", span: 6, icon: "warning", tone: "warn",
           text: crPlural(noCentre.length, "account") + " with no access yet: " + noCentre.map(m => m.fullName || m.memberId).join(", ") + ".",
-          sub: (noCentre.length === 1 ? "This role works" : "These roles work") + " only for named centres. Open " + (noCentre.length === 1 ? "them" : "each") + " and choose Capabilities and centres." } : null,
+          sub: (noCentre.length === 1 ? "This role works" : "These roles work") + " only for named centres. Open " + (noCentre.length === 1 ? "them" : "each") + " and choose Capabilities and centres.",
+          act: { l: "Choose centres for " + (noCentre[0].fullName || noCentre[0].memberId), run: () => crSyAccessForm(ctx, d, noCentre[0]) } } : null,
         { type: "table", span: 6, title: "Staff", sub: crPlural(d.staff.length, "account") + (d.total > d.staff.length ? " · showing the first " + crNum(d.staff.length) + " of " + crNum(d.total) : ""), nosel: true,
           cols: ["Person", "Role", "Centres", "Can access"],
           rows: d.staff.map(m => {

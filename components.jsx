@@ -2271,7 +2271,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={startCamera}>{value ? "Re-take" : "Take photo"}</button>
             <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy ? "Uploading…" : "Upload"}</button>
-            {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setZoom(true)}>View</button>}
+            {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setZoom(true)}>View larger</button>}
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("link")}>Paste link</button>
             {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange("")}>Remove</button>}
             <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadPicked(f); e.target.value = ""; }}/>

@@ -59,9 +59,10 @@ function CrAttention({ b, ctx, phone }) {
   if (phone) return (
     <div className="cr-pbox">
       {rows.map((r, i) => (
-        <button key={i} type="button" className="cr-prow" onClick={() => go(r)}>
+        <button key={i} type="button" className="cr-prow" data-act-missing={r.act ? undefined : "1"} onClick={() => go(r)}>
           <span className={"cr-att-n cr-t-" + crTone(r.tone)}>{crNum(r.n)}</span>
           <span className="cr-prow-t"><b style={{ whiteSpace: "normal" }}>{r.l}</b><span style={{ whiteSpace: "normal" }}>{r.s}</span></span>
+          {r.act ? <span className="cr-att-go">{r.act}</span> : null}
           <CrIcon n="caret-right"/>
         </button>
       ))}
@@ -73,7 +74,11 @@ function CrAttention({ b, ctx, phone }) {
         <button key={i} type="button" className="cr-att-row" onClick={() => go(r)}>
           <span className={"cr-att-n cr-t-" + crTone(r.tone)}>{crNum(r.n)}</span>
           <span className="cr-att-text"><b>{r.l}</b><span>{r.s}</span></span>
-          <span className="cr-att-go">Review<CrIcon n="arrow-right"/></span>
+          {/* The row's own verb ("Decide", "Collect"): a button that says
+              Review on every row tells nobody what happens. A row declared
+              without one still renders, but is marked so the suite fails on
+              it (tests/control-room.test.js) rather than shipping a vague one. */}
+          <span className="cr-att-go" data-act-missing={r.act ? undefined : "1"}>{r.act || "Review"}<CrIcon n="arrow-right"/></span>
         </button>
       ))}
     </div>

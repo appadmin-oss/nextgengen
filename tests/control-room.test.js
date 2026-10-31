@@ -286,6 +286,55 @@ function cleanup() {
     chk('the members search draws one focus ring, on its frame, not a second on the input inside it', ring.focused && ring.inner === 'none' && ring.frame !== 'none');
     await R.context().close();
 
+    /* Conduct and progression: each row says what it does and goes where that
+       is done — not "Review" on every row, opening a filtered list. */
+    php(`db_insert('sanctions', ['personId'=>'NGG-CR-1','personType'=>'member','kind'=>'fine','tier'=>1,'amount'=>2000,'status'=>'active','reason'=>'late','issuedAt'=>now_iso(),'issuedBy'=>'t']);
+         db_insert('sanctions', ['personId'=>'NGG-CR-2','personType'=>'member','kind'=>'suspension','tier'=>2,'status'=>'proposed','reason'=>'proposed','issuedAt'=>now_iso(),'issuedBy'=>'t']);`, ['bootstrap']);
+    const C = await open(1366, 900, '/control/members');
+    await C.waitForFunction(() => /Conduct and progression/.test(document.body.innerText), null, { timeout: 30000 });
+    const rows = await C.$$eval('.cr-att-row', r => r.map(x => x.innerText.replace(/\s+/g, ' ').trim()));
+    const decide = rows.find(x => /to decide/.test(x)) || '', owe = rows.find(x => /owing a fine/.test(x)) || '';
+    chk('conduct: a sanction to decide says Decide, and an owed fine says Collect with the amount', /Decide/.test(decide) && /Collect/.test(owe) && /₦2,000/.test(owe) && !rows.some(x => /^\d+ fined\b/.test(x)));
+    /* Records needing attention: the fixes, not "Review". A gap a family can
+       fill is asked for in one press, after a confirm that reads the count. */
+    const rec = rows.find(x => /with no date of birth/.test(x)) || '';
+    chk('records: a missing date of birth offers to ask the families, children with no guardian contact come first',
+      /Ask families/.test(rec) && rows.findIndex(x => /guardian contact/.test(x)) < rows.findIndex(x => /date of birth/.test(x)) && !rows.some(x => /Review$/.test(x)));
+    await C.click('.cr-att-row:has-text("with no date of birth")');
+    await C.waitForSelector('.cr-confirm', { timeout: 10000 });
+    const ask = await C.innerText('.cr-confirm');
+    await C.click('.cr-confirm .is-primary');
+    await C.waitForFunction(() => /Emailed/.test((document.querySelector('.cr-toast') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});
+    const said = await C.evaluate(() => (document.querySelector('.cr-toast') || {}).innerText || '');
+    chk('records: …it asks first, naming how many, then says what was sent', /^Ask \d+ famil/.test(ask) && /Emailed \d+ famil/.test(said));
+    await C.click('.cr-att-row:has-text("to decide")');
+    await C.waitForFunction(() => /\/control\/money\/conduct/.test(location.pathname), null, { timeout: 15000 }).catch(() => {});
+    chk('conduct: …Decide opens Conduct & fines, where it is decided', /\/control\/money\/conduct/.test(new URL(C.url()).pathname));
+    await C.context().close();
+    php(`db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-CR-%'");`, ['bootstrap']);
+
+    /* No attention row anywhere says only "Review". CrAttention still draws a
+       row declared without an `act`, but marks it [data-act-missing] — this is
+       what catches it. Home: a waiting message says Reply and opens Messages. */
+    php(`db_insert('contact_messages', ['ref'=>'CR-ACT-1','name'=>'A parent','email'=>'p@example.invalid','subject'=>'Hello','message'=>'Hi','status'=>'new','createdAt'=>now_iso()]);`, ['bootstrap']);
+    const H = await open(1366, 900, '/control');
+    await H.waitForFunction(() => /Unread messages/.test(document.body.innerText), null, { timeout: 30000 });
+    const hrows = await H.$$eval('.cr-att-row', r => r.map(x => x.innerText.replace(/\s+/g, ' ').trim()));
+    const msg = hrows.find(x => /Unread messages/.test(x)) || '';
+    chk('home: every "Needs you" row names what it does — none is a bare Review, none is missing its verb',
+      hrows.length > 0 && !hrows.some(x => /\bReview$/.test(x)) && !(await H.$('[data-act-missing]')));
+    chk('home: …a waiting message says Reply, and why it matters', /Reply$/.test(msg) && /waiting for a reply/.test(msg));
+    await H.click('.cr-att-row:has-text("Unread messages")');
+    await H.waitForFunction(() => /\/control\/inbox\/messages/.test(location.pathname), null, { timeout: 15000 }).catch(() => {});
+    chk('home: …Reply opens the Messages inbox, where it is answered', /\/control\/inbox\/messages/.test(new URL(H.url()).pathname));
+    await H.context().close();
+    php(`db_exec("DELETE FROM contact_messages WHERE ref = 'CR-ACT-1'");`, ['bootstrap']);
+    const M2 = await open(1366, 900, '/control/members');
+    await M2.waitForFunction(() => /Records needing attention/.test(document.body.innerText), null, { timeout: 30000 });
+    const mrows = await M2.$$eval('.cr-att-row', r => r.map(x => x.innerText.replace(/\s+/g, ' ').trim()));
+    chk('members dashboard: no attention row is a bare Review or missing its verb', !mrows.some(x => /\bReview$/.test(x)) && !(await M2.$('[data-act-missing]')));
+    await M2.context().close();
+
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

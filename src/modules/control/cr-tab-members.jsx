@@ -414,7 +414,7 @@ function CrMbSuggest({ s, ctx }) {
           <li key={m.memberId}>
             <CrAvatar name={m.fullName} photo={nggPhotoSrc(m.photoUrl)}/>
             <span className="cr-sugg-t"><b>{m.fullName}</b><span>{[m.displayId || m.memberId, m.centre, crMemStatusLabel(m.status)].filter(Boolean).join(" · ")}</span></span>
-            <button type="button" className="cr-btn is-sm" onClick={() => crMemOpen(ctx, m.memberId)}>Open</button>
+            <button type="button" className="cr-btn is-sm" aria-label={"Open the record of " + (m.fullName || m.memberId)} onClick={() => crMemOpen(ctx, m.memberId)}>Open record</button>
           </li>))}</ul>
       </div>}
     </section>
@@ -1003,11 +1003,13 @@ function crMbRecBlocks(d, ctx) {
         rows: (r.family || []).map(f => ({ icon: "users", t: f.fullName + (f.relationship ? " · " + f.relationship : ""), s: f.email, m: f.status })) },
       mt.mentor ? { type: "kpis", span: 6, items: [{ l: "Mentor", v: mt.mentor }, { l: "Since", v: mt.since ? crDate(mt.since) : "—" }, { l: "Meetings in 90 days", v: crNum(mt.meetings90), tone: mt.meetings90 ? "flat" : "down" }, { l: "Last met", v: mt.lastMet ? crDate(mt.lastMet) : "—" }] }
         : { type: "note", span: 6, icon: "handshake", text: "No mentor assigned.", act: { l: "Assign a mentor", run: () => crMbMentor(ctx, m, null) } },
-      mt.mentor && !mt.meetings90 ? { type: "note", span: 6, icon: "warning", tone: "warn", text: "No meeting logged in 90 days." } : null,
+      mt.mentor && !mt.meetings90 ? { type: "note", span: 6, icon: "warning", tone: "warn", text: "No meeting logged in 90 days.",
+        sub: "The weekly review is not happening. Mentorship check-ins shows what is overdue for every match.", act: { l: "See overdue check-ins", run: () => ctx.go("mentorship", "ms-checkins") } } : null,
     ].filter(Boolean));
   }
   if (tab === "classes") {
-    if (!r.centre) return out.concat([{ type: "note", span: 6, icon: "map-pin", text: "No centre on the record, so no timetable." }]);
+    if (!r.centre) return out.concat([{ type: "note", span: 6, icon: "map-pin", text: "No centre on the record, so no timetable.",
+      act: { l: "Set their centre", run: () => crMemEdit(ctx, m, () => crMbRecReload(ctx, m.memberId)) } }]);
     return out.concat([{ type: "table", span: 6, title: "Their classes at " + r.centre, nosel: true, cols: ["Day", "Time", "Class", "Room · instructor"],
       rows: (r.classes || []).map((s, i) => ({ key: "c" + i, cells: [{ k: "text", t: s.day }, { k: "mono", t: s.startTime + "–" + s.endTime }, { k: "text", t: s.course + (s.level ? " · " + s.level : "") }, { k: "text", t: [s.room, s.instructor].filter(Boolean).join(" · ") || "—" }] })),
       emptyText: "No classes for " + (r.course || "their course") + " on " + r.centre + "’s timetable." }]);
@@ -1043,18 +1045,58 @@ function crMbDashBlocks(d, ctx) {
   const seg = k => () => ctx.setData(x => crMbWithSeg(x, k));
   const h = o.headline || {}, q = o.quality || {}, c = o.conduct, out = [];
   if (c) {
-    out.push({ type: "attention", span: 3, title: "Conduct and progression", sub: "Each opens the members it counts", empty: "No fines, suspensions or promotions recorded.", rows: [
-      { n: c.fined, l: "fined", tone: "warn", onClick: seg("fined") }, { n: c.finesOwedBy, l: "owing a fine · " + fmtMoney(c.finesOwed), tone: "warn", onClick: seg("fines_owed") },
-      { n: c.suspended, l: "suspended now", tone: "bad", onClick: seg("suspended") }, { n: c.evicted, l: "evicted", tone: "bad", onClick: seg("evicted") },
-      { n: c.awaitingReview, l: "with a sanction to decide", tone: "warn", onClick: seg("conduct_review") }, { n: c.promoted, l: "promoted to NGV", tone: "ok", onClick: seg("promoted_ngv") },
+    /* Each row goes where the thing is DONE, and says what that is. A row
+       that only filtered the roster ("Review" on all four) left the operator
+       holding a list and no way to act on it. "Fined" is gone from here: it is
+       the all-time count, the same people as "owing" plus the paid, and the
+       totals note below carries it. */
+    const can = k => !ctx.can || ctx.can(k);
+    out.push({ type: "attention", span: 3, title: "Conduct and progression", sub: "What needs deciding, collecting or lifting", empty: "No sanctions to decide, fines owed or suspensions.", rows: [
+      { n: c.awaitingReview, l: (c.awaitingReview === 1 ? "sanction" : "sanctions") + " to decide", s: "Proposed by the conduct policy. Confirm or waive each one.", tone: "warn", age: 3, act: "Decide",
+        onClick: () => ctx.go("money", "conduct") },
+      { n: c.finesOwedBy, l: "owing a fine", s: fmtMoney(c.finesOwed) + " outstanding. Record payments or waive.", tone: "warn", age: 2, act: can("fees") ? "Collect" : "See who",
+        onClick: can("fees") ? () => ctx.go("money", "fees") : seg("fines_owed") },
+      { n: c.suspended, l: "suspended now", s: "Lift early or extend on the compliance board.", tone: "bad", age: 1, act: "Lift or extend",
+        onClick: () => ctx.go("money", "conduct") },
+      { n: c.evicted, l: "evicted", s: "No longer attending.", tone: "bad", act: "See who", onClick: seg("evicted") },
+      { n: c.promoted, l: "promoted to NGV", s: "Moved on to NextGen Vanguard.", tone: "ok", act: "See who", onClick: seg("promoted_ngv") },
     ] });
   }
-  const QUAL = [["duplicate_groups", "possible duplicate records", null], ["minor_no_guardian", "children with no guardian contact", "minor_no_guardian"], ["no_email", "with no email", "no_email"],
-    ["no_centre", "in no centre", "no_centre"], ["unknown_centre", "in a centre that no longer exists", "unknown_centre"], ["no_phone", "with no phone", "no_phone"], ["no_dob", "with no date of birth", "no_dob"]];
-  out.push({ type: "attention", span: c ? 3 : 6, title: "Records needing attention", action: "Data quality", onAction: () => ctx.go("members", "quality"),
+  /* Records needing attention, the same way: each row is the fix, not a
+     filtered list with "Review" on it. A gap a family can fill is ASKED for
+     in one press (admin.profile.remind: the same email the record drive
+     sends, listing what is missing); a gap only staff can fill opens the
+     roster on exactly those records. Children with no guardian contact come
+     first and are staff work — there is nobody to email. */
+  const askFamilies = (key, what) => async () => {
+    let r;
+    try { r = await NGGApi.admin.members.ids({ segment: key }); }
+    catch (e) { ctx.toast(crErr(e, "Couldn’t find who that is."), null, true); return; }
+    const ids = r.memberIds || [];
+    if (!ids.length) { ctx.toast("Nobody to ask — the figure has changed since this page loaded."); return; }
+    const ok = await ctx.confirm({ title: "Ask " + crPlural(ids.length, "family", "families") + " for " + what + "?",
+      body: "Each gets an email listing what is missing from the record, with a link to fill it in on the dashboard." + (r.capped ? " This sends to the first " + crNum(ids.length) + " of " + crNum(r.total) + "." : ""),
+      cta: "Email " + crNum(ids.length) });
+    if (!ok) return;
+    try {
+      const s = await NGGApi.admin.memberRecords.remind(ids);
+      const res = s.results || [], noMail = res.filter(x => x.error === "no_email").length, done = res.filter(x => x.unchanged).length, other = res.filter(x => !x.ok && x.error !== "no_email").length;
+      ctx.toast("Emailed " + crPlural(s.sent || 0, "family", "families") + [noMail ? crNum(noMail) + " have no email to send to" : "", done ? crNum(done) + " already complete" : "", other ? crNum(other) + " not sent" : ""].filter(Boolean).map(x => " · " + x).join(""), null, !!other);
+    } catch (e) { ctx.toast(crErr(e, "Couldn’t send those emails."), null, true); }
+  };
+  const QUAL = [
+    { k: "minor_no_guardian", l: "children with no guardian contact", s: "Nobody to call in an emergency. Add a parent or guardian to each.", tone: "bad", age: 9, act: "Add guardians", onClick: seg("minor_no_guardian") },
+    { k: "duplicate_groups", l: "possible duplicate records", s: "One person, two records: their card and fees land twice. Merge them.", tone: "bad", age: 8, act: "Merge", onClick: () => ctx.go("members", "quality") },
+    { k: "unknown_centre", l: "in a centre that no longer exists", s: "Select them all and move them to a current centre.", tone: "warn", age: 7, act: "Move", onClick: seg("unknown_centre") },
+    { k: "no_centre", l: "in no centre", s: "No card prefix, no centre reports. Select them all and set a centre.", tone: "warn", age: 6, act: "Assign", onClick: seg("no_centre") },
+    { k: "no_dob", l: "with no date of birth", s: "Ask their families: one email each, listing what is missing.", tone: "warn", age: 5, act: "Ask families", onClick: askFamilies("no_dob", "a date of birth") },
+    { k: "no_email", l: "with no email", s: "No sign-in by email and no reminders reach them. Add one from the record.", tone: "warn", age: 4, act: "Add emails", onClick: seg("no_email") },
+    { k: "no_phone", l: "with no phone", s: "Add a number from the record, or ask at the desk.", tone: "warn", age: 3, act: "Add phones", onClick: seg("no_phone") },
+  ];
+  out.push({ type: "attention", span: c ? 3 : 6, title: "Records needing attention", sub: "Most serious first", action: "Data quality", onAction: () => ctx.go("members", "quality"),
     empty: "Nothing outstanding — every record has a name, a way to reach someone, and a centre.",
-    rows: QUAL.map(x => ({ n: q[x[0]] || 0, l: x[1], tone: x[0] === "minor_no_guardian" || x[0] === "duplicate_groups" ? "bad" : "warn", onClick: x[2] ? seg(x[2]) : () => ctx.go("members", "quality") }))
-      .concat(o.consent && o.consent.participants > 0 ? [{ n: o.consent.unrecorded, l: "of " + crNum(o.consent.participants) + " with no publication consent", tone: "neutral", onClick: seg("no_consent") }] : []) });
+    rows: QUAL.map(x => Object.assign({}, x, { n: q[x.k] || 0 }))
+      .concat(o.consent && o.consent.participants > 0 ? [{ n: o.consent.unrecorded, l: "with no publication consent", s: "Of " + crNum(o.consent.participants) + " members. They stay off the public site until consent is recorded.", tone: "neutral", age: 0, act: "See who", onClick: seg("no_consent") }] : []) });
   if (c) out.push({ type: "note", span: 6, icon: "scales", text: "Fines imposed to date: " + fmtMoney(c.finesImposed) + ", of which " + fmtMoney(c.finesOwed) + " is still owed.", sub: "Proposed, waived and lifted fines are not counted. " + crNum(c.promoted365) + " promoted to NGV in the last 12 months." });
   out.push({ type: "columns", span: 4, title: "Joining, month by month", big: crNum(h.new365), sub: "joined in 12 months", bars: (o.growth || []).map(g => ({ l: new Date(g.month + "-01T00:00:00").toLocaleDateString("en-GB", { month: "short" }), v: g.joined, tip: g.month + " · " + crPlural(g.joined, "member") })) });
   out.push({ type: "bars", span: 2, title: "By centre", empty: "No centres yet.", rows: (o.byCentre || []).map(x => [x.name + " · " + crNum(x.active) + " active", x.total]) });
@@ -1674,8 +1716,9 @@ Object.assign(CR_TAB_DEFS, {
       if (c && (sub === "map" || sub === "summer") && d.canWrite) return [{ type: "custom", span: 6, render: c2 => <CrCeSubEditor ctx={c2 || ctx} c={c} which={sub}/> }];
       const out = [];
       if (!d.canWrite) out.push({ type: "note", span: 6, icon: "lock-simple", text: "You can see the directory but not change it.", sub: "A centre’s code and colour are printed on member ID cards, so changing one needs the member-desk (people) permission." });
-      const unmapped = d.centres.filter(x => x.lat == null && x.status !== "retired").length;
-      if (unmapped && d.canWrite) out.push({ type: "note", span: 6, icon: "map-pin", tone: "warn", text: crPlural(unmapped, "centre") + " not mapped yet.", sub: "Without a map the check-in desk cannot confirm someone is at the centre. Open one and choose Map and geo-fence." });
+      const unmappedList = d.centres.filter(x => x.lat == null && x.status !== "retired"), unmapped = unmappedList.length;
+      if (unmapped && d.canWrite) out.push({ type: "note", span: 6, icon: "map-pin", tone: "warn", text: crPlural(unmapped, "centre") + " not mapped yet.",
+        act: { l: "Map " + unmappedList[0].name, run: () => ctx.setSub(unmappedList[0].centreId + "/map") }, sub: "Without a map the check-in desk cannot confirm someone is at the centre. Open one and choose Map and geo-fence." });
       out.push({
         type: "table", span: 6, nosel: true, title: "Centres", sub: crPlural(d.centres.length, "centre"),
         search: "Name, code, area or address",
@@ -1803,6 +1846,20 @@ Object.assign(CR_TAB_DEFS, {
    not done here. Each signal the server raises is one attention row; opening it
    lists the people in a drawer, where a lock can be lifted one person at a time
    (deliberately not in bulk: lifting a lock is a judgement about one account). */
+/* What each signal's row does, by signal id (member_accounts_overview in
+   domain/member-self.php). A row goes where the gap is closed: a lock is lifted
+   from the list of who is locked; a missing email is added on the roster,
+   opened on exactly those members; a staff account's second factor is the
+   sign-in security desk. Never-signed-in and suspended have no fix on this
+   screen — there is no welcome resend op, and suspension is a decision made on
+   the roster or the compliance board — so they say "See who" and open the list. */
+const CR_ACCT_ACT = {
+  locked: () => ({ act: "Lift locks", age: 4 }),
+  staffNo2fa: ctx => ({ act: "Require 2FA", age: 3, onClick: () => ctx.go("members", "security") }),
+  noWayIn: ctx => ({ act: "Add emails", age: 2, onClick: () => { crMbPending.seg = "no_email"; ctx.go("members", "members"); } }),
+  neverSignedIn: () => ({ act: "See who", age: 1 }),
+  suspended: () => ({ act: "See who", age: 0 }),
+};
 function crAcctOpen(ctx, sig) {
   ctx.drawer({
     title: sig.label, sub: crPlural(sig.count, "account"),
@@ -1841,7 +1898,7 @@ Object.assign(CR_TAB_DEFS, {
           sub: "Ending a membership is not done here: it is settled by the agreement between NGG and the family, and no button on this screen or a member’s own dashboard closes an account." },
         { type: "attention", span: 6, title: "What needs a look",
           empty: "Nobody is locked out, everybody has an email to sign in with, and every staff account has a second factor. Nothing to do.",
-          rows: sig.map(s => ({ n: s.count, l: s.label, s: s.why, tone: s.id === "locked" ? "bad" : "warn", onClick: () => crAcctOpen(ctx, s) })) },
+          rows: sig.map(s => Object.assign({ n: s.count, l: s.label, s: s.why, tone: s.id === "locked" || s.id === "staffNo2fa" ? "bad" : "warn", onClick: () => crAcctOpen(ctx, s) }, CR_ACCT_ACT[s.id] ? CR_ACCT_ACT[s.id](ctx, s) : { act: "See who" })) },
       ];
     },
   },

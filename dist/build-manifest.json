@@ -1,14 +1,14 @@
 {
-  "buildId": "d8153b769b",
-  "builtAt": "2026-10-31T13:36:18.267Z",
+  "buildId": "0891fc5d19",
+  "builtAt": "2026-10-31T13:36:52.970Z",
   "bundle": {
-    "file": "app.ff8cd95b59.min.js",
-    "bytes": 5764705,
-    "gzipBytes": 1605516,
+    "file": "app.7cd78f5c3e.min.js",
+    "bytes": 5770418,
+    "gzipBytes": 1607569,
     "files": 104
   },
   "assets": {
-    "app.min.js": "app.ff8cd95b59.min.js",
+    "app.min.js": "app.7cd78f5c3e.min.js",
     "styles.css": "styles.2616d251cf.css",
     "styles-app.css": "styles-app.989768135d.css",
     "data.js": "data.ec97c65376.js",
