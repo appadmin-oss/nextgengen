@@ -17779,3 +17779,12 @@ button.m9x-ev-sum { cursor: pointer; }
   .nte-desk { padding: 12px 10px 72px; }
   .nte-subj .nte-in.nt-subject { font-size: 22px; }
 }
+
+/* Diagnostics → a lost photo's Cloudinary picks (CrSyPhotoRecover). */
+.cr-sy-cloud { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cr-sy-cloud-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cr-sy-cloud-who { flex: 1 1 200px; min-width: 0; }
+.cr-sy-cloud-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.cr-sy-cloud-pick { padding: 0; border: 1px solid var(--cr-line-strong); border-radius: var(--cr-r); overflow: hidden; background: none; cursor: pointer; width: 48px; height: 48px; }
+.cr-sy-cloud-pick:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.cr-sy-cloud-pick img { display: block; width: 48px; height: 48px; object-fit: cover; }

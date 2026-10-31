@@ -336,7 +336,21 @@ function crSyPhotoDirHint(dir) {
    and no record changes. */
 function CrSyPhotoRecover({ ctx }) {
   const [st, setSt] = React.useState({ busy: "", note: "" });
+  const [cloud, setCloud] = React.useState(null);   // the missing photos, with the Cloudinary photos held for the same people
   const fileRef = React.useRef(null);
+  const findCloud = async () => {
+    setSt({ busy: "cloud", note: "Looking for the same people’s photos in Cloudinary…" });
+    try { const r = await NGGApi.admin.photoFrame.cloud(); setCloud(r.items || []);
+      setSt({ busy: "", note: r.items.length ? crPlural(r.withCandidates, "missing photo") + " of " + crNum(r.items.length) + " have a Cloudinary photo for the same person. Pick one for each." : "No photos are missing." }); }
+    catch (e) { setSt({ busy: "", note: crErr(e, "Couldn’t look.") }); }
+  };
+  const useCloud = async (x, url) => {
+    setSt({ busy: "cloud", note: "Pointing " + (x.who || "the record") + " at that photo…" });
+    try { await NGGApi.admin.photoFrame.useCloud(x.name, x.place, x.rowId, url);
+      setCloud(c => (c || []).filter(y => !(y.name === x.name && y.rowId === x.rowId && y.place === x.place)));
+      setSt({ busy: "", note: (x.who || "The record") + " now shows their Cloudinary photo." }); ctx.reload(); }
+    catch (e) { setSt({ busy: "", note: crErr(e, "Couldn’t change it.") }); }
+  };
   const search = async () => {
     setSt({ busy: "search", note: "Searching this hosting account…" });
     try {
@@ -375,10 +389,19 @@ function CrSyPhotoRecover({ ctx }) {
       <div className="cr-sy-frame-acts">
         <button type="button" className="cr-btn is-sm is-primary" disabled={!!st.busy} onClick={search}>{st.busy === "search" ? "Searching…" : "Search this account"}</button>
         <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={() => fileRef.current && fileRef.current.click()}>Restore from a backup</button>
+        <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={findCloud}>{st.busy === "cloud" ? "Looking…" : "Use their Cloudinary photos"}</button>
         <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={copyNames}>Copy the missing file names</button>
         <input ref={fileRef} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden aria-label="Photo files from a backup" onChange={e => { restore(e.target.files); e.target.value = ""; }}/>
       </div>
       {st.note && <p className="cr-hint" role="status" aria-live="polite">{st.note}</p>}
+      {cloud && cloud.length > 0 && <ul className="cr-sy-cloud">
+        {cloud.map(x => <li key={x.place + x.rowId + x.name} className="cr-sy-cloud-row">
+          <span className="cr-sy-cloud-who"><b>{x.who || x.ids.join(", ") || "Unknown record"}</b> <span className="cr-hint">{x.place}</span></span>
+          {x.candidates.length ? <span className="cr-sy-cloud-picks">{x.candidates.map(u => <button key={u} type="button" className="cr-sy-cloud-pick" disabled={!!st.busy}
+            onClick={() => useCloud(x, u)} aria-label={"Use this photo for " + (x.who || "this record")}><img src={u.replace("/upload/", "/upload/c_fill,w_96,h_96/")} alt="" loading="lazy" width="48" height="48"/></button>)}</span>
+            : <span className="cr-hint">No Cloudinary photo held for this person — restore from a backup, or ask for a new one.</span>}
+        </li>)}
+      </ul>}
     </div>
   );
 }

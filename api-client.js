@@ -1984,6 +1984,8 @@
         recover: () => request('/admin/photo-framing.php', { body: { action: 'recover' }, timeout: 180000 }),
         lost:    () => request('/admin/photo-framing.php', { body: { action: 'lost' }, timeout: 120000 }),
         restore: (name, data) => request('/admin/photo-framing.php', { body: { action: 'restore', name, data }, timeout: 120000 }),
+        cloud:    () => request('/admin/photo-framing.php', { body: { action: 'cloud' }, timeout: 120000 }),
+        useCloud: (name, place, rowId, url) => request('/admin/photo-framing.php', { body: { action: 'useCloud', name, place, rowId, url } }),
       },
       membership: {
         list:     (status) => request('/admin/membership.php' + qs({ status: status || '' })),
@@ -2135,6 +2137,7 @@
         heldDecide:(id, decision) => request('/admin/policy.php', { body: { action: 'heldDecide', id, decision } }),
         unmatched: (id, personId, personType, dismiss) => request('/admin/policy.php', { body: { action: 'unmatchedMatch', id, personId: personId || '', personType: personType || 'member', dismiss: !!dismiss } }),
         repair:    (opts) => request('/admin/policy.php', { body: Object.assign({ action: 'repair' }, opts || {}) }),
+        halfday:   () => request('/admin/policy.php', { body: { action: 'halfday' } }),
         freshStart:(opts) => request('/admin/policy.php', { body: Object.assign({ action: 'freshStart' }, opts || {}) }),
         correctives: () => request('/admin/policy.php' + qs({ view: 'correctives' })),
         correctivesDone: (ids) => request('/admin/policy.php', { body: { action: 'correctivesDone', ids } }),

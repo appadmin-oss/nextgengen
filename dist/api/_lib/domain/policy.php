@@ -815,27 +815,69 @@ function policy_halfday_pairs(string $personId, string $from, string $to): array
 /** The note a no-sign-out half-day carries. Starts "Incomplete", so the
  *  repair tools and a late sign-out (policy_checkout_landed) find it. */
 const POLICY_NOSIGNOUT_NOTE = 'Incomplete day — signed in, no sign-out: a half-day.';
+const POLICY_HALFDAY_REASON = 'A day signed in with no sign-out is a half-day, not an absence (policy change, 31 Oct 2026).';
 
 /**
- * One time: every live "Incomplete" ABSENCE becomes a half-day. Before 31 Oct
- * 2026 a day with no sign-out was counted as a whole absence and fined as one;
- * the child had come. The absence is voided with that reason, a half-day is
- * logged for the same day, and the person's standing is worked out again — so
- * the absence fine for that day is lifted (a paid one becomes credit).
+ * Every live "Incomplete" ABSENCE becomes a half-day. Before 31 Oct 2026 a day
+ * with no sign-out was counted as a whole absence and fined as one; the child
+ * had come. Per person, in ONE transaction: the absences are voided with that
+ * reason, a half-day is logged for each day, and the person's standing is
+ * worked out again — so the day's absence fine is lifted (a paid one becomes
+ * credit), and a suspension it tipped is lifted with it.
+ *
+ * Why per person and bounded. The first version converted every row, then
+ * re-worked everybody, then set a done-flag: on a shared host the run hit PHP's
+ * time limit part-way, the rows already converted were never selected again,
+ * and their people were never re-worked — the absences gone from the record,
+ * the fines still on the account. Now a person is converted and re-worked
+ * together or not at all, a call does at most $max people, and the next call
+ * carries on. A second pass re-works anybody an earlier run left half-done
+ * (a converted day whose absence fine still stands). Cheap when there is
+ * nothing to do: two queries.
+ *
+ * @return array{converted:int, people:int, reworked:int, more:bool}
  */
-function policy_nosignout_to_halfday(): int {
-    if ((string)(setting_raw('policy_nosignout_halfday') ?? '') !== '') return 0;
-    $rows = db_all("SELECT id, personId, personType, date, byId FROM infractions WHERE kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')");
-    $people = [];
-    foreach ($rows as $r) {
-        db_update('infractions', ['voidedAt' => now_iso(), 'voidedBy' => 'system', 'voidReason' => 'A day signed in with no sign-out is a half-day, not an absence (policy change, 31 Oct 2026).'], ['id' => (int)$r['id']]);
-        policy_log((string)$r['personId'], (string)$r['personType'], 'halfday', (string)$r['date'], POLICY_NOSIGNOUT_NOTE, (string)$r['byId'] ?: 'system');
-        $people[(string)$r['personId']] = (string)$r['personType'];
+function policy_nosignout_to_halfday(int $max = 40): array {
+    $out = ['converted' => 0, 'people' => 0, 'reworked' => 0, 'more' => false];
+    $ids = db_all("SELECT DISTINCT personId, personType FROM infractions WHERE kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '') LIMIT " . ($max + 1));
+    if (count($ids) > $max) { $out['more'] = true; $ids = array_slice($ids, 0, $max); }
+    foreach ($ids as $who) {
+        $id = (string)$who['personId']; $t = in_array((string)$who['personType'], ['student', 'volunteer', 'member'], true) ? (string)$who['personType'] : 'student';
+        $out['converted'] += (int)db_tx(static function () use ($id, $t) {
+            $rows = db_all("SELECT id, date, byId FROM infractions WHERE personId = ? AND kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id]);
+            foreach ($rows as $r) {
+                db_update('infractions', ['voidedAt' => now_iso(), 'voidedBy' => 'system', 'voidReason' => POLICY_HALFDAY_REASON], ['id' => (int)$r['id']]);
+                policy_log($id, $t, 'halfday', (string)$r['date'], POLICY_NOSIGNOUT_NOTE, (string)$r['byId'] ?: 'system');
+            }
+            policy_relift($id, $t);
+            return count($rows);
+        });
+        $out['people']++;
     }
-    foreach ($people as $id => $t) policy_relift($id, in_array($t, ['student', 'volunteer', 'member'], true) ? $t : 'student');
-    setting_set('policy_nosignout_halfday', now_iso(), 'system');
-    if ($rows) audit('policy.nosignout_halfday', 'system', '', ['converted' => count($rows), 'people' => count($people)]);
-    return count($rows);
+    /* Left half-done by an earlier run: a day converted, its absence fine still owed. */
+    $stuck = db_all("SELECT DISTINCT s.personId, s.personType FROM sanctions s JOIN infractions i ON i.personId = s.personId AND i.kind = 'absence' AND i.voidReason = ?
+                     WHERE s.kind = 'fine' AND s.issuedBy = 'system' AND s.status IN ('pending','paid') AND s.tier >= 500000 AND s.tier < ? LIMIT " . ($max + 1),
+                    [POLICY_HALFDAY_REASON, POLICY_T_LATE_FINE]);
+    if (count($stuck) > $max) { $out['more'] = true; $stuck = array_slice($stuck, 0, $max); }
+    foreach ($stuck as $who) {
+        $t = in_array((string)$who['personType'], ['student', 'volunteer', 'member'], true) ? (string)$who['personType'] : 'student';
+        if (policy_relift((string)$who['personId'], $t) > 0) $out['reworked']++;
+    }
+    if ($out['converted'] || $out['reworked']) audit('policy.nosignout_halfday', 'system', '', $out);
+    return $out;
+}
+
+/** admin.policy.halfday.run — apply the half-day rule to past days now, and say what changed. */
+function admin_policy_halfday_run(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $t0 = microtime(true); $sum = ['converted' => 0, 'people' => 0, 'reworked' => 0, 'more' => false];
+    do {
+        $r = policy_nosignout_to_halfday(40);
+        foreach (['converted', 'people', 'reworked'] as $k) $sum[$k] += $r[$k];
+        $sum['more'] = $r['more'];
+    } while ($r['more'] && microtime(true) - $t0 < 20);
+    audit('policy.halfday.run', (string)$g['requester']['memberId'], '', $sum, (string)($p['ip'] ?? ''));
+    return ['ok' => true] + $sum;
 }
 
 // ── Infractions ─────────────────────────────────────────────────────────────

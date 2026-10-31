@@ -36091,27 +36091,35 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 /* ── A day signed in with no sign-out is a half-day, not an absence (31 Oct 2026) ── */
 (function () {
     $now = now_iso();
-    $keep = setting_raw('policy_nosignout_halfday');
-    db_insert('members', ['memberId' => 'NGG-HD-1', 'fullName' => 'Half Day', 'email' => 'hd1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (['NGG-HD-1', 'NGG-HD-2'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => 'Half ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    $keepPol = setting_raw('policy');
+    policy_settings_save(['member' => ['enabled' => true, 'absenceFine' => 1000]], 'test');
+    $fine = fn($id) => db_row("SELECT status FROM sanctions WHERE personId = ? AND kind = 'fine' AND tier >= 500000 AND tier < ?", [$id, POLICY_T_LATE_FINE]);
     // Logged under the old rule: an absence for the day, and its fine.
     policy_log('NGG-HD-1', 'member', 'no_checkout', '2026-10-17', 'Signed in but never signed out.');
     policy_log('NGG-HD-1', 'member', 'absence', '2026-10-17', 'Incomplete day — no sign-out.');
     policy_apply('NGG-HD-1', 'member');
-    $fine = fn() => db_row("SELECT status FROM sanctions WHERE personId = 'NGG-HD-1' AND kind = 'fine' AND tier >= 500000 AND tier < ?", [POLICY_T_LATE_FINE]);
-    $hadFine = $fine() !== null;
-    db_exec("DELETE FROM settings WHERE settingKey = 'policy_nosignout_halfday'");
-    $n = policy_nosignout_to_halfday();
+    $had = $fine('NGG-HD-1');
+    $r = policy_nosignout_to_halfday();
     $live = fn($k, $d) => (bool)db_row("SELECT 1 FROM infractions WHERE personId = 'NGG-HD-1' AND kind = ? AND date = ? AND (voidedAt IS NULL OR voidedAt = '')", [$k, $d]);
-    chk('half-day · an old no-sign-out absence becomes a half-day', $n >= 1 && !$live('absence', '2026-10-17') && $live('halfday', '2026-10-17'));
-    chk('half-day · …and its absence fine is lifted', !$hadFine || in_array(($fine()['status'] ?? 'lifted'), ['lifted'], true));
-    chk('half-day · …once only', policy_nosignout_to_halfday() === 0);
+    chk('half-day · an old no-sign-out absence becomes a half-day', $r['converted'] >= 1 && !$live('absence', '2026-10-17') && $live('halfday', '2026-10-17'));
+    chk('half-day · …and its absence fine is lifted in the same step', $had && ($had['status'] ?? '') === 'pending' && ($fine('NGG-HD-1')['status'] ?? '') === 'lifted');
+    chk('half-day · nothing left to do is two queries and no change', policy_nosignout_to_halfday() === ['converted' => 0, 'people' => 0, 'reworked' => 0, 'more' => false]);
+    // Left half-done by an earlier run: converted, but the fine still owed.
+    policy_log('NGG-HD-2', 'member', 'absence', '2026-10-24', 'Incomplete day — no sign-out.');
+    policy_apply('NGG-HD-2', 'member');
+    db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = 'system', voidReason = ? WHERE personId = 'NGG-HD-2' AND kind = 'absence'", [$now, POLICY_HALFDAY_REASON]);
+    $stuckBefore = $fine('NGG-HD-2');
+    $r2 = policy_nosignout_to_halfday();
+    chk('half-day · a person an earlier run left half-done is re-worked: the fine comes off', ($stuckBefore['status'] ?? '') === 'pending' && $r2['reworked'] === 1 && ($fine('NGG-HD-2')['status'] ?? '') === 'lifted');
+    $run = backend_dispatch('admin.policy.halfday.run', ['requesterId' => 'NGG-2025-0099']);
+    chk('half-day · an admin can apply it now and is told what changed', !empty($run['ok']) && $run['converted'] === 0 && $run['more'] === false);
     // Two half-days in a window count as one absence; one does not.
     chk('half-day · one half-day is not an absence', count(policy_unexcused_absences('NGG-HD-1', '2026-10-01', '2026-10-31')) === 0);
     policy_log('NGG-HD-1', 'member', 'halfday', '2026-10-24', POLICY_NOSIGNOUT_NOTE);
-    $u = policy_unexcused_absences('NGG-HD-1', '2026-10-01', '2026-10-31');
-    chk('half-day · two half-days count as one absence, dated on the second', $u === ['2026-10-24']);
-    if ($keep === null) db_exec("DELETE FROM settings WHERE settingKey = 'policy_nosignout_halfday'"); else setting_set('policy_nosignout_halfday', $keep, 'system');
-    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c = 'NGG-HD-1'");
+    chk('half-day · two half-days count as one absence, dated on the second', policy_unexcused_absences('NGG-HD-1', '2026-10-01', '2026-10-31') === ['2026-10-24']);
+    if ($keepPol === null) db_exec("DELETE FROM settings WHERE settingKey = 'policy'"); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$keepPol, 'policy']);
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-HD-%'");
 })();
 
 
@@ -36187,6 +36195,26 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $mine = array_values(array_filter($ov['members'] ?? [], fn($x) => $x['memberId'] === 'NGG-AC-1'));
     chk('overview · how each member is doing: attendance, outside learning, last learnt', $mine && $mine[0]['days90'] === 12 && $mine[0]['outside'] === 2 && $mine[0]['lastLearnt'] === $today);
     foreach (['attendance' => 'studentId', 'learning_log' => 'memberId', 'awards' => 'subjectId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-AC-%'");
+})();
+
+
+/* ── A lost photo file whose photo is still in Cloudinary ── */
+(function () {
+    $now = now_iso(); $SU = 'NGG-2025-0099';
+    $gone = str_repeat('ab', 16) . '.jpg';
+    $cloud = 'https://res.cloudinary.com/demo-ngg/image/upload/v1/headshots/pc1.jpg';
+    db_insert('members', ['memberId' => 'NGG-PC-1', 'fullName' => 'Pat Cloud', 'email' => 'pc1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '',
+        'photoUrl' => '/api/public/photo.php?p=' . $gone, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('photo_change_requests', ['requestId' => 'PCR-PC-1', 'subjectType' => 'member', 'subjectId' => 'NGG-PC-1', 'photoUrl' => $cloud, 'requestedAt' => $now]);
+    $r = backend_dispatch('admin.photos.cloud', ['requesterId' => $SU]);
+    $mine = array_values(array_filter($r['items'] ?? [], fn($x) => $x['name'] === $gone));
+    chk('photos · a missing file is matched to the Cloudinary photo held for the same person', $mine && $mine[0]['who'] === 'Pat Cloud' && in_array($cloud, $mine[0]['candidates'], true));
+    chk('photos · only a photo held for that person can be used', (backend_dispatch('admin.photos.use_cloud', ['requesterId' => $SU, 'name' => $gone, 'place' => $mine[0]['place'], 'rowId' => $mine[0]['rowId'],
+        'url' => 'https://res.cloudinary.com/demo-ngg/image/upload/v1/someone-else.jpg'])['error'] ?? '') === 'not_a_match');
+    $u = backend_dispatch('admin.photos.use_cloud', ['requesterId' => $SU, 'name' => $gone, 'place' => $mine[0]['place'], 'rowId' => $mine[0]['rowId'], 'url' => $cloud]);
+    chk('photos · chosen, the record shows the Cloudinary photo and the file is no longer missing', !empty($u['ok'])
+        && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PC-1'")['photoUrl'] === $cloud && !isset((photo_store_missing_map() ?? [])[$gone]));
+    db_exec("DELETE FROM photo_change_requests WHERE requestId = 'PCR-PC-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PC-1'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

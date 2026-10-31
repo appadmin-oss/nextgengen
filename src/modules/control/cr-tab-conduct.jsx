@@ -1235,6 +1235,12 @@ Object.assign(CR_TAB_DEFS, {
       if (v === "compliance") {
         if (ctx.can("people")) out.push({ l: "Fresh start…", icon: "sparkle", run: () => crCfFreshStart(ctx) });
         out.push({ l: "Repair absences", icon: "first-aid-kit", run: () => crCfRepairForm(ctx) });
+        /* The no-sign-out rule (a half-day, not an absence) applied to past days now,
+           with what changed — rather than waiting for the hourly maintenance. */
+        if (ctx.can("people")) out.push({ l: "Apply half-days to past days", icon: "circle-half", run: async () => {
+          try { const r = await NGGApi.admin.policy.halfday();
+            ctx.toast(r.converted || r.reworked ? crPlural(r.converted, "day") + " made a half-day for " + crPlural(r.people, "person", "people") + (r.reworked ? " · " + crPlural(r.reworked, "person", "people") + "’s fines corrected" : "") + (r.more ? " · more left, press again" : "") + "." : "Nothing to change: every day with no sign-out is already a half-day.");
+            crCfRefresh(ctx); } catch (e) { ctx.toast(crErr(e, "Couldn’t apply it."), null, true); } } });
         out.push({ l: "Refresh", icon: "arrows-clockwise", run: () => crCfRefresh(ctx) });
       }
       return out;
