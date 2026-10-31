@@ -103,20 +103,20 @@ function cleanup() {
     chk('the NGG form groups courses by the four NGG divisions, each in a family\'s words', divs.length === 5 && /Creative & Performing Arts/.test(divs[0]) && /cybersecurity/i.test(divs[2]) && /Business Strategy, Operations & Administration/.test(divs[3]) && /Not sure yet/.test(divs[4]));
     // Piano, Guitar and Catering are NGG courses too (the Creative division); these three are Summer School's alone.
     chk('…and no Summer School course is on it', !/Talking Drums|Tie & Dye|Dance \/ Acting/.test(await J.innerText('.apf-courses')));
-    await J.click('button:has-text("Continue")');
+    await J.click('button:has-text("Next:")');
     chk('continuing without a course says what is missing', /Choose an option/.test(await J.innerText('.apf-errsum')));
     await J.click('.apf-course:has-text("Robotics")');
     await J.click('.apf-starters button >> nth=0');
     await J.type('#apf-in-vision', 'an engineer who builds robots that sort plastic waste.');
     await J.click('#apf-fld-hobbies .apf-chip:has-text("Reading")');
     await J.click('#apf-fld-influenceAreas .apf-chip:has-text("Education")');
-    await J.click('button:has-text("Continue")');
+    await J.click('button:has-text("Next:")');
     await J.waitForSelector('#apf-fld-agree', { timeout: 10000 });
     const costs = await J.innerText('.apf-info');
     chk('before applying, the family is told what joining costs and that nothing is paid now', /₦10,000/.test(costs) && /₦4,000/.test(costs) && /first month is charged only for the meetings left/.test(costs) && /Nothing to pay today/.test(costs));
     chk('nothing on the form scrolls sideways on a phone', await J.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await J.click('button:has-text("Agree to all")');
-    await J.click('button:has-text("Review")');
+    await J.click('button:has-text("Check my answers")');
     await J.waitForSelector('.apf-review', { timeout: 10000 });
     chk('the review names the course', /Robotics/.test(await J.innerText('.apf-review')));
     await J.click('button:has-text("Send application")');

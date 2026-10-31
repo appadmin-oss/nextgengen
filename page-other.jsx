@@ -999,7 +999,7 @@ function NggVolunteerPage({ setPage }) {
           )}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24, gap: 12 }}>
             <button className="btn btn-ghost" onClick={back} disabled={step === 0 || busy} style={{ visibility: step === 0 ? "hidden" : "visible" }}>← Back</button>
-            <button className="btn btn-primary btn-lg" onClick={next} disabled={busy}>{busy ? "Submitting…" : step === 3 ? "Register as an NGG volunteer →" : "Continue →"}</button>
+            <button className="btn btn-primary btn-lg" onClick={next} disabled={busy}>{busy ? "Submitting…" : step === 3 ? "Register as an NGG volunteer →" : step === 2 ? "Check my answers →" : "Next: " + steps[step + 1] + " →"}</button>
           </div>
           </React.Fragment>
           )}
@@ -3700,9 +3700,9 @@ function ReviewList({ rows, g, gold, picked, setPicked, selectable, busy, onOpen
             })()}
             <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: v.tint, background: v.bg, whiteSpace: "nowrap", flex: "none" }}>{v.short}</span>
             {r.possibleDuplicate && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: "#ffce54", background: "rgba(245,176,38,.18)", flex: "none" }}>dup?</span>}
-            <button onClick={() => onOpen(i)}
+            <button onClick={() => onOpen(i)} aria-label={"Check " + (r.fullName || "this sign-up") + "’s sign-up"}
               style={{ minHeight: 44, padding: "9px 15px", borderRadius: 10, border: "1px solid rgba(255,255,255,.24)", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 13.5, cursor: "pointer", flex: "none" }}>
-              Open →
+              Check sign-up →
             </button>
           </div>
         );

@@ -147,11 +147,11 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
       /We found a record with your email/.test(await bodyText(fp)) && /Kemi/.test(await bodyText(fp)) && !/Kemi Adeyemi/.test(await bodyText(fp)));
     await fp.fill('input[placeholder="6 digits"]', '482913');
     await fp.fill('input[placeholder="e.g. their first name"]', 'Bello');
-    await btn(fp, /^Connect$/).click();
+    await btn(fp, /^Connect this child$/).click();
     await waitText(fp, /don’t match a member/);
     chk('a code with the wrong name connects nothing, and says why', true);
     await fp.fill('input[placeholder="e.g. their first name"]', 'Tobi');
-    await btn(fp, /^Connect$/).click();
+    await btn(fp, /^Connect this child$/).click();
     await waitText(fp, /Connected to Tobi/);
     chk('the child\'s code + name connects at once', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-KID'")['status'];`) === 'active');
     chk('…and the child is told', php(`echo db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-FU-KID' AND title = 'A family account is connected to you'")['c'];`) === '1');
@@ -289,6 +289,15 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await waitText(fp, /asked you to pay their fees/, 40000);
     const t2 = await bodyText(fp);
     chk('the parent\'s Today puts the child\'s ask in the to-do list', /Tobi asked you to pay their fees/.test(t2));
+    /* Each to-do row is one button that ends in its action ("Pay ₦…", "Upload the report"), never a bare caret, "Open Fees", "Review" or "See".
+       Only the rows this family actually has are checked. */
+    const todoBtns = await fp.evaluate(() => Array.from(document.querySelectorAll('section[aria-labelledby="todo-h"] button')).map(b => (b.textContent || '').replace(/\s+/g, ' ').trim()));
+    const todoOk = !/Open Fees/.test(t2) && todoBtns.length > 0
+      && todoBtns.some(x => /asked you to pay.*(Pay ₦[\d,]+|Pay the joining invoice)$/.test(x))
+      && todoBtns.filter(x => /results aren’t in yet/.test(x)).every(x => /Upload the report$/.test(x))
+      && !todoBtns.some(x => /(Review|See|Open|Read)$/.test(x));
+    if (!todoOk) console.error('    to-do rows: ' + JSON.stringify(todoBtns));
+    chk('…and each to-do row names its action: the ask ends "Pay ₦…", missing results end "Upload the report"', todoOk);
     chk('…and Today is fuller: things to do for the child, what is coming, and their lessons', /For Tobi/.test(t2) && /Coming up/.test(t2) && /What Tobi is learning/.test(t2) && /Pay ahead/.test(t2));
     await settle(fp);
     await fp.screenshot({ path: path.join(SHOTS, 'family-today-fees-phone.png'), fullPage: true });

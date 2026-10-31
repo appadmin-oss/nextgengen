@@ -351,8 +351,9 @@ class Fp3Portal extends React.Component {
         : t.status === "off" ? ["neutral", "ph ph-calendar-blank", "No class today", "NGG meets on Saturdays at " + w.member.centre + ". You get a text when " + first + " checks in."]
         : t.status === "present" ? ["ok", "ph ph-check-circle", "In since " + t.in, (t.out ? "Signed out at " + t.out + "." : "On time. Sign-out opens at " + outAt + ", and you’ll get a text when " + first + " leaves.")]
         : t.status === "late" ? ["warn", "ph ph-clock", "In since " + t.in + ", " + t.lateMinutes + " min late", "Doors open at " + doors + (grace ? " with " + grace + " minutes’ grace." : ".") + " You’ll get a text at sign-out."]
-        : ["bad", "ph ph-door-open", "Not in yet", "Doors opened at " + doors + ". If " + first + " is away today, tell the centre."];
-      out.st = { bg: T[s[0]][0], fg: T[s[0]][1], icon: s[1], h: first + " · " + s[2], s: s[3] };
+        : ["bad", "ph ph-door-open", "Not in yet", "Doors opened at " + doors + ". If " + first + " is away today, tell the centre here and the day is marked excused."];
+      /* "Not in yet" names the fix: tell the centre about the absence, from here. */
+      out.st = { bg: T[s[0]][0], fg: T[s[0]][1], icon: s[1], h: first + " · " + s[2], s: s[3], hasAct: s[0] === "bad", actL: "Tell the centre", act: () => this.openSheet("leave") };
       const m = x => +String(x).split(":")[0] * 60 + +String(x).split(":")[1];
       const nowM = T0.mins;
       const ttAll = w.timetable.map(c => { const now = m(c[0]) <= nowM && nowM < m(c[1]); return { time: c[0] + "–" + c[1], name: c[2], sub: [c[3], c[4]].filter(Boolean).join(" · "), now, bg: now ? "#fdf6e3" : "transparent", fw: now ? 700 : 600, past: m(c[1]) <= nowM }; });
@@ -367,12 +368,12 @@ class Fp3Portal extends React.Component {
       const todo = [];
       wards.forEach(x => {
         if (x.status !== "active" || !x.loaded) return;
-        x.conduct.fines.forEach(fn => todo.push(["ph ph-warning-circle", "A " + N(fn.amount) + " fine for " + x.member.first, fn.reason, "Review", () => this.go("money", { childId: x.linkId }), "warn"]));
+        x.conduct.fines.forEach(fn => todo.push(["ph ph-warning-circle", "A " + N(fn.amount) + " fine for " + x.member.first, fn.reason, "Pay or appeal it", () => this.go("money", { childId: x.linkId }), "warn"]));
         fp3Asks(x).forEach(a => todo.push(["ph ph-hand-waving", a.h, a.s, a.cta, () => this.go("money", { childId: x.linkId }), "warn"]));
-        const cr0 = this.curRes(x); if (cr0 && cr0.status === "missing") todo.push(["ph ph-upload-simple", x.member.first + "’s " + cr0.name + " results aren’t in yet", "Due " + cr0.due + ". Members upload their results every session, and the mentor builds the plan from them.", "See", () => this.go("progress", { childId: x.linkId, rsSession: "", sub: Object.assign({}, S.sub, { progress: "results" }) }), "warn"]);
-        const po = this.planOpen(x); if (po) todo.push(["ph ph-signature", "Read and sign " + x.member.first + "’s session plan", "Built from the " + po.name + " results and checked by " + po.plan.reviewedBy + ".", "Read", () => this.go("progress", { childId: x.linkId, rsSession: po.id, sub: Object.assign({}, S.sub, { progress: "results" }) }), "neutral"]);
+        const cr0 = this.curRes(x); if (cr0 && cr0.status === "missing") todo.push(["ph ph-upload-simple", x.member.first + "’s " + cr0.name + " results aren’t in yet", "Due " + cr0.due + ". Members upload their results every session, and the mentor builds the plan from them. You can upload the report for them.", "Upload the report", () => this.go("progress", { childId: x.linkId, rsSession: "", sub: Object.assign({}, S.sub, { progress: "results" }), sheet: "upload", upFile: null, upName: "" }), "warn"]);
+        const po = this.planOpen(x); if (po) todo.push(["ph ph-signature", "Read and sign " + x.member.first + "’s session plan", "Built from the " + po.name + " results and checked by " + po.plan.reviewedBy + ".", "Read and sign", () => this.go("progress", { childId: x.linkId, rsSession: po.id, sub: Object.assign({}, S.sub, { progress: "results" }) }), "neutral"]);
       });
-      this.inbox().filter(mm => mm.sign && !mm.signed).forEach(mm => todo.push(["ph ph-file-text", "Sign: " + mm.h, "So the mentor knows home has seen it.", "Open", () => { this.readMsg(mm); openSheet("msg", { msgId: mm.id }); }, "neutral"]));
+      this.inbox().filter(mm => mm.sign && !mm.signed).forEach(mm => todo.push(["ph ph-file-text", "Sign: " + mm.h, "So the mentor knows home has seen it.", "Read and sign", () => { this.readMsg(mm); openSheet("msg", { msgId: mm.id }); }, "neutral"]));
       unanswered.slice(0, 1).forEach(e => todo.push(["ph ph-calendar-star", "Can you come? " + e.title, e.date + " · " + e.time + ". Families are expected.", "Reply", () => this.go("attendance", { sub: Object.assign({}, S.sub, { attendance: "coming" }) }), "neutral"]));
       const RANK = { "ph ph-hand-waving": 0, "ph ph-warning-circle": 0, "ph ph-upload-simple": 1, "ph ph-signature": 2, "ph ph-file-text": 3, "ph ph-calendar-star": 4 };
       todo.sort((a, b) => RANK[a[0]] - RANK[b[0]]);
@@ -529,7 +530,8 @@ class Fp3Portal extends React.Component {
     if (sec === "account") {
       out.pf = [["Name", g.fullName || "Not given yet"], ["Phone", g.phone || "Not given yet"], ["Email", g.email], ["With NGG since", fp3Long(g.createdAt)]].map(x => ({ k: x[0], v: x[1] }));
       out.pfAsk = () => { const x = wards.find(y => y.status === "active"); if (!x) return this.toast("Connect a child first; the centre that looks after them keeps your details."); this.setState({ childId: x.linkId }); openSheet("profile"); };
-      out.acColl = wards.filter(x => x.status === "active").map(x => ({ name: x.member.first, ini: this.ini(x.member.fullName), tone: x.member.tone, list: !x.loaded ? "Loading…" : (x.collectors || []).length ? x.collectors.map(c => c[0] + " (" + c[1] + ")").join(", ") : "Nobody listed yet. Ask the centre to add who may collect " + x.member.first + ".",
+      out.acColl = wards.filter(x => x.status === "active").map(x => ({ name: x.member.first, ini: this.ini(x.member.fullName), tone: x.member.tone, list: !x.loaded ? "Loading…" : (x.collectors || []).length ? x.collectors.map(c => c[0] + " (" + c[1] + ")").join(", ") : "Nobody listed yet. Press Add who collects to ask the centre to add someone.",
+        changeL: x.loaded && !(x.collectors || []).length ? "Add who collects" : "Change who collects", changeA: (x.loaded && !(x.collectors || []).length ? "Add who may collect " : "Change who may collect ") + x.member.first,
         change: () => { this.setState({ childId: x.linkId }); openSheet("collect"); } }));
       const cs = (w && w.consents && w.consents.length ? w.consents : (wards.find(x => x.consents && x.consents.length) || {}).consents) || [];
       out.consents = (cs.length ? cs : [{ label: "Taking part in NGG" }, { label: "Emergency medical care" }, { label: "Keeping and using their records" }, { label: "Photos and videos in NGG materials" }, { label: "First name and work on the website", key: "site_visibility" }])
@@ -605,7 +607,7 @@ class Fp3Portal extends React.Component {
       const list = all.filter(mm => S.ibCat === "all" || mm.cat === S.ibCat);
       out.ibCats = [["all", "All"], ["report", "Reports"], ["alert", "Alerts"], ["centre", "From the centre"]].map(c => { const n = (c[0] === "all" ? all : all.filter(mm => mm.cat === c[0])).filter(mm => mm.unread).length; return pill(S.ibCat === c[0], c[1] + (n ? " · " + n : ""), () => this.setState({ ibCat: c[0] })); });
       out.ibRows = list.map((mm, i) => ({ icon: mm.icon, h: mm.h, b: mm.b, meta: mm.t + " · " + nameOf(mm.ward), dot: mm.unread ? "#f5b026" : "transparent", fw: mm.unread ? 600 : 500, bt: i ? "1px solid #f1efea" : "0", hasChip: !!mm.sign, chip: mm.signed ? "Signed" : "Needs your signature", cbg: mm.signed ? T.ok[0] : T.warn[0], cfg: mm.signed ? T.ok[1] : T.warn[1], onClick: () => { this.readMsg(mm); openSheet("msg", { msgId: mm.id }); } }));
-      out.ibEmpty = !list.length;
+      out.ibEmpty = !list.length; out.ibEmptyL = S.ibCat === "all" ? "No messages yet. Reports, alerts and news from the centre arrive here." : "Nothing in this list. Press All to see every message.";
     }
 
     const sh = S.sheet;
@@ -721,7 +723,7 @@ window.Fp3Portal = Fp3Portal;
 function fp3Asks(x) {
   const F = x.fees || {}, first = x.member.first;
   if (!F.asked || F.claim || !(F.payable > 0 || F.joining)) return [];
-  return [{ badge: first + " asked about fees", h: first + " asked you to pay their fees", s: "Pay online here, by transfer, or ahead for the months to come. Already paid by transfer or at the desk? Press I’ve paid on Fees and give the reference.", cta: "Open Fees" }];
+  return [{ badge: first + " asked about fees", h: first + " asked you to pay their fees", s: "Pay online here, by transfer, or ahead for the months to come. Already paid by transfer or at the desk? Press I’ve paid on Fees and give the reference.", cta: F.payable > 0 ? "Pay " + "₦" + Number(F.payable).toLocaleString("en") : "Pay the joining invoice" }];
 }
 
 /** Fees → Pay ahead: months of the commitment fee (and any renewal among them), priced by the server. */

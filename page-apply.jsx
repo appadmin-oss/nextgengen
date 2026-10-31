@@ -501,7 +501,7 @@ function ClubApplyPage({ setPage }) {
               <div className="apf-inlinebar">
                 {step > 0 && <button type="button" className="apf-btn apf-btn--ghost" onClick={() => go(step - 1)}><i className="ph ph-arrow-left" aria-hidden="true"/>Back</button>}
                 <span className="apf-grow apf-left">{step === last ? "Last step" : (last - step) + " to go"}</span>
-                <ApfNext step={step} last={last} busy={busy} next={next}/>
+                <ApfNext step={step} last={last} busy={busy} next={next} nextL={(steps[step + 1] || {}).l}/>
               </div>
             )}
           </>}
@@ -532,7 +532,7 @@ function ClubApplyPage({ setPage }) {
           <div className="apf-bar-in">
             {step > 0 && <button type="button" className="apf-btn apf-btn--ghost" onClick={() => go(step - 1)}><i className="ph ph-arrow-left" aria-hidden="true"/>Back</button>}
             <span className="apf-grow"/>
-            <ApfNext step={step} last={last} busy={busy} next={next}/>
+            <ApfNext step={step} last={last} busy={busy} next={next} nextL={(steps[step + 1] || {}).l}/>
           </div>
         </div>
       )}
@@ -542,8 +542,10 @@ function ClubApplyPage({ setPage }) {
   );
 }
 
-function ApfNext({ step, last, busy, next }) {
-  const l = step === last ? (busy ? "Sending…" : "Send application") : step === last - 1 ? "Review" : "Continue";
+/* The forward button names where it goes ("Next: School"), and the step before
+   the last says what happens there — not "Continue" / "Review". */
+function ApfNext({ step, last, busy, next, nextL }) {
+  const l = step === last ? (busy ? "Sending…" : "Send application") : step === last - 1 ? "Check my answers" : nextL ? "Next: " + nextL : "Next step";
   return <button type="button" className="apf-btn apf-btn--ink" onClick={next} disabled={busy} aria-busy={busy || undefined}>{l}<i className={"ph " + (step === last ? "ph-paper-plane-tilt" : "ph-arrow-right")} aria-hidden="true"/></button>;
 }
 function ApfTip({ id, small }) {

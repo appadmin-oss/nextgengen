@@ -5237,7 +5237,7 @@ function unzipDocumentXml(buf) {
       /* Each submission is its OWN page: its own address, its own back button,
          one job on the screen. */
       if (!await step('a queued submission can be opened from the index',
-                      () => rvP.getByRole('button', { name: /Open/ }).first().click())) return;
+                      () => rvP.getByRole('button', { name: /^Check .+sign-up$/ }).first().click())) return;
       await rvP.waitForTimeout(500);
       ok('opening a submission gives it its own address',
          /[?&]s=RC1-0101/.test(await rvP.evaluate(() => window.location.search)));

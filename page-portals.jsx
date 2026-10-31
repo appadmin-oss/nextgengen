@@ -921,7 +921,7 @@ function GateLinks({ scope }) {
                 <td><span className={"chip " + (GATE_KINDS[g.kind] || GATE_KINDS.desk).chip}>{(GATE_KINDS[g.kind] || GATE_KINDS.desk).label}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(linkFor(g)); toast.success("Link copied."); }}>Copy link</button>
-                  <a className="btn btn-ghost btn-sm" href={linkFor(g)} target="_blank" rel="noreferrer">Open</a>
+                  <a className="btn btn-ghost btn-sm" href={linkFor(g)} target="_blank" rel="noreferrer">Open the page</a>
                   <div className="mono admin-cell-sub" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{(g.path || "/gate?g=") + g.gateId}</div>
                 </td>
                 <td>{g.hasPassword ? <span className="chip chip-lime">🔑 password</span> : <span className="chip status-archived">admin only</span>}</td>

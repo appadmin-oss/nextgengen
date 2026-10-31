@@ -154,7 +154,7 @@ Object.assign(Mp9Portal.prototype, {
       compEarlier: (c.history || []).slice(1, 6).map(h => { const x = RATE[h.rating] || [h.rating, "#c9c6bc"]; const m2 = h.metrics || {};
         return { w: mp9Date(m2.from) + " – " + mp9Date(m2.to), v: x[0], n: (h.focus || [])[0] || "", hasN: !!(h.focus || [])[0], fg: x[0] === "Going well" ? "#1d6b30" : x[0] === "Needs a push" ? "#7a5600" : "#4a4a50", dot: x[1] }; }),
       cp: {
-        tabs: [["week", "This week", "ph ph-sun-horizon", false], ["review", "Review", "ph ph-arrows-clockwise", !done], ["ask", "Ask", "ph ph-sparkle", false]].map(([k, l, icon, dot]) => ({ l, icon, dot, on: cpTab === k ? "true" : "false", bg: cpTab === k ? "#fff" : "transparent", sh: cpTab === k ? "0 1px 2px rgba(11,11,12,.12)" : "none", fw: cpTab === k ? 700 : 500, go: () => set({ cpTab: k }) })),
+        tabs: [["week", "This week", "ph ph-sun-horizon", false], ["review", "Weekly review", "ph ph-arrows-clockwise", !done], ["ask", "Ask", "ph ph-sparkle", false]].map(([k, l, icon, dot]) => ({ l, icon, dot, on: cpTab === k ? "true" : "false", bg: cpTab === k ? "#fff" : "transparent", sh: cpTab === k ? "0 1px 2px rgba(11,11,12,.12)" : "none", fw: cpTab === k ? 700 : 500, go: () => set({ cpTab: k }) })),
         tWeek: cpTab === "week", tReview: cpTab === "review", tAsk: cpTab === "ask",
         kept: kept.length ? kept : [{ icon: "ph ph-sparkle", fg: "#4a4a50", t: "Nothing kept yet", s: "Save a summary of a Companion chat and it stays here for the session.", when: "" }],
         canEnd: msgs.length > 1,
@@ -240,7 +240,7 @@ Object.assign(Mp9Portal.prototype, {
         withdraw: () => NGGApi.member.withdrawRequest(x.requestId).then(() => { this.refresh(["reqs"]); this.toast("Request withdrawn"); }).catch(e => this.toast(mp9Err(e))) }; });
     return {
       rec: { attended: att.present || 0, ran: att.daysRan || 0, pct: att.rateKnown ? att.rate + "%" : "no term calendar set" },
-      certs: (r.certificates || []).map(c => ({ t: c.certId + (c.revoked ? " · revoked" : ""), d: String(c.issuedAt || "").slice(0, 10), url: "/cert/" + c.certId })),
+      certs: (r.certificates || []).map(c => ({ t: c.certId + (c.revoked ? " · revoked" : ""), d: String(c.issuedAt || "").slice(0, 10), url: "/cert/" + c.certId, openA: "Open certificate " + c.certId, open: () => { location.href = "/cert/" + encodeURIComponent(c.certId); } })),
       days: days.length ? (s.daysAll ? days : days.slice(0, 6)) : [{ d: "No days recorded yet", st: "", i: "—", o: "—", fg: "#6b6b72" }], daysMore: !s.daysAll && days.length > 6, showDays: () => this.setState({ daysAll: true }),
       reqKinds: KINDS.map(k => ({ k: k[3] || k[0], on: s.rKind === k[0] ? "true" : "false", ring: s.rKind === k[0] ? "#0b0b0c" : "#d6d4cc", bw: s.rKind === k[0] ? "2px" : "1px", pick: () => this.setState({ rKind: k[0], rF: {} }) })),
       rHas: !!K, rFields: K ? K[2].map(fl => ({ f: fl, v: f[fl] || "", on: e => this.setState({ rF: { ...this.state.rF, [fl]: e.target.value } }) })) : [],

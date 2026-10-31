@@ -2022,7 +2022,7 @@ function CmFiles({ slug, channelName, onBack, onOpenThread }) {
             <b>{savedList.length} {savedList.length === 1 ? "file" : "files"} saved offline</b>
             {savedBytes ? " · " + cmBytes(savedBytes) : ""}. Available with no data.
           </span>
-          <button onClick={() => setSheetFor({ reason: "manage" })}>Manage</button>
+          <button onClick={() => setSheetFor({ reason: "manage" })}>See or remove saved files</button>
         </div>
       )}
 
@@ -2142,7 +2142,7 @@ function CmFileSheet({ entry, saved, files, onClose, onOpen, onSavedChange, onOp
             <span>Always ask before files over {CM_ASK_MB} MB</span>
           </label>
           <button className="cmm-cta" onClick={() => onOpen(f)}>
-            {f.kind === "video" ? "Play" : "Open"} · {cmBytes(pref.saver && f.kind === "video" ? (f.bytes || 0) * 0.35 : f.bytes)}
+            {f.kind === "video" ? "Play" : "Open the file"} · {cmBytes(pref.saver && f.kind === "video" ? (f.bytes || 0) * 0.35 : f.bytes)}
           </button>
         </div>
       )}
@@ -5667,7 +5667,7 @@ function CmTrnList({ auth, staff, onOpen, onCreate, onBack }) {
                       ? <button className="cmm-cta is-sm" disabled={busy === t.tournamentId}
                                 onClick={() => join(t)}>{busy === t.tournamentId ? "…" : "Enter"}</button>
                       : <span className="trn-why">{t.status === "open" ? "Not open to you" : "Entries closed"}</span>}
-                  <button className="trn-more" onClick={() => onOpen(t.tournamentId)}>Details →</button>
+                  <button className="trn-more" onClick={() => onOpen(t.tournamentId)} aria-label={"Players and rounds: " + t.name}>Players and rounds →</button>
                 </div>
               </article>
             );
@@ -6620,7 +6620,7 @@ function CmChess({ auth, onOpenMatch, onBack }) {
               <span className="cmc-train-h">{arena.name}</span>
               <span className="cmc-train-s">{cmArenaLine(arena)}</span>
             </span>
-            <span className="cmc-train-go">{arena.joined ? "Open" : "Join"}</span>
+            <span className="cmc-train-go">{arena.joined ? "Go to arena" : "Join"}</span>
           </button>
         )}
         <button className="cmc-tile trn-entry" onClick={() => { setOpenTrn(""); setScreen("trn"); }}>

@@ -292,7 +292,7 @@ function DashRecords({ onRaise }) {
                 </div>
                 {c.revoked
                   ? <span className="mono" style={{ fontSize: 11, color: "#b03535" }}>REVOKED</span>
-                  : <a className="btn btn-ghost btn-sm" href={"/cert/" + c.certId}>View</a>}
+                  : <a className="btn btn-ghost btn-sm" href={"/cert/" + c.certId} aria-label={"Open certificate " + c.certId}>Open certificate</a>}
               </div>
             )))}
           </div>
@@ -1217,7 +1217,7 @@ function DashboardKpis({ session, prog, stats, account, acctState }) {
       <div className="ngg-kpi">
         <div className="ngg-kpi-top"><span className="ngg-kpi-l">Account</span>{owed != null && <span className={"chip " + (owed > 0 ? "chip-coral" : "chip-lime")}>{owed > 0 ? "Due" : "Clear"}</span>}</div>
         <div className={"ngg-kpi-n" + (owed === 0 ? " is-clear" : "")}>{account ? (owed > 0 ? naira(owed) : "Clear") : "—"}</div>
-        <div className="ngg-kpi-s">{account ? (owed > 0 ? "outstanding" : "nothing outstanding")
+        <div className="ngg-kpi-s">{account ? (owed > 0 ? "outstanding · your parent or guardian pays it from the family account" : "nothing outstanding")
           : acctState === "disabled" ? "not enabled yet"
           : acctState === "error" ? "unavailable"
           : acctState === "hidden" ? "—"
@@ -1599,7 +1599,7 @@ function DashboardMissionRow({ m, onSubmit, busy, done, disabled }) {
       </div>
       {!done && !disabled && (
         <button className="btn btn-primary btn-sm dash-mission-cta" onClick={onSubmit} disabled={busy}>
-          {busy ? "…" : (m.proof === "none" ? "Done" : "Submit")}
+          {busy ? "…" : (m.proof === "none" ? "Mark it done" : "Send my proof")}
         </button>
       )}
     </div>
@@ -1680,7 +1680,7 @@ function AssignmentCard({ a, onMutate }) {
           <div className="dash-assign-actions">
             <Uploader kind="submission" accept="*/*" onUploaded={(url) => setFileUrl(url)} compact/>
             {fileUrl && <a className="dash-assign-filelink" href={fileUrl} target="_blank" rel="noopener noreferrer">✓ file attached</a>}
-            <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy}>{busy ? "…" : (sub ? "Update" : "Submit")}</button>
+            <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy}>{busy ? "…" : (sub ? "Update my answer" : "Hand it in")}</button>
           </div>
         </div>
       )}
@@ -2217,7 +2217,7 @@ function DashboardCheckin() {
         <div className="dci-done">
           <span className={"dci-done-chip is-" + (d.checkin.wellbeing === "Okay" ? "ok" : "warn")}>{(DCI_FEEL.find(f => f[0] === d.checkin.wellbeing) || DCI_FEEL[0])[1]}</span>
           <span className="dci-muted">{"Checked in this week" + (d.checkin.note ? " · “" + d.checkin.note + "”" : "")}</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => setEdit(true)}>Change</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEdit(true)}>Change my check-in</button>
         </div>
       ) : (
         <div className="dci-form">

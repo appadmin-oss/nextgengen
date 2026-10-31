@@ -8486,7 +8486,7 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-att-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .cr-att-text b { font-size: 14px; font-weight: 500; }
 .cr-att-text span { font-size: 12.5px; color: var(--cr-muted-3); }
-.cr-att-go { height: 30px; padding: 0 12px; border: 1px solid var(--cr-line-2); border-radius: 9px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+.cr-att-go { height: 30px; padding: 0 12px; border: 1px solid var(--cr-line-2); border-radius: 9px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; flex: none; white-space: nowrap; }
 .cr-att-go .ph { font-size: 12px; }
 
 .cr-status { padding: 16px; display: flex; flex-direction: column; gap: 12px; height: 100%; }
@@ -15565,6 +15565,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .fp3-526624e{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .fp3-3479bf1{margin:0;font-size:17px;font-weight:700;letter-spacing:-0.01em}
 .fp3-c14009f{font-size:13.5px;text-wrap:pretty}
+.fp3-ce2f4d9{height:36px;padding:0 12px;border:1px solid #d9d6cd;border-radius:10px;background:#fff;font-size:13px;font-weight:500}
 .fp3-9248a79{padding:var(--dc-padding, unset);display:flex;flex-direction:column}
 .fp3-ec6efad{display:flex;align-items:center;gap:12px;min-height:44px;border-bottom:1px solid #f4f2ed}
 .fp3-71f0871{font-family:'Geist Mono', monospace;font-size:12.5px;color:#4a4a50;width:var(--dc-width, unset);flex-shrink:0}
@@ -15594,7 +15595,8 @@ button.m9x-ev-sum { cursor: pointer; }
 .fp3-907d439{width:36px;height:36px;border-radius:10px;background:var(--dc-background, unset);color:var(--dc-color, unset);display:grid;place-items:center;flex-shrink:0}
 .fp3-4ff818f{font-size:18px}
 .fp3-7afa83f{font-size:14.5px;font-weight:600;text-wrap:pretty}
-.fp3-dcd4d38{color:#8a8a90;flex-shrink:0}
+.fp3-79465de{flex-shrink:0;display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:600;color:#0b0b0c;white-space:nowrap}
+.fp3-eca7566{color:#8a8a90}
 .fp3-d365d66{width:100%;height:44px;border:0;border-top:1px solid #f1efea;background:#fff;font-size:13.5px;font-weight:600;color:#3a3a40}
 .fp3-b221478{display:grid;grid-template-columns:repeat(auto-fit, minmax(min(100%, 150px), 1fr));gap:10px}
 .fp3-ba8095e{background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:14px;text-align:left;display:flex;flex-direction:column;gap:4px;min-height:104px;min-width:0}
@@ -15846,7 +15848,6 @@ button.m9x-ev-sum { cursor: pointer; }
 .fp3-f098827{padding:14px 18px 8px;display:flex;flex-direction:column;gap:2px}
 .fp3-769ba02{font-size:13px;color:#4a4a50;text-wrap:pretty}
 .fp3-45812fb{width:38px;height:38px;border-radius:50%;background:var(--dc-background, unset);display:grid;place-items:center;font-size:13px;font-weight:600;flex-shrink:0}
-.fp3-ce2f4d9{height:36px;padding:0 12px;border:1px solid #d9d6cd;border-radius:10px;background:#fff;font-size:13px;font-weight:500}
 .fp3-993723a{display:flex;align-items:flex-start;gap:12px;padding:12px 18px;border-top:1px solid #f1efea}
 .fp3-6f90de2{color:#22a05a;font-size:20px;margin-top:1px}
 .fp3-859604b{padding:12px 18px 16px;border-top:1px solid #f1efea;font-size:13px;color:#4a4a50;text-wrap:pretty}

@@ -820,7 +820,7 @@ class Ss3Portal extends React.Component {
     out.sp = { name: p.name, ini: ss3Ini(p.name), tone: ss3Tone(p.id), sub: [p.displayId, p.age != null ? p.age : "", p.centre, p.track].filter(x => x !== "").join(" · "), status: p.status,
       onStatus: e => { const v = e.target.value; this.S().studentStatus(p.id, v).then(() => { this.toast(p.name.split(" ")[0] + " is now " + v + "."); this.openChild(p.id); this.reload(); }).catch(x => this.fail(x)); },
       canAlert: live && p.today === "absent",
-      alert: () => this.S().absenceAlert(p.id, "").then(r => this.toast(r && r.sent ? "Email sent to " + (p.guardian || "the guardian") + "." : "No email on file for " + (p.guardian || "the guardian") + ".")).catch(x => this.fail(x)),
+      alert: () => this.S().absenceAlert(p.id, "").then(r => this.toast(r && r.sent ? "Email sent to " + (p.guardian || "the guardian") + "." : "No email on file for " + (p.guardian || "the guardian") + (p.phone ? ". Call them on " + p.phone + " instead." : ". There is no phone either: ask the coordinator to add a guardian contact."))).catch(x => this.fail(x)),
       tel: p.phone ? "tel:" + p.phone : undefined, today: p.reg !== "verified" ? "Not confirmed" : SS3_TODAY_L[p.today] || p.today, tc: pill[1],
       todaySub: p.today === "absent" ? (p.lastSeen ? "Last seen " + ss3Day(p.lastSeen) : "Not seen yet this season") : p.today === "out" ? "Signed out " + p.outAt : p.inAt ? "In at " + p.inAt : "",
       rate: live && p.rate != null ? p.rate + "%" : "—", rc: p.rate != null && p.rate < B.riskRate ? "#a12a2a" : "#0b0b0c", days: p.days + " programme days",

@@ -1283,7 +1283,7 @@ function AnalyticsWorkspace() {
                     {anFmt(c.evidence || 0)}
                   </td>
                   <td className="mono">{anFmt(c.stars)}</td>
-                  <td><button className="an-open" onClick={() => openDrill("centre-students", c.name + " — students", { centre: c.name })}>Open →</button></td>
+                  <td><button className="an-open" onClick={() => openDrill("centre-students", c.name + " — students", { centre: c.name })} aria-label={"List the students at " + c.name}>List students →</button></td>
                 </tr>
               ))}
             </tbody>
