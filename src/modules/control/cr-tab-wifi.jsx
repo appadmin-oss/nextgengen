@@ -535,12 +535,30 @@ const crWfLoad = async () => {
    about each (domain/wifi-cacentre.php). Why a push failed, in words. */
 const CR_WF_CAC_ERR = {
   unreachable: "CACENTRE couldn’t be reached. It is tried again at the next push.",
-  bad_signature: "CACENTRE doesn’t recognise NGG’s key. DIR_PUSH_SECRET_NGG (the directory connection) must be the same value here and at CACENTRE.",
-  not_configured: "CACENTRE has no key for NGG yet: DIR_PUSH_SECRET_NGG in its includes/.env, the same value as here.",
+  bad_signature: "The gate doesn’t recognise NGG’s attendance secret. hooks.attendance_secret here must be the same value as NGG_SECRET on the gate.",
+  not_configured: "Attendance isn’t connected here yet: hooks.attendance_secret (the gate secret) is empty.",
+  replayed: "The gate saw that request already. It is sent again at the next push.",
   expired: "The two servers’ clocks disagree by more than five minutes.",
   bad_window: "The two servers’ clocks disagree by more than five minutes.",
   too_many: "The list was longer than one push may carry.",
 };
+/* Everybody still on a starting password, within the admin's centres: members
+   with no email, or whose email never arrives, are handed theirs by a person.
+   They are also shown at the gate's desk when the member checks in. */
+async function crWfStarts(ctx) {
+  let r;
+  try { r = await NGGApi.admin.wifi.cacentreStarts(); } catch (e) { return ctx.toast(crWfErr(e, "Couldn’t fetch the starting passwords."), null, true); }
+  if (!r || !r.ok) return ctx.toast(CR_WF_CAC_ERR[r && r.error] || "CACENTRE refused: " + (r && r.error), null, true);
+  const ppl = r.people || [];
+  const tsv = ["Centre\tName\tPrinted ID\tSign-in name\tStarting password"].concat(ppl.map(x => [x.centre, x.name, x.printedId, x.username, x.code].join("\t"))).join("\n");
+  ctx.drawer({
+    title: ppl.length ? crPlural(ppl.length, "person", "people") + " still on a starting password" : "Nobody is on a starting password",
+    sub: "Within your centres. Hand each person theirs; once they choose their own, they leave this list.",
+    sections: [{ h: "People", list: ppl.map(x => ({ icon: "key", t: x.name + (x.printedId ? " · " + x.printedId : ""), s: (x.centre ? x.centre + " — " : "") + "Sign-in name " + x.username + " · password " + x.code })),
+      empty: "Everybody has chosen their own password." }],
+    actions: ppl.length ? [{ l: "Copy all (for a spreadsheet)", primary: true, run: () => { navigator.clipboard && navigator.clipboard.writeText(tsv).then(() => ctx.toast("Copied " + crPlural(ppl.length, "row", "rows") + ".")); } }] : [],
+  });
+}
 async function crWfCacPush(ctx) {
   try {
     const r = await NGGApi.admin.wifi.cacentrePush();
@@ -552,7 +570,7 @@ function crWfCacBlock(ctx, c) {
   if (!c) return null;
   const act = c.canSend && c.configured ? { l: "Send now", run: () => crWfCacPush(ctx) } : undefined;
   if (!c.configured) return { type: "note", span: 6, icon: "buildings", text: "CACENTRE runs the Wi-Fi for the estate. NGG isn’t sending its people there yet.",
-    sub: "It goes over the connection NGG already has with CACENTRE for the person directory, which isn’t set up here: DIR_PUSH_SECRET_NGG (api/config.php → dir_push_secret), the same value at CACENTRE. Until then the gateways and members’ Wi-Fi passwords stay NGG’s." };
+    sub: "It goes over the connection NGG already has with CACENTRE’s gate for attendance: hooks.attendance_secret in api/config.php, the same value as NGG_SECRET on the gate. Once attendance works, so does this. Until then the gateways and members’ Wi-Fi passwords stay NGG’s." };
   const L = c.last;
   if (!L) return { type: "note", span: 6, icon: "buildings", text: "CACENTRE runs the Wi-Fi. NGG’s people are sent there every " + Math.round(c.every / 60) + " minutes; nothing has been sent yet.", act };
   const unknown = Object.keys(L.unknownSites || {});
@@ -560,7 +578,7 @@ function crWfCacBlock(ctx, c) {
   return { type: "note", span: 6, icon: "buildings", tone: L.refused || unknown.length ? "warn" : "ok",
     text: "CACENTRE runs the Wi-Fi. Sent " + crAgo(L.at) + ": " + crNum(L.sent) + " people with NGG’s say about each" + (L.gone ? ", " + crNum(L.gone) + " no longer on NGG’s list withdrawn" : "") + (L.refused ? "; " + crNum(L.refused) + " refused (" + (L.refusals || []).slice(0, 3).map(x => x.id + ": " + x.error).join(", ") + ")" : "") + ".",
     sub: (unknown.length ? "CACENTRE has no site for " + unknown.map(k => k.toUpperCase() + " (" + crNum(L.unknownSites[k]) + ")").join(", ") + ": add each there with the centre’s card code; until then those people sign in at the hubs only. " : "")
-      + (L.full ? "" : "The list was sent in parts, so nobody was withdrawn. ") + "Suspensions, overrides and the access table here become NGG’s say; CACENTRE never gives more than NGG does. Members still set their password under Me → Wi-Fi, kept by CACENTRE once their centre’s router has moved.", act };
+      + (L.full ? "" : "The list was sent in parts, so nobody was withdrawn. ") + "Suspensions, overrides and the access table here become NGG’s say; CACENTRE never gives more than NGG does. Members still set their password under Me → Wi-Fi, kept by CACENTRE once their centre’s router has moved. Anybody without email is shown their starting password at the gate when they check in, or use Starting passwords to hand them out.", act };
 }
 
 Object.assign(CR_TAB_DEFS, {
@@ -573,6 +591,7 @@ Object.assign(CR_TAB_DEFS, {
       d.cacentre && d.cacentre.configured
         ? { l: "Add a router at CACENTRE", icon: "arrow-square-out", primary: true, run: () => window.open(d.cacentre.routersUrl, "_blank", "noopener") }
         : { l: "Add a gateway", icon: "plus", primary: true, disabled: !(d.centres || []).length, why: (d.centres || []).length ? "" : "Add a centre first (Members → Centres).", run: () => crWfEdit(ctx, d, null) },
+      d.cacentre && d.cacentre.configured ? { l: "Starting passwords", icon: "key", run: () => crWfStarts(ctx) } : null,
       { l: "Test this connection", icon: "gauge", run: () => crWfSpeedTest(ctx, d) },
       { l: "Why can’t somebody get on?", icon: "magnifying-glass", run: () => crWfLookup(ctx) },
       { l: "Line test, every gateway", icon: "pulse", disabled: !(d.gateways || []).length, why: "No gateways yet.",

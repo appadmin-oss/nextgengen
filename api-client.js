@@ -2000,6 +2000,8 @@
         // CACENTRE runs the Wi-Fi; NGG sends its people and its say (domain/wifi-cacentre.php).
         cacentre: () => request('/admin/wifi.php' + qs({ view: 'cacentre' })),
         cacentrePush: () => request('/admin/wifi.php', { body: { action: 'cacentrePush' }, timeout: 120000 }),
+        // Everybody still on a starting password, within the admin's centres, to hand out.
+        cacentreStarts: () => request('/admin/wifi.php' + qs({ view: 'starts' }), { timeout: 60000 }),
         gatewayMoved: (gatewayId, undo) => request('/admin/wifi.php', { body: { action: 'moved', gatewayId, undo: !!undo } }),
         testAtNextFetch: (gatewayId) => request('/admin/wifi.php', { body: { action: 'test', gatewayId } }),
         speedSave: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'speed' }, data) }),

@@ -16812,7 +16812,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
         $m = fn() => db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
         // Charge last month at 1000, then raise, then charge this month.
-        fees_accrue_member($m(), null, gmdate('Y-m-d', strtotime('-1 month')));
+        /* "first day of last month", not "-1 month": on the 31st, -1 month is the 1st of THIS month. */
+        fees_accrue_member($m(), null, gmdate('Y-m-d', strtotime('first day of last month')));
         fees_uprate_apply('test');
         fees_accrue_member($m());
         $amounts = array_map('intval', array_column(
@@ -33623,22 +33624,28 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $keys = []; foreach ($all as $r) $keys += array_flip(array_keys($r));
     chk('wifi→cacentre · only the agreed fields travel: no phone, birthday, guardian or money', array_keys($keys) == ['id', 'kind', 'name', 'email', 'printedId', 'homeSite', 'verdict', 'why', 'validUntil']);
 
-    // The envelope: what CACENTRE's WifiEnvelope::verify() checks, re-done here.
+    // The call: what the gate (gate/src/wifi.ts) checks, re-done here — NGG's own attendance scheme.
     $sec = str_repeat('k', 40); $t0 = 1800000000;
-    $tok = dirpush_sign('wifi.roster', ['full' => true, 'people' => [$p('NGG-CP-ACT')]], $sec, $t0);
-    [$v, $body, $mac] = explode('.', $tok);
-    $unb = fn($s) => base64_decode(strtr($s, '-_', '+/') . str_repeat('=', (4 - strlen($s) % 4) % 4));
-    $c = json_decode($unb($body), true);
-    chk('wifi→cacentre · the roster rides the directory’s connection: its v1 envelope, as NGG, typed wifi.roster', $v === 'v1' && hash_equals(hash_hmac('sha256', $body, $sec, true), $unb($mac))
-        && $c['iss'] === 'ngg' && $c['typ'] === 'wifi.roster' && $c['exp'] - $c['iat'] === 300 && $c['full'] === true && $c['people'][0]['id'] === 'NGG-CP-ACT');
+    $rq = wifi_cac_request('wifi.roster', ['full' => true, 'people' => [$p('NGG-CP-ACT')]], $sec, $t0);
+    $hd = []; foreach ($rq['headers'] as $h) { [$k, $v] = explode(': ', $h, 2); $hd[$k] = $v; }
+    $c = json_decode($rq['body'], true);
+    chk('wifi→cacentre · the roster rides the attendance connection: to the gate, signed sha256=HMAC(attendance secret, ts.body)',
+        str_ends_with($rq['url'], '/v1/issuers/ngg/wifi') && $hd['X-NGG-Timestamp'] === (string)$t0
+        && hash_equals('sha256=' . hash_hmac('sha256', $t0 . '.' . $rq['body'], $sec), $hd['X-NGG-Signature'])
+        && $c['typ'] === 'wifi.roster' && $c['full'] === true && $c['people'][0]['id'] === 'NGG-CP-ACT');
+    chk('wifi→cacentre · two identical calls are never the same signature (the gate spends each once)',
+        wifi_cac_request('wifi.card', ['op' => 'show', 'id' => 'x'], $sec, $t0)['body'] !== wifi_cac_request('wifi.card', ['op' => 'show', 'id' => 'x'], $sec, $t0)['body']);
 
-    // One connection: the Wi-Fi is on exactly when the directory push is, with its key.
-    $GLOBALS['CONFIG']['dir_push_secret'] = '';
-    chk('wifi→cacentre · with no directory key nothing is sent', (wifi_cac_push('test')['error'] ?? '') === 'not_configured' && (wifi_cac_tick()['skipped'] ?? '') === 'no key');
-    $GLOBALS['CONFIG']['dir_push_secret'] = 'changeme-changeme-changeme-changeme-12';
-    chk('wifi→cacentre · a placeholder key counts as no key', !wifi_cac_ready());
+    // One connection: the Wi-Fi is on exactly when attendance is, with its secret.
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = '';
+    chk('wifi→cacentre · with no attendance secret nothing is sent', (wifi_cac_push('test')['error'] ?? '') === 'not_configured' && (wifi_cac_tick()['skipped'] ?? '') === 'no key');
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = 'short';
+    chk('wifi→cacentre · a secret too short to be one counts as none', !wifi_cac_ready());
     $GLOBALS['CONFIG']['dir_push_secret'] = str_repeat('d', 40);
-    chk('wifi→cacentre · the directory’s key IS the Wi-Fi’s: there is no second one', wifi_cac_ready() && !function_exists('wifi_cac_secret'));
+    chk('wifi→cacentre · the directory key opens no Wi-Fi: only the attendance secret does', !wifi_cac_ready());
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = str_repeat('a', 40);
+    chk('wifi→cacentre · the attendance secret IS the Wi-Fi’s: there is no second one', wifi_cac_ready());
+    $GLOBALS['CONFIG']['dir_push_secret'] = '';
 
     // Members keep their PIN on their own dashboard. A centre whose NGG router still fetches keeps NGG's PIN;
     // once it has moved, Me → Wi-Fi asks CACENTRE — and says so honestly when CACENTRE can't be reached.
@@ -33651,7 +33658,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi→cacentre · once it has moved, the dashboard asks CACENTRE, and an outage is an honest error, never NGG’s stale PIN', wifi_cac_serves($C, false)
         && empty($g['ok']) && ($g['error'] ?? '') === 'cacentre_unreachable' && !isset($g['wifi']));
     db_exec("DELETE FROM wifi_gateways WHERE gatewayId = 'GCP000001'");
-    $GLOBALS['CONFIG']['dir_push_secret'] = ''; $GLOBALS['CONFIG']['dir_push_url'] = '';
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = ''; $GLOBALS['CONFIG']['dir_push_url'] = '';
 
     // Who may: the status for anybody with network; sending only for somebody who sees every centre.
     $mem('NGG-CP-SA', ['role' => 'super_admin']);
@@ -33665,7 +33672,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $mg = $sv['gateway']['gatewayId']; $mk = $sv['key'];
     backend_dispatch('wifi.feed', ['gatewayId' => $mg, 'key' => $mk, 'since' => 0]);
     chk('wifi→cacentre · a router can’t be marked moved before NGG is connected', (backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg])['error'] ?? '') === 'cacentre_not_connected');
-    $GLOBALS['CONFIG']['dir_push_secret'] = str_repeat('d', 40);
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = str_repeat('a', 40);
     chk('wifi→cacentre · while it still fetches from NGG, its members keep NGG’s PIN', !wifi_cac_serves($C, false));
     $mv = backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg]);
     chk('wifi→cacentre · marked moved, its members see CACENTRE’s PIN at once, not a day later', !empty($mv['ok']) && $mv['gateway']['movedAt'] !== '' && wifi_cac_serves($C, false));
@@ -33679,7 +33686,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi→cacentre · back to NGG: it is fed again, with a full list', !empty($bk['ok']) && $bk['gateway']['movedAt'] === '' && !empty($f2['ok']) && !empty($f2['full']));
     chk('wifi→cacentre · marking it twice changes nothing', !empty(backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg, 'undo' => true])['unchanged']));
     db_exec("DELETE FROM wifi_gateways WHERE gatewayId = ?", [$mg]);
-    $GLOBALS['CONFIG']['dir_push_secret'] = '';
+    // The starting-password list is admin-only, and asks nothing of CACENTRE until NGG is connected.
+    chk('wifi→cacentre · an admin without network cannot see starting passwords', (backend_dispatch('admin.wifi.cacentre.starts', ['requesterId' => 'NGG-CP-ADM'])['error'] ?? '') === 'forbidden');
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = '';
+    chk('wifi→cacentre · before attendance is connected the list says so', (backend_dispatch('admin.wifi.cacentre.starts', ['requesterId' => 'NGG-CP-SA'])['error'] ?? '') === 'not_configured');
     $hook = (string)file_get_contents(__DIR__ . '/../hooks/wifi-feed.php');
     $set = (string)file_get_contents(__DIR__ . '/../_lib/domain/wifi-setup.php');
     chk('wifi · a MikroTik is refused with 200, which RouterOS keeps (it drops a 4xx body); others keep the status', str_contains($hook, "\$ros ? 200 :"));
@@ -35060,7 +35070,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $save = setting_get('fees');
     setting_set('fees', ['enabled' => true, 'trainingFee' => 300000, 'trainingBasis' => 'total', 'trainingMonths' => 18,
                          'serviceMonths' => 18, 'membershipFee' => 0, 'monthlyDues' => 0, 'balanceCap' => 0] + FEES_DEFAULTS, 'test');
-    $ago = fn(int $months, int $days = 0) => gmdate('Y-m-d', strtotime("-$months months -$days days"));
+    /* Months back from today, the day clamped to the month's length: "-20 months" from
+       31 October is 31 February, which PHP rolls into March — a whole month short. */
+    $ago = function (int $months, int $days = 0): string {
+        $t = new DateTimeImmutable('today', new DateTimeZone('UTC'));
+        $m = $t->modify('first day of this month')->modify("-$months months");
+        $d = min((int)$t->format('j'), (int)$m->format('t'));
+        return $m->setDate((int)$m->format('Y'), (int)$m->format('n'), $d)->modify("-$days days")->format('Y-m-d');
+    };
     db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-TF9-%'");
     db_exec("DELETE FROM member_status_log WHERE memberId LIKE 'NGG-TF9-%'");
     db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-TF9-%'");

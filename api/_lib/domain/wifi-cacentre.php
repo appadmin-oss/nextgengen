@@ -22,15 +22,20 @@
  */
 
 /*
- * THE CONNECTION IS THE DIRECTORY'S (domain/directory-push.php). Same key
- * (DIR_PUSH_SECRET_NGG / dir_push_secret), same CACENTRE address
- * (dir_push_url), same signer and sender. Only the document type differs:
- * `wifi.roster` for the people and NGG's say, `wifi.card` for one member's
- * Wi-Fi to show on their own dashboard. There is no Wi-Fi key of its own.
+ * THE CONNECTION IS ATTENDANCE'S (owner, 2026-10-31). NGG already shares one
+ * secret with the gate at CACENTRE — hooks.attendance_secret here, NGG_SECRET on
+ * the gate — for card lookups and check-ins. The Wi-Fi rides it: every call is a
+ * JSON POST to the gate (CACENTRE's address, /v1/issuers/ngg/wifi), signed the way
+ * the gate signs to NGG (X-NGG-Timestamp, X-NGG-Signature = sha256=HMAC(secret,
+ * ts.body)). The gate checks it, spends the signature once, and passes it to
+ * CACENTRE. So the Wi-Fi works wherever attendance does: no key of its own, and the
+ * directory key carries the directory only. `typ` is `wifi.roster` for the people
+ * and NGG's say, `wifi.card` for one member's Wi-Fi (and the starting-password list).
  *
- * PASSWORDS ARE SET ON THE MEMBER'S DASHBOARD. The member opens Me → Wi-Fi in
- * this app and chooses their own; the app passes it to CACENTRE, which holds
- * it sealed and never sends it back (wifi_cac_member_view). There are no PINs.
+ * PASSWORDS: CACENTRE gives everybody a starting password and holds it sealed. A
+ * member sees theirs on their dashboard until they choose their own; a member with
+ * no email is handed it at the gate when they check in, or by an admin from the
+ * starting-password list (admin_wifi_cac_starts).
  */
 
 /** Must match WifiStore::ROSTER_MAX at CACENTRE: one push carries at most this many. */
@@ -39,11 +44,47 @@ const WIFI_CAC_EVERY = 900;        // seconds between pushes from the web-cron t
 const WIFI_CAC_LAST = 'wifi_cac_last';
 const WIFI_CAC_ROUTER_FRESH = 86400; // an NGG gateway heard from within this still serves its centre
 
-function wifi_cac_ready(): bool { return dirpush_ready(); }
+/** The attendance secret NGG shares with the gate; empty while attendance is not connected. */
+function wifi_cac_secret(): string {
+    $s = trim((string)(getenv('NGG_GATE_SECRET') ?: ($GLOBALS['CONFIG']['hooks']['attendance_secret'] ?? '')));
+    return strlen($s) >= 16 ? $s : '';
+}
 
-/** POST one Wi-Fi document over the directory's connection. */
-function wifi_cac_post(string $path, string $typ, array $claims, int $timeout = 60): array {
-    return dirpush_post(dirpush_base() . $path, dirpush_sign($typ, $claims), $timeout);
+function wifi_cac_ready(): bool { return wifi_cac_secret() !== '' && function_exists('curl_init'); }
+
+/**
+ * One Wi-Fi call, as the gate checks it (gate/src/wifi.ts): the body, and its
+ * signature over "ts.body" with the attendance secret — NGG's own scheme.
+ *
+ * @return array{url:string, body:string, headers:list<string>}
+ */
+function wifi_cac_request(string $typ, array $claims, string $secret, int $ts): array {
+    /* `n`: two identical calls in one second must not look like a replay to the gate. */
+    $body = json_encode(['typ' => $typ] + $claims + ['n' => bin2hex(random_bytes(8))], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return ['url' => dirpush_base() . '/v1/issuers/ngg/wifi', 'body' => $body, 'headers' => ['Content-Type: application/json', 'Accept: application/json',
+        'X-NGG-Timestamp: ' . $ts, 'X-NGG-Signature: sha256=' . hash_hmac('sha256', $ts . '.' . $body, $secret)]];
+}
+
+/** POST one Wi-Fi call to the gate, on the attendance connection. */
+function wifi_cac_post(string $typ, array $claims, int $timeout = 60): array {
+    $secret = wifi_cac_secret();
+    if ($secret === '') return ['ok' => false, 'error' => 'not_configured'];
+    $rq = wifi_cac_request($typ, $claims, $secret, time());
+    $ch = curl_init($rq['url']);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_HTTPHEADER => $rq['headers'], CURLOPT_POSTFIELDS => $rq['body'],
+    ]);
+    $raw = curl_exec($ch); $err = curl_error($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($err !== '' || $raw === false) { error_log('[wifi-cac] ' . ($err ?: 'no response')); return ['ok' => false, 'error' => 'unreachable']; }
+    $json = json_decode((string)$raw, true);
+    if (!is_array($json)) return ['ok' => false, 'error' => 'bad-response', 'http' => $code];
+    if (empty($json['ok'])) {
+        error_log('[wifi-cac] HTTP ' . $code . ' ' . json_encode($json));
+        if (!isset($json['error']) && isset($json['code'])) $json['error'] = $json['code'];
+    }
+    return $json + ['http' => $code];
 }
 
 /** The reason CACENTRE shows a person, in NGG's words, for a case of the access table. */
@@ -124,7 +165,7 @@ function wifi_cac_push(string $by = 'cron'): array {
     $r = ['ok' => true, 'at' => now_iso(), 'by' => $by, 'sent' => count($people), 'full' => $full, 'applied' => 0, 'refused' => 0, 'gone' => 0,
           'unknownSites' => [], 'refusals' => [], 'error' => ''];
     foreach ($chunks as $chunk) {
-        $res = wifi_cac_post('/api/wifi-roster.php?issuer=ngg', 'wifi.roster', ['full' => $full, 'people' => $chunk]);
+        $res = wifi_cac_post('wifi.roster', ['full' => $full, 'people' => $chunk]);
         if (empty($res['ok'])) { $r['ok'] = false; $r['error'] = (string)($res['error'] ?? 'refused'); break; }
         $r['applied'] += (int)($res['applied'] ?? 0); $r['refused'] += (int)($res['refused'] ?? 0); $r['gone'] += (int)($res['gone'] ?? 0);
         foreach ((array)($res['unknownSites'] ?? []) as $code => $n) $r['unknownSites'][(string)$code] = ($r['unknownSites'][(string)$code] ?? 0) + (int)$n;
@@ -151,7 +192,7 @@ function wifi_cac_tick(): array {
  * down too, and the rest wait for the next tick.
  */
 function wifi_cac_mail_starts(): array {
-    $r = wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', ['op' => 'startPending'], 20);
+    $r = wifi_cac_post('wifi.card', ['op' => 'startPending'], 20);
     if (empty($r['ok'])) return ['ok' => false, 'error' => (string)($r['error'] ?? 'unreachable')];
     $sent = []; $failed = 0; $failRun = 0;
     foreach ((array)($r['people'] ?? []) as $x) {
@@ -178,7 +219,7 @@ function wifi_cac_mail_starts(): array {
     }
     $marked = 0;
     if ($sent) {
-        $c = wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', ['op' => 'startSent', 'sent' => $sent], 20);
+        $c = wifi_cac_post('wifi.card', ['op' => 'startSent', 'sent' => $sent], 20);
         $marked = (int)($c['marked'] ?? 0);
     }
     return ['ok' => true, 'sent' => count($sent), 'failed' => $failed, 'marked' => $marked];
@@ -194,9 +235,32 @@ function wifi_cac_gate(array $p): array {
 function admin_wifi_cac_status(array $p): array {
     $g = wifi_gate($p); if (!$g['ok']) return $g;
     $last = setting_get(WIFI_CAC_LAST);
-    return ['ok' => true, 'configured' => wifi_cac_ready(), 'url' => dirpush_base(), 'routersUrl' => dirpush_base() . '/admin/wifi.php', 'every' => WIFI_CAC_EVERY,
+    return ['ok' => true, 'configured' => wifi_cac_ready(), 'url' => dirpush_base() . '/v1/issuers/ngg/wifi', 'routersUrl' => dirpush_base() . '/admin/wifi.php', 'every' => WIFI_CAC_EVERY,
             'sites' => (object)array_filter(array_map(fn($c) => strtolower(trim((string)$c['code'])), array_column(db_all('SELECT name, code FROM centres'), null, 'name'))),
             'canSend' => $g['scope'] === null, 'last' => is_array($last) ? $last : null];
+}
+
+/**
+ * Everybody still on a starting password, for admins to hand out (owner,
+ * 2026-10-31): members with no email, or whose email never arrives, are given
+ * theirs by a person. Within the admin's own centres. Never a chosen password.
+ */
+function admin_wifi_cac_starts(array $p): array {
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    if (!wifi_cac_ready()) return ['ok' => false, 'error' => 'not_configured'];
+    $r = wifi_cac_post('wifi.card', ['op' => 'startList'], 30);
+    if (empty($r['ok'])) return ['ok' => false, 'error' => (string)($r['error'] ?? 'unreachable')];
+    $centre = array_column(db_all('SELECT memberId, centre FROM members'), 'centre', 'memberId');
+    $out = [];
+    foreach ((array)($r['people'] ?? []) as $x) {
+        $c = (string)($centre[(string)($x['id'] ?? '')] ?? '');
+        if (!wifi_scope_has($g['scope'], $c)) continue;
+        $out[] = ['id' => (string)$x['id'], 'name' => (string)($x['name'] ?? ''), 'printedId' => (string)($x['printedId'] ?? ''),
+                  'username' => (string)($x['username'] ?? ''), 'code' => (string)($x['code'] ?? ''), 'centre' => $c];
+    }
+    usort($out, fn($a, $b) => [$a['centre'], $a['name']] <=> [$b['centre'], $b['name']]);
+    audit('wifi.cacentre.starts', (string)$g['requester']['memberId'], 'ngg', ['n' => count($out)]);
+    return ['ok' => true, 'people' => $out];
 }
 
 function admin_wifi_cac_push(array $p): array {
@@ -234,7 +298,7 @@ function wifi_cac_card(string $localId, string $op = 'show', string $password = 
     $claims = ['id' => $localId, 'op' => in_array($op, ['setPassword', 'newStartCode'], true) ? $op : 'show'];
     if ($op === 'setPassword') $claims['password'] = $password;
     if ($me !== null) $claims['me'] = $me;
-    return wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', $claims, 15);
+    return wifi_cac_post('wifi.card', $claims, 15);
 }
 
 /**

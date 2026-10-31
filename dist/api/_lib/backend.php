@@ -664,6 +664,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.wifi.overview'         => 'admin_wifi_overview',
             'admin.wifi.cacentre'         => 'admin_wifi_cac_status',
             'admin.wifi.cacentre.push'    => 'admin_wifi_cac_push',
+            'admin.wifi.cacentre.starts'  => 'admin_wifi_cac_starts',
             'admin.wifi.gateway.moved'    => 'admin_wifi_gateway_moved',
             'admin.wifi.access.set'       => 'admin_wifi_access_set',
             'admin.wifi.gateway.save'     => 'admin_wifi_gateway_save',
