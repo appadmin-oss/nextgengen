@@ -239,6 +239,8 @@ function web_cron_run(): void {
                 /* Volunteer pay: each finished day decided once (domain/volunteer-pay.php). Hourly. */
                 if (web_cron_due('volpay', web_cron_cfg('volpay', 3600)) && function_exists('volpay_tick')) web_cron_guard('volunteer_pay', fn() => volpay_tick());
                 if (web_cron_due('dirpush', web_cron_cfg('dirpush', 3600)) && function_exists('dirpush_tick')) web_cron_guard('directory_push', fn() => dirpush_tick());
+                // The registration checklist: recount open ones, remind supervisors and families weekly (domain/registration-checklist.php).
+                if (web_cron_due('regcheck', web_cron_cfg('regcheck', 3600)) && function_exists('rcl_tick')) web_cron_guard('registration_checklist', fn() => rcl_tick());
             } finally { @flock($lock, LOCK_UN); }
         }
         @fclose($lock);

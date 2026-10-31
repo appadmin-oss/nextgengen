@@ -1055,6 +1055,7 @@ function admin_application_convert(array $p): array {
         }
     }
     audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id, 'type' => $type, 'start' => $start], (string)($p['ip'] ?? ''));
+    if (function_exists('rcl_start_for_new_member')) rcl_start_for_new_member($newId, (string)$g['requester']['memberId']);   // registration checklist (domain/registration-checklist.php)
     return ['ok' => true, 'memberId' => $newId, 'invoice' => $invoice];
 }
 

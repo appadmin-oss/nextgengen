@@ -4797,3 +4797,47 @@ CREATE TABLE IF NOT EXISTS saturday_formation_dates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (204) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 205 · The registration checklist: admin-defined items, one checklist per member, verdicts, evidence and the reminder ledger ──
+CREATE TABLE IF NOT EXISTS reg_checklist_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  itemId VARCHAR(40) NOT NULL, title VARCHAR(160) NOT NULL, help VARCHAR(600) NOT NULL DEFAULT '',
+  evidence VARCHAR(16) NOT NULL DEFAULT 'none', presence TINYINT NOT NULL DEFAULT 0, maxAgeDays INT NOT NULL DEFAULT 0,
+  sort INT NOT NULL DEFAULT 0, status VARCHAR(16) NOT NULL DEFAULT 'active',
+  createdAt VARCHAR(40) NOT NULL DEFAULT '', createdBy VARCHAR(64) NOT NULL DEFAULT '', updatedAt VARCHAR(40) NOT NULL DEFAULT '', updatedBy VARCHAR(64) NOT NULL DEFAULT '',
+  retiredAt VARCHAR(40) NOT NULL DEFAULT '', retiredBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_rcl_item (itemId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS reg_checklists (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'open', done INT NOT NULL DEFAULT 0, total INT NOT NULL DEFAULT 0,
+  supervisorId VARCHAR(64) NOT NULL DEFAULT '', supervisorKind VARCHAR(16) NOT NULL DEFAULT '', supervisorName VARCHAR(160) NOT NULL DEFAULT '',
+  assignedAt VARCHAR(40) NOT NULL DEFAULT '', assignedBy VARCHAR(64) NOT NULL DEFAULT '', startedAt VARCHAR(40) NOT NULL DEFAULT '', startedBy VARCHAR(64) NOT NULL DEFAULT '',
+  completedAt VARCHAR(40) NOT NULL DEFAULT '', updatedAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_rcl_member (memberId),
+  KEY idx_rcl_sup (supervisorId, status),
+  KEY idx_rcl_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS reg_checklist_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, itemId VARCHAR(40) NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'verified',
+  submissionId VARCHAR(40) NOT NULL DEFAULT '', at VARCHAR(40) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '', reason VARCHAR(400) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_rcl_state (memberId, itemId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS reg_checklist_submissions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  submissionId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL, itemKey VARCHAR(60) NOT NULL, supervisorId VARCHAR(64) NOT NULL,
+  url VARCHAR(600) NOT NULL DEFAULT '', ext VARCHAR(10) NOT NULL DEFAULT '', mime VARCHAR(120) NOT NULL DEFAULT '', bytes INT NOT NULL DEFAULT 0,
+  capturedOn VARCHAR(10) NOT NULL DEFAULT '', note VARCHAR(500) NOT NULL DEFAULT '', verdict VARCHAR(20) NOT NULL, reason VARCHAR(400) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_rcl_sub (submissionId),
+  KEY idx_rcl_sub (memberId, itemKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS reg_checklist_sends (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sendKey VARCHAR(160) NOT NULL, channel VARCHAR(16) NOT NULL DEFAULT '', recipient VARCHAR(190) NOT NULL DEFAULT '',
+  memberId VARCHAR(64) NOT NULL DEFAULT '', sentAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_rcl_send (sendKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (205) ON DUPLICATE KEY UPDATE version = version;

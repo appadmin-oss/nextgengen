@@ -4666,3 +4666,50 @@ From a read-through of both journeys; each item has a test in the
 - **Not done**: bulk actions and a waitlist state on the volunteer review queue;
   the applications CSV still carries guardian phones in full (it is an admissions
   call sheet, now limited to the admin's own centres).
+
+## 2026-10-31 — the registration checklist
+
+- **One list per NGG member, two sources** (`domain/registration-checklist.php`,
+  migration 205). Automatic items are one registry, `RCL_AUTO`, each with a
+  verifier `rcl_verify_<key>()` that reads the record (guardian link, the five
+  membership consents, photo, date of birth, school, emergency contact,
+  courses, the joining invoice while fees are on, a non-proof printed card).
+  They are computed on every read from grouped queries (`rcl_facts`), never
+  stored, and evidence never ticks one. Admin items are `reg_checklist_items`
+  (photo | document | none, presence, max age), retired not deleted.
+- **Supervisors** are suggested by the server (`rcl_candidates`): staff with
+  `people` covering the centre, NGG mentors there with screening recorded
+  (`ms_clearance_bulk`), NGG volunteer mentors and instructors there with
+  safeguarding cleared. "Physically available" is presence at that centre in
+  the last six weeks: `attendance` rows attributed to a centre by the row's own
+  `centreId`/`centre`, else the gate link its device names, else the person's
+  home centre; the check-in desk rota (`attendance_duty`) and `timetable_slots`
+  there. Ranked by Saturdays present, other days, rota, classes, being the
+  member's mentor, and load (cap `RCL_SUPERVISOR_MAX` = 12). Somebody with no
+  presence is listed only to pick with a typed reason (audited). A person is
+  one principal: a volunteer or mentor with a member account is their memberId.
+  `admin.regcheck.assign` re-derives all of this per row, per centre.
+- **Verification** (`member.regcheck.submit`, `rcl_check_evidence`): assigned
+  supervisor only; the file must be ours (`results_file_ok`), its extension
+  and declared type must match the item's evidence, its size bounded (the
+  size `media_objects` recorded wins), its date within `maxAgeDays`, and, for a
+  presence item, the supervisor checked in at the member's centre that day.
+  Every attempt is a `reg_checklist_submissions` row with a verdict and a
+  reason in words. Staff reject reopens (`reg_checklist_state`).
+- **Upload**: `evidence` is a media-aware kind in `upload-sign.php` (a PDF stays
+  a PDF), and a volunteer's card session may sign that kind only, because a
+  volunteer can be the supervisor.
+- **Reminders** through the web-cron (`rcl_tick`, hourly): recount open
+  checklists; each supervisor once an ISO week; each guardian once a week with
+  only the family's items; claimed in `reg_checklist_sends` before sending, at
+  most 60 sends a tick.
+- **Screens**: Control Room → Members → Registration (tab id `reg-checklist`,
+  because `registration` is the alias for the Summer desks), `cr-tab-registration.jsx`;
+  My registrations in the Mentor Portal and the progress card for the member
+  (Me) and family (Today), `mp15-registration.jsx`. `admin_application_convert`
+  starts a new NGG member's checklist with one guarded call.
+- Merge policy: `reg_checklists` keep the survivor's, state moves unique,
+  submissions and sends move.
+- Tests: the registration checklist section of `api/tests/run.php` (rolled back
+  after it runs) and the convert check beside the convert test;
+  `tests/registration-checklist.test.js` (in `test:all`, `npm run test:regcheck`).

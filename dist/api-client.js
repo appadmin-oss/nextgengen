@@ -1074,6 +1074,13 @@
       wifiPassword: (password) => request('/member/wifi.php', { body: { action: 'password', password } }),
       // Their volunteer wallet, when they volunteer with NGG (domain/volunteer-pay.php); null when they don't.
       volunteerPay: () => request('/member/volunteer-pay.php'),
+      /* The registration checklist (domain/registration-checklist.php): the members I
+         supervise, my own progress, and evidence for one item. */
+      regcheck: {
+        mine:     () => request('/member/registration-checklist.php' + qs({ view: 'mine' })),
+        progress: () => request('/member/registration-checklist.php' + qs({ view: 'progress' })),
+        submit:   (body) => request('/member/registration-checklist.php', { body: Object.assign({}, body || {}, { action: 'submit' }) }),
+      },
       volunteerBank: (d) => request('/member/volunteer-pay.php', { body: { action: 'bank', bankName: d.bankName, accountNumber: d.accountNumber, accountName: d.accountName } }),
       /* Self-service. No memberId travels in any of these — the server reads it
          from the session, which is what keeps them from being an enumeration
@@ -1372,6 +1379,8 @@
       verify:   (data) => request('/family/verify.php', { body: data }),
       logout:   (everywhere) => request('/family/logout.php', { body: { everywhere: !!everywhere } }),
       ward:     (linkId) => request('/family/ward.php' + qs({ link: linkId })),
+      // A ward's registration progress: done, what is left, who is helping (first name).
+      registration: (linkId) => request('/family/registration.php' + qs({ link: linkId })),
       // A child's Anchor week, for a parent's link; writes go through act('anchor.confirm' | 'anchor.remark').
       anchor:   (linkId) => request('/family/anchor.php' + qs({ link: linkId })),
       pay:      (linkId) => request('/family/pay.php', { body: { link: linkId } }),
@@ -1689,6 +1698,15 @@
         ids:       (o) => request('/admin/courses.php' + qs(Object.assign({ view: 'placement', ids: 1 }, o || {}))),
         health:    (o) => request('/admin/courses.php' + qs(Object.assign({ view: 'health' }, o || {}))),
         set:       (action, memberIds, extra) => request('/admin/courses.php', { body: Object.assign({ action, memberIds }, extra || {}) }),
+      },
+      /* The registration checklist (domain/registration-checklist.php). Capability: people. */
+      regcheck: {
+        list:    (o) => request('/admin/registration-checklist.php' + qs(Object.assign({ view: 'list' }, o || {}))),
+        ids:     (o) => request('/admin/registration-checklist.php' + qs(Object.assign({ view: 'list', ids: 1 }, o || {}))),
+        member:  (memberId) => request('/admin/registration-checklist.php' + qs({ view: 'member', memberId })),
+        suggest: (memberIds) => request('/admin/registration-checklist.php' + qs({ view: 'suggest', memberIds: (memberIds || []).join(',') })),
+        items:   () => request('/admin/registration-checklist.php' + qs({ view: 'items' })),
+        act:     (action, body) => request('/admin/registration-checklist.php', { body: Object.assign({}, body || {}, { action }) }),
       },
       engagementPortal: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'portal' }, opts || {}))),
       /* Whether the community is a community: reply rate, distinct voices,

@@ -113,7 +113,7 @@ not shown at all, so your sidebar may be shorter than a colleague's.
 
 | Section | What it is for |
 |---|---|
-| Members | The year-round roster. Search, filter, edit, bulk actions, ID printing. |
+| Members | The year-round roster. Search, filter, edit, bulk actions, ID printing. **Registration**: each new member's registration checklist and who is helping them. |
 | Applications | People who applied and have not been processed yet. |
 | Volunteers | Volunteer roster and their status. |
 | Mentors / Mentorship | Mentor records and mentor–member pairings. |
@@ -464,6 +464,73 @@ Every change a staff account makes is written to the **audit log**
 (System → Audit trail) with who, what and when. A bulk run is **one** entry
 naming the action, the count and every refusal — not one entry per row —
 so "who suspended forty people on Tuesday" has a readable answer.
+
+### Registration: helping a new member finish registering
+
+Control Room → Members → **Registration** (`people`). Every NGG member has a
+registration checklist; a member accepted from an application gets theirs at
+once. A named **supervisor** at the member's centre helps them through it, and
+the member and their guardians see how far along they are.
+
+The checklist has two kinds of item:
+
+- **From the record.** Guardian linked, consents recorded (taking part,
+  emergency medical care and records granted; photos and the website answered),
+  photo on file, date of birth, school, emergency contact, courses placed, the
+  membership fee paid (only while fees are switched on) and the ID card
+  printed (a proof does not count). These are done when the member's record
+  shows them, and only then: a photo of a birth certificate does not give the
+  record a date of birth. Fix the record, and the item passes.
+- **Items staff add.** A title, what the supervisor should do, the evidence it
+  takes (a photo, a document, or a note), whether the supervisor must be at the
+  member's centre that day, and how old the evidence may be.
+
+| You want to… | Do this |
+|---|---|
+| See who has not finished | **Show: Still registering**. Each row has their progress, what is left and who is helping. **Nobody helping yet** lists the ones without a supervisor. |
+| Give a member a supervisor | Open the member → **Assign a supervisor**, or select several from one centre → **Assign a supervisor**. Pick from **Suggested** and press **Assign**. |
+| Understand a suggestion | Each line says why, from what the system already holds: check-ins at that centre's gate on recent Saturdays and in the last six weeks, the check-in desk rota, the timetable there, what the person says they are free for, how many members they already support, and that their safeguarding is cleared. A member's own mentor is marked **Already their mentor**. |
+| Ask someone who has not been at the centre lately | Under **Not seen at …**, press **Assign with a reason** and say why. The reason is kept in the audit log. Nobody uncleared is ever listed. |
+| See what is left for one member, and the evidence | Open the member. **Still to do**, **Done** and **Evidence submitted** (every attempt, accepted or refused, with the reason). **Open file** shows a submitted file. |
+| Reject an item that was verified | Open the member → **Done** → **Reject**, and say what was wrong. It reopens and the supervisor is told why. Items from the record cannot be rejected: correct the record. |
+| Add, change, reorder or retire an item | **Add an item** at the top; open an item under **Items staff added** to **Change**, **Move up**, **Move down** or **Retire** it. A retired item leaves every checklist but keeps its history; **Bring it back** restores it. |
+| Start checklists for members who joined before this existed | **Start N checklists** at the top (at most 500 a press; it says how many are left). Nobody is told until a supervisor is assigned. |
+| Help a member yourself | Assign yourself, then use **Show: Mine to help**. Open the member and press **Submit** (or **Check again** for an item from the record). |
+
+**Who may supervise.** Staff holding `people` whose centres include the
+member's; an NGG mentor at that centre whose screening is recorded; an NGG
+volunteer mentor or instructor at that centre whose safeguarding is cleared.
+Nobody supports more than 12 members at once: a thirteenth is refused and
+named. The assignment checks all of this again when you press it, member by
+member, whatever the screen showed; a scoped admin is refused for members
+outside their centres.
+
+**What counts as evidence.** The supervisor submits from **My registrations**
+in the Mentor Portal (My role → My registrations), or from this screen if they
+are staff. An item counts only when the evidence is the kind the item asks for
+(a photo is JPG, PNG, WebP or HEIC; a document is a PDF, a Word file or a photo
+of the page; at most 10 MB, uploaded here, not a link elsewhere), is no older
+than the item allows, comes from the member's assigned supervisor, and — when
+the item says so — the supervisor checked in at the member's centre that day.
+A refused attempt says why in words, and is kept.
+
+**Who is told.** The supervisor, in the app, when they are assigned and once a
+week while any of their members has items open. The guardians, by email and
+in the family account, once a week, with only the things the family can do
+(consents, the photo, date of birth, school, an emergency contact, the fee).
+The member sees "Your registration: 6 of 9 done" on **Me**, with what is left
+and the supervisor's first name; a guardian sees the same on **Today**. Neither
+sees any evidence, or anyone else's.
+
+| Refusal | What it means |
+|---|---|
+| cannot supervise there | Not staff with `people` for that centre, and not a cleared NGG mentor or volunteer there. |
+| not seen at the centre — give a reason | No check-in, rota or class there in six weeks. Assign with a reason, or pick someone suggested. |
+| the supervisor is at the cap | They already support 12 members. |
+| not in a centre you administer | Outside your centre scope. |
+| This item needs a photo; that is a PDF | The evidence was the wrong kind of file. |
+| That is 45 days old | Older than the item accepts. |
+| This item needs you at … | The supervisor had not checked in at the member's centre that day. |
 
 ---
 

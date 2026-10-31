@@ -802,6 +802,7 @@ function Fp3TodayMore({ c, w }) {
   return (
     <div className="fp3x-more">
       <Fp3Anchor c={c} linkId={w.linkId} first={first} role="parent" compact/>
+      {typeof RclProgress === "function" ? <RclProgress who="family" linkId={w.linkId} first={first}/> : null}
       <section className="fp3x-card" aria-labelledby="fp3x-qa">
         <h2 id="fp3x-qa" className="fp3x-h">For {first}</h2>
         <div className="fp3x-acts">
