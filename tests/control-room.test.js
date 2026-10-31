@@ -295,6 +295,18 @@ function cleanup() {
     const rows = await C.$$eval('.cr-att-row', r => r.map(x => x.innerText.replace(/\s+/g, ' ').trim()));
     const decide = rows.find(x => /to decide/.test(x)) || '', owe = rows.find(x => /owing a fine/.test(x)) || '';
     chk('conduct: a sanction to decide says Decide, and an owed fine says Collect with the amount', /Decide/.test(decide) && /Collect/.test(owe) && /₦2,000/.test(owe) && !rows.some(x => /^\d+ fined\b/.test(x)));
+    /* Records needing attention: the fixes, not "Review". A gap a family can
+       fill is asked for in one press, after a confirm that reads the count. */
+    const rec = rows.find(x => /with no date of birth/.test(x)) || '';
+    chk('records: a missing date of birth offers to ask the families, children with no guardian contact come first',
+      /Ask families/.test(rec) && rows.findIndex(x => /guardian contact/.test(x)) < rows.findIndex(x => /date of birth/.test(x)) && !rows.some(x => /Review$/.test(x)));
+    await C.click('.cr-att-row:has-text("with no date of birth")');
+    await C.waitForSelector('.cr-confirm', { timeout: 10000 });
+    const ask = await C.innerText('.cr-confirm');
+    await C.click('.cr-confirm .is-primary');
+    await C.waitForFunction(() => /Emailed/.test((document.querySelector('.cr-toast') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});
+    const said = await C.evaluate(() => (document.querySelector('.cr-toast') || {}).innerText || '');
+    chk('records: …it asks first, naming how many, then says what was sent', /^Ask \d+ famil/.test(ask) && /Emailed \d+ famil/.test(said));
     await C.click('.cr-att-row:has-text("to decide")');
     await C.waitForFunction(() => /\/control\/money\/conduct/.test(location.pathname), null, { timeout: 15000 }).catch(() => {});
     chk('conduct: …Decide opens Conduct & fines, where it is decided', /\/control\/money\/conduct/.test(new URL(C.url()).pathname));

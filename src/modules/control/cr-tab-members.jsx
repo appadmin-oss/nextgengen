@@ -1060,12 +1060,41 @@ function crMbDashBlocks(d, ctx) {
       { n: c.promoted, l: "promoted to NGV", s: "Moved on to NextGen Vanguard.", tone: "ok", act: "See who", onClick: seg("promoted_ngv") },
     ] });
   }
-  const QUAL = [["duplicate_groups", "possible duplicate records", null], ["minor_no_guardian", "children with no guardian contact", "minor_no_guardian"], ["no_email", "with no email", "no_email"],
-    ["no_centre", "in no centre", "no_centre"], ["unknown_centre", "in a centre that no longer exists", "unknown_centre"], ["no_phone", "with no phone", "no_phone"], ["no_dob", "with no date of birth", "no_dob"]];
-  out.push({ type: "attention", span: c ? 3 : 6, title: "Records needing attention", action: "Data quality", onAction: () => ctx.go("members", "quality"),
+  /* Records needing attention, the same way: each row is the fix, not a
+     filtered list with "Review" on it. A gap a family can fill is ASKED for
+     in one press (admin.profile.remind: the same email the record drive
+     sends, listing what is missing); a gap only staff can fill opens the
+     roster on exactly those records. Children with no guardian contact come
+     first and are staff work — there is nobody to email. */
+  const askFamilies = (key, what) => async () => {
+    let r;
+    try { r = await NGGApi.admin.members.ids({ segment: key }); }
+    catch (e) { ctx.toast(crErr(e, "Couldn’t find who that is."), null, true); return; }
+    const ids = r.memberIds || [];
+    if (!ids.length) { ctx.toast("Nobody to ask — the figure has changed since this page loaded."); return; }
+    const ok = await ctx.confirm({ title: "Ask " + crPlural(ids.length, "family", "families") + " for " + what + "?",
+      body: "Each gets an email listing what is missing from the record, with a link to fill it in on the dashboard." + (r.capped ? " This sends to the first " + crNum(ids.length) + " of " + crNum(r.total) + "." : ""),
+      cta: "Email " + crNum(ids.length) });
+    if (!ok) return;
+    try {
+      const s = await NGGApi.admin.memberRecords.remind(ids);
+      const res = s.results || [], noMail = res.filter(x => x.error === "no_email").length, done = res.filter(x => x.unchanged).length, other = res.filter(x => !x.ok && x.error !== "no_email").length;
+      ctx.toast("Emailed " + crPlural(s.sent || 0, "family", "families") + [noMail ? crNum(noMail) + " have no email to send to" : "", done ? crNum(done) + " already complete" : "", other ? crNum(other) + " not sent" : ""].filter(Boolean).map(x => " · " + x).join(""), null, !!other);
+    } catch (e) { ctx.toast(crErr(e, "Couldn’t send those emails."), null, true); }
+  };
+  const QUAL = [
+    { k: "minor_no_guardian", l: "children with no guardian contact", s: "Nobody to call in an emergency. Add a parent or guardian to each.", tone: "bad", age: 9, act: "Add guardians", onClick: seg("minor_no_guardian") },
+    { k: "duplicate_groups", l: "possible duplicate records", s: "One person, two records: their card and fees land twice. Merge them.", tone: "bad", age: 8, act: "Merge", onClick: () => ctx.go("members", "quality") },
+    { k: "unknown_centre", l: "in a centre that no longer exists", s: "Select them all and move them to a current centre.", tone: "warn", age: 7, act: "Move", onClick: seg("unknown_centre") },
+    { k: "no_centre", l: "in no centre", s: "No card prefix, no centre reports. Select them all and set a centre.", tone: "warn", age: 6, act: "Assign", onClick: seg("no_centre") },
+    { k: "no_dob", l: "with no date of birth", s: "Ask their families: one email each, listing what is missing.", tone: "warn", age: 5, act: "Ask families", onClick: askFamilies("no_dob", "a date of birth") },
+    { k: "no_email", l: "with no email", s: "No sign-in by email and no reminders reach them. Add one from the record.", tone: "warn", age: 4, act: "Add emails", onClick: seg("no_email") },
+    { k: "no_phone", l: "with no phone", s: "Add a number from the record, or ask at the desk.", tone: "warn", age: 3, act: "Add phones", onClick: seg("no_phone") },
+  ];
+  out.push({ type: "attention", span: c ? 3 : 6, title: "Records needing attention", sub: "Most serious first", action: "Data quality", onAction: () => ctx.go("members", "quality"),
     empty: "Nothing outstanding — every record has a name, a way to reach someone, and a centre.",
-    rows: QUAL.map(x => ({ n: q[x[0]] || 0, l: x[1], tone: x[0] === "minor_no_guardian" || x[0] === "duplicate_groups" ? "bad" : "warn", onClick: x[2] ? seg(x[2]) : () => ctx.go("members", "quality") }))
-      .concat(o.consent && o.consent.participants > 0 ? [{ n: o.consent.unrecorded, l: "of " + crNum(o.consent.participants) + " with no publication consent", tone: "neutral", onClick: seg("no_consent") }] : []) });
+    rows: QUAL.map(x => Object.assign({}, x, { n: q[x.k] || 0 }))
+      .concat(o.consent && o.consent.participants > 0 ? [{ n: o.consent.unrecorded, l: "with no publication consent", s: "Of " + crNum(o.consent.participants) + " members. They stay off the public site until consent is recorded.", tone: "neutral", age: 0, act: "See who", onClick: seg("no_consent") }] : []) });
   if (c) out.push({ type: "note", span: 6, icon: "scales", text: "Fines imposed to date: " + fmtMoney(c.finesImposed) + ", of which " + fmtMoney(c.finesOwed) + " is still owed.", sub: "Proposed, waived and lifted fines are not counted. " + crNum(c.promoted365) + " promoted to NGV in the last 12 months." });
   out.push({ type: "columns", span: 4, title: "Joining, month by month", big: crNum(h.new365), sub: "joined in 12 months", bars: (o.growth || []).map(g => ({ l: new Date(g.month + "-01T00:00:00").toLocaleDateString("en-GB", { month: "short" }), v: g.joined, tip: g.month + " · " + crPlural(g.joined, "member") })) });
   out.push({ type: "bars", span: 2, title: "By centre", empty: "No centres yet.", rows: (o.byCentre || []).map(x => [x.name + " · " + crNum(x.active) + " active", x.total]) });
