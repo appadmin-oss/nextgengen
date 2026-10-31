@@ -306,6 +306,7 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await fp.waitForURL(/\/pay\//, { timeout: 20000 });
     const inv = JSON.parse(php(`echo json_encode(db_row("SELECT purpose, total FROM membership_invoices WHERE memberId = 'NGG-FU-KID' AND status = 'open' ORDER BY id DESC LIMIT 1"));`));
     chk('paying ahead opens an advance invoice for the figure on screen, priced by the server', inv && inv.purpose === 'advance' && want.replace(/\D/g, '') === String(inv.total));
+    await waitForBoot(fp);   // /pay is a full page load: the app boots again (a minute, cold, in dev) before it can say anything
     await waitText(fp, /Pay ahead for Tobi/, 40000);
     chk('…and the /pay page names it as paying ahead', true);
 
