@@ -1347,7 +1347,7 @@ function humanizeError(message, code) {
    THE ADMIN ACTION LAYER — one selection primitive, one bulk bar, one runner.
 
    Every screen in this console had rolled its own. There were at least six
-   variants of "tick some rows and do a thing to them": AdminApplications kept a
+   variants of "tick some rows and do a thing to them": the old applications screen (removed) kept a
    Set and awaited a loop, SummerPending kept a Set called `ticked` with its own
    bar, the review desk kept `picked` and passed an `onBulk` up, the assessment
    screen kept an object map, the mentor sheet took an array of ids, and the two

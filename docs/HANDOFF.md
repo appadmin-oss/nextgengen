@@ -4630,3 +4630,39 @@ Two branches had built the same things twice. What the merge kept:
 - The family email lost its inline `style` attributes.
 - Tests: the formation section of `api/tests/run.php`;
   `tests/formation-editor.test.js` (in `test:all`, `npm run test:formation`).
+
+## 2026-10-31 — application review fixes (NGG membership and volunteers)
+
+From a read-through of both journeys; each item has a test in the
+"Application review fixes" block of `api/tests/run.php`.
+
+- **Siblings**: convert matched "already a member" on email alone, so the second
+  child on a parent's email got no record. Now email + date of birth (or name).
+- **Details required**: the Club's guardian/school/consent checks ran only when
+  the request sent `details`; leaving it out skipped them. Now `details_required`.
+- **Changing an application** needs a 6-digit code emailed to that address
+  (`app_edit_code_check`, stored hashed in `details._edit`, stripped from the
+  admin list).
+- **Convert guards**: refuses a declined application, re-checks age 10–17,
+  asks for a centre instead of defaulting to Egbeda (must be an active centre).
+  `status=accepted` for a child is refused (`use_convert`).
+- **Waitlist** stays in the inbox (`status` accepts a comma list); waitlist and
+  reject tell the family by email and text (`app_tell_family`).
+- **Centre scope** on applications list/status/convert/update/delete; volunteer
+  list filtered in SQL above the caps; decline and safeguard scope-checked.
+- **Volunteer safeguarding**: two referees + declaration on both forms
+  (`volunteer_apply_safeguarding`); under 18 needs a guardian who agrees, and
+  approval needs `guardianConfirmed` (recorded in `consents`,
+  type `volunteer_guardian`). The instructor roster refuses until
+  `safeguarding = 'cleared'`, and its per-child queries are now two grouped ones.
+- **Programmes**: volunteer dedupe is per programme; approving a second-programme
+  application widens the volunteer to `both`. NGG's volunteer door checks the
+  centre runs the Club. Control Room has the `ngg_volunteer_applications_open` switch.
+- **Copy and structure**: welcome email no longer says "cohort"/"Summer Students";
+  admin alert says "NGG membership"; decline email is programme-aware; inline
+  styles removed from these emails. `window.__nggProgram` removed (the URL is the
+  state). Unmounted `AdminApplications` and `ApplicationEditor` deleted.
+  `/join/volunteer` rebuilt with classes (`.nvj-*`, `.vsg-*`).
+- **Not done**: bulk actions and a waitlist state on the volunteer review queue;
+  the applications CSV still carries guardian phones in full (it is an admissions
+  call sheet, now limited to the admin's own centres).

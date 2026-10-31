@@ -522,6 +522,67 @@ function intake_photo_accept(string $incoming): string {
     return '';
 }
 
+/**
+ * The safeguarding part of a volunteer application: two referees and the
+ * declaration, and for an applicant under 18 their guardian, who must agree.
+ * Returns ['ok', 'details'] or a refusal naming the field.
+ */
+function volunteer_apply_safeguarding(array $p, int $age): array {
+    $refs = [];
+    foreach (array_slice(is_array($p['referees'] ?? null) ? $p['referees'] : [], 0, 2) as $r) {
+        $n = mb_substr(trim((string)($r['name'] ?? '')), 0, 120); $c = mb_substr(trim((string)($r['contact'] ?? '')), 0, 160);
+        $rel = mb_substr(trim((string)($r['relation'] ?? '')), 0, 80);
+        if ($n !== '' && $c !== '') $refs[] = ['name' => $n, 'contact' => $c, 'relation' => $rel];
+    }
+    if (count($refs) < 2) return ['ok' => false, 'error' => 'referees_required', 'field' => 'referees', 'message' => 'Give two referees who are not family, with a phone number or email for each.'];
+    if (strcasecmp($refs[0]['contact'], $refs[1]['contact']) === 0) return ['ok' => false, 'error' => 'referees_same', 'field' => 'referees', 'message' => 'Your two referees need different contact details.'];
+    if (empty($p['declaration'])) return ['ok' => false, 'error' => 'declaration_required', 'field' => 'declaration', 'message' => 'Read and agree to the safeguarding declaration.'];
+    $d = ['referees' => $refs, 'declaration' => ['agreed' => true, 'version' => VOLUNTEER_DECLARATION_VERSION, 'at' => now_iso()]];
+    if ($age < 18) {
+        $gd = is_array($p['guardian'] ?? null) ? $p['guardian'] : [];
+        $gn = mb_substr(trim((string)($gd['name'] ?? '')), 0, 120);
+        $gp = sms_normalize((string)($gd['phone'] ?? ''));
+        $ge = strtolower(trim((string)($gd['email'] ?? '')));
+        if ($gn === '' || $gp === '') return ['ok' => false, 'error' => 'guardian_required', 'field' => 'guardian', 'message' => 'Under 18: give your parent or guardian’s name and phone number.'];
+        if ($ge !== '' && !filter_var($ge, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_guardian_email', 'field' => 'guardian'];
+        if (empty($gd['consent'])) return ['ok' => false, 'error' => 'guardian_consent_required', 'field' => 'guardian', 'message' => 'Under 18: your parent or guardian must agree to you volunteering.'];
+        $d['guardian'] = ['name' => $gn, 'phone' => $gp, 'email' => $ge, 'consentOnForm' => true];
+    }
+    return ['ok' => true, 'details' => $d];
+}
+const VOLUNTEER_DECLARATION_VERSION = '2026-10-31';
+
+/**
+ * Changing an application already sent: null when $code is the one emailed
+ * to that application's address (and spends it), else a refusal that has
+ * just emailed a fresh code. Codes last 30 minutes; five wrong tries end one.
+ */
+function app_edit_code_check(int $appId, string $code, string $email, string $first): ?array {
+    $a = db_row('SELECT details FROM applications WHERE id = ?', [$appId]);
+    $det = json_decode((string)($a['details'] ?? ''), true) ?: [];
+    $ec = is_array($det['_edit'] ?? null) ? $det['_edit'] : null;
+    $code = preg_replace('/\D/', '', $code);
+    if ($ec && $code !== '' && strtotime((string)$ec['exp']) > time() && (int)($ec['tries'] ?? 0) < 5) {
+        if (hash_equals((string)$ec['hash'], hash('sha256', $appId . '|' . $code))) {
+            unset($det['_edit']);
+            db_update('applications', ['details' => json_encode($det, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)], ['id' => $appId]);
+            return null;
+        }
+        $det['_edit']['tries'] = (int)($ec['tries'] ?? 0) + 1;
+        db_update('applications', ['details' => json_encode($det, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)], ['id' => $appId]);
+        return ['ok' => false, 'error' => 'edit_code_wrong', 'field' => 'editCode', 'message' => 'That code is not right. Check the latest email from NGG.'];
+    }
+    $new = (string)random_int(100000, 999999);
+    $det['_edit'] = ['hash' => hash('sha256', $appId . '|' . $new), 'exp' => gmdate('Y-m-d\TH:i:s\Z', time() + 1800), 'tries' => 0];
+    db_update('applications', ['details' => json_encode($det, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)], ['id' => $appId]);
+    @send_mail($email, 'Your code to change the NGG application', email_template(['title' => 'Change the application',
+        'intro' => 'Somebody asked to change ' . ($first !== '' ? $first . '’s' : 'an') . ' NGG application sent from this address. If that was you, use this code within 30 minutes.',
+        'bodyHtml' => '<p class="code">' . esc_html($new) . '</p><p>If it was not you, ignore this email. Nothing changes without the code.</p>',
+        'footNote' => 'Next Generation Genius']));
+    return ['ok' => false, 'error' => 'edit_code_sent', 'field' => 'editCode', 'masked' => function_exists('mask_email') ? mask_email($email) : '',
+        'message' => 'This child has already applied. We emailed a 6-digit code to ' . (function_exists('mask_email') ? mask_email($email) : 'that address') . ': enter it to update the application.'];
+}
+
 function public_apply(array $p): array {
     $kind = (string)($p['kind'] ?? 'teen');
     if (!in_array($kind, ['teen', 'mentor', 'volunteer'], true)) return ['ok' => false, 'error' => 'bad_kind'];
@@ -564,6 +625,7 @@ function public_apply(array $p): array {
     // Adults only for mentor/volunteer; the teen branch enforces 10–17 below.
     if ($kind !== 'teen' && $dobAge < 16) return ['ok' => false, 'error' => 'dob_too_young'];
 
+    $details = null;
     $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $programme = ''; $courses = []; $faculty = ''; $visibilityConsent = 0;
     $photoUrl = intake_photo_accept((string)($p['photoUrl'] ?? ''));
     if ($kind === 'teen') {
@@ -623,7 +685,12 @@ function public_apply(array $p): array {
         $program = (string)($p['program'] ?? '') === 'anchor' ? 'anchor' : '';
         $centre = substr(trim((string)($p['centre'] ?? '')), 0, 80);
         if ($centre === '') return ['ok' => false, 'error' => 'centre_required'];
-        if (!db_row("SELECT id FROM centres WHERE name = ? AND status = 'active' LIMIT 1", [$centre])) return ['ok' => false, 'error' => 'invalid_centre'];
+        $hitC = db_row("SELECT name, programmes FROM centres WHERE lower(name) = ? AND status = 'active' LIMIT 1", [mb_strtolower($centre)]);
+        if (!$hitC) return ['ok' => false, 'error' => 'invalid_centre'];
+        $centre = (string)$hitC['name'];
+        // NGG's own door files an NGG volunteer, so the centre must run the Club.
+        if ($program === 'anchor' && function_exists('centre_serves') && !centre_serves($hitC, 'ngg'))
+            return ['ok' => false, 'error' => 'centre_not_offered', 'detail' => $centre . ' does not run the NGG Club.'];
         if ($program === 'anchor') {
             // NGG volunteers serve year-round activities, not the Summer
             // School's courses: an area from the NGG catalogue, and at least
@@ -659,6 +726,12 @@ function public_apply(array $p): array {
         if (!in_array($programme, VOL_PROGRAMMES, true)) return ['ok' => false, 'error' => 'bad_programme'];
         // Optional opt-in to be featured (photo + first name) on the public site.
         $visibilityConsent = !empty($p['visibilityConsent']) ? 1 : 0;
+        /* Safeguarding starts on the form: two referees who can vouch for the
+           applicant, and a signed declaration. Nobody works with children on
+           an application that has neither. */
+        $vd = volunteer_apply_safeguarding($p, $dobAge);
+        if (empty($vd['ok'])) return $vd;
+        $details = $vd['details'];
     } else {
         $role = substr(trim((string)($p['role'] ?? '')), 0, 60);
     }
@@ -673,7 +746,12 @@ function public_apply(array $p): array {
     /* The Club application (v2026.10) sends the rest of what the old Google
        Form asked, and the typed agreements. Checked as a whole before any
        write: a refused agreement or a malformed phone saves nothing. */
-    $details = null; $agree = [];
+    $details = $details ?? null; $agree = [];
+    /* The Club's application carries the guardian, the school and the
+       agreements. A request without them is refused, not filed: the checks
+       below ran only when the form sent them, so leaving them out skipped
+       guardian and consent entirely. */
+    if ($kind === 'teen' && $program !== 'summer' && !is_array($p['details'] ?? null)) return ['ok' => false, 'error' => 'details_required', 'message' => 'The guardian, school and agreements are needed. Reload the form and try again.'];
     if ($kind === 'teen' && $program !== 'summer' && is_array($p['details'] ?? null)) {
         $cd = club_apply_details($p['details'], $why);
         if (empty($cd['ok'])) return $cd;
@@ -697,9 +775,15 @@ function public_apply(array $p): array {
        date of birth within the programme, so siblings sharing a parent's email
        stay separate. An application not yet decided is UPDATED with the newer
        answers; a decided one is left as it was. */
-    if ($details !== null) {
+    if ($kind === 'teen' && $details !== null) {
         $prev = db_row("SELECT id, ref, status FROM applications WHERE kind = 'teen' AND lower(email) = ? AND dob = ? AND program = ? ORDER BY id DESC LIMIT 1", [$email, $dob, $program]);
         if ($prev && in_array((string)$prev['status'], ['new', 'reviewing', 'waitlist', ''], true)) {
+            /* Changing an application someone already sent needs a code from
+               that inbox: an email and a date of birth are not a secret, and
+               without this anybody who knew both could replace a child's
+               guardian, phone and photo. */
+            $chk = app_edit_code_check((int)$prev['id'], (string)($p['editCode'] ?? ''), $email, $first);
+            if ($chk !== null) return $chk + ['ref' => intake_reference($kind, (int)$prev['id'])];
             db_update('applications', [
                 'name' => $name, 'firstName' => $first, 'lastName' => $last, 'otherName' => $other, 'sex' => $sex, 'age' => $age ?: null,
                 'centre' => $centre, 'track' => $track, 'faculty' => $faculty, 'why' => $why, 'phone' => $phone,
@@ -715,9 +799,14 @@ function public_apply(array $p): array {
     /* Siblings share a parent's email, so the Club form (which sends a date of
        birth it has checked) is guarded on email AND date of birth; "Apply for
        another child" must not come back as the first child's reference. */
-    $dupe = $details !== null
+    /* A volunteer is a duplicate within the same programme only: somebody who
+       registered for the Summer School and then for the Club is two
+       applications, not the first one's reference handed back. */
+    $dupe = $kind === 'teen' && $details !== null
         ? db_row('SELECT id FROM applications WHERE lower(email) = ? AND dob = ? AND kind = ? AND createdAt > ? LIMIT 1', [$email, $dob, $kind, $cutoff])
-        : db_row('SELECT id FROM applications WHERE lower(email) = ? AND kind = ? AND createdAt > ? LIMIT 1', [$email, $kind, $cutoff]);
+        : ($kind === 'volunteer'
+            ? db_row("SELECT id FROM applications WHERE lower(email) = ? AND kind = 'volunteer' AND COALESCE(NULLIF(programme,''),'summer') = ? AND createdAt > ? LIMIT 1", [$email, $programme ?: 'summer', $cutoff])
+            : db_row('SELECT id FROM applications WHERE lower(email) = ? AND kind = ? AND createdAt > ? LIMIT 1', [$email, $kind, $cutoff]));
     if ($dupe) {
         audit('apply.' . $kind, null, $email, ['name' => $name, 'duplicate' => true], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'ref' => intake_reference($kind, (int)$dupe['id']), 'duplicate' => true, 'whatsapp' => $whatsapp];
@@ -735,7 +824,7 @@ function public_apply(array $p): array {
         'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
     ]);
     $ref = intake_reference($kind, $appId);
-    if ($details !== null) club_apply_consents_record($ref, $agree, $details);
+    if ($kind === 'teen' && $details !== null) club_apply_consents_record($ref, $agree, $details);
     if ($kind === 'volunteer') {
         event_emit('volunteer.applied', [
             'ref' => $ref, 'name' => $name, 'role' => $role, 'courses' => $courses,
@@ -743,7 +832,7 @@ function public_apply(array $p): array {
         ]);
     }
     // Notify the admissions inbox so applications don't sit unseen.
-    $label = $kind === 'volunteer' ? (($program === 'anchor' ? 'NGG volunteer · ' : 'Summer volunteer · ') . $role) : ($kind === 'mentor' ? 'mentor' : ($program === 'summer' ? 'Summer' : 'Anchor 12'));
+    $label = $kind === 'volunteer' ? (($program === 'anchor' ? 'NGG volunteer · ' : 'Summer volunteer · ') . $role) : ($kind === 'mentor' ? 'mentor' : ($program === 'summer' ? 'Summer School' : 'NGG membership'));
     intake_admin_alert("New {$label} application — {$name}", [
         'title' => 'New application',
         'intro' => "{$name} just applied.",
@@ -1180,5 +1269,7 @@ function public_volunteer_context(): array {
         'coursesByFaculty' => volunteer_courses_by_faculty(),
         'faculties' => volunteer_faculty_options(),
         'centres' => public_centre_options(),
+        // NGG's own volunteer door offers only centres that run the Club.
+        'nggCentres' => function_exists('centre_names_for_programme') ? centre_names_for_programme('ngg') : array_column(public_centre_options(), 'name'),
     ];
 }

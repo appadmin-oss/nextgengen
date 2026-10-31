@@ -83,7 +83,8 @@ if (empty($res['ok'])) {
     $code = $res['error'] ?? 'apply_failed';
     // Which field, which agreements, what age: the form points at the answer to fix.
     json_send(['ok' => false, 'error' => $code, 'detail' => $res['detail'] ?? null, 'field' => $res['field'] ?? null,
-               'missing' => $res['missing'] ?? null, 'age' => $res['age'] ?? null], $code === 'rate_limited' ? 429 : 400);
+               'missing' => $res['missing'] ?? null, 'age' => $res['age'] ?? null, 'message' => $res['message'] ?? null,
+               'masked' => $res['masked'] ?? null], $code === 'rate_limited' ? 429 : 400);
 }
 unset($res['ok']);
 json_ok($res);

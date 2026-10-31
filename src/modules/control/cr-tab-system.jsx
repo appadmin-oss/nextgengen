@@ -988,7 +988,7 @@ const crSyGenCtx = { current: null };
 const CR_SY_ATT_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Volunteers"], ["default", "Everyone else"]];
 const CR_SY_CLOSE_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Summer volunteers"]];
 const CR_SY_IDLE = [["900", "15 minutes"], ["1800", "30 minutes (default)"], ["3600", "1 hour"], ["14400", "4 hours"], ["43200", "12 hours — a full working day"], ["0", "Never — only for a locked, private office"]];
-const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled", "face_check_enabled"];
+const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "ngg_volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled", "face_check_enabled"];
 const CR_SY_ID_KEYS = ["program", "year", "motto", "validityDays", "website", "phone", "address", "logoLockup", "logoOkun"];
 const crSyTime = v => !v || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use a time like 09:00.";
 const crSyInt = (lo, hi, what) => v => /^-?\d+$/.test(String(v).trim()) && +v >= lo && +v <= hi ? "" : "Enter " + what + " from " + lo + " to " + hi + ".";
@@ -1003,9 +1003,10 @@ function crSyGenForm(d, part) {
     type: "form", span: 6, key: "settings-" + (part || "general"),
     groups: [
       { part: "general", h: "Sign-ups", help: "Whether the public forms take new applications.", rows: [
-        tog("applications_open", "Teen applications open"),
+        tog("applications_open", "NGG membership applications open"),
         tog("mentor_applications_open", "Mentor applications open"),
-        tog("volunteer_applications_open", "Volunteer registration open"),
+        tog("volunteer_applications_open", "Summer School volunteer registration open", "The seasonal form at /volunteer."),
+        tog("ngg_volunteer_applications_open", "NGG volunteer registration open", "The year-round form at /join/volunteer."),
         tog("intake_photo_required", "Require a headshot on the public forms", "Teen, volunteer and kiosk. Off: the photo is optional at sign-up and can be added later through Photo review or the ID Card Studio."),
         tog("photo_gate_issuance", "Hold the ID until the photo is approved", "The ID is bound only once parent consent is in and the headshot is approved in Photo review. A registration with no photo is never held."),
         tog("geofence_enabled", "Geo-fenced registration", "Picks the centre by location and refuses off-site sign-ups. Map each centre’s point under Members → Centres."),

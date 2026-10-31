@@ -77,6 +77,15 @@ require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
 require $ROOT . '/_lib/object-store.php';
+/* What the Club form sends with every child application (club_apply_details + the agreements). */
+const CLUBTEST_DETAILS = ['filledBy' => 'parent', 'school' => 'egbeda senior high school', 'class' => 'JSS 2', 'classArm' => 'B',
+    'address' => '12 Ola Street, Egbeda', 'resState' => 'Lagos', 'resLga' => 'Alimosho', 'originState' => 'Ogun', 'originLga' => '',
+    'nationality' => 'Nigerian', 'parent1Rel' => 'Mother', 'parent1Name' => 'adunni adebayo', 'parent1Phone' => '8031234567',
+    'parent2None' => true, 'hobbies' => ['Reading'], 'influenceAreas' => ['Education'], 'heardFrom' => 'WhatsApp', 'promoCode' => ''];
+const CLUBTEST_WHY = 'I want to learn to build things that help the people in my community.';
+const CLUBTEST_CONSENTS = ['participation' => true, 'medical' => true, 'data' => true, 'comms' => true, 'media' => true, 'site_visibility' => true, 'trips' => false];
+/* Two referees, the form's minimum for a volunteer (volunteer_apply_safeguarding). */
+const VOLTEST_REFS = [['name' => 'Ref One', 'contact' => 'ref1@example.com', 'relation' => 'Teacher'], ['name' => 'Ref Two', 'contact' => '08030000001', 'relation' => 'Employer']];
 require $ROOT . '/_lib/telegram.php';
 require $ROOT . '/_lib/nudges.php';
 /* Every domain file, discovered rather than listed.
@@ -529,13 +538,13 @@ setting_set('intake_photo_required', '0', 'test');
 chk('post publishes with slug', !empty(backend_dispatch('admin.posts.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'blog', 'title' => 'First Post', 'body' => 'Hi', 'status' => 'published']])['slug']));
 chk('public reads published post', count(backend_dispatch('public.posts', ['kind' => 'blog'])['posts']) === 1);
 chk('newsletter idempotent', backend_dispatch('public.newsletter', ['email' => 'sub@example.com'])['ok'] && backend_dispatch('public.newsletter', ['email' => 'sub@example.com'])['ok']);
-chk('apply validates age', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Kid', 'lastName' => 'Test', 'email' => 'k@example.com', 'phone' => '08031234000', 'dob' => '1985-01-01'])['error'] === 'bad_age');
+chk('apply validates age', backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'Kid', 'lastName' => 'Test', 'email' => 'k@example.com', 'phone' => '08031234000', 'dob' => '1985-01-01'])['error'] === 'bad_age');
 // Headshot required on intake (teen + volunteer) when the gate is on (default).
 setting_set('intake_photo_required', '1', 'test');
-chk('apply requires a headshot when the gate is on', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'No', 'lastName' => 'Photo', 'email' => 'nophoto@example.com', 'phone' => '08031234111', 'dob' => '2012-01-01'])['error'] === 'photo_required');
-chk('apply passes with a valid cloudinary headshot', !empty(backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'With', 'lastName' => 'Photo', 'email' => 'withphoto@example.com', 'phone' => '08031234112', 'dob' => '2012-01-01', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'])['ok']));
+chk('apply requires a headshot when the gate is on', backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'No', 'lastName' => 'Photo', 'email' => 'nophoto@example.com', 'phone' => '08031234111', 'dob' => '2012-01-01'])['error'] === 'photo_required');
+chk('apply passes with a valid cloudinary headshot', !empty(backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'summer', 'sex' => 'Male', 'firstName' => 'With', 'lastName' => 'Photo', 'email' => 'withphoto@example.com', 'phone' => '08031234112', 'dob' => '2012-01-01', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'])['ok']));
 setting_set('intake_photo_required', '0', 'test');
-chk('apply skips the headshot gate when disabled', !empty(backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Gate', 'lastName' => 'Off', 'email' => 'gateoff@example.com', 'phone' => '08031234113', 'dob' => '2012-01-01'])['ok']));
+chk('apply skips the headshot gate when disabled', !empty(backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'summer', 'sex' => 'Male', 'firstName' => 'Gate', 'lastName' => 'Off', 'email' => 'gateoff@example.com', 'phone' => '08031234113', 'dob' => '2012-01-01'])['ok']));
 
 // ── Volunteer registration (public taxonomy: admin | mentor | instructor) ──
 $vctx = backend_dispatch('public.volunteer.context', []);
@@ -545,13 +554,13 @@ chk('volunteer context serves the faculty catalogue', is_array($vctx['faculties'
 // An active centre must exist for volunteer intake (centre is now required).
 db_insert('centres', ['centreId' => 'CEN-VOL', 'name' => 'Testville', 'code' => 'TVL', 'color' => '#4C6FFF', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 $vFac = $vctx['faculties'][0];
-chk('volunteer apply rejects unknown role', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'chef', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110009', 'dob' => '1990-01-01'])['error'] === 'bad_role');
-chk('volunteer apply rejects a missing centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'No', 'lastName' => 'Centre', 'email' => 'nocentre@example.com', 'phone' => '08031110077', 'dob' => '1990-01-01'])['error'] === 'centre_required');
-chk('volunteer apply rejects an invalid centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Centre', 'email' => 'badcentre@example.com', 'phone' => '08031110078', 'dob' => '1990-01-01', 'centre' => 'Nowhere'])['error'] === 'invalid_centre');
-chk('mentor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'No', 'lastName' => 'Fac', 'email' => 'nofac@example.com', 'phone' => '08031110076', 'dob' => '1990-01-01', 'centre' => 'Testville'])['error'] === 'faculty_required');
-chk('instructor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Fac2', 'email' => 'nofac2@example.com', 'phone' => '08031110075', 'dob' => '1990-01-01', 'centre' => 'Testville', 'courses' => ['Practical Coding']])['error'] === 'faculty_required');
-chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110001', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Basket Weaving']])['error'] === 'course_required');
-chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['ok'] === true);
+chk('volunteer apply rejects unknown role', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'chef', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110009', 'dob' => '1990-01-01'])['error'] === 'bad_role');
+chk('volunteer apply rejects a missing centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'No', 'lastName' => 'Centre', 'email' => 'nocentre@example.com', 'phone' => '08031110077', 'dob' => '1990-01-01'])['error'] === 'centre_required');
+chk('volunteer apply rejects an invalid centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Centre', 'email' => 'badcentre@example.com', 'phone' => '08031110078', 'dob' => '1990-01-01', 'centre' => 'Nowhere'])['error'] === 'invalid_centre');
+chk('mentor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'No', 'lastName' => 'Fac', 'email' => 'nofac@example.com', 'phone' => '08031110076', 'dob' => '1990-01-01', 'centre' => 'Testville'])['error'] === 'faculty_required');
+chk('instructor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Fac2', 'email' => 'nofac2@example.com', 'phone' => '08031110075', 'dob' => '1990-01-01', 'centre' => 'Testville', 'courses' => ['Practical Coding']])['error'] === 'faculty_required');
+chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110001', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Basket Weaving']])['error'] === 'course_required');
+chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['ok'] === true);
 chk('volunteer centre stored on application', db_row("SELECT centre FROM applications WHERE email = 'vol-admin@example.com'")['centre'] === 'Testville');
 chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications WHERE email = 'vol-admin@example.com'")['phone'] === '+2348031234567');
 /* ── The headshot a browser can actually produce ──────────────────────────────
@@ -578,7 +587,7 @@ chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications 
     $phSeq = 0;
     $apply = function ($email, $photo) use (&$phSeq) {
         $phSeq++;
-        return backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Female',
+        return backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Female',
             'role' => 'admin', 'firstName' => 'Photo', 'lastName' => 'Case', 'email' => $email,
             'phone' => '080522' . sprintf('%05d', 1000 + $phSeq), 'dob' => '1990-01-01',
             'centre' => 'Photoville', 'why' => 'I care.', 'photoUrl' => $photo]);
@@ -624,17 +633,17 @@ chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications 
     setting_set('intake_photo_required', $keep === '' ? '0' : $keep, 'test');
 })();
 
-chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Practical Coding', 'Piano', 'Basket Weaving'], 'visibilityConsent' => true])['ok'] === true);
+chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Practical Coding', 'Piano', 'Basket Weaving'], 'visibilityConsent' => true])['ok'] === true);
 chk('instructor faculty stored on application', db_row("SELECT faculty FROM applications WHERE email = 'vol-teach@example.com'")['faculty'] === $vFac);
 chk('volunteer visibility consent stored on application', (int)db_row("SELECT visibilityConsent FROM applications WHERE email = 'vol-teach@example.com'")['visibilityConsent'] === 1);
 chk('instructor courses stored filtered to catalogue', json_decode((string)db_row("SELECT courses FROM applications WHERE email = 'vol-teach@example.com'")['courses'], true) === ['Practical Coding', 'Piano']);
-chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['duplicate'] === true);
+chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['duplicate'] === true);
 chk('volunteer.applied event queued for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.applied'")['c'] === 2);
 // Standardised intake: structured name + DOB stored; legacy `name` composed.
 chk('structured name + dob stored on application', (function () { $r = db_row("SELECT firstName,lastName,dob,name FROM applications WHERE email='vol-teach@example.com'"); return $r && $r['firstName'] === 'Vol' && $r['lastName'] === 'Teach' && $r['dob'] === '1990-01-01' && $r['name'] === 'Vol Teach'; })());
-chk('apply rejects a malformed dob', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Dob', 'email' => 'baddob@example.com', 'phone' => '08031110099', 'dob' => 'not-a-date'])['error'] === 'bad_dob');
-chk('apply rejects an under-16 volunteer', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Too', 'lastName' => 'Young', 'email' => 'young@example.com', 'phone' => '08031110098', 'dob' => '2015-01-01'])['error'] === 'dob_too_young');
-chk('apply requires a first name', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'lastName' => 'Only', 'email' => 'nofirst@example.com', 'phone' => '08031110097', 'dob' => '1990-01-01'])['error'] === 'bad_firstName');
+chk('apply rejects a malformed dob', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Dob', 'email' => 'baddob@example.com', 'phone' => '08031110099', 'dob' => 'not-a-date'])['error'] === 'bad_dob');
+chk('apply rejects an under-16 volunteer', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Too', 'lastName' => 'Young', 'email' => 'young@example.com', 'phone' => '08031110098', 'dob' => '2015-01-01'])['error'] === 'dob_too_young');
+chk('apply requires a first name', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'lastName' => 'Only', 'email' => 'nofirst@example.com', 'phone' => '08031110097', 'dob' => '1990-01-01'])['error'] === 'bad_firstName');
 // The HTTP endpoint builds the gs_call payload from the request body; the
 // domain tests above dispatch straight to public.apply and so never catch a
 // field the endpoint forgets to forward. `sex` is required on every intake and
@@ -675,7 +684,7 @@ chk('old card freed on reassign', db_row('SELECT status FROM qr_codes WHERE toke
 chk('void retires a card + detaches student', backend_dispatch('admin.summer.qr.void', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok])['ok'] === true && db_row('SELECT status FROM qr_codes WHERE token = ?', [$qtok])['status'] === 'void' && db_row('SELECT token FROM summer_students WHERE studentId = ?', [$qrKid])['token'] === '');
 chk('void card cannot be reassigned', backend_dispatch('admin.summer.qr.reassign', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok, 'studentId' => $qrKid])['error'] === 'card_void');
 
-chk('phone is required on volunteer intake', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Phone', 'email' => 'nophone@example.com', 'dob' => '1990-01-01', 'courses' => ['Practical Coding']])['error'] === 'phone_required');
+chk('phone is required on volunteer intake', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Phone', 'email' => 'nophone@example.com', 'dob' => '1990-01-01', 'courses' => ['Practical Coding']])['error'] === 'phone_required');
 
 // ── Volunteer review desk: approve → ID + QR + profile; decline ──
 $volAppId = (int)db_row("SELECT id FROM applications WHERE email = 'vol-teach@example.com'")['id'];
@@ -755,7 +764,7 @@ chk('email cta button is navy, not gold', str_contains($__tpl, 'linear-gradient(
 chk('email carries a hidden preheader', str_contains($__tpl, 'mso-hide:all'));
 chk('email footer carries a reply path + contact', str_contains($__tpl, 'Reply to this email') && str_contains($__tpl, 'afrovanguard.org'));
 $GLOBALS['__mail_sink'] = [];
-$__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'Glad to help']);
+$__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'Glad to help']);
 /* Random, not the row id: the reference used to print how many applications
    the programme had received on every one of them, and let a named person's
    status be found by walking the numbers. */
@@ -764,7 +773,7 @@ chk('apply returns a traceable reference that is not the row id',
 $__ack = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'));
 chk('volunteer application acknowledges the applicant', count($__ack) === 1 && str_contains($__ack[0]['subject'], 'volunteer application'));
 chk('ack is on-brand + names role + carries the reference', str_contains($__ack[0]['html'], '#0c1432') && str_contains($__ack[0]['html'], 'Mentor') && str_contains($__ack[0]['html'], (string)$__ap['ref']));
-$__dup = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'again']);
+$__dup = backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'again']);
 chk('resubmit is a no-op duplicate with the same reference', $__dup['duplicate'] === true && $__dup['ref'] === $__ap['ref']);
 chk('duplicate does not re-acknowledge', count(array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'))) === 1);
 unset($GLOBALS['__mail_sink']);
@@ -1017,7 +1026,7 @@ chk('overview: twelve weeks of check-ins, oldest first, ending this week', (func
     return count($c) === 12 && $c[0]['from'] < $c[11]['from'] && $c[11]['from'] <= gmdate('Y-m-d') && strtotime($c[11]['from']) > time() - 8 * 86400;
 })());
 chk('overview: recent activity names the person who did it', array_key_exists('actorName', (backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['recent'][0] ?? ['actorName' => ''])));
-backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Applicant', 'lastName' => 'One', 'email' => 'app1@example.com', 'phone' => '08031110030', 'dob' => '2011-01-01', 'track' => 'Music', 'centre' => 'Ayobo']);
+backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'Applicant', 'lastName' => 'One', 'email' => 'app1@example.com', 'phone' => '08031110030', 'dob' => '2011-01-01', 'track' => 'Music', 'centre' => 'Ayobo']);
 $apps = backend_dispatch('admin.applications.list', ['requesterId' => 'NGG-2025-0099', 'kind' => 'teen'])['applications'];
 chk('applications listed', count($apps) >= 1);
 $appId = $apps[0]['id'];
@@ -1099,14 +1108,14 @@ chk('idcard proportion is editable, clamped, and preserves branding', (function 
     // height clamps into range, width persists, and the earlier motto survives the partial save (merge)
     return (float)$id['widthMm'] === 55.0 && (float)$id['heightMm'] === 100.0 && $id['motto'] === 'EMPOWERED 360°';
 })());
-chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'X', 'lastName' => 'Y', 'email' => 'x@example.com', 'phone' => '08031110050', 'dob' => '2011-01-01'])['error'] === 'applications_closed');
+chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'X', 'lastName' => 'Y', 'email' => 'x@example.com', 'phone' => '08031110050', 'dob' => '2011-01-01'])['error'] === 'applications_closed');
 chk('newsletter list works', is_array(backend_dispatch('admin.newsletter.list', ['requesterId' => 'NGG-2025-0099'])['subscribers']));
 
 // ── Program tagging (Summer vs Anchor) + convert respects program ──
 backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['applications_open' => true]]);
 backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Summer', 'lastName' => 'Kid', 'email' => 'summer1@example.com', 'phone' => '08031110031', 'dob' => '2013-01-01', 'track' => 'Dance', 'centre' => 'Egbeda', 'program' => 'summer']);
 chk('summer application tagged', db_row("SELECT program FROM applications WHERE email='summer1@example.com'")['program'] === 'summer');
-backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Anchor', 'lastName' => 'Kid', 'email' => 'anchor1@example.com', 'phone' => '08031110032', 'dob' => '2010-01-01', 'track' => 'Tech', 'centre' => 'Egbeda', 'program' => 'anchor']);
+backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'Anchor', 'lastName' => 'Kid', 'email' => 'anchor1@example.com', 'phone' => '08031110032', 'dob' => '2010-01-01', 'track' => 'Tech', 'centre' => 'Egbeda', 'program' => 'anchor']);
 $anchorApp = db_row("SELECT id FROM applications WHERE email='anchor1@example.com'")['id'];
 $convA = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $anchorApp]);
 chk('anchor applicant becomes NGG member', db_row('SELECT type FROM members WHERE memberId=?', [$convA['memberId']])['type'] === 'NGG');
@@ -1114,7 +1123,7 @@ $summerAppId = db_row("SELECT id FROM applications WHERE email='summer1@example.
 $convS = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $summerAppId]);
 chk('summer applicant becomes Summer member', db_row('SELECT type FROM members WHERE memberId=?', [$convS['memberId']])['type'] === 'Summer');
 chk('invalid program falls back to anchor', (function () {
-    backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Junk', 'lastName' => 'Prog', 'email' => 'junkprog@example.com', 'phone' => '08031110033', 'dob' => '2011-06-01', 'program' => 'bogus']);
+    backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'Junk', 'lastName' => 'Prog', 'email' => 'junkprog@example.com', 'phone' => '08031110033', 'dob' => '2011-06-01', 'program' => 'bogus']);
     return db_row("SELECT program FROM applications WHERE email='junkprog@example.com'")['program'] === 'anchor';
 })());
 
@@ -1150,7 +1159,18 @@ chk('club apply: the agreements are in the ledger with the policy version, trips
     return count($rows) === 7 && $by['media'] === 'granted' && $by['trips'] === 'declined'
         && !array_filter($rows, fn($x) => $x['policyVersion'] !== '2026.10' || $x['method'] !== 'online-application');
 })());
-$cr2 = $clubApp(['why' => 'I want to become an engineer who builds bridges across Lagos.']);
+/* Changing an application already sent needs the code emailed to its address:
+   an email and a date of birth are not a secret. */
+$cr2a = $clubApp(['why' => 'I want to become an engineer who builds bridges across Lagos.']);
+$crId = (int)db_row("SELECT id FROM applications WHERE email = 'club.family@example.com'")['id'];
+chk('club apply: the same child again without the emailed code changes nothing, and a code is sent',
+    ($cr2a['error'] ?? '') === 'edit_code_sent' && strpos((string)db_row('SELECT why FROM applications WHERE id = ?', [$crId])['why'], 'engineer') === false);
+chk('club apply: …a wrong code is refused', ($clubApp(['why' => 'I want to become an engineer who builds bridges across Lagos.', 'editCode' => '000000'])['error'] ?? '') === 'edit_code_wrong');
+$crDet = json_decode((string)db_row('SELECT details FROM applications WHERE id = ?', [$crId])['details'], true);
+$crDet['_edit'] = ['hash' => hash('sha256', $crId . '|123456'), 'exp' => gmdate('Y-m-d\TH:i:s\Z', time() + 600), 'tries' => 0];
+db_update('applications', ['details' => json_encode($crDet)], ['id' => $crId]);
+chk('club apply: the change code never reaches the admin desk', !isset(backend_dispatch('admin.applications.list', ['requesterId' => 'NGG-2025-0099', 'kind' => 'teen'])['applications'][0]['details']['_edit']));
+$cr2 = $clubApp(['why' => 'I want to become an engineer who builds bridges across Lagos.', 'editCode' => '123456']);
 chk('club apply: the same child again (email + date of birth) updates the application, same reference', !empty($cr2['updated']) && $cr2['ref'] === $cr1['ref']
     && (int)db_row("SELECT COUNT(*) c FROM applications WHERE email = 'club.family@example.com'")['c'] === 1
     && strpos((string)db_row("SELECT why FROM applications WHERE email = 'club.family@example.com'")['why'], 'engineer') !== false);
@@ -1300,12 +1320,100 @@ chk('summer signup: Apply finds the live public sign-up link — the centre\'s o
     db_exec("UPDATE gate_links SET status = 'revoked' WHERE gateId IN ('SELF-ALL', 'SELF-EG', 'SELF-OLD', 'DESK-AY')");
     return $none['url'] === '' && $eg['url'] === '/apply?g=SELF-EG' && $eg['centre'] === 'Egbeda' && $ay['url'] === '/apply?g=SELF-ALL' && $any['url'] === '/apply?g=SELF-ALL';
 })());
-$cconv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$crow['id']]);
+$cconv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$crow['id'], 'centre' => 'Egbeda']);
 $cmem = db_row('SELECT * FROM members WHERE memberId = ?', [$cconv['memberId'] ?? '']);
 chk('club apply → member: the parent by name and number, the school and class, the agreements inherited', $cmem
     && $cmem['parentName'] === 'Adunni Adebayo' && $cmem['parentPhone'] === '08031234567' && $cmem['school'] === 'Egbeda Senior High School' && (json_decode((string)$cmem['profileJson'], true)['class'] ?? '') === 'JSS 2'
     && (int)db_row("SELECT COUNT(DISTINCT type) c FROM consents WHERE studentId = ? AND policyVersion = '2026.10'", [$cmem['memberId']])['c'] === 7
     && (consent_state($cmem['memberId'])['media']['status'] ?? '') === 'granted');
+// ── Application review fixes (siblings, consent, scope, waitlist, volunteers' safeguarding) ──
+(function () {
+    $now = now_iso(); $A = 'NGG-2025-0099';
+    foreach ([['CEN-AF1', 'Afton', 'ngg'], ['CEN-AF2', 'Afvale', 'summer']] as [$cid, $cn, $pr]) db_insert('centres', ['centreId' => $cid, 'name' => $cn, 'code' => substr($cid, -3), 'color' => '#123456', 'status' => 'active', 'programmes' => $pr, 'createdAt' => $now]);
+    $kid = fn(array $o) => backend_dispatch('public.apply', array_merge(['kind' => 'teen', 'program' => 'anchor', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY,
+        'sex' => 'Female', 'lastName' => 'Sibling', 'email' => 'fam-af@example.com', 'phone' => '08031117000', 'centre' => 'Afton', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'], $o));
+    $k1 = $kid(['firstName' => 'Kemi', 'dob' => gmdate('Y-m-d', strtotime('-12 years'))]);
+    $k2 = $kid(['firstName' => 'Tobi', 'sex' => 'Male', 'dob' => gmdate('Y-m-d', strtotime('-14 years'))]);
+    $id1 = (int)db_row("SELECT id FROM applications WHERE email = 'fam-af@example.com' AND firstName = 'Kemi'")['id'];
+    $id2 = (int)db_row("SELECT id FROM applications WHERE email = 'fam-af@example.com' AND firstName = 'Tobi'")['id'];
+    chk('review fix · siblings on one parent email are two applications', !empty($k1['ok']) && !empty($k2['ok']) && $id1 && $id2 && $id1 !== $id2);
+    $c1 = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id1]);
+    $c2 = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id2]);
+    chk('review fix · the second child becomes their own member, not "already had a record"', !empty($c1['memberId']) && !empty($c2['memberId']) && empty($c2['existed']) && $c1['memberId'] !== $c2['memberId']
+        && db_row('SELECT fullName FROM members WHERE memberId = ?', [$c2['memberId']])['fullName'] === 'Tobi Sibling');
+    chk('review fix · converting the same child twice still finds their record', !empty(backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id2])['existed']));
+    chk('review fix · a Club application without the guardian, school and agreements is refused',
+        (backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'anchor', 'firstName' => 'No', 'lastName' => 'Details', 'sex' => 'Male', 'email' => 'nodet@example.com', 'phone' => '08031117001', 'dob' => gmdate('Y-m-d', strtotime('-13 years')), 'centre' => 'Afton', 'why' => CLUBTEST_WHY])['error'] ?? '') === 'details_required');
+    // Convert's guards: declined, age today, a centre.
+    $k3 = $kid(['firstName' => 'Ada', 'email' => 'fam-af3@example.com', 'dob' => gmdate('Y-m-d', strtotime('-11 years'))]);
+    $id3 = (int)db_row("SELECT id FROM applications WHERE email = 'fam-af3@example.com'")['id'];
+    db_update('applications', ['status' => 'rejected'], ['id' => $id3]);
+    chk('review fix · a declined application cannot be converted', (backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id3])['error'] ?? '') === 'rejected');
+    db_update('applications', ['status' => 'new', 'dob' => gmdate('Y-m-d', strtotime('-19 years'))], ['id' => $id3]);
+    chk('review fix · nor one whose applicant is now past 17', (backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id3])['error'] ?? '') === 'bad_age');
+    db_update('applications', ['dob' => gmdate('Y-m-d', strtotime('-11 years')), 'centre' => ''], ['id' => $id3]);
+    chk('review fix · a blank centre is asked for, never quietly Egbeda', (backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id3])['error'] ?? '') === 'centre_required');
+    chk('review fix · marking a child "accepted" without converting is refused (Convert makes the member)', (backend_dispatch('admin.applications.status', ['requesterId' => $A, 'id' => $id3, 'status' => 'accepted'])['error'] ?? '') === 'use_convert');
+    // Waitlist: the family is told, and the application stays reachable.
+    db_update('applications', ['centre' => 'Afton'], ['id' => $id3]);
+    $w = backend_dispatch('admin.applications.status', ['requesterId' => $A, 'id' => $id3, 'status' => 'waitlist']);
+    chk('review fix · waitlisting tells the family', !empty($w['ok']) && in_array('email', $w['told'] ?? [], true));
+    $wl = backend_dispatch('admin.applications.list', ['requesterId' => $A, 'kind' => 'teen', 'status' => 'new,reviewing,waitlist'])['applications'];
+    chk('review fix · a waitlisted child is still on the desk, and can be converted from there', in_array($id3, array_map('intval', array_column($wl, 'id')), true)
+        && !empty(backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id3])['memberId']));
+    // Centre scope: a scoped admin sees and acts on their own centre's applicants only.
+    db_insert('members', ['memberId' => 'AF-SCOPED', 'fullName' => 'Scoped Afvale', 'email' => 'afscoped@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Afvale', 'centreScope' => json_encode(['CEN-AF2']), 'createdAt' => $now, 'updatedAt' => $now]);
+    $k4 = $kid(['firstName' => 'Zara', 'email' => 'fam-af4@example.com', 'dob' => gmdate('Y-m-d', strtotime('-13 years'))]);
+    $id4 = (int)db_row("SELECT id FROM applications WHERE email = 'fam-af4@example.com'")['id'];
+    $sl = backend_dispatch('admin.applications.list', ['requesterId' => 'AF-SCOPED', 'kind' => 'teen'])['applications'] ?? null;
+    chk('review fix · a centre-scoped admin does not see another centre\'s children', is_array($sl) && !in_array($id4, array_map('intval', array_column($sl, 'id')), true));
+    chk('review fix · …nor convert, decline or edit them', (backend_dispatch('admin.application.convert', ['requesterId' => 'AF-SCOPED', 'id' => $id4])['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('admin.applications.status', ['requesterId' => 'AF-SCOPED', 'id' => $id4, 'status' => 'rejected'])['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('admin.application.update', ['requesterId' => 'AF-SCOPED', 'id' => $id4, 'data' => ['name' => 'X Y']])['error'] ?? '') === 'out_of_scope');
+
+    // ── Volunteers ──
+    $vol = fn(array $o) => backend_dispatch('public.apply', array_merge(['kind' => 'volunteer', 'program' => 'anchor', 'role' => 'mentor', 'sex' => 'Female', 'firstName' => 'Vee', 'lastName' => 'Lun',
+        'email' => 'vee@example.com', 'phone' => '08031117100', 'dob' => '1995-02-02', 'centre' => 'Afton', 'faculty' => 'Mentoring', 'courses' => ['One-to-one mentoring'],
+        'why' => 'I want to give back.', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg', 'referees' => VOLTEST_REFS, 'declaration' => true], $o));
+    chk('review fix · a volunteer needs two referees and the declaration', ($vol(['referees' => [VOLTEST_REFS[0]]])['error'] ?? '') === 'referees_required'
+        && ($vol(['declaration' => false])['error'] ?? '') === 'declaration_required');
+    chk('review fix · NGG\'s volunteer door only offers centres that run the Club', ($vol(['centre' => 'Afvale'])['error'] ?? '') === 'centre_not_offered');
+    $teen = gmdate('Y-m-d', strtotime('-16 years -2 months'));
+    chk('review fix · a 16-year-old must name a guardian who agrees', ($vol(['email' => 'v16@example.com', 'dob' => $teen])['error'] ?? '') === 'guardian_required'
+        && ($vol(['email' => 'v16@example.com', 'dob' => $teen, 'guardian' => ['name' => 'Mum Lun', 'phone' => '08031117101']])['error'] ?? '') === 'guardian_consent_required');
+    $r16 = $vol(['email' => 'v16@example.com', 'dob' => $teen, 'guardian' => ['name' => 'Mum Lun', 'phone' => '08031117101', 'consent' => true]]);
+    $a16 = (int)db_row("SELECT id FROM applications WHERE email = 'v16@example.com'")['id'];
+    chk('review fix · …and is not approved until staff confirm they spoke to the guardian', !empty($r16['ok'])
+        && (backend_dispatch('admin.volunteers.approve', ['requesterId' => $A, 'id' => $a16])['error'] ?? '') === 'guardian_consent_required');
+    $ok16 = backend_dispatch('admin.volunteers.approve', ['requesterId' => $A, 'id' => $a16, 'guardianConfirmed' => true]);
+    chk('review fix · …then approved with the consent recorded, and screening still pending', !empty($ok16['ok']) && ($ok16['safeguarding'] ?? '') === 'pending'
+        && (bool)db_row("SELECT id FROM consents WHERE studentId = ? AND type = 'volunteer_guardian' AND status = 'granted'", [$ok16['volunteer']['volunteerId']]));
+    // A Summer volunteer applying at the Club is a second application, and approval widens them to both.
+    $wasOpen = setting_raw('volunteer_applications_open'); setting_set('volunteer_applications_open', '1', 'test');
+    $sv = backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'admin', 'sex' => 'Male', 'firstName' => 'Sam', 'lastName' => 'Both', 'email' => 'sam-both@example.com', 'phone' => '08031117200', 'dob' => '1990-01-01',
+        'centre' => 'Afvale', 'why' => 'Summer help.', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg', 'referees' => VOLTEST_REFS, 'declaration' => true]);
+    $sid = (int)db_row("SELECT id FROM applications WHERE email = 'sam-both@example.com'")['id'];
+    setting_set('volunteer_applications_open', $wasOpen === null ? '1' : (string)$wasOpen, 'test');
+    backend_dispatch('admin.volunteers.approve', ['requesterId' => $A, 'id' => $sid]);
+    $nv = $vol(['email' => 'sam-both@example.com', 'firstName' => 'Sam', 'lastName' => 'Both', 'role' => 'admin', 'faculty' => 'Operations', 'courses' => ['Logistics']]);
+    chk('review fix · a Summer volunteer applying for the Club is a new application, not the Summer reference back', !empty($nv['ok']) && empty($nv['duplicate']) && !empty($sv['ok'])
+        && (int)db_row("SELECT COUNT(*) c FROM applications WHERE email = 'sam-both@example.com'")['c'] === 2);
+    $nid = (int)db_row("SELECT id FROM applications WHERE email = 'sam-both@example.com' ORDER BY id DESC LIMIT 1")['id'];
+    $wv = backend_dispatch('admin.volunteers.approve', ['requesterId' => $A, 'id' => $nid]);
+    chk('review fix · …and approving it makes them serve both, not "already"', ($wv['widened'] ?? '') === 'both' && empty($wv['already'])
+        && db_row("SELECT programme FROM volunteers WHERE lower(email) = 'sam-both@example.com'")['programme'] === 'both');
+    // The instructor roster shows children only after screening clears.
+    db_insert('volunteers', ['volunteerId' => 'VOL-AF-INS', 'fullName' => 'Ins Tructor', 'email' => 'ins-af@example.com', 'role' => 'instructor', 'courses' => json_encode(['Practical Coding']), 'centre' => 'Afton', 'token' => 'TOK-AF-INS', 'status' => 'active', 'safeguarding' => 'pending', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('review fix · an instructor whose screening has not cleared sees no children', (public_instructor_roster(['token' => 'TOK-AF-INS', 'email' => 'ins-af@example.com'])['error'] ?? '') === 'safeguarding_pending');
+    db_update('volunteers', ['safeguarding' => 'cleared'], ['volunteerId' => 'VOL-AF-INS']);
+    chk('review fix · …and the room once it has', !empty(public_instructor_roster(['token' => 'TOK-AF-INS', 'email' => 'ins-af@example.com'])['ok']));
+    chk('review fix · a scoped admin cannot clear or decline another centre\'s volunteer', (backend_dispatch('admin.volunteers.safeguard', ['requesterId' => 'AF-SCOPED', 'volunteerId' => 'VOL-AF-INS', 'status' => 'cleared'])['error'] ?? '') === 'out_of_scope');
+
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-AF-INS' OR lower(email) IN ('v16@example.com', 'sam-both@example.com')");
+    db_exec("DELETE FROM applications WHERE email LIKE 'fam-af%' OR email IN ('vee@example.com', 'v16@example.com', 'sam-both@example.com', 'nodet@example.com')");
+    db_exec("DELETE FROM members WHERE memberId = 'AF-SCOPED' OR email LIKE 'fam-af%'");
+    db_exec("DELETE FROM centres WHERE centreId IN ('CEN-AF1', 'CEN-AF2')");
+})();
 chk('schools: a school the family typed joins the list once their child is accepted', (function () {
     school_learn('Bright Future Model College, Egbeda', 'Alimosho', 'Lagos');
     $h = backend_dispatch('public.schools', ['q' => 'bright future model'])['schools'];
@@ -4496,7 +4604,7 @@ chk('…while the QR on the card we already print passes, with the warning it de
        standard volunteer card's QR is 98 units, about 9mm, or 0.31mm a square.
        That is real and it scans — it is also close enough to the floor to be
        worth saying, so it warns rather than either blocking or staying silent. */
-    $t = ['name' => 'Real card', 'kind' => 'volunteer', 'w' => 590, 'h' => 972, 'safe' => 30,
+    $t = ['name' => 'Real card', 'kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'w' => 590, 'h' => 972, 'safe' => 30,
           'elements' => [
               ['id' => 's', 'type' => 'text', 'x' => 80, 'y' => 400, 'w' => 430, 'h' => 56, 'text' => '{{surname}}'],
               ['id' => 'r', 'type' => 'text', 'x' => 80, 'y' => 470, 'w' => 430, 'h' => 40, 'text' => '{{roleFaculty}}'],
@@ -6726,7 +6834,7 @@ chk('centre: an insecure (non-https) link is rejected', backend_dispatch('admin.
 // Restore the chat.whatsapp.com invite for the apply-echo assertion below.
 backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'whatsappUrl' => 'https://chat.whatsapp.com/ABC123']]);
 setting_set('volunteer_applications_open', '1', 'system');
-$waApply = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Wa', 'lastName' => 'Joiner', 'email' => 'wa-join@example.com', 'phone' => '08031119009', 'dob' => '1990-01-01', 'centre' => 'Ayobo Hub']);
+$waApply = backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Wa', 'lastName' => 'Joiner', 'email' => 'wa-join@example.com', 'phone' => '08031119009', 'dob' => '1990-01-01', 'centre' => 'Ayobo Hub']);
 chk('apply returns the selected centre whatsapp link', ($waApply['whatsapp'] ?? '') === 'https://chat.whatsapp.com/ABC123');
 chk('centre: public meta exposes a PII-safe lead (consented → first name only)', (function () {
     $m = centre_public_meta(['area' => 'A', 'address' => 'B', 'meetDays' => 'Sat', 'meetTime' => '9', 'leadVolunteerId' => 'VOL-LEAD-1']);
@@ -21843,7 +21951,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $again = $apply([$row('Clm Fresh')], ['applicants' => $apps]);
     chk('applicants: the same file twice files them once', ($again['applicants']['already'] ?? 0) === 1
         && (int)db_row("SELECT COUNT(*) c FROM applications WHERE importKey = 'intake:clm form only'")['c'] === 1);
-    $cv = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => (int)$app['id']]);
+    $cv = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => (int)$app['id'], 'centre' => 'Egbeda']);
     $made = $byName('Clm Form Only');
     chk('applicants: confirming one makes the member, with a claimed member ID — an empty email no longer "finds" a stranger',
         !empty($cv['ok']) && empty($cv['existed']) && $made && (string)$made['displayId'] !== ''
@@ -22899,11 +23007,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE email LIKE 'audit-%'");
 
     // ── Admission carries the intake across ───────────────────────────────
-    backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Female',
+    backend_dispatch('public.apply', ['kind' => 'teen', 'details' => ['parent1Phone' => '08031119001'] + CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'sex' => 'Female',
         'firstName' => 'Zainab', 'otherName' => 'Ade', 'lastName' => 'Okoro',
         'email' => 'audit-guardian@example.com', 'phone' => '08031119001',
         'dob' => '2012-04-18', 'track' => 'Tech', 'centre' => 'Egbeda',
-        'program' => 'anchor', 'why' => 'I want to build things that work.']);
+        'program' => 'anchor', 'why' => 'I want to build things that work for the people around me.']);
     $app = db_row("SELECT * FROM applications WHERE email = 'audit-guardian@example.com' LIMIT 1");
     chk('admission: the application is recorded', !empty($app));
 
@@ -22918,7 +23026,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('admission: the guardian\'s email reaches the field the reminders read',
         (string)$mem['parentEmail'] === 'audit-guardian@example.com');
     chk('admission: …and their phone number does too',
-        (string)$mem['parentPhone'] === (string)$app['phone'] && (string)$mem['parentPhone'] !== '');
+        (string)$mem['parentPhone'] === (string)(json_decode((string)$app['details'], true)['parent1Phone'] ?? '') && (string)$mem['parentPhone'] !== '');
     /* A programme for ten- to seventeen-year-olds cannot reconstruct a date of
        birth after the fact, and this was the moment the record became
        permanent. */
@@ -24646,7 +24754,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_insert('centres', ['centreId' => 'CEN-VPR', 'name' => 'Progville', 'code' => 'PGV', 'color' => '#224466', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
     $keep = setting_raw('intake_photo_required');
     setting_set('intake_photo_required', '0', 'test');
-    $apply = fn($email, $phone, $prog) => backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Female', 'role' => 'admin',
+    $apply = fn($email, $phone, $prog) => backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Female', 'role' => 'admin',
         'firstName' => 'Prog', 'lastName' => 'Vol', 'email' => $email, 'phone' => $phone, 'dob' => '1990-01-01', 'centre' => 'Progville', 'why' => 'x']
         + ($prog === null ? [] : ['programme' => $prog]));
     chk('volunteers: an unknown programme is refused', ($apply('vpr0@example.com', '08061110000', 'weekends')['error'] ?? '') === 'bad_programme');
@@ -26797,7 +26905,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $ts = backend_dispatch('admin.timetable.save', ['requesterId' => 'NGG-SEP-SUP', 'data' => ['centreId' => 'CEN-SEP-S', 'course' => 'Guitar', 'weekday' => 6, 'startTime' => '10:00', 'endTime' => '11:00']]);
     chk('separation: …and refuses a class there, saying how to fix it', ($ts['error'] ?? '') === 'centre_not_ngg' && str_contains($ts['detail'], 'People → Centres'));
     chk('separation: Summer School\'s public centre pages do not list a Club-only centre', !in_array('Sep Club House', $names(public_centres_list()['centres']), true) && (public_centre_page(['slug' => 'sep-club'])['error'] ?? '') === 'not_found');
-    $ap = backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'anchor', 'firstName' => 'Sep', 'lastName' => 'Kid', 'dob' => '2014-01-01', 'sex' => 'Female',
+    $ap = backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'program' => 'anchor', 'firstName' => 'Sep', 'lastName' => 'Kid', 'dob' => '2014-01-01', 'sex' => 'Female',
         'centre' => 'sep summer venue', 'track' => 'guitar', 'why' => str_repeat('I want to learn. ', 3), 'email' => 'sepkid@example.com', 'phone' => '08030000000']);
     chk('separation: an NGG application to a Summer-only venue is refused by name', ($ap['error'] ?? '') === 'centre_not_offered' && str_contains($ap['detail'] ?? '', 'Sep Summer Venue'));
     $cu = fn($d) => backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-SEP-SUP', 'data' => $d + ['name' => 'Sep New', 'color' => '#76B043']]);
@@ -27053,7 +27161,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     // With a model: its reading wins field by field, cleaned against allow-lists; the IDs the rules saw are kept.
     $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) {
-        return ['ok' => true, 'provider' => 'openai', 'text' => json_encode(['kind' => 'volunteer', 'centre' => 'planwick', 'which' => 'all', 'backs' => 'short',
+        return ['ok' => true, 'provider' => 'openai', 'text' => json_encode(['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'centre' => 'planwick', 'which' => 'all', 'backs' => 'short',
             'paper' => 'tabloid', 'dpi' => 999, 'ids' => ['VOL-1', '<script>'], 'names' => ['Ada Obi', 'DROP TABLE;'], 'limit' => 5000, 'order' => 'name', 'marks' => 'yes', 'extra' => 'x',
             'profileSeen' => $profile])];
     };
@@ -27295,7 +27403,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // The design each card type prints with: a published front of the same kind, or the standard card.
     $draft = backend_dispatch('admin.card.template.save', ['requesterId' => $CARDADM, 'template' => ['id' => '', 'name' => 'Unpublished member', 'kind' => 'member', 'face' => 'front', 'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => []]]);
     chk('id studio: a draft cannot be assigned — nobody may print a draft', (backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'member', 'templateId' => $draft['templateId']])['error'] ?? '') === 'not_published');
-    chk('id studio: a design for another kind of card is refused', (backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'volunteer', 'templateId' => $TIDX])['error'] ?? '') === 'wrong_kind');
+    chk('id studio: a design for another kind of card is refused', (backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'templateId' => $TIDX])['error'] ?? '') === 'wrong_kind');
     $ds = backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'member', 'templateId' => $TIDX]);
     $dst = backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM]);
     chk('id studio: a published member design is assigned, with the version the server holds', !empty($ds['ok']) && ($dst['designs']->member['templateId'] ?? '') === $TIDX
@@ -27347,8 +27455,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     // ── Applying with a division ──
     backend_dispatch('admin.fees.settings.set', ['requesterId' => $A1, 'data' => ['enabled' => true, 'membershipFee' => 10000, 'membershipEveryMonths' => 12, 'monthlyDues' => 4000, 'trainingFee' => 0, 'balanceCap' => 0, 'remindEnabled' => false]]);
-    $apply = fn(array $o) => backend_dispatch('public.apply', array_merge(['kind' => 'teen', 'program' => 'anchor', 'firstName' => 'Pay', 'lastName' => 'Kid', 'dob' => gmdate('Y-m-d', strtotime('-13 years')),
-        'sex' => 'female', 'phone' => '08031112222', 'photoUrl' => '', 'centre' => '', 'why' => 'I like robots'], $o));
+    $apply = fn(array $o) => backend_dispatch('public.apply', array_merge(['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'program' => 'anchor', 'firstName' => 'Pay', 'lastName' => 'Kid', 'dob' => gmdate('Y-m-d', strtotime('-13 years')),
+        'sex' => 'female', 'phone' => '08031112222', 'photoUrl' => '', 'centre' => '', 'why' => 'I like robots and I want to build one that helps my grandmother.'], $o));
     $GLOBALS['CONFIG']['intake_photo_required'] = false; setting_set('intake_photo_required', '0', 'test');
     $bad = $apply(['email' => 'pay-x@example.com', 'division' => 'Media & Content Strategy', 'track' => 'Robotics']);
     chk('pay: an application refuses a course from another division', ($bad['error'] ?? '') === 'course_not_in_division');
@@ -27361,7 +27469,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // ── Accepted → one invoice, sent ──
     $GLOBALS['__mail_sink'] = [];
     $start = gmdate('Y-m-d', strtotime('+3 days'));
-    $cv = backend_dispatch('admin.application.convert', ['requesterId' => $A1, 'id' => (int)$appA['id'], 'startDate' => $start]);
+    $cv = backend_dispatch('admin.application.convert', ['requesterId' => $A1, 'id' => (int)$appA['id'], 'startDate' => $start, 'centre' => 'Egbeda']);
     $memA = db_row('SELECT * FROM members WHERE memberId = ?', [(string)($cv['memberId'] ?? '')]);
     $invA = $memA ? db_row('SELECT * FROM membership_invoices WHERE memberId = ?', [$memA['memberId']]) : null;
     $itemsA = $invA ? membership_items($invA) : [];
@@ -27416,7 +27524,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mkMember = function (string $email) use ($apply, $A1) {
         $apply(['email' => $email, 'division' => 'Creative & Performing Arts', 'track' => 'Adire']);
         $a = db_row('SELECT * FROM applications WHERE email = ? ORDER BY id DESC LIMIT 1', [$email]);
-        $c = backend_dispatch('admin.application.convert', ['requesterId' => $A1, 'id' => (int)$a['id']]);
+        $c = backend_dispatch('admin.application.convert', ['requesterId' => $A1, 'id' => (int)$a['id'], 'centre' => 'Egbeda']);
         return db_row('SELECT * FROM membership_invoices WHERE memberId = ?', [(string)$c['memberId']]);
     };
     $invB = $mkMember('pay-b@example.com');
@@ -34882,7 +34990,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? '');
     $cat = ngg_volunteer_catalogue();
     $area = array_key_first($cat); $act = $cat[$area][0];
-    $base = ['kind' => 'volunteer', 'program' => 'anchor', 'role' => 'mentor', 'sex' => 'Female', 'firstName' => 'Ngozi', 'lastName' => 'Door',
+    $base = ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'program' => 'anchor', 'role' => 'mentor', 'sex' => 'Female', 'firstName' => 'Ngozi', 'lastName' => 'Door',
              'phone' => '08031239999', 'dob' => '1995-05-05', 'centre' => $centre, 'why' => 'All year, every Saturday.',
              'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'];
     chk('ngg door: NGG has its own catalogue, not the Summer School courses', $cat && !in_array($act, academy_courses(), true));

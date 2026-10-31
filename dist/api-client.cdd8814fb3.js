@@ -1760,9 +1760,10 @@
       mentorSupport: (data) => request('/admin/mentor-support.php', { body: data }),
       applications: {
         list:    (q) => request('/admin/applications.php' + qs(q || {})),
-        status:  (id, status) => request('/admin/applications.php', { body: { id, status } }),
-        // `startDate` prices the first month's commitment fee (only the meeting days left are charged).
-        convert: (id, startDate) => request('/admin/applications.php', { body: { action: 'convert', id, startDate: startDate || '' } }),
+        /* A waitlist or a refusal tells the family; `reason` is what they read. */
+        status:  (id, status, reason) => request('/admin/applications.php', { body: { id, status, reason: reason || '' } }),
+        // `startDate` prices the first month's commitment fee (only the meeting days left are charged); `centre` when the application has none.
+        convert: (id, startDate, centre) => request('/admin/applications.php', { body: { action: 'convert', id, startDate: startDate || '', centre: centre || '' } }),
         update:  (id, data) => request('/admin/applications.php', { body: { action: 'update', id, data } }),
         remove:  (id) => request('/admin/applications.php', { body: { action: 'delete', id } }),
       },
@@ -2189,7 +2190,8 @@
       },
       volunteers: {
         list:    (programme) => request('/admin/volunteers.php' + qs({ programme: programme || '' })),
-        approve: (id) => request('/admin/volunteers.php', { body: { action: 'approve', id } }),
+        /* An under-18 applicant is approved only with `guardianConfirmed`: staff spoke to the guardian on the form. */
+        approve: (id, guardianConfirmed) => request('/admin/volunteers.php', { body: { action: 'approve', id, guardianConfirmed: !!guardianConfirmed } }),
         decline: (id, reason) => request('/admin/volunteers.php', { body: { action: 'decline', id, reason: reason || '' } }),
         safeguard: (volunteerId, status) => request('/admin/volunteers.php', { body: { action: 'safeguard', volunteerId, status } }),
         // Portal access, granted per person by a super admin. caps ⊆ ['summer','club'].
