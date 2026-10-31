@@ -456,7 +456,7 @@ function push_flush_after_response(string $subject): void {
     if ($subjects === null) {
         $subjects = [];
         register_shutdown_function(static function () use (&$subjects) {
-            if (function_exists('fastcgi_finish_request')) @fastcgi_finish_request();
+            response_detach();
             foreach (array_keys($subjects) as $s) { try { push_flush($s); } catch (\Throwable $e) { error_log('[push_flush] ' . $e->getMessage()); } }
         });
     }

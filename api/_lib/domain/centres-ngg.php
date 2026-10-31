@@ -92,6 +92,7 @@ const CENTRE_NAME_TABLES = [
     'engagement_snapshots',
     'events',
     'insight_threads',
+    'learning_log',
     'lesson_feedback',
     'match_games',
     'member_credentials',

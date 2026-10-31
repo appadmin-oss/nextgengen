@@ -140,7 +140,8 @@ function fp3Ward(link, d, today) {
     timetable: tt,
     attendance: { rate: a.rateKnown ? a.rate : null, rateKnown: !!a.rateKnown, present: a.present || 0, daysRan: a.daysRan || 0, recent: strip,
       late: (a.late || []).map(r => ({ date: fp3Date(r.date), minutes: r.minutes })) },
-    conduct: { state: fines.length || ((d.conduct || {}).state && !["good", "clear", ""].includes(d.conduct.state)) ? "warn" : "good", reason: (d.conduct || {}).reason || "", fines },
+    conduct: { state: fines.length || ((d.conduct || {}).state && !["good", "clear", ""].includes(d.conduct.state)) ? "warn" : "good", reason: (d.conduct || {}).reason || "", fines, decisions: (d.conduct || {}).decisions || [] },
+    achievements: d.achievements || { items: [], next: [] },
     charges: (d.charges || []).map(c => ({ id: c.entryId, label: fp3Note(c.note) + " · " + "₦" + Number(c.amount).toLocaleString("en"), when: fp3Date(c.createdAt) })),
     fees: fees3 ? {
       enabled: true, payable: fees3.payable, outstanding: fees3.outstanding, payOnline: fees3.payOnline, offlinePending: fees3.offlinePending,

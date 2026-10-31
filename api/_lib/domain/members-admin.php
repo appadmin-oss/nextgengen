@@ -299,6 +299,7 @@ function member_merge_policy(): array {
            award both rows claim (unique on memberId+awardId) and brings
            across every award only the duplicate held. */
         'member_credentials'     => 'MOVE_UNIQUE',
+        'learning_log'           => 'MOVE',           // what they learnt outside NGG travels with them
         'member_state'           => 'MOVE_UNIQUE',
         'member_timetables'      => 'MOVE_UNIQUE',    // one personal week per person; the survivor's stands
         'member_assessments'     => 'MOVE_UNIQUE',

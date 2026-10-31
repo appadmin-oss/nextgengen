@@ -541,6 +541,8 @@ const CR_WF_CAC_ERR = {
   expired: "The two servers’ clocks disagree by more than five minutes.",
   bad_window: "The two servers’ clocks disagree by more than five minutes.",
   too_many: "The list was longer than one push may carry.",
+  gate_not_updated: "The gate at CACENTRE doesn’t have the Wi-Fi route yet. Deploy the latest gate and CACENTRE; the next push then goes through.",
+  "bad-response": "The gate at CACENTRE doesn’t have the Wi-Fi route yet. Deploy the latest gate and CACENTRE; the next push then goes through.",
 };
 /* Everybody still on a starting password, within the admin's centres: members
    with no email, or whose email never arrives, are handed theirs by a person.

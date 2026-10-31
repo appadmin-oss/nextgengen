@@ -321,7 +321,12 @@ const CR_INBOX_SOURCES = {
             (f => Object.assign(f, { values: Object.assign(f.values, { why: crReqDraftApprove(x, crPayGuess(x).map(p => ({ method: p.method, amount: +p.amount || 0 })).filter(p => p.amount)) }) }))(crPayApproveForm(x))),
           run: async (it, v) => { const parts = crPayParts(v); if (!parts.length) throw Object.assign(new Error("no_amount"), { data: { message: "Enter the amount that arrived." } });
             await NGGApi.admin.requests.decide(x.requestId, true, v.why || "", crPayTotal(parts), parts); return { text: fmtMoney(crPayTotal(parts)) + " posted · " + x.fullName }; },
-        } : null) : {
+        } : null) : x.kind === "appeal" && x.refSanctionId ? {
+          /* An appeal against a decision: upheld, the decision is overturned (its fine comes off the account).
+             The person who made the decision can't decide its appeal; the server says so. */
+          l: "Overturn it", tone: "primary", note: CR_REASON_NOTE("Why it is overturned", "The family reads this.", true),
+          run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Overturned · " + x.fullName }; },
+        } : {
           l: "Approve", tone: "primary", note: Object.assign(CR_REASON_NOTE("Your reply", "The member reads this — a drafted reply; edit it or send it.", false), { dflt: crReqDraftApprove(x) }),
           run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Approved · " + x.fullName }; },
         };
@@ -330,7 +335,7 @@ const CR_INBOX_SOURCES = {
           title: x.subject || x.kindLabel, body: x.body || payNote, search: [x.requestId, x.displayId, x.memberId, x.centre, x.reference].join(" "),
           facts: f, thread: (x.body || payNote) ? [{ who: x.byFamily ? (x.raisedByName || "Their family") : (x.fullName || "Member"), at: x.createdAt, body: x.body || payNote, mine: false }] : null,
           note: pay && !canMoney ? "Approving a payment needs the Fees permission." : "",
-          actions: [approve, { l: "Decline", note: Object.assign(CR_REASON_NOTE("Why it is declined", "A drafted reason for this kind of request — edit it to fit."),
+          actions: [approve, { l: x.kind === "appeal" && x.refSanctionId ? "Keep it" : "Decline", note: Object.assign(CR_REASON_NOTE("Why it is declined", "A drafted reason for this kind of request — edit it to fit."),
             { dflt: ((CR_REQ_DECLINE[x.kind] || CR_REQ_DECLINE_ANY)[0] || [0, 0, () => ""])[2](x) }), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: "Declined, with your reason" }; } }].filter(Boolean),
         });
       });

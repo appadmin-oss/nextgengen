@@ -1745,6 +1745,31 @@ chk('the honeypot: an empty hp is a person, a filled one is a script', !bot_trap
     && !bot_trap_tripped(['identifier' => 'x']) && bot_trap_tripped(['identifier' => 'x', 'hp' => 'http://spam.example']));
 
 // ── Web-cron (no-SSH host: opportunistic maintenance without cron) ──
+/* The scheduler (rebuilt 31 Oct 2026): a budget, one network job a visitor's run, most overdue first. */
+chk('scheduler · every job says how often and whether it talks to another server', (function () {
+    foreach (web_cron_jobs() as $name => $j) if (!is_int($j[0]) || $j[0] < 15 || !is_callable($j[1]) || !is_bool($j[2])) return false;
+    return isset(web_cron_jobs()['deliver'], web_cron_jobs()['maint'], web_cron_jobs()['reminders']);
+})());
+chk('scheduler · a run takes at most one network job and leaves the rest due, unclaimed', (function () {
+    $nets = array_keys(array_filter(web_cron_jobs(), fn($j) => $j[2]));
+    foreach (array_keys(web_cron_jobs()) as $n) @touch(web_cron_marker($n));                 // nothing due…
+    foreach (array_slice($nets, 0, 2) as $n) @touch(web_cron_marker($n), time() - 10 * 86400 * 30);   // …but two network jobs
+    $GLOBALS['__test_net_ran'] = 0;
+    $out = web_cron_tick(8.0, 1);
+    $ran = array_keys(array_filter($out, fn($v) => $v !== 'waits'));
+    $waits = array_keys(array_filter($out, fn($v) => $v === 'waits'));
+    $left = $waits ? time() - (int)filemtime(web_cron_marker($waits[0])) : 0;
+    return count($ran) === 1 && count($waits) === 1 && $left > 86400;
+})());
+chk('scheduler · a job whose last run will not fit what is left of the budget waits for a fresh run', web_cron_fits(0.0, 30.0, 8.0) && web_cron_fits(2.0, 5.0, 8.0)
+    && !web_cron_fits(3.0, 6.0, 8.0) && !web_cron_fits(8.5, 0.0, 8.0));
+chk('scheduler · an outside run makes visitors\' pages do no background work', (function () {
+    @touch(web_cron_marker('external'));
+    $a = web_cron_external_fresh();
+    @touch(web_cron_marker('external'), time() - 3600);
+    return $a && !web_cron_external_fresh();
+})());
+chk('scheduler · the response is handed back on LiteSpeed too, not only FPM', str_contains((string)file_get_contents(__DIR__ . '/../_lib/webcron.php'), 'litespeed_finish_request'));
 chk('web_cron_due fires once then throttles', (function () {
     $a = web_cron_due('unit_test_job', 3600); $b = web_cron_due('unit_test_job', 3600); return $a === true && $b === false;
 })());
@@ -24575,7 +24600,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     summer_thanks_drain(500);
     $f2 = db_row("SELECT status, attempts FROM volunteer_thanks WHERE cohortId = 'SUM-THX' AND volunteerId = 'VT-1'");
     chk('thanks: an email that did not go is tried again on the next run', $f1['status'] === 'failed' && $f2['status'] === 'sent' && (int)$f2['attempts'] === 2);
-    chk('thanks: the web-cron sends the rest', str_contains((string)file_get_contents(__DIR__ . '/../_lib/webcron.php'), 'summer_thanks_drain()'));
+    chk('thanks: the background scheduler sends the rest', isset(web_cron_jobs()['vol_thanks']) && web_cron_jobs()['vol_thanks'][1] === 'summer_thanks_drain');
     unset($GLOBALS['__mail_sink']);
     db_exec("DELETE FROM volunteer_thanks WHERE cohortId = 'SUM-THX'"); db_exec("DELETE FROM summer_cohorts WHERE cohortId = 'SUM-THX'");
     db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VT-%'"); db_exec("DELETE FROM attendance WHERE studentId LIKE 'VT-%'");
@@ -25578,7 +25603,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     policy_sweep_member_absences(gmdate('Y-m-d', strtotime($today . ' -1 day')));
     $nc = array_column(db_all("SELECT date FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'no_checkout'"), 'date');
     chk('strict: a member who signed in and never out has an incomplete day', in_array($d1, $nc, true)
-        && (bool)db_row("SELECT id FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'absence' AND date = ?", [$d1]));
+        && (bool)db_row("SELECT id FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'halfday' AND date = ?", [$d1])
+        && !db_row("SELECT id FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'absence' AND date = ?", [$d1]));
     chk('strict: …but not for days before the rule applied', !in_array($d0, $nc, true));
 
     chk('strict: the settings save keeps the three NGG rules', (function () {
@@ -25995,15 +26021,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     setting_set('policy_member_swept_through', $ago(8), 'system');
     policy_sweep_member_absences($ago(1));
     $live = fn() => array_column(db_all("SELECT kind FROM infractions WHERE personId = 'NGG-LO-1' AND date = ? AND (voidedAt IS NULL OR voidedAt = '')", [$sat]), 'kind');
-    chk('late sign-out: the sweep counts a day with no sign-out absent (the rule)', in_array('absence', $live(), true) && in_array('no_checkout', $live(), true));
+    chk('late sign-out: the sweep counts a day with no sign-out as a half-day, not an absence', in_array('halfday', $live(), true) && in_array('no_checkout', $live(), true) && !in_array('absence', $live(), true));
 
     $rec = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-LO-1']);
     $onSat = array_values(array_filter($rec['attendance']['recent'] ?? [], fn($r) => $r['date'] === $sat));
     chk('late sign-out: the record shows that Saturday once, as no sign-out — not present AND absent', count($onSat) === 1 && $onSat[0]['kind'] === 'incomplete' && $onSat[0]['in'] === '07:34');
-    chk('late sign-out: …and counts it once, as the absence it is', ($rec['attendance']['present'] ?? -1) === 0 && ($rec['attendance']['absent'] ?? -1) === 1);
+    chk('late sign-out: …and counts it once, as a half-day — they came', ($rec['attendance']['present'] ?? -1) === 1 && ($rec['attendance']['absent'] ?? -1) === 0 && ($rec['attendance']['halfDays'] ?? -1) === 1);
     $own = backend_dispatch('member.records', ['memberId' => 'NGG-LO-1']);
     $ownSat = array_values(array_filter($own['attendance']['days'] ?? [], fn($r) => $r['date'] === $sat));
-    chk('late sign-out: the member\'s own records say it was counted absent, not "present"', ($ownSat[0]['status'] ?? '') === 'no sign-out, counted absent');
+    chk('late sign-out: the member\'s own records say it was a half-day, not "present"', ($ownSat[0]['status'] ?? '') === 'no sign-out, a half-day');
 
     // Days later the gate's back-fill delivers the departure, with its own time.
     $tz = (int)attendance_settings()['tzOffset'];
@@ -26011,7 +26037,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $h = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'NGG-LO-1', 'action' => 'out', 'date' => $sat, 'scannedAt' => $leftAt]]]);
     $row = db_row('SELECT checkOutAt FROM attendance WHERE studentId = ? AND date = ?', ['NGG-LO-1', $sat]);
     chk('late sign-out: a departure re-sent days later is stamped at the time it happened, not now', ($h['results'][0]['status'] ?? '') === 'marked' && (string)$row['checkOutAt'] === $leftAt);
-    chk('late sign-out: …and the no-sign-out absence and its no_checkout are voided', $live() === []);
+    chk('late sign-out: …and the no-sign-out half-day and its no_checkout are voided', $live() === []);
     chk('late sign-out: …with the reason kept', (bool)db_row("SELECT 1 FROM infractions WHERE personId = 'NGG-LO-1' AND date = ? AND voidReason LIKE 'Signed out%'", [$sat]));
     $rec2 = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-LO-1']);
     $onSat2 = array_values(array_filter($rec2['attendance']['recent'] ?? [], fn($r) => $r['date'] === $sat));
@@ -29444,8 +29470,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && str_contains(crm_push_last(), '1 refused by CACENTRE'));
 
     chk('crm: the secret is an API key on the Settings screen, sealed', isset(SERVICE_KEYS['cacentre']) && SERVICE_KEYS['cacentre']['fields'][0][0] === 'cacentre.crm_secret' && SERVICE_KEYS['cacentre']['fields'][0][2] === 'secret');
-    chk('crm: the web-cron and the external cron both run it', str_contains((string)file_get_contents(dirname(__DIR__) . '/_lib/webcron.php'), 'crm_push_run()')
-        && str_contains((string)file_get_contents(dirname(__DIR__) . '/public/cron.php'), 'crm_push_run()'));
+    chk('crm: the scheduler runs it, and the outside scheduler reads the same registry', isset(web_cron_jobs()['crm_push'])
+        && str_contains((string)file_get_contents(dirname(__DIR__) . '/public/cron.php'), 'web_cron_jobs()'));
 
     $GLOBALS['__crm_push_transport'] = null;
     $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
@@ -35662,7 +35688,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     setting_set('policy_member_swept_through', $ago(3), 'system');
     policy_sweep_member_absences($d1);
     db_exec("UPDATE members SET status = 'active' WHERE status = 'zz_co_hold'");
-    $inc = fn($id, $d) => (bool)db_row("SELECT 1 FROM infractions WHERE personId = ? AND date = ? AND kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id, $d]);
+    $inc = fn($id, $d) => (bool)db_row("SELECT 1 FROM infractions WHERE personId = ? AND date = ? AND kind = 'halfday' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id, $d]);
     $h = db_row("SELECT * FROM attendance_held_days WHERE date = ? AND centre = 'Co Ikeja' AND personType = 'member'", [$d1]);
     chk('sign-outs · a centre where everybody came and no sign-out arrived is HELD, as sign-outs', $h && $h['cause'] === 'checkout' && (int)$h['expected'] === 4 && (int)$h['present'] === 0
         && str_contains((string)$h['why'], 'No sign-outs arrived from Co Ikeja'));
@@ -35675,7 +35701,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('sign-outs · the desk is told the held day is about sign-outs', $mine && $mine[0]['cause'] === 'checkout');
     $r = admin_attendance_held_decide(['requesterId' => $SU, 'id' => (int)$h['id'], 'decision' => 'count']);
     chk('sign-outs · "they left without signing out" logs an incomplete day for each, as the person deciding', !empty($r['ok']) && $r['logged'] === 4 && $inc('NGG-CO-2', $d1)
-        && (string)db_row("SELECT byId FROM infractions WHERE personId = 'NGG-CO-2' AND date = ? AND kind = 'absence'", [$d1])['byId'] === $SU);
+        && (string)db_row("SELECT byId FROM infractions WHERE personId = 'NGG-CO-2' AND date = ? AND kind = 'halfday'", [$d1])['byId'] === $SU);
     hooks_attendance(['source' => 'cacentre-gate', 'events' => [['ref' => 'NGG-CO-2', 'date' => $d1, 'scannedAt' => $d1 . 'T14:40:00Z', 'action' => 'out']]]);
     chk('sign-outs · …and a sign-out that arrives afterwards still clears it', !$inc('NGG-CO-2', $d1));
 
@@ -36059,6 +36085,108 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     foreach (['notice_reads' => "noticeId = '$id'", 'notice_mail' => "noticeId = '$id'", 'notices' => "noticeId = '$id'", 'notifications' => "linkRef = '$id'", 'guardian_notices' => "guardianId = 'GRD-NT-1'",
               'guardian_wards' => "guardianId = 'GRD-NT-1'", 'guardians' => "guardianId = 'GRD-NT-1'", 'members' => "memberId LIKE 'NGG-NT-%'", 'centres' => "centreId = 'CEN-NT-1'"] as $t => $w2) db_exec("DELETE FROM $t WHERE $w2");
+})();
+
+
+/* ── A day signed in with no sign-out is a half-day, not an absence (31 Oct 2026) ── */
+(function () {
+    $now = now_iso();
+    $keep = setting_raw('policy_nosignout_halfday');
+    db_insert('members', ['memberId' => 'NGG-HD-1', 'fullName' => 'Half Day', 'email' => 'hd1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    // Logged under the old rule: an absence for the day, and its fine.
+    policy_log('NGG-HD-1', 'member', 'no_checkout', '2026-10-17', 'Signed in but never signed out.');
+    policy_log('NGG-HD-1', 'member', 'absence', '2026-10-17', 'Incomplete day — no sign-out.');
+    policy_apply('NGG-HD-1', 'member');
+    $fine = fn() => db_row("SELECT status FROM sanctions WHERE personId = 'NGG-HD-1' AND kind = 'fine' AND tier >= 500000 AND tier < ?", [POLICY_T_LATE_FINE]);
+    $hadFine = $fine() !== null;
+    db_exec("DELETE FROM settings WHERE settingKey = 'policy_nosignout_halfday'");
+    $n = policy_nosignout_to_halfday();
+    $live = fn($k, $d) => (bool)db_row("SELECT 1 FROM infractions WHERE personId = 'NGG-HD-1' AND kind = ? AND date = ? AND (voidedAt IS NULL OR voidedAt = '')", [$k, $d]);
+    chk('half-day · an old no-sign-out absence becomes a half-day', $n >= 1 && !$live('absence', '2026-10-17') && $live('halfday', '2026-10-17'));
+    chk('half-day · …and its absence fine is lifted', !$hadFine || in_array(($fine()['status'] ?? 'lifted'), ['lifted'], true));
+    chk('half-day · …once only', policy_nosignout_to_halfday() === 0);
+    // Two half-days in a window count as one absence; one does not.
+    chk('half-day · one half-day is not an absence', count(policy_unexcused_absences('NGG-HD-1', '2026-10-01', '2026-10-31')) === 0);
+    policy_log('NGG-HD-1', 'member', 'halfday', '2026-10-24', POLICY_NOSIGNOUT_NOTE);
+    $u = policy_unexcused_absences('NGG-HD-1', '2026-10-01', '2026-10-31');
+    chk('half-day · two half-days count as one absence, dated on the second', $u === ['2026-10-24']);
+    if ($keep === null) db_exec("DELETE FROM settings WHERE settingKey = 'policy_nosignout_halfday'"); else setting_set('policy_nosignout_halfday', $keep, 'system');
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c = 'NGG-HD-1'");
+})();
+
+
+/* ── An appeal against a decision, reviewed by somebody else ── */
+(function () {
+    $now = now_iso(); $SU = 'NGG-2025-0099';
+    db_insert('members', ['memberId' => 'NGG-AP-1', 'fullName' => 'Appeal Kid', 'email' => 'ap1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-AP-ADM', 'fullName' => 'Second Admin', 'email' => 'ap-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    // A suspension the first admin issued by hand, with its fine.
+    backend_dispatch('admin.policy.sanction.issue', ['requesterId' => $SU, 'personId' => 'NGG-AP-1', 'kind' => 'suspension', 'reason' => 'Fighting at the desk', 'days' => 7]);
+    $sn = db_row("SELECT * FROM sanctions WHERE personId = 'NGG-AP-1' AND kind = 'suspension'");
+    $c = member_compliance(['memberId' => 'NGG-AP-1']);
+    chk('appeal · the member sees the decision by name, to appeal it', ($c['decisions'][0]['id'] ?? 0) === (int)$sn['id'] && $c['decisions'][0]['what'] === 'A suspension');
+    $r = backend_dispatch('member.request.create', ['memberId' => 'NGG-AP-1', 'kind' => 'appeal', 'body' => 'It was not me, ask the coordinator.', 'refSanctionId' => (int)$sn['id']]);
+    chk('appeal · raised against the suspension', !empty($r['ok']) && $r['request']['refSanctionId'] === (int)$sn['id'] && $r['request']['subject'] === 'Appeal: a suspension');
+    chk('appeal · once: a second appeal of the same decision is refused', (backend_dispatch('member.request.create', ['memberId' => 'NGG-AP-1', 'kind' => 'appeal', 'body' => 'again', 'refSanctionId' => (int)$sn['id']])['error'] ?? '') === 'already_appealed');
+    chk('appeal · somebody else\'s decision cannot be named', (backend_dispatch('member.request.create', ['memberId' => 'NGG-AP-1', 'kind' => 'appeal', 'body' => 'x', 'refSanctionId' => 999999])['error'] ?? '') === 'not_found');
+    $rid = $r['request']['requestId'];
+    chk('appeal · the admin who issued it cannot decide its appeal', (backend_dispatch('admin.requests.decide', ['requesterId' => $SU, 'requestId' => $rid, 'approve' => true, 'decision' => 'fine'])['error'] ?? '') === 'needs_second_person');
+    chk('appeal · upheld or not, the reviewer says why', (backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-AP-ADM', 'requestId' => $rid, 'approve' => true, 'decision' => ''])['error'] ?? '') === 'need_reason');
+    $d = backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-AP-ADM', 'requestId' => $rid, 'approve' => true, 'decision' => 'The coordinator confirms it was somebody else.']);
+    $after = db_row("SELECT status, note FROM sanctions WHERE id = ?", [(int)$sn['id']]);
+    chk('appeal · upheld by a second person: the suspension is overturned, with the appeal on it', !empty($d['ok']) && $after['status'] === 'lifted' && str_contains((string)$after['note'], $rid));
+    // A proposed eviction cannot be confirmed while its appeal is open.
+    policy_issue('NGG-AP-1', 'member', 'eviction', 99, ['status' => 'proposed', 'reason' => 'test']);
+    $ev = db_row("SELECT id FROM sanctions WHERE personId = 'NGG-AP-1' AND kind = 'eviction'");
+    backend_dispatch('member.request.create', ['memberId' => 'NGG-AP-1', 'kind' => 'appeal', 'body' => 'Please review this.', 'refSanctionId' => (int)$ev['id']]);
+    chk('appeal · an eviction is not confirmed while its appeal is open', (backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU, 'sanctionId' => (int)$ev['id'], 'status' => 'active'])['error'] ?? '') === 'under_appeal');
+    foreach (['sanctions' => 'personId', 'member_requests' => 'memberId', 'member_ledger' => 'memberId', 'members' => 'memberId'] as $t => $col) db_exec("DELETE FROM $t WHERE $col LIKE 'NGG-AP-%'");
+})();
+
+
+/* ── Achievements, worked out; learning outside NGG, confirmed ── */
+(function () {
+    $now = now_iso(); $SU = 'NGG-2025-0099';
+    db_insert('members', ['memberId' => 'NGG-AC-1', 'fullName' => 'Ada Achiever', 'displayId' => '026-901', 'email' => 'ac1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-AC-2', 'fullName' => 'Bo Second', 'displayId' => '026-902', 'email' => 'ac2@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $today = attendance_today();
+    for ($i = 1; $i <= 12; $i++) { $d = gmdate('Y-m-d', strtotime($today . ' UTC') - $i * 86400);
+        db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-AC-1', 'date' => $d, 'checkInAt' => $d . 'T08:00:00Z', 'checkOutAt' => $d . 'T15:00:00Z', 'method' => 'test', 'createdAt' => $now]); }
+    $a = member_achievements(['memberId' => 'NGG-AC-1']);
+    $t = array_column($a['items'], 't');
+    chk('achievements · 10 days attended is reached, worked out from attendance', !empty($a['ok']) && in_array('10 days attended', $t, true) && $a['stats']['days'] === 12 && $a['stats']['fullDays'] === 12);
+    chk('achievements · the next goal is within reach and counted', ($a['next'][0]['t'] ?? '') === '13 more days to 25 days attended');
+    chk('achievements · a place at the centre for attendance this month or last', (bool)array_filter($a['items'], fn($x) => $x['kind'] === 'place' && str_starts_with($x['t'], '1st at Egbeda')));
+    // Staff give a recognition; the member sees it.
+    $w = backend_dispatch('admin.members.award.add', ['requesterId' => $SU, 'memberId' => 'NGG-AC-1', 'name' => 'Best in Coding', 'category' => 'academic', 'period' => 'Term 1 2026']);
+    $a2 = member_achievements(['memberId' => 'NGG-AC-1']);
+    chk('achievements · a recognition from staff is shown, with its kind', !empty($w['ok']) && ($a2['items'][0]['t'] ?? '') === 'Best in Coding' && str_contains($a2['items'][0]['s'], 'Academic'));
+    chk('achievements · a recognition needs a name', (backend_dispatch('admin.members.award.add', ['requesterId' => $SU, 'memberId' => 'NGG-AC-1', 'name' => ''])['error'] ?? '') === 'name_required');
+
+    // Learning outside NGG.
+    chk('outside · needs evidence: a video, picture, link or a few lines', (backend_dispatch('member.learning.add', ['memberId' => 'NGG-AC-1', 'data' => ['title' => 'Loops', 'platform' => 'Scratch']])['error'] ?? '') === 'evidence_required');
+    $e = backend_dispatch('member.learning.add', ['memberId' => 'NGG-AC-1', 'data' => ['title' => 'Responsive Web Design: 20 steps', 'platform' => 'freeCodeCamp', 'hours' => 3,
+        'media' => [['url' => 'https://res.example.com/a.mp4', 'kind' => 'video'], 'javascript:alert(1)', 'https://res.example.com/b.png']]]);
+    chk('outside · logged with its video and picture; a bad link is dropped', !empty($e['ok']) && $e['entry']['status'] === 'pending' && count($e['entry']['media']) === 2 && $e['entry']['media'][0]['kind'] === 'video');
+    chk('outside · it waits for an instructor and counts for nothing yet', member_achievements(['memberId' => 'NGG-AC-1'])['stats']['outside'] === 0);
+    chk('outside · sending back needs a note', (backend_dispatch('admin.learning.review', ['requesterId' => $SU, 'entryIds' => [$e['entry']['entryId']], 'decision' => 'returned'])['error'] ?? '') === 'note_required');
+    $rv = backend_dispatch('admin.learning.review', ['requesterId' => $SU, 'entryIds' => [$e['entry']['entryId'], 'LRN-NOPE'], 'decision' => 'confirmed']);
+    chk('outside · confirmed per entry; an unknown one is named, not hidden', !empty($rv['ok']) && $rv['applied'] === 1 && $rv['results'][1]['error'] === 'not_found');
+    $st = member_achievements(['memberId' => 'NGG-AC-1'])['stats'];
+    chk('outside · once confirmed it counts, with its hours', $st['outside'] === 1 && (float)$st['outsideHours'] === 3.0);
+    chk('outside · a confirmed entry stays on the record', (backend_dispatch('member.learning.remove', ['memberId' => 'NGG-AC-1', 'entryId' => $e['entry']['entryId']])['error'] ?? '') === 'confirmed');
+    // A platform's report.
+    $rows = [['id' => '026-902', 'title' => 'Python basics', 'progress' => '60%', 'hours' => 4], ['name' => 'ada achiever', 'title' => 'Python basics', 'progress' => '100%'], ['name' => 'Nobody Here', 'title' => 'x']];
+    $chk = backend_dispatch('admin.learning.import', ['requesterId' => $SU, 'platform' => 'Khan Academy', 'rows' => $rows]);
+    chk('report · the check matches by printed ID and by name, refuses the unknown, writes nothing', !empty($chk['ok']) && $chk['add'] === 2 && $chk['refused'] === 1 && !$chk['applied']
+        && !db_row("SELECT 1 x FROM learning_log WHERE source = 'report'"));
+    $ap = backend_dispatch('admin.learning.import', ['requesterId' => $SU, 'platform' => 'Khan Academy', 'rows' => $rows, 'apply' => true]);
+    chk('report · applied, the rows arrive confirmed', $ap['add'] === 2 && (int)db_row("SELECT COUNT(*) c FROM learning_log WHERE source = 'report' AND status = 'confirmed'")['c'] === 2);
+    chk('report · the same report again adds nothing', backend_dispatch('admin.learning.import', ['requesterId' => $SU, 'platform' => 'Khan Academy', 'rows' => $rows, 'apply' => true])['add'] === 0);
+    $ov = backend_dispatch('admin.learning.overview', ['requesterId' => $SU, 'centre' => 'Egbeda']);
+    $mine = array_values(array_filter($ov['members'] ?? [], fn($x) => $x['memberId'] === 'NGG-AC-1'));
+    chk('overview · how each member is doing: attendance, outside learning, last learnt', $mine && $mine[0]['days90'] === 12 && $mine[0]['outside'] === 2 && $mine[0]['lastLearnt'] === $today);
+    foreach (['attendance' => 'studentId', 'learning_log' => 'memberId', 'awards' => 'subjectId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-AC-%'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

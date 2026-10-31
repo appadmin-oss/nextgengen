@@ -4987,3 +4987,40 @@ INSERT INTO schema_version (version) VALUES (212) ON DUPLICATE KEY UPDATE versio
 -- CREATE / ALTER / INSERT): it is NGG_MYSQL_ROW_FIXUPS 'saturday_formation.hour_later.*'
 -- in api/_lib/db.php, guarded by a marker so it moves each site's schedule once.
 INSERT INTO schema_version (version) VALUES (213) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 214 · An appeal can be against a sanction, not only a charge ──
+ALTER TABLE member_requests ADD COLUMN refSanctionId INT NOT NULL DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (214) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 215 · Learning outside NGG, and the kind of a recognition ──
+CREATE TABLE IF NOT EXISTS learning_log (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  entryId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  centreId VARCHAR(40) NOT NULL DEFAULT '',
+  platform VARCHAR(120) NOT NULL DEFAULT '',
+  providerId VARCHAR(64) NOT NULL DEFAULT '',
+  title VARCHAR(200) NOT NULL DEFAULT '',
+  progress VARCHAR(120) NOT NULL DEFAULT '',
+  hours DECIMAL(7,2) NOT NULL DEFAULT 0,
+  doneOn VARCHAR(10) NOT NULL DEFAULT '',
+  link VARCHAR(500) NOT NULL DEFAULT '',
+  mediaJson TEXT,
+  notes TEXT,
+  source VARCHAR(16) NOT NULL DEFAULT 'member',
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  reviewedBy VARCHAR(64) NOT NULL DEFAULT '',
+  reviewedAt VARCHAR(32) NOT NULL DEFAULT '',
+  reviewNote VARCHAR(500) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_llog_entry (entryId),
+  KEY idx_llog_member (memberId, doneOn),
+  KEY idx_llog_status (status, centre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE awards ADD COLUMN category VARCHAR(32) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (215) ON DUPLICATE KEY UPDATE version = version;

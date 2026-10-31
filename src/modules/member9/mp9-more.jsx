@@ -228,7 +228,10 @@ Object.assign(Mp9Portal.prototype, {
     const away = "I'll be away" + (ex ? " · " + ex.left + " of " + ex.max + " absences left" : "");
     const KINDS = [["I'll be away", "leave", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD, blank if you do not know)", "Why"], away],
       ["Academic leave (exams or a school programme)", "academic", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD)", "What it’s for, and the school"]],
-      ["Ask for a replacement ID", "idcard", ["Say why"]], ["Correct my details", "details", ["What needs changing"]], ["Appeal a charge", "appeal", ["Which charge, and why"]], ["Something else", "help", ["Anything else the desk should know"]]];
+      ["Ask for a replacement ID", "idcard", ["Say why"]], ["Correct my details", "details", ["What needs changing"]]]
+      /* Each decision that still stands can be appealed by name. Somebody who didn't make it reviews it. */
+      .concat(((this.dd("comp9") || {}).decisions || []).filter(d => !d.underAppeal).map(d => ["Appeal: " + d.what + (d.amount ? " · " + mp9Naira(d.amount) : ""), "appeal", ["Why it's wrong"], null, { refSanctionId: d.id, subject: "Appeal: " + d.what }]))
+      .concat([["Appeal a charge", "appeal", ["Which charge, and why"]], ["Something else", "help", ["Anything else the desk should know"]]]);
     const K = KINDS.find(k => k[0] === s.rKind);
     const f = s.rF || {};
     const rOk = !!K && (K[1] === "leave" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && !!(f[K[2][2]] || "").trim() : K[1] === "academic" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][1]] || "") && (f[K[2][2]] || "").trim().length >= 10 : !!(f[K[2][0]] || "").trim());
@@ -247,9 +250,43 @@ Object.assign(Mp9Portal.prototype, {
       rCant: !rOk, rOp: rOk ? 1 : 0.4, rCancel: () => this.setState({ rKind: null, rF: {} }),
       rSend: () => { if (!rOk) return; const v = i => (f[K[2][i]] || "").trim();
         const body = (K[1] === "leave" || K[1] === "academic") ? { kind: K[1], fromDate: v(0), toDate: v(1), body: v(2) }
-          : { kind: K[1], subject: f.subject || "", body: v(0) };
-        NGGApi.member.raiseRequest(body).then(() => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs"]); this.toast("Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
+          : Object.assign({ kind: K[1], subject: f.subject || "", body: v(0) }, K[4] || {});
+        NGGApi.member.raiseRequest(body).then(() => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs", "comp9"]); this.toast("Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
       reqList: list.length ? list : [{ t: "You haven’t asked the desk anything yet", key: "none", gone: false, hasReply: false, reply: "", canWithdraw: false, sFg: "#6b6b72", sText: "", when: "–", withdraw: () => {} }],
+      ...this.achVals(),
+    };
+  },
+  /* Achievements, worked out from the records (domain/achievements.php), and
+     learning outside NGG: logged here with a video, screenshots or pictures,
+     confirmed by an instructor. */
+  achVals() {
+    const s = this.state, A = this.dd("ach") || {}, L = this.dd("llog") || {}, o = s.out || {};
+    const ach = (A.items || []).map(x => ({ icon: "ph ph-" + (x.icon || "medal"), t: x.t, s: x.s || "" }));
+    const set = p => this.setState(st => ({ out: { ...(st.out || {}), ...p } }));
+    const F = [["title", "What you learnt or made", "e.g. Responsive web design, part 1"], ["platform", "Where", "e.g. freeCodeCamp, Khan Academy, Scratch"],
+      ["progress", "How far (optional)", "e.g. 20 of 40 steps, or finished"], ["hours", "Hours spent (optional)", "e.g. 3"], ["link", "Link (optional)", "https://…"]];
+    const files = o.files || [];
+    const ok = !!(o.title || "").trim() && !!(o.platform || "").trim() && (files.length > 0 || /^https:\/\//.test(o.link || "") || (o.notes || "").trim().length >= 20) && !o.busy;
+    const ST = { pending: ["Waiting for an instructor", "#7a5600"], confirmed: ["Confirmed", "#1d6b30"], returned: ["Sent back", "#b0361c"] };
+    return {
+      achLead: ach.length ? "Worked out from your attendance, lessons and what staff recognised." : "Your achievements appear here as you attend, finish lessons and are recognised.",
+      ach, achNext: (A.next || []).map(x => ({ icon: "ph ph-" + (x.icon || "flag"), t: x.t })),
+      outForm: !!o.open, outOpen: () => set({ open: true }), outCancel: () => this.setState({ out: {} }),
+      outFields: F.map(f => ({ f: f[1], ph: f[2], v: o[f[0]] || "", on: e => set({ [f[0]]: e.target.value }) })),
+      outNotes: o.notes || "", outOnNotes: e => set({ notes: e.target.value }),
+      outFileL: o.busy ? "Uploading…" : files.length ? files.length + " added · add more" : "Add a video, screenshots or pictures",
+      outOnFiles: e => { const list = Array.from(e.target.files || []).slice(0, 8 - files.length); if (!list.length) return; set({ busy: true });
+        Promise.all(list.map(f => NGGApi.uploadFile(f, "assignment").then(u => ({ url: mp9Abs(u.url), kind: /^video\//.test(f.type) ? "video" : /pdf/.test(f.type) ? "pdf" : "image" }))))
+          .then(up => set({ busy: false, files: files.concat(up) })).catch(err => { set({ busy: false }); this.toast(mp9Err(err)); }); },
+      outCant: !ok, outOp: ok ? 1 : 0.4,
+      outSend: () => { if (!ok) return; set({ busy: true });
+        NGGApi.member.learningAdd({ title: o.title, platform: o.platform, progress: o.progress || "", hours: +o.hours || 0, link: o.link || "", notes: o.notes || "", media: files })
+          .then(() => { this.setState({ out: {} }); this.refresh(["llog", "ach"]); this.toast("Sent. An instructor will confirm it."); })
+          .catch(err => { set({ busy: false }); this.toast(mp9Err(err)); }); },
+      outList: (L.entries || []).map(x => { const st = ST[x.status] || [x.status, "#4a4a50"];
+        return { t: x.title, st: st[0], fg: st[1], s: [x.platform, x.progress, x.hours ? x.hours + " h" : "", (x.media || []).length ? (x.media.length + " file" + (x.media.length === 1 ? "" : "s")) : "", x.doneOn].filter(Boolean).join(" · "),
+          hasNote: !!x.reviewNote, note: x.reviewNote ? "Instructor: " + x.reviewNote : "", canRemove: x.status !== "confirmed",
+          remove: () => NGGApi.member.learningRemove(x.entryId).then(() => { this.refresh(["llog"]); this.toast("Removed"); }).catch(err => this.toast(mp9Err(err))) }; }),
     };
   },
   meVals() {

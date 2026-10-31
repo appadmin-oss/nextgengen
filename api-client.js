@@ -1099,6 +1099,11 @@
       projectMark:  (projectId, status, note) => request('/member/projects.php', { body: { projectId, status, note: note || '' } }),
       withdrawRequest: (requestId) => request('/member/self.php', { body: { action: 'withdraw', requestId } }),
       compliance:   () => request('/member/compliance.php'),
+      // What I have done well, worked out from my records; and what I learnt outside NGG (domain/achievements.php).
+      achievements: () => request('/member/achievements.php'),
+      learning:       () => request('/member/learning.php'),
+      learningAdd:    (data) => request('/member/learning.php', { body: { action: 'add', data } }),
+      learningRemove: (entryId) => request('/member/learning.php', { body: { action: 'remove', entryId } }),
       coach:        (messages) => request('/member/coach.php', { body: { messages } }),
       companion:    () => request('/member/companion.php'),
       /* Opportunities that fit me (domain/opportunities.php); save toggles my bookmark. */
@@ -1618,6 +1623,16 @@
       companion: {
         board:  (rating) => request('/admin/companion.php' + qs({ rating: rating || '' })),
         assess: (memberIds) => request('/admin/companion.php', { body: { action: 'assess', memberIds } }),
+      },
+      /* Learning outside NGG, confirmed by an instructor; how each member is doing; achievements (domain/achievements.php). */
+      learning: {
+        list:        (status, memberId) => request('/admin/learning.php' + qs({ view: 'list', status: status || 'pending', memberId: memberId || '' })),
+        overview:    (centre) => request('/admin/learning.php' + qs({ view: 'overview', centre: centre || '' })),
+        achievements: (memberId) => request('/admin/learning.php' + qs({ view: 'achievements', memberId })),
+        review:      (entryIds, decision, note) => request('/admin/learning.php', { body: { action: 'review', entryIds, decision, note: note || '' } }),
+        importRows:  (platform, rows, apply) => request('/admin/learning.php', { body: { action: 'import', platform, rows, apply: !!apply } }),
+        award:       (memberId, d) => request('/admin/learning.php', { body: Object.assign({ action: 'award', memberId }, d) }),
+        awardRemove: (awardId) => request('/admin/learning.php', { body: { action: 'awardRemove', awardId } }),
       },
       /* Where a course leads: the awarding bodies outside NGG, what each
          awards, and who holds one (domain/providers.php). */

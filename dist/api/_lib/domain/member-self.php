@@ -30,7 +30,7 @@ declare(strict_types=1);
 /** The kinds a member may raise, and what each is called on screen. */
 const MEMBER_REQUEST_KINDS = [
     'payment' => 'Payment made',
-    'appeal'  => 'Appeal a charge',
+    'appeal'  => 'Appeal',
     'leave'   => 'Leave of absence',
     /* Academic leave: weeks away for school exams or a school programme,
        approved by the desk with the school's letter where there is one. Its
@@ -439,6 +439,7 @@ function member_request_public(array $r): array
         'toDate'    => (string)($r['toDate'] ?? ''),
         'decision'  => (string)($r['decision'] ?? ''),
         'decidedAt' => (string)($r['decidedAt'] ?? ''),
+        'refSanctionId' => (int)($r['refSanctionId'] ?? 0),
         'createdAt' => (string)($r['createdAt'] ?? ''),
         'byFamily'  => (string)($r['raisedBy'] ?? '') !== '',
         'topic'     => (string)($r['topic'] ?? ''),
@@ -576,8 +577,8 @@ function member_records(array $p): array
                     'revoked' => trim((string)($c['revokedAt'] ?? '')) !== ''];
     }
 
-    // A day with no sign-out was counted absent by the rule: say so, not "present".
-    $incomplete = array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id]), 'date', 'date');
+    // A day with no sign-out is a half-day by the rule: say so, not "present".
+    $incomplete = array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind IN ('absence','halfday') AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id]), 'date', 'date');
     $present = count($days);
     return ['ok' => true, 'attendance' => [
         'present' => $present,
@@ -591,7 +592,7 @@ function member_records(array $p): array
             'in' => substr((string)($d['checkInAt'] ?? ''), 11, 5),
             'out' => substr((string)($d['checkOutAt'] ?? ''), 11, 5),
             'method' => (string)($d['method'] ?? ''),
-        ] + (isset($incomplete[(string)$d['date']]) ? ['status' => 'no sign-out, counted absent'] : []), $days),
+        ] + (isset($incomplete[(string)$d['date']]) ? ['status' => 'no sign-out, a half-day'] : []), $days),
     ], 'certificates' => $certs, 'member' => [
         'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
         'centre' => (string)($m['centre'] ?? ''), 'level' => (string)($m['level'] ?? ''),
@@ -733,6 +734,19 @@ function member_request_create(array $p): array
         $ref = trim((string)($p['refEntryId'] ?? ''));
         if ($ref !== '' && db_row('SELECT id FROM member_ledger WHERE entryId = ? AND memberId = ? LIMIT 1', [$ref, $id])) {
             $row['refEntryId'] = $ref;
+        }
+        /* Or a SANCTION of theirs — a warning, Dormant Track, a suspension, an
+           eviction, a fine. Their own, still standing, and not already under
+           appeal: one appeal per decision, so the desk decides it once. */
+        $sid = (int)($p['refSanctionId'] ?? 0);
+        if ($sid > 0) {
+            $sn = db_row("SELECT id, kind, reason, status FROM sanctions WHERE id = ? AND personId = ? LIMIT 1", [$sid, $id]);
+            if (!$sn) return ['ok' => false, 'error' => 'not_found', 'detail' => 'That decision is not on this record.'];
+            if (!in_array((string)$sn['status'], ['active', 'proposed', 'pending'], true)) return ['ok' => false, 'error' => 'not_standing', 'detail' => 'That decision no longer stands, so there is nothing to appeal.'];
+            if (db_row("SELECT id FROM member_requests WHERE kind = 'appeal' AND refSanctionId = ? AND status = 'open' LIMIT 1", [$sid]))
+                return ['ok' => false, 'error' => 'already_appealed', 'detail' => 'This is already under appeal. You will be told the decision.'];
+            $row['refSanctionId'] = $sid;
+            if ($row['subject'] === '') $row['subject'] = 'Appeal: ' . (POLICY_APPEAL_WORDS[(string)$sn['kind']] ?? (string)$sn['kind']);
         }
         if ($row['subject'] === '') $row['subject'] = 'Appeal';
     } elseif ($kind === 'idcard') {
@@ -1094,6 +1108,20 @@ function admin_request_decide(array $p): array
     if ((string)$r['kind'] === 'feedback' || ((string)($r['topic'] ?? '') !== '' && isset(MEMBER_FEEDBACK_TOPICS[(string)$r['topic']]))) return admin_feedback_answer($g, $r, $rCentre, $p);
 
     $approve = !empty($p['approve']);
+    /* THE REVIEW. An appeal against a sanction is decided by somebody other
+       than the person who issued or confirmed it — a decision is not reviewed
+       by its author — and with a reason either way: upheld or not, the family
+       is owed the why. Upheld, the sanction is overturned (lifted), which takes
+       its fine off the account and, for a suspension, its re-entry fee. */
+    $appealOf = null;
+    if ((string)$r['kind'] === 'appeal' && (int)($r['refSanctionId'] ?? 0) > 0) {
+        $appealOf = db_row('SELECT * FROM sanctions WHERE id = ? LIMIT 1', [(int)$r['refSanctionId']]);
+        $me = (string)($g['requester']['memberId'] ?? '');
+        if ($appealOf && $me !== '' && in_array($me, [(string)$appealOf['issuedBy'], (string)($appealOf['clearedBy'] ?? '')], true))
+            return ['ok' => false, 'error' => 'needs_second_person', 'detail' => 'You made this decision, so somebody else reviews the appeal.'];
+        if (trim((string)($p['decision'] ?? '')) === '')
+            return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Say why, either way. The family sees it.'];
+    }
     /* The permission cap holds at the desk too: several requests may each have
        fitted when filed, and approving all of them would grant more than the
        session allows. Counted against what is already APPROVED. */
@@ -1172,6 +1200,10 @@ function admin_request_decide(array $p): array
     }
 
     db_update('member_requests', $patch, ['id' => (int)$r['id']]);
+    if ($appealOf && $approve && in_array((string)$appealOf['status'], ['active', 'proposed', 'pending'], true) && function_exists('admin_policy_sanction_update')) {
+        admin_policy_sanction_update(['requesterId' => (string)$g['requester']['memberId'], 'sanctionId' => (int)$appealOf['id'], 'status' => 'lifted',
+            'note' => 'Appeal ' . $rid . ' upheld: ' . mb_substr($reason, 0, 200)]);
+    }
     /* An absence request decides a fine that was being held (policy_apply's
        absence rule): declined, the absences it covered are fined now; approved,
        they are not. Approved academic leave goes further — its days were never
@@ -1179,7 +1211,7 @@ function admin_request_decide(array $p): array
        which lifts anything they caused. */
     if (in_array((string)$r['kind'], ['leave', 'academic'], true) && (string)$r['memberId'] !== '' && function_exists('policy_apply')) {
         if ($approve && (string)$r['kind'] === 'academic') {
-            db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = ? WHERE personId = ? AND kind IN ('absence', 'no_checkout') AND date >= ? AND date <= ? AND (voidedAt IS NULL OR voidedAt = '')",
+            db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = ? WHERE personId = ? AND kind IN ('absence', 'no_checkout', 'halfday') AND date >= ? AND date <= ? AND (voidedAt IS NULL OR voidedAt = '')",
                 [now_iso(), $by, 'Academic leave ' . $rid . ' approved', (string)$r['memberId'], (string)$r['fromDate'], (string)($r['toDate'] ?: $r['fromDate'])]);
         }
         policy_apply((string)$r['memberId'], 'member');

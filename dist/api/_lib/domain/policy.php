@@ -787,10 +787,62 @@ function policy_unexcused_absences(string $personId, string $from, string $to): 
         $cover = function_exists('member_absence_cover') ? member_absence_cover($personId, (string)$r['date']) : '';
         if (!in_array($cover, ['approved', 'academic', 'open'], true)) $out[] = (string)$r['date'];
     }
+    $out = array_merge($out, policy_halfday_pairs($personId, $from, $to));
+    sort($out);
     return $out;
 }
 
+/**
+ * Two half-days make one absence (owner, 31 Oct 2026). A day with a check-in
+ * and no sign-out is a HALF-DAY, not an absence: the child came. It carries no
+ * absence fine and no exercise of its own; every second one in the window
+ * counts once towards the absences that lead to a suspension, dated on that
+ * second day. Excused days are not counted, as for absences.
+ *
+ * @return list<string> the date of every second half-day in [from, to]
+ */
+function policy_halfday_pairs(string $personId, string $from, string $to): array {
+    $days = [];
+    foreach (db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'halfday' AND (voidedAt IS NULL OR voidedAt = '') AND date >= ? AND date <= ? ORDER BY date", [$personId, $from, $to]) as $r) {
+        $cover = function_exists('member_absence_cover') ? member_absence_cover($personId, (string)$r['date']) : '';
+        if (!in_array($cover, ['approved', 'academic', 'open'], true)) $days[] = (string)$r['date'];
+    }
+    $out = [];
+    foreach ($days as $i => $d) if ($i % 2 === 1) $out[] = $d;
+    return $out;
+}
+
+/** The note a no-sign-out half-day carries. Starts "Incomplete", so the
+ *  repair tools and a late sign-out (policy_checkout_landed) find it. */
+const POLICY_NOSIGNOUT_NOTE = 'Incomplete day — signed in, no sign-out: a half-day.';
+
+/**
+ * One time: every live "Incomplete" ABSENCE becomes a half-day. Before 31 Oct
+ * 2026 a day with no sign-out was counted as a whole absence and fined as one;
+ * the child had come. The absence is voided with that reason, a half-day is
+ * logged for the same day, and the person's standing is worked out again — so
+ * the absence fine for that day is lifted (a paid one becomes credit).
+ */
+function policy_nosignout_to_halfday(): int {
+    if ((string)(setting_raw('policy_nosignout_halfday') ?? '') !== '') return 0;
+    $rows = db_all("SELECT id, personId, personType, date, byId FROM infractions WHERE kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')");
+    $people = [];
+    foreach ($rows as $r) {
+        db_update('infractions', ['voidedAt' => now_iso(), 'voidedBy' => 'system', 'voidReason' => 'A day signed in with no sign-out is a half-day, not an absence (policy change, 31 Oct 2026).'], ['id' => (int)$r['id']]);
+        policy_log((string)$r['personId'], (string)$r['personType'], 'halfday', (string)$r['date'], POLICY_NOSIGNOUT_NOTE, (string)$r['byId'] ?: 'system');
+        $people[(string)$r['personId']] = (string)$r['personType'];
+    }
+    foreach ($people as $id => $t) policy_relift($id, in_array($t, ['student', 'volunteer', 'member'], true) ? $t : 'student');
+    setting_set('policy_nosignout_halfday', now_iso(), 'system');
+    if ($rows) audit('policy.nosignout_halfday', 'system', '', ['converted' => count($rows), 'people' => count($people)]);
+    return count($rows);
+}
+
 // ── Infractions ─────────────────────────────────────────────────────────────
+
+/** A sanction, as a family reads it in "Appeal: …". */
+const POLICY_APPEAL_WORDS = ['warning' => 'a warning', 'dormant' => 'the Dormant Track', 'suspension' => 'a suspension', 'eviction' => 'an eviction',
+    'fine' => 'a fine', 'corrective' => 'corrective exercise', 'review' => 'a management review'];
 
 const POLICY_INFRACTIONS = ['absence', 'late', 'tardy', 'halfday', 'no_checkout', 'idcard_missing', 'idcard_lost', 'review_missed', 'misconduct'];
 
@@ -824,7 +876,7 @@ function policy_checkout_landed(string $personId, string $type, string $date, st
     if ($personId === '' || $date === '') return 0;
     $n = db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = 'Signed out; the sign-out arrived after the nightly check.'
                   WHERE personId = ? AND date = ? AND (voidedAt IS NULL OR voidedAt = '')
-                    AND (kind = 'no_checkout' OR (kind = 'absence' AND note LIKE 'Incomplete%'))",
+                    AND (kind = 'no_checkout' OR (kind IN ('absence','halfday') AND note LIKE 'Incomplete%'))",
                  [now_iso(), substr($byId, 0, 64), $personId, $date]);
     if ($n > 0) {
         audit('policy.checkout_landed', $byId, $personId, ['date' => $date, 'voided' => $n]);
@@ -1369,6 +1421,16 @@ function policy_apply_session(string $personId, string $type, array $cfg, string
     $every = max(1, (int)$cfg['suspendAfterAbsences']);
     $bySession = [];
     foreach ($unexcused as $d) { [$a] = policy_session_bounds($personId, $d); $bySession[$a][] = $d; }
+    /* Two half-days (signed in, no sign-out) count as one absence in their
+       session — paired within the session, dated on the second. */
+    $halves = [];
+    foreach (db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'halfday' AND (voidedAt IS NULL OR voidedAt = '') ORDER BY date", [$personId]) as $h) {
+        $d = (string)$h['date'];
+        $cover = function_exists('member_absence_cover') ? member_absence_cover($personId, $d) : '';
+        if (in_array($cover, ['approved', 'academic', 'open'], true)) continue;
+        [$a] = policy_session_bounds($personId, $d); $halves[$a][] = $d;
+    }
+    foreach ($halves as $a => $ds) { foreach ($ds as $i => $d) if ($i % 2 === 1) $bySession[$a][] = $d; sort($bySession[$a]); }
     foreach ($bySession as $start => $days) {
         $times = min(9, intdiv(count($days), $every));
         for ($j = 1; $j <= $times; $j++) {
@@ -1525,6 +1587,7 @@ function policy_on_checkin(string $personId, string $type, string $date, array $
  * gap (host down for a week) is caught up rather than skipped.
  */
 function policy_sweep_absences(?string $upto = null): array {
+    policy_nosignout_to_halfday();
     $pol = policy_settings();
     if (empty($pol['enabled'])) return ['ok' => true, 'skipped' => 'policy_disabled'];
     $cfg = programme_settings();
@@ -1577,10 +1640,10 @@ function policy_sweep_absences(?string $upto = null): array {
                     if (policy_log($id, $type, 'absence', $d, 'No check-in scan on a programme day.')) $absences++;
                 } elseif (!empty($pol['checkoutRequired']) && $present[$id] === '' && !isset($outHeld[(string)$row['centre']])) {
                     // Scanned in, never scanned out. Logged as its own fact so
-                    // the ledger says what actually happened, and as an absence
-                    // because the blueprint counts a missing scan as one.
+                    // the ledger says what actually happened, and as a half-day:
+                    // they came, so it is not an absence (two make one).
                     policy_log($id, $type, 'no_checkout', $d, 'Checked in but never scanned out.');
-                    if (policy_log($id, $type, 'absence', $d, 'Incomplete scan — no check-out (§1.3).')) $absences++;
+                    policy_log($id, $type, 'halfday', $d, POLICY_NOSIGNOUT_NOTE);
                     $noCheckout++;
                 }
             }
@@ -1607,6 +1670,7 @@ function policy_sweep_absences(?string $upto = null): array {
  * from the day the rule first applied (`policy_member_checkout_since`).
  */
 function policy_sweep_member_absences(?string $upto = null): array {
+    policy_nosignout_to_halfday();
     if (!policy_enabled_for('member')) return ['ok' => true, 'skipped' => 'member_policy_disabled'];
     $cal = member_programme_settings();
     if (empty($cal['enabled'])) return ['ok' => true, 'skipped' => 'no_member_calendar'];
@@ -1664,7 +1728,7 @@ function policy_sweep_member_absences(?string $upto = null): array {
                 // Signed in, never signed out — left before closing time, or
                 // walked past the desk. The day was not completed.
                 policy_log($id, 'member', 'no_checkout', $d, 'Signed in but never signed out.');
-                if (policy_log($id, 'member', 'absence', $d, 'Incomplete day — no sign-out.')) $absences++;
+                policy_log($id, 'member', 'halfday', $d, POLICY_NOSIGNOUT_NOTE);
             }
         }
         setting_set('policy_member_swept_through', $d, 'system');
@@ -1949,6 +2013,11 @@ function admin_policy_sanction_update(array $p): array {
     $s = db_row('SELECT * FROM sanctions WHERE id = ?', [$sid]);
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     $pg = policy_subject_gate($g['requester'], (string)$s['personId']); if (!$pg['ok']) return $pg;
+    /* Not while it is under appeal: confirming an eviction (or setting any
+       sanction going) before its appeal is heard makes the appeal decoration. */
+    if ($status === 'active' && (string)$s['status'] === 'proposed' && function_exists('db_row')
+        && db_row("SELECT id FROM member_requests WHERE kind = 'appeal' AND refSanctionId = ? AND status = 'open' LIMIT 1", [$sid]))
+        return ['ok' => false, 'error' => 'under_appeal', 'detail' => 'This is under appeal. Decide the appeal first, in Requests.'];
     db_update('sanctions', [
         'status' => $status,
         'clearedAt' => in_array($status, ['active', 'proposed'], true) ? '' : now_iso(),
@@ -2208,7 +2277,7 @@ function admin_attendance_held_decide(array $p): array {
             if ($type === 'member' && function_exists('member_absence_cover') && member_absence_cover($id, $date) === 'academic') continue;
             if ($byDepartures) {
                 policy_log($id, $type, 'no_checkout', $date, 'Signed in but never signed out — counted by staff after the day was held.', $by);
-                if (policy_log($id, $type, 'absence', $date, 'Incomplete day — no sign-out; counted by staff after the day was held.', $by)) { $logged++; policy_apply($id, $type); }
+                if (policy_log($id, $type, 'halfday', $date, POLICY_NOSIGNOUT_NOTE, $by)) { $logged++; policy_apply($id, $type); }
             } elseif (policy_log($id, $type, 'absence', $date, 'No check-in — counted by staff after the day was held.', $by)) { $logged++; policy_apply($id, $type); }
         }
     }
@@ -2284,7 +2353,7 @@ function admin_policy_absence_repair(array $p): array {
     $onlyCentre = trim((string)($p['centre'] ?? ''));
     $ph = implode(',', array_fill(0, count($types), '?'));
     $rows = db_all("SELECT id, personId, personType, kind, date, note FROM infractions
-                    WHERE personType IN ($ph) AND kind IN ('absence','no_checkout') AND byId = 'system' AND " . policy_sweep_note_sql() . "
+                    WHERE personType IN ($ph) AND kind IN ('absence','no_checkout','halfday') AND byId = 'system' AND " . policy_sweep_note_sql() . "
                       AND (voidedAt IS NULL OR voidedAt = '') AND date >= ? AND date <= ? ORDER BY date",
                    array_merge($types, [$from, $to]));
     // Each person's centre, per type, in one read each — never per row.

@@ -163,8 +163,16 @@ function member_compliance(array $p): array {
             'issuedAt' => (string)$f['issuedAt'],
         ];
     }
+    /* Every decision that still stands, so it can be appealed by name. */
+    $open = array_flip(array_map('intval', array_column(db_all("SELECT refSanctionId FROM member_requests WHERE memberId = ? AND kind = 'appeal' AND status = 'open' AND refSanctionId > 0", [$memberId]), 'refSanctionId')));
+    $decisions = [];
+    foreach (db_all("SELECT id, kind, reason, status, amount, issuedAt FROM sanctions WHERE personId = ? AND status IN ('active','pending','proposed') AND kind <> 'review' ORDER BY issuedAt DESC LIMIT 40", [$memberId]) as $d) {
+        $decisions[] = ['id' => (int)$d['id'], 'kind' => (string)$d['kind'], 'what' => ucfirst(POLICY_APPEAL_WORDS[(string)$d['kind']] ?? (string)$d['kind']),
+            'reason' => (string)$d['reason'], 'amount' => (int)$d['amount'], 'issuedAt' => (string)$d['issuedAt'], 'underAppeal' => isset($open[(int)$d['id']])];
+    }
     return [
         'ok'             => true,
+        'decisions'      => $decisions,
         'enabled'        => $enabled,
         'state'          => $state['state'],
         'until'          => $state['until'],

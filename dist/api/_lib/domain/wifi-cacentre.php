@@ -66,7 +66,7 @@ function wifi_cac_request(string $typ, array $claims, string $secret, int $ts): 
 }
 
 /** POST one Wi-Fi call to the gate, on the attendance connection. */
-function wifi_cac_post(string $typ, array $claims, int $timeout = 60): array {
+function wifi_cac_post(string $typ, array $claims, int $timeout = 20): array {
     $secret = wifi_cac_secret();
     if ($secret === '') return ['ok' => false, 'error' => 'not_configured'];
     $rq = wifi_cac_request($typ, $claims, $secret, time());
@@ -79,7 +79,10 @@ function wifi_cac_post(string $typ, array $claims, int $timeout = 60): array {
     curl_close($ch);
     if ($err !== '' || $raw === false) { error_log('[wifi-cac] ' . ($err ?: 'no response')); return ['ok' => false, 'error' => 'unreachable']; }
     $json = json_decode((string)$raw, true);
-    if (!is_array($json)) return ['ok' => false, 'error' => 'bad-response', 'http' => $code];
+    /* The gate answers JSON on this route, always. Anything else came from somewhere
+       that does not know the route — a gate not yet redeployed proxies an unknown
+       /v1 path through to the site, which answers with a web page. */
+    if (!is_array($json)) return ['ok' => false, 'error' => 'gate_not_updated', 'http' => $code];
     if (empty($json['ok'])) {
         error_log('[wifi-cac] HTTP ' . $code . ' ' . json_encode($json));
         if (!isset($json['error']) && isset($json['code'])) $json['error'] = $json['code'];
@@ -166,7 +169,7 @@ function wifi_cac_push(string $by = 'cron'): array {
           'unknownSites' => [], 'refusals' => [], 'error' => ''];
     foreach ($chunks as $chunk) {
         $res = wifi_cac_post('wifi.roster', ['full' => $full, 'people' => $chunk]);
-        if (empty($res['ok'])) { $r['ok'] = false; $r['error'] = (string)($res['error'] ?? 'refused'); break; }
+        if (empty($res['ok'])) { $r['ok'] = false; $r['error'] = (string)($res['error'] ?? 'refused'); $r['http'] = (int)($res['http'] ?? 0); break; }
         $r['applied'] += (int)($res['applied'] ?? 0); $r['refused'] += (int)($res['refused'] ?? 0); $r['gone'] += (int)($res['gone'] ?? 0);
         foreach ((array)($res['unknownSites'] ?? []) as $code => $n) $r['unknownSites'][(string)$code] = ($r['unknownSites'][(string)$code] ?? 0) + (int)$n;
         foreach ((array)($res['results'] ?? []) as $x) if (empty($x['ok']) && count($r['refusals']) < 20) $r['refusals'][] = ['id' => (string)($x['id'] ?? ''), 'error' => (string)($x['error'] ?? '')];
