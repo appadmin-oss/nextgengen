@@ -115,6 +115,23 @@ const FEES_DEFAULTS = [
     'remindEnabled' => false,
     'remindEveryDays' => 14,
     'remindMinBalance' => 1,
+    /* Notices BEFORE a charge falls due (domain/dues-notices.php): the month's
+       dues and a membership renewal, `noticeDaysBefore` days ahead, to every
+       guardian linked to the child. On by default wherever dues are on — a
+       family should hear what is coming before it is owed, not only once it is
+       late. The channels are the family's: the family app's inbox, email,
+       Telegram (free, where the guardian has connected it) and SMS (paid, off
+       by default; tried only when Telegram did not reach them). The same
+       channels carry the arrears reminders and the payment-note replies. */
+    'noticeEnabled' => true,
+    'noticeDaysBefore' => 7,
+    'noticeApp' => true,
+    'noticeEmail' => true,
+    'noticeTelegram' => true,
+    'noticeSms' => false,
+    /* A payment a parent says they made waits for the fees desk to check it.
+       Past this many hours unchecked, the desk is nudged once a day. */
+    'claimStaffHours' => 48,
     /* ── Uprating ─────────────────────────────────────────────────────────
      * Naira inflation erodes a fixed figure fast: ₦75,000 set today is worth
      * noticeably less in two years, and a programme that never revisits its
@@ -150,6 +167,14 @@ const FEES_DEFAULTS = [
  * form may move them and how much work one pass may do.
  */
 const FEES_REMIND_MIN_DAYS = 7;
+/** How far ahead a notice of an upcoming charge may go: a day at the least,
+ *  a month at the most — further out, it is news nobody acts on. */
+const FEES_NOTICE_DAYS_MIN = 1;
+const FEES_NOTICE_DAYS_MAX = 30;
+/** When the desk is nudged about payment notes nobody has checked: from half a
+ *  day to a week. */
+const FEES_CLAIM_HOURS_MIN = 12;
+const FEES_CLAIM_HOURS_MAX = 168;
 /** A year. Past this, "remind them" is not what the setting means any more. */
 const FEES_REMIND_MAX_DAYS = 365;
 /** How far apart an uprate interval may be set, in months. */
@@ -199,6 +224,10 @@ function fees_bounds(): array {
         'phaseMax'       => FEES_PHASE_MAX,
         'remindMinDays'  => FEES_REMIND_MIN_DAYS,
         'remindMaxDays'  => FEES_REMIND_MAX_DAYS,
+        'noticeDaysMin'  => FEES_NOTICE_DAYS_MIN,
+        'noticeDaysMax'  => FEES_NOTICE_DAYS_MAX,
+        'claimHoursMin'  => FEES_CLAIM_HOURS_MIN,
+        'claimHoursMax'  => FEES_CLAIM_HOURS_MAX,
         'uprateMaxPct'   => FEES_UPRATE_MAX_PCT,
         'uprateEveryMin' => FEES_UPRATE_EVERY_MIN,
         'uprateEveryMax' => FEES_UPRATE_EVERY_MAX,
@@ -317,6 +346,13 @@ function fees_settings_save(array $in, string $by): array {
            told, rather than getting a daily chase that nobody asked to defend. */
         'remindEveryDays' => max(FEES_REMIND_MIN_DAYS, min(FEES_REMIND_MAX_DAYS, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']) ?: (int)$cur['remindEveryDays'])),
         'remindMinBalance' => fees_money($in['remindMinBalance'] ?? null, (int)$cur['remindMinBalance']),
+        'noticeEnabled'  => $bool('noticeEnabled'),
+        'noticeDaysBefore' => max(FEES_NOTICE_DAYS_MIN, min(FEES_NOTICE_DAYS_MAX, (int)($in['noticeDaysBefore'] ?? $cur['noticeDaysBefore']) ?: (int)$cur['noticeDaysBefore'])),
+        'noticeApp'      => $bool('noticeApp'),
+        'noticeEmail'    => $bool('noticeEmail'),
+        'noticeTelegram' => $bool('noticeTelegram'),
+        'noticeSms'      => $bool('noticeSms'),
+        'claimStaffHours' => max(FEES_CLAIM_HOURS_MIN, min(FEES_CLAIM_HOURS_MAX, (int)($in['claimStaffHours'] ?? $cur['claimStaffHours']) ?: (int)$cur['claimStaffHours'])),
         /* Uprating. `upratePct` of 0 switches it off, which is the default —
            raising what families are charged is not something to inherit. */
         'upratePct' => max(0, min(FEES_UPRATE_MAX_PCT, (int)($in['upratePct'] ?? $cur['upratePct']))),
@@ -1396,7 +1432,9 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
  *   nothing PAYABLE               see below — this is the one that matters
  *   under remindMinBalance        not worth a message
  *   reminded within everyDays     the floor, which is 7 days minimum
- *   no guardian email             nothing to send to
+ *   no way to reach the family    no linked guardian account, no email and
+ *                                 no phone (dues_contacts — a guardian with
+ *                                 only a family-app account IS reachable)
  *
  * PAYABLE, not outstanding. A member halfway through their service carries a
  * large training charge that is being written off as they go; chasing them for
@@ -1406,7 +1444,7 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
 function fees_reminder_candidates(?array $cfg = null, int $limit = FEES_CANDIDATE_MAX): array {
     $cfg = $cfg ?? fees_settings();
     $out = ['due' => [], 'skipped' => ['off' => 0, 'optedOut' => 0, 'nothingPayable' => 0,
-                                       'underMinimum' => 0, 'tooSoon' => 0, 'noEmail' => 0]];
+                                       'underMinimum' => 0, 'tooSoon' => 0, 'noContact' => 0]];
     if (empty($cfg['enabled']) || empty($cfg['remindEnabled'])) { $out['skipped']['off'] = 1; return $out; }
     $everyDays = max(FEES_REMIND_MIN_DAYS, (int)$cfg['remindEveryDays']);
     $minBal = max(1, (int)$cfg['remindMinBalance']);
@@ -1419,10 +1457,11 @@ function fees_reminder_candidates(?array $cfg = null, int $limit = FEES_CANDIDAT
         if ((int)$bal['payable'] < $minBal) { $out['skipped']['underMinimum']++; continue; }
         $last = strtotime((string)($m['duesRemindedAt'] ?? '')) ?: 0;
         if ($last > 0 && ($now - $last) < $everyDays * 86400) { $out['skipped']['tooSoon']++; continue; }
-        $to = trim((string)($m['parentEmail'] ?? ''));
-        if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) { $out['skipped']['noEmail']++; continue; }
+        $ct = function_exists('dues_contacts') ? dues_contacts($m) : ['guardianIds' => [], 'emails' => array_filter([trim((string)($m['parentEmail'] ?? ''))]), 'phones' => []];
+        if (!$ct['guardianIds'] && !$ct['emails'] && !$ct['phones']) { $out['skipped']['noContact']++; continue; }
         $out['due'][] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],
-                         'to' => $to, 'payable' => (int)$bal['payable'],
+                         'to' => (string)($ct['emails'][0] ?? ''), 'reach' => ['app' => count($ct['guardianIds']), 'email' => count($ct['emails']), 'phones' => count($ct['phones'])],
+                         'payable' => (int)$bal['payable'],
                          'lastRemindedAt' => (string)($m['duesRemindedAt'] ?? ''), 'row' => $m];
     }
     $out['everyDays'] = $everyDays;
@@ -1470,13 +1509,22 @@ function fees_reminder_send(array $cand, ?array $cfg = null): bool {
     }
     $body .= '<p style="margin:0 0 10px">If any of this looks wrong, or if now is a difficult time, please reply to this '
           . 'message or speak to your centre coordinator — we would rather hear from you than not.</p>';
-    $html = email_template([
-        'title' => 'Account balance', 'intro' => $first . '\'s account has an amount to pay.',
-        'bodyHtml' => $body,
-        'footNote' => 'You are receiving this because you are ' . $first . '\'s guardian at Next Generation Genius. '
-                    . 'Tell your centre coordinator if you would prefer not to receive these.',
-    ]);
-    $ok = (bool)@send_mail($cand['to'], $first . '\'s account — ' . $money((int)$bal['payable']) . ' to pay', $html);
+    /* Every channel the family has, to every linked guardian — the family app,
+       email, Telegram, SMS if switched on (dues-notices.php) — not one email to
+       the address on the child's record. One per family per day at most. */
+    $parts = [];
+    foreach (['membership' => 'membership', 'dues' => 'dues', 'fine' => 'fines'] as $k => $label) {
+        $v = (int)($bal['byKind'][$k] ?? 0);
+        if ($v > 0) $parts[] = $label . ' ' . $money($v);
+    }
+    $plain = $first . '\'s account has ' . $money((int)$bal['payable']) . ' to pay' . ($parts ? ' (' . implode(', ', $parts) . ')' : '')
+           . '. Pay from the family app, or tell us there if you already have. If now is a difficult time, speak to your centre coordinator.';
+    $res = function_exists('dues_notice_send')
+        ? dues_notice_send($m, 'arrears', gmdate('Y-m-d'), ['title' => $first . '\'s account: ' . $money((int)$bal['payable']) . ' to pay', 'intro' => $first . '\'s account has an amount to pay.',
+            'subject' => $first . '\'s account — ' . $money((int)$bal['payable']) . ' to pay', 'text' => $plain, 'html' => $body, 'amount' => (int)$bal['payable'],
+            'footNote' => 'You are receiving this because you are ' . $first . '\'s guardian at Next Generation Genius. Tell your centre coordinator if you would prefer not to receive these.'], $cfg)
+        : ['sent' => false];
+    $ok = !empty($res['sent']);
     /* Stamped whether or not the transport succeeded. The alternative is a
      * mailer that is failing quietly and a family reminded on every single cron
      * tick because nothing recorded the attempt. */

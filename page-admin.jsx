@@ -9742,7 +9742,7 @@ function AdminFees() {
                       [prev.skipped.tooSoon, "reminded recently"],
                       [prev.skipped.optedOut, "asked not to be reminded"],
                       [prev.skipped.underMinimum, "under the minimum balance"],
-                      [prev.skipped.noEmail, "no guardian email on file"]]
+                      [prev.skipped.noContact, "no way to reach the family (no app account, email or phone)"]]
                       .filter(([n]) => n > 0).map(([n, why]) => n + " " + why).join(" · ") || "nobody — everyone with a balance is on the list"}.
                   </div>
                   {prev.count > 0 && (

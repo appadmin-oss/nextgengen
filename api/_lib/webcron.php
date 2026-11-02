@@ -319,6 +319,13 @@ function web_cron_reminders(): void {
         try { fees_reminders_run(FEES_REMIND_CRON_BATCH); }
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'fees.reminders', $e->getMessage()); }
     }
+    /* Notices BEFORE a charge falls due, the payment-note nudge to the fees
+       desk (domain/dues-notices.php). Once a day for the roster scan; nothing
+       is ever said twice, whatever the cadence. Guarded on its own. */
+    if (function_exists('dues_notices_run')) {
+        try { dues_notices_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'dues.notices', $e->getMessage()); }
+    }
 
     /* And note — never apply — an overdue amounts review. An uprate that is only
      * visible on the tab where it is set is an uprate nobody performs, because

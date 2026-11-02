@@ -2102,6 +2102,8 @@
         void:        (entryId, reason) => request('/admin/fees.php', { body: { action: 'void', entryId, reason } }),
         mou:         (memberId) => request('/admin/fees.php', { body: { action: 'mou', memberId } }),
         remindOff:   (memberId, off) => request('/admin/fees.php', { body: { action: 'remindOff', memberId, off } }),
+        notices:     () => request('/admin/fees.php' + qs({ view: 'notices' })),
+        noticesRun:  () => request('/admin/fees.php', { body: { action: 'noticesRun' } }),
         charge:      (memberId, kind, amount, reason, note) => request('/admin/fees.php', { body: { action: 'charge', memberId, kind, amount, reason, note } }),
         fineImport:  (rows, opts) => request('/admin/fees.php', { body: Object.assign({ action: 'fineImport', rows }, opts || {}) }),
         waive:       (memberId, amount, reason) => request('/admin/fees.php', { body: { action: 'waive', memberId, amount, reason } }),

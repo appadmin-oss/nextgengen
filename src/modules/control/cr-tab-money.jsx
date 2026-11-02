@@ -245,7 +245,7 @@ async function crMoRemindSend(ctx) {
   const p = ctx.data.prev, n = (p && p.count) || 0;
   if (!n) return;
   const ok = await ctx.confirm({ title: "Send " + crPlural(n, "reminder") + "?", cta: "Send " + crNum(n),
-    body: "This emails " + crPlural(n, "guardian") + " about their outstanding balance. It can’t be recalled. Nobody will be reminded again for at least " + crPlural(p.everyDays, "day") + "." });
+    body: "This tells " + crPlural(n, "family", "families") + " about their outstanding balance — in the family app, by email and by Telegram, as set under Amounts. It can’t be recalled. Nobody will be reminded again for at least " + crPlural(p.everyDays, "day") + "." });
   if (!ok) return;
   try {
     const res = (await NGGApi.admin.fees.remindRun(ctx.data.B.remindBatch)).result || {};
@@ -253,6 +253,29 @@ async function crMoRemindSend(ctx) {
     await crMoRemindPreview(ctx);
   } catch (e) { ctx.toast(crMoErr(e, "Couldn’t send the reminders."), null, true); }
 }
+
+/* ── Notices before dues fall due (domain/dues-notices.php) ──
+   Read on demand: the list walks every active member's account, so it is
+   fetched when the Reminders view is opened, not on every Money visit. */
+const CR_MO_NOTICE_KIND = { upcoming: "Before it falls due", arrears: "Arrears reminder", claim_ack: "Payment note received", claim_decided: "Payment note answered" };
+const CR_MO_CHANNELS = [["app", "family app"], ["email", "email"], ["telegram", "Telegram"], ["sms", "SMS"]];
+async function crMoNoticesLoad(ctx) {
+  ctx.setData(x => Object.assign({}, x, { nvBusy: true, nvErr: "" }));
+  try { const nv = await NGGApi.admin.fees.notices(); ctx.setData(x => Object.assign({}, x, { nv, nvBusy: false })); }
+  catch (e) { ctx.setData(x => Object.assign({}, x, { nvBusy: false, nvErr: crErr(e, "Couldn’t load the notices.") })); }
+}
+async function crMoNoticesRun(ctx) {
+  const nv = ctx.data.nv, n = ((nv && nv.coming) || []).filter(x => !x.told && x.tellOn <= nv.today).length;
+  const ok = await ctx.confirm({ title: "Send today’s notices now?", cta: n ? "Send " + crNum(n) : "Send",
+    body: (n ? crPlural(n, "family", "families") + " are due a notice today. " : "") + "The background job sends these on its own each day; this only sends them sooner. A family is never told twice about the same due date, so pressing this again sends nothing new." });
+  if (!ok) return;
+  try {
+    const r = ((await NGGApi.admin.fees.noticesRun()) || {}).result || {};
+    ctx.toast(crNum(r.upcoming || 0) + " told" + (r.unreachable ? " · " + crNum(r.unreachable) + " had no way to be reached" : "") + ".", null, !!r.unreachable);
+    await crMoNoticesLoad(ctx);
+  } catch (e) { ctx.toast(crMoErr(e, "Couldn’t send the notices."), null, true); }
+}
+function crMoChannelText(ch) { return CR_MO_CHANNELS.filter(c => ch && ch[c[0]] > 0).map(c => c[1] + (c[0] === "email" && ch.email > 1 ? " ×" + ch.email : "")).join(" · ") || "nobody reached"; }
 
 /* ── Uprate: what it would do, then the press ── */
 async function crMoUprate(ctx) {
@@ -300,7 +323,7 @@ function crMoTrainServer() {
 function crMoSwitcher(ctx, view) {
   /* custom: a view switcher bound to the URL tail. No block switches between
      sub-views of one tab; CrSeg is the shell's own control. */
-  const pick = v => { ctx.closeDrawer(); ctx.setSub(v); };
+  const pick = v => { ctx.closeDrawer(); ctx.setSub(v); if (v === "reminders" && !(ctx.data && ctx.data.nv)) crMoNoticesLoad(ctx); };
   /* Five segments do not fit a phone's width; there it is the field's own select. */
   return { type: "custom", span: 6, render: (c, phone) => phone
     ? <select className="cr-select" aria-label="Dues view" value={view} onChange={e => pick(e.target.value)}>{CR_MO_VIEWS.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select>
@@ -417,20 +440,71 @@ function crMoTrainingBlocks(d, ctx) {
   return out;
 }
 
+/* Before it falls due: who will be told, on which day, by which channels; what went; the payment notes waiting. */
+function crMoNoticeBlocks(d, ctx) {
+  const cfg = d.cfg, nv = d.nv, out = [];
+  if (d.nvErr) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: d.nvErr, act: { l: "Try again", run: () => crMoNoticesLoad(ctx) } }];
+  if (!nv) return [{ type: "note", span: 6, icon: "hourglass", text: d.nvBusy ? "Working out who will be told before their dues fall due…" : "Notices before dues fall due.",
+    act: d.nvBusy ? null : { l: "Show who will be told", run: () => crMoNoticesLoad(ctx) } }];
+  const S = nv.settings || {}, ch = S.channels || {}, av = S.available || {};
+  const on = CR_MO_CHANNELS.filter(c => ch[c[0]]).map(c => c[1]);
+  const off = CR_MO_CHANNELS.filter(c => !ch[c[0]] && av[c[0]] === false).map(c => c[1]);
+  if (!cfg.enabled || !S.noticeEnabled) {
+    out.push({ type: "note", span: 6, icon: "bell-slash", tone: "warn", text: "Families are not told before their dues fall due.",
+      sub: !cfg.enabled ? "Dues themselves are switched off." : "Turn “Tell families before dues fall due” on under Amounts.", act: { l: "Open Amounts", run: () => ctx.setSub("amounts") } });
+  } else {
+    const coming = nv.coming || [], today = coming.filter(x => !x.told && x.tellOn <= nv.today).length;
+    const last = nv.lastRun && nv.lastRun.doneOn ? "Last daily run " + crDate(nv.lastRun.doneOn) + (nv.lastRun.told != null ? " — " + crPlural(nv.lastRun.told, "family", "families") + " told." : ".") : "The daily run has not happened yet.";
+    out.push({ type: "note", span: 6, icon: "calendar-check", tone: today ? "gold" : "ok",
+      text: "Families are told " + crPlural(S.daysBefore, "day") + " before dues and renewals fall due, by " + (on.join(", ") || "no channel") + ".",
+      sub: last + (off.length ? " Not available on this site: " + off.join(", ") + "." : "") + " Every linked guardian is told, once per due date; a family paid ahead, or who asked not to be chased, is not.",
+      act: today ? { l: "Send today’s " + crNum(today) + " now", run: () => crMoNoticesRun(ctx) } : { l: "Refresh", run: () => crMoNoticesLoad(ctx) } });
+    const claims = nv.claims || {};
+    out.push({ type: "kpis", span: 6, items: [
+      { l: "To be told in 14 days", v: crNum(coming.filter(x => !x.told).length) },
+      { l: "Already told", v: crNum(coming.filter(x => x.told).length) },
+      { l: "Coming due", v: fmtMoney(coming.reduce((a, x) => a + (x.amount || 0), 0)) },
+      { l: "Payment notes waiting", v: crNum(claims.open || 0), dn: claims.oldest ? "oldest " + crDate(claims.oldest) : "" },
+    ] });
+    if (claims.open) out.push({ type: "note", span: 6, icon: "currency-ngn", tone: "warn",
+      text: crPlural(claims.open, "payment note") + " from families " + (claims.open === 1 ? "is" : "are") + " waiting to be checked.",
+      sub: "The family was told at once that it arrived and will hear the answer in the family app. The Fees desk is nudged once a day when one waits longer than " + crPlural(S.claimStaffHours, "hour") + ".",
+      act: ctx.can("people") ? { l: "Open Member requests", run: () => ctx.go("inbox", "requests") } : null });
+    out.push({ type: "table", span: 6, title: "Coming up", nosel: true,
+      cols: ["Member", "What", { l: "Amount", num: true }, "Due", "Told", "Reaches"],
+      rows: coming.map(x => ({ key: x.memberId + x.dueOn, open: () => crMoOpen(ctx, x.memberId), cells: [
+        { k: "person", t: x.fullName, s: x.centre }, { k: "text", t: x.what }, { k: "num", t: fmtMoney(x.amount), v: x.amount },
+        { k: "text", t: crDate(x.dueOn) },
+        x.told ? { k: "status", tone: "ok", t: "Told " + crDate(x.told) } : { k: "status", tone: x.tellOn <= nv.today ? "gold" : "neutral", t: x.tellOn <= nv.today ? "Today" : "On " + crDate(x.tellOn) },
+        { k: "text", t: [x.reach.app ? crPlural(x.reach.app, "app") : "", x.reach.email ? crPlural(x.reach.email, "email") : "", x.reach.phones ? crPlural(x.reach.phones, "phone") : ""].filter(Boolean).join(" · ") || "No way to reach them",
+          s: !x.reach.app && !x.reach.email && !x.reach.phones ? "Add a guardian or a parent email" : "" },
+      ] })), search: "Search", emptyText: "Nothing falls due for anyone in the next fortnight." });
+  }
+  out.push({ type: "table", span: 6, title: "Sent to families", nosel: true,
+    cols: ["Member", "Notice", { l: "Amount", num: true }, "Reached", "When"],
+    rows: (nv.history || []).map((h, i) => ({ key: h.memberId + h.at + i, open: () => crMoOpen(ctx, h.memberId), cells: [
+      { k: "person", t: h.fullName, s: h.memberId }, { k: "text", t: h.title, s: CR_MO_NOTICE_KIND[h.kind] || h.kind },
+      { k: "num", t: h.amount ? fmtMoney(h.amount) : "—", v: h.amount },
+      h.status === "sent" ? { k: "text", t: crMoChannelText(h.channels) } : { k: "status", tone: "bad", t: "Nobody reached" },
+      { k: "text", t: crDate(h.at) },
+    ] })), search: "Search", emptyText: "Nothing has been sent to families yet." });
+  return out;
+}
+
 function crMoRemindBlocks(d, ctx) {
-  const cfg = d.cfg, p = d.prev, out = [];
+  const cfg = d.cfg, p = d.prev, out = crMoNoticeBlocks(d, ctx);
   if (!cfg.enabled || !cfg.remindEnabled) {
-    out.push({ type: "note", span: 6, icon: "bell-slash", tone: "warn", text: "Reminders are switched off, so nothing is being sent.",
+    out.push({ type: "note", span: 6, icon: "bell-slash", tone: "warn", text: "Arrears reminders (money already owed) are switched off.",
       sub: !cfg.enabled ? "Dues themselves are switched off." : "Turn them on under Amounts to start.", act: { l: "Open Amounts", run: () => ctx.setSub("amounts") } });
     return out;
   }
   out.push({ type: "note", span: 6, icon: "bell",
-    text: "Reminders go out automatically, at most once every " + crPlural(cfg.remindEveryDays, "day") + " per family.",
+    text: "Arrears — money already owed: reminders go out automatically, at most once every " + crPlural(cfg.remindEveryDays, "day") + " per family.",
     sub: "The background job checks far more often than that; the spacing decides, so nobody is chased faster than you set it. A family is only included when they have something payable — a training fee that service is writing off is not money owed.",
     act: { l: p ? "Refresh" : "See who would be reminded", run: () => crMoRemindPreview(ctx) } });
   if (p) {
     const s = p.skipped || {};
-    const why = [[s.nothingPayable, "nothing payable"], [s.tooSoon, "reminded recently"], [s.optedOut, "asked not to be reminded"], [s.underMinimum, "under the minimum balance"], [s.noEmail, "no guardian email on file"]]
+    const why = [[s.nothingPayable, "nothing payable"], [s.tooSoon, "reminded recently"], [s.optedOut, "asked not to be reminded"], [s.underMinimum, "under the minimum balance"], [s.noContact, "no way to reach the family (no app account, email or phone)"]]
       .filter(x => x[0] > 0).map(x => crNum(x[0]) + " " + x[1]).join(" · ");
     out.push({ type: "note", span: 6, icon: p.count ? "paper-plane-tilt" : "check-circle", tone: p.count ? "gold" : "ok",
       text: crPlural(p.count, "family", "families") + " due a reminder now.",
@@ -471,7 +545,18 @@ function crMoAmountsForm(cfg, B, defaults) {
         { id: "balanceCap", l: "Stop charging at (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.balanceCap), check: money,
           help: "A ceiling on one member’s balance; once reached nothing further accrues. 0 means no ceiling — an account that grows past what anyone can pay pushes a family out of the programme." },
       ] },
-      { h: "Reminders", rows: [
+      { h: "Before dues fall due", help: "Families hear what is coming, how much and how to pay, before it is owed — once per due date, to every linked guardian.", rows: [
+        { id: "noticeEnabled", l: "Tell families before dues fall due", c: "toggle", value: !!cfg.noticeEnabled },
+        { id: "noticeDaysBefore", l: "How many days before", c: "input", type: "number", im: "numeric", value: String(cfg.noticeDaysBefore), check: int(B.noticeDaysMin, B.noticeDaysMax),
+          help: "Between " + B.noticeDaysMin + " and " + B.noticeDaysMax + ". A week gives a family a pay day to plan around." },
+        { id: "noticeApp", l: "In the family app", c: "toggle", value: !!cfg.noticeApp, help: "Every linked guardian’s notices, and the member’s own portal." },
+        { id: "noticeEmail", l: "By email", c: "toggle", value: !!cfg.noticeEmail, help: "Each guardian’s email and the parent email on the record." },
+        { id: "noticeTelegram", l: "By Telegram", c: "toggle", value: !!cfg.noticeTelegram, help: "To a guardian whose phone is linked to the NGG Telegram bot." },
+        { id: "noticeSms", l: "By SMS", c: "toggle", value: !!cfg.noticeSms, help: "One text per family, only when Telegram did not reach them. Each text costs money." },
+        { id: "claimStaffHours", l: "Nudge the Fees desk when a payment note waits (hours)", c: "input", type: "number", im: "numeric", value: String(cfg.claimStaffHours), check: int(B.claimHoursMin, B.claimHoursMax),
+          help: "A family told “we will check it” should not wait longer than this. Once a day, staff with Fees are told how many are waiting." },
+      ] },
+      { h: "Arrears reminders", rows: [
         { id: "remindEnabled", l: "Remind guardians about arrears", c: "toggle", value: !!cfg.remindEnabled },
         { id: "remindEveryDays", l: "No more often than every (days)", c: "input", type: "number", im: "numeric", value: String(cfg.remindEveryDays), check: int(B.remindMinDays, B.remindMaxDays),
           help: "The minimum is " + B.remindMinDays + " — a family reminded daily stops reading anything you send, and your sender gets blocked." },
@@ -522,9 +607,10 @@ Object.assign(CR_TAB_DEFS, {
       const id = crMoAcctId(ctx.sub);
       const acct = id ? await crMoLoadAccount(id).catch(() => null) : null;
       const prev = ctx.data && ctx.data.prev;
+      const nv = ctx.sub === "reminders" ? await NGGApi.admin.fees.notices().catch(() => null) : (ctx.data && ctx.data.nv) || null;
       const d = { cfg: s.fees, B, defaults: s.defaults || {}, arr, acct, rev: 0,
         up: up ? Object.assign({}, up.uprate, { maxPct: up.maxPct }) : null,
-        prev: prev || null, trainServer: crMoTrainServer() };
+        prev: prev || null, nv, nvErr: ctx.sub === "reminders" && !nv ? "Couldn’t load the notices." : "", trainServer: crMoTrainServer() };
       d.amountsForm = crMoAmountsForm(d.cfg, B, d.defaults);
       return d;
     },

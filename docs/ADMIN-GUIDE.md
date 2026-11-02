@@ -1721,6 +1721,43 @@ words. The member's panel and this drawer are drawn by one component from one
 server answer, so they cannot disagree. On a day or week rate, "still to come"
 reaches as far as the meeting calendar is set.
 
+### Telling families about dues — before, after, and when they say they paid
+
+**Money → Dues & arrears → Reminders** (needs `fees`; a centre-scoped admin
+sees and sends for their own centres). Three kinds of message reach a family,
+and every one goes to **every linked guardian**, not one email address:
+
+| Message | When | Where it goes |
+|---|---|---|
+| **Before it falls due** | *N* days before monthly dues (the 1st) or a membership renewal (the join anniversary) — 7 by default | the family app of each guardian, each guardian's email and the parent email on the record, Telegram where a guardian's phone is linked to the NGG bot, SMS (off by default; one per family, only when Telegram did not reach them), and the member's own portal |
+| **Arrears reminder** | money already owed, no more often than every *N* days (at least 7) | the same channels |
+| **Payment note received / answered** | the moment a parent sends *I've paid*, and when the desk approves or declines it | the family app and email; the answer says what is still to pay — or, when nothing is owed today, the next amount and date |
+
+- **Each family hears once per due date.** December's dues and a renewal that
+  fall on the same day are one notice with both lines and the total. The
+  background job and the **Send today's … now** button share one log, so
+  pressing it, or the job running every 15 minutes, never tells anyone twice.
+- **Who is not told, and why** — a family paid ahead past the date (their
+  credit is spent on the charges in date order), a family that asked not to be
+  chased (*Stop reminders* on their account), and a family with no way to be
+  reached (no linked guardian, no parent email, no phone). The **Coming up**
+  table shows, for the next fortnight, each family, what falls due, the amount,
+  the day they will be told (or *Told* with the date), and how many apps,
+  emails and phones will reach them — *No way to reach them* is the list to fix
+  in People → Members.
+- **Sent to families** is the record: each notice, its amount, and the
+  channels that actually delivered it. *Nobody reached* means every channel
+  failed — usually no mail server and no linked guardian.
+- **Payment notes waiting**: open *I've paid* notes. When one waits longer than
+  the hours set (48 by default, 12 to 168), every staff member holding `fees`
+  for that centre gets one nudge a day saying how many and how old the oldest
+  is. The notes themselves are answered in **Inbox → Member requests**.
+
+**Settings** — *Amounts → Before dues fall due*: the switch, how many days
+before (1–30), each channel, and the desk nudge. Telegram and SMS are listed as
+*not available on this site* until the bot or the SMS gateway is set up under
+Settings. Notices start when dues are on; they need nothing else switched on.
+
 ### Conduct & fines — one home for fines
 
 **Money → Conduct & fines** is where fines live, start to finish. It has four
@@ -2339,6 +2376,9 @@ not the child's:
   number), the date, and a photo of the receipt if they have one. It arrives in **Member requests** as *Payment made*, marked *From
   their family account*, and moves no money until you approve it against the
   statement — exactly as a member's claim used to.
+  The parent is told at once that it arrived (with their reference and how
+  long checking takes), and told again — in the family app and by email — when
+  you approve or decline it.
 - **The child asks.** The member's app no longer has *I've made a payment*. On
   their account screen there is one button, **Ask my parent**: every connected
   parent gets a message in their family account and an email asking them to

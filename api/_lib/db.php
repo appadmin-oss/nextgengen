@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 215;
+const NGG_SCHEMA_TARGET = 216;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6187,6 +6187,28 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_llog_member ON learning_log(memberId, doneOn);
             CREATE INDEX IF NOT EXISTS idx_llog_status ON learning_log(status, centre);
             ALTER TABLE awards ADD COLUMN category TEXT NOT NULL DEFAULT '';
+        ",
+        /* 216 — dues and payment notices (domain/dues-notices.php): one row per
+         * thing a family or the fees desk was told — an upcoming charge, an
+         * overdue balance, a payment note received or decided, a desk nudge —
+         * with the channels it actually went by. The unique key is what stops a
+         * 15-minute cron telling anybody the same thing twice. */
+        216 => "
+            CREATE TABLE IF NOT EXISTS dues_notices (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL DEFAULT '',
+              kind TEXT NOT NULL,
+              refKey TEXT NOT NULL,
+              title TEXT NOT NULL DEFAULT '',
+              amount INTEGER NOT NULL DEFAULT 0,
+              dueOn TEXT NOT NULL DEFAULT '',
+              channelsJson TEXT NOT NULL DEFAULT '{}',
+              reached INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'sending',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_dues_notices ON dues_notices(memberId, kind, refKey);
+            CREATE INDEX IF NOT EXISTS idx_dues_notices_at ON dues_notices(createdAt);
         ",
     ];
 

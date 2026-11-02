@@ -755,6 +755,8 @@ function member_request_create(array $p): array
 
     db_insert('member_requests', $row);
     audit('member.request.create', $id, $row['requestId'], ['kind' => $kind], (string)($p['ip'] ?? ''));
+    // A parent who says they paid hears at once that it arrived, and what happens next (dues-notices.php).
+    if ($kind === 'payment' && function_exists('dues_claim_ack')) dues_claim_ack($row);
     /* The desk is told once, when it is raised. Not on every edit — a queue
        that pings is a queue that gets muted. */
     // …and the people who can decide it, at the member's centre: the bell, a push, and an email (push.php).
@@ -1226,6 +1228,8 @@ function admin_request_decide(array $p): array
     member_request_tell($r, (MEMBER_REQUEST_KINDS[(string)$r['kind']] ?? 'Request') . ' — ' . ($approve ? 'approved' : 'declined'),
         'has been ' . ($approve ? 'approved.' : 'declined.'),
         $reason !== '' ? $reason : ($approve ? 'Your request has been approved.' : 'Your request was declined.'));
+    // A payment note's answer reaches every guardian, in the family app and by their channels (dues-notices.php).
+    if ((string)$r['kind'] === 'payment' && function_exists('dues_claim_decided')) dues_claim_decided($r, $approve, (int)($patch['amount'] ?? $r['amount']), $reason);
     $after = db_row('SELECT * FROM member_requests WHERE id = ? LIMIT 1', [(int)$r['id']]);
     return ['ok' => true, 'request' => member_request_public($after ?: [])];
 }

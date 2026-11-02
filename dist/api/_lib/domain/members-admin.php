@@ -358,6 +358,7 @@ function member_merge_policy(): array {
         'curriculum_progress'    => 'MOVE_UNIQUE',    // one row per lesson; the survivor's stands
         'member_promotions'      => 'MOVE',
         'member_requests'        => 'MOVE',
+        'dues_notices'           => 'MOVE_UNIQUE',    // one notice per due date; the survivor's stands
         'mentors'                => 'MOVE',
         'promo_seen'             => 'MOVE_UNIQUE',
         'program_journal_follows' => 'MOVE_UNIQUE',

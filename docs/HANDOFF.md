@@ -5258,3 +5258,53 @@ one out of step.
 - **Not changed, on purpose:** the attendance settings (doors, grace,
   sign-out) and the rulebook's lateness bands are admin-owned policy; the
   guide tells the operator to move a 14:00 sign-out to 15:00 if one is set.
+
+
+## 2026-11-02 — Families hear about dues before they are owed (domain/dues-notices.php)
+
+Owner's request: "improve the messaging and reminder systems for dues, pending
+payments and so on — parents should have started seeing notices and reminders
+for upcoming dues some time before."
+
+What was there: one arrears reminder, **off by default** (`remindEnabled`),
+emailed to `parentEmail` only, and only after money was owed. A guardian with
+the family app but no email was skipped as "noEmail"; nothing was said before a
+due date; an "I've paid" note was silent until decided.
+
+- **New domain `dues-notices.php`** (bootstrap list, after `membership-pay`).
+  `dues_notice_send($m, $kind, $refKey, $msg)` is the one delivery path:
+  every active guardian link's family app (`family_notice_add`, kind
+  `dues-<kind>`), guardians' emails + `parentEmail`, Telegram per phone, SMS
+  once per family only if Telegram missed, and the member's own portal for
+  upcoming notices. It **claims a `dues_notices` row first** (migration 216,
+  UNIQUE memberId+kind+refKey) so the cron and the button cannot double-send;
+  the row then records `channelsJson`, `reached`, `sent|unreachable`.
+- **Before it falls due**: `dues_upcoming_for()` reads
+  `membership_upcoming_charges()` (un-posted dues on the 1st, renewals on the
+  join anniversary) inside `noticeDaysBefore` and spends paid-ahead credit in
+  date order. `dues_upcoming_candidates()` groups by due day (refKey
+  `YYYY-MM-DD:kind-key+kind-key`) and counts the skipped (optedOut, paidAhead,
+  nothingDue, alreadyTold, noContact). `dues_notices_run()` runs from
+  `web_cron_reminders()`, once a day (setting `dues_notices_state.doneOn`)
+  unless the 400-row batch filled.
+- **Arrears**: `fees_reminder_candidates` skips `noContact` (no app, email or
+  phone) instead of `noEmail`; `fees_reminder_send` delivers through
+  `dues_notice_send(..., 'arrears', today)`. Still off by default — that is
+  policy, the advance notices are on.
+- **Payment notes**: `member_request_create` → `dues_claim_ack()`;
+  `admin_request_decide` → `dues_claim_decided()` (what is still to pay, or the
+  next amount and date when nothing is owed). `dues_claims_staff_nudge()`
+  tells `fees` staff in scope once a day when notes wait past `claimStaffHours`.
+- **Settings** (FEES_DEFAULTS, bounded in `fees_settings_save`, bounds in
+  `fees_bounds`): `noticeEnabled` true, `noticeDaysBefore` 7 (1–30),
+  `noticeApp/Email/Telegram` true, `noticeSms` false, `claimStaffHours` 48 (12–168).
+- **Control Room**: Money → Dues & arrears → Reminders now leads with the
+  notices (`admin.fees.notices`, GET view `notices`: coming fortnight, sent
+  history, open notes, last run; the told-lookup is one query, not per row) and
+  **Send today's … now** (`admin.fees.notices.run`, scoped to the requester's
+  centres). Amounts has the settings group. `dues_notices` is in the member
+  merge policy (MOVE_UNIQUE).
+- Tests: PHP block "Dues and payment notices" in `api/tests/run.php`;
+  browser suite `tests/dues-notices-ui.test.js` (`test:duesnotices`, in
+  `test:all`). The pre-existing failure "portal: reading an entry marks it
+  read" fails on the untouched base too and is not from this change.

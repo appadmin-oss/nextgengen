@@ -5024,3 +5024,21 @@ CREATE TABLE IF NOT EXISTS learning_log (
 ALTER TABLE awards ADD COLUMN category VARCHAR(32) NOT NULL DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (215) ON DUPLICATE KEY UPDATE version = version;
+
+-- 216: dues and payment notices — what a family or the fees desk was told, and by which channels.
+CREATE TABLE IF NOT EXISTS dues_notices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  kind VARCHAR(24) NOT NULL,
+  refKey VARCHAR(120) NOT NULL,
+  title VARCHAR(200) NOT NULL DEFAULT '',
+  amount INT NOT NULL DEFAULT 0,
+  dueOn VARCHAR(10) NOT NULL DEFAULT '',
+  channelsJson TEXT,
+  reached INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'sending',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_dues_notices (memberId, kind, refKey),
+  KEY idx_dues_notices_at (createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (216) ON DUPLICATE KEY UPDATE version = version;

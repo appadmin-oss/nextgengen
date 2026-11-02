@@ -17543,7 +17543,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $pv = $p2['preview'];
         foreach (['due', 'count', 'skipped', 'everyDays', 'enabled'] as $k) if (!array_key_exists($k, $pv)) return false;
         // Every exclusion is NAMED — "it will send 4 of 60" is not checkable.
-        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'noEmail'] as $k) {
+        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'noContact'] as $k) {
             if (!array_key_exists($k, $pv['skipped'])) return false;
         }
         // A preview does not send: the stamp is untouched by looking.
@@ -36215,6 +36215,120 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('photos · chosen, the record shows the Cloudinary photo and the file is no longer missing', !empty($u['ok'])
         && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PC-1'")['photoUrl'] === $cloud && !isset((photo_store_missing_map() ?? [])[$gone]));
     db_exec("DELETE FROM photo_change_requests WHERE requestId = 'PCR-PC-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PC-1'");
+})();
+
+
+/* ── Dues and payment notices (domain/dues-notices.php) ────────────────────
+   A family hears what is coming before it is owed, on every channel and to
+   every linked guardian; arrears reach a guardian who has only the family
+   app; a payment note is acknowledged and answered; the desk is nudged. */
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099';
+    $keep = setting_get('fees');
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'trainingFee' => 0,
+        'noticeEnabled' => true, 'noticeDaysBefore' => 7, 'noticeApp' => true, 'noticeEmail' => true, 'noticeTelegram' => true, 'noticeSms' => false,
+        'remindEnabled' => true, 'remindEveryDays' => 14, 'remindMinBalance' => 1, 'claimStaffHours' => 48] + FEES_DEFAULTS, 'test');
+    $mk = static function (string $id, string $name, string $parentEmail, array $x = []) use ($now) {
+        db_insert('members', $x + ['memberId' => $id, 'fullName' => $name, 'email' => '', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => '2025-12-01', 'parentEmail' => $parentEmail, 'parentPhone' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    };
+    $mk('NGG-DN-1', 'Ada Notice', 'parent.dn1@example.com');
+    $mk('NGG-DN-2', 'Bola Ahead', 'parent.dn2@example.com');
+    $mk('NGG-DN-3', 'Chi AppOnly', '');                  // reachable only through a guardian's family app
+    $mk('NGG-DN-4', 'Dayo Quiet', 'parent.dn4@example.com', ['duesRemindOff' => 1]);
+    foreach ([['GDN-DN00000001', 'mum.dn1@example.com', 'NGG-DN-1'], ['GDN-DN00000003', '', 'NGG-DN-3']] as [$gid, $em, $mid]) {
+        db_insert('guardians', ['guardianId' => $gid, 'email' => $em, 'fullName' => 'Guardian ' . $mid, 'phone' => '', 'status' => 'active', 'createdAt' => $now]);
+        db_insert('guardian_wards', ['linkId' => 'GW-' . $gid, 'guardianId' => $gid, 'memberId' => $mid, 'relationship' => 'parent', 'status' => 'active', 'createdAt' => $now]);
+    }
+    fees_post('NGG-DN-2', 'payment', 9000, ['note' => 'Paid ahead', 'method' => 'transfer', 'reference' => 'AHEAD-1', 'by' => $ADM]);
+    $sv = backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['noticeDaysBefore' => 999, 'claimStaffHours' => 1, 'noticeSms' => true, 'noticeTelegram' => false]]);
+    $c2 = fees_settings();
+    chk('dues notices: the settings are saved through the Fees screen, bounded — days before at most 30, the desk nudge at least 12 hours',
+        !empty($sv['ok']) && $c2['noticeDaysBefore'] === FEES_NOTICE_DAYS_MAX && $c2['claimStaffHours'] === FEES_CLAIM_HOURS_MIN && $c2['noticeSms'] === true && $c2['noticeTelegram'] === false);
+    backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['noticeDaysBefore' => 7, 'claimStaffHours' => 48, 'noticeSms' => false, 'noticeTelegram' => true]]);
+    $cfg = fees_settings();
+
+    // Six days before 1 December: December's dues and the first renewal fall due together.
+    $T = '2026-11-25';
+    $items = dues_upcoming_for(db_row("SELECT * FROM members WHERE memberId = 'NGG-DN-1'"), $cfg, $T);
+    chk('dues notices: what falls due within the window, after the credit — December’s dues and the renewal on the same day',
+        array_column($items, 'kind') === ['dues', 'membership'] && $items[0]['due'] === '2026-12-01' && $items[1]['due'] === '2026-12-01');
+    chk('dues notices: eleven days out, nothing is due yet', dues_upcoming_for(db_row("SELECT * FROM members WHERE memberId = 'NGG-DN-1'"), $cfg, '2026-11-20') === []);
+    $c = dues_upcoming_candidates($T, $cfg);
+    $ids = array_map(static fn($d) => (string)$d['member']['memberId'], $c['due']);
+    chk('dues notices: a family paid ahead past it, and one that asked not to be chased, are not told — each counted',
+        in_array('NGG-DN-1', $ids, true) && in_array('NGG-DN-3', $ids, true) && !in_array('NGG-DN-2', $ids, true) && !in_array('NGG-DN-4', $ids, true)
+        && $c['skipped']['paidAhead'] >= 1 && $c['skipped']['optedOut'] >= 1);
+
+    $GLOBALS['__mail_sink'] = [];
+    $r = dues_notices_run($T, true);
+    $mails = array_values(array_filter($GLOBALS['__mail_sink'], static fn($m) => in_array((string)$m['to'], ['mum.dn1@example.com', 'parent.dn1@example.com'], true)));
+    $row = db_row("SELECT * FROM dues_notices WHERE memberId = 'NGG-DN-1' AND kind = 'upcoming'");
+    $gn = db_row("SELECT * FROM guardian_notices WHERE guardianId = 'GDN-DN00000001' AND kind = 'dues-upcoming'");
+    chk('dues notices: one notice per family per due date — the family app, the guardian’s email and the parent email on the record, naming both charges and the total',
+        $r['upcoming'] >= 2 && $row && $row['status'] === 'sent' && (int)$row['amount'] === 7000 && $row['dueOn'] === '2026-12-01'
+        && count($mails) === 2 && in_array('mum.dn1@example.com', array_column($mails, 'to'), true) && in_array('parent.dn1@example.com', array_column($mails, 'to'), true)
+        && str_contains($mails[0]['html'], 'Dues for December 2026') && str_contains($mails[0]['html'], 'Membership renewal')
+        && $gn && str_contains((string)$gn['title'], 'due 1 Dec') && (json_decode((string)$row['channelsJson'], true)['app'] ?? 0) === 1);
+    chk('dues notices: a guardian with only the family app is told there, about that child',
+        (bool)db_row("SELECT 1 FROM guardian_notices WHERE guardianId = 'GDN-DN00000003' AND kind = 'dues-upcoming' AND memberId = 'NGG-DN-3'"));
+    chk('dues notices: the member sees it in their own portal too', (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-DN-1' AND kind = 'money'"));
+    $GLOBALS['__mail_sink'] = [];
+    $again = dues_notices_run($T, true);
+    chk('dues notices: never said twice, whatever the cron does', $again['upcoming'] === 0 && $GLOBALS['__mail_sink'] === []
+        && (int)db_row("SELECT COUNT(*) c FROM dues_notices WHERE memberId = 'NGG-DN-1' AND kind = 'upcoming'")['c'] === 1);
+    $state = setting_get('dues_notices_state');
+    chk('dues notices: the daily scan marks the day done, so a 15-minute tick does not rescan the roster', ($state['doneOn'] ?? '') === $T);
+    $cfgOff = $cfg; $cfgOff['noticeEnabled'] = false;
+    chk('dues notices: switched off, nobody is listed', !empty(dues_upcoming_candidates($T, $cfgOff)['off']) && dues_upcoming_candidates($T, $cfgOff)['due'] === []);
+
+    // Arrears: a guardian with only the family app is reachable — no longer skipped as "no email".
+    fees_post('NGG-DN-3', 'dues', 2000, ['periodKey' => '2026-10', 'note' => 'Dues — October', 'by' => 'accrual']);
+    $ac = fees_reminder_candidates();
+    chk('dues reminders: a family reachable only by the app is a candidate, and nobody is counted as “no email” any more',
+        in_array('NGG-DN-3', array_column($ac['due'], 'memberId'), true) && array_key_exists('noContact', $ac['skipped']) && !array_key_exists('noEmail', $ac['skipped']));
+    $GLOBALS['__mail_sink'] = [];
+    foreach ($ac['due'] as $cand) if ($cand['memberId'] === 'NGG-DN-3') fees_reminder_send($cand);
+    chk('dues reminders: the arrears reminder lands in the family app with the alerts, and the stamp is set', (bool)db_row("SELECT 1 FROM guardian_notices WHERE guardianId = 'GDN-DN00000003' AND kind = 'dues-arrears' AND cat = 'alert' AND memberId = 'NGG-DN-3'")
+        && (string)db_row("SELECT duesRemindedAt FROM members WHERE memberId = 'NGG-DN-3'")['duesRemindedAt'] !== ''
+        && (bool)db_row("SELECT 1 FROM dues_notices WHERE memberId = 'NGG-DN-3' AND kind = 'arrears' AND status = 'sent'"));
+
+    // A payment note: acknowledged at once, answered when decided. Two months are on the account first.
+    foreach (['2026-10', '2026-11'] as $pk) fees_post('NGG-DN-1', 'dues', 2000, ['periodKey' => $pk, 'note' => 'Dues — ' . $pk, 'by' => 'accrual']);
+    $GLOBALS['__mail_sink'] = [];
+    $cr = member_request_create(['memberId' => 'NGG-DN-1', 'kind' => 'payment', 'amount' => 2000, 'reference' => 'TRF-DN-1', 'raisedBy' => 'guardian:GDN-DN00000001', 'body' => 'Paid by transfer']);
+    $rid = (string)($cr['request']['requestId'] ?? db_row("SELECT requestId FROM member_requests WHERE memberId = 'NGG-DN-1' AND kind = 'payment' ORDER BY id DESC LIMIT 1")['requestId']);
+    $ack = db_row("SELECT * FROM guardian_notices WHERE guardianId = 'GDN-DN00000001' AND kind = 'dues-claim_ack'");
+    chk('payment notes: the parent hears at once that it arrived, with the reference and what happens next',
+        !empty($cr['ok']) && $ack && str_contains((string)$ack['body'], 'TRF-DN-1') && str_contains((string)$ack['body'], 'within 2 days')
+        && (bool)array_filter($GLOBALS['__mail_sink'], static fn($m) => str_contains((string)$m['subject'], 'We have your payment note')));
+    $dc = backend_dispatch('admin.requests.decide', ['requesterId' => $ADM, 'requestId' => $rid, 'approve' => true, 'amount' => 2000]);
+    $ans = db_row("SELECT * FROM guardian_notices WHERE guardianId = 'GDN-DN00000001' AND kind = 'dues-claim_decided'");
+    chk('payment notes: the answer reaches the family app, with what is still to pay', !empty($dc['ok']) && $ans && str_contains((string)$ans['title'], 'Payment confirmed')
+        && str_contains((string)$ans['body'], 'Still to pay'));
+
+    // The desk: notes waiting past the hours set are a nudge, once a day per person.
+    db_insert('member_requests', ['requestId' => 'REQ-DNOLD00001', 'memberId' => 'NGG-DN-1', 'kind' => 'payment', 'status' => 'open', 'subject' => 'Payment of ₦2,000', 'body' => '',
+        'amount' => 2000, 'reference' => 'OLD-1', 'proofUrl' => '', 'paidAt' => '', 'fromDate' => '', 'toDate' => '', 'refEntryId' => '', 'decision' => '', 'decidedBy' => '', 'decidedAt' => '',
+        'ledgerEntryId' => '', 'createdAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 3 * 86400), 'updatedAt' => $now, 'raisedBy' => '']);
+    $n1 = dues_claims_staff_nudge($T, $cfg); $n2 = dues_claims_staff_nudge($T, $cfg);
+    chk('payment notes: waiting more than two days, the fees desk is nudged — once a day', $n1 >= 1 && $n2 === 0
+        && (bool)db_row("SELECT 1 FROM dues_notices WHERE memberId = ? AND kind = 'claim_staff' AND refKey = ?", [$ADM, $T])
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = ? AND title LIKE '%payment note%waiting to be checked'", [$ADM]));
+
+    // The Control Room: what is coming, what was sent, what is waiting.
+    $nv = backend_dispatch('admin.fees.notices', ['requesterId' => $ADM, 'today' => '2026-11-20']);
+    $mine = array_values(array_filter($nv['coming'] ?? [], static fn($x) => $x['memberId'] === 'NGG-DN-1'))[0] ?? null;
+    chk('Money → Reminders: who will be told, on which day, by which channels — and what was sent', !empty($nv['ok']) && $mine && $mine['tellOn'] === '2026-11-24'
+        && $mine['dueOn'] === '2026-12-01' && $mine['amount'] === 7000 && $mine['told'] !== '' && $mine['reach']['email'] === 2
+        && (bool)array_filter($nv['history'], static fn($h) => $h['memberId'] === 'NGG-DN-1' && $h['kind'] === 'upcoming') && $nv['claims']['open'] >= 1);
+    chk('Money → Reminders: a member without the Fees permission is refused', empty(backend_dispatch('admin.fees.notices', ['requesterId' => 'NGG-DN-1'])['ok']));
+
+    unset($GLOBALS['__mail_sink']);
+    setting_set('fees', is_array($keep) ? $keep : [], 'test');
+    setting_set('dues_notices_state', null, 'test');
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-DN-%'"); db_exec("DELETE FROM member_requests WHERE memberId LIKE 'NGG-DN-%'");
+    db_exec("DELETE FROM guardian_wards WHERE memberId LIKE 'NGG-DN-%'"); db_exec("DELETE FROM guardians WHERE guardianId LIKE 'GDN-DN%'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
