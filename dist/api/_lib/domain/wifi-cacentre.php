@@ -40,6 +40,25 @@
 
 /** Must match WifiStore::ROSTER_MAX at CACENTRE: one push carries at most this many. */
 const WIFI_CAC_MAX = 5000;
+
+/**
+ * The most a single push may weigh, in bytes.
+ *
+ * Not CACENTRE's limit — the HOST'S. CACENTRE sits on cPanel, and
+ * ModSecurity's `SecRequestBodyNoFilesLimit` defaults to 131072 bytes and
+ * REJECTS a larger body in phase 2, before PHP runs. cPanel's rules deny with
+ * `status:406`, so what comes back is an error page, not JSON, and the gate
+ * could only report "CACENTRE answered 406". A roster of 1,200 people is
+ * ~218KB: every push failed, so nothing was applied at all.
+ *
+ * 96 KiB leaves room for the envelope and for a host that trims the limit
+ * further. Raise it with `$CONFIG['wifi']['cac_body_max']` if the host's
+ * limit has been raised to match — the number that matters is theirs.
+ */
+const WIFI_CAC_BODY_MAX = 98304;
+
+/** Room for {"typ":…,"full":…,"people":[]} and the replay nonce. */
+const WIFI_CAC_ENVELOPE = 160;
 const WIFI_CAC_EVERY = 900;        // seconds between pushes from the web-cron tick
 const WIFI_CAC_LAST = 'wifi_cac_last';
 const WIFI_CAC_ROUTER_FRESH = 86400; // an NGG gateway heard from within this still serves its centre
@@ -156,6 +175,37 @@ function wifi_cac_me(array $m): ?array {
 }
 
 /**
+ * The roster, cut into pushes that fit through the host's door.
+ *
+ * By BYTES, not by a count of people: a count cannot know how long anybody's
+ * name or email is, and the limit that rejects us is counted in bytes. Each
+ * row is measured as it will actually be encoded.
+ *
+ * `WIFI_CAC_MAX` still bounds a page as well — CACENTRE refuses a longer list
+ * outright (`too_many`) — so whichever runs out first ends the page.
+ *
+ * A single row bigger than the budget cannot be split, so it goes alone and
+ * is refused honestly by the host rather than silently dropped here.
+ *
+ * @param  list<array<string,mixed>> $people
+ * @return list<list<array<string,mixed>>>  at least one page, possibly empty
+ */
+function wifi_cac_pages(array $people, ?int $budget = null): array {
+    $budget = $budget ?? (int)($GLOBALS['CONFIG']['wifi']['cac_body_max'] ?? WIFI_CAC_BODY_MAX);
+    $budget = max(4096, $budget) - WIFI_CAC_ENVELOPE;
+    $pages = []; $cur = []; $size = 0;
+    foreach ($people as $row) {
+        $n = strlen((string)json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) + 1;  // +1 for the comma
+        if ($cur !== [] && ($size + $n > $budget || count($cur) >= WIFI_CAC_MAX)) {
+            $pages[] = $cur; $cur = []; $size = 0;
+        }
+        $cur[] = $row; $size += $n;
+    }
+    if ($cur !== [] || $pages === []) $pages[] = $cur;
+    return $pages;
+}
+
+/**
  * Send everybody. One full push when the list fits (anybody NGG no longer
  * sends loses Wi-Fi there); several partial pushes when it does not, which
  * withdraw nobody — said so in the result rather than hidden.
@@ -163,7 +213,11 @@ function wifi_cac_me(array $m): ?array {
 function wifi_cac_push(string $by = 'cron'): array {
     if (!wifi_cac_ready()) return ['ok' => false, 'error' => 'not_configured'];
     $people = wifi_cac_people();
-    $chunks = array_chunk($people, WIFI_CAC_MAX) ?: [[]];
+    $chunks = wifi_cac_pages($people);
+    /* `full` says "this is everybody", and CACENTRE withdraws anyone of ours
+       missing from it — so it may only be said when the whole roster went in
+       ONE push. Paged, it is false and nobody is withdrawn; the result says
+       so rather than leaving it to be inferred. */
     $full = count($chunks) === 1;
     $r = ['ok' => true, 'at' => now_iso(), 'by' => $by, 'sent' => count($people), 'full' => $full, 'applied' => 0, 'refused' => 0, 'gone' => 0,
           'unknownSites' => [], 'refusals' => [], 'error' => ''];
@@ -175,6 +229,14 @@ function wifi_cac_push(string $by = 'cron'): array {
         foreach ((array)($res['results'] ?? []) as $x) if (empty($x['ok']) && count($r['refusals']) < 20) $r['refusals'][] = ['id' => (string)($x['id'] ?? ''), 'error' => (string)($x['error'] ?? '')];
     }
     $r['partial'] = !$r['ok'] || $r['refused'] > 0;
+    $r['pages'] = count($chunks);
+    /* Paged means `full` could not be said, so CACENTRE withdrew nobody. Said
+       here in words, because the difference only shows up as somebody who
+       left still being on the Wi-Fi, which nothing else would explain. */
+    if ($r['ok'] && !$full) {
+        $r['note'] = 'Sent in ' . $r['pages'] . ' parts because the roster is larger than one request may carry, so nobody was withdrawn. '
+            . 'Anybody suspended is still sent as off. Raise the host\'s request-body limit, or wifi.cac_body_max, to send it whole.';
+    }
     setting_set(WIFI_CAC_LAST, $r, $by);
     return $r;
 }
