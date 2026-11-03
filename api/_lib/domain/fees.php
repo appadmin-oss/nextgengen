@@ -980,11 +980,11 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
             [$memberId, $kind, $periodKey]);
         return $have ?: null;
     }
-    /* Money in may settle a re-entry fee, and a settled one is what lets a
+    /* Money in may settle policy fines — a settled re-entry fee is what lets a
        suspended child back through the door — asked here, where every
        payment and waiver passes, so no desk can forget to. */
-    if ($isCredit && function_exists('policy_reentry_sync')) {
-        try { policy_reentry_sync($memberId); } catch (Throwable $e) { error_log('[fees_post] reentry sync: ' . $e->getMessage()); }
+    if ($isCredit && function_exists('policy_fines_sync')) {
+        try { policy_fines_sync($memberId); } catch (Throwable $e) { error_log('[fees_post] fines sync: ' . $e->getMessage()); }
     }
     return $row;
 }
@@ -2196,6 +2196,9 @@ function admin_fees_void(array $p): array {
     db_update('member_ledger', ['voidedAt' => now_iso(), 'voidedBy' => $by,
                                 'voidReason' => substr($reason, 0, 240)], ['entryId' => $entryId]);
     audit('fees.void', $by, (string)$e['memberId'], ['entryId' => $entryId, 'amount' => (int)$e['amount'], 'reason' => $reason], (string)($p['ip'] ?? ''));
+    /* A voided payment can leave a fine the ledger had settled owed again; a
+       voided charge can settle the next one. The conduct board reads the same. */
+    if (function_exists('policy_fines_sync')) { try { policy_fines_sync((string)$e['memberId']); } catch (Throwable $ex) { error_log('[fees_void] fines sync: ' . $ex->getMessage()); } }
     return ['ok' => true];
 }
 

@@ -610,6 +610,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.policy.sanction.issue' => 'admin_policy_sanction_issue',
             'admin.policy.sanction.update' => 'admin_policy_sanction_update',
             'admin.policy.halfday.run'     => 'admin_policy_halfday_run',
+            'admin.policy.prelate.run'     => 'admin_policy_prelate_run',
             'admin.policy.reinstate'      => 'admin_policy_reinstate',
             'admin.policy.sweep'          => 'admin_policy_sweep',
             /* Attendance integrity (policy.php): the outage brake's held days,

@@ -638,6 +638,8 @@ function crCfComplianceBlocks(d, ctx) {
   return out;
 }
 
+/** What a set of corrective exercise was for, as the desk's list says it. */
+const CR_CF_FOR = { late: "Late", absence: "Absent" };
 /** "frog jumps" → "Frog jumps". */
 function crCfCap(w) { w = String(w || ""); return w.charAt(0).toUpperCase() + w.slice(1); }
 
@@ -650,12 +652,15 @@ function crCfCorrectiveBlocks(d, ctx, word) {
   const C = d.correctives;
   if (!C || !(C.rows || []).length) return [];
   return [{ type: "table", span: 6, title: crCfCap(word) + " to do (" + crNum(C.total) + ")", search: "Search by name or centre",
-    sub: "Tick them off as they are done at the centre.",
-    cols: ["Member", "Centre", { l: "How many", num: true }, { l: "Why", wrap: true }],
+    sub: "Exercise owed at the centre — not money; fines are under Policy fines owed. Tick each set off as it is done.",
+    /* The count column is named for what it counts. It said "How many" beside a
+       reason that also named the absence fine, so 7 read as if it were money. */
+    cols: ["Member", "Centre", "For", { l: crCfCap(word), num: true }, { l: "Why", wrap: true }],
     rows: C.rows.map(r => ({ key: String(r.id), cells: [
       { k: "person", t: r.fullName, s: r.displayId || r.memberId }, { k: "text", t: r.centre || "—" },
+      { k: "text", t: CR_CF_FOR[r.for] || "Other", s: r.date ? crCfDay(r.date) : "", v: r.date || "" },
       { k: "num", t: crNum(r.count), v: r.count }, { k: "text", t: r.reason } ] })),
-    filters: ["Centre"],
+    filters: ["Centre", "For"],
     bulk: [{ l: "Mark done", max: C.max || 500, run: async keys => {
       try { const r = await NGGApi.admin.policy.correctivesDone(keys.map(Number)); ctx.toast(crPlural(r.done, "set") + " of " + word + " done."); crCfRefresh(ctx); }
       catch (e) { ctx.toast(crErr(e, "Couldn’t mark those done."), null, true); return false; }
@@ -1241,6 +1246,14 @@ Object.assign(CR_TAB_DEFS, {
           try { const r = await NGGApi.admin.policy.halfday();
             ctx.toast(r.converted || r.reworked ? crPlural(r.converted, "day") + " made a half-day for " + crPlural(r.people, "person", "people") + (r.reworked ? " · " + crPlural(r.reworked, "person", "people") + "’s fines corrected" : "") + (r.more ? " · more left, press again" : "") + "." : "Nothing to change: every day with no sign-out is already a half-day.");
             crCfRefresh(ctx); } catch (e) { ctx.toast(crErr(e, "Couldn’t apply it."), null, true); } } });
+        /* Lates recorded for arrivals before lateness begins (the older definition)
+           undone now, with their fines refunded — the nightly check does it too. */
+        if (ctx.can("people")) out.push({ l: "Correct lates before the first band", icon: "clock-counter-clockwise", run: async () => {
+          try { const r = await NGGApi.admin.policy.prelate();
+            ctx.toast(r.voided || r.reworded ? [r.voided ? crPlural(r.voided, "late") + " undone for " + crPlural(r.people, "person", "people") : "",
+              r.refunded ? crPlural(r.refunded, "paid fine") + " refunded as credit" : "", r.reworded ? crPlural(r.reworded, "entry", "entries") + " reworded" : "",
+              r.more ? "more left, press again" : ""].filter(Boolean).join(" · ") + "." : "Nothing to correct: every late on record arrived at or after the first band.");
+            crCfRefresh(ctx); } catch (e) { ctx.toast(crErr(e, "Couldn’t correct them."), null, true); } } });
         out.push({ l: "Refresh", icon: "arrows-clockwise", run: () => crCfRefresh(ctx) });
       }
       return out;

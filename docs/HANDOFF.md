@@ -5392,3 +5392,40 @@ reminder never reached the member.
 - Also in this round: `window.__adminSection` is installed once in a layout
   effect (it was missing between first paint and the effect, and torn down per
   render); membership-pay and portal-account tests wait for what they assert.
+
+
+## 3 Nov 2026 — Lates before the first band; one penalty per entry; fines owed read the account
+
+Reported with a screenshot of Compliance → Frog jumps to do: "Arrived 09:21 …
+(09:45 to before 10:00) — 3 frog jumps", "Arrived 09:01 …", and an absence row
+"₦1,000 fine and 7 frog jumps" under a "How many" of 7.
+
+- **Cause.** Two definitions of late. The ladder logged a member late from
+  resumption + grace; the rulebook (30 Oct) is late from its first band. The
+  rulebook re-reads every late on record, and `policy_band_for()` answered the
+  FIRST band for any minute below it, so ladder-era lates were charged under a
+  band their own arrival time contradicts. It now answers `before`, and
+  `policy_apply_session()` issues nothing for it.
+- **Repair.** `policy_prelate_repair()` — half-day repair's shape: per person in
+  one transaction, bounded, `more` to continue; runs at the top of both nightly
+  sweeps and on demand (`admin.policy.prelate.run`, Compliance → "Correct lates
+  before the first band"). Voids each pre-band late (`POLICY_PRELATE_TAG`), logs
+  the day tardy, `policy_relift` lifts the fine and owed jumps (a paid fine's
+  charge is voided — the payment stands as credit). Done jumps stay done.
+  Only under `rulebook = session`.
+- **Wording.** `policy_session_reason()` is the one place a rulebook row's words
+  come from: one penalty per row. The repair rewrites older rows and the fine's
+  ledger note. The jumps list carries `for` (late/absence) and `date` from the
+  tier; the column is named for the exercise, plus a For column.
+- **Money.** `policy_reentry_sync` → `policy_fines_sync`: every pending policy
+  fine the account covers is paid by the ledger (both ways; a voided payment
+  makes it owed again; `admin_fees_void` re-syncs). Before, only the re-entry
+  fee was read this way, so a fine paid online stayed "owed" on the conduct
+  board and froze awards. `policy_states_for()` counted proposed fines as owed
+  while `policy_state()` did not — aligned.
+- Tests: PHP block "Arrivals before lateness begins are not lates" (19 checks,
+  mutation-checked: removing the `before` branch fails two, re-entry-only sync
+  fails two); `tests/conduct-rulebook.test.js` checks the column and wording.
+- Baseline before this change: PHP 6501/1 failed (`portal: reading an entry
+  marks it read`), UI smoke 648/1 failed (`…a named reason for every family NOT
+  included`) — both pre-existing and unchanged.

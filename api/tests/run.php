@@ -35824,8 +35824,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $f1 = $sc('NGG-RB-1', 'fine', POLICY_T_LATE_FINE + policy_day_number($d1)); $j1 = $sc('NGG-RB-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d1));
     chk('rulebook · 09:38: a ₦500 fine and 3 frog jumps, the fine on the account', $f1 && (int)$f1['amount'] === 500 && $j1 && (int)$j1['amount'] === 3 && $j1['status'] === 'pending'
         && (bool)db_row("SELECT 1 FROM member_ledger WHERE memberId = 'NGG-RB-1' AND periodKey = ? AND amount = 500", ['sanction-' . $f1['id']]));
-    chk('rulebook · …and the late says what it cost, in words', str_contains((string)db_row("SELECT note FROM infractions WHERE personId = 'NGG-RB-1' AND date = ? AND kind = 'late'", [$d1])['note'], 'Arrived 09:38')
-        && str_contains((string)$f1['reason'], '₦500 fine and 3 frog jumps'));
+    chk('rulebook · …and the late says what it cost, in words — one penalty per row: the fine says money, the exercise says the exercise', str_contains((string)db_row("SELECT note FROM infractions WHERE personId = 'NGG-RB-1' AND date = ? AND kind = 'late'", [$d1])['note'], 'Arrived 09:38')
+        && str_contains((string)$f1['reason'], '₦500 lateness fine') && !str_contains((string)$f1['reason'], 'frog jumps')
+        && str_contains((string)$j1['reason'], '3 frog jumps') && !str_contains((string)$j1['reason'], '₦'));
     chk('rulebook · 09:50: 5 frog jumps and no fine', !$sc('NGG-RB-1', 'fine', POLICY_T_LATE_FINE + policy_day_number($d2)) && (int)$sc('NGG-RB-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d2))['amount'] === 5);
     $rv = $sc('NGG-RB-1', 'review', POLICY_T_REVIEW + policy_day_number($d3));
     chk('rulebook · 10:05: for management review — no automatic fine or jumps, but on the board awaiting a person', $rv && $rv['status'] === 'proposed'
@@ -35939,6 +35940,120 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
     foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'attendance' => 'studentId', 'member_requests' => 'memberId', 'assignment_submissions' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-RB-%'");
     db_exec("DELETE FROM assignments WHERE assignmentId LIKE 'ASG-RB-%'");
+})();
+
+
+// ── Arrivals before lateness begins are not lates: the band lookup, the issue, and the repair of what was charged ──
+(function () {
+    $now = now_iso(); $ADM = 'NGG-PL-ADM';
+    $keep = []; foreach (['policy', 'memberProgramme'] as $k) $keep[$k] = setting_raw($k);
+    $today = attendance_today(); $ago = fn($n) => gmdate('Y-m-d', strtotime($today . ' UTC') - $n * 86400);
+    member_programme_settings_save(['enabled' => true, 'startDate' => $ago(60), 'endDate' => $ago(-30), 'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'test');
+    $rules = ['enabled' => true, 'rulebook' => 'session', 'checkoutRequired' => false, 'absenceFine' => 1000, 'resumption' => '09:00',
+        'lateBands' => [['from' => '09:30', 'fine' => 500, 'jumps' => 3], ['from' => '09:45', 'fine' => 0, 'jumps' => 5]], 'reviewFrom' => '10:00',
+        'absenceJumps' => 7, 'suspendAfterAbsences' => 9, 'suspendDays' => 7, 'reentryFee' => 5000, 'permittedAbsences' => 5, 'formalAfterDays' => 21, 'evidenceFine' => 0, 'jumpWord' => 'frog jumps'];
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true, 'member' => $rules], 'test');
+    $mk = fn($id, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Pl ' . $id, 'email' => strtolower($id) . '@example.org', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'centre' => 'Pl Centre', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk($ADM, ['role' => 'super_admin', 'centre' => '']);
+    foreach (range(1, 3) as $i) $mk('NGG-PL-' . $i);
+    $cfg = policy_for('member');
+    $local = fn($d, $hm) => strtotime($d . ' ' . $hm . ':00 UTC') - (int)attendance_settings()['tzOffset'] * 60;
+    $came = fn($id, $d, $hm) => db_insert('attendance', ['cohortId' => '', 'studentId' => $id, 'token' => '', 'date' => $d, 'checkInAt' => gmdate('Y-m-d\TH:i:s\Z', $local($d, $hm)), 'method' => 'gate', 'centre' => 'Pl Centre', 'createdAt' => $now]);
+    $sc = fn($id, $kind, $tier) => db_row('SELECT * FROM sanctions WHERE personId = ? AND kind = ? AND tier = ?', [$id, $kind, $tier]);
+
+    $b1 = policy_band_for($cfg, 9 * 60 + 21); $b2 = policy_band_for($cfg, 9 * 60 + 30); $b3 = policy_band_for($cfg, 9 * 60 + 50);
+    chk('pre-band · 09:21 is before lateness begins — no band, nothing owed; 09:30 is the first band; 09:50 the second',
+        $b1['before'] === true && $b1['fine'] === 0 && $b1['jumps'] === 0 && $b2['before'] === false && $b2['from'] === '09:30' && $b3['from'] === '09:45');
+
+    // A late on record for a 09:21 arrival (the older definition logged it) issues nothing now.
+    [$dA, $dB, $dC] = [$ago(10), $ago(9), $ago(8)];
+    $came('NGG-PL-1', $dA, '09:21'); policy_log('NGG-PL-1', 'member', 'late', $dA, 'Scanned after resumption + grace.');
+    policy_apply('NGG-PL-1', 'member');
+    chk('pre-band · a late on record for a 09:21 arrival issues no fine and no frog jumps',
+        !$sc('NGG-PL-1', 'fine', POLICY_T_LATE_FINE + policy_day_number($dA)) && !$sc('NGG-PL-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($dA)));
+
+    // What the old engine left behind: a 09:01 and a 09:21 charged under the first band — one fine already PAID — and old one-sentence wording.
+    $came('NGG-PL-2', $dA, '09:01'); policy_log('NGG-PL-2', 'member', 'late', $dA, 'old');
+    $came('NGG-PL-2', $dB, '09:21'); policy_log('NGG-PL-2', 'member', 'late', $dB, 'old');
+    $came('NGG-PL-2', $dC, '09:38'); policy_log('NGG-PL-2', 'member', 'late', $dC, 'a real late');
+    $old = 'Arrived 09:01 (09:30 to before 09:45) — ₦500 fine and 3 frog jumps.';
+    foreach ([$dA, $dB] as $d) {
+        policy_issue('NGG-PL-2', 'member', 'fine', POLICY_T_LATE_FINE + policy_day_number($d), ['amount' => 500, 'status' => 'pending', 'reason' => $old]);
+        policy_issue('NGG-PL-2', 'member', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d), ['amount' => 3, 'status' => 'pending', 'reason' => $old]);
+    }
+    $paid = $sc('NGG-PL-2', 'fine', POLICY_T_LATE_FINE + policy_day_number($dA));
+    fees_post('NGG-PL-2', 'payment', 500, ['by' => 'test', 'method' => 'cash', 'note' => 'paid the late fine']);
+    db_update('sanctions', ['status' => 'paid'], ['id' => (int)$paid['id']]);
+    policy_apply('NGG-PL-2', 'member');   // the real 09:38 late is charged as it should be
+    $absD = $ago(12);
+    policy_issue('NGG-PL-3', 'member', 'corrective', POLICY_T_ABS_JUMPS + policy_day_number($absD), ['amount' => 7, 'status' => 'pending', 'reason' => 'Absent on X without permission — ₦1,000 fine and 7 frog jumps.']);
+    policy_log('NGG-PL-3', 'member', 'absence', $absD, 'No check-in on a member programme day.');
+
+    $r = policy_prelate_repair();
+    $liveLates = fn($id) => array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'late' AND (voidedAt IS NULL OR voidedAt = '') ORDER BY date", [$id]), 'date');
+    chk('pre-band repair · the lates for 09:01 and 09:21 are voided with the reason, the real 09:38 late stands',
+        $liveLates('NGG-PL-2') === [$dC] && $liveLates('NGG-PL-1') === []
+        && str_starts_with((string)db_row("SELECT voidReason FROM infractions WHERE personId = 'NGG-PL-2' AND date = ? AND kind = 'late'", [$dB])['voidReason'], POLICY_PRELATE_TAG . ': arrived 09:21, and lateness begins at 09:30'));
+    chk('pre-band repair · …the day is kept as seen-after-resumption (tardy), which costs nothing',
+        (bool)db_row("SELECT 1 FROM infractions WHERE personId = 'NGG-PL-2' AND date = ? AND kind = 'tardy'", [$dB]));
+    $pending = $sc('NGG-PL-2', 'fine', POLICY_T_LATE_FINE + policy_day_number($dB));
+    chk('pre-band repair · the unpaid fine and both sets of frog jumps are lifted, and the fines are off the account',
+        $pending['status'] === 'lifted' && $sc('NGG-PL-2', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($dA))['status'] === 'lifted'
+        && $sc('NGG-PL-2', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($dB))['status'] === 'lifted'
+        && (string)db_row("SELECT voidedAt FROM member_ledger WHERE memberId = 'NGG-PL-2' AND periodKey = ?", ['sanction-' . $pending['id']])['voidedAt'] !== '');
+    chk('pre-band repair · the fine already PAID is refunded: lifted, its charge voided, the payment left standing as credit',
+        $sc('NGG-PL-2', 'fine', POLICY_T_LATE_FINE + policy_day_number($dA))['status'] === 'lifted'
+        && (string)db_row("SELECT voidedAt FROM member_ledger WHERE memberId = 'NGG-PL-2' AND periodKey = ?", ['sanction-' . $paid['id']])['voidedAt'] !== ''
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-PL-2' AND kind = 'payment' AND (voidedAt IS NULL OR voidedAt = '')")['c'] === 1
+        && $r['refunded'] === 1);
+    $real = $sc('NGG-PL-2', 'fine', POLICY_T_LATE_FINE + policy_day_number($dC));
+    chk('pre-band repair · the real late keeps its ₦500 fine and 3 frog jumps', $real && $real['status'] === 'pending' && (int)$real['amount'] === 500
+        && $sc('NGG-PL-2', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($dC))['status'] === 'pending');
+    $abs = $sc('NGG-PL-3', 'corrective', POLICY_T_ABS_JUMPS + policy_day_number($absD));
+    chk('pre-band repair · an older exercise row that also named the fine is reworded to the exercise alone',
+        $abs['reason'] === 'Absent on ' . policy_day_text($absD) . ' without permission — 7 frog jumps.' && $abs['status'] === 'pending');
+    chk('pre-band repair · it says what it did', $r['voided'] === 3 && $r['people'] === 2 && $r['reworded'] >= 1 && $r['more'] === false
+        && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'policy.prelate_repair'"));
+    chk('pre-band repair · a second run finds nothing to do', policy_prelate_repair() === ['voided' => 0, 'people' => 0, 'refunded' => 0, 'reworded' => 0, 'more' => false]);
+    chk('pre-band repair · the nightly member check runs it', str_contains((string)(new ReflectionFunction('policy_sweep_member_absences'))->getFileName(), 'policy.php')
+        && preg_match('/function policy_sweep_member_absences[^{]*\{\s*policy_nosignout_to_halfday\(\);\s*policy_prelate_repair\(\);/', (string)file_get_contents(__DIR__ . '/../_lib/domain/policy.php')) === 1);
+    $ed = 'NGG-PL-ED'; $mk($ed, ['role' => 'editor', 'centre' => '']);
+    chk('pre-band repair · on demand: needs the People permission, then answers with the counts',
+        (backend_dispatch('admin.policy.prelate.run', ['requesterId' => $ed])['error'] ?? '') === 'forbidden'
+        && ($run = backend_dispatch('admin.policy.prelate.run', ['requesterId' => $ADM]))['ok'] === true && array_key_exists('refunded', $run));
+
+    // The conduct board and the family's account agree about a fine: what the ledger has settled is paid, both ways.
+    $absF = 500000 + policy_day_number($ago(15));
+    policy_issue('NGG-PL-1', 'member', 'fine', $absF, ['amount' => 1000, 'status' => 'pending', 'reason' => 'Absent — ₦1,000 absence fine.']);
+    chk('fines sync · before any payment the board says ₦1,000 owed', policy_state('NGG-PL-1', 'member')['finesOwed'] === 1000);
+    $pay = fees_post('NGG-PL-1', 'payment', 1000, ['by' => 'test', 'method' => 'paystack', 'note' => 'paid online']);
+    $fs = $sc('NGG-PL-1', 'fine', $absF);
+    chk('fines sync · a payment that covers it settles the fine (not only a re-entry fee): paid by the ledger, nothing owed on the board or the roster',
+        $fs['status'] === 'paid' && $fs['clearedBy'] === 'ledger' && policy_state('NGG-PL-1', 'member')['finesOwed'] === 0
+        && policy_states_for(['NGG-PL-1'], 'member')['NGG-PL-1']['finesOwed'] === 0);
+    $vd = backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => (string)$pay['entryId'], 'reason' => 'the transfer bounced']);
+    chk('fines sync · the payment voided: the fine is owed again, on both', !empty($vd['ok']) && $sc('NGG-PL-1', 'fine', $absF)['status'] === 'pending'
+        && policy_state('NGG-PL-1', 'member')['finesOwed'] === 1000);
+    db_update('sanctions', ['status' => 'waived', 'clearedBy' => $ADM], ['id' => (int)$fs['id']]);
+    fees_post('NGG-PL-1', 'payment', 1000, ['by' => 'test', 'method' => 'cash', 'note' => 'more']);
+    chk('fines sync · a fine a person settled by hand is theirs: the ledger does not touch it', $sc('NGG-PL-1', 'fine', $absF)['status'] === 'waived');
+    policy_issue('NGG-PL-1', 'member', 'fine', 4242, ['amount' => 700, 'status' => 'proposed', 'reason' => 'proposed, not owed']);
+    chk('fines owed · a proposed fine is not owed — the roster reads it as the record does',
+        policy_states_for(['NGG-PL-1'], 'member')['NGG-PL-1']['finesOwed'] === policy_state('NGG-PL-1', 'member')['finesOwed']);
+
+    $cl = backend_dispatch('admin.policy.correctives', ['requesterId' => $ADM]);
+    $mine = array_values(array_filter($cl['rows'], fn($r) => $r['memberId'] === 'NGG-PL-2'));
+    chk('frog jumps list · each set says what it was for and on which day', $mine && $mine[0]['for'] === 'late' && $mine[0]['date'] === $dC && $mine[0]['count'] === 3
+        && !str_contains($mine[0]['reason'], '₦'));
+
+    // Under the older ladder, "late" means past resumption + grace: the repair leaves it alone.
+    $came('NGG-PL-3', $dB, '09:21'); policy_log('NGG-PL-3', 'member', 'late', $dB, 'ladder late');
+    policy_settings_save(['member' => ['rulebook' => 'ladder'] + $rules], 'test');
+    chk('pre-band repair · not under the ladder rulebook, whose definition of late is different', policy_prelate_repair()['voided'] === 0 && $liveLates('NGG-PL-3') === [$dB]);
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'attendance' => 'studentId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-PL-%'");
 })();
 
 
