@@ -3395,3 +3395,47 @@ hides an outage (CLAUDE.md §9). An empty registry comes back as a real answer
 with empty lists, so `null` means only "failed", and that case now says so and
 offers the retry. Quietly, at the bottom of a course page: nothing there
 blocks the work.
+
+### Wi-Fi: NGG's half, against CACENTRE's authority
+
+The 2026-10-23 design in this file says *"the router pulls from NGG"*.
+**That is no longer true and the note above it should be read with this one.**
+CACENTRE's own design (2026-10-28, `cac/docs/wifi.md` in cacentre-site)
+makes CACENTRE the authority for the whole estate: routers fetch their list
+from CACENTRE, which holds every PIN and makes every decision. Shared hosting
+can neither run RADIUS nor reach a router behind NAT, and one PIN should live
+in one place.
+
+So NGG's half is not the system that was planned here. It is two documents
+about its own people — `wifi.roster` (who we have and our say about each) and
+`wifi.card` (show one member theirs) — and `docs/WIFI.md` is the detail.
+
+**No new connection, and that was the point.** Both ride the person
+directory's: the `DirectoryEnvelope` wire, the key `DIR_PUSH_SECRET_NGG`,
+CACENTRE's address, with only `typ` differing. `dirpush_mint()` became
+`dirpush_token($claims, $typ)` and the transport became `dirpush_call()`, so
+there is ONE signer for all three documents. A second copy of that envelope
+is a second place the wire can drift from CACENTRE's `DirectoryEnvelope`, and
+a drift reads as `bad_signature` — which does not say which side moved.
+
+**Nothing about access is decided or stored here.** `wifi_verdict_for()`
+reads the member row every time and returns a say, not a decision; a stored
+verdict goes stale the moment somebody is suspended, and that gap is somebody
+online who should not be. No PIN is ever held on this side.
+
+**A full push is a withdrawal instruction.** `full: true` tells CACENTRE
+"this is everybody", so anyone of ours missing from it loses Wi-Fi. It is
+only sent when the whole roster fits in one push; past CACENTRE's 5,000 it
+goes as partial pushes, which withdraw nobody.
+
+**A test that aged out, found on the way.** `portal: reading an entry marks
+it read` had been failing since **2026-10-29** — `mp_shared_entries()` asks
+for the last 21 days and the fixture was pinned to `2026-10-08`, so the
+entry simply fell out of the window five days ago. The fixture is relative
+now. Nothing was wrong with the product; a fixture pinned to a date, read
+against a rolling window, is a test with an expiry date.
+
+**Still blocked, and not by this.** CACENTRE's Wi-Fi is on the branch
+`claude/cacentre-wifi-authority` and is not merged to main, so
+`/api/wifi-roster.php` does not exist on a deployment built from main. NGG's
+half is complete and inert until it does.

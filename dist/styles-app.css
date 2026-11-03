@@ -11311,6 +11311,17 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-4ee4928{font-size:12.5px;color:#6b6b72;font-weight:600;display:flex;align-items:center;gap:6px}
 .m9-62ba2f8{font-size:20px;font-weight:700}
 .m9-36764d1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.m9-1f579c4{height:26px;padding:0 10px;border-radius:999px;background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:12.5px;font-weight:600;display:inline-flex;align-items:center}
+.m9-6a9adae{display:flex;gap:12px;flex-wrap:wrap}
+.m9-d7fe8fe{flex:1 1 150px;display:flex;flex-direction:column;gap:3px}
+.m9-c9a11fd{font-family:'Geist Mono',monospace;font-size:19px;font-weight:600;letter-spacing:.02em}
+.m9-74a952d{font-family:'Geist Mono',monospace;font-size:19px;font-weight:600;letter-spacing:.14em}
+.m9-53f9594{font-size:14px;color:#2a2a2e;line-height:1.5}
+.m9-5cd40f9{display:flex;gap:8px;padding:10px 12px;border-radius:12px;background:#fdf6e3;color:#5c4100;font-size:13.5px;line-height:1.45}
+.m9-319d7a2{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #f0efea}
+.m9-804c143{min-height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer}
+.m9-2fbd403{flex:1;min-width:180px;font-size:12.5px;color:#6b6b72;line-height:1.45}
+.m9-19bfff7{margin:0;font-size:14px;color:#4a4a50;line-height:1.5}
 .m9-a28827f{height:40px;padding:0 14px;border-radius:10px;border:0;background:#0b0b0c;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px}
 .m9-4f958f5{margin:0;font-size:14.5px;line-height:1.5;color:#2a2a2e}
 .m9-3bc6cc4{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px 16px;font-size:14.5px}
@@ -11318,7 +11329,6 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-bace81c{font-size:12.5px;color:#5f5f66}
 .m9-a14c37d{margin:2px 0 0;overflow-wrap:anywhere}
 .m9-9ec6d7f{font-size:13px;color:#4a4a50;display:flex;align-items:center;gap:6px}
-.m9-319d7a2{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #f0efea}
 .m9-e4cc52e{flex:1;min-width:200px;font-size:13px;color:#4a4a50;line-height:1.45}
 .m9-3847813{height:40px;padding:0 14px;border-radius:10px;border:1px solid #d6d4cc;background:#fff;font-size:13.5px;font-weight:600;cursor:pointer}
 .m9-1db78f5{height:24px;padding:0 9px;border-radius:999px;background:#f4f4f2;font-size:12px;font-weight:600;display:inline-flex;align-items:center}

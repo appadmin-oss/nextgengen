@@ -27791,8 +27791,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('portal: a concern never lands on the child\'s mentoring record', (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1'")['c'] === $before);
 
     // Messages: a journal entry shared with the mentor reaches them; a private one never does.
-    db_insert('journal', ['entryId' => 'JMP1', 'memberId' => 'NGG-MPK2', 'title' => 'My week', 'body' => 'I tried', 'visibility' => 'mentor', 'isPrivate' => 0, 'createdAt' => '2026-10-08T09:00:00Z']);
-    db_insert('journal', ['entryId' => 'JMP2', 'memberId' => 'NGG-MPK2', 'title' => 'Secret', 'body' => 'Private', 'visibility' => 'private', 'isPrivate' => 1, 'createdAt' => '2026-10-08T09:00:00Z']);
+    /* RELATIVE, because what they are read against is. `mp_shared_entries()`
+       asks for the last 21 days, so a fixture pinned to a fixed date is a
+       test with an expiry: this one passed until 2026-10-29 and then failed
+       every day after, for no reason but the calendar. */
+    $jAt = gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 86400);
+    db_insert('journal', ['entryId' => 'JMP1', 'memberId' => 'NGG-MPK2', 'title' => 'My week', 'body' => 'I tried', 'visibility' => 'mentor', 'isPrivate' => 0, 'createdAt' => $jAt]);
+    db_insert('journal', ['entryId' => 'JMP2', 'memberId' => 'NGG-MPK2', 'title' => 'Secret', 'body' => 'Private', 'visibility' => 'private', 'isPrivate' => 1, 'createdAt' => $jAt]);
     $ms = backend_dispatch('member.mentor.messages', $p('NGG-MP1'));
     $ids = array_column($ms['messages'], 'id');
     chk('portal: shared journal entries and check-ins reach the mentor; private entries never', in_array('journal:JMP1', $ids, true) && !in_array('journal:JMP2', $ids, true)
@@ -32033,6 +32038,122 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $oldP[0] >= $small[0] * 9 && $oldP[1] >= $small[1] * 9);
 
     if ($save === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $save;
+})();
+
+
+/* ── NGG's half of the estate's Wi-Fi ────────────────────────────────────── */
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Wifi ' . $id,
+        'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-WIFI-%'");
+    $mk('NGG-WIFI-OK',   ['displayId' => '026-014']);
+    $mk('NGG-WIFI-SUSP', ['status' => 'suspended']);
+    $mk('NGG-WIFI-INACT',['status' => 'inactive']);
+    $mk('NGG-WIFI-GRAD', ['status' => 'graduated-ngg']);
+    $mk('NGG-WIFI-STAFF',['role' => 'club_admin']);
+    $mk('SUM-WIFI-P1',   ['type' => 'Summer', 'displayId' => 'EG-26-001']);
+
+    $verdict = fn($id) => wifi_verdict_for(db_row('SELECT * FROM members WHERE memberId = ?', [$id]));
+
+    chk('wifi: an active member is on, as a member', $verdict('NGG-WIFI-OK')['verdict'] === 'on' && $verdict('NGG-WIFI-OK')['kind'] === 'member');
+    chk('wifi: staff are on, and are staff — not members', $verdict('NGG-WIFI-STAFF')['verdict'] === 'on' && $verdict('NGG-WIFI-STAFF')['kind'] === 'staff');
+    chk('wifi: a suspended record is off, and says so in words',
+        $verdict('NGG-WIFI-SUSP')['verdict'] === 'off' && str_contains($verdict('NGG-WIFI-SUSP')['why'], 'suspended'));
+    chk('wifi: inactive is off too', $verdict('NGG-WIFI-INACT')['verdict'] === 'off');
+    chk('wifi: somebody who has graduated is off', $verdict('NGG-WIFI-GRAD')['verdict'] === 'off');
+    chk('wifi: a Summer participant is a participant, never a member (CLAUDE.md §5)',
+        $verdict('SUM-WIFI-P1')['kind'] === 'participant');
+
+    /* Every kind and verdict this side can produce must be one CACENTRE
+       accepts, or the row is refused as `bad_row` and nobody here is told
+       which of ours fell out. These two lists are the contract. */
+    $kinds = []; $verdicts = [];
+    foreach (wifi_roster_rows(500, 0) as $r) { $kinds[$r['kind']] = true; $verdicts[$r['verdict']] = true; }
+    chk('wifi: every kind we send is one CACENTRE accepts from this issuer',
+        !array_diff(array_keys($kinds), WIFI_KINDS));
+    chk('wifi: every verdict we send is one CACENTRE accepts',
+        !array_diff(array_keys($verdicts), WIFI_ACCESS));
+
+    /* The row shape CACENTRE's rosterIngest() reads, field for field. */
+    $row = wifi_row(db_row("SELECT * FROM members WHERE memberId = 'NGG-WIFI-OK'"));
+    chk('wifi: a roster row carries exactly the fields CACENTRE reads',
+        array_keys($row) === ['id', 'kind', 'name', 'email', 'printedId', 'homeSite', 'verdict', 'why', 'validUntil']);
+    chk('wifi: the printed ID they already carry travels, so they keep one name across the estate',
+        $row['printedId'] === '026-014');
+    chk('wifi: the home site is the centre CODE, lower-cased (EG -> eg)',
+        $row['homeSite'] === strtolower($row['homeSite']) && !str_contains($row['homeSite'], ' '));
+
+    /* THE WIRE. One signer for every document this connection carries, so
+       NGG's envelope cannot drift from DirectoryEnvelope's. Checked by
+       verifying our own token the way CACENTRE does. */
+    $secret = str_repeat('k', 48);
+    $tok = dirpush_token(['full' => true, 'people' => []], WIFI_TYP_ROSTER, $secret, 1800000000);
+    [$v1, $body, $mac] = explode('.', $tok);
+    $claims = json_decode(base64_decode(strtr($body, '-_', '+/')), true);
+    chk('wifi: the roster token is the directory envelope with a different typ',
+        $v1 === 'v1' && $claims['typ'] === 'wifi.roster' && $claims['iss'] === DIRPUSH_APP
+        && strlen((string)$claims['nonce']) === 32 && (int)$claims['exp'] === 1800000000 + DIRPUSH_TTL);
+    chk('wifi: …signed exactly as CACENTRE verifies it (HMAC over the base64url body)',
+        hash_equals(rtrim(strtr(base64_encode(hash_hmac('sha256', $body, $secret, true)), '+/', '-_'), '='), $mac));
+    $cardTok = dirpush_token(['id' => 'NGG-WIFI-OK', 'op' => 'show'], WIFI_TYP_CARD, $secret, 1800000000);
+    chk('wifi: a card token is a DIFFERENT typ, so neither is accepted at the other\'s door',
+        json_decode(base64_decode(strtr(explode('.', $cardTok)[1], '-_', '+/')), true)['typ'] === 'wifi.card');
+    chk('wifi: a directory push is still minted exactly as before',
+        json_decode(base64_decode(strtr(explode('.', dirpush_mint([], $secret, 1800000000))[1], '-_', '+/')), true)['typ'] === 'dir.push');
+
+    /* Our cap must not exceed theirs: a roster longer than CACENTRE's
+       ROSTER_MAX is refused whole (`too_many`), and a `full` push that was
+       cut would withdraw everybody past the cut. */
+    chk('wifi: our roster cap is CACENTRE\'s, and a page is well under it',
+        WIFI_ROSTER_MAX === 5000 && WIFI_PUSH_BATCH < WIFI_ROSTER_MAX);
+
+    /* With no key, nothing is sent and the refusal says which key to set —
+       the directory's, because they are the same connection. */
+    $saveSecret = $GLOBALS['CONFIG']['dir_push_secret'] ?? null;
+    $GLOBALS['CONFIG']['dir_push_secret'] = '';
+    $none = wifi_push_run(true);
+    chk('wifi: with no CACENTRE key the push refuses in words, naming the one key',
+        empty($none['ok']) && $none['error'] === 'not_configured' && str_contains($none['message'], 'DIR_PUSH_SECRET_NGG'));
+    chk('wifi: …and a member\'s screen says so rather than erroring',
+        (function () { $c = member_wifi_card(['memberId' => 'NGG-WIFI-OK']);
+            return !empty($c['ok']) && $c['card'] === null && ($c['configured'] ?? true) === false; })());
+
+    /* With a key, the push goes — and what CACENTRE answers is kept, because
+       `unknownSites` is the one thing nothing else would ever surface. */
+    $GLOBALS['CONFIG']['dir_push_secret'] = $secret;
+    $seen = null;
+    $GLOBALS['__dirpush_transport'] = function (string $url, string $body) use (&$seen) {
+        $seen = ['url' => $url, 'claims' => json_decode(base64_decode(strtr(explode('.', json_decode($body, true)['token'])[1], '-_', '+/')), true)];
+        return ['code' => 200, 'body' => json_encode(['ok' => true, 'applied' => 6, 'refused' => 0, 'gone' => 1,
+            'partial' => false, 'unknownSites' => ['eg' => 6]])];
+    };
+    $r = wifi_push_run(true);
+    chk('wifi: the push goes to CACENTRE\'s roster door, as this issuer',
+        !empty($r['ok']) && str_contains((string)$seen['url'], '/api/wifi-roster.php?issuer=ngg'));
+    chk('wifi: the people travel INSIDE the signature, never beside it',
+        isset($seen['claims']['people']) && count($seen['claims']['people']) >= 6 && $seen['claims']['full'] === true);
+    chk('wifi: a centre CACENTRE has no site for is kept, so somebody can be told',
+        (wifi_state()['unknownSites']['eg'] ?? 0) === 6 && (int)wifi_state()['applied'] === 6);
+
+    /* A member's own card: asked of CACENTRE each time, never stored here. */
+    $GLOBALS['__dirpush_transport'] = fn($url, $body) => ['code' => 200, 'body' => json_encode(['ok' => true,
+        'card' => ['username' => '026-014', 'pin' => '418290', 'access' => 'on', 'why' => 'An active NGG member.']])];
+    $card = member_wifi_card(['memberId' => 'NGG-WIFI-OK']);
+    chk('wifi: a member sees their sign-in name and PIN, from CACENTRE',
+        !empty($card['ok']) && $card['card']['username'] === '026-014' && $card['card']['pin'] === '418290');
+    chk('wifi: and NO PIN is stored on this side',
+        (int)(db_row("SELECT COUNT(*) c FROM settings WHERE settingValue LIKE '%418290%'")['c'] ?? 0) === 0);
+
+    $GLOBALS['__dirpush_transport'] = fn($url, $body) => ['code' => 409, 'body' => json_encode(['ok' => false, 'error' => 'wifi_off'])];
+    $off = member_wifi_card(['memberId' => 'NGG-WIFI-SUSP', 'op' => 'newPin']);
+    chk('wifi: a new PIN for somebody whose Wi-Fi is off is explained, not an error code',
+        empty($off['ok']) && $off['error'] === 'wifi_off' && str_contains($off['message'], 'off at the moment'));
+
+    unset($GLOBALS['__dirpush_transport']);
+    if ($saveSecret === null) unset($GLOBALS['CONFIG']['dir_push_secret']); else $GLOBALS['CONFIG']['dir_push_secret'] = $saveSecret;
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-WIFI-%' OR memberId LIKE 'SUM-WIFI-%'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

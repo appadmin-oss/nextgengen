@@ -223,6 +223,18 @@ async function as(memberId, admin, viewport) {
     await mb.waitForTimeout(900);
     chk('Opportunities: Save is the member’s own bookmark', /OPP-FIT/.test(q(`db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-MV-K1' AND stateKey = 'mp9.opps'")['stateValue'] ?? ''`)));
 
+    // ── Wi-Fi: CACENTRE's answer, shown honestly when there is no connection ──
+    /* This suite sets no CACENTRE key, which is the state most deployments
+       are in until somebody sets one. The card must SAY that rather than
+       break or sit blank — and it must never invent a PIN, because the PIN
+       is CACENTRE's and NGG never holds one. */
+    await nav(mb, 'Account', 'Profile');
+    await mb.waitForFunction(() => /Wi-Fi at the centre/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
+    const wifiTxt = await mb.innerText('main section[aria-label="Wi-Fi"]');
+    chk('Wi-Fi: the member\'s card says where it stands instead of sitting blank',
+      /Wi-Fi at the centre/.test(wifiTxt) && /not set up|not put you on|not connected/i.test(wifiTxt));
+    chk('Wi-Fi: …and no PIN is invented on this side', !/\b\d{6}\b/.test(wifiTxt));
+
     // ── Records: a request to the desk ──
     await nav(mb, 'Account', 'Records');
     await mb.click('main button[aria-pressed]:has-text("Correct my details")');

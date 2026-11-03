@@ -944,6 +944,10 @@
       studyPlan:         () => request('/member/curriculum.php' + qs({ view: 'study' })),
       studyStart:        (itemId, topic, exam) => request('/member/curriculum.php', { body: { action: 'drill', itemId, topic: topic || '', exam: exam || '' }, timeout: 60000 }),
       studyMark:         (drillId, answers) => request('/member/curriculum.php', { body: { action: 'drill', drillId, answers } }),
+      /* This member's own Wi-Fi. CACENTRE holds the PIN and decides who is
+         on; NGG asks it for the one person asking. */
+      wifi:              () => request('/member/wifi.php'),
+      wifiNewPin:        () => request('/member/wifi.php', { body: { op: 'newPin' } }),
       /* Everything the Learn app's first screen needs, in ONE request:
          lessons, the school plan and where the courses lead. Three separate
          calls meant three PHP bootstraps before a child saw a lesson. */
@@ -1470,6 +1474,11 @@
       companion: {
         board:  (rating) => request('/admin/companion.php' + qs({ rating: rating || '' })),
         assess: (memberIds) => request('/admin/companion.php', { body: { action: 'assess', memberIds } }),
+      },
+      /* NGG's half of the estate's Wi-Fi (domain/wifi.php). */
+      wifi: {
+        status: () => request('/admin/wifi.php'),
+        push:   () => request('/admin/wifi.php', { body: { action: 'push' }, timeout: 120000 }),
       },
       /* Where a course leads: the awarding bodies outside NGG, what each
          awards, and who holds one (domain/providers.php). */

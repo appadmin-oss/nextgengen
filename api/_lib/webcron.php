@@ -230,6 +230,13 @@ function web_cron_run(): void {
                    every row upserts on its source key so a missed tick costs
                    nothing. Does nothing at all until a push secret is set. */
                 if (web_cron_due('dirpush', web_cron_cfg('dirpush', 3600)) && function_exists('dirpush_tick')) web_cron_guard('directory_push', fn() => dirpush_tick());
+                /* NGG's say about who may use the estate's Wi-Fi, to CACENTRE
+                   — which runs the network and makes the decision. A FULL
+                   push, so somebody suspended this morning is off the Wi-Fi
+                   by the next tick rather than at the next whole-roster
+                   sweep. Rides the directory's key: nothing happens until
+                   that one secret is set, and then both work. */
+                if (web_cron_due('wifi_push', web_cron_cfg('wifi_push', 1800)) && function_exists('wifi_push_run')) web_cron_guard('wifi_push', fn() => wifi_push_run(true));
             } finally { @flock($lock, LOCK_UN); }
         }
         @fclose($lock);

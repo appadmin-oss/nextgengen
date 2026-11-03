@@ -92,12 +92,23 @@ function dirpush_ready(): bool {
         && !preg_match('/^(your|changeme|replace|example|todo)/i', $s);
 }
 
-/** Where CACENTRE is. */
-function dirpush_endpoint(): string {
+/**
+ * Where CACENTRE is.
+ *
+ * One address for every door this estate opens there. The Wi-Fi rides this
+ * same connection — the same key, the same envelope, a different `typ` — so
+ * it must resolve CACENTRE the same way or a deployment could end up pushing
+ * its directory to one host and its Wi-Fi roster to another.
+ */
+function dirpush_base(): string {
     $base = trim((string)(getenv('DIR_PUSH_URL') ?: ($GLOBALS['CONFIG']['dir_push_url'] ?? '')));
     if ($base === '') $base = 'https://cacentre.afrovanguard.org.ng';
 
-    return rtrim($base, '/') . '/api/directory-push.php?app=' . DIRPUSH_APP;
+    return rtrim($base, '/');
+}
+
+function dirpush_endpoint(): string {
+    return dirpush_base() . '/api/directory-push.php?app=' . DIRPUSH_APP;
 }
 
 /**
@@ -211,12 +222,24 @@ function dirpush_batch(string $store, int $cursor, int $limit = DIRPUSH_BATCH): 
  *
  * @param list<array<string,mixed>> $rows
  */
-function dirpush_mint(array $rows, ?string $secret = null, ?int $now = null): string {
+/**
+ * The envelope, for ANY document this one connection carries.
+ *
+ * CACENTRE's `DirectoryEnvelope` reads three types over the same key — the
+ * directory push, the Wi-Fi roster and one person's Wi-Fi card — and tells
+ * them apart by `typ` alone, refusing a token of one type presented at
+ * another's door. So there is ONE signer here and `typ` is an argument: a
+ * second copy of this function is a second place the wire format can drift
+ * from theirs, and a drift shows up as `bad_signature` with nothing to say
+ * which side moved.
+ *
+ * @param array<string,mixed> $claims the document's own fields
+ */
+function dirpush_token(array $claims, string $typ = DIRPUSH_TYP, ?string $secret = null, ?int $now = null): string {
     $now = $now ?? time();
-    $payload = json_encode([
-        'rows'  => array_values($rows),
+    $payload = json_encode($claims + [
         'iss'   => DIRPUSH_APP,
-        'typ'   => DIRPUSH_TYP,
+        'typ'   => $typ,
         'nonce' => bin2hex(random_bytes(16)),
         'iat'   => $now,
         'exp'   => $now + DIRPUSH_TTL,
@@ -226,6 +249,61 @@ function dirpush_mint(array $rows, ?string $secret = null, ?int $now = null): st
     $mac  = hash_hmac('sha256', $body, $secret ?? dirpush_secret(), true);
 
     return 'v1.' . $body . '.' . rtrim(strtr(base64_encode($mac), '+/', '-_'), '=');
+}
+
+function dirpush_mint(array $rows, ?string $secret = null, ?int $now = null): string {
+    return dirpush_token(['rows' => array_values($rows)], DIRPUSH_TYP, $secret, $now);
+}
+
+/**
+ * POST a signed document to one of CACENTRE's doors and read its answer.
+ *
+ * The transport the directory push already uses, with the URL and the type
+ * as arguments. A failure is a refusal shaped like CACENTRE's own, never an
+ * exception: this is an optional integration and nothing on this side may
+ * fall over because the other end is having an afternoon.
+ *
+ * `$GLOBALS['__dirpush_transport']` is the test seam — the same shape the
+ * CRM push uses, so a suite never reaches the network.
+ *
+ * @param array<string,mixed> $claims
+ * @return array<string,mixed>
+ */
+function dirpush_call(string $url, array $claims, string $typ, int $timeout = 30): array {
+    if (!dirpush_ready()) return ['ok' => false, 'error' => 'not-configured'];
+    $body = json_encode(['token' => dirpush_token($claims, $typ)], JSON_UNESCAPED_SLASHES);
+
+    $t = $GLOBALS['__dirpush_transport'] ?? null;
+    if (is_callable($t)) {
+        $r = $t($url, (string)$body);
+        $json = json_decode((string)($r['body'] ?? ''), true);
+        return is_array($json) ? $json + ['http' => (int)($r['code'] ?? 0)]
+                               : ['ok' => false, 'error' => 'bad-response', 'http' => (int)($r['code'] ?? 0)];
+    }
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
+        CURLOPT_POSTFIELDS => $body,
+    ]);
+    $out  = curl_exec($ch);
+    $err  = curl_error($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($err !== '' || $out === false) {
+        error_log('[dirpush] ' . $typ . ' ' . ($err ?: 'no response'));
+        return ['ok' => false, 'error' => 'unreachable'];
+    }
+    $json = json_decode((string)$out, true);
+    if (!is_array($json)) return ['ok' => false, 'error' => 'bad-response', 'http' => $code];
+    if (empty($json['ok'])) error_log('[dirpush] ' . $typ . ' HTTP ' . $code . ' ' . json_encode($json));
+
+    return $json + ['http' => $code];
 }
 
 /**

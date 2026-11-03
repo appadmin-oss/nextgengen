@@ -292,6 +292,13 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.providers.member'            => 'admin_provider_member',
             'member.providers.mine'             => 'member_providers_mine',
             'member.learn.boot'                 => 'member_learn_boot',
+
+            /* NGG's half of the estate's Wi-Fi: CACENTRE is the authority and
+               runs the network; this says who our people are and shows one
+               member their own card (domain/wifi.php). */
+            'member.wifi.card'                  => 'member_wifi_card',
+            'admin.wifi.status'                 => 'admin_wifi_status',
+            'admin.wifi.push'                   => 'admin_wifi_push',
             'member.providers.aim'              => 'member_provider_aim',
             'member.lesson.feedback'   => 'member_lesson_feedback_give',
             'member.lesson.feedback.mine' => 'member_lesson_feedback_mine',

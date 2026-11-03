@@ -910,6 +910,9 @@ Object.assign(Mp9Portal.prototype, {
       signOutMe: () => nggPortalSignOut(this.props.onSignOut), goMore: go("more"), onMoreCur: cur === "more" ? "page" : undefined,
       goHelp: go("help"), goSat: go("sat"), goMentor: go("mentor"), goGrowth: go("growth"), goOpps: go(this.older() ? "opps" : "sat"), goJournal: go("journal"), goMe: go("me"), goLearn: go("learn"),
       goMoney: go("money"), goRecords: go("records"), goTimetable: go("timetable"), goCompanion: go("companion"), goResults: go("results"), goLearnT: go("learn"),
+      /* Their own Wi-Fi. CACENTRE holds the PIN and makes the decision; this
+         asks for it and shows what comes back, and never keeps a copy. */
+      wf: mp9Wifi(this, this.state, o => this.setState(o)),
       onToday: cur === "today", onMentor: cur === "mentor", onGrowth: cur === "growth", onResults: cur === "results", onSat: cur === "sat", onJournal: cur === "journal", onOpps: cur === "opps", onCommunity: cur === "community", onPassport: cur === "passport", onHelp: cur === "help", onMore: cur === "more",
       onLearn: cur === "learn", onMe: cur === "me", onTimetable: cur === "timetable", onCompanion: cur === "companion", onMoney: cur === "money", onRecords: cur === "records",
       ntRight: narrow ? "8px" : "24px", ntLeft: narrow ? "8px" : "auto", ntTop: narrow ? "60px" : "84px", ntW: narrow ? "auto" : "380px",
@@ -938,6 +941,60 @@ Object.assign(Mp9Portal.prototype, {
 });
 
 /** A lesson file, from this site (api/member/lesson-file.php). */
+
+/**
+ * One member's Wi-Fi card, as the Account screen reads it.
+ *
+ * CACENTRE is the authority (cacentre-site `cac/docs/wifi.md`): it holds
+ * every PIN and decides who is on. NGG asks for this one person's card over
+ * the connection it already has, and shows the answer. Nothing is cached —
+ * a PIN kept here is a second place it can leak from — so a member who is
+ * suspended between two loads sees that on the second one.
+ */
+function mp9Wifi(self, s, set) {
+  const w = s.wifi, c = w && w.card;
+  if (w === undefined && !s.wifiAsked) {
+    /* Asked once, on the first render of the screen that shows it. */
+    set({ wifiAsked: true });
+    NGGApi.member.wifi().then(r => set({ wifi: r })).catch(e => set({ wifi: { error: mp9Err(e) } }));
+  }
+  const newPin = () => {
+    if (s.wifiBusy) return;
+    set({ wifiBusy: true });
+    NGGApi.member.wifiNewPin()
+      .then(r => { set({ wifi: r, wifiBusy: false }); self.toast("New PIN set."); })
+      .catch(e => { set({ wifiBusy: false }); self.toast(mp9Err(e), null, true); });
+  };
+  if (!w) return { tag: "Loading…", tagBg: "#f4f4f2", tagFg: "#4a4a50", hasCard: false, noCard: true, why: "Checking your Wi-Fi…", newPin, newPinL: "New PIN", resetSay: "", hasSpeed: false, speedSay: "", noRouter: false, username: "", pin: "" };
+  if (!c) {
+    return { tag: "Not set up", tagBg: "#f4f4f2", tagFg: "#4a4a50", hasCard: false, noCard: true,
+      why: w.why || w.error || "Your centre has not put you on the Wi-Fi list yet.",
+      newPin, newPinL: "New PIN", resetSay: "", hasSpeed: false, speedSay: "", noRouter: false, username: "", pin: "" };
+  }
+  const on = c.access === "on", lim = c.access === "limited";
+  const sp = c.speed || null, u = c.usage || {};
+  const left = Math.max(0, Number(c.resetsLeft || 0));
+  return {
+    tag: on ? "On" : lim ? "Limited" : "Off",
+    tagBg: on ? "#f3faf4" : lim ? "#fdf6e3" : "#fdeeea",
+    tagFg: on ? "#1d6b30" : lim ? "#5c4100" : "#7a2410",
+    hasCard: true, noCard: false,
+    username: c.username || "", pin: c.pin || "—",
+    why: c.why || "",
+    hasSpeed: !!sp,
+    speedSay: sp ? [sp.down ? sp.down + " Mbps" : "", sp.devices ? sp.devices + (sp.devices === 1 ? " device" : " devices") : "",
+                    c.where || "", u.dayMb ? Math.round((u.today || 0) / 1048576) + " of " + u.dayMb + " MB used today" : ""]
+                   .filter(Boolean).join(" · ") : "",
+    /* Said plainly rather than shown as a red state: a router that is off is
+       not the member's fault and not something they can fix. */
+    noRouter: c.hasRouter === false,
+    newPin,
+    newPinL: s.wifiBusy ? "Asking…" : "New PIN",
+    resetSay: !on ? "A new PIN would not let you on while your Wi-Fi is off."
+      : left > 0 ? left + " more " + (left === 1 ? "change" : "changes") + " today."
+      : "No more PIN changes today.",
+  };
+}
 
 function mp9Greeting() { const h = new Date().getHours(); return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening"; }
 

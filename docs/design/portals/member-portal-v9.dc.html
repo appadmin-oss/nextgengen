@@ -536,6 +536,25 @@ button,input,textarea,select{font:inherit;color:inherit}
     <button onClick="{{ goMoney }}" style="text-align:left;background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;cursor:pointer;display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#6b6b72;font-weight:600;display:flex;align-items:center;gap:6px"><i class="ph ph-wallet"></i>Money & account</span><span style="font-size:20px;font-weight:700">{{ balance }} to pay</span><span style="font-size:13px;color:#4a4a50">Dues, fines and payments</span></button>
     <button onClick="{{ goRecords }}" style="text-align:left;background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;cursor:pointer;display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#6b6b72;font-weight:600;display:flex;align-items:center;gap:6px"><i class="ph ph-folder-simple"></i>Records</span><span style="font-size:20px;font-weight:700">{{ rec.attended }} of {{ rec.ran }} days</span><span style="font-size:13px;color:#4a4a50">Attendance, certificates and requests</span></button>
   </div>
+  <section aria-label="Wi-Fi" style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0;font-size:16px;font-weight:600;flex:1">Wi-Fi at the centre</h2><span style="height:26px;padding:0 10px;border-radius:999px;background:{{ wf.tagBg }};color:{{ wf.tagFg }};font-size:12.5px;font-weight:600;display:inline-flex;align-items:center">{{ wf.tag }}</span></div>
+    <sc-if value="{{ wf.hasCard }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div style="flex:1 1 150px;display:flex;flex-direction:column;gap:3px"><span style="font-size:12.5px;color:#6b6b72">Sign-in name</span><span style="font-family:'Geist Mono',monospace;font-size:19px;font-weight:600;letter-spacing:.02em">{{ wf.username }}</span></div>
+        <div style="flex:1 1 150px;display:flex;flex-direction:column;gap:3px"><span style="font-size:12.5px;color:#6b6b72">PIN</span><span style="font-family:'Geist Mono',monospace;font-size:19px;font-weight:600;letter-spacing:.14em">{{ wf.pin }}</span></div>
+      </div>
+      <span style="font-size:14px;color:#2a2a2e;line-height:1.5">{{ wf.why }}</span>
+      <sc-if value="{{ wf.hasSpeed }}" hint-placeholder-val="{{ true }}"><span style="font-size:13px;color:#4a4a50;line-height:1.45">{{ wf.speedSay }}</span></sc-if>
+      <sc-if value="{{ wf.noRouter }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:8px;padding:10px 12px;border-radius:12px;background:#fdf6e3;color:#5c4100;font-size:13.5px;line-height:1.45"><i class="ph ph-warning" aria-hidden="true"></i>There is no Wi-Fi point switched on where you sign in yet.</div></sc-if>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #f0efea">
+        <button onClick="{{ wf.newPin }}" style="min-height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer">{{ wf.newPinL }}</button>
+        <span style="flex:1;min-width:180px;font-size:12.5px;color:#6b6b72;line-height:1.45">{{ wf.resetSay }}</span>
+      </div>
+    </sc-if>
+    <sc-if value="{{ wf.noCard }}" hint-placeholder-val="{{ false }}">
+      <p style="margin:0;font-size:14px;color:#4a4a50;line-height:1.5">{{ wf.why }}</p>
+    </sc-if>
+  </section>
   <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0;font-size:16px;font-weight:600;flex:1">Profile</h2><button onClick="{{ openProfile }}" style="height:40px;padding:0 14px;border-radius:10px;border:0;background:#0b0b0c;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-pencil-simple" aria-hidden="true"></i>Edit profile</button></div>
     <sc-if value="{{ hasBio }}" hint-placeholder-val="{{ false }}"><p style="margin:0;font-size:14.5px;line-height:1.5;color:#2a2a2e">{{ bioShown }}</p></sc-if>
