@@ -14,21 +14,37 @@ NGG's half is small and entirely about its own people:
 | shows one member their own sign-in name and PIN (`wifi.card`) | hold a PIN |
 | names the centres CACENTRE has no site for | talk to a router |
 
-## No new connection
+## No new connection — the attendance one
 
-Both documents ride the connection this estate already has with CACENTRE —
-the `DirectoryEnvelope` wire, the key **`DIR_PUSH_SECRET_NGG`**, CACENTRE's
-address. Only the document type differs, and CACENTRE refuses a token of one
-type at another's door.
+The owner's decision of **2026-10-31** (`cac/docs/wifi.md` §2): NGG's Wi-Fi
+rides the **attendance** connection, not the person directory's.
 
-**Setting that one key turns on both the person directory and the Wi-Fi.**
-There is no second secret and no second address. If the Wi-Fi is not working,
-check that key first — `admin.wifi.status` says whether it is set.
+```
+NGG  --signed with hooks.attendance_secret-->  the gate
+the gate  --signed with its own `wifi` key-->  CACENTRE
+```
 
-Everything here signs through `dirpush_token()` and posts through
-`dirpush_call()` (`domain/directory-push.php`). One signer, because a second
-copy of the envelope is a second place the wire can drift from CACENTRE's —
-and a drift shows up as `bad_signature`, which does not say which side moved.
+`POST {gate}/v1/issuers/ngg/wifi`, signed exactly as NGG's attendance calls
+are: `X-NGG-Timestamp` and `X-NGG-Signature: sha256=<hex HMAC of ts.body>`.
+The gate checks it, **spends the signature once** (so a captured roster or
+"set my password" cannot be replayed inside its five minutes), stamps the
+issuer itself — NGG can only ever speak for NGG's people — and passes it on.
+
+**Wi-Fi works wherever check-in works.** There is no key to add and nothing
+to set up. `DIR_PUSH_SECRET_NGG` carries the person directory and only the
+person directory; an earlier draft of this integration rode that one, and it
+was wrong — CACENTRE deleted those doors on 2026-10-31.
+
+## Passwords
+
+CACENTRE gives each person a **starting password** and holds it until they
+replace it with one of their own. A password the member chose is never sent
+back to anybody, including them — so the card shows a starting code while one
+is in force, and afterwards just says they have set their own.
+
+`setPassword` sets theirs; `newStartCode` asks for a fresh starting one.
+CACENTRE's own limit on changes is the limit — a second limit enforced here
+would be two limits that disagree.
 
 ## Our say
 
@@ -88,7 +104,7 @@ pushed since they joined.
 
 ## If it is not working
 
-1. **Is `DIR_PUSH_SECRET_NGG` set?** Same key as the person directory. With
+1. **Is the gate connection set up?** `hooks.attendance_secret` in NGG, `NGG_SECRET` on the gate — the same one check-in uses. With
    no key nothing is sent, the member's card says so plainly, and
    `admin.wifi.status` reports `configured: false`.
 2. **Does CACENTRE have the same key** for app `ngg`? A mismatch is

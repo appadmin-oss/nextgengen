@@ -12,14 +12,25 @@ declare(strict_types=1);
  *   1. SAY WHO OUR PEOPLE ARE, and what we think of each — `wifi.roster`.
  *   2. SHOW ONE PERSON THEIR OWN WI-FI — `wifi.card`.
  *
- * ── NO NEW CONNECTION ───────────────────────────────────────────────────────
+ * ── NO NEW CONNECTION: THE ATTENDANCE ONE ───────────────────────────────────
  *
- * Both ride the connection this estate already has with CACENTRE: the
- * `DirectoryEnvelope` wire, the key `DIR_PUSH_SECRET_NGG`, CACENTRE's
- * address. Only the document type differs, and CACENTRE refuses a token of
- * one type at another's door. That is why everything here goes through
- * `dirpush_token()` / `dirpush_call()` rather than signing anything itself —
- * one signer, so the wire cannot drift from theirs.
+ * The owner's decision of 2026-10-31 (cacentre-site `cac/docs/wifi.md` §2):
+ * NGG's Wi-Fi rides the **attendance** connection, not the person
+ * directory's. NGG already shares one secret with the gate — the one its card
+ * lookups and attendance reports are signed with — so:
+ *
+ *   NGG  --signed with hooks.attendance_secret-->  the gate
+ *   the gate  --signed with its own `wifi` key-->  CACENTRE
+ *
+ * `POST {gate}/v1/issuers/ngg/wifi`, signed exactly as NGG's attendance calls
+ * are: `X-NGG-Timestamp` and `X-NGG-Signature: sha256=<hex HMAC of ts.body>`.
+ * The gate says who is asking, never the caller, so NGG can only ever speak
+ * for NGG's people.
+ *
+ * **Wi-Fi works wherever attendance works.** There is no key to add and
+ * nothing to set up. `DIR_PUSH_SECRET_NGG` carries the person directory and
+ * ONLY the person directory — an earlier draft of this file rode that one,
+ * and it was wrong.
  *
  * ── WHAT NGG DOES NOT DO ────────────────────────────────────────────────────
  *
@@ -40,6 +51,12 @@ declare(strict_types=1);
 
 const WIFI_TYP_ROSTER = 'wifi.roster';
 const WIFI_TYP_CARD   = 'wifi.card';
+
+/** The gate's door for this issuer. */
+const WIFI_GATE_PATH = '/v1/issuers/ngg/wifi';
+
+/** The gate refuses a bigger body (WIFI_BODY_MAX in gate/src/wifi.ts). */
+const WIFI_BODY_MAX = 4500000;
 
 /** CACENTRE refuses a longer roster whole rather than cutting it (`too_many`). */
 const WIFI_ROSTER_MAX = 5000;
@@ -151,6 +168,83 @@ function wifi_home_site(array $m): string {
     return $code !== '' ? strtolower($code) : strtolower($centre);
 }
 
+
+/* ── The connection ───────────────────────────────────────────────────────── */
+
+/** The secret NGG already shares with the gate. One secret, both directions. */
+function wifi_secret(): string {
+    return trim((string)($GLOBALS['CONFIG']['hooks']['attendance_secret'] ?? ''));
+}
+
+/** Configured means: attendance is configured. There is nothing else to set. */
+function wifi_ready(): bool {
+    $s = wifi_secret();
+    return strlen($s) >= 16 && !preg_match('/^(your|changeme|replace|example|todo)/i', $s);
+}
+
+/** Where the gate is. The same host the gate's own routes are published on. */
+function wifi_gate_url(): string {
+    $b = trim((string)(getenv('NGG_GATE_URL') ?: ($GLOBALS['CONFIG']['hooks']['gate_url'] ?? '')));
+    if ($b === '') $b = 'https://cacentre.afrovanguard.org.ng';
+    return rtrim($b, '/') . WIFI_GATE_PATH;
+}
+
+/**
+ * Post one signed document to the gate.
+ *
+ * Signed the way NGG's attendance calls are — `hex(HMAC_SHA256(secret,
+ * ts . "." . body))` — because that is the point of riding this connection:
+ * one signing scheme, one secret, already working.
+ *
+ * THE GATE SPENDS A SIGNATURE ONCE. A captured roster or "set my password"
+ * cannot be replayed within its five minutes, which also means a retry must
+ * be signed afresh rather than resent byte for byte. Every call here signs at
+ * the moment it is sent, so that holds.
+ *
+ * Never throws: the Wi-Fi is not allowed to be the reason anything else here
+ * falls over.
+ *
+ * @param array<string,mixed> $body
+ * @return array<string,mixed>
+ */
+function wifi_gate_post(array $body, int $timeout = 30): array {
+    if (!wifi_ready()) {
+        return ['ok' => false, 'error' => 'not_configured',
+                'message' => 'The gate connection is not set up (hooks.attendance_secret). Wi-Fi rides the same connection as check-in, so setting that up turns both on.'];
+    }
+    $raw = (string)json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (strlen($raw) > WIFI_BODY_MAX) return ['ok' => false, 'error' => 'too_large'];
+    $ts  = (string)time();
+    $sig = 'sha256=' . hash_hmac('sha256', $ts . '.' . $raw, wifi_secret());
+
+    $t = $GLOBALS['__wifi_transport'] ?? null;      // the test seam
+    if (is_callable($t)) {
+        $r = $t(wifi_gate_url(), $raw, $ts, $sig);
+        $j = json_decode((string)($r['body'] ?? ''), true);
+        return is_array($j) ? $j + ['http' => (int)($r['code'] ?? 0)]
+                            : ['ok' => false, 'error' => 'bad_response', 'http' => (int)($r['code'] ?? 0)];
+    }
+    $ch = curl_init(wifi_gate_url());
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json',
+                               'X-NGG-Timestamp: ' . $ts, 'X-NGG-Signature: ' . $sig],
+        CURLOPT_POSTFIELDS => $raw,
+    ]);
+    $out = curl_exec($ch); $err = curl_error($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($err !== '' || $out === false) {
+        error_log('[wifi] ' . ($body['typ'] ?? '?') . ' ' . ($err ?: 'no response'));
+        return ['ok' => false, 'error' => 'unreachable'];
+    }
+    $j = json_decode((string)$out, true);
+    if (!is_array($j)) return ['ok' => false, 'error' => 'bad_response', 'http' => $code];
+    if (empty($j['ok'])) error_log('[wifi] ' . ($body['typ'] ?? '?') . ' HTTP ' . $code . ' ' . json_encode($j));
+    return $j + ['http' => $code];
+}
+
 /* ── The roster: who we have, and our say about each ──────────────────────── */
 
 /** One member, shaped exactly as CACENTRE's `rosterIngest()` reads a row. */
@@ -205,17 +299,16 @@ function wifi_state(): array { $s = setting_get(WIFI_STATE_KEY); return is_array
  * @return array<string,mixed>
  */
 function wifi_push_run(bool $full = true): array {
-    if (!function_exists('dirpush_ready') || !dirpush_ready()) {
+    if (!wifi_ready()) {
         return ['ok' => false, 'error' => 'not_configured',
-                'message' => 'No CACENTRE key is set (DIR_PUSH_SECRET_NGG). The Wi-Fi roster rides the person directory\'s connection, so setting that key turns both on.'];
+                'message' => 'The gate connection is not set up (hooks.attendance_secret). Wi-Fi rides the same connection as check-in, so setting that up turns both on.'];
     }
     $total = wifi_count();
-    $url = dirpush_base() . '/api/wifi-roster.php?issuer=' . DIRPUSH_APP;
     $now = now_iso();
 
     /* One push, and it may say "this is everybody". */
     if ($full && $total <= WIFI_ROSTER_MAX) {
-        $r = dirpush_call($url, ['full' => true, 'people' => wifi_roster_rows(WIFI_ROSTER_MAX, 0)], WIFI_TYP_ROSTER, 60);
+        $r = wifi_gate_post(['typ' => WIFI_TYP_ROSTER, 'full' => true, 'people' => wifi_roster_rows(WIFI_ROSTER_MAX, 0)], 60);
         return wifi_remember($r, ['at' => $now, 'full' => true, 'sent' => min($total, WIFI_ROSTER_MAX)]);
     }
 
@@ -225,7 +318,7 @@ function wifi_push_run(bool $full = true): array {
     for ($off = 0; $off < $total; $off += WIFI_PUSH_BATCH) {
         $page = wifi_roster_rows(WIFI_PUSH_BATCH, $off);
         if (!$page) break;
-        $r = dirpush_call($url, ['full' => false, 'people' => $page], WIFI_TYP_ROSTER, 60);
+        $r = wifi_gate_post(['typ' => WIFI_TYP_ROSTER, 'full' => false, 'people' => $page], 60);
         if (empty($r['ok'])) { $fail = $r; break; }
         $sent += count($page);
         $applied += (int)($r['applied'] ?? 0);
@@ -270,28 +363,39 @@ function member_wifi_card(array $p): array {
     $mid = (string)($p['memberId'] ?? '');
     $m = $mid !== '' ? db_row('SELECT * FROM members WHERE memberId = ?', [$mid]) : null;
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
-    if (!function_exists('dirpush_ready') || !dirpush_ready()) {
+    if (!wifi_ready()) {
         return ['ok' => true, 'card' => null, 'configured' => false,
                 'why' => 'The Wi-Fi is not connected on this site yet.'];
     }
-    $op = ($p['op'] ?? '') === 'newPin' ? 'newPin' : 'show';
-    $r = dirpush_call(dirpush_base() . '/api/wifi-card.php?issuer=' . DIRPUSH_APP,
-        ['id' => $mid, 'op' => $op], WIFI_TYP_CARD, 20);
+    $op = (string)($p['op'] ?? 'show');
+    if (!in_array($op, ['show', 'setPassword', 'newStartCode'], true)) return ['ok' => false, 'error' => 'unknown_op'];
+
+    $body = ['typ' => WIFI_TYP_CARD, 'op' => $op, 'id' => $mid,
+        /* Their own roster row travels WITH the call. CACENTRE applies it as a
+           one-row partial roster — which withdraws nobody — so a member who
+           joined since the last push is added the moment they look, instead of
+           being told they are not on the list until the next tick. */
+        'me' => wifi_row($m)];
+    if ($op === 'setPassword') $body['password'] = (string)($p['password'] ?? '');
+
+    $r = wifi_gate_post($body, 20);
 
     if (empty($r['ok'])) {
-        /* CACENTRE's refusals, in words a member can act on. `wifi_off` is
-           not an error on their part and must not read like one. */
-        $code = (string)($r['error'] ?? 'unreachable');
+        /* CACENTRE's and the gate's refusals, in words a member can act on.
+           `wifi_off` is not their fault and must not read like an error. */
+        $code = (string)($r['error'] ?? $r['code'] ?? 'unreachable');
         $say = [
-            'wifi_off'       => 'Your Wi-Fi is off at the moment, so a new PIN would not let you on.',
+            'wifi_off'       => 'Your Wi-Fi is off at the moment, so a password would not let you on.',
+            'too_many'       => 'That is enough password changes for today.',
             'not_configured' => 'The Wi-Fi is not connected on this site yet.',
+            'bad_signature'  => 'This site could not prove who it was to the gate. Tell an admin.',
+            'replayed'       => 'That went through already. Reload to see where you stand.',
             'unreachable'    => 'Could not reach the Wi-Fi service. Try again in a moment.',
-        ][$code] ?? 'Could not load your Wi-Fi just now.';
+        ][$code] ?? (string)($r['message'] ?? 'Could not load your Wi-Fi just now.');
         return ['ok' => false, 'error' => $code, 'message' => $say];
     }
     /* `card: null` is CACENTRE saying it has not been told about this person
-       yet — a real answer, not a failure, and usually means the roster has
-       not been pushed since they joined. */
+       yet — a real answer, not a failure. */
     return ['ok' => true, 'configured' => true, 'card' => $r['card'] ?? null,
             'why' => (string)($r['why'] ?? ''), 'op' => $op];
 }
@@ -304,7 +408,7 @@ function admin_wifi_status(array $p): array {
     foreach (db_all("SELECT * FROM members WHERE COALESCE(status, '') <> 'deleted' LIMIT " . WIFI_ROSTER_MAX) as $m) {
         $counts[wifi_verdict_for($m)['verdict']] = ($counts[wifi_verdict_for($m)['verdict']] ?? 0) + 1;
     }
-    return ['ok' => true, 'configured' => function_exists('dirpush_ready') && dirpush_ready(),
+    return ['ok' => true, 'configured' => wifi_ready(),
             'people' => wifi_count(), 'max' => WIFI_ROSTER_MAX, 'would' => $counts,
             'last' => $state, 'canPush' => admin_cap_gate($p, 'settings')['ok']];
 }

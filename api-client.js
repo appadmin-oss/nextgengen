@@ -947,7 +947,10 @@
       /* This member's own Wi-Fi. CACENTRE holds the PIN and decides who is
          on; NGG asks it for the one person asking. */
       wifi:              () => request('/member/wifi.php'),
-      wifiNewPin:        () => request('/member/wifi.php', { body: { op: 'newPin' } }),
+      /* CACENTRE gives a starting code; the member replaces it with a password
+         of their own, which is never sent back to anyone, including them. */
+      wifiSetPassword:   (password) => request('/member/wifi.php', { body: { op: 'setPassword', password } }),
+      wifiNewStartCode:  () => request('/member/wifi.php', { body: { op: 'newStartCode' } }),
       /* Everything the Learn app's first screen needs, in ONE request:
          lessons, the school plan and where the courses lead. Three separate
          calls meant three PHP bootstraps before a child saw a lesson. */

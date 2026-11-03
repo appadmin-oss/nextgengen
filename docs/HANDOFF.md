@@ -3439,3 +3439,51 @@ against a rolling window, is a test with an expiry date.
 `claude/cacentre-wifi-authority` and is not merged to main, so
 `/api/wifi-roster.php` does not exist on a deployment built from main. NGG's
 half is complete and inert until it does.
+
+### Wi-Fi, corrected: the ATTENDANCE connection, not the directory's
+
+The entry above this one is wrong about the connection, and the owner said so
+before it was written: **2026-10-31** (cacentre-site `cac/docs/wifi.md` §2,
+and the commit "Wi-Fi: NGG rides its attendance connection through the gate").
+
+NGG's Wi-Fi does NOT ride the person directory. It rides the secret NGG
+already shares with the gate for card lookups and check-ins:
+
+```
+NGG  --hooks.attendance_secret-->  the gate  --its own `wifi` key-->  CACENTRE
+```
+
+`POST {gate}/v1/issuers/ngg/wifi`, signed exactly as NGG's attendance calls
+are. The gate spends the signature once, stamps the issuer itself — so NGG
+can only ever speak for its own people — and passes it on. CACENTRE **deleted**
+`api/wifi-roster.php` and `api/wifi-card.php`, the directory-key doors this
+was first built against, and narrowed `DirectoryEnvelope::TYPES` back to
+`dir.push` alone. `DIR_PUSH_SECRET_NGG` carries the directory and only the
+directory.
+
+So `dirpush_token()` / `dirpush_call()` are gone again and
+`domain/directory-push.php` is back as it was: generalising it bought nothing
+once the Wi-Fi left that wire, and a parameter nothing passes is a hint that
+a capability exists when it does not.
+
+**Wi-Fi now works wherever check-in works.** No key to add, nothing to set up
+— which is the whole reason the owner moved it.
+
+**Passwords changed shape with it.** CACENTRE gives a starting password and
+holds it only until the member sets their own; a password they chose is never
+sent back to anybody, including them. The card shows a starting code while
+one is in force and afterwards only says they have set their own.
+`setPassword` and `newStartCode` replaced the single `newPin`.
+
+**How this was missed the first time:** the search stopped at the default
+branches. `claude/cacentre-wifi-authority` was the newest branch with "wifi"
+in its name, and the newer decision landed on a branch named for something
+else entirely (`claude/ai-assistance-judges-features-1ka4oz`). Branch names
+are not a reliable index of what is in them — sort by commit date and read
+the subjects.
+
+**Already merged, as it turns out.** Both the latest branch
+(`claude/stoic-hamilton-1f18hh`) and the release line
+(`claude/finme-dues-training-fees-l54o5j`) already contain the whole Wi-Fi
+line. What is not merged is `main`, which is 179 commits behind — the open
+PR "Bring main up to the line the work is actually on" is about exactly that.

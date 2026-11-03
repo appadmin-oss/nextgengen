@@ -541,14 +541,18 @@ button,input,textarea,select{font:inherit;color:inherit}
     <sc-if value="{{ wf.hasCard }}" hint-placeholder-val="{{ true }}">
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div style="flex:1 1 150px;display:flex;flex-direction:column;gap:3px"><span style="font-size:12.5px;color:#6b6b72">Sign-in name</span><span style="font-family:'Geist Mono',monospace;font-size:19px;font-weight:600;letter-spacing:.02em">{{ wf.username }}</span></div>
-        <div style="flex:1 1 150px;display:flex;flex-direction:column;gap:3px"><span style="font-size:12.5px;color:#6b6b72">PIN</span><span style="font-family:'Geist Mono',monospace;font-size:19px;font-weight:600;letter-spacing:.14em">{{ wf.pin }}</span></div>
+        <sc-if value="{{ wf.hasCode }}" hint-placeholder-val="{{ true }}"><div style="flex:1 1 150px;display:flex;flex-direction:column;gap:3px"><span style="font-size:12.5px;color:#6b6b72">Starting password</span><span style="font-family:'Geist Mono',monospace;font-size:19px;font-weight:600;letter-spacing:.14em">{{ wf.code }}</span></div></sc-if>
       </div>
       <span style="font-size:14px;color:#2a2a2e;line-height:1.5">{{ wf.why }}</span>
       <sc-if value="{{ wf.hasSpeed }}" hint-placeholder-val="{{ true }}"><span style="font-size:13px;color:#4a4a50;line-height:1.45">{{ wf.speedSay }}</span></sc-if>
       <sc-if value="{{ wf.noRouter }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:8px;padding:10px 12px;border-radius:12px;background:#fdf6e3;color:#5c4100;font-size:13.5px;line-height:1.45"><i class="ph ph-warning" aria-hidden="true"></i>There is no Wi-Fi point switched on where you sign in yet.</div></sc-if>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #f0efea">
-        <button onClick="{{ wf.newPin }}" style="min-height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer">{{ wf.newPinL }}</button>
-        <span style="flex:1;min-width:180px;font-size:12.5px;color:#6b6b72;line-height:1.45">{{ wf.resetSay }}</span>
+      <div style="display:flex;flex-direction:column;gap:8px;padding-top:10px;border-top:1px solid #f0efea">
+        <label style="display:flex;flex-direction:column;gap:4px"><span style="font-size:13px;font-weight:600">Set a password of your own</span><input type="password" value="{{ wf.pw }}" onChange="{{ wf.onPw }}" autoComplete="new-password" placeholder="At least 8 characters" style="height:48px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;font-size:16px;outline:0"></input></label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button onClick="{{ wf.setPw }}" style="min-height:44px;padding:0 14px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer">{{ wf.pwL }}</button>
+          <button onClick="{{ wf.newStart }}" style="min-height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer">New starting password</button>
+        </div>
+        <span style="font-size:12.5px;color:#6b6b72;line-height:1.45">{{ wf.resetSay }}</span>
       </div>
     </sc-if>
     <sc-if value="{{ wf.noCard }}" hint-placeholder-val="{{ false }}">

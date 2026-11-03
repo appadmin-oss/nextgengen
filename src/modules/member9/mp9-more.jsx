@@ -954,45 +954,53 @@ Object.assign(Mp9Portal.prototype, {
 function mp9Wifi(self, s, set) {
   const w = s.wifi, c = w && w.card;
   if (w === undefined && !s.wifiAsked) {
-    /* Asked once, on the first render of the screen that shows it. */
     set({ wifiAsked: true });
     NGGApi.member.wifi().then(r => set({ wifi: r })).catch(e => set({ wifi: { error: mp9Err(e) } }));
   }
-  const newPin = () => {
+  const after = (p, said) => { set({ wifiBusy: true });
+    p.then(r => { set({ wifi: r, wifiBusy: false, wifiPw: "" }); self.toast(said); })
+     .catch(e => { set({ wifiBusy: false }); self.toast(mp9Err(e), null, true); }); };
+  const newStart = () => { if (!s.wifiBusy) after(NGGApi.member.wifiNewStartCode(), "New starting code."); };
+  const setPw = () => {
+    const pw = (s.wifiPw || "").trim();
     if (s.wifiBusy) return;
-    set({ wifiBusy: true });
-    NGGApi.member.wifiNewPin()
-      .then(r => { set({ wifi: r, wifiBusy: false }); self.toast("New PIN set."); })
-      .catch(e => { set({ wifiBusy: false }); self.toast(mp9Err(e), null, true); });
+    if (pw.length < (c && c.passwordMin ? c.passwordMin : 8)) { self.toast("Too short.", null, true); return; }
+    after(NGGApi.member.wifiSetPassword(pw), "Password set.");
   };
-  if (!w) return { tag: "Loading…", tagBg: "#f4f4f2", tagFg: "#4a4a50", hasCard: false, noCard: true, why: "Checking your Wi-Fi…", newPin, newPinL: "New PIN", resetSay: "", hasSpeed: false, speedSay: "", noRouter: false, username: "", pin: "" };
-  if (!c) {
-    return { tag: "Not set up", tagBg: "#f4f4f2", tagFg: "#4a4a50", hasCard: false, noCard: true,
-      why: w.why || w.error || "Your centre has not put you on the Wi-Fi list yet.",
-      newPin, newPinL: "New PIN", resetSay: "", hasSpeed: false, speedSay: "", noRouter: false, username: "", pin: "" };
-  }
+  const base = { newStart, setPw, pw: s.wifiPw || "", onPw: e => set({ wifiPw: e.target.value }),
+    pwL: s.wifiBusy ? "Saving…" : "Set my password", hasCard: false, noCard: true,
+    username: "", code: "", hasCode: false, showPw: false, hasSpeed: false, speedSay: "", noRouter: false, resetSay: "" };
+
+  if (!w) return { ...base, tag: "Loading…", tagBg: "#f4f4f2", tagFg: "#4a4a50", why: "Checking your Wi-Fi…" };
+  if (!c) return { ...base, tag: "Not set up", tagBg: "#f4f4f2", tagFg: "#4a4a50",
+    why: w.why || w.error || "Your centre has not put you on the Wi-Fi list yet." };
+
   const on = c.access === "on", lim = c.access === "limited";
   const sp = c.speed || null, u = c.usage || {};
   const left = Math.max(0, Number(c.resetsLeft || 0));
+  /* A password the member chose is NEVER sent back, not even to them. What
+     comes back is a starting code, until they replace it with their own. */
+  const code = String(c.startCode || c.pin || "");
   return {
+    ...base,
     tag: on ? "On" : lim ? "Limited" : "Off",
     tagBg: on ? "#f3faf4" : lim ? "#fdf6e3" : "#fdeeea",
     tagFg: on ? "#1d6b30" : lim ? "#5c4100" : "#7a2410",
     hasCard: true, noCard: false,
-    username: c.username || "", pin: c.pin || "—",
-    why: c.why || "",
+    username: c.username || "",
+    hasCode: !!code,
+    code,
+    /* Their own password is not shown because it is not ours to show. */
+    showPw: on && !code,
+    why: (c.why || "") + (c.ownPassword ? " You have set your own password." : ""),
     hasSpeed: !!sp,
     speedSay: sp ? [sp.down ? sp.down + " Mbps" : "", sp.devices ? sp.devices + (sp.devices === 1 ? " device" : " devices") : "",
                     c.where || "", u.dayMb ? Math.round((u.today || 0) / 1048576) + " of " + u.dayMb + " MB used today" : ""]
                    .filter(Boolean).join(" · ") : "",
-    /* Said plainly rather than shown as a red state: a router that is off is
-       not the member's fault and not something they can fix. */
     noRouter: c.hasRouter === false,
-    newPin,
-    newPinL: s.wifiBusy ? "Asking…" : "New PIN",
-    resetSay: !on ? "A new PIN would not let you on while your Wi-Fi is off."
-      : left > 0 ? left + " more " + (left === 1 ? "change" : "changes") + " today."
-      : "No more PIN changes today.",
+    resetSay: !on ? "You cannot change it while your Wi-Fi is off."
+      : code ? "Sign in with this, then set a password of your own. " + left + " " + (left === 1 ? "change" : "changes") + " left today."
+      : left > 0 ? left + " more " + (left === 1 ? "change" : "changes") + " today." : "No more changes today.",
   };
 }
 

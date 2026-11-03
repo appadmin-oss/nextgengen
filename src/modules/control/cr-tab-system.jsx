@@ -1925,7 +1925,7 @@ Object.assign(CR_TAB_DEFS, {
       if (!d.configured) {
         out.push({ type: "note", span: 6, icon: "plugs", tone: "warn",
           text: "Not connected to CACENTRE, so nothing is being sent.",
-          sub: "The Wi-Fi rides the person directory's connection — one key, DIR_PUSH_SECRET_NGG, set in api/config.php or the environment. Setting it turns on both. CACENTRE must hold the same value for app “ngg”." });
+          sub: "The Wi-Fi rides the same connection as check-in — the secret NGG already shares with the gate (hooks.attendance_secret in api/config.php, NGG_SECRET on the gate). There is no second key to set: Wi-Fi works wherever check-in works." });
         return out;
       }
 

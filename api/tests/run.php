@@ -32085,23 +32085,37 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi: the home site is the centre CODE, lower-cased (EG -> eg)',
         $row['homeSite'] === strtolower($row['homeSite']) && !str_contains($row['homeSite'], ' '));
 
-    /* THE WIRE. One signer for every document this connection carries, so
-       NGG's envelope cannot drift from DirectoryEnvelope's. Checked by
-       verifying our own token the way CACENTRE does. */
+    /* THE WIRE: the ATTENDANCE connection, not the directory's.
+       The owner's decision of 2026-10-31 moved NGG's Wi-Fi onto the secret it
+       already shares with the gate; the directory-key Wi-Fi doors were
+       deleted on CACENTRE's side. Signed exactly as NGG's attendance calls
+       are, which is what `verifyBody()` on the gate checks. */
     $secret = str_repeat('k', 48);
-    $tok = dirpush_token(['full' => true, 'people' => []], WIFI_TYP_ROSTER, $secret, 1800000000);
-    [$v1, $body, $mac] = explode('.', $tok);
-    $claims = json_decode(base64_decode(strtr($body, '-_', '+/')), true);
-    chk('wifi: the roster token is the directory envelope with a different typ',
-        $v1 === 'v1' && $claims['typ'] === 'wifi.roster' && $claims['iss'] === DIRPUSH_APP
-        && strlen((string)$claims['nonce']) === 32 && (int)$claims['exp'] === 1800000000 + DIRPUSH_TTL);
-    chk('wifi: …signed exactly as CACENTRE verifies it (HMAC over the base64url body)',
-        hash_equals(rtrim(strtr(base64_encode(hash_hmac('sha256', $body, $secret, true)), '+/', '-_'), '='), $mac));
-    $cardTok = dirpush_token(['id' => 'NGG-WIFI-OK', 'op' => 'show'], WIFI_TYP_CARD, $secret, 1800000000);
-    chk('wifi: a card token is a DIFFERENT typ, so neither is accepted at the other\'s door',
-        json_decode(base64_decode(strtr(explode('.', $cardTok)[1], '-_', '+/')), true)['typ'] === 'wifi.card');
-    chk('wifi: a directory push is still minted exactly as before',
-        json_decode(base64_decode(strtr(explode('.', dirpush_mint([], $secret, 1800000000))[1], '-_', '+/')), true)['typ'] === 'dir.push');
+    $saveSecret = $GLOBALS['CONFIG']['hooks']['attendance_secret'] ?? null;
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = $secret;
+    $sent = null;
+    $GLOBALS['__wifi_transport'] = function (string $url, string $raw, string $ts, string $sig) use (&$sent) {
+        $sent = ['url' => $url, 'raw' => $raw, 'ts' => $ts, 'sig' => $sig, 'body' => json_decode($raw, true)];
+        return ['code' => 200, 'body' => json_encode(['ok' => true, 'applied' => 6, 'refused' => 0, 'gone' => 1,
+            'partial' => false, 'unknownSites' => ['eg' => 6]])];
+    };
+    wifi_push_run(true);
+    chk('wifi: the roster goes to the GATE, on this issuer\'s own door',
+        str_ends_with((string)$sent['url'], '/v1/issuers/ngg/wifi'));
+    chk('wifi: …signed exactly as NGG signs its attendance calls (sha256 of ts.body)',
+        $sent['sig'] === 'sha256=' . hash_hmac('sha256', $sent['ts'] . '.' . $sent['raw'], $secret));
+    chk('wifi: …and the body says which document it is, so the gate can refuse the rest',
+        ($sent['body']['typ'] ?? '') === 'wifi.roster' && ($sent['body']['full'] ?? null) === true);
+    chk('wifi: NGG never names the issuer — the gate does, so it can only speak for its own',
+        !isset($sent['body']['issuer']));
+    /* Named in a comment is fine — the file records WHY it is not used. What
+       must not exist is a call into the directory push, or the secret being
+       read from anywhere but the attendance connection. */
+    $wifiSrc = file_get_contents(__DIR__ . '/../_lib/domain/wifi.php');
+    chk('wifi: the directory key is NOT what carries this (it carries the directory only)',
+        !preg_match('/\bdirpush_[a-z_]+\s*\(/', $wifiSrc)
+        && !preg_match('/getenv\(\s*.DIR_PUSH_SECRET/', $wifiSrc)
+        && str_contains($wifiSrc, "['hooks']['attendance_secret']"));
 
     /* Our cap must not exceed theirs: a roster longer than CACENTRE's
        ROSTER_MAX is refused whole (`too_many`), and a `full` push that was
@@ -32111,48 +32125,49 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     /* With no key, nothing is sent and the refusal says which key to set —
        the directory's, because they are the same connection. */
-    $saveSecret = $GLOBALS['CONFIG']['dir_push_secret'] ?? null;
-    $GLOBALS['CONFIG']['dir_push_secret'] = '';
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = '';
     $none = wifi_push_run(true);
-    chk('wifi: with no CACENTRE key the push refuses in words, naming the one key',
-        empty($none['ok']) && $none['error'] === 'not_configured' && str_contains($none['message'], 'DIR_PUSH_SECRET_NGG'));
+    chk('wifi: with no gate connection the push refuses in words, naming what to set',
+        empty($none['ok']) && $none['error'] === 'not_configured' && str_contains($none['message'], 'attendance_secret'));
     chk('wifi: …and a member\'s screen says so rather than erroring',
         (function () { $c = member_wifi_card(['memberId' => 'NGG-WIFI-OK']);
             return !empty($c['ok']) && $c['card'] === null && ($c['configured'] ?? true) === false; })());
 
-    /* With a key, the push goes — and what CACENTRE answers is kept, because
-       `unknownSites` is the one thing nothing else would ever surface. */
-    $GLOBALS['CONFIG']['dir_push_secret'] = $secret;
-    $seen = null;
-    $GLOBALS['__dirpush_transport'] = function (string $url, string $body) use (&$seen) {
-        $seen = ['url' => $url, 'claims' => json_decode(base64_decode(strtr(explode('.', json_decode($body, true)['token'])[1], '-_', '+/')), true)];
-        return ['code' => 200, 'body' => json_encode(['ok' => true, 'applied' => 6, 'refused' => 0, 'gone' => 1,
-            'partial' => false, 'unknownSites' => ['eg' => 6]])];
-    };
+    /* With the connection up, the push goes — and what CACENTRE answers is
+       kept, because `unknownSites` is the one thing nothing else surfaces. */
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = $secret;
     $r = wifi_push_run(true);
-    chk('wifi: the push goes to CACENTRE\'s roster door, as this issuer',
-        !empty($r['ok']) && str_contains((string)$seen['url'], '/api/wifi-roster.php?issuer=ngg'));
-    chk('wifi: the people travel INSIDE the signature, never beside it',
-        isset($seen['claims']['people']) && count($seen['claims']['people']) >= 6 && $seen['claims']['full'] === true);
+    chk('wifi: the people travel in the signed body, and it is everybody',
+        !empty($r['ok']) && count($sent['body']['people']) >= 6);
     chk('wifi: a centre CACENTRE has no site for is kept, so somebody can be told',
         (wifi_state()['unknownSites']['eg'] ?? 0) === 6 && (int)wifi_state()['applied'] === 6);
 
     /* A member's own card: asked of CACENTRE each time, never stored here. */
-    $GLOBALS['__dirpush_transport'] = fn($url, $body) => ['code' => 200, 'body' => json_encode(['ok' => true,
-        'card' => ['username' => '026-014', 'pin' => '418290', 'access' => 'on', 'why' => 'An active NGG member.']])];
+    $askedCard = null;
+    $GLOBALS['__wifi_transport'] = function ($url, $raw, $ts, $sig) use (&$askedCard) {
+        $askedCard = json_decode($raw, true);
+        return ['code' => 200, 'body' => json_encode(['ok' => true, 'card' => ['username' => '026-014',
+            'startCode' => '418290', 'ownPassword' => false, 'hasPassword' => true, 'passwordMin' => 8,
+            'access' => 'on', 'why' => 'An active NGG member.', 'resetsLeft' => 3]])];
+    };
     $card = member_wifi_card(['memberId' => 'NGG-WIFI-OK']);
-    chk('wifi: a member sees their sign-in name and PIN, from CACENTRE',
-        !empty($card['ok']) && $card['card']['username'] === '026-014' && $card['card']['pin'] === '418290');
+    chk('wifi: a member sees their sign-in name and starting code, from CACENTRE',
+        !empty($card['ok']) && $card['card']['username'] === '026-014' && $card['card']['startCode'] === '418290');
+    chk('wifi: their own roster row travels with the call, so somebody who just joined is added then',
+        ($askedCard['typ'] ?? '') === 'wifi.card' && ($askedCard['me']['id'] ?? '') === 'NGG-WIFI-OK'
+        && ($askedCard['me']['verdict'] ?? '') === 'on');
+    chk('wifi: a member may only show, set their own password, or ask for a new start code',
+        (member_wifi_card(['memberId' => 'NGG-WIFI-OK', 'op' => 'deskNewStart'])['error'] ?? '') === 'unknown_op');
     chk('wifi: and NO PIN is stored on this side',
         (int)(db_row("SELECT COUNT(*) c FROM settings WHERE settingValue LIKE '%418290%'")['c'] ?? 0) === 0);
 
-    $GLOBALS['__dirpush_transport'] = fn($url, $body) => ['code' => 409, 'body' => json_encode(['ok' => false, 'error' => 'wifi_off'])];
-    $off = member_wifi_card(['memberId' => 'NGG-WIFI-SUSP', 'op' => 'newPin']);
+    $GLOBALS['__wifi_transport'] = fn($url, $raw, $ts, $sig) => ['code' => 409, 'body' => json_encode(['ok' => false, 'error' => 'wifi_off'])];
+    $off = member_wifi_card(['memberId' => 'NGG-WIFI-SUSP', 'op' => 'setPassword', 'password' => 'abcd1234']);
     chk('wifi: a new PIN for somebody whose Wi-Fi is off is explained, not an error code',
         empty($off['ok']) && $off['error'] === 'wifi_off' && str_contains($off['message'], 'off at the moment'));
 
-    unset($GLOBALS['__dirpush_transport']);
-    if ($saveSecret === null) unset($GLOBALS['CONFIG']['dir_push_secret']); else $GLOBALS['CONFIG']['dir_push_secret'] = $saveSecret;
+    unset($GLOBALS['__wifi_transport']);
+    if ($saveSecret === null) unset($GLOBALS['CONFIG']['hooks']['attendance_secret']); else $GLOBALS['CONFIG']['hooks']['attendance_secret'] = $saveSecret;
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-WIFI-%' OR memberId LIKE 'SUM-WIFI-%'");
 })();
 

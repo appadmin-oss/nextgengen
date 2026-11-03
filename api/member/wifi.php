@@ -17,7 +17,8 @@ if ($method === 'GET') {
 } elseif ($method === 'POST') {
     $b = read_json_body();
     rate_limit_check_actor('member.wifi.pin', (string)$mid);
-    $res = gs_call('member.wifi.card', ['memberId' => $mid, 'op' => (string)($b['op'] ?? 'show')]);
+    $res = gs_call('member.wifi.card', ['memberId' => $mid, 'op' => (string)($b['op'] ?? 'show'),
+        'password' => (string)($b['password'] ?? '')]);
 } else {
     json_error('method_not_allowed', 405);
 }
