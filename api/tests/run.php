@@ -28488,8 +28488,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('portal: a concern never lands on the child\'s mentoring record', (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1'")['c'] === $before);
 
     // Messages: a journal entry shared with the mentor reaches them; a private one never does.
-    db_insert('journal', ['entryId' => 'JMP1', 'memberId' => 'NGG-MPK2', 'title' => 'My week', 'body' => 'I tried', 'visibility' => 'mentor', 'isPrivate' => 0, 'createdAt' => '2026-10-08T09:00:00Z']);
-    db_insert('journal', ['entryId' => 'JMP2', 'memberId' => 'NGG-MPK2', 'title' => 'Secret', 'body' => 'Private', 'visibility' => 'private', 'isPrivate' => 1, 'createdAt' => '2026-10-08T09:00:00Z']);
+    /* RELATIVE, because what reads them is. `mp_shared_entries()` asks for the
+       last 21 days, so a fixture pinned to a fixed date is a test with an
+       expiry: this one passed until 2026-10-29 and failed every day after,
+       for no reason but the calendar. */
+    $jAt = gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 86400);
+    db_insert('journal', ['entryId' => 'JMP1', 'memberId' => 'NGG-MPK2', 'title' => 'My week', 'body' => 'I tried', 'visibility' => 'mentor', 'isPrivate' => 0, 'createdAt' => $jAt]);
+    db_insert('journal', ['entryId' => 'JMP2', 'memberId' => 'NGG-MPK2', 'title' => 'Secret', 'body' => 'Private', 'visibility' => 'private', 'isPrivate' => 1, 'createdAt' => $jAt]);
     $ms = backend_dispatch('member.mentor.messages', $p('NGG-MP1'));
     $ids = array_column($ms['messages'], 'id');
     chk('portal: shared journal entries and check-ins reach the mentor; private entries never', in_array('journal:JMP1', $ids, true) && !in_array('journal:JMP2', $ids, true)
@@ -36626,6 +36631,59 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     setting_set('fees', is_array($keep) ? $keep : [], 'test');
     db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-AN-1'"); db_exec("DELETE FROM notifications WHERE memberId = 'NGG-AN-1'"); db_exec("DELETE FROM dues_notices WHERE memberId = 'NGG-AN-1'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-AN-1'"); db_exec("DELETE FROM club_announcements WHERE annId = 'ANN-CMTEST01'");
+})();
+
+
+/* ── The Wi-Fi roster has to fit through the host's door ─────────────────── */
+(function () {
+    /* CACENTRE is on cPanel, where ModSecurity's SecRequestBodyNoFilesLimit
+       defaults to 131072 bytes and rejects a larger body in PHASE 2 — before
+       PHP runs — with cPanel's 406. A roster of 1,200 people is ~218KB, so
+       every push failed and nothing was applied at all. Measured, not
+       assumed: the test builds the body the way the push does and weighs it. */
+    $row = fn($i) => ['id' => sprintf('NGG-WFP-%05d', $i), 'kind' => 'member',
+        'name' => 'Testerly Namesworth ' . $i, 'email' => 'someone.longish' . $i . '@example.org',
+        'printedId' => sprintf('026-%04d', $i), 'homeSite' => 'eg', 'verdict' => 'on'];
+    $people = array_map($row, range(1, 1200));
+
+    $weigh = fn(array $page, bool $full) => strlen((string)json_encode(
+        ['typ' => 'wifi.roster', 'full' => $full, 'people' => $page, 'n' => str_repeat('a', 16)],
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+
+    chk('wifi roster · the old single push really was over the host\'s limit (the bug)',
+        $weigh($people, true) > 131072);
+
+    $pages = wifi_cac_pages($people);
+    chk('wifi roster · it is cut into more than one page now', count($pages) > 1);
+    $over = array_values(array_filter($pages, fn($pg) => $weigh($pg, false) > WIFI_CAC_BODY_MAX));
+    chk('wifi roster · and EVERY page fits the budget' . ($over ? ' — ' . count($over) . ' did not' : ''), !$over);
+    chk('wifi roster · …with room under the host\'s own 128KB default',
+        !array_filter($pages, fn($pg) => $weigh($pg, false) >= 131072));
+    chk('wifi roster · nobody is lost or duplicated in the cutting',
+        array_sum(array_map('count', $pages)) === count($people)
+        && count(array_unique(array_merge(...array_map(fn($pg) => array_column($pg, 'id'), $pages)))) === count($people));
+
+    /* The property that matters more than the paging: `full` may only be said
+       when the WHOLE roster went in one push, because CACENTRE withdraws
+       anybody missing from a full one. */
+    chk('wifi roster · a roster that fits still goes as ONE full push',
+        count(wifi_cac_pages(array_map($row, range(1, 20)))) === 1);
+    chk('wifi roster · an empty roster is still one (empty) page, not none',
+        wifi_cac_pages([]) === [[]]);
+
+    /* A row too big to split is not silently dropped — it goes alone. */
+    $huge = ['id' => 'NGG-WFP-HUGE', 'kind' => 'member', 'name' => str_repeat('x', 200000), 'verdict' => 'on'];
+    $hp = wifi_cac_pages([$row(1), $huge, $row(2)]);
+    chk('wifi roster · a single row bigger than the budget goes alone, never dropped',
+        array_sum(array_map('count', $hp)) === 3
+        && count(array_filter($hp, fn($pg) => count($pg) === 1 && $pg[0]['id'] === 'NGG-WFP-HUGE')) === 1);
+
+    /* The budget follows the host, not us. */
+    $GLOBALS['CONFIG']['wifi']['cac_body_max'] = 1048576;
+    chk('wifi roster · a host with a bigger door can be told, and then it goes whole',
+        count(wifi_cac_pages($people)) === 1);
+    unset($GLOBALS['CONFIG']['wifi']['cac_body_max']);
+
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
