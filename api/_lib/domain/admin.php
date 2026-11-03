@@ -1294,8 +1294,9 @@ function admin_broadcast(array $p): array {
     // Persistent broadcast notification (memberId '*' = every member's feed).
     // The audience is stamped so the in-app feed matches the emailed audience.
     $audKey = $aud['key'];
+    $notifId = 'N-' . gmdate('Y') . '-' . rand_hex(4);
     db_insert('notifications', [
-        'notifId' => 'N-' . gmdate('Y') . '-' . rand_hex(4),
+        'notifId' => $notifId,
         'memberId' => '*', 'kind' => 'announcement', 'title' => $title, 'body' => $body,
         'linkPage' => $linkPage, 'audience' => $audKey, 'readAt' => '', 'createdAt' => now_iso(),
     ]);
@@ -1317,8 +1318,15 @@ function admin_broadcast(array $p): array {
         }, 300);
     }
 
-    audit('admin.broadcast', $g['requester']['memberId'], '', ['title' => $title, 'audience' => $audience, 'emailed' => $emailResult['sent']], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'emailed' => $emailResult['sent'], 'skipped' => $emailResult['skipped']];
+    /* In Community too, when asked: a pinned Announcement in the commons, by the sender (community_announce). */
+    $posted = null;
+    if (!empty($p['community']) && function_exists('community_announce')) {
+        $fit = community_announce_fits($audKey);
+        $posted = $fit['ok'] ? community_announce((string)$g['requester']['memberId'], 'qm:' . $notifId, $title, $body, $fit['centre']) : ['ok' => false, 'error' => 'not_for_community', 'why' => $fit['why']];
+    }
+    audit('admin.broadcast', $g['requester']['memberId'], '', ['title' => $title, 'audience' => $audience, 'emailed' => $emailResult['sent'], 'community' => !empty($posted['ok'])], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'emailed' => $emailResult['sent'], 'skipped' => $emailResult['skipped'],
+        'community' => $posted === null ? null : ['posted' => !empty($posted['ok']), 'why' => (string)($posted['why'] ?? '')]];
 }
 
 /** Recent announcements (the broadcast history) — most recent first. */

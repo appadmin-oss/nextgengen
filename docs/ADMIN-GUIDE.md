@@ -2229,6 +2229,33 @@ also acknowledge from Messages — signing the notice there is the same thing.
 
 **Quick message** is the old one-line notification, kept for short alerts.
 
+### Announcements reach the member portal and Community (from 3 Nov 2026)
+
+What you announce no longer lives only behind the bell:
+
+- **In the member portal**, an unread quick message, club announcement or
+  official notice from the last fortnight sits at the **top of the member's
+  Today**, ahead of their to-dos, until they read it (a notice opens on its own
+  page; a message opens in their notifications). It is also in the bell, as
+  before.
+- **In Community**, each one can be posted as a **pinned Announcement in the
+  commons**, by the person who sent it (for a club announcement, by its
+  approver). It is posted once however often it is resent, and an official
+  notice that is **withdrawn comes down from Community too**.
+  - Quick message: **Show it in Community** (on by default).
+  - Official notice: **Delivery → Show it in Community** (on by default; it
+    links to the full notice).
+  - Club announcement: the **Community** channel chip (on for new ones).
+  - A message for **one centre** is headed "For Egbeda centre — …", because the
+    commons is shared by every centre. A **Summer School-only** message, or one
+    for **guardians only**, never goes to Community — it is the NGG members'
+    space; the screen says so and the sender is told.
+- **Money reminders never go to Community** — they are one family's business.
+  The member sees their own in their portal, in words for them: "₦7,000 due
+  1 Dec — your parent or guardian has been told" before it falls due, and "Your
+  account: ₦2,000 to pay — your parent or guardian has been sent a reminder"
+  for arrears. The child is told, never chased.
+
 ### Club announcements (Club portal → Announcements)
 
 A coordinator or centre lead writes an announcement; an **admin approves** it

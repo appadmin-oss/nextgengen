@@ -5046,3 +5046,8 @@ INSERT INTO schema_version (version) VALUES (216) ON DUPLICATE KEY UPDATE versio
 -- 217 — Paystack's charge, borne by the family, recorded beside the invoice's own total.
 ALTER TABLE membership_invoices ADD COLUMN processingFee INT NOT NULL DEFAULT 0;
 INSERT INTO schema_version (version) VALUES (217) ON DUPLICATE KEY UPDATE version = version;
+
+-- 218 — staff broadcasts shown in Community: one post per source message; a notice's Community choice.
+ALTER TABLE community_posts ADD COLUMN sourceRef VARCHAR(80) NOT NULL DEFAULT '', ADD INDEX idx_community_posts_source (sourceRef);
+ALTER TABLE notices ADD COLUMN communityOn TINYINT NOT NULL DEFAULT 0;
+INSERT INTO schema_version (version) VALUES (218) ON DUPLICATE KEY UPDATE version = version;

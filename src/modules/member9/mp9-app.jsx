@@ -419,7 +419,23 @@ class Mp9Portal extends React.Component {
   /* ── Today ───────────────────────────────────────────────────────────── */
   todayVals(go) {
     const t = this.dd("today") || {}, a = t.account, mf = this.mentorInfo().first;
-    const todo = (t.todo || []).map((x, i) => {
+    /* What NGG has announced, at the top of Today until it is read — a quick message, a club
+       announcement or an official notice from the last fortnight — not only a dot on the bell.
+       Reading it here marks it read, so it leaves Today the way it leaves the bell. */
+    const s0 = this.state, since = Date.now() - 14 * 86400000;
+    const news = ((this.dd("notifs") || {}).notifications || [])
+      .filter(n => (n.kind === "announcement" || n.kind === "notice") && !(s0.goneIds || {})[n.notifId] && !mp9NotifRead(n, s0) && new Date(n.createdAt).getTime() >= since)
+      .slice(0, 3).map(n => {
+        const a = n.action || {}, notice = a.page === "notice" && a.ref;
+        return { icon: "ph ph-megaphone", t: n.title || "From NGG", s: String(n.body || "").slice(0, 140) + (String(n.body || "").length > 140 ? "…" : ""), cta: notice ? "Read the notice" : "Read",
+          go: () => {
+            this.setState(st => ({ readIds: { ...(st.readIds || {}), [n.notifId]: 1 } }));
+            NGGApi.member.markRead(n.notifId, false).catch(() => {});
+            if (notice) location.assign("/notice/" + encodeURIComponent(a.ref)); else this.setState({ notif: true });
+          }, tone: "info" };
+      });
+    const todo = news.concat(t.todo || []).map((x, i) => {
+      if (x.go) return { icon: x.icon, t: x.t, s: x.s, cta: x.cta, go: x.go, fg: MP9_TONE[x.tone] || "#4a4a50", bt: i ? "1px solid #f0efea" : "0" };
       const scr = MP9_ROUTE[x.route] || (/results/.test(x.route) ? "results" : /money|account/.test(x.route) ? "money" : /learn/.test(x.route) ? "learn" : /mentor/.test(x.route) ? "mentor" : "today");
       return { icon: "ph ph-" + x.icon, t: x.title, s: x.subtitle, cta: x.cta, go: go(scr), fg: MP9_TONE[x.tone] || "#4a4a50", bt: i ? "1px solid #f0efea" : "0" };
     });

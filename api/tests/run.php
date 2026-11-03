@@ -31602,7 +31602,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('club portal: app-only to guardians when none has a family account is refused, not sent to nobody', ($un['error'] ?? '') === 'unreachable' && str_contains((string)($un['message'] ?? ''), 'Nobody'));
     chk('club portal: members by SMS alone is refused; members by app, or guardians by app or email, is fine', cp_ann_unreachable('members', ['sms']) !== ''
         && cp_ann_unreachable('members', ['app']) === '' && cp_ann_unreachable('guardians', ['email']) === '' && cp_ann_unreachable('guardians', ['app']) === '' && cp_ann_unreachable('both', ['app']) === '');
-    chk('club portal: new announcements start on App and Email (Telegram too once a bot is set), never SMS', cp_ann_default_channels() === ['app', 'email']);
+    chk('club portal: new announcements start on App, Email and Community (Telegram too once a bot is set), never SMS', cp_ann_default_channels() === ['app', 'email', 'community']);
 
     // In-app reaches guardians: their family account's inbox, once each.
     db_insert('guardians', ['guardianId' => 'G-CPA', 'email' => 'p1@cp.example', 'fullName' => 'Mrs Alpha', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
@@ -36391,6 +36391,76 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     unset($GLOBALS['__paystack_mock'], $GLOBALS['CONFIG']['paystack']);
     setting_set('fees', is_array($keep) ? $keep : [], 'test');
     db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-PF-1'"); db_exec("DELETE FROM membership_invoices WHERE memberId = 'NGG-PF-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PF-1'");
+})();
+
+/* ── Staff broadcasts reach Community and the member's portal ───────────────
+   A quick message, a club announcement and an official notice become ONE pinned
+   Announcement in the commons each, by the sender; a withdrawn notice comes down;
+   Summer-only and guardians-only messages stay out; money reminders never go
+   there, and the member is told of theirs in their own words. */
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099';
+    community_ensure_channels();
+    $q = backend_dispatch('admin.broadcast', ['requesterId' => $ADM, 'title' => 'Centre closed on Saturday', 'body' => 'Water works on the road. See you the week after.', 'audience' => 'all', 'community' => true]);
+    $post = db_row("SELECT * FROM community_posts WHERE sourceRef LIKE 'qm:%' ORDER BY id DESC LIMIT 1");
+    chk('broadcast → Community: a quick message is pinned in the commons as an Announcement, by the sender',
+        !empty($q['ok']) && !empty($q['community']['posted']) && $post && $post['kind'] === 'announce' && (int)$post['pinned'] === 1 && $post['authorId'] === $ADM
+        && $post['status'] === 'published' && str_starts_with((string)$post['body'], 'Centre closed on Saturday')
+        && (string)db_row("SELECT slug FROM community_channels WHERE channelId = ?", [$post['channelId']])['slug'] === 'commons');
+    $again = community_announce($ADM, (string)$post['sourceRef'], 'Centre closed on Saturday', 'x');
+    chk('broadcast → Community: once per message — the same source posts nothing new', !empty($again['existed']) && (int)db_row("SELECT COUNT(*) c FROM community_posts WHERE sourceRef = ?", [$post['sourceRef']])['c'] === 1);
+    $n0 = (int)db_row("SELECT COUNT(*) c FROM community_posts WHERE kind = 'announce'")['c'];
+    $qs = backend_dispatch('admin.broadcast', ['requesterId' => $ADM, 'title' => 'Summer kit list', 'body' => 'Bring a water bottle.', 'audience' => 'Summer', 'community' => true]);
+    $qn = backend_dispatch('admin.broadcast', ['requesterId' => $ADM, 'title' => 'Quiet one', 'body' => 'Bell only.', 'audience' => 'all']);
+    chk('broadcast → Community: a Summer School-only message is not posted, and the sender is told why; unasked, nothing is posted',
+        !empty($qs['ok']) && empty($qs['community']['posted']) && str_contains((string)$qs['community']['why'], 'Summer') && array_key_exists('community', $qn) && $qn['community'] === null
+        && (int)db_row("SELECT COUNT(*) c FROM community_posts WHERE kind = 'announce'")['c'] === $n0);
+    $qc = backend_dispatch('admin.broadcast', ['requesterId' => $ADM, 'title' => 'Bring your cards', 'body' => 'ID check at the door.', 'audience' => 'Egbeda', 'community' => true]);
+    $pc = db_row("SELECT body FROM community_posts WHERE sourceRef LIKE 'qm:%' ORDER BY id DESC LIMIT 1");
+    chk('broadcast → Community: a message for one centre says so in its first line, because the commons is every centre’s',
+        !empty($qc['community']['posted']) && str_starts_with((string)$pc['body'], 'For Egbeda centre — Bring your cards'));
+    chk('broadcast → Community: only staff post announcements — a member cannot be made the author', (community_announce('NGG-2025-0001', 'qm:test-member', 'x', 'y')['error'] ?? '') === 'not_staff'
+        || !db_row("SELECT 1 FROM members WHERE memberId = 'NGG-2025-0001' AND role = 'member'"));
+
+    // An official notice: posted with a link to the whole notice, and taken down when it is withdrawn.
+    $sv = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'org' => 'NGG', 'kind' => 'Notice', 'subject' => 'New term dates', 'body' => 'Term starts on 9 January.', 'signoff' => 'The Programme Office',
+        'audience' => 'all', 'reach' => 'both', 'communityOn' => true]);
+    $nid = (string)($sv['notice']['noticeId'] ?? '');
+    $pub = backend_dispatch('admin.notices.publish', ['requesterId' => $ADM, 'noticeId' => $nid]);
+    $np = db_row("SELECT * FROM community_posts WHERE sourceRef = ?", ['notice:' . $nid]);
+    chk('notice → Community: published with “Show it in Community”, it is pinned there with a link to the notice in full',
+        $nid !== '' && !empty($pub['ok']) && $np && $np['kind'] === 'announce' && str_contains((string)$np['body'], '/notice/' . $nid) && !empty($sv['notice']['communityOn']));
+    $wd = backend_dispatch('admin.notices.withdraw', ['requesterId' => $ADM, 'noticeId' => $nid, 'reason' => 'Dates changed again']);
+    chk('notice → Community: withdrawn, it comes down from Community too', !empty($wd['ok']) && db_row("SELECT status FROM community_posts WHERE sourceRef = ?", ['notice:' . $nid])['status'] === 'removed');
+    $sg = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'org' => 'NGG', 'kind' => 'Notice', 'subject' => 'For parents only', 'body' => 'Consent forms are due.', 'signoff' => 'Office',
+        'audience' => 'all', 'reach' => 'guardians', 'communityOn' => true]);
+    backend_dispatch('admin.notices.publish', ['requesterId' => $ADM, 'noticeId' => (string)($sg['notice']['noticeId'] ?? '')]);
+    chk('notice → Community: a notice for guardians only never goes there', !db_row("SELECT 1 FROM community_posts WHERE sourceRef = ?", ['notice:' . (string)($sg['notice']['noticeId'] ?? '')]));
+
+    // A club announcement: Community is a channel; guardians-only skips it.
+    chk('club announcement → Community: Community counts as reaching members, and alone it cannot reach guardians',
+        cp_ann_unreachable('members', ['community']) === '' && cp_ann_unreachable('guardians', ['community']) !== '');
+    db_insert('club_announcements', ['annId' => 'ANN-CMTEST01', 'title' => 'Robotics fair', 'body' => 'Show your builds on Saturday.', 'aud' => 'members', 'centre' => 'all',
+        'channels' => json_encode(['community']), 'status' => 'approved', 'sendAt' => '', 'byId' => $ADM, 'byName' => 'Admin', 'approvedById' => $ADM, 'approvedByName' => 'Admin',
+        'note' => '', 'sentAt' => '', 'stats' => '', 'smsBody' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    $st = cp_ann_send(['me' => db_row("SELECT * FROM members WHERE memberId = ?", [$ADM])], db_row("SELECT * FROM club_announcements WHERE annId = 'ANN-CMTEST01'"));
+    chk('club announcement → Community: sent with the Community channel, it is pinned there once and counted', ($st['community'] ?? 0) === 1
+        && (bool)db_row("SELECT 1 FROM community_posts WHERE sourceRef = 'ann:ANN-CMTEST01' AND kind = 'announce' AND pinned = 1"));
+
+    // Money stays out of Community; the member hears of their own reminder in words for them.
+    chk('reminders: no money reminder is ever a Community post', !db_row("SELECT 1 FROM community_posts WHERE sourceRef LIKE 'dues%' OR body LIKE '%to pay%'"));
+    db_insert('members', ['memberId' => 'NGG-AN-1', 'fullName' => 'Ama Notice', 'email' => '', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'joinDate' => '2025-12-01', 'parentEmail' => 'parent.an1@example.com', 'createdAt' => $now, 'updatedAt' => $now]);
+    $keep = setting_get('fees');
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'remindEnabled' => true, 'remindMinBalance' => 1] + FEES_DEFAULTS, 'test');
+    fees_post('NGG-AN-1', 'dues', 2000, ['periodKey' => '2026-10', 'note' => 'Monthly dues 2026-10', 'by' => 'accrual']);
+    foreach (fees_reminder_candidates()['due'] as $cand) if ($cand['memberId'] === 'NGG-AN-1') fees_reminder_send($cand);
+    $mn = db_row("SELECT * FROM notifications WHERE memberId = 'NGG-AN-1' AND kind = 'money' ORDER BY id DESC LIMIT 1");
+    chk('reminders: the member sees an arrears reminder in their own portal, told — not chased — and pointed at Fees',
+        $mn && str_starts_with((string)$mn['title'], 'Your account:') && str_contains((string)$mn['body'], 'parent or guardian') && (string)$mn['linkPage'] === 'money');
+    setting_set('fees', is_array($keep) ? $keep : [], 'test');
+    db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-AN-1'"); db_exec("DELETE FROM notifications WHERE memberId = 'NGG-AN-1'"); db_exec("DELETE FROM dues_notices WHERE memberId = 'NGG-AN-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-AN-1'"); db_exec("DELETE FROM club_announcements WHERE annId = 'ANN-CMTEST01'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

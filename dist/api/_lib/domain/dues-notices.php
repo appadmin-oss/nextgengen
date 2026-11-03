@@ -107,8 +107,12 @@ function dues_notice_send(array $m, string $kind, string $refKey, array $msg, ?a
                 [$mid, $kind === 'arrears' ? 'alert' : 'centre', $gid, 'dues-' . $kind, $kind . ':' . $refKey . ':' . $mid]);
         }
     }
+    /* The member sees it in their own portal too — in words for them (`member` => ['title', 'text']),
+       not the note written to their parent: the child is told, never chased. */
     if (!empty($msg['member']) && function_exists('push_notification')) {
-        try { push_notification($mid, ['kind' => 'money', 'title' => mb_substr($title, 0, 160), 'body' => mb_substr($text, 0, 600), 'linkPage' => 'money']); $went['member'] = 1; } catch (Throwable $e) {}
+        $mt = is_array($msg['member']) ? (string)($msg['member']['title'] ?? $title) : $title;
+        $mx = is_array($msg['member']) ? (string)($msg['member']['text'] ?? $text) : $text;
+        try { push_notification($mid, ['kind' => 'money', 'title' => mb_substr($mt, 0, 160), 'body' => mb_substr($mx, 0, 600), 'linkPage' => 'money']); $went['member'] = 1; } catch (Throwable $e) {}
     }
     if ($ch['email'] && $ct['emails'] && function_exists('send_mail') && function_exists('email_template')) {
         $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
@@ -186,7 +190,9 @@ function dues_upcoming_message(array $m, array $items, array $cfg): array {
           . '<p style="margin:0 0 10px">If now is a difficult time, reply to this message or speak to your centre coordinator — we would rather hear from you than not.</p>';
     return ['title' => $money($total) . ' due ' . gmdate('j M', strtotime($due . 'T12:00:00Z')) . ' for ' . $first, 'intro' => 'A note before it falls due.',
         'subject' => $first . '\'s NGG dues — ' . $money($total) . ' due ' . gmdate('j F', strtotime($due . 'T12:00:00Z')),
-        'text' => $text, 'html' => $html, 'amount' => $total, 'dueOn' => $due, 'member' => true];
+        'text' => $text, 'html' => $html, 'amount' => $total, 'dueOn' => $due,
+        'member' => ['title' => $money($total) . ' due ' . gmdate('j M', strtotime($due . 'T12:00:00Z')),
+            'text' => $what . ' falls due on ' . $when . '. Your parent or guardian has been told.']];
 }
 
 /** The families to tell today, with why each of the rest is not on the list. */

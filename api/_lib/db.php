@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 217;
+const NGG_SCHEMA_TARGET = 218;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6214,6 +6214,13 @@ function db_migrate(PDO $db): void {
            (`total`, what the ledger posts); the charge taken with it is recorded beside it for the receipt. */
         217 => "
             ALTER TABLE membership_invoices ADD COLUMN processingFee INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* 218 — staff broadcasts shown in Community: the post remembers the message it came from
+           (one post per source; withdrawn with it), and a notice remembers whether it goes there. */
+        218 => "
+            ALTER TABLE community_posts ADD COLUMN sourceRef TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_community_posts_source ON community_posts(sourceRef);
+            ALTER TABLE notices ADD COLUMN communityOn INTEGER NOT NULL DEFAULT 0;
         ",
     ];
 

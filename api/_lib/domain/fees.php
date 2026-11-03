@@ -1546,7 +1546,10 @@ function fees_reminder_send(array $cand, ?array $cfg = null): bool {
     $res = function_exists('dues_notice_send')
         ? dues_notice_send($m, 'arrears', gmdate('Y-m-d'), ['title' => $first . '\'s account: ' . $money((int)$bal['payable']) . ' to pay', 'intro' => $first . '\'s account has an amount to pay.',
             'subject' => $first . '\'s account — ' . $money((int)$bal['payable']) . ' to pay', 'text' => $plain, 'html' => $body, 'amount' => (int)$bal['payable'],
-            'footNote' => 'You are receiving this because you are ' . $first . '\'s guardian at Next Generation Genius. Tell your centre coordinator if you would prefer not to receive these.'], $cfg)
+            'footNote' => 'You are receiving this because you are ' . $first . '\'s guardian at Next Generation Genius. Tell your centre coordinator if you would prefer not to receive these.',
+            // In the member's own portal, in words for them: what is owed, and that home has been told.
+            'member' => ['title' => 'Your account: ' . $money((int)$bal['payable']) . ' to pay',
+                'text' => 'Your parent or guardian has been sent a reminder. If it has been paid, they can tell us in the family app.']], $cfg)
         : ['sent' => false];
     $ok = !empty($res['sent']);
     /* Stamped whether or not the transport succeeded. The alternative is a

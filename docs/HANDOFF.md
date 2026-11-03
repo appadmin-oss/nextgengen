@@ -5356,3 +5356,39 @@ the family app with a seeded family:**
 - Tests: PHP block "Parents pay Paystack's charge" (the money reaching NGG is
   checked across ₦500–₦500,000, the flat-charge line and the cap; init amount;
   a bare-dues payment refused; ledger, receipt, paid page).
+
+
+## 2026-11-03 — Announcements reach the member portal and Community
+
+Owner's request: "As part of the reminders, quick messages and announcements
+should also display in member portals and community."
+
+Found: quick messages, club announcements (app channel) and official notices
+already reached the member's bell; none reached Community; the arrears
+reminder never reached the member.
+
+- `community_announce($authorId, $sourceRef, $title, $body, $centre, $link)`
+  (community.php) posts a staff broadcast as a pinned `announce` post in the
+  commons through `community_post_create()` (so the staff-only rule and the
+  safeguarding screen apply), once per `community_posts.sourceRef`
+  (`qm:<notifId>`, `ann:<annId>`, `notice:<noticeId>`; migration 218). The
+  per-author spam throttle is skipped for this path only, via a request-scoped
+  global. `community_announce_withdraw()` sets `removed`.
+  `community_announce_fits()` keeps Summer-only and guardians-only messages out
+  and names the centre for a one-centre message.
+- Quick message: `admin_broadcast` takes `community` (the route passes it),
+  returns `community: {posted, why}`. Notices: `notices.communityOn`
+  (migration 218), set in the editor, posted on publish (with a /notice link),
+  removed on withdraw. Club announcements: `community` in `CP_ANN_CHANNELS` and
+  in `cp_ann_default_channels()`; `cp_ann_send` posts by the approver and counts
+  it in `stats.community`.
+- Member portal Today (`todayVals`, mp9-app.jsx) leads with up to three unread
+  announcements/notices from the last 14 days; reading one marks it read.
+- `dues_notice_send` takes `member => ['title','text']` for the member's own
+  words; the upcoming notice and the arrears reminder (`fees_reminder_send`)
+  both reach the member's portal. Money is never posted to Community.
+- Tests: PHP block "Staff broadcasts reach Community and the member's portal";
+  the club-portal default-channels check now expects Community.
+- Also in this round: `window.__adminSection` is installed once in a layout
+  effect (it was missing between first paint and the effect, and torn down per
+  render); membership-pay and portal-account tests wait for what they assert.
