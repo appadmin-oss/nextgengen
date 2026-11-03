@@ -1176,15 +1176,28 @@ function admin_request_decide(array $p): array
         if (isset($pp['error'])) return ['ok' => false, 'error' => $pp['error'], 'detail' => $pp['detail']];
         if ($pp['parts']) $parts = $pp['parts'];
     }
+    /* The same rules as a payment recorded at the desk (fees_payment_guard):
+       not one's own account, not around a joining invoice, and a bank reference
+       accepted once — this path used to post with none of them. */
+    if ($approve && (string)$r['kind'] === 'payment' && function_exists('fees_payment_guard')) {
+        $chk = $parts ? array_map(static fn($x) => ['method' => (string)$x['method'], 'reference' => (string)$x['reference']], $parts)
+                      : [['method' => 'claim', 'reference' => (string)$r['reference']]];
+        $no = fees_payment_guard((string)$r['memberId'], $by, $chk, (string)($p['ip'] ?? ''));
+        if ($no) return $no;
+    }
     if ($parts && function_exists('fees_post')) {
         $ids = [];
+        // All parts or none: a claim half-posted and then refused is two truths about one payment.
+        db_tx(static function () use (&$parts, &$ids, $r, $rid, $by) {
         foreach ($parts as $k => $x) {
             $entry = fees_post((string)$r['memberId'], 'payment', (int)$x['amount'], [
                 'note' => 'Payment confirmed from member claim ' . $rid . ' — ' . member_payment_part_text($x),
                 'method' => $x['method'], 'reference' => $x['reference'] !== '' ? $x['reference'] : ($x['receivedBy'] !== '' ? 'cash to ' . $x['receivedBy'] : ''), 'by' => $by,
             ]);
-            if ($entry) { $ids[] = (string)$entry['entryId']; $parts[$k]['entryId'] = (string)$entry['entryId']; }
+            if (!$entry) throw new \RuntimeException('payment part not posted');
+            $ids[] = (string)$entry['entryId']; $parts[$k]['entryId'] = (string)$entry['entryId'];
         }
+        });
         $patch['ledgerEntryId'] = implode(',', $ids);
         $patch['amount'] = array_sum(array_map(static fn($x) => (int)$x['amount'], $parts));
         $patch['parts'] = json_encode($parts, JSON_UNESCAPED_UNICODE);

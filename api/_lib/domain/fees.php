@@ -1718,6 +1718,50 @@ function admin_fees_member(array $p): array {
 
 /** Record a payment received. Admin-entered: this is the reconciliation step,
  *  not a gateway callback. */
+/**
+ * The rules every payment recorded by a person passes, whichever door it comes
+ * through — the desk (admin_fees_payment) and a family's claim approved from the
+ * inbox (member_request_decide). The claim path used to post with none of them,
+ * so the same transfer slip could be credited once at the desk and again as a
+ * claim, and an operator could approve a claim on their own account.
+ *
+ *   · nobody credits their own account;
+ *   · an open joining invoice is paid through Membership payments, where a
+ *     second person checks it, never around it;
+ *   · a bank reference is money that arrived once: accepted once, across desk
+ *     payments, offline claims and approved family claims — and a transfer
+ *     needs one.
+ *
+ * @param list<array{method:string,reference:string}> $parts
+ * @return array|null a refusal, or null when it may be posted
+ */
+function fees_payment_guard(string $memberId, string $by, array $parts, string $ip = ''): ?array {
+    if ($by === $memberId) return ['ok' => false, 'error' => 'own_account'];
+    if (db_row("SELECT invoiceId FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose = 'joining' LIMIT 1", [$memberId])) {
+        return ['ok' => false, 'error' => 'use_invoice', 'detail' => 'This member has an unpaid joining invoice. Record the payment against it (Membership payments), where it is checked by a second person.'];
+    }
+    $keys = [];
+    foreach ($parts as $x) {
+        $refKey = function_exists('membership_ref_key') ? membership_ref_key((string)($x['reference'] ?? '')) : '';
+        if (!in_array((string)($x['method'] ?? 'cash'), ['cash', 'claim'], true) && strlen($refKey) < 4)
+            return ['ok' => false, 'error' => 'reference_required', 'detail' => 'The transaction reference on the slip or alert.'];
+        if ($refKey === '') continue;
+        if (isset($keys[$refKey])) return ['ok' => false, 'error' => 'reference_reused', 'detail' => 'The same reference is given twice.'];
+        $keys[$refKey] = (string)$x['reference'];
+    }
+    if ($keys) {
+        $seen = false;
+        foreach (array_keys($keys) as $k) if (db_row("SELECT invoiceId FROM offline_payments WHERE referenceKey = ? AND status <> 'rejected' LIMIT 1", [$k])) { $seen = true; break; }
+        if (!$seen) foreach (db_all("SELECT reference FROM member_ledger WHERE kind = 'payment' AND reference <> '' AND (voidedAt IS NULL OR voidedAt = '')") as $lr)
+            if (isset($keys[membership_ref_key((string)$lr['reference'])])) { $seen = true; break; }
+        if ($seen) {
+            audit('fees.payment.reused_reference', $by, $memberId, ['reference' => implode(', ', $keys)], $ip);
+            return ['ok' => false, 'error' => 'reference_reused', 'detail' => 'That reference is already recorded.'];
+        }
+    }
+    return null;
+}
+
 function admin_fees_payment(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
@@ -1730,20 +1774,9 @@ function admin_fees_payment(array $p): array {
     /* Nobody credits their own account, and the joining invoice is not paid
        around: crediting it here and then voiding the invoice skipped the
        evidence and the second person (domain/membership-pay.php). */
-    if ($by === $id) return ['ok' => false, 'error' => 'own_account'];
-    if (function_exists('membership_invoice_by') && db_row("SELECT invoiceId FROM membership_invoices WHERE memberId = ? AND status = 'open' LIMIT 1", [$id])) {
-        return ['ok' => false, 'error' => 'use_invoice', 'detail' => 'This member has an unpaid joining invoice. Record the payment against it (Membership payments), where it is checked by a second person.'];
-    }
-    /* A bank reference is money that arrived once: it is accepted once,
-       across manual payments and offline claims alike. */
     $method = (string)($p['method'] ?? 'cash');
-    $refKey = function_exists('membership_ref_key') ? membership_ref_key((string)($p['reference'] ?? '')) : '';
-    if ($method !== 'cash' && strlen($refKey) < 4) return ['ok' => false, 'error' => 'reference_required', 'detail' => 'The transaction reference on the slip or alert.'];
-    if ($refKey !== '') {
-        $seen = db_row("SELECT invoiceId FROM offline_payments WHERE referenceKey = ? AND status <> 'rejected' LIMIT 1", [$refKey]);
-        if (!$seen) foreach (db_all("SELECT reference FROM member_ledger WHERE kind = 'payment' AND reference <> '' AND (voidedAt IS NULL OR voidedAt = '')") as $lr) if (membership_ref_key((string)$lr['reference']) === $refKey) { $seen = true; break; }
-        if ($seen) { audit('fees.payment.reused_reference', $by, $id, ['reference' => (string)$p['reference']], (string)($p['ip'] ?? '')); return ['ok' => false, 'error' => 'reference_reused', 'detail' => 'That reference is already recorded.']; }
-    }
+    $no = fees_payment_guard($id, $by, [['method' => $method, 'reference' => (string)($p['reference'] ?? '')]], (string)($p['ip'] ?? ''));
+    if ($no) return $no;
     $e = fees_post($id, 'payment', $amount, [
         'note' => (string)($p['note'] ?? ''), 'method' => (string)($p['method'] ?? 'cash'),
         'reference' => (string)($p['reference'] ?? ''), 'by' => $by,

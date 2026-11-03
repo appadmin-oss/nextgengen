@@ -36129,6 +36129,17 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $j3 = backend_dispatch('admin.fees.journal', ['requesterId' => 'NGG-MR-SC', 'q' => 'NGG-MR-1']);
     chk('transactions · a centre-scoped reader sees only their centres', !empty($j3['ok']) ? ($j3['total'] ?? 1) === 0 : in_array($j3['error'] ?? '', ['forbidden'], true));
     chk('transactions · needs the Fees permission', (backend_dispatch('admin.fees.journal', ['requesterId' => 'NGG-MR-2'])['error'] ?? '') !== '');
+    // One transfer is credited once, whichever door it comes through.
+    $desk = backend_dispatch('admin.fees.payment', ['requesterId' => $ADM, 'memberId' => 'NGG-MR-2', 'amount' => 2000, 'method' => 'transfer', 'reference' => 'TRF-77701']);
+    $claim = member_request_create(['memberId' => 'NGG-MR-2', 'kind' => 'payment', 'amount' => 2000, 'reference' => 'trf 77701', 'paidAt' => gmdate('Y-m-d')]);
+    $dec = backend_dispatch('admin.requests.decide', ['requesterId' => $ADM, 'requestId' => $claim['request']['requestId'], 'approve' => true, 'decision' => 'ok']);
+    chk('payments · a family claim for a transfer already recorded at the desk is refused, not credited twice',
+        !empty($desk['ok']) && ($dec['error'] ?? '') === 'reference_reused'
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-MR-2' AND kind = 'payment'")['c'] === 1
+        && db_row('SELECT status FROM member_requests WHERE requestId = ?', [$claim['request']['requestId']])['status'] === 'open');
+    $own = member_request_create(['memberId' => $ADM, 'kind' => 'payment', 'amount' => 500, 'reference' => 'TRF-OWN-1', 'paidAt' => gmdate('Y-m-d')]);
+    chk('payments · nobody approves a payment onto their own account from the inbox either',
+        !empty($own['ok']) && (backend_dispatch('admin.requests.decide', ['requesterId' => $ADM, 'requestId' => $own['request']['requestId'], 'approve' => true, 'decision' => 'ok'])['error'] ?? '') === 'own_account');
     $m2 = db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'");
     fees_accrue_member($m2);
     $first = db_row("SELECT note, amount FROM member_ledger WHERE memberId = 'NGG-MR-2' AND kind = 'dues' ORDER BY periodKey LIMIT 1");
