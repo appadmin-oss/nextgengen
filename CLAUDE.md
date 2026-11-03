@@ -616,5 +616,7 @@ one reintroduces the failure.
 - `docs/PRINT-SPEC.md` — what the studios hand a print shop.
 - `docs/POLICY.md` — programme policy: conduct thresholds, fines, attendance.
 - `docs/FORMS.md` — the intake form builder's cascade and conditional logic.
+- `docs/MATH-LAB-PLAN.md` — the approved plan for Math Lab → The Mathematics
+  Clinic (owner decisions in §17). Read it before touching `mathlab.php`.
 - `docs/HANDOFF.md` — a historical change record. **Append, never rewrite**;
   it is the log of why things are the way they are.
