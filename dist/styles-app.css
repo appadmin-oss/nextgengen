@@ -17838,3 +17838,9 @@ button.m9x-ev-sum { cursor: pointer; }
 .cr-jfilter label.is-grow { flex: 1 1 220px; }
 .cr-jfilter .cr-select { max-width: none; }
 .cr-jfilter .cr-input { height: 36px; padding: 0 10px; border: 1px solid var(--cr-line-3); border-radius: var(--cr-r); font-size: 14px; background: var(--cr-bg); color: var(--cr-ink); }
+
+/* ── Money that could not be applied: one line each, with its decision (Membership payments) ── */
+.cr-mp-unapplied p { margin: 2px 0 8px; font-size: 13px; }
+.cr-mp-unapplied ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cr-mp-unapplied li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding-top: 8px; border-top: 1px solid var(--cr-line-4); }
+.cr-mp-unapplied-acts { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 220;
+const NGG_SCHEMA_TARGET = 221;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6251,6 +6251,32 @@ function db_migrate(PDO $db): void {
                periodKey (VARCHAR(32) there, TEXT here) to 96 characters: keys of
                38-52 characters were written and refused or truncated there. */
             CREATE INDEX IF NOT EXISTS idx_mledg_created ON member_ledger (createdAt);
+        ",
+        221 => "
+            /* Money that arrived and could not be applied — a Paystack payment
+               for an invoice voided or paid another way meanwhile, or an amount
+               that does not match its invoice. It lived only as audit-log rows,
+               with no way to say it had been dealt with. One row per payment
+               reference, resolved by a person: applied to the account,
+               refunded, or dismissed with a reason. */
+            CREATE TABLE IF NOT EXISTS unapplied_payments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              reference TEXT NOT NULL,
+              source TEXT NOT NULL DEFAULT 'paystack',
+              cause TEXT NOT NULL DEFAULT 'unapplied',
+              invoiceId TEXT DEFAULT '',
+              memberId TEXT DEFAULT '',
+              amount INTEGER NOT NULL DEFAULT 0,
+              currency TEXT DEFAULT 'NGN',
+              status TEXT NOT NULL DEFAULT 'open',
+              note TEXT DEFAULT '',
+              ledgerEntryId TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              resolvedAt TEXT DEFAULT '',
+              resolvedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_unapplied_ref ON unapplied_payments (reference);
+            CREATE INDEX IF NOT EXISTS idx_unapplied_status ON unapplied_payments (status, createdAt);
         ",
     ];
 

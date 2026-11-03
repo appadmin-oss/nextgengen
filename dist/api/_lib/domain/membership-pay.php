@@ -663,6 +663,8 @@ function membership_paystack_verify(string $reference): array {
         && !db_row("SELECT id FROM audit_log WHERE event = 'membership.paystack.unapplied' AND meta LIKE ? LIMIT 1", ['%"' . $reference . '"%'])) {
         audit('membership.paystack.unapplied', 'paystack', (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $reference, 'amount' => (int)($d['amount'] ?? 0), 'currency' => (string)($d['currency'] ?? ''), 'invoiceStatus' => (string)$inv['status']]);
     }
+    if ($succeeded && (string)$inv['status'] !== 'open' && !$appliedHere)
+        unapplied_record($reference, 'unapplied', $inv, (int)round(((int)($d['amount'] ?? 0)) / 100), (string)($d['currency'] ?? 'NGN'));
     if ((string)$inv['status'] === 'paid') return ['ok' => true, 'status' => 'paid', 'invoice' => $inv];
     if ((string)$inv['status'] !== 'open') {
         if ($succeeded) return ['ok' => false, 'error' => 'not_open', 'detail' => 'This invoice was cancelled after the payment started. The payment is recorded and the centre will refund or apply it.'];
@@ -676,6 +678,9 @@ function membership_paystack_verify(string $reference): array {
     if ($fee < 0 || (string)($d['reference'] ?? '') !== $reference || (int)($d['amount'] ?? 0) !== ((int)$inv['total'] + max(0, $fee)) * 100
         || strtoupper((string)($d['currency'] ?? '')) !== strtoupper((string)$inv['currency'])) {
         audit('membership.paystack.mismatch', null, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $reference, 'amount' => (int)($d['amount'] ?? 0), 'currency' => (string)($d['currency'] ?? '')]);
+        // Money that DID arrive, for an amount the invoice does not match: on the record for a person.
+        if ($succeeded && (string)($d['reference'] ?? '') === $reference)
+            unapplied_record($reference, 'mismatch', $inv, (int)round(((int)($d['amount'] ?? 0)) / 100), (string)($d['currency'] ?? 'NGN'));
         return ['ok' => false, 'error' => 'payment_mismatch'];
     }
     // The charge is recorded on the invoice (for the receipt), never on the ledger: it is Paystack's, not something owed to NGG.
@@ -780,12 +785,12 @@ function admin_membership_invoices(array $p): array {
        invoice since voided or paid another way, or an amount that does not
        match) — never silently dropped. In scope only. */
     $alerts = [];
-    foreach (db_all("SELECT event, subject, meta, at FROM audit_log WHERE event IN ('membership.paystack.unapplied', 'membership.paystack.mismatch') ORDER BY id DESC LIMIT 100") as $a) {
-        if ($scope !== null && !admin_centre_allowed($g['requester'], (string)(db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [(string)$a['subject']])['centre'] ?? ''))) continue;
-        $meta = json_decode((string)$a['meta'], true) ?: [];
-        $alerts[] = ['kind' => $a['event'] === 'membership.paystack.mismatch' ? 'mismatch' : 'unapplied', 'memberId' => (string)$a['subject'], 'at' => (string)$a['at'],
-            'invoiceId' => (string)($meta['invoiceId'] ?? ''), 'reference' => (string)($meta['reference'] ?? ''), 'amount' => (int)round(((int)($meta['amount'] ?? 0)) / 100), 'status' => (string)($meta['invoiceStatus'] ?? '')];
-        if (count($alerts) >= 30) break;
+    unapplied_backfill();
+    foreach (db_all("SELECT * FROM unapplied_payments WHERE status = 'open' ORDER BY id DESC LIMIT 200") as $a) {
+        if ($scope !== null && !admin_centre_allowed($g['requester'], (string)(db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [(string)$a['memberId']])['centre'] ?? ''))) continue;
+        $alerts[] = ['id' => (int)$a['id'], 'kind' => (string)$a['cause'], 'memberId' => (string)$a['memberId'], 'at' => (string)$a['createdAt'],
+            'invoiceId' => (string)$a['invoiceId'], 'reference' => (string)$a['reference'], 'amount' => (int)$a['amount'],
+            'fullName' => (string)(db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [(string)$a['memberId']])['fullName'] ?? '')];
     }
     $counts = [];
     foreach (db_all('SELECT status, COUNT(*) c FROM membership_invoices WHERE 1 = 1' . $scopeSql . ' GROUP BY status', $scopeArgs) as $c) $counts[(string)$c['status']] = (int)$c['c'];
@@ -1086,4 +1091,67 @@ function admin_membership_evidence(array $p): array {
     if (hash_file('sha256', $path) !== (string)$op['evidenceSha256']) return ['ok' => false, 'error' => 'evidence_altered'];
     audit('membership.offline.evidence_viewed', (string)$g['requester']['memberId'], (string)$op['memberId'], ['paymentId' => $op['paymentId']], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'path' => $path, 'type' => (string)$op['evidenceType']];
+}
+
+/* ── Money that arrived and could not be applied ─────────────────────────────
+   A Paystack payment for an invoice voided or paid another way meanwhile, or
+   for an amount its invoice does not match. It used to live only in the audit
+   log — shown as the latest thirty, with no way to say it had been dealt with.
+   One row per payment reference (unique), and a person resolves it: applied
+   to the family's account, refunded (at Paystack), or dismissed with a reason. */
+function unapplied_record(string $reference, string $cause, array $inv, int $amount, string $currency): void {
+    try {
+        db_insert('unapplied_payments', ['reference' => $reference, 'source' => 'paystack', 'cause' => $cause, 'invoiceId' => (string)$inv['invoiceId'],
+            'memberId' => (string)$inv['memberId'], 'amount' => max(0, $amount), 'currency' => strtoupper($currency ?: 'NGN'), 'status' => 'open', 'createdAt' => now_iso()]);
+    } catch (\Throwable $e) {
+        if (!(function_exists('fees_is_duplicate') && fees_is_duplicate($e))) error_log('[unapplied] ' . $e->getMessage());
+    }
+}
+
+/** The audit-log rows from before the table existed, brought in once each (the reference is unique). */
+function unapplied_backfill(): void {
+    if (setting_raw('unapplied_backfilled') !== null) return;
+    foreach (db_all("SELECT event, subject, meta, at FROM audit_log WHERE event IN ('membership.paystack.unapplied', 'membership.paystack.mismatch') ORDER BY id") as $a) {
+        $meta = json_decode((string)$a['meta'], true) ?: [];
+        if ((string)($meta['reference'] ?? '') === '') continue;
+        try {
+            db_insert('unapplied_payments', ['reference' => (string)$meta['reference'], 'source' => 'paystack',
+                'cause' => $a['event'] === 'membership.paystack.mismatch' ? 'mismatch' : 'unapplied', 'invoiceId' => (string)($meta['invoiceId'] ?? ''),
+                'memberId' => (string)$a['subject'], 'amount' => (int)round(((int)($meta['amount'] ?? 0)) / 100), 'currency' => strtoupper((string)($meta['currency'] ?? 'NGN')) ?: 'NGN',
+                'status' => 'open', 'createdAt' => (string)$a['at']]);
+        } catch (\Throwable $e) { /* already there */ }
+    }
+    setting_set('unapplied_backfilled', gmdate('c'), 'system');
+}
+
+/**
+ * admin.fees.unapplied.resolve — {id, decision: apply|refund|dismiss, note}.
+ * Apply posts the money to the family's account (once: the row's own key);
+ * refund records that it was returned at Paystack; dismiss needs a reason.
+ */
+function admin_unapplied_resolve(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $row = db_row('SELECT * FROM unapplied_payments WHERE id = ? LIMIT 1', [(int)($p['id'] ?? 0)]);
+    if (!$row) return ['ok' => false, 'error' => 'not_found'];
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$row['memberId']]);
+    if ($m && !admin_centre_allowed($g['requester'], (string)($m['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
+    if ((string)$row['status'] !== 'open') return ['ok' => false, 'error' => 'already_resolved'];
+    $action = (string)($p['decision'] ?? '');   // not `action`: the route spends that word on choosing the op
+    $note = trim(mb_substr((string)($p['note'] ?? ''), 0, 240));
+    $by = (string)($g['requester']['memberId'] ?? '');
+    if (!in_array($action, ['apply', 'refund', 'dismiss'], true)) return ['ok' => false, 'error' => 'bad_action'];
+    if ($action !== 'apply' && strlen($note) < 3) return ['ok' => false, 'error' => 'reason_required'];
+    if ($by !== '' && $by === (string)$row['memberId']) return ['ok' => false, 'error' => 'own_account'];
+    $entry = '';
+    if ($action === 'apply') {
+        if (!$m) return ['ok' => false, 'error' => 'not_found', 'detail' => 'The member this payment was for no longer exists — refund it instead.'];
+        $e = fees_post((string)$row['memberId'], 'payment', (int)$row['amount'], ['periodKey' => 'unapplied:' . (int)$row['id'], 'method' => 'paystack',
+            'reference' => (string)$row['reference'], 'note' => 'Paystack payment applied by hand' . ($note !== '' ? ' — ' . $note : ''), 'by' => $by]);
+        if (!$e) return ['ok' => false, 'error' => 'post_failed'];
+        $entry = (string)$e['entryId'];
+    }
+    db_update('unapplied_payments', ['status' => ['apply' => 'applied', 'refund' => 'refunded', 'dismiss' => 'dismissed'][$action], 'note' => $note,
+        'ledgerEntryId' => $entry, 'resolvedAt' => now_iso(), 'resolvedBy' => $by], ['id' => (int)$row['id']]);
+    audit('fees.unapplied.' . $action, $by, (string)$row['memberId'], ['reference' => (string)$row['reference'], 'amount' => (int)$row['amount'], 'note' => $note], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'status' => ['apply' => 'applied', 'refund' => 'refunded', 'dismiss' => 'dismissed'][$action], 'entryId' => $entry];
 }

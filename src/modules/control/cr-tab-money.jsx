@@ -966,6 +966,18 @@ function CrMembershipPayments({ ctx }) {
     onSubmit: async v => { try { await NGGApi.admin.membership.void(inv.invoiceId, v.reason); load(); } catch (e) { throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); } },
     done: "Voided.",
   });
+  /* Money that arrived and could not be applied: each is decided by a person, and stays listed until it is
+     (admin.fees.unapplied.resolve). It used to be one line of text with no way to say it had been dealt with. */
+  const UNAPPLIED_ACT = { apply: ["Apply to their account", "It is posted as a payment on the family’s account, so their balance goes down by it."],
+    refund: ["Mark refunded", "Refund it in the Paystack dashboard first, then record it here with the refund reference."],
+    dismiss: ["Dismiss", "Only when it is not money the family is owed — say why."] };
+  const resolveUnapplied = (a, decision) => ctx.form({
+    title: UNAPPLIED_ACT[decision][0] + " · " + money(a.amount), intro: UNAPPLIED_ACT[decision][1], submit: UNAPPLIED_ACT[decision][0],
+    fields: [{ id: "note", l: decision === "apply" ? "Note (optional)" : decision === "refund" ? "Refund reference" : "Why", type: "textarea", rows: 2, max: 240, req: decision !== "apply",
+      check: v => decision !== "apply" && v.trim().length < 3 ? "Say it in a few words." : "" }],
+    onSubmit: async v => { try { await NGGApi.admin.fees.unappliedResolve(a.id, decision, v.note.trim()); load(); } catch (e) { throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); } },
+    done: decision === "apply" ? "Applied to the account." : decision === "refund" ? "Recorded as refunded." : "Dismissed.",
+  });
   const resend = async inv => {
     const ok = await ctx.confirm({ title: "Send the payment link again?", body: "It goes to " + (inv.sentTo || "the family") + ". Only resend if they have not paid by transfer or cash — record that instead.", cta: "Send again" });
     if (!ok) return;
@@ -1020,7 +1032,19 @@ function CrMembershipPayments({ ctx }) {
       {bp && <div className="cr-box cr-mp-note is-warn"><CrIcon n="warning-circle"/><span><b>A change of bank account is waiting.</b> {bp.byName} proposed {bp.bank.bankName} · {bp.bank.accountName} · {bp.bank.accountNumber} on {crDate(bp.at)}. Invoices keep the current account until another person confirms it.</span>
         {bp.by !== d.me && <button type="button" className="cr-btn is-sm" onClick={bankConfirm}>Confirm</button>}
         <button type="button" className="cr-btn is-sm" onClick={bankCancel}>Cancel it</button></div>}
-      {(d.alerts || []).length > 0 && <div className="cr-box cr-mp-note is-warn" role="status"><CrIcon n="warning-circle"/><span><b>Money that could not be applied.</b> {d.alerts.map(a => (a.kind === "mismatch" ? "A Paystack payment that does not match its invoice" : "A Paystack payment for an invoice that was no longer open") + " — " + a.invoiceId + " · " + a.reference + (a.amount ? " · " + money(a.amount) : "") + " (" + crDate(a.at) + ")").join("; ")}. Refund it or apply it to the family’s account.</span></div>}
+      {(d.alerts || []).length > 0 && <div className="cr-box cr-mp-note is-warn cr-mp-unapplied" role="region" aria-label="Money that could not be applied">
+        <CrIcon n="warning-circle"/>
+        <div><b>Money that arrived and could not be applied ({crNum(d.alerts.length)})</b>
+          <p>Each needs a decision. It stays here until somebody makes one, with their name on it.</p>
+          <ul>{d.alerts.map(a => <li key={a.id || a.reference}>
+            <span><b>{money(a.amount)}</b> · {a.fullName || a.memberId} · {a.kind === "mismatch" ? "did not match invoice " : "for invoice "}{a.invoiceId}{a.kind === "mismatch" ? "" : ", no longer open"} · {a.reference} · {crDate(a.at)}</span>
+            {a.id ? <span className="cr-mp-unapplied-acts">
+              <button type="button" className="cr-btn is-sm" onClick={() => resolveUnapplied(a, "apply")}>Apply to account</button>
+              <button type="button" className="cr-btn is-sm" onClick={() => resolveUnapplied(a, "refund")}>Refunded</button>
+              <button type="button" className="cr-btn is-sm" onClick={() => resolveUnapplied(a, "dismiss")}>Dismiss</button>
+            </span> : null}
+          </li>)}</ul>
+        </div></div>}
       <div className="cr-mp-kpis">
         <div className="cr-box"><span>Awaiting payment</span><b>{crNum(c.open || 0)}</b></div>
         <div className={"cr-box" + (c.pending ? " is-bad" : "")}><span>Waiting for a second check</span><b>{crNum(c.pending || 0)}</b></div>

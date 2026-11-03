@@ -289,6 +289,7 @@ function member_merge_policy(): array {
         'member_ledger'          => 'BLOCK',          // money: never combined silently
         'membership_invoices'    => 'BLOCK',          // a joining invoice and its receipt name one member
         'offline_payments'       => 'BLOCK',          // evidence of money paid for one member
+        'unapplied_payments'     => 'BLOCK',          // money that arrived for one member, not yet decided
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive
         'member_status_log'      => 'KEEP_SURVIVOR',  // the survivor's dates are the ones their fee is earned off on
         'member_progress'        => 'MOVE_UNIQUE',

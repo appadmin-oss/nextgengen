@@ -5538,3 +5538,40 @@ items plus a confidence check on every question.
   instructor/parent views, offline packs, question bank and AI pipeline,
   migrating old Math Lab progress. The old Arcade Math Lab code is still in
   page-club.jsx, unused by the entry card.
+
+
+## 3 Nov 2026 — Money data-risk fixes (from the money research)
+
+Nine faults found by reading the money code end to end; each fixed with a PHP
+check that fails without it (mutation-checked).
+
+1. **Summer accounts were charged** by the nightly run (membership, dues, the
+   training place). `fees_accrue_member` refuses a non-NGG account.
+2. **Months away were back-billed** on return. Dues months and membership years
+   are charged only if the member was active on a day of them
+   (`member_status_log`, `fees_active_between`).
+3. **The ceiling was checked once** before a backlog posted. Now before every posting.
+4. **Members past the first batch were never charged automatically**
+   (`ORDER BY id LIMIT N`, no cursor). `fees_accrue_batch` carries a cursor
+   (`fees_accrue_cursor`) and wraps.
+5. **`fees_post` read any insert error as "already posted".** Only a duplicate
+   key does (`fees_is_duplicate`); keys over 96 characters are shortened the
+   same way on both databases; migration 220 widens MySQL `periodKey` (was 32)
+   and indexes `member_ledger.createdAt`.
+6. **A family's payment claim skipped the payment guards** (reused reference,
+   own account, open joining invoice). `fees_payment_guard` serves both doors;
+   a claim's parts post in one transaction.
+7. **A void could split an invoice from its ledger.** Payments keyed `minv:`,
+   charges posted by `invoice:` and deductions keyed `volpay:` are corrected at
+   their source (`void_at_source`).
+8. **Three owed totals.** The Members overview and Analytics read real money
+   (training place out, owing only above zero); the member drawer shows the
+   statement's figures; the first ageing band reads "up to 30 days overdue".
+9. **Fines matched by wording** ("chocolate" counted as late) and a capped fine
+   left its sanction owed with nothing charged. Policy fines name their rule;
+   old rows match whole words; a refused or trimmed fine updates its sanction.
+10. **Unapplied money** (paid against a replaced invoice, or a mismatched
+    amount) lived only in the audit log. Migration 221 `unapplied_payments`,
+    one row per reference, listed on Membership payments with Apply to account
+    / Refunded / Dismiss (`admin.fees.unapplied.resolve`); the old audit rows
+    are brought in once (`unapplied_backfill`). Merge policy: BLOCK.

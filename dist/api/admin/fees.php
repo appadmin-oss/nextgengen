@@ -45,6 +45,7 @@ if ($method === 'GET') {
         'noticesRun'    => 'admin.fees.notices.run',
         'upratePreview' => 'admin.fees.uprate.preview',
         'uprateApply'   => 'admin.fees.uprate.apply',
+        'unappliedResolve' => 'admin.fees.unapplied.resolve',
     ];
     if (!isset($map[$action])) json_error('bad_action', 400);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));

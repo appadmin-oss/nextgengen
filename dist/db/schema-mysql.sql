@@ -5078,3 +5078,24 @@ INSERT INTO schema_version (version) VALUES (219) ON DUPLICATE KEY UPDATE versio
 ALTER TABLE member_ledger MODIFY COLUMN periodKey VARCHAR(96) DEFAULT '';
 CREATE INDEX idx_mledg_created ON member_ledger (createdAt);
 INSERT INTO schema_version (version) VALUES (220) ON DUPLICATE KEY UPDATE version = version;
+
+-- 221: money that arrived and could not be applied, resolved by a person.
+CREATE TABLE IF NOT EXISTS unapplied_payments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  reference VARCHAR(120) NOT NULL,
+  source VARCHAR(32) NOT NULL DEFAULT 'paystack',
+  cause VARCHAR(32) NOT NULL DEFAULT 'unapplied',
+  invoiceId VARCHAR(64) DEFAULT '',
+  memberId VARCHAR(64) DEFAULT '',
+  amount INT NOT NULL DEFAULT 0,
+  currency VARCHAR(8) DEFAULT 'NGN',
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  note VARCHAR(255) DEFAULT '',
+  ledgerEntryId VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  resolvedAt VARCHAR(32) DEFAULT '',
+  resolvedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY uq_unapplied_ref (reference),
+  KEY idx_unapplied_status (status, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (221) ON DUPLICATE KEY UPDATE version = version;

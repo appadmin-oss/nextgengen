@@ -1004,6 +1004,14 @@ paid of it.
 
 The family pays through the link (Paystack), or by bank transfer or cash.
 
+**Money that arrived and could not be applied.** When a family pays an invoice
+that was replaced or cancelled while their payment page was open, or pays an
+amount that does not match, the money is listed at the top of **Money →
+Membership payments** until somebody decides it: **Apply to account** (posted as
+a payment, so their balance goes down), **Refunded** (refund it in Paystack
+first, then record the refund reference) or **Dismiss** (with a reason). Each
+decision is recorded with the name of who made it.
+
 **Paying the balance online.** After joining, a member's account (their
 dashboard) and the family portal show **Pay ₦… online** whenever there is
 something to pay and Paystack is connected. Pressing it makes a **balance

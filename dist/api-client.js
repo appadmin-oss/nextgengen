@@ -2111,6 +2111,7 @@
         member:      (memberId) => request('/admin/fees.php' + qs({ view: 'member', memberId })),
         arrears:     (limit) => request('/admin/fees.php' + qs({ view: 'arrears', limit })),
         journal:     (f) => request('/admin/fees.php' + qs(Object.assign({ view: 'journal' }, f || {}))),
+        unappliedResolve: (id, decision, note) => request('/admin/fees.php', { body: { action: 'unappliedResolve', id, decision, note } }),
         training: (q) => request('/admin/fees.php' + qs(Object.assign({ view: 'training' }, q || {}))),
         /* Find anybody's account, not only a debtor's — the arrears list holds
            people who owe, so it could never answer "has Ada paid?". */

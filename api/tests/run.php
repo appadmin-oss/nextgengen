@@ -36176,6 +36176,23 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($keepRule) db_update('conduct_rules', ['active' => $keepRule['active'], 'capTerm' => $keepRule['capTerm']], ['id' => (int)$keepRule['id']]);
     else db_exec("DELETE FROM conduct_rules WHERE ruleId = 'RULE-LATE-T'");
     db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-MR-%'");
+    // Money that arrived and could not be applied: recorded once, decided by a person, applied once.
+    $invRow = ['invoiceId' => 'MINV-UNAP-1', 'memberId' => 'NGG-MR-2'];
+    unapplied_record('NGGM-UNAPTEST000001', 'unapplied', $invRow, 2500, 'NGN');
+    unapplied_record('NGGM-UNAPTEST000001', 'unapplied', $invRow, 2500, 'NGN');
+    $ua = db_row("SELECT * FROM unapplied_payments WHERE reference = 'NGGM-UNAPTEST000001'");
+    chk('unapplied · a payment that could not be applied is recorded once per reference, open, for the right family',
+        $ua && $ua['status'] === 'open' && (int)$ua['amount'] === 2500 && (int)db_row("SELECT COUNT(*) c FROM unapplied_payments WHERE reference = 'NGGM-UNAPTEST000001'")['c'] === 1);
+    $ml = backend_dispatch('admin.membership.invoices', ['requesterId' => $ADM]);
+    chk('unapplied · Membership payments lists it with its id, so it can be decided', (bool)array_filter($ml['alerts'] ?? [], fn($a) => ($a['reference'] ?? '') === 'NGGM-UNAPTEST000001' && ($a['id'] ?? 0) > 0));
+    chk('unapplied · refunding or dismissing needs a reason', (backend_dispatch('admin.fees.unapplied.resolve', ['requesterId' => $ADM, 'id' => (int)$ua['id'], 'decision' => 'dismiss', 'note' => ''])['error'] ?? '') === 'reason_required');
+    $before = (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'"))['realCredited'];
+    $ap = backend_dispatch('admin.fees.unapplied.resolve', ['requesterId' => $ADM, 'id' => (int)$ua['id'], 'decision' => 'apply', 'note' => 'paid the replaced invoice']);
+    chk('unapplied · applying it posts the payment to the account, once, and it leaves the list',
+        !empty($ap['ok']) && (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'"))['realCredited'] === $before + 2500
+        && (backend_dispatch('admin.fees.unapplied.resolve', ['requesterId' => $ADM, 'id' => (int)$ua['id'], 'decision' => 'apply'])['error'] ?? '') === 'already_resolved'
+        && !array_filter(backend_dispatch('admin.membership.invoices', ['requesterId' => $ADM])['alerts'] ?? [], fn($a) => ($a['reference'] ?? '') === 'NGGM-UNAPTEST000001'));
+    db_exec("DELETE FROM unapplied_payments WHERE reference LIKE 'NGGM-UNAPTEST%'");
     $m2 = db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'");
     fees_accrue_member($m2);
     $first = db_row("SELECT note, amount FROM member_ledger WHERE memberId = 'NGG-MR-2' AND kind = 'dues' ORDER BY periodKey LIMIT 1");
