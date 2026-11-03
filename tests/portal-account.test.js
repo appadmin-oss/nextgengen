@@ -171,6 +171,8 @@ async function as(memberId, admin, viewport) {
     // ── Voice notes and reading aloud ──
     await mb.goto(BASE + '/dashboard/mentor', { waitUntil: 'domcontentloaded' }); await waitForBoot(mb);
     await mb.waitForSelector('main button[aria-label="Record a voice note"]', { timeout: 40000 }).catch(() => {});
+    // The composer paints before the conversation arrives: wait for the mentor's messages, not the box.
+    await mb.waitForSelector('main button[aria-label="Read aloud"]', { timeout: 20000 }).catch(() => {});
     chk('Voice: the message box has a microphone, and the mentor’s messages can be read aloud',
       await mb.isVisible('main button[aria-label="Record a voice note"]') && (await mb.$$('main button[aria-label="Read aloud"]')).length >= 1);
     // The test server has no storage bucket: the upload is answered with a path the site would have stored.

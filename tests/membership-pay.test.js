@@ -128,6 +128,8 @@ function cleanup() {
     console.log('the Control Room: divisions, acceptance, payments');
     const P = await open('/control', A1);
     await P.waitForSelector('.cr-app', { timeout: 30000 });
+    /* The jump hook is installed by an effect, after the shell first paints: wait for it, not for the markup. */
+    await P.waitForFunction(() => typeof window.__adminSection === 'function', null, { timeout: 30000 });
     await P.evaluate(() => window.__adminSection('divisions'));
     await P.waitForSelector('.cr-dv-card', { timeout: 20000 });
     chk('Learning → Divisions & courses shows the four NGG divisions, with icon and card label', (await P.$$('.cr-dv-card')).length === 4

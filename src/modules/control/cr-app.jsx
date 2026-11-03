@@ -205,14 +205,21 @@ function CrRoom({ auth, setPage, unlockNote }) {
     if (panel) history.pushState({ page: name }, "", "/" + name + "?panel=" + encodeURIComponent(panel));
     setPage(name);
   };
-  React.useEffect(() => {
-    window.__adminSection = (section, tab) => {
+  /* window.__adminSection — the cross-section jump (CLAUDE.md §6). Installed ONCE, before the
+     first paint (a layout effect), and it calls the latest go/portal through a ref. Reinstalled
+     by a passive effect on every render, it was missing between the shell's paint and the effect,
+     and torn down on each render — a jump made right after navigating could land in that gap. */
+  const jumpRef = React.useRef(null);
+  jumpRef.current = { go, portal };
+  React.useLayoutEffect(() => {
+    const jump = (section, tab) => {
       const r = crResolve([section, tab]);
-      if (r.portal) return portal(r.portal, r.panel);
-      go(r.page, r.tab, r.sub);
+      if (r.portal) return jumpRef.current.portal(r.portal, r.panel);
+      jumpRef.current.go(r.page, r.tab, r.sub);
     };
-    return () => { window.__adminSection = null; };
-  });
+    window.__adminSection = jump;
+    return () => { if (window.__adminSection === jump) window.__adminSection = null; };
+  }, []);
 
   const ctx = {
     api: NGGApi.admin, me, can: c => crCapOk(c, has), can1: has, phone, density, reloadKey,
