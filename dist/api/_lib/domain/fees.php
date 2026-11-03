@@ -1311,6 +1311,41 @@ function admin_fees_training(array $p): array {
             'trainingMonths' => (int)$cfg['trainingMonths'], 'serviceMonths' => (int)$cfg['serviceMonths']];
 }
 
+/** Was the member ACTIVE on any day in [from, to)? From their status history (member_status_history), oldest first. */
+function fees_active_between(array $hist, string $from, string $to): bool {
+    $n = count($hist);
+    for ($i = 0; $i < $n; $i++) {
+        if ((string)$hist[$i]['status'] !== 'active') continue;
+        $a = (string)$hist[$i]['since'];
+        $b = $hist[$i + 1]['since'] ?? '9999-12-31';
+        if ($a < $to && $b > $from) return true;
+    }
+    return false;
+}
+
+/**
+ * The next batch of NGG members to bring up to date, from where the last run
+ * stopped, wrapping round at the end. Both doors (the nightly tick and the
+ * button) used `ORDER BY id LIMIT N` with no cursor, so a programme with more
+ * members than one batch never reached the rest — its docblock said they were
+ * "caught up over successive ticks", and they were not.
+ */
+function fees_accrue_batch(int $limit, array $cfg): array {
+    $after = (int)(setting_raw('fees_accrue_cursor') ?? 0);
+    $rows = db_all("SELECT * FROM members WHERE status = 'active' AND (type IS NULL OR type <> 'Summer') AND id > ? ORDER BY id LIMIT " . $limit, [$after]);
+    $tot = ['members' => 0, 'membership' => 0, 'dues' => 0, 'training' => 0, 'atCap' => 0, 'noJoinDate' => 0, 'wrapped' => count($rows) < $limit];
+    foreach ($rows as $m) {
+        $r = fees_accrue_member($m, $cfg);
+        $tot['members']++;
+        $tot['membership'] += $r['membership']; $tot['dues'] += $r['dues']; $tot['training'] += $r['training'];
+        if ($r['skipped'] === 'at_cap') $tot['atCap']++;
+        if ($r['skipped'] === 'no_join_date') $tot['noJoinDate']++;
+    }
+    // Past the end: the next run starts from the beginning again.
+    setting_set('fees_accrue_cursor', $tot['wrapped'] ? 0 : (int)end($rows)['id'], 'accrual');
+    return $tot;
+}
+
 /**
  * Bring a member's charges up to date.
  *
@@ -1326,6 +1361,10 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     $cfg = $cfg ?? fees_settings();
     $out = ['membership' => 0, 'dues' => 0, 'training' => 0, 'skipped' => ''];
     if (empty($cfg['enabled'])) { $out['skipped'] = 'disabled'; return $out; }
+    /* NGG members only. A Summer School participant converted to an account is an
+       `active` member row with a join date (admin2.php), and the nightly run used to
+       charge them membership, dues and a training place they never took. */
+    if (function_exists('member_is_ngg') && !member_is_ngg($member)) { $out['skipped'] = 'not_ngg'; return $out; }
     if ((string)($member['status'] ?? 'active') !== 'active') { $out['skipped'] = 'not_active'; return $out; }
     $memberId = (string)$member['memberId'];
     /* The terms this member's training place runs on, fixed the first time
@@ -1336,6 +1375,16 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     if ($ten['start'] === '') { $out['skipped'] = 'no_join_date'; return $out; }
     $bal = fees_balance($member, $cfg, $asOf);
     if (!empty($bal['atCap'])) { $out['skipped'] = 'at_cap'; return $out; }
+    /* The ceiling is checked before EVERY posting, not once before the run: a member
+       just under it with a backlog used to have every month posted past it. */
+    $owed = max(0, (int)$bal['realCharged'] - (int)$bal['realCredited']);
+    $cap = (int)($bal['cap'] ?? 0);
+    $room = static function (int $amt) use (&$owed, $cap): bool { return $cap <= 0 || $owed + $amt <= $cap; };
+    /* Only periods the member was ACTIVE in. The loops walk from the start date to
+       today and the run used to check only today's status, so a member away for six
+       months was charged all six on return. member_status_log is the record. */
+    $hist = member_status_history($member);
+    $activeIn = static fn(string $from, string $to): bool => fees_active_between($hist, $from, $to);
 
     /* Membership renews on the anniversary of joining. The 'once' key from the
        one-off era is still what a 0-month cycle posts, so a deployment that
@@ -1345,11 +1394,15 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     if ((int)$cfg['membershipFee'] > 0) {
         foreach (fees_membership_periods($ten['start'], $asOf ?? gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) {
             if ($settled !== '' && (string)$per['due'] <= $settled) continue;
+            $every = max(1, (int)$cfg['membershipEveryMonths']);
+            $end = $per['key'] === 'once' ? fees_add_days((string)$per['due'], 1) : gmdate('Y-m-d', (int)strtotime($per['due'] . ' 00:00:00 UTC +' . $every . ' months'));
+            if (!$activeIn((string)$per['due'], $end)) continue;
+            if (!$room((int)$cfg['membershipFee'])) { $out['skipped'] = 'at_cap'; break; }
             $label = $per['key'] === 'once' ? 'Membership fee'
                 : 'Membership fee — year ' . substr($per['key'], 1) . ' from ' . $per['due'];
             if (fees_post($memberId, 'membership', (int)$cfg['membershipFee'],
                           ['periodKey' => $per['key'], 'note' => $label, 'by' => 'accrual'])) {
-                $out['membership']++;
+                $out['membership']++; $owed += (int)$cfg['membershipFee'];
             }
         }
     }
@@ -1361,11 +1414,13 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
                left in it — the same figure their joining invoice quoted
                (membership_prorate), so the two cannot disagree. A charge
                already on the ledger is never re-priced. */
+            if (!$activeIn($mk . '-01', gmdate('Y-m-d', (int)strtotime($mk . '-01 00:00:00 UTC +1 month')))) continue;
             $amt = (int)$cfg['monthlyDues'];
             if ($mk === $firstMonth && function_exists('membership_prorate')) $amt = membership_prorate($amt, $ten['start'], $member)['amount'];
+            if ($amt > 0 && !$room($amt)) { $out['skipped'] = 'at_cap'; break; }
             if ($amt > 0 && fees_post($memberId, 'dues', $amt,
                           ['periodKey' => $mk, 'note' => 'Monthly dues ' . $mk . ($mk === $firstMonth && $amt < (int)$cfg['monthlyDues'] ? ' (part month, from ' . $ten['start'] . ')' : ''), 'by' => 'accrual'])) {
-                $out['dues']++;
+                $out['dues']++; $owed += $amt;
             }
         }
     }
@@ -2354,17 +2409,9 @@ function admin_fees_accrue(array $p): array {
     $cfg = fees_settings();
     if (empty($cfg['enabled'])) return ['ok' => false, 'error' => 'fees_disabled'];
     $limit = max(1, min(FEES_SCAN_MAX, (int)($p['limit'] ?? FEES_ACCRUE_BATCH)));
-    $rows = db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . $limit);
-    $tot = ['members' => 0, 'membership' => 0, 'dues' => 0, 'training' => 0, 'atCap' => 0, 'noJoinDate' => 0];
-    foreach ($rows as $m) {
-        $r = fees_accrue_member($m, $cfg);
-        $tot['members']++;
-        $tot['membership'] += $r['membership']; $tot['dues'] += $r['dues']; $tot['training'] += $r['training'];
-        if ($r['skipped'] === 'at_cap') $tot['atCap']++;
-        if ($r['skipped'] === 'no_join_date') $tot['noJoinDate']++;
-    }
+    $tot = fees_accrue_batch($limit, $cfg);
     audit('fees.accrue', (string)($g['requester']['memberId'] ?? ''), 'fees', $tot, (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'accrued' => $tot, 'scanned' => count($rows), 'limit' => $limit];
+    return ['ok' => true, 'accrued' => $tot, 'scanned' => $tot['members'], 'limit' => $limit, 'more' => !$tot['wrapped']];
 }
 
 /**

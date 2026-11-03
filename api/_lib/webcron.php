@@ -441,11 +441,7 @@ function web_cron_accrue(): void {
     $cfg = fees_settings();
     if (empty($cfg['enabled'])) return;
     $limit = max(1, min(FEES_SCAN_MAX, (int)web_cron_cfg('accrueBatch', FEES_ACCRUE_BATCH)));
-    $n = 0;
-    foreach (db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . $limit) as $m) {
-        fees_accrue_member($m, $cfg);
-        $n++;
-    }
+    $n = function_exists('fees_accrue_batch') ? (int)fees_accrue_batch($limit, $cfg)['members'] : 0;
     if ($n && function_exists('ops_record')) ops_record('cron', 'fees_accrue', $n . ' member(s) brought up to date');
 }
 

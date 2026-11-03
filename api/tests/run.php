@@ -36139,6 +36139,57 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 })();
 
 
+// ── Charging runs: NGG members only, never for months away, never past the ceiling, and everybody reached ──
+(function () {
+    $now = now_iso();
+    $keep = setting_raw('fees'); $keepCur = setting_raw('fees_accrue_cursor');
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'trainingFee' => 0, 'balanceCap' => 0] + FEES_DEFAULTS, 'test');
+    $m0 = gmdate('Y-m', strtotime(gmdate('Y-m-15') . ' UTC'));
+    $mAgo = fn($n) => gmdate('Y-m', strtotime(gmdate('Y-m-15') . " UTC -$n months"));
+    $mk = function ($id, $type, $join) use ($now) {
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Acc ' . $id, 'email' => strtolower($id) . '@example.org', 'type' => $type, 'status' => 'active',
+            'role' => 'member', 'centre' => 'Acc Centre', 'joinDate' => $join, 'createdAt' => $now, 'updatedAt' => $now]);
+        return db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
+    };
+    $keys = fn($id, $kind) => array_column(db_all("SELECT periodKey FROM member_ledger WHERE memberId = ? AND kind = ? ORDER BY periodKey", [$id, $kind]), 'periodKey');
+
+    $sum = $mk('SUM-ACC-1', 'Summer', $mAgo(3) . '-01');
+    $r = fees_accrue_member($sum, fees_settings());
+    chk('accrual · a Summer School participant with an account is never charged membership, dues or a training place',
+        $r['skipped'] === 'not_ngg' && !db_row("SELECT 1 FROM member_ledger WHERE memberId = 'SUM-ACC-1'"));
+
+    // Active for two months, away (inactive) for three, back for two.
+    $away = $mk('NGG-ACC-2', 'NGG', $mAgo(6) . '-01');
+    db_exec("DELETE FROM member_status_log WHERE memberId = 'NGG-ACC-2'");
+    foreach ([['active', $mAgo(6) . '-01'], ['inactive', $mAgo(4) . '-01'], ['active', $mAgo(1) . '-01']] as [$st, $since])
+        db_insert('member_status_log', ['memberId' => 'NGG-ACC-2', 'status' => $st, 'since' => $since, 'source' => 'test', 'recordedAt' => $now]);
+    fees_accrue_member($away, fees_settings());
+    chk('accrual · months the member was away are not charged on their return — only the months they were active',
+        $keys('NGG-ACC-2', 'dues') === [$mAgo(6), $mAgo(5), $mAgo(1), $m0]);
+
+    // The ceiling holds for every posting, not just at the start of the run.
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'trainingFee' => 0, 'balanceCap' => 9000] + FEES_DEFAULTS, 'test');
+    $capped = $mk('NGG-ACC-3', 'NGG', $mAgo(8) . '-01');
+    $rc = fees_accrue_member($capped, fees_settings());
+    $b = fees_balance($capped, fees_settings());
+    chk('accrual · a backlog stops at the ceiling: nothing is posted that would take the account past it', $b['realCharged'] <= 9000 && $b['realCharged'] >= 7000 && $rc['skipped'] === 'at_cap');
+
+    // Everybody is reached: the run carries on from where the last one stopped, and wraps.
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'trainingFee' => 0, 'balanceCap' => 0] + FEES_DEFAULTS, 'test');
+    db_exec("DELETE FROM settings WHERE settingKey = 'fees_accrue_cursor'");
+    $active = (int)db_row("SELECT COUNT(*) c FROM members WHERE status = 'active' AND (type IS NULL OR type <> 'Summer')")['c'];
+    $seen = 0; $runs = 0;
+    do { $t = fees_accrue_batch(2, fees_settings()); $seen += $t['members']; $runs++; } while (!$t['wrapped'] && $runs < 10000);
+    chk('accrual · successive runs of a small batch reach every NGG member once, then start again from the beginning',
+        $seen === $active && (int)(setting_raw('fees_accrue_cursor') ?? -1) === 0);
+    chk('accrual · …and never pick up a Summer account', !db_row("SELECT 1 FROM member_ledger WHERE memberId = 'SUM-ACC-1'"));
+
+    if ($keep === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'fees'", [$keep]);
+    if ($keepCur === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees_accrue_cursor'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'fees_accrue_cursor'", [$keepCur]);
+    foreach (['member_ledger', 'member_status_log', 'members'] as $t) db_exec("DELETE FROM $t WHERE memberId IN ('SUM-ACC-1','NGG-ACC-2','NGG-ACC-3')");
+})();
+
+
 // ── Official notices: the Management notice as written, formatted once, sent, read and acknowledged ──
 (function () {
     $now = now_iso();
