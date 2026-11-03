@@ -36156,6 +36156,26 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $dues = $ov['overview']['dues'] ?? null;
     chk('overview · "Families owing" and "Payable" are the families asked for money and what they are asked for — a training place alone is neither',
         $dues && $dues['outstanding'] === $payableAll && $dues['people'] === $owingAll && fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-TP'"))['realCharged'] === 0);
+    // A fine's conduct rule is named, never guessed from a word inside another word; a capped fine's sanction says what was charged.
+    chk('conduct rules · "chocolate", "plate" and "escalated" are not lateness; "late" and "lateness" are',
+        conduct_rule_key(['note' => 'Ate the chocolate in class']) === '' && conduct_rule_key(['note' => 'Broke a plate']) === ''
+        && conduct_rule_key(['note' => 'Matter escalated']) === '' && conduct_rule_key(['note' => 'Late to the session']) === 'late'
+        && conduct_rule_key(['note' => 'lateness, third time']) === 'late' && conduct_rule_key(['note' => 'Missed Saturday']) === 'absent');
+    $keepRule = db_row("SELECT * FROM conduct_rules WHERE reason = 'late' ORDER BY id LIMIT 1");
+    if ($keepRule) db_update('conduct_rules', ['active' => 1, 'capTerm' => 700], ['id' => (int)$keepRule['id']]);
+    else db_insert('conduct_rules', ['ruleId' => 'RULE-LATE-T', 'reason' => 'late', 'name' => 'Late', 'whenText' => '', 'amount' => 500, 'capTerm' => 700, 'active' => 1, 'createdBy' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    $d1 = policy_day_number(gmdate('Y-m-d')); 
+    policy_issue('NGG-MR-2', 'member', 'fine', POLICY_T_LATE_FINE + $d1, ['amount' => 500, 'status' => 'pending', 'reason' => 'Arrived 09:35 — ₦500 lateness fine.']);
+    policy_issue('NGG-MR-2', 'member', 'fine', POLICY_T_LATE_FINE + $d1 - 7, ['amount' => 500, 'status' => 'pending', 'reason' => 'Arrived 09:40 — ₦500 lateness fine.']);
+    policy_issue('NGG-MR-2', 'member', 'fine', POLICY_T_LATE_FINE + $d1 - 14, ['amount' => 500, 'status' => 'pending', 'reason' => 'Arrived 09:41 — ₦500 lateness fine.']);
+    $sx = fn($t) => db_row("SELECT * FROM sanctions WHERE personId = 'NGG-MR-2' AND kind = 'fine' AND tier = ?", [$t]);
+    $l1 = $sx(POLICY_T_LATE_FINE + $d1); $l2 = $sx(POLICY_T_LATE_FINE + $d1 - 7); $l3 = $sx(POLICY_T_LATE_FINE + $d1 - 14);
+    chk('conduct rules · a policy fine the term cap trims says the amount charged; one it refuses is lifted, not left owed with nothing on the account',
+        (int)$l1['amount'] === 500 && (int)$l2['amount'] === 200 && $l3['status'] === 'lifted' && $l3['clearedBy'] === 'rule'
+        && !db_row("SELECT 1 FROM member_ledger WHERE memberId = 'NGG-MR-2' AND periodKey = ?", ['sanction-' . $l3['id']]));
+    if ($keepRule) db_update('conduct_rules', ['active' => $keepRule['active'], 'capTerm' => $keepRule['capTerm']], ['id' => (int)$keepRule['id']]);
+    else db_exec("DELETE FROM conduct_rules WHERE ruleId = 'RULE-LATE-T'");
+    db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-MR-%'");
     $m2 = db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'");
     fees_accrue_member($m2);
     $first = db_row("SELECT note, amount FROM member_ledger WHERE memberId = 'NGG-MR-2' AND kind = 'dues' ORDER BY periodKey LIMIT 1");

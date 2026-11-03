@@ -540,9 +540,12 @@ function conduct_rule_key(array $opts): string {
        evidence fine's note carries an assignment's title, and a title like
        "Absence essay" must not be capped under the absence rule. */
     if (isset($opts['rule'])) return '';
+    /* Older rows name no rule, so their wording decides — as WHOLE WORDS. It
+       matched "late" anywhere, so "plate", "chocolate" and "escalated" counted
+       against the lateness cap. New fines name their rule (policy_fine_to_ledger). */
     $note = strtolower((string)($opts['note'] ?? ''));
-    if (str_contains($note, 'late')) return 'late';
-    if (str_contains($note, 'absen') || str_contains($note, 'missed')) return 'absent';
+    if (preg_match('/\blate(ness|ly)?\b/', $note)) return 'late';
+    if (preg_match('/\b(absent|absence|absences|missed)\b/', $note)) return 'absent';
     return '';
 }
 /**

@@ -1250,12 +1250,29 @@ function policy_fine_to_ledger(string $personId, string $type, int $sanctionId, 
     if ($type !== 'member' || $amount <= 0 || $sanctionId <= 0) return;
     if (!function_exists('fees_post')) return;
     if (!db_row('SELECT id FROM members WHERE memberId = ? LIMIT 1', [$personId])) return;
-    fees_post($personId, 'fine', $amount, [
+    /* The fine NAMES its conduct rule, from what the sanction is (its tier),
+       never from its wording: a late band's fine is a lateness fine, an absence
+       fine an absence fine, anything else (a re-entry fee, an ID card) is under
+       no conduct cap. */
+    $tier = (int)(db_row('SELECT tier FROM sanctions WHERE id = ?', [$sanctionId])['tier'] ?? 0);
+    $rule = ($tier >= POLICY_T_LATE_FINE && $tier < POLICY_T_LATE_JUMPS) || ($tier > 0 && $tier < 1000) ? 'late'
+          : ($tier >= 500000 && $tier < POLICY_T_LATE_FINE ? 'absent' : '');
+    $row = fees_post($personId, 'fine', $amount, [
         // The sanction id IS the period key: one ledger row per sanction, ever.
         'periodKey' => 'sanction-' . $sanctionId,
         'note' => 'Policy fine' . ($reason !== '' ? ' — ' . $reason : ''),
-        'by' => 'policy',
+        'by' => 'policy', 'rule' => $rule,
     ]);
+    /* A conduct rule switched off, or its term cap reached, posts less than
+       the sanction says — or nothing. The sanction says the same, or the
+       conduct board goes on asking for money the account never charged. */
+    $posted = $row ? (int)$row['amount'] : 0;
+    if ($posted <= 0) {
+        db_update('sanctions', ['status' => 'lifted', 'clearedAt' => now_iso(), 'clearedBy' => 'rule',
+            'reason' => mb_substr(trim($reason . ' Not charged: the ' . ($rule !== '' ? $rule : 'conduct') . ' rule is off or its term cap is reached.'), 0, 240)], ['id' => $sanctionId]);
+    } elseif ($posted < $amount) {
+        db_update('sanctions', ['amount' => $posted, 'reason' => mb_substr(trim($reason . ' Reduced to ' . policy_naira($posted) . ' by the term cap.'), 0, 240)], ['id' => $sanctionId]);
+    }
 }
 
 /**
