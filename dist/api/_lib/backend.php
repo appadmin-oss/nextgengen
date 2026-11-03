@@ -580,6 +580,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.fees.settings.get'     => 'admin_fees_settings_get',
             'admin.fees.settings.set'     => 'admin_fees_settings_set',
             'admin.fees.member'           => 'admin_fees_member',
+            'admin.fees.journal'          => 'admin_fees_journal',
             'admin.fees.payment'          => 'admin_fees_payment',
             'admin.fees.void'             => 'admin_fees_void',
             'admin.fees.mou'              => 'admin_fees_mou',

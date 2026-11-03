@@ -1840,9 +1840,9 @@ function fees_unpaid_of(array $member, array $kinds, ?string $through = null, ?a
  *
  * @return array<string, array{left:int, amount:int}>
  */
-function fees_charges_left(array $member, ?array $cfg = null, ?array $entries = null): array {
+function fees_charges_left(array $member, ?array $cfg = null, ?array $entries = null, ?array $ten = null): array {
     $cfg = $cfg ?? fees_settings();
-    $ten = fees_tenure($member, $cfg);
+    $ten = $ten ?? fees_tenure($member, $cfg);
     $memberDues = [];
     if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
     $charges = []; $credit = 0;
@@ -2423,27 +2423,137 @@ function admin_fees_remind_run(array $p): array {
  * large only because their training fee has not been written off yet is not the
  * person to call.
  */
+const FEES_JOURNAL_PAGE = 100;
+const FEES_JOURNAL_MAX = 500;
+const FEES_JOURNAL_KINDS = ['membership', 'dues', 'fine', 'adjustment', 'payment', 'waiver', 'writeoff', 'training'];
+
+/**
+ * admin.fees.journal — every money movement across the accounts in scope, for
+ * a period: who it was for, what it was, how it came, the reference, WHO
+ * POSTED IT, and a void with who voided it and why. The question it exists to
+ * answer is "what came in this month, by what means, and who keyed it" — the
+ * one an auditor asks first, and one no screen here could answer: each
+ * account showed its own lines and nothing showed them together.
+ *
+ * Filters are allow-listed by name (kind, direction, method, state); an
+ * unknown value falls back to everything rather than erroring. The totals
+ * are for the whole filter, not the drawn page. Scope is applied in the
+ * query, per row.
+ */
+function admin_fees_journal(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $day = static fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) ? (string)$v : '';
+    $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
+    $from = $day($p['from'] ?? '') ?: substr($today, 0, 8) . '01';
+    $to = $day($p['to'] ?? '') ?: $today;
+    if ($to < $from) [$from, $to] = [$to, $from];
+    $toNext = gmdate('Y-m-d', strtotime($to . ' 00:00:00 UTC') + 86400);
+    $where = ['l.createdAt >= ?', 'l.createdAt < ?']; $args = [$from, $toNext];
+    $kind = (string)($p['kind'] ?? '');
+    if (in_array($kind, FEES_JOURNAL_KINDS, true)) { $where[] = 'l.kind = ?'; $args[] = $kind; }
+    $dir = (string)($p['direction'] ?? '');
+    if (in_array($dir, ['charge', 'credit'], true)) { $where[] = 'l.direction = ?'; $args[] = $dir; }
+    $state = (string)($p['state'] ?? '');
+    if ($state === 'void') $where[] = "(l.voidedAt IS NOT NULL AND l.voidedAt <> '')";
+    elseif ($state === 'live') $where[] = "(l.voidedAt IS NULL OR l.voidedAt = '')";
+    $q = trim(mb_substr((string)($p['q'] ?? ''), 0, 80));
+    if ($q !== '') { $where[] = '(LOWER(m.fullName) LIKE ? OR LOWER(l.memberId) LIKE ? OR LOWER(l.reference) LIKE ?)'; $like = '%' . mb_strtolower($q) . '%'; array_push($args, $like, $like, $like); }
+    $scope = admin_centre_names_in_scope($g['requester']);
+    if ($scope !== null) {
+        if (!$scope) return ['ok' => true, 'rows' => [], 'total' => 0, 'from' => $from, 'to' => $to, 'totals' => ['received' => 0, 'byMethod' => [], 'charged' => 0, 'byKind' => [], 'waived' => 0, 'voided' => 0]];
+        $where[] = 'm.centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; array_push($args, ...$scope);
+    }
+    $sqlWhere = implode(' AND ', $where);
+    $base = "FROM member_ledger l LEFT JOIN members m ON m.memberId = l.memberId WHERE $sqlWhere";
+    // Totals for the whole filter, live rows only — a voided entry is counted as voided, not as money.
+    $totals = ['received' => 0, 'byMethod' => [], 'charged' => 0, 'byKind' => [], 'waived' => 0, 'voided' => 0];
+    foreach (db_all("SELECT l.kind, l.direction, l.method, l.voidedAt, l.amount $base", $args) as $r) {
+        if (trim((string)($r['voidedAt'] ?? '')) !== '') { $totals['voided']++; continue; }
+        $k = (string)$r['kind']; $a = (int)$r['amount'];
+        if ($k === 'training' || $k === 'writeoff') continue;   // the place: never money anybody is asked for
+        if ((string)$r['direction'] === 'charge') { $totals['charged'] += $a; $totals['byKind'][$k] = ($totals['byKind'][$k] ?? 0) + $a; }
+        elseif ($k === 'payment') { $totals['received'] += $a; $m = (string)$r['method'] !== '' ? (string)$r['method'] : 'other'; $totals['byMethod'][$m] = ($totals['byMethod'][$m] ?? 0) + $a; }
+        elseif ($k === 'waiver') $totals['waived'] += $a;
+    }
+    $total = (int)(db_row("SELECT COUNT(*) c $base", $args)['c'] ?? 0);
+    $limit = max(1, min(FEES_JOURNAL_MAX, (int)($p['limit'] ?? FEES_JOURNAL_PAGE)));
+    $offset = max(0, (int)($p['offset'] ?? 0));
+    $rows = db_all("SELECT l.*, m.fullName, m.centre $base ORDER BY l.createdAt DESC, l.id DESC LIMIT $limit OFFSET $offset", $args);
+    // Who posted and who voided, by name: one query for every id on the page.
+    $people = array_values(array_unique(array_filter(array_merge(array_column($rows, 'createdBy'), array_column($rows, 'voidedBy')),
+        static fn($x) => $x !== '' && $x !== null)));
+    $names = [];
+    if ($people) {
+        $ph = implode(',', array_fill(0, count($people), '?'));
+        foreach (db_all("SELECT memberId, fullName FROM members WHERE memberId IN ($ph)", $people) as $r) $names[(string)$r['memberId']] = (string)$r['fullName'];
+    }
+    $who = static fn($id) => $id === '' ? '' : ($names[$id] ?? (in_array($id, ['accrual', 'policy', 'system', 'paystack', 'ledger'], true) ? ['accrual' => 'Automatic (dues)', 'policy' => 'Automatic (conduct)', 'system' => 'Automatic', 'paystack' => 'Paystack', 'ledger' => 'Automatic'][$id] : $id));
+    return ['ok' => true, 'from' => $from, 'to' => $to, 'total' => $total, 'limit' => $limit, 'offset' => $offset, 'totals' => $totals,
+        'rows' => array_map(static fn($r) => [
+            'entryId' => (string)$r['entryId'], 'memberId' => (string)$r['memberId'], 'fullName' => (string)($r['fullName'] ?? ''), 'centre' => (string)($r['centre'] ?? ''),
+            'kind' => (string)$r['kind'], 'direction' => (string)$r['direction'], 'amount' => (int)$r['amount'], 'periodKey' => (string)$r['periodKey'],
+            'note' => (string)$r['note'], 'method' => (string)$r['method'], 'reference' => (string)$r['reference'],
+            'at' => (string)$r['createdAt'], 'by' => $who((string)($r['createdBy'] ?? '')),
+            'void' => trim((string)($r['voidedAt'] ?? '')) !== '', 'voidedAt' => (string)($r['voidedAt'] ?? ''),
+            'voidedBy' => $who((string)($r['voidedBy'] ?? '')), 'voidReason' => (string)($r['voidReason'] ?? ''),
+        ], $rows)];
+}
+
+/** The ageing bands a collector reads debt by: how long the oldest unpaid naira has been due. */
+const FEES_AGE_BANDS = [['current', 'Due within 30 days', 0], ['d31', '31–60 days', 31], ['d61', '61–90 days', 61], ['d90', 'Over 90 days', 91]];
+function fees_age_band(int $days): string {
+    $k = 'current'; foreach (FEES_AGE_BANDS as [$key, , $from]) if ($days >= $from) $k = $key; return $k;
+}
+
+/**
+ * Who owes, as a collector reads it: what each family owes, how long the oldest
+ * unpaid charge has been due, when they last paid, and what the debt is made of
+ * — and the whole book aged into bands that add up to the total.
+ *
+ * ONE ledger read for the list. It used to read every member's ledger again
+ * inside the loop (fees_balance → fees_entries), a query per row; now the rows
+ * are read once, grouped, and handed to fees_balance / fees_charges_left.
+ */
 function admin_fees_arrears(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
     $limit = max(1, min(FEES_ARREARS_PAGE_MAX, (int)($p['limit'] ?? FEES_ARREARS_PAGE)));
-    $owedBy = [];
-    foreach (db_all("SELECT memberId, direction, amount, kind FROM member_ledger WHERE voidedAt = '' OR voidedAt IS NULL") as $e) {
+    $byMember = []; $owedBy = [];
+    foreach (db_all("SELECT * FROM member_ledger ORDER BY id") as $e) {
         $id = (string)$e['memberId'];
-        $owedBy[$id] = $owedBy[$id] ?? 0;
-        $owedBy[$id] += ((string)$e['direction'] === 'charge' ? 1 : -1) * (int)$e['amount'];
+        $byMember[$id][] = $e;
+        if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
+        $owedBy[$id] = ($owedBy[$id] ?? 0) + ((string)$e['direction'] === 'charge' ? 1 : -1) * (int)$e['amount'];
     }
     $ids = array_keys(array_filter($owedBy, fn($v) => $v > 0));
-    $out = []; $totalPayable = 0;
+    $out = []; $totalPayable = 0; $bands = array_fill_keys(array_column(FEES_AGE_BANDS, 0), 0);
     $scope = admin_centre_names_in_scope($g['requester']);
+    $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
     if ($ids) {
         foreach (array_chunk($ids, 400) as $chunk) {
             $ph = implode(',', array_fill(0, count($chunk), '?'));
             foreach (db_all("SELECT * FROM members WHERE memberId IN ($ph)", $chunk) as $m) {
                 if ($scope !== null && !in_array((string)($m['centre'] ?? ''), $scope, true)) continue;
-                $b = fees_balance($m, $cfg);
+                $entries = $byMember[(string)$m['memberId']] ?? [];
+                $b = fees_balance($m, $cfg, null, $entries);
                 if ((int)$b['payable'] <= 0) continue;
                 $totalPayable += (int)$b['payable'];
+                // What is left on each charge, and so how old the debt is and what it is made of.
+                $kindOf = []; foreach ($entries as $e) $kindOf[(string)$e['entryId']] = (string)$e['kind'];
+                $made = ['dues' => 0, 'membership' => 0, 'fine' => 0, 'other' => 0]; $oldest = ''; $ageOf = [];
+                foreach (fees_charges_left($m, $cfg, $entries, $b['tenure']) as $eid => $l) {
+                    if ($l['left'] <= 0) continue;
+                    $k = $kindOf[$eid] ?? 'other'; $made[isset($made[$k]) ? $k : 'other'] += $l['left'];
+                    $due = substr((string)$l['due'], 0, 10);
+                    if ($due !== '' && ($oldest === '' || $due < $oldest)) $oldest = $due;
+                    $days = $due !== '' ? max(0, (int)floor((strtotime($today . ' UTC') - strtotime($due . ' UTC')) / 86400)) : 0;
+                    $bands[fees_age_band($days)] += $l['left'];
+                }
+                // Training owed on leaving has no charge row of its own: it is as old as the leaving, counted current.
+                $made['other'] += max(0, (int)$b['payable'] - array_sum($made));
+                $days = $oldest !== '' ? max(0, (int)floor((strtotime($today . ' UTC') - strtotime($oldest . ' UTC')) / 86400)) : 0;
+                $last = null;
+                foreach (array_reverse($entries) as $e) if ((string)$e['kind'] === 'payment' && trim((string)($e['voidedAt'] ?? '')) === '') { $last = $e; break; }
                 $out[] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],
                           'centre' => (string)($m['centre'] ?? ''),
                           'payable' => (int)$b['payable'], 'outstanding' => (int)$b['outstanding'],
@@ -2451,15 +2561,21 @@ function admin_fees_arrears(array $p): array {
                           'atCap' => !empty($b['atCap']),
                           'phase' => (string)$b['tenure']['phase'],
                           'remindOff' => (int)($m['duesRemindOff'] ?? 0) === 1,
-                          'guardianPhone' => (string)($m['parentPhone'] ?? '')];
+                          'guardianPhone' => (string)($m['parentPhone'] ?? ''),
+                          'oldestDue' => $oldest, 'daysOverdue' => $days, 'band' => fees_age_band($days),
+                          'made' => $made,
+                          'lastPaid' => $last ? ['date' => substr((string)$last['createdAt'], 0, 10), 'amount' => (int)$last['amount'], 'method' => (string)$last['method']] : null];
             }
         }
     }
     usort($out, fn($a, $b) => $b['payable'] <=> $a['payable']);
     $matched = count($out);
+    $bandRows = array_map(fn($x) => ['key' => $x[0], 'label' => $x[1], 'amount' => (int)$bands[$x[0]]], FEES_AGE_BANDS);
+    // Training owed on leaving is in the payable but on no charge: counted current, so the bands add up to the total.
+    $gap = $totalPayable - array_sum($bands); if ($gap > 0) $bandRows[0]['amount'] += $gap;
     return ['ok' => true, 'arrears' => array_slice($out, 0, $limit),
             'matched' => $matched, 'truncated' => $matched > $limit,
-            'totalPayable' => $totalPayable, 'settings' => $cfg];
+            'totalPayable' => $totalPayable, 'aging' => $bandRows, 'settings' => $cfg];
 }
 
 /* ══ Bulk fines: a sheet of fines, matched to members, checked before written ══

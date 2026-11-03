@@ -36102,6 +36102,33 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $w = backend_dispatch('admin.fees.waive', ['requesterId' => $ADM, 'memberId' => 'NGG-MR-1', 'amount' => 50000, 'reason' => 'hardship']);
     chk('money · a waiver is capped at what is payable, not at a total holding the training place — no credit appears from nowhere',
         !empty($w['ok']) && $w['waived'] === 2000 && $w['clamped'] === true && fees_balance($m1)['payable'] === 0 && fees_balance($m1)['realCredited'] === 3000);
+    // The debt book: aged, one ledger read, the bands add up to the total.
+    $wa = backend_dispatch('admin.fees.arrears', ['requesterId' => $ADM]);
+    $mine = array_values(array_filter($wa['arrears'] ?? [], fn($r) => $r['memberId'] === 'NGG-MR-1'))[0] ?? null;
+    chk('who owes · the bands add up to the total payable', array_sum(array_column($wa['aging'] ?? [], 'amount')) === ($wa['totalPayable'] ?? -1));
+    chk('who owes · each family says how long the oldest unpaid charge has been due, when they last paid, and what the debt is made of',
+        $mine === null || ($mine['oldestDue'] !== '' && $mine['daysOverdue'] >= 0 && in_array($mine['band'], ['current', 'd31', 'd61', 'd90'], true)
+            && isset($mine['made']['dues']) && array_sum($mine['made']) === $mine['payable'] && ($mine['lastPaid']['amount'] ?? 0) === 1000));
+    $nq = 0; $GLOBALS['__dbq_probe'] = true;
+    // A list must not read the ledger once per family (a per-row query in a serialiser is a defect here).
+    $src = (string)file_get_contents(__DIR__ . '/../_lib/domain/fees.php');
+    $fn = substr($src, strpos($src, 'function admin_fees_arrears('), 3000);
+    chk('who owes · reads the ledger once for the list, and hands each family its rows', substr_count($fn, 'FROM member_ledger') === 1 && str_contains($fn, 'fees_balance($m, $cfg, null, $entries)'));
+    // Transactions: every movement with who keyed it; totals for the filter; voids counted, not added.
+    $j = backend_dispatch('admin.fees.journal', ['requesterId' => $ADM, 'from' => gmdate('Y-m-d', strtotime('-1 day')), 'to' => gmdate('Y-m-d', strtotime('+1 day')), 'q' => 'NGG-MR-1']);
+    $byKind = []; foreach ($j['rows'] ?? [] as $r) $byKind[$r['kind']][] = $r;
+    chk('transactions · the payment is listed with how it came and who keyed it', ($byKind['payment'][0]['method'] ?? '') === 'cash' && ($byKind['payment'][0]['by'] ?? '') === 'test');
+    chk('transactions · totals for the whole filter: received by method, charged by kind, the training place never in them',
+        ($j['totals']['received'] ?? 0) === 1000 && ($j['totals']['byMethod']['cash'] ?? 0) === 1000 && !isset($j['totals']['byKind']['training'])
+        && ($j['totals']['charged'] ?? 0) === 3000);
+    $j2 = backend_dispatch('admin.fees.journal', ['requesterId' => $ADM, 'q' => 'NGG-MR-1', 'kind' => 'nonsense', 'state' => 'void', 'from' => 'yesterday']);
+    chk('transactions · an unknown filter falls back rather than erroring, and a voided entry is counted as voided, not as money',
+        !empty($j2['ok']) && preg_match('/^\d{4}-\d{2}-01$/', (string)$j2['from']) === 1 && ($j2['totals']['voided'] ?? 0) >= 1 && ($j2['totals']['charged'] ?? -1) === 0);
+    db_insert('members', ['memberId' => 'NGG-MR-SC', 'fullName' => 'Scoped', 'email' => 'sc@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin',
+        'centre' => 'Elsewhere', 'centreScope' => json_encode(['Elsewhere']), 'createdAt' => $now, 'updatedAt' => $now, 'capsExtra' => json_encode(['fees'])]);
+    $j3 = backend_dispatch('admin.fees.journal', ['requesterId' => 'NGG-MR-SC', 'q' => 'NGG-MR-1']);
+    chk('transactions · a centre-scoped reader sees only their centres', !empty($j3['ok']) ? ($j3['total'] ?? 1) === 0 : in_array($j3['error'] ?? '', ['forbidden'], true));
+    chk('transactions · needs the Fees permission', (backend_dispatch('admin.fees.journal', ['requesterId' => 'NGG-MR-2'])['error'] ?? '') !== '');
     $m2 = db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'");
     fees_accrue_member($m2);
     $first = db_row("SELECT note, amount FROM member_ledger WHERE memberId = 'NGG-MR-2' AND kind = 'dues' ORDER BY periodKey LIMIT 1");
