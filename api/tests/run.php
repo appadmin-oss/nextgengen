@@ -36268,7 +36268,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('dues notices: one notice per family per due date — the family app, the guardian’s email and the parent email on the record, naming both charges and the total',
         $r['upcoming'] >= 2 && $row && $row['status'] === 'sent' && (int)$row['amount'] === 7000 && $row['dueOn'] === '2026-12-01'
         && count($mails) === 2 && in_array('mum.dn1@example.com', array_column($mails, 'to'), true) && in_array('parent.dn1@example.com', array_column($mails, 'to'), true)
-        && str_contains($mails[0]['html'], 'Dues for December 2026') && str_contains($mails[0]['html'], 'Membership renewal')
+        && str_contains($mails[0]['html'], 'Commitment fee · December 2026') && str_contains($mails[0]['html'], 'Membership renewal')
         && $gn && str_contains((string)$gn['title'], 'due 1 Dec') && (json_decode((string)$row['channelsJson'], true)['app'] ?? 0) === 1);
     chk('dues notices: a guardian with only the family app is told there, about that child',
         (bool)db_row("SELECT 1 FROM guardian_notices WHERE guardianId = 'GDN-DN00000003' AND kind = 'dues-upcoming' AND memberId = 'NGG-DN-3'"));

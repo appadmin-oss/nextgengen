@@ -2103,6 +2103,8 @@ function member_fees_account(array $p): array {
             'kind' => (string)$e['kind'], 'direction' => (string)$e['direction'],
             'amount' => (int)$e['amount'], 'note' => (string)$e['note'],
             'createdAt' => (string)$e['createdAt'],
+            // The month a dues charge is FOR ("2026-10"), not the day it was posted: "this month's fee" is decided by it.
+            'period' => preg_match('/^\d{4}-\d{2}$/', (string)($e['periodKey'] ?? '')) ? (string)$e['periodKey'] : '',
             'void' => trim((string)($e['voidedAt'] ?? '')) !== '',
             /* Deliberately absent: `createdBy`, `voidedBy`, `method`,
                `reference`. Which member of staff posted a row and which bank

@@ -465,8 +465,10 @@ class Fp3Portal extends React.Component {
         bank: bk ? [["Account name", bk.name, "inherit"], ["Bank", bk.bank, "inherit"], ["Account no.", bk.account, "'Geist Mono', monospace"], ["Amount", N(F.payable), "'Geist Mono', monospace"], ["Reference", ref, "'Geist Mono', monospace"]].map(b => ({ k: b[0], v: b[1], ff: b[2] })) : [],
         hasFines: w.conduct.fines.length > 0,
         fines: w.conduct.fines.map(x => ({ amount: N(x.amount), when: x.when, reason: x.reason, canAppeal: true, appealed: false, appeal: () => openSheet("appeal", { fRef: (w.charges.find(c => /fine/i.test(c.label)) || w.charges[0] || {}).id || "" }) })),
-        next: F.next.map(x => ({ label: x.label, when: x.when, amount: N(x.amount) })),
-        termsL: "Membership is " + N(TM.membershipFee) + " a year, renewed on the date " + first + " joined. The commitment fee is " + N(TM.monthly) + " a month, charged on the 1st; a first month is charged only for the Saturdays left." + (TM.remindEvery ? " While something is owed, a reminder is emailed every " + TM.remindEvery + " days." : ""),
+        /* Nothing coming is said, not left as an empty card: paid ahead, or simply nothing in the next two months. */
+        next: F.next.length ? F.next.map(x => ({ label: x.label, when: x.when, amount: N(x.amount) }))
+          : F.enabled ? [{ label: F.ahead && F.ahead.paidThrough ? "Paid ahead to " + F.ahead.paidThroughL : "Nothing falls due in the next two months", when: F.ahead && F.ahead.paidThrough ? N(F.ahead.credit) + " held on the account" : "", amount: "" }] : [],
+        termsL: "Membership is " + N(TM.membershipFee) + " a year, renewed on the date " + first + " joined. The commitment fee is " + N(TM.monthly) + " a month, charged on the 1st; a first month is charged only for the Saturdays left." + fp3TellTerms(TM),
         stTabs: TABS.map(tb => { const on = S.stF === tb[0]; return { l: tb[1], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#d9d6cd", onClick: () => this.setState({ stF: tb[0], stN: 14 }, () => this.pushUrl(true)) }; }),
         rows, stCount: list.length + (list.length === 1 ? " entry" : " entries"), stEmpty: !list.length, stEmptyL: S.stF === "fines" ? "No fines. " + first + " has a clean record." : "Nothing here yet.",
         stMore: list.length > S.stN, stMoreL: "Show " + Math.min(20, list.length - S.stN) + " more of " + (list.length - S.stN), showMore: () => this.setState(s2 => ({ stN: s2.stN + 20 })),
@@ -656,9 +658,12 @@ class Fp3Portal extends React.Component {
         const notice = !!mm.href;
         out.msg = { meta: [mm.t, mm.from].filter(Boolean).join(" · "), b: notice ? mm.b + (mm.sign && !mm.signed ? "\n\nPlease read the whole notice and confirm you have understood it." : "") : mm.b,
           signed: !!mm.signed, signedL: notice ? "Acknowledged. The centre can see you have read and understood it." : "Signed. The mentor can see you’ve read it." };
-        Object.assign(out, { shTitle: mm.h || "", shLead: "", shGoL: notice ? (mm.sign && !mm.signed ? "Read and acknowledge" : "Open the notice") : mm.sign && !mm.signed ? busyL("Sign as read") : "Close" });
+        /* A dues notice is something to do, not only to read: its button opens Fees for that child. */
+        const money = mm.act === "money";
+        Object.assign(out, { shTitle: mm.h || "", shLead: "", shGoL: notice ? (mm.sign && !mm.signed ? "Read and acknowledge" : "Open the notice") : money ? "See fees and pay" : mm.sign && !mm.signed ? busyL("Sign as read") : "Close" });
         out.shGo = () => {
           if (notice) { location.assign(mm.href); return; }
+          if (money) { this.go("money", mm.ward && mm.ward !== "all" ? { childId: mm.ward } : {}); return; }
           if (!(mm.sign && !mm.signed)) return this.closeSheet();
           this.write(() => NGGApi.family.act("report.sign", { id: mm.id }), () => { this.closeSheet(); this.toast("Signed. The mentor can see you’ve read it."); }, () => this.loadInbox());
         };

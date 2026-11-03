@@ -58,17 +58,22 @@ const FP3_HOME_TIPS = {
 };
 /* WAEC bands, as the handoff gives them (API_DATA §1). */
 const FP3_GRADES = [[75, "A1"], [70, "B2"], [65, "B3"], [60, "C4"], [55, "C5"], [50, "C6"], [45, "D7"], [40, "E8"], [0, "F9"]];
-const FP3_ICON = { "file-text": "ph ph-file-text", "warning-circle": "ph ph-warning-circle", megaphone: "ph ph-megaphone" };
+const FP3_ICON = { "file-text": "ph ph-file-text", "warning-circle": "ph ph-warning-circle", megaphone: "ph ph-megaphone", wallet: "ph ph-wallet" };
 
 /** Group the open charges into lines a parent can read: "Monthly commitment fee × 15", not fifteen rows. */
 function fp3Lines(lines) {
   const by = {};
   (lines || []).forEach(l => {
     const k = l.kind === "dues" ? "dues" : l.kind === "fine" ? "fine:" + l.label : l.kind + ":" + l.label;
-    if (!by[k]) by[k] = { label: l.kind === "dues" ? "Commitment fee" : fp3Note(l.label), kind: l.kind, amount: 0, n: 0, detail: "" };
+    if (!by[k]) by[k] = { label: l.kind === "dues" ? "Commitment fee" : fp3Note(l.label), kind: l.kind, amount: 0, n: 0, detail: "", periods: [] };
     by[k].amount += l.amount; by[k].n++;
+    if (/^\d{4}-\d{2}$/.test(l.period || "")) by[k].periods.push(l.period);
   });
-  return Object.keys(by).map(k => { const x = by[k]; return Object.assign({}, x, { label: x.n > 1 ? x.label + " × " + x.n + " months" : x.label, detail: x.n > 1 ? "Unpaid months" : "" }); });
+  /* The months a dues line is for, by name: "October 2026", or "August – October 2026" — never just "Unpaid months". */
+  const span = ps => { const o = ps.slice().sort(); if (!o.length) return ""; const a = fp3Month(o[0]), b = fp3Month(o[o.length - 1]);
+    return a === b ? a : a.split(" ")[1] === b.split(" ")[1] ? a.split(" ")[0] + " – " + b : a + " – " + b; };
+  return Object.keys(by).map(k => { const x = by[k], when = x.kind === "dues" ? span(x.periods) : "";
+    return Object.assign({}, x, { label: x.n > 1 ? x.label + " × " + x.n + " months" : x.label, detail: when || (x.n > 1 ? "Unpaid months" : "") }); });
 }
 
 /** A ledger note as a parent reads it: dates in words, "Monthly dues 2026-10" as the month. */
@@ -80,12 +85,25 @@ function fp3Note(t) {
 /** "2027-01" → "January 2027". */
 function fp3Month(mk) { const d = new Date(String(mk) + "-01T12:00:00Z"); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }); }
 
+/** How the family will be told about money, from the centre's own settings — never a channel that is off. */
+function fp3TellTerms(TM) {
+  const CH = { app: "here in the family app", email: "by email", telegram: "on Telegram", sms: "by text" };
+  const ch = (TM.channels || []).map(c => CH[c]).filter(Boolean);
+  const how = ch.length > 1 ? ch.slice(0, -1).join(", ") + " and " + ch[ch.length - 1] : ch[0] || "";
+  if (!how) return "";
+  return (TM.noticeDays ? " You’ll hear " + how + " " + TM.noticeDays + (TM.noticeDays === 1 ? " day" : " days") + " before each charge falls due." : "")
+    + (TM.remindEvery ? " While something is owed, a reminder comes every " + TM.remindEvery + " days." : "");
+}
+
 /** What the amount owed is made of, in one line a parent reads at a glance: "Commitment fees for 22 months, membership and a fine". */
 function fp3Owed(lines) {
   const n = { dues: 0, membership: 0, fine: 0, other: 0 };
   (lines || []).forEach(l => { const k = n[l.kind] !== undefined ? l.kind : "other"; n[k] += l.kind === "dues" ? (/× (\d+)/.exec(l.label) ? +/× (\d+)/.exec(l.label)[1] : 1) : 1; });
   const parts = [];
-  if (n.dues) parts.push(n.dues === 1 ? "this month’s commitment fee" : "commitment fees for " + n.dues + " months");
+  /* "This month’s" only when the one fee owed IS this month’s: October’s, owed in November, is named. */
+  const due1 = (lines || []).find(l => l.kind === "dues"), now = new Date(), thisMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+  const p1 = due1 && due1.periods && due1.periods.length === 1 ? due1.periods[0] : "";
+  if (n.dues) parts.push(n.dues > 1 ? "commitment fees for " + n.dues + " months" : !p1 || p1 === thisMonth ? "this month’s commitment fee" : "the commitment fee for " + fp3Month(p1));
   if (n.membership) parts.push(n.membership === 1 ? "membership" : "membership for " + n.membership + " years");
   if (n.fine) parts.push(n.fine === 1 ? "a fine" : n.fine + " fines");
   if (n.other) parts.push(n.other === 1 ? "one other charge" : n.other + " other charges");
@@ -178,5 +196,5 @@ function fp3Events(rows) {
 /** Inbox rows, in the design's shape. `ward` is the child's link, or 'all' for a household notice. */
 function fp3Inbox(rows) {
   return (rows || []).map(r => ({ id: r.id, cat: r.cat, ward: r.wardLinkId || "all", icon: FP3_ICON[r.icon] || "ph ph-envelope-simple", h: r.title, b: r.body,
-    t: fp3Ago(r.at), from: r.from, unread: !!r.unread, sign: !!r.sign, signed: r.signedAt ? fp3Date(r.signedAt) : "", href: r.href || "" }));
+    t: fp3Ago(r.at), from: r.from, unread: !!r.unread, sign: !!r.sign, signed: r.signedAt ? fp3Date(r.signedAt) : "", href: r.href || "", act: r.act || "" }));
 }

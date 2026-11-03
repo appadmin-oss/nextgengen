@@ -134,24 +134,37 @@ function dues_notice_send(array $m, string $kind, string $refKey, array $msg, ?a
 
 /* ── Upcoming charges ────────────────────────────────────────────────────── */
 
-/** What falls due for one member within the window, after any credit they have paid ahead. */
-function dues_upcoming_for(array $m, array $cfg, string $today): array {
+/** A coming charge in the family's words — the same words the family app's Fees screen uses. */
+function dues_charge_label(array $c): string {
+    return $c['kind'] === 'dues' ? 'Commitment fee · ' . gmdate('F Y', strtotime($c['key'] . '-01T12:00:00Z'))
+        : 'Membership renewal (year ' . substr((string)$c['key'], 1) . ')';
+}
+
+/**
+ * The charges still to come within $days, after what the family has paid
+ * ahead — spent on the charges in the order they fall. One answer for the
+ * notices and the family app's "Next charge", so a family paid to March is
+ * never shown a December charge, and a renewal is never left out.
+ */
+function dues_coming_charges(array $m, array $cfg, string $today, int $days, int $months = 2): array {
     if (!function_exists('membership_upcoming_charges')) return [];
-    $days = max(FEES_NOTICE_DAYS_MIN, min(FEES_NOTICE_DAYS_MAX, (int)$cfg['noticeDaysBefore']));
     $until = gmdate('Y-m-d', strtotime($today . 'T12:00:00Z') + $days * 86400);
-    $coming = array_values(array_filter(membership_upcoming_charges($m, $cfg, 2, $today),
+    $coming = array_values(array_filter(membership_upcoming_charges($m, $cfg, $months, $today),
         static fn($c) => (string)$c['due'] > $today && (string)$c['due'] <= $until));
     if (!$coming) return [];
-    // Spend what they have paid ahead on the charges in the order they fall.
     $bal = fees_balance($m, $cfg, $today);
     $credit = max(0, (int)$bal['realCredited'] - (int)$bal['realCharged']);
     $out = [];
     foreach ($coming as $c) {
         if ($credit >= (int)$c['amount']) { $credit -= (int)$c['amount']; continue; }
-        $out[] = $c + ['label' => $c['kind'] === 'dues' ? 'Dues for ' . gmdate('F Y', strtotime($c['key'] . '-01T12:00:00Z'))
-            : 'Membership renewal (year ' . substr((string)$c['key'], 1) . ')'];
+        $out[] = $c + ['label' => dues_charge_label($c)];
     }
     return $out;
+}
+
+/** What falls due for one member within the notice window, after any credit they have paid ahead. */
+function dues_upcoming_for(array $m, array $cfg, string $today): array {
+    return dues_coming_charges($m, $cfg, $today, max(FEES_NOTICE_DAYS_MIN, min(FEES_NOTICE_DAYS_MAX, (int)$cfg['noticeDaysBefore'])));
 }
 
 /** The words for an upcoming notice: what, how much, when, and how to pay. */
