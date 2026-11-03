@@ -36140,6 +36140,22 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $own = member_request_create(['memberId' => $ADM, 'kind' => 'payment', 'amount' => 500, 'reference' => 'TRF-OWN-1', 'paidAt' => gmdate('Y-m-d')]);
     chk('payments · nobody approves a payment onto their own account from the inbox either',
         !empty($own['ok']) && (backend_dispatch('admin.requests.decide', ['requesterId' => $ADM, 'requestId' => $own['request']['requestId'], 'approve' => true, 'decision' => 'ok'])['error'] ?? '') === 'own_account');
+    $inv = fees_post('NGG-MR-2', 'payment', 700, ['periodKey' => 'minv:MINV-TEST-1', 'by' => 'paystack', 'method' => 'paystack']);
+    $vp = fees_post('NGG-MR-2', 'payment', 300, ['periodKey' => 'volpay:VP-TEST-1', 'by' => 'test', 'method' => 'volunteer-pay']);
+    chk('void · an invoice payment or a volunteer-pay deduction is corrected where it started, never voided on the account alone',
+        (backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => $inv['entryId'], 'reason' => 'x'])['error'] ?? '') === 'void_at_source'
+        && (backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => $vp['entryId'], 'reason' => 'x'])['error'] ?? '') === 'void_at_source'
+        && (string)db_row('SELECT voidedAt FROM member_ledger WHERE entryId = ?', [$inv['entryId']])['voidedAt'] === '');
+    // One owed figure everywhere: the overview reads what families are asked for, never the training place.
+    db_insert('members', ['memberId' => 'NGG-MR-TP', 'fullName' => 'Place Only', 'email' => 'tp@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => 'Mr Centre', 'joinDate' => gmdate('Y-m-d'), 'createdAt' => $now, 'updatedAt' => $now]);
+    fees_post('NGG-MR-TP', 'training', 60000, ['periodKey' => 'total', 'note' => 'Training fee — the place', 'by' => 'test']);
+    $ov = backend_dispatch('admin.members.overview', ['requesterId' => $ADM]);
+    $payableAll = 0; $owingAll = 0;
+    foreach (db_all("SELECT * FROM members WHERE memberId IN (SELECT DISTINCT memberId FROM member_ledger)") as $mm) { $bb = fees_balance($mm); $pp = (int)$bb['realCharged'] - (int)$bb['realCredited']; if ($pp > 0) { $payableAll += $pp; $owingAll++; } }
+    $dues = $ov['overview']['dues'] ?? null;
+    chk('overview · "Families owing" and "Payable" are the families asked for money and what they are asked for — a training place alone is neither',
+        $dues && $dues['outstanding'] === $payableAll && $dues['people'] === $owingAll && fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-TP'"))['realCharged'] === 0);
     $m2 = db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'");
     fees_accrue_member($m2);
     $first = db_row("SELECT note, amount FROM member_ledger WHERE memberId = 'NGG-MR-2' AND kind = 'dues' ORDER BY periodKey LIMIT 1");

@@ -537,11 +537,17 @@ function admin_members_overview(array $p): array {
     // ── Dues, where the ledger is in use ───────────────────────────────
     $dues = null;
     if (in_array('fees', member_effective_caps($g['requester']), true)) {
-        $owing = db_row("SELECT COUNT(DISTINCT l.memberId) people,
-                                SUM(CASE WHEN l.direction = 'charge' THEN l.amount ELSE -l.amount END) balance
+        /* What families are ASKED for, as Home and the debt book read it: the
+           training place (and its write-offs) is never money owed, and "people
+           with a balance" are those whose real balance is above zero — it used
+           to count anybody with a ledger row, and sum ₦60,000 a member of place. */
+        $people = 0; $owed = 0;
+        foreach (db_all("SELECT l.memberId, SUM(CASE WHEN l.kind IN ('training','writeoff') THEN 0 WHEN l.direction = 'charge' THEN l.amount ELSE -l.amount END) net
                          FROM member_ledger l JOIN members m ON m.memberId = l.memberId
-                         WHERE l.voidedAt = ''" . str_replace('centre', 'm.centre', $scope), $args);
-        $dues = ['people' => (int)($owing['people'] ?? 0), 'outstanding' => (int)($owing['balance'] ?? 0)];
+                         WHERE COALESCE(l.voidedAt, '') = ''" . str_replace('centre', 'm.centre', $scope) . " GROUP BY l.memberId", $args) as $r) {
+            if ((int)$r['net'] > 0) { $people++; $owed += (int)$r['net']; }
+        }
+        $dues = ['people' => $people, 'outstanding' => $owed];
     }
 
     $staff = [];

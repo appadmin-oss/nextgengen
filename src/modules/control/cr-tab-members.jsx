@@ -966,7 +966,10 @@ function crMbRecBlocks(d, ctx) {
   if (tab === "fees") {
     if (!r.fees) return out.concat([crMbHidden("Money")]);
     const f = r.fees;
-    const items = [{ l: "Outstanding", v: fmtMoney(f.outstanding) }, { l: "Payable now", v: fmtMoney(f.payable) }, { l: "Charged", v: fmtMoney(f.charged) }, { l: "Paid or credited", v: fmtMoney(f.credited) }];
+    /* The account statement's figures (Money › the member's account): Charged − Received = Payable now.
+       "Outstanding" held the training place, which nobody is asked to pay, beside the payable it disagreed with. */
+    const items = [{ l: "Payable now", v: fmtMoney(f.payable) }, { l: "Charged", v: fmtMoney(f.realCharged !== undefined ? f.realCharged : f.charged) },
+      { l: "Received", v: fmtMoney(f.realCredited !== undefined ? f.realCredited : f.credited) }];
     if (f.programmeCost) items.push({ l: "Programme covered", v: fmtMoney(f.programmeCovered) + " of " + fmtMoney(f.programmeCost) });
     const mm = (rec.detail || {}).member || {}, settled = String(mm.feesSettledThrough || "");
     return out.concat([
@@ -1102,7 +1105,7 @@ function crMbDashBlocks(d, ctx) {
   out.push({ type: "bars", span: 2, title: "By centre", empty: "No centres yet.", rows: (o.byCentre || []).map(x => [x.name + " · " + crNum(x.active) + " active", x.total]) });
   out.push({ type: "bars", span: 2, title: "By status", rows: Object.entries(o.byStatus || {}).map(([k, v]) => [crMemStatusLabel(k), v]) });
   out.push({ type: "bars", span: 2, title: "By programme", rows: Object.entries(o.byType || {}).map(([k, v]) => [k === "Summer" ? "Summer School" : "NGG", v]) });
-  if (o.dues) out.push({ type: "kpis", span: 2, title: "Dues", items: [{ l: "People with a balance", v: crNum(o.dues.people) }, { l: "Outstanding", v: fmtMoney(o.dues.outstanding) }] });
+  if (o.dues) out.push({ type: "kpis", span: 2, title: "Dues", items: [{ l: "Families owing", v: crNum(o.dues.people) }, { l: "Payable", v: fmtMoney(o.dues.outstanding) }] });
   if (Object.keys(o.staff || {}).length) out.push({ type: "bars", span: o.dues ? 6 : 2, title: "Staff", rows: Object.entries(o.staff).map(([k, v]) => [String(k).replace(/_/g, " ").replace(/^./, s => s.toUpperCase()), v]) });
   if (o.scoped) out.push({ type: "note", span: 6, icon: "map-pin", text: "These figures cover only the centres you look after." });
   return out;

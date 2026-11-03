@@ -102,7 +102,8 @@ function status_members(callable $inScope, string $today, bool $withFees): array
 
     $owing = [];
     if ($withFees) {
-        foreach (db_all("SELECT memberId, SUM(CASE WHEN direction = 'charge' THEN amount ELSE -amount END) net FROM member_ledger
+        // Real money only: the training place is never owed (fees_balance's payable).
+        foreach (db_all("SELECT memberId, SUM(CASE WHEN kind IN ('training','writeoff') THEN 0 WHEN direction = 'charge' THEN amount ELSE -amount END) net FROM member_ledger
                          WHERE COALESCE(voidedAt,'') = '' GROUP BY memberId") as $r) if ((int)$r['net'] > 0) $owing[(string)$r['memberId']] = (int)$r['net'];
     }
 

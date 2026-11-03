@@ -68,6 +68,7 @@ function admin_member_record(array $p): array {
         $entries = fees_entries($id);
         $b = fees_balance($m, null, null, $entries);
         $out['fees'] = ['payable' => (int)$b['payable'], 'outstanding' => (int)$b['outstanding'], 'charged' => (int)$b['charged'], 'credited' => (int)$b['credited'],
+            'realCharged' => (int)$b['realCharged'], 'realCredited' => (int)$b['realCredited'],
             'programmeCost' => (int)$b['programmeCost'], 'programmeCovered' => (int)$b['programmeCovered'], 'phase' => (string)($b['tenure']['phase'] ?? ''),
             'recent' => array_map(static fn($e) => ['date' => substr((string)$e['createdAt'], 0, 10), 'kind' => (string)$e['kind'], 'direction' => (string)$e['direction'],
                 'amount' => (int)$e['amount'], 'note' => (string)($e['note'] ?? ''), 'voided' => (string)($e['voidedAt'] ?? '') !== ''], array_slice(array_reverse($entries), 0, 12))];

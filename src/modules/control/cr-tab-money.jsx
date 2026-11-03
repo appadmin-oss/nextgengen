@@ -84,7 +84,7 @@ const CR_MO_METHOD_L = Object.assign({ paystack: "Paystack", online: "Online" },
 const CR_MO_ENTRY_ERR = {
   bad_amount: "Enter an amount above ₦0.", bad_reason: "Choose why this fine is being issued.",
   note_required: "Say why — this one needs a written reason.", reason_required: "Say why. It stays on the account.",
-  nothing_outstanding: "Nothing is payable on this account, so there is nothing to waive.", bad_kind: "That is not something this screen can post.",
+  nothing_outstanding: "Nothing is payable on this account, so there is nothing to waive.", void_at_source: "This entry belongs to an invoice or a payout — correct it where it started.", bad_kind: "That is not something this screen can post.",
   already_done: "The MOU is already recorded as accomplished.", already_void: "That entry is already voided.",
   fees_disabled: "Dues are switched off, so nothing is charged.", reminders_disabled: "Reminders are switched off.",
   not_due: "The amounts were already raised inside the review period.",
@@ -437,7 +437,7 @@ function crMoAccountBlocks(d, ctx) {
 
 /** Overdue, in words: "Due 12 Oct · 22 days" — or "Not yet overdue". */
 function crMoAge(r) { return r.oldestDue ? crDate(r.oldestDue) + " · " + (r.daysOverdue > 0 ? crPlural(r.daysOverdue, "day") : "today") : "—"; }
-const CR_MO_BAND = { current: "Due within 30 days", d31: "31–60 days", d61: "61–90 days", d90: "Over 90 days" };
+const CR_MO_BAND = { current: "Up to 30 days", d31: "31–60 days", d61: "61–90 days", d90: "Over 90 days" };
 /** What one family's debt is made of: "Dues ₦18,000 · Fines ₦1,000". */
 function crMoMade(m) {
   if (!m) return "";
@@ -467,7 +467,7 @@ function CrMoAgeing({ arr }) {
 function crMoOwesBlocks(d, ctx) {
   const arr = d.arr || {}, rows = arr.arrears || [], out = [];
   const old = rows.filter(r => r.daysOverdue > 90).length, never = rows.filter(r => !r.lastPaid).length;
-  out.push({ type: "custom", span: 6, title: "The debt book", sub: "How much is owed, and how long it has been owed — the bands add up to the total.", render: () => <CrMoAgeing arr={arr}/> });
+  out.push({ type: "custom", span: 6, title: "The debt book", sub: "How much is owed, and how long since it fell due — the bands add up to the total.", render: () => <CrMoAgeing arr={arr}/> });
   out.push({ type: "kpis", span: 6, items: [
     { l: "Families owing", v: crNum(arr.matched || 0), tone: "flat" },
     { l: "Owing over 90 days", v: crNum(old), tone: "flat", s: old ? "Call these first" : "None" },

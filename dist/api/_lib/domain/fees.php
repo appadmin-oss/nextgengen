@@ -2401,6 +2401,17 @@ function admin_fees_void(array $p): array {
     if ($e) { $sg = fees_scope_gate($g['requester'], (string)$e['memberId']); if (!$sg['ok']) return $sg; }
     if (!$e) return ['ok' => false, 'error' => 'not_found'];
     if (trim((string)($e['voidedAt'] ?? '')) !== '') return ['ok' => false, 'error' => 'already_void'];
+    /* An entry another record stands behind is reversed THERE, not voided here:
+       voiding an invoice's payment left the invoice paid, with its numbered
+       receipt, while the account said unpaid; voiding a volunteer-pay deduction
+       left the payout recorded as having taken it. */
+    $pk = (string)($e['periodKey'] ?? ''); $cb = (string)($e['createdBy'] ?? '');
+    if (str_starts_with($pk, 'minv:') || str_starts_with($cb, 'invoice:')) {
+        return ['ok' => false, 'error' => 'void_at_source', 'detail' => 'This came from a membership invoice. Void the invoice in Membership payments, so the invoice, its receipt and the account agree.'];
+    }
+    if (str_starts_with($pk, 'volpay:')) {
+        return ['ok' => false, 'error' => 'void_at_source', 'detail' => 'This was taken from volunteer pay. Correct it in Volunteer pay, so the payout and the account agree.'];
+    }
     $by = (string)($g['requester']['memberId'] ?? '');
     db_update('member_ledger', ['voidedAt' => now_iso(), 'voidedBy' => $by,
                                 'voidReason' => substr($reason, 0, 240)], ['entryId' => $entryId]);
@@ -2602,7 +2613,7 @@ function admin_fees_journal(array $p): array {
 }
 
 /** The ageing bands a collector reads debt by: how long the oldest unpaid naira has been due. */
-const FEES_AGE_BANDS = [['current', 'Due within 30 days', 0], ['d31', '31–60 days', 31], ['d61', '61–90 days', 61], ['d90', 'Over 90 days', 91]];
+const FEES_AGE_BANDS = [['current', 'Up to 30 days overdue', 0], ['d31', '31–60 days', 31], ['d61', '61–90 days', 61], ['d90', 'Over 90 days', 91]];
 function fees_age_band(int $days): string {
     $k = 'current'; foreach (FEES_AGE_BANDS as [$key, , $from]) if ($days >= $from) $k = $key; return $k;
 }
