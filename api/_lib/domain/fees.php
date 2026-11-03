@@ -202,6 +202,15 @@ const FEES_UPRATE_NOTE_DAYS = 30;
 /** Batch sizes. Every one of these is a bound on how much a single press or a
  *  single cron tick may do, so a mis-click cannot walk an entire roster. */
 const FEES_SCAN_MAX = 2000;          // rows one pass may read, whatever is asked
+/** The ledger's periodKey column holds this many characters on both databases (migration 220). */
+const FEES_PERIODKEY_MAX = 96;
+/** A unique-key collision, on SQLite or MySQL — and nothing else. */
+function fees_is_duplicate(\Throwable $e): bool {
+    $m = strtolower($e->getMessage());
+    if (str_contains($m, 'unique constraint') || str_contains($m, 'duplicate entry')) return true;
+    $info = $e instanceof \PDOException ? ($e->errorInfo ?? null) : null;
+    return is_array($info) && (int)($info[1] ?? 0) === 1062;
+}
 const FEES_ACCRUE_BATCH = 500;       // default members per accrual press
 const FEES_REMIND_BATCH = 50;        // default sends per press
 const FEES_REMIND_BATCH_MAX = 200;   // ceiling on one press, however it is asked
@@ -960,6 +969,12 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
        unique index — two payments in the same month are two real events. Give
        each its own key unless the caller pinned one deliberately. */
     if ($periodKey === '') $periodKey = $kind . ':' . bin2hex(random_bytes(6));
+    /* A key longer than the column is shortened HERE, the same way on both
+       databases: kept readable and made unique by a hash of the whole key.
+       MySQL's column was VARCHAR(32) while keys of 38–52 characters were
+       written (the fresh-start waiver, the membership import): strict MySQL
+       refused them and non-strict truncated them into one another. */
+    if (strlen($periodKey) > FEES_PERIODKEY_MAX) $periodKey = substr($periodKey, 0, FEES_PERIODKEY_MAX - 13) . '#' . substr(md5($periodKey), 0, 12);
     $row = [
         'entryId' => 'FEE-' . strtoupper(bin2hex(random_bytes(6))),
         'memberId' => $memberId, 'kind' => $kind,
@@ -975,7 +990,14 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
     try {
         db_insert('member_ledger', $row);
     } catch (Throwable $e) {
-        // Already posted for this period — the desired state, not a failure.
+        /* Only a DUPLICATE KEY means "already posted for this period" — the
+           desired state. Anything else (a lock timeout, a value the column
+           refused) is a failure and is said to be one: it used to be read as
+           "already posted", so an entry that never landed was reported as done. */
+        if (!fees_is_duplicate($e)) {
+            error_log('[fees_post] ' . $memberId . ' ' . $kind . ' ' . $periodKey . ': ' . $e->getMessage());
+            return null;
+        }
         $have = db_row('SELECT * FROM member_ledger WHERE memberId = ? AND kind = ? AND periodKey = ? LIMIT 1',
             [$memberId, $kind, $periodKey]);
         return $have ?: null;

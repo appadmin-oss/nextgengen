@@ -5071,3 +5071,10 @@ CREATE TABLE IF NOT EXISTS mlab_sessions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS mlab_enrol (memberId VARCHAR(64) NOT NULL, courseId VARCHAR(40) NOT NULL, enrolledAt VARCHAR(32) NOT NULL DEFAULT '', UNIQUE KEY uq_mlab_enrol (memberId, courseId)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (219) ON DUPLICATE KEY UPDATE version = version;
+
+-- 220: the ledger read by date (Transactions), and periodKey wide enough for
+-- the keys the code writes (fees_post shortens anything over 96 to fit).
+-- MODIFY is idempotent; the index is created once by name.
+ALTER TABLE member_ledger MODIFY COLUMN periodKey VARCHAR(96) DEFAULT '';
+CREATE INDEX idx_mledg_created ON member_ledger (createdAt);
+INSERT INTO schema_version (version) VALUES (220) ON DUPLICATE KEY UPDATE version = version;

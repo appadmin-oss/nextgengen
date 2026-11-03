@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 219;
+const NGG_SCHEMA_TARGET = 220;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6244,6 +6244,13 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_mlab_sessions_member ON mlab_sessions(memberId, startedAt);
             CREATE TABLE IF NOT EXISTS mlab_enrol (memberId TEXT NOT NULL, courseId TEXT NOT NULL, enrolledAt TEXT NOT NULL DEFAULT '');
             CREATE UNIQUE INDEX IF NOT EXISTS uq_mlab_enrol ON mlab_enrol(memberId, courseId);
+        ",
+        220 => "
+            /* The ledger read by date: the Transactions journal filters on
+               createdAt, and nothing indexed it. On MySQL the same step widens
+               periodKey (VARCHAR(32) there, TEXT here) to 96 characters: keys of
+               38-52 characters were written and refused or truncated there. */
+            CREATE INDEX IF NOT EXISTS idx_mledg_created ON member_ledger (createdAt);
         ",
     ];
 

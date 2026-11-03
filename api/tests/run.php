@@ -36184,6 +36184,20 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $seen === $active && (int)(setting_raw('fees_accrue_cursor') ?? -1) === 0);
     chk('accrual · …and never pick up a Summer account', !db_row("SELECT 1 FROM member_ledger WHERE memberId = 'SUM-ACC-1'"));
 
+    // A ledger entry either lands or is reported as not landing; a long key fits the same way on both databases.
+    $long = 'fresh-start:2026-11-03:import:membership:' . str_repeat('x', 80);
+    $a = fees_post('NGG-ACC-2', 'waiver', 100, ['periodKey' => $long, 'by' => 'test']);
+    $b2 = fees_post('NGG-ACC-2', 'waiver', 100, ['periodKey' => $long, 'by' => 'test']);
+    chk('ledger · a key longer than the column is shortened to fit (one row), and the same key again is the same row, not a second waiver',
+        $a && strlen((string)$a['periodKey']) <= FEES_PERIODKEY_MAX && $b2 && $b2['entryId'] === $a['entryId']
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-ACC-2' AND kind = 'waiver'")['c'] === 1);
+    chk('ledger · only a duplicate key reads as "already posted"; any other failure is a failure',
+        fees_is_duplicate(new \PDOException('SQLSTATE[23000]: Integrity constraint violation: 19 UNIQUE constraint failed: member_ledger.memberId'))
+        && fees_is_duplicate(new \PDOException("SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'x' for key 'idx_mledg_accrual'"))
+        && !fees_is_duplicate(new \PDOException('SQLSTATE[HY000]: General error: 1205 Lock wait timeout exceeded'))
+        && !fees_is_duplicate(new \PDOException("SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'periodKey'")));
+    chk('ledger · the schema is at 220 and the ledger is indexed by date', NGG_SCHEMA_TARGET >= 220
+        && (bool)db_row("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_mledg_created'"));
     if ($keep === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'fees'", [$keep]);
     if ($keepCur === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees_accrue_cursor'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'fees_accrue_cursor'", [$keepCur]);
     foreach (['member_ledger', 'member_status_log', 'members'] as $t) db_exec("DELETE FROM $t WHERE memberId IN ('SUM-ACC-1','NGG-ACC-2','NGG-ACC-3')");

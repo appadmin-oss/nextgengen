@@ -2746,7 +2746,8 @@ function policy_fresh_start_run(array $members, string $asOf, bool $imported, st
                 $mrow = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$e['memberId']]);
                 $left = $mrow ? (int)(fees_entry_left($mrow, (string)$e['periodKey']) ?? 0) : 0;
                 if ($left <= 0) continue;
-                fees_post((string)$e['memberId'], 'waiver', $left, ['periodKey' => 'fresh-start:' . $asOf . ':' . (string)$e['periodKey'], 'by' => $by, 'note' => mb_substr($why . ' (imported fine)', 0, 240)]);
+                // Counted only when the waiver actually landed: the report used to count waivers that were never posted.
+                if (!fees_post((string)$e['memberId'], 'waiver', $left, ['periodKey' => 'fresh-start:' . $asOf . ':' . (string)$e['periodKey'], 'by' => $by, 'note' => mb_substr($why . ' (imported fine)', 0, 240)])) continue;
                 $imp++; $impTotal += $left; $people[(string)$e['memberId']] = true;
             }
         }
