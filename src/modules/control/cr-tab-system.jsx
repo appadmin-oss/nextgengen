@@ -1885,3 +1885,83 @@ Object.assign(CR_TAB_DEFS, {
     ],
   },
 });
+
+/* One press sends the roster now, rather than waiting for the half-hourly
+   tick — what somebody does after suspending a member and wanting them off
+   the Wi-Fi before they walk out of the building. */
+async function crWifiPush(ctx) {
+  try {
+    const r = await NGGApi.admin.wifi.push();
+    ctx.toast(r.applied !== undefined
+      ? "Sent. CACENTRE applied " + crNum(r.applied) + (r.gone ? ", withdrew " + crNum(r.gone) : "") + "."
+      : "Sent.");
+    await ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t send the roster."), null, true); }
+}
+
+Object.assign(CR_TAB_DEFS, {
+  /* WI-FI (domain/wifi.php).
+     CACENTRE runs the network and is the authority; this screen is only
+     NGG's half — who we say may use it, and what CACENTRE answered. It must
+     never read as though the decision is made here, because it is not. */
+  wifi: {
+    skeleton: ["kpis", "cards"],
+    load: async () => NGGApi.admin.wifi.status(),
+    facts: d => {
+      const w = d.would || {}, l = d.last || {};
+      return "Wi-Fi: " + (d.configured ? "connected to CACENTRE" : "NOT connected (no key)") + "; we say "
+        + crNum(w.on || 0) + " on, " + crNum(w.limited || 0) + " limited, " + crNum(w.off || 0) + " off"
+        + (l.at ? "; last sent " + l.at : "; never sent");
+    },
+    blocks: (d, ctx) => {
+      const w = d.would || {}, l = d.last || {}, unknown = Object.entries(l.unknownSites || {});
+      const out = [{ type: "kpis", span: 6, items: [
+        { l: "We say on", v: crNum(w.on || 0), dn: "members and staff" },
+        { l: "Limited", v: crNum(w.limited || 0), dn: "dormant, or fees owing", tone: (w.limited || 0) ? "warn" : "flat" },
+        { l: "Off", v: crNum(w.off || 0), dn: "not active with us" },
+        { l: "People sent", v: crNum(d.people || 0), dn: "cap " + crNum(d.max || 0) },
+      ] }];
+
+      if (!d.configured) {
+        out.push({ type: "note", span: 6, icon: "plugs", tone: "warn",
+          text: "Not connected to CACENTRE, so nothing is being sent.",
+          sub: "The Wi-Fi rides the person directory's connection — one key, DIR_PUSH_SECRET_NGG, set in api/config.php or the environment. Setting it turns on both. CACENTRE must hold the same value for app “ngg”." });
+        return out;
+      }
+
+      /* What CACENTRE said, not what we hoped. A push that half-worked is
+         reported as partial, never as success. */
+      out.push(l.at
+        ? { type: "note", span: 6, icon: l.ok ? "check-circle" : "warning-circle", tone: l.ok ? "ok" : "bad",
+            text: l.ok
+              ? "Last sent " + crDate(l.at) + ": CACENTRE applied " + crNum(l.applied || 0)
+                + (l.refused ? ", refused " + crNum(l.refused) : "") + (l.gone ? ", withdrew " + crNum(l.gone) : "") + "."
+              : "The last push did not get through" + (l.error ? " (" + l.error + ")" : "") + ".",
+            sub: (l.full ? "A full list: anybody of ours CACENTRE did not see in it loses Wi-Fi." : "Sent in pages, which withdraw nobody.")
+              + " It goes again on its own every half hour.",
+            act: d.canPush ? { l: "Send the roster now", run: () => crWifiPush(ctx) } : null }
+        : { type: "note", span: 6, icon: "paper-plane-tilt",
+            text: "The roster has not been sent yet.",
+            sub: "It goes on its own within half an hour, or send it now.",
+            act: d.canPush ? { l: "Send the roster now", run: () => crWifiPush(ctx) } : null });
+
+      /* The one thing nothing else would ever surface: a centre of ours that
+         CACENTRE has no site for. Those members reach the hubs only. */
+      if (unknown.length) {
+        out.push({ type: "cards", span: 6, title: "Centres CACENTRE has no site for",
+          sub: "Members there can sign in at the hubs only, until somebody adds the site at CACENTRE",
+          empty: "None.",
+          cards: unknown.map(([code, n]) => ({
+            icon: "map-pin", title: code.toUpperCase(), sub: "our centre code",
+            tag: crNum(n) + (n === 1 ? " person" : " people"), tone: "warn",
+            meta: [["What to do", "Add a site with the code “" + code + "” at CACENTRE → Wi-Fi → Sites."]],
+          })) });
+      }
+
+      out.push({ type: "note", span: 6, icon: "info",
+        text: "CACENTRE runs the network and makes the decision.",
+        sub: "This page is only what NGG says about its own people. CACENTRE holds every PIN, sets the speeds and can block somebody outright — a block there beats anything said here. Members see their own sign-in name and PIN on their NGG dashboard." });
+      return out;
+    },
+  },
+});

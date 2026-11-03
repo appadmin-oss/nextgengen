@@ -129,6 +129,7 @@ const CR_PAGES = {
     { id: "keys", label: "API keys", desc: "Connect AI, photo storage, payments, email and text messages.", cap: "settings" },
     { id: "access", label: "Access & roles", desc: "Who can do what. Give people the least they need.", cap: "rbac" },
     { id: "integrations", label: "Integrations", desc: "Services that send, store and take payments.", cap: "settings" },
+    { id: "wifi", label: "Wi-Fi", desc: "Who we tell CACENTRE may use the estate's Wi-Fi, and what it said back. CACENTRE runs the network and makes the decision.", cap: ["settings", "people"] },
     { id: "ops", label: "Diagnostics", desc: "Health checks for the server and storage.", cap: "settings" },
     { id: "audit", label: "Audit log", desc: "Every change, who made it and when.", cap: "audit" },
   ] },
