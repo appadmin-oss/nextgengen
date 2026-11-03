@@ -36713,5 +36713,78 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
 })();
 
+/* ── Maths Lab (docs/MATH-LAB-PLAN.md): questions, the climb, mastery, review, Lite ── */
+(function () {
+    $now = now_iso();
+    // Every form, many seeds: the key it derives is marked right, and no multiple choice repeats an option.
+    $bad = 0; $n = 0;
+    foreach (mlb_forms() as $c => $forms) foreach ($forms as $fi => $f) for ($s = 1; $s <= 25; $s++) {
+        $it = mlb_item($c, $fi, $s * 104729); $n++;
+        $resp = in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key'];
+        if (!mlb_mark($it, $resp)['ok']) $bad++;
+        if (isset($it['options']) && count(array_unique($it['options'])) !== count($it['options'])) $bad++;
+        if (mlb_public($it) !== array_diff_key(mlb_public($it), ['key' => 1, 'steps' => 1, 'whys' => 1])) $bad++;
+    }
+    chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 70);
+    chk('maths lab · the map holds all 170 competencies, and the drafted graph is used where written', count(mlb_competencies()) === 170 && mlb_comp('MC-049')['needs'] === ['MC-048', 'MC-045', 'MC-027']);
+    // Marking is generous about form, strict about value.
+    $e = ['kind' => 'expr', 'key' => '8x-12', 'form' => 'expanded'];
+    chk('maths lab · an expression is marked by value (any order), and the form rule asks for it expanded', mlb_mark($e, '-12 + 8x')['ok'] && !mlb_mark($e, '8x+12')['ok']
+        && !mlb_mark($e, '4(2x-3)')['ok'] && mlb_mark($e, '4(2x-3)')['form'] !== null);
+    $f = ['kind' => 'frac', 'key' => '3/4', 'form' => 'lowest'];
+    chk('maths lab · a fraction must be in lowest terms where that is the skill, and "1,250" is 1250', mlb_mark($f, '3/4')['ok'] && !mlb_mark($f, '6/8')['ok'] && mlb_mark($f, '6/8')['form'] !== null
+        && mlb_mark(['kind' => 'num', 'key' => '1250'], '₦1,250')['ok'] && mlb_expr_eval('2+2*', []) === null);
+
+    db_insert('members', ['memberId' => 'NGG-ML-1', 'fullName' => 'Lab Learner', 'email' => 'ml1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SUM-ML-2', 'fullName' => 'Summer Kid', 'email' => 'ml2@example.com', 'type' => 'Summer', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('maths lab · the full Lab is for NGG members only', (mlb_home(['memberId' => 'SUM-ML-2'])['error'] ?? '') === 'members_only' && !empty(mlb_home(['memberId' => 'NGG-ML-1'])['ok']));
+    $answerAll = static function (array $st, bool $right, int $ms = 1000) {
+        $sess = db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$st['sessionId']]);
+        foreach (json_decode($sess['items'], true) as $i => $x) {
+            $it = mlb_item($x['c'], $x['f'], $x['s']);
+            $a = $right ? (in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key']) : (in_array($it['kind'], ['mcq', 'error'], true) ? ((int)$it['key'] + 1) % count($it['options']) : ($it['kind'] === 'pair' ? ['999', '999'] : '99999'));
+            mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $st['sessionId'], 'index' => $i, 'answer' => $a, 'ms' => $ms]);
+        }
+        return mlb_finish(['memberId' => 'NGG-ML-1', 'sessionId' => $st['sessionId']]);
+    };
+    // The climb: a clean, fast gate lights the whole stage and moves on.
+    $g1 = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb']);
+    chk('maths lab · a new member starts the climb at Stage 1 with a gate of typed questions, and no keys reach the browser',
+        !empty($g1['ok']) && $g1['ref'] === '1' && count($g1['items']) === MLB_GATE_ITEMS && !isset($g1['items'][0]['key']) && !isset($g1['items'][0]['steps']));
+    $r1 = $answerAll($g1, true);
+    $st1 = mlb_states('NGG-ML-1');
+    chk('maths lab · all right and fast clears the whole stage as known (fast-tracked), with a review booked in days, and moves on',
+        $r1['right'] === MLB_GATE_ITEMS && ($st1['MC-001']['state'] ?? '') === 'known' && ($st1['MC-010']['state'] ?? '') === 'known' && (string)$st1['MC-005']['nextReview'] !== ''
+        && (int)mlb_profile('NGG-ML-1')['climbStage'] === 2);
+    // A slow gate does not fast-track, and a poor one ends the climb where the gaps are.
+    $g2 = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb']); $r2 = $answerAll($g2, false);
+    chk('maths lab · a gate with most answers wrong ends the climb: learning starts in that stage', (int)mlb_profile('NGG-ML-1')['climbDone'] === 1 && (int)mlb_profile('NGG-ML-1')['climbStage'] === 2
+        && (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb'])['error'] ?? '') === 'climb_done' && mlb_home(['memberId' => 'NGG-ML-1'])['next']['mode'] === 'practice');
+    // Practice: instant feedback and a probability that rises; then the mastery check.
+    $pr = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'practice', 'comp' => 'MC-011']);
+    $x = json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$pr['sessionId']])['items'], true)[0];
+    $it = mlb_item($x['c'], $x['f'], $x['s']);
+    $fb = mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pr['sessionId'], 'index' => 0, 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key'], 'ms' => 4000]);
+    chk('maths lab · practice says at once whether an answer is right, with the worked solution and XP', !empty($fb['correct']) && is_array($fb['steps']) && $fb['xp'] > 0 && $fb['p'] > 0.15
+        && (mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pr['sessionId'], 'index' => 0, 'answer' => '1'])['error'] ?? '') === 'already_answered');
+    chk('maths lab · a topic whose prerequisites are not known is refused, and named', (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'practice', 'comp' => 'MC-049'])['error'] ?? '') === 'locked');
+    db_exec("UPDATE mlab_state SET state = 'ready', p = 0.9 WHERE memberId = 'NGG-ML-1' AND comp = 'MC-011'");
+    $ck = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'check', 'comp' => 'MC-011']); $rc = $answerAll($ck, true, 20000);
+    chk('maths lab · passing a mastery check (85%) lights the star as mastered with a review in about 10 days, and +100 XP',
+        $rc['pct'] === 100 && mlb_states('NGG-ML-1')['MC-011']['state'] === 'mastered' && $rc['xp'] === 100 && count($rc['review']) === MLB_CHECK_ITEMS);
+    // Review: a due topic that holds becomes secure; one that slips needs a refresh.
+    db_exec("UPDATE mlab_state SET nextReview = ? WHERE memberId = 'NGG-ML-1' AND comp IN ('MC-011', 'MC-001')", [gmdate('Y-m-d', time() - 86400)]);
+    $rv = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'review']); $rr = $answerAll($rv, true);
+    chk('maths lab · due reviews that hold move the topics on (mastered → secure, known → secure)', $rr['right'] === 2 && mlb_states('NGG-ML-1')['MC-011']['state'] === 'secure' && mlb_states('NGG-ML-1')['MC-001']['state'] === 'secure');
+    // Lite: anyone, marked by a signed token; a tampered token is refused.
+    $li = mlb_lite_item(['comp' => 'MC-045']);
+    $x = json_decode(b64url_decode(explode('.', $li['token'])[0]), true); $it = mlb_item($x['c'], (int)$x['f'], (int)$x['s']);
+    $ok = mlb_lite_check(['token' => $li['token'], 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key']]);
+    $tam = mlb_lite_check(['token' => b64url(json_encode(['c' => 'MC-045', 'f' => 0, 's' => 1, 'e' => time() + 99])) . '.' . explode('.', $li['token'])[1], 'answer' => '1']);
+    chk('maths lab · Lite marks with the worked solution and no record; a forged token is refused', !empty($ok['correct']) && !empty($ok['steps']) && !isset($li['item']['key']) && ($tam['error'] ?? '') === 'bad_token');
+    foreach (['mlab_state', 'mlab_profile', 'mlab_sessions', 'mlab_enrol'] as $t) db_exec("DELETE FROM $t WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

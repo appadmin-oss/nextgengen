@@ -5500,3 +5500,41 @@ build yet.
   pilot Stages 5–7; exam track and licences are the long run; AI drafting
   heavily guarded (§8.7); Claude and ChatGPT are the team.
 - `HANDOFF-NEXT-AGENT.md` restored with the Math Lab as the next job.
+
+## 2026-11-03 — Maths Lab: the deep functional preview (built)
+
+Owner's request: "build a deep functional preview version of the new maths lab
+… and send me a production zip". Name decided: **Maths Lab** (just that).
+"Defend" decided: a smarter machine-marked method — built as "Spot the error"
+items plus a confidence check on every question.
+
+- `/study/lab` is a new tab of the study page (`STT_TOOLS` entry `lab`, flag
+  `deep` so its sub-addresses survive); `/mathlab`, `/math-lab`, `/mathslab`,
+  `/lab` forward there (`pageFromPath`). The Arcade's Math Lab card now opens it.
+- Content: `domain/mathslab-map.php` (all 170 competencies, strands, courses;
+  the drafted graph for Stages 5–7, a default chain elsewhere) and
+  `domain/mathslab-gen.php` (Stages 1–7: 70 competencies, ~120 forms; seeded,
+  answers and wrong options derived; worked solutions; KaTeX stems; diagrams;
+  "Spot the error"; a safe expression evaluator for algebra answers — no eval).
+  Stages 8–17 show as "in preparation".
+- Engine `domain/mathslab.php`: members only (NGG), free. The climb from MC-001
+  (6-question gates, all right and fast clears a stage as "known", momentum
+  shortens gates, a partial gate ends the climb at the gaps), practice with
+  instant feedback and a BKT-style probability, mastery checks (10 items, 85%),
+  spaced reviews (10 days → secure → 45 days → long-term), stage bosses (80%),
+  XP with a daily practice cap, streak with earned freezes, badges, courses with
+  enrolment and a printable certificate with a verification code. Maths Lab
+  Lite for everyone else: signed-token questions, marking and solutions, no
+  record. Ops `mathslab.*`, `public.mathslab.*`; routes `api/member/mathslab.php`,
+  `api/public/mathslab.php`; migration 219 (+ MySQL mirror); merge policy.
+- Interface `src/modules/mathslab/mlb-app.jsx` (+ `styles.css` `.mlb-*`); KaTeX
+  0.16.11 vendored under `vendor/katex/` (woff2 only) and registered in
+  `vendor/VERSIONS.json`. `vendor-build.js --check` compared 16-character hashes
+  with 64-character ones and failed every file — fixed; nothing ran it before.
+- Verified: PHP suite 6560/0 (the Maths Lab block re-derives ~3,000 generated
+  questions and walks the climb, practice, check, review and Lite); a browser
+  smoke at 390 px as a member and as a guest, no page errors.
+- Not yet (see docs/MATH-LAB-PLAN.md): Stages 8–17 content, the exam track,
+  instructor/parent views, offline packs, question bank and AI pipeline,
+  migrating old Math Lab progress. The old Arcade Math Lab code is still in
+  page-club.jsx, unused by the entry card.

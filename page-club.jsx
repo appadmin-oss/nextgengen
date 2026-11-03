@@ -4601,7 +4601,7 @@ function CmArcade({ auth }) {
               <ArcadeCard key={g.key} game={g} busy={starting === g.key} onPlay={() => play(g.key)}/>
             ))}
           </div>
-          <MathLabTeaser onOpen={() => setLab(true)}/>
+          <MathLabTeaser onOpen={() => { try { history.pushState({ page: "study" }, "", "/study/lab"); } catch (_) {} location.assign("/study/lab"); }}/>
           <ArcadeBoard games={home.games} programme={home.programme}/>
           <p className="arc-fineprint">
             Rounds are marked on the server, so nobody can type their way to the top of the board.

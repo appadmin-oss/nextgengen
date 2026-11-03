@@ -359,6 +359,10 @@ function member_merge_policy(): array {
         'member_promotions'      => 'MOVE',
         'member_requests'        => 'MOVE',
         'dues_notices'           => 'MOVE_UNIQUE',    // one notice per due date; the survivor's stands
+        'mlab_state'             => 'MOVE_UNIQUE',    // Maths Lab: one row per topic; the survivor's stands
+        'mlab_profile'           => 'MOVE_UNIQUE',
+        'mlab_sessions'          => 'MOVE',
+        'mlab_enrol'             => 'MOVE_UNIQUE',
         'mentors'                => 'MOVE',
         'promo_seen'             => 'MOVE_UNIQUE',
         'program_journal_follows' => 'MOVE_UNIQUE',

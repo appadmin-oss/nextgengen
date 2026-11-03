@@ -5051,3 +5051,23 @@ INSERT INTO schema_version (version) VALUES (217) ON DUPLICATE KEY UPDATE versio
 ALTER TABLE community_posts ADD COLUMN sourceRef VARCHAR(80) NOT NULL DEFAULT '', ADD INDEX idx_community_posts_source (sourceRef);
 ALTER TABLE notices ADD COLUMN communityOn TINYINT NOT NULL DEFAULT 0;
 INSERT INTO schema_version (version) VALUES (218) ON DUPLICATE KEY UPDATE version = version;
+
+-- 219 — Maths Lab: map state, profile, sessions, course enrolments.
+CREATE TABLE IF NOT EXISTS mlab_state (
+  id INT AUTO_INCREMENT PRIMARY KEY, memberId VARCHAR(64) NOT NULL, comp VARCHAR(16) NOT NULL, state VARCHAR(16) NOT NULL DEFAULT 'none',
+  p DOUBLE NOT NULL DEFAULT 0.15, attempts INT NOT NULL DEFAULT 0, correct INT NOT NULL DEFAULT 0, fast TINYINT NOT NULL DEFAULT 0,
+  nextReview VARCHAR(10) NOT NULL DEFAULT '', masteredAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_mlab_state (memberId, comp)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS mlab_profile (
+  memberId VARCHAR(64) PRIMARY KEY, xp INT NOT NULL DEFAULT 0, streak INT NOT NULL DEFAULT 0, lastDay VARCHAR(10) NOT NULL DEFAULT '',
+  freezes INT NOT NULL DEFAULT 0, climbStage INT NOT NULL DEFAULT 1, climbDone TINYINT NOT NULL DEFAULT 0, momentum INT NOT NULL DEFAULT 0,
+  xpDay VARCHAR(10) NOT NULL DEFAULT '', xpToday INT NOT NULL DEFAULT 0, bosses TEXT, createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS mlab_sessions (
+  sessionId VARCHAR(32) PRIMARY KEY, memberId VARCHAR(64) NOT NULL, mode VARCHAR(16) NOT NULL, ref VARCHAR(16) NOT NULL DEFAULT '',
+  items MEDIUMTEXT, resp MEDIUMTEXT, startedAt VARCHAR(32) NOT NULL DEFAULT '', finishedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_mlab_sessions_member (memberId, startedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS mlab_enrol (memberId VARCHAR(64) NOT NULL, courseId VARCHAR(40) NOT NULL, enrolledAt VARCHAR(32) NOT NULL DEFAULT '', UNIQUE KEY uq_mlab_enrol (memberId, courseId)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (219) ON DUPLICATE KEY UPDATE version = version;

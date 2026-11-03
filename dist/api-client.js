@@ -1049,6 +1049,17 @@
       curriculumUpload:   (file) => { const fd = new FormData(); fd.append('file', file); return request('/member/curriculum.php', { body: fd, timeout: 180000 }); },
       stateGet:  (keys) => request('/member/state.php' + qs({ keys: Array.isArray(keys) ? keys.join(',') : keys })),
       stateSet:  (key, value) => request('/member/state.php', { body: { key, value } }),
+      /* Maths Lab (docs/MATH-LAB-PLAN.md) — marked on the server; the client never holds a key. */
+      mathslab: {
+        home:   () => request('/member/mathslab.php'),
+        map:    () => request('/member/mathslab.php?view=map'),
+        comp:   (comp) => request('/member/mathslab.php' + qs({ view: 'comp', comp })),
+        cert:   (course) => request('/member/mathslab.php' + qs({ view: 'certificate', course })),
+        start:  (mode, opts) => request('/member/mathslab.php', { body: Object.assign({ action: 'start', mode }, opts || {}) }),
+        answer: (sessionId, index, answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'answer', sessionId, index, answer }, extra || {}) }),
+        finish: (sessionId) => request('/member/mathslab.php', { body: { action: 'finish', sessionId } }),
+        enrol:  (courseId) => request('/member/mathslab.php', { body: { action: 'enrol', courseId } }),
+      },
       tools: {
         decks:   () => request('/member/tools.php?view=decks'),
         deck:    (deckId) => request('/member/tools.php' + qs({ view: 'deck', deckId })),
@@ -1276,6 +1287,11 @@
       securityRevokeOthers: () => request('/member/security.php', { body: { action: 'revoke_others' } }),
     },
     public: {
+      /* Maths Lab Lite — anyone: a question with a signed token, then marking with the worked solution. */
+      mathslabMap:   () => request('/public/mathslab.php?view=map'),
+      mathslabComp:  (comp) => request('/public/mathslab.php' + qs({ view: 'comp', comp })),
+      mathslabItem:  (comp) => request('/public/mathslab.php' + qs({ comp })),
+      mathslabCheck: (token, answer) => request('/public/mathslab.php', { body: { token, answer } }),
       /* The help centre's answers (api/public/help.php). No case is opened publicly. */
       help: (q) => request('/public/help.php' + (q ? qs({ q }) : '')),
       telegram:   () => request('/public/telegram.php'),

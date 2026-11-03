@@ -1148,6 +1148,17 @@ function backend_dispatch(string $op, array $args = []): array {
             'mathlab.board'           => 'mathlab_board',
             'mathlab.start'           => 'mathlab_start',
             'mathlab.submit'          => 'mathlab_submit',
+            // Maths Lab (docs/MATH-LAB-PLAN.md): members' Lab and the public Lite
+            'mathslab.home'           => 'mlb_home',
+            'mathslab.map'            => 'mlb_map',
+            'mathslab.comp'           => 'mlb_comp_view',
+            'mathslab.start'          => 'mlb_start',
+            'mathslab.answer'         => 'mlb_answer',
+            'mathslab.finish'         => 'mlb_finish',
+            'mathslab.enrol'          => 'mlb_enrol',
+            'mathslab.certificate'    => 'mlb_certificate',
+            'public.mathslab.item'    => 'mlb_lite_item',
+            'public.mathslab.check'   => 'mlb_lite_check',
             // Two-player, turn-based. No free-text op exists by design.
             'match.list'              => 'match_list',
             'match.get'               => 'match_get',

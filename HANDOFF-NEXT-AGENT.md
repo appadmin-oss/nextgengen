@@ -33,7 +33,14 @@ PHP suite "portal: reading an entry marks it read".
 
 ---
 
-## The next job: Math Lab → The Mathematics Clinic
+## The next job: Maths Lab — continue from the preview
+
+**A deep functional preview is built (3 Nov 2026)** — read the last entry of
+`docs/HANDOFF.md` for exactly what exists (Stages 1–7, the climb, mastery,
+reviews, bosses, courses, Lite) and what does not. The name is **Maths Lab**.
+Continue from it rather than starting again.
+
+### Background (the plan)
 
 **Read `docs/MATH-LAB-PLAN.md` first, all of it.** It is the approved direction
 (owner decisions of 3 Nov 2026 are in its §17 and at the top). It contains the
