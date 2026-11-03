@@ -5477,3 +5477,64 @@ before touching how they look:
   actions are the four money actions; the MOU and reminders are settings in the
   summary. Checks: PHP "statement · …" (3), `dues-notices-ui.test.js` reads the
   reconciliation off the page.
+
+
+## 2026-11-03 — Math Lab → The Mathematics Clinic: review, research and plan (nothing built)
+
+Owner's request: review the Mathematics Clinic curriculum (JSON, 170
+competencies), say how feasible it is, how it scales, how assessment is
+structured and how real exam questions (SAT, WAEC, Ghana, Nigeria and more) can
+be used; transform Math Lab into the Clinic (keep the name), put it on the study
+page at its own address, and restructure it — "it is currently shit", "the
+questions are also shit". Explicitly: research, plan in full detail, do not
+build yet.
+
+- `docs/MATH-LAB-PLAN.md` is the result: the curriculum measured (13 of 16
+  fields per competency are boilerplate; 160 of 170 prerequisites point to
+  themselves; no questions at all), the current Lab and all 91 of its question
+  forms audited, three research streams (exam formats and copyright; learning
+  science with effect sizes; competitors and maths tech), and the design.
+- Owner decisions recorded in its §17: interface replaced completely; members
+  only, free, Coursera-style courses; Math Lab Lite for non-members; members
+  start at the lowest point and climb fast on performance and speed (§9.4a);
+  pilot Stages 5–7; exam track and licences are the long run; AI drafting
+  heavily guarded (§8.7); Claude and ChatGPT are the team.
+- `HANDOFF-NEXT-AGENT.md` restored with the Math Lab as the next job.
+
+## 2026-11-03 — Maths Lab: the deep functional preview (built)
+
+Owner's request: "build a deep functional preview version of the new maths lab
+… and send me a production zip". Name decided: **Maths Lab** (just that).
+"Defend" decided: a smarter machine-marked method — built as "Spot the error"
+items plus a confidence check on every question.
+
+- `/study/lab` is a new tab of the study page (`STT_TOOLS` entry `lab`, flag
+  `deep` so its sub-addresses survive); `/mathlab`, `/math-lab`, `/mathslab`,
+  `/lab` forward there (`pageFromPath`). The Arcade's Math Lab card now opens it.
+- Content: `domain/mathslab-map.php` (all 170 competencies, strands, courses;
+  the drafted graph for Stages 5–7, a default chain elsewhere) and
+  `domain/mathslab-gen.php` (Stages 1–7: 70 competencies, ~120 forms; seeded,
+  answers and wrong options derived; worked solutions; KaTeX stems; diagrams;
+  "Spot the error"; a safe expression evaluator for algebra answers — no eval).
+  Stages 8–17 show as "in preparation".
+- Engine `domain/mathslab.php`: members only (NGG), free. The climb from MC-001
+  (6-question gates, all right and fast clears a stage as "known", momentum
+  shortens gates, a partial gate ends the climb at the gaps), practice with
+  instant feedback and a BKT-style probability, mastery checks (10 items, 85%),
+  spaced reviews (10 days → secure → 45 days → long-term), stage bosses (80%),
+  XP with a daily practice cap, streak with earned freezes, badges, courses with
+  enrolment and a printable certificate with a verification code. Maths Lab
+  Lite for everyone else: signed-token questions, marking and solutions, no
+  record. Ops `mathslab.*`, `public.mathslab.*`; routes `api/member/mathslab.php`,
+  `api/public/mathslab.php`; migration 219 (+ MySQL mirror); merge policy.
+- Interface `src/modules/mathslab/mlb-app.jsx` (+ `styles.css` `.mlb-*`); KaTeX
+  0.16.11 vendored under `vendor/katex/` (woff2 only) and registered in
+  `vendor/VERSIONS.json`. `vendor-build.js --check` compared 16-character hashes
+  with 64-character ones and failed every file — fixed; nothing ran it before.
+- Verified: PHP suite 6560/0 (the Maths Lab block re-derives ~3,000 generated
+  questions and walks the climb, practice, check, review and Lite); a browser
+  smoke at 390 px as a member and as a guest, no page errors.
+- Not yet (see docs/MATH-LAB-PLAN.md): Stages 8–17 content, the exam track,
+  instructor/parent views, offline packs, question bank and AI pipeline,
+  migrating old Math Lab progress. The old Arcade Math Lab code is still in
+  page-club.jsx, unused by the entry card.

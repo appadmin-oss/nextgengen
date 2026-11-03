@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 218;
+const NGG_SCHEMA_TARGET = 219;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6221,6 +6221,29 @@ function db_migrate(PDO $db): void {
             ALTER TABLE community_posts ADD COLUMN sourceRef TEXT NOT NULL DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_community_posts_source ON community_posts(sourceRef);
             ALTER TABLE notices ADD COLUMN communityOn INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* 219 — Maths Lab (docs/MATH-LAB-PLAN.md): each member's place on the map, their
+           profile (XP, streak, climb), sessions (questions as competency/form/seed, never keys)
+           and course enrolments. */
+        219 => "
+            CREATE TABLE IF NOT EXISTS mlab_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, memberId TEXT NOT NULL, comp TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'none',
+              p REAL NOT NULL DEFAULT 0.15, attempts INTEGER NOT NULL DEFAULT 0, correct INTEGER NOT NULL DEFAULT 0, fast INTEGER NOT NULL DEFAULT 0,
+              nextReview TEXT NOT NULL DEFAULT '', masteredAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mlab_state ON mlab_state(memberId, comp);
+            CREATE TABLE IF NOT EXISTS mlab_profile (
+              memberId TEXT PRIMARY KEY, xp INTEGER NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0, lastDay TEXT NOT NULL DEFAULT '',
+              freezes INTEGER NOT NULL DEFAULT 0, climbStage INTEGER NOT NULL DEFAULT 1, climbDone INTEGER NOT NULL DEFAULT 0, momentum INTEGER NOT NULL DEFAULT 0,
+              xpDay TEXT NOT NULL DEFAULT '', xpToday INTEGER NOT NULL DEFAULT 0, bosses TEXT NOT NULL DEFAULT '{}', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS mlab_sessions (
+              sessionId TEXT PRIMARY KEY, memberId TEXT NOT NULL, mode TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '', items TEXT NOT NULL DEFAULT '[]',
+              resp TEXT NOT NULL DEFAULT '{}', startedAt TEXT NOT NULL DEFAULT '', finishedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mlab_sessions_member ON mlab_sessions(memberId, startedAt);
+            CREATE TABLE IF NOT EXISTS mlab_enrol (memberId TEXT NOT NULL, courseId TEXT NOT NULL, enrolledAt TEXT NOT NULL DEFAULT '');
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mlab_enrol ON mlab_enrol(memberId, courseId);
         ",
     ];
 

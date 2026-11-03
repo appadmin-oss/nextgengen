@@ -140,6 +140,10 @@ const STT_TOOLS = [
     subs: [["calc", "Calculator"], ["graph", "Graphs"], ["bases", "Number bases"]] },
   { id: "words",  label: "Words",       icon: "ph-book-bookmark",account: false, sub: "Dictionary and typing practice",
     subs: [["dict", "Dictionary"], ["typing", "Typing"]] },
+  /* The Maths Lab (docs/MATH-LAB-PLAN.md): its own screens, so it keeps its deeper
+     addresses (/study/lab/learn/MC-049) — `deep` stops the shell rewriting them. */
+  { id: "lab",    label: "Maths Lab",   icon: "ph-function",     account: false, deep: true, sub: "Climb to your level, master every topic, keep it for good",
+    subs: [] },
   { id: "labs",   label: "Course labs", icon: "ph-flask",        account: false, sub: "Tools for Tech, Creative, Media and Business courses",
     subs: [] },
 ];
@@ -201,7 +205,7 @@ function ToolsApp({ setPage }) {
     const jump = e => go(e.detail.tool, e.detail.sub);
     window.addEventListener("popstate", on); window.addEventListener("stt:go", jump);
     // An old address is rewritten to the one it now lives at.
-    try { const want = sttPath(route.tool, route.sub); if (location.pathname !== want && !/^\/study\/?$/.test(location.pathname)) history.replaceState({ page: "study" }, "", want); } catch (_) {}
+    try { const want = sttPath(route.tool, route.sub); const deep = (STT_TOOLS.find(t => t.id === route.tool) || {}).deep && location.pathname.indexOf(want) === 0; if (location.pathname !== want && !deep && !/^\/study\/?$/.test(location.pathname)) history.replaceState({ page: "study" }, "", want); } catch (_) {}
     return () => { window.removeEventListener("popstate", on); window.removeEventListener("stt:go", jump); };
   }, [go]); // eslint-disable-line
   const def = STT_TOOLS.find(t => t.id === tool) || STT_TOOLS[0];
@@ -250,6 +254,7 @@ function ToolsApp({ setPage }) {
           : tool === "revise" ? (sub === "quiz" ? <SttQuiz/> : sub === "notes" ? <SttNotes/> : <SttFlashcards/>)
           : tool === "maths" ? (sub === "graph" ? <SttGraph/> : sub === "bases" ? <SttBases/> : <SttCalc/>)
           : tool === "words" ? (sub === "typing" ? <SttTyping signedIn={signedIn}/> : <SttDict signedIn={signedIn}/>)
+          : tool === "lab" ? <MathsLab me={me}/>
           : <SttLabs/>}
       </main>
     </div>

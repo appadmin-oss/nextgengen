@@ -222,6 +222,8 @@ const VENDOR_LIBS = {
      its own TensorFlow.js; the models load from /vendor/human/models/. */
   human: { js: ["/vendor/human/human.js"], global: "Human" },
   qrcode: { js: ["/vendor/qrcode.min.js"], global: "qrcode" },
+  // KaTeX 0.16.11 — maths typesetting for the Maths Lab (woff2 fonts only).
+  katex: { js: ["/vendor/katex/katex.min.js"], css: ["/vendor/katex/katex.min.css"], global: "katex" },
   // Filerobot 5.0.0 — the photo editor. Built by vendor-build.js with React
   // aliased to our page globals, so it must load AFTER React (it always does:
   // React is in the document head, this is fetched from a click).

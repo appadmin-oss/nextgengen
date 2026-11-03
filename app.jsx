@@ -261,6 +261,8 @@ function pageFromPath() {
   if (seg === "login" || seg === "signin") return "home";
   // What a scanned card opens: /q/<qr-token> (NGG member, Summer participant, volunteer) or /s/<handle>.
   if (seg === "q" || seg === "s") return "summerprofile";
+  /* The Maths Lab lives on the study page; its short addresses forward there (docs/MATH-LAB-PLAN.md §6). */
+  if (seg === "mathlab" || seg === "math-lab" || seg === "mathslab" || seg === "lab") { try { history.replaceState({ page: "study" }, "", "/study/lab" + window.location.search); } catch (_) {} return "study"; }
   /* /member/<area>/<tab> was the address of the 2026-10-11 Member Portal, which
      was withdrawn. Its links are in notifications and bookmarks, so each forwards
      to the dashboard section that holds the same thing. */
