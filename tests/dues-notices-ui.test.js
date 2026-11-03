@@ -139,6 +139,16 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
       && !!(await ap.$('[role="switch"][aria-label="By SMS"][aria-checked="false"]'))
       && !!(await ap.$('[role="switch"][aria-label="In the family app"]')) && !!(await ap.$('[role="switch"][aria-label="By Telegram"]'))
       && !!(await ap.$('input[aria-label="Nudge the Fees desk when a payment note waits (hours)"]')));
+    // Paying online: the family bears Paystack's charge; the percentage is typed as a percentage, kept in basis points.
+    chk('Amounts carries the Paystack charge: on by default, at Paystack’s local terms',
+      !!(await ap.$('[role="switch"][aria-label="Families pay Paystack’s charge"][aria-checked="true"]'))
+      && (await ap.inputValue('input[aria-label="Paystack’s percentage (%)"]')) === '1.5'
+      && (await ap.inputValue('input[aria-label="Paystack’s charge is capped at (₦)"]')) === '2000');
+    await ap.fill('input[aria-label="Paystack’s percentage (%)"]', '1.75');
+    await ap.click('button.cr-unsaved-save');
+    chk('a new percentage saves, and is stored as basis points',
+      await until(() => /1 change saved/.test(document.body.innerText), null, 15000)
+      && php(`echo fees_settings()['payFeeBps'];`) === '175');
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

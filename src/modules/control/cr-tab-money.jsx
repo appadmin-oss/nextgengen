@@ -556,6 +556,14 @@ function crMoAmountsForm(cfg, B, defaults) {
         { id: "claimStaffHours", l: "Nudge the Fees desk when a payment note waits (hours)", c: "input", type: "number", im: "numeric", value: String(cfg.claimStaffHours), check: int(B.claimHoursMin, B.claimHoursMax),
           help: "A family told “we will check it” should not wait longer than this. Once a day, staff with Fees are told how many are waiting." },
       ] },
+      { h: "Paying online", help: "Paystack takes a charge on every online payment. With this on, the family pays it on top, worked out so NGG receives the whole amount; the receipt shows it as Paystack’s charge, and the account records only the dues. A bank transfer to NGG carries no charge. Match the figures to your Paystack plan.", rows: [
+        { id: "payFeeOn", l: "Families pay Paystack’s charge", c: "toggle", value: !!cfg.payFeeOn, help: "Off: NGG absorbs it and receives the amount less Paystack’s charge." },
+        { id: "payFeePct", l: "Paystack’s percentage (%)", c: "input", type: "text", im: "decimal", value: String((cfg.payFeeBps || 0) / 100),
+          check: v => { const n = Number(v); return v === "" || !isFinite(n) || n < 0 ? "Enter a percentage, like 1.5." : n * 100 > B.payFeeBpsMax ? "At most " + B.payFeeBpsMax / 100 + "%." : Math.round(n * 100) !== n * 100 ? "Two decimal places at most." : ""; } },
+        { id: "payFeeFlat", l: "Plus a flat charge of (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.payFeeFlat), check: int(0, B.payFeeFlatMax) },
+        { id: "payFeeFlatUnder", l: "…waived on payments under (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.payFeeFlatUnder), check: int(0, B.payFeeCapMax * 100) },
+        { id: "payFeeCap", l: "Paystack’s charge is capped at (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.payFeeCap), check: int(0, B.payFeeCapMax), help: "0 means no cap." },
+      ] },
       { h: "Arrears reminders", rows: [
         { id: "remindEnabled", l: "Remind guardians about arrears", c: "toggle", value: !!cfg.remindEnabled },
         { id: "remindEveryDays", l: "No more often than every (days)", c: "input", type: "number", im: "numeric", value: String(cfg.remindEveryDays), check: int(B.remindMinDays, B.remindMaxDays),
@@ -570,6 +578,8 @@ function crMoAmountsForm(cfg, B, defaults) {
     save: async patch => {
       const send = {};
       Object.keys(patch).forEach(k => { send[k] = typeof patch[k] === "boolean" || k === "trainingBasis" ? patch[k] : parseInt(patch[k], 10); });
+      /* The percentage is typed as a percentage and stored in basis points (1.5% → 150). */
+      if (patch.payFeePct != null) { delete send.payFeePct; send.payFeeBps = Math.round(Number(patch.payFeePct) * 100); }
       const r = await NGGApi.admin.fees.settingsSet(send);
       const c = crMoCtx.current;
       /* Said out loud when the server floors it, rather than showing a number nobody typed. */

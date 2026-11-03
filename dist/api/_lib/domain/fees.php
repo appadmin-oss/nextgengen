@@ -132,6 +132,18 @@ const FEES_DEFAULTS = [
     /* A payment a parent says they made waits for the fees desk to check it.
        Past this many hours unchecked, the desk is nudged once a day. */
     'claimStaffHours' => 48,
+    /* ── Paying online: who bears Paystack's charge ─────────────────────────
+     * On by default: a family paying online pays Paystack's charge on top, so
+     * NGG receives the whole fee. The charge is grossed up — worked out on the
+     * amount Paystack will actually take it from — so what reaches NGG is never
+     * short. Paystack's local card terms: 1.5% + ₦100, the ₦100 waived on a
+     * transaction under ₦2,500, capped at ₦2,000. Paystack changes these, so
+     * they are settings, not constants. A bank transfer to NGG carries none. */
+    'payFeeOn' => true,
+    'payFeeBps' => 150,          // 1.5% in basis points
+    'payFeeFlat' => 100,
+    'payFeeFlatUnder' => 2500,
+    'payFeeCap' => 2000,
     /* ── Uprating ─────────────────────────────────────────────────────────
      * Naira inflation erodes a fixed figure fast: ₦75,000 set today is worth
      * noticeably less in two years, and a programme that never revisits its
@@ -175,6 +187,10 @@ const FEES_NOTICE_DAYS_MAX = 30;
  *  day to a week. */
 const FEES_CLAIM_HOURS_MIN = 12;
 const FEES_CLAIM_HOURS_MAX = 168;
+/* Ceilings on the Paystack charge settings: a typo (1500 for 1.5%) must not put 15% on a family's bill. */
+const FEES_PAYFEE_BPS_MAX = 500;      // 5%
+const FEES_PAYFEE_FLAT_MAX = 1000;
+const FEES_PAYFEE_CAP_MAX = 10000;
 /** A year. Past this, "remind them" is not what the setting means any more. */
 const FEES_REMIND_MAX_DAYS = 365;
 /** How far apart an uprate interval may be set, in months. */
@@ -228,6 +244,9 @@ function fees_bounds(): array {
         'noticeDaysMax'  => FEES_NOTICE_DAYS_MAX,
         'claimHoursMin'  => FEES_CLAIM_HOURS_MIN,
         'claimHoursMax'  => FEES_CLAIM_HOURS_MAX,
+        'payFeeBpsMax'   => FEES_PAYFEE_BPS_MAX,
+        'payFeeFlatMax'  => FEES_PAYFEE_FLAT_MAX,
+        'payFeeCapMax'   => FEES_PAYFEE_CAP_MAX,
         'uprateMaxPct'   => FEES_UPRATE_MAX_PCT,
         'uprateEveryMin' => FEES_UPRATE_EVERY_MIN,
         'uprateEveryMax' => FEES_UPRATE_EVERY_MAX,
@@ -353,6 +372,11 @@ function fees_settings_save(array $in, string $by): array {
         'noticeTelegram' => $bool('noticeTelegram'),
         'noticeSms'      => $bool('noticeSms'),
         'claimStaffHours' => max(FEES_CLAIM_HOURS_MIN, min(FEES_CLAIM_HOURS_MAX, (int)($in['claimStaffHours'] ?? $cur['claimStaffHours']) ?: (int)$cur['claimStaffHours'])),
+        'payFeeOn'        => $bool('payFeeOn'),
+        'payFeeBps'       => max(0, min(FEES_PAYFEE_BPS_MAX, (int)($in['payFeeBps'] ?? $cur['payFeeBps']))),
+        'payFeeFlat'      => max(0, min(FEES_PAYFEE_FLAT_MAX, (int)($in['payFeeFlat'] ?? $cur['payFeeFlat']))),
+        'payFeeFlatUnder' => max(0, min(FEES_PAYFEE_CAP_MAX * 100, (int)($in['payFeeFlatUnder'] ?? $cur['payFeeFlatUnder']))),
+        'payFeeCap'       => max(0, min(FEES_PAYFEE_CAP_MAX, (int)($in['payFeeCap'] ?? $cur['payFeeCap']))),
         /* Uprating. `upratePct` of 0 switches it off, which is the default —
            raising what families are charged is not something to inherit. */
         'upratePct' => max(0, min(FEES_UPRATE_MAX_PCT, (int)($in['upratePct'] ?? $cur['upratePct']))),
@@ -2150,6 +2174,8 @@ function member_fees_account(array $p): array {
         'remindOff' => (int)($m['duesRemindOff'] ?? 0) === 1,
         // Paystack is configured: the account can offer "Pay online" (membership_balance_invoice).
         'payOnline' => function_exists('paystack_secret') && paystack_secret() !== '',
+        // Paystack's charge on paying today's balance online, when the family bears it (paystack_family_charge).
+        'payFee' => function_exists('paystack_secret') && paystack_secret() !== '' && function_exists('paystack_family_charge') ? paystack_family_charge((int)$bal['payable'], $cfg) : 0,
         'currency' => (string)$cfg['currency'],
     ]];
 }

@@ -162,9 +162,9 @@ function fp3Ward(link, d, today) {
     achievements: d.achievements || { items: [], next: [] },
     charges: (d.charges || []).map(c => ({ id: c.entryId, label: fp3Note(c.note) + " · " + "₦" + Number(c.amount).toLocaleString("en"), when: fp3Date(c.createdAt) })),
     fees: fees3 ? {
-      enabled: true, payable: fees3.payable, outstanding: fees3.outstanding, payOnline: fees3.payOnline, offlinePending: fees3.offlinePending,
+      enabled: true, payable: fees3.payable, outstanding: fees3.outstanding, payOnline: fees3.payOnline, payFee: fees3.payFee || 0, offlinePending: fees3.offlinePending,
       lines: fp3Lines(fees3.lines), next: fees3.next.map(x => ({ label: x.label, when: fp3Date(x.date), amount: x.amount })),
-      joining: fees3.joining ? { invoiceId: fees3.joining.invoiceId, start: fp3Date(fees3.joining.start), items: fees3.joining.items } : null,
+      joining: fees3.joining ? { invoiceId: fees3.joining.invoiceId, start: fp3Date(fees3.joining.start), items: fees3.joining.items, total: fees3.joining.total || 0 } : null,
       entries: fees3.entries.map((e, i) => ({ id: e.id || "E" + i, when: fp3Date(e.date), month: e.month, kind: e.kind, note: fp3Note(e.note), amount: e.amount, dir: e.dir, void: e.void })),
       programme: Object.assign({}, fees3.programme, { serviceStarts: fp3Long(fees3.programme.serviceStarts), completes: fp3Long(fees3.programme.completes) }),
       terms: fees3.terms, bank: fees3.bank,

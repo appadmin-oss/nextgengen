@@ -539,7 +539,9 @@ function membership_receipt_html(array $inv): string {
         . $row('Paid', esc_html($paidAt))
         . $row('Method', esc_html($method) . ($ref !== '' ? ' · ref <code>' . esc_html($ref) . '</code>' : ''))
         . ($off ? $row('Paid by', esc_html((string)$off['payerName'])) : '')
-        . '</table><table class="items">' . $lines . '<tr class="tot"><td>Total paid</td><td class="n">' . esc_html(fees_money_text((int)$inv['total'], $cfg)) . '</td></tr></table></div>'
+        . '</table><table class="items">' . $lines
+        . ((int)($inv['processingFee'] ?? 0) > 0 ? '<tr><td><b>Paystack charge</b><div class="d">Paid to Paystack for the online payment — not an NGG fee</div></td><td class="n">' . esc_html(fees_money_text((int)$inv['processingFee'], $cfg)) . '</td></tr>' : '')
+        . '<tr class="tot"><td>Total paid</td><td class="n">' . esc_html(fees_money_text((int)$inv['total'] + (int)($inv['processingFee'] ?? 0), $cfg)) . '</td></tr></table></div>'
         . '<div class="pr"><button onclick="window.print()">Print or save as PDF</button></div>'
         . '<div class="f">Next Generation Genius, an Afrovanguard programme' . (!empty($c['email']) ? ' · ' . esc_html((string)$c['email']) : '') . (!empty($c['phone']) ? ' · ' . esc_html((string)$c['phone']) : '')
         . '. Keep this receipt for your records. Questions about it: quote ' . esc_html($inv['receiptNo']) . '.</div></main></body></html>';
@@ -569,6 +571,26 @@ function membership_send_receipt(array $inv): array {
 
 /* ── Paystack ────────────────────────────────────────────────────────────── */
 
+/**
+ * Paystack's charge on a payment of $net, when the family bears it: the
+ * smallest gross whose own Paystack charge leaves at least $net for NGG.
+ * 0 when it is switched off. Whole naira, rounded up — NGG is never short by a
+ * kobo. The flat part is waived when the GROSS is under the threshold, so the
+ * waiver is tested on the gross; past the cap, the cap is the charge.
+ */
+function paystack_family_charge(int $net, ?array $cfg = null): int {
+    $cfg = $cfg ?? fees_settings();
+    if ($net <= 0 || empty($cfg['payFeeOn'])) return 0;
+    $rate = max(0, (int)$cfg['payFeeBps']) / 10000;
+    if ($rate >= 1) return 0;
+    $flat = max(0, (int)$cfg['payFeeFlat']); $under = max(0, (int)$cfg['payFeeFlatUnder']); $cap = max(0, (int)$cfg['payFeeCap']);
+    $gross = (int)ceil($net / (1 - $rate) - 1e-9);
+    if ($flat > 0 && $gross >= $under) $gross = (int)ceil(($net + $flat) / (1 - $rate) - 1e-9);
+    $fee = $gross - $net;
+    if ($cap > 0 && $fee > $cap) $fee = $cap;
+    return max(0, $fee);
+}
+
 /** What the family sees at /pay/<token>: no ledger, no other child, nothing to enumerate. */
 function public_membership_invoice(array $p): array {
     $inv = membership_invoice_by('payToken', trim((string)($p['token'] ?? '')));
@@ -586,6 +608,9 @@ function public_membership_invoice(array $p): array {
         'receiptUrl' => (string)$inv['status'] === 'paid' ? membership_receipt_url($inv) : '',
         'pendingOffline' => $pending ? ['method' => MPAY_METHODS[(string)$pending['method']] ?? '', 'at' => (string)$pending['recordedAt']] : null,
         'paystack' => $terms['paystack'], 'bank' => $terms['bank'],
+        /* Paying online adds Paystack's charge; paying by transfer does not. Said before anybody presses Pay.
+           A paid invoice shows the charge that was actually taken with it. */
+        'onlineFee' => (string)$inv['status'] === 'paid' ? (int)($inv['processingFee'] ?? 0) : ($terms['paystack'] ? paystack_family_charge((int)$inv['total']) : 0),
     ]];
 }
 
@@ -602,13 +627,17 @@ function public_membership_pay_init(array $p): array {
     $email = membership_contact($m);
     if ($email === '') return ['ok' => false, 'error' => 'no_email'];
     $ref = 'NGGM-' . strtoupper(rand_hex(8));
-    $r = paystack_http('POST', '/transaction/initialize', ['email' => $email, 'amount' => (int)$inv['total'] * 100, 'currency' => (string)$inv['currency'],
+    /* The family bears Paystack's charge: the checkout is for the invoice plus the charge, and the charge
+       rides in the transaction's own metadata (set here, server-side), so verify knows what THIS checkout
+       was for even if the setting changes before the family pays. The invoice — and the ledger — stay the fee. */
+    $fee = paystack_family_charge((int)$inv['total']);
+    $r = paystack_http('POST', '/transaction/initialize', ['email' => $email, 'amount' => ((int)$inv['total'] + $fee) * 100, 'currency' => (string)$inv['currency'],
         'reference' => $ref, 'callback_url' => membership_pay_url($inv),
-        'metadata' => ['invoiceId' => (string)$inv['invoiceId'], 'memberId' => (string)$inv['memberId'], 'kind' => 'ngg_membership']]);
+        'metadata' => ['invoiceId' => (string)$inv['invoiceId'], 'memberId' => (string)$inv['memberId'], 'kind' => 'ngg_membership', 'processingFee' => $fee]]);
     if (empty($r['status']) || empty($r['data']['authorization_url'])) return ['ok' => false, 'error' => 'init_failed'];
     db_update('membership_invoices', ['paystackRef' => $ref], ['id' => $inv['id']]);
-    audit('membership.paystack.init', null, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $ref], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'authorizationUrl' => (string)$r['data']['authorization_url'], 'reference' => $ref];
+    audit('membership.paystack.init', null, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $ref, 'processingFee' => $fee], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'authorizationUrl' => (string)$r['data']['authorization_url'], 'reference' => $ref, 'total' => (int)$inv['total'], 'processingFee' => $fee];
 }
 
 /**
@@ -640,11 +669,17 @@ function membership_paystack_verify(string $reference): array {
         return ['ok' => true, 'status' => (string)$inv['status'], 'invoice' => $inv];
     }
     if (!$succeeded) return ['ok' => true, 'status' => (string)($d['status'] ?? 'pending'), 'invoice' => $inv];
-    if ((string)($d['reference'] ?? '') !== $reference || (int)($d['amount'] ?? 0) !== (int)$inv['total'] * 100
+    /* The charge this checkout carried, from the transaction's own metadata (we set it at initialise; a
+       checkout started before the family bore the charge has none). It may not exceed the invoice itself. */
+    $fee = max(0, (int)($d['metadata']['processingFee'] ?? 0));
+    if ($fee > (int)$inv['total']) $fee = -1;
+    if ($fee < 0 || (string)($d['reference'] ?? '') !== $reference || (int)($d['amount'] ?? 0) !== ((int)$inv['total'] + max(0, $fee)) * 100
         || strtoupper((string)($d['currency'] ?? '')) !== strtoupper((string)$inv['currency'])) {
         audit('membership.paystack.mismatch', null, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $reference, 'amount' => (int)($d['amount'] ?? 0), 'currency' => (string)($d['currency'] ?? '')]);
         return ['ok' => false, 'error' => 'payment_mismatch'];
     }
+    // The charge is recorded on the invoice (for the receipt), never on the ledger: it is Paystack's, not something owed to NGG.
+    db_update('membership_invoices', ['processingFee' => $fee], ['id' => $inv['id']]);
     $s = membership_settle((string)$inv['invoiceId'], 'paystack', $reference, 'paystack', ['channel' => (string)($d['channel'] ?? '')]);
     return ['ok' => !empty($s['ok']), 'status' => !empty($s['ok']) ? 'paid' : 'failed', 'invoice' => $s['invoice'] ?? $inv, 'error' => $s['error'] ?? null];
 }

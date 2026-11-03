@@ -36331,5 +36331,67 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM guardian_wards WHERE memberId LIKE 'NGG-DN-%'"); db_exec("DELETE FROM guardians WHERE guardianId LIKE 'GDN-DN%'");
 })();
 
+/* ── Parents pay Paystack's charge (membership-pay.php paystack_family_charge) ──
+   The family pays the dues plus Paystack's charge; NGG receives the whole dues;
+   the ledger records only the dues; the receipt shows the charge. */
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099';
+    $keep = setting_get('fees');
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000] + FEES_DEFAULTS, 'test');
+    $cfg = fees_settings();
+    // Paystack keeps 1.5% (+₦100 from ₦2,500), at most ₦2,000. What reaches NGG after its charge on the gross:
+    $kept = static function (int $net) use ($cfg) { $g = $net + paystack_family_charge($net, $cfg);
+        $c = min((int)$cfg['payFeeCap'], (int)ceil($g * $cfg['payFeeBps'] / 10000 + ($g >= (int)$cfg['payFeeFlatUnder'] ? (int)$cfg['payFeeFlat'] : 0))); return $g - $c; };
+    $ok = true;
+    foreach ([500, 2000, 2400, 2462, 2470, 2500, 7000, 25000, 120000, 500000] as $net) {
+        $k = $kept($net); $fee = paystack_family_charge($net, $cfg);
+        if ($k < $net || $k > $net + 2) { $ok = false; fwrite(STDERR, "net $net fee $fee kept $k\n"); }
+    }
+    chk('paystack charge: after Paystack takes its cut of what the family pays, NGG has the whole amount — under ₦2,500, across the flat-charge line, and at the cap',
+        $ok && paystack_family_charge(2000, $cfg) === 31 && paystack_family_charge(7000, $cfg) === 209 && paystack_family_charge(500000, $cfg) === 2000);
+    chk('paystack charge: switched off, or nothing owed, there is none', paystack_family_charge(7000, ['payFeeOn' => false] + $cfg) === 0 && paystack_family_charge(0, $cfg) === 0);
+    $sv = backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['payFeeBps' => 15000, 'payFeeCap' => 999999]]);
+    chk('paystack charge: a typo cannot put 150% on a bill — the settings are bounded', !empty($sv['ok']) && fees_settings()['payFeeBps'] === FEES_PAYFEE_BPS_MAX && fees_settings()['payFeeCap'] === FEES_PAYFEE_CAP_MAX);
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000] + FEES_DEFAULTS, 'test');
+
+    db_insert('members', ['memberId' => 'NGG-PF-1', 'fullName' => 'Pay Fee', 'email' => '', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'joinDate' => '2025-12-01', 'parentEmail' => 'parent.pf1@example.com', 'createdAt' => $now, 'updatedAt' => $now]);
+    fees_post('NGG-PF-1', 'dues', 7000, ['periodKey' => '2026-10', 'note' => 'Monthly dues 2026-10', 'by' => 'accrual']);
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    $sent = null; $paid = null;
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) use (&$sent, &$paid) {
+        if (strpos($path, '/transaction/initialize') === 0) { $sent = $body; return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/pf1', 'reference' => $body['reference']]]; }
+        $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
+        return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => $paid ?? $sent['amount'], 'currency' => 'NGN', 'channel' => 'card', 'metadata' => $sent['metadata']]];
+    };
+    $acct = backend_dispatch('member.fees.account', ['memberId' => 'NGG-PF-1'])['account'] ?? (member_fees_account(['memberId' => 'NGG-PF-1'])['account'] ?? []);
+    chk('paystack charge: the account quotes it before anybody presses Pay', ($acct['payFee'] ?? -1) === 209);
+    $bi = membership_balance_invoice(db_row("SELECT * FROM members WHERE memberId = 'NGG-PF-1'"), 'test');
+    $inv = membership_invoice_by('invoiceId', (string)$bi['invoiceId']);
+    $pub = public_membership_invoice(['token' => $inv['payToken']])['invoice'] ?? [];
+    chk('paystack charge: the pay page shows the invoice at the dues, and the charge beside it', (int)$inv['total'] === 7000 && ($pub['onlineFee'] ?? 0) === 209 && ($pub['total'] ?? 0) === 7000);
+    $in = backend_dispatch('public.membership.pay.init', ['token' => $inv['payToken']]);
+    chk('paystack charge: the checkout is for the dues plus the charge, and the charge rides in the transaction itself',
+        !empty($in['ok']) && (int)$sent['amount'] === 7209 * 100 && (int)$sent['metadata']['processingFee'] === 209);
+    $paid = 7000 * 100;
+    chk('paystack charge: a payment of the bare dues against a checkout that carried the charge does not settle it',
+        (membership_paystack_verify((string)$in['reference'])['error'] ?? '') === 'payment_mismatch');
+    $paid = null;
+    $v = membership_paystack_verify((string)$in['reference']);
+    $inv2 = membership_invoice_by('invoiceId', (string)$bi['invoiceId']);
+    $credit = (int)db_row("SELECT COALESCE(SUM(amount),0) s FROM member_ledger WHERE memberId = 'NGG-PF-1' AND kind = 'payment'")['s'];
+    chk('paystack charge: paid, the account takes the dues — not the charge — and nothing is owed',
+        ($v['status'] ?? '') === 'paid' && $credit === 7000 && (int)$inv2['processingFee'] === 209 && (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-PF-1'"), $cfg)['payable'] === 0);
+    $html = membership_receipt_html($inv2);
+    chk('paystack charge: the receipt names it as Paystack’s, and the total is what left the family’s account',
+        str_contains($html, 'Paystack charge') && str_contains($html, fees_money_text(7209, $cfg)));
+    $after = public_membership_invoice(['token' => $inv2['payToken']])['invoice'] ?? [];
+    chk('paystack charge: the paid page shows the charge that was actually taken', ($after['onlineFee'] ?? 0) === 209);
+
+    unset($GLOBALS['__paystack_mock'], $GLOBALS['CONFIG']['paystack']);
+    setting_set('fees', is_array($keep) ? $keep : [], 'test');
+    db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-PF-1'"); db_exec("DELETE FROM membership_invoices WHERE memberId = 'NGG-PF-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PF-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

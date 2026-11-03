@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 216;
+const NGG_SCHEMA_TARGET = 217;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6209,6 +6209,11 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS uq_dues_notices ON dues_notices(memberId, kind, refKey);
             CREATE INDEX IF NOT EXISTS idx_dues_notices_at ON dues_notices(createdAt);
+        ",
+        /* 217 — the family bears Paystack's charge on an online payment. The invoice keeps the fee
+           (`total`, what the ledger posts); the charge taken with it is recorded beside it for the receipt. */
+        217 => "
+            ALTER TABLE membership_invoices ADD COLUMN processingFee INTEGER NOT NULL DEFAULT 0;
         ",
     ];
 

@@ -991,6 +991,24 @@ new figure. A transfer waiting to be verified blocks online payment until it is
 checked, so nobody pays twice. Policy fines on the conduct ledger are not
 included yet; dues, training fees and fines posted to the fees ledger are.
 
+**Paystack's charge is paid by the family (from 3 Nov 2026).** Paying online,
+the family pays what is owed **plus Paystack's charge**, worked out so that
+after Paystack takes its cut NGG receives the whole amount. The figure is shown
+before anybody presses Pay — on the pay page ("₦7,000 plus Paystack's ₦209
+charge"), on the family app's **Pay ₦7,209 online** button and pay sheet, and
+on the member's own account — with the free way beside it: **a bank transfer to
+NGG has no charge**. The account records only the ₦7,000; the charge is
+Paystack's, not something owed to NGG. The receipt lists it as *Paystack
+charge* and its total is what left the family's account.
+
+The terms live under **Money → Dues & arrears → Amounts → Paying online**:
+the switch (off = NGG absorbs the charge), the percentage (1.5%), the flat
+charge (₦100), the payment size under which the flat charge is waived (₦2,500)
+and the cap (₦2,000) — Paystack's local card terms. If your Paystack plan
+differs, change them there. A checkout started before a change keeps the
+charge it was started with. Donations are unchanged: a donor gives what they
+choose.
+
 **Money → Membership payments** lists every invoice, joining and balance:
 
 - **Resend link** — only while unpaid and with no offline payment waiting.

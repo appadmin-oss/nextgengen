@@ -2025,7 +2025,8 @@ function DashboardObligations({ account }) {
         <React.Fragment>
           <div className="dash-account-figure">{naira(owed)}</div>
           <div className="dash-account-sub">to pay</div>
-          {a.payOnline && <PayBalanceButton amountText={naira(owed)} pay={() => NGGApi.member.feesPay()}/>}
+          {a.payOnline && <PayBalanceButton amountText={naira(owed + (a.payFee || 0))} pay={() => NGGApi.member.feesPay()}/>}
+          {a.payOnline && a.payFee > 0 && <p className="pay-balance-note">Includes Paystack’s {naira(a.payFee)} charge for paying online. A bank transfer to NGG has no charge.</p>}
         </React.Fragment>
       ) : (
         <React.Fragment>

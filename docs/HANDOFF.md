@@ -5308,3 +5308,51 @@ due date; an "I've paid" note was silent until decided.
   browser suite `tests/dues-notices-ui.test.js` (`test:duesnotices`, in
   `test:all`). The pre-existing failure "portal: reading an entry marks it
   read" fails on the untouched base too and is not from this change.
+
+
+## 2026-11-03 — Family app money fixes; parents pay Paystack's charge
+
+Owner's requests: "Continue. Fix other UX issues" and "The parents should pay
+the paystack charges".
+
+**UX, found by driving every Control Room tab (89, desk and phone — clean) and
+the family app with a seeded family:**
+
+- A dues notice in the family inbox was a dead end (only *Close*). Money
+  notices (`dues-upcoming`, `dues-arrears`, `dues-claim_decided`) carry
+  `act: 'money'` from `family_inbox()` and open **Fees for that child**
+  ("See fees and pay"); they show a wallet icon. Notices are now stamped with
+  the child's `memberId` (arrears filed with the alerts, `cat = 'alert'`).
+- "This month's commitment fee" was said of October's fee in November. Ledger
+  entries now carry `period` (the periodKey), so a single dues line shows its
+  month and an older one is named; several show the span.
+- **Next charge / Coming up** was "next month's fee" regardless of paid-ahead
+  credit or renewals. `family_fees_view()` reads `dues_coming_charges()` —
+  the same calculation the notices use (`dues_upcoming_for()` now wraps it).
+  An empty list says why (paid ahead to …, or nothing in two months).
+- The terms line promised "a reminder is emailed every N days" whatever the
+  settings; `fp3TellTerms()` says how the family is told, from the live
+  notice/reminder settings and channels.
+- Notices use the family's word, "Commitment fee · December 2026", not "Dues".
+- The family pay sheet's *Total* read the ledger balance, which is ₦0 for a
+  joining invoice; it now reads the invoice total.
+
+**Paystack's charge** (`paystack_family_charge()` in membership-pay.php):
+
+- Grossed up on the amount Paystack charges: `gross = ceil(net / (1 − rate))`,
+  plus the flat part only if that gross reaches the waiver threshold, capped.
+  Settings in FEES_DEFAULTS: `payFeeOn` true, `payFeeBps` 150, `payFeeFlat` 100,
+  `payFeeFlatUnder` 2500, `payFeeCap` 2000 (bounded: 5%, ₦1,000, ₦10,000).
+- `public_membership_pay_init` initialises for `total + fee` and puts
+  `processingFee` in the transaction metadata; `membership_paystack_verify`
+  expects `(total + metadata fee) × 100` (a pre-change checkout has none, so
+  it still verifies), records `membership_invoices.processingFee` (migration
+  217) and settles the invoice **total** — the ledger never sees the charge.
+- Shown before paying: `public_membership_invoice.onlineFee`,
+  `family_fees_view.payFee` (fees for the joining invoice total when one is
+  open), `member_fees_account.payFee`; the receipt lists *Paystack charge*.
+- The family view's button label moved into the design source
+  (`mo.payOnlineL` in family-portal-v3.dc.html), recompiled with dc-compile.
+- Tests: PHP block "Parents pay Paystack's charge" (the money reaching NGG is
+  checked across ₦500–₦500,000, the flat-charge line and the cap; init amount;
+  a bare-dues payment refused; ledger, receipt, paid page).

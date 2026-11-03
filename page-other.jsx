@@ -1468,7 +1468,10 @@ function MembershipPayPage({ setPage }) {
               <tbody>
                 {inv.items.map((it, i) => <tr key={i}><td><b>{it.label}</b>{it.detail ? <span>{it.detail}</span> : null}</td><td>{money(it.amount)}</td></tr>)}
               </tbody>
-              <tfoot><tr><td>{inv.status === "paid" ? "Total paid" : "Total to pay"}</td><td>{money(inv.total)}</td></tr></tfoot>
+              <tfoot>
+                {inv.status === "paid" && inv.onlineFee > 0 && <tr className="mpay-charge"><td><b>Paystack charge</b><span>For paying online — not an NGG fee</span></td><td>{money(inv.onlineFee)}</td></tr>}
+                <tr><td>{inv.status === "paid" ? "Total paid" : "Total to pay"}</td><td>{money(inv.total + (inv.status === "paid" ? (inv.onlineFee || 0) : 0))}</td></tr>
+              </tfoot>
             </table>
             {err && <div className="mpay-err" role="alert">{err}</div>}
             {inv.status === "paid" ? (
@@ -1482,11 +1485,14 @@ function MembershipPayPage({ setPage }) {
               <div className="mpay-note" role="status"><b>Your {String(inv.pendingOffline.method || "offline").toLowerCase()} payment is being checked.</b> The centre records it and a second member of staff confirms it against the bank statement; your receipt is emailed as soon as that is done. Please don’t pay again.</div>
             ) : (
               <div className="mpay-actions">
-                {inv.paystack && <button className="btn btn-primary btn-lg mpay-pay" onClick={pay} disabled={busy}>{busy ? "Opening Paystack…" : "Pay " + money(inv.total) + " securely"}</button>}
-                {inv.paystack && <p className="mpay-fine">Card, bank transfer or USSD through Paystack. We never see card details.</p>}
+                {inv.paystack && <button className="btn btn-primary btn-lg mpay-pay" onClick={pay} disabled={busy}>{busy ? "Opening Paystack…" : "Pay " + money(inv.total + (inv.onlineFee || 0)) + " online"}</button>}
+                {/* The charge is said before the press, with the free way beside it — never found on a card statement. */}
+                {inv.paystack && (inv.onlineFee > 0
+                  ? <p className="mpay-fine">{money(inv.total)} plus Paystack’s {money(inv.onlineFee)} charge for paying online by card, bank transfer or USSD.{inv.bank ? " Paying by bank transfer to the account below has no charge." : ""} We never see card details.</p>
+                  : <p className="mpay-fine">Card, bank transfer or USSD through Paystack. We never see card details.</p>)}
                 {inv.bank && (
                   <div className="mpay-bank">
-                    <b>{inv.paystack ? "Or pay by bank transfer" : "Pay by bank transfer"}</b>
+                    <b>{inv.paystack ? "Or pay by bank transfer" + (inv.onlineFee > 0 ? " — " + money(inv.total) + ", no charge" : "") : "Pay by bank transfer"}</b>
                     <dl><div><dt>Bank</dt><dd>{inv.bank.bankName}</dd></div><div><dt>Account number</dt><dd className="mpay-mono">{inv.bank.accountNumber}</dd></div><div><dt>Account name</dt><dd>{inv.bank.accountName}</dd></div><div><dt>Narration</dt><dd className="mpay-mono">{inv.invoiceId}</dd></div></dl>
                     <p>Keep your slip or alert and show it at the centre. Once a member of staff has checked it, your receipt is emailed to you.</p>
                   </div>

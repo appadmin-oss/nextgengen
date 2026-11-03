@@ -385,7 +385,7 @@ class Fp3Portal extends React.Component {
         const actv = wards.filter(x => x.status === "active" && x.loaded), house = actv.reduce((tt, x) => tt + (x.fees.payable || 0), 0);
         out.ac = { h: first + "’s account", lab: !F.enabled ? "No fees" : F.joining ? "Joining invoice" : F.payable ? "To pay now" : "All paid", amount: N(F.payable),
           sub: !F.enabled ? "The centre hasn’t set up fees for " + first + "’s account." : F.payable ? (F.joining ? "Membership and the first month’s commitment fee, charged only for the Saturdays left." : fp3Owed(F.lines)) : "Thank you. Nothing is owed for " + first + ".",
-          canPay: F.payable > 0 && !pend, payL: F.payOnline ? "Pay " + N(F.payable) : "How to pay", pay: () => F.payOnline ? openSheet("pay") : this.go("money", { bank: true }), pending: pend && F.payable > 0, pendingL: "Bank transfer being checked",
+          canPay: F.payable > 0 && !pend, payL: F.payOnline ? "Pay " + N((F.joining ? F.joining.total : F.payable) + (F.payFee || 0)) : "How to pay", pay: () => F.payOnline ? openSheet("pay") : this.go("money", { bank: true }), pending: pend && F.payable > 0, pendingL: "Bank transfer being checked",
           facts: [["Next charge", F.next[0] ? N(F.next[0].amount) : "—", F.next[0] ? F.next[0].when : "Nothing scheduled"]]
             .concat(F.ahead && F.ahead.paidThrough ? [["Paid ahead", "to " + F.ahead.paidThroughL, N(F.ahead.credit) + " held on the account"]] : [])
             .concat([["Training place", chip, "Covered by NGG, not a bill"]]).concat(actv.length > 1 ? [["All your children", N(house), house ? "To pay across " + actv.length + " children" : "Nothing owed"]] : []).map(f => ({ l: f[0], v: f[1], s: f[2] })),
@@ -457,6 +457,8 @@ class Fp3Portal extends React.Component {
       const bk = F.bank;
       out.mo = {
         lab: !F.enabled ? "Fees aren’t switched on" : J ? "Joining invoice · " + J.invoiceId : F.payable ? "To pay now" : "Nothing to pay", amount: N(F.payable),
+        /* Online, the family pays Paystack's charge too: the button says the figure the checkout will show. */
+        payOnlineL: "Pay " + N((J ? J.total : F.payable) + (F.payFee || 0)) + " online",
         sub: !F.enabled ? "The centre hasn’t set up fees for " + first + "’s account. Nothing is owed." : J ? first + "’s place at " + w.member.centre + " is confirmed. Paying this completes membership. " + first + "’s first Saturday is " + J.start + "." : F.payable ? "What’s owed on " + first + "’s account today." : "Thank you. Nothing is owed for " + first + ".",
         hasLines: F.payable > 0 && lines.length > 0,
         lines: lines.map((l, i) => ({ icon: KI[l.kind] || "ph ph-receipt", label: l.label, detail: l.detail, amount: N(l.amount), bt: i ? "#2a2a2e" : "transparent" })),
@@ -678,8 +680,12 @@ class Fp3Portal extends React.Component {
         out.shGo = () => { if (S.fBody.trim().length < 8) return this.setState({ shErr: "Tell the centre a little more." }); req(pr ? "familydetails" : "collect", { subject: S.fBody.trim().slice(0, 60), body: S.fBody.trim() }, ["Sent", "The " + w.member.centre + " desk checks it and replies in Messages → Requests, usually within two days."]); };
       }
       if (sh === "pay") {
-        Object.assign(out, { shTitle: w.fees.joining ? "Pay " + first + "’s joining invoice" : "Pay for " + first, shLead: "You’ll go to Paystack to pay by card, bank or USSD, then come straight back here.", shGoL: S.busy ? "Opening Paystack…" : "Continue to Paystack", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
-        out.payLines = (w.fees.joining ? w.fees.joining.items : w.fees.lines).map(rr => ({ k: rr.label, v: N(rr.amount) })).concat([{ k: "Total", v: N(w.fees.payable) }]);
+        const fee = w.fees.payFee || 0, net = w.fees.joining ? w.fees.joining.total : w.fees.payable;
+        Object.assign(out, { shTitle: w.fees.joining ? "Pay " + first + "’s joining invoice" : "Pay for " + first,
+          shLead: "You’ll go to Paystack to pay by card, bank or USSD, then come straight back here." + (fee ? " Paystack charges " + N(fee) + " for paying online; paying by bank transfer to NGG has no charge." : ""),
+          shGoL: S.busy ? "Opening Paystack…" : "Continue to Paystack", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
+        out.payLines = (w.fees.joining ? w.fees.joining.items : w.fees.lines).map(rr => ({ k: rr.label, v: N(rr.amount) }))
+          .concat(fee ? [{ k: "Paystack charge", v: N(fee) }] : []).concat([{ k: "Total", v: N(net + fee) }]);
         out.shGo = () => this.write(() => NGGApi.family.pay(w.linkId), rr => { if (rr && rr.payUrl) window.location.assign(rr.payUrl); else this.setState({ shErr: "The payment page couldn’t be opened. Try again." }); });
       }
       if (sh === "leave") {
