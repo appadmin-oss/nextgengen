@@ -5429,3 +5429,51 @@ Reported with a screenshot of Compliance → Frog jumps to do: "Arrived 09:21 �
 - Baseline before this change: PHP 6501/1 failed (`portal: reading an entry
   marks it read`), UI smoke 648/1 failed (`…a named reason for every family NOT
   included`) — both pre-existing and unchanged.
+
+
+## 3 Nov 2026 — Money screens read the account one way
+
+Reported: "the UX for finance-related things is terrible". Walked every Money
+view and the family's Fees page with a realistic ledger (part payments, a
+waiver, policy fines, the training place) and fixed what the figures got wrong
+before touching how they look:
+
+- **The family breakdown named the wrong charges.** `family_fees_view` walked
+  the charges newest-first until they added up to the payable; payments are
+  applied oldest-first by due day everywhere else. `fees_charges_left()` is the
+  one allocator now (the walk `fees_unpaid_of` does, per entry); the breakdown
+  reads the ledger itself (the member's account view withholds `entryId`, held
+  by the "withholds which member of staff" test) and carries `of` for a part-paid
+  charge — the page says "₦3,000 already paid of ₦5,000" instead of showing a
+  ₦2,000 membership.
+- **Charged − Received ≠ Payable** on the staff account: `charged` held the
+  ₦60,000 training place. The tiles read `realCharged` / `realCredited`, and the
+  place has its own tile. The account search returns the real figures too.
+- **A waiver was capped at `outstanding`** (training included), so waiving more
+  than was owed stood as credit that paid the coming months. Capped at
+  `payable`; the form says "payable now"; Waive is off when nothing is payable.
+- Smaller: a part first month is "Monthly dues YYYY-MM (part month, from …)"
+  like every other month (it was "Commitment fee YYYY-MM", the family-side word,
+  in a staff ledger); a fine line no longer repeats its amount ("— ₦1,000
+  absence fine." beside ₦1,000); the account no longer carries a second "Back to
+  the list" button; a parent on file as "Mrs Chukwujeme" is greeted "Good
+  evening, Mrs Chukwujeme", not "Good evening, Mrs".
+- Tests: PHP block "Money read one way" (6 checks; restoring the newest-first
+  walk and the `outstanding` cap fails two). Pre-existing and unchanged:
+  `membership-pay.test.js` harness error (`window.__adminSection is not a
+  function`) fails the same with and without this change.
+- **The account is a statement** (follow-up the same day, after "this
+  structure of analysing the funds is unprofessional and confusing"). The
+  account was four tiles that did not reconcile, seven equal buttons and an
+  amounts list with no balance. `fees_account_statement()` builds it on the
+  server (on `admin.fees.member` as `account`): `summary` (charged by kind −
+  received by kind = payable, with credit said as credit), `open` (each charge
+  with something left, in the allocator's own due-day order, with `due`, `paid`
+  and `left`) and `statement` (every entry with the running balance after it; a
+  voided entry is listed and moves nothing; the training place is not in it
+  unless it became owed on leaving). The screen: a summary with the
+  reconciliation table (`.cr-stmt`, `.cr-recon`, container query, not a media
+  query), "What is owed", "Statement", then the training place apart. Header
+  actions are the four money actions; the MOU and reminders are settings in the
+  summary. Checks: PHP "statement · …" (3), `dues-notices-ui.test.js` reads the
+  reconciliation off the page.

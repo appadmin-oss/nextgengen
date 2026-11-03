@@ -149,6 +149,20 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     chk('a new percentage saves, and is stored as basis points',
       await until(() => /1 change saved/.test(document.body.innerText), null, 15000)
       && php(`echo fees_settings()['payFeeBps'];`) === '175');
+    // One member's account reads as a statement whose figures reconcile on the page.
+    php(`fees_post('NGG-DN-1', 'membership', 5000, ['periodKey' => 'y1', 'note' => 'Membership fee — year 1', 'by' => 'test']);
+      fees_post('NGG-DN-1', 'payment', 1500, ['by' => 'NGG-DN-ADM', 'method' => 'cash', 'note' => 'Cash at the desk']);`);
+    await ap.goto(BASE + '/control/money/fees/account/NGG-DN-1', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ap);
+    chk('an account opens on the amount payable, the sum that makes it, what is owed and the statement',
+      await until(() => /What is owed/.test(document.body.innerText) && /Statement/.test(document.body.innerText) && !!document.querySelector('table.cr-recon'), null, 60000));
+    const recon = await ap.evaluate(() => Object.fromEntries([...document.querySelectorAll('table.cr-recon tr')].map(r => [r.querySelector('th').innerText.trim(), (r.querySelector('td') || {}).innerText || ''])));
+    const naira = v => +String(v || '').replace(/[^0-9]/g, '');
+    chk('…and the sum reconciles: total charged − total received = payable now (₦5,000 − ₦1,500 = ₦3,500)',
+      naira(recon['Total charged']) === 5000 && naira(recon['Total received']) === 1500 && naira(recon['Payable now']) === 3500);
+    chk('…the open charge says what was paid of it and what is left', /₦1,500/.test(await body()) && /₦3,500/.test(await body()) && /Membership fee · year 1/.test(await body()));
+    await ap.screenshot({ path: path.join(SHOTS, 'account.png'), fullPage: true });
+
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

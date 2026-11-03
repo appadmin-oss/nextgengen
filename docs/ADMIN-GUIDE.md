@@ -975,7 +975,32 @@ Nobody can use it, the super admin included. A member whose dues were settled to
 a date before then still shows "Membership and dues settled up to …" on their
 Fees, and those periods are still never charged. To take money off an account
 now: record the payment that was made, or waive a specific amount with its
-reason (Money → the member's account).
+reason (Money → the member's account). A waiver is capped at what is **payable
+now** — the training place is never part of it (it is written off by the MOU,
+not waived), so waiving more than is owed cannot leave credit behind.
+
+**Reading a member's account** (Money → Dues & arrears → open a member). It
+reads like a bank statement, in three parts:
+
+- **The summary**: *Payable now* in large type, and beside it the sum that
+  makes it — what was charged, by kind (membership, monthly dues, fines,
+  adjustments), less what was received, by kind (payments, waivers) — so
+  **Total charged − Total received = Payable now** on the page. When more has
+  been paid than charged it says *In credit*. The programme month, reminders
+  and the MOU are listed here, each with its button.
+- **What is owed**: every charge with something left on it, oldest first by
+  the day it fell due — payments always settle the oldest charge first, so the
+  top line is what the next payment pays — with what was paid of it and what
+  is left.
+- **Statement**: every entry, newest first, with a charge or payment column
+  and the balance after it. A voided entry stays listed, struck out of the
+  figures. Open any line to see it or void it.
+
+The **training place** sits below, on its own: it is covered by NGG and never
+in the figures above. (Before 3 Nov 2026 the account showed *Charged* with the
+training place inside it, and the figures did not add up.) The family's Fees
+page reads payments the same way: a charge partly paid shows what was already
+paid of it.
 
 The family pays through the link (Paystack), or by bank transfer or cash.
 

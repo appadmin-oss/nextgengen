@@ -1364,7 +1364,7 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
             $amt = (int)$cfg['monthlyDues'];
             if ($mk === $firstMonth && function_exists('membership_prorate')) $amt = membership_prorate($amt, $ten['start'], $member)['amount'];
             if ($amt > 0 && fees_post($memberId, 'dues', $amt,
-                          ['periodKey' => $mk, 'note' => ($mk === $firstMonth && $amt < (int)$cfg['monthlyDues'] ? 'Commitment fee ' . $mk . ' (from ' . $ten['start'] . ')' : 'Monthly dues ' . $mk), 'by' => 'accrual'])) {
+                          ['periodKey' => $mk, 'note' => 'Monthly dues ' . $mk . ($mk === $firstMonth && $amt < (int)$cfg['monthlyDues'] ? ' (part month, from ' . $ten['start'] . ')' : ''), 'by' => 'accrual'])) {
                 $out['dues']++;
             }
         }
@@ -1633,6 +1633,7 @@ function admin_fees_member(array $p): array {
         'balance' => $bal = fees_balance($m, $cfg),
         'training' => fees_training_watch($m, $cfg, $bal),
         'entries' => array_reverse($entries),          // newest first for reading
+        'account' => fees_account_statement($m, $bal, $cfg),
         'remindOff' => (int)($m['duesRemindOff'] ?? 0) === 1,
         'settings' => $cfg,
     ]];
@@ -1757,7 +1758,12 @@ function admin_fees_waive(array $p): array {
     $before = fees_balance($m);
     $asked = fees_money($p['amount'] ?? null, 0);
     if ($asked <= 0) return ['ok' => false, 'error' => 'bad_amount'];
-    $amount = min($asked, (int)$before['outstanding']);
+    /* Capped at what the family is ASKED for. It was capped at `outstanding`,
+       which also holds the training place (covered, never billed): a ₦50,000
+       waiver on a ₦24,870 balance went through, and the ₦25,130 over stood as
+       credit that quietly paid the coming months. The place is written off by
+       the MOU, not waived here. */
+    $amount = min($asked, (int)$before['payable']);
     if ($amount <= 0) return ['ok' => false, 'error' => 'nothing_outstanding'];
     $by = (string)($g['requester']['memberId'] ?? '');
     $e = fees_post($id, 'waiver', $amount, ['note' => substr($reason, 0, 240), 'by' => $by]);
@@ -1823,6 +1829,96 @@ function fees_unpaid_of(array $member, array $kinds, ?string $through = null, ?a
     }
     return $unpaid;
 }
+/**
+ * What is left on EACH live charge (training excluded), keyed by entryId —
+ * payments and waivers applied to the oldest real charges first, the one
+ * reading fees_unpaid_of() and fees_entry_left() use. A screen that says what
+ * an amount owed is made of must ask this, not walk the list in its own
+ * order: the family's Fees page walked the charges newest-first until they
+ * added up, so a fine posted today for last month's absence took the
+ * "part paid" remainder that really belonged to an older charge.
+ *
+ * @return array<string, array{left:int, amount:int}>
+ */
+function fees_charges_left(array $member, ?array $cfg = null, ?array $entries = null): array {
+    $cfg = $cfg ?? fees_settings();
+    $ten = fees_tenure($member, $cfg);
+    $memberDues = [];
+    if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
+    $charges = []; $credit = 0;
+    foreach ($entries ?? fees_entries((string)$member['memberId']) as $e) {
+        if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
+        $kind = (string)$e['kind'];
+        if ((string)$e['direction'] === 'charge') { if ($kind !== 'training') $charges[] = ['entryId' => (string)$e['entryId'], 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)]; }
+        elseif ($kind !== 'writeoff') $credit += (int)$e['amount'];
+    }
+    usort($charges, static fn($a, $b) => [$a['day'], $a['id']] <=> [$b['day'], $b['id']]);
+    $out = [];
+    foreach ($charges as $c) {
+        $take = min($credit, $c['amount']); $credit -= $take;
+        $out[$c['entryId']] = ['left' => $c['amount'] - $take, 'amount' => $c['amount'], 'due' => (string)$c['day']];
+    }
+    return $out;
+}
+
+/**
+ * One member's account as an accountant reads it, built on the server so the
+ * screen adds nothing up:
+ *
+ *   summary    charged by kind − received by kind = payable now (a sum that
+ *              reconciles, on the page)
+ *   open       each charge with something left on it, oldest first, what is
+ *              left and what was paid of it (fees_charges_left)
+ *   statement  every entry in the order it was posted, with charge / credit
+ *              columns and the running balance; a voided entry is listed and
+ *              moves nothing. The training place is not money anybody is
+ *              asked for, so it is not in the statement — it has its own
+ *              section — unless it became owed on leaving, which is a line.
+ *
+ * Before 3 Nov 2026 the account showed four tiles that did not reconcile and a
+ * list of amounts with no balance, so nobody could trace how the payable was
+ * reached.
+ */
+function fees_account_statement(array $m, array $bal, ?array $cfg = null, ?array $entries = null): array {
+    $cfg = $cfg ?? fees_settings();
+    $entries = $entries ?? fees_entries((string)$m['memberId']);
+    $leftBy = fees_charges_left($m, $cfg, $entries);
+    $charged = []; $received = []; $rows = []; $run = 0;
+    foreach ($entries as $e) {
+        $kind = (string)$e['kind']; $amt = (int)$e['amount']; $void = trim((string)($e['voidedAt'] ?? '')) !== '';
+        if ($kind === 'training' || $kind === 'writeoff') continue;   // the place: its own section
+        $isCharge = (string)$e['direction'] === 'charge';
+        if (!$void) {
+            $run += $isCharge ? $amt : -$amt;
+            $k = $kind === 'adjustment' ? ($isCharge ? 'adjustment' : 'credit_adjustment') : $kind;
+            if ($isCharge) $charged[$k] = ($charged[$k] ?? 0) + $amt; else $received[$k] = ($received[$k] ?? 0) + $amt;
+        }
+        $rows[] = ['entryId' => (string)$e['entryId'], 'date' => substr((string)$e['createdAt'], 0, 10), 'kind' => $kind,
+            'periodKey' => (string)($e['periodKey'] ?? ''), 'note' => (string)$e['note'], 'void' => $void, 'voidReason' => (string)($e['voidReason'] ?? ''),
+            'charge' => $isCharge ? $amt : 0, 'credit' => $isCharge ? 0 : $amt, 'balance' => $run,
+            'left' => $isCharge && !$void ? (int)($leftBy[(string)$e['entryId']]['left'] ?? 0) : null];
+    }
+    $trainingOwed = (int)($bal['trainingOwed'] ?? 0);
+    if ($trainingOwed > 0) {
+        $run += $trainingOwed; $charged['training_owed'] = $trainingOwed;
+        $rows[] = ['entryId' => '', 'date' => '', 'kind' => 'training_owed', 'periodKey' => '', 'note' => 'Left before the MOU was complete: what service had not yet earned off the training place',
+            'void' => false, 'voidReason' => '', 'charge' => $trainingOwed, 'credit' => 0, 'balance' => $run, 'left' => $trainingOwed];
+    }
+    /* In the allocator's own order — by the day each charge fell due — which is
+       the order payments settle them, so the top line is what the next payment pays. */
+    $rowBy = []; foreach ($rows as $r) if ($r['entryId'] !== '') $rowBy[$r['entryId']] = $r;
+    $open = [];
+    foreach ($leftBy as $id => $l) {
+        if ($l['left'] <= 0 || !isset($rowBy[$id])) continue;
+        $r = $rowBy[$id];
+        $open[] = ['entryId' => $id, 'date' => $r['date'], 'due' => substr((string)$l['due'], 0, 10), 'kind' => $r['kind'], 'periodKey' => $r['periodKey'], 'note' => $r['note'],
+                   'amount' => $l['amount'], 'left' => $l['left'], 'paid' => $l['amount'] - $l['left']];
+    }
+    return ['summary' => ['charged' => $charged, 'received' => $received, 'chargedTotal' => array_sum($charged), 'receivedTotal' => array_sum($received),
+                          'payable' => (int)$bal['payable'], 'credit' => max(0, -$run)],
+            'open' => $open, 'statement' => array_reverse($rows)];   // newest first on screen; the balance on each line is as at that line
+}
+
 /**
  * What is still owed on ONE charge, identified by its period key — payments
  * and waivers applied to the oldest real charges first, exactly as
@@ -2085,7 +2181,10 @@ function admin_fees_lookup(array $p): array {
                   /* Both figures: `payable` is what to ask for, `charged` proves
                      an account exists at all for somebody who owes nothing. */
                   'payable' => (int)$b['payable'], 'charged' => (int)$b['charged'],
-                  'credited' => (int)$b['credited'], 'phase' => (string)$b['tenure']['phase']];
+                  'credited' => (int)$b['credited'], 'phase' => (string)$b['tenure']['phase'],
+                  /* The real money, so Charged − Received = Payable on screen; `charged`
+                     also holds the training place, which nobody is asked to pay. */
+                  'realCharged' => (int)$b['realCharged'], 'realCredited' => (int)$b['realCredited']];
     }
     return ['ok' => true, 'members' => $out, 'q' => $q,
             'truncated' => count($rows) > FEES_LOOKUP_MAX, 'max' => FEES_LOOKUP_MAX];

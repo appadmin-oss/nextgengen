@@ -12,7 +12,13 @@
 /* Soft avatar tones, one per child by their id, so a child keeps their colour. */
 const FP3_TONES = ["#f4e1c1", "#d4e6ea", "#e3dcf1", "#dcebd9", "#f3d9d6", "#e6e0d2"];
 function fp3Tone(id) { let h = 0; String(id || "").split("").forEach(c => { h = (h * 31 + c.charCodeAt(0)) >>> 0; }); return FP3_TONES[h % FP3_TONES.length]; }
-function fp3First(n) { return String(n || "").trim().split(/\s+/)[0] || ""; }
+/** What to call somebody: their first name — or, when the name on file starts with a title, the title and surname
+    ("Mrs Chukwujeme", never "Good evening, Mrs"). */
+function fp3First(n) {
+  const w = String(n || "").trim().split(/\s+/).filter(Boolean);
+  if (w.length > 1 && /^(mr|mrs|ms|miss|mx|dr|prof|chief|pastor|rev|engr|barr|alhaji|alhaja|sir|lady|hon|deaconess|deacon|elder)\.?$/i.test(w[0])) return w[0] + " " + w[w.length - 1];
+  return w[0] || "";
+}
 const FP3_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const FP3_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "Sat 31 Oct" from an ISO date or datetime; '' when there is none. Dates are calendar dates, read without a timezone shift. */
@@ -65,21 +71,28 @@ function fp3Lines(lines) {
   const by = {};
   (lines || []).forEach(l => {
     const k = l.kind === "dues" ? "dues" : l.kind === "fine" ? "fine:" + l.label : l.kind + ":" + l.label;
-    if (!by[k]) by[k] = { label: l.kind === "dues" ? "Commitment fee" : fp3Note(l.label), kind: l.kind, amount: 0, n: 0, detail: "", periods: [] };
+    if (!by[k]) by[k] = { label: l.kind === "dues" ? "Commitment fee" : fp3Note(l.label), kind: l.kind, amount: 0, n: 0, detail: "", periods: [], paid: 0, of: 0 };
     by[k].amount += l.amount; by[k].n++;
+    /* Part paid: the server says what the charge was (`of`), so ₦2,000 left on a ₦5,000 membership is not read as its price. */
+    if (l.of > 0) { by[k].paid += l.of - l.amount; by[k].of += l.of; }
     if (/^\d{4}-\d{2}$/.test(l.period || "")) by[k].periods.push(l.period);
   });
   /* The months a dues line is for, by name: "October 2026", or "August – October 2026" — never just "Unpaid months". */
   const span = ps => { const o = ps.slice().sort(); if (!o.length) return ""; const a = fp3Month(o[0]), b = fp3Month(o[o.length - 1]);
     return a === b ? a : a.split(" ")[1] === b.split(" ")[1] ? a.split(" ")[0] + " – " + b : a + " – " + b; };
+  const naira = n => "₦" + Number(n).toLocaleString("en");
   return Object.keys(by).map(k => { const x = by[k], when = x.kind === "dues" ? span(x.periods) : "";
-    return Object.assign({}, x, { label: x.n > 1 ? x.label + " × " + x.n + " months" : x.label, detail: when || (x.n > 1 ? "Unpaid months" : "") }); });
+    const part = x.paid > 0 ? naira(x.paid) + " already paid" + (x.n === 1 ? " of " + naira(x.of) : "") : "";
+    return Object.assign({}, x, { label: x.n > 1 ? x.label + " × " + x.n + " months" : x.label,
+      detail: [when || (x.n > 1 ? "Unpaid months" : ""), part].filter(Boolean).join(" · ") }); });
 }
 
 /** A ledger note as a parent reads it: dates in words, "Monthly dues 2026-10" as the month. */
 function fp3Note(t) {
   return String(t || "").replace(/Monthly dues (\d{4})-(\d{2})\b/g, (_, y, m) => "Commitment fee · " + ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][+m - 1] + " " + y)
-    .replace(/\b(\d{4}-\d{2}-\d{2})\b/g, d => fp3Long(d)).replace(/^Policy fine — /, "Fine: ");
+    .replace(/\b(\d{4}-\d{2}-\d{2})\b/g, d => fp3Long(d)).replace(/^Policy fine — /, "Fine: ")
+    /* The amount is printed beside the line; a fine's note that repeats it ("— ₦1,000 absence fine.") says it twice. */
+    .replace(/\s+—\s+₦[\d,]+(?: [a-z]+)? fine\.?$/, "");
 }
 
 /** "2027-01" → "January 2027". */

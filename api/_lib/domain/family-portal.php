@@ -85,13 +85,20 @@ function family_fees_view(array $m): ?array {
             'kind' => (string)$e['kind'], 'note' => (string)$e['note'], 'amount' => (int)$e['amount'], 'period' => (string)($e['period'] ?? ''),
             'dir' => (string)$e['direction'] === 'credit' ? 'credit' : 'charge', 'void' => !empty($e['void']), 'place' => $place((string)$e['kind'])];
     }, (array)$a['entries']);
-    // What the payable is made of: the open charges, newest first, until they add up to it.
-    $lines = []; $left = (int)$a['payable'];
-    foreach ($entries as $e) {
-        if ($left <= 0) break;
-        if ($e['dir'] !== 'charge' || $e['void'] || $e['place']) continue;
-        $amt = min($left, $e['amount']); $left -= $amt;
-        $lines[] = ['label' => $e['note'] !== '' ? $e['note'] : ucfirst($e['kind']), 'kind' => $e['kind'], 'amount' => $amt, 'detail' => $e['date'], 'period' => $e['period']];
+    /* What the payable is made of: each charge with something left on it, read
+       the way the account is (fees_charges_left — payments to the oldest
+       first), newest first on screen. A part-paid charge says what it was
+       (`of`), so "Membership ₦2,000" is not read as the price of membership. */
+    $ledger = fees_entries($mid);   // read from the ledger itself: the member's account view withholds the entry key
+    $leftBy = fees_charges_left($m, $cfg, $ledger);
+    $lines = [];
+    foreach (array_reverse($ledger) as $e) {
+        $l = $leftBy[(string)$e['entryId']] ?? null;   // live, non-training charges only
+        if (!$l || $l['left'] <= 0) continue;
+        $per = (string)($e['periodKey'] ?? '');
+        $lines[] = ['label' => (string)$e['note'] !== '' ? (string)$e['note'] : ucfirst((string)$e['kind']), 'kind' => (string)$e['kind'], 'amount' => $l['left'],
+            'of' => $l['left'] < $l['amount'] ? $l['amount'] : 0, 'detail' => substr((string)$e['createdAt'], 0, 10),
+            'period' => preg_match('/^\d{4}-\d{2}$/', $per) ? $per : ''];
     }
     $inv = db_row("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' ORDER BY id DESC LIMIT 1", [$mid]);
     /* What is still to come in the next two months, after what was paid ahead: the commitment fee on the 1st

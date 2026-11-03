@@ -82,7 +82,7 @@ const CR_MO_METHODS = [["cash", "Cash"], ["transfer", "Bank transfer"], ["pos", 
 const CR_MO_ENTRY_ERR = {
   bad_amount: "Enter an amount above ₦0.", bad_reason: "Choose why this fine is being issued.",
   note_required: "Say why — this one needs a written reason.", reason_required: "Say why. It stays on the account.",
-  nothing_outstanding: "There is nothing outstanding to waive.", bad_kind: "That is not something this screen can post.",
+  nothing_outstanding: "Nothing is payable on this account, so there is nothing to waive.", bad_kind: "That is not something this screen can post.",
   already_done: "The MOU is already recorded as accomplished.", already_void: "That entry is already voided.",
   fees_disabled: "Dues are switched off, so nothing is charged.", reminders_disabled: "Reminders are switched off.",
   not_due: "The amounts were already raised inside the review period.",
@@ -115,7 +115,8 @@ async function crMoOpen(ctx, memberId) {
 
 /* ── Money entries: one form per kind, one submit path ── */
 function crMoEntry(ctx, kind, acct) {
-  const owed = acct.balance.outstanding;
+  /* What the family is asked for — `outstanding` also holds the training place, which is not owed. */
+  const owed = acct.balance.payable;
   const titles = { payment: "Record a payment", fine: "Issue a fine", adjustment: "Adjust the account", waiver: "Waive what is owed" };
   ctx.form({
     title: titles[kind] + " · " + acct.fullName, submit: titles[kind], busyLabel: "Saving…",
@@ -124,7 +125,7 @@ function crMoEntry(ctx, kind, acct) {
     values: { amount: "", method: "cash", reference: "", reason: kind === "fine" ? "late" : "", note: "" },
     fields: [
       { id: "amount", l: "Amount (₦)", req: true, num: true, money: true, im: "numeric", max: 12,
-        help: fmtMoney(owed) + " outstanding" + (kind === "waiver" && owed > 0 ? " — more than this is capped to it." : "."),
+        help: fmtMoney(owed) + " payable now" + (kind === "waiver" && owed > 0 ? " — more than this is capped to it." : "."),
         check: v => { const n = parseInt(v, 10); return !(n > 0) ? "Enter an amount above ₦0." : ctx.data.B.amountMax && n > ctx.data.B.amountMax ? "At most " + fmtMoney(ctx.data.B.amountMax) + "." : ""; } },
       kind === "payment" ? { id: "method", l: "How it came", type: "chips", req: true, opts: CR_MO_METHODS } : null,
       kind === "payment" ? { id: "reference", l: "Reference", ph: "TRF-… or receipt no.", max: 120 } : null,
@@ -330,31 +331,104 @@ function crMoSwitcher(ctx, view) {
     : <CrSeg label="Dues view" value={view} options={CR_MO_VIEWS} onChange={pick}/> };
 }
 
+/** The money a family is asked for: realCharged / realCredited, which leave out the training place. Older servers sent only the totals. */
+function crMoReal(b, k) { const r = b[k === "charged" ? "realCharged" : "realCredited"]; return r !== undefined ? r : b[k]; }
+
+/* What each kind of money is called on the statement. */
+const CR_MO_CHARGED = [["membership", "Membership fees"], ["dues", "Monthly dues"], ["fine", "Fines"], ["adjustment", "Adjustments"], ["training_owed", "Training place owed on leaving"]];
+const CR_MO_RECEIVED = [["payment", "Payments"], ["waiver", "Waivers"], ["credit_adjustment", "Adjustments"]];
+/** "Monthly dues · October 2026" — the kind, and the month it is for when it is for one. */
+function crMoWhat(e) {
+  const k = e.kind === "training_owed" ? "Training place owed" : CR_MO_KIND[e.kind] || e.kind;
+  const yr = e.kind === "membership" && /^y(\d+)$/.exec(e.periodKey || "");
+  const mk = yr ? "year " + yr[1] : /^\d{4}-\d{2}$/.test(e.periodKey || "") ? new Date(e.periodKey + "-01T12:00:00Z").toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }) : "";
+  return mk ? k + " · " + mk : k;
+}
+/** A note worth a second line: not one that only restates the description ("Membership fee — year 1", "Monthly dues 2026-10"). */
+function crMoNoteAdds(e) {
+  const n = String(e.note || "").trim(), k = String(CR_MO_KIND[e.kind] || "").toLowerCase();
+  return !n || (k && n.toLowerCase().startsWith(k) && !/\(part month/.test(n)) ? "" : n;
+}
+/** "(₦3,000)" — the accountant's minus, for money taken off. */
+function crMoLess(n) { return "(" + fmtMoney(n) + ")"; }
+
+/* ══ One member's account, as a statement ═══════════════════════════════════
+   The server works every figure out (fees_account_statement); this draws it.
+   Three questions, in the order somebody asks them: what do they owe and how
+   is it made up (a sum that reconciles), which charges is it (oldest first,
+   what is left of each), and how did it get here (every entry, with the
+   running balance). The training place is not money anybody is asked for,
+   so it sits below the money, on its own. */
+function CrMoAccountSummary({ a, ctx }) {
+  const S = a.account.summary, b = a.balance, t = b.tenure || {};
+  const charged = CR_MO_CHARGED.filter(k => S.charged[k[0]]), received = CR_MO_RECEIVED.filter(k => S.received[k[0]]);
+  const where = t.phase === "unknown" ? "No join date on this record" : "Month " + t.months + " of " + ((t.trainingMonths || 0) + (t.serviceMonths || 0)) + ", in " + t.phase;
+  return (
+    <div className="cr-stmt">
+      <div className="cr-stmt-due">
+        <span className="cr-stmt-k">{S.credit > 0 ? "In credit" : "Payable now"}</span>
+        <b className="cr-stmt-big">{fmtMoney(S.credit > 0 ? S.credit : S.payable)}</b>
+        <span className="cr-stmt-sub">{S.credit > 0 ? "Paid ahead — it covers the next charges as they fall due." : S.payable > 0 ? "What the family is asked for today." : "Nothing is owed."}</span>
+        <dl className="cr-stmt-facts">
+          <div><dt>Programme</dt><dd>{where}{b.mouAt ? " · MOU accomplished " + crDate(b.mouAt) : ""}</dd></div>
+          {a.guardian && a.guardian.name ? <div><dt>Guardian</dt><dd>{a.guardian.name}{a.guardian.phone ? " · " + crMask(a.guardian.phone) : ""}</dd></div> : null}
+          <div><dt>Reminders</dt><dd>{a.remindOff ? "Off for this family" : "On"} <button type="button" className="cr-btn is-sm" onClick={() => crMoRemindOff(ctx, a)}>{a.remindOff ? "Turn on" : "Turn off"}</button></dd></div>
+          {!b.mouAt ? <div><dt>MOU</dt><dd>Not yet accomplished <button type="button" className="cr-btn is-sm" onClick={() => crMoMou(ctx, a)}>Mark accomplished…</button></dd></div> : null}
+          {b.atCap ? <div><dt>Ceiling</dt><dd>Reached — nothing further accrues</dd></div> : null}
+        </dl>
+      </div>
+      <table className="cr-recon" aria-label="How the amount payable is made up">
+        <tbody>
+          <tr className="is-head"><th scope="rowgroup" colSpan={2}>Charged</th></tr>
+          {charged.length ? charged.map(k => <tr key={k[0]}><th scope="row">{k[1]}</th><td>{fmtMoney(S.charged[k[0]])}</td></tr>)
+            : <tr><th scope="row">Nothing charged yet</th><td>{fmtMoney(0)}</td></tr>}
+          <tr className="is-total"><th scope="row">Total charged</th><td>{fmtMoney(S.chargedTotal)}</td></tr>
+          <tr className="is-head"><th scope="rowgroup" colSpan={2}>Received</th></tr>
+          {received.length ? received.map(k => <tr key={k[0]}><th scope="row">{k[1]}</th><td>{crMoLess(S.received[k[0]])}</td></tr>)
+            : <tr><th scope="row">Nothing received yet</th><td>{crMoLess(0)}</td></tr>}
+          <tr className="is-total"><th scope="row">Total received</th><td>{crMoLess(S.receivedTotal)}</td></tr>
+          <tr className="is-grand"><th scope="row">{S.credit > 0 ? "In credit" : "Payable now"}</th><td>{S.credit > 0 ? crMoLess(S.credit) : fmtMoney(S.payable)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function crMoAccountBlocks(d, ctx) {
-  const a = d.acct, b = a.balance, t = b.tenure || {};
-  const out = [];
-  out.push({ type: "kpis", span: 6, title: a.fullName + "’s account", sub: [a.memberId, a.centre, a.status && a.status !== "active" ? a.status : ""].filter(Boolean).join(" · "),
-    action: "Back to the list", onAction: () => ctx.setSub(""), items: [
-    { l: "Payable now", v: fmtMoney(b.payable), tone: "flat" }, { l: "Charged", v: fmtMoney(b.charged), tone: "flat" },
-    { l: "Received", v: fmtMoney(b.credited), tone: "flat" }, { l: "Training earned off", v: fmtMoney(b.trainingEarned), tone: "flat" },
-  ] });
-  out.push({ type: "note", span: 6, icon: "calendar-blank",
-    text: (t.phase === "unknown" ? "No join date on this record, so the three-year clock can’t be worked out."
-      : "Month " + t.months + " of " + ((t.trainingMonths || 0) + (t.serviceMonths || 0)) + " — currently in " + t.phase + "." + (t.phase === "service" ? " " + t.servedMonths + " of " + t.serviceMonths + " service months served." : ""))
-      + (b.mouAt ? " MOU accomplished " + crDate(b.mouAt) + "." : ""),
-    sub: [a.guardian && a.guardian.name ? "Guardian " + a.guardian.name + (a.guardian.phone ? " · " + crMask(a.guardian.phone) : "") : "", a.remindOff ? "Reminders are off for this family" : "", b.atCap ? "At the ceiling — nothing further accrues" : ""].filter(Boolean).join(" · ") });
-  /* custom: TrainingFeeWatch (components.jsx) is the one training-fee schedule
-     renderer, shared with the member's own dashboard. */
-  if (a.training) out.push({ type: "custom", span: 6, render: () => <TrainingFeeWatch w={a.training} audience="staff"/> });
-  out.push({ type: "table", span: 6, title: "Ledger", sub: "Newest first · open an entry to void it", nosel: true,
-    cols: ["What", { l: "When" }, { l: "Amount", num: true }, "State"],
-    rows: (a.entries || []).map(e => ({ key: e.entryId, open: () => crMoEntryOpen(ctx, e, a), cells: [
-      { k: "text", t: (CR_MO_KIND[e.kind] || e.kind) + (/^\d{4}-\d{2}$/.test(e.periodKey || "") ? " " + e.periodKey : ""), s: e.void ? "Voided — " + (e.voidReason || "") : e.note },
-      { k: "text", t: e.createdAt ? crDate(e.createdAt) : "—" },
-      { k: "num", t: (e.direction === "charge" ? "" : "−") + fmtMoney(e.amount), v: (e.direction === "charge" ? 1 : -1) * e.amount },
-      { k: "status", t: e.void ? "Voided" : e.direction === "charge" ? "Charge" : "Credit", tone: e.void ? "neutral" : e.direction === "charge" ? "warn" : "ok" },
+  const a = d.acct, out = [];
+  // An older server sends no statement: say so, rather than drawing an empty account.
+  if (!a.account) return [{ type: "note", span: 6, icon: "warning-circle", tone: "warn", text: "This account’s statement could not be read — the server is older than this screen.",
+    sub: "Upload the latest api/ folder, then open the account again.", act: { l: "Back to the list", run: () => ctx.setSub("") } }];
+  const byId = {}; (a.entries || []).forEach(e => { byId[e.entryId] = e; });
+  out.push({ type: "custom", span: 6, title: a.fullName + "’s account", sub: [a.memberId, a.centre, a.status && a.status !== "active" ? a.status : ""].filter(Boolean).join(" · "),
+    action: "Back to the list", onAction: () => ctx.setSub(""), render: () => <CrMoAccountSummary a={a} ctx={ctx}/> });
+  const open = a.account.open || [];
+  out.push({ type: "table", span: 6, title: "What is owed", nosel: true,
+    sub: open.length ? "Oldest first — payments settle the oldest charge first, so this is what the next payment pays." : "",
+    cols: ["Charge", { l: "Fell due" }, { l: "Amount", num: true }, { l: "Paid", num: true }, { l: "Left to pay", num: true }],
+    rows: open.map(o => ({ key: "o" + o.entryId, open: byId[o.entryId] ? () => crMoEntryOpen(ctx, byId[o.entryId], a) : null, cells: [
+      { k: "text", t: crMoWhat(o), s: o.kind === "fine" || o.kind === "adjustment" ? o.note : "" },
+      { k: "text", t: o.due || o.date ? crDate(o.due || o.date) : "—", v: o.due || o.date },
+      { k: "num", t: fmtMoney(o.amount), v: o.amount },
+      { k: "num", t: o.paid ? fmtMoney(o.paid) : "—", v: o.paid },
+      { k: "num", t: fmtMoney(o.left), v: o.left },
     ] })),
-    search: "Search the ledger", filters: ["State"], emptyText: "Nothing on this account yet. Charges appear when dues are brought up to date." });
+    emptyText: "Nothing is owed on this account." });
+  out.push({ type: "table", span: 6, title: "Statement", nosel: true, sub: "Every entry, newest first, with the balance after it · open one to see it or void it",
+    cols: [{ l: "Date" }, "Description", { l: "Charge", num: true }, { l: "Payment", num: true }, { l: "Balance", num: true }],
+    rows: (a.account.statement || []).map((r, i) => ({ key: "s" + (r.entryId || i), open: byId[r.entryId] ? () => crMoEntryOpen(ctx, byId[r.entryId], a) : null, cells: [
+      { k: "text", t: r.date ? crDate(r.date) : "—", v: r.date },
+      { k: "text", t: crMoWhat(r), s: r.void ? "Voided — " + (r.voidReason || "no reason given") + " · not counted" : crMoNoteAdds(r) },
+      { k: "num", t: r.charge ? fmtMoney(r.charge) : "", v: r.charge },
+      { k: "num", t: r.credit ? crMoLess(r.credit) : "", v: r.credit },
+      { k: "num", t: r.void ? "—" : r.balance < 0 ? crMoLess(-r.balance) + " cr" : fmtMoney(r.balance), v: r.balance },
+    ] })),
+    search: "Search the statement", emptyText: "Nothing on this account yet. Charges appear when dues are brought up to date." });
+  /* custom: TrainingFeeWatch (components.jsx) is the one training-fee schedule
+     renderer, shared with the member's own dashboard. The place is covered by
+     NGG and never billed, so it sits apart from the money above. */
+  if (a.training) out.push({ type: "custom", span: 6, title: "Training place", sub: "Covered by NGG — not owed, and not in the figures above",
+    render: () => <TrainingFeeWatch w={a.training} audience="staff"/> });
   return out;
 }
 
@@ -380,7 +454,7 @@ function crMoOwesBlocks(d, ctx) {
         { k: "person", t: m.fullName, s: m.memberId + " · " + (m.type === "Summer" ? "Summer School" : m.type || "NGG") },
         { k: "text", t: m.centre || "—" },
         { k: "num", t: m.payable > 0 ? fmtMoney(m.payable) : "Nothing owed", v: m.payable },
-        { k: "num", t: fmtMoney(m.charged), v: m.charged }, { k: "num", t: fmtMoney(m.credited), v: m.credited },
+        { k: "num", t: fmtMoney(crMoReal(m, "charged")), v: crMoReal(m, "charged") }, { k: "num", t: fmtMoney(crMoReal(m, "credited")), v: crMoReal(m, "credited") },
       ] })),
       emptyText: f.tooShort ? "Type at least two letters." : "Nobody matches “" + f.q + "”." });
   }
@@ -630,11 +704,11 @@ Object.assign(CR_TAB_DEFS, {
       const out = [{ l: "Record payment", icon: "currency-ngn", primary: true, run: () => crMoPayAnyone(ctx) }];
       if (a) {
         out.push({ l: "Issue a fine", icon: "gavel", run: () => crMoEntry(ctx, "fine", a) });
-        out.push({ l: "Waive", icon: "hand-heart", disabled: a.balance.outstanding <= 0, why: "Nothing outstanding to waive.", run: () => crMoEntry(ctx, "waiver", a) });
+        out.push({ l: "Waive", icon: "hand-heart", disabled: a.balance.payable <= 0, why: "Nothing payable to waive — the training place is not owed.", run: () => crMoEntry(ctx, "waiver", a) });
         out.push({ l: "Adjust", icon: "plus-minus", run: () => crMoEntry(ctx, "adjustment", a) });
-        if (!a.balance.mouAt) out.push({ l: "Mark MOU accomplished", icon: "seal-check", run: () => crMoMou(ctx, a) });
-        out.push({ l: a.remindOff ? "Allow reminders" : "Stop reminders", icon: a.remindOff ? "bell" : "bell-slash", run: () => crMoRemindOff(ctx, a) });
-        out.push({ l: "Back to the list", icon: "arrow-left", run: () => ctx.setSub("") });
+        /* The MOU and reminders are settings of the account, not money actions:
+           they sit in the summary beside the facts they change. "Back to the
+           list" is the account heading's own link. */
         return out;
       }
       out.push({ l: "Bring charges up to date", icon: "arrows-clockwise", disabled: !d.cfg.enabled, why: "Dues are switched off — nothing is charged.", run: () => crMoAccrue(ctx) });

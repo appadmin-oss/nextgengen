@@ -17789,3 +17789,28 @@ button.m9x-ev-sum { cursor: pointer; }
 .cr-sy-cloud-pick { padding: 0; border: 1px solid var(--cr-line-strong); border-radius: var(--cr-r); overflow: hidden; background: none; cursor: pointer; width: 48px; height: 48px; }
 .cr-sy-cloud-pick:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .cr-sy-cloud-pick img { display: block; width: 48px; height: 48px; object-fit: cover; }
+
+/* ── A member's account, as a statement (cr-tab-money.jsx, CrMoAccountSummary) ──
+   What is payable on the left; on the right the sum that makes it — charged by
+   kind, less received by kind — so the figure can be checked on the page.
+   Side by side when the block is wide enough, stacked when it is not: the
+   block's own width decides, not the window's. */
+.cr-block:has(> .cr-stmt), .cr-pblock:has(> .cr-stmt) { container-type: inline-size; }
+.cr-stmt { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); background: var(--cr-bg); padding: 20px; }
+@container (min-width: 720px) { .cr-stmt { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 32px; } }
+.cr-stmt-due { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cr-stmt-k { font-size: 13px; color: var(--cr-muted-3); }
+.cr-stmt-big { font-size: 34px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--cr-ink); line-height: 1.15; }
+.cr-stmt-sub { font-size: 13.5px; color: var(--cr-muted-3); }
+.cr-stmt-facts { margin: 14px 0 0; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--cr-line-4); padding-top: 12px; }
+.cr-stmt-facts div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; align-items: center; font-size: 13.5px; }
+.cr-stmt-facts dt { color: var(--cr-muted-3); }
+.cr-stmt-facts dd { margin: 0; color: var(--cr-ink); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cr-recon { width: 100%; border-collapse: collapse; font-size: 13.5px; align-self: start; }
+.cr-recon th { text-align: left; font-weight: 400; color: var(--cr-ink); padding: 5px 0; }
+.cr-recon td { text-align: right; font-variant-numeric: tabular-nums; padding: 5px 0; white-space: nowrap; }
+.cr-recon tr.is-head th { font-size: 12.5px; font-weight: 600; color: var(--cr-muted-3); padding-top: 12px; }
+.cr-recon tr.is-head:first-child th { padding-top: 0; }
+.cr-recon tr:not(.is-head):not(.is-total):not(.is-grand) th { padding-left: 12px; color: var(--cr-muted-2); }
+.cr-recon tr.is-total th, .cr-recon tr.is-total td { font-weight: 600; border-top: 1px solid var(--cr-line-4); }
+.cr-recon tr.is-grand th, .cr-recon tr.is-grand td { font-weight: 650; font-size: 15px; border-top: 2px solid var(--cr-ink); padding-top: 9px; }

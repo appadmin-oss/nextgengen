@@ -36057,6 +36057,56 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 })();
 
 
+// ── Money read one way: the family's breakdown, the account figures, the waiver cap, the dues label ──
+(function () {
+    $now = now_iso(); $ADM = 'NGG-MR-ADM';
+    $keep = setting_raw('fees');
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'trainingFee' => 60000] + FEES_DEFAULTS, 'test');
+    foreach ([[$ADM, 'super_admin', ''], ['NGG-MR-1', 'member', '2026-01-01'], ['NGG-MR-2', 'member', gmdate('Y-m-d', strtotime('-40 days'))]] as [$id, $role, $join])
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Mr ' . $id, 'email' => strtolower($id) . '@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => $role,
+            'centre' => 'Mr Centre', 'joinDate' => $join, 'createdAt' => $now, 'updatedAt' => $now]);
+    // A fine posted first, then a January commitment fee back-filled after it, then ₦1,000 paid.
+    fees_post('NGG-MR-1', 'training', 60000, ['periodKey' => 'total', 'note' => 'Training fee — the place', 'by' => 'test']);
+    fees_post('NGG-MR-1', 'fine', 1000, ['periodKey' => 'fine-x', 'note' => 'Policy fine — Absent on Sat 31 Oct 2026 — ₦1,000 absence fine.', 'by' => 'test']);
+    fees_post('NGG-MR-1', 'dues', 2000, ['periodKey' => '2026-01', 'note' => 'Monthly dues 2026-01', 'by' => 'test']);
+    fees_post('NGG-MR-1', 'payment', 1000, ['by' => 'test', 'method' => 'cash', 'note' => 'cash']);
+    $m1 = db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-1'");
+    $v = family_fees_view($m1); $by = []; foreach ($v['lines'] as $l) $by[$l['kind']] = $l;
+    chk('money · the family\'s breakdown reads payments as the account does (oldest first): January ₦1,000 left of ₦2,000, the fine ₦1,000 — not "January ₦2,000" and no fine',
+        ($by['dues']['amount'] ?? 0) === 1000 && ($by['dues']['of'] ?? 0) === 2000 && ($by['fine']['amount'] ?? 0) === 1000 && ($by['fine']['of'] ?? -1) === 0);
+    chk('money · …and its lines add up to what it asks for', array_sum(array_column($v['lines'], 'amount')) === $v['payable'] && $v['payable'] === 2000);
+    $b1 = fees_balance($m1);
+    chk('money · the account\'s real figures add up: charged − received = payable, the training place apart',
+        $b1['realCharged'] - $b1['realCredited'] === $b1['payable'] && $b1['realCharged'] === 3000 && $b1['charged'] === 63000);
+    $lk = backend_dispatch('admin.fees.lookup', ['requesterId' => $ADM, 'q' => 'NGG-MR-1']);
+    $row = array_values(array_filter($lk['members'] ?? [], fn($x) => $x['memberId'] === 'NGG-MR-1'))[0] ?? [];
+    chk('money · the account search carries the real figures too', ($row['realCharged'] ?? 0) === 3000 && ($row['realCredited'] ?? 0) === 1000);
+    $bad = fees_post('NGG-MR-1', 'adjustment', 9999, ['periodKey' => 'oops', 'note' => 'keyed by mistake', 'by' => 'test']);
+    backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => (string)$bad['entryId'], 'reason' => 'keyed by mistake']);
+    $acct = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-MR-1'])['account']['account'] ?? null;
+    $S = $acct['summary'] ?? [];
+    chk('statement · the summary is a sum that reconciles: charged by kind − received by kind = payable now, the training place not in it',
+        $S && $S['chargedTotal'] === 3000 && $S['receivedTotal'] === 1000 && $S['chargedTotal'] - $S['receivedTotal'] === $S['payable']
+        && ($S['charged']['dues'] ?? 0) === 2000 && ($S['charged']['fine'] ?? 0) === 1000 && !isset($S['charged']['training']) && ($S['received']['payment'] ?? 0) === 1000);
+    $st = $acct['statement'] ?? [];
+    chk('statement · every entry with the balance after it, newest first, ending on what is payable; a voided entry is listed and moves nothing',
+        $st && $st[0]['void'] === true && $st[0]['balance'] === $st[1]['balance'] && $st[1]['balance'] === 2000
+        && !array_filter($st, fn($r) => $r['kind'] === 'training'));
+    chk('statement · what is owed: each open charge oldest first, what is left and what was paid of it',
+        array_map(fn($o) => [$o['kind'], $o['amount'], $o['paid'], $o['left']], $acct['open'] ?? []) === [['dues', 2000, 1000, 1000], ['fine', 1000, 0, 1000]]);
+    $w = backend_dispatch('admin.fees.waive', ['requesterId' => $ADM, 'memberId' => 'NGG-MR-1', 'amount' => 50000, 'reason' => 'hardship']);
+    chk('money · a waiver is capped at what is payable, not at a total holding the training place — no credit appears from nowhere',
+        !empty($w['ok']) && $w['waived'] === 2000 && $w['clamped'] === true && fees_balance($m1)['payable'] === 0 && fees_balance($m1)['realCredited'] === 3000);
+    $m2 = db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'");
+    fees_accrue_member($m2);
+    $first = db_row("SELECT note, amount FROM member_ledger WHERE memberId = 'NGG-MR-2' AND kind = 'dues' ORDER BY periodKey LIMIT 1");
+    chk('money · a part first month is "Monthly dues" like every other month, and says it is a part month',
+        $first && str_starts_with((string)$first['note'], 'Monthly dues ') && ((int)$first['amount'] === 2000 || str_contains((string)$first['note'], '(part month, from ')));
+    if ($keep === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'fees'", [$keep]);
+    foreach (['member_ledger' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-MR-%'");
+})();
+
+
 // ── Official notices: the Management notice as written, formatted once, sent, read and acknowledged ──
 (function () {
     $now = now_iso();
