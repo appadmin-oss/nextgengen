@@ -37626,7 +37626,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         if (isset($it['options']) && count(array_unique($it['options'])) !== count($it['options'])) $bad++;
         if (mlb_public($it) !== array_diff_key(mlb_public($it), ['key' => 1, 'steps' => 1, 'whys' => 1])) $bad++;
     }
-    chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 70);
+    chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 140);
     /* Spot the error must make a child CHECK the working: the mistake moves
        between lines from one item to the next. Every such form used to put it
        on the same line every time, which teaches where the answer sits. And
@@ -37700,7 +37700,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         !empty($pg['ok']) && count($pg['mistakes']) >= 1 && count($pg['mistakes']) <= 6 && !isset($mc['MC-011'])
         && !array_filter($pg['mistakes'], fn($x) => trim((string)$x['why']) === '' || $x['wrong'] < 1 || mlb_comp($x['comp']) === null));
     chk('maths lab · …and the last fortnight in numbers: answered, right, and every stage open to them with its count',
-        $pg['recent']['answered'] >= MLB_GATE_ITEMS * 2 && $pg['recent']['right'] < $pg['recent']['answered'] && count($pg['stages']) === 7
+        $pg['recent']['answered'] >= MLB_GATE_ITEMS * 2 && $pg['recent']['right'] < $pg['recent']['answered'] && count($pg['stages']) === count(array_filter(array_keys(mlb_stages()), 'mlb_stage_available'))
         && $pg['stages'][0]['mastered'] === 10 && $pg['stages'][0]['total'] === 10 && $pg['certificates'] === []);
     chk('maths lab · a Summer account has no progress here', (backend_dispatch('mathslab.progress', ['memberId' => 'SUM-ML-2'])['error'] ?? '') === 'members_only');
     // Lite: anyone, marked by a signed token; a tampered token is refused.
