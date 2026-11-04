@@ -8183,6 +8183,10 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
   --cr-pad: 10px;          /* density: row padding (§3) */
   --cr-row-font: 13.5px;   /* density: table font */
 }
+/* The Maths Lab wears the Control Room's design in the SITE's navy rather than its black (owner,
+   4 Nov 2026): one token re-pointed, so every ink surface — text, primary buttons, done nodes,
+   meters, the step bar — follows, and the Control Room itself keeps its own ink. */
+.mlb { --cr-ink: var(--navy-900); --cr-nav-on: #e7eaf3; }
 .cr-app {
   position: relative; width: 100%; height: 100dvh; overflow: hidden;
   display: flex; flex-direction: column;

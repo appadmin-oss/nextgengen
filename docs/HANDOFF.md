@@ -6134,3 +6134,8 @@ stats, the focused player, and the interactive-first Learn page.
   progress. Opening one closes the rest; closing the open one leaves none
   open (`-1`). mathlab-shot asserts there is exactly one path and that it is
   the focus stage's, both on load and after opening another stage.
+- **The Lab's ink is the site's navy** (owner: "Change the blacks to the
+  site's navy"). One line after the Control Room token block in
+  `styles-app.css`, `.mlb { --cr-ink: var(--navy-900); --cr-nav-on: #e7eaf3; }`,
+  re-points the token every Lab ink surface reads. The Control Room keeps its
+  black.
