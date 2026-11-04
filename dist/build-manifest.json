@@ -1,17 +1,17 @@
 {
-  "buildId": "a0ed1217e3",
-  "builtAt": "2026-11-04T11:58:37.955Z",
+  "buildId": "c728b6c6cf",
+  "builtAt": "2026-11-04T12:00:35.047Z",
   "bundle": {
-    "file": "app.d7761b0f8e.min.js",
-    "bytes": 2305763,
-    "gzipBytes": 620187,
+    "file": "app.231c83614f.min.js",
+    "bytes": 2312627,
+    "gzipBytes": 622597,
     "files": 46
   },
   "more": {
-    "file": "app-more.e0b8f34c8e.min.js",
-    "bytes": 3541141,
-    "gzipBytes": 1010332,
-    "files": 59,
+    "file": "app-more.789f074e3b.min.js",
+    "bytes": 3569893,
+    "gzipBytes": 1019414,
+    "files": 61,
     "list": [
       "src/modules/idcards/ids-core.jsx",
       "src/modules/idcards/ids-ui.jsx",
@@ -31,6 +31,7 @@
       "src/modules/control/cr-tab-home.jsx",
       "src/modules/control/cr-tab-inbox.jsx",
       "src/modules/control/cr-tab-members.jsx",
+      "src/modules/control/cr-tab-registration.jsx",
       "src/modules/control/cr-tab-security.jsx",
       "src/modules/control/cr-tab-programme.jsx",
       "src/modules/control/cr-tab-money.jsx",
@@ -48,6 +49,7 @@
       "src/modules/control/cr-gate.jsx",
       "src/modules/control/cr-app.jsx",
       "src/modules/mentor15/mp15-view.jsx",
+      "src/modules/mentor15/mp15-registration.jsx",
       "src/modules/mentor15/mp15-class.jsx",
       "src/modules/mentor15/mp15-app.jsx",
       "src/modules/instructor6/ip6-view.jsx",
@@ -75,13 +77,13 @@
     ]
   },
   "assets": {
-    "app.min.js": "app.d7761b0f8e.min.js",
-    "app-more.min.js": "app-more.e0b8f34c8e.min.js",
-    "styles.css": "styles.6bdb8fe1af.css",
-    "styles-app.css": "styles-app.439d991b90.css",
+    "app.min.js": "app.231c83614f.min.js",
+    "app-more.min.js": "app-more.789f074e3b.min.js",
+    "styles.css": "styles.03ba825217.css",
+    "styles-app.css": "styles-app.aab72f93c7.css",
     "data.js": "data.ec97c65376.js",
-    "photos.js": "photos.5db77ca07f.js",
-    "api-client.js": "api-client.389b511ac0.js",
+    "photos.js": "photos.36b0b4ea72.js",
+    "api-client.js": "api-client.d12fe4557a.js",
     "outbox.js": "outbox.042a8c9122.js"
   },
   "node": "v22.22.0"

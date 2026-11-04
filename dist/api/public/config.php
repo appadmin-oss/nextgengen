@@ -29,7 +29,20 @@ if ($storageFull) { $uploadsEnabled = false; $publicUpload = false; }
 $bucket = store_configured();
 if ($bucket) { $uploadsEnabled = true; $storageFull = false; $publicUpload = false; }
 
+/* Card printing only (nggImgFetchParts, photos.js): a bucket photo is framed for a
+   card through Cloudinary's fetch, once per print. Page views never use Cloudinary —
+   the optimised sizes are stored in the bucket (photo_variants_make). Named only
+   while the live account has credits; the hosts are the only ones it may fetch from
+   (set the same list as the account's "Allowed fetch domains"). */
+$imgLevel = function_exists('media_usage_state') ? (string)(media_usage_state()['level'] ?? 'ok') : 'ok';
+$imgCloud = !empty($cld['cloud_name']) && $imgLevel !== 'critical' ? (string)$cld['cloud_name'] : '';
+$imgHosts = array_values(array_filter(array_unique([
+    $bucket ? store_public_host() : '',
+    strtolower((string)parse_url((string)($CONFIG['app_origin'] ?? ''), PHP_URL_HOST)),
+])));
+
 json_ok([
+    'img' => ['cloud' => $imgCloud, 'hosts' => $imgHosts],
     'uploads' => [
         'enabled'   => $uploadsEnabled,
         'cloudName' => $uploadsEnabled && !$bucket ? (string)($cld['cloud_name'] ?? '') : '',

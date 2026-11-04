@@ -54,6 +54,7 @@ const CR_PAGES = {
     { id: "families", label: "Families", desc: "Parent and guardian accounts connected to members.", cap: "people" },
     { id: "centres", label: "Centres", desc: "Where NGG meets.", cap: "people" },
     { id: "idcards", label: "ID cards", desc: "Print queue for member and staff cards.", cap: "people" },
+    { id: "reg-checklist", label: "Registration", desc: "Every new member’s registration checklist: what is left, who is helping them at their centre, and the items staff add.", cap: "people" },
     { id: "request-log", label: "Request history", desc: "Every request members and parents have raised — open, approved, declined and withdrawn — and who decided it.", cap: "people" },
     { id: "accounts", label: "Accounts", desc: "Who cannot sign in, and why. Ending a membership is not done here.", cap: "people" },
     { id: "security", label: "Sign-in security", desc: "Who has a second sign-in step, the policy for each kind of person, and letting someone in for ten minutes.", cap: "people" },
@@ -109,7 +110,7 @@ const CR_PAGES = {
     { id: "assignments", label: "Assignments", desc: "Coursework submitted for grading.", cap: "content" },
     { id: "anchor", label: "Anchor Journal", desc: "The weekly reflection every member writes.", cap: "content" },
     { id: "timetable", label: "Timetable", desc: "Which course meets when, where and with whom, at each centre.", cap: "club" },
-    { id: "formation", label: "Saturday formation", desc: "The Saturday schedule every portal reads, block by block, and what each reader is told.", cap: "content" },
+    { id: "formation", label: "Saturday formation", desc: "The Saturday schedule every portal reads: the main day, a centre’s own, one changed Saturday, a Saturday off.", cap: "content" },
     { id: "opps", label: "Opportunities", desc: "Bootcamps, competitions and volunteering shown to members, matched to their age.", cap: "content" },
   ] },
   events: { label: "Events", icon: "calendar-blank", tabs: [

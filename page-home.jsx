@@ -1477,7 +1477,7 @@ function StatusPage({ setPage, previewConfig }) {
                   <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                     <div style={{ height: 4, background: "#3b5bdb" }}/>
                     <div style={{ aspectRatio: "16/10", position: "relative", background: "#f3ecdb", display: "grid", placeItems: "center" }}>
-                      {a.photoUrl ? <img src={a.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : <i className="ph ph-image-square" style={{ fontSize: 30, color: "#c9bfa4" }}/>}
+                      {a.photoUrl ? <img src={nggImg(a.photoUrl, "card")} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : <i className="ph ph-image-square" style={{ fontSize: 30, color: "#c9bfa4" }}/>}
                     </div>
                     <div style={{ padding: "15px 16px 16px", display: "flex", flexDirection: "column", flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
@@ -1528,7 +1528,7 @@ function StatusPage({ setPage, previewConfig }) {
                 <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 160, maxWidth: "40vw" }}>
                   <span style={{ width: p.avatarSize, height: p.avatarSize, borderRadius: "50%", display: "grid", placeItems: "center", position: "relative", overflow: "hidden", fontFamily: "'Sora'", fontWeight: 800, fontSize: "var(--rs-fsize-1, 22px)", color: inkOn(p.color).ink, background: p.color, border: "3px solid " + p.medalColor, boxShadow: "0 0 0 4px rgba(255,255,255,0.06)" }}>
                     {p.initial}
-                    {p.photo ? <img src={p.photo} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
+                    {p.photo ? <img src={nggImg(p.photo, "headshot")} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
                   </span>
                   <span style={{ marginTop: 10, fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#fff", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.handle}</span>
                   <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>{p.faculty} · {p.centre}</span>
@@ -1623,7 +1623,7 @@ function LbRow({ m }) {
           {/* The initial stays underneath: if the photo 404s the avatar
               degrades to the same monogram everyone else has, rather than a
               broken-image icon on a child's row. */}
-          {m.photo ? <img src={m.photo} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
+          {m.photo ? <img src={nggImg(m.photo, "headshot")} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
         </span>
         <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
           <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.handle}</b>

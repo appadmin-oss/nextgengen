@@ -80,7 +80,7 @@ function CrPill({ tone, t }) {
 /** Initials, or the photograph when there is one. */
 function CrAvatar({ name, photo, className }) {
   const [bad, setBad] = React.useState(false);
-  return <span className={className || "cr-ini"}>{photo && !bad ? <img src={photo} alt="" loading="lazy" onError={() => setBad(true)}/> : crInitials(name)}</span>;
+  return <span className={className || "cr-ini"}>{photo && !bad ? <img src={nggImg(photo, "avatar")} alt="" loading="lazy" onError={() => setBad(true)}/> : crInitials(name)}</span>;
 }
 
 /**

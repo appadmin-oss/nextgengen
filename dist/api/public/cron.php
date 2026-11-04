@@ -91,5 +91,5 @@ audit('cron.external', 'cron', '', ['jobs' => $result, 'ms' => $ms], client_ip()
    a non-zero exit from `curl -f` plus one legible line is what either needs. */
 $bad = array_filter($result, fn($v) => $v === 'error');
 http_response_code($bad ? 500 : 200);
-foreach ($result as $name => $state) echo str_pad($name, 12) . $state . "\n";
+foreach ($result as $name => $state) echo str_pad($name, 13) . $state . "\n";
 echo "took {$ms}ms\n";

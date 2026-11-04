@@ -369,7 +369,7 @@ class Mp15Portal extends React.Component {
     const badges = { list: badgesSrv.mentees !== undefined ? badgesSrv.mentees : dueN, sat: revTotal - revDoneN, msg: unreadN, academy: badgesSrv.academy || 0 };
     /* The Academy is a mentor's own record: staff overseeing a centre with no mentor record have none to complete. */
     const oriL = this.oriLocked(), ori = this.orientation() || {};
-    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Class', 'ph ph-star', [['stars', 'Stars'], ['results', 'School results'], ['curric', 'Curriculum']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['My role', 'ph ph-seal-check', [['role', 'My role'], ['projects', 'Projects'], ...(me.mentorId ? [['academy', 'Academy']] : [])].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
+    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Class', 'ph ph-star', [['stars', 'Stars'], ['results', 'School results'], ['curric', 'Curriculum']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['My role', 'ph ph-seal-check', [['role', 'My role'], ['projects', 'Projects'], ['reg', 'My registrations'], ...(me.mentorId ? [['academy', 'Academy']] : [])].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
       .map(([l, icon, kids]) => { const n = kids.reduce((a, [id]) => a + (badges[id] || 0), 0); return { l, icon, kids, ids: kids.map(x => x[0]), b: n }; });
     const navCur = S.scr === 'kid' ? 'list' : S.scr === 'module' ? 'academy' : S.scr === 'concern' ? 'role' : S.scr;
     const goId = id => id === 'hub' ? this.props.onHub() : this.go(id);
@@ -380,7 +380,7 @@ class Mp15Portal extends React.Component {
     const areaTabbar = AREAS.map(a => { const on = a === area; return { l: a.l === 'This week' ? 'Week' : a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, fg: on ? hue(a) : '#626a6e', fw: on ? 600 : 500, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
     const areaTabs = area.kids.map(([id, l]) => { const on = S.scr === id; const b = badges[id] || 0; return { l, on: on ? 'true' : 'false', fg: on ? hueOn : '#5a5a60', fw: on ? 600 : 500, bar: on ? hueOn : 'transparent', b, hasB: !!b, go: () => goId(id) }; });
     const inDetail = S.scr === 'kid' || S.scr === 'concern' || S.scr === 'module';
-    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ...(me.mentorId ? [['academy', 'Academy', 'ph ph-graduation-cap']] : []), ['role', 'My role', 'ph ph-seal-check'], ['projects', 'Projects', 'ph ph-flag-checkered'], ['stars', 'Stars', 'ph ph-star'], ['results', 'School results', 'ph ph-exam'], ['curric', 'Curriculum', 'ph ph-book-open']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
+    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ...(me.mentorId ? [['academy', 'Academy', 'ph ph-graduation-cap']] : []), ['role', 'My role', 'ph ph-seal-check'], ['projects', 'Projects', 'ph ph-flag-checkered'], ['reg', 'My registrations', 'ph ph-clipboard-text'], ['stars', 'Stars', 'ph ph-star'], ['results', 'School results', 'ph ph-exam'], ['curric', 'Curriculum', 'ph ph-book-open']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
     if (isLead) navDef.splice(2, 0, ['mentors', 'Mentors', 'ph ph-chalkboard-teacher']);
     if (oriL) navDef.unshift(navDef.splice(navDef.findIndex(n => n[0] === 'academy'), 1)[0]);   // the Academy first in More while it is due
     const tabIds = ['week', 'list', 'sat', 'msg'];
@@ -451,7 +451,7 @@ class Mp15Portal extends React.Component {
     const nmServer = (S.nmRes || []).filter(r => !nmLocal.some(l => l.id === r.id)).map(r => ({ id: r.id, name: r.name, sub: (r.mentee ? 'Your mentee' : 'At ' + r.centre) }));
     const nmAll = nmLocal.concat(nmServer).slice(0, 8);
 
-    const titles = { module: ((acMods.find(m => m.id === S.mod)) || {}).title || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck0.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', projects: 'Projects', mentors: 'Mentors', concern: 'Report a concern', stars: 'Stars', results: 'School results', curric: 'Curriculum' };
+    const titles = { module: ((acMods.find(m => m.id === S.mod)) || {}).title || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck0.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', projects: 'Projects', reg: 'My registrations', mentors: 'Mentors', concern: 'Report a concern', stars: 'Stars', results: 'School results', curric: 'Curriculum' };
     const nTeam = ((D.team || {}).mentors || []).length;
     const subs = { module: 'Academy', goals: 'Every mentee’s goal, how close they are, and when it was last checked', sess: 'Every one-to-one, pod session and family contact you’ve logged',
       week: mp15Fmt(today, { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + N + ' mentees · ' + roleLabel.toLowerCase(), list: N + ' in your care · sorted by who needs you most', kid: '',
@@ -703,8 +703,10 @@ class Mp15Portal extends React.Component {
     const S = this.state; const cls = 'm15x-slot m15x-end' + (narrow ? ' is-narrow' : '');
     const need = { week: ['week'], sat: ['satNext'] }[S.scr];
     if (need && need.some(k => S.ld[k] || S.er[k] || !S.d[k])) return null;
-    if (S.scr === 'week') return <div className={cls}><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
-    if (S.scr === 'sat') return <div className={cls}><FormationDay audience="mentor" compact={true}/></div>;
+    if (S.scr === 'week') return <div className={cls}><FormationDay audience="mentor" centre={S.centre || ''} compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
+    if (S.scr === 'sat') return <div className={cls}><FormationDay audience="mentor" centre={S.centre || ''} compact={true}/></div>;
+    // The registration checklist: the members this person supervises (mp15-registration.jsx).
+    if (S.scr === 'reg') return <div className={cls}><RclSupervisorDesk/></div>;
     if (S.scr === 'projects') return <div className={cls}><Mp15Projects act={(a, b, ok) => this.act(a, b, ok).then(r => { if (r) this.refresh(['role']); return r; })} today={this.today()}/></div>;
     if (S.scr === 'mentors' && S.supFor) { const m = ((S.d.team || {}).mentors || []).find(x => x.mentorId === S.supFor);
       if (m) return <div className={cls}><Mp15SupNotes key={m.mentorId} m={m} onClose={() => this.setState({ supFor: null })}

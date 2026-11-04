@@ -289,6 +289,7 @@ function member_merge_policy(): array {
         'member_ledger'          => 'BLOCK',          // money: never combined silently
         'membership_invoices'    => 'BLOCK',          // a joining invoice and its receipt name one member
         'offline_payments'       => 'BLOCK',          // evidence of money paid for one member
+        'documents'              => 'BLOCK',          // an issued invoice, receipt or certificate names one member; it is never re-addressed
         'unapplied_payments'     => 'BLOCK',          // money that arrived for one member, not yet decided
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive
         'member_status_log'      => 'KEEP_SURVIVOR',  // the survivor's dates are the ones their fee is earned off on
@@ -331,6 +332,13 @@ function member_merge_policy(): array {
         'mentor_supports'        => 'MOVE',
         'circle_links'           => 'MOVE',
         'guardian_wards'         => 'MOVE',           // a parent's link follows the child
+        /* The registration checklist (domain/registration-checklist.php): one per
+           member, so the survivor's stands; an item verified on either record stays
+           verified; every submission and every reminder sent comes across. */
+        'reg_checklists'         => 'KEEP_SURVIVOR',
+        'reg_checklist_state'    => 'MOVE_UNIQUE',
+        'reg_checklist_submissions' => 'MOVE',
+        'reg_checklist_sends'    => 'MOVE',
         'guardian_notices'       => 'MOVE',           // a report about the child stays about the child
         'mentor_slots'           => 'MOVE',           // a booked family meeting follows the child
         'member_collectors'      => 'MOVE',           // who may collect them is a fact about the child

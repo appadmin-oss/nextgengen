@@ -5628,3 +5628,178 @@ check that fails without it (mutation-checked).
   four tiles from the newest 500 rows.
 - Still open: a Money overview tab (needs a registry entry in `cr-pages.jsx`).
 
+
+
+## 2026-11-04 — Photos: stored in R2, optimised once, served from R2
+
+Owner's plan: the bucket (R2) stores; Cloudinary optimises. Cloudinary bills every
+byte it serves on every view and R2 serves free, so Cloudinary is used ONCE per
+photo per size, never on a view. (A first cut delivered every view through
+Cloudinary fetch; the owner pointed out the per-view cost and it was rebuilt.)
+
+- `photo_variants_make` (domain/photos.php): each size in `PHOTO_VARIANTS` is
+  fetched once from Cloudinary (`/image/fetch/f_webp,q_auto,<steps>/<bucket url>`)
+  and stored as `<photo>__<size>.webp`; only when all are stored are the records
+  repointed to `<photo>?nv=1` (`photo_repoint_urls`). `photo_variants_tick`
+  every 10 min; Diagnostics → Optimise photos.
+- `nggImg(url, size)` (photos.js): `?nv=1` → the stored size in the bucket; a
+  Cloudinary-hosted photo → its size after any edit; else as is.
+  `NGG_IMG_SIZES` = `PHOTO_VARIANTS`, held by a PHP test. 21 display sites and
+  the Club's `cmOpt` go through it.
+- Held own-store photos move into the bucket (`photo_store_to_bucket`), records
+  repointed, local file kept, missing left alone; hourly and from Diagnostics.
+- Edits: with a bucket, `cloudinary_adopt` edits bucket/own-store photos by
+  fetch (no copy into Cloudinary storage); `photo_materialise` saves the
+  finished edit into the bucket and makes its sizes.
+- Card printing frames a bucket photo by fetch (`nggImgFetchParts`, needs
+  site-config `img`), once per print.
+- Not done: moving photos stored IN Cloudinary into the bucket (frees its
+  storage and their per-view bandwidth). Same machinery; wants a dry run on
+  production data first, since those URLs are on printed-card records.
+## 2026-10-30 — the Saturday formation is editable, per centre and per Saturday
+
+- **Versions of the day** (migration 204, `saturday_formation_blocks.scope`):
+  `''` the main day, `centre:<centreId>`, `date:<Saturday>`,
+  `date:<Saturday>@<centreId>`; `sf_day($date, $centreId)` resolves them in that
+  order, most specific first, and is the one resolver every reader uses.
+  Centres are keyed by id, so a CACENTRE rename leaves their day in place. The
+  old `saturday_formation` table is copied once and left unread.
+- **Saturdays off** (`saturday_formation_dates`): everywhere or at one centre,
+  with a note families read. Nothing is sent; portals say so.
+- **Times are the day's.** A save refuses an overlap unless it ripples; add,
+  remove and move keep the day's end; `shift` moves the whole day. The hours,
+  the parent plan/absent/close times and the reminders follow the version in
+  force at the child's or mentor's centre that Saturday. Nothing is pinned to
+  8:00 or 2:00 any more, except that no family email goes before 8:00.
+- **What a block is for is its `kind`** (`checkin`, `mentor`, `classes`,
+  `break`, `close`), not its key: the reminders and `mp_breakout_window()` read
+  the kind (falling back to the seeded `musing`), so a renamed or re-keyed
+  block keeps working.
+- One route, one op per verb (`admin.formation.add/remove/move/shift/
+  version.create/version.delete/day.set`), capability `content`, centre-scoped,
+  one audit event each, `cache_invalidate('formation')`.
+- The family email lost its inline `style` attributes.
+- Tests: the formation section of `api/tests/run.php`;
+  `tests/formation-editor.test.js` (in `test:all`, `npm run test:formation`).
+
+## 2026-10-31 — application review fixes (NGG membership and volunteers)
+
+From a read-through of both journeys; each item has a test in the
+"Application review fixes" block of `api/tests/run.php`.
+
+- **Siblings**: convert matched "already a member" on email alone, so the second
+  child on a parent's email got no record. Now email + date of birth (or name).
+- **Details required**: the Club's guardian/school/consent checks ran only when
+  the request sent `details`; leaving it out skipped them. Now `details_required`.
+- **Changing an application** needs a 6-digit code emailed to that address
+  (`app_edit_code_check`, stored hashed in `details._edit`, stripped from the
+  admin list).
+- **Convert guards**: refuses a declined application, re-checks age 10–17,
+  asks for a centre instead of defaulting to Egbeda (must be an active centre).
+  `status=accepted` for a child is refused (`use_convert`).
+- **Waitlist** stays in the inbox (`status` accepts a comma list); waitlist and
+  reject tell the family by email and text (`app_tell_family`).
+- **Centre scope** on applications list/status/convert/update/delete; volunteer
+  list filtered in SQL above the caps; decline and safeguard scope-checked.
+- **Volunteer safeguarding**: two referees + declaration on both forms
+  (`volunteer_apply_safeguarding`); under 18 needs a guardian who agrees, and
+  approval needs `guardianConfirmed` (recorded in `consents`,
+  type `volunteer_guardian`). The instructor roster refuses until
+  `safeguarding = 'cleared'`, and its per-child queries are now two grouped ones.
+- **Programmes**: volunteer dedupe is per programme; approving a second-programme
+  application widens the volunteer to `both`. NGG's volunteer door checks the
+  centre runs the Club. Control Room has the `ngg_volunteer_applications_open` switch.
+- **Copy and structure**: welcome email no longer says "cohort"/"Summer Students";
+  admin alert says "NGG membership"; decline email is programme-aware; inline
+  styles removed from these emails. `window.__nggProgram` removed (the URL is the
+  state). Unmounted `AdminApplications` and `ApplicationEditor` deleted.
+  `/join/volunteer` rebuilt with classes (`.nvj-*`, `.vsg-*`).
+- **Not done**: bulk actions and a waitlist state on the volunteer review queue;
+  the applications CSV still carries guardian phones in full (it is an admissions
+  call sheet, now limited to the admin's own centres).
+
+## 2026-10-31 — the registration checklist
+
+- **One list per NGG member, two sources** (`domain/registration-checklist.php`,
+  migration 205). Automatic items are one registry, `RCL_AUTO`, each with a
+  verifier `rcl_verify_<key>()` that reads the record (guardian link, the five
+  membership consents, photo, date of birth, school, emergency contact,
+  courses, the joining invoice while fees are on, a non-proof printed card).
+  They are computed on every read from grouped queries (`rcl_facts`), never
+  stored, and evidence never ticks one. Admin items are `reg_checklist_items`
+  (photo | document | none, presence, max age), retired not deleted.
+- **Supervisors** are suggested by the server (`rcl_candidates`): staff with
+  `people` covering the centre, NGG mentors there with screening recorded
+  (`ms_clearance_bulk`), NGG volunteer mentors and instructors there with
+  safeguarding cleared. "Physically available" is presence at that centre in
+  the last six weeks: `attendance` rows attributed to a centre by the row's own
+  `centreId`/`centre`, else the gate link its device names, else the person's
+  home centre; the check-in desk rota (`attendance_duty`) and `timetable_slots`
+  there. Ranked by Saturdays present, other days, rota, classes, being the
+  member's mentor, and load (cap `RCL_SUPERVISOR_MAX` = 12). Somebody with no
+  presence is listed only to pick with a typed reason (audited). A person is
+  one principal: a volunteer or mentor with a member account is their memberId.
+  `admin.regcheck.assign` re-derives all of this per row, per centre.
+- **Verification** (`member.regcheck.submit`, `rcl_check_evidence`): assigned
+  supervisor only; the file must be ours (`results_file_ok`), its extension
+  and declared type must match the item's evidence, its size bounded (the
+  size `media_objects` recorded wins), its date within `maxAgeDays`, and, for a
+  presence item, the supervisor checked in at the member's centre that day.
+  Every attempt is a `reg_checklist_submissions` row with a verdict and a
+  reason in words. Staff reject reopens (`reg_checklist_state`).
+- **Upload**: `evidence` is a media-aware kind in `upload-sign.php` (a PDF stays
+  a PDF), and a volunteer's card session may sign that kind only, because a
+  volunteer can be the supervisor.
+- **Reminders** through the web-cron (`rcl_tick`, hourly): recount open
+  checklists; each supervisor once an ISO week; each guardian once a week with
+  only the family's items; claimed in `reg_checklist_sends` before sending, at
+  most 60 sends a tick.
+- **Screens**: Control Room → Members → Registration (tab id `reg-checklist`,
+  because `registration` is the alias for the Summer desks), `cr-tab-registration.jsx`;
+  My registrations in the Mentor Portal and the progress card for the member
+  (Me) and family (Today), `mp15-registration.jsx`. `admin_application_convert`
+  starts a new NGG member's checklist with one guarded call.
+- Merge policy: `reg_checklists` keep the survivor's, state moves unique,
+  submissions and sends move.
+- Tests: the registration checklist section of `api/tests/run.php` (rolled back
+  after it runs) and the convert check beside the convert test;
+  `tests/registration-checklist.test.js` (in `test:all`, `npm run test:regcheck`).
+
+## 2026-11-04 — NGG documents: invoice, receipt, acknowledgement, Math Lab certificate
+
+From the handoff `design_handoff_ngg_documents`. `api/_lib/domain/documents.php`
+owns all of it; migration 224 adds `doc_serials` and `documents`.
+
+- **Numbers without gaps.** `doc_mint()` bumps a counter row in the same
+  transaction as the record, so a rolled-back invoice takes its number with it.
+  The invoice number IS `membership_invoices.invoiceId`, so the pay page, the
+  emails, the narration and the paper carry one number. The receipt number is
+  minted inside `membership_settle()`'s transaction. Old `NGG-INV-xxxxx`,
+  `NGG-BAL-`, `NGG-ADV-` and `NGG-RCT-` numbers are kept, never renumbered.
+- **Frozen receipts and certificates.** `documents.data` holds what they said,
+  including the legal details filled in at issue. A detail blank then takes
+  today's value, because a blank was never printed as a fact.
+  An invoice is rendered fresh, with its status derived (due, overdue, paid,
+  void).
+- **No server PDF.** The host has no headless browser. The page is printed by
+  the browser; fonts come from `/assets/fonts` (the CSP has no font host), and
+  the icons and the QR are inline SVG. A page that runs past one sheet hides its
+  print button and says so.
+- **Verification.** `/verify/<number>?c=<check code>` (`.htaccess` →
+  `api/public/doc-verify.php`). Numbers are sequential and so guessable; the
+  code (an HMAC of the number) is the key. A wrong code and an unknown number get
+  the same answer. Rate-limited (`doc.verify`).
+- **Acknowledgement**, not a receipt, for a transfer the desk recorded and a
+  second person has not checked. It carries the payment's own id, not a receipt
+  number, so a refused transfer leaves no receipt number behind.
+- **Certificates** on a member's first clear of a level; a later 90%+ issues a
+  Distinction one and the old one verifies as superseded. The paper printed is
+  the real one (Foundation, Standard or Stretch), not the handoff's two-way
+  rule. Each level carries its `formula` in `mathlab_levels()`; blurbs 8 and 14
+  were aligned with the handoff.
+- Departures from the handoff: no `pay.ngg.ng/INV-#####` short link (an
+  invoice number in a URL would let anyone enumerate families' invoices), so
+  the pay QR and link are the private `/pay/<token>`; billing address prints
+  only where the application recorded one.
+- Tests: the documents block at the end of `api/tests/run.php`.
+

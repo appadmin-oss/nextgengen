@@ -451,7 +451,7 @@ function SummerPage({ setPage }) {
                   <>
                     <span className="member-card-fig" style={{ background: m.color || "var(--navy-900)" }}>
                       {m.photo
-                        ? <img src={m.photo} alt="" loading="lazy" onError={e => { e.target.style.display = "none"; }}/>
+                        ? <img src={nggImg(m.photo, "avatar")} alt="" loading="lazy" onError={e => { e.target.style.display = "none"; }}/>
                         : <span className="member-card-initial" aria-hidden="true">{(shown.replace("@","")[0] || "?").toUpperCase()}</span>}
                       <span className="member-card-scrim" aria-hidden="true"/>
                       {m.faculty && <span className="chip chip-on-dark member-card-fac">{m.faculty}</span>}
@@ -781,20 +781,25 @@ function cmPhotoOf(post) {
     author: { name: a.name || "", centre: a.centre || "", isMe: !!a.isMe, photo: a.photo || "" },
   };
 }
-/* Cloudinary bills every distinct derived copy. So images come in four widths,
-   not the dozen the screens asked for; the resize goes AFTER any edit already in
-   the URL (before it, a 96px avatar re-ran the whole edit and was then blown up);
-   and a video is delivered as exactly the rendition made at upload
-   (CM_VIDEO_TF = upload-sign.php's eager string), so it is transcoded once. */
+/* Cloudinary bills every distinct derived copy and every byte it serves. So a
+   picture goes through nggImg (photos.js — one rule for every image): one on
+   Cloudinary in a few named sizes, after any edit already in its URL; one in the
+   bucket as the size stored beside it, never through Cloudinary on a view. A
+   video is delivered as exactly the rendition made at upload (CM_VIDEO_TF =
+   upload-sign.php's eager string), so it is transcoded once. */
 const CM_WIDTHS = [128, 320, 640, 1280];
 const CM_VIDEO_TF = "f_auto,q_auto:eco,w_1280,c_limit";
 function cmSnapW(w) { for (const x of CM_WIDTHS) if (w <= x) return x; return CM_WIDTHS[CM_WIDTHS.length - 1]; }
 function cmOpt(url, w) {
-  if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return url;
-  const tf = /\/video\/upload\//.test(url) ? CM_VIDEO_TF : "f_auto,q_auto" + (w ? ",w_" + cmSnapW(w) + ",c_limit" : "");
-  // …/upload/<edits>/v123/id → …/upload/<edits>/<tf>/v123/id. No version marker: the old place.
-  if (/\/upload\/(?:[^/]+\/)*?v\d+\//.test(url)) return url.replace(/(\/upload\/(?:[^/]+\/)*?)(v\d+\/)/, "$1" + tf + "/$2");
-  return url.replace("/upload/", "/upload/" + tf + "/");
+  if (!url) return url;
+  if (/res\.cloudinary\.com\/[^/]+\/video\/upload\//.test(url)) {
+    // …/upload/<edits>/v123/id → …/upload/<edits>/<tf>/v123/id. No version marker: the old place.
+    if (/\/upload\/(?:[^/]+\/)*?v\d+\//.test(url)) return url.replace(/(\/upload\/(?:[^/]+\/)*?)(v\d+\/)/, "$1" + CM_VIDEO_TF + "/$2");
+    return url.replace("/upload/", "/upload/" + CM_VIDEO_TF + "/");
+  }
+  if (/\.(mp4|mov|webm|m4v|avi)(\?|$)/i.test(url)) return url;
+  const W = cmSnapW(w || 1280);
+  return nggImg(url, W <= 320 ? "small" : W <= 640 ? "card" : "wide");
 }
 function cmPoster(url) {
   if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return "";
@@ -892,7 +897,7 @@ function cmRoleOf(post) {
 // A member's avatar — their profile photo when we have one, else a colour + initial.
 function cmAvatar(name, seed, photo, extraClass, role) {
   const cls = "cm-avatar" + (extraClass ? " " + extraClass : "");
-  if (photo) return <span className={cls + " cm-avatar-photo"} aria-hidden="true"><img src={cmOpt(photo, 96)} alt="" loading="lazy"/></span>;
+  if (photo) return <span className={cls + " cm-avatar-photo"} aria-hidden="true"><img src={nggImg(photo, "avatar")} alt="" loading="lazy"/></span>;
   const bg = cmColor(seed, role);
   return <span className={cls} style={{ background: bg, color: inkOn(bg).ink }} aria-hidden="true">{cmInitial(name)}</span>;
 }
@@ -5481,7 +5486,7 @@ function CmLadderRow({ e, top }) {
         </>}
       </span>
       <span className="lad-av" style={{ background: cmColor(e.name, "") }} aria-hidden="true">
-        {e.photo ? <img src={cmOpt(e.photo, 64)} alt="" loading="lazy"/> : cmInitial(e.name)}
+        {e.photo ? <img src={nggImg(e.photo, "avatar")} alt="" loading="lazy"/> : cmInitial(e.name)}
       </span>
       <span className="lad-who">
         {/* A marker rather than a suffix on the name. The highlighted row says

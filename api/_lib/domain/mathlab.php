@@ -69,97 +69,97 @@ function mathlab_levels(): array {
         /* ── Number ─────────────────────────────────────────────────────── */
         1  => ['level' => 1,  'name' => 'Number & Numeration', 'band' => 'JSS 1–2', 'icon' => '①',
                'strand' => 'Number', 'needs' => [],
-               'blurb' => 'Factors, multiples, fractions, percentages and sharing in a ratio.',
+               'blurb' => 'Factors, multiples, fractions, percentages and sharing in a ratio.', 'formula' => 'a/b + c/d = (ad + bc)/bd',
                'questions' => 12, 'seconds' => 300],
         2  => ['level' => 2,  'name' => 'Sets & Venn Diagrams', 'band' => 'JSS 3 – SSS 1', 'icon' => '②',
                'strand' => 'Number', 'needs' => [1],
-               'blurb' => 'Unions, intersections, complements and the two-set formula.',
+               'blurb' => 'Unions, intersections, complements and the two-set formula.', 'formula' => 'n(A∪B) = n(A) + n(B) − n(A∩B)',
                'questions' => 10, 'seconds' => 300],
 
         /* ── Algebra ────────────────────────────────────────────────────── */
         3  => ['level' => 3,  'name' => 'Algebraic Processes', 'band' => 'JSS 3', 'icon' => '③',
                'strand' => 'Algebra', 'needs' => [],
-               'blurb' => 'Expanding, factorising, solving and changing the subject.',
+               'blurb' => 'Expanding, factorising, solving and changing the subject.', 'formula' => 'a² − b² = (a − b)(a + b)',
                'questions' => 12, 'seconds' => 330],
         4  => ['level' => 4,  'name' => 'Indices & Logarithms', 'band' => 'SSS 1', 'icon' => '④',
                'strand' => 'Algebra', 'needs' => [3],
-               'blurb' => 'The laws of indices, and logarithms as their mirror.',
+               'blurb' => 'The laws of indices, and logarithms as their mirror.', 'formula' => 'log xy = log x + log y',
                'questions' => 12, 'seconds' => 330],
         5  => ['level' => 5,  'name' => 'Surds', 'band' => 'SSS 1–2', 'icon' => '⑤',
                'strand' => 'Algebra', 'needs' => [4],
-               'blurb' => 'Simplifying, and rationalising a denominator.',
+               'blurb' => 'Simplifying, and rationalising a denominator.', 'formula' => '1/√a = √a/a',
                'questions' => 10, 'seconds' => 330],
         6  => ['level' => 6,  'name' => 'Quadratic Equations', 'band' => 'SSS 2', 'icon' => '⑥',
                'strand' => 'Algebra', 'needs' => [3],
-               'blurb' => 'Roots, the discriminant, and the sum and product of roots.',
+               'blurb' => 'Roots, the discriminant, and the sum and product of roots.', 'formula' => 'x = (−b ± √(b² − 4ac))/2a',
                'questions' => 12, 'seconds' => 360],
         7  => ['level' => 7,  'name' => 'Polynomials', 'band' => 'Further Maths', 'icon' => '⑦',
                'strand' => 'Algebra', 'needs' => [6],
-               'blurb' => 'The remainder and factor theorems, and partial fractions.',
+               'blurb' => 'The remainder and factor theorems, and partial fractions.', 'formula' => 'f(a) = 0 ⇔ (x − a) | f(x)',
                'questions' => 10, 'seconds' => 390],
         8  => ['level' => 8,  'name' => 'Sequences & Series', 'band' => 'SSS 2', 'icon' => '⑧',
                'strand' => 'Algebra', 'needs' => [3],
-               'blurb' => 'A.P. and G.P. — nth terms, sums, and a sum to infinity.',
+               'blurb' => 'A.P. and G.P.: nth terms, sums, and a sum to infinity.', 'formula' => 'Sₙ = a(1 − rⁿ)/(1 − r)',
                'questions' => 12, 'seconds' => 360],
         9  => ['level' => 9,  'name' => 'Binary Operations', 'band' => 'Further Maths', 'icon' => '⑨',
                'strand' => 'Algebra', 'needs' => [3],
-               'blurb' => 'A rule you are handed: closure, identity and inverse.',
+               'blurb' => 'A rule you are handed: closure, identity and inverse.', 'formula' => 'a ∗ e = e ∗ a = a',
                'questions' => 10, 'seconds' => 360],
         10 => ['level' => 10, 'name' => 'Complex Numbers', 'band' => 'Further Maths', 'icon' => '⑩',
                'strand' => 'Algebra', 'needs' => [5, 6],
-               'blurb' => 'i, the conjugate, the modulus, and arithmetic that keeps them apart.',
+               'blurb' => 'i, the conjugate, the modulus, and arithmetic that keeps them apart.', 'formula' => '|z|² = z·z̄',
                'questions' => 10, 'seconds' => 390],
 
         /* ── Shape & space ──────────────────────────────────────────────── */
         11 => ['level' => 11, 'name' => 'Trigonometry', 'band' => 'SSS 2–3', 'icon' => '⑪',
                'strand' => 'Shape & space', 'needs' => [3],
-               'blurb' => 'Exact ratios, the sine and cosine rules, and simple equations.',
+               'blurb' => 'Exact ratios, the sine and cosine rules, and simple equations.', 'formula' => 'a² = b² + c² − 2bc cos A',
                'questions' => 10, 'seconds' => 360],
         12 => ['level' => 12, 'name' => 'Coordinate Geometry', 'band' => 'SSS 3', 'icon' => '⑫',
                'strand' => 'Shape & space', 'needs' => [3, 11],
-               'blurb' => 'Lines, gradients, distances and midpoints.',
+               'blurb' => 'Lines, gradients, distances and midpoints.', 'formula' => 'm = (y₂ − y₁)/(x₂ − x₁)',
                'questions' => 10, 'seconds' => 390],
         13 => ['level' => 13, 'name' => 'Vectors in Three Dimensions', 'band' => 'Further Maths / A-level', 'icon' => '⑬',
                'strand' => 'Shape & space', 'needs' => [12],
-               'blurb' => 'Magnitude, the scalar product, and the angle between two vectors.',
+               'blurb' => 'Magnitude, the scalar product, and the angle between two vectors.', 'formula' => 'a·b = |a||b| cos θ',
                'questions' => 10, 'seconds' => 420],
 
         /* ── Data ───────────────────────────────────────────────────────── */
         14 => ['level' => 14, 'name' => 'Statistics', 'band' => 'SSS 1–3', 'icon' => '⑭',
                'strand' => 'Data', 'needs' => [],
-               'blurb' => 'Mean, median, mode, range — and the spread around them.',
+               'blurb' => 'Mean, median, mode, range, and the spread around them.', 'formula' => 'x̄ = Σx/n',
                'questions' => 10, 'seconds' => 360],
         15 => ['level' => 15, 'name' => 'Probability', 'band' => 'SSS 2–3', 'icon' => '⑮',
                'strand' => 'Data', 'needs' => [2, 14],
-               'blurb' => 'One event, two events, and what changes when you do not replace.',
+               'blurb' => 'One event, two events, and what changes when you do not replace.', 'formula' => 'P(A∪B) = P(A) + P(B) − P(A∩B)',
                'questions' => 10, 'seconds' => 360],
         16 => ['level' => 16, 'name' => 'Binomial & Counting', 'band' => 'Further Maths', 'icon' => '⑯',
                'strand' => 'Data', 'needs' => [15],
-               'blurb' => 'Permutations, combinations and the binomial expansion.',
+               'blurb' => 'Permutations, combinations and the binomial expansion.', 'formula' => '(a + b)ⁿ = Σ ⁿCᵣ aⁿ⁻ʳbʳ',
                'questions' => 10, 'seconds' => 360],
 
         /* ── Reasoning ──────────────────────────────────────────────────── */
         17 => ['level' => 17, 'name' => 'Logic', 'band' => 'Further Maths', 'icon' => '⑰',
                'strand' => 'Reasoning', 'needs' => [2],
-               'blurb' => 'Truth tables, implication, and whether an argument holds.',
+               'blurb' => 'Truth tables, implication, and whether an argument holds.', 'formula' => 'p ⇒ q ≡ ¬q ⇒ ¬p',
                'questions' => 10, 'seconds' => 330],
         18 => ['level' => 18, 'name' => 'Matrices', 'band' => 'Further Maths', 'icon' => '⑱',
                'strand' => 'Reasoning', 'needs' => [3],
-               'blurb' => 'Determinants, inverses and multiplication.',
+               'blurb' => 'Determinants, inverses and multiplication.', 'formula' => 'AA⁻¹ = I',
                'questions' => 10, 'seconds' => 360],
 
         /* ── Calculus ───────────────────────────────────────────────────── */
         19 => ['level' => 19, 'name' => 'Differentiation', 'band' => 'Further Maths / A-level', 'icon' => '⑲',
                'strand' => 'Calculus', 'needs' => [6, 8],
-               'blurb' => 'Gradients, turning points, and the product and quotient rules.',
+               'blurb' => 'Gradients, turning points, and the product and quotient rules.', 'formula' => '(uv)′ = u′v + uv′',
                'questions' => 10, 'seconds' => 420],
         20 => ['level' => 20, 'name' => 'Integration', 'band' => 'Further Maths / A-level', 'icon' => '⑳',
                'strand' => 'Calculus', 'needs' => [19],
-               'blurb' => 'Definite integrals and the area under a curve.',
+               'blurb' => 'Definite integrals and the area under a curve.', 'formula' => '∫ f′(x) dx = f(b) − f(a)',
                'questions' => 10, 'seconds' => 420],
         21 => ['level' => 21, 'name' => 'Calculus in Motion', 'band' => 'Further Maths / A-level', 'icon' => '㉑',
                'strand' => 'Calculus', 'needs' => [20],
-               'blurb' => 'Rates of change, velocity and acceleration, and area between curves.',
+               'blurb' => 'Rates of change, velocity and acceleration, and area between curves.', 'formula' => 'a = dv/dt = d²s/dt²',
                'questions' => 10, 'seconds' => 450],
     ];
 }
@@ -1147,6 +1147,7 @@ function mathlab_submit(array $p): array {
 
     $prev = db_row('SELECT * FROM math_progress WHERE playerId = ? AND level = ?', [$playerId, $level]);
     $now = now_iso();
+    $stage = mathlab_stage_for($prev ?: null);   // the paper this attempt was set: the certificate names it
     if ($prev) {
         db_update('math_progress', [
             'bestScore' => max((int)$prev['bestScore'], $score),
@@ -1185,8 +1186,12 @@ function mathlab_submit(array $p): array {
                                     'strand' => (string)$lv['strand']];
         }
     }
+    /* A member who clears a level is given a certificate (documents.php):
+       once per level, and a Distinction one that replaces a Pass at 90%+. */
+    $cert = $cleared && function_exists('doc_ml_issue') ? doc_ml_issue($playerId, $level, $pct, $correct, $total, $stage) : null;
     return ['ok' => true, 'correct' => $correct, 'total' => $total, 'score' => $score,
             'ms' => $ms, 'passPct' => MATHLAB_PASS_PCT, 'cleared' => $cleared,
+            'certificate' => $cert ? ['no' => (string)$cert['docNo'], 'url' => doc_view_url($cert)] : null,
             'marks' => $marks,
             'opened' => $opened,
             'unlocked' => $opened[0] ?? null];

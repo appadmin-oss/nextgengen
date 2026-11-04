@@ -97,6 +97,9 @@ function web_cron_jobs(): array {
     if (defined('WIFI_CAC_EVERY')) $add('wifi_cac', WIFI_CAC_EVERY, $has('wifi_cac_tick'), true);
     $add('volpay',       3600,   $has('volpay_tick'), false);
     $add('dirpush',      3600,   $has('dirpush_tick'), true);
+    $add('photos_bucket', 3600,  $has('photo_store_to_bucket_tick'), true);   // held photos into the bucket, a batch an hour until none are left
+    $add('regcheck',     3600,   $has('rcl_tick'), true);                     // registration checklist: recount, remind supervisors and families weekly
+    $add('photo_sizes',  600,    $has('photo_variants_tick'), true);          // each bucket photo's sizes, made once by Cloudinary, stored beside it
     // Once: tracks that name courses exactly become chosen courses (curriculum.php).
     if (function_exists('member_courses_backfill_once') && defined('MEMBER_COURSES_BACKFILL') && (string)setting_raw(MEMBER_COURSES_BACKFILL) === '')
         $add('courses_backfill', 60, 'member_courses_backfill_once', false);

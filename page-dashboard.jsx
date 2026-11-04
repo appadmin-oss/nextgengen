@@ -1024,7 +1024,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                   <section id="sec-today" className="ngg-anchor"><DashboardToday today={today} member={m} onMutate={onMutate} session={session}/></section>
                   <section id="sec-assignments" className="ngg-anchor"><DashboardAssignments assignments={data.assignments || []} onMutate={onMutate}/></section>
                   {/* The Saturday Formation Schedule, the member's part of each block (an NGG member's Saturday; Summer School keeps its own). */}
-                  {(m.type || "NGG") === "NGG" && typeof FormationDay === "function" && <section id="sec-saturday" className="ngg-anchor"><FormationDay audience="member" compact={true}/></section>}
+                  {(m.type || "NGG") === "NGG" && typeof FormationDay === "function" && <section id="sec-saturday" className="ngg-anchor"><FormationDay audience="member" centre={m.centre || ""} compact={true}/></section>}
                   {mentor && <section id="sec-checkin" className="ngg-anchor"><DashboardCheckin/></section>}
                   <section id="sec-activity" className="ngg-anchor"><DashboardActivityFeed memberId={m.memberId} session={session} reloadKey={mutateSeq}/></section>
                   <section id="sec-journal" className="ngg-anchor"><DashboardJournal onMutate={onMutate}/></section>
@@ -1157,7 +1157,7 @@ function DashboardSidebar({ m, first, account, ngv, fines, counts, mentorNamed, 
       <div className="ngg-side-inner">
         <button className="ngg-side-brand" onClick={onEditProfile} title="Edit your profile">
           {hasPhoto
-            ? <img src={m.photoUrl} alt="" className="ngg-side-avatar-img" onError={(e) => { e.target.style.display = "none"; }}/>
+            ? <img src={nggImg(m.photoUrl, "avatar")} alt="" className="ngg-side-avatar-img" onError={(e) => { e.target.style.display = "none"; }}/>
             : <Avatar seed={m.memberId.charCodeAt(m.memberId.length - 1) % 20 + 1} size={40} ring/>}
           <span className="ngg-side-brand-text"><b>{first}</b><span className="mono">{m.memberId}</span></span>
         </button>
@@ -1285,7 +1285,7 @@ function DashboardProfileModal({ m, onClose, onSaved, onAsk }) {
         <div className="admin-fields">
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {hasPhoto
-              ? <img src={d.photoUrl} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover" }} onError={(e) => { e.target.style.display = "none"; }}/>
+              ? <img src={nggImg(d.photoUrl, "face")} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover" }} onError={(e) => { e.target.style.display = "none"; }}/>
               : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--cream-100)", display: "grid", placeItems: "center", fontSize: 28 }}>🙂</div>}
             <div className="admin-upload-row">
               <input type="text" className="admin-input" value={d.photoUrl} onChange={(e) => set("photoUrl", e.target.value)} placeholder="Upload → or paste a photo URL"/>
@@ -2264,7 +2264,7 @@ function DashboardMentor({ mentor }) {
       <div className="eyebrow" style={{color:"var(--ink-500)"}}>YOUR MENTOR</div>
       <div className="dash-mentor-row">
         {mentor.photoUrl
-          ? <img className="dash-mentor-avatar" src={mentor.photoUrl} alt={mentor.fullName}/>
+          ? <img className="dash-mentor-avatar" src={nggImg(mentor.photoUrl, "face")} alt={mentor.fullName}/>
           : <div className="dash-mentor-avatar dash-mentor-avatar-fallback">{(mentor.fullName || "?").charAt(0)}</div>}
         <div>
           <div className="dash-mentor-name">{mentor.fullName}</div>

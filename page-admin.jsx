@@ -4683,7 +4683,7 @@ function AdminMentorship() {
         {roster.mentors.map(m => (
           <div key={m.mentorId} className="admin-roster-card">
             <div className="admin-roster-head">
-              {m.photoUrl ? <img src={m.photoUrl} alt="" className="admin-roster-avatar" onError={e => { e.target.style.display = "none"; }}/> : <div className="admin-roster-avatar admin-card-img-fallback">{(m.fullName || "?").charAt(0)}</div>}
+              {m.photoUrl ? <img src={nggImg(m.photoUrl, "avatar")} alt="" className="admin-roster-avatar" onError={e => { e.target.style.display = "none"; }}/> : <div className="admin-roster-avatar admin-card-img-fallback">{(m.fullName || "?").charAt(0)}</div>}
               <CentreRing centre={m.centre} centres={roster.centres} url={m.photoUrl} name={m.fullName} size={38}/>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="admin-roster-name">
@@ -8907,7 +8907,7 @@ function ApplicantDetail({ a }) {
   const dobLine = a.dob ? (a.dob + (age != null ? " · age " + age : "")) : (age != null ? "age " + age : "");
   return (
     <div className="admin-detail">
-      {a.photoUrl ? <img className="admin-detail-photo" src={a.photoUrl} alt="" onError={e => { e.target.style.display = "none"; }}/> : null}
+      {a.photoUrl ? <img className="admin-detail-photo" src={nggImg(a.photoUrl, "headshot")} alt="" onError={e => { e.currentTarget.hidden = true; }}/> : null}
       <DetailRow label="Reference">{a.ref ? <span className="mono">{a.ref}</span> : null}</DetailRow>
       <DetailRow label="Full name">{fullName}</DetailRow>
       {(a.firstName || a.lastName) ? <DetailRow label="Name parts">{"First: " + (a.firstName || "—") + "  ·  Other: " + (a.otherName || "—") + "  ·  Last: " + (a.lastName || "—")}</DetailRow> : null}
@@ -8921,169 +8921,17 @@ function ApplicantDetail({ a }) {
       {a.role ? <DetailRow label="Role">{a.role}</DetailRow> : null}
       {(a.courses && a.courses.length) ? <DetailRow label="Courses">{a.courses.join(", ")}</DetailRow> : null}
       <DetailRow label="Submitted">{fmtDate(a.createdAt)}</DetailRow>
-      <DetailRow label="Reason">{a.why ? <span style={{ whiteSpace: "pre-wrap" }}>{a.why}</span> : null}</DetailRow>
+      <DetailRow label="Reason">{a.why ? <span className="admin-prewrap">{a.why}</span> : null}</DetailRow>
+      {/* A volunteer's safeguarding, as the form gathered it: referees to contact, the declaration, and under 18 the guardian. */}
+      {a.details && (a.details.referees || []).map((r, i) => <DetailRow key={"ref" + i} label={"Referee " + (i + 1)}>{r.name + (r.relation ? " (" + r.relation + ")" : "") + " · " + r.contact}</DetailRow>)}
+      {a.details && a.details.declaration ? <DetailRow label="Declaration">{"Agreed · version " + (a.details.declaration.version || "")}</DetailRow> : null}
+      {a.details && a.details.guardian ? <DetailRow label="Guardian">{a.details.guardian.name + " · " + a.details.guardian.phone + (a.details.guardian.email ? " · " + a.details.guardian.email : "") + " · agreed on the form"}</DetailRow> : null}
     </div>
   );
 }
 
 /* Correct a pending application's data before converting/approving it.
    Mirrors admin.application.update. */
-function ApplicationEditor({ a, onSaved, onDelete }) {
-  const centreOpts = useCentreOptions();
-  const [f, setF] = React.useState({
-    name: a.name || "", email: a.email || "", phone: a.phone || "", age: a.age != null ? String(a.age) : "",
-    centre: a.centre || "", track: a.track || "", role: a.role || "", faculty: a.faculty || "",
-    program: a.program || "", courses: (a.courses || []).join(", "), why: a.why || "", photoUrl: a.photoUrl || "",
-  });
-  const [busy, setBusy] = React.useState(false);
-  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
-  const save = async () => {
-    if (f.name.trim().length < 2) { toast.error("Name needs at least 2 characters."); return; }
-    setBusy(true);
-    try {
-      await NGGApi.admin.applications.update(a.id, { ...f, age: f.age === "" ? 0 : parseInt(f.age, 10) || 0, courses: f.courses.split(",").map(c => c.trim()).filter(Boolean) });
-      toast.success("Application saved."); onSaved();
-    } catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : e.code === "bad_age" ? "Age looks off." : (e.code || e.message)); }
-    finally { setBusy(false); }
-  };
-  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
-  const fld = (key, label, opts = {}) => (
-    <div style={{ flex: "1 1 170px", minWidth: opts.min || 140 }}>
-      <span style={lbl}>{label}</span>
-      <input className="admin-input" style={{ width: "100%" }} type={opts.type || "text"} value={f[key]} onChange={e => set(key, e.target.value)} placeholder={opts.ph || ""}/>
-    </div>
-  );
-  return (
-    <div style={{ padding: "14px 2px", display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid #eef0f4", marginTop: 12 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-        {fld("name", "Full name", { min: 200 })}
-        {fld("email", "Email", { type: "email", min: 200 })}
-        {fld("phone", "Phone")}
-        {fld("age", "Age", { type: "number" })}
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-        <div style={{ flex: "1 1 180px", minWidth: 150 }}><span style={lbl}>Centre</span>
-          <select className="admin-input" style={{ width: "100%" }} value={f.centre || ""} onChange={e => set("centre", e.target.value)}>
-            <option value="">— select —</option>
-            {((f.centre && !centreOpts.includes(f.centre)) ? [f.centre, ...centreOpts] : centreOpts).map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        {fld("track", "Track")}
-        {fld("role", "Role")}
-        {fld("faculty", "Faculty")}
-        {fld("courses", "Courses (comma-separated)", { min: 200 })}
-      </div>
-      <div><span style={lbl}>Why / message</span><textarea className="admin-input" rows={2} value={f.why} onChange={e => set("why", e.target.value)} style={{ width: "100%", resize: "vertical" }}/></div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save application"}</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onSaved}>Cancel</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onDelete} style={{ color: "#b03535", marginLeft: "auto" }}>Delete application</button>
-      </div>
-    </div>
-  );
-}
-
-function AdminApplications() {
-  const [list, setList] = React.useState(null);
-  const [filter, setFilter] = React.useState({ kind: "", status: "" });
-  const [err, setErr] = React.useState("");
-  const [sel, setSel] = React.useState(() => new Set());
-  const [expanded, setExpanded] = React.useState(() => new Set());
-  const toggleExpand = (id) => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const [bulkBusy, setBulkBusy] = React.useState(false);
-  const load = () => NGGApi.admin.applications.list(filter).then(r => { setList(r.applications || []); setErr(""); setSel(new Set()); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter.kind, filter.status]);
-  const setStatus = async (id, status) => { try { await NGGApi.admin.applications.status(id, status); load(); } catch (e) { toast.error(e.code || e.message); } };
-  const toggle = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const allSelected = list && list.length > 0 && sel.size === list.length;
-  const toggleAll = () => setSel(allSelected ? new Set() : new Set((list || []).map(a => a.id)));
-  // Bulk status change — one confirm, then apply to every selected row and
-  // report how many succeeded. Beats changing dozens of rows one at a time.
-  const bulkStatus = async (status) => {
-    if (!sel.size || bulkBusy) return;
-    const ids = Array.from(sel);
-    const ok = await dialog.confirm({ title: "Set " + ids.length + " to " + status + "?", body: "Applies the “" + status + "” status to every selected application.", cta: "Apply to " + ids.length, danger: status === "rejected" });
-    if (!ok) return;
-    setBulkBusy(true);
-    const results = await Promise.allSettled(ids.map(id => NGGApi.admin.applications.status(id, status)));
-    const failed = results.filter(r => r.status === "rejected").length;
-    setBulkBusy(false);
-    if (failed) toast.error(failed + " of " + ids.length + " couldn't be updated."); else toast.success(ids.length + " applications updated.");
-    load();
-  };
-  const convert = async (id) => {
-    const ok = await dialog.confirm({ title: "Convert to member?", body: "This creates an active member account from this application.", cta: "Create member" });
-    if (!ok) return;
-    try { const r = await NGGApi.admin.applications.convert(id); toast.success("Member created: " + r.memberId); load(); } catch (e) { toast.error(e.code || e.message); }
-  };
-  const [editId, setEditId] = React.useState(0);
-  const [zoomUrl, setZoomUrl] = React.useState("");
-  const removeApp = async (a) => {
-    if (!(await dialog.confirm({ title: "Delete this application?", body: "Permanently removes " + a.name + "'s application. Use this for spam, duplicates or test entries. This can't be undone.", cta: "Delete", danger: true }))) return;
-    try { await NGGApi.admin.applications.remove(a.id); toast.success("Application deleted."); setEditId(0); load(); } catch (e) { toast.error(e.code || e.message); }
-  };
-  return (
-    <div className="admin-section">
-      {zoomUrl && <ImageLightbox url={zoomUrl} alt="Applicant photo" onClose={() => setZoomUrl("")}/>}
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Applications</h2>
-        <div className="admin-section-actions">
-          <button className="btn btn-ghost btn-sm" disabled={!list || !list.length} onClick={() => downloadCsv("applications", (list || []).map(a => ({ kind: a.kind, program: a.program || "", name: a.name, email: a.email, age: a.age || "", centre: a.centre || "", track: a.track || "", role: a.role || "", status: a.status, createdAt: a.createdAt })))}>Export CSV</button>
-        </div>
-      </div>
-      <div className="admin-filters">
-        <select className="admin-select" value={filter.kind} onChange={e => setFilter(f => ({ ...f, kind: e.target.value }))}><option value="">All kinds</option><option value="teen">Teen</option><option value="mentor">Mentor</option></select>
-        <select className="admin-select" value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}><option value="">All statuses</option><option value="new">New</option><option value="reviewing">Reviewing</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="waitlist">Waitlist</option></select>
-      </div>
-      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
-        list === null ? <div className="dash-spinner"/> :
-        list.length === 0 ? <div className="admin-empty">No applications.</div> :
-        <React.Fragment>
-        <div className="admin-bulkbar">
-          <label className="admin-bulk-all"><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all applications"/> <span>{sel.size ? sel.size + " selected" : "Select all"}</span></label>
-          {sel.size > 0 && (
-            <div className="admin-bulk-actions">
-              <span className="mono admin-bulk-label">Set status:</span>
-              {["reviewing", "accepted", "waitlist", "rejected"].map(s => (
-                <button key={s} className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => bulkStatus(s)}>{s}</button>
-              ))}
-              <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => setSel(new Set())}>Clear</button>
-            </div>
-          )}
-        </div>
-        <div className="admin-app-list">
-          {list.map(a => (
-            <div className={"admin-app" + (sel.has(a.id) ? " is-selected" : "")} key={a.id}>
-              <div className="admin-app-top">
-                <div style={{display:"flex", gap:12, alignItems:"center"}}>
-                  <input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} aria-label={"Select " + a.name} style={{flex:"0 0 auto", width:18, height:18}}/>
-                  {a.photoUrl && <img src={a.photoUrl} alt="" title="View photo" onClick={() => setZoomUrl(a.photoUrl)} style={{width:40, height:40, borderRadius:"50%", objectFit:"cover", flex:"0 0 auto", cursor:"zoom-in"}} onError={e => { e.target.style.display = "none"; }}/>}
-                  <div>
-                    <div className="admin-cell-name">{a.name} <span className="chip">{a.kind}</span>{a.program ? <span className={"chip " + (a.program === "summer" ? "chip-gold" : "chip-navy")}>{a.program}</span> : null}</div>
-                    <div className="mono admin-cell-sub">{a.email}{a.age ? " · age " + a.age : ""}{a.centre ? " · " + a.centre : ""}{a.track ? " · " + a.track : ""}{a.role ? " · " + a.role : ""} · {fmtDate(a.createdAt)}</div>
-                  </div>
-                </div>
-                <span className={"chip status-" + (a.status === "accepted" ? "published" : a.status === "rejected" ? "archived" : "draft")}>{a.status}</span>
-              </div>
-              {!expanded.has(a.id) && a.why && <p className="admin-app-why">{a.why}</p>}
-              {expanded.has(a.id) && <ApplicantDetail a={a}/>}
-              {editId === a.id && <ApplicationEditor a={a} onSaved={() => { setEditId(0); load(); }} onDelete={() => removeApp(a)}/>}
-              <div className="admin-app-actions">
-                <button className="btn btn-ghost btn-sm" aria-expanded={expanded.has(a.id)} onClick={() => toggleExpand(a.id)}>{expanded.has(a.id) ? "Hide details ▴" : "View details ▾"}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === a.id ? 0 : a.id)}>{editId === a.id ? "Close editor" : "Edit"}</button>
-                <select className="admin-select admin-app-status" value={a.status} onChange={e => setStatus(a.id, e.target.value)}>
-                  <option value="new">New</option><option value="reviewing">Reviewing</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="waitlist">Waitlist</option>
-                </select>
-                {a.kind === "teen" && a.status !== "accepted" && <button className="btn btn-primary btn-sm" onClick={() => convert(a.id)}>Convert to member →</button>}
-              </div>
-            </div>
-          ))}
-        </div>
-        </React.Fragment>
-      }
-    </div>
-  );
-}
 
 // ============================================================================
 // Volunteers — review desk + approved roster + safeguarding
@@ -10661,11 +10509,19 @@ function AdminVolunteers({ crCtx } = {}) {
 
   const approve = async (a) => {
     if (a.role === "instructor" && !a.phone) { toast.error("Instructors need a phone before approval."); return; }
-    const ok = await dialog.confirm({ title: "Approve " + a.name + "?", body: "This issues a volunteer ID + QR attendance profile and emails" + (a.phone ? "/SMSes" : "") + " it to them. " + (a.role !== "admin" ? "Safeguarding screening is still required before they work with young people." : ""), cta: "Approve & issue ID" });
+    const g = a.details && a.details.guardian;
+    /* Under 18: approval is also a statement that staff spoke to the guardian named on the form and they agree. */
+    const ok = await dialog.confirm(a.minor
+      ? { title: "Approve " + a.name + ", who is under 18?", body: "Only if you have spoken to their guardian" + (g ? ", " + g.name + " (" + g.phone + ")," : "") + " and they agree to " + a.name + " volunteering. Approving records that consent. Screening and referees still clear before they work with members.", cta: "Guardian agrees: approve" }
+      : { title: "Approve " + a.name + "?", body: "This issues a volunteer ID and QR attendance profile and emails" + (a.phone ? " and texts" : "") + " it to them. They work with members only once their referees and screening have cleared.", cta: "Approve & issue ID" });
     if (!ok) return;
     setBusy("a" + a.id);
-    try { const r = await NGGApi.admin.volunteers.approve(a.id); toast.success("Approved · " + r.volunteer.volunteerId + (r.idSent && r.idSent.length ? " · ID sent by " + r.idSent.join(" + ") : "")); load(); }
-    catch (e) { toast.error(e.code === "phone_required" ? "Instructors need a phone first." : (e.code || e.message)); }
+    try {
+      const r = await NGGApi.admin.volunteers.approve(a.id, !!a.minor);
+      toast.success(r.widened ? a.name + " already volunteers, and now serves both programmes" : "Approved · " + r.volunteer.volunteerId + (r.idSent && r.idSent.length ? " · ID sent by " + r.idSent.join(" + ") : "") + " · screening " + (r.safeguarding || "pending"));
+      load();
+    }
+    catch (e) { toast.error(e.code === "phone_required" ? "Instructors need a phone first." : ((e.data && e.data.message) || e.code || e.message)); }
     finally { setBusy(""); }
   };
   const decline = async (a) => {
@@ -10754,6 +10610,7 @@ function AdminVolunteers({ crCtx } = {}) {
                     <div className="mono admin-cell-sub">{a.email}{a.phone ? " · " + a.phone : " · no phone"}{a.centre ? " · 🏫 " + a.centre : ""}{a.faculty ? " · " + a.faculty : ""}{(a.courses || []).length ? " · " + a.courses.join(", ") : ""} · {fmtDate(a.createdAt)}</div>
                   </div>
                   {a.role === "instructor" && !a.phone && <span className="chip status-archived">phone required</span>}
+                  {a.minor && <span className="chip status-draft">Under 18 · guardian</span>}
                 </div>
                 {!expanded.has(a.id) && a.why && <p className="admin-app-why">{a.why}</p>}
                 {expanded.has(a.id) && <ApplicantDetail a={a}/>}

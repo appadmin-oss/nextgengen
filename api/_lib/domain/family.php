@@ -396,6 +396,8 @@ function family_ward(array $p): array {
         'achievements' => function_exists('member_achievements_for') ? array_diff_key(member_achievements_for($m), ['ok' => 1]) : null,
         // Growth over the term, written to a parent (no staff-only records): mp_growth in mentor-portal.php.
         'growth' => function_exists('mp_growth') ? mp_growth($mid, 'family') : null,
+        // Invoices, receipts, acknowledgements and Math Lab certificates, each with its private link (documents.php).
+        'documents' => function_exists('documents_for_member') ? documents_for_member($mid) : [],
         'requests' => array_map('member_request_public', $reqs),
         // Excused absences this session, of the two allowed (member_excuses, POLICY §1.1).
         'excuses' => function_exists('member_excuses') ? array_diff_key(member_excuses($m), ['days' => 1]) : null,

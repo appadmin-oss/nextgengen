@@ -344,6 +344,25 @@ function CrSyPhotoRecover({ ctx }) {
       setSt({ busy: "", note: r.items.length ? crPlural(r.withCandidates, "missing photo") + " of " + crNum(r.items.length) + " have a Cloudinary photo for the same person. Pick one for each." : "No photos are missing." }); }
     catch (e) { setSt({ busy: "", note: crErr(e, "Couldn’t look.") }); }
   };
+  /* Stored in the bucket, optimised once by Cloudinary, served from the bucket (domain/photos.php). */
+  const noBucket = e => e && (e.code === "no_bucket" || e.code === "not_possible" || (e.data && ["no_bucket", "not_possible"].includes(e.data.error)));
+  const toBucket = async () => {
+    setSt({ busy: "bucket", note: "Moving held photos into the bucket…" });
+    try { const r = await NGGApi.admin.photoFrame.toBucket();
+      setSt({ busy: "", note: (r.moved ? crPlural(r.moved, "photo") + " moved into the bucket; " + crPlural(r.rows, "record") + " now point at it. " : "Nothing moved. ")
+        + (r.left ? crNum(r.left) + " still held — press again, or leave it: it carries on by itself every hour. " : "None left on this server. ")
+        + (r.failed ? crNum(r.failed) + " the bucket refused (" + (r.errors || []).join("; ") + "). " : "")
+        + (r.missing ? crNum(r.missing) + " missing files were left alone." : "") }); ctx.reload(); }
+    catch (e) { setSt({ busy: "", note: noBucket(e) ? "No bucket is set. Add R2 (or any S3-compatible store) in Settings → API keys → File storage first." : crErr(e, "The move didn’t finish.") }); }
+  };
+  const optimise = async () => {
+    setSt({ busy: "sizes", note: "Making each photo’s sizes once, into the bucket…" });
+    try { const r = await NGGApi.admin.photoFrame.variants();
+      setSt({ busy: "", note: (r.made ? crPlural(r.made, "photo") + " optimised; pages now load their small copies from the bucket. " : "Nothing new to optimise. ")
+        + (r.left ? crNum(r.left) + " left — it carries on by itself every ten minutes. " : "")
+        + (r.failed ? crNum(r.failed) + " couldn’t be done (shown as they are for now)." : "") }); }
+    catch (e) { setSt({ busy: "", note: noBucket(e) ? "Needs a bucket (Settings → API keys → File storage) and a Cloudinary account with credits." : crErr(e, "That didn’t finish.") }); }
+  };
   const useCloud = async (x, url) => {
     setSt({ busy: "cloud", note: "Pointing " + (x.who || "the record") + " at that photo…" });
     try { await NGGApi.admin.photoFrame.useCloud(x.name, x.place, x.rowId, url);
@@ -389,6 +408,8 @@ function CrSyPhotoRecover({ ctx }) {
       <div className="cr-sy-frame-acts">
         <button type="button" className="cr-btn is-sm is-primary" disabled={!!st.busy} onClick={search}>{st.busy === "search" ? "Searching…" : "Search this account"}</button>
         <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={() => fileRef.current && fileRef.current.click()}>Restore from a backup</button>
+        <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={toBucket}>{st.busy === "bucket" ? "Moving…" : "Move held photos to the bucket"}</button>
+        <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={optimise}>{st.busy === "sizes" ? "Optimising…" : "Optimise photos"}</button>
         <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={findCloud}>{st.busy === "cloud" ? "Looking…" : "Use their Cloudinary photos"}</button>
         <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={copyNames}>Copy the missing file names</button>
         <input ref={fileRef} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden aria-label="Photo files from a backup" onChange={e => { restore(e.target.files); e.target.value = ""; }}/>
@@ -1011,7 +1032,7 @@ const crSyGenCtx = { current: null };
 const CR_SY_ATT_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Volunteers"], ["default", "Everyone else"]];
 const CR_SY_CLOSE_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Summer volunteers"]];
 const CR_SY_IDLE = [["900", "15 minutes"], ["1800", "30 minutes (default)"], ["3600", "1 hour"], ["14400", "4 hours"], ["43200", "12 hours — a full working day"], ["0", "Never — only for a locked, private office"]];
-const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled", "face_check_enabled"];
+const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "ngg_volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled", "face_check_enabled"];
 const CR_SY_ID_KEYS = ["program", "year", "motto", "validityDays", "website", "phone", "address", "logoLockup", "logoOkun"];
 const crSyTime = v => !v || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use a time like 09:00.";
 const crSyInt = (lo, hi, what) => v => /^-?\d+$/.test(String(v).trim()) && +v >= lo && +v <= hi ? "" : "Enter " + what + " from " + lo + " to " + hi + ".";
@@ -1026,9 +1047,10 @@ function crSyGenForm(d, part) {
     type: "form", span: 6, key: "settings-" + (part || "general"),
     groups: [
       { part: "general", h: "Sign-ups", help: "Whether the public forms take new applications.", rows: [
-        tog("applications_open", "Teen applications open"),
+        tog("applications_open", "NGG membership applications open"),
         tog("mentor_applications_open", "Mentor applications open"),
-        tog("volunteer_applications_open", "Volunteer registration open"),
+        tog("volunteer_applications_open", "Summer School volunteer registration open", "The seasonal form at /volunteer."),
+        tog("ngg_volunteer_applications_open", "NGG volunteer registration open", "The year-round form at /join/volunteer."),
         tog("intake_photo_required", "Require a headshot on the public forms", "Teen, volunteer and kiosk. Off: the photo is optional at sign-up and can be added later through Photo review or the ID Card Studio."),
         tog("photo_gate_issuance", "Hold the ID until the photo is approved", "The ID is bound only once parent consent is in and the headshot is approved in Photo review. A registration with no photo is never held."),
         tog("geofence_enabled", "Geo-fenced registration", "Picks the centre by location and refuses off-site sign-ups. Map each centre’s point under Members → Centres."),

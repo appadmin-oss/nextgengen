@@ -169,27 +169,30 @@ const CR_INBOX_SOURCES = {
   applications: {
     cap: "people",
     async load(ctx) {
-      const [r, rv] = await Promise.all([
-        NGGApi.admin.applications.list({ status: "new" }),
-        NGGApi.admin.applications.list({ status: "reviewing" }).catch(() => ({ applications: [] })),
-      ]);
-      return (r.applications || []).concat(rv.applications || []).filter(a => a.kind !== "volunteer").map(a => {
+      /* New, under review and waitlisted: a waitlisted child stays on the desk
+         someone can accept them from, instead of vanishing when "Waitlist" is pressed. */
+      const r = await NGGApi.admin.applications.list({ status: "new,reviewing,waitlist" });
+      return (r.applications || []).filter(a => a.kind !== "volunteer").map(a => {
         const prog = a.program === "summer" ? "Summer School" : "NGG membership";
-        const status = (to, label) => async () => { await NGGApi.admin.applications.status(a.id, to); return { text: label + " · " + a.name, undo: () => NGGApi.admin.applications.status(a.id, a.status || "new") }; };
-        /* Waitlisting or refusing SAYS so: the family is emailed the drafted
-           message (edit it first; empty it to change only the status). */
-        const tell = (to, l, label) => ({ l, note: { l: "Message to the family (emailed)", req: false, dflt: crAppDraft(a, to, ctx.me),
-            help: a.email ? "Sent to " + a.email + " and kept on the application. Empty it to change the status without writing." : "There is no email on this application — the status changes, and nobody is told. Call them." },
-          run: async (it, v) => { const r = await NGGApi.admin.applications.status(a.id, to, a.email ? (v.why || "") : "");
-            return { text: label + " · " + a.name + (r && r.told ? " · the family was emailed" : v.why && a.email ? " · the email didn’t go" : ""), undo: () => NGGApi.admin.applications.status(a.id, a.status || "new") }; } });
+        const wait = a.status === "waitlist";
+        const toldBy = (x) => ((x && x.told) || []).length ? " · family told by " + x.told.join(" and ") : "";
+        const status = (to, label) => async () => { const x = await NGGApi.admin.applications.status(a.id, to, "", { notify: false }); return { text: label + " · " + a.name }; };
+        /* Waitlisting or refusing SAYS so: the family is emailed (and the main
+           parent texted) the drafted message. Edit it first; empty it to change
+           only the status. A told family is not undone quietly. */
+        const tell = (to, l, label) => ({ l, note: { l: "Message to the family", req: false, dflt: crAppDraft(a, to, ctx.me),
+            help: a.email ? "Emailed to " + a.email + ", texted to the parent, and kept on the application. Empty it to change the status without writing." : "There is no email on this application. The parent is texted if a phone is on it. Empty it to change only the status." },
+          run: async (it, v) => { const why = (v && v.why) || ""; const x = await NGGApi.admin.applications.status(a.id, to, why, { notify: !!why });
+            return { text: label + " · " + a.name + toldBy(x) }; } });
         const ask = a.email ? { l: "Ask for something", keep: true, note: { l: "What you need (emailed)", req: true, dflt: crAppDraft(a, "ask", ctx.me),
             help: "Sent to " + a.email + ". The application stays here, marked as in hand." },
           run: async (it, v) => { await NGGApi.admin.applications.message(a.id, v.why);
             return { text: "Asked · " + a.email, patch: { thread: (it.thread || []).concat([{ who: (ctx.me && ctx.me.name) || "You", at: new Date().toISOString(), body: v.why, mine: true }]) } }; } } : null;
+        const centreField = a.centre ? [] : [{ id: "centre", l: "Centre", req: true, help: "The application names no centre. Type the centre they will attend, as it is spelt in Centres." }];
         const actions = a.kind === "teen" ? [
           a.program === "summer" ? { l: "Accept & create member", tone: "primary",
-            confirm: () => ({ title: "Create a member for " + a.name + "?", body: "They get a Summer School record. This can’t be undone from here.", cta: "Accept & create member" }),
-            run: async () => { const x = await NGGApi.admin.applications.convert(a.id); return { text: x.existed ? a.name + " already had a record · " + x.memberId : "Member created · " + x.memberId }; } }
+            form: () => ({ title: "Create a member for " + a.name + "?", submit: "Accept & create member", intro: "They get a Summer School record. This can’t be undone from here.", values: {}, fields: centreField }),
+            run: async (it, v) => { const x = await NGGApi.admin.applications.convert(a.id, "", (v && v.centre) || ""); return { text: x.existed ? a.name + " already had a record · " + x.memberId : "Member created · " + x.memberId }; } }
           : { l: "Accept & create member", tone: "primary",
             /* An NGG place is paid for only once it is offered: accepting sends
                the family one invoice — the membership fee and the first
@@ -198,29 +201,29 @@ const CR_INBOX_SOURCES = {
             form: () => ({ title: "Accept " + a.name + " into NGG", submit: "Accept and send the invoice",
               intro: "They get an NGG record, a member ID and a card number. Their family is emailed one invoice to pay: the membership fee and the commitment fee for the meeting days left in their first month.",
               values: { start: new Date().toISOString().slice(0, 10) },
-              fields: [{ id: "start", l: "Start date", type: "date", req: true, help: "The first day they attend. Only the meeting days from this date are charged for the first month." }] }),
+              fields: [{ id: "start", l: "Start date", type: "date", req: true, help: "The first day they attend. Only the meeting days from this date are charged for the first month." }].concat(centreField) }),
             run: async (it, v) => {
-              const x = await NGGApi.admin.applications.convert(a.id, v.start);
+              const x = await NGGApi.admin.applications.convert(a.id, v.start, v.centre || "");
               if (x.existed) return { text: a.name + " already had a record · " + x.memberId };
               const inv = x.invoice || {};
               const tail = inv.invoiceId ? (inv.sent ? " · invoice " + fmtMoney(inv.total) + " sent to " + inv.to : " · invoice made, but the email didn’t go — resend it from Money → Membership payments")
                 : inv.error === "fees_off" ? " · no invoice: membership fees are off" : inv.error ? " · no invoice (" + inv.error.replace(/_/g, " ") + ")" : "";
               return { text: "Member created · " + x.memberId + tail };
             } },
-          tell("waitlist", "Waitlist", "Waitlisted"),
+          wait ? null : tell("waitlist", "Waitlist", "Waitlisted"),
           tell("rejected", "Reject", "Rejected"),
           ask,
-        ] : [
+        ].filter(Boolean) : [
           { l: "Accept", tone: "primary", run: status("accepted", "Accepted") },
-          tell("waitlist", "Waitlist", "Waitlisted"),
+          wait ? null : tell("waitlist", "Waitlist", "Waitlisted"),
           tell("rejected", "Reject", "Rejected"),
           ask,
-        ];
+        ].filter(Boolean);
         const rec = crOpenRecord(ctx, a.known && a.known.memberId, a.known && a.known.kind === "parent" ? "Open " + String(a.known.name || "").split(" ")[0] + "’s record" : "Open their record");
         if (rec) actions.push(rec);
         return crItem({
           id: "app:" + a.id, cat: "applications", kind: "Application", icon: "user-plus", who: a.name || a.email || "Applicant", at: a.createdAt,
-          unread: a.status === "new", urgent: crSignals(a.why).urgent, title: [prog, a.track || a.role].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
+          unread: a.status === "new", urgent: crSignals(a.why).urgent, title: [prog, a.track || a.role, wait ? "Waitlisted" : ""].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
           search: [a.email, a.centre, a.track, a.ref].join(" "),
           facts: [["Already with us", a.known ? crKnownLine(a.known) : ""], ["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.program === "summer" ? "" : (a.faculty || "—")], ["Course", a.track || (a.details && a.details.courseOther ? "Something else: " + a.details.courseOther : "—")], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]]
             .concat(crAppDetailFacts(a)).filter(f => f[1] !== ""),

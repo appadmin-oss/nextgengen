@@ -329,7 +329,7 @@ class Fp3Portal extends React.Component {
        payment made offline. */
     const wl = active && loaded;
     out.mainSlotEnd = sec === "today" && wl ? <Fp3TodayMore key={w.linkId} c={this} w={w}/>
-      : sec === "money" && wl && w.fees.enabled ? <div className="fp3x-more" key={w.linkId}><Fp3Ahead c={this} w={w}/><Fp3Paid c={this} w={w}/></div>
+      : sec === "money" && wl ? <div className="fp3x-more" key={w.linkId}>{w.fees.enabled ? <><Fp3Ahead c={this} w={w}/><Fp3Paid c={this} w={w}/></> : null}<Fp3Docs c={this} w={w}/></div>
       // Anchor Circle, in the family account: the child's week on Growth (domain/circle.php).
       : sec === "progress" && wl ? <div className="fp3x-more" key={w.linkId}><Fp3Anchor c={this} linkId={w.linkId} first={w.member.first} role="parent"/></div>
       : sec === "account" ? <React.Fragment>
@@ -880,6 +880,34 @@ function Fp3Paid({ c, w }) {
 }
 
 /** Today, below the design's page: quick actions, what is coming, and this week's lessons. */
+/** Money → Documents: every invoice, receipt, acknowledgement and Math Lab
+    certificate, each opened as its printable page (domain/documents.php). */
+const FP3_DOC = { invoice: ["ph ph-file-text", "Invoice"], receipt: ["ph ph-receipt", "Receipt"], ack: ["ph ph-hourglass-medium", "Acknowledgement"], certificate: ["ph ph-medal", "Certificate"] };
+const FP3_DOC_STATE = { due: "Payment due", overdue: "Overdue", paid: "Paid", void: "Cancelled", pending: "Being checked", issued: "", superseded: "Replaced" };
+function Fp3Docs({ c, w }) {
+  const docs = w.documents || [];
+  if (!docs.length) return null;
+  const when = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); };
+  return (
+    <section className="fp3x-card fp3x-docs" aria-labelledby="fp3xDocsH">
+      <div className="fp3x-card-h">
+        <span className="fp3x-ic" aria-hidden="true"><i className="ph ph-files"/></span>
+        <div><h2 id="fp3xDocsH">Documents</h2><p>Invoices, receipts and certificates. Open one to print it or save it as a PDF.</p></div>
+      </div>
+      <ul className="fp3x-doclist">
+        {docs.map(d => (
+          <li key={d.kind + d.no}>
+            <i className={(FP3_DOC[d.kind] || FP3_DOC.invoice)[0]} aria-hidden="true"/>
+            <span className="fp3x-doc-t"><b>{d.kind === "certificate" ? d.title : (FP3_DOC[d.kind] || FP3_DOC.invoice)[1]}</b>
+              <span><span className="fp3x-doc-no">{d.no}</span>{" · " + when(d.at)}{d.amount != null ? " · " + c.naira(d.amount) : ""}{FP3_DOC_STATE[d.state] ? " · " + FP3_DOC_STATE[d.state] : ""}</span></span>
+            <a className="fp3x-doc-go" href={d.url} target="_blank" rel="noopener noreferrer" aria-label={"Open " + (FP3_DOC[d.kind] || FP3_DOC.invoice)[1].toLowerCase() + " " + d.no}>Open</a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Fp3TodayMore({ c, w }) {
   const S = c.state, first = w.member.first, F = w.fees, L = w.learning || {};
   const acts = [
@@ -894,6 +922,7 @@ function Fp3TodayMore({ c, w }) {
       {/* Asked here, where a parent can see the point: their child's day. */}
       {typeof NggPushNudge === "function" ? <NggPushNudge surface="family" text={"Know the moment " + first + " checks in or out, and when the centre answers you — on this phone, without signing in. Nights stay quiet."}/> : null}
       <Fp3Anchor c={c} linkId={w.linkId} first={first} role="parent" compact/>
+      {typeof RclProgress === "function" ? <RclProgress who="family" linkId={w.linkId} first={first}/> : null}
       <section className="fp3x-card" aria-labelledby="fp3x-qa">
         <h2 id="fp3x-qa" className="fp3x-h">For {first}</h2>
         <div className="fp3x-acts">

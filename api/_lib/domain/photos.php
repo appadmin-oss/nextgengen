@@ -27,10 +27,34 @@ const ID_BG_GREY = 'eceef2';
 
 /* ── Cloudinary editing (delivery-URL transforms) ─────────────────────────── */
 
-/** Insert a transform chain right after /upload/ in a Cloudinary delivery URL. */
+/** Insert a transform chain right after /upload/ (or /image/fetch/) in a Cloudinary delivery URL. */
 function cloudinary_apply(string $url, string $transform): string {
-    if ($transform === '' || strpos($url, '/upload/') === false) return $url;
+    if ($transform === '') return $url;
+    if (cloudinary_fetched($url)) return preg_replace('#/image/fetch/#', '/image/fetch/' . $transform . '/', $url, 1) ?? $url;
+    if (strpos($url, '/upload/') === false) return $url;
     return preg_replace('#/upload/#', '/upload/' . $transform . '/', $url, 1) ?? $url;
+}
+
+/* ── Stored in the bucket, edited by fetch ────────────────────────────────
+   The plan (owner, 31 Oct 2026): photos are STORED in the bucket (R2) and
+   Cloudinary only works on them. With a bucket set, a photo in it — or still
+   in this site's own store — is edited through Cloudinary's FETCH
+   (…/image/fetch/<edits>/<its address>): Cloudinary reads it from the bucket
+   and keeps nothing but the derived copy, instead of the photo being uploaded
+   into Cloudinary first (the storage that ran out). The finished photo is then
+   rendered once and saved back into the bucket (photo_materialise). */
+function cloudinary_fetched(string $url): bool {
+    return (bool)preg_match('#^https://res\.cloudinary\.com/[^/]+/image/fetch/#', $url);
+}
+/** A bucket (or own-store) photo as a clean fetch address on the live account; '' when it cannot be. */
+function cloudinary_fetch_url(string $src): string {
+    $src = preg_replace('#\?nv=1$#', '', $src) ?? $src;
+    $cld = (string)(($GLOBALS['CONFIG']['cloudinary'] ?? [])['cloud_name'] ?? '');
+    if ($cld === '') return '';
+    if (photo_is_stored_locally($src) && strpos($src, '://') === false) $src = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . $src;
+    $ok = (function_exists('store_hosted') && store_hosted($src)) || photo_is_stored_locally($src);
+    if (!$ok || !preg_match('#^https://#', $src)) return '';
+    return 'https://res.cloudinary.com/' . rawurlencode($cld) . '/image/fetch/' . rawurlencode($src);
 }
 
 /**
@@ -74,6 +98,8 @@ function cloudinary_edit(string $sourceUrl, array $rec, bool $creditsOk): array 
  * on top of an already-edited URL. Leaves non-Cloudinary URLs untouched.
  */
 function cloudinary_base(string $url): string {
+    // …/image/fetch/<edits>/https%3A… → …/image/fetch/https%3A… (the stored photo, unedited)
+    if (cloudinary_fetched($url)) return preg_replace('#(/image/fetch/)(?:[a-z]{1,3}_[^/]*/)+(?=https?%3A)#i', '$1', $url, 1) ?? $url;
     if (strpos($url, '/upload/') === false) return $url;
     // .../upload/<transforms>/v123/<publicid> → .../upload/v123/<publicid>
     $stripped = preg_replace('#(/upload/).*?(v\d+/)#', '$1$2', $url, 1);
@@ -920,6 +946,247 @@ function admin_photos_lost(array $p): array {
             'dir' => photo_store_dir(), 'insideSite' => photo_store_inside_site()];
 }
 
+/* ── Stored in the bucket, optimised ONCE, served from the bucket ─────────
+
+   The plan (owner, 31 Oct 2026): photos are STORED in the S3-compatible bucket
+   (R2) and Cloudinary OPTIMISES them. Cloudinary bills every byte it serves, on
+   every view, while R2 serves for nothing — so Cloudinary is asked for each
+   display size ONCE, and the small WebP versions are stored back in the bucket
+   beside the photo as `<photo>__<size>.webp`. Only when every size is stored is
+   `?nv=1` added to the photo's address on the records: the sign nggImg
+   (photos.js) reads to serve a size from the bucket. The bucket ignores the
+   query, so a marked address still opens the original anywhere else.
+
+   Photos still kept in this site's own store ("held" while Cloudinary was full
+   and no bucket was set) are moved into the bucket first:
+   · uploaded server-side under a key from their name (photos/<name>), so a
+     re-run overwrites the same object rather than making a second;
+   · every record naming one is repointed — every text column the photo scan
+     reads, the audit trail excepted (it is history);
+   · the local file is NEVER deleted, so the move can be undone;
+   · a record whose file is already gone is left alone and counted — pointing
+     it at a bucket address that would also 404 turns a broken image into an
+     undiagnosable one;
+   · bounded per call and resumable: a request killed half-way has moved what
+     it finished, and the next call carries on.
+
+   PHOTO_VARIANTS has the same names and steps as NGG_IMG_SIZES in photos.js; a
+   test holds the two together, because a size a page asks for that was never
+   stored is a broken image. */
+
+const PHOTO_BUCKET_BATCH = 25;
+const PHOTO_TOKEN_RE = '#[^\s"\'<>,]*photo\.php(?:\?|%3[fF])p(?:=|%3[dD])([0-9a-f]{32}\.(?:jpg|png|webp))#i';
+const PHOTO_VARIANTS = [
+    'avatar'   => 'c_fill,g_face,w_96,h_96',
+    'face'     => 'c_fill,g_face,w_240,h_240',
+    'headshot' => 'c_fill,g_face,w_480,h_600',
+    'small'    => 'c_limit,w_320',
+    'card'     => 'c_limit,w_800',
+    'wide'     => 'c_limit,w_1600',
+];
+const PHOTO_VARIANT_MARK = '?nv=1';
+
+/** The text columns the photo scan reads, by table, the audit trail left out. */
+function photo_ref_tables(): array {
+    $by = [];
+    foreach (photo_store_ref_columns() as [$t, $c]) if ($t !== 'audit_log') $by[$t][] = $c;
+    return $by;
+}
+/** Rows of $t with any of $cols LIKE $like (one query a table). */
+function photo_ref_rows(string $t, array $cols, string $like): array {
+    $q = db_driver() === 'mysql' ? '`' : '"';
+    $where = implode(' OR ', array_map(fn($c) => $q . $c . $q . ' LIKE ?', $cols));
+    try { return db_all('SELECT ' . implode(', ', array_map(fn($c) => $q . $c . $q, $cols)) . " FROM $q$t$q WHERE $where", array_fill(0, count($cols), $like)); }
+    catch (Throwable $e) { return []; }
+}
+function photo_ref_write(string $t, string $c, string $old, string $new): int {
+    $q = db_driver() === 'mysql' ? '`' : '"';
+    return db_exec("UPDATE $q$t$q SET $q$c$q = ? WHERE $q$c$q = ?", [$new, $old]);
+}
+
+/** Point every record naming an own-store photo in $urls (name => bucket URL) at it. Returns rows changed. */
+function photo_store_repoint(array $urls): int {
+    if (!$urls) return 0;
+    $changed = 0;
+    foreach (photo_ref_tables() as $t => $cols) foreach (photo_ref_rows($t, $cols, '%photo.php%') as $row) foreach ($row as $c => $v) {
+        if (!is_string($v) || stripos($v, 'photo.php') === false) continue;
+        $new = preg_replace_callback(PHOTO_TOKEN_RE, static function ($m) use ($urls) {
+            $id = strtolower($m[1]);
+            if (!isset($urls[$id])) return $m[0];
+            return stripos($m[0], '%3') !== false ? rawurlencode($urls[$id]) : $urls[$id];   // inside an encoded URL, stay encoded
+        }, $v);
+        if ($new !== null && $new !== $v) $changed += photo_ref_write($t, (string)$c, $v, $new);
+    }
+    return $changed;
+}
+
+/** One batch of held photos into the bucket. {ok, moved, rows, missing, failed, left, errors} */
+function photo_store_to_bucket(int $max = PHOTO_BUCKET_BATCH): array {
+    if (!function_exists('store_configured') || !store_configured()) return ['ok' => false, 'error' => 'no_bucket'];
+    $refs = photo_store_referenced();
+    if ($refs === null) return ['ok' => false, 'error' => 'scan_failed'];
+    $held = []; $missing = 0;
+    foreach ($refs as $id => $place) {
+        if (strncmp($place, 'audit_log.', 10) === 0) continue;
+        $path = photo_store_find($id);
+        if ($path === '' || !is_file($path)) { $missing++; continue; }
+        $held[$id] = $path;
+    }
+    $urls = []; $failed = 0; $errors = [];
+    foreach (array_slice($held, 0, max(1, $max), true) as $id => $path) {
+        $ext = strtolower(pathinfo($id, PATHINFO_EXTENSION));
+        $key = store_folder() . '/photos/' . $id;
+        $r = store_http('PUT', $key, (string)file_get_contents($path), ['content-type' => $ext === 'png' ? 'image/png' : ($ext === 'webp' ? 'image/webp' : 'image/jpeg'),
+            'cache-control' => 'public, max-age=31536000, immutable']);
+        if ((int)$r['code'] >= 200 && (int)$r['code'] < 300) $urls[$id] = store_public_url($key);
+        else { $failed++; if (count($errors) < 3) $errors[] = 'HTTP ' . (int)$r['code'] . ($r['error'] ? ' ' . $r['error'] : ''); }
+    }
+    $rows = photo_store_repoint($urls);
+    if (function_exists('cache_delete')) { cache_delete('ops.photoLinks'); cache_delete('photos.missingNames'); }
+    $left = count($held) - count($urls);
+    if ($urls || $failed) audit('photos.to_bucket', 'system', '', ['moved' => count($urls), 'rows' => $rows, 'failed' => $failed, 'left' => $left]);
+    if ($failed && function_exists('ops_record')) ops_record('warn', 'photos.to_bucket', 'Some photos did not reach the bucket', implode('; ', $errors));
+    return ['ok' => true, 'moved' => count($urls), 'rows' => $rows, 'missing' => $missing, 'failed' => $failed, 'left' => $left, 'errors' => $errors];
+}
+
+/** admin.photos.to_bucket — move the held photos now (batches for up to 20 s) and say what is left. */
+function admin_photos_to_bucket(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $t0 = microtime(true); $sum = ['moved' => 0, 'rows' => 0, 'failed' => 0, 'missing' => 0, 'left' => 0, 'errors' => []];
+    do {
+        $r = photo_store_to_bucket();
+        if (empty($r['ok'])) return $r + ['ok' => false];
+        foreach (['moved', 'rows', 'failed'] as $k) $sum[$k] += $r[$k];
+        $sum['missing'] = $r['missing']; $sum['left'] = $r['left']; $sum['errors'] = $r['errors'] ?: $sum['errors'];
+    } while ($r['moved'] > 0 && $r['left'] > 0 && microtime(true) - $t0 < 20);
+    audit('photos.to_bucket.run', (string)$g['requester']['memberId'], '', array_diff_key($sum, ['errors' => 1]), (string)($p['ip'] ?? ''));
+    return ['ok' => true] + $sum;
+}
+
+/** The scheduler's job: one batch an hour while any held photo is left. */
+function photo_store_to_bucket_tick(): void {
+    if (!function_exists('store_configured') || !store_configured()) return;
+    $done = (string)(setting_raw('photos.bucket_done') ?? '');
+    if ($done !== '' && time() - (int)strtotime($done) < 86400) return;
+    $r = photo_store_to_bucket();
+    if (!empty($r['ok']) && $r['left'] === 0 && $r['failed'] === 0) setting_set('photos.bucket_done', now_iso(), 'system');
+}
+
+/** GET one URL's bytes, or ''. Test seam: $GLOBALS['__photo_download_mock'] = fn($url) => bytes. */
+function photo_download(string $url): string {
+    if (isset($GLOBALS['__photo_download_mock']) && is_callable($GLOBALS['__photo_download_mock'])) return (string)($GLOBALS['__photo_download_mock'])($url);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2]);
+    $b = (string)curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    return $code === 200 ? $b : '';
+}
+
+/**
+ * Render a Cloudinary delivery URL once and store the result in the bucket,
+ * named by its bytes (the same photo is one object, however often saved).
+ * Returns the bucket URL, or '' (the caller keeps the edit).
+ */
+function photo_save_to_bucket(string $url): string {
+    if (!preg_match('#^https://res\.cloudinary\.com/#', $url)) return '';
+    $bytes = photo_download($url);
+    if (strlen($bytes) < 100 || strlen($bytes) > PHOTO_STORE_MAX_BYTES) return '';
+    $info = function_exists('getimagesizefromstring') ? @getimagesizefromstring($bytes) : false;
+    $ext = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp'][(int)($info[2] ?? 0)] ?? '';
+    if ($ext === '') return '';
+    $key = store_folder() . '/photos/e_' . substr(hash('sha256', $bytes), 0, 32) . '.' . $ext;
+    $r = store_http('PUT', $key, $bytes, ['content-type' => $ext === 'png' ? 'image/png' : ($ext === 'webp' ? 'image/webp' : 'image/jpeg'), 'cache-control' => 'public, max-age=31536000, immutable']);
+    if ((int)$r['code'] < 200 || (int)$r['code'] >= 300) {
+        if (function_exists('ops_record')) ops_record('warn', 'photo.materialise', 'A finished photo could not be stored in the bucket; it is kept as an edit for now.', 'HTTP ' . (int)$r['code']);
+        return '';
+    }
+    return store_public_url($key);
+}
+
+/** May Cloudinary be asked to make sizes now? A bucket, a cloud, and not at critical. */
+function photo_variants_possible(): bool {
+    if (!function_exists('store_configured') || !store_configured()) return false;
+    if ((string)(($GLOBALS['CONFIG']['cloudinary'] ?? [])['cloud_name'] ?? '') === '') return false;
+    return !function_exists('media_usage_state') || (string)(media_usage_state()['level'] ?? 'ok') !== 'critical';
+}
+
+/**
+ * Make and store every size of one bucket photo. Returns the marked address
+ * (url + ?nv=1) when all are stored, or '' — then nothing is marked and the
+ * original keeps being shown, so a half-made set is never served.
+ */
+function photo_variants_make(string $url): string {
+    $url = preg_replace('#\?nv=1$#', '', trim($url)) ?? '';
+    $key = function_exists('store_key_of') ? store_key_of($url) : '';
+    if ($key === '' || !preg_match('#\.(jpe?g|png|webp)$#i', $key) || strpos($key, '__') !== false || !photo_variants_possible()) return '';
+    $cloud = rawurlencode((string)$GLOBALS['CONFIG']['cloudinary']['cloud_name']);
+    $stem = (string)preg_replace('#\.(jpe?g|png|webp)$#i', '', $key);
+    foreach (PHOTO_VARIANTS as $size => $tf) {
+        $bytes = photo_download('https://res.cloudinary.com/' . $cloud . '/image/fetch/f_webp,q_auto,' . $tf . '/' . rawurlencode($url));
+        if (strlen($bytes) < 30 || substr($bytes, 0, 4) !== 'RIFF' || substr($bytes, 8, 4) !== 'WEBP') return '';
+        $r = store_http('PUT', $stem . '__' . $size . '.webp', $bytes, ['content-type' => 'image/webp', 'cache-control' => 'public, max-age=31536000, immutable']);
+        if ((int)$r['code'] < 200 || (int)$r['code'] >= 300) return '';
+    }
+    return $url . PHOTO_VARIANT_MARK;
+}
+
+/** Point every record naming one of $map's bucket addresses (old => new) at the new one — exact addresses, plain or JSON-escaped. */
+function photo_repoint_urls(array $map): int {
+    if (!$map) return 0;
+    $changed = 0; $host = function_exists('store_public_host') ? store_public_host() : '';
+    if ($host === '') return 0;
+    foreach (photo_ref_tables() as $t => $cols) foreach (photo_ref_rows($t, $cols, '%' . $host . '%') as $row) foreach ($row as $c => $v) {
+        if (!is_string($v) || $v === '') continue;
+        $new = $v;
+        foreach ($map as $old => $to) foreach ([[$old, $to], [str_replace('/', '\/', $old), str_replace('/', '\/', $to)]] as [$o, $n])
+            $new = preg_replace('#' . preg_quote($o, '#') . '(?![\w.?/%-])#', str_replace(['\\', '$'], ['\\\\', '\$'], $n), $new) ?? $new;
+        if ($new !== $v) $changed += photo_ref_write($t, (string)$c, $v, $new);
+    }
+    return $changed;
+}
+
+/** Bucket photos the records name that have no sizes yet. */
+function photo_variants_todo(int $max = 200): array {
+    $host = function_exists('store_public_host') ? store_public_host() : '';
+    if ($host === '') return [];
+    $re = '#https://' . preg_quote($host, '#') . '/[A-Za-z0-9_./%-]+?\.(?:jpe?g|png|webp)(?![\w.?])#i';
+    $out = [];
+    foreach (photo_ref_tables() as $t => $cols) foreach (photo_ref_rows($t, $cols, '%' . $host . '%') as $row) foreach ($row as $v) {
+        if (!is_string($v) || !preg_match_all($re, str_replace('\/', '/', $v), $m)) continue;
+        foreach ($m[0] as $u) if (strpos($u, '__') === false) { $out[$u] = true; if (count($out) >= $max) return array_keys($out); }
+    }
+    return array_keys($out);
+}
+
+/** One run: sizes for up to $max photos (or until $seconds pass), and their records marked. */
+function photo_variants_run(int $max = 15, float $seconds = 20.0): array {
+    if (!photo_variants_possible()) return ['ok' => false, 'error' => 'not_possible', 'detail' => 'A bucket and a Cloudinary account with credits are both needed.'];
+    $t0 = microtime(true); $todo = photo_variants_todo(); $done = []; $failed = 0;
+    foreach (array_slice($todo, 0, $max) as $u) {
+        if (microtime(true) - $t0 > $seconds) break;
+        $m = photo_variants_make($u);
+        if ($m === '') { $failed++; continue; }
+        $done[$u] = $m;
+    }
+    $rows = photo_repoint_urls($done);
+    if ($done || $failed) audit('photos.variants', 'system', '', ['made' => count($done), 'rows' => $rows, 'failed' => $failed, 'left' => count($todo) - count($done)]);
+    if ($failed && function_exists('ops_record')) ops_record('warn', 'photos.variants', 'Some photos could not be optimised', $failed . ' this run');
+    return ['ok' => true, 'made' => count($done), 'rows' => $rows, 'failed' => $failed, 'left' => count($todo) - count($done)];
+}
+
+/** admin.photos.variants — optimise the bucket's photos now, and say what is left. */
+function admin_photos_variants(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $r = photo_variants_run(40, 25.0);
+    if (!empty($r['ok'])) audit('photos.variants.run', (string)$g['requester']['memberId'], '', $r, (string)($p['ip'] ?? ''));
+    return $r;
+}
+
+/** The scheduler's job: a few at a time, while any are left. */
+function photo_variants_tick(): void {
+    if (photo_variants_possible()) photo_variants_run(10, 15.0);
+}
+
 /* ── A lost file whose photo is still in Cloudinary ───────────────────────
 
    The stored copy on this server is gone, but the same person's photo is often
@@ -1459,6 +1726,14 @@ function cloudinary_adopt(string $url): array {
     $onAcc = cloudinary_hosted($url) ? media_account_for_cloud(cloudinary_cloud_of($url)) : null;
     $onSpent = $onAcc && $onAcc['id'] !== cloudinary_active() && MEDIA_LEVEL_ORDER[(string)(media_usage_state($onAcc['id'])['level'] ?? 'ok')] >= MEDIA_LEVEL_ORDER['high'];
     if (cloudinary_hosted($url) && !$onSpent) return ['ok' => true, 'url' => cloudinary_base($url), 'adopted' => false];
+    if (cloudinary_fetched($url)) return ['ok' => true, 'url' => cloudinary_base($url), 'adopted' => false];
+    /* With a bucket, a bucket or own-store photo is edited by fetch and never copied into
+       Cloudinary's storage; the finished photo is kept in the bucket (photo_materialise).
+       A fetch spends credits too, so at critical it is refused like an upload. */
+    if (!$onSpent && function_exists('store_configured') && store_configured() && ($f = cloudinary_fetch_url($url)) !== '') {
+        if (function_exists('media_usage_state') && (string)(media_usage_state()['level'] ?? 'ok') === 'critical') return ['ok' => false, 'error' => 'media_storage_full'];
+        return ['ok' => true, 'url' => $f, 'adopted' => false, 'fetch' => true];
+    }
     if ($onSpent) $url = cloudinary_base($url);
     if (!cloudinary_configured()) return ['ok' => false, 'error' => 'cloudinary_not_configured'];
     // Storage full: the photo stays on the site's own store rather than tipping the plan over.
@@ -1531,6 +1806,7 @@ function cloudinary_upload_signed(string $file, string $publicId = ''): array {
  * what was done. A failed upload changes nothing: the edited URL is kept. */
 /** The transformation chain in a Cloudinary delivery URL ('' when there is none). */
 function photo_chain_of(string $url): string {
+    if (cloudinary_fetched($url)) return preg_match('#/image/fetch/((?:[a-z]{1,3}_[^/]*/?)+?)/https?%3A#i', $url, $m) ? $m[1] : '';
     return preg_match('#/upload/(.+?)/v\d+/#', $url, $m) ? $m[1] : '';
 }
 /** An approved asset row for a photo edited outside the review desk. */
@@ -1544,8 +1820,15 @@ function photo_asset_record(string $type, string $id, string $source, string $ed
 
 function photo_materialise(string $url): string {
     $url = trim($url);
-    if ($url === '' || !cloudinary_hosted($url) || cloudinary_base($url) === $url) return $url;   // nothing derived to fix
+    if ($url === '' || !(cloudinary_hosted($url) || cloudinary_fetched($url)) || cloudinary_base($url) === $url) return $url;   // nothing derived to fix
     if (setting_raw('photo_materialise') === '0' || !cloudinary_configured()) return $url;
+    /* With a bucket, the finished photo is stored THERE, and its sizes made once
+       (photo_variants_make): Cloudinary renders it and keeps nothing. */
+    if (function_exists('store_configured') && store_configured()) {
+        $b = photo_save_to_bucket($url);
+        if ($b !== '') { $v = photo_variants_make($b); return $v !== '' ? $v : $b; }
+    }
+    if (cloudinary_fetched($url)) return $url;   // no bucket to keep it in: it stays a fetch edit
     if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) return $url;
     $up = cloudinary_upload_signed($url);
     if (empty($up['ok'])) {
