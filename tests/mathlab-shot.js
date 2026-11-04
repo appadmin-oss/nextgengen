@@ -41,7 +41,7 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
   const stateOf=c=>!c.available?'soon':MASTERED.indexOf(c.id)>=0?'mastered':LEARNING.indexOf(c.id)>=0?'practising':'open';
   const MAP={ok:true,member:true,bands:SRC.bands,stages:SRC.stages.map(s=>{const comps=s.comps.map(c=>({id:c.id,title:c.title,state:stateOf(c)}));
     const band=SRC.bands.find(b=>{const m=b.stages.match(/(\d+)(?:–(\d+))?/);return s.n>=+m[1]&&s.n<=+(m[2]||m[1]);});
-    return {n:s.n,title:s.title,strand:s.strand,level:band&&band.level,available:s.available,comps:comps,boss:false,
+    return {n:s.n,title:s.title,strand:s.strand,band:band&&band.name,bandId:band&&band.id,level:band&&band.level,available:s.available,comps:comps,boss:false,
       bossReady:s.available&&comps.every(c=>c.state==='mastered')};})};
   const firstLearning=SRC.stages.reduce((a,s)=>a.concat(s.comps),[]).find(c=>c.id===LEARNING[0]);
   // 640 XP sits in the Analyst band (500–1500); the climb is done, so next is the topic in progress.
@@ -69,7 +69,7 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
       return {comp:id,title:c.title,wrong:[4,3,2][k],why:['Line them up by place value before you add.','Exchange a ten for ten ones when the top digit is smaller.','Check by adding the answer back.'][k],last:'2026-11-03T09:00:00Z'};})};
   fs.writeFileSync(FIX,`<!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">
+<link rel="stylesheet" href="/dist/vendor/phosphor/phosphor.css"><link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">
 <style>body{margin:0;background:#fff;}</style>
 </head><body class="cm-app"><div class="cm-slack-page"><div class="cm-slack"><main class="cm-col">
 <div class="cm-stream is-feed"><div id="root"></div></div></main></div></div>
@@ -83,7 +83,9 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
  var HOME=${JSON.stringify(HOME)}, MAP=${JSON.stringify(MAP)}, PROGRESS=${JSON.stringify(PROGRESS)}, COMPS=${JSON.stringify(SRC.comps)}, ORDER=${JSON.stringify(SRC.order)}, FIG=${JSON.stringify(SRC.fig)};
  window.NGGApi=window.NGGApi||{}; window.NGGApi.member=window.NGGApi.member||{};
  window.NGGApi.member.mathslab={ home:function(){return Promise.resolve(HOME);}, map:function(){return Promise.resolve(MAP);}, progress:function(){return Promise.resolve(PROGRESS);},
-   comp:function(id){return Promise.resolve(Object.assign({ok:true},COMPS[id]));} };
+   comp:function(id){return Promise.resolve(Object.assign({ok:true},COMPS[id]));},
+   start:function(){return Promise.resolve({ok:true,sessionId:'S1',mode:'practice',title:'Practice · Triangles and angle properties',items:[FIG,ORDER,FIG]});},
+   answer:function(){return Promise.resolve({ok:true,correct:false,why:'',answer:'$72$°',steps:['The angles of a triangle add to $180^\\circ$.','$180 - 38 - 70 = 72$.']});} };
  window.NGGApi.public=window.NGGApi.public||{};
  window.NGGApi.public.mathslabComp=function(id){return Promise.resolve(Object.assign({ok:true},COMPS[id]));};
  window.NGGApi.public.mathslabMap=function(){return Promise.resolve(MAP);};
@@ -96,7 +98,8 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
    board:function(){return Promise.resolve({scope:'week',game:'maths',programme:'ngg',board:[],me:null});},
    start:function(){return Promise.resolve({});}, submit:function(){return Promise.resolve({});} };
  var view=Q.get('view')||'home';
- var C = view==='learn' ? React.createElement('div',{className:'mlb'},React.createElement(MlbLearn,{comp:Q.get('comp'),go:function(){},startPlay:function(){},lite:Q.get('lite')==='1'}))
+ var C = view==='play' ? React.createElement('div',{className:'mlb'},React.createElement(MlbPlayer,{start:{mode:'practice',comp:'MC-074'},onDone:function(){},go:function(){}}))
+       : view==='learn' ? React.createElement('div',{className:'mlb'},React.createElement(MlbLearn,{comp:Q.get('comp'),go:function(){},startPlay:function(){},lite:Q.get('lite')==='1'}))
        : view==='arcade' ? React.createElement(CmArcade,{auth:{member:{fullName:'Temiloluwa Adeyemi',centre:'Egbeda'}}})
        :                   React.createElement(MathsLab,{me:{phase:'ok',member:{fullName:'Temiloluwa Adeyemi'}}});
  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement('div',{className:'stt-app'},C));
@@ -123,17 +126,20 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
     };
     await shoot('arcade','view=arcade',{width:1080,height:900},'.ml-teaser-n');
     await shoot('home','',{width:1080,height:1000},'.mlb-hero',null);
-    await shoot('map','',{width:1080,height:1000},'.mlb-stars','.mlb-navb:nth-child(2)');
+    await shoot('map','',{width:1080,height:1000},'.mlb-path','.mlb-navb:nth-child(2)');
     await shoot('progress','',{width:1080,height:1000},'.mlb-miss','.mlb-navb:nth-child(4)');
     await shoot('home-phone','',{width:390,height:844},'.mlb-hero',null);
     await shoot('progress-phone','',{width:390,height:844},'.mlb-miss','.mlb-navb:nth-child(4)');
-    await shoot('map-phone','',{width:390,height:844},'.mlb-stars','.mlb-navb:nth-child(2)');
-    await shoot('learn-pythagoras','view=learn&comp=MC-077',{width:1080,height:1000},'.mlb-why',null);
+    await shoot('map-phone','',{width:390,height:844},'.mlb-path','.mlb-navb:nth-child(2)');
+    await shoot('learn-pythagoras','view=learn&comp=MC-077',{width:1080,height:1000},'.mlb-explore',null);
+    await shoot('learn-pythagoras-why','view=learn&comp=MC-077',{width:1080,height:1000},'.mlb-why','.mlb-lesson-foot .mlb-go');
     await shoot('learn-quadratic-phone','view=learn&comp=MC-103',{width:390,height:844},'.mlb-explore',null);
     await shoot('learn-unit-circle','view=learn&comp=MC-145',{width:1080,height:1000},'.mlb-explore',null);
     await shoot('learn-derivative','view=learn&comp=MC-152',{width:1080,height:1000},'.mlb-explore',null);
-    await shoot('lite-order','view=learn&comp=MC-002&lite=1',{width:1080,height:1000},'.mlb-order-list',null);
-    await shoot('lite-figure','view=learn&comp=MC-074&lite=1&q=fig',{width:1080,height:1000},'.mlb-q svg.mlb-dia',null);
+    await shoot('player','view=play',{width:1080,height:900},'.mlb-q',null);
+    await shoot('player-phone','view=play',{width:390,height:844},'.mlb-q',null);
+    await shoot('lite-order','view=learn&comp=MC-002&lite=1',{width:1080,height:1000},'.mlb-order-list','.mlb-skip .mlb-link');
+    await shoot('lite-figure','view=learn&comp=MC-074&lite=1&q=fig',{width:1080,height:1000},'.mlb-q svg.mlb-dia','.mlb-skip .mlb-link');
     /* Behaviour, not only pixels: an explorer's readout follows its slider; "Why it works" walks
        one line at a time; the order exercise sends the order the learner made. */
     { const page=await browser.newPage({viewport:{width:1080,height:1000}}); const errs=[]; page.on('pageerror',e=>errs.push(String(e&&e.message)));
@@ -142,10 +148,17 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
       const before=await page.textContent('.mlb-ex-out'); const sl=page.locator('.mlb-sl-in').first(); await sl.focus(); await page.keyboard.press('ArrowRight');
       const after=await page.textContent('.mlb-ex-out');
       if(before===after||!/16|5\^2|25/.test(before)) problems.push('pythagoras explorer: readout did not follow the slider ('+before.slice(0,60)+')');
+      const bar=await page.$$eval('.mlb-stepbar li',ls=>ls.map(l=>l.innerText.trim()));
+      if(bar.join('|')!=='Explore|Why it works|Worked example|Practise') problems.push('lesson steps: '+JSON.stringify(bar));
+      await page.click('.mlb-lesson-foot .mlb-go'); await page.waitForSelector('.mlb-why',{timeout:4000});
+      if(await page.locator('.mlb-explore').count()) problems.push('lesson steps: Explore still shown on the Why step');
       const n0=await page.locator('.mlb-why-steps li').count(); await page.click('.mlb-why .stt-btn'); const n1=await page.locator('.mlb-why-steps li').count();
+      await page.click('.mlb-skip .mlb-link'); await page.waitForSelector('.mlb-status',{timeout:4000});
+      if(!(await page.locator('.mlb-status .mlb-go').count())) problems.push('lesson steps: Skip to practice did not reach Practise');
       if(!(n0===1&&n1===2)) problems.push('why it works: did not reveal one line at a time ('+n0+'→'+n1+')');
       if(errs.length) problems.push('learn interaction: '+errs[0]);
       await page.goto(BASE+'/tests/_ml_fixture.html?view=learn&comp=MC-002&lite=1',{waitUntil:'networkidle'});
+      await page.waitForSelector('.mlb-skip .mlb-link',{timeout:8000}); await page.click('.mlb-skip .mlb-link');
       await page.waitForSelector('.mlb-order-list',{timeout:8000});
       await page.click('.mlb-order-row:nth-child(2) [aria-label^="Move line 2 up"]');
       const first=await page.textContent('.mlb-order-row:first-child .mlb-order-t');

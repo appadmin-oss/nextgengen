@@ -4765,6 +4765,19 @@ off as "bad at maths" when a foundation was simply never taught.
   full topic is.
 - Rounding rules are stated under the answer box ("correct to 2 decimal
   places"). Any answer that rounds to the right value is accepted.
+- **Finding a topic (the path).** The Map is a path, like Duolingo's, drawn
+  in the Control Room's style. Each stage has a header, followed by its ten
+  topics as round buttons: black with a tick when known, gold with *Start* on
+  the one to do next, white when open, and grey with a lock when not yet
+  open. The stage boss (a trophy) comes last. Pressing a
+  topic shows its name and a *Start* button. On a computer, a side panel shows
+  the streak, stars, XP and *Up next*.
+- **A topic is a lesson in steps**, one screen at a time: *Explore* (the
+  interactive), *Why it works* (the proof), *Worked example*, then *Practise*
+  (with the *Mastery check* and the topics it builds on). A step bar shows
+  where the member is, and any step can be reopened. *Continue* and *Back*
+  sit at the bottom, and *Skip to practice* is there for anyone who already
+  knows the idea.
 - **Written for an eleven-year-old.** Every explorer opens with a *Try this*
   challenge, one thing to do and one thing to notice. The readouts and the
   early proofs use everyday words ("one number word for each object", not

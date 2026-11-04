@@ -8121,9 +8121,10 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
    a first visit fetches one font instead of up to seven. */
 
 /* The Control Room v2 tokens. Declared once, for the Control Room and for the
-   surfaces that share its design system outside it: the sign-in pop-up and the
-   portal gate's sign-in card. */
-.cr-app, .signin-scrim, .portal-login-card, .mfa-nudge, .mfa-toast {
+   surfaces that share its design system outside it: the sign-in pop-up, the
+   portal gate's sign-in card, and the Maths Lab (owner, 4 Nov 2026: "use my
+   design style — the Control Room style"). */
+.cr-app, .signin-scrim, .portal-login-card, .mfa-nudge, .mfa-toast, .mlb {
   --cr-ink: #0b0b0c;
   --cr-text: #2b2b30;
   --cr-muted: #4a4a50;

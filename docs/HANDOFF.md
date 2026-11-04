@@ -5997,3 +5997,88 @@ ran — the run read "367 passed, 1 failed" over a suite of 627.
   was checked to fail when broken. `tests/mathlab-shot.js` now photographs
   four Learn pages, the order exercise and a figure question, and drives a
   slider, the proof walk-through and the order buttons.
+
+## 4 Nov 2026 — Maths Lab: clean, structured redesign
+
+Audit found: map stars stretched to ~60 px with topic names only in
+tooltips; loose nav pills; single-column Home/Learn with Practise below the
+fold; three button systems; flat cards with mixed paddings. Changed:
+
+- One token set on `.mlb` (colour, radius, shadow) and the Lab owns its
+  buttons (`.mlb .stt-btn`, `.mlb-go`), so it looks the same wherever it is
+  mounted. Cards are a hairline, with no resting shadow; depth only on an
+  open stage and the question card.
+- Segmented tab bar (`.mlb-nav`); Map stays lit while on a topic page.
+- Home: hero stat tiles, then content + side column (`.mlb-cols`) from
+  860 px of the LAB's width (container query, not media).
+- Map: band sections → stage cards (`.mlb-stage`, accordion,
+  `aria-expanded`), each with progress, and a list of its ten topics BY
+  NAME (`.mlb-topic`). The stage in progress opens itself. The constellation
+  in the card is decorative (`MlbStars decorative`): the list is the one
+  keyboard route.
+- Learn: content column + a sticky side card (state, readiness, Practise,
+  Mastery check, Builds on); on narrow screens the side card comes first, so
+  Practise is above the fold.
+- Player is a centred 760 px focus column.
+- Framework card is compact: one sentence and a five-step band strip.
+
+## 4 Nov 2026 (later) — Maths Lab in Duolingo's visual language (owner: "Duolingo is your no. 1 model … and Brilliant")
+
+The "clean structured" pass above was rejected ("still terrible"). It is
+replaced by a Duolingo-modelled UI; the structural parts (tokens, container
+queries, one button system) stay.
+
+- **Shell** (`.mlb-shell`): a sidebar of big uppercase tabs once the Lab is
+  ≥ 980 px; a four-tab strip (icon over label) on a phone. `.mlb-main` is its
+  own container, so Home/Learn/Map columns measure the column beside the
+  sidebar, not the window.
+- **Map = the path.** Per stage, a unit banner in its band colour, then ten
+  round 3D lesson nodes on a zig-zag (`MLB_PATH_X`, a per-element `--dx`):
+  done (check), the ONE current lesson (star, ring, bobbing START bubble),
+  open, locked (grey). The stage boss is a trophy node at the end. A node
+  opens a card (`.mlb-pop`) with the topic name and Start/Review; Escape or a
+  click outside closes it and focus returns. A section divider per band.
+  On wide screens a right rail holds the stats, *Up next* and a key.
+- **Band colours** (`.is-foundations|junior|waec|further|beyond` → `--b`,
+  `--b-edge`, `--b-ink`, `--b-soft`): the bright fill carries icons only;
+  every surface with words uses `--b-ink` (≥ 4.5:1 with white). The primary
+  button is `#2f7d00` for the same reason: Duolingo's `#58cc02` with white
+  text is 2.1:1.
+- **Chunky controls**: a 2 px hairline and a solid bottom edge that `:active`
+  pushes down (buttons, options, keys, nodes).
+- **Player**: a thick progress bar, large stem, tile options, a full-width
+  CHECK, and green/red result sheets.
+- **Learn**: the topic header is the stage's colour banner; the
+  Brilliant-style content column has the interactive first.
+- `tests/mathlab-shot.js` now waits for `.mlb-path`, loads Phosphor, and
+  photographs the player (desktop and phone): 15 screens.
+
+## 4 Nov 2026 (latest) — Maths Lab: Duolingo's structure, the Control Room's design
+
+Owner: "Use my design style, not Duo's. The Control Room style." The
+Duolingo-coloured block above (band colours, 3D bottom edges, uppercase
+labels) is gone. What stays is the STRUCTURE: the path of lesson nodes with
+one current lesson, the stage boss at the end, the node card, *Up next*, the
+stats, the focused player, and the interactive-first Learn page.
+
+- `.mlb` is added to the Control Room token declaration in `styles-app.css`
+  (`.cr-app, .signin-scrim, …, .mlb`). The Lab's block in `styles.css`
+  styles everything with `var(--cr-*)`: Geist, ink on white, 1 px hairlines,
+  `--cr-r`/`--cr-r-lg` radii, `.cr-seg`-style tabs on a phone, `.cr-nav-item`
+  rows in the sidebar, `.cr-kpis`-style 1 px-gapped stat tiles, dot pills,
+  `.cr-btn` shapes (ink primary). Gold (`--cr-gold`) marks only what is live:
+  the current lesson node, the Home continue button, the streak flame.
+- No uppercase labels any more. The Duolingo labels' `text-transform` had
+  broken two ui-smoke assertions that read `innerText`.
+- Path nodes: done = ink with a check; now = gold with a soft ring and an ink
+  *Start* tag; open = white hairline; locked = grey `--cr-s2`. The band classes
+  stay on the markup but carry no colour.
+- **Topic page = a lesson in steps** (owner: "the steps is not well structured.
+  Duolingo is your model"): Explore → Why it works → Worked example →
+  Practise, ONE screen at a time, with a step bar (`.mlb-stepbar`, each step a
+  button), a sticky Back / Continue bar (`.mlb-lesson-foot`) and *Already know
+  it? Skip to practice*. Steps a topic has no content for are left out.
+  Practise (readiness, Practise, Mastery check, Builds on; or Lite's inline
+  questions) is always last. Focus moves to the step's heading on every step.
+- The phone Home button is back to ≥ 44 px (`.mlb-go` min-height 44); ui-smoke
+  had measured 40.

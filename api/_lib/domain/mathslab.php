@@ -307,7 +307,7 @@ function mlb_map(array $p): array {
     $stages = []; $certs = $m ? mlb_course_certs((string)$m['memberId']) : [];
     foreach (mlb_stages() as $n => $st) {
         $comps = array_map(static fn($id) => ['id' => $id, 'title' => mlb_comp($id)['title'], 'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon')], $st['comps']);
-        $stages[] = ['n' => $n, 'title' => $st['title'], 'strand' => $st['strand'], 'band' => mlb_band((int)$n)['name'], 'level' => mlb_band((int)$n)['level'], 'available' => mlb_stage_available($n), 'comps' => $comps,
+        $stages[] = ['n' => $n, 'title' => $st['title'], 'strand' => $st['strand'], 'band' => mlb_band((int)$n)['name'], 'bandId' => mlb_band((int)$n)['id'], 'level' => mlb_band((int)$n)['level'], 'available' => mlb_stage_available($n), 'comps' => $comps,
             'boss' => isset($bosses[(string)$n]), 'bossReady' => $m && mlb_stage_available($n) && !array_filter($comps, static fn($c) => !in_array($c['state'], MLB_GOOD, true)),
             'certificate' => $certs['stage:' . $n] ?? null];
     }
@@ -321,7 +321,7 @@ function mlb_comp_view(array $p): array {
     $id = (string)($p['comp'] ?? ''); $c = mlb_comp($id); if (!$c) return ['ok' => false, 'error' => 'not_found'];
     $m = mlb_member($p); $states = $m ? mlb_states((string)$m['memberId']) : []; $s = $states[$id] ?? null;
     $ex = mlb_available($id) ? mlb_item($id, 0, random_int(1, 2000000000)) : null;
-    return ['ok' => true, 'comp' => ['id' => $id, 'title' => $c['title'], 'stage' => $c['stage'], 'stageTitle' => mlb_stages()[$c['stage']]['title'], 'strand' => $c['strand'],
+    return ['ok' => true, 'comp' => ['id' => $id, 'title' => $c['title'], 'stage' => $c['stage'], 'stageTitle' => mlb_stages()[$c['stage']]['title'], 'strand' => $c['strand'], 'band' => mlb_band((int)$c['stage'])['id'], 'bandName' => mlb_band((int)$c['stage'])['name'],
         'needs' => array_map(static fn($n) => ['id' => $n, 'title' => mlb_comp($n)['title'], 'state' => mlb_view_state($n, $states), 'ahead' => mlb_need_ahead($id, $n) ? mlb_comp($n)['stage'] : 0], $c['needs'])],
         'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon'), 'p' => $s ? (float)$s['p'] : 0, 'attempts' => $s ? (int)$s['attempts'] : 0,
         'nextReview' => $s ? (string)$s['nextReview'] : '',
