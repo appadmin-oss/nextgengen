@@ -4477,3 +4477,18 @@ nothing is added until you press Add. Report rows arrive confirmed.
 lessons done here, average score, outside learning and hours, days attended in
 the last 90, and when they last learnt anything. "Nothing learnt in 30 days"
 is the list to follow up.
+
+
+## Photos: stored in the bucket, optimised once, served from the bucket
+
+New uploads go to the file-storage bucket (R2) once one is set in **Settings →
+API keys → File storage**. Cloudinary is asked **once** per photo for the sizes
+the pages use; the small copies are stored back in the bucket and every page
+loads them from there, so viewing photos costs no Cloudinary credits.
+
+In **Settings → Diagnostics → Photo storage**:
+- **Move held photos to the bucket**: the photos still kept on this server. The
+  server copy is kept; missing files are left alone. It also runs every hour.
+- **Optimise photos**: makes the sizes now. It also runs every ten minutes.
+- **Use their Cloudinary photos**: for a record whose file is gone but whose
+  person has a photo in Cloudinary.

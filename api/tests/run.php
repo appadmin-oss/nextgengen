@@ -37008,5 +37008,74 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM members WHERE memberId = ?", [$ADM]);
 })();
 
+
+/* ── Photos: stored in the bucket, optimised ONCE by Cloudinary, served from the bucket ── */
+(function () {
+    $now = now_iso(); $SU = 'NGG-2025-0099';
+    $keep = [$GLOBALS['CONFIG']['storage'] ?? null, $GLOBALS['CONFIG']['cloudinary'] ?? null];
+    $png = (function () { $im = imagecreatetruecolor(40, 40); imagefill($im, 0, 0, imagecolorallocate($im, 200, 40, 40)); ob_start(); imagepng($im); return ob_get_clean(); })();
+    $put = photo_store_put('data:image/png;base64,' . base64_encode($png));
+    preg_match('/[0-9a-f]{32}\.png/', (string)($put['url'] ?? ''), $mm); $id = $mm[0] ?? '';
+    $local = '/api/public/photo.php?p=' . $id;
+    db_insert('members', ['memberId' => 'NGG-BK-1', 'fullName' => 'Bucket One', 'email' => 'bk1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '',
+        'photoUrl' => $local, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('photo_change_requests', ['requestId' => 'PCR-BK-1', 'subjectType' => 'member', 'subjectId' => 'NGG-BK-1', 'photoUrl' => 'https://next.example.org' . $local, 'requestedAt' => $now]);
+    chk('bucket · with no bucket set, nothing moves and it says why', $id !== '' && (photo_store_to_bucket()['error'] ?? '') === 'no_bucket');
+    $GLOBALS['CONFIG']['storage'] = ['endpoint' => 'https://acc.r2.cloudflarestorage.com', 'bucket' => 'ngg-media', 'access_key' => 'AK', 'secret_key' => 'SK', 'public_base' => 'https://pub-x.r2.dev', 'folder' => 'ngg'];
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'nggcloud', 'api_key' => 'k', 'api_secret' => 's'];
+    $puts = []; $GLOBALS['__store_http_mock'] = function ($m, $k, $b = '', $x = []) use (&$puts) { $puts[] = [$m, $k, strlen($b), $x['content-type'] ?? '']; return ['code' => 200, 'body' => '']; };
+    $r = backend_dispatch('admin.photos.to_bucket', ['requesterId' => $SU]);
+    $want = 'https://pub-x.r2.dev/ngg/photos/' . $id;
+    $mine = array_values(array_filter($puts, fn($p) => $p[1] === 'ngg/photos/' . $id));
+    chk('bucket · the held photo is uploaded once, under its own name, as what it is', $mine && $mine[0][0] === 'PUT' && $mine[0][3] === 'image/png' && $mine[0][2] > 100);
+    chk('bucket · every record naming it now points at the bucket — relative and absolute', !empty($r['ok'])
+        && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-BK-1'")['photoUrl'] === $want
+        && db_row("SELECT photoUrl FROM photo_change_requests WHERE requestId = 'PCR-BK-1'")['photoUrl'] === $want);
+    chk('bucket · the local file is kept', photo_store_find($id) !== '');
+    // Optimised once: each size fetched from Cloudinary a single time, stored beside the photo, and only then marked.
+    $webp = 'RIFF' . pack('V', 26) . 'WEBPVP8 ' . str_repeat("\0", 18);
+    $asked = []; $GLOBALS['__photo_download_mock'] = function ($u) use (&$asked, $webp) { $asked[] = $u; return $webp; };
+    $puts = [];
+    $v = backend_dispatch('admin.photos.variants', ['requesterId' => $SU]);
+    $sizes = array_keys(PHOTO_VARIANTS);
+    $stored = array_map(fn($p) => $p[1], array_filter($puts, fn($p) => str_starts_with($p[1], 'ngg/photos/' . substr($id, 0, 32) . '__')));
+    $askedMine = array_values(array_filter($asked, fn($u) => str_contains($u, rawurlencode($want))));
+    chk('sizes · every size is made by Cloudinary once and stored in the bucket as WebP', !empty($v['ok']) && $v['made'] >= 1
+        && count($askedMine) === count($sizes) && str_starts_with($askedMine[0], 'https://res.cloudinary.com/nggcloud/image/fetch/f_webp,q_auto,')
+        && count($stored) === count($sizes) && in_array('ngg/photos/' . substr($id, 0, 32) . '__headshot.webp', $stored, true));
+    chk('sizes · …and only then is the record marked, so a page serves them from the bucket', db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-BK-1'")['photoUrl'] === $want . '?nv=1'
+        && db_row("SELECT photoUrl FROM photo_change_requests WHERE requestId = 'PCR-BK-1'")['photoUrl'] === $want . '?nv=1');
+    $asked = [];
+    chk('sizes · run again, Cloudinary is not asked again (a view never reaches it)', backend_dispatch('admin.photos.variants', ['requesterId' => $SU])['made'] === 0 && $asked === []);
+    // A refused size marks nothing.
+    db_exec("UPDATE members SET photoUrl = ? WHERE memberId = 'NGG-BK-1'", [$want]);
+    db_exec("UPDATE photo_change_requests SET photoUrl = ? WHERE requestId = 'PCR-BK-1'", [$want]);
+    $GLOBALS['__photo_download_mock'] = fn($u) => '';
+    $f = photo_variants_run();
+    chk('sizes · if Cloudinary does not answer, nothing is marked and the original is shown', $f['failed'] >= 1 && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-BK-1'")['photoUrl'] === $want);
+    // The sizes the pages ask for are the sizes stored.
+    preg_match_all("/^\s+(\w+):\s+'([^']+)'/m", substr((string)file_get_contents(dirname(__DIR__, 2) . '/photos.js'), (int)strpos((string)file_get_contents(dirname(__DIR__, 2) . '/photos.js'), 'const NGG_IMG_SIZES')), $js, PREG_SET_ORDER);
+    $jsSizes = []; foreach ($js as $row) { if (isset($jsSizes[$row[1]])) break; $jsSizes[$row[1]] = $row[2]; }
+    chk('sizes · the page asks for exactly the sizes the server stores (photos.js = PHOTO_VARIANTS)', $jsSizes === PHOTO_VARIANTS);
+    // Edits: a bucket photo is edited by fetch and the finished photo saved back into the bucket.
+    $uploads = 0; $GLOBALS['__cloudinary_upload_mock'] = function () use (&$uploads) { $uploads++; return 'https://res.cloudinary.com/nggcloud/image/upload/v1/x.jpg'; };
+    $src = 'https://pub-x.r2.dev/ngg/headshot/2026/10/abc.jpg';
+    $ad = cloudinary_adopt($src . '?nv=1');
+    $fetch = 'https://res.cloudinary.com/nggcloud/image/fetch/' . rawurlencode($src);
+    chk('edit · a bucket photo is edited by fetch, never copied into Cloudinary', !empty($ad['ok']) && $ad['url'] === $fetch && $uploads === 0);
+    $ed = cloudinary_apply($fetch, 'c_fill,g_face,w_600,h_750,e_improve:30');
+    chk('edit · the steps sit before the address, and the clean photo and the steps read back', $ed === 'https://res.cloudinary.com/nggcloud/image/fetch/c_fill,g_face,w_600,h_750,e_improve:30/' . rawurlencode($src)
+        && cloudinary_base($ed) === $fetch && photo_chain_of($ed) === 'c_fill,g_face,w_600,h_750,e_improve:30');
+    $GLOBALS['__photo_download_mock'] = fn($u) => str_contains($u, 'f_webp') ? $webp : $png;
+    $puts = [];
+    $m = photo_materialise($ed);
+    $e = 'https://pub-x.r2.dev/ngg/photos/e_' . substr(hash('sha256', $png), 0, 32) . '.png';
+    chk('edit · the finished photo is saved in the bucket, named by its bytes, with its sizes made at once', $m === $e . '?nv=1' && $uploads === 0
+        && count(array_filter($puts, fn($p) => str_ends_with($p[1], '.webp'))) === count($sizes));
+    unset($GLOBALS['__photo_download_mock'], $GLOBALS['__store_http_mock'], $GLOBALS['__cloudinary_upload_mock']);
+    foreach (['storage', 'cloudinary'] as $j => $k) { if ($keep[$j] === null) unset($GLOBALS['CONFIG'][$k]); else $GLOBALS['CONFIG'][$k] = $keep[$j]; }
+    db_exec("DELETE FROM photo_change_requests WHERE requestId = 'PCR-BK-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-BK-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

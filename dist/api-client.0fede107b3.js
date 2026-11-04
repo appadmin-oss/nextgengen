@@ -6,6 +6,16 @@
 (function (global) {
   const BASE = '/api';
 
+  /* The image cloud and hosts (site-config `img`), for nggImgFetchParts in
+     photos.js — card printing frames a bucket photo through Cloudinary's fetch.
+     Page views never do: they are served from the bucket (nggImg). */
+  function setImgCfg(c) {
+    if (!c || typeof c !== 'object') return;
+    const v = { cloud: String(c.cloud || ''), hosts: Array.isArray(c.hosts) ? c.hosts.map(h => String(h).toLowerCase()) : [] };
+    global.__nggImgCfg = v;
+    try { localStorage.setItem('ngg_img', JSON.stringify(v)); } catch (_) {}
+  }
+
   function getCookie(name) {
     const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'));
     return m ? decodeURIComponent(m[1]) : '';
@@ -231,6 +241,7 @@
       try { _configCache = await request('/public/config.php'); }
       catch (__) { _configCache = { uploads: { enabled: false } }; }
     }
+    setImgCfg(_configCache.img);
     return _configCache;
   }
 
@@ -2002,6 +2013,8 @@
         restore: (name, data) => request('/admin/photo-framing.php', { body: { action: 'restore', name, data }, timeout: 120000 }),
         cloud:    () => request('/admin/photo-framing.php', { body: { action: 'cloud' }, timeout: 120000 }),
         useCloud: (name, place, rowId, url) => request('/admin/photo-framing.php', { body: { action: 'useCloud', name, place, rowId, url } }),
+        toBucket: () => request('/admin/photo-framing.php', { body: { action: 'toBucket' }, timeout: 120000 }),
+        variants: () => request('/admin/photo-framing.php', { body: { action: 'variants' }, timeout: 120000 }),
       },
       membership: {
         list:     (status) => request('/admin/membership.php' + qs({ status: status || '' })),
@@ -2539,6 +2552,8 @@
   API.portalBeat = (portal, seconds) => request('/member/beat.php', { body: { portal: portal, seconds: seconds } });
 
   global.NGGApi = API;
+  // The image cloud and hosts, read once a load (card printing; nggImgFetchParts in photos.js).
+  if (global.document) setTimeout(() => { getConfig().catch(() => {}); }, 0);
   global.NGGApiBase = BASE;
 
   /* How long people actually use the portals. Time counts only while the page

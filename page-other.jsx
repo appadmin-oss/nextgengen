@@ -1279,7 +1279,7 @@ function MentorsPage({ setPage }) {
                     <div key={m.mentorId} className="card reveal" data-reveal style={{ padding: 22, display: "flex", flexDirection: "column", gap: 12, "--reveal-delay": (i * 40) + "ms" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         {m.photoUrl
-                          ? <img src={m.photoUrl} alt="" style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/>
+                          ? <img src={nggImg(m.photoUrl, "face")} alt="" style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/>
                           : <Avatar name={m.fullName} seed={m.mentorId} size={56}/>}
                         <div>
                           <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18 }}>{m.fullName}</div>
@@ -1376,7 +1376,7 @@ function MemberCardView({ m, token, auth }) {
               <span className={"mcv-state" + (m.active ? " is-ok" : " is-bad")} role="status">{m.active ? "✓ Active member" : "Not an active member"}</span>
             </div>
             <div className="mcv-body">
-              <div className="mcv-photo">{m.photoUrl ? <img src={m.photoUrl} alt="" onError={e => { e.target.style.display = "none"; }}/> : <span aria-hidden="true">{ini}</span>}</div>
+              <div className="mcv-photo">{m.photoUrl ? <img src={nggImg(m.photoUrl, "headshot")} alt="" onError={e => { e.target.style.display = "none"; }}/> : <span aria-hidden="true">{ini}</span>}</div>
               <div className="mcv-who">
                 <h1>{name}</h1>
                 {m.displayId && <div className="mcv-id">{m.displayId}</div>}
@@ -1595,7 +1595,7 @@ function SummerProfilePage({ setPage }) {
             <div style={{ display: "flex", alignItems: "flex-end", gap: 18 }}>
               <div style={{ width: 104, height: 104, borderRadius: "50%", overflow: "hidden", border: "4px solid #fff", boxShadow: "0 6px 16px -8px rgba(12,20,50,0.35)", flexShrink: 0, background: "var(--navy-700)", display: "grid", placeItems: "center" }}>
                 {m.photoUrl
-                  ? <img src={m.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/>
+                  ? <img src={nggImg(m.photoUrl, "headshot")} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/>
                   : <span aria-hidden="true" className="display" style={{ fontWeight: 800, fontSize: 34, color: "var(--gold-500)" }}>{initials}</span>}
               </div>
               <div style={{ paddingBottom: 8 }}>
@@ -2448,7 +2448,7 @@ function ParentVerifyPage() {
     </div>
     <div style={{ ...card, display: "flex", gap: 14, alignItems: "center", marginBottom: 14 }}>
       {ctx.student.photoUrl
-        ? <img src={ctx.student.photoUrl} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover" }}/>
+        ? <img src={nggImg(ctx.student.photoUrl, "face")} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover" }}/>
         : <div style={{ width: 56, height: 56, borderRadius: 14, background: "#eef0e6", display: "grid", placeItems: "center", fontSize: 24, fontWeight: 800 }}>{(ctx.student.name || "?").charAt(0)}</div>}
       <div><div style={{ fontWeight: 800, fontSize: 17 }}>{ctx.student.name}</div><div style={{ fontSize: 13, color: "#777" }}>{ctx.student.course || "Summer program"}</div></div>
     </div>
@@ -4260,7 +4260,7 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
     {step === 2 && (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ ...card, padding: 16, display: "flex", gap: 13, alignItems: "center" }}>
-          {photoUrl ? <img src={photoUrl} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: "var(--rs-fsize-1, 22px)", fontWeight: 800 }}>{(regDisplayName(form) || "?").charAt(0)}</div>}
+          {photoUrl ? <img src={nggImg(photoUrl, "face")} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: "var(--rs-fsize-1, 22px)", fontWeight: 800 }}>{(regDisplayName(form) || "?").charAt(0)}</div>}
           <div><div style={{ fontWeight: 800, fontSize: 16 }}>{regDisplayName(form)}</div><div style={{ ...mut, fontSize: 13 }}>{form.course || ""}{form.age ? " · " + form.age : ""}</div></div>
         </div>
         <div style={{ ...card, padding: 14, fontSize: 13.5, lineHeight: 1.6 }}>
@@ -4751,7 +4751,7 @@ function ScanResult({ result, onDone, onFace }) {
   return (
     <div role="status" aria-live="assertive" className={"gate-result is-" + result.kind + (result.stop ? " is-stop" : "")}>
       {result.photo
-        ? <img className="gate-result-photo" src={result.photo} alt=""/>
+        ? <img className="gate-result-photo" src={nggImg(result.photo, "headshot")} alt=""/>
         : <span className="gate-result-photo is-glyph" aria-hidden="true">{k.glyph}</span>}
       <p className="gate-result-word"><span aria-hidden="true">{k.glyph}</span> {result.word || k.word}</p>
       <p className="gate-result-name">{result.name}</p>
@@ -7268,7 +7268,7 @@ function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
           <input type="checkbox" checked={isPicked(s.studentId)} onChange={() => toggle(s.studentId)}
             aria-label={"Select " + s.fullName}
             style={{ width: 20, height: 20, flex: "none", accentColor: gold, cursor: "pointer" }}/>
-          <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb,#8fbb3f)", flex: "none" }}>{s.photoUrl ? <img src={s.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}</div>
+          <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb,#8fbb3f)", flex: "none" }}>{s.photoUrl ? <img src={nggImg(s.photoUrl, "avatar")} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}</div>
           {/* The NAME opens the record. It is already the thing a mentor looks
               at, and this row overflowed at 390px with three buttons on it —
               a fourth would have made it worse. */}

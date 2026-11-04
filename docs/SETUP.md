@@ -356,6 +356,27 @@ b2 bucket update --cors-rules '[{"corsRuleName":"ngg","allowedOrigins":["https:/
 **custom domain** must be added to `connect-src` and `frame-src` there by hand,
 or uploads (and photos on printed cards) fail with a CSP error in the console.
 
+**Stored in the bucket, optimised once by Cloudinary, served from the bucket.**
+Cloudinary bills every byte it serves on every view; R2 serves for nothing. So
+with both set, Cloudinary is asked for each photo's display sizes **once** (by
+fetch, reading the photo from the bucket), and the small WebP copies are stored
+back in the bucket beside it as `<photo>__<size>.webp`. Pages then load those
+straight from the bucket (`nggImg`, photos.js); no page view reaches Cloudinary.
+A photo whose sizes are not made yet is shown as it is. Cloudinary is otherwise
+used only to frame a photo when an ID card is printed, and to edit one (the
+finished edit is saved back into the bucket).
+
+In the Cloudinary console, **Settings → Security**: make sure **Fetched URL** is
+not under *Restricted image types*, and set **Allowed fetch domains** to your
+bucket's public host (e.g. `pub-1a2b3c.r2.dev`) and this site's host, and nothing
+else, so nobody can spend your credits fetching other sites through your cloud.
+
+Photos still kept on this server (the "held" ones in Diagnostics) move into the
+bucket from **Settings → Diagnostics → Photo storage → Move held photos to the
+bucket**, and by themselves once an hour. **Optimise photos** makes the sizes
+now; otherwise it carries on by itself every ten minutes. Moving keeps the file
+on this server and leaves a missing file alone.
+
 What the server enforces: the object key is chosen by the server (folder, date,
 random id), so nobody can overwrite another file; the content type comes from an
 allow-list by extension (no HTML, SVG or scripts); and the signature covers the

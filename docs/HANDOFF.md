@@ -5628,3 +5628,31 @@ check that fails without it (mutation-checked).
   four tiles from the newest 500 rows.
 - Still open: a Money overview tab (needs a registry entry in `cr-pages.jsx`).
 
+
+
+## 2026-11-04 — Photos: stored in R2, optimised once, served from R2
+
+Owner's plan: the bucket (R2) stores; Cloudinary optimises. Cloudinary bills every
+byte it serves on every view and R2 serves free, so Cloudinary is used ONCE per
+photo per size, never on a view. (A first cut delivered every view through
+Cloudinary fetch; the owner pointed out the per-view cost and it was rebuilt.)
+
+- `photo_variants_make` (domain/photos.php): each size in `PHOTO_VARIANTS` is
+  fetched once from Cloudinary (`/image/fetch/f_webp,q_auto,<steps>/<bucket url>`)
+  and stored as `<photo>__<size>.webp`; only when all are stored are the records
+  repointed to `<photo>?nv=1` (`photo_repoint_urls`). `photo_variants_tick`
+  every 10 min; Diagnostics → Optimise photos.
+- `nggImg(url, size)` (photos.js): `?nv=1` → the stored size in the bucket; a
+  Cloudinary-hosted photo → its size after any edit; else as is.
+  `NGG_IMG_SIZES` = `PHOTO_VARIANTS`, held by a PHP test. 21 display sites and
+  the Club's `cmOpt` go through it.
+- Held own-store photos move into the bucket (`photo_store_to_bucket`), records
+  repointed, local file kept, missing left alone; hourly and from Diagnostics.
+- Edits: with a bucket, `cloudinary_adopt` edits bucket/own-store photos by
+  fetch (no copy into Cloudinary storage); `photo_materialise` saves the
+  finished edit into the bucket and makes its sizes.
+- Card printing frames a bucket photo by fetch (`nggImgFetchParts`, needs
+  site-config `img`), once per print.
+- Not done: moving photos stored IN Cloudinary into the bucket (frees its
+  storage and their per-view bandwidth). Same machinery; wants a dry run on
+  production data first, since those URLs are on printed-card records.

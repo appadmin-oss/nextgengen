@@ -48,7 +48,9 @@ const CPH_DETECT = "c_thumb,g_face,w_200,h_200";   // any face-gravity crop make
 function cphCloudinary(url) {
   const s = String(url || "");
   const m = s.match(/^(https?:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.+)$/);
-  if (!m) return null;
+  /* Stored in the bucket (or this site's own store): framed through Cloudinary's
+     fetch with the same steps, once per print — read from the bucket, not kept. */
+  if (!m) { const f = typeof nggImgFetchParts === "function" ? nggImgFetchParts(s) : null; return f ? { prefix: f.prefix, chain: [], rest: f.rest } : null; }
   const segs = m[2].split("/");
   const chain = [];
   // Transformation segments come first; the version (v123) or the public id ends them.
