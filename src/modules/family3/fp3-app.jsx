@@ -894,6 +894,7 @@ function Fp3TodayMore({ c, w }) {
       {/* Asked here, where a parent can see the point: their child's day. */}
       {typeof NggPushNudge === "function" ? <NggPushNudge surface="family" text={"Know the moment " + first + " checks in or out, and when the centre answers you — on this phone, without signing in. Nights stay quiet."}/> : null}
       <Fp3Anchor c={c} linkId={w.linkId} first={first} role="parent" compact/>
+      {typeof RclProgress === "function" ? <RclProgress who="family" linkId={w.linkId} first={first}/> : null}
       <section className="fp3x-card" aria-labelledby="fp3x-qa">
         <h2 id="fp3x-qa" className="fp3x-h">For {first}</h2>
         <div className="fp3x-acts">

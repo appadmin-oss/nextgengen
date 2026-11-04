@@ -113,7 +113,7 @@ not shown at all, so your sidebar may be shorter than a colleague's.
 
 | Section | What it is for |
 |---|---|
-| Members | The year-round roster. Search, filter, edit, bulk actions, ID printing. |
+| Members | The year-round roster. Search, filter, edit, bulk actions, ID printing. **Registration**: each new member's registration checklist and who is helping them. |
 | Applications | People who applied and have not been processed yet. |
 | Volunteers | Volunteer roster and their status. |
 | Mentors / Mentorship | Mentor records and mentor–member pairings. |
@@ -491,6 +491,73 @@ Every change a staff account makes is written to the **audit log**
 (System → Audit trail) with who, what and when. A bulk run is **one** entry
 naming the action, the count and every refusal — not one entry per row —
 so "who suspended forty people on Tuesday" has a readable answer.
+
+### Registration: helping a new member finish registering
+
+Control Room → Members → **Registration** (`people`). Every NGG member has a
+registration checklist; a member accepted from an application gets theirs at
+once. A named **supervisor** at the member's centre helps them through it, and
+the member and their guardians see how far along they are.
+
+The checklist has two kinds of item:
+
+- **From the record.** Guardian linked, consents recorded (taking part,
+  emergency medical care and records granted; photos and the website answered),
+  photo on file, date of birth, school, emergency contact, courses placed, the
+  membership fee paid (only while fees are switched on) and the ID card
+  printed (a proof does not count). These are done when the member's record
+  shows them, and only then: a photo of a birth certificate does not give the
+  record a date of birth. Fix the record, and the item passes.
+- **Items staff add.** A title, what the supervisor should do, the evidence it
+  takes (a photo, a document, or a note), whether the supervisor must be at the
+  member's centre that day, and how old the evidence may be.
+
+| You want to… | Do this |
+|---|---|
+| See who has not finished | **Show: Still registering**. Each row has their progress, what is left and who is helping. **Nobody helping yet** lists the ones without a supervisor. |
+| Give a member a supervisor | Open the member → **Assign a supervisor**, or select several from one centre → **Assign a supervisor**. Pick from **Suggested** and press **Assign**. |
+| Understand a suggestion | Each line says why, from what the system already holds: check-ins at that centre's gate on recent Saturdays and in the last six weeks, the check-in desk rota, the timetable there, what the person says they are free for, how many members they already support, and that their safeguarding is cleared. A member's own mentor is marked **Already their mentor**. |
+| Ask someone who has not been at the centre lately | Under **Not seen at …**, press **Assign with a reason** and say why. The reason is kept in the audit log. Nobody uncleared is ever listed. |
+| See what is left for one member, and the evidence | Open the member. **Still to do**, **Done** and **Evidence submitted** (every attempt, accepted or refused, with the reason). **Open file** shows a submitted file. |
+| Reject an item that was verified | Open the member → **Done** → **Reject**, and say what was wrong. It reopens and the supervisor is told why. Items from the record cannot be rejected: correct the record. |
+| Add, change, reorder or retire an item | **Add an item** at the top; open an item under **Items staff added** to **Change**, **Move up**, **Move down** or **Retire** it. A retired item leaves every checklist but keeps its history; **Bring it back** restores it. |
+| Start checklists for members who joined before this existed | **Start N checklists** at the top (at most 500 a press; it says how many are left). Nobody is told until a supervisor is assigned. |
+| Help a member yourself | Assign yourself, then use **Show: Mine to help**. Open the member and press **Submit** (or **Check again** for an item from the record). |
+
+**Who may supervise.** Staff holding `people` whose centres include the
+member's; an NGG mentor at that centre whose screening is recorded; an NGG
+volunteer mentor or instructor at that centre whose safeguarding is cleared.
+Nobody supports more than 12 members at once: a thirteenth is refused and
+named. The assignment checks all of this again when you press it, member by
+member, whatever the screen showed; a scoped admin is refused for members
+outside their centres.
+
+**What counts as evidence.** The supervisor submits from **My registrations**
+in the Mentor Portal (My role → My registrations), or from this screen if they
+are staff. An item counts only when the evidence is the kind the item asks for
+(a photo is JPG, PNG, WebP or HEIC; a document is a PDF, a Word file or a photo
+of the page; at most 10 MB, uploaded here, not a link elsewhere), is no older
+than the item allows, comes from the member's assigned supervisor, and — when
+the item says so — the supervisor checked in at the member's centre that day.
+A refused attempt says why in words, and is kept.
+
+**Who is told.** The supervisor, in the app, when they are assigned and once a
+week while any of their members has items open. The guardians, by email and
+in the family account, once a week, with only the things the family can do
+(consents, the photo, date of birth, school, an emergency contact, the fee).
+The member sees "Your registration: 6 of 9 done" on **Me**, with what is left
+and the supervisor's first name; a guardian sees the same on **Today**. Neither
+sees any evidence, or anyone else's.
+
+| Refusal | What it means |
+|---|---|
+| cannot supervise there | Not staff with `people` for that centre, and not a cleared NGG mentor or volunteer there. |
+| not seen at the centre — give a reason | No check-in, rota or class there in six weeks. Assign with a reason, or pick someone suggested. |
+| the supervisor is at the cap | They already support 12 members. |
+| not in a centre you administer | Outside your centre scope. |
+| This item needs a photo; that is a PDF | The evidence was the wrong kind of file. |
+| That is 45 days old | Older than the item accepts. |
+| This item needs you at … | The supervisor had not checked in at the member's centre that day. |
 
 ---
 
@@ -951,6 +1018,37 @@ back.
 
 The NGG join form asks for a **division first**, then a course inside it, and
 says what joining costs before anybody applies.
+
+### Reviewing applications (Inbox → Applications)
+
+| You want to… | Do this |
+|---|---|
+| Accept a child | **Accept & create member**: the start date, and the centre when the application names none. Each child is their own member, even when brothers and sisters applied from one parent's email. A declined application, or a child who is now outside 10 to 17, is refused with the reason. |
+| Put a child on the waiting list | **Waitlist**. The family is emailed and the main parent is texted. The application stays in the inbox, marked *Waitlisted*, and you accept it from there when a place opens. |
+| Decline | **Reject**, with an optional line the family reads in the email and text. |
+| See only your centres | A centre-limited admin sees, exports, accepts and declines their own centres' applicants only. |
+
+A family who sends the form again for the same child (same email and date of
+birth) is emailed a 6-digit code and must enter it before the application
+changes. Without it, anyone who knew the email and the birthday could replace
+a child's guardian and photo.
+
+### Volunteer registrations (Mentors → Volunteers)
+
+Both volunteer forms (Summer School at /volunteer, NGG all year at
+/join/volunteer) now ask for **two referees** and a signed **safeguarding
+declaration**. An applicant **under 18** names a parent or guardian who agrees.
+
+- The review shows the referees, the declaration and the guardian; under-18s
+  carry an *Under 18 · guardian* chip. Approving one asks you to confirm you
+  have **spoken to the guardian**; that is recorded as their consent.
+- Approval issues the ID, but a volunteer sees children (the instructor
+  roster, the mentor portal) only once **safeguarding is set to Cleared**.
+  Contact the referees before you clear them.
+- Somebody already volunteering for one programme who applies for the other
+  is a new application; approving it makes them serve **both**.
+- NGG's form only offers centres that run the Club. **Settings → Sign-ups**
+  now has a separate switch for NGG volunteer registration.
 
 ### Joining fees: the membership invoice
 
@@ -2617,6 +2715,31 @@ hours the family app shows. The doors, the grace minutes and when sign-out opens
 **attendance settings** (Control Room → Settings), which the family app now reads rather
 than printing a fixed 09:00 and 14:00 — if sign-out is set to open at 14:00, move it to
 15:00 there so families are not let go before the day ends. On the
+the Saturday, block by block, with what members do, what mentors watch for, what
+instructors deliver, what admin must have ready and what families are told. Every portal
+and the Saturday reminders read it; change a block and they all change.
+
+| You want to… | Do this |
+|---|---|
+| Change a block's time, name or words | Open the block → **Change this block**. With **Move the blocks after it too** on (the default), a later end moves the rest of the day with it, keeping every length and gap. Off, a time that runs into the next block is refused and named. |
+| Add a block | **Add a block**: its name, what it comes after, how many minutes. The blocks after it move later by its length. |
+| Remove, reorder or copy a block | Open the block → **Remove this block** (the blocks after it move up), **Move up** / **Move down** (the two swap places; the day still ends when it did), **Duplicate**. |
+| Start the day at a different time | **Move the day**: the whole day, or from one block on, to a new start. Nothing may run past midnight or move more than five hours at once. |
+| Give one centre a different day | **A centre's own day**: a copy of the main day, used at that centre every Saturday until you remove it. |
+| Change one Saturday only | **Change one Saturday**: that Saturday everywhere, or at one centre. It starts as a copy of the day in force there. |
+| Cancel a Saturday | **Mark a Saturday off**, everywhere or at one centre, with a line families read. Nothing is sent that day and every portal says so. A note without "off" is shown above that Saturday's plan. |
+
+Which day applies at a centre on a Saturday is the first that exists of: that
+Saturday at that centre → that Saturday everywhere → the centre's own day → the
+main day. **Versions of the day** lists them; the address names the one on
+screen, so a link opens it. A centre-scoped admin changes only their own
+centres' days. **What it is for** on each block (check-in, mentor breakout,
+classes, break, close) decides the reminders: members are not reminded at
+check-in, instructors are reminded at the classes block, the mentor breakout
+sets the mentors' planning window. Families who take check-in news get the plan
+an hour before the day starts (never before 8:00), a not-arrived notice 45
+minutes in and the close at the day's end, all by their child's centre's day.
+On the
 Saturday register a mentor ticks, per child, the values seen and the duties: On time
 (the gate's arrival time is shown), Assignment in, Checked out — and can **Add detail**: one line
 (up to 500 characters) of what they saw, saved with the register. It shows under the child's name,
@@ -2626,6 +2749,9 @@ opens their profile; **Go to the weekly review** takes the mentor straight to Af
 **The Saturday plan (Before).** The mentor's part of the day is the
 **Musing & mentor breakout** block of the formation schedule (9:30–11:00 by
 default), so its window — and what follows it — come from Control Room →
+**Musing & mentor breakout** block of the formation schedule (8:30–10:00 by
+default; the block whose kind is *Mentor breakout*, at the mentor's centre, that
+Saturday), so its window — and what follows it — come from Control Room →
 Learning → Saturday formation, never from a fixed number. The *Pod huddle*
 always opens it (the register is taken there) and the *Close* always ends it;
 between them the mentor times every item in five-minute steps, moves items up

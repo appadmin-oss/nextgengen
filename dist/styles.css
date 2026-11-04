@@ -7995,6 +7995,7 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 .apf-ngv-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .apf-ngv-row span { font-size: 13px; color: #b4b4b8; }
 .apf-ngv-btn { height: 48px; padding: 0 20px; border-radius: var(--apf-r); background: var(--apf-gold); color: var(--apf-ink); font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+.apf-ngv-alt { min-height: 44px; display: inline-flex; align-items: center; color: inherit; font-weight: 600; text-decoration: underline; }
 
 /* Field grid: one column, six on a wider form */
 .apf-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px 16px; align-items: start; }
@@ -8269,6 +8270,9 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 .apf-cgroup-b { font-size: 13px; color: var(--apf-muted); margin-top: -4px; }
 .apf-note { padding: 12px 14px; border-radius: var(--apf-r); background: var(--apf-warn-bg); border: 1px solid #f1e3b8; color: #5c4100; font-size: 14px; display: flex; gap: 8px; }
 .apf-note i { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.apf-code-in { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.apf-code-l { font-weight: 600; }
+.apf-code-f { max-width: 12ch; letter-spacing: .3em; font-variant-numeric: tabular-nums; }
 .apf-lb-o > span { display: flex; flex-direction: column; }
 .apf-lb-sub { font-style: normal; font-size: 12.5px; color: var(--apf-muted); }
 .summer-fwd { padding: 72px 0 96px; min-height: calc(100vh - 71px); }
@@ -9016,3 +9020,67 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .mlb-cert-n { font-size: 1.6rem; font-weight: 800; }
 .mlb-cert-c { font-size: 1.25rem; font-weight: 700; }
 @media print { .stt-app .stt-top, .stt-app .stt-tabs, .stt-app .stt-panel-h, .mlb .mlb-nav, .mlb .mlb-actions { display: none; } }
+/* ── /join/volunteer: NGG's volunteer registration (NggVolunteerPage) ─────────
+   Classes only; every colour is a token. The error tone has its own pair of
+   tokens on the page so it is declared once. */
+.nvj { --nvj-err-ink: #a3331c; --nvj-err-bg: #fdeeea; --nvj-err-line: #f2c3b5; --nvj-note-bg: #fdf3d8; --nvj-note-line: #f0d48a; }
+.nvj-hero { background: var(--paper); padding: 56px 0 88px; min-height: calc(100vh - 71px); }
+.nvj-wrap { max-width: 980px; container-type: inline-size; }
+.nvj-head { text-align: center; margin-bottom: 40px; }
+.nvj-eyebrow { color: var(--ink-700); }
+.nvj-title { font-size: clamp(44px, 6vw, 84px); margin: 10px 0 0; }
+.nvj-title em { font-style: normal; color: var(--navy-700); }
+.nvj-lede { font-size: 17px; color: var(--ink-500); max-width: 560px; margin: 16px auto 0; line-height: 1.5; }
+.nvj-aside { font-size: 14px; color: var(--ink-500); margin: 10px auto 0; }
+.nvj-aside a { color: var(--navy-900); font-weight: 600; display: inline-flex; align-items: center; min-height: 44px; }
+.nvj-restored { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin-bottom: 20px; padding: 12px 16px; border-radius: 12px; background: var(--nvj-note-bg); border: 1px solid var(--nvj-note-line); font-size: 14px; color: var(--ink-900); }
+.nvj-link { background: none; border: 0; cursor: pointer; min-height: 44px; font: 600 12px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-700); }
+.nvj-steps { list-style: none; margin: 0 0 32px; padding: 0 12px; display: flex; justify-content: space-between; gap: 8px; }
+.nvj-step { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: 1 1 0; position: relative; }
+.nvj-step + .nvj-step::before { content: ""; position: absolute; top: 22px; right: calc(50% + 26px); width: calc(100% - 52px); height: 2px; background: var(--cream-200); }
+.nvj-step.is-done + .nvj-step::before, .nvj-step.is-on::before { background: var(--navy-900); }
+.nvj-dot { width: 44px; height: 44px; border-radius: 50%; padding: 0; border: 0; display: grid; place-items: center; background: var(--cream-100); color: var(--ink-700); font: 700 18px var(--font-display); cursor: default; }
+.nvj-step.is-done .nvj-dot { background: var(--navy-900); color: var(--paper); cursor: pointer; }
+.nvj-step.is-on .nvj-dot { background: var(--gold-500); color: var(--navy-900); box-shadow: inset 0 0 0 2px var(--navy-900); }
+.nvj-step-l { font: 400 10px var(--font-mono); letter-spacing: .15em; text-transform: uppercase; color: var(--ink-500); text-align: center; }
+.nvj-step.is-on .nvj-step-l { font-weight: 700; color: var(--navy-900); }
+.nvj-card { padding: 48px; min-height: 380px; }
+.nvj-closed { text-align: center; }
+.nvj-stack { display: flex; flex-direction: column; gap: 18px; }
+.nvj-h2 { font-family: var(--font-display); font-size: 32px; margin: 0; letter-spacing: -0.02em; }
+.nvj-muted { color: var(--ink-500); margin: 0; }
+.nvj-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.nvj-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.nvj-span { grid-column: 1 / -1; }
+.nvj-choice { display: flex; flex-direction: column; gap: 4px; padding: 18px; border-radius: 14px; text-align: left; cursor: pointer; font-family: inherit; background: var(--paper); color: var(--ink-900); border: 1px solid var(--cream-200); min-height: 44px; }
+.nvj-choice.is-on { background: var(--navy-900); color: var(--paper); border: 2px solid var(--gold-500); }
+.nvj-choice-i { font-size: 28px; margin-bottom: 6px; }
+.nvj-choice-n { font-weight: 700; }
+.nvj-choice-l { font-size: 13px; line-height: 1.35; }
+.nvj-sub { font: 500 11px var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-500); margin-bottom: 10px; }
+.nvj-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.nvj-pill { min-height: 44px; padding: 9px 14px; border-radius: 999px; cursor: pointer; font: 600 14px inherit; font-family: inherit; background: var(--paper); color: var(--ink-900); border: 1px solid var(--cream-200); }
+.nvj-pill.is-on { background: var(--navy-900); color: var(--paper); border-color: var(--gold-500); }
+.nvj-note { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--nvj-note-bg); border: 1px solid var(--nvj-note-line); font-size: 14px; color: var(--ink-900); }
+.nvj-summary { padding: 18px; border-radius: 14px; background: var(--cream-50); border: 1px solid var(--cream-200); }
+.nvj-sum { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin: 0; font-size: 14px; }
+.nvj-sum dt { font-weight: 700; }
+.nvj-sum dd { margin: 0; }
+.nvj-err { margin-top: 18px; padding: 12px 16px; border-radius: 12px; background: var(--nvj-err-bg); border: 1px solid var(--nvj-err-line); color: var(--nvj-err-ink); font-size: 14px; font-weight: 500; }
+.nvj-nav { display: flex; justify-content: space-between; margin-top: 24px; gap: 12px; }
+.nvj-hidden { visibility: hidden; }
+@container (max-width: 700px) {
+  .nvj-grid2, .nvj-grid3, .nvj-sum { grid-template-columns: 1fr; }
+  .nvj-card { padding: 24px; }
+  .nvj-step-l { display: none; }
+}
+
+/* The safeguarding fields both volunteer forms share (VolSafeguardFields). */
+.vsg { display: flex; flex-direction: column; gap: 20px; }
+.vsg-set { border: 1px solid var(--cream-200); border-radius: 14px; padding: 16px 18px; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.vsg-set legend { font: 700 13px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-700); padding: 0 6px; }
+.vsg-help { margin: 0; font-size: 14px; color: var(--ink-500); line-height: 1.5; }
+.vsg-ref { display: grid; grid-template-columns: 1.2fr 1fr 1.2fr; gap: 12px; }
+.vsg-check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--ink-700); line-height: 1.5; min-height: 44px; }
+.vsg-check input { margin-top: 4px; width: 18px; height: 18px; flex: none; }
+@container (max-width: 700px) { .vsg-ref { grid-template-columns: 1fr; } }

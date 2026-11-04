@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 221;
+const NGG_SCHEMA_TARGET = 223;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6277,6 +6277,84 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS uq_unapplied_ref ON unapplied_payments (reference);
             CREATE INDEX IF NOT EXISTS idx_unapplied_status ON unapplied_payments (status, createdAt);
+        ",
+        /* 222 — the Saturday formation, versioned (domain/saturday-formation.php).
+         * One row per block per VERSION of the day: the main day (scope ''), a
+         * centre's own day ('centre:<centreId>'), one Saturday everywhere
+         * ('date:YYYY-MM-DD') or at one centre ('date:YYYY-MM-DD@<centreId>').
+         * saturday_formation had blockKey UNIQUE, which cannot hold versions;
+         * its rows are copied in as the main day and it is left unread. `kind`
+         * names what a block is for (check-in, mentor breakout, classes, break,
+         * close), so reminders follow the block rather than a fixed key or time.
+         * saturday_formation_dates: a Saturday that is off (no NGG), with a note. */
+        222 => "
+            CREATE TABLE IF NOT EXISTS saturday_formation_blocks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scope TEXT NOT NULL DEFAULT '', blockKey TEXT NOT NULL, sort INTEGER DEFAULT 0,
+              startTime TEXT NOT NULL, endTime TEXT NOT NULL, title TEXT NOT NULL, flow TEXT DEFAULT '',
+              purpose TEXT DEFAULT '', quote TEXT DEFAULT '', forJson TEXT DEFAULT '', kind TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sfb ON saturday_formation_blocks(scope, blockKey);
+            INSERT INTO saturday_formation_blocks (scope, blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson, kind, updatedAt, updatedBy)
+              SELECT '', blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson,
+                     CASE blockKey WHEN 'checkin' THEN 'checkin' WHEN 'musing' THEN 'mentor' WHEN 'division' THEN 'classes' WHEN 'break' THEN 'break' WHEN 'close' THEN 'close' ELSE '' END,
+                     updatedAt, updatedBy
+                FROM saturday_formation WHERE status = 'active';
+            CREATE TABLE IF NOT EXISTS saturday_formation_dates (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              onDate TEXT NOT NULL, centreId TEXT NOT NULL DEFAULT '', off INTEGER NOT NULL DEFAULT 0, note TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sfd ON saturday_formation_dates(onDate, centreId);
+        ",
+        /* 223 — the registration checklist (domain/registration-checklist.php).
+         * reg_checklist_items: the items staff define for the NGG programme
+         * (retired, never deleted, so history keeps its titles). The automatic
+         * items are not stored: the record answers them every time it is read.
+         * reg_checklists: one per member, with the supervisor helping them and
+         * the last progress counted (for the list's filters and sort).
+         * reg_checklist_state: an admin item verified or rejected for a member.
+         * reg_checklist_submissions: every piece of evidence offered, with the
+         * verdict and the reason in words, accepted or refused.
+         * reg_checklist_sends: the reminder ledger, so nothing is sent twice. */
+        223 => "
+            CREATE TABLE IF NOT EXISTS reg_checklist_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              itemId TEXT NOT NULL UNIQUE, title TEXT NOT NULL, help TEXT NOT NULL DEFAULT '',
+              evidence TEXT NOT NULL DEFAULT 'none', presence INTEGER NOT NULL DEFAULT 0, maxAgeDays INTEGER NOT NULL DEFAULT 0,
+              sort INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
+              createdAt TEXT NOT NULL DEFAULT '', createdBy TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', updatedBy TEXT NOT NULL DEFAULT '',
+              retiredAt TEXT NOT NULL DEFAULT '', retiredBy TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS reg_checklists (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'open', done INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
+              supervisorId TEXT NOT NULL DEFAULT '', supervisorKind TEXT NOT NULL DEFAULT '', supervisorName TEXT NOT NULL DEFAULT '',
+              assignedAt TEXT NOT NULL DEFAULT '', assignedBy TEXT NOT NULL DEFAULT '', startedAt TEXT NOT NULL DEFAULT '', startedBy TEXT NOT NULL DEFAULT '',
+              completedAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rcl_sup ON reg_checklists(supervisorId, status);
+            CREATE INDEX IF NOT EXISTS idx_rcl_status ON reg_checklists(status);
+            CREATE TABLE IF NOT EXISTS reg_checklist_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, itemId TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'verified',
+              submissionId TEXT NOT NULL DEFAULT '', at TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_rcl_state ON reg_checklist_state(memberId, itemId);
+            CREATE TABLE IF NOT EXISTS reg_checklist_submissions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              submissionId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, itemKey TEXT NOT NULL, supervisorId TEXT NOT NULL,
+              url TEXT NOT NULL DEFAULT '', ext TEXT NOT NULL DEFAULT '', mime TEXT NOT NULL DEFAULT '', bytes INTEGER NOT NULL DEFAULT 0,
+              capturedOn TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', verdict TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rcl_sub ON reg_checklist_submissions(memberId, itemKey);
+            CREATE TABLE IF NOT EXISTS reg_checklist_sends (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sendKey TEXT NOT NULL UNIQUE, channel TEXT NOT NULL DEFAULT '', recipient TEXT NOT NULL DEFAULT '',
+              memberId TEXT NOT NULL DEFAULT '', sentAt TEXT NOT NULL DEFAULT ''
+            );
         ",
     ];
 
