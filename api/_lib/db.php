@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 226;
+const NGG_SCHEMA_TARGET = 227;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6397,6 +6397,14 @@ function db_migrate(PDO $db): void {
            lesson; this is the week-later recall the review exists for. */
         226 => "
             ALTER TABLE curriculum_progress ADD COLUMN reviewedAt TEXT NOT NULL DEFAULT '';
+        ",
+        /* 227 — Maths Lab: everyone studies, nobody guesses their way through (owner, 4 Nov
+           2026). studiedAt: the topic's lesson was worked through, step by step — practice and
+           the mastery check are refused before it. owed: correct practice answers still owed
+           after a failed mastery check or boss, before either may be taken again. */
+        227 => "
+            ALTER TABLE mlab_state ADD COLUMN studiedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mlab_state ADD COLUMN owed INTEGER NOT NULL DEFAULT 0;
         ",
     ];
 

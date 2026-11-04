@@ -17,6 +17,10 @@ const MLB_CHECK_PASS = 85;        // % (the curriculum's proposed bar)
 const MLB_BOSS_PASS = 80;
 const MLB_PRACTICE_ITEMS = 8;
 const MLB_GATE_ITEMS = 6;
+/* Owner, 4 Nov 2026: "Everyone must study. No cutting corners. No failing and failing and failing
+   until you get the answer." So a topic's lesson must be studied before its practice opens, and a
+   failed mastery check or boss is owed this many CORRECT practice answers before it is retaken. */
+const MLB_RETAKE_OWED = 5;
 const MLB_DAY_PRACTICE_XP = 60;   // practice XP cap a day: no grinding
 const MLB_GOOD = ['known', 'mastered', 'secure', 'longterm'];
 const MLB_STATE_ORDER = ['none' => 0, 'learning' => 1, 'review' => 1, 'practising' => 2, 'ready' => 3, 'known' => 4, 'mastered' => 5, 'secure' => 6, 'longterm' => 7];
@@ -119,6 +123,12 @@ function mlb_start(array $p): array {
     } elseif ($mode === 'practice' || $mode === 'check') {
         if (!mlb_available($comp)) return ['ok' => false, 'error' => 'not_available'];
         if (!mlb_unlocked($comp, $states)) return ['ok' => false, 'error' => 'locked', 'needs' => array_values(array_filter(mlb_comp($comp)['needs'], fn($x) => !in_array($states[$x]['state'] ?? 'none', MLB_GOOD, true) && mlb_available($x)))];
+        $cs = $states[$comp] ?? []; $good = in_array($cs['state'] ?? 'none', MLB_GOOD, true);
+        // The lesson first, every time it is not already known: no practising a topic nobody has studied.
+        if (!$good && (string)($cs['studiedAt'] ?? '') === '') return ['ok' => false, 'error' => 'not_studied'];
+        // The check is earned by practice, never retried until it gives way.
+        if ($mode === 'check' && (int)($cs['owed'] ?? 0) > 0) return ['ok' => false, 'error' => 'practice_owed', 'owed' => (int)$cs['owed']];
+        if ($mode === 'check' && ($cs['state'] ?? 'none') !== 'ready') return ['ok' => false, 'error' => 'not_ready'];
         $ref = $comp;
         $items = mlb_pick_items([$comp], $mode === 'check' ? MLB_CHECK_ITEMS : MLB_PRACTICE_ITEMS);
     } elseif ($mode === 'review') {
@@ -169,8 +179,9 @@ function mlb_answer(array $p): array {
         $pk = mlb_bkt((float)($st['p'] ?? 0.15), $mk['ok'] && $resp[$i]['hints'] < 2, !empty($it['typed']));
         $att = (int)($st['attempts'] ?? 0) + 1; $cor = (int)($st['correct'] ?? 0) + ($mk['ok'] ? 1 : 0);
         $cur = (string)($st['state'] ?? 'none'); $new = $cur;
-        if (mlb_rank($cur) < mlb_rank('known')) $new = $pk >= 0.85 && $att >= 6 && $cor >= 5 ? 'ready' : ($pk >= 0.6 ? 'practising' : 'learning');
-        mlb_set_state($mid, $x['c'], ['p' => $pk, 'attempts' => $att, 'correct' => $cor, 'state' => $new]);
+        $owed = max(0, (int)($st['owed'] ?? 0) - ($mk['ok'] && $resp[$i]['hints'] < 1 ? 1 : 0));   // only an unaided right answer pays it down
+        if (mlb_rank($cur) < mlb_rank('known')) $new = $owed === 0 && $pk >= 0.85 && $att >= 6 && $cor >= 5 ? 'ready' : ($pk >= 0.6 ? 'practising' : 'learning');
+        mlb_set_state($mid, $x['c'], ['p' => $pk, 'attempts' => $att, 'correct' => $cor, 'state' => $new, 'owed' => $owed]);
         $out += ['correct' => $mk['ok'], 'why' => $mk['why'], 'formNote' => $mk['form'], 'answer' => mlb_answer_text($it), 'steps' => $it['steps'], 'state' => $new, 'p' => $pk,
             'xp' => $mk['ok'] ? mlb_award_xp($mid, $resp[$i]['hints'] ? 1 : 2, true) : 0];
     }
@@ -220,7 +231,8 @@ function mlb_finish(array $p): array {
         }
     } elseif ($mode === 'check') {
         if ($pct >= MLB_CHECK_PASS) { $setGood($ref, 'mastered', 10); $xp = mlb_award_xp($mid, 100); $msg = 'Mastered! A quick review in about 10 days will make it stick.'; }
-        else { mlb_set_state($mid, $ref, ['state' => 'practising', 'p' => min((float)($states[$ref]['p'] ?? 0.5), 0.7)]); $msg = 'Not yet — ' . $pct . '%. The bar is ' . MLB_CHECK_PASS . '%. Practise the questions you missed, then try again.'; }
+        else { mlb_set_state($mid, $ref, ['state' => 'practising', 'p' => min((float)($states[$ref]['p'] ?? 0.5), 0.7), 'owed' => MLB_RETAKE_OWED]);
+               $msg = 'Not yet — ' . $pct . '%. The bar is ' . MLB_CHECK_PASS . '%. Go back over the worked solutions below, then get ' . MLB_RETAKE_OWED . ' practice questions right without hints before you try the check again.'; }
     } elseif ($mode === 'review') {
         foreach ($items as $i => $x) {
             $c = $x['c']; $cur = (string)($states[$c]['state'] ?? 'none'); $ok = !empty($resp[$i]['ok']);
@@ -233,7 +245,13 @@ function mlb_finish(array $p): array {
             $prof = mlb_profile($mid); $b = json_decode((string)$prof['bosses'], true) ?: []; $b[$ref] = mlb_today();
             db_update('mlab_profile', ['bosses' => json_encode($b), 'updatedAt' => now_iso()], ['memberId' => $mid]);
             $xp = mlb_award_xp($mid, 300); $msg = 'Boss defeated — Stage ' . $ref . ' is complete.';
-        } else $msg = 'The boss wins this time (' . $pct . '%, need ' . MLB_BOSS_PASS . '%). Strengthen the topics you missed and come back.';
+        } else {
+            /* A lost boss is not retried at once: every topic it caught you out on goes back to
+               practice, owes MLB_RETAKE_OWED unaided right answers and a fresh mastery check, and the
+               boss stays locked until they are mastered again. */
+            foreach (array_keys($missed) as $c) { mlb_set_state($mid, $c, ['state' => 'practising', 'p' => min((float)($states[$c]['p'] ?? 0.6), 0.6), 'owed' => MLB_RETAKE_OWED]); $changes[] = ['comp' => $c, 'to' => 'practising']; }
+            $msg = 'The boss wins this time (' . $pct . '%, need ' . MLB_BOSS_PASS . '%). The ' . count($missed) . ' topic' . (count($missed) === 1 ? '' : 's') . ' it caught you on ' . (count($missed) === 1 ? 'is' : 'are') . ' back in practice: master ' . (count($missed) === 1 ? 'it' : 'them') . ' again, then face the boss.';
+        }
     } else {
         $msg = $right . ' of ' . $n . ' right.';
     }
@@ -316,6 +334,18 @@ function mlb_map(array $p): array {
     return ['ok' => true, 'member' => (bool)$m, 'stages' => $stages, 'bands' => $bands];
 }
 
+/** mathslab.studied — the member worked through the topic's lesson, step by step (the client
+ *  calls it on reaching Practise). Recorded once; it is what lets practice and the check open. */
+function mlb_mark_studied(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $mid = (string)$m['memberId']; $comp = (string)($p['comp'] ?? '');
+    if (!mlb_comp($comp) || !mlb_available($comp)) return ['ok' => false, 'error' => 'not_available'];
+    $states = mlb_states($mid);
+    if (!mlb_unlocked($comp, $states)) return ['ok' => false, 'error' => 'locked'];
+    if ((string)($states[$comp]['studiedAt'] ?? '') === '') mlb_set_state($mid, $comp, ['studiedAt' => now_iso()]);
+    return ['ok' => true, 'studied' => true];
+}
+
 /** mathslab.comp — one competency: what it is, a worked example, where the learner stands. */
 function mlb_comp_view(array $p): array {
     $id = (string)($p['comp'] ?? ''); $c = mlb_comp($id); if (!$c) return ['ok' => false, 'error' => 'not_found'];
@@ -325,6 +355,7 @@ function mlb_comp_view(array $p): array {
         'needs' => array_map(static fn($n) => ['id' => $n, 'title' => mlb_comp($n)['title'], 'state' => mlb_view_state($n, $states), 'ahead' => mlb_need_ahead($id, $n) ? mlb_comp($n)['stage'] : 0], $c['needs'])],
         'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon'), 'p' => $s ? (float)$s['p'] : 0, 'attempts' => $s ? (int)$s['attempts'] : 0,
         'nextReview' => $s ? (string)$s['nextReview'] : '',
+        'studied' => $s ? (string)($s['studiedAt'] ?? '') !== '' : false, 'owed' => $s ? (int)($s['owed'] ?? 0) : 0,
         'why' => function_exists('mlb_why_of') ? mlb_why_of($id) : null,
         'example' => $ex ? ['stem' => $ex['stem'], 'diagram' => $ex['diagram'] ?? null, 'lines' => $ex['lines'] ?? null, 'answer' => mlb_answer_text($ex), 'steps' => $ex['steps']] : null];
 }

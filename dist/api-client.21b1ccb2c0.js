@@ -1071,6 +1071,7 @@
         answer: (sessionId, index, answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'answer', sessionId, index, answer }, extra || {}) }),
         finish: (sessionId) => request('/member/mathslab.php', { body: { action: 'finish', sessionId } }),
         enrol:  (courseId) => request('/member/mathslab.php', { body: { action: 'enrol', courseId } }),
+        studied: (comp) => request('/member/mathslab.php', { body: { action: 'studied', comp } }),
       },
       tools: {
         decks:   () => request('/member/tools.php?view=decks'),

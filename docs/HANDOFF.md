@@ -6105,3 +6105,25 @@ stats, the focused player, and the interactive-first Learn page.
   questions) is always last. Focus moves to the step's heading on every step.
 - The phone Home button is back to ≥ 44 px (`.mlb-go` min-height 44); ui-smoke
   had measured 40.
+- **No cutting corners, no guessing through** (owner: "Everyone must study.
+  No cutting corners. No failing and failing and failing until you get the
+  answer"). Migration **227**: `mlab_state.studiedAt` and `mlab_state.owed`.
+  - **No skip.** *Skip to practice* and *Show the whole argument* are gone.
+    A step is done only when worked: `MlbExplore` reports the first slider or
+    button use, deferred with `setTimeout`, because updating the lesson
+    inside the range's own input event snapped the slider back; `MlbWhy`
+    reports when every line is shown; the example when every line is shown.
+    Continue waits for that, and steps ahead are disabled.
+  - **`mathslab.studied`** (`mlb_mark_studied`) is called on reaching
+    Practise. `mlb_start` refuses practice and check with `not_studied` for a
+    topic that is not studied and not already known.
+  - **The check needs `state = ready`** on the server too (`not_ready`). The
+    client used to be the only gate.
+  - **A failed check** sets `owed = MLB_RETAKE_OWED` (5). Only an unaided
+    right practice answer pays it down, the state cannot reach `ready` while
+    anything is owed, and a retake is `practice_owed`.
+  - **A lost boss** puts each topic it caught back to `practising` with
+    `owed = 5`, so the boss is locked until they are mastered again.
+  - `run.php` pins every rule. The owed rule was checked by switching it off
+    (the suite then fails), and the test uses `mlb_set_state`, not an
+    SQLite-only upsert, because the suite also runs on MySQL.

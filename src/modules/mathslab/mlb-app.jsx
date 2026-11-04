@@ -17,6 +17,7 @@ const MLB_STATE_L = { none: "Not started", open: "Ready to learn", locked: "Lock
   ready: "Ready to check", review: "Needs a refresh", known: "Known (fast-tracked)", mastered: "Mastered", secure: "Secure", longterm: "Long-term" };
 const MLB_GOOD_V = ["known", "mastered", "secure", "longterm"];
 const MLB_ERR = { members_only: "The full Maths Lab is for NGG members.", locked: "Finish the topics this builds on first.", not_available: "This topic is still in preparation.",
+  not_studied: "Study the lesson first: work through every step, then practise.", practice_owed: "Get more practice questions right first — the check can't be retried straight away.", not_ready: "The mastery check opens when your practice shows you are ready.",
   climb_done: "Your climb is finished.", nothing_due: "Nothing is due for review.", boss_locked: "Know every topic in the stage first.", finished: "That session is already finished.",
   network: "You’re offline. Check your connection and try again.", rate_limited: "Slow down a little and try again." };
 function mlbErr(e) { const c = e && (e.code || e.message); return MLB_ERR[c] || (e && e.detail) || "That didn’t work. Try again."; }
@@ -207,12 +208,17 @@ const MLB_TRY = {
   growth: "Set the rate to 10% and the years to 30. Which line pulls ahead, and why?",
 };
 function mlbExplorerFor(comp) { for (const k in MLB_EXPLORE) if (MLB_EXPLORE[k].indexOf(comp) >= 0) return k; return null; }
-function MlbExplore({ comp }) {
+function MlbExplore({ comp, onDone }) {
+  /* Report the first real interaction once, AFTER the event: updating the lesson inside the
+     slider's own input event swallowed that first move (the range snapped back). */
+  const told = React.useRef(false);
+  const tell = () => { if (told.current || !onDone) return; told.current = true; setTimeout(onDone, 0); };
   const k = mlbExplorerFor(comp); if (!k) return null;
   const E = { numline: MlbExNumline, array: MlbExArray, area: MlbExArea, fraction: MlbExFraction, triangle: MlbExTriangle, pythag: MlbExPythag, sector: MlbExSector,
     line: MlbExLine, quad: MlbExQuad, unit: MlbExUnit, chord: MlbExChord, riemann: MlbExRiemann, chance: MlbExChance, series: MlbExSeries, growth: MlbExGrowth }[k];
   return (
-    <section className="mlb-card mlb-explore" aria-labelledby="mlb-ex-h">
+    <section className="mlb-card mlb-explore" aria-labelledby="mlb-ex-h"
+      onInputCapture={e => { if (e.target.closest("input")) tell(); }} onClickCapture={e => { if (e.target.closest(".mlb-ex button")) tell(); }}>
       <h3 id="mlb-ex-h" className="mlb-h3"><i className="ph ph-sliders-horizontal" aria-hidden="true"/> Explore it</h3>
       <p className="mlb-ex-try"><b>Try this:</b> {MLB_TRY[k]}</p>
       <E/>
@@ -647,27 +653,50 @@ function MlbFramework({ bands }) {
 
 /* ── One competency ── */
 /* One topic, as a lesson in steps (Duolingo's shape, Brilliant's content): Explore → Why it
-   works → Worked example → Practise, one screen at a time, a step bar to see where you are
-   and jump back, and Back / Continue at the bottom. Steps a topic has no content for are
-   simply not there (a skill with no proof has no "Why it works"). Practise is always last,
-   and "Skip to practice" is there for a learner who already knows the idea. */
+   works → Worked example → Practise, one screen at a time. Owner, 4 Nov 2026: "Everyone must
+   study. No cutting corners." So there is no skipping: a step is DONE only when it has been
+   worked (a slider moved, every line of the argument read, every line of the example shown),
+   Continue waits for that, and a step ahead of the furthest one reached cannot be opened.
+   Reaching Practise records the study on the server, which refuses practice without it.
+   A topic already studied (or known) can be moved through freely. */
 function MlbLearn({ comp, go, startPlay, lite }) {
   const [st, load] = useMlb(() => lite ? NGGApi.public.mathslabComp(comp) : NGGApi.member.mathslab.comp(comp), [comp, lite]);
   const [shown, setShown] = React.useState(1);
   const [step, setStep] = React.useState(0);
+  const [reached, setReached] = React.useState(0);
+  const [done, setDone] = React.useState({});
+  const [studied, setStudied] = React.useState(null);   // null = not yet asked, true once the server has it
+  const [studyErr, setStudyErr] = React.useState("");
   const headRef = React.useRef(null);
-  React.useEffect(() => { setStep(0); setShown(1); }, [comp]);
+  React.useEffect(() => { setStep(0); setReached(0); setDone({}); setShown(1); setStudied(null); setStudyErr(""); }, [comp]);
+  const ok = st.phase === "ok", d = ok ? st.d : null;
+  const steps = [];
+  if (ok) {
+    const can = ["soon", "locked"].indexOf(d.state) < 0;
+    if (can && mlbExplorerFor(d.comp.id)) steps.push({ id: "explore", label: "Explore", need: "Move a slider (or press a button) and watch what changes." });
+    if (d.why) steps.push({ id: "why", label: "Why it works", need: "Read every line of the argument." });
+    if (d.example) steps.push({ id: "example", label: "Worked example", need: "Show every line of the worked example." });
+    steps.push({ id: "practise", label: "Practise", need: "" });
+  }
+  const free = ok && (d.studied || MLB_GOOD_V.indexOf(d.state) >= 0);
+  const at = Math.min(step, Math.max(steps.length - 1, 0)), cur = steps[at], last = at === steps.length - 1;
+  const mark = id => setDone(x => x[id] ? x : Object.assign({}, x, { [id]: true }));
+  React.useEffect(() => { if (ok && d.example && shown >= d.example.steps.length) mark("example"); }, [shown, ok]); // eslint-disable-line
+  // Reaching Practise is the study: tell the server once (members only — Lite keeps no record).
+  React.useEffect(() => {
+    if (!ok || lite || !cur || cur.id !== "practise" || d.studied || studied) return;
+    if (["soon", "locked"].indexOf(d.state) >= 0) return;
+    NGGApi.member.mathslab.studied(comp).then(() => setStudied(true), e => setStudyErr(mlbErr(e)));
+  }, [ok, at]); // eslint-disable-line
   if (st.phase === "loading") return <SttState kind="loading"/>;
   if (st.phase === "error") return <SttState kind="error" text={"Couldn’t open this topic. " + mlbErr(st.e)} retry={load}/>;
-  const c = st.d.comp, ex = st.d.example, state = st.d.state, pct = Math.round((st.d.p || 0) * 100);
+  const c = d.comp, ex = d.example, state = d.state, pct = Math.round((d.p || 0) * 100);
   const canLearn = ["soon", "locked"].indexOf(state) < 0;
-  const steps = [];
-  if (canLearn && mlbExplorerFor(c.id)) steps.push({ id: "explore", label: "Explore" });
-  if (st.d.why) steps.push({ id: "why", label: "Why it works" });
-  if (ex) steps.push({ id: "example", label: "Worked example" });
-  steps.push({ id: "practise", label: "Practise" });
-  const at = Math.min(step, steps.length - 1), cur = steps[at], last = at === steps.length - 1;
-  const toStep = i => { setStep(i); setTimeout(() => { if (headRef.current) headRef.current.focus(); try { headRef.current.scrollIntoView({ block: "start" }); } catch (_) {} }, 0); };
+  const stepDone = free || cur.id === "practise" || !!done[cur.id];
+  const canOpen = i => free || i <= reached;
+  const toStep = i => { if (!canOpen(i)) return; setStep(i); setTimeout(() => { if (headRef.current) { headRef.current.focus(); try { headRef.current.scrollIntoView({ block: "start" }); } catch (_) {} } }, 0); };
+  const next = () => { if (!stepDone) return; const n = at + 1; setReached(r => Math.max(r, n)); setStep(n); setTimeout(() => { if (headRef.current) { headRef.current.focus(); try { headRef.current.scrollIntoView({ block: "start" }); } catch (_) {} } }, 0); };
+  const practiseOpen = lite || free || studied === true;
   return (
     <div className="mlb-learn">
       <div className="mlb-lesson-top">
@@ -679,14 +708,14 @@ function MlbLearn({ comp, go, startPlay, lite }) {
         <h2 className="mlb-h2">{c.title}</h2>
       </header>
       <ol className="mlb-stepbar" aria-label="Lesson steps">{steps.map((x, i) => (
-        <li key={x.id} className={i < at ? "is-done" : i === at ? "is-on" : ""}>
-          <button type="button" aria-current={i === at ? "step" : undefined} onClick={() => toStep(i)}>
-            <span className="mlb-stepbar-n" aria-hidden="true">{i < at ? "✓" : i + 1}</span><span className="mlb-stepbar-l">{x.label}</span>
+        <li key={x.id} className={(i < at || (done[x.id] && i !== at) ? "is-done" : i === at ? "is-on" : "") + (canOpen(i) ? "" : " is-ahead")}>
+          <button type="button" aria-current={i === at ? "step" : undefined} disabled={!canOpen(i)} onClick={() => toStep(i)}>
+            <span className="mlb-stepbar-l">{x.label}</span>{!canOpen(i) ? <span className="mlb-sr"> (locked until you reach it)</span> : null}
           </button></li>))}</ol>
       <div className="mlb-lesson-body">
         <h3 className="mlb-sr" tabIndex={-1} ref={headRef}>Step {at + 1} of {steps.length}: {cur.label}</h3>
-        {cur.id === "explore" ? <MlbExplore comp={c.id}/> : null}
-        {cur.id === "why" ? <MlbWhy key={c.id} why={st.d.why}/> : null}
+        {cur.id === "explore" ? <MlbExplore comp={c.id} onDone={() => mark("explore")}/> : null}
+        {cur.id === "why" ? <MlbWhy key={c.id} why={d.why} onDone={() => mark("why")}/> : null}
         {cur.id === "example" ? <section className="mlb-card" aria-labelledby="mlb-we"><h3 id="mlb-we" className="mlb-h3">Worked example</h3>
           <MlbMath as="p" className="mlb-stem" text={ex.stem}/><MlbDiagram d={ex.diagram}/>
           {ex.lines ? <ol className="mlb-lines">{ex.lines.map((l, i) => <li key={i}><MlbMath text={l}/></li>)}</ol> : null}
@@ -698,10 +727,12 @@ function MlbLearn({ comp, go, startPlay, lite }) {
           {!lite && state !== "soon" ? <div className="mlb-ready"><span>How sure we are you know it</span><span className="mlb-meter is-big"><span style={{ width: pct + "%" }}/></span><b>{pct}%</b></div> : null}
           {state === "locked" ? <p className="mlb-warn">Locked: light up the topics it builds on first.</p> : null}
           {state === "soon" ? <p className="mlb-warn">This topic is being prepared and will open soon.</p> : null}
+          {studyErr ? <p className="mlb-warn" role="alert">{studyErr}</p> : null}
           {canLearn && !lite ? <div className="mlb-actions">
-            <button type="button" className="mlb-go" onClick={() => startPlay({ mode: "practice", comp })}><i className="ph ph-pencil-line" aria-hidden="true"/>Practise</button>
-            <button type="button" className="stt-btn" disabled={state !== "ready"} aria-describedby="mlb-chk-why" onClick={() => startPlay({ mode: "check", comp })}><i className="ph ph-seal-check" aria-hidden="true"/>Mastery check</button>
-            <span id="mlb-chk-why" className="mlb-meta">{state === "ready" ? "10 questions, no hints. Pass at 85%." : MLB_GOOD_V.indexOf(state) >= 0 ? "Already lit — it comes back in your reviews." : "Unlocks when practice shows you are ready."}</span>
+            <button type="button" className="mlb-go" disabled={!practiseOpen} onClick={() => startPlay({ mode: "practice", comp })}><i className="ph ph-pencil-line" aria-hidden="true"/>Practise</button>
+            <button type="button" className="stt-btn" disabled={!practiseOpen || state !== "ready" || d.owed > 0} aria-describedby="mlb-chk-why" onClick={() => startPlay({ mode: "check", comp })}><i className="ph ph-seal-check" aria-hidden="true"/>Mastery check</button>
+            <span id="mlb-chk-why" className="mlb-meta">{d.owed > 0 ? "After a check that didn’t pass: get " + d.owed + " more practice question" + (d.owed === 1 ? "" : "s") + " right without a hint, then try again."
+              : state === "ready" ? "10 questions, no hints. Pass at 85%." : MLB_GOOD_V.indexOf(state) >= 0 ? "Already lit — it comes back in your reviews." : "Unlocks when practice shows you are ready."}</span>
           </div> : null}
           {c.needs.length ? <div className="mlb-needs"><h4 className="mlb-h4">Builds on</h4><ul>{c.needs.map(n => <li key={n.id}><button type="button" className="mlb-link" onClick={() => go({ v: "learn", comp: n.id })}>{n.title}</button>
             {n.state === "soon" ? <small> in preparation</small> : n.ahead ? <small> introduced here; full topic in Stage {n.ahead}</small> : MLB_GOOD_V.indexOf(n.state) >= 0 ? <small className="is-ok"> known</small> : null}</li>)}</ul></div> : null}
@@ -710,19 +741,19 @@ function MlbLearn({ comp, go, startPlay, lite }) {
       </div>
       <div className="mlb-lesson-foot">
         {at > 0 ? <button type="button" className="stt-btn" onClick={() => toStep(at - 1)}><i className="ph ph-arrow-left" aria-hidden="true"/>Back</button> : <span/>}
-        <span className="mlb-meta">Step {at + 1} of {steps.length}</span>
-        {!last ? <button type="button" className="mlb-go" onClick={() => toStep(at + 1)}>Continue<i className="ph ph-arrow-right" aria-hidden="true"/></button>
+        <span className="mlb-meta" aria-live="polite">{!last && !stepDone ? cur.need : "Step " + (at + 1) + " of " + steps.length}</span>
+        {!last ? <button type="button" className="mlb-go" disabled={!stepDone} onClick={next}>Continue<i className="ph ph-arrow-right" aria-hidden="true"/></button>
           : <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}>Back to the map</button>}
       </div>
-      {!last && canLearn ? <p className="mlb-skip"><button type="button" className="mlb-link" onClick={() => toStep(steps.length - 1)}>Already know it? Skip to practice</button></p> : null}
     </div>
   );
 }
 
 /* ── Why it works: the argument one line at a time, each with its reason ── */
-function MlbWhy({ why }) {
+function MlbWhy({ why, onDone }) {
   const [shown, setShown] = React.useState(1);
   const all = shown >= why.steps.length;
+  React.useEffect(() => { if (all && onDone) onDone(); }, [all]); // eslint-disable-line
   return (
     <section className="mlb-card mlb-why" aria-labelledby="mlb-why-h">
       <h3 id="mlb-why-h" className="mlb-h3">Why it works</h3>
@@ -731,7 +762,7 @@ function MlbWhy({ why }) {
       <ol className="mlb-why-steps" aria-live="polite">{why.steps.slice(0, shown).map((s, i) => (
         <li key={i}><MlbMath className="mlb-why-s" text={s.s}/><span className="mlb-why-r"><b>Because</b><MlbMath text={s.r}/></span></li>))}</ol>
       {!all ? <div className="mlb-actions"><button type="button" className="stt-btn" onClick={() => setShown(n => n + 1)}>Next line</button>
-        <button type="button" className="mlb-link" onClick={() => setShown(why.steps.length)}>Show the whole argument</button></div>
+</div>
         : <p className="mlb-meta">Each line only uses things we already know from the lines above it. In practice you will be asked why a line is true, and to put the lines in order.</p>}
     </section>
   );

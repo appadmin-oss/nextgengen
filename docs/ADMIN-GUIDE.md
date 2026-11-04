@@ -4775,9 +4775,23 @@ off as "bad at maths" when a foundation was simply never taught.
 - **A topic is a lesson in steps**, one screen at a time: *Explore* (the
   interactive), *Why it works* (the proof), *Worked example*, then *Practise*
   (with the *Mastery check* and the topics it builds on). A step bar shows
-  where the member is, and any step can be reopened. *Continue* and *Back*
-  sit at the bottom, and *Skip to practice* is there for anyone who already
-  knows the idea.
+  where the member is. *Continue* and *Back* sit at the bottom.
+- **Everyone studies; nobody guesses their way through.**
+  - **No skipping.** *Continue* opens only once the step has been done: an
+    explorer slider moved, every line of the proof read, every line of the
+    worked example shown. Steps ahead cannot be opened early.
+  - **The server enforces it.** Reaching *Practise* records the study, and
+    practice and the *Mastery check* are refused for a topic that has not
+    been studied, whatever the page sends. A topic already studied or known
+    can be moved through freely.
+  - **The check opens on readiness.** The *Mastery check* opens only when
+    practice shows the member is ready.
+  - **A failed check is not retaken at once.** It owes **5 right practice
+    answers, without a hint**, before it opens again; the topic page counts
+    them down.
+  - **A lost stage boss** sends every topic it caught the member on back to
+    practice, each owing the same 5 answers and a new mastery check. The boss
+    stays locked until those topics are mastered again.
 - **Written for an eleven-year-old.** Every explorer opens with a *Try this*
   challenge, one thing to do and one thing to notice. The readouts and the
   early proofs use everyday words ("one number word for each object", not

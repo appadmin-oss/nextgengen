@@ -132,33 +132,48 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
     await shoot('progress-phone','',{width:390,height:844},'.mlb-miss','.mlb-navb:nth-child(4)');
     await shoot('map-phone','',{width:390,height:844},'.mlb-path','.mlb-navb:nth-child(2)');
     await shoot('learn-pythagoras','view=learn&comp=MC-077',{width:1080,height:1000},'.mlb-explore',null);
-    await shoot('learn-pythagoras-why','view=learn&comp=MC-077',{width:1080,height:1000},'.mlb-why','.mlb-lesson-foot .mlb-go');
     await shoot('learn-quadratic-phone','view=learn&comp=MC-103',{width:390,height:844},'.mlb-explore',null);
     await shoot('learn-unit-circle','view=learn&comp=MC-145',{width:1080,height:1000},'.mlb-explore',null);
     await shoot('learn-derivative','view=learn&comp=MC-152',{width:1080,height:1000},'.mlb-explore',null);
     await shoot('player','view=play',{width:1080,height:900},'.mlb-q',null);
     await shoot('player-phone','view=play',{width:390,height:844},'.mlb-q',null);
-    await shoot('lite-order','view=learn&comp=MC-002&lite=1',{width:1080,height:1000},'.mlb-order-list','.mlb-skip .mlb-link');
-    await shoot('lite-figure','view=learn&comp=MC-074&lite=1&q=fig',{width:1080,height:1000},'.mlb-q svg.mlb-dia','.mlb-skip .mlb-link');
+    /* Lite lessons are studied step by step before their questions appear; walk one through. */
+    const walk=async page=>{ for(let k=0;k<12;k++){
+        if(await page.locator('.mlb-order-list, .mlb-q svg.mlb-dia').count()) return true;
+        if(await page.locator('.mlb-ex .mlb-sl-in').count()){ const sl=page.locator('.mlb-ex .mlb-sl-in').first(); await sl.focus(); await page.keyboard.press('ArrowRight'); }
+        while(await page.locator('.mlb-why .mlb-actions .stt-btn').count()) await page.click('.mlb-why .mlb-actions .stt-btn');
+        while(await page.locator('.mlb-lesson-body .mlb-card .stt-btn:has-text("Show the next line")').count()) await page.click('.mlb-lesson-body .mlb-card .stt-btn:has-text("Show the next line")');
+        const go=page.locator('.mlb-lesson-foot .mlb-go'); if(await go.count()&&await go.isEnabled()) await go.click(); await page.waitForTimeout(150); } return false; };
+    for(const [name,q,sel] of [['lite-order','view=learn&comp=MC-002&lite=1','.mlb-order-list'],['lite-figure','view=learn&comp=MC-074&lite=1&q=fig','.mlb-q svg.mlb-dia']]){
+      const page=await browser.newPage({viewport:{width:1080,height:1000},deviceScaleFactor:2}); const errs=[]; page.on('pageerror',e=>errs.push(String(e&&e.message)));
+      await page.goto(BASE+'/tests/_ml_fixture.html?'+q,{waitUntil:'networkidle'}); await page.waitForSelector('.mlb-stepbar',{timeout:15000});
+      if(!(await walk(page))) problems.push(name+': never reached the practice questions by studying the steps');
+      if(errs.length) problems.push(name+': '+errs[0]);
+      await page.screenshot({path:path.join(OUT,'mathlab-'+name+'.png'),fullPage:true}); shots++; console.log('  📸 mathlab-'+name+'.png'); await page.close(); }
     /* Behaviour, not only pixels: an explorer's readout follows its slider; "Why it works" walks
        one line at a time; the order exercise sends the order the learner made. */
     { const page=await browser.newPage({viewport:{width:1080,height:1000}}); const errs=[]; page.on('pageerror',e=>errs.push(String(e&&e.message)));
       await page.goto(BASE+'/tests/_ml_fixture.html?view=learn&comp=MC-077',{waitUntil:'networkidle'});
       await page.waitForSelector('.mlb-ex-out',{timeout:8000});
-      const before=await page.textContent('.mlb-ex-out'); const sl=page.locator('.mlb-sl-in').first(); await sl.focus(); await page.keyboard.press('ArrowRight');
-      const after=await page.textContent('.mlb-ex-out');
-      if(before===after||!/16|5\^2|25/.test(before)) problems.push('pythagoras explorer: readout did not follow the slider ('+before.slice(0,60)+')');
-      const bar=await page.$$eval('.mlb-stepbar li',ls=>ls.map(l=>l.innerText.trim()));
+      const bar=await page.$$eval('.mlb-stepbar li .mlb-stepbar-l',ls=>ls.map(l=>l.innerText.trim()));
+      /* No cutting corners: Continue waits for the step to be WORKED, steps ahead cannot be opened, and there is no skip. */
+      const gate=await page.evaluate(()=>({cont:document.querySelector('.mlb-lesson-foot .mlb-go').disabled,
+        ahead:Array.from(document.querySelectorAll('.mlb-stepbar button')).slice(1).every(b=>b.disabled), skip:/skip/i.test(document.querySelector('.mlb-learn').innerText)}));
+      if(!gate.cont||!gate.ahead||gate.skip) problems.push('no cutting corners: '+JSON.stringify(gate));
+      const before=await page.textContent('.mlb-ex-out'); const sl=page.locator('.mlb-sl-in').first(); await sl.focus(); await page.keyboard.press('ArrowRight'); await page.waitForTimeout(200);
+      const after=await page.textContent('.mlb-ex-out'); const val=await sl.inputValue();
+      if(before===after||!/16|5\^2|25/.test(before)) problems.push('pythagoras explorer: readout did not follow the slider (value '+val+'; '+after.slice(0,60)+')');
       if(bar.join('|')!=='Explore|Why it works|Worked example|Practise') problems.push('lesson steps: '+JSON.stringify(bar));
+      if(await page.locator('.mlb-lesson-foot .mlb-go').isDisabled()) problems.push('explore: Continue stayed shut after the slider moved');
       await page.click('.mlb-lesson-foot .mlb-go'); await page.waitForSelector('.mlb-why',{timeout:4000});
       if(await page.locator('.mlb-explore').count()) problems.push('lesson steps: Explore still shown on the Why step');
+      if(!(await page.locator('.mlb-lesson-foot .mlb-go').isDisabled())) problems.push('why: Continue open before the argument was read');
       const n0=await page.locator('.mlb-why-steps li').count(); await page.click('.mlb-why .stt-btn'); const n1=await page.locator('.mlb-why-steps li').count();
-      await page.click('.mlb-skip .mlb-link'); await page.waitForSelector('.mlb-status',{timeout:4000});
-      if(!(await page.locator('.mlb-status .mlb-go').count())) problems.push('lesson steps: Skip to practice did not reach Practise');
+      await page.screenshot({path:path.join(OUT,'mathlab-learn-pythagoras-why.png'),fullPage:true}); shots++;
       if(!(n0===1&&n1===2)) problems.push('why it works: did not reveal one line at a time ('+n0+'→'+n1+')');
       if(errs.length) problems.push('learn interaction: '+errs[0]);
       await page.goto(BASE+'/tests/_ml_fixture.html?view=learn&comp=MC-002&lite=1',{waitUntil:'networkidle'});
-      await page.waitForSelector('.mlb-skip .mlb-link',{timeout:8000}); await page.click('.mlb-skip .mlb-link');
+      await page.waitForSelector('.mlb-stepbar',{timeout:8000}); await walk(page);
       await page.waitForSelector('.mlb-order-list',{timeout:8000});
       await page.click('.mlb-order-row:nth-child(2) [aria-label^="Move line 2 up"]');
       const first=await page.textContent('.mlb-order-row:first-child .mlb-order-t');

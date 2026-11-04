@@ -37710,6 +37710,19 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $g2 = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb']); $r2 = $answerAll($g2, false);
     chk('maths lab · a gate with most answers wrong ends the climb: learning starts in that stage', (int)mlb_profile('NGG-ML-1')['climbDone'] === 1 && (int)mlb_profile('NGG-ML-1')['climbStage'] === 2
         && (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb'])['error'] ?? '') === 'climb_done' && mlb_home(['memberId' => 'NGG-ML-1'])['next']['mode'] === 'practice');
+    /* Everyone studies (owner, 4 Nov 2026): practice and the check are refused until the topic's
+       lesson has been worked through, which the lesson records on reaching Practise. */
+    chk('maths lab · a topic nobody has studied is refused practice and its mastery check (not_studied)',
+        (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'practice', 'comp' => 'MC-011'])['error'] ?? '') === 'not_studied'
+        && (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'check', 'comp' => 'MC-011'])['error'] ?? '') === 'not_studied'
+        && mlb_comp_view(['memberId' => 'NGG-ML-1', 'comp' => 'MC-011'])['studied'] === false);
+    $sd = backend_dispatch('mathslab.studied', ['memberId' => 'NGG-ML-1', 'comp' => 'MC-011']);
+    chk('maths lab · …studying it is recorded once, through the op, and a locked topic cannot be marked studied',
+        !empty($sd['ok']) && mlb_comp_view(['memberId' => 'NGG-ML-1', 'comp' => 'MC-011'])['studied'] === true
+        && (backend_dispatch('mathslab.studied', ['memberId' => 'NGG-ML-1', 'comp' => 'MC-049'])['error'] ?? '') === 'locked'
+        && (backend_dispatch('mathslab.studied', ['memberId' => 'SUM-ML-2', 'comp' => 'MC-011'])['error'] ?? '') === 'members_only');
+    chk('maths lab · …and the mastery check is refused until practice shows the learner is ready (not_ready)',
+        (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'check', 'comp' => 'MC-011'])['error'] ?? '') === 'not_ready');
     // Practice: instant feedback and a probability that rises; then the mastery check.
     $pr = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'practice', 'comp' => 'MC-011']);
     $x = json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$pr['sessionId']])['items'], true)[0];
@@ -37722,6 +37735,29 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $ck = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'check', 'comp' => 'MC-011']); $rc = $answerAll($ck, true, 20000);
     chk('maths lab · passing a mastery check (85%) lights the star as mastered with a review in about 10 days, and +100 XP',
         $rc['pct'] === 100 && mlb_states('NGG-ML-1')['MC-011']['state'] === 'mastered' && $rc['xp'] === 100 && count($rc['review']) === MLB_CHECK_ITEMS);
+    /* No failing and failing until it gives way: a failed check owes MLB_RETAKE_OWED unaided right
+       practice answers before it may be taken again — readiness alone does not reopen it, and a
+       hinted answer does not pay it down. */
+    backend_dispatch('mathslab.studied', ['memberId' => 'NGG-ML-1', 'comp' => 'MC-012']);
+    mlb_set_state('NGG-ML-1', 'MC-012', ['state' => 'ready', 'p' => 0.9, 'attempts' => 8, 'correct' => 8]);   // portable: no SQLite-only upsert in a suite MySQL also runs
+    $cf = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'check', 'comp' => 'MC-012']); $rf = $answerAll($cf, false);
+    $s12 = mlb_states('NGG-ML-1')['MC-012'];
+    db_exec("UPDATE mlab_state SET state = 'ready', p = 0.95 WHERE memberId = 'NGG-ML-1' AND comp = 'MC-012'");
+    $retake = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'check', 'comp' => 'MC-012']);
+    chk('maths lab · a failed mastery check cannot be retaken at once — not even marked ready — it is owed ' . MLB_RETAKE_OWED . ' right practice answers (practice_owed)',
+        $rf['pct'] < MLB_CHECK_PASS && $s12['state'] === 'practising' && (int)$s12['owed'] === MLB_RETAKE_OWED
+        && ($retake['error'] ?? '') === 'practice_owed' && (int)($retake['owed'] ?? 0) === MLB_RETAKE_OWED && mlb_comp_view(['memberId' => 'NGG-ML-1', 'comp' => 'MC-012'])['owed'] === MLB_RETAKE_OWED);
+    $pp = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'practice', 'comp' => 'MC-012']);
+    $pitems = json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$pp['sessionId']])['items'], true);
+    $owedAfter = [];
+    foreach ($pitems as $i => $x) {
+        $it = mlb_item($x['c'], $x['f'], $x['s']);
+        mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pp['sessionId'], 'index' => $i, 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'], 'ms' => 3000, 'hints' => $i === 0 ? 1 : 0]);
+        $owedAfter[] = (int)mlb_states('NGG-ML-1')['MC-012']['owed'];
+    }
+    chk('maths lab · …each unaided right practice answer pays one down (a hinted one does not), and the check reopens only at nought',
+        $owedAfter[0] === MLB_RETAKE_OWED && $owedAfter[1] === MLB_RETAKE_OWED - 1 && end($owedAfter) === 0
+        && mlb_states('NGG-ML-1')['MC-012']['state'] === 'ready' && !empty(mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'check', 'comp' => 'MC-012'])['ok']));
     // Review: a due topic that holds becomes secure; one that slips needs a refresh.
     db_exec("UPDATE mlab_state SET nextReview = ? WHERE memberId = 'NGG-ML-1' AND comp IN ('MC-011', 'MC-001')", [gmdate('Y-m-d', time() - 86400)]);
     $rv = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'review']); $rr = $answerAll($rv, true);
@@ -37742,6 +37778,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $ok = mlb_lite_check(['token' => $li['token'], 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key']]);
     $tam = mlb_lite_check(['token' => b64url(json_encode(['c' => 'MC-045', 'f' => 0, 's' => 1, 'e' => time() + 99])) . '.' . explode('.', $li['token'])[1], 'answer' => '1']);
     chk('maths lab · Lite marks with the worked solution and no record; a forged token is refused', !empty($ok['correct']) && !empty($ok['steps']) && !isset($li['item']['key']) && ($tam['error'] ?? '') === 'bad_token');
+    /* A lost boss is not retried until it gives way either: every topic it caught the learner on
+       goes back to practice owing right answers, and the boss stays locked until they are mastered. */
+    db_exec("UPDATE mlab_state SET state = 'known' WHERE memberId = 'NGG-ML-1' AND comp IN ('MC-001','MC-002','MC-003','MC-004','MC-005','MC-006','MC-007','MC-008','MC-009','MC-010')");
+    $bs = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'boss', 'stage' => 1]); $rb = $answerAll($bs, false);
+    $after = mlb_states('NGG-ML-1'); $caught = array_unique(array_column(array_filter($rb['review'], fn($q) => !$q['correct']), 'comp'));
+    chk('maths lab · a lost boss sends every topic it caught you on back to practice, owing right answers, and the boss locks until they are mastered again',
+        !empty($bs['ok']) && $rb['pct'] < MLB_BOSS_PASS && $caught !== [] && !array_filter($caught, fn($c) => $after[$c]['state'] !== 'practising' || (int)$after[$c]['owed'] !== MLB_RETAKE_OWED)
+        && (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'boss', 'stage' => 1])['error'] ?? '') === 'boss_locked');
     foreach (['mlab_state', 'mlab_profile', 'mlab_sessions', 'mlab_enrol'] as $t) db_exec("DELETE FROM $t WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
 })();

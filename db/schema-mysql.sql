@@ -5195,3 +5195,8 @@ INSERT INTO schema_version (version) VALUES (225) ON DUPLICATE KEY UPDATE versio
 -- 226: a lesson's questions answered from memory on a later day (the opening review).
 ALTER TABLE curriculum_progress ADD COLUMN reviewedAt VARCHAR(32) NOT NULL DEFAULT '';
 INSERT INTO schema_version (version) VALUES (226) ON DUPLICATE KEY UPDATE version = version;
+
+-- 227: Maths Lab — a topic's lesson must be studied before practice, and a failed check or boss is owed practice before a retake.
+ALTER TABLE mlab_state ADD COLUMN studiedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE mlab_state ADD COLUMN owed INT NOT NULL DEFAULT 0;
+INSERT INTO schema_version (version) VALUES (227) ON DUPLICATE KEY UPDATE version = version;

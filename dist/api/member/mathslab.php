@@ -13,7 +13,7 @@ if ($method === 'GET') {
     else $res = gs_call('mathslab.home', ['memberId' => $mid]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
-    $map = ['start' => 'mathslab.start', 'answer' => 'mathslab.answer', 'finish' => 'mathslab.finish', 'enrol' => 'mathslab.enrol'];
+    $map = ['start' => 'mathslab.start', 'answer' => 'mathslab.answer', 'finish' => 'mathslab.finish', 'enrol' => 'mathslab.enrol', 'studied' => 'mathslab.studied'];
     $a = (string)($b['action'] ?? '');
     if (!isset($map[$a])) json_error('bad_action', 400);
     rate_limit_check('mathslab.' . $a);

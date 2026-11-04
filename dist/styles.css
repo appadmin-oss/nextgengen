@@ -9085,10 +9085,10 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-stepbar li.is-on button, .mlb-stepbar li.is-done button { color: var(--cr-ink); }
 .mlb-stepbar-n { display: none; }
 .mlb-stepbar li.is-on .mlb-stepbar-l { font-weight: 600; }
+.mlb-stepbar li.is-ahead button { cursor: not-allowed; color: var(--cr-faint); }
 .mlb-lesson-body { display: flex; flex-direction: column; gap: 16px; min-height: 240px; }
 .mlb-lesson-foot { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-top: 1px solid var(--cr-line); background: var(--cr-bg); }
 .mlb-lesson-foot .mlb-go { min-width: 160px; }
-.mlb-skip { margin: -4px 0 0; text-align: center; font-size: 13.5px; }
 @container (max-width: 520px) { .mlb-stepbar-l { font-size: 12px; } .mlb-lesson-foot .mlb-meta { display: none; } .mlb-lesson-foot .mlb-go { min-width: 0; flex: 1 1 auto; } }
 .mlb-status .mlb-go { min-height: 44px; }
 .mlb-status .mlb-chip { align-self: flex-start; }

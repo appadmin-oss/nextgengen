@@ -1187,6 +1187,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'mathslab.enrol'          => 'mlb_enrol',
             'mathslab.certificate'    => 'mlb_certificate',
             'mathslab.progress'       => 'mlb_progress',
+            'mathslab.studied'        => 'mlb_mark_studied',
             'public.mathslab.item'    => 'mlb_lite_item',
             'public.mathslab.check'   => 'mlb_lite_check',
             // Two-player, turn-based. No free-text op exists by design.
