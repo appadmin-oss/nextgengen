@@ -146,21 +146,42 @@ function wifi_cac_people(): array {
     foreach ($parts as $s) {
         $id = (string)$s['studentId']; $ed = $eds[(string)$s['cohortId']] ?? null;
         $d = wifi_access_for_participant($s, $ed, ['settings' => wifi_settings((string)$s['centre']), 'account' => $acc['summer|' . $id] ?? null, 'today' => $today, 'usage' => null]);
-        $out[] = ['id' => 'summer-' . $id, 'kind' => 'participant', 'name' => trim((string)$s['fullName']), 'email' => '',
+        $out[] = wifi_cac_trim(['id' => 'summer-' . $id, 'kind' => 'participant', 'name' => trim((string)$s['fullName']), 'email' => '',
             'printedId' => wifi_username_for('summer', $s), 'homeSite' => $codes[(string)$s['centre']] ?? '',
-            'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => (string)($ed['endDate'] ?? '')];
+            'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => (string)($ed['endDate'] ?? '')]);
     }
     return $out;
 }
 
 /** One member's roster row: the same row the push sends, built for one person. */
+/**
+ * Drop the fields that are empty anyway.
+ *
+ * CACENTRE reads every optional field as `$r['x'] ?? ''`, so an absent one
+ * and an empty one mean exactly the same thing there — but the empty one
+ * still costs its name and quotes in every row, and what the roster is paged
+ * against is counted in BYTES. `"why":"","validUntil":""` alone is 24 bytes
+ * a person; on a roster of 1,200 that is a page of its own.
+ *
+ * `id`, `kind` and `verdict` always travel, and that is not tidiness:
+ * CACENTRE refuses a row without the first two, and an ABSENT verdict reads
+ * there as `on` (`$r['verdict'] ?? 'on'`) — so dropping an empty one would
+ * quietly put somebody on the internet.
+ */
+function wifi_cac_trim(array $row): array {
+    foreach ($row as $k => $v) {
+        if ($v === '' && !in_array($k, ['id', 'kind', 'verdict'], true)) unset($row[$k]);
+    }
+    return $row;
+}
+
 function wifi_cac_member_row(array $m, array $codes, array $policy, array $owing, array $acc): array {
     $id = (string)$m['memberId']; $staff = wifi_is_staff($m);
     $d = wifi_access_for($m, ['settings' => wifi_settings((string)$m['centre']), 'policy' => $policy[$id] ?? null, 'feesOwing' => !empty($owing[$id]),
         'account' => $acc['member|' . $id] ?? null, 'usage' => null]);
-    return ['id' => $id, 'kind' => $staff ? 'staff' : 'member', 'name' => trim((string)$m['fullName']), 'email' => strtolower(trim((string)$m['email'])),
+    return wifi_cac_trim(['id' => $id, 'kind' => $staff ? 'staff' : 'member', 'name' => trim((string)$m['fullName']), 'email' => strtolower(trim((string)$m['email'])),
         'printedId' => wifi_username_for('member', $m), 'homeSite' => $staff ? '' : ($codes[(string)$m['centre']] ?? ''),
-        'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => ''];
+        'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => '']);
 }
 
 /** The row for one member, read fresh, for CACENTRE to add them at once if it has not been sent them yet. */

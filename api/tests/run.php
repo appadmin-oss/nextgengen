@@ -36090,6 +36090,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('money · the family\'s breakdown reads payments as the account does (oldest first): January ₦1,000 left of ₦2,000, the fine ₦1,000 — not "January ₦2,000" and no fine',
         ($by['dues']['amount'] ?? 0) === 1000 && ($by['dues']['of'] ?? 0) === 2000 && ($by['fine']['amount'] ?? 0) === 1000 && ($by['fine']['of'] ?? -1) === 0);
     chk('money · …and its lines add up to what it asks for', array_sum(array_column($v['lines'], 'amount')) === $v['payable'] && $v['payable'] === 2000);
+    chk('statement · the family statement carries the balance after each entry: the newest is what is owed (₦2,000), the training place moves nothing',
+        ($v['entries'][0]['balance'] ?? null) === 2000 && count(array_unique(array_map(fn($e) => $e['balance'], array_filter($v['entries'], fn($e) => $e['kind'] === 'training')))) === 1
+        && min(array_map(fn($e) => $e['balance'], $v['entries'])) >= 0);
     /* The member's money screen printed "MOU done" for every member. It reads
        the record now: a member serving has not completed it, one with mouAt has. */
     $tr = member_statement(['memberId' => 'NGG-MR-1'])['training'] ?? [];

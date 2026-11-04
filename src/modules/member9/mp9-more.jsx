@@ -1480,12 +1480,15 @@ function Mp9Notifications({ items, loading, error, retry, isRead, unreadOnly, se
    ledger ("Monthly dues 2026-07", "Policy fine — Missed 2026-07-03 — ₦1,000
    absence fine."): ISO months and days read as dates, and an amount the row
    already prints in its own column is not said twice. */
-const MP9_KIND_L = { membership: "Membership fee", dues: "Monthly dues", fine: "Fine", payment: "Payment", waiver: "Waived", adjustment: "Adjustment", training: "Training place", writeoff: "Training earned off", refund: "Refund" };
+const MP9_KIND_L = { membership: "Membership fee", dues: "Commitment fee", fine: "Fine", payment: "Payment", waiver: "Waived", adjustment: "Adjustment", training: "Training place", writeoff: "Training earned off", refund: "Refund" };
 function mp9Plain(t) {
-  return String(t || "")
+  /* "Commitment fee" is the name families, notices and receipts use; the
+     ledger's own "Monthly dues" stays in the ledger. */
+  return String(t || "").replace(/^Monthly dues\b/, "Commitment fee").replace(/^Policy fine — /, "Fine — ")
     .replace(/\s*—\s*₦[\d,]+\s+([^—]+?)\.?$/, " — $1")
     .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (m, y, mo, d) => mp9Date(m) || m)
     .replace(/\b(\d{4})-(\d{2})\b/g, (m, y, mo) => { const n = Number(mo); return n >= 1 && n <= 12 ? new Date(Date.UTC(Number(y), n - 1, 1)).toLocaleString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }) : m; })
+    .replace(/^Commitment fee (?=[A-Z])/, "Commitment fee · ")
     .trim();
 }
 function mp9LedgerWhat(l) {

@@ -85,6 +85,16 @@ function family_fees_view(array $m): ?array {
             'kind' => (string)$e['kind'], 'note' => (string)$e['note'], 'amount' => (int)$e['amount'], 'period' => (string)($e['period'] ?? ''),
             'dir' => (string)$e['direction'] === 'credit' ? 'credit' : 'charge', 'void' => !empty($e['void']), 'place' => $place((string)$e['kind'])];
     }, (array)$a['entries']);
+    /* The balance after each entry, real money only (the training place and a
+       cancelled line move nothing), so a month on the statement can close on a
+       figure instead of leaving a parent to add twelve rows. Entries arrive
+       newest first; the running sum is taken oldest first. */
+    $run = 0;
+    for ($i = count($entries) - 1; $i >= 0; $i--) {
+        $e = $entries[$i];
+        if (!$e['void'] && !$e['place']) $run += $e['dir'] === 'charge' ? $e['amount'] : -$e['amount'];
+        $entries[$i]['balance'] = $run;
+    }
     /* What the payable is made of: each charge with something left on it, read
        the way the account is (fees_charges_left — payments to the oldest
        first), newest first on screen. A part-paid charge says what it was

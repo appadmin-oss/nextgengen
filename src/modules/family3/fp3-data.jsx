@@ -152,7 +152,7 @@ function fp3Ward(link, d, today) {
     strip.push(seen[iso] ? (lateOn[iso] ? "l" : "p") : a.rateKnown ? "a" : "x");
   }
   const fees3 = d.fees3 || null;
-  const fines = ((d.conduct || {}).fines || []).filter(f => f.status !== "paid" && f.status !== "void").map((f, i) => ({ id: "fine-" + i + "-" + (f.issuedAt || ""), amount: f.amount, when: fp3Date(f.issuedAt), reason: f.reason }));
+  const fines = ((d.conduct || {}).fines || []).filter(f => f.status !== "paid" && f.status !== "void").map((f, i) => ({ id: "fine-" + i + "-" + (f.issuedAt || ""), amount: f.amount, when: fp3Date(f.issuedAt), reason: fp3Note(f.reason) }));
   const rq = (d.requests || []).map(r => ({ id: r.requestId, kind: r.kind, kindLabel: r.kindLabel, status: r.status, at: fp3Date(r.createdAt), subject: r.subject,
     from: r.fromDate ? fp3Date(r.fromDate) : "", to: r.toDate ? fp3Date(r.toDate) : "", reply: [].concat((r.comments || []).map(m => m.byName + " · " + fp3Date(String(m.at).slice(0, 10)) + ": " + m.text), r.decision ? [r.decision] : []).join("\n\n") }));
   const results = (d.results || []).map(r => ({ id: r.id, name: r.name, school: r.school, baseline: !!r.baseline, status: r.status, due: fp3Date(r.due),
@@ -178,7 +178,7 @@ function fp3Ward(link, d, today) {
       enabled: true, payable: fees3.payable, outstanding: fees3.outstanding, payOnline: fees3.payOnline, payFee: fees3.payFee || 0, offlinePending: fees3.offlinePending,
       lines: fp3Lines(fees3.lines), next: fees3.next.map(x => ({ label: x.label, when: fp3Date(x.date), amount: x.amount })),
       joining: fees3.joining ? { invoiceId: fees3.joining.invoiceId, start: fp3Date(fees3.joining.start), items: fees3.joining.items, total: fees3.joining.total || 0 } : null,
-      entries: fees3.entries.map((e, i) => ({ id: e.id || "E" + i, when: fp3Date(e.date), month: e.month, kind: e.kind, note: fp3Note(e.note), amount: e.amount, dir: e.dir, void: e.void })),
+      entries: fees3.entries.map((e, i) => ({ id: e.id || "E" + i, when: fp3Date(e.date), month: e.month, kind: e.kind, note: fp3Note(e.note), amount: e.amount, dir: e.dir, void: e.void, balance: e.balance })),
       programme: Object.assign({}, fees3.programme, { serviceStarts: fp3Long(fees3.programme.serviceStarts), completes: fp3Long(fees3.programme.completes) }),
       terms: fees3.terms, bank: fees3.bank,
       ahead: fees3.ahead ? Object.assign({}, fees3.ahead, { paidThroughL: fees3.ahead.paidThrough ? fp3Month(fees3.ahead.paidThrough) : "" }) : null,
