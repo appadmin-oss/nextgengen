@@ -514,7 +514,8 @@ function member_statement(array $p): array
        off. It is not a ledger row (it moves as nothing — it is the rest of a
        charge already on the account), so it closes the statement as a line of
        its own, and the payable total agrees with every other screen. */
-    $owed = (int)(fees_balance($m, $cfg)['trainingOwed'] ?? 0);
+    $bal  = fees_balance($m, $cfg);
+    $owed = (int)($bal['trainingOwed'] ?? 0);
     if ($owed > 0) {
         $payable += $owed;
         $lines[] = ['date' => gmdate('Y-m-d'), 'kind' => 'training', 'note' => 'Training fee not earned off — left before the MOU was complete',
@@ -527,7 +528,18 @@ function member_statement(array $p): array
             'member' => ['fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
                          'centre' => (string)($m['centre'] ?? ''), 'level' => (string)($m['level'] ?? '')],
             'lines' => $lines,
-            'closingPayable' => $payable, 'closingTotal' => $total];
+            'closingPayable' => $payable, 'closingTotal' => $total,
+            /* The training place, in the words a member is owed about it. The
+               money screen used to print "MOU done" for every member, including
+               one a month into the programme — so it reads the record now. */
+            'training' => [
+                'cost'     => (int)($bal['trainingCharged'] ?? 0),
+                'covered'  => (int)($bal['programmeCovered'] ?? 0),
+                'owed'     => $owed,
+                'mouDone'  => trim((string)($m['mouAt'] ?? '')) !== '' || !empty($bal['tenure']['graduated']),
+                'mouAt'    => (string)($m['mouAt'] ?? ''),
+                'left'     => !empty($bal['tenure']['left']),
+            ]];
 }
 
 // ── The record ───────────────────────────────────────────────────────────────

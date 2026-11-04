@@ -207,13 +207,15 @@ Object.assign(Mp9Portal.prototype, {
   moneyVals(go) {
     const s = this.state, st = this.dd("stmt") || {}, cp = this.dd("comp9") || {}, t = this.dd("today") || {}, a = t.account || {};
     const lines = (st.lines || []).filter(l => !l.void);
-    const rows = lines.map(l => ({ d: mp9Date(l.date), w: (l.note || l.kind) + (l.real === false ? " · programme cost" : ""), c: l.charge ? mp9Naira(l.charge) : "", p: l.credit ? mp9Naira(l.credit) : "", bal: mp9Naira(l.runningPayable), isPay: !!l.credit }));
+    const rows = lines.map(l => { const x = mp9LedgerWhat(l); return { d: mp9Date(l.date), w: x.w, sub: x.sub, c: l.charge ? mp9Naira(l.charge) : "", p: l.credit ? mp9Naira(l.credit) : "", bal: mp9Naira(l.runningPayable), isPay: !!l.credit }; });
     const fines = (cp.fines || []);
     return {
-      ledger: rows.length ? (s.ledgerAll ? rows : rows.slice(-8)) : [{ d: "–", w: st.enabled === false ? "Nothing is being charged on this account" : "Nothing charged yet", c: "", p: "", bal: mp9Naira(0), isPay: false }],
+      /* Only the last eight show at first, so the balance they start from is
+         stated rather than left to look like an error in the first row. */
+      ledger: rows.length ? (s.ledgerAll || rows.length <= 8 ? rows : [{ d: "", w: "Brought forward", sub: (rows.length - 8) + " earlier entries", c: "", p: "", bal: mp9Naira(lines[lines.length - 9].runningPayable), isPay: false }].concat(rows.slice(-8))) : [{ d: "–", w: st.enabled === false ? "Nothing is being charged on this account" : "Nothing charged yet", c: "", p: "", bal: mp9Naira(0), isPay: false }],
       ledgerMore: rows.length > 8 && !s.ledgerAll, ledgerN: rows.length, showLedger: () => this.setState({ ledgerAll: true }),
-      mou: { done: true, cost: a.trainingFee ? mp9Naira(a.trainingFee) : "Covered", note: "Covered by NGG while you serve. It is only yours to pay if you leave before your MOU is complete.", status: "Active" },
-      finesList: fines.length ? fines.map(f => ({ d: mp9Date(f.issuedAt), t: f.reason, a: mp9Naira(f.amount), st: f.status === "pending" ? "Being reviewed" : "Owed", fg: "#b0361c", strike: "none" }))
+      mou: mp9MouCard(st.training, a),
+      finesList: fines.length ? fines.map(f => ({ d: mp9Date(f.issuedAt), t: mp9Plain(f.reason), a: mp9Naira(f.amount), st: "Owed", fg: "#b0361c", strike: "none" }))
         : [{ d: "", t: "No fines. Keep it that way.", a: "", st: "", fg: "#1d6b30", strike: "none" }],
       /* A member does not record payments: their parent does, from the family
          account. "Ask my parent" opens the panel below the money screen. */
@@ -1472,4 +1474,35 @@ function Mp9Notifications({ items, loading, error, retry, isRead, unreadOnly, se
       {typeof NggPushCard === "function" ? <div className="m9n-push"><NggPushCard surface="member" compact title="Get these on your phone"/></div> : null}
     </div>
   </>;
+}
+
+/* A statement line in a member's words. The stored note is written for the
+   ledger ("Monthly dues 2026-07", "Policy fine — Missed 2026-07-03 — ₦1,000
+   absence fine."): ISO months and days read as dates, and an amount the row
+   already prints in its own column is not said twice. */
+const MP9_KIND_L = { membership: "Membership fee", dues: "Monthly dues", fine: "Fine", payment: "Payment", waiver: "Waived", adjustment: "Adjustment", training: "Training place", writeoff: "Training earned off", refund: "Refund" };
+function mp9Plain(t) {
+  return String(t || "")
+    .replace(/\s*—\s*₦[\d,]+\s+([^—]+?)\.?$/, " — $1")
+    .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (m, y, mo, d) => mp9Date(m) || m)
+    .replace(/\b(\d{4})-(\d{2})\b/g, (m, y, mo) => { const n = Number(mo); return n >= 1 && n <= 12 ? new Date(Date.UTC(Number(y), n - 1, 1)).toLocaleString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }) : m; })
+    .trim();
+}
+function mp9LedgerWhat(l) {
+  const raw = mp9Plain(l.note) || MP9_KIND_L[l.kind] || l.kind || "";
+  /* The first clause leads; what follows a dash or a bracket is detail. */
+  const cut = raw.search(/\s+—\s+|\s+\(/);
+  let w = cut > 0 ? raw.slice(0, cut) : raw, sub = cut > 0 ? raw.slice(cut).replace(/^\s+—\s+/, "").replace(/^\s+\((.*)\)$/, "$1") : "";
+  if (l.real === false) sub = sub ? sub + " · covered by NGG, not a bill" : "Covered by NGG, not a bill";
+  return { w, sub };
+}
+/* The training place card: what it costs, how much service has earned off,
+   and the one state that turns it into money (left before the MOU). */
+function mp9MouCard(t, a) {
+  t = t || {};
+  const cost = t.cost || (a && a.trainingFee) || 0;
+  if (t.owed > 0) return { cost: mp9Naira(t.owed), note: "You left before your MOU was complete, so the part of the training place your service had not earned off is now owed.", status: "Owed", bg: "#fbeae6", fg: "#9b2c14" };
+  if (t.mouDone) return { cost: cost ? mp9Naira(cost) : "Covered", note: "Your MOU is complete. The training place is yours, and nothing about it is owed.", status: t.mouAt ? "MOU complete · " + mp9Date(t.mouAt) : "MOU complete", bg: "#e9f6ec", fg: "#1d6b30" };
+  const pct = cost > 0 ? Math.min(100, Math.floor((t.covered || 0) * 100 / cost)) : 0;
+  return { cost: cost ? mp9Naira(cost) : "Covered", note: "Covered by NGG while you serve" + (cost ? " — " + mp9Naira(t.covered || 0) + " earned off so far" : "") + ". It is only yours to pay if you leave before your MOU is complete.", status: cost ? "Earning off · " + pct + "%" : "In training", bg: "#eef2f8", fg: "#1f4a7a" };
 }

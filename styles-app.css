@@ -10552,6 +10552,30 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
    <main>, which already carries the screen's padding. ──────────────────── */
 .m9x-slot { margin: 0 0 16px; }
 .m9x-slot:empty { display: none; }
+/* The member's account statement. Five columns on a wide panel; on a narrow
+   one the description takes its own line and the three figures sit labelled
+   beneath it — squeezing five columns into a phone wrapped "Monthly dues"
+   into the amounts. Sized by the panel, not the window. */
+.m9x-led { container-type: inline-size; }
+.m9x-led-h, .m9x-led-r { display: grid; grid-template-columns: 64px minmax(0,1fr) 84px 84px 92px; gap: 8px; padding: 10px 16px; align-items: baseline; font-variant-numeric: tabular-nums; }
+.m9x-led-h { padding: 8px 16px; font-size: 12px; color: #6b6b72; background: #fafaf8; }
+.m9x-led-r { border-top: 1px solid #f0efea; font-size: 13.5px; }
+.m9x-led-n { text-align: right; }
+.m9x-led-d { color: #6b6b72; font-size: 12.5px; }
+.m9x-led-w { min-width: 0; }
+.m9x-led-sub { display: block; font-size: 12.5px; color: #6b6b72; }
+.m9x-led-sub:empty { display: none; }
+.m9x-led-p { color: #1d6b30; }
+.m9x-led-b { font-weight: 600; }
+@container (max-width: 520px) {
+  .m9x-led-h { display: none; }
+  .m9x-led-r { grid-template-columns: minmax(0,1fr) auto; row-gap: 4px; }
+  .m9x-led-d { grid-column: 2; grid-row: 1; text-align: right; }
+  .m9x-led-w { grid-column: 1; grid-row: 1; font-weight: 600; }
+  .m9x-led-n { grid-column: 1 / -1; display: flex; justify-content: space-between; text-align: left; font-size: 13px; }
+  .m9x-led-n::before { content: attr(data-l); color: #6b6b72; font-weight: 400; }
+  .m9x-led-n:empty { display: none; }
+}
 .m9x-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .m9x-load { height: 3px; border-radius: 3px; background: #e8e5dd; overflow: hidden; position: relative; }
 .m9x-bar { position: absolute; inset: 0 auto 0 0; width: 34%; background: #0b0b0c; border-radius: 3px; animation: m15x-slide 1.1s ease-in-out infinite; }
@@ -11590,15 +11614,9 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-2d85344{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
 .m9-7eec61e{height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;align-self:flex-start;margin-top:6px}
 .m9-c2569fc{font-size:24px;font-weight:700}
-.m9-a764bcf{align-self:flex-start;height:24px;padding:0 9px;border-radius:999px;background:#e9f6ec;color:#1d6b30;font-size:12px;font-weight:600;display:inline-flex;align-items:center;margin-top:4px}
+.m9-a4aa779{align-self:flex-start;height:24px;padding:0 9px;border-radius:999px;background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:12px;font-weight:600;display:inline-flex;align-items:center;margin-top:4px}
 .m9-1affe63{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #f0efea}
 .m9-02d17af{height:44px;padding:0 10px;border:0;background:none;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px}
-.m9-6148ea4{display:grid;grid-template-columns:64px minmax(0,1fr) 72px 72px 72px;gap:8px;padding:8px 16px;font-size:12px;color:#6b6b72;background:#fafaf8}
-.m9-54c2afb{text-align:right}
-.m9-b6d4047{display:grid;grid-template-columns:64px minmax(0,1fr) 72px 72px 72px;gap:8px;padding:10px 16px;border-top:1px solid #f0efea;font-size:13.5px;align-items:baseline;font-variant-numeric:tabular-nums}
-.m9-8b08dfb{color:#6b6b72;font-size:12.5px}
-.m9-cd84ae0{text-align:right;color:#1d6b30}
-.m9-f3535dc{text-align:right;font-weight:600}
 .m9-a1d3658{width:100%;height:44px;border:0;border-top:1px solid #f0efea;background:#fafaf8;font-size:13.5px;font-weight:600;cursor:pointer}
 .m9-73af34e{font-size:12.5px;color:#6b6b72;width:56px}
 .m9-e00e1be{flex:1;font-size:14.5px}
@@ -11659,6 +11677,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-71052c7{margin:0 16px 10px;padding:8px 12px;border-radius:10px;background:#f4f4f2;font-size:13px;display:flex;align-items:center;gap:8px}
 .m9-24b099d{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .m9-cdb5630{display:grid;grid-template-columns:minmax(0,1fr) 84px 72px 64px 40px;gap:8px;padding:8px 16px;font-size:12px;color:#6b6b72;background:#fafaf8;border-top:1px solid #f0efea}
+.m9-54c2afb{text-align:right}
 .m9-a7f41c0{display:grid;grid-template-columns:minmax(0,1fr) 84px 72px 64px 40px;gap:8px;align-items:center;padding:6px 16px;border-top:1px solid #f0efea}
 .m9-8530640{height:40px;padding:0 10px;border:1px solid #d6d4cc;border-radius:10px;font-size:15px;min-width:0;background:#fcfcfb}
 .m9-46ab352{height:40px;padding:0 10px;border:var(--dc-border, unset);border-radius:10px;font-size:15px;width:100%;font-variant-numeric:tabular-nums;background:#fcfcfb}

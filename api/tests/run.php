@@ -36080,6 +36080,15 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('money · the family\'s breakdown reads payments as the account does (oldest first): January ₦1,000 left of ₦2,000, the fine ₦1,000 — not "January ₦2,000" and no fine',
         ($by['dues']['amount'] ?? 0) === 1000 && ($by['dues']['of'] ?? 0) === 2000 && ($by['fine']['amount'] ?? 0) === 1000 && ($by['fine']['of'] ?? -1) === 0);
     chk('money · …and its lines add up to what it asks for', array_sum(array_column($v['lines'], 'amount')) === $v['payable'] && $v['payable'] === 2000);
+    /* The member's money screen printed "MOU done" for every member. It reads
+       the record now: a member serving has not completed it, one with mouAt has. */
+    $tr = member_statement(['memberId' => 'NGG-MR-1'])['training'] ?? [];
+    chk('statement · the training place is the record\'s: ₦60,000, nothing owed, MOU not yet complete for a member still serving',
+        ($tr['cost'] ?? 0) === 60000 && ($tr['owed'] ?? -1) === 0 && ($tr['mouDone'] ?? null) === false && ($tr['left'] ?? null) === false);
+    db_exec("UPDATE members SET mouAt = ? WHERE memberId = 'NGG-MR-1'", [$now]);
+    $tr = member_statement(['memberId' => 'NGG-MR-1'])['training'] ?? [];
+    chk('statement · …and complete, with its date, once the MOU is signed off', ($tr['mouDone'] ?? null) === true && ($tr['mouAt'] ?? '') === $now && ($tr['covered'] ?? 0) === 60000);
+    db_exec("UPDATE members SET mouAt = '' WHERE memberId = 'NGG-MR-1'");
     $b1 = fees_balance($m1);
     chk('money · the account\'s real figures add up: charged − received = payable, the training place apart',
         $b1['realCharged'] - $b1['realCredited'] === $b1['payable'] && $b1['realCharged'] === 3000 && $b1['charged'] === 63000);
