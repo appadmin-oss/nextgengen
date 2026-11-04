@@ -28,16 +28,20 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
   const manifest=JSON.parse(fs.readFileSync(path.join(ROOT,'dist','build-manifest.json'),'utf8'));
   /* The map, straight out of the domain code that serves it. */
   const SRC=JSON.parse(execFileSync('php',['-r',
-    'require "api/_lib/domain/mathslab-map.php";require "api/_lib/domain/mathslab-gen.php";require "api/_lib/domain/mathslab.php";'
+    'function db_row(){return null;} require "api/_lib/domain/mathslab-map.php";require "api/_lib/domain/mathslab-gen.php";require "api/_lib/domain/mathslab-gen-upper.php";require "api/_lib/domain/mathslab-why.php";require "api/_lib/domain/mathslab.php";'
     +'$st=[];foreach(mlb_stages() as $n=>$s){$st[]=["n"=>$n,"title"=>$s["title"],"strand"=>$s["strand"],"available"=>mlb_stage_available($n),'
     +'"comps"=>array_map(fn($id)=>["id"=>$id,"title"=>mlb_comp($id)["title"],"available"=>mlb_available($id)],$s["comps"])];}'
-    +'echo json_encode(["stages"=>$st,"total"=>count(mlb_competencies())],JSON_UNESCAPED_UNICODE);'
+    +'$cv=[];foreach(["MC-002","MC-074","MC-077","MC-103","MC-145","MC-152"] as $id){$v=mlb_comp_view(["comp"=>$id]);unset($v["ok"]);$cv[$id]=$v;}'
+    +'$n=count(mlb_forms()["MC-002"]);$ord=mlb_public(mlb_item("MC-002",$n-1,11));'
+    +'$fig=mlb_public(mlb_item("MC-074",0,5));'
+    +'echo json_encode(["stages"=>$st,"total"=>count(mlb_competencies()),"comps"=>$cv,"order"=>$ord,"fig"=>$fig,"bands"=>mlb_map([])["bands"]],JSON_UNESCAPED_UNICODE);'
   ],{cwd:ROOT,encoding:'utf8'}));
   const open=[];SRC.stages.forEach(s=>s.comps.forEach(c=>{if(c.available)open.push(c.id);}));
   const MASTERED=open.slice(0,12),LEARNING=open.slice(12,15);
   const stateOf=c=>!c.available?'soon':MASTERED.indexOf(c.id)>=0?'mastered':LEARNING.indexOf(c.id)>=0?'practising':'open';
-  const MAP={ok:true,member:true,stages:SRC.stages.map(s=>{const comps=s.comps.map(c=>({id:c.id,title:c.title,state:stateOf(c)}));
-    return {n:s.n,title:s.title,strand:s.strand,available:s.available,comps:comps,boss:false,
+  const MAP={ok:true,member:true,bands:SRC.bands,stages:SRC.stages.map(s=>{const comps=s.comps.map(c=>({id:c.id,title:c.title,state:stateOf(c)}));
+    const band=SRC.bands.find(b=>{const m=b.stages.match(/(\d+)(?:–(\d+))?/);return s.n>=+m[1]&&s.n<=+(m[2]||m[1]);});
+    return {n:s.n,title:s.title,strand:s.strand,level:band&&band.level,available:s.available,comps:comps,boss:false,
       bossReady:s.available&&comps.every(c=>c.state==='mastered')};})};
   const firstLearning=SRC.stages.reduce((a,s)=>a.concat(s.comps),[]).find(c=>c.id===LEARNING[0]);
   // 640 XP sits in the Analyst band (500–1500); the climb is done, so next is the topic in progress.
@@ -52,7 +56,10 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
   /* Progress, from the same learner: the first stage is fully mastered (its
      ten topics are the first ten open) and has its certificate; the mistakes
      are on the topics in progress, which is where mistakes would be. */
-  const PROGRESS={ok:true,xp:HOME.xp,level:HOME.level,streak:HOME.streak,due:0,badges:HOME.badges,
+  // The foundation underneath the topics in progress (as mlb_root_gaps would name it).
+  const ROOTS=[{comp:open[10],title:SRC.stages[1].comps[0].title,stage:2,behind:LEARNING.map(id=>SRC.stages.reduce((a,s)=>a.concat(s.comps),[]).find(c=>c.id===id).title)}];
+  HOME.roots=ROOTS;
+  const PROGRESS={ok:true,roots:ROOTS,bands:SRC.bands.map(b=>({name:b.name,level:b.level,total:b.topics,mastered:b.id==='foundations'?MASTERED.length:0})),xp:HOME.xp,level:HOME.level,streak:HOME.streak,due:0,badges:HOME.badges,
     recent:{answered:64,right:51,sureWrong:3},
     stages:MAP.stages.filter(s=>s.available).map(s=>({n:s.n,title:s.title,strand:s.strand,total:s.comps.length,
       mastered:s.comps.filter(c=>c.state==='mastered').length,started:s.comps.some(c=>c.state!=='open'),boss:s.n===1,
@@ -73,18 +80,26 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
 <script src="/dist/${manifest.bundle.file}"></script>
 <script>
  var Q=new URLSearchParams(location.search);
- var HOME=${JSON.stringify(HOME)}, MAP=${JSON.stringify(MAP)}, PROGRESS=${JSON.stringify(PROGRESS)};
+ var HOME=${JSON.stringify(HOME)}, MAP=${JSON.stringify(MAP)}, PROGRESS=${JSON.stringify(PROGRESS)}, COMPS=${JSON.stringify(SRC.comps)}, ORDER=${JSON.stringify(SRC.order)}, FIG=${JSON.stringify(SRC.fig)};
  window.NGGApi=window.NGGApi||{}; window.NGGApi.member=window.NGGApi.member||{};
- window.NGGApi.member.mathslab={ home:function(){return Promise.resolve(HOME);}, map:function(){return Promise.resolve(MAP);}, progress:function(){return Promise.resolve(PROGRESS);} };
+ window.NGGApi.member.mathslab={ home:function(){return Promise.resolve(HOME);}, map:function(){return Promise.resolve(MAP);}, progress:function(){return Promise.resolve(PROGRESS);},
+   comp:function(id){return Promise.resolve(Object.assign({ok:true},COMPS[id]));} };
+ window.NGGApi.public=window.NGGApi.public||{};
+ window.NGGApi.public.mathslabComp=function(id){return Promise.resolve(Object.assign({ok:true},COMPS[id]));};
+ window.NGGApi.public.mathslabMap=function(){return Promise.resolve(MAP);};
+ window.NGGApi.public.mathslabItem=function(){return Promise.resolve({token:'t',item:Q.get('q')==='fig'?FIG:ORDER});};
+ window.LAST_CHECK=null;
+ window.NGGApi.public.mathslabCheck=function(t,a){window.LAST_CHECK=a;return Promise.resolve({correct:true,answer:'ok',steps:['ok']});};
  window.NGGApi.member.arcade={ home:function(){return Promise.resolve({
      games:[{key:'maths',name:'Number Rush',icon:'\\u26a1',blurb:'Twenty sums against the clock.',skill:'Mental arithmetic',kind:'type',questions:20,seconds:90,best:140,plays:3,tier:2,isDaily:true}],
      daily:'maths',dailyDone:false,streak:6,stars:9,programme:'ngg',totalPlays:14});},
    board:function(){return Promise.resolve({scope:'week',game:'maths',programme:'ngg',board:[],me:null});},
    start:function(){return Promise.resolve({});}, submit:function(){return Promise.resolve({});} };
  var view=Q.get('view')||'home';
- var C = view==='arcade' ? React.createElement(CmArcade,{auth:{member:{fullName:'Temiloluwa Adeyemi',centre:'Egbeda'}}})
+ var C = view==='learn' ? React.createElement('div',{className:'mlb'},React.createElement(MlbLearn,{comp:Q.get('comp'),go:function(){},startPlay:function(){},lite:Q.get('lite')==='1'}))
+       : view==='arcade' ? React.createElement(CmArcade,{auth:{member:{fullName:'Temiloluwa Adeyemi',centre:'Egbeda'}}})
        :                   React.createElement(MathsLab,{me:{phase:'ok',member:{fullName:'Temiloluwa Adeyemi'}}});
- ReactDOM.createRoot(document.getElementById('root')).render(C);
+ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement('div',{className:'stt-app'},C));
 </script></body></html>`);
   const srv=spawn('php',['-S','127.0.0.1:'+PORT,'-t',ROOT],{cwd:ROOT,stdio:'ignore'});
   const browser=await chromium.launch({executablePath:exe});
@@ -113,6 +128,32 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
     await shoot('home-phone','',{width:390,height:844},'.mlb-hero',null);
     await shoot('progress-phone','',{width:390,height:844},'.mlb-miss','.mlb-navb:nth-child(4)');
     await shoot('map-phone','',{width:390,height:844},'.mlb-stars','.mlb-navb:nth-child(2)');
+    await shoot('learn-pythagoras','view=learn&comp=MC-077',{width:1080,height:1000},'.mlb-why',null);
+    await shoot('learn-quadratic-phone','view=learn&comp=MC-103',{width:390,height:844},'.mlb-explore',null);
+    await shoot('learn-unit-circle','view=learn&comp=MC-145',{width:1080,height:1000},'.mlb-explore',null);
+    await shoot('learn-derivative','view=learn&comp=MC-152',{width:1080,height:1000},'.mlb-explore',null);
+    await shoot('lite-order','view=learn&comp=MC-002&lite=1',{width:1080,height:1000},'.mlb-order-list',null);
+    await shoot('lite-figure','view=learn&comp=MC-074&lite=1&q=fig',{width:1080,height:1000},'.mlb-q svg.mlb-dia',null);
+    /* Behaviour, not only pixels: an explorer's readout follows its slider; "Why it works" walks
+       one line at a time; the order exercise sends the order the learner made. */
+    { const page=await browser.newPage({viewport:{width:1080,height:1000}}); const errs=[]; page.on('pageerror',e=>errs.push(String(e&&e.message)));
+      await page.goto(BASE+'/tests/_ml_fixture.html?view=learn&comp=MC-077',{waitUntil:'networkidle'});
+      await page.waitForSelector('.mlb-ex-out',{timeout:8000});
+      const before=await page.textContent('.mlb-ex-out'); const sl=page.locator('.mlb-sl-in').first(); await sl.focus(); await page.keyboard.press('ArrowRight');
+      const after=await page.textContent('.mlb-ex-out');
+      if(before===after||!/16|5\^2|25/.test(before)) problems.push('pythagoras explorer: readout did not follow the slider ('+before.slice(0,60)+')');
+      const n0=await page.locator('.mlb-why-steps li').count(); await page.click('.mlb-why .stt-btn'); const n1=await page.locator('.mlb-why-steps li').count();
+      if(!(n0===1&&n1===2)) problems.push('why it works: did not reveal one line at a time ('+n0+'→'+n1+')');
+      if(errs.length) problems.push('learn interaction: '+errs[0]);
+      await page.goto(BASE+'/tests/_ml_fixture.html?view=learn&comp=MC-002&lite=1',{waitUntil:'networkidle'});
+      await page.waitForSelector('.mlb-order-list',{timeout:8000});
+      await page.click('.mlb-order-row:nth-child(2) [aria-label^="Move line 2 up"]');
+      const first=await page.textContent('.mlb-order-row:first-child .mlb-order-t');
+      await page.click('.mlb-q .mlb-go');
+      const sent=await page.evaluate(()=>window.LAST_CHECK);
+      if(!Array.isArray(sent)||sent.length!==4||sent[0]!==1||sent[1]!==0) problems.push('order exercise: sent '+JSON.stringify(sent)+' (first line now: '+first+')');
+      if(!/1 \+ 1|set|Join|Counting|So/.test(first)) problems.push('order exercise: unexpected first line '+first);
+      await page.close(); console.log('  ✓ explorer readout, proof walk-through and argument ordering behave'); }
   } finally { await browser.close(); srv.kill(); try{fs.unlinkSync(FIX);}catch(_){} }
   if(problems.length){problems.forEach(p=>console.log('  ✗ '+p));console.log('\n❌ MATHS LAB SHOTS: '+problems.length+' problem(s)');process.exit(1);}
   console.log('\n✅ MATHS LAB SHOTS: '+shots+' screens rendered clean into tests/screens/');

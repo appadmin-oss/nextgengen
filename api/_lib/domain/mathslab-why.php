@@ -36,9 +36,9 @@ function mlb_why_of(string $id): ?array {
 function mlb_why_1_4(): array {
     return [
     /* Stage 1 · Number Consciousness */
-    'MC-001' => ['A number is the answer to “how many?”, and counting is pairing.', 'Counting a set gives the same number whatever order you count in.', [
-        ['Each object is given exactly one counting word: one, two, three, …', 'That is what counting is: a one-to-one pairing of objects with number words.'],
-        ['No object is skipped and none is counted twice.', 'Otherwise the pairing is not one-to-one and the count is wrong.'],
+    'MC-001' => ['A number answers “how many?”. Counting means giving each thing one number word.', 'Counting a set gives the same number whatever order you count in.', [
+        ['Each object is given exactly one counting word: one, two, three, …', 'That is what counting is: one number word for each object.'],
+        ['No object is skipped and none is counted twice.', 'If you skip one, or count one twice, the count is wrong.'],
         ['The last word said is the size of the set.', 'The words were used in order, so the last one tells how many were used.'],
         ['Counting in a different order pairs the same objects with the same words.', 'Only which object gets which word changes, not how many words are used.'],
     ]],
@@ -58,7 +58,7 @@ function mlb_why_1_4(): array {
         ['“five” is the counting word reached after four objects and one more.', 'It names a quantity.'],
         ['“5” is the symbol agreed for that same counting word.', 'Numerals are written names for counting words.'],
         ['||||| has a mark for each object, five marks.', 'Tally marks pair one mark with one object.'],
-        ['All three name the same size of set.', 'Each pairs one-to-one with the same set of objects.'],
+        ['All three name the same size of set.', 'Each one matches the same five objects.'],
     ]],
     'MC-005' => ['Each counting word is one more than the word before it.', 'Counting back by 1 undoes counting on by 1.', [
         ['The word after $n$ is $n + 1$.', 'Counting on adds one object.'],
@@ -67,7 +67,7 @@ function mlb_why_1_4(): array {
         ['So $(n + 1) - 1 = n$.', 'We return to the word we started from.'],
     ]],
     'MC-006' => ['Compare by pairing: whatever is left over decides it.', 'If $a$ objects pair with part of $b$ objects and some of $b$ are left, then $a < b$.', [
-        ['Pair the objects of the two sets one-to-one.', 'Pairing compares sizes without counting.'],
+        ['Pair the objects of the two sets one-to-one.', 'You can compare two groups just by matching them up, without counting.'],
         ['Every object of the first set gets a partner.', 'The first set is used up completely.'],
         ['Some objects of the second set have no partner.', 'The second set still has objects waiting.'],
         ['So the second set has more: $a < b$.', 'It has all the partners plus extras.'],
@@ -98,7 +98,7 @@ function mlb_why_1_4(): array {
     ]],
 
     /* Stage 2 · Arithmetic Foundations */
-    'MC-011' => ['Order and grouping do not change a total.', '$a + b = b + a$ (addition is commutative).', [
+    'MC-011' => ['Order and grouping do not change a total.', '$a + b = b + a$: you can add in any order.', [
         ['Take a set of $a$ red counters and a set of $b$ blue counters.', 'Model the numbers as sets.'],
         ['$a + b$ is the count of all counters, reds first.', 'Meaning of addition.'],
         ['$b + a$ is the count of the same counters, blues first.', 'Meaning of addition, starting from the other set.'],
@@ -124,7 +124,7 @@ function mlb_why_1_4(): array {
     ]],
     'MC-015' => ['You never need to memorise a fact you can build from one you know.', '$7 \\times 8 = 56$ from $7 \\times 4$.', [
         ['$8 = 4 + 4$.', 'Split the harder factor.'],
-        ['$7 \\times 8 = 7 \\times 4 + 7 \\times 4$.', 'Multiplication distributes over addition: 8 groups of 7 is two lots of 4 groups.'],
+        ['$7 \\times 8 = 7 \\times 4 + 7 \\times 4$.', '8 groups of 7 is the same as 4 groups of 7, and then 4 more groups of 7.'],
         ['$7 \\times 4 = 28$.', 'Double 7 is 14, double again is 28.'],
         ['$7 \\times 8 = 28 + 28 = 56$.', 'Add the two parts.'],
     ]],
@@ -173,14 +173,14 @@ function mlb_why_1_4(): array {
         ['From $0$ to $5$ is $5$ more steps right.', 'Counting on from zero.'],
         ['So the missing addend is $3 + 5 = 8$.', 'The steps add.'],
     ]],
-    'MC-023' => ['The rules for signs are FORCED by the distributive law — not made up.', '$(-1) \\times (-1) = 1$.', [
+    'MC-023' => ['Minus times minus is plus — not because someone said so, but because any other answer would break rules we already trust.', '$(-1) \\times (-1) = 1$.', [
         ['$(-1) \\times 0 = 0$.', 'Anything times zero is zero.'],
         ['$(-1) \\times (1 + (-1)) = 0$.', '$1 + (-1) = 0$.'],
         ['$(-1) \\times 1 + (-1) \\times (-1) = 0$.', 'Multiplication distributes over addition.'],
         ['$-1 + (-1) \\times (-1) = 0$.', '$(-1) \\times 1 = -1$.'],
         ['$(-1) \\times (-1) = 1$.', 'It is the number that added to $-1$ gives $0$.'],
     ]],
-    'MC-024' => ['Order of operations is a convention so one expression has one meaning.', '$2 + 3 \\times 4 = 14$, not $20$.', [
+    'MC-024' => ['Order of operations is a rule everyone agrees on, so a sum has only one answer.', '$2 + 3 \\times 4 = 14$, not $20$.', [
         ['$3 \\times 4$ means $4 + 4 + 4$.', 'Multiplication is repeated addition.'],
         ['So $2 + 3 \\times 4 = 2 + 4 + 4 + 4$.', 'Substitute its meaning.'],
         ['$2 + 4 + 4 + 4 = 14$.', 'Add.'],

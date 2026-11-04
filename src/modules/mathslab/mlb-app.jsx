@@ -95,7 +95,332 @@ function MlbDiagram({ d }) {
       {[-R + 1, R - 1].map(v => <text key={v} x={X(v)} y={Y(0) + 14} textAnchor="middle" className="mlb-dia-t">{v}</text>)}
     </svg>;
   }
+  if (d.type === "figure") {
+    const P = d.pts || {}, names = Object.keys(P); if (!names.length) return null;
+    const xs = names.map(k => P[k][0]), ys = names.map(k => P[k][1]);
+    (d.circles || []).forEach(c => { xs.push(c[0] - c[2], c[0] + c[2]); ys.push(c[1] - c[2], c[1] + c[2]); });
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const W2 = 320, H2 = 240, pad = 34, sc = Math.min((W2 - 2 * pad) / Math.max(maxX - minX, 1e-6), (H2 - 2 * pad) / Math.max(maxY - minY, 1e-6));
+    const X = x => pad + (x - minX) * sc + ((W2 - 2 * pad) - (maxX - minX) * sc) / 2, Y = y => H2 - pad - (y - minY) * sc - ((H2 - 2 * pad) - (maxY - minY) * sc) / 2;
+    const cx = xs.reduce((a, b) => a + b, 0) / xs.length, cy = ys.reduce((a, b) => a + b, 0) / ys.length;
+    const unit = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l]; };
+    return <svg className="mlb-dia" viewBox={"0 0 " + W2 + " " + H2} role="img" aria-label={"A figure with points " + names.join(", ")}>
+      {(d.circles || []).map((c, i) => <circle key={"c" + i} cx={X(c[0])} cy={Y(c[1])} r={c[2] * sc} className="mlb-dia-shape"/>)}
+      {(d.segs || []).map((s, i) => { const a = P[s[0]], b = P[s[1]]; if (!a || !b) return null; const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, u = unit([cx, cy], [mx, my]);
+        return <g key={"s" + i}><line x1={X(a[0])} y1={Y(a[1])} x2={X(b[0])} y2={Y(b[1])} className="mlb-dia-edge"/>
+          {s[2] ? <text x={X(mx) + u[0] * 16} y={Y(my) - u[1] * 16 + 4} textAnchor="middle" className="mlb-dia-t">{s[2]}</text> : null}</g>; })}
+      {(d.angles || []).map((g, i) => { const p = P[g[0]], v = P[g[1]], q = P[g[2]]; if (!p || !v || !q) return null; const u1 = unit(v, p), u2 = unit(v, q), r = 22;
+        const bis = unit([0, 0], [u1[0] + u2[0], u1[1] + u2[1]]);
+        return <g key={"a" + i}><path d={"M" + (X(v[0]) + u1[0] * r) + " " + (Y(v[1]) - u1[1] * r) + " A" + r + " " + r + " 0 0 " + ((u1[0] * u2[1] - u1[1] * u2[0]) > 0 ? 0 : 1) + " " + (X(v[0]) + u2[0] * r) + " " + (Y(v[1]) - u2[1] * r)} className="mlb-dia-ang"/>
+          <text x={X(v[0]) + bis[0] * 40} y={Y(v[1]) - bis[1] * 40 + 4} textAnchor="middle" className="mlb-dia-t is-ang">{g[3]}</text></g>; })}
+      {(d.right || []).map((g, i) => { const p = P[g[0]], v = P[g[1]], q = P[g[2]]; if (!p || !v || !q) return null; const u1 = unit(v, p), u2 = unit(v, q), r = 12;
+        const a = [X(v[0]) + u1[0] * r, Y(v[1]) - u1[1] * r], b = [a[0] + u2[0] * r, a[1] - u2[1] * r], c = [X(v[0]) + u2[0] * r, Y(v[1]) - u2[1] * r];
+        return <path key={"r" + i} d={"M" + a.join(" ") + " L" + b.join(" ") + " L" + c.join(" ")} className="mlb-dia-ang"/>; })}
+      {names.map(k => { const u = unit([cx, cy], P[k]); return <g key={k}><circle cx={X(P[k][0])} cy={Y(P[k][1])} r="3.5" className="mlb-dia-dot"/>
+        <text x={X(P[k][0]) + u[0] * 14} y={Y(P[k][1]) - u[1] * 14 + 5} textAnchor="middle" className="mlb-dia-t is-pt">{k}</text></g>; })}
+    </svg>;
+  }
+  if (d.type === "plot") {
+    const R = d.range || 6;
+    return <MlbPlot R={R} label="A graph on a grid">
+      {(X, Y) => <React.Fragment>
+        {(d.curves || []).map((c, i) => <path key={i} d={mlbCurve(c[0] === "line" ? x => c[1] * x + c[2] : x => c[1] * x * x + c[2] * x + c[3], R, X, Y)} className={"mlb-dia-line" + (i ? " is-b" : "")}/>)}
+        {(d.pts || []).map((p, i) => <g key={"p" + i}><circle cx={X(p[0])} cy={Y(p[1])} r="5" className="mlb-dia-arrow"/>{p[2] ? <text x={X(p[0]) + 8} y={Y(p[1]) - 8} className="mlb-dia-t">{p[2]}</text> : null}</g>)}
+      </React.Fragment>}
+    </MlbPlot>;
+  }
   return null;
+}
+
+/* ── Plotting helpers shared by question diagrams and the explorers ── */
+function mlbCurve(f, R, X, Y) {
+  let d = "", pen = false;
+  for (let i = 0; i <= 240; i++) {
+    const x = -R + (2 * R) * i / 240, y = f(x);
+    if (!isFinite(y) || Math.abs(y) > R * 3) { pen = false; continue; }
+    d += (pen ? " L" : " M") + X(x).toFixed(1) + " " + Y(y).toFixed(1); pen = true;
+  }
+  return d;
+}
+function MlbPlot({ R, children, label, S }) {
+  const size = S || 300, sc = size / (2 * R), X = v => size / 2 + v * sc, Y = v => size / 2 - v * sc, cid = "mlbp" + React.useId().replace(/[^a-zA-Z0-9]/g, "");
+  const tick = R <= 6 ? 1 : R <= 12 ? 2 : 5;
+  return (
+    <svg className="mlb-dia mlb-dia-sq" viewBox={"0 0 " + size + " " + size} role="img" aria-label={label}>
+      <defs><clipPath id={cid}><rect width={size} height={size}/></clipPath></defs>
+      {Array.from({ length: 2 * R + 1 }, (_, i) => <g key={i}><line x1={X(i - R)} y1="0" x2={X(i - R)} y2={size} className="mlb-dia-grid"/><line x1="0" y1={Y(i - R)} x2={size} y2={Y(i - R)} className="mlb-dia-grid"/></g>)}
+      <line x1="0" y1={Y(0)} x2={size} y2={Y(0)} className="mlb-dia-axis"/><line x1={X(0)} y1="0" x2={X(0)} y2={size} className="mlb-dia-axis"/>
+      {Array.from({ length: Math.floor(R / tick) * 2 + 1 }, (_, i) => (i - Math.floor(R / tick)) * tick).filter(v => v && Math.abs(v) < R).map(v =>
+        <g key={"t" + v}><text x={X(v)} y={Y(0) + 13} textAnchor="middle" className="mlb-dia-tick">{v}</text><text x={X(0) - 5} y={Y(v) + 4} textAnchor="end" className="mlb-dia-tick">{v}</text></g>)}
+      <g clipPath={"url(#" + cid + ")"}>{children(X, Y, sc)}</g>
+    </svg>
+  );
+}
+/* A labelled range control: keyboard (arrows, Page Up/Down, Home/End) and touch, never a drag on the figure. */
+function MlbSlider({ label, value, min, max, step, onChange, fmt }) {
+  const id = React.useId();
+  return (
+    <div className="mlb-sl"><label htmlFor={id} className="mlb-sl-l"><MlbMath text={label}/></label>
+      <input id={id} type="range" className="mlb-sl-in" min={min} max={max} step={step || 1} value={value} onChange={e => onChange(Number(e.target.value))}/>
+      <output htmlFor={id} className="mlb-sl-v">{fmt ? fmt(value) : value}</output></div>
+  );
+}
+const mlbR = (v, k) => { const p = Math.pow(10, k == null ? 2 : k); return String(Math.round(v * p) / p); };
+const mlbComma = v => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");   // fixed, not the device locale
+const mlbSign = (v, k) => (v < 0 ? "- " + mlbR(-v, k) : "+ " + mlbR(v, k));
+
+/* ── Explore it: one small interactive per big idea. Registry, then the explorers. ── */
+const MLB_EXPLORE = {
+  numline: ["MC-008", "MC-011", "MC-012", "MC-021", "MC-022"],
+  array: ["MC-014", "MC-015", "MC-016", "MC-017"],
+  area: ["MC-045", "MC-056", "MC-058"],
+  fraction: ["MC-025", "MC-026", "MC-027", "MC-030"],
+  triangle: ["MC-072", "MC-073", "MC-074", "MC-075"],
+  pythag: ["MC-077", "MC-096", "MC-111"],
+  sector: ["MC-078", "MC-083", "MC-141"],
+  line: ["MC-055", "MC-091", "MC-093", "MC-094", "MC-095", "MC-099"],
+  quad: ["MC-098", "MC-101", "MC-102", "MC-103", "MC-104", "MC-106", "MC-157"],
+  unit: ["MC-112", "MC-142", "MC-143", "MC-145", "MC-146"],
+  chord: ["MC-151", "MC-152", "MC-153"],
+  riemann: ["MC-158", "MC-159", "MC-160"],
+  chance: ["MC-120", "MC-166"],
+  series: ["MC-070", "MC-129"],
+  growth: ["MC-038", "MC-063", "MC-068", "MC-169"],
+};
+/* One small challenge per explorer, in words an eleven-year-old can follow: a thing to DO and a
+   thing to notice. The owner's rule: easy to understand, never dumbed down. */
+const MLB_TRY = {
+  numline: "Start at 3 and add −5. Which way did you jump? Now try adding a positive number.",
+  array: "Make 3 rows of 7. Press “Turn it on its side”. Did the number of dots change?",
+  area: "Make the two pieces the same width. Then make one piece really thin. Do the two parts still add up to the whole?",
+  fraction: "Shade 1 part out of 2. Now cut each part into 3. Is the shaded length still the same?",
+  triangle: "Make angle A as big as you can. What happens to the other angles? What do all three add up to?",
+  pythag: "Find sides that make the long side a whole number. Hint: try 3 and 4, then 6 and 8.",
+  sector: "Set the angle to 360°. That is the whole circle. Now try 180°: what fraction is that?",
+  line: "Make the gradient 0. What does the line look like? Now make it negative.",
+  quad: "Move c up until the curve stops touching the x-axis. Watch the discriminant: what sign is it now?",
+  unit: "Move the angle into each quarter of the circle. Which of sin and cos turn negative?",
+  chord: "Make the gap h smaller and smaller. Watch the orange line and the number.",
+  riemann: "Start with 1 strip, then use more and more. How close can you get to the exact area?",
+  chance: "Roll 10 times, then 1000 times. When do the bars look most even?",
+  series: "Set r to 0.5 and add more terms. Does the total keep growing for ever?",
+  growth: "Set the rate to 10% and the years to 30. Which line pulls ahead, and why?",
+};
+function mlbExplorerFor(comp) { for (const k in MLB_EXPLORE) if (MLB_EXPLORE[k].indexOf(comp) >= 0) return k; return null; }
+function MlbExplore({ comp }) {
+  const k = mlbExplorerFor(comp); if (!k) return null;
+  const E = { numline: MlbExNumline, array: MlbExArray, area: MlbExArea, fraction: MlbExFraction, triangle: MlbExTriangle, pythag: MlbExPythag, sector: MlbExSector,
+    line: MlbExLine, quad: MlbExQuad, unit: MlbExUnit, chord: MlbExChord, riemann: MlbExRiemann, chance: MlbExChance, series: MlbExSeries, growth: MlbExGrowth }[k];
+  return (
+    <section className="mlb-card mlb-explore" aria-labelledby="mlb-ex-h">
+      <h3 id="mlb-ex-h" className="mlb-h3"><i className="ph ph-sliders-horizontal" aria-hidden="true"/> Explore it</h3>
+      <p className="mlb-ex-try"><b>Try this:</b> {MLB_TRY[k]}</p>
+      <E/>
+    </section>
+  );
+}
+function MlbExOut({ children }) { return <div className="mlb-ex-out" role="status" aria-live="polite">{children}</div>; }
+
+function MlbExNumline() {
+  const [a, setA] = React.useState(3), [b, setB] = React.useState(-5);
+  const x0 = 20, W = 300, X = v => x0 + (v + 10) * (W - 2 * x0 + 20) / 20 - 10, s = a + b, y = 44;
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox="0 0 320 90" role="img" aria-label={"A jump from " + a + " by " + b + " landing on " + s}>
+      <line x1="10" y1={y} x2="310" y2={y} className="mlb-dia-axis"/>
+      {Array.from({ length: 21 }, (_, i) => i - 10).map(v => <g key={v}><line x1={X(v)} y1={y - (v % 5 ? 4 : 8)} x2={X(v)} y2={y + (v % 5 ? 4 : 8)} className="mlb-dia-axis"/>{v % 5 === 0 ? <text x={X(v)} y={y + 24} textAnchor="middle" className="mlb-dia-tick">{v}</text> : null}</g>)}
+      <path d={"M" + X(a) + " " + y + " Q" + (X(a) + X(s)) / 2 + " " + (y - 40) + " " + X(s) + " " + y} className={"mlb-dia-jump" + (b < 0 ? " is-b" : "")}/>
+      <circle cx={X(a)} cy={y} r="6" className="mlb-dia-dot"/><circle cx={X(s)} cy={y} r="6" className="mlb-dia-arrow"/>
+    </svg>
+    <MlbSlider label="Start at $a$" value={a} min={-10} max={10} onChange={setA}/>
+    <MlbSlider label="Add $b$" value={b} min={-10} max={10} onChange={setB}/>
+    <MlbExOut><MlbMath text={"$" + a + " + (" + b + ") = " + s + "$" + (Math.abs(s) > 10 ? " (off the line)" : "") + ". " + (b < 0 ? "Adding a negative number moves you LEFT. It is the same as taking away " + (-b) + "." : b === 0 ? "Adding zero does not move you at all." : "Adding a positive number moves you right.")}/></MlbExOut>
+  </div>;
+}
+function MlbExArray() {
+  const [r, setR] = React.useState(3), [c, setC] = React.useState(7), [t, setT] = React.useState(false);
+  const rows = t ? c : r, cols = t ? r : c, g = Math.min(28, 280 / Math.max(cols, rows));
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox={"0 0 320 " + (rows * g + 20)} role="img" aria-label={rows + " rows of " + cols}>
+      {Array.from({ length: rows * cols }, (_, i) => <circle key={i} cx={20 + (i % cols) * g} cy={14 + Math.floor(i / cols) * g} r={g / 3} className="mlb-dia-dot"/>)}</svg>
+    <MlbSlider label="Rows" value={r} min={1} max={10} onChange={setR}/><MlbSlider label="Columns" value={c} min={1} max={10} onChange={setC}/>
+    <button type="button" className="stt-btn" aria-pressed={t} onClick={() => setT(!t)}>Turn it on its side</button>
+    <MlbExOut><MlbMath text={"$" + rows + " \\times " + cols + " = " + (r * c) + "$. Turning it on its side swaps the rows and columns, but the dots stay the same, so $" + r + " \\times " + c + " = " + c + " \\times " + r + "$. And $" + (r * c) + " \\div " + r + " = " + c + "$: division is reading the array back."}/></MlbExOut>
+  </div>;
+}
+function MlbExArea() {
+  const [a, setA] = React.useState(4), [b, setB] = React.useState(5), [c, setC] = React.useState(3);
+  const u = Math.min(260 / (b + c), 150 / a);
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox={"0 0 320 " + (a * u + 40)} role="img" aria-label={"A rectangle " + a + " by " + (b + c) + " split into " + a * b + " and " + a * c}>
+      <rect x="30" y="10" width={b * u} height={a * u} className="mlb-dia-fill"/><rect x={30 + b * u} y="10" width={c * u} height={a * u} className="mlb-dia-fill2"/>
+      <text x={30 + b * u / 2} y={14 + a * u / 2} textAnchor="middle" className="mlb-dia-t">{a * b}</text><text x={30 + b * u + c * u / 2} y={14 + a * u / 2} textAnchor="middle" className="mlb-dia-t">{a * c}</text>
+      <text x="18" y={14 + a * u / 2} textAnchor="middle" className="mlb-dia-t">{a}</text>
+      <text x={30 + b * u / 2} y={a * u + 30} textAnchor="middle" className="mlb-dia-t">{b}</text><text x={30 + b * u + c * u / 2} y={a * u + 30} textAnchor="middle" className="mlb-dia-t">{c}</text>
+    </svg>
+    <MlbSlider label="$a$ (height)" value={a} min={1} max={9} onChange={setA}/><MlbSlider label="$b$" value={b} min={1} max={9} onChange={setB}/><MlbSlider label="$c$" value={c} min={1} max={9} onChange={setC}/>
+    <MlbExOut><MlbMath text={"$" + a + "(" + b + " + " + c + ") = " + a + " \\times " + b + " + " + a + " \\times " + c + " = " + (a * b) + " + " + (a * c) + " = " + (a * (b + c)) + "$. It is one rectangle, counted all at once or in two pieces. That is why you can open up brackets."}/></MlbExOut>
+  </div>;
+}
+function MlbExFraction() {
+  const [n, setN] = React.useState(4), [k, setK] = React.useState(3), [m, setM] = React.useState(2);
+  const kk = Math.min(k, n), bar = (parts, shade, y) => Array.from({ length: parts }, (_, i) => <rect key={i} x={20 + i * 280 / parts} y={y} width={280 / parts} height="34" className={i < shade ? "mlb-dia-fill" : "mlb-dia-box"}/>);
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox="0 0 320 100" role="img" aria-label={kk + " out of " + n + " and " + kk * m + " out of " + n * m}>{bar(n, kk, 8)}{bar(n * m, kk * m, 56)}</svg>
+    <MlbSlider label="Parts in the whole" value={n} min={2} max={10} onChange={setN}/><MlbSlider label="Parts shaded" value={kk} min={0} max={n} onChange={setK}/><MlbSlider label="Cut each part into" value={m} min={1} max={5} onChange={setM}/>
+    <MlbExOut><MlbMath text={"$\\frac{" + kk + "}{" + n + "} = \\frac{" + (kk * m) + "}{" + (n * m) + "}$. Same shaded length, just cut into smaller pieces. $= " + mlbR(kk / n, 3) + " = " + mlbR(kk / n * 100, 1) + "\\%$."}/></MlbExOut>
+  </div>;
+}
+function MlbExTriangle() {
+  const [A, setA] = React.useState(50), [B, setB] = React.useState(70);
+  const Bc = Math.min(B, 175 - A), C = 180 - A - Bc, rad = Math.PI / 180, base = 6, h = base * Math.sin(A * rad) * Math.sin(Bc * rad) / Math.sin((A + Bc) * rad), cx = h / Math.tan(A * rad);
+  const P = { A: [0, 0], B: [base, 0], C: [cx, h] };
+  return <div className="mlb-ex">
+    <MlbDiagram d={{ type: "figure", pts: P, segs: [["A", "B"], ["B", "C"], ["C", "A"]], angles: [["B", "A", "C", A + "°"], ["C", "B", "A", Bc + "°"], ["A", "C", "B", C + "°"]] }}/>
+    <MlbSlider label="Angle at A" value={A} min={10} max={160} onChange={setA} fmt={v => v + "°"}/><MlbSlider label="Angle at B" value={Bc} min={5} max={170 - A} onChange={setB} fmt={v => v + "°"}/>
+    <MlbExOut><MlbMath text={"$" + A + "^\\circ + " + Bc + "^\\circ + " + C + "^\\circ = 180^\\circ$. Whatever triangle you make, the three angles always add up to 180° — a straight line."}/></MlbExOut>
+  </div>;
+}
+function MlbExPythag() {
+  const [a, setA] = React.useState(3), [b, setB] = React.useState(4), c = Math.hypot(a, b);
+  /* Units, y down. Right angle at A; B along the base (side b), C straight up (side a). Each square
+     is built on the OUTER side of its edge: sq(p, q) turns p→q a quarter-turn to find the far side. */
+  const A = [0, 0], B = [b, 0], C = [0, -a];
+  const sq = (p, q) => { const dx = q[0] - p[0], dy = q[1] - p[1]; return [p, q, [q[0] - dy, q[1] + dx], [p[0] - dy, p[1] + dx]]; };
+  const S = [[sq(A, B), "mlb-dia-fill", b * b], [sq(C, A), "mlb-dia-fill2", a * a], [sq(B, C), "mlb-dia-box", c * c]];
+  const all = S.reduce((z, x) => z.concat(x[0]), []), xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), u = Math.min(300 / (Math.max(...xs) - x0), 280 / (Math.max(...ys) - y0));
+  const T = p => [10 + (p[0] - x0) * u, 10 + (p[1] - y0) * u], pts = q => q.map(p => T(p).join(",")).join(" ");
+  const mid = q => T([(q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2]);
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox="0 0 320 300" role="img" aria-label={"Squares on the sides: " + a * a + ", " + b * b + " and " + mlbR(c * c, 1)}>
+      {S.map(([q, cls, area], i) => <g key={i}><polygon points={pts(q)} className={cls}/><text x={mid(q)[0]} y={mid(q)[1] + 5} textAnchor="middle" className="mlb-dia-t is-pt">{mlbR(area, 1)}</text></g>)}
+      <polygon points={pts([A, B, C])} className="mlb-dia-shape"/>
+    </svg>
+    <MlbSlider label="Side $a$" value={a} min={1} max={8} onChange={setA}/><MlbSlider label="Side $b$" value={b} min={1} max={8} onChange={setB}/>
+    <MlbExOut><MlbMath text={"$" + a + "^2 + " + b + "^2 = " + (a * a) + " + " + (b * b) + " = " + (a * a + b * b) + "$, so the hypotenuse is $\\sqrt{" + (a * a + b * b) + "} " + (Number.isInteger(c) ? "= " + c : "\\approx " + mlbR(c)) + "$. The two small squares always add up to exactly the big one." + (Number.isInteger(c) ? " A whole-number triple!" : "")}/></MlbExOut>
+  </div>;
+}
+function MlbExSector() {
+  const [r, setR] = React.useState(5), [t, setT] = React.useState(60), th = t * Math.PI / 180, R0 = 110, C = [160, 130];
+  const end = [C[0] + R0 * Math.cos(-th), C[1] + R0 * Math.sin(-th)];
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox="0 0 320 260" role="img" aria-label={"A sector of angle " + t + " degrees"}>
+      <circle cx={C[0]} cy={C[1]} r={R0} className="mlb-dia-box"/>
+      <path d={"M" + C.join(" ") + " L" + (C[0] + R0) + " " + C[1] + " A" + R0 + " " + R0 + " 0 " + (t > 180 ? 1 : 0) + " 0 " + end.join(" ") + " Z"} className="mlb-dia-fill"/>
+      <circle cx={C[0]} cy={C[1]} r="3" className="mlb-dia-dot"/></svg>
+    <MlbSlider label="Radius $r$" value={r} min={1} max={12} onChange={setR}/><MlbSlider label="Angle" value={t} min={1} max={360} onChange={setT} fmt={v => v + "°"}/>
+    <MlbExOut><MlbMath text={"$\\theta = " + t + "^\\circ = " + mlbR(th, 3) + "$ rad, $\\frac{" + t + "}{360}$ of a turn. Arc $= r\\theta = " + mlbR(r * th) + "$; area $= \\frac{1}{2}r^2\\theta = " + mlbR(r * r * th / 2) + "$. At $360^\\circ$: $2\\pi r = " + mlbR(2 * Math.PI * r) + "$ and $\\pi r^2 = " + mlbR(Math.PI * r * r) + "$."}/></MlbExOut>
+  </div>;
+}
+function MlbExLine() {
+  const [m, setM] = React.useState(2), [c, setC] = React.useState(-1), [p, setP] = React.useState(false), R = 6;
+  return <div className="mlb-ex">
+    <MlbPlot R={R} label={"The line y = " + m + "x + " + c}>{(X, Y) => <React.Fragment>
+      <path d={mlbCurve(x => m * x + c, R, X, Y)} className="mlb-dia-line"/>
+      {p && m !== 0 ? <path d={mlbCurve(x => -x / m + c, R, X, Y)} className="mlb-dia-line is-b"/> : null}
+      <path d={"M" + X(0) + " " + Y(c) + " L" + X(1) + " " + Y(c) + " L" + X(1) + " " + Y(m + c)} className="mlb-dia-ang"/>
+      <circle cx={X(0)} cy={Y(c)} r="5" className="mlb-dia-arrow"/>
+    </React.Fragment>}</MlbPlot>
+    <MlbSlider label="Gradient $m$" value={m} min={-4} max={4} step={0.5} onChange={setM}/><MlbSlider label="Intercept $c$" value={c} min={-5} max={5} onChange={setC}/>
+    <button type="button" className="stt-btn" aria-pressed={p} onClick={() => setP(!p)}>Show the perpendicular</button>
+    <MlbExOut><MlbMath text={"$y = " + mlbR(m) + "x " + mlbSign(c) + "$: one step right, " + (m >= 0 ? mlbR(m) + " up" : mlbR(-m) + " down") + "; crosses the $y$-axis at $" + c + "$" + (m !== 0 ? " and the $x$-axis at $" + mlbR(-c / m) + "$" : "") + "." + (p && m !== 0 ? " Perpendicular gradient: $-\\frac{1}{" + mlbR(m) + "} = " + mlbR(-1 / m) + "$, and the product is $-1$." : "")}/></MlbExOut>
+  </div>;
+}
+function MlbExQuad() {
+  const [a, setA] = React.useState(1), [b, setB] = React.useState(-2), [c, setC] = React.useState(-3), R = 8;
+  const D = b * b - 4 * a * c, h = a ? -b / (2 * a) : 0, k = a ? c - b * b / (4 * a) : c, roots = a && D >= 0 ? [(-b - Math.sqrt(D)) / (2 * a), (-b + Math.sqrt(D)) / (2 * a)] : [];
+  return <div className="mlb-ex">
+    <MlbPlot R={R} label={"The curve y = " + a + "x² + " + b + "x + " + c}>{(X, Y) => <React.Fragment>
+      <path d={mlbCurve(x => a * x * x + b * x + c, R, X, Y)} className="mlb-dia-line"/>
+      {a ? <line x1={X(h)} y1="0" x2={X(h)} y2="300" className="mlb-dia-sym"/> : null}
+      {a ? <circle cx={X(h)} cy={Y(k)} r="5" className="mlb-dia-arrow"/> : null}
+      {roots.map((x, i) => <circle key={i} cx={X(x)} cy={Y(0)} r="5" className="mlb-dia-dot"/>)}
+    </React.Fragment>}</MlbPlot>
+    <MlbSlider label="$a$" value={a} min={-3} max={3} step={0.5} onChange={setA}/><MlbSlider label="$b$" value={b} min={-6} max={6} onChange={setB}/><MlbSlider label="$c$" value={c} min={-6} max={6} onChange={setC}/>
+    <MlbExOut>{a === 0 ? <MlbMath text="With $a = 0$ it is a straight line, not a quadratic."/> : <MlbMath text={"Discriminant $b^2 - 4ac = " + mlbR(D) + "$: " + (D > 0 ? "positive, so two roots, $x = " + mlbR(roots[0]) + "$ and $" + mlbR(roots[1]) + "$" : D === 0 ? "zero, so one repeated root, $x = " + mlbR(h) + "$ — the vertex touches the axis" : "negative, so no real roots — the curve never meets the $x$-axis") + ". Vertex $(" + mlbR(h) + ", " + mlbR(k) + ")$, a " + (a > 0 ? "minimum" : "maximum") + "; axis of symmetry $x = " + mlbR(h) + "$." + (roots.length ? " Sum of roots $" + mlbR(roots[0] + roots[1]) + " = -\\frac{b}{a}$, product $" + mlbR(roots[0] * roots[1]) + " = \\frac{c}{a}$." : "")}/>}</MlbExOut>
+  </div>;
+}
+function MlbExUnit() {
+  const [t, setT] = React.useState(140), th = t * Math.PI / 180, R0 = 110, C = [150, 140], s = Math.sin(th), co = Math.cos(th);
+  const P = [C[0] + R0 * co, C[1] - R0 * s], q = t % 360 === 0 || t % 90 === 0 ? 0 : Math.floor((t % 360) / 90) + 1;
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox="0 0 300 280" role="img" aria-label={"The unit circle at " + t + " degrees"}>
+      <circle cx={C[0]} cy={C[1]} r={R0} className="mlb-dia-box"/>
+      <line x1="20" y1={C[1]} x2="280" y2={C[1]} className="mlb-dia-axis"/><line x1={C[0]} y1="15" x2={C[0]} y2="265" className="mlb-dia-axis"/>
+      {["S", "A", "T", "C"].map((l, i) => <text key={l} x={C[0] + (i === 0 || i === 2 ? -1 : 1) * 70} y={C[1] + (i < 2 ? -1 : 1) * 70 + 5} textAnchor="middle" className={"mlb-dia-quad" + (q === [2, 1, 3, 4][i] ? " is-on" : "")}>{l}</text>)}
+      <line x1={C[0]} y1={C[1]} x2={P[0]} y2={P[1]} className="mlb-dia-edge"/>
+      <line x1={P[0]} y1={P[1]} x2={P[0]} y2={C[1]} className="mlb-dia-line is-b"/><line x1={C[0]} y1={C[1]} x2={P[0]} y2={C[1]} className="mlb-dia-line"/>
+      <circle cx={P[0]} cy={P[1]} r="6" className="mlb-dia-arrow"/></svg>
+    <MlbSlider label={"Angle $\\theta$"} value={t} min={0} max={360} onChange={setT} fmt={v => v + "°"}/>
+    <MlbExOut><MlbMath text={"$\\cos " + t + "^\\circ = " + mlbR(co, 3) + "$ (blue, across), $\\sin " + t + "^\\circ = " + mlbR(s, 3) + "$ (orange, up)" + (Math.abs(co) > 1e-9 ? ", $\\tan = " + mlbR(s / co, 3) + "$" : ", $\\tan$ undefined") + ". " + (q ? "Quadrant " + q + ": " + ["", "all positive", "only sin positive", "only tan positive", "only cos positive"][q] + ". " : "On an axis. ") + "And always $\\sin^2 + \\cos^2 = " + mlbR(s * s + co * co, 3) + "$."}/></MlbExOut>
+  </div>;
+}
+function MlbExChord() {
+  const [x0, setX] = React.useState(1), [h, setH] = React.useState(2), R = 4, f = x => x * x, g = (f(x0 + h) - f(x0)) / h;
+  return <div className="mlb-ex">
+    <MlbPlot R={R} label={"A chord of y = x squared from " + x0 + " with h = " + h}>{(X, Y) => <React.Fragment>
+      <path d={mlbCurve(f, R, X, Y)} className="mlb-dia-line"/>
+      <path d={mlbCurve(x => 2 * x0 * (x - x0) + f(x0), R, X, Y)} className="mlb-dia-sym"/>
+      <path d={mlbCurve(x => g * (x - x0) + f(x0), R, X, Y)} className="mlb-dia-line is-b"/>
+      <circle cx={X(x0)} cy={Y(f(x0))} r="5" className="mlb-dia-dot"/><circle cx={X(x0 + h)} cy={Y(f(x0 + h))} r="5" className="mlb-dia-arrow"/>
+    </React.Fragment>}</MlbPlot>
+    <MlbSlider label="Point $x$" value={x0} min={-2} max={2} step={0.5} onChange={setX}/>
+    <MlbSlider label="Gap $h$" value={h} min={0.01} max={2} step={0.01} onChange={setH}/>
+    <MlbExOut><MlbMath text={"Chord gradient $= \\frac{(x + h)^2 - x^2}{h} = 2x + h = " + mlbR(g, 3) + "$. Make $h$ tiny: the orange line turns into the dashed line that just touches the curve, and its gradient gets closer and closer to $2x = " + mlbR(2 * x0) + "$. That limit IS the derivative."}/></MlbExOut>
+  </div>;
+}
+function MlbExRiemann() {
+  const [n, setN] = React.useState(4), [b, setB] = React.useState(3), f = x => x * x, w = b / n;
+  let sum = 0; for (let i = 0; i < n; i++) sum += f((i + 0.5) * w) * w;
+  const exact = b * b * b / 3, R = 10;
+  return <div className="mlb-ex">
+    <MlbPlot R={R} label={n + " strips under y = x squared from 0 to " + b}>{(X, Y) => <React.Fragment>
+      {Array.from({ length: n }, (_, i) => <rect key={i} x={X(i * w)} y={Y(f((i + 0.5) * w))} width={X((i + 1) * w) - X(i * w)} height={Y(0) - Y(f((i + 0.5) * w))} className="mlb-dia-strip"/>)}
+      <path d={mlbCurve(f, R, X, Y)} className="mlb-dia-line"/>
+    </React.Fragment>}</MlbPlot>
+    <MlbSlider label="Strips" value={n} min={1} max={60} onChange={setN}/><MlbSlider label="Up to $x = b$" value={b} min={1} max={3} step={0.5} onChange={setB}/>
+    <MlbExOut><MlbMath text={"$" + n + "$ strips give $" + mlbR(sum, 4) + "$. The exact area is $\\int_0^{" + b + "} x^2\\,dx = \\frac{" + mlbR(b, 1) + "^3}{3} = " + mlbR(exact, 4) + "$. Error: $" + mlbR(Math.abs(exact - sum), 4) + "$ — more, thinner strips close the gap."}/></MlbExOut>
+  </div>;
+}
+function MlbExChance() {
+  const [counts, setCounts] = React.useState([0, 0, 0, 0, 0, 0]), total = counts.reduce((a, b) => a + b, 0);
+  const roll = k => setCounts(c => { const n = c.slice(); for (let i = 0; i < k; i++) n[Math.floor(Math.random() * 6)]++; return n; });
+  const max = Math.max(1, ...counts.map(x => x / Math.max(1, total)), 1 / 6 * 1.5);
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox="0 0 320 170" role="img" aria-label={"Relative frequency of each face after " + total + " rolls"}>
+      <line x1="20" y1={140 - 120 * (1 / 6) / max} x2="310" y2={140 - 120 * (1 / 6) / max} className="mlb-dia-sym"/>
+      {counts.map((c, i) => { const f = total ? c / total : 0, hh = 120 * f / max; return <g key={i}><rect x={30 + i * 46} y={140 - hh} width="34" height={hh} className="mlb-dia-fill"/>
+        <text x={47 + i * 46} y="158" textAnchor="middle" className="mlb-dia-t">{i + 1}</text></g>; })}</svg>
+    <div className="mlb-actions">{[1, 10, 100, 1000].map(k => <button key={k} type="button" className="stt-btn" onClick={() => roll(k)}>Roll {k}</button>)}
+      <button type="button" className="mlb-link" onClick={() => setCounts([0, 0, 0, 0, 0, 0])}>Start again</button></div>
+    <MlbExOut><MlbMath text={total ? total + " rolls. Each face came up " + counts.map(c => mlbR(c / total * 100, 1) + "%").join(", ") + ". The dashed line is $\\frac{1}{6} \\approx 16.7\\%$. With a few rolls the bars jump about. With lots of rolls they settle on it." : "Roll the die. Will each face really come up a sixth of the time?"}/></MlbExOut>
+  </div>;
+}
+function MlbExSeries() {
+  const [a, setA] = React.useState(8), [r, setR] = React.useState(0.5), [n, setN] = React.useState(8);
+  const terms = Array.from({ length: n }, (_, i) => a * Math.pow(r, i)), partial = terms.reduce((x, y) => x + y, 0), lim = Math.abs(r) < 1 ? a / (1 - r) : null;
+  const top = Math.max(Math.abs(lim || 0), ...terms.map((_, i) => Math.abs(terms.slice(0, i + 1).reduce((x, y) => x + y, 0))), 1);
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox="0 0 320 170" role="img" aria-label={"Running totals of the first " + n + " terms"}>
+      <line x1="10" y1="85" x2="310" y2="85" className="mlb-dia-axis"/>
+      {lim !== null ? <line x1="10" y1={85 - 75 * lim / top} x2="310" y2={85 - 75 * lim / top} className="mlb-dia-sym"/> : null}
+      {terms.map((_, i) => { const S = terms.slice(0, i + 1).reduce((x, y) => x + y, 0), hh = 75 * S / top, w = 290 / n; return <rect key={i} x={14 + i * w} y={hh >= 0 ? 85 - hh : 85} width={w * 0.7} height={Math.abs(hh)} className="mlb-dia-fill"/>; })}</svg>
+    <MlbSlider label="First term $a$" value={a} min={1} max={10} onChange={setA}/><MlbSlider label="Ratio $r$" value={r} min={-1.5} max={1.5} step={0.1} onChange={setR} fmt={v => mlbR(v, 1)}/><MlbSlider label="Terms $n$" value={n} min={1} max={30} onChange={setN}/>
+    <MlbExOut><MlbMath text={"$S_{" + n + "} = " + mlbR(partial, 4) + "$. " + (lim !== null ? "With $|r| < 1$ the totals close in on $\\frac{a}{1 - r} = " + mlbR(lim, 4) + "$ (dashed) but never pass it." : "With $|r| \\ge 1$ the terms do not shrink, so there is no sum to infinity.")}/></MlbExOut>
+  </div>;
+}
+function MlbExGrowth() {
+  const [P, setP] = React.useState(1000), [rate, setRate] = React.useState(10), [yrs, setYrs] = React.useState(10);
+  const comp = Array.from({ length: yrs + 1 }, (_, t) => P * Math.pow(1 + rate / 100, t)), simp = Array.from({ length: yrs + 1 }, (_, t) => P * (1 + rate / 100 * t)), top = comp[yrs];
+  const X = t => 20 + t * 280 / Math.max(yrs, 1), Y = v => 150 - 130 * v / top;
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox="0 0 320 170" role="img" aria-label="Compound and simple growth over time">
+      <line x1="20" y1="150" x2="310" y2="150" className="mlb-dia-axis"/>
+      <polyline points={simp.map((v, t) => X(t) + "," + Y(v)).join(" ")} className="mlb-dia-line is-b"/>
+      <polyline points={comp.map((v, t) => X(t) + "," + Y(v)).join(" ")} className="mlb-dia-line"/></svg>
+    <MlbSlider label="Start (₦)" value={P} min={100} max={10000} step={100} onChange={setP}/><MlbSlider label="Rate" value={rate} min={1} max={30} onChange={setRate} fmt={v => v + "%"}/><MlbSlider label="Years" value={yrs} min={1} max={40} onChange={setYrs}/>
+    <MlbExOut><MlbMath text={"Compound (blue): $" + P + " \\times " + mlbR(1 + rate / 100, 2) + "^{" + yrs + "} \\approx ₦" + mlbComma(comp[yrs]) + "$. Simple (orange): ₦" + mlbComma(simp[yrs]) + ". Compound interest earns interest on the interest too, so it multiplies again every year. That is why it pulls away."}/></MlbExOut>
+  </div>;
 }
 
 /* ── Where we are inside /study/lab ── */
@@ -230,7 +555,7 @@ function MlbFramework({ bands }) {
   return (
     <section className="mlb-card" aria-labelledby="mlb-fw-h">
       <h3 id="mlb-fw-h" className="mlb-h3">The 170-Point Mathematics Mastery Framework</h3>
-      <p className="mlb-p">From why 1 + 1 = 2, through WAEC and Further Mathematics, and beyond. No blind memorisation: the key results come with the argument that makes them true. No neglected foundations: every topic opens only when what it builds on is known, and a topic that keeps going wrong is traced back to the gap underneath it.</p>
+      <p className="mlb-p">170 steps, from why 1 + 1 = 2 all the way to WAEC, Further Mathematics and beyond. You learn <b>why</b> things are true, not just what to memorise. A topic opens when you know the topics it is built on. If something keeps going wrong, we find the missing piece underneath it and help you fix that first.</p>
       <ul className="mlb-bands">{bands.map(b => <li key={b.id}><b>{b.name}</b><span>{b.level}</span><span>{b.stages} · {b.topics} points</span><span>{b.what}</span></li>)}</ul>
     </section>
   );
@@ -256,6 +581,7 @@ function MlbLearn({ comp, go, startPlay, lite }) {
         {state === "locked" ? <p className="mlb-warn">Locked: light up the topics it builds on first.</p> : null}
         {state === "soon" ? <p className="mlb-warn">This topic is being prepared and will open soon.</p> : null}
       </section>
+      {canLearn ? <MlbExplore comp={c.id}/> : null}
       {st.d.why ? <MlbWhy key={c.id} why={st.d.why}/> : null}
       {ex ? <section className="mlb-card" aria-labelledby="mlb-we"><h3 id="mlb-we" className="mlb-h3">Worked example</h3>
         <MlbMath as="p" className="mlb-stem" text={ex.stem}/><MlbDiagram d={ex.diagram}/>
@@ -281,12 +607,12 @@ function MlbWhy({ why }) {
     <section className="mlb-card mlb-why" aria-labelledby="mlb-why-h">
       <h3 id="mlb-why-h" className="mlb-h3">Why it works</h3>
       <MlbMath as="p" className="mlb-why-idea" text={why.idea}/>
-      <p className="mlb-why-claim">We show: <MlbMath text={why.claim}/></p>
+      <p className="mlb-why-claim">What we will show: <MlbMath text={why.claim}/></p>
       <ol className="mlb-why-steps" aria-live="polite">{why.steps.slice(0, shown).map((s, i) => (
         <li key={i}><MlbMath className="mlb-why-s" text={s.s}/><span className="mlb-why-r"><b>Because</b><MlbMath text={s.r}/></span></li>))}</ol>
       {!all ? <div className="mlb-actions"><button type="button" className="stt-btn" onClick={() => setShown(n => n + 1)}>Next line</button>
         <button type="button" className="mlb-link" onClick={() => setShown(why.steps.length)}>Show the whole argument</button></div>
-        : <p className="mlb-meta">Every line uses only what came before it. Practice includes questions on this argument: why a line is true, and putting it in order.</p>}
+        : <p className="mlb-meta">Each line only uses things we already know from the lines above it. In practice you will be asked why a line is true, and to put the lines in order.</p>}
     </section>
   );
 }
@@ -329,8 +655,8 @@ function MlbOrder({ item, value, onChange, disabled }) {
       <ol className="mlb-order-list">{v.map((k, pos) => (
         <li key={k} className="mlb-order-row"><span className="mlb-order-n">{pos + 1}</span><MlbMath className="mlb-order-t" text={item.options[k]}/>
           <span className="mlb-order-btns">
-            <button type="button" className="mlb-key" disabled={disabled || pos === 0} aria-label={"Move line " + (pos + 1) + " up"} onClick={() => move(pos, -1)}><i className="ph ph-arrow-up" aria-hidden="true"/></button>
-            <button type="button" className="mlb-key" disabled={disabled || pos === v.length - 1} aria-label={"Move line " + (pos + 1) + " down"} onClick={() => move(pos, 1)}><i className="ph ph-arrow-down" aria-hidden="true"/></button>
+            <button type="button" className="mlb-key" disabled={disabled || pos === 0} aria-label={"Move line " + (pos + 1) + " up"} onClick={() => move(pos, -1)}><span aria-hidden="true">↑</span></button>
+            <button type="button" className="mlb-key" disabled={disabled || pos === v.length - 1} aria-label={"Move line " + (pos + 1) + " down"} onClick={() => move(pos, 1)}><span aria-hidden="true">↓</span></button>
           </span></li>))}</ol>
       <p className="mlb-sr" aria-live="polite">{said}</p>
     </div>
@@ -476,7 +802,7 @@ function MlbProgress({ go }) {
       </div>
 
       <section className="mlb-card" aria-labelledby="mlb-roots-h"><h3 id="mlb-roots-h" className="mlb-h3">Foundations to fix first</h3>
-        {d.roots && d.roots.length ? <React.Fragment><p className="mlb-p">These are the earliest topics underneath what you are finding hard. Fixing them first makes the hard topics easier; practising the hard ones harder does not.</p>
+        {d.roots && d.roots.length ? <React.Fragment><p className="mlb-p">These topics are underneath the ones you are finding hard. Fix these first and the hard ones get easier.</p>
           <ul className="mlb-roots">{d.roots.map(x => (
             <li key={x.comp}><div><b>{x.title}</b><small>Stage {x.stage} · underneath {x.behind.slice(0, 3).join(", ")}{x.behind.length > 3 ? " and " + (x.behind.length - 3) + " more" : ""}</small></div>
               <button type="button" className="stt-btn is-go" onClick={() => go({ v: "learn", comp: x.comp })}>Start here</button></li>))}</ul></React.Fragment>

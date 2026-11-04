@@ -165,7 +165,7 @@ function mlb_forms(): array {
     static $f = null;
     if ($f !== null) return $f;
 
-    return $f = [
+    $f = [
     /* ═══ Stage 1 — Number Consciousness ═══ */
     'MC-001' => [
         static function (MlbRng $r) { $n = $r->int(6, 19);
@@ -855,7 +855,11 @@ function mlb_forms(): array {
             return mlb_typed('num', 'Find the sum of the first ' . $n . ' terms of the arithmetic progression $' . $a . ',\\ ' . ($a + $d) . ',\\ ' . ($a + 2 * $d) . ',\\ \\dots$', (string)(intdiv($n * (2 * $a + ($n - 1) * $d), 2)),
                 ['$S_n = \\frac{n}{2}\\left(2a + (n - 1)d\\right)$.', '$S_{' . $n . '} = \\frac{' . $n . '}{2}(' . (2 * $a) . ' + ' . (($n - 1) * $d) . ') = ' . intdiv($n * (2 * $a + ($n - 1) * $d), 2) . '$.'], 'Pair the first and last terms.', 'procedure', 50); },
     ],
-    ];
+    ] + (function_exists('mlb_forms_upper') ? mlb_forms_upper() : []);   // Stages 8–17: mathslab-gen-upper.php
+    /* Two proof forms for every topic with a "Why it works" (mathslab-why.php), appended AFTER the
+       topic's own forms so no existing form changes its index (a session stores form numbers). */
+    if (function_exists('mlb_why_forms')) foreach (mlb_why_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    return $f;
 }
 
 /** One question, reproducible from (competency, form, seed). */
@@ -870,7 +874,7 @@ function mlb_item(string $comp, int $form, int $seed): ?array {
 /** What the learner's screen may see: never the key, the solution or the "why" of each option before marking. */
 function mlb_public(array $it): array {
     $out = ['kind' => $it['kind'], 'stem' => $it['stem'], 'dim' => $it['dim'], 'secs' => (int)$it['secs'], 'hint' => (string)$it['hint']];
-    foreach (['options', 'lines', 'diagram', 'unit', 'labels'] as $k) if (isset($it[$k])) $out[$k] = $it[$k];
+    foreach (['options', 'lines', 'diagram', 'unit', 'labels', 'dp'] as $k) if (isset($it[$k])) $out[$k] = $it[$k];
     if (($it['form'] ?? '') === 'lowest' || in_array($it['form'] ?? '', ['expanded', 'simplified'], true)) $out['rule'] = $it['form'];
     return $out;
 }
@@ -884,7 +888,7 @@ function mlb_public(array $it): array {
 
 /** A number from what a learner typed: commas, ₦, %, units and a fraction allowed. */
 function mlb_parse_num(string $s): ?float {
-    $s = trim(str_replace(['₦', ',', ' ', '−', '%', '°c', '°', 'km/h', 'cm', 'kg', 'min', 'days', 'day', 'naira'], ['', '', '', '-', '', '', '', '', '', '', '', '', '', ''], mb_strtolower($s)));
+    $s = trim(str_replace(['₦', ',', ' ', '−', '%', '°c', '°', 'km/h', 'm/s²', 'm/s', '²', '³', 'cm', 'kg', 'min', 'days', 'day', 'naira'], ['', '', '', '-', '', '', '', '', '', '', '', '', '', '', '', '', '', ''], mb_strtolower($s)));
     $s = preg_replace('/(?<=\d)m$/', '', $s);
     if ($s === '') return null;
     if (preg_match('/^(-?\d+)\s*\/\s*(-?\d+)$/', $s, $m)) return (int)$m[2] === 0 ? null : (int)$m[1] / (int)$m[2];
@@ -977,6 +981,10 @@ function mlb_expr_equal(string $key, string $got, bool $positive = false): bool 
  */
 function mlb_mark(array $it, $resp): array {
     $kind = $it['kind'];
+    if ($kind === 'order') {
+        $got = is_array($resp) ? array_map('intval', array_values($resp)) : [];
+        return ['ok' => $got === array_map('intval', $it['key']), 'why' => null, 'form' => null];
+    }
     if ($kind === 'mcq' || $kind === 'error') {
         $i = is_numeric($resp) ? (int)$resp : -1;
         $ok = $i === (int)$it['key'];
@@ -992,6 +1000,10 @@ function mlb_mark(array $it, $resp): array {
     if ($s === '') return ['ok' => false, 'why' => null, 'form' => null];
     if ($kind === 'num') {
         $v = mlb_parse_num($s); $k = mlb_parse_num((string)$it['key']);
+        /* "Correct to N decimal places": any answer that rounds to the key is
+           right, so typing more digits is never marked wrong; a different
+           rounding is. The key is stored already rounded. */
+        if (isset($it['dp']) && $v !== null && $k !== null) return ['ok' => abs($v - $k) <= 0.5 * 10 ** -(int)$it['dp'] + 1e-9, 'why' => null, 'form' => null];
         return ['ok' => $v !== null && $k !== null && abs($v - $k) <= 1e-9 * max(1.0, abs($k)), 'why' => null, 'form' => null];
     }
     if ($kind === 'frac') {
@@ -1010,8 +1022,12 @@ function mlb_mark(array $it, $resp): array {
         return ['ok' => $same, 'why' => null, 'form' => null];
     }
     if ($kind === 'expr') {
+        // "y = 3x - 4" and "3x - 4" are the same answer to "find the equation": the left-hand side is not the skill.
+        $s = preg_replace('/^\s*(?:[a-z]|f\s*\(\s*x\s*\)|f\s*\^\s*-?1\s*\(\s*x\s*\)|dy\s*\/\s*dx)\s*=\s*/i', '', $s);
         $eq = mlb_expr_equal((string)$it['key'], $s, !empty($it['positive']));
         if (!$eq) return ['ok' => false, 'why' => null, 'form' => null];
+        // Factorising is the skill: the same polynomial typed back unfactorised is the right value, not the answer.
+        if (($it['form'] ?? '') === 'factorised' && substr_count($s, '(') < 2) return ['ok' => false, 'why' => null, 'form' => 'Right value — now write it as a product of brackets.'];
         if (($it['form'] ?? '') === 'expanded' && strpos($s, '(') !== false) return ['ok' => false, 'why' => null, 'form' => 'Right value — now remove the brackets (expand it).'];
         if (($it['form'] ?? '') === 'simplified') {
             preg_match_all('/[a-z]+/', mb_strtolower($s), $mm);
@@ -1024,9 +1040,13 @@ function mlb_mark(array $it, $resp): array {
 
 /** The answer as a learner should see it after marking. */
 function mlb_answer_text(array $it): string {
+    if (isset($it['show'])) return (string)$it['show'];   // a form that knows its own written form (a bearing is "030°", not "30")
+    if ($it['kind'] === 'pair' && !empty($it['point'])) return '$(' . $it['key'][0] . ', ' . $it['key'][1] . ')$';
+    if ($it['kind'] === 'num' && ($it['unit'] ?? '') === '°') return mlb_p((float)$it['key']) . '°';
     switch ($it['kind']) {
         case 'mcq': case 'error': return (string)$it['options'][(int)$it['key']];
-        case 'pair': return '$x = ' . $it['key'][0] . '$, $y = ' . $it['key'][1] . '$';
+        case 'order': return implode(' → ', array_map(static fn($k, $i) => ($i + 1) . '. ' . $it['options'][$k], $it['key'], array_keys($it['key'])));
+        case 'pair': $L = $it['labels'] ?? ['x', 'y']; return '$' . $L[0] . ' = ' . $it['key'][0] . '$, $' . $L[1] . ' = ' . $it['key'][1] . '$';
         case 'frac': $f = mlb_parse_frac((string)$it['key']); return '$' . mlb_ftex($f[0], $f[1]) . '$';
         case 'expr': return '$' . str_replace(['sqrt(', '*'], ['\\sqrt(', ''], (string)$it['key']) . '$';
         default: return (isset($it['unit']) && $it['unit'] === '₦' ? '₦' : '') . mlb_p((float)$it['key']) . (isset($it['unit']) && $it['unit'] !== '₦' ? ' ' . $it['unit'] : '');

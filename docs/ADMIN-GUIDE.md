@@ -4727,3 +4727,46 @@ In **Settings → Diagnostics → Photo storage**:
 - **Optimise photos**: makes the sizes now. It also runs every ten minutes.
 - **Use their Cloudinary photos**: for a record whose file is gone but whose
   person has a photo in Cloudinary.
+
+## Maths Lab: the 170-Point Mathematics Mastery Framework (`/study/lab`)
+
+The Mathematics Clinic's idea, built into the Lab: understand **why** maths
+works, never only memorise it; never skip a foundation; never write a child
+off as "bad at maths" when a foundation was simply never taught.
+
+- **All 170 points are open**, in 17 stages of ten, grouped into five
+  **bands**: *Foundations* (Primary, Stages 1–4), *Algebra and number*
+  (JSS · BECE, 5–7), *WAEC core* (SSS · WASSCE Mathematics, 8–12),
+  *Further Mathematics* (WASSCE Further Mathematics, 13–16) and *Beyond*
+  (mechanics, university and research, 17). The map shows each stage's band;
+  Progress shows how many points of each band a member holds.
+- **Why it works.** The foundations (Stages 1–4, starting from why
+  1 + 1 = 2) and every topic built on a law, formula or theorem (91 topics
+  in all, e.g. Pythagoras, the quadratic formula, the laws of indices,
+  differentiation from first principles) show a short argument on the topic
+  page. It appears one line at a time, each with the reason it is true. Topics
+  that are a skill or a convention have none. Practice on those topics
+  includes two kinds of question from the argument: *why is this line true?*
+  and *put the argument in order* (arrow buttons; no dragging).
+- **Explore it.** About 60 topics have an interactive panel with sliders that
+  work by keyboard and touch. Among them: the number line, arrays,
+  area-model brackets, fraction bars, the angle sum, Pythagoras' squares,
+  sectors and radians, straight lines, parabolas and the discriminant, the
+  unit circle (CAST), a chord becoming a tangent, strips under a curve, a die
+  rolled 1,000 times, series and compound growth.
+- **Foundations to fix first** (Progress, and Home when it applies). When a
+  member keeps getting a topic wrong, the Lab traces it back to the
+  **earliest** topic underneath it that they do not yet know, and offers
+  *Start here*. Practising the hard topic harder fixes nothing when the gap
+  is lower down.
+- **A topic that needs a later stage's idea** (e.g. *Graphical solution of
+  linear equations* in Stage 6 uses coordinates from Stage 10) is not locked
+  by it. The topic introduces what it needs, and the page says where the
+  full topic is.
+- Rounding rules are stated under the answer box ("correct to 2 decimal
+  places"). Any answer that rounds to the right value is accepted.
+- **Written for an eleven-year-old.** Every explorer opens with a *Try this*
+  challenge, one thing to do and one thing to notice. The readouts and the
+  early proofs use everyday words ("one number word for each object", not
+  "one-to-one correspondence"). Keep new copy to that standard: easy to
+  follow, never dumbed down.

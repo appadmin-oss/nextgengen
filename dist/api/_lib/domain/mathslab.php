@@ -49,10 +49,16 @@ function mlb_set_state(string $mid, string $comp, array $patch): void {
     else db_insert('mlab_state', $patch + ['memberId' => $mid, 'comp' => $comp, 'state' => 'none', 'p' => 0.15, 'attempts' => 0, 'correct' => 0, 'fast' => 0, 'nextReview' => '', 'masteredAt' => '']);
 }
 function mlb_rank(string $state): int { return MLB_STATE_ORDER[$state] ?? 0; }
-/** A competency the learner may work on: every prerequisite is known or better, or not yet taught in the Lab. */
+/**
+ * A competency the learner may work on: every prerequisite is known or better, or not yet taught in the Lab.
+ * A prerequisite from a LATER stage (the plan's sequencing problems: 055 needs 091/094, 058 needs 061) never
+ * blocks — the topic introduces what it needs in place, and the full topic comes later. Blocking on it would
+ * lock a Stage 6 topic behind Stage 10, and the climb could never finish Stage 6.
+ */
+function mlb_need_ahead(string $comp, string $need): bool { return (mlb_comp($need)['stage'] ?? 0) > (mlb_comp($comp)['stage'] ?? 0); }
 function mlb_unlocked(string $comp, array $states): bool {
     foreach (mlb_comp($comp)['needs'] ?? [] as $need) {
-        if (!mlb_available($need)) continue;
+        if (!mlb_available($need) || mlb_need_ahead($comp, $need)) continue;
         if (!in_array($states[$need]['state'] ?? 'none', MLB_GOOD, true)) return false;
     }
     return true;
@@ -275,7 +281,7 @@ function mlb_home(array $p): array {
     $certs = mlb_course_certs($mid);
     return ['ok' => true, 'name' => explode(' ', trim((string)$m['fullName']))[0], 'xp' => (int)$prof['xp'], 'level' => mlb_level((int)$prof['xp']),
         'streak' => (int)$prof['streak'], 'freezes' => (int)$prof['freezes'], 'climb' => ['stage' => (int)$prof['climbStage'], 'done' => (bool)$prof['climbDone'], 'momentum' => (int)$prof['momentum']],
-        'next' => mlb_next($prof, $states), 'counts' => $count + ['available' => $avail, 'total' => 170], 'badges' => mlb_badges($prof, $states),
+        'next' => mlb_next($prof, $states), 'counts' => $count + ['available' => $avail, 'total' => 170], 'badges' => mlb_badges($prof, $states), 'roots' => mlb_root_gaps($states, 2),
         'courses' => array_map(static fn($c) => mlb_course_view($c, $states, $enrol, $prof) + ['certificate' => $certs[$c['id']] ?? null,
             'stageCertificates' => array_values(array_filter(array_map(static fn($n) => isset($certs['stage:' . $n]) ? ['stage' => (int)$n] + $certs['stage:' . $n] : null, $c['stages'])))], array_values(mlb_courses()))];
 }
@@ -301,11 +307,13 @@ function mlb_map(array $p): array {
     $stages = []; $certs = $m ? mlb_course_certs((string)$m['memberId']) : [];
     foreach (mlb_stages() as $n => $st) {
         $comps = array_map(static fn($id) => ['id' => $id, 'title' => mlb_comp($id)['title'], 'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon')], $st['comps']);
-        $stages[] = ['n' => $n, 'title' => $st['title'], 'strand' => $st['strand'], 'available' => mlb_stage_available($n), 'comps' => $comps,
+        $stages[] = ['n' => $n, 'title' => $st['title'], 'strand' => $st['strand'], 'band' => mlb_band((int)$n)['name'], 'level' => mlb_band((int)$n)['level'], 'available' => mlb_stage_available($n), 'comps' => $comps,
             'boss' => isset($bosses[(string)$n]), 'bossReady' => $m && mlb_stage_available($n) && !array_filter($comps, static fn($c) => !in_array($c['state'], MLB_GOOD, true)),
             'certificate' => $certs['stage:' . $n] ?? null];
     }
-    return ['ok' => true, 'member' => (bool)$m, 'stages' => $stages];
+    $bands = array_map(static fn($b) => ['id' => $b['id'], 'name' => $b['name'], 'level' => $b['level'], 'stages' => $b['from'] === $b['to'] ? 'Stage ' . $b['from'] : 'Stages ' . $b['from'] . '–' . $b['to'],
+        'what' => $b['what'], 'topics' => ($b['to'] - $b['from'] + 1) * 10], MLB_BANDS);
+    return ['ok' => true, 'member' => (bool)$m, 'stages' => $stages, 'bands' => $bands];
 }
 
 /** mathslab.comp — one competency: what it is, a worked example, where the learner stands. */
@@ -314,9 +322,10 @@ function mlb_comp_view(array $p): array {
     $m = mlb_member($p); $states = $m ? mlb_states((string)$m['memberId']) : []; $s = $states[$id] ?? null;
     $ex = mlb_available($id) ? mlb_item($id, 0, random_int(1, 2000000000)) : null;
     return ['ok' => true, 'comp' => ['id' => $id, 'title' => $c['title'], 'stage' => $c['stage'], 'stageTitle' => mlb_stages()[$c['stage']]['title'], 'strand' => $c['strand'],
-        'needs' => array_map(static fn($n) => ['id' => $n, 'title' => mlb_comp($n)['title'], 'state' => mlb_view_state($n, $states)], $c['needs'])],
+        'needs' => array_map(static fn($n) => ['id' => $n, 'title' => mlb_comp($n)['title'], 'state' => mlb_view_state($n, $states), 'ahead' => mlb_need_ahead($id, $n) ? mlb_comp($n)['stage'] : 0], $c['needs'])],
         'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon'), 'p' => $s ? (float)$s['p'] : 0, 'attempts' => $s ? (int)$s['attempts'] : 0,
         'nextReview' => $s ? (string)$s['nextReview'] : '',
+        'why' => function_exists('mlb_why_of') ? mlb_why_of($id) : null,
         'example' => $ex ? ['stem' => $ex['stem'], 'diagram' => $ex['diagram'] ?? null, 'lines' => $ex['lines'] ?? null, 'answer' => mlb_answer_text($ex), 'steps' => $ex['steps']] : null];
 }
 
@@ -420,7 +429,45 @@ function mlb_progress(array $p): array {
     usort($miss, static fn($a, $b) => [$b['wrong'], $b['last']] <=> [$a['wrong'], $a['last']]);
     return ['ok' => true, 'stages' => $stages, 'certificates' => $certList, 'mistakes' => array_slice($miss, 0, 6), 'recent' => $recent,
             'level' => mlb_level((int)$prof['xp']), 'xp' => (int)$prof['xp'], 'streak' => (int)$prof['streak'], 'due' => count(mlb_due($states)),
-            'badges' => mlb_badges($prof, $states)];
+            'badges' => mlb_badges($prof, $states), 'roots' => mlb_root_gaps($states),
+            'bands' => array_map(static function ($b) use ($states) {
+                $ids = array_merge(...array_map(static fn($n) => mlb_stages()[$n]['comps'], range($b['from'], $b['to'])));
+                return ['name' => $b['name'], 'level' => $b['level'], 'total' => count($ids), 'mastered' => count(array_filter($ids, static fn($id) => in_array($states[$id]['state'] ?? '', MLB_GOOD, true)))];
+            }, MLB_BANDS)];
+}
+
+/**
+ * “No neglected foundations”: for each topic the learner is struggling with, walk its prerequisites
+ * back to the EARLIEST ones that are not yet known — the real gap. A child failing quadratics is
+ * often failing factorisation, which is often failing multiplication tables; practising quadratics
+ * harder fixes nothing. A prerequisite from a later stage (mlb_need_ahead) is not a gap.
+ * Returns up to $max roots: {comp, title, stage, behind: [titles of the struggling topics]}.
+ */
+function mlb_root_gaps(array $states, int $max = 4): array {
+    $good = static fn($id) => in_array($states[$id]['state'] ?? '', MLB_GOOD, true);
+    $struggling = [];
+    foreach ($states as $id => $st) {
+        if ($good($id) || !mlb_comp((string)$id)) continue;
+        $att = (int)($st['attempts'] ?? 0); $p = (float)($st['p'] ?? 0);
+        if ($att >= 4 && $p < 0.6) $struggling[] = (string)$id;
+    }
+    $roots = [];
+    foreach ($struggling as $id) {
+        $seen = []; $stack = [$id]; $found = [];
+        while ($stack) {
+            $c = array_pop($stack);
+            foreach (mlb_comp($c)['needs'] ?? [] as $need) {
+                if (isset($seen[$need]) || !mlb_available($need) || mlb_need_ahead($c, $need) || $good($need)) continue;
+                $seen[$need] = true; $stack[] = $need;
+                $open = array_filter(mlb_comp($need)['needs'], static fn($n) => mlb_available($n) && !mlb_need_ahead($need, $n) && !$good($n));
+                if (!$open) $found[] = $need;   // everything under it is known: this is where to start
+            }
+        }
+        foreach ($found as $r) { $roots[$r] ??= ['comp' => $r, 'title' => mlb_comp($r)['title'], 'stage' => mlb_comp($r)['stage'], 'behind' => []]; $roots[$r]['behind'][] = mlb_comp($id)['title']; }
+    }
+    $roots = array_values($roots);
+    usort($roots, static fn($a, $b) => [count($b['behind']), mlb_num($a['comp'])] <=> [count($a['behind']), mlb_num($b['comp'])]);
+    return array_slice($roots, 0, $max);
 }
 
 /** courseId (and "stage:N") => {no, url} for every Maths Lab certificate this member holds (one query). */

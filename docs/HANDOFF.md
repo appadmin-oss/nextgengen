@@ -5963,3 +5963,37 @@ ran — the run read "367 passed, 1 failed" over a suite of 627.
   are on top of the fine, and each row shows *Fine for it* — the fine for the
   same incident (late band, absent day, rule breach, keyed by tier) and its
   status (`admin_policy_correctives`, one query per 500 people).
+
+## 4 Nov 2026 — Maths Lab: all 170 topics, "Why it works", Explore it, the framework
+
+- **Content complete.** Stages 8–17 (MC-071..170) are in
+  `api/_lib/domain/mathslab-gen-upper.php`, at least four forms per topic,
+  typed and choice, across procedure / application / reasoning. Prerequisite
+  edges for 71–170 are in `MLB_EDGES`. A prerequisite in a LATER stage
+  (055→091/094, 058→061, the plan's "sequencing problems") never blocks:
+  `mlb_need_ahead()`. Without it, Stage 6 would be locked behind Stage 10 and
+  the climb could never finish Stage 6.
+- **Proofs** (`domain/mathslab-why.php`). The owner said "only necessary": the
+  foundations (Stages 1–4) plus every topic resting on a provable result,
+  91 in all. Each is [idea, claim, [[statement, reason]…]]. Statements and
+  reasons are distinct within a proof, because `mlb_why_justify` uses the
+  other reasons as its wrong options. `mlb_why_forms()` appends two forms per
+  proof AFTER a topic's own forms, so stored sessions keep their form
+  numbers.
+- **New item kind `order`**: options shuffled (never shown already in
+  order); the answer is the option indexes in order; marked by equality.
+  `MlbOrder` uses move buttons, per the no-drag rule.
+- **Bands**: `MLB_BANDS` in `mathslab-map.php` is the one table (map, Lite,
+  Progress).
+- **Root gaps**: `mlb_root_gaps()` traces a struggling topic (≥4 attempts,
+  p < 0.6) down unmet, non-ahead prerequisites to the earliest ones whose own
+  needs are met.
+- **Diagrams**: `MlbDiagram` now draws `figure` (points, labelled sides,
+  angle arcs, right-angle marks, circles; auto-fit) and `plot`.
+  **Explore it**: `MLB_EXPLORE` maps topic → explorer, 15 explorers, all
+  sliders (`MlbSlider`, a native range input).
+- Tests: run.php pins the proofs (distinct, both forms mark right, order
+  never pre-solved), the bands, root gaps and the ahead rule; each of these
+  was checked to fail when broken. `tests/mathlab-shot.js` now photographs
+  four Learn pages, the order exercise and a figure question, and drives a
+  slider, the proof walk-through and the order buttons.
