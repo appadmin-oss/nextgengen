@@ -25630,6 +25630,61 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('member: …and the multiple-choice points were still awarded',
         (int)$right['progress']['score'] === 2 && (int)$right['progress']['maxScore'] === 5);
 
+    /* ── The week-later review has to actually happen ──────────────────
+       Three faults kept it from anybody: it looked at the row BEFORE today's
+       lesson in a list ordered week, course, position (another course's, for
+       anybody with two); a pass on the lesson page — the lesson still on the
+       screen — counted as the review being done; and the right answers came
+       back after one try beside "Submit again", so a second attempt was
+       copying and always passed. */
+    (function () use ($uid, $c) {
+        $snap = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$uid, 'NGG-CUR-M1']);
+        $ago = fn(int $d) => gmdate('Y-m-d\TH:i:s\Z', time() - $d * 86400);
+        // Reveal: one wrong try is marked, not given away.
+        db_exec("UPDATE curriculum_progress SET attempts = 0, reviewedAt = '', startedAt = ?, status = 'attempted' WHERE id = ?", [$ago(0), $snap['id']]);
+        $w1 = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'answers' => [$c[0]['checkId'] => 0, $c[1]['checkId'] => 1]]);
+        chk('learn: a wrong first try says WHICH were wrong and does not hand over the answers',
+            !empty($w1['ok']) && is_array($w1['review']) && $w1['review'][0]['right'] === false && !array_key_exists('answer', $w1['review'][0])
+            && (int)$w1['progress']['revealAfter'] === CURR_REVEAL_AFTER);
+        chk('learn: …and an answer on the lesson day is not recall',
+            (string)db_row('SELECT reviewedAt FROM curriculum_progress WHERE id = ?', [$snap['id']])['reviewedAt'] === '');
+        db_exec('UPDATE curriculum_progress SET attempts = ? WHERE id = ?', [CURR_REVEAL_AFTER - 1, $snap['id']]);
+        $w3 = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'answers' => [$c[0]['checkId'] => 0, $c[1]['checkId'] => 1]]);
+        chk('learn: after ' . CURR_REVEAL_AFTER . ' tries the answers are shown, because being stuck has stopped teaching',
+            isset($w3['review'][0]['answer']) && $w3['review'][0]['answer'] === '1');
+        // Recall: an answer days after the lesson was opened is stamped.
+        db_exec("UPDATE curriculum_progress SET startedAt = ?, reviewedAt = '' WHERE id = ?", [$ago(3), $snap['id']]);
+        backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'answers' => [$c[0]['checkId'] => 1, $c[1]['checkId'] => 0]]);
+        chk('learn: an answer three days after the lesson was opened is recorded as recall',
+            (string)db_row('SELECT reviewedAt FROM curriculum_progress WHERE id = ?', [$snap['id']])['reviewedAt'] !== '');
+        db_update('curriculum_progress', array_diff_key($snap, ['id' => 1]), ['id' => $snap['id']]);
+
+        // The opening review, against a list where courses interleave.
+        $U = fn(string $id, string $course, int $week, int $checks) => ['unit' => ['unitId' => $id, 'course' => $course, 'week' => $week, 'title' => $id, 'passMark' => 60,
+            'level' => '', 'position' => 1, 'summary' => '', 'objectives' => '[]', 'body' => '', 'durationMins' => 0, 'status' => 'published', 'version' => 1,
+            'source' => '', 'updatedAt' => '', 'publishedAt' => ''],
+            'materials' => [], 'checks' => array_map(fn($i) => ['checkId' => "$id-c$i", 'kind' => 'short', 'prompt' => 'Q', 'options' => '[]', 'points' => 1,
+                'source' => '', 'answer' => 'A', 'rubric' => ''], range(1, $checks))];
+        $units = ['RV-A1' => $U('RV-A1', 'Piano', 1, 2), 'RV-B1' => $U('RV-B1', 'Coding', 1, 1), 'RV-Z1' => $U('RV-Z1', '', 1, 1),
+                  'RV-A2' => $U('RV-A2', 'Piano', 2, 1)];
+        $rv = curriculum_opening_review($units, 'RV-A2', 'NGG-RV-NOBODY');
+        chk('learn: the opening review finds last week\'s lesson IN THIS COURSE, past another course\'s lesson between them',
+            ($rv['unitId'] ?? '') === 'RV-A1' && count($rv['checks']) === 2 && !isset($rv['checks'][0]['answer']));
+        $row = fn(array $set) => db_exec('DELETE FROM curriculum_progress WHERE unitId = ? AND memberId = ?', ['RV-A1', 'NGG-RV-M'])
+            + db_insert('curriculum_progress', $set + ['unitId' => 'RV-A1', 'memberId' => 'NGG-RV-M', 'updatedAt' => now_iso()]);
+        $row(['status' => 'completed', 'startedAt' => $ago(7), 'completedAt' => $ago(7)]);
+        chk('learn: a lesson passed ON THE DAY is still asked a week later — passing with the lesson open is not remembering it',
+            (curriculum_opening_review($units, 'RV-A2', 'NGG-RV-M')['completed'] ?? null) === true);
+        $row(['status' => 'completed', 'startedAt' => $ago(0), 'completedAt' => $ago(0)]);
+        chk('learn: …but not in the same sitting, when it would not be recall either', curriculum_opening_review($units, 'RV-A2', 'NGG-RV-M') === null);
+        $row(['status' => 'completed', 'startedAt' => $ago(7), 'completedAt' => $ago(7), 'reviewedAt' => $ago(1)]);
+        chk('learn: once answered from memory it is not asked twice', curriculum_opening_review($units, 'RV-A2', 'NGG-RV-M') === null);
+        $row(['status' => 'completed', 'startedAt' => $ago(9), 'completedAt' => $ago(4)]);
+        chk('learn: a completion already days after the lesson (before the stamp existed) counts as recalled', curriculum_opening_review($units, 'RV-A2', 'NGG-RV-M') === null);
+        chk('learn: the first lesson of a course reviews nothing, whatever sits before it in the list', curriculum_opening_review($units, 'RV-B1', 'NGG-RV-M') === null);
+        db_exec("DELETE FROM curriculum_progress WHERE memberId = 'NGG-RV-M'");
+    })();
+
     // The Learn app's own record: picked up, kept, noted (domain/learn.php).
     (function () use ($uid) {
         $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'] ?? [];
@@ -36479,6 +36534,88 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
     foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'attendance' => 'studentId', 'member_requests' => 'memberId', 'assignment_submissions' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-RB-%'");
     db_exec("DELETE FROM assignments WHERE assignmentId LIKE 'ASG-RB-%'");
+})();
+
+// ── One Rules page: a written rule costs money, frog jumps and — repeated — a suspension, like the rulebook's own ──
+(function () {
+    $now = now_iso(); $ADM = 'NGG-WR-ADM';
+    $keep = []; foreach (['policy', 'memberProgramme'] as $k) $keep[$k] = setting_raw($k);
+    $today = attendance_today(); $ago = fn($n) => gmdate('Y-m-d', strtotime($today . ' UTC') - $n * 86400);
+    member_programme_settings_save(['enabled' => true, 'startDate' => $ago(60), 'endDate' => $ago(-30), 'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'test');
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true, 'member' => ['enabled' => true, 'rulebook' => 'session', 'jumpWord' => 'frog jumps']], 'test');
+    $mk = fn($id, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Wr ' . $id, 'email' => strtolower($id) . '@example.org', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'centre' => 'Wr Centre', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk($ADM, ['role' => 'super_admin', 'centre' => '']);
+    foreach (range(1, 4) as $i) $mk('NGG-WR-' . $i);
+    db_insert('centres', ['centreId' => 'CEN-WR-1', 'name' => 'Wr Centre', 'code' => 'WR', 'status' => 'active', 'createdAt' => $now]);
+    $mk('NGG-WR-X', ['centre' => 'Wr Elsewhere']); $mk('NGG-WR-LEAD', ['role' => 'admin', 'centre' => '', 'centreScope' => '["CEN-WR-1"]']);
+
+    $bad = backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $ADM, 'name' => 'No uniform', 'amount' => 500, 'escalateAfter' => 3]);
+    chk('rules · an escalation needs both halves — how many, and to what', ($bad['error'] ?? '') === 'escalate_incomplete');
+    $sv = backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $ADM, 'name' => 'No uniform', 'whenText' => 'Arriving out of uniform', 'amount' => 500, 'jumps' => 5,
+        'escalateAfter' => 3, 'escalateTo' => 'suspension', 'suspendDays' => 7, 'reentryFee' => 2000]);
+    $rid = $sv['ruleId'] ?? '';
+    chk('rules · a written rule carries a fine, frog jumps and what its third breach in a session leads to', !empty($sv['created']) && $rid !== '');
+    $pg = backend_dispatch('admin.policy.rules', ['requesterId' => $ADM]);
+    $mine = array_values(array_filter($pg['written'] ?? [], fn($r) => $r['ruleId'] === $rid))[0] ?? null;
+    chk('rules · the Rules page has the rulebook and the written rules together, with who may change what', !empty($pg['ok']) && $mine && $mine['jumps'] === 5 && $mine['escalateTo'] === 'suspension'
+        && ($pg['rulebook']['rulebook'] ?? '') === 'session' && $pg['can'] === ['rules' => true, 'rulebook' => true, 'breach' => true]);
+    chk('rules · …and a family reads the rule in a sentence', in_array('No uniform (Arriving out of uniform): ₦500 fine and 5 frog jumps. 3 in a session is a 7-day suspension, and ₦2,000 to come back.', array_column($pg['lines'], 1), true));
+
+    $b1 = backend_dispatch('admin.policy.ruleBreach', ['requesterId' => $ADM, 'ruleId' => $rid, 'personIds' => ['NGG-WR-1', 'NGG-WR-2'], 'date' => $ago(10)]);
+    $s1 = db_all("SELECT kind, amount, status FROM sanctions WHERE personId = 'NGG-WR-1' ORDER BY kind");
+    chk('rules · a breach recorded for two members at once: each gets the ₦500 fine and the 5 frog jumps', $b1['recorded'] === 2
+        && array_map(fn($x) => [$x['kind'], (int)$x['amount']], $s1) === [['corrective', 5], ['fine', 500]]);
+    chk('rules · …the fine is on the family\'s account, named for the rule', (bool)db_row("SELECT 1 FROM member_ledger WHERE memberId = 'NGG-WR-1' AND kind = 'fine' AND amount = 500 AND note LIKE '%No uniform%'"));
+    $again = backend_dispatch('admin.policy.ruleBreach', ['requesterId' => $ADM, 'ruleId' => $rid, 'personIds' => ['NGG-WR-1'], 'date' => $ago(10)]);
+    chk('rules · the same breach the same day is answered as already recorded, not charged twice', !empty($again['results'][0]['unchanged'])
+        && (int)db_row("SELECT COUNT(*) c FROM sanctions WHERE personId = 'NGG-WR-1' AND kind = 'fine'")['c'] === 1);
+    backend_dispatch('admin.policy.ruleBreach', ['requesterId' => $ADM, 'ruleId' => $rid, 'personIds' => ['NGG-WR-1'], 'date' => $ago(5)]);
+    chk('rules · two breaches: no suspension yet', !db_row("SELECT 1 FROM sanctions WHERE personId = 'NGG-WR-1' AND kind = 'suspension'"));
+    backend_dispatch('admin.policy.ruleBreach', ['requesterId' => $ADM, 'ruleId' => $rid, 'personIds' => ['NGG-WR-1'], 'date' => $ago(1)]);
+    $sus = db_row("SELECT * FROM sanctions WHERE personId = 'NGG-WR-1' AND kind = 'suspension'");
+    $fee = db_row("SELECT * FROM sanctions WHERE personId = 'NGG-WR-1' AND kind = 'fine' AND amount = 2000");
+    chk('rules · the third breach in the session: a 7-day suspension from the next day, and the ₦2,000 re-entry fee', $sus && $sus['status'] === 'active' && $sus['startsAt'] === $today
+        && $sus['endsAt'] === gmdate('Y-m-d', strtotime($today . ' UTC') + 6 * 86400) && str_contains((string)$sus['reason'], '3 breaches of “No uniform”') && $fee && $fee['status'] === 'pending');
+    chk('rules · …the re-entry fee is what the record says is owed to come back', (policy_state('NGG-WR-1', 'member')['reentryOwed'] ?? 0) === 2000);
+    $inf = db_row("SELECT id FROM infractions WHERE personId = 'NGG-WR-1' AND kind = ? AND date = ?", ['rule:' . $rid, $ago(5)]);
+    backend_dispatch('admin.policy.void', ['requesterId' => $ADM, 'infractionId' => (int)$inf['id'], 'reason' => 'Wrong child — it was a sibling']);
+    chk('rules · voiding one breach lifts what it caused: its fine and jumps, the suspension, and its re-entry fee', db_row("SELECT status FROM sanctions WHERE id = ?", [(int)$sus['id']])['status'] === 'lifted'
+        && db_row("SELECT status FROM sanctions WHERE id = ?", [(int)$fee['id']])['status'] === 'lifted'
+        && (int)db_row("SELECT COUNT(*) c FROM sanctions WHERE personId = 'NGG-WR-1' AND kind = 'corrective' AND status = 'pending'")['c'] === 2
+        && (string)db_row("SELECT voidedAt FROM member_ledger WHERE memberId = 'NGG-WR-1' AND amount = 2000")['voidedAt'] !== '');
+    $pp = backend_dispatch('admin.policy.person', ['requesterId' => $ADM, 'personId' => 'NGG-WR-1']);
+    chk('rules · the record names the rule that was broken, not its code', in_array('Broke a rule: No uniform', array_column($pp['infractions'], 'label'), true));
+    $cr = backend_dispatch('admin.policy.correctives', ['requesterId' => $ADM]);
+    $row = array_values(array_filter($cr['rows'], fn($r) => $r['memberId'] === 'NGG-WR-2'))[0] ?? null;
+    chk('rules · the frog jumps to do say which rule they are for', $row && $row['for'] === 'rule' && $row['rule'] === 'No uniform' && $row['count'] === 5);
+
+    $sc = backend_dispatch('admin.policy.ruleBreach', ['requesterId' => 'NGG-WR-LEAD', 'ruleId' => $rid, 'personIds' => ['NGG-WR-3', 'NGG-WR-X', 'NGG-WR-NOPE', 'NGG-WR-LEAD'], 'date' => $today]);
+    $v = array_column($sc['results'], null, 'personId');
+    chk('rules · each member is answered on their own: recorded, out of scope, not found, staff', $sc['recorded'] === 1 && !empty($v['NGG-WR-3']['ok'])
+        && $v['NGG-WR-X']['error'] === 'out_of_scope' && $v['NGG-WR-NOPE']['error'] === 'not_found' && $v['NGG-WR-LEAD']['error'] === 'staff_account');
+    chk('rules · …in one audit event for the run', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'policy.rule.breach' AND actorId = 'NGG-WR-LEAD'")['c'] === 1);
+    chk('rules · a breach in the future, or long past, is refused', (backend_dispatch('admin.policy.ruleBreach', ['requesterId' => $ADM, 'ruleId' => $rid, 'personIds' => ['NGG-WR-3'], 'date' => $ago(-2)])['error'] ?? '') === 'bad_date'
+        && (backend_dispatch('admin.policy.ruleBreach', ['requesterId' => $ADM, 'ruleId' => $rid, 'personIds' => ['NGG-WR-3'], 'date' => $ago(200)])['error'] ?? '') === 'bad_date');
+    chk('rules · at most ' . POLICY_BREACH_MAX . ' members a time', (backend_dispatch('admin.policy.ruleBreach', ['requesterId' => $ADM, 'ruleId' => $rid, 'personIds' => array_map(fn($i) => 'X' . $i, range(1, POLICY_BREACH_MAX + 1))])['error'] ?? '') === 'too_many');
+
+    // A cap per term on a rule of no particular kind.
+    $cp = backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $ADM, 'name' => 'Phone in class', 'amount' => 1000, 'capTerm' => 1500]);
+    foreach ([12, 8, 3] as $d) backend_dispatch('admin.policy.ruleBreach', ['requesterId' => $ADM, 'ruleId' => $cp['ruleId'], 'personIds' => ['NGG-WR-4'], 'date' => $ago($d)]);
+    $fs = array_map('intval', array_column(db_all("SELECT amount FROM sanctions WHERE personId = 'NGG-WR-4' AND kind = 'fine' ORDER BY tier"), 'amount'));
+    chk('rules · a term cap of ₦1,500: ₦1,000, then the ₦500 left, then nothing', $fs === [1000, 500]);
+    backend_dispatch('admin.fees.fineRuleSave', ['requesterId' => $ADM, 'ruleId' => $cp['ruleId'], 'active' => false]);
+    chk('rules · a rule switched off takes no new breaches, and says so', (backend_dispatch('admin.policy.ruleBreach', ['requesterId' => $ADM, 'ruleId' => $cp['ruleId'], 'personIds' => ['NGG-WR-4']])['error'] ?? '') === 'rule_off');
+    chk('rules · recording a breach needs the people permission', (backend_dispatch('admin.policy.ruleBreach', ['requesterId' => 'NGG-WR-1', 'ruleId' => $rid, 'personIds' => ['NGG-WR-2']])['error'] ?? '') === 'forbidden');
+
+    // The rulebook from the Rules page: the people desk's, member block only.
+    $rb = backend_dispatch('admin.policy.rulebookSave', ['requesterId' => $ADM, 'member' => ['absenceJumps' => 9, 'enabled' => false]]);
+    chk('rules · the rulebook saves from the Rules page — only its own fields, not the member switch', !empty($rb['ok']) && $rb['changed'] === ['absenceJumps'] && policy_for('member')['absenceJumps'] === 9 && policy_enabled_for('member'));
+
+    foreach ($keep as $k => $v2) { if ($v2 === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v2, $k]); }
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-WR-%'");
+    db_exec("DELETE FROM conduct_rules WHERE name IN ('No uniform', 'Phone in class')"); policy_rules_index(true);
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-WR-1'");
 })();
 
 

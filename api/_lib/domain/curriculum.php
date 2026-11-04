@@ -2273,6 +2273,7 @@ function curriculum_for_member(array $m): array {
             'fineAfterDays' => (int)$cfg['fineAfterDays'], 'fineAmount' => (int)$cfg['fineAmount'],
             'progress' => $pr ? ['status' => (string)$pr['status'], 'bestPct' => (int)$pr['bestPct'], 'attempts' => (int)$pr['attempts'],
                                  'pending' => (int)$pr['pending'] > 0, 'completedAt' => (string)$pr['completedAt'],
+                                 'recalled' => curriculum_recalled($pr),
                                  'stale' => (int)$pr['unitVersion'] !== (int)$u['version'] && (int)$pr['attempts'] > 0] : null];
     }
     return ['units' => $out, 'total' => count($out), 'completed' => $done, 'overdue' => $overdue,
@@ -2342,18 +2343,29 @@ function member_curriculum_unit(array $p): array {
  */
 function curriculum_opening_review(array $units, string $unitId, string $memberId): ?array {
     if (!curriculum_schedule()['reviewAtStart']) return null;   // Control Room → Curriculum → Schedule
-    $ids = array_keys($units);
-    $at = array_search($unitId, $ids, true);
-    if ($at === false || $at === 0) return null;          // the first lesson reviews nothing
-
-    $prevId = (string)$ids[$at - 1];
+    if (!isset($units[$unitId])) return null;
+    /* LAST WEEK'S LESSON IN THIS COURSE, not the lesson before this one in
+       the list. A member's lessons arrive ordered week, course, position, so
+       for anybody with two courses — or any Club-wide lesson in the same week
+       — the row before is another course's, and the review used to give up
+       there. It reached almost nobody it was built for. */
+    $course = mb_strtolower((string)$units[$unitId]['unit']['course']);
+    $prevId = null;
+    foreach ($units as $id => $b) {
+        if ((string)$id === $unitId) break;
+        if (mb_strtolower((string)$b['unit']['course']) === $course) $prevId = (string)$id;
+    }
+    if ($prevId === null) return null;                     // the first lesson reviews nothing
     $prev = $units[$prevId];
     if (!$prev['checks']) return null;                     // nothing was ever asked of it
-    // A different course's lesson is not last week's lesson.
-    if (mb_strtolower((string)$prev['unit']['course']) !== mb_strtolower((string)$units[$unitId]['unit']['course'])) return null;
 
-    $pr = db_row('SELECT status, bestPct, pending FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$prevId, $memberId]);
-    if ($pr && (string)$pr['status'] === 'completed') return null;   // already done, don't ask twice
+    $pr = db_row('SELECT status, bestPct, pending, startedAt, completedAt, reviewedAt FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$prevId, $memberId]);
+    if ($pr && curriculum_recalled($pr)) return null;      // remembered on a later day: don't ask twice
+    /* Two lessons in one sitting: the first is still on the screen in their
+       head, so asking now is not recall — and the answer would not count as
+       it. It is asked when they come back. */
+    $opened = $pr ? strtotime((string)$pr['startedAt']) : false;
+    if ($opened && time() - $opened < CURR_RECALL_GAP_DAYS * 86400) return null;
 
     $pub = curriculum_unit_public($prev['unit'], [], $prev['checks'], false);
     return [
@@ -2362,9 +2374,33 @@ function curriculum_opening_review(array $units, string $unitId, string $memberI
         'week' => (int)$prev['unit']['week'],
         'passMark' => (int)$prev['unit']['passMark'],
         'checks' => $pub['checks'],
-        'attempted' => $pr ? in_array((string)$pr['status'], ['attempted', 'submitted'], true) : false,
+        'attempted' => $pr ? in_array((string)$pr['status'], ['attempted', 'submitted', 'completed'], true) : false,
+        'completed' => $pr ? (string)$pr['status'] === 'completed' : false,
         'pending' => $pr ? (int)$pr['pending'] > 0 : false,
     ];
+}
+
+/** Days between opening a lesson and an answer that counts as recalled rather than read off the page. */
+const CURR_RECALL_GAP_DAYS = 2;
+/** Wrong attempts before the right answers are shown; until then a learner is told only which ones were wrong. */
+const CURR_REVEAL_AFTER = 3;
+
+/**
+ * Has this lesson been answered FROM MEMORY — on a later day than it was
+ * opened? Passing on the lesson page, with the lesson still on the screen
+ * above the questions, measures the hour; it used to count as the review
+ * being done, so the lesson page's own "have a go now" switched the
+ * week-later review off for everybody who took it up.
+ *
+ * `reviewedAt` is stamped by a submit made CURR_RECALL_GAP_DAYS or more
+ * after the lesson was opened. A completion that was already that late
+ * (before the column existed) counts too, so nobody is asked twice.
+ */
+function curriculum_recalled(array $pr): bool {
+    if ((string)($pr['reviewedAt'] ?? '') !== '') return true;
+    if ((string)($pr['status'] ?? '') !== 'completed') return false;
+    $s = strtotime((string)($pr['startedAt'] ?? '')); $c = strtotime((string)($pr['completedAt'] ?? ''));
+    return $s && $c && ($c - $s) >= CURR_RECALL_GAP_DAYS * 86400;
 }
 
 /**
@@ -2664,8 +2700,30 @@ function curriculum_progress_public(?array $pr, array $b): ?array {
     return ['status' => (string)$pr['status'], 'score' => (float)$pr['score'], 'maxScore' => (float)$pr['maxScore'],
             'bestPct' => (int)$pr['bestPct'], 'attempts' => (int)$pr['attempts'], 'pending' => (int)$pr['pending'] > 0,
             'passMark' => (int)$b['unit']['passMark'], 'feedback' => (string)$pr['feedback'], 'answers' => $answers,
-            'marks' => $marks, 'completedAt' => (string)$pr['completedAt'],
+            'marks' => $marks, 'completedAt' => (string)$pr['completedAt'], 'reviewedAt' => (string)($pr['reviewedAt'] ?? ''),
+            'revealAfter' => CURR_REVEAL_AFTER,
             'stale' => (int)$pr['unitVersion'] !== (int)$b['unit']['version'] && (int)$pr['attempts'] > 0];
+}
+
+/**
+ * What a learner is shown after a fully marked attempt.
+ *
+ * The right answers used to come back after the FIRST try, with "Submit
+ * again" beside them — so the second attempt was copying, it always passed,
+ * and the lesson's score, its completion and every report built on them
+ * measured nothing. Now a learner is told which ones they got wrong and has
+ * to think again; the answers themselves arrive once they pass, or after
+ * CURR_REVEAL_AFTER tries, when being stuck has stopped teaching anything.
+ */
+function curriculum_attempt_review(array $checks, array $marks, bool $passed, int $attempts): array {
+    $reveal = $passed || $attempts >= CURR_REVEAL_AFTER;
+    return array_map(static function ($c) use ($marks, $reveal) {
+        $cid = (string)$c['checkId'];
+        $got = (float)($marks[$cid]['points'] ?? 0);
+        $o = ['checkId' => $cid, 'kind' => (string)$c['kind'], 'right' => $got >= (float)$c['points'] && (float)$c['points'] > 0];
+        if ($reveal) { $o['answer'] = (string)$c['answer']; $o['rubric'] = (string)$c['rubric']; }
+        return $o;
+    }, $checks);
 }
 
 /**
@@ -2752,6 +2810,9 @@ function member_curriculum_submit(array $p): array {
             'marks' => json_encode($marks, JSON_UNESCAPED_UNICODE), 'feedback' => mb_substr(implode(' ', $feedback), 0, 2000),
             'pending' => $t['pending'] > 0 ? 1 : 0, 'updatedAt' => $now];
     if ($t['passed'] && !$completedBefore) $row['completedAt'] = $now;
+    // An answer given days after the lesson was opened is recall, whatever it scored.
+    $opened = $pr ? strtotime((string)$pr['startedAt']) : false;
+    if ($pr && $opened && (string)($pr['reviewedAt'] ?? '') === '' && time() - $opened >= CURR_RECALL_GAP_DAYS * 86400) $row['reviewedAt'] = $now;
     if ($pr) db_update('curriculum_progress', $row, ['id' => $pr['id']]);
     else db_insert('curriculum_progress', $row + ['unitId' => $id, 'memberId' => (string)$m['memberId'], 'startedAt' => $now]);
     if ($t['passed'] && !$completedBefore && function_exists('event_emit')) {
@@ -2759,8 +2820,7 @@ function member_curriculum_submit(array $p): array {
     }
     $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
     return ['ok' => true, 'progress' => curriculum_progress_public($pr, $b),
-            // The answers are revealed only once the attempt is fully marked.
-            'review' => $t['pending'] === 0 ? curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], true)['checks'] : null];
+            'review' => $t['pending'] === 0 ? curriculum_attempt_review($b['checks'], $marks, $t['passed'] || $completedBefore, (int)$pr['attempts']) : null];
 }
 
 /* ══ Instructors and mentors ═══════════════════════════════════════════════ */

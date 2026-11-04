@@ -5182,3 +5182,16 @@ CREATE TABLE IF NOT EXISTS documents (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (224) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 225 · Written rules carry frog jumps and repeat escalation, like the rulebook's own ──
+ALTER TABLE conduct_rules ADD COLUMN jumps INT NOT NULL DEFAULT 0;
+ALTER TABLE conduct_rules ADD COLUMN escalateAfter INT NOT NULL DEFAULT 0;
+ALTER TABLE conduct_rules ADD COLUMN escalateTo VARCHAR(16) NOT NULL DEFAULT '';
+ALTER TABLE conduct_rules ADD COLUMN suspendDays INT NOT NULL DEFAULT 7;
+ALTER TABLE conduct_rules ADD COLUMN reentryFee INT NOT NULL DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (225) ON DUPLICATE KEY UPDATE version = version;
+
+-- 226: a lesson's questions answered from memory on a later day (the opening review).
+ALTER TABLE curriculum_progress ADD COLUMN reviewedAt VARCHAR(32) NOT NULL DEFAULT '';
+INSERT INTO schema_version (version) VALUES (226) ON DUPLICATE KEY UPDATE version = version;

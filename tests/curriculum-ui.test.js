@@ -423,6 +423,16 @@ async function contextFor(memberId, admin, viewport) {
         php(`echo db_row("SELECT p.status FROM curriculum_progress p JOIN curriculum_units u ON u.unitId = p.unitId WHERE u.title = 'Finding middle C'")["status"];`) === 'submitted');
     await mp.screenshot({ path: path.join(SHOTS, 'member-lesson.png'), fullPage: true });
     await mp.click('button:has-text("← All lessons")');
+    /* Straight on to the next lesson, in the same sitting: last week's
+       questions are NOT put in front of them — the lesson is still in their
+       head, so answering now would not be remembering, and would not count. */
+    await mp.click('.cur-item:has-text("Hand position")');
+    await mp.waitForSelector('.cur-lesson');
+    await mp.waitForTimeout(800);
+    chk('the next lesson in the SAME sitting does not open on a review — that would not be recall', !(await mp.$('.cur-review')));
+    await mp.click('button:has-text("← All lessons")');
+    // A week passes.
+    php(`db_exec("UPDATE curriculum_progress SET startedAt = ? WHERE unitId = (SELECT unitId FROM curriculum_units WHERE title = 'Finding middle C')", [gmdate('Y-m-d\\TH:i:s\\Z', time() - 7 * 86400)]);`);
     await mp.click('.cur-item:has-text("Hand position")');
     /* THE OPENING REVIEW. This is the second lesson of the course, so it
        opens on the PREVIOUS lesson's questions — before today's teaching is

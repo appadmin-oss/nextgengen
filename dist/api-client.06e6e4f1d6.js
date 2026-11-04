@@ -2186,6 +2186,12 @@
         save:      (programme, policy, memberProgramme) => request('/admin/policy.php', { body: { action: 'save', programme, policy, memberProgramme } }),
         dayToggle: (date, runs) => request('/admin/policy.php', { body: { action: 'dayToggle', date, runs } }),
         infraction:(personId, personType, kind, date, note) => request('/admin/policy.php', { body: { action: 'infraction', personId, personType, kind, date, note } }),
+        /** A written rule broken, by one member or several: {ruleId, personIds[], date?, note?}. */
+        /** Every rule in one place: the rulebook's and the written ones (the Rules page). */
+        rules:     () => request('/admin/policy.php' + qs({ view: 'rules' })),
+        ruleBreach:(data) => request('/admin/policy.php', { body: Object.assign({ action: 'ruleBreach' }, data) }),
+        /** The member rulebook alone (people), from the Rules page. */
+        rulebookSave:(member) => request('/admin/policy.php', { body: { action: 'rulebookSave', member } }),
         void:      (infractionId, reason) => request('/admin/policy.php', { body: { action: 'void', infractionId, reason } }),
         issue:     (personId, personType, kind, reason, opts) => request('/admin/policy.php', { body: Object.assign({ action: 'sanctionIssue', personId, personType, kind, reason }, opts || {}) }),
         update:    (sanctionId, status, note) => request('/admin/policy.php', { body: { action: 'sanctionUpdate', sanctionId, status, note } }),

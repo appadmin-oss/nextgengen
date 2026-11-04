@@ -1589,6 +1589,28 @@ be skipped — being away is not a reason to be shut out of this week), what
 they'll learn, the lesson itself with **Read it to me** and a speed control,
 next session's questions, and *How did that go?* at the end.
 
+**How the week-later review works (and what counts).** Each lesson's questions
+are asked again at the start of the member's next lesson **in the same
+course**, from memory. Three rules decide it:
+
+- *Last week's lesson* means the previous lesson in that course — not
+  whatever lesson sits before it in the member's list. (It used to mean the
+  latter, so anybody taking two courses was almost never asked.)
+- **Passing on the lesson day does not count as remembering.** A member may
+  answer the questions straight after reading the lesson, and passing still
+  completes it — but they are asked again at the next session. Only an answer
+  given **two or more days** after they opened the lesson is recorded as
+  recall (`reviewedAt`), and once it is, they are not asked twice. A review is
+  never offered in the same sitting as the lesson it reviews.
+- **A wrong answer is marked, not given away.** After a try the member sees
+  which questions they got wrong; the right answers appear once they pass, or
+  after **3** tries. Before this, the answers appeared after the first try
+  beside *Submit again*, so every second attempt passed and a lesson's score
+  meant nothing.
+
+`/learn/review` lists both kinds of waiting: lessons not finished, and lessons
+*passed on the day — still to remember*.
+
 Around the lesson, so somebody coming back has somewhere to start:
 
 - **Pick up where you left off.** *This week* leads with the last lesson they
@@ -1985,15 +2007,42 @@ Settings. Notices start when dues are on; they need nothing else switched on.
 
 ### Conduct & fines — one home for fines
 
-**Money → Conduct & fines** is where fines live, start to finish. It has four
+**Money → Conduct & fines** is where fines live, start to finish. It has five
 views, and each person sees only those their permissions reach:
 
 | View | Needs | What it holds |
 |---|---|---|
+| **Rules** | `fees`, `people` or `summer` | **Every rule in one place** — the rulebook's four (late, absence, permission, evidence) and every written rule — each as *trigger → consequence (fine and/or frog jumps) → what happens on repeat → cap* |
 | **Fines** | `fees` | This term's fines at a glance, **Upload fines**, the **fine rules**, and the one-time clearance |
 | **Compliance** | `people` or `summer` | Everybody with something on record, and each person's record |
 | **Policy** | `summer` | The thresholds: absences allowed, lates, suspension, the fines the policy issues |
 | **Calendars** | `summer` | Which days count — the Summer School days and the NGG member days |
+
+#### The Rules page
+
+One table, one row per rule, read the same way whoever wrote it:
+
+- **When** — what breaks it (*arrives after 10:00*, *phone out in class*).
+- **Costs** — the fine, the frog jumps, or both.
+- **On repeat** — e.g. *every 3rd time in a term: a 7-day suspension and a
+  ₦1,000 re-entry fee*, or *every 2nd time: referred for review*.
+- **Cap** — the most it can cost in a term.
+- **Broken** — how many times it has been recorded.
+
+Who can change what: a written rule is added or edited by somebody holding
+`fees` (**Add a rule**); the rulebook's four rows by somebody holding
+`people`. A row you cannot change says so instead of offering a button.
+
+**Recording a breach.** *Record a breach* (or **Members → select people →
+Broke a rule…**, or a person's conduct drawer) records that a written rule
+was broken, for up to 100 people at once, on today or a date in the last 90
+days. The fine, the frog jumps and any escalation follow automatically, the
+same way the rulebook's own do. Refused rows are named: not found, a staff
+account, outside your centres, your own account, or already recorded for that
+day. One audit entry per press.
+
+**Announce the rules** writes an *Our rules* notice from the table and opens
+it in the notice editor as a draft — read it, then send it like any notice.
 
 Dues & arrears is about money owed and paid; it no longer has an upload.
 Old links to *Dues & arrears → Upload fines* open Conduct & fines. In Summer

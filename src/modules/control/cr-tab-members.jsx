@@ -1185,6 +1185,7 @@ Object.assign(CR_TAB_DEFS, {
           payload: v => ({ consentType: v.consentType, consentStatus: v.consentStatus }) }) },
         ctx.can("fees") ? { l: "Dues reminders", max: 500, run: crMemBulk(ctx, "remindersOff", "Dues reminders", { id: "off", l: "Monthly reminders", type: "chips", req: true, opts: [["1", "Off — don’t remind these families"], ["0", "On — remind them as normal"]] }, "updated",
           { values: { off: "1" }, intro: "Off is a per-family opt-out. It stops the reminder only; the obligation and the balance are unchanged.", payload: v => ({ off: v.off === "1" ? 1 : 0 }) }) } : null,
+        ctx.can("people") ? { l: "Broke a rule…", max: 100, run: keys => { crRuleBreach(ctx, keys, "", () => ctx.setData(x => Object.assign({}, x, { rev: (x.rev || 0) + 1 }))); return false; } } : null,
         { l: "Export selected", run: async keys => { await crMbExport(ctx, keys); return false; } },
       ].filter(Boolean);
       if (d.suggest) out.push({ key: "suggest", type: "custom", span: 6, render: c => <CrMbSuggest s={d.suggest} ctx={c}/> });

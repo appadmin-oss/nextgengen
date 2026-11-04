@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 224;
+const NGG_SCHEMA_TARGET = 226;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6374,6 +6374,30 @@ function db_migrate(PDO $db): void {
               token TEXT NOT NULL UNIQUE, irn TEXT NOT NULL DEFAULT '', issuedAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_documents_member ON documents(memberId, kind);",
+
+        /* 225 — one Rules page (domain/policy.php policy_apply_rules). A written
+           rule could only cost money and could only be recorded as a fine, so
+           "no uniform: ₦500 and 5 frog jumps, the third time a suspension" had
+           nowhere to go. A rule now carries what the rulebook's own rules carry:
+           corrective exercise per breach, and what its Nth breach in a session
+           escalates to (a suspension with an optional re-entry fee, or a
+           management review). A breach is an infraction of kind 'rule:<ruleId>';
+           its sanctions are derived from it like a late's, so voiding the breach
+           lifts them. */
+        225 => "
+            ALTER TABLE conduct_rules ADD COLUMN jumps INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE conduct_rules ADD COLUMN escalateAfter INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE conduct_rules ADD COLUMN escalateTo TEXT NOT NULL DEFAULT '';
+            ALTER TABLE conduct_rules ADD COLUMN suspendDays INTEGER NOT NULL DEFAULT 7;
+            ALTER TABLE conduct_rules ADD COLUMN reentryFee INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* When a member last answered a lesson's questions FROM MEMORY — on a
+           later day than they opened it (domain/curriculum.php,
+           curriculum_opening_review). Passing on the lesson day measures the
+           lesson; this is the week-later recall the review exists for. */
+        226 => "
+            ALTER TABLE curriculum_progress ADD COLUMN reviewedAt TEXT NOT NULL DEFAULT '';
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

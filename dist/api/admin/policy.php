@@ -11,6 +11,7 @@ if ($method === 'GET') {
     if ($view === 'board')       $res = gs_call('admin.policy.board', ['requesterId' => $mid]);
     elseif ($view === 'integrity') $res = gs_call('admin.attendance.integrity', ['requesterId' => $mid]);
     elseif ($view === 'correctives') $res = gs_call('admin.policy.correctives', ['requesterId' => $mid]);
+    elseif ($view === 'rules')   $res = gs_call('admin.policy.rules', ['requesterId' => $mid]);
     elseif ($view === 'person')  $res = gs_call('admin.policy.person', ['requesterId' => $mid, 'personId' => $_GET['personId'] ?? '', 'personType' => $_GET['personType'] ?? '']);
     else                         $res = gs_call('admin.policy.settings', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
@@ -20,6 +21,8 @@ if ($method === 'GET') {
         'save'           => 'admin.policy.save',
         'dayToggle'      => 'admin.policy.day.toggle',
         'infraction'     => 'admin.policy.infraction',
+        'ruleBreach'     => 'admin.policy.ruleBreach',
+        'rulebookSave'   => 'admin.policy.rulebookSave',
         'void'           => 'admin.policy.void',
         'sanctionIssue'  => 'admin.policy.sanction.issue',
         'sanctionUpdate' => 'admin.policy.sanction.update',

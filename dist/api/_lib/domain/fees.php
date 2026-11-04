@@ -3118,6 +3118,10 @@ function fees_fine_rule_amount(string $reason): int {
 /** admin.fees.fineRules — every rule, with what it has governed this term. */
 function admin_fees_fine_rules(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    return fees_fine_rules_data();
+}
+/** The written rules and this term's use of them — the read behind both the fees desk and the Rules page (admin.policy.rules). */
+function fees_fine_rules_data(): array {
     if (function_exists('cp_rules_seed')) cp_rules_seed();
     [$from, $to] = function_exists('cp_term_bounds') ? cp_term_bounds('') : [gmdate('Y-01-01'), gmdate('Y-12-31')];
     // One pass over this term's fines, not one per rule (the Club portal's reader looped).
@@ -3127,12 +3131,19 @@ function admin_fees_fine_rules(array $p): array {
         $by[$k]['n'] = ($by[$k]['n'] ?? 0) + 1; $by[$k]['total'] = ($by[$k]['total'] ?? 0) + (int)$e['amount'];
         $all['n']++; $all['total'] += (int)$e['amount'];
     }
+    // Breaches recorded against each written rule this term — one grouped query.
+    $breaches = [];
+    foreach (db_all("SELECT kind, COUNT(*) c FROM infractions WHERE kind LIKE 'rule:%' AND (voidedAt IS NULL OR voidedAt = '') AND date BETWEEN ? AND ? GROUP BY kind", [$from, $to]) as $b) $breaches[substr((string)$b['kind'], 5)] = (int)$b['c'];
     $rules = [];
     foreach (db_all('SELECT * FROM conduct_rules ORDER BY id') as $r) {
         $k = (string)$r['reason'];
         $rules[] = ['ruleId' => (string)$r['ruleId'], 'reason' => $k, 'reasonLabel' => $k !== '' ? (FEES_FINE_REASONS[$k] ?? $k) : '',
             'name' => (string)$r['name'], 'whenText' => (string)$r['whenText'], 'amount' => (int)$r['amount'], 'capTerm' => (int)$r['capTerm'],
             'active' => (bool)(int)$r['active'], 'updatedAt' => (string)($r['updatedAt'] ?? ''),
+            // What a breach costs besides money, and what its Nth breach in a session escalates to (policy_apply_rules).
+            'jumps' => (int)($r['jumps'] ?? 0), 'escalateAfter' => (int)($r['escalateAfter'] ?? 0), 'escalateTo' => (string)($r['escalateTo'] ?? ''),
+            'suspendDays' => (int)($r['suspendDays'] ?? 7), 'reentryFee' => (int)($r['reentryFee'] ?? 0),
+            'breaches' => (int)($breaches[(string)$r['ruleId']] ?? 0),
             'thisTerm' => $k !== '' ? ['n' => $by[$k]['n'] ?? 0, 'total' => $by[$k]['total'] ?? 0] : ['n' => 0, 'total' => 0]];
     }
     $taken = array_values(array_filter(array_map(static fn($r) => $r['reason'], $rules)));
@@ -3164,6 +3175,11 @@ function admin_fees_fine_rule_save(array $p): array {
         'amount' => $int('amount', $cur ? (int)$cur['amount'] : 0),
         'capTerm' => $int('capTerm', $cur ? (int)$cur['capTerm'] : 0),
         'active' => array_key_exists('active', $p) ? (!empty($p['active']) && $p['active'] !== 'false' ? 1 : 0) : ($cur ? (int)$cur['active'] : 1),
+        'jumps' => $int('jumps', $cur ? (int)($cur['jumps'] ?? 0) : 0),
+        'escalateAfter' => $int('escalateAfter', $cur ? (int)($cur['escalateAfter'] ?? 0) : 0),
+        'escalateTo' => $str('escalateTo', $cur ? (string)($cur['escalateTo'] ?? '') : ''),
+        'suspendDays' => $int('suspendDays', $cur ? (int)($cur['suspendDays'] ?? 7) : 7),
+        'reentryFee' => $int('reentryFee', $cur ? (int)($cur['reentryFee'] ?? 0) : 0),
     ];
     // The whole payload is checked before anything is written.
     if (mb_strlen($next['name']) < 3 || mb_strlen($next['name']) > 160) return ['ok' => false, 'error' => 'bad_name'];
@@ -3172,6 +3188,13 @@ function admin_fees_fine_rule_save(array $p): array {
     if ($next['amount'] < 0 || $next['amount'] > FEES_AMOUNT_MAX) return ['ok' => false, 'error' => 'bad_amount', 'max' => FEES_AMOUNT_MAX];
     if ($next['capTerm'] < 0 || $next['capTerm'] > FEES_AMOUNT_MAX) return ['ok' => false, 'error' => 'bad_cap', 'max' => FEES_AMOUNT_MAX];
     if ($next['capTerm'] > 0 && $next['amount'] > $next['capTerm']) return ['ok' => false, 'error' => 'cap_below_fine'];
+    if ($next['jumps'] < 0 || $next['jumps'] > 200) return ['ok' => false, 'error' => 'bad_jumps', 'max' => 200];
+    if (!in_array($next['escalateTo'], ['', 'suspension', 'review'], true)) return ['ok' => false, 'error' => 'bad_escalate'];
+    if ($next['escalateAfter'] < 0 || $next['escalateAfter'] > 60) return ['ok' => false, 'error' => 'bad_escalate_after', 'max' => 60];
+    // An escalation needs both halves: how many breaches, and to what. Half of one would govern nothing while looking set.
+    if (($next['escalateTo'] === '') !== ($next['escalateAfter'] === 0)) return ['ok' => false, 'error' => 'escalate_incomplete'];
+    if ($next['suspendDays'] < 1 || $next['suspendDays'] > 365) return ['ok' => false, 'error' => 'bad_suspend_days', 'max' => 365];
+    if ($next['reentryFee'] < 0 || $next['reentryFee'] > FEES_AMOUNT_MAX) return ['ok' => false, 'error' => 'bad_reentry', 'max' => FEES_AMOUNT_MAX];
     // conduct_rule_allow() reads the FIRST rule of a kind, so a second one would govern nothing while looking live.
     if ($next['reason'] !== '') {
         $other = db_row('SELECT ruleId FROM conduct_rules WHERE reason = ? AND ruleId <> ? LIMIT 1', [$next['reason'], $id]);
@@ -3179,15 +3202,19 @@ function admin_fees_fine_rule_save(array $p): array {
     }
     if ($cur) {
         $was = ['name' => (string)$cur['name'], 'whenText' => (string)$cur['whenText'], 'reason' => (string)$cur['reason'],
-                'amount' => (int)$cur['amount'], 'capTerm' => (int)$cur['capTerm'], 'active' => (int)$cur['active']];
+                'amount' => (int)$cur['amount'], 'capTerm' => (int)$cur['capTerm'], 'active' => (int)$cur['active'],
+                'jumps' => (int)($cur['jumps'] ?? 0), 'escalateAfter' => (int)($cur['escalateAfter'] ?? 0), 'escalateTo' => (string)($cur['escalateTo'] ?? ''),
+                'suspendDays' => (int)($cur['suspendDays'] ?? 7), 'reentryFee' => (int)($cur['reentryFee'] ?? 0)];
         $diff = array_keys(array_filter($next, static fn($v, $k) => $was[$k] !== $v, ARRAY_FILTER_USE_BOTH));
         if (!$diff) return ['ok' => true, 'unchanged' => true, 'ruleId' => $id];
         db_update('conduct_rules', $next + ['updatedAt' => now_iso()], ['ruleId' => $id]);
+        if (function_exists('policy_rules_index')) policy_rules_index(true);
         audit('fees.rule.save', $by, $id, ['changed' => $diff, 'from' => array_intersect_key($was, array_flip($diff)), 'to' => array_intersect_key($next, array_flip($diff))], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'ruleId' => $id, 'changed' => $diff];
     }
     $id = 'RULE-' . strtoupper(rand_hex(4));
     db_insert('conduct_rules', $next + ['ruleId' => $id, 'createdBy' => $by, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    if (function_exists('policy_rules_index')) policy_rules_index(true);
     audit('fees.rule.create', $by, $id, $next, (string)($p['ip'] ?? ''));
     return ['ok' => true, 'ruleId' => $id, 'created' => true];
 }

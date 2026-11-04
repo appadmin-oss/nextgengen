@@ -2718,7 +2718,11 @@ function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
       })()}
       {c.kind === "mcq"
         ? c.options.map((o, k) => (
-            <label key={k} className={"cur-opt" + (rv && String(k) === rv.answer ? " is-right" : "") + (rv && value === k && String(k) !== rv.answer ? " is-wrong" : "")}>
+            /* `answer` is there once the right answers are revealed (a pass,
+               or enough tries); before that only `right` comes back, so the
+               learner is told which they got wrong and has to think again. */
+            <label key={k} className={"cur-opt" + (rv && (rv.answer !== undefined ? String(k) === rv.answer : rv.right && value === k) ? " is-right" : "")
+                                     + (rv && value === k && (rv.answer !== undefined ? String(k) !== rv.answer : !rv.right) ? " is-wrong" : "")}>
               <input type="radio" name={c.checkId} checked={value === k} disabled={disabled} onChange={() => onChange(k)}/>
               <span>{o}</span>
             </label>))
@@ -2734,6 +2738,7 @@ function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
           </React.Fragment>}
       {mark && mark.feedback && <p className="cur-feedback"><b>{mark.by === "ai" ? "Feedback (AI)" : mark.by === "auto" ? "Note" : "Your instructor"}:</b> {mark.feedback}</p>}
       {rv && c.kind !== "mcq" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
+      {rv && rv.answer === undefined && !rv.right && <p className="cur-feedback"><b>Not yet.</b> Think it through again — the answer is shown once you pass, or after a few tries.</p>}
     </fieldset>
   );
 }

@@ -5821,3 +5821,42 @@ desk's notice page:
   why it never saw this).
 - Not a fault: `.cr-pchips` (every phone table's filter row) is a deliberate
   edge-to-edge scrolling strip; the page itself does not scroll sideways.
+
+## 2026-11-04 — One Rules page; the Learn review made real
+
+**Rules page** (Money → Conduct & fines → Rules, `admin.policy.rules`): the
+rulebook's four rows and every written rule in one table — trigger,
+consequence (fine and/or frog jumps), repeat escalation, cap, breaches.
+Written rules gained frog jumps and "every Nth breach in a term → suspension
+(+ re-entry fee) or review" (migration 225; `policy_apply_rules`, tiers
+1e8–5e8 in `policy.php`). Breaches are recorded per person or in bulk
+(`admin.policy.ruleBreach`, cap 100, per-row verdicts, one audit event), and
+the rulebook's four are edited from the same page by `people`
+(`admin.policy.rulebookSave`). *Announce the rules* drafts an "Our rules"
+notice. Tests: the "One Rules page" block in `api/tests/run.php`,
+`tests/rules-page.test.js`. `conduct-tab.test.js` now expects the Rules view
+first, and a club admin to see Rules + Compliance.
+
+**Learn audit — three faults that between them meant the week-later review
+almost never happened and a lesson's score measured nothing:**
+
+1. `curriculum_opening_review()` took the row before today's lesson in a list
+   ordered *week, course, position*; for a member with two courses (or a
+   Club-wide lesson that week) that row was another course's, and it returned
+   null. It now walks back to the previous lesson **in the same course**.
+2. A pass on the lesson page, with the lesson still on screen, counted as the
+   review being done, so the page's own "have a go now" turned the review off.
+   Recall is now an answer **≥ 2 days** after the lesson was opened
+   (`curriculum_progress.reviewedAt`, migration 226; `curriculum_recalled()`
+   also accepts a pre-226 completion that was already that late). Not offered
+   in the same sitting.
+3. The submit returned every right answer after the first try, beside
+   "Submit again". It now returns `right` per question, and the answers only
+   once passed or after `CURR_REVEAL_AFTER` (3) tries
+   (`curriculum_attempt_review()`). `CurCheckField` reads either shape.
+
+Not changed, worth knowing: the opening review still offers last week's
+questions to a member who never opened last week's lesson (it was always so —
+"you missed a session" is information too); and an instructor's mark on a
+written answer days later does not stamp `reviewedAt` (only the member's own
+submit does).

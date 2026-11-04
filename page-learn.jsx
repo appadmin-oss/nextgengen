@@ -1016,7 +1016,8 @@ function LearnLesson({ unitId, onDone, units }) {
           <h2 className="lrn-sec-h">Next session's review</h2>
           <p className="lrn-note">
             You'll be asked {u.checks.length === 1 ? "this" : "these"} at the start of your next session, from memory.
-            Have a go now if you like — it is the remembering a week later that makes it stick. Pass mark {u.passMark}%.
+            Have a go now if you like — passing today still finishes the lesson, and you will be asked again from memory, because it is the remembering a week later that makes it stick.
+            Pass mark {u.passMark}%. A wrong answer is marked, not given away: the answers appear once you pass, or after {(p && p.revealAfter) || 3} tries.
             {p && p.attempts > 0 ? " Attempts so far: " + p.attempts + "." : ""}
           </p>
           {u.checks.map((c, i) => (
@@ -1347,10 +1348,14 @@ function LearnNotes({ d }) {
 function LearnReview({ d }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading"/>;
   const units = (d.units || []);
-  /* A lesson carries the questions you are asked about it a week later. What
-     is waiting is every lesson you have not finished that has questions on
-     it — which is exactly what the next session will open with. */
-  const waiting = units.filter(u => u.checks > 0 && (!u.progress || u.progress.status !== "completed"));
+  /* A lesson carries the questions you are asked about it a week later, from
+     memory. Two different things wait: lessons not finished at all, and
+     lessons passed on the day — with the lesson still above the questions —
+     that have not yet been answered from memory. The second used to be
+     counted as done, which is how the week-later review stopped happening. */
+  const asked = units.filter(u => u.checks > 0 && !(u.progress && u.progress.recalled));
+  const waiting = asked.filter(u => !u.progress || u.progress.status !== "completed");
+  const recall = asked.filter(u => u.progress && u.progress.status === "completed");
   const marked = units.filter(u => u.progress && u.progress.pending);
   return (
     <div className="lrn-stack">
@@ -1366,14 +1371,21 @@ function LearnReview({ d }) {
           <ul className="lrn-list">{marked.map(u => <LearnLessonCard key={u.unitId} u={u} showCourse/>)}</ul>
         </section>
       )}
+      {recall.length > 0 && (
+        <section className="lrn-group" aria-label="Passed on the day">
+          <h2 className="lrn-group-h">Passed on the day — still to remember</h2>
+          <p className="lrn-note">You got these right with the lesson in front of you. You will be asked them again from memory at your next session in that course.</p>
+          <ul className="lrn-list">{recall.map(u => <LearnLessonCard key={u.unitId} u={u} showCourse/>)}</ul>
+        </section>
+      )}
       {waiting.length > 0 ? (
         <section className="lrn-group" aria-label="To be asked">
           <h2 className="lrn-group-h">You will be asked about these</h2>
           <ul className="lrn-list">{waiting.map(u => <LearnLessonCard key={u.unitId} u={u} showCourse/>)}</ul>
         </section>
-      ) : (
+      ) : recall.length > 0 ? null : (
         <div className="lrn-empty"><i className="ph-fill ph-check-circle" aria-hidden="true"/>
-          <h2>Nothing waiting.</h2><p>You have finished every lesson that has questions on it.</p></div>
+          <h2>Nothing waiting.</h2><p>You have answered every lesson's questions from memory.</p></div>
       )}
     </div>
   );
