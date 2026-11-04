@@ -5860,3 +5860,37 @@ questions to a member who never opened last week's lesson (it was always so —
 "you missed a session" is information too); and an instructor's mark on a
 written answer days later does not stamp `reviewedAt` (only the member's own
 submit does).
+
+## 2026-11-04 — The Arcade's Math Lab door, and a smoke suite that had stopped halfway
+
+`tests/ui-smoke.js` failed on "waiting for `.ml-ladder`". Not a slow page: on
+3 Nov the old twenty-one-level ladder was replaced by the Maths Lab at
+`/study/lab`, the Arcade band's button became a navigation there, and the
+test went on waiting for the retired ladder. That wait sat outside `step`, so
+its timeout THREW and every assertion after it in the file silently never
+ran — the run read "367 passed, 1 failed" over a suite of 627.
+
+- **The band** (`MathLabTeaser`, page-club.jsx) still read the RETIRED
+  ladder's board and said "Twenty-one levels across six strands … Next up:
+  Surds" on the way into a Lab that has neither. It now asks the new Lab
+  (`mathslab.home`) and shows its next step, level and topics mastered; a
+  Summer account (members_only) gets the door without figures. It is an
+  `<a href="/study/lab">`, not a button that sets `location`.
+- **Removed, unreachable since 3 Nov:** `MathLab`, `MathLevelCard`,
+  `MathPaper`, `MathMarked`, `ML_TIERS`, the Arcade's `lab` state, the
+  `NGGApi.member.mathlab` client namespace and ~100 `.ml-*` rules (only
+  `.ml-teaser*` remains). The server ops in `mathlab.php` / `arcade.php`
+  (`mathStart`, `mathSubmit`, the level certificates) are untouched: issued
+  certificates must keep verifying, and the PHP suite still covers them.
+- **Tests now cover the new Lab in a browser for the first time.**
+  ui-smoke's Math Lab blocks hold the band (asks the new Lab, names its next
+  step, never the retired ladder, links to /study/lab, copes with a Summer
+  account, 4.5:1 on the community surface, fits 360px) and render the real
+  `MathsLab` home on the same data. `mathlab-shot.js` photographs the band and
+  the Lab's home and map, with the map read from `mathslab-map.php`.
+  Fixture trap: the ui-smoke API stub is a Proxy, and a stub assigned through
+  `NGGApi.member` before `member` has been stored on it is silently lost.
+- **One more fault the abort had hidden:** the fees Reminders test expected
+  "no guardian email"; the server deliberately became `noContact` ("no way to
+  reach the family") in 19f44ec1 when reminders gained app and phone. The test
+  was brought up to the contract.

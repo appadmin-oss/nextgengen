@@ -435,11 +435,39 @@ function unzipDocumentXml(buf) {
 <script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script>
 <script>
   var b = new URLSearchParams(location.search).get('board');
+  /* The new Maths Lab's home, as mathslab.home sends it. Internally
+     consistent: 640 XP is the Analyst band (500–1500), 12 of the 70 open
+     topics are mastered, and a climb not yet done is what next asks for.
+     ?ml=summer answers as the server does for an account the Lab is not
+     for, so the Arcade's band has to cope with no figures. */
+  function mlbStub() {
+    window.__mlbCalls = [];
+    var who = new URLSearchParams(location.search).get('ml');
+    var home = {
+      ok: true, name: 'Amaka', xp: 640, level: { n: 2, name: 'Analyst', next: 1500, from: 500 },
+      streak: 3, freezes: 1, climb: { stage: 4, done: false, momentum: 2 },
+      next: { mode: 'climb', stage: 4, label: 'Continue your climb: Stage 4 gate' },
+      counts: { mastered: 12, learning: 3, due: 0, available: 70, total: 170 },
+      badges: [{ id: 'first-star', name: 'First star', what: 'Your first topic known or mastered', earned: true },
+               { id: 'climber', name: 'Climber', what: 'Finished the climb to your level', earned: false }],
+      courses: [{ id: 'C1', title: 'Algebra foundations', pct: 40, enrolled: true, available: true }],
+    };
+    // Stored on the proxy first: a stub assigned through a fresh deep() is lost.
+    window.NGGApi.member = window.NGGApi.member || {};
+    window.NGGApi.member.mathslab = {
+      home: function () {
+        window.__mlbCalls.push('home');
+        if (who === 'summer') { var e = new Error('members_only'); e.code = 'members_only'; return Promise.reject(e); }
+        return Promise.resolve(home);
+      },
+    };
+  }
   var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'photo' ? 'PhotoEditor'
             : b === 'att' ? 'SummerAttendance' : b === 'kiosk' ? 'SummerKiosk'
             : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : b === 'centre' ? 'CentreDetail'
             : b === 'builder' ? 'SummerFormBuilder' : b === 'gatereg' ? 'GateRegister'
             : b === 'arcade' ? 'CmArcade'
+            : b === 'mathslab' ? 'MathsLab'
             : b === 'mentor' ? 'MentorPortal'
             : b === 'consent' ? 'MemberConsentEditor'
             : b === 'checkin' ? 'GateCheckin'
@@ -878,7 +906,7 @@ function unzipDocumentXml(buf) {
           count: 2, everyDays: 14, enabled: true,
           due: [{ memberId: 'NGG-2026-0001', fullName: 'Ada Obi', payable: 62000, lastRemindedAt: '' },
                 { memberId: 'NGG-2026-0002', fullName: 'Bode Eze', payable: 34000, lastRemindedAt: '2026-06-01T09:00:00Z' }],
-          skipped: { off: 0, optedOut: 1, nothingPayable: 3, underMinimum: 0, tooSoon: 2, noEmail: 1 },
+          skipped: { off: 0, optedOut: 1, nothingPayable: 3, underMinimum: 0, tooSoon: 2, noContact: 1 },
         } });
       },
       remindRun: function () { window.__remindRuns = (window.__remindRuns || 0) + 1;
@@ -1404,6 +1432,10 @@ function unzipDocumentXml(buf) {
       };
     }
     props = {};
+  } else if (b === 'mathslab') {
+    /* The Maths Lab itself (/study/lab), the page the Arcade's band opens. */
+    mlbStub();
+    props = { me: { phase: 'ok', member: { fullName: 'Amaka Amadi' } } };
   } else if (b === 'arcade') {
     /* The Arcade grades on the server, so the interesting client behaviour is
        what it SENDS: the answers must line up with the questions they were
@@ -1474,84 +1506,7 @@ function unzipDocumentXml(buf) {
         return new Promise(function (r) { setTimeout(function () { r(body); }, 1200); });
       },
     };
-    /* The Math Lab hangs off the same screen. Two strands, three cleared, and
-       one level shut behind a prerequisite in ANOTHER strand — the shape the
-       ladder actually has, so the grouped view and the "Needs …" line are
-       both exercised rather than merely rendered. */
-    window.__mathStarts = [];
-    window.__mathSubmits = [];
-    var LV = [
-      { level: 1, name: 'Number & Numeration', band: 'JSS 1\u20132', icon: '\u2460',
-        strand: 'Number', needs: [],
-        blurb: 'Factors, multiples, fractions.', questions: 12, seconds: 300 },
-      { level: 2, name: 'Algebraic Processes', band: 'JSS 3', icon: '\u2461',
-        strand: 'Algebra', needs: [],
-        blurb: 'Expanding and factorising.', questions: 12, seconds: 330 },
-      { level: 3, name: 'Indices & Logarithms', band: 'SSS 1', icon: '\u2462',
-        strand: 'Algebra', needs: [2],
-        blurb: 'The laws of indices.', questions: 12, seconds: 330 },
-      { level: 4, name: 'Surds', band: 'SSS 1\u20132', icon: '\u2463',
-        strand: 'Algebra', needs: [3],
-        blurb: 'Rationalising a denominator.', questions: 10, seconds: 330 },
-      { level: 5, name: 'Quadratic Equations', band: 'SSS 2', icon: '\u2464',
-        strand: 'Algebra', needs: [2],
-        blurb: 'Roots and the discriminant.', questions: 12, seconds: 360 },
-    ];
-    window.NGGApi.member.mathlab = {
-      board: function () {
-        return Promise.resolve({
-          passPct: 70, cleared: 2, total: LV.length, open: 2,
-          strands: ['Number', 'Algebra'],
-          levels: LV.map(function (l, i) {
-            var cleared = i <= 1;
-            var waiting = l.needs.filter(function (n) { return n > 2; })
-                                 .map(function (n) { return LV[n - 1].name; });
-            // Same promotion rule the server applies: never cleared →
-            // Foundation, cleared → Standard, cleared at 90%+ → Stretch.
-            // Level 1 is cleared at 92 and level 2 at 74, so the stub carries
-            // one of each rather than two of the same.
-            var best = cleared ? (i === 0 ? 92 : 74) : 0;
-            var stage = !cleared ? 1 : (best >= 90 ? 3 : 2);
-            return Object.assign({}, l, {
-              unlocked: waiting.length === 0, waitingOn: waiting, cleared: cleared,
-              stage: stage, stageName: ['Foundation', 'Standard', 'Stretch'][stage - 1],
-              bestScore: best, bestCorrect: cleared ? 11 : 0, attempts: cleared ? 1 : 0,
-            });
-          }),
-        });
-      },
-      start: function (level) {
-        window.__mathStarts.push(level);
-        return Promise.resolve({
-          roundId: 'ML-TESTPAPER', level: level, name: 'Indices & Logarithms', band: 'SSS 1',
-          seconds: fast ? 1 : 300,
-          stage: 1, stageName: 'Foundation',
-          stageBlurb: 'Mostly the gentler forms, with one to reach for.',
-          // Tiered and in tier order, the way the server ships a paper: two
-          // foundation questions then one stretch, so there is exactly one
-          // step-up marker to find.
-          questions: [
-            { q: 'Simplify 2^3 \u00d7 2^4, giving your answer as a number.', tier: 1 },
-            { q: 'Evaluate log3 of 81.', tier: 1 },
-            { q: 'Evaluate 49^(1/2).', tier: 3 },
-          ],
-        });
-      },
-      submit: function (roundId, answers) {
-        window.__mathSubmits.push({ roundId: roundId, answers: answers.slice() });
-        var body = {
-          correct: 2, total: 3, score: 67, ms: 41200, passPct: 70, cleared: false,
-          marks: [
-            { ok: true,  your: '128', answer: '128' },
-            { ok: false, your: '3',   answer: '4' },
-            { ok: true,  your: '7',   answer: '7' },
-          ],
-          opened: [], unlocked: null,
-        };
-        if (!fast) return Promise.resolve(body);
-        return new Promise(function (r) { setTimeout(function () { r(body); }, 1200); });
-      },
-    };
+    mlbStub();
     props = { auth: { member: { fullName: 'Amaka Amadi', centre: 'Egbeda' } } };
   } else { props = { setPage: function () {} }; }
   try {
@@ -4005,245 +3960,17 @@ function unzipDocumentXml(buf) {
        contrast.every(c => c.ratio >= 4.5));
 
 
-    /* ── The Math Lab ──────────────────────────────────────────────────────
-     * A ladder rather than a leaderboard, and the two things that can look
-     * right on screen while being wrong are the same two the Arcade has: a
-     * locked level that is only VISUALLY locked, and answers that go up
-     * indexed against the wrong questions. Both are read off the wire here.  */
-    const ml = await browser.newPage();
-    const mlErrs = [];
-    ml.on('pageerror', e => mlErrs.push(String(e.message)));
-    await ml.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok', { waitUntil: 'networkidle' });
-    await ml.waitForSelector('.ml-teaser', { timeout: 15000 });
-    ok('the Math Lab band mounts in the Arcade with no script error', mlErrs.length === 0);
-    if (mlErrs.length) console.error('       ', mlErrs.slice(0, 3).join(' | '));
-    const mlTeaser = await ml.evaluate(() => document.querySelector('.ml-teaser').innerText);
-    ok('…and names the level you are actually on, not just the feature',
-       /Indices & Logarithms/.test(mlTeaser));
-    ok('…and says how far up the ladder you are', /2 of 5 levels cleared/.test(mlTeaser));
-
-    await ml.evaluate(() => document.querySelector('.ml-teaser .arc-cta').click());
-    await ml.waitForSelector('.ml-ladder', { timeout: 10000 });
-    ok('opening it lists every level, locked ones included',
-       await ml.evaluate(() => document.querySelectorAll('.ml-lv').length) === 5);
-    ok('…with the cleared ones marked',
-       await ml.evaluate(() => document.querySelectorAll('.ml-lv.is-cleared').length) === 2);
-
-    /* The whole point of the rewrite. Surds (4) is shut because Indices (3) is
-       not cleared, while Quadratics (5) — which needs only Algebraic Processes
-       — is open. On the old linear ladder that was impossible: a level was
-       open if and only if the one below it was cleared, so a student could not
-       reach anything past the first thing they were stuck on. */
-    ok('a level is open when ITS OWN prerequisites are cleared, not when the one below it is',
-       await ml.evaluate(() => {
-         const open = Array.from(document.querySelectorAll('.ml-lv.is-open'))
-           .map(l => l.querySelector('.ml-lv-h').textContent);
-         return open.length === 2
-             && open.indexOf('Quadratic Equations') >= 0
-             && open.indexOf('Surds') < 0;
-       }));
-
-    /* A locked level must have NO control at all, not a disabled one: a
-       disabled button is skipped by the keyboard and explains nothing, and the
-       reason is the entire message. And the reason is a NAME — "clear level 3"
-       makes a student count rungs to work out what level 3 was. */
-    ok('a locked level offers no button to press, and names the work that opens it',
-       await ml.evaluate(() => {
-         const shut = Array.from(document.querySelectorAll('.ml-lv.is-locked'));
-         return shut.length === 1
-             && shut.every(l => l.querySelector('button') === null)
-             && /Needs Indices & Logarithms/.test(shut[0].innerText);
-       }));
-
-    /* Grouping, and the filter that makes twenty-one levels navigable. */
-    ok('the levels are grouped under their strand, in the order the server sends',
-       await ml.evaluate(() => {
-         const heads = Array.from(document.querySelectorAll('.ml-group-h'))
-           .map(h => h.firstChild.textContent.trim());
-         return heads.join('|') === 'Number|Algebra';
-       }));
-    /* Size is measured on the styled phone pass below — this fixture is
-       deliberately unstyled, so a box measured here would mean nothing. */
-    ok('…and every strand chip is a real button carrying its own pressed state',
-       await ml.evaluate(() => {
-         const chips = Array.from(document.querySelectorAll('.ml-strand'));
-         return chips.length === 3                       // All + two strands
-             && chips.every(c => c.tagName === 'BUTTON' && c.hasAttribute('aria-pressed'))
-             && chips.filter(c => c.getAttribute('aria-pressed') === 'true').length === 1;
-       }));
-    await ml.evaluate(() => Array.from(document.querySelectorAll('.ml-strand'))
-      .find(c => /^Number/.test(c.textContent)).click());
-    ok('…and picking one narrows the list to that strand and says so out loud',
-       await ml.evaluate(() => {
-         const live = document.querySelector('.ml-count');
-         return document.querySelectorAll('.ml-lv').length === 1
-             && document.querySelectorAll('.ml-group-h').length === 1
-             && live && live.getAttribute('role') === 'status'
-             && /1 number level/i.test(live.textContent);
-       }));
-    await ml.evaluate(() => document.querySelectorAll('.ml-strand')[0].click());   // back to All
-
-    /* Difficulty progression on the ladder. Clearing a level does not finish
-       it — it promotes the paper — and the ladder is where a student decides
-       what to do next, so that has to be legible from here. Level 1 was
-       cleared at 92% and level 2 at 74%, so one shows Stretch and one
-       Standard: if the promotion rule were ignored they would read alike. */
-    ok('a cleared level says which paper it will set next, and the two differ',
-       await ml.evaluate(() => {
-         const said = Array.from(document.querySelectorAll('.ml-lv.is-cleared .ml-lv-stage'))
-           .map(p => p.textContent.replace(/\s+/g, ' ').trim());
-         return said.length === 2
-             && /^Stretch paper next/.test(said[0])
-             && /^Standard paper next/.test(said[1]);
-       }));
-    /* …and an untouched level does NOT, because "Foundation paper — gentler
-       forms first" on every one of them is the same sentence eleven times. */
-    ok('…and an untouched level does not repeat the boilerplate',
-       await ml.evaluate(() =>
-         document.querySelectorAll('.ml-lv.is-open .ml-lv-stage').length === 0));
-
-    /* Start the third level — by its number, which is not its array index. */
-    await ml.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
-    await ml.waitForSelector('.ml-qs', { timeout: 10000 });
-    ok('starting a level asks the server for that level, not its position in the list',
-       (await ml.evaluate(() => window.__mathStarts)).join() === '3');
-    /* The ramp inside a paper. The questions arrive in tier order, and the
-       point where they get harder is marked — a paper that simply gets harder
-       with no warning reads to a child as their own falling apart. The stub
-       paper is two foundation questions then one stretch, so there is exactly
-       one marker, it sits before question 3, and it names the tier. */
-    ok('the paper says which paper it is',
-       /Foundation paper/.test(await ml.evaluate(() =>
-         document.querySelector('.ml-paper-stage').textContent)));
-    ok('…and marks the point where the questions step up',
-       await ml.evaluate(() => {
-         const steps = Array.from(document.querySelectorAll('.ml-q-step'));
-         if (steps.length !== 1 || !/Stretch from here/.test(steps[0].textContent)) return false;
-         // Before the third question, and after the second.
-         const items = Array.from(document.querySelectorAll('.ml-qs > li'));
-         return items.indexOf(steps[0]) === 2;
-       }));
-    /* The marker is decoration around questions that are numbered anyway, so
-       it must not be announced as a list item a screen-reader user has to
-       step through. */
-    ok('…without putting a phantom question into the list for a screen reader',
-       await ml.evaluate(() =>
-         document.querySelector('.ml-q-step').getAttribute('aria-hidden') === 'true'
-         && document.querySelectorAll('.ml-q').length === 3));
-
-    ok('the paper shows every question at once, the way a paper does',
-       await ml.evaluate(() => document.querySelectorAll('.ml-q').length) === 3
-       && await ml.evaluate(() => document.querySelectorAll('.ml-q .ml-q-in').length) === 3);
-    /* The answers to this paper are 128, 4 and 7 in the stub. None may appear
-       anywhere on the page while it is still being written. */
-    ok('…and carries no answer anywhere in it, in the markup or out of it',
-       await ml.evaluate(() => !/\b128\b/.test(document.getElementById('root').innerHTML)));
-
-    /* Filled in BACKWARDS. Answers keyed off focus order or off render order
-       rather than off the question's own index look identical on screen and
-       arrive scrambled; going last-to-first is what separates them. */
-    await ml.evaluate(async () => {
-      const set = (el, v) => {
-        const proto = Object.getPrototypeOf(el);
-        Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      };
-      const ins = Array.from(document.querySelectorAll('.ml-q-in'));
-      set(ins[2], 'third'); set(ins[0], 'first'); set(ins[1], 'second');
-    });
-    await ml.evaluate(() => document.querySelector('.ml-paper-ft .arc-next').click());
-    await ml.waitForSelector('.ml-score', { timeout: 10000 });
-    const mlSent = await ml.evaluate(() => window.__mathSubmits);
-    ok('answers go up indexed against the question they were typed against',
-       mlSent.length === 1 && mlSent[0].answers.join('|') === 'first|second|third');
-    ok('…on the round the server minted', mlSent[0].roundId === 'ML-TESTPAPER');
-
-    const mlMarked = await ml.evaluate(() => document.querySelector('.ml-marked').innerText);
-    ok('the marked paper shows the score against the pass mark', /67/.test(mlMarked) && /70%/.test(mlMarked));
-    ok('…and the right answer beside the one that was wrong, and only that one',
-       await ml.evaluate(() => {
-         const rights = document.querySelectorAll('.ml-mark-right');
-         return rights.length === 1
-             && /4/.test(rights[0].innerText)
-             && rights[0].closest('.ml-mark').classList.contains('is-no');
-       }));
-    ok('…marking each answer with a symbol as well as a colour',
-       await ml.evaluate(() => {
-         const rows = Array.from(document.querySelectorAll('.ml-mark'));
-         return rows.length === 3
-             && rows.filter(r => /✓/.test(r.innerText)).length === 2
-             && rows.filter(r => /✗/.test(r.innerText)).length === 1;
-       }));
-
-    /* The breakdown by difficulty. A single percentage tells a student
-       nothing they can act on; this is the part that says WHERE the marks
-       went, and it is computed by zipping the marks against the tiers that
-       came down with the paper — so it must survive the paper actually
-       spanning more than one tier, and must never claim a tier the paper did
-       not carry. The stub paper is two foundation questions (one right, one
-       wrong) and one stretch (right). */
-    ok('the marking breaks the score down by difficulty, not just a percentage',
-       await ml.evaluate(() => {
-         const bars = Array.from(document.querySelectorAll('.ml-tier'));
-         const read = b => ({
-           name: b.querySelector('.ml-tier-n').textContent.trim(),
-           val: b.querySelector('.ml-tier-v').textContent.trim(),
-         });
-         const got = bars.map(read);
-         return got.length === 2                     // only the tiers the paper carried
-             && got[0].name === 'Foundation' && got[0].val === '1/2'
-             && got[1].name === 'Stretch'    && got[1].val === '1/1';
-       }));
-    ok('…and names the tier the marks actually went on',
-       /foundation questions are where the marks went: 1 of 2 right/i.test(
-         await ml.evaluate(() => document.querySelector('.ml-tier-say').textContent)));
-    /* Every bar carries its own count in text. A bar alone is unreadable to a
-       screen reader and unreadable at a glance, and three coloured bars with
-       no numbers is exactly the chart that says nothing. */
-    ok('…with every bar carrying its number, never colour alone',
-       await ml.evaluate(() => Array.from(document.querySelectorAll('.ml-tier'))
-         .every(b => /^\d+\/\d+$/.test(b.querySelector('.ml-tier-v').textContent.trim()))));
-    await ml.close();
-
-    /* The clock running out hands the paper in — once. */
-    const mlT = await browser.newPage();
-    const mlTErrs = [];
-    mlT.on('pageerror', e => mlTErrs.push(String(e.message)));
-    await mlT.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok&fast=1', { waitUntil: 'networkidle' });
-    await mlT.waitForSelector('.ml-teaser', { timeout: 15000 });
-    await mlT.evaluate(() => document.querySelector('.ml-teaser .arc-cta').click());
-    await mlT.waitForSelector('.ml-ladder', { timeout: 10000 });
-    await mlT.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
-    let mlGraded = true;
-    try { await mlT.waitForSelector('.ml-score', { timeout: 12000 }); }
-    catch (_) { mlGraded = false; }
-    await mlT.waitForTimeout(900);     // past the held grade, to catch a stray second send
-    const mlTimed = await mlT.evaluate(() => window.__mathSubmits);
-    await mlT.close();
-    ok('a paper whose clock runs out hands itself in without being told',
-       mlTErrs.length === 0 && mlGraded && mlTimed.length >= 1);
-    ok('…exactly once, however the ticking clock and a slow marking overlap (' + mlTimed.length + ')',
-       mlTimed.length === 1);
-
-    /* Legible on the surface it actually renders into — the same white-on-white
-       trap the Arcade stylesheet fell into, on a screen whose whole job is
-       telling a child which answers were wrong. */
-    const mlC = await browser.newPage();
-    await mlC.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok&css=1', { waitUntil: 'networkidle' });
-    await mlC.waitForSelector('.ml-teaser', { timeout: 15000 });
-    await mlC.waitForFunction(() => getComputedStyle(document.querySelector('.ml-teaser')).borderRadius !== '0px',
-                              null, { timeout: 10000 });
-    await mlC.evaluate(() => document.querySelector('.ml-teaser .arc-cta').click());
-    await mlC.waitForSelector('.ml-ladder', { timeout: 10000 });
-    await mlC.evaluate(() => {
-      const root = document.getElementById('root');
-      const wrap = document.createElement('div');
-      wrap.className = 'cm-slack-page';
-      wrap.innerHTML = '<div class="cm-slack"><main class="cm-col"><div class="cm-stream is-feed" id="mlslot"></div></main></div>';
-      root.parentNode.insertBefore(wrap, root);
-      document.getElementById('mlslot').appendChild(root);
-    });
-    const mlContrast = await mlC.evaluate(() => {
+    /* ── The Maths Lab, from the Arcade ───────────────────────────────────
+     * The old twenty-one-level ladder that opened inline here was replaced by
+     * the Maths Lab at /study/lab (owner, 3 Nov 2026). This block used to drive
+     * that ladder, and when the band's button started going to /study/lab its
+     * wait for `.ml-ladder` timed out and THREW — straight past `step`, so
+     * every assertion after it in this file silently never ran. What is held
+     * now: the band speaks for the Lab it opens (the new Lab's own `next`,
+     * level and mastery, never the retired ladder's levels), it is a real link
+     * to /study/lab, it copes with an account the Lab has no figures for, it
+     * is legible where it renders — and the Lab it opens renders.          */
+    const mlContrastOf = (sel) => {
       const lum = (r, g, b) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
         return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
       const num = (s) => (String(s).match(/[\d.]+/g) || [0, 0, 0]).map(Number);
@@ -4257,7 +3984,7 @@ function unzipDocumentXml(buf) {
         return [255, 255, 255];
       };
       const out = [];
-      document.querySelectorAll('.ml *').forEach((el) => {
+      document.querySelectorAll(sel).forEach((el) => {
         const t = (el.textContent || '').trim();
         if (!t || el.children.length > 0) return;
         const f = num(getComputedStyle(el).color), g = backdrop(el);
@@ -4267,14 +3994,85 @@ function unzipDocumentXml(buf) {
         out.push({ cls: String(el.className || el.tagName), ratio: (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05) });
       });
       return out;
-    });
+    };
+    const ml = await browser.newPage();
+    const mlErrs = [];
+    ml.on('pageerror', e => mlErrs.push(String(e.message)));
+    await ml.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok', { waitUntil: 'networkidle' });
+    if (await step('the Maths Lab band appears in the Arcade', () => ml.waitForFunction(
+        () => document.querySelector('.ml-teaser-n'), null, { timeout: 15000 }))) {
+      ok('the Maths Lab band mounts in the Arcade with no script error', mlErrs.length === 0);
+      if (mlErrs.length) console.error('       ', mlErrs.slice(0, 3).join(' | '));
+      const t = await ml.evaluate(() => ({
+        text: document.querySelector('.ml-teaser').innerText,
+        tag: document.querySelector('.ml-teaser .arc-cta').tagName,
+        href: document.querySelector('.ml-teaser .arc-cta').getAttribute('href'),
+        cta: document.querySelector('.ml-teaser .arc-cta').innerText,
+        calls: window.__mlbCalls.slice(),
+      }));
+      ok('…asks the NEW Lab (`mathslab.home`) what it will open on', t.calls.indexOf('home') >= 0);
+      ok('…and names that next step, in the Lab\'s own words', /Next up: Continue your climb: Stage 4 gate/.test(t.text));
+      ok('…with the level and how much is mastered (Analyst · 12 of 70)', /Analyst · 12 of 70 topics mastered/.test(t.text));
+      ok('…and never describes the retired ladder it no longer opens', !/twenty-one|levels cleared|six strands/i.test(t.text));
+      ok('the door is a real link to /study/lab, not a button that sets location', t.tag === 'A' && t.href === '/study/lab');
+      ok('…and says "Continue" to somebody with progress', /Continue in the Maths Lab/.test(t.cta));
+    }
+    await ml.close();
+
+    // An account the full Lab is not for (Summer School): the door, no figures.
+    const mlS = await browser.newPage();
+    await mlS.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok&ml=summer', { waitUntil: 'networkidle' });
+    if (await step('the band appears for a Summer account', () => mlS.waitForSelector('.ml-teaser', { timeout: 15000 }))) {
+      await mlS.waitForTimeout(300);
+      const sm = await mlS.evaluate(() => ({ prog: !!document.querySelector('.ml-teaser-prog'),
+        href: document.querySelector('.ml-teaser .arc-cta').getAttribute('href'), text: document.querySelector('.ml-teaser').innerText }));
+      ok('an account the Lab has no record for still gets the door (/study/lab serves it Lite), and no figures that are not theirs',
+         !sm.prog && sm.href === '/study/lab' && !/Next up/.test(sm.text) && /Open the Maths Lab/.test(sm.text));
+    }
+    await mlS.close();
+
+    /* The Lab the door opens: the real MathsLab component on the same data. */
+    const mlb = await browser.newPage();
+    const mlbErrs = [];
+    mlb.on('pageerror', e => mlbErrs.push(String(e.message)));
+    await mlb.goto(BASE + '/tests/_boards_fixture.html?board=mathslab&css=1', { waitUntil: 'networkidle' });
+    if (await step('the Maths Lab home renders', () => mlb.waitForSelector('.mlb-hero', { timeout: 15000 }))) {
+      const h = await mlb.evaluate(() => ({ text: document.querySelector('.mlb').innerText,
+        nav: Array.from(document.querySelectorAll('.mlb-navb')).map(x => x.innerText.trim()),
+        go: (document.querySelector('.mlb-go') || {}).innerText || '', errs: window.__errors.slice() }));
+      ok('the Lab it opens renders its home with no script error', mlbErrs.length === 0 && h.errs.length === 0);
+      if (mlbErrs.length || h.errs.length) console.error('       ', mlbErrs.concat(h.errs).slice(0, 3).join(' | '));
+      ok('…greets the member and offers the SAME next step the Arcade band named',
+         /Hello, Amaka/.test(h.text) && /Continue your climb: Stage 4 gate/.test(h.go));
+      ok('…with its own Home / Map / Courses / Progress', h.nav.join(',') === 'Home,Map,Courses,Progress');
+    } else {
+      // Say WHY it did not render, not only that it did not.
+      console.error('        ', JSON.stringify(await mlb.evaluate(() => ({ errs: window.__errors, text: document.body.innerText.slice(0, 200) }))), mlbErrs.slice(0, 2));
+    }
+    await mlb.close();
+
+    /* Legible on the surface it actually renders into — the community stream,
+       the same white-on-white trap the Arcade stylesheet once fell into. */
+    const mlC = await browser.newPage();
+    await mlC.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok&css=1', { waitUntil: 'networkidle' });
+    if (await step('the styled band appears', () => mlC.waitForFunction(() => document.querySelector('.ml-teaser-n')
+        && getComputedStyle(document.querySelector('.ml-teaser')).borderRadius !== '0px', null, { timeout: 15000 }))) {
+      await mlC.evaluate(() => {
+        const root = document.getElementById('root');
+        const wrap = document.createElement('div');
+        wrap.className = 'cm-slack-page';
+        wrap.innerHTML = '<div class="cm-slack"><main class="cm-col"><div class="cm-stream is-feed" id="mlslot"></div></main></div>';
+        root.parentNode.insertBefore(wrap, root);
+        document.getElementById('mlslot').appendChild(root);
+      });
+      const mlContrast = await mlC.evaluate(mlContrastOf, '.ml-teaser *');
+      const mlWorst = mlContrast.slice().sort((a, b) => a.ratio - b.ratio)[0];
+      ok('the Maths Lab band has text to measure on the community surface (' + mlContrast.length + ' nodes)', mlContrast.length >= 5);
+      ok('…and every piece of it clears 4.5:1 there (worst: '
+         + (mlWorst ? mlWorst.ratio.toFixed(2) + ' on .' + String(mlWorst.cls).split(' ')[0] : 'n/a') + ')',
+         mlContrast.every(c => c.ratio >= 4.5));
+    }
     await mlC.close();
-    const mlWorst = mlContrast.slice().sort((a, b) => a.ratio - b.ratio)[0];
-    ok('the Math Lab has text to measure on the community surface (' + mlContrast.length + ' nodes)',
-       mlContrast.length >= 15);
-    ok('…and every piece of it clears 4.5:1 there (worst: '
-       + (mlWorst ? mlWorst.ratio.toFixed(2) + ' on .' + String(mlWorst.cls).split(' ')[0] : 'n/a') + ')',
-       mlContrast.every(c => c.ratio >= 4.5));
 
 
     /* ── The Mentor Portal ─────────────────────────────────────────────────
@@ -4529,83 +4327,38 @@ function unzipDocumentXml(buf) {
     await mtP.close();
     await mtT.close();
 
-    /* ── The Math Lab on a phone ───────────────────────────────────────────
-     * The community composer shipped 24.6px wide on a phone because a flex row
-     * would not wrap, and nothing measured it. The Lab has two rows with the
-     * same shape — the level card (icon, blurb, action) and the paper footer —
-     * so they are measured on a real 360px viewport rather than read off the
-     * stylesheet. 360 and not 390: it is the narrowest Android in common use,
-     * and what fits there fits everywhere. */
+    /* ── The Maths Lab band, and the Lab, on a phone ──────────────────────
+     * 360px, the narrowest Android in common use: the band must not push the
+     * page sideways, its door must be a thumb-sized target, and the Lab's own
+     * home must fit the same width. */
     const mlT2 = await browser.newContext({ viewport: { width: 360, height: 780 }, hasTouch: true });
     const mlPh = await mlT2.newPage();
     await mlPh.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok&css=1', { waitUntil: 'networkidle' });
-    await mlPh.waitForSelector('.ml-teaser', { timeout: 15000 });
-    await mlPh.waitForFunction(() => getComputedStyle(document.querySelector('.ml-teaser')).borderRadius !== '0px',
-                               null, { timeout: 10000 });
-    await mlPh.evaluate(() => document.querySelector('.ml-teaser .arc-cta').click());
-    await mlPh.waitForSelector('.ml-ladder', { timeout: 10000 });
-    await mlPh.waitForTimeout(150);
-
-    const ladderPhone = await mlPh.evaluate(() => {
-      const doc = document.documentElement;
-      const cards = Array.from(document.querySelectorAll('.ml-lv'));
-      const btns = Array.from(document.querySelectorAll('.ml-lv .ml-go'));
-      return {
-        overflow: doc.scrollWidth - doc.clientWidth,
-        narrowest: Math.min(...cards.map(c => Math.round(c.getBoundingClientRect().width))),
-        smallestBtn: btns.length ? Math.min(...btns.map(b => {
-          const r = b.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height));
-        })) : 0,
-        blurbWidth: Math.min(...cards.map(c => Math.round(c.querySelector('.ml-lv-p').getBoundingClientRect().width))),
-        smallestChip: (() => {
-          const cs = Array.from(document.querySelectorAll('.ml-strand'));
-          return cs.length ? Math.min(...cs.map(c => {
-            const r = c.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height));
-          })) : 0;
-        })(),
-      };
-    });
-    ok('the ladder does not push the page sideways on a 360px phone ('
-       + ladderPhone.overflow + 'px over)', ladderPhone.overflow <= 0);
-    ok('…every level card still uses the width it has (' + ladderPhone.narrowest + 'px)',
-       ladderPhone.narrowest >= 320);
-    /* The composer bug was exactly this: a row that would not wrap squeezed the
-       text to 24.6px while everything still LOOKED laid out. */
-    ok('…and the blurb is not squeezed to a column (' + ladderPhone.blurbWidth + 'px)',
-       ladderPhone.blurbWidth >= 150);
-    ok('…with every Start button a thumb-sized target (' + ladderPhone.smallestBtn + 'px)',
-       ladderPhone.smallestBtn >= 44);
-    /* WCAG 2.2 2.5.8 is 24×24; these sit in a wrapping row where the spacing
-       exception is easy to lose, so they are built to the 44px touch size and
-       measured at it. */
-    ok('…and every strand chip too (' + ladderPhone.smallestChip + 'px)',
-       ladderPhone.smallestChip >= 44);
-
-    await mlPh.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
-    await mlPh.waitForSelector('.ml-qs', { timeout: 10000 });
-    await mlPh.waitForTimeout(150);
-    const paperPhone = await mlPh.evaluate(() => {
-      const doc = document.documentElement;
-      const ins = Array.from(document.querySelectorAll('.ml-q-in'));
-      const ft = document.querySelector('.ml-paper-ft .arc-next').getBoundingClientRect();
-      return {
-        overflow: doc.scrollWidth - doc.clientWidth,
-        narrowestIn: Math.min(...ins.map(i => Math.round(i.getBoundingClientRect().width))),
-        inHeight: Math.min(...ins.map(i => Math.round(i.getBoundingClientRect().height))),
-        // Below 16px, iOS Safari zooms the page on focus and the paper jumps
-        // every time a child taps an answer box.
-        fontPx: Math.min(...ins.map(i => parseFloat(getComputedStyle(i).fontSize))),
-        handIn: Math.round(Math.min(ft.width, ft.height)),
-      };
-    });
-    ok('the paper does not push the page sideways on a phone (' + paperPhone.overflow + 'px over)',
-       paperPhone.overflow <= 0);
-    ok('…every answer box is wide enough to type in (' + paperPhone.narrowestIn + 'px)',
-       paperPhone.narrowestIn >= 200);
-    ok('…and tall enough to tap (' + paperPhone.inHeight + 'px)', paperPhone.inHeight >= 44);
-    ok('…at a size iOS will not zoom the page for (' + paperPhone.fontPx + 'px)', paperPhone.fontPx >= 16);
-    ok('…and Hand it in is reachable without hunting (' + paperPhone.handIn + 'px)', paperPhone.handIn >= 40);
+    if (await step('the styled band appears on a phone', () => mlPh.waitForFunction(() => document.querySelector('.ml-teaser-n')
+        && getComputedStyle(document.querySelector('.ml-teaser')).borderRadius !== '0px', null, { timeout: 15000 }))) {
+      const bp = await mlPh.evaluate(() => {
+        const r = document.querySelector('.ml-teaser .arc-cta').getBoundingClientRect();
+        return { overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                 cta: Math.round(Math.min(r.width, r.height)),
+                 p: Math.round(document.querySelector('.ml-teaser-p').getBoundingClientRect().width) };
+      });
+      ok('the Maths Lab band does not push the page sideways on a 360px phone (' + bp.overflow + 'px over)', bp.overflow <= 0);
+      ok('…its door is a thumb-sized target (' + bp.cta + 'px)', bp.cta >= 44);
+      ok('…and its words are not squeezed to a column (' + bp.p + 'px)', bp.p >= 150);
+    }
+    const mlbPh = await mlT2.newPage();
+    await mlbPh.goto(BASE + '/tests/_boards_fixture.html?board=mathslab&css=1', { waitUntil: 'networkidle' });
+    if (await step('the Maths Lab home renders on a phone', () => mlbPh.waitForSelector('.mlb-hero', { timeout: 15000 }))) {
+      await mlbPh.waitForTimeout(150);
+      const lp = await mlbPh.evaluate(() => {
+        const g = document.querySelector('.mlb-go'), r = g ? g.getBoundingClientRect() : { width: 0, height: 0 };
+        return { overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, go: Math.round(Math.min(r.width, r.height)) };
+      });
+      ok('the Maths Lab home fits a 360px phone (' + lp.overflow + 'px over)', lp.overflow <= 0);
+      ok('…with its next-step button a thumb-sized target (' + lp.go + 'px)', lp.go >= 44);
+    }
     await mlPh.close();
+    await mlbPh.close();
     await mlT2.close();
 
     /* ── The community on a phone ──────────────────────────────────────────
@@ -5593,7 +5346,7 @@ function unzipDocumentXml(buf) {
            rather than a leap of faith. */
         ok('…and a named reason for every family NOT included',
           /3 nothing payable/.test(remText) && /2 reminded recently/.test(remText)
-          && /1 asked not to be reminded/.test(remText) && /1 no guardian email/.test(remText));
+          && /1 asked not to be reminded/.test(remText) && /1 no way to reach the family/.test(remText));
         // Still nothing sent: previewing is not sending.
         ok('…and previewing still sends nothing',
           (await fz.evaluate(() => window.__remindRuns || 0)) === 0

@@ -1063,9 +1063,12 @@ Open one, then press **Print or save as PDF**.
   payment settled. A later rename or fee change does not touch it.
 - **A transfer still being checked** gets an *Acknowledgement*, not a
   receipt. The receipt follows when the second person confirms it.
-- **Certificates** are given automatically when a member clears a Math Lab
-  level (70%). Clearing it later at 90% or more gives a Distinction
-  certificate. The old one then says "replaced".
+- **Math Lab level certificates** were given when a member cleared a level of
+  the old twenty-one-level ladder (70%, or a Distinction at 90%). That ladder
+  was replaced on 3 Nov 2026 by the **Maths Lab** at `/study/lab` (the
+  Arcade's *Maths Lab* band opens it), so no new level certificates are
+  issued; every one already issued stays valid and verifiable. The Maths Lab's
+  own course certificates are shown from its **Courses** tab.
 - **Families** find them in the Family Portal under Money → Documents.
 - **Verify:** the QR code opens `/verify/<number>`. Anyone holding the
   document can check it there with the check code printed under the QR.
