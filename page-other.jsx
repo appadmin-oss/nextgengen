@@ -1487,7 +1487,10 @@ function MembershipPayPage({ setPage }) {
     try { const r = await NGGApi.public.membershipPay(token); if (!nggPaystackUrlOk(r.authorizationUrl)) throw new Error("bad_checkout"); window.location.assign(r.authorizationUrl); }
     catch (e) {
       setBusy(false);
-      setErr({ already_paid: "This invoice is already paid.", offline_pending: "A payment you made by transfer or cash is being checked by the centre. Please don’t pay again.", payments_unavailable: "Online payment isn’t available right now — pay by transfer to the account below.", init_failed: "Paystack didn’t respond. Try again in a moment." }[e.code] || "Couldn’t start the payment. Try again.");
+      /* The amount owed changed since this link was made (paid at the desk, a
+         waiver): the old invoice is withdrawn and the server names the new one. */
+      if (e.code === "balance_changed" && /^\/pay\/[A-Za-z0-9_-]+$/.test(e.detail || "")) { setErr("The amount owed has changed since this link was made. Taking you to today’s amount…"); setTimeout(() => window.location.assign(e.detail), 1600); return; }
+      setErr({ nothing_to_pay: "Nothing is owed on this account any more, so there is nothing to pay. Thank you.", balance_changed: "The amount owed has changed since this link was made. Ask the centre for a new link.", already_paid: "This invoice is already paid.", offline_pending: "A payment you made by transfer or cash is being checked by the centre. Please don’t pay again.", payments_unavailable: "Online payment isn’t available right now — pay by transfer to the account below.", init_failed: "Paystack didn’t respond. Try again in a moment." }[e.code] || "Couldn’t start the payment. Try again.");
       if (e.code === "already_paid" || e.code === "offline_pending") load();
     }
   };

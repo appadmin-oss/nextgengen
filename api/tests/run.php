@@ -30915,6 +30915,18 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
         return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => $kobo, 'currency' => 'NGN', 'channel' => 'card', 'metadata' => ['invoiceId' => $inv2['invoiceId']]]];
     };
+    /* The link is a quote of what was owed then. Paid in part at the desk
+       since, the old link must not take the full amount online. */
+    $desk = fees_post('BAL-1', 'payment', 500, ['periodKey' => 'test:bal:desk', 'note' => 'Cash at the desk', 'method' => 'cash', 'by' => 'test']);
+    $stale = backend_dispatch('public.membership.pay.init', ['token' => $inv2['payToken']]);
+    $inv3 = db_row("SELECT * FROM membership_invoices WHERE memberId = 'BAL-1' AND status = 'open' ORDER BY id DESC LIMIT 1");
+    chk('balance · an old link after money arrived another way is not paid: it is withdrawn and the family is sent to today\'s amount',
+        ($stale['error'] ?? '') === 'balance_changed' && db_row('SELECT status FROM membership_invoices WHERE invoiceId = ?', [$inv2['invoiceId']])['status'] === 'void'
+        && $inv3 && (int)$inv3['total'] === (int)$inv2['total'] - 500 && ($stale['detail'] ?? '') === '/pay/' . $inv3['payToken']);
+    // Back to the figure the rest of this block pays.
+    db_exec('UPDATE member_ledger SET voidedAt = ?, voidReason = ? WHERE entryId = ?', [$now, 'test', $desk['entryId']]);
+    db_exec("UPDATE membership_invoices SET status = 'void' WHERE id = ?", [$inv3['id']]);
+    db_exec("UPDATE membership_invoices SET status = 'open', voidReason = '' WHERE invoiceId = ?", [$inv2['invoiceId']]);
     $init = backend_dispatch('public.membership.pay.init', ['token' => $inv2['payToken']]);
     $charges = (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'BAL-1' AND direction = 'charge'")['c'];
     $kobo = 100;   // ₦1 paid against the balance

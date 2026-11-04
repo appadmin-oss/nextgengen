@@ -576,6 +576,21 @@ function public_membership_pay_init(array $p): array {
     // An offline payment awaiting its check would be paid twice.
     if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [(string)$inv['invoiceId']])) return ['ok' => false, 'error' => 'offline_pending'];
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$inv['memberId']]) ?: [];
+    /* A balance link is a quote of what was owed THEN. Settled another way
+       since — cash at the desk, an approved claim, a waiver — and the old link
+       still took the full amount online: the family paid twice and held the
+       difference as credit. The balance is read again here; changed, the old
+       invoice is withdrawn and the family is sent to one for today's figure. */
+    if ((string)($inv['purpose'] ?? '') === 'balance' && $m && function_exists('fees_balance')) {
+        $due = (int)(fees_balance($m)['payable'] ?? 0);
+        if ($due !== (int)$inv['total']) {
+            db_exec("UPDATE membership_invoices SET status = 'void', voidReason = ? WHERE id = ? AND status = 'open'", ['superseded: the balance changed before payment', $inv['id']]);
+            audit('membership.balance.superseded', 'system', (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'was' => (int)$inv['total'], 'now' => $due]);
+            if ($due <= 0) return ['ok' => false, 'error' => 'nothing_to_pay'];
+            $fresh = membership_balance_invoice($m, 'system');
+            return ['ok' => false, 'error' => 'balance_changed', 'detail' => (string)($fresh['payUrl'] ?? '')];
+        }
+    }
     $email = membership_contact($m);
     if ($email === '') return ['ok' => false, 'error' => 'no_email'];
     $ref = 'NGGM-' . strtoupper(rand_hex(8));
