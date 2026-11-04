@@ -33645,15 +33645,25 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $all = []; foreach (wifi_cac_people() as $r) $all[$r['id']] = $r;
     $p = fn($id) => $all[$id] ?? [];
     chk('wifi→cacentre · an active member goes as an NGG member, on, at their centre’s card code', ($p('NGG-CP-ACT')['kind'] ?? '') === 'member' && $p('NGG-CP-ACT')['verdict'] === 'on'
-        && $p('NGG-CP-ACT')['homeSite'] === 'cp' && $p('NGG-CP-ACT')['printedId'] === '026-701' && $p('NGG-CP-ACT')['why'] === '' && $p('NGG-CP-ACT')['email'] === 'ngg-cp-act@example.com');
+        && $p('NGG-CP-ACT')['homeSite'] === 'cp' && $p('NGG-CP-ACT')['printedId'] === '026-701'
+        && ($p('NGG-CP-ACT')['why'] ?? '') === '' && $p('NGG-CP-ACT')['email'] === 'ngg-cp-act@example.com');
     chk('wifi→cacentre · a suspension here is NGG saying off, with the reason in words', ($p('NGG-CP-SUS')['verdict'] ?? '') === 'off' && $p('NGG-CP-SUS')['why'] === WIFI_CASE_WORDS['blocked']);
     chk('wifi→cacentre · a hand-set override here travels as NGG’s say', ($p('NGG-CP-OVR')['verdict'] ?? '') === 'off' && $p('NGG-CP-OVR')['why'] === WIFI_CASE_WORDS['override']);
-    chk('wifi→cacentre · a mentor goes as staff, with no home site (staff sign in anywhere)', ($p('NGG-CP-MEN')['kind'] ?? '') === 'staff' && $p('NGG-CP-MEN')['homeSite'] === '');
+    chk('wifi→cacentre · a mentor goes as staff, with no home site (staff sign in anywhere)',
+        ($p('NGG-CP-MEN')['kind'] ?? '') === 'staff' && ($p('NGG-CP-MEN')['homeSite'] ?? '') === '');
     chk('wifi→cacentre · a participant goes within their edition, until its end date', ($p('summer-SS-CP-1')['kind'] ?? '') === 'participant' && $p('summer-SS-CP-1')['verdict'] === 'on'
         && $p('summer-SS-CP-1')['validUntil'] === gmdate('Y-m-d', strtotime($today . ' +10 days')) && $p('summer-SS-CP-1')['printedId'] === 'CP-26-001');
     chk('wifi→cacentre · a Summer-type member record is not sent as a member', !isset($all['SUM-CP-1']));
+    /* The PROPERTY, not a fixed list: an empty field may be left out (absent
+       and empty are the same to CACENTRE, and the roster is paged by bytes),
+       but a field outside the agreed set may never appear. Pinning the exact
+       list would fail for a reason that has nothing to do with privacy. */
+    $agreed = ['id', 'kind', 'name', 'email', 'printedId', 'homeSite', 'verdict', 'why', 'validUntil'];
     $keys = []; foreach ($all as $r) $keys += array_flip(array_keys($r));
-    chk('wifi→cacentre · only the agreed fields travel: no phone, birthday, guardian or money', array_keys($keys) == ['id', 'kind', 'name', 'email', 'printedId', 'homeSite', 'verdict', 'why', 'validUntil']);
+    chk('wifi→cacentre · only the agreed fields travel: no phone, birthday, guardian or money'
+        . (($x = array_diff(array_keys($keys), $agreed)) ? ' — ' . implode(', ', $x) : ''), !$x);
+    chk('wifi→cacentre · and the three that decide anything are always there',
+        !array_filter($all, fn($r) => !isset($r['id'], $r['kind'], $r['verdict'])));
 
     // The call: what the gate (gate/src/wifi.ts) checks, re-done here — NGG's own attendance scheme.
     $sec = str_repeat('k', 40); $t0 = 1800000000;
@@ -36815,6 +36825,15 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi roster · and EVERY page fits the budget' . ($over ? ' — ' . count($over) . ' did not' : ''), !$over);
     chk('wifi roster · …with room under the host\'s own 128KB default',
         !array_filter($pages, fn($pg) => $weigh($pg, false) >= 131072));
+    /* Empty fields are dropped, but never the three that decide anything —
+       an ABSENT verdict reads as `on` at CACENTRE, so dropping an empty one
+       would quietly put somebody on the internet. */
+    chk('wifi roster · empty fields are dropped to fit more people in a page',
+        wifi_cac_trim(['id' => 'X', 'kind' => 'member', 'name' => '', 'email' => '', 'verdict' => 'off', 'why' => '', 'validUntil' => ''])
+        === ['id' => 'X', 'kind' => 'member', 'verdict' => 'off']);
+    chk('wifi roster · …and an empty verdict is NEVER dropped (absent reads as "on" there)',
+        array_key_exists('verdict', wifi_cac_trim(['id' => 'X', 'kind' => 'member', 'verdict' => ''])));
+
     chk('wifi roster · nobody is lost or duplicated in the cutting',
         array_sum(array_map('count', $pages)) === count($people)
         && count(array_unique(array_merge(...array_map(fn($pg) => array_column($pg, 'id'), $pages)))) === count($people));
