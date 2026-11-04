@@ -37626,7 +37626,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         if (isset($it['options']) && count(array_unique($it['options'])) !== count($it['options'])) $bad++;
         if (mlb_public($it) !== array_diff_key(mlb_public($it), ['key' => 1, 'steps' => 1, 'whys' => 1])) $bad++;
     }
-    chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 140);
+    chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 170);
     /* Spot the error must make a child CHECK the working: the mistake moves
        between lines from one item to the next. Every such form used to put it
        on the same line every time, which teaches where the answer sits. And

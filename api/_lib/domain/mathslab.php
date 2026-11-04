@@ -49,10 +49,16 @@ function mlb_set_state(string $mid, string $comp, array $patch): void {
     else db_insert('mlab_state', $patch + ['memberId' => $mid, 'comp' => $comp, 'state' => 'none', 'p' => 0.15, 'attempts' => 0, 'correct' => 0, 'fast' => 0, 'nextReview' => '', 'masteredAt' => '']);
 }
 function mlb_rank(string $state): int { return MLB_STATE_ORDER[$state] ?? 0; }
-/** A competency the learner may work on: every prerequisite is known or better, or not yet taught in the Lab. */
+/**
+ * A competency the learner may work on: every prerequisite is known or better, or not yet taught in the Lab.
+ * A prerequisite from a LATER stage (the plan's sequencing problems: 055 needs 091/094, 058 needs 061) never
+ * blocks — the topic introduces what it needs in place, and the full topic comes later. Blocking on it would
+ * lock a Stage 6 topic behind Stage 10, and the climb could never finish Stage 6.
+ */
+function mlb_need_ahead(string $comp, string $need): bool { return (mlb_comp($need)['stage'] ?? 0) > (mlb_comp($comp)['stage'] ?? 0); }
 function mlb_unlocked(string $comp, array $states): bool {
     foreach (mlb_comp($comp)['needs'] ?? [] as $need) {
-        if (!mlb_available($need)) continue;
+        if (!mlb_available($need) || mlb_need_ahead($comp, $need)) continue;
         if (!in_array($states[$need]['state'] ?? 'none', MLB_GOOD, true)) return false;
     }
     return true;
@@ -314,7 +320,7 @@ function mlb_comp_view(array $p): array {
     $m = mlb_member($p); $states = $m ? mlb_states((string)$m['memberId']) : []; $s = $states[$id] ?? null;
     $ex = mlb_available($id) ? mlb_item($id, 0, random_int(1, 2000000000)) : null;
     return ['ok' => true, 'comp' => ['id' => $id, 'title' => $c['title'], 'stage' => $c['stage'], 'stageTitle' => mlb_stages()[$c['stage']]['title'], 'strand' => $c['strand'],
-        'needs' => array_map(static fn($n) => ['id' => $n, 'title' => mlb_comp($n)['title'], 'state' => mlb_view_state($n, $states)], $c['needs'])],
+        'needs' => array_map(static fn($n) => ['id' => $n, 'title' => mlb_comp($n)['title'], 'state' => mlb_view_state($n, $states), 'ahead' => mlb_need_ahead($id, $n) ? mlb_comp($n)['stage'] : 0], $c['needs'])],
         'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon'), 'p' => $s ? (float)$s['p'] : 0, 'attempts' => $s ? (int)$s['attempts'] : 0,
         'nextReview' => $s ? (string)$s['nextReview'] : '',
         'example' => $ex ? ['stem' => $ex['stem'], 'diagram' => $ex['diagram'] ?? null, 'lines' => $ex['lines'] ?? null, 'answer' => mlb_answer_text($ex), 'steps' => $ex['steps']] : null];

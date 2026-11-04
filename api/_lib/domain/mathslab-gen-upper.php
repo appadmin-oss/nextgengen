@@ -1490,5 +1490,595 @@ function mlb_forms_upper(): array {
                 ['Component $= F\\cos 90^\\circ$.', '$\\cos 90^\\circ = 0$, so there is no horizontal component.'], 'A vertical force has no sideways part.', 'reasoning', 25); },
     ];
 
+    /* ══ Stage 15 · Advanced Trigonometry and Analytic Geometry ══════════ */
+    $f['MC-141'] = [
+        static function (MlbRng $r) { $d = $r->pick([30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330, 360, 15, 75]);
+            return mlb_typed('frac', 'Write $' . mlb_deg($d) . '$ in radians as $k\\pi$. What is $k$, as a fraction?', mlb_frac($d, 180),
+                ['$180^\\circ = \\pi$ radians, so multiply by $\\frac{\\pi}{180}$.', '$' . $d . ' \\times \\frac{\\pi}{180} = ' . mlb_ftex($d, 180) . '\\pi$.'], '$180^\\circ = \\pi$.', 'procedure', 35); },
+        static function (MlbRng $r) { $rad = $r->int(3, 20); $th = $r->pick([0.5, 0.8, 1.2, 1.5, 2, 2.5]);
+            return mlb_typed('num', 'An arc of a circle of radius $' . $rad . '$ cm subtends an angle of $' . mlb_dec($th) . '$ radians at the centre. Find the arc length in cm.', mlb_dec($rad * $th),
+                ['In radians, arc length $s = r\\theta$.', '$s = ' . $rad . ' \\times ' . mlb_dec($th) . ' = ' . mlb_dec($rad * $th) . '$ cm.'], 'No 360 needed in radians.', 'procedure', 30, ['unit' => 'cm']); },
+        static function (MlbRng $r) { $rad = 2 * $r->int(2, 10); $th = $r->pick([0.5, 1, 1.5, 2, 2.5]);
+            return mlb_typed('num', 'Find the area of a sector of radius $' . $rad . '$ cm with angle $' . mlb_dec($th) . '$ radians, in $\\text{cm}^2$.', mlb_dec($rad * $rad * $th / 2),
+                ['Sector area $= \\frac{1}{2}r^2\\theta$ in radians.', '$\\frac{1}{2} \\times ' . ($rad * $rad) . ' \\times ' . mlb_dec($th) . ' = ' . mlb_dec($rad * $rad * $th / 2) . '\\ \\text{cm}^2$.'], 'Half, r squared, theta.', 'procedure', 35, ['unit' => 'cm²']); },
+        static function (MlbRng $r) { $L = $r->int(50, 200); $deg = $r->pick([10, 15, 20, 30, 40]); $s = $L * deg2rad($deg);
+            return mlb_typed('num', 'A pendulum $' . $L . '$ cm long swings through an angle of $' . mlb_deg($deg) . '$. How far does its tip travel along the arc, to 1 decimal place (cm)?', mlb_rd($s, 1),
+                ['Change to radians: $' . $deg . ' \\times \\frac{\\pi}{180} = ' . mlb_rd(deg2rad($deg), 4) . '$ rad.', '$s = r\\theta = ' . $L . ' \\times ' . mlb_rd(deg2rad($deg), 4) . ' \\approx ' . mlb_rd($s, 1) . '$ cm.'], 'Radians first, then $s = r\\theta$.', 'application', 60, ['unit' => 'cm', 'dp' => 1]); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'What is one radian?', 'The angle at the centre when the arc length equals the radius',
+                [['The same as one degree', 'One radian is about $57.3^\\circ$ — much bigger than a degree.'], ['The angle in a full turn', 'A full turn is $2\\pi$ radians.'], ['The angle when the arc equals the diameter', 'Arc equal to the RADIUS, not the diameter.']],
+                ['Radians measure angle by arc length: $\\theta = \\frac{s}{r}$.', 'When $s = r$, $\\theta = 1$ radian $\\approx 57.3^\\circ$.'], 'Arc over radius.', 'concept', 30); },
+        static function (MlbRng $r) { do { $r1 = $r->int(2, 9); $t1 = $r->pick([0.5, 1, 1.5, 2, 2.5, 3]); $r2 = $r->int(2, 9); $t2 = $r->pick([0.5, 1, 1.5, 2, 2.5, 3]); } while ($r1 === $r2 && $t1 == $t2);
+            $s1 = $r1 * $t1; $s2 = $r2 * $t2; $right = abs($s1 - $s2) < 1e-9 ? 'They are the same length' : ($s1 > $s2 ? 'Arc A' : 'Arc B');
+            $wrong = []; foreach (['Arc A', 'Arc B', 'They are the same length'] as $t) if ($t !== $right) $wrong[] = [$t, 'Compare $s = r\\theta$: A is $' . mlb_dec($s1) . '$, B is $' . mlb_dec($s2) . '$.'];
+            $wrong[] = ['The one with the bigger angle', 'Angle alone does not decide it — the radius multiplies it.'];
+            return mlb_mcq($r, 'Arc A: radius $' . $r1 . '$ cm, angle $' . mlb_dec($t1) . '$ rad. Arc B: radius $' . $r2 . '$ cm, angle $' . mlb_dec($t2) . '$ rad. Which arc is longer?', $right, $wrong,
+                ['Arc length $s = r\\theta$ depends on BOTH the radius and the angle.', 'A: $' . mlb_dec($s1) . '$ cm; B: $' . mlb_dec($s2) . '$ cm.'], 'Work out both, do not guess from one number.', 'reasoning', 40); },
+    ];
+    $f['MC-142'] = [
+        static function (MlbRng $r) { $q = $r->int(1, 4); $th = [0, $r->int(10, 80), $r->int(100, 170), $r->int(190, 260), $r->int(280, 350)][$q]; $fn = $r->pick(['sin', 'cos', 'tan']);
+            $pos = ['sin' => [1, 2], 'cos' => [1, 4], 'tan' => [1, 3]][$fn]; $right = in_array($q, $pos, true) ? 'Positive' : 'Negative';
+            return mlb_mcq($r, 'Is $\\' . $fn . ' ' . mlb_deg($th) . '$ positive or negative?', $right,
+                [[$right === 'Positive' ? 'Negative' : 'Positive', 'CAST (or "All Students Take Calculus"): all positive in the 1st quadrant, sin in the 2nd, tan in the 3rd, cos in the 4th.'], ['Zero', 'It is zero only on the axes ($0^\\circ$, $90^\\circ$, $180^\\circ$…).']],
+                ['$' . $th . '^\\circ$ is in quadrant ' . $q . '.', 'In quadrant ' . $q . ', $\\' . $fn . '$ is ' . mb_strtolower($right) . '.'], 'Which quadrant? Then CAST.', 'concept', 30); },
+        static function (MlbRng $r) { $c = $r->pick([['\\sin 150^\\circ', 1, 2], ['\\sin 210^\\circ', -1, 2], ['\\sin 330^\\circ', -1, 2], ['\\cos 120^\\circ', -1, 2], ['\\cos 240^\\circ', -1, 2], ['\\cos 300^\\circ', 1, 2], ['\\tan 135^\\circ', -1, 1], ['\\tan 225^\\circ', 1, 1], ['\\tan 315^\\circ', -1, 1]]);
+            return mlb_typed('frac', 'Find the exact value of $' . $c[0] . '$.', mlb_frac($c[1], $c[2]),
+                ['Find the reference angle (to the $x$-axis) and the sign from the quadrant.', '$' . $c[0] . ' = ' . mlb_ftex($c[1], $c[2]) . '$.'], 'Reference angle, then the sign.', 'procedure', 45); },
+        static function (MlbRng $r) { $th = $r->pick([$r->int(91, 179), $r->int(181, 269), $r->int(271, 359)]); $ref = $th < 180 ? 180 - $th : ($th < 270 ? $th - 180 : 360 - $th);
+            return mlb_typed('num', 'What is the reference angle (the acute angle to the $x$-axis) for $' . mlb_deg($th) . '$?', (string)$ref,
+                ['Measure to the nearest part of the $x$-axis ($180^\\circ$ or $360^\\circ$).', 'The reference angle is $' . $ref . '^\\circ$.'], 'How far from the horizontal axis?', 'procedure', 30, ['unit' => '°']); },
+        static function (MlbRng $r) { $R = $r->int(10, 40); $c = $R + $r->int(1, 5); $th = $r->pick([60, 120, 150, 210, 240, 300]); $h = $c - $R * cos(deg2rad($th));
+            return mlb_typed('num', 'A Ferris wheel of radius $' . $R . '$ m has its centre $' . $c . '$ m above the ground. A seat that started at the bottom has turned through $' . mlb_deg($th) . '$; its height is $h = ' . $c . ' - ' . $R . '\\cos\\theta$. Find $h$, to 1 decimal place.', mlb_rd($h, 1),
+                ['$\\cos ' . $th . '^\\circ = ' . mlb_rd(cos(deg2rad($th)), 3) . '$ (mind the sign beyond $90^\\circ$).', '$h = ' . $c . ' - ' . $R . ' \\times (' . mlb_rd(cos(deg2rad($th)), 3) . ') \\approx ' . mlb_rd($h, 1) . '$ m.'], 'Cosine is negative past 90°, which lifts the seat above the centre.', 'application', 70, ['unit' => 'm', 'dp' => 1]); },
+        static function (MlbRng $r) { $c = $r->pick([[150, '\\sin', 30, '\\frac{1}{2}', 'positive'], [120, '\\cos', 60, '-\\frac{1}{2}', 'negative'], [210, '\\sin', 30, '-\\frac{1}{2}', 'negative']]);
+            [$th, $fn, $ref, $val, $sg] = $c; $wrongVal = str_starts_with($val, '-') ? substr($val, 1) : '-' . $val;
+            return mlb_error_of($r, 'Find the first mistake in this working for $' . $fn . ' ' . mlb_deg($th) . '$.', ['Reference angle: $' . mlb_deg($ref) . '$', 'In this quadrant ' . $fn . ' is ' . $sg, '$' . $fn . ' ' . $th . '^\\circ = ' . $val . '$'], [
+                [1, ['Reference angle: $' . mlb_deg($ref) . '$', 'In this quadrant ' . $fn . ' is ' . ($sg === 'positive' ? 'negative' : 'positive'), '$' . $fn . ' ' . $th . '^\\circ = ' . $wrongVal . '$'], 'the sign comes from the quadrant (CAST): here ' . $fn . ' is ' . $sg . '.'],
+                [0, ['Reference angle: $' . mlb_deg($th - 90) . '$', 'In this quadrant ' . $fn . ' is ' . $sg, '$' . $fn . ' ' . $th . '^\\circ = ' . $fn . ' ' . ($th - 90) . '^\\circ$'], 'the reference angle is measured to the $x$-axis, not the $y$-axis: $' . mlb_deg($ref) . '$.'],
+            ]); },
+    ];
+    $f['MC-143'] = [
+        static function (MlbRng $r) { [$o, $a, $h] = $r->pick(MLB_TRIPLES);
+            return mlb_typed('frac', '$\\theta$ is acute and $\\sin\\theta = ' . mlb_ftex($o, $h) . '$. Find $\\cos\\theta$.', mlb_frac($a, $h),
+                ['$\\cos^2\\theta = 1 - \\sin^2\\theta = 1 - ' . mlb_ftex($o * $o, $h * $h) . ' = ' . mlb_ftex($a * $a, $h * $h) . '$.', 'Acute, so positive: $\\cos\\theta = ' . mlb_ftex($a, $h) . '$.'], '$\\sin^2 + \\cos^2 = 1$.', 'procedure', 45); },
+        static function (MlbRng $r) { [$o, $a, $h] = $r->pick(MLB_TRIPLES); $w = $r->int(0, 2);
+            [$name, $num, $den] = [['\\sec\\theta', $h, $a], ['\\csc\\theta', $h, $o], ['\\cot\\theta', $a, $o]][$w];
+            return mlb_typed('frac', '$\\theta$ is acute and $\\tan\\theta = ' . mlb_ftex($o, $a) . '$. Find $' . $name . '$.', mlb_frac($num, $den),
+                ['Draw a right triangle with opposite $' . $o . '$, adjacent $' . $a . '$; the hypotenuse is $' . $h . '$.', '$\\sec = \\frac{1}{\\cos}$, $\\csc = \\frac{1}{\\sin}$, $\\cot = \\frac{1}{\\tan}$: $' . $name . ' = ' . mlb_ftex($num, $den) . '$.'], 'Sketch the triangle.', 'procedure', 55); },
+        static function (MlbRng $r) { $c = $r->int(0, 2);
+            [$e, $right, $w] = [['1 - \\cos^2\\theta', '$\\sin^2\\theta$', [['$\\cos^2\\theta$', 'That is $1 - \\sin^2\\theta$.'], ['$1 - \\cos\\theta$', 'The squares do not cancel like that.'], ['$\\tan^2\\theta$', '$1 + \\tan^2\\theta = \\sec^2\\theta$ is a different identity.']]],
+                                 ['\\frac{\\sin\\theta}{\\cos\\theta}', '$\\tan\\theta$', [['$\\cot\\theta$', 'That is cosine over sine.'], ['$1$', 'Only when $\\theta = 45^\\circ$.'], ['$\\sec\\theta$', 'Secant is $\\frac{1}{\\cos\\theta}$.']]],
+                                 ['1 + \\tan^2\\theta', '$\\sec^2\\theta$', [['$\\csc^2\\theta$', 'That is $1 + \\cot^2\\theta$.'], ['$1$', 'That is $\\sin^2\\theta + \\cos^2\\theta$.'], ['$\\tan^2\\theta + 1^2 = \\tan\\theta + 1$', 'Squares do not "undo" like that.']]]][$c];
+            return mlb_mcq($r, 'Simplify $' . $e . '$.', $right, $w, ['From $\\sin^2\\theta + \\cos^2\\theta = 1$ (divide through by $\\cos^2\\theta$ for the tan form).', '$' . $e . ' = ' . trim($right, '$') . '$.'], 'Start from $\\sin^2 + \\cos^2 = 1$.', 'concept', 35); },
+        static function (MlbRng $r) { [$o, $a, $h] = $r->pick(MLB_TRIPLES);
+            return mlb_typed('frac', 'A roof rises $' . $o . '$ m over a horizontal run of $' . $a . '$ m. If $\\theta$ is its angle with the horizontal, find $\\cos\\theta$ exactly.', mlb_frac($a, $h),
+                ['$\\tan\\theta = \\frac{' . $o . '}{' . $a . '}$, so the sloping length is $\\sqrt{' . ($o * $o) . ' + ' . ($a * $a) . '} = ' . $h . '$ m.', '$\\cos\\theta = \\frac{' . $a . '}{' . $h . '}$.'], 'Find the hypotenuse first.', 'application', 50); },
+        static function (MlbRng $r) { [$o, $a, $h] = $r->pick(MLB_TRIPLES);
+            return mlb_error_of($r, '$\\theta$ is acute and $\\sin\\theta = ' . mlb_ftex($o, $h) . '$. Find the first mistake in this working for $\\cos\\theta$.',
+                ['$\\cos^2\\theta = 1 - \\sin^2\\theta$', '$= 1 - ' . mlb_ftex($o * $o, $h * $h) . ' = ' . mlb_ftex($a * $a, $h * $h) . '$', '$\\cos\\theta = ' . mlb_ftex($a, $h) . '$'], [
+                [0, ['$\\cos\\theta = 1 - \\sin\\theta$', '$= 1 - ' . mlb_ftex($o, $h) . '$', '$\\cos\\theta = ' . mlb_ftex($h - $o, $h) . '$'], 'the identity is for SQUARES: $\\sin^2\\theta + \\cos^2\\theta = 1$, not $\\sin\\theta + \\cos\\theta = 1$.'],
+                [2, ['$\\cos^2\\theta = 1 - \\sin^2\\theta$', '$= 1 - ' . mlb_ftex($o * $o, $h * $h) . ' = ' . mlb_ftex($a * $a, $h * $h) . '$', '$\\cos\\theta = ' . mlb_ftex($a * $a, $h * $h) . '$'], 'that is $\\cos^2\\theta$; take the square root.'],
+            ]); },
+    ];
+    $f['MC-144'] = [
+        static function (MlbRng $r) { [$a1, $b1, $c1] = $r->pick(MLB_TRIPLES); [$a2, $b2, $c2] = $r->pick(MLB_TRIPLES); $plus = $r->int(0, 1) === 1;
+            // sinA = a1/c1, cosA = b1/c1; sinB = a2/c2, cosB = b2/c2
+            $num = $a1 * $b2 + ($plus ? 1 : -1) * $b1 * $a2;
+            return mlb_typed('frac', '$A$ and $B$ are acute, with $\\sin A = ' . mlb_ftex($a1, $c1) . '$ and $\\sin B = ' . mlb_ftex($a2, $c2) . '$. Find $\\sin(A ' . ($plus ? '+' : '-') . ' B)$ exactly.', mlb_frac($num, $c1 * $c2),
+                ['$\\cos A = ' . mlb_ftex($b1, $c1) . '$ and $\\cos B = ' . mlb_ftex($b2, $c2) . '$ (from the triangles).', '$\\sin(A ' . ($plus ? '+' : '-') . ' B) = \\sin A\\cos B ' . ($plus ? '+' : '-') . ' \\cos A\\sin B = \\frac{' . ($a1 * $b2) . ' ' . ($plus ? '+' : '-') . ' ' . ($b1 * $a2) . '}{' . ($c1 * $c2) . '} = ' . mlb_ftex($num, $c1 * $c2) . '$.'], 'Find both cosines first.', 'procedure', 90); },
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES); $w = $r->int(0, 1);
+            return $w ? mlb_typed('frac', '$A$ is acute and $\\sin A = ' . mlb_ftex($a, $c) . '$. Find $\\sin 2A$ exactly.', mlb_frac(2 * $a * $b, $c * $c),
+                    ['$\\cos A = ' . mlb_ftex($b, $c) . '$ and $\\sin 2A = 2\\sin A\\cos A$.', '$2 \\times ' . mlb_ftex($a, $c) . ' \\times ' . mlb_ftex($b, $c) . ' = ' . mlb_ftex(2 * $a * $b, $c * $c) . '$.'], 'Double-angle formula.', 'procedure', 60)
+                : mlb_typed('frac', '$A$ is acute and $\\sin A = ' . mlb_ftex($a, $c) . '$. Find $\\cos 2A$ exactly.', mlb_frac($c * $c - 2 * $a * $a, $c * $c),
+                    ['$\\cos 2A = 1 - 2\\sin^2 A$.', '$1 - 2 \\times ' . mlb_ftex($a * $a, $c * $c) . ' = ' . mlb_ftex($c * $c - 2 * $a * $a, $c * $c) . '$.'], 'Use the form with $\\sin^2$.', 'procedure', 60); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'Is $\\sin(A + B) = \\sin A + \\sin B$ true for all angles?', 'No — $\\sin(A + B) = \\sin A\\cos B + \\cos A\\sin B$',
+                [['Yes, sine distributes over addition', 'Try $A = B = 90^\\circ$: $\\sin 180^\\circ = 0$, but $\\sin 90^\\circ + \\sin 90^\\circ = 2$.'], ['Yes, for acute angles', '$A = B = 45^\\circ$: $\\sin 90^\\circ = 1$ but $2\\sin 45^\\circ \\approx 1.41$.'], ['Only when $A = B$', 'Even then it fails, as $45^\\circ + 45^\\circ$ shows.']],
+                ['A single counter-example disproves a general rule.', 'The correct expansion is $\\sin A\\cos B + \\cos A\\sin B$.'], 'Test a pair of angles.', 'reasoning', 40); },
+        static function (MlbRng $r) { [$ang, $split, $exp, $key, $l2] = $r->pick([
+                ['\\sin 75^\\circ', '75 = 45 + 30', '\\sin 45\\cos 30 + \\cos 45\\sin 30', 'sqrt(6)/4+sqrt(2)/4', '\\frac{\\sqrt{6} + \\sqrt{2}}{4}'],
+                ['\\cos 15^\\circ', '15 = 45 - 30', '\\cos 45\\cos 30 + \\sin 45\\sin 30', 'sqrt(6)/4+sqrt(2)/4', '\\frac{\\sqrt{6} + \\sqrt{2}}{4}'],
+                ['\\sin 15^\\circ', '15 = 45 - 30', '\\sin 45\\cos 30 - \\cos 45\\sin 30', 'sqrt(6)/4-sqrt(2)/4', '\\frac{\\sqrt{6} - \\sqrt{2}}{4}'],
+                ['\\cos 75^\\circ', '75 = 45 + 30', '\\cos 45\\cos 30 - \\sin 45\\sin 30', 'sqrt(6)/4-sqrt(2)/4', '\\frac{\\sqrt{6} - \\sqrt{2}}{4}']]);
+            return mlb_typed('expr', 'A surveyor needs $' . $ang . '$ exactly, using $' . $split . '$. Write it with sqrt( ).', $key,
+                ['$' . $ang . ' = ' . $exp . '$, with $\\sin 45 = \\cos 45 = \\frac{\\sqrt{2}}{2}$, $\\cos 30 = \\frac{\\sqrt{3}}{2}$, $\\sin 30 = \\frac{1}{2}$.', '$= ' . $l2 . '$.'], 'Split it into special angles.', 'application', 80); },
+    ];
+    $f['MC-145'] = [
+        static function (MlbRng $r) { [$eq, $s1, $s2] = $r->pick([['\\sin x = \\frac{1}{2}', 30, 150], ['\\sin x = \\frac{\\sqrt{3}}{2}', 60, 120], ['\\sin x = -\\frac{1}{2}', 210, 330], ['\\cos x = \\frac{1}{2}', 60, 300], ['\\cos x = -\\frac{1}{2}', 120, 240], ['\\tan x = 1', 45, 225], ['\\tan x = -1', 135, 315], ['\\tan x = \\sqrt{3}', 60, 240], ['\\cos x = 0', 90, 270]]);
+            $big = $r->int(0, 1) === 1;
+            return mlb_typed('num', 'Solve $' . $eq . '$ for $0^\\circ \\le x \\le 360^\\circ$. Give the ' . ($big ? 'larger' : 'smaller') . ' solution.', (string)($big ? $s2 : $s1),
+                ['Find the reference angle from the special values, then the quadrants where the sign fits.', 'The solutions are $' . $s1 . '^\\circ$ and $' . $s2 . '^\\circ$.'], 'Two solutions in a full turn — use CAST.', 'procedure', 60, ['unit' => '°']); },
+        static function (MlbRng $r) { $a = $r->int(1, 9); $b = $r->pick([1, 2, 3, 4, 5, 6]); $w = $r->int(0, 1);
+            return $w ? mlb_typed('num', 'What is the period of $y = ' . $a . '\\sin ' . $b . 'x$, in degrees?', (string)(360 / $b),
+                    ['$\\sin x$ repeats every $360^\\circ$; $\\sin ' . $b . 'x$ repeats ' . $b . ' times as fast.', 'Period $= \\frac{360}{' . $b . '} = ' . (360 / $b) . '^\\circ$.'], 'The number with $x$ squeezes the graph.', 'procedure', 30, ['unit' => '°'])
+                : mlb_typed('num', 'What is the amplitude of $y = ' . $a . '\\sin ' . $b . 'x$?', (string)$a,
+                    ['The amplitude is the size of the number in front.', 'It goes up to $' . $a . '$ and down to $-' . $a . '$: amplitude $' . $a . '$.'], 'How high does it go?', 'procedure', 25); },
+        static function (MlbRng $r) { $c = $r->int(0, 2); $k = [mlb_ftex($r->int(1, 4), 5), '1', mlb_ftex($r->int(6, 9), 5)][$c]; $right = ['2', '1', '0'][$c];
+            $wrong = []; foreach (['2', '1', '0'] as $t) if ($t !== $right) $wrong[] = [$t, 'Picture the line $y = ' . $k . '$ across one cycle of the sine wave, which lies between −1 and 1.'];
+            $wrong[] = ['Infinitely many', 'Within one turn the wave is crossed only a few times.'];
+            return mlb_mcq($r, 'How many solutions does $\\sin x = ' . $k . '$ have for $0^\\circ \\le x < 360^\\circ$?', $right, $wrong,
+                ['$\\sin x$ takes values from $-1$ to $1$ and reaches $1$ only at $90^\\circ$.', $c === 0 ? 'A value between 0 and 1 is met twice (quadrants 1 and 2).' : ($c === 1 ? 'The value 1 is met once, at $90^\\circ$.' : 'A value above 1 is never reached.')], 'Sketch the wave and the line.', 'reasoning', 40); },
+        static function (MlbRng $r) { $m = $r->int(2, 5); $a = $r->int(1, $m - 1); $w = $r->int(0, 1);
+            return mlb_typed('num', 'The depth of water in a harbour is modelled by $d = ' . $m . ' + ' . $a . '\\sin(30t)^\\circ$ metres, $t$ hours after midnight. What is the ' . ($w ? 'greatest' : 'least') . ' depth?', (string)($w ? $m + $a : $m - $a),
+                ['$\\sin$ ranges from $-1$ to $1$.', $w ? 'Greatest: $' . $m . ' + ' . $a . ' = ' . ($m + $a) . '$ m.' : 'Least: $' . $m . ' - ' . $a . ' = ' . ($m - $a) . '$ m.'], 'When is the sine largest or smallest?', 'application', 40, ['unit' => 'm']); },
+    ];
+    $f['MC-146'] = [
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES); $k = $r->int(1, 2);
+            return mlb_typed('num', 'Write $' . ($a * $k) . '\\sin x + ' . ($b * $k) . '\\cos x$ in the form $R\\sin(x + \\alpha)$. Find $R$.', (string)($c * $k),
+                ['$R = \\sqrt{a^2 + b^2}$.', '$\\sqrt{' . (($a * $k) ** 2) . ' + ' . (($b * $k) ** 2) . '} = ' . ($c * $k) . '$.'], 'Pythagoras on the coefficients.', 'procedure', 45); },
+        static function (MlbRng $r) { $a = $r->int(1, 9); $b = $r->int(1, 9); $al = rad2deg(atan($b / $a));
+            return mlb_typed('num', 'Write $' . $a . '\\sin x + ' . $b . '\\cos x$ as $R\\sin(x + \\alpha)$ with $0^\\circ < \\alpha < 90^\\circ$. Find $\\alpha$ to 1 decimal place.', mlb_rd($al, 1),
+                ['$R\\cos\\alpha = ' . $a . '$ and $R\\sin\\alpha = ' . $b . '$, so $\\tan\\alpha = \\frac{' . $b . '}{' . $a . '}$.', '$\\alpha \\approx ' . mlb_rd($al, 1) . '^\\circ$.'], 'Divide the two equations.', 'procedure', 60, ['unit' => '°', 'dp' => 1]); },
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES);
+            return mlb_mcq($r, 'What is the greatest value of $' . $a . '\\sin x + ' . $b . '\\cos x$?', (string)$c,
+                [[(string)($a + $b), 'The two parts never reach their maxima at the same $x$; the maximum is $\\sqrt{' . $a . '^2 + ' . $b . '^2}$.'], [(string)($c * $c), 'That is $R^2$; the maximum is $R$.'], [(string)max($a, $b), 'The combination is bigger than either part alone.']],
+                ['$' . $a . '\\sin x + ' . $b . '\\cos x = ' . $c . '\\sin(x + \\alpha)$.', 'The sine is at most 1, so the greatest value is $' . $c . '$.'], 'Write it as one sine wave.', 'reasoning', 40); },
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES); $k = $r->pick([10, 20, 30]);
+            return mlb_typed('num', 'An alternating voltage is $V = ' . ($a * $k) . '\\sin\\omega t + ' . ($b * $k) . '\\cos\\omega t$ volts. What is its peak voltage?', (string)($c * $k),
+                ['Combine into a single wave: $R = \\sqrt{' . ($a * $k) . '^2 + ' . ($b * $k) . '^2}$.', 'Peak $= R = ' . ($c * $k) . '$ V.'], 'The peak is the amplitude $R$.', 'application', 50, ['unit' => 'V']); },
+    ];
+    $f['MC-147'] = [
+        static function (MlbRng $r) { $a = $r->int(-8, 8); $b = $r->int(-8, 8); $rad = $r->int(1, 9);
+            return mlb_typed('pair', 'Find the centre of the circle $(x ' . ($a < 0 ? '+ ' . (-$a) : '- ' . $a) . ')^2 + (y ' . ($b < 0 ? '+ ' . (-$b) : '- ' . $b) . ')^2 = ' . ($rad * $rad) . '$.', [$a, $b],
+                ['$(x - a)^2 + (y - b)^2 = r^2$ has centre $(a, b)$ — the signs change.', 'Centre $(' . $a . ', ' . $b . ')$, radius $' . $rad . '$.'], 'Read off with the opposite signs.', 'procedure', 30, ['labels' => ['x', 'y'], 'point' => true]); },
+        static function (MlbRng $r) { $a = $r->int(-6, 6); $b = $r->int(-6, 6); $rad = $r->int(1, 9); $F = $a * $a + $b * $b - $rad * $rad;
+            return mlb_typed('num', 'Find the radius of the circle $x^2 + y^2 ' . mlb_sterm(-2 * $a, 'x') . mlb_sterm(-2 * $b, 'y') . mlb_sterm($F) . ' = 0$.', (string)$rad,
+                ['Complete the squares: centre $(' . $a . ', ' . $b . ')$.', '$r^2 = ' . $a . '^2 + ' . $b . '^2 - (' . $F . ') = ' . ($rad * $rad) . '$, so $r = ' . $rad . '$.'], 'Centre is minus half the $x$ and $y$ coefficients.', 'procedure', 60); },
+        static function (MlbRng $r) { $a = $r->int(-6, 6); $b = $r->int(-6, 6); $rad = $r->int(2, 8); $F = $a * $a + $b * $b - $rad * $rad;
+            return mlb_typed('pair', 'Find the centre of $x^2 + y^2 ' . mlb_sterm(-2 * $a, 'x') . mlb_sterm(-2 * $b, 'y') . mlb_sterm($F) . ' = 0$.', [$a, $b],
+                ['For $x^2 + y^2 + 2gx + 2fy + c = 0$, the centre is $(-g, -f)$.', 'Here $2g = ' . (-2 * $a) . '$, $2f = ' . (-2 * $b) . '$, so the centre is $(' . $a . ', ' . $b . ')$.'], 'Halve and change sign.', 'procedure', 45, ['labels' => ['x', 'y'], 'point' => true]); },
+        static function (MlbRng $r) { $rad = $r->int(3, 9); [$x, $y] = $r->pick([[0, $rad], [$rad - 1, 1], [$rad, 2], [1, 1]]); $d2 = $x * $x + $y * $y;
+            $right = $d2 < $rad * $rad ? 'Inside' : ($d2 === $rad * $rad ? 'On the circle' : 'Outside');
+            $wrong = []; foreach (['Inside', 'On the circle', 'Outside'] as $t) if ($t !== $right) $wrong[] = [$t, 'Compare $x^2 + y^2 = ' . $d2 . '$ with $r^2 = ' . ($rad * $rad) . '$.'];
+            return mlb_mcq($r, 'Is the point $(' . $x . ', ' . $y . ')$ inside, on, or outside the circle $x^2 + y^2 = ' . ($rad * $rad) . '$?', $right, $wrong,
+                ['$' . $x . '^2 + ' . $y . '^2 = ' . $d2 . '$ and $r^2 = ' . ($rad * $rad) . '$.', $d2 < $rad * $rad ? 'Less, so inside.' : ($d2 === $rad * $rad ? 'Equal, so on the circle.' : 'Greater, so outside.')], 'Substitute and compare with $r^2$.', 'reasoning', 35); },
+        static function (MlbRng $r) { [$p, $q, $d] = $r->pick(MLB_TRIPLES); $a = $r->int(0, 5); $b = $r->int(0, 5); $rad = $d + $r->pick([-1, 1, 2]);
+            $reach = $d <= $rad;
+            return mlb_mcq($r, 'A sprinkler at $(' . $a . ', ' . $b . ')$ (metres) waters everything within $' . $rad . '$ m. Does it reach a plant at $(' . ($a + $p) . ', ' . ($b + $q) . ')$?', $reach ? 'Yes' : 'No',
+                [[$reach ? 'No' : 'Yes', 'The plant is $\\sqrt{' . $p . '^2 + ' . $q . '^2} = ' . $d . '$ m away; compare with ' . $rad . ' m.']],
+                ['The watered region is the disc $(x - ' . $a . ')^2 + (y - ' . $b . ')^2 \\le ' . ($rad * $rad) . '$.', 'Distance to the plant: $' . $d . '$ m, ' . ($reach ? 'within' : 'beyond') . ' the ' . $rad . ' m reach.'], 'Distance from the centre.', 'application', 45); },
+    ];
+    $f['MC-148'] = [
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES);
+            return mlb_typed('num', 'A point is $' . $c . '$ cm from the centre of a circle of radius $' . $a . '$ cm. How long is a tangent from the point to the circle?', (string)$b,
+                ['The tangent meets the radius at a right angle, so tangent, radius and distance form a right triangle.', '$\\sqrt{' . $c . '^2 - ' . $a . '^2} = \\sqrt{' . ($b * $b) . '} = ' . $b . '$ cm.'], 'Radius ⟂ tangent: Pythagoras.', 'procedure', 45, ['unit' => 'cm']); },
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES); $sx = $r->int(0, 1) ? 1 : -1; $sy = $r->int(0, 1) ? 1 : -1; $x = $sx * $a; $y = $sy * $b;
+            return mlb_typed('frac', 'Find the gradient of the tangent to $x^2 + y^2 = ' . ($c * $c) . '$ at the point $(' . $x . ', ' . $y . ')$.', mlb_frac(-$x, $y),
+                ['The radius to $(' . $x . ', ' . $y . ')$ has gradient $' . mlb_ftex($y, $x) . '$.', 'The tangent is perpendicular: $' . mlb_ftex(-$x, $y) . '$.'], 'Tangent ⟂ radius.', 'procedure', 50); },
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES);
+            return mlb_typed('expr', 'Find the equation of the tangent to $x^2 + y^2 = ' . ($c * $c) . '$ at $(' . $a . ', ' . $b . ')$, in the form $y = \\dots$', '(' . ($c * $c) . '-' . $a . 'x)/' . $b,
+                ['The tangent at $(x_1, y_1)$ on $x^2 + y^2 = r^2$ is $x_1x + y_1y = r^2$.', '$' . $a . 'x + ' . $b . 'y = ' . ($c * $c) . '$, so $y = \\frac{' . ($c * $c) . ' - ' . $a . 'x}{' . $b . '}$.'], 'Gradient from the radius, then the point.', 'procedure', 80); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'A tangent touches a circle at $T$, and $O$ is the centre. What is the angle between the tangent and $OT$?', '$90^\\circ$',
+                [['$45^\\circ$', 'The tangent meets the radius at a RIGHT angle, whatever the circle.'], ['It depends on the size of the circle', 'It is always $90^\\circ$.'], ['$180^\\circ$', 'They are not in a straight line.']],
+                ['A tangent is perpendicular to the radius at the point of contact.', 'So the angle is $90^\\circ$.'], 'Tangent ⟂ radius.', 'concept', 20); },
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES); $k = $r->pick([10, 20, 50, 100]);
+            return mlb_typed('num', 'A circular lake has radius $' . ($a * $k) . '$ m. A path runs straight from a hut $' . ($c * $k) . '$ m from the lake\'s centre and just touches the shore. How long is the path to that point?', (string)($b * $k),
+                ['The path is a tangent; it meets the radius at a right angle.', '$\\sqrt{' . ($c * $k) . '^2 - ' . ($a * $k) . '^2} = ' . ($b * $k) . '$ m.'], 'Tangent length by Pythagoras.', 'application', 50, ['unit' => 'm']); },
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES);
+            return mlb_typed('num', 'Two tangents are drawn from a point $P$ to a circle, touching it at $A$ and $B$. $PA = ' . $b . '$ cm. How long is $PB$, and why must it be? Enter $PB$.', (string)$b,
+                ['Triangles $OAP$ and $OBP$ are right-angled at $A$ and $B$, share the hypotenuse $OP$, and have $OA = OB$ (radii).', 'So they are congruent (RHS) and $PB = PA = ' . $b . '$ cm.'], 'Join $O$ to $A$, $B$ and $P$.', 'reasoning', 45, ['unit' => 'cm']); },
+    ];
+    $f['MC-149'] = [
+        static function (MlbRng $r) { $a = $r->nz(-5, 6);
+            return mlb_typed('pair', 'Find the focus of the parabola $y^2 = ' . (4 * $a) . 'x$.', [$a, 0],
+                ['$y^2 = 4ax$ has its focus at $(a, 0)$.', '$4a = ' . (4 * $a) . '$, so $a = ' . $a . '$: focus $(' . $a . ', 0)$.'], 'Compare with $y^2 = 4ax$.', 'procedure', 35, ['labels' => ['x', 'y'], 'point' => true]); },
+        static function (MlbRng $r) { $a = $r->nz(-5, 6);
+            return mlb_typed('num', 'The directrix of $y^2 = ' . (4 * $a) . 'x$ is the line $x = k$. Find $k$.', (string)(-$a),
+                ['$y^2 = 4ax$ has directrix $x = -a$.', '$a = ' . $a . '$, so $x = ' . (-$a) . '$.'], 'The directrix is on the other side of the vertex from the focus.', 'procedure', 35); },
+        static function (MlbRng $r) { $h = $r->int(-5, 5); $k = $r->int(-6, 6);
+            return mlb_typed('pair', 'Find the vertex of the parabola $y = ' . mlb_poly([1, -2 * $h, $h * $h + $k]) . '$.', [$h, $k],
+                ['Complete the square: $y = (x' . mlb_sterm(-$h) . ')^2 ' . ($k < 0 ? '- ' . (-$k) : '+ ' . $k) . '$.', 'Vertex $(' . $h . ', ' . $k . ')$.'], 'Complete the square.', 'procedure', 45, ['labels' => ['x', 'y'], 'point' => true]); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'A parabola is the set of points that are…', 'the same distance from a fixed point (focus) and a fixed line (directrix)',
+                [['the same distance from two fixed points', 'That describes the perpendicular bisector (a line), not a parabola.'], ['a fixed distance from one point', 'That is a circle.'], ['a fixed total distance from two points', 'That is an ellipse.']],
+                ['Focus–directrix definition: $PS = PM$.', 'Every point on the parabola is as far from the focus as from the directrix.'], 'One point and one line.', 'concept', 30); },
+        static function (MlbRng $r) { $f = $r->int(20, 120);
+            return mlb_typed('num', 'A satellite dish has the cross-section $y = \\frac{x^2}{' . (4 * $f) . '}$ (cm). The receiver must sit at the focus. How far above the vertex is that, in cm?', (string)$f,
+                ['$x^2 = 4fy$ has its focus at $(0, f)$; here $x^2 = ' . (4 * $f) . 'y$.', 'So $f = ' . $f . '$ cm above the vertex.'], 'Write it as $x^2 = 4fy$.', 'application', 45, ['unit' => 'cm']); },
+        static function (MlbRng $r) { $a = $r->int(1, 6); $x = $r->int(1, 12);
+            return mlb_typed('num', 'The point $P$ on $y^2 = ' . (4 * $a) . 'x$ has $x$-coordinate $' . $x . '$. Without finding $y$, how far is $P$ from the focus?', (string)($x + $a),
+                ['The directrix is $x = -' . $a . '$, so $P$ is $' . $x . ' + ' . $a . ' = ' . ($x + $a) . '$ from it.', 'Every point on a parabola is as far from the focus as from the directrix: $' . ($x + $a) . '$.'], 'Use the definition, not the distance formula.', 'reasoning', 45); },
+    ];
+    $f['MC-150'] = [
+        static function (MlbRng $r) { do { $x = $r->int(-5, 5); $y = $r->int(-5, 5); $a = $r->nz(-4, 4); $b = $r->nz(-4, 4); $c = $r->nz(-4, 4); $d = $r->nz(-4, 4); } while ($a * $d - $b * $c === 0);
+            return mlb_typed('pair', 'Find where the lines $' . mlb_lterm($a, 'x') . mlb_sterm($b, 'y') . ' = ' . ($a * $x + $b * $y) . '$ and $' . mlb_lterm($c, 'x') . mlb_sterm($d, 'y') . ' = ' . ($c * $x + $d * $y) . '$ intersect.', [$x, $y],
+                ['Solve the two equations together (elimination or substitution).', 'They meet at $(' . $x . ', ' . $y . ')$.'], 'Eliminate one variable.', 'procedure', 80, ['labels' => ['x', 'y'], 'point' => true]); },
+        static function (MlbRng $r) { do { $P = [[$r->int(-5, 5), $r->int(-5, 5)], [$r->int(-5, 5), $r->int(-5, 5)], [$r->int(-5, 5), $r->int(-5, 5)]]; $A2 = abs($P[0][0] * ($P[1][1] - $P[2][1]) + $P[1][0] * ($P[2][1] - $P[0][1]) + $P[2][0] * ($P[0][1] - $P[1][1])); } while ($A2 === 0);
+            return mlb_typed('num', 'Find the area of the triangle with vertices ' . implode(', ', array_map(static fn($p) => '$(' . $p[0] . ', ' . $p[1] . ')$', $P)) . '.', mlb_dec($A2 / 2),
+                ['Area $= \\frac{1}{2}|x_1(y_2 - y_3) + x_2(y_3 - y_1) + x_3(y_1 - y_2)|$.', '$\\frac{1}{2} \\times ' . $A2 . ' = ' . mlb_dec($A2 / 2) . '$.'], 'Shoelace formula.', 'procedure', 90); },
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES); $x = $r->int(-4, 4); $y = $r->int(-4, 4); $k = $r->int(-20, 20); $d = abs($a * $x + $b * $y + $k) / $c;
+            return mlb_typed('num', 'Find the perpendicular distance from $(' . $x . ', ' . $y . ')$ to the line $' . $a . 'x + ' . $b . 'y' . mlb_sterm($k) . ' = 0$, to 2 decimal places.', mlb_rd($d, 2),
+                ['$d = \\frac{|ax_1 + by_1 + c|}{\\sqrt{a^2 + b^2}}$.', '$\\frac{|' . ($a * $x + $b * $y + $k) . '|}{' . $c . '} \\approx ' . mlb_rd($d, 2) . '$.'], 'The formula needs the line equal to zero.', 'procedure', 60, ['dp' => 2]); },
+        static function (MlbRng $r) { $m = $r->nz(-3, 3); $c = $r->int(-4, 4); $col = $r->int(0, 1) === 1; $x3 = $r->int(3, 6); $y3 = $m * $x3 + $c + ($col ? 0 : $r->nz(-3, 3));
+            return mlb_mcq($r, 'Are the points $(0, ' . $c . ')$, $(1, ' . ($m + $c) . ')$ and $(' . $x3 . ', ' . $y3 . ')$ collinear (on one straight line)?', $col ? 'Yes' : 'No',
+                [[$col ? 'No' : 'Yes', 'Compare the gradients between the first two points and between the first and third.']],
+                ['Gradient from the first to the second: $' . $m . '$.', 'From the first to the third: $' . mlb_ftex($y3 - $c, $x3) . '$ — ' . ($col ? 'the same, so collinear.' : 'different, so not collinear.')], 'Equal gradients from a shared point.', 'reasoning', 45); },
+        static function (MlbRng $r) { $w = $r->int(20, 60); $h = $r->int(10, 40); $s = $r->int(5, $w - 5);
+            $P = [[0, 0], [$w, 0], [$w + $s, $h], [$s, $h]]; $A = $w * $h;
+            return mlb_typed('num', 'A surveyor marks the corners of a field at $(0, 0)$, $(' . $w . ', 0)$, $(' . ($w + $s) . ', ' . $h . ')$ and $(' . $s . ', ' . $h . ')$ (metres). Find its area in $\\text{m}^2$.', (string)$A,
+                ['The shape is a parallelogram with base $' . $w . '$ m and height $' . $h . '$ m (or use the shoelace formula).', 'Area $= ' . $w . ' \\times ' . $h . ' = ' . $A . '\\ \\text{m}^2$.'], 'Identify the shape first.', 'application', 70, ['unit' => 'm²']); },
+    ];
+
+    /* ══ Stage 16 · Calculus and Mathematical Analysis ═══════════════════ */
+    $f['MC-151'] = [
+        static function (MlbRng $r) { $a = $r->nz(-9, 9);
+            return mlb_typed('num', 'Find $\\displaystyle\\lim_{x \\to ' . $a . '} \\frac{x^2 - ' . ($a * $a) . '}{x ' . ($a > 0 ? '- ' . $a : '+ ' . (-$a)) . '}$.', (string)(2 * $a),
+                ['Factorise: $\\frac{(x - ' . abs($a) . ')(x + ' . abs($a) . ')}{x ' . ($a > 0 ? '- ' . $a : '+ ' . (-$a)) . '} = x ' . ($a > 0 ? '+ ' . $a : '- ' . (-$a)) . '$ for $x \\ne ' . $a . '$.', 'As $x \\to ' . $a . '$: $' . $a . ($a > 0 ? ' + ' . $a : ' - ' . (-$a)) . ' = ' . (2 * $a) . '$.'], 'Cancel the factor causing $\\frac{0}{0}$.', 'procedure', 50); },
+        static function (MlbRng $r) { $a = $r->nz(-9, 9); $b = $r->int(-9, 9); $c = $r->nz(-9, 9); $d = $r->int(-9, 9);
+            return mlb_typed('frac', 'Find $\\displaystyle\\lim_{x \\to \\infty} \\frac{' . mlb_lterm($a, 'x') . mlb_sterm($b) . '}{' . mlb_lterm($c, 'x') . mlb_sterm($d) . '}$.', mlb_frac($a, $c),
+                ['Divide top and bottom by $x$: $\\frac{' . $a . ' + ' . $b . '/x}{' . $c . ' + ' . $d . '/x}$.', 'As $x \\to \\infty$ the fractions vanish: $' . mlb_ftex($a, $c) . '$.'], 'Only the leading terms matter.', 'procedure', 45); },
+        static function (MlbRng $r) { $c = [$r->int(-3, 3), $r->int(-5, 5), $r->int(-9, 9)]; $k = $r->int(-4, 4);
+            return mlb_typed('num', 'Find $\\displaystyle\\lim_{x \\to ' . $k . '} (' . mlb_poly($c) . ')$.', (string)($c[0] * $k * $k + $c[1] * $k + $c[2]),
+                ['A polynomial is continuous, so the limit is its value at the point.', '$' . $c[0] . '(' . $k . ')^2 + ' . $c[1] . '(' . $k . ') + ' . $c[2] . ' = ' . ($c[0] * $k * $k + $c[1] * $k + $c[2]) . '$.'], 'Just substitute — nothing breaks.', 'concept', 30); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'What is $\\displaystyle\\lim_{x \\to 0} \\frac{1}{x}$?', 'It does not exist',
+                [['0', 'As $x$ gets closer to 0, $\\frac{1}{x}$ gets LARGER in size, not smaller.'], ['$\\infty$', 'From the left it heads to $-\\infty$ and from the right to $+\\infty$ — they disagree.'], ['1', 'There is no reason for 1.']],
+                ['From the right, $\\frac{1}{x} \\to +\\infty$; from the left, $\\to -\\infty$.', 'The two sides do not agree, so the limit does not exist.'], 'Check both sides.', 'reasoning', 40); },
+        static function (MlbRng $r) { $k = $r->int(1, 6); $a = $r->int(1, 8);
+            return mlb_typed('num', 'A stone falls $s = ' . $k . 't^2$ metres in $t$ seconds. Its average speed from $t = ' . $a . '$ to $t = ' . $a . ' + h$ is $' . (2 * $k * $a) . ' + ' . $k . 'h$ m/s. What is its speed at exactly $t = ' . $a . '$?', (string)(2 * $k * $a),
+                ['The instantaneous speed is the limit of the average speed as $h \\to 0$.', '$' . (2 * $k * $a) . ' + ' . $k . ' \\times 0 = ' . (2 * $k * $a) . '$ m/s.'], 'Shrink the interval to nothing.', 'application', 45, ['unit' => 'm/s']); },
+    ];
+    $f['MC-152'] = [
+        static function (MlbRng $r) { $a = $r->int(-5, 6); $h = $r->pick([1, 0.5, 0.1, 0.01, 2]);
+            return mlb_typed('num', 'Find the gradient of the chord of $y = x^2$ from $x = ' . $a . '$ to $x = ' . $a . ' + ' . mlb_dec($h) . '$.', mlb_dec(2 * $a + $h),
+                ['$\\frac{(' . $a . ' + h)^2 - ' . $a . '^2}{h} = \\frac{' . (2 * $a) . 'h + h^2}{h} = ' . (2 * $a) . ' + h$.', 'With $h = ' . mlb_dec($h) . '$: $' . mlb_dec(2 * $a + $h) . '$.'], 'Change in $y$ over change in $x$.', 'procedure', 50); },
+        static function (MlbRng $r) { $a = $r->nz(-4, 5); $b = $r->int(-6, 6); $k = $r->int(-4, 4);
+            return mlb_typed('num', 'Using first principles, $f(x) = ' . mlb_poly([$a, $b, 0]) . '$ has $f\'(x) = \\lim_{h \\to 0} \\frac{f(x + h) - f(x)}{h}$. Find $f\'(' . $k . ')$.', (string)(2 * $a * $k + $b),
+                ['$\\frac{f(x + h) - f(x)}{h} = ' . (2 * $a) . 'x + ' . $a . 'h' . mlb_sterm($b) . '$, which tends to $' . mlb_lterm(2 * $a, 'x') . mlb_sterm($b) . '$.', '$f\'(' . $k . ') = ' . (2 * $a) . '(' . $k . ')' . mlb_sterm($b) . ' = ' . (2 * $a * $k + $b) . '$.'], 'Expand $f(x + h)$, cancel, then let $h \\to 0$.', 'procedure', 80); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'Which expression defines the derivative $f\'(x)$ from first principles?', '$\\displaystyle\\lim_{h \\to 0} \\frac{f(x + h) - f(x)}{h}$',
+                [['$\\displaystyle\\frac{f(x + h) - f(x)}{h}$', 'Without the limit, that is the gradient of a CHORD, not the tangent.'], ['$\\displaystyle\\lim_{h \\to 0} \\frac{f(x) - f(h)}{x - h}$', 'The two points must be $x$ and $x + h$.'], ['$\\displaystyle\\lim_{h \\to 0} f(x + h)$', 'That is just $f(x)$ for a continuous function.']],
+                ['The tangent gradient is the limit of chord gradients as the second point slides in.', '$f\'(x) = \\lim_{h \\to 0} \\frac{f(x + h) - f(x)}{h}$.'], 'Chord gradient, then the limit.', 'concept', 35); },
+        static function (MlbRng $r) {
+            return mlb_error_of($r, 'Find the first mistake in this working for the derivative of $f(x) = x^2$ from first principles.',
+                ['$f(x + h) = (x + h)^2 = x^2 + 2xh + h^2$', '$\\frac{f(x + h) - f(x)}{h} = \\frac{2xh + h^2}{h} = 2x + h$', 'As $h \\to 0$: $f\'(x) = 2x$'], [
+                [0, ['$f(x + h) = (x + h)^2 = x^2 + h^2$', '$\\frac{f(x + h) - f(x)}{h} = \\frac{h^2}{h} = h$', 'As $h \\to 0$: $f\'(x) = 0$'], '$(x + h)^2$ has a middle term: $x^2 + 2xh + h^2$.'],
+                [2, ['$f(x + h) = (x + h)^2 = x^2 + 2xh + h^2$', '$\\frac{f(x + h) - f(x)}{h} = \\frac{2xh + h^2}{h} = 2x + h$', 'As $h \\to 0$: $f\'(x) = 2x + 1$'], 'the $h$ tends to 0, so it disappears: $2x$.'],
+            ]); },
+        static function (MlbRng $r) { $k = $r->int(1, 9); $t = $r->int(1, 10);
+            return mlb_typed('num', 'A car\'s position is $s = ' . $k . 't^2$ metres. From first principles its velocity is $\\lim_{h \\to 0} \\frac{s(t + h) - s(t)}{h}$. Find the velocity at $t = ' . $t . '$ s.', (string)(2 * $k * $t),
+                ['$\\frac{' . $k . '(t + h)^2 - ' . $k . 't^2}{h} = ' . (2 * $k) . 't + ' . $k . 'h \\to ' . (2 * $k) . 't$.', 'At $t = ' . $t . '$: $' . (2 * $k * $t) . '$ m/s.'], 'Velocity is the derivative of position.', 'application', 60, ['unit' => 'm/s']); },
+    ];
+    $f['MC-153'] = [
+        static function (MlbRng $r) { $c = [$r->int(-4, 5), $r->int(-6, 6), $r->int(-9, 9), $r->int(-9, 9)]; if ($c[0] === 0) $c[0] = 2;
+            return mlb_typed('expr', 'Differentiate $y = ' . mlb_poly($c) . '$. Write $\\frac{dy}{dx}$.', mlb_poly([3 * $c[0], 2 * $c[1], $c[2]]),
+                ['$\\frac{d}{dx}x^n = nx^{n-1}$; a constant differentiates to 0.', '$\\frac{dy}{dx} = ' . mlb_poly([3 * $c[0], 2 * $c[1], $c[2]]) . '$.'], 'Multiply by the power, lower the power by one.', 'procedure', 45); },
+        static function (MlbRng $r) { $c = [$r->int(-3, 3), $r->int(-5, 5), $r->int(-9, 9)]; if ($c[0] === 0) $c[0] = 1; $k = $r->int(-4, 4);
+            return mlb_typed('num', 'Find the gradient of $y = ' . mlb_poly($c) . '$ at $x = ' . $k . '$.', (string)(2 * $c[0] * $k + $c[1]),
+                ['$\\frac{dy}{dx} = ' . mlb_poly([2 * $c[0], $c[1]]) . '$.', 'At $x = ' . $k . '$: $' . (2 * $c[0] * $k + $c[1]) . '$.'], 'Differentiate, then substitute.', 'procedure', 40); },
+        static function (MlbRng $r) { $a = $r->nz(-3, 3); $b = $r->int(-8, 8); $x = $r->int(-5, 5); $m = 2 * $a * $x + $b;
+            return mlb_typed('num', 'At what value of $x$ does $y = ' . mlb_poly([$a, $b, $r->int(-5, 5)]) . '$ have gradient $' . $m . '$?', (string)$x,
+                ['$\\frac{dy}{dx} = ' . mlb_poly([2 * $a, $b]) . ' = ' . $m . '$.', '$' . mlb_lterm(2 * $a, 'x') . ' = ' . ($m - $b) . '$, so $x = ' . $x . '$.'], 'Set the derivative equal to the gradient.', 'reasoning', 50); },
+        static function (MlbRng $r) { $n = $r->int(3, 7); $a = $r->int(2, 6);
+            return mlb_mcq($r, 'Differentiate $' . $a . 'x^' . $n . '$.', '$' . ($a * $n) . 'x^' . ($n - 1) . '$',
+                [['$' . $a . 'x^' . ($n - 1) . '$', 'Multiply by the power as well: $' . $a . ' \\times ' . $n . ' = ' . ($a * $n) . '$.'], ['$' . ($a * $n) . 'x^' . $n . '$', 'Lower the power by one.'], ['$' . $a . 'x^' . ($n + 1) . '$', 'Raising the power is integration, not differentiation.']],
+                ['$\\frac{d}{dx}ax^n = anx^{n-1}$.', '$' . $a . ' \\times ' . $n . 'x^{' . ($n - 1) . '} = ' . ($a * $n) . 'x^' . ($n - 1) . '$.'], 'Bring the power down, then reduce it.', 'reasoning', 30); },
+        static function (MlbRng $r) { $a = $r->int(1, 5); $b = 10 * $r->int(1, 20); $c = 100 * $r->int(5, 50); $x = $r->int(5, 40);
+            return mlb_typed('num', 'The cost of making $x$ items is $C = ' . $a . 'x^2 + ' . $b . 'x + ' . $c . '$ naira. The marginal cost is $\\frac{dC}{dx}$. Find it when $x = ' . $x . '$.', (string)(2 * $a * $x + $b),
+                ['$\\frac{dC}{dx} = ' . (2 * $a) . 'x + ' . $b . '$.', 'At $x = ' . $x . '$: $' . (2 * $a * $x + $b) . '$ naira per extra item.'], 'Marginal cost is the rate of change of cost.', 'application', 45, ['unit' => '₦']); },
+    ];
+    $f['MC-154'] = [
+        static function (MlbRng $r) { $a = $r->nz(-3, 4); $b = $r->int(-4, 4); $n = $r->int(2, 5); $k = $r->int(-2, 2);
+            return mlb_typed('num', 'Find $\\frac{dy}{dx}$ at $x = ' . $k . '$ when $y = (' . mlb_lterm($a, 'x') . mlb_sterm($b) . ')^' . $n . '$.', (string)($n * $a * ($a * $k + $b) ** ($n - 1)),
+                ['Chain rule: $\\frac{dy}{dx} = ' . $n . '(' . mlb_lterm($a, 'x') . mlb_sterm($b) . ')^{' . ($n - 1) . '} \\times ' . $a . '$.', 'At $x = ' . $k . '$: $' . $n . ' \\times (' . ($a * $k + $b) . ')^{' . ($n - 1) . '} \\times ' . $a . ' = ' . ($n * $a * ($a * $k + $b) ** ($n - 1)) . '$.'], 'Outside derivative times inside derivative.', 'procedure', 60); },
+        static function (MlbRng $r) { $a = $r->int(-4, 4); $k = $r->int(-3, 3);
+            return mlb_typed('num', 'Find $\\frac{dy}{dx}$ at $x = ' . $k . '$ when $y = x^2(x' . mlb_sterm($a) . ')$, using the product rule.', (string)(2 * $k * ($k + $a) + $k * $k),
+                ['Product rule: $\\frac{dy}{dx} = 2x(x' . mlb_sterm($a) . ') + x^2 \\times 1$.', 'At $x = ' . $k . '$: $' . (2 * $k * ($k + $a)) . ' + ' . ($k * $k) . ' = ' . (2 * $k * ($k + $a) + $k * $k) . '$.'], '$u\'v + uv\'$.', 'procedure', 60); },
+        static function (MlbRng $r) { $a = $r->nz(-5, 5); $k = $r->int(-3, 3); if ($k + $a === 0) $k++;
+            return mlb_typed('frac', 'Find $\\frac{dy}{dx}$ at $x = ' . $k . '$ when $y = \\frac{x}{x' . mlb_sterm($a) . '}$, using the quotient rule.', mlb_frac($a, ($k + $a) ** 2),
+                ['Quotient rule: $\\frac{(x' . mlb_sterm($a) . ')(1) - x(1)}{(x' . mlb_sterm($a) . ')^2} = \\frac{' . $a . '}{(x' . mlb_sterm($a) . ')^2}$.', 'At $x = ' . $k . '$: $\\frac{' . $a . '}{' . (($k + $a) ** 2) . '} = ' . mlb_ftex($a, ($k + $a) ** 2) . '$.'], '$\\frac{vu\' - uv\'}{v^2}$.', 'procedure', 70); },
+        static function (MlbRng $r) { $a = $r->int(2, 5); $n = $r->int(3, 5);
+            return mlb_error_of($r, 'Find the first mistake in this working for $\\frac{d}{dx}(' . $a . 'x + 1)^' . $n . '$.',
+                ['Let $u = ' . $a . 'x + 1$, so $y = u^' . $n . '$', '$\\frac{dy}{du} = ' . $n . 'u^{' . ($n - 1) . '}$ and $\\frac{du}{dx} = ' . $a . '$', '$\\frac{dy}{dx} = ' . ($n * $a) . '(' . $a . 'x + 1)^{' . ($n - 1) . '}$'], [
+                [2, ['Let $u = ' . $a . 'x + 1$, so $y = u^' . $n . '$', '$\\frac{dy}{du} = ' . $n . 'u^{' . ($n - 1) . '}$ and $\\frac{du}{dx} = ' . $a . '$', '$\\frac{dy}{dx} = ' . $n . '(' . $a . 'x + 1)^{' . ($n - 1) . '}$'], 'the chain rule multiplies by $\\frac{du}{dx} = ' . $a . '$ as well.'],
+                [1, ['Let $u = ' . $a . 'x + 1$, so $y = u^' . $n . '$', '$\\frac{dy}{du} = ' . $n . 'u^{' . ($n - 1) . '}$ and $\\frac{du}{dx} = ' . $a . 'x$', '$\\frac{dy}{dx} = ' . ($n * $a) . 'x(' . $a . 'x + 1)^{' . ($n - 1) . '}$'], 'the derivative of $' . $a . 'x + 1$ is $' . $a . '$, not $' . $a . 'x$.'],
+            ]); },
+        static function (MlbRng $r) { $t = $r->int(1, 6);
+            return mlb_typed('num', 'A balloon\'s volume is $V = (t + 1)^3$ litres after $t$ seconds. How fast is the volume increasing at $t = ' . $t . '$, in litres per second?', (string)(3 * ($t + 1) ** 2),
+                ['$\\frac{dV}{dt} = 3(t + 1)^2 \\times 1$ (chain rule).', 'At $t = ' . $t . '$: $3 \\times ' . ($t + 1) . '^2 = ' . (3 * ($t + 1) ** 2) . '$.'], 'Rate of change is the derivative.', 'application', 45); },
+    ];
+    $f['MC-155'] = [
+        static function (MlbRng $r) { $a = $r->nz(-6, 6); $w = $r->int(0, 1);
+            return $w ? mlb_typed('num', 'Find $\\frac{dy}{dx}$ at $x = 0$ when $y = \\sin ' . $a . 'x$.', (string)$a,
+                    ['$\\frac{d}{dx}\\sin ' . $a . 'x = ' . $a . '\\cos ' . $a . 'x$.', 'At $x = 0$: $' . $a . '\\cos 0 = ' . $a . '$.'], 'Chain rule with sine.', 'procedure', 40)
+                : mlb_typed('num', 'Find $\\frac{dy}{dx}$ at $x = 0$ when $y = e^{' . $a . 'x}$.', (string)$a,
+                    ['$\\frac{d}{dx}e^{' . $a . 'x} = ' . $a . 'e^{' . $a . 'x}$.', 'At $x = 0$: $' . $a . 'e^0 = ' . $a . '$.'], '$e^{kx}$ differentiates to $ke^{kx}$.', 'procedure', 35); },
+        static function (MlbRng $r) { $a = $r->int(2, 9); $k = $r->int(1, 9);
+            return mlb_typed('frac', 'Find $\\frac{dy}{dx}$ at $x = ' . $k . '$ when $y = \\ln(' . $a . 'x)$.', mlb_frac(1, $k),
+                ['$\\ln(' . $a . 'x) = \\ln ' . $a . ' + \\ln x$, so $\\frac{dy}{dx} = \\frac{1}{x}$.', 'At $x = ' . $k . '$: $' . mlb_ftex(1, $k) . '$.'], 'The constant inside the log disappears.', 'reasoning', 45); },
+        static function (MlbRng $r) { $c = $r->int(0, 1);
+            return $c ? mlb_mcq($r, 'What is $\\frac{d}{dx}\\cos x$?', '$-\\sin x$',
+                    [['$\\sin x$', 'The derivative of cos has a minus sign.'], ['$-\\cos x$', 'That is the SECOND derivative of $\\cos x$.'], ['$\\cos x$', 'Only $e^x$ is its own derivative.']],
+                    ['$\\frac{d}{dx}\\cos x = -\\sin x$.', 'Check at $x = 90^\\circ$: cos is falling there, and $-\\sin 90^\\circ = -1 < 0$. ✓'], 'Is cos rising or falling just after 0?', 'concept', 25)
+                : mlb_mcq($r, 'What is $\\frac{d}{dx}e^x$?', '$e^x$',
+                    [['$xe^{x-1}$', 'The power rule is for $x^n$; here the variable is in the exponent.'], ['$\\ln x$', 'That is the inverse function, not the derivative.'], ['$e$', 'The result still depends on $x$.']],
+                    ['$e^x$ is the function that is its own derivative.', '$\\frac{d}{dx}e^x = e^x$.'], 'The special property of $e$.', 'concept', 25); },
+        static function (MlbRng $r) { $P = 100 * $r->int(5, 50); $k = $r->pick([0.02, 0.03, 0.05, 0.1]);
+            return mlb_typed('num', 'A population is modelled by $P = ' . $P . 'e^{' . mlb_dec($k) . 't}$. How fast is it growing at $t = 0$, in individuals per year?', mlb_dec($P * $k),
+                ['$\\frac{dP}{dt} = ' . $P . ' \\times ' . mlb_dec($k) . 'e^{' . mlb_dec($k) . 't}$.', 'At $t = 0$: $' . $P . ' \\times ' . mlb_dec($k) . ' = ' . mlb_dec($P * $k) . '$.'], 'Rate of change of an exponential.', 'application', 45); },
+    ];
+    $f['MC-156'] = [
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick(MLB_TRIPLES); $x = ($r->int(0, 1) ? 1 : -1) * $a; $y = ($r->int(0, 1) ? 1 : -1) * $b;
+            return mlb_typed('frac', 'Find $\\frac{dy}{dx}$ for $x^2 + y^2 = ' . ($c * $c) . '$ at the point $(' . $x . ', ' . $y . ')$.', mlb_frac(-$x, $y),
+                ['Differentiate implicitly: $2x + 2y\\frac{dy}{dx} = 0$.', '$\\frac{dy}{dx} = -\\frac{x}{y} = ' . mlb_ftex(-$x, $y) . '$.'], 'Differentiate $y^2$ as $2y\\frac{dy}{dx}$.', 'procedure', 50); },
+        static function (MlbRng $r) { $s = $r->int(2, 20); $ds = $r->int(1, 5);
+            return mlb_typed('num', 'The side of a square grows at $' . $ds . '$ cm/s. How fast is its area growing when the side is $' . $s . '$ cm, in $\\text{cm}^2$/s?', (string)(2 * $s * $ds),
+                ['$A = s^2$, so $\\frac{dA}{dt} = 2s\\frac{ds}{dt}$.', '$2 \\times ' . $s . ' \\times ' . $ds . ' = ' . (2 * $s * $ds) . '$.'], 'Chain rule through time.', 'procedure', 45); },
+        static function (MlbRng $r) { $rad = $r->int(2, 20); $dr = $r->int(1, 4);
+            return mlb_typed('num', 'A ripple spreads so that its radius grows at $' . $dr . '$ cm/s. When the radius is $' . $rad . '$ cm, the area is growing at $k\\pi\\ \\text{cm}^2$/s. Find $k$.', (string)(2 * $rad * $dr),
+                ['$A = \\pi r^2$, so $\\frac{dA}{dt} = 2\\pi r\\frac{dr}{dt}$.', '$2\\pi \\times ' . $rad . ' \\times ' . $dr . ' = ' . (2 * $rad * $dr) . '\\pi$.'], 'Differentiate the area with respect to time.', 'application', 50); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'Differentiating with respect to $x$, what is $\\frac{d}{dx}(y^2)$?', '$2y\\frac{dy}{dx}$',
+                [['$2y$', '$y$ depends on $x$, so the chain rule adds a factor $\\frac{dy}{dx}$.'], ['$0$', '$y$ is not a constant.'], ['$2x$', 'It is $y$ being squared, not $x$.']],
+                ['$\\frac{d}{dx}(y^2) = \\frac{d}{dy}(y^2) \\times \\frac{dy}{dx}$.', '$= 2y\\frac{dy}{dx}$.'], 'Chain rule.', 'reasoning', 30); },
+    ];
+    $f['MC-157'] = [
+        static function (MlbRng $r) { $h = $r->int(-6, 6); $k = $r->int(-9, 9);
+            return mlb_typed('pair', 'Find the stationary point of $y = ' . mlb_poly([1, -2 * $h, $h * $h + $k]) . '$.', [$h, $k],
+                ['$\\frac{dy}{dx} = ' . mlb_poly([2, -2 * $h]) . ' = 0$ gives $x = ' . $h . '$.', 'Then $y = ' . $k . '$: the point $(' . $h . ', ' . $k . ')$.'], 'Set the gradient to zero.', 'procedure', 50, ['labels' => ['x', 'y'], 'point' => true]); },
+        static function (MlbRng $r) { $a = $r->int(1, 5);
+            return mlb_typed('num', 'Find the positive $x$-coordinate of a stationary point of $y = x^3 - ' . (3 * $a * $a) . 'x$.', (string)$a,
+                ['$\\frac{dy}{dx} = 3x^2 - ' . (3 * $a * $a) . ' = 0$, so $x^2 = ' . ($a * $a) . '$.', '$x = \\pm' . $a . '$; the positive one is $' . $a . '$.'], 'Solve $\\frac{dy}{dx} = 0$.', 'procedure', 50); },
+        static function (MlbRng $r) { $c = $r->int(0, 1);
+            return mlb_mcq($r, 'At a stationary point, $\\frac{d^2y}{dx^2} ' . ($c ? '> 0' : '< 0') . '$. What kind of point is it?', $c ? 'A minimum' : 'A maximum',
+                [[$c ? 'A maximum' : 'A minimum', $c ? 'A positive second derivative means the gradient is increasing: the curve bends up, like ∪.' : 'A negative second derivative means the curve bends down, like ∩.'], ['A point of inflection', 'That needs the second derivative to be zero (and change sign).'], ['It cannot be decided', 'The sign of the second derivative decides it.']],
+                ['The second derivative shows which way the curve bends.', $c ? 'Positive: ∪-shaped, a minimum.' : 'Negative: ∩-shaped, a maximum.'], 'Smile or frown?', 'reasoning', 35); },
+        static function (MlbRng $r) { $a = $r->int(1, 4);
+            return mlb_typed('num', 'Find the maximum value of $y = ' . (3 * $a * $a) . 'x - x^3$ for $x > 0$.', (string)(2 * $a ** 3),
+                ['$\\frac{dy}{dx} = ' . (3 * $a * $a) . ' - 3x^2 = 0$ at $x = ' . $a . '$; $\\frac{d^2y}{dx^2} = -6x < 0$, so it is a maximum.', '$y = ' . (3 * $a * $a) . ' \\times ' . $a . ' - ' . $a . '^3 = ' . (2 * $a ** 3) . '$.'], 'Find where, then the value.', 'procedure', 60); },
+        static function (MlbRng $r) { $L = 6 * $r->int(2, 10);
+            return mlb_typed('num', 'An open box is made from a $' . $L . '$ cm square sheet by cutting squares of side $x$ from the corners: $V = x(' . $L . ' - 2x)^2$. What value of $x$ (in cm) gives the greatest volume?', (string)($L / 6),
+                ['$\\frac{dV}{dx} = (' . $L . ' - 2x)^2 - 4x(' . $L . ' - 2x) = (' . $L . ' - 2x)(' . $L . ' - 6x)$.', '$\\frac{dV}{dx} = 0$ at $x = ' . ($L / 6) . '$ (the other root, $x = ' . ($L / 2) . '$, leaves no box).'], 'Differentiate, factorise, reject the impossible root.', 'application', 100, ['unit' => 'cm']); },
+    ];
+    $f['MC-158'] = [
+        static function (MlbRng $r) { $a = $r->int(1, 4); $b = $r->int(-6, 6); $k = $r->int(-9, 9);
+            return mlb_typed('expr', '$F\'(x) = ' . mlb_poly([3 * $a, 2 * $b, 0]) . '$ and $F(0) = ' . $k . '$. Find $F(x)$.', mlb_poly([$a, $b, 0, $k]),
+                ['Integrate term by term: $' . mlb_poly([$a, $b, 0]) . ' + C$ (each power goes up by one and is divided by the new power).', '$F(0) = C = ' . $k . '$, so $F(x) = ' . mlb_poly([$a, $b, 0, $k]) . '$.'], 'Raise the power, divide by it, then fix $C$.', 'procedure', 60); },
+        static function (MlbRng $r) { $n = $r->int(1, 5); $a = ($n + 1) * $r->int(1, 4);
+            return mlb_typed('expr', 'Find $\\int ' . $a . 'x^' . $n . '\\,dx$, taking the constant of integration as 0.', ($a / ($n + 1)) . 'x^' . ($n + 1),
+                ['$\\int x^n\\,dx = \\frac{x^{n+1}}{n+1} + C$.', '$\\frac{' . $a . '}{' . ($n + 1) . '}x^{' . ($n + 1) . '} = ' . ($a / ($n + 1)) . 'x^{' . ($n + 1) . '}$.'], 'Up one, divide by the new power.', 'procedure', 40); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'Why does an indefinite integral need $+ C$?', 'Many functions have the same derivative, differing only by a constant',
+                [['To make the answer bigger', 'The constant can be any number, including negative.'], ['Because the derivative of $x$ is $C$', 'The derivative of a constant is 0, which is why it is lost.'], ['It is only needed for definite integrals', 'It cancels in definite integrals; it is needed in indefinite ones.']],
+                ['$x^2$, $x^2 + 5$ and $x^2 - 3$ all have derivative $2x$.', 'So $\\int 2x\\,dx = x^2 + C$ covers them all.'], 'What happens to constants when you differentiate?', 'concept', 30); },
+        static function (MlbRng $r) { $n = $r->int(2, 5); $a = ($n + 1) * $r->int(1, 3);
+            return mlb_error_of($r, 'Find the first mistake in this working for $\\int ' . $a . 'x^' . $n . '\\,dx$.',
+                ['Raise the power by one: $x^{' . ($n + 1) . '}$', 'Divide by the new power: $\\frac{' . $a . '}{' . ($n + 1) . '}x^{' . ($n + 1) . '}$', '$= ' . ($a / ($n + 1)) . 'x^{' . ($n + 1) . '} + C$'], [
+                [1, ['Raise the power by one: $x^{' . ($n + 1) . '}$', 'Multiply by the old power: $' . ($a * $n) . 'x^{' . ($n + 1) . '}$', '$= ' . ($a * $n) . 'x^{' . ($n + 1) . '} + C$'], 'integration DIVIDES by the new power; multiplying belongs to differentiation.'],
+                [0, ['Lower the power by one: $x^{' . ($n - 1) . '}$', 'Multiply by the power: $' . ($a * $n) . 'x^{' . ($n - 1) . '}$', '$= ' . ($a * $n) . 'x^{' . ($n - 1) . '} + C$'], 'that is differentiation. Integration raises the power.'],
+            ]); },
+        static function (MlbRng $r) { $a = $r->int(1, 6); $b = $r->int(0, 10); $t = $r->int(1, 8);
+            return mlb_typed('num', 'A cyclist\'s velocity is $v = ' . (2 * $a) . 't + ' . $b . '$ m/s, and she starts at $s = 0$. How far has she gone after $' . $t . '$ s?', (string)($a * $t * $t + $b * $t),
+                ['Displacement is the integral of velocity: $s = ' . $a . 't^2 + ' . $b . 't + C$, and $C = 0$.', 'At $t = ' . $t . '$: $' . ($a * $t * $t) . ' + ' . ($b * $t) . ' = ' . ($a * $t * $t + $b * $t) . '$ m.'], 'Integrate velocity to get position.', 'application', 50, ['unit' => 'm']); },
+    ];
+    $f['MC-159'] = [
+        static function (MlbRng $r) { $c = [$r->int(-2, 3), $r->int(-4, 4), $r->int(-5, 5)]; $a = $r->int(-2, 1); $b = $r->int($a + 1, 4);
+            $F = static fn($x) => [2 * $c[0] * $x ** 3 + 3 * $c[1] * $x ** 2 + 6 * $c[2] * $x, 6]; // over 6
+            $num = $F($b)[0] - $F($a)[0];
+            return mlb_typed('frac', 'Evaluate $\\displaystyle\\int_{' . $a . '}^{' . $b . '} (' . mlb_poly($c) . ')\\,dx$.', mlb_frac($num, 6),
+                ['Antiderivative: $' . mlb_ftex($c[0], 3) . 'x^3 + ' . mlb_ftex($c[1], 2) . 'x^2 + ' . $c[2] . 'x$.', 'Top limit minus bottom limit: $' . mlb_ftex($num, 6) . '$.'], 'Integrate, then $F(b) - F(a)$.', 'procedure', 90); },
+        static function (MlbRng $r) { $k = $r->int(1, 9);
+            return mlb_typed('frac', 'Find the area under $y = x^2$ from $x = 0$ to $x = ' . $k . '$.', mlb_frac($k ** 3, 3),
+                ['$\\int_0^{' . $k . '} x^2\\,dx = \\left[\\frac{x^3}{3}\\right]_0^{' . $k . '}$.', '$\\frac{' . ($k ** 3) . '}{3} = ' . mlb_ftex($k ** 3, 3) . '$.'], 'Integrate between the limits.', 'procedure', 40); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'What is $\\displaystyle\\int_{0}^{2} (-x)\\,dx$?', '$-2$',
+                [['$2$', 'The line $y = -x$ is BELOW the axis here, so the integral is negative. The area is 2; the integral is −2.'], ['$0$', 'Nothing cancels on $[0, 2]$ — the function is negative throughout.'], ['$-4$', '$\\left[-\\frac{x^2}{2}\\right]_0^2 = -2$.']],
+                ['$\\left[-\\frac{x^2}{2}\\right]_0^2 = -2 - 0$.', 'A definite integral counts area below the axis as negative.'], 'Is the graph above or below the axis?', 'reasoning', 35); },
+        static function (MlbRng $r) { $k = $r->int(1, 8);
+            return mlb_typed('num', 'A car\'s velocity is $v = 3t^2$ m/s. How far does it travel from $t = 0$ to $t = ' . $k . '$ s?', (string)($k ** 3),
+                ['Distance $= \\int_0^{' . $k . '} 3t^2\\,dt = [t^3]_0^{' . $k . '}$.', '$= ' . ($k ** 3) . '$ m.'], 'The area under a velocity–time graph is the distance.', 'application', 45, ['unit' => 'm']); },
+    ];
+    $f['MC-160'] = [
+        static function (MlbRng $r) { $h = $r->int(1, 9);
+            return mlb_typed('frac', 'The line $y = x$ from $x = 0$ to $x = ' . $h . '$ is rotated $360^\\circ$ about the $x$-axis, making a cone. Its volume is $k\\pi$. Find $k$.', mlb_frac($h ** 3, 3),
+                ['$V = \\pi\\int_0^{' . $h . '} y^2\\,dx = \\pi\\int_0^{' . $h . '} x^2\\,dx$.', '$= \\pi\\left[\\frac{x^3}{3}\\right]_0^{' . $h . '} = ' . mlb_ftex($h ** 3, 3) . '\\pi$.'], '$\\pi\\int y^2\\,dx$.', 'procedure', 60); },
+        static function (MlbRng $r) { $a = $r->int(1, 9);
+            return mlb_typed('frac', 'A vase is shaped by rotating $y = \\sqrt{x}$ from $x = 0$ to $x = ' . $a . '$ about the $x$-axis (units in dm). Its volume is $k\\pi$ litres. Find $k$.', mlb_frac($a * $a, 2),
+                ['$V = \\pi\\int_0^{' . $a . '} (\\sqrt{x})^2\\,dx = \\pi\\int_0^{' . $a . '} x\\,dx$.', '$= \\pi\\left[\\frac{x^2}{2}\\right]_0^{' . $a . '} = ' . mlb_ftex($a * $a, 2) . '\\pi$.'], 'Square $y$ before integrating.', 'application', 60); },
+        static function (MlbRng $r) { $n = $r->int(2, 5); $y = array_map(static fn($x) => $x * $x, range(0, $n)); $T = 0.5 * ($y[0] + $y[$n] + 2 * array_sum(array_slice($y, 1, $n - 1)));
+            return mlb_typed('num', 'Use the trapezium rule with strips of width 1 to estimate $\\displaystyle\\int_0^{' . $n . '} x^2\\,dx$.', mlb_dec($T),
+                ['$\\frac{h}{2}[y_0 + y_' . $n . ' + 2(y_1 + \\dots + y_{' . ($n - 1) . '})]$ with $y = ' . implode(', ', $y) . '$.', '$\\frac{1}{2}[' . ($y[0] + $y[$n]) . ' + 2(' . array_sum(array_slice($y, 1, $n - 1)) . ')] = ' . mlb_dec($T) . '$ (exact: $' . mlb_ftex($n ** 3, 3) . '$).'], 'Ends once, middles twice.', 'procedure', 80); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'The trapezium rule is used on $y = x^2$ between 0 and 2. Is the estimate too big or too small?', 'Too big — the curve bends below the straight tops',
+                [['Too small', 'For a curve that bends upwards (∪), each trapezium\'s top lies ABOVE the curve.'], ['Exactly right', 'Only straight-line graphs are integrated exactly by trapezia.'], ['It cannot be told', 'The shape of the curve tells you.']],
+                ['$y = x^2$ is convex (bends upwards).', 'Straight chords lie above it, so the trapezia overestimate.'], 'Draw one strip.', 'reasoning', 40); },
+    ];
+
+    /* ══ Stage 17 · Further Mathematics, Mechanics and Beyond ════════════ */
+    $f['MC-161'] = [
+        static function (MlbRng $r) { $v = 2 * $r->int(2, 15); $t1 = $r->int(2, 10); $t2 = $r->int(2, 20);
+            return mlb_typed('num', 'A car accelerates steadily from rest to $' . $v . '$ m/s in $' . $t1 . '$ s, then keeps that speed for $' . $t2 . '$ s. How far does it travel altogether?', (string)($v * $t1 / 2 + $v * $t2),
+                ['Distance is the area under the velocity–time graph: a triangle then a rectangle.', '$\\frac{1}{2} \\times ' . $t1 . ' \\times ' . $v . ' + ' . $t2 . ' \\times ' . $v . ' = ' . ($v * $t1 / 2 + $v * $t2) . '$ m.'], 'Area under the graph.', 'procedure', 60, ['unit' => 'm']); },
+        static function (MlbRng $r) { $u = $r->int(0, 20); $a = $r->nz(-5, 6); $t = $r->int(2, 8); $v = $u + $a * $t; if ($v < 0) { $a = abs($a); $v = $u + $a * $t; }
+            return mlb_typed('num', 'On a velocity–time graph, the velocity changes from $' . $u . '$ m/s to $' . $v . '$ m/s in $' . $t . '$ s. Find the acceleration, in m/s².', mlb_dec(($v - $u) / $t),
+                ['Acceleration is the gradient of a velocity–time graph.', '$\\frac{' . $v . ' - ' . $u . '}{' . $t . '} = ' . mlb_dec(($v - $u) / $t) . '$ m/s².'], 'Change in velocity over time.', 'procedure', 40, ['unit' => 'm/s²']); },
+        static function (MlbRng $r) { $c = $r->int(0, 1);
+            return mlb_mcq($r, 'On a velocity–time graph, what does the ' . ($c ? 'gradient' : 'area under the graph') . ' represent?', $c ? 'Acceleration' : 'Displacement (distance travelled)',
+                [[$c ? 'Displacement' : 'Acceleration', $c ? 'Displacement is the AREA under a velocity–time graph.' : 'Acceleration is the GRADIENT of a velocity–time graph.'], ['Speed', 'Speed is read straight off the vertical axis.'], ['Time', 'Time is the horizontal axis.']],
+                ['Gradient $= \\frac{\\Delta v}{\\Delta t}$ = acceleration; area $= v \\times t$ = displacement.', 'So: ' . ($c ? 'acceleration' : 'displacement') . '.'], 'Units help: m/s × s = m.', 'concept', 30); },
+        static function (MlbRng $r) { $v = 2 * $r->int(5, 15); $t = $r->int(2, 8);
+            return mlb_typed('num', 'A driver brakes steadily from $' . $v . '$ m/s to a stop in $' . $t . '$ s. How far does the car travel while braking?', (string)($v * $t / 2),
+                ['The graph is a triangle from $' . $v . '$ m/s down to 0.', 'Area $= \\frac{1}{2} \\times ' . $t . ' \\times ' . $v . ' = ' . ($v * $t / 2) . '$ m.'], 'Average speed × time.', 'application', 45, ['unit' => 'm']); },
+        static function (MlbRng $r) { $v = 2 * $r->int(5, 15); $t = $r->int(2, 8);
+            return mlb_error_of($r, 'A car accelerates steadily from rest to $' . $v . '$ m/s in $' . $t . '$ s. Find the first mistake in this working for the distance travelled.',
+                ['The distance is the area under the velocity–time graph', 'The graph is a triangle with base $' . $t . '$ and height $' . $v . '$', 'Distance $= \\frac{1}{2} \\times ' . $t . ' \\times ' . $v . ' = ' . ($v * $t / 2) . '$ m'], [
+                [0, ['Distance $=$ speed $\\times$ time', 'Its speed is $' . $v . '$ m/s', 'Distance $= ' . $v . ' \\times ' . $t . ' = ' . ($v * $t) . '$ m'], 'the car was not at ' . $v . ' m/s the whole time; its speed rose from 0, so use the area (or the average speed).'],
+                [2, ['The distance is the area under the velocity–time graph', 'The graph is a triangle with base $' . $t . '$ and height $' . $v . '$', 'Distance $= ' . $t . ' \\times ' . $v . ' = ' . ($v * $t) . '$ m'], 'a triangle\'s area has a half in it.'],
+            ]); },
+    ];
+    $f['MC-162'] = [
+        static function (MlbRng $r) { $u = $r->int(0, 20); $a = $r->int(1, 6); $t = $r->int(2, 10);
+            return mlb_typed('num', 'A particle starts at $' . $u . '$ m/s and accelerates at $' . $a . '$ m/s² for $' . $t . '$ s. Find its final velocity.', (string)($u + $a * $t),
+                ['$v = u + at$.', '$' . $u . ' + ' . $a . ' \\times ' . $t . ' = ' . ($u + $a * $t) . '$ m/s.'], 'Start speed plus the gain.', 'procedure', 30, ['unit' => 'm/s']); },
+        static function (MlbRng $r) { $u = $r->int(0, 15); $a = 2 * $r->int(1, 4); $t = $r->int(2, 10);
+            return mlb_typed('num', 'A particle starts at $' . $u . '$ m/s with acceleration $' . $a . '$ m/s². How far does it travel in $' . $t . '$ s?', (string)($u * $t + $a * $t * $t / 2),
+                ['$s = ut + \\frac{1}{2}at^2$.', '$' . $u . ' \\times ' . $t . ' + \\frac{1}{2} \\times ' . $a . ' \\times ' . ($t * $t) . ' = ' . ($u * $t + $a * $t * $t / 2) . '$ m.'], 'Choose the equation with $u$, $a$, $t$ and $s$.', 'procedure', 45, ['unit' => 'm']); },
+        static function (MlbRng $r) { [$p, $q, $c] = $r->pick([[3, 4, 5], [6, 8, 10], [5, 12, 13], [8, 15, 17]]); $s = $q * $q / 2;
+            return mlb_typed('num', 'A ball is moving at $' . $p . '$ m/s and accelerates at $1$ m/s² over $' . mlb_dec($s) . '$ m. What is its final speed?', (string)$c,
+                ['No time is given, so use $v^2 = u^2 + 2as$.', '$v^2 = ' . ($p * $p) . ' + 2 \\times 1 \\times ' . mlb_dec($s) . ' = ' . ($c * $c) . '$, so $v = ' . $c . '$ m/s.'], 'The equation without $t$.', 'procedure', 50, ['unit' => 'm/s']); },
+        static function (MlbRng $r) { $a = $r->int(1, 6); $t = $r->int(1, 6);
+            return mlb_typed('num', 'A particle\'s displacement is $s = t^3 - ' . $a . 't^2$ metres. Find its velocity at $t = ' . $t . '$ s.', (string)(3 * $t * $t - 2 * $a * $t),
+                ['$v = \\frac{ds}{dt} = 3t^2 - ' . (2 * $a) . 't$.', 'At $t = ' . $t . '$: $' . (3 * $t * $t) . ' - ' . (2 * $a * $t) . ' = ' . (3 * $t * $t - 2 * $a * $t) . '$ m/s.'], 'Velocity is the derivative of displacement.', 'procedure', 45, ['unit' => 'm/s']); },
+        static function (MlbRng $r) { $u = 2 * $r->int(5, 15); $d = $r->pick([2, 4, 5]);
+            return mlb_typed('num', 'A car travelling at $' . $u . '$ m/s brakes with a deceleration of $' . $d . '$ m/s². What is its stopping distance?', mlb_dec($u * $u / (2 * $d)),
+                ['$v^2 = u^2 + 2as$ with $v = 0$, $a = -' . $d . '$.', '$0 = ' . ($u * $u) . ' - ' . (2 * $d) . 's$, so $s = ' . mlb_dec($u * $u / (2 * $d)) . '$ m.'], 'Final speed is zero.', 'application', 50, ['unit' => 'm']); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'You know $u$, $v$ and $a$, and want the distance $s$. Which equation should you use?', '$v^2 = u^2 + 2as$',
+                [['$s = ut + \\frac{1}{2}at^2$', 'That needs the time $t$, which you do not know.'], ['$v = u + at$', 'That has no $s$ in it.'], ['$s = \\frac{1}{2}(u + v)t$', 'That needs $t$ too.']],
+                ['Pick the equation that contains exactly the quantities you know and the one you want.', '$v^2 = u^2 + 2as$ has $u$, $v$, $a$ and $s$, and no $t$.'], 'Which variable is missing?', 'reasoning', 35); },
+    ];
+    $f['MC-163'] = [
+        static function (MlbRng $r) { $m = $r->int(2, 50); $a = $r->int(1, 8);
+            return mlb_typed('num', 'What resultant force, in newtons, gives a $' . $m . '$ kg mass an acceleration of $' . $a . '$ m/s²?', (string)($m * $a),
+                ['Newton\'s second law: $F = ma$.', '$' . $m . ' \\times ' . $a . ' = ' . ($m * $a) . '$ N.'], '$F = ma$.', 'procedure', 25, ['unit' => 'N']); },
+        static function (MlbRng $r) { $m = $r->int(2, 20); $F = $r->int(5, 120);
+            return mlb_typed('num', 'A resultant force of $' . $F . '$ N acts on a $' . $m . '$ kg trolley. Find its acceleration in m/s², to 2 decimal places.', mlb_rd($F / $m, 2),
+                ['$a = \\frac{F}{m}$.', '$\\frac{' . $F . '}{' . $m . '} \\approx ' . mlb_rd($F / $m, 2) . '$ m/s².'], 'Rearrange $F = ma$.', 'procedure', 30, ['unit' => 'm/s²', 'dp' => 2]); },
+        static function (MlbRng $r) { $m = $r->int(2, 30); $up = $m * 10 + $r->int(10, 80);
+            return mlb_typed('num', 'A $' . $m . '$ kg crate is lifted by a rope with tension $' . $up . '$ N. Taking $g = 10$ m/s², find its upward acceleration, to 2 decimal places.', mlb_rd(($up - 10 * $m) / $m, 2),
+                ['Weight $= mg = ' . (10 * $m) . '$ N downwards; resultant $= ' . $up . ' - ' . (10 * $m) . ' = ' . ($up - 10 * $m) . '$ N up.', '$a = \\frac{' . ($up - 10 * $m) . '}{' . $m . '} \\approx ' . mlb_rd(($up - 10 * $m) / $m, 2) . '$ m/s².'], 'Resultant force first.', 'application', 60, ['unit' => 'm/s²', 'dp' => 2]); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'A lorry moves along a straight road at a constant 20 m/s. What is the resultant force on it?', 'Zero',
+                [['A forward force bigger than the resistance', 'If the forward force were bigger, the lorry would be speeding up.'], ['A force of 20 N forwards', 'Speed is not force.'], ['It depends on the mass', 'At constant velocity the resultant is zero whatever the mass.']],
+                ['Newton\'s first law: constant velocity means no acceleration.', 'So the resultant force is zero: the driving force balances the resistance.'], 'Constant velocity: is it accelerating?', 'concept', 30); },
+        static function (MlbRng $r) { $m = $r->int(3, 15); $F1 = $r->int(20, 80); $F2 = $r->int(5, $F1 - 5);
+            return mlb_typed('num', 'Two people push a $' . $m . '$ kg box in opposite directions with forces of $' . $F1 . '$ N and $' . $F2 . '$ N. Find the box\'s acceleration, to 2 decimal places.', mlb_rd(($F1 - $F2) / $m, 2),
+                ['Opposite forces: resultant $= ' . $F1 . ' - ' . $F2 . ' = ' . ($F1 - $F2) . '$ N.', '$a = \\frac{' . ($F1 - $F2) . '}{' . $m . '} \\approx ' . mlb_rd(($F1 - $F2) / $m, 2) . '$ m/s².'], 'Opposite forces subtract.', 'reasoning', 45, ['unit' => 'm/s²', 'dp' => 2]); },
+    ];
+    $f['MC-164'] = [
+        static function (MlbRng $r) { $F = $r->int(5, 80); $d = $r->pick([0.2, 0.25, 0.3, 0.5, 0.8, 1, 1.5, 2]);
+            return mlb_typed('num', 'A force of $' . $F . '$ N acts at right angles to a spanner, $' . mlb_dec($d) . '$ m from the bolt. Find the moment in N m.', mlb_dec($F * $d),
+                ['Moment $=$ force $\\times$ perpendicular distance.', '$' . $F . ' \\times ' . mlb_dec($d) . ' = ' . mlb_dec($F * $d) . '$ N m.'], 'Force times distance from the pivot.', 'procedure', 30, ['unit' => 'N m']); },
+        static function (MlbRng $r) { $m1 = 5 * $r->int(4, 12); $d1 = $r->pick([1, 1.5, 2, 2.5]); $m2 = 5 * $r->int(4, 12);
+            return mlb_typed('num', 'A $' . $m1 . '$ kg child sits $' . mlb_dec($d1) . '$ m from the pivot of a see-saw. How far from the pivot, on the other side, must a $' . $m2 . '$ kg child sit to balance it? Give your answer to 2 decimal places (m).', mlb_rd($m1 * $d1 / $m2, 2),
+                ['Balance: clockwise moments equal anticlockwise moments.', '$' . $m1 . ' \\times ' . mlb_dec($d1) . ' = ' . $m2 . 'd$, so $d \\approx ' . mlb_rd($m1 * $d1 / $m2, 2) . '$ m.'], 'Moments balance.', 'application', 50, ['unit' => 'm', 'dp' => 2]); },
+        static function (MlbRng $r) { $m = $r->int(2, 40); $mu = $r->pick([0.1, 0.2, 0.25, 0.3, 0.4, 0.5]);
+            return mlb_typed('num', 'A $' . $m . '$ kg box rests on a horizontal floor. The coefficient of friction is $' . mlb_dec($mu) . '$. Taking $g = 10$ m/s², what is the greatest friction force?', mlb_dec($mu * 10 * $m),
+                ['On a horizontal floor, $R = mg = ' . (10 * $m) . '$ N.', '$F_{\\max} = \\mu R = ' . mlb_dec($mu) . ' \\times ' . (10 * $m) . ' = ' . mlb_dec($mu * 10 * $m) . '$ N.'], 'Friction $\\le \\mu R$.', 'procedure', 40, ['unit' => 'N']); },
+        static function (MlbRng $r) { $m1 = $r->int(3, 10); $m2 = $r->int(1, $m1 - 1);
+            return mlb_typed('frac', 'Masses of $' . $m1 . '$ kg and $' . $m2 . '$ kg hang on either side of a smooth pulley, joined by a light string. Taking $g = 10$ m/s², find the acceleration as a fraction (m/s²).', mlb_frac(10 * ($m1 - $m2), $m1 + $m2),
+                ['The system: driving force $(' . $m1 . ' - ' . $m2 . ')g$ moves total mass $' . ($m1 + $m2) . '$ kg.', '$a = \\frac{' . ($m1 - $m2) . ' \\times 10}{' . ($m1 + $m2) . '} = ' . mlb_ftex(10 * ($m1 - $m2), $m1 + $m2) . '$ m/s².'], 'Treat the masses as one system.', 'reasoning', 60); },
+        static function (MlbRng $r) { $F = $r->int(10, 60); $d = $r->int(1, 4); $th = $r->pick([30, 45, 60]);
+            return mlb_mcq($r, 'A force of $' . $F . '$ N is applied at the end of a $' . $d . '$ m bar, at $' . mlb_deg($th) . '$ to the bar. Which is its moment about the other end?', $F . ' × ' . $d . ' × sin ' . $th . '°',
+                [[$F . ' × ' . $d, 'The force is not at right angles; only its perpendicular component turns the bar.'], [$F . ' × ' . $d . ' × cos ' . $th . '°', 'The component along the bar (cos) pulls along it and turns nothing.'], [$F . ' ÷ ' . $d, 'Moments multiply force by distance.']],
+                ['Moment $=$ force $\\times$ perpendicular distance $=$ perpendicular component $\\times$ distance.', 'The perpendicular component is $' . $F . '\\sin ' . $th . '^\\circ$.'], 'Only the part at right angles turns it.', 'reasoning', 45); },
+    ];
+    $f['MC-165'] = [
+        static function (MlbRng $r) { $m = $r->int(1, 2000); $v = $r->int(1, 30);
+            return mlb_typed('num', 'Find the momentum of a $' . $m . '$ kg object moving at $' . $v . '$ m/s, in kg m/s.', (string)($m * $v),
+                ['Momentum $p = mv$.', '$' . $m . ' \\times ' . $v . ' = ' . ($m * $v) . '$ kg m/s.'], 'Mass times velocity.', 'procedure', 20); },
+        static function (MlbRng $r) { $m1 = $r->int(1, 8); $u1 = $r->int(2, 12); $m2 = $r->int(1, 8); $u2 = $r->int(-6, 6);
+            return mlb_typed('frac', 'A $' . $m1 . '$ kg trolley at $' . $u1 . '$ m/s hits a $' . $m2 . '$ kg trolley moving at $' . $u2 . '$ m/s (same line). They join and move together. Find their common velocity as a fraction (m/s).', mlb_frac($m1 * $u1 + $m2 * $u2, $m1 + $m2),
+                ['Momentum is conserved: $' . $m1 . ' \\times ' . $u1 . ' + ' . $m2 . ' \\times (' . $u2 . ') = (' . $m1 . ' + ' . $m2 . ')v$.', '$v = \\frac{' . ($m1 * $u1 + $m2 * $u2) . '}{' . ($m1 + $m2) . '} = ' . mlb_ftex($m1 * $u1 + $m2 * $u2, $m1 + $m2) . '$ m/s.'], 'Total momentum before = after.', 'procedure', 60); },
+        static function (MlbRng $r) { $m = $r->pick([0.05, 0.1, 0.2, 0.5]); $u = $r->int(5, 30); $v = $r->int(5, 30);
+            return mlb_typed('num', 'A $' . mlb_dec($m) . '$ kg ball hits a wall at $' . $u . '$ m/s and bounces straight back at $' . $v . '$ m/s. Find the size of the impulse, in N s.', mlb_dec($m * ($u + $v)),
+                ['Impulse $=$ change in momentum; the direction reverses, so velocities have opposite signs.', '$' . mlb_dec($m) . '(' . $v . ' - (-' . $u . ')) = ' . mlb_dec($m * ($u + $v)) . '$ N s.'], 'Mind the change of direction.', 'reasoning', 50, ['unit' => 'N s']); },
+        static function (MlbRng $r) { $mb = $r->pick([0.01, 0.02, 0.05]); $vb = 50 * $r->int(4, 10); $mg = $r->int(2, 6);
+            return mlb_typed('num', 'A $' . $mg . '$ kg gun fires a $' . mlb_dec($mb) . '$ kg bullet at $' . $vb . '$ m/s. At what speed does the gun recoil, to 2 decimal places?', mlb_rd($mb * $vb / $mg, 2),
+                ['Before firing, total momentum is 0, so afterwards $' . mlb_dec($mb) . ' \\times ' . $vb . ' = ' . $mg . 'v$.', '$v \\approx ' . mlb_rd($mb * $vb / $mg, 2) . '$ m/s backwards.'], 'Momentum before = momentum after = 0.', 'application', 50, ['unit' => 'm/s', 'dp' => 2]); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'In a collision between two trolleys with no outside forces, which quantity is always conserved?', 'Total momentum',
+                [['Total kinetic energy', 'Kinetic energy is often lost as heat and sound; only in perfectly elastic collisions is it kept.'], ['The velocity of each trolley', 'The velocities change — that is what a collision does.'], ['The momentum of each trolley', 'Momentum passes between them; only the TOTAL stays the same.']],
+                ['With no external force, total momentum is conserved.', 'Energy can change form, so kinetic energy is not always kept.'], 'Which is always true?', 'concept', 30); },
+    ];
+    $f['MC-166'] = [
+        static function (MlbRng $r) { $a = $r->int(5, 30); $b = $r->int(5, 30); $c = $r->int(5, 30); $d = $r->int(5, 30);
+            return mlb_typed('frac', 'In a survey, ' . $a . ' girls and ' . $b . ' boys walk to school; ' . $c . ' girls and ' . $d . ' boys take the bus. A student is chosen at random. Given that the student is a girl, what is the probability she walks?', mlb_frac($a, $a + $c),
+                ['$P(\\text{walk} \\mid \\text{girl}) = \\frac{P(\\text{walk and girl})}{P(\\text{girl})}$ — restrict to the girls.', 'There are $' . ($a + $c) . '$ girls, of whom $' . $a . '$ walk: $' . mlb_ftex($a, $a + $c) . '$.'], 'Shrink the sample space to the condition.', 'procedure', 60); },
+        static function (MlbRng $r) { $n = $r->int(3, 8); $k = $r->int(0, $n);
+            return mlb_typed('frac', 'A fair coin is tossed ' . $n . ' times. What is the probability of exactly ' . $k . ' heads?', mlb_frac(mlb_ncr($n, $k), 2 ** $n),
+                ['$P(X = ' . $k . ') = \\binom{' . $n . '}{' . $k . '}\\left(\\frac{1}{2}\\right)^{' . $n . '}$.', '$\\frac{' . mlb_ncr($n, $k) . '}{' . (2 ** $n) . '} = ' . mlb_ftex(mlb_ncr($n, $k), 2 ** $n) . '$.'], 'Binomial: choose which tosses are heads.', 'procedure', 50); },
+        static function (MlbRng $r) { $x = [0, 1, 2, 3]; do { $p = [$r->int(1, 5), $r->int(1, 5), $r->int(1, 5), $r->int(1, 5)]; } while (array_sum($p) < 4); $s = array_sum($p);
+            $E = ($x[1] * $p[1] + $x[2] * $p[2] + $x[3] * $p[3]);
+            return mlb_typed('frac', '$X$ takes the values $0, 1, 2, 3$ with probabilities $' . implode(', ', array_map(static fn($v) => mlb_ftex($v, $s), $p)) . '$. Find $E(X)$.', mlb_frac($E, $s),
+                ['$E(X) = \\sum x\\,P(X = x)$.', '$0 \\cdot ' . mlb_ftex($p[0], $s) . ' + 1 \\cdot ' . mlb_ftex($p[1], $s) . ' + 2 \\cdot ' . mlb_ftex($p[2], $s) . ' + 3 \\cdot ' . mlb_ftex($p[3], $s) . ' = ' . mlb_ftex($E, $s) . '$.'], 'Weight each value by its probability.', 'procedure', 60); },
+        static function (MlbRng $r) { $pa = $r->pick([[1, 2], [1, 3], [2, 5]]); $pb = $r->pick([[1, 2], [1, 4], [3, 5]]); $ind = $r->int(0, 1) === 1;
+            $pab = $ind ? [$pa[0] * $pb[0], $pa[1] * $pb[1]] : [$pa[0] * $pb[0] + 1, $pa[1] * $pb[1]];
+            return mlb_mcq($r, '$P(A) = ' . mlb_ftex($pa[0], $pa[1]) . '$, $P(B) = ' . mlb_ftex($pb[0], $pb[1]) . '$ and $P(A \\cap B) = ' . mlb_ftex($pab[0], $pab[1]) . '$. Are $A$ and $B$ independent?', $ind ? 'Yes' : 'No',
+                [[$ind ? 'No' : 'Yes', 'Check whether $P(A)P(B) = P(A \\cap B)$.'], ['Only if they are mutually exclusive', 'Mutually exclusive events (with non-zero probabilities) are NEVER independent.']],
+                ['Independent means $P(A \\cap B) = P(A)P(B)$.', '$P(A)P(B) = ' . mlb_ftex($pa[0] * $pb[0], $pa[1] * $pb[1]) . '$' . ($ind ? ', which matches.' : ', which does not match.')], 'Multiply and compare.', 'reasoning', 45); },
+        static function (MlbRng $r) { $n = $r->int(2, 6); $o = $r->pick([4, 5]);
+            return mlb_typed('frac', 'A quiz has ' . $n . ' questions, each with ' . $o . ' options. A student guesses every answer. What is the probability that all ' . $n . ' are right?', mlb_frac(1, $o ** $n),
+                ['Each guess is right with probability $' . mlb_ftex(1, $o) . '$, independently.', '$\\left(' . mlb_ftex(1, $o) . '\\right)^' . $n . ' = ' . mlb_ftex(1, $o ** $n) . '$.'], 'Independent events multiply.', 'application', 40); },
+    ];
+    $f['MC-167'] = [
+        static function (MlbRng $r) { $a = $r->int(-20, 50); $b = $r->pick([0.5, 1.2, 1.5, 2, 2.5, 3, -0.8, -1.5]); $x = $r->int(5, 40);
+            return mlb_typed('num', 'The regression line of $y$ on $x$ is $y = ' . $a . ' ' . ($b < 0 ? '- ' . mlb_dec(-$b) : '+ ' . mlb_dec($b)) . 'x$. Estimate $y$ when $x = ' . $x . '$.', mlb_dec($a + $b * $x),
+                ['Substitute into the line.', '$' . $a . ' + (' . mlb_dec($b) . ')(' . $x . ') = ' . mlb_dec($a + $b * $x) . '$.'], 'Put $x$ into the equation.', 'procedure', 30); },
+        static function (MlbRng $r) { $mx = $r->int(5, 30); $my = $r->int(20, 90); $b = $r->pick([0.5, 1.5, 2, 2.5, 3, -1, -2]);
+            return mlb_typed('num', 'A regression line $y = a + ' . mlb_dec($b) . 'x$ passes through the mean point $(\\bar{x}, \\bar{y}) = (' . $mx . ', ' . $my . ')$. Find $a$.', mlb_dec($my - $b * $mx),
+                ['The regression line always passes through $(\\bar{x}, \\bar{y})$.', '$' . $my . ' = a + ' . mlb_dec($b) . ' \\times ' . $mx . '$, so $a = ' . mlb_dec($my - $b * $mx) . '$.'], 'Substitute the means.', 'procedure', 40); },
+        static function (MlbRng $r) { $c = $r->int(0, 2);
+            $cases = [['hours of revision and test marks — more revision tends to go with higher marks', 'Positive correlation'], ['the age of a car and its value — older cars tend to be worth less', 'Negative correlation'], ['shoe size and the day of the month someone was born', 'No correlation']];
+            [$what, $right] = $cases[$c]; $wrong = []; foreach ($cases as $i => [$w, $t]) if ($i !== $c) $wrong[] = [$t, 'That would describe: ' . $w . '.'];
+            return mlb_mcq($r, 'What kind of correlation would you expect between ' . $what . '?', $right, $wrong, [$right . ': as one variable changes, the other ' . ($c === 0 ? 'tends to rise.' : ($c === 1 ? 'tends to fall.' : 'shows no pattern.')), 'Correlation describes the trend, not a rule for every point.'], 'As one goes up, what does the other do?', 'concept', 30); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'Across Nigerian cities, ice-cream sales and drownings show strong positive correlation. What can you conclude?', 'They may both be driven by a third factor, such as hot weather',
+                [['Ice cream causes drowning', 'Correlation alone never shows cause.'], ['Drowning causes people to buy ice cream', 'Correlation alone never shows cause, in either direction.'], ['The data must be wrong', 'The correlation can be real without one causing the other.']],
+                ['Correlation is not causation.', 'Hot weather increases both swimming and ice-cream sales: a confounding variable.'], 'Is there a hidden third variable?', 'reasoning', 40); },
+        static function (MlbRng $r) { $a = 10 * $r->int(5, 30); $b = $r->int(2, 12); $x = 5 * $r->int(2, 20);
+            return mlb_typed('num', 'A shop finds its weekly sales $S$ (in thousands of naira) fit $S = ' . $a . ' + ' . $b . 'A$, where $A$ is its advertising spend (thousands of naira). Predict sales when $A = ' . $x . '$.', (string)($a + $b * $x),
+                ['Substitute $A = ' . $x . '$.', '$' . $a . ' + ' . $b . ' \\times ' . $x . ' = ' . ($a + $b * $x) . '$ thousand naira.'], 'Use the fitted line — within the data\'s range.', 'application', 40); },
+    ];
+    $f['MC-168'] = [
+        static function (MlbRng $r) { $n = $r->int(5, 40);
+            return mlb_typed('num', 'It can be proved by induction that $1 + 3 + 5 + \\dots + (2n - 1) = n^2$. Use it to find the sum of the first ' . $n . ' odd numbers.', (string)($n * $n),
+                ['The first $n$ odd numbers add to $n^2$.', '$' . $n . '^2 = ' . ($n * $n) . '$.'], 'Use the proved formula.', 'procedure', 30); },
+        static function (MlbRng $r) { $n = $r->int(10, 200);
+            return mlb_typed('num', 'Using $\\sum_{r=1}^{n} r = \\frac{n(n + 1)}{2}$, find $1 + 2 + 3 + \\dots + ' . $n . '$.', (string)($n * ($n + 1) / 2),
+                ['$\\frac{' . $n . ' \\times ' . ($n + 1) . '}{2}$.', '$= ' . ($n * ($n + 1) / 2) . '$.'], 'Gauss\'s pairing.', 'procedure', 30); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'In a proof by induction of a statement about all positive integers $n$, what does the BASE CASE show?', 'The statement is true for $n = 1$',
+                [['The statement is true for all $n$', 'That is what the whole proof establishes, not the base case alone.'], ['If it is true for $n = k$, it is true for $n = k + 1$', 'That is the inductive step.'], ['The statement is true for large $n$', 'Induction starts from the smallest case.']],
+                ['Base case: check the first value.', 'The inductive step then carries truth from each case to the next, like dominoes.'], 'Which domino falls first?', 'concept', 30); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'A student checks that $n^2 + n + 41$ is prime for $n = 1, 2, 3, \\dots, 10$ and concludes it is prime for every $n$. What is wrong?', 'Checking examples is not a proof — it fails at $n = 40$',
+                [['Nothing: ten cases is enough', '$40^2 + 40 + 41 = 41^2$, which is not prime.'], ['They should have checked 100 cases', 'No number of cases proves a statement about ALL $n$.'], ['Primes cannot be tested this way', 'Each case can be tested; the error is generalising from them.']],
+                ['Examples can disprove a claim, but never prove it for all $n$.', 'Here $n = 40$ gives $41^2$: a counter-example.'], 'Can examples ever prove "for all"?', 'reasoning', 45); },
+        static function (MlbRng $r) { $k = $r->int(3, 12);
+            return mlb_typed('num', 'In an induction proof of $1 + 2 + \\dots + n = \\frac{n(n+1)}{2}$, you assume the result for $n = ' . $k . '$ and add the next term. What is that next term?', (string)($k + 1),
+                ['The inductive step goes from $n = k$ to $n = k + 1$.', 'The next term added is $k + 1 = ' . ($k + 1) . '$.'], 'What comes after the $k$th term?', 'application', 30); },
+    ];
+    $f['MC-169'] = [
+        static function (MlbRng $r) { $k = 2 * $r->int(1, 5); $c = $r->int(-10, 10); $x = $r->int(1, 6);
+            return mlb_typed('num', 'Solve $\\frac{dy}{dx} = ' . $k . 'x$ with $y = ' . $c . '$ when $x = 0$. Find $y$ when $x = ' . $x . '$.', (string)($c + $k / 2 * $x * $x),
+                ['Integrate: $y = ' . ($k / 2) . 'x^2 + C$, and $C = ' . $c . '$.', 'At $x = ' . $x . '$: $' . ($k / 2 * $x * $x) . mlb_sterm($c) . ' = ' . ($c + $k / 2 * $x * $x) . '$.'], 'Integrate, then use the condition.', 'procedure', 50); },
+        static function (MlbRng $r) { $a = $r->int(1, 5); $b = $r->int(-5, 5); $x = $r->int(-3, 3); $y = $r->int(-3, 3);
+            return mlb_typed('num', '$f(x, y) = ' . $a . 'x^2y' . mlb_sterm($b, 'y') . '$. Find $\\frac{\\partial f}{\\partial x}$ at $(' . $x . ', ' . $y . ')$.', (string)(2 * $a * $x * $y),
+                ['Differentiate with respect to $x$, treating $y$ as a constant: $\\frac{\\partial f}{\\partial x} = ' . (2 * $a) . 'xy$.', 'At $(' . $x . ', ' . $y . ')$: $' . (2 * $a * $x * $y) . '$.'], 'Hold $y$ fixed.', 'procedure', 45); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'Which function satisfies $\\frac{dy}{dx} = 3y$?', '$y = Ae^{3x}$',
+                [['$y = 3x^2$', 'Its derivative is $6x$, not $3 \\times 3x^2$.'], ['$y = e^{x} + 3$', 'Its derivative is $e^x$, which is not $3y$.'], ['$y = \\frac{3}{2}y^2$', 'That is not even a function of $x$.']],
+                ['A rate proportional to the amount gives exponential growth.', '$\\frac{d}{dx}Ae^{3x} = 3Ae^{3x} = 3y$. ✓'], 'Growth proportional to size.', 'concept', 35); },
+        static function (MlbRng $r) { $P0 = 100 * $r->int(1, 50); $k = $r->pick([0.02, 0.05, 0.1]); $t = $r->int(5, 30);
+            return mlb_typed('num', 'A culture grows so that $\\frac{dP}{dt} = ' . mlb_dec($k) . 'P$, with $P = ' . $P0 . '$ at $t = 0$. The solution is $P = ' . $P0 . 'e^{' . mlb_dec($k) . 't}$. Find $P$ when $t = ' . $t . '$, to the nearest whole number.', mlb_rd($P0 * exp($k * $t), 0),
+                ['$P = ' . $P0 . 'e^{' . mlb_dec($k * $t) . '}$.', '$\\approx ' . mlb_rd($P0 * exp($k * $t), 0) . '$.'], 'Substitute into the solution.', 'application', 50, ['dp' => 0]); },
+        static function (MlbRng $r) { $k = $r->int(1, 4);
+            return mlb_error_of($r, 'Find the first mistake in this working to solve $\\frac{dy}{dx} = ' . (2 * $k) . 'x$ with $y = 1$ when $x = 0$.',
+                ['$y = \\int ' . (2 * $k) . 'x\\,dx = ' . $k . 'x^2 + C$', 'At $x = 0$: $1 = 0 + C$, so $C = 1$', '$y = ' . $k . 'x^2 + 1$'], [
+                [0, ['$y = \\int ' . (2 * $k) . 'x\\,dx = ' . $k . 'x^2$', 'At $x = 0$: $y = 0$', 'So the condition $y = 1$ cannot be met'], 'the constant of integration $+ C$ was dropped; it is what lets the condition be satisfied.'],
+                [1, ['$y = \\int ' . (2 * $k) . 'x\\,dx = ' . $k . 'x^2 + C$', 'At $x = 0$: $C = 0$', '$y = ' . $k . 'x^2$'], 'substituting $x = 0$, $y = 1$ gives $1 = 0 + C$, so $C = 1$.'],
+            ]); },
+    ];
+    $f['MC-170'] = [
+        static function (MlbRng $r) { $a = $r->pick([2, 3, 5, 6, 7, 10, 11]); $x0 = $r->pick([1, 2, 3]); $x1 = $x0 - ($x0 * $x0 - $a) / (2 * $x0);
+            return mlb_typed('num', 'Use one step of the Newton–Raphson method on $f(x) = x^2 - ' . $a . '$, starting from $x_0 = ' . $x0 . '$, to estimate $\\sqrt{' . $a . '}$. Give $x_1$ to 4 decimal places.', mlb_rd($x1, 4),
+                ['$x_1 = x_0 - \\frac{f(x_0)}{f\'(x_0)}$ with $f\'(x) = 2x$.', '$' . $x0 . ' - \\frac{' . ($x0 * $x0 - $a) . '}{' . (2 * $x0) . '} = ' . mlb_rd($x1, 4) . '$.'], 'Follow the tangent to the axis.', 'procedure', 60, ['dp' => 4]); },
+        static function (MlbRng $r) { $a = $r->int(1, 3); $b = $a + 1;
+            return mlb_typed('num', '$f(x) = x^3 - ' . ($a * $a * $a + $a) . '$ changes sign between $x = ' . $a . '$ and $x = ' . $b . '$. With the bisection method, what is the next value of $x$ to test?', mlb_dec(($a + $b) / 2),
+                ['Bisection tests the midpoint of the interval.', '$\\frac{' . $a . ' + ' . $b . '}{2} = ' . mlb_dec(($a + $b) / 2) . '$.'], 'Halve the interval.', 'procedure', 30); },
+        static function (MlbRng $r) { $P = 1000 * $r->int(1, 50); $rate = $r->pick([2, 3, 5, 8, 10]); $t = $r->int(2, 10);
+            return mlb_typed('num', 'A town of ' . mlb_p($P) . ' people grows by $' . $rate . '\\%$ a year. Using $P = ' . mlb_n($P) . '(1.' . str_pad((string)$rate, 2, '0', STR_PAD_LEFT) . ')^t$, predict the population after ' . $t . ' years, to the nearest whole number.', mlb_rd($P * (1 + $rate / 100) ** $t, 0),
+                ['Each year multiplies by $1 + \\frac{' . $rate . '}{100}$.', '$' . mlb_n($P) . ' \\times ' . mlb_dec(1 + $rate / 100) . '^{' . $t . '} \\approx ' . mlb_n((int)round($P * (1 + $rate / 100) ** $t)) . '$.'], 'Repeated multiplication.', 'application', 50, ['dp' => 0]); },
+        static function (MlbRng $r) { $true = $r->int(50, 500); $err = $r->int(1, 20) * ($r->int(0, 1) ? 1 : -1); $est = $true + $err;
+            return mlb_typed('num', 'A model predicts $' . $est . '$ when the true value is $' . $true . '$. What is the percentage error, to 2 decimal places? (Give the size, without a sign.)', mlb_rd(abs($err) / $true * 100, 2),
+                ['Percentage error $= \\frac{|\\text{estimate} - \\text{true}|}{\\text{true}} \\times 100$.', '$\\frac{' . abs($err) . '}{' . $true . '} \\times 100 \\approx ' . mlb_rd(abs($err) / $true * 100, 2) . '\\%$.'], 'Divide by the TRUE value.', 'procedure', 40, ['unit' => '%', 'dp' => 2]); },
+        static function (MlbRng $r) {
+            return mlb_mcq($r, 'A modeller predicts a city\'s population 200 years ahead with $P = P_0(1.03)^t$. What is the biggest weakness?', 'Assuming the growth rate stays 3% for 200 years',
+                [['Using a power of $t$', 'Exponential models are standard for growth; the problem is the fixed rate.'], ['Rounding the answer', 'Rounding is minor next to the assumption about the rate.'], ['Using today\'s population', 'Starting from known data is correct.']],
+                ['Every model rests on assumptions.', 'Over 200 years, land, resources and policy change the rate: the constant-rate assumption fails.'], 'What does the model assume never changes?', 'reasoning', 40); },
+    ];
+
     return $f;
 }
