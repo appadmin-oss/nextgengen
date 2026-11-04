@@ -5258,3 +5258,23 @@ one out of step.
 - **Not changed, on purpose:** the attendance settings (doors, grace,
   sign-out) and the rulebook's lateness bands are admin-owned policy; the
   guide tells the operator to move a 14:00 sign-out to 15:00 if one is set.
+
+## 2026-11-04 — Notice editor: an overflow, and a pasted notice that never saved
+
+Reproduced with the owner's own notice pasted into the editor, measured at 390px
+and 1360px, in the editor, its preview, the member's /notice page and the
+desk's notice page:
+
+- The letterhead's remove button hung 6px outside the page (`right: -6px`)
+  on a phone. It sits inside now, and the two letterhead lines keep clear of
+  it on both sides.
+- **A notice pasted whole onto a new page never saved by itself.** The paste
+  fills the subject in the same event that reads the body, before React
+  re-renders, so `changed()` saw no subject and left the state at `new`; the
+  autosave only ran from `dirty`. It waited for the next keystroke — or lost
+  the paste to a closed tab. The autosave now runs from `new` too once the
+  notice is valid. `tests/notices.test.js` asserts it with nothing else
+  touched (the earlier test changed a setting right after pasting, which is
+  why it never saw this).
+- Not a fault: `.cr-pchips` (every phone table's filter row) is a deliberate
+  edge-to-edge scrolling strip; the page itself does not scroll sideways.

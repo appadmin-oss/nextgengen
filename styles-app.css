@@ -17700,6 +17700,8 @@ button.m9x-ev-sum { cursor: pointer; }
 .nte-in::placeholder { color: var(--cr-faint); }
 .nte-in:focus { outline: none; background: var(--cr-s4); }
 .nte-head { position: relative; }
+/* The × sits inside the letterhead's own box (it used to hang 6px out, past the page on a phone); the two lines keep clear of it on both sides so they stay centred. */
+.nte-head .nte-in.nt-org, .nte-head .nte-in.nt-kind { padding-left: 36px; padding-right: 36px; }
 .nte-head .nte-in.nt-org { margin-bottom: 4px; }
 .nte-head .nte-in.nt-kind { margin-bottom: 14px; }
 .nte-subj { display: flex; align-items: baseline; gap: 8px; }
@@ -17718,7 +17720,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .nte-add em { font-style: normal; color: var(--cr-muted-3); }
 .nte-add:hover { border-color: var(--cr-ink); color: var(--cr-ink); }
 .nte-add.is-sign { margin: 24px 0 0; }
-.nte-x { position: absolute; top: -6px; right: -6px; width: 32px; height: 32px; display: inline-grid; place-items: center; border: 0; border-radius: var(--cr-r-sm); background: transparent; color: var(--cr-muted-3); }
+.nte-x { position: absolute; top: 0; right: 0; width: 32px; height: 32px; display: inline-grid; place-items: center; border: 0; border-radius: var(--cr-r-sm); background: transparent; color: var(--cr-muted-3); }
 .nte-x:hover { background: var(--cr-s2); color: var(--cr-ink); }
 .nte-signrow { position: relative; margin-top: 24px; }
 .nte-signrow .nte-in.nt-sign { margin: 0; padding-right: 36px; }

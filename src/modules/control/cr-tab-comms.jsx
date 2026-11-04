@@ -224,8 +224,11 @@ function NoticeEditor({ d, ctx, id }) {
   };
   const changed = () => { ver.current++; setSave(s => s.s === "new" && !valid() ? s : { s: "dirty" }); };
   /* Drafts save themselves a moment after the writing stops — once there is a subject and something to say. */
+  /* "new" counts too: a pasted notice fills its subject in the same event that
+     reads the body, before the page has re-rendered, so changed() saw no subject
+     and left a whole pasted notice unsaved until the writer typed again. */
   React.useEffect(() => {
-    if (pub || save.s !== "dirty" || !valid()) return;
+    if (pub || (save.s !== "dirty" && save.s !== "new") || !valid()) return;
     const t = setTimeout(() => { doSave().catch(() => {}); }, 1200);
     return () => clearTimeout(t);
   }, [save, f, head, sign, body, pub]);
