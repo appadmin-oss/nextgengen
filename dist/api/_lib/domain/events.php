@@ -276,8 +276,12 @@ function donation_verify(string $reference): array {
         return ['ok' => false, 'error' => 'payment_mismatch'];
     }
     if ($paid) {
-        db_update('donations', ['status' => 'paid', 'channel' => (string)($r['data']['channel'] ?? ''), 'paidAt' => now_iso()], ['id' => $d['id']]);
-        event_emit('donation.paid', ['ref' => $reference, 'amount' => (int)$d['amount'], 'name' => (string)$d['name']]);
+        /* The browser's return and Paystack's webhook arrive together and both
+           read `pending`: only the one that turns it paid announces it, or the
+           thank-you and the alert go out twice for one gift. */
+        $won = db_exec("UPDATE donations SET status = 'paid', channel = ?, paidAt = ? WHERE id = ? AND status <> 'paid'",
+            [(string)($r['data']['channel'] ?? ''), now_iso(), $d['id']]);
+        if ($won) event_emit('donation.paid', ['ref' => $reference, 'amount' => (int)$d['amount'], 'name' => (string)$d['name']]);
         return ['ok' => true, 'status' => 'paid'];
     }
     return ['ok' => true, 'status' => (string)$d['status']];

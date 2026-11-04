@@ -1297,24 +1297,10 @@ function admin_fees_training(array $p): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $ledger = [];
         foreach (db_all("SELECT * FROM member_ledger WHERE memberId IN ($ph) ORDER BY id", $ids) as $e) $ledger[(string)$e['memberId']][] = $e;
-        $comp = [];
-        $today = attendance_today();
-        // The same reading as fees_compliance_cutoff(): a suspension past its end date no longer pauses anything.
-        foreach (db_all("SELECT personId, kind, issuedAt, startsAt, endsAt FROM sanctions WHERE personId IN ($ph) AND status = 'active' AND kind IN ('eviction','suspension') ORDER BY issuedAt", $ids) as $sx) {
-            $pid = (string)$sx['personId'];
-            if ($sx['kind'] === 'suspension' && (string)$sx['endsAt'] !== '' && substr((string)$sx['endsAt'], 0, 10) < $today) continue;
-            if ($sx['kind'] === 'eviction') $comp[$pid] = ['cutoff' => substr((string)$sx['issuedAt'], 0, 10), 'state' => 'evicted', 'final' => true];
-            elseif (($comp[$pid]['state'] ?? '') !== 'evicted') $comp[$pid] = ['cutoff' => substr((string)$sx['startsAt'], 0, 10), 'state' => 'suspended', 'final' => false];
-        }
-        /* The status history and every suspension, for the serving-days count —
-           one query each for the chunk, as above. */
-        $hist = []; $susp = [];
-        foreach (db_all("SELECT memberId, status, since FROM member_status_log WHERE memberId IN ($ph) ORDER BY since, id", $ids) as $h) $hist[(string)$h['memberId']][] = $h;
-        foreach (db_all("SELECT personId, status, startsAt, endsAt, clearedAt FROM sanctions WHERE personId IN ($ph) AND kind = 'suspension'", $ids) as $sx) $susp[(string)$sx['personId']][] = $sx;
+        $compOf = fees_comp_batch($ids);
         foreach ($chunk as $m) {
             $mid = (string)$m['memberId'];
-            $b = fees_balance($m, $cfg, null, $ledger[$mid] ?? [],
-                              ($comp[$mid] ?? ['cutoff' => '', 'state' => 'clear', 'final' => false]) + ['history' => $hist[$mid] ?? [], 'suspensions' => $susp[$mid] ?? []]);
+            $b = fees_balance($m, $cfg, null, $ledger[$mid] ?? [], $compOf[$mid]);
             $t = $b['tenure'];
             $units = 0;
             foreach ($ledger[$mid] ?? [] as $e) if ((string)$e['kind'] === 'training' && (string)$e['direction'] === 'charge' && trim((string)($e['voidedAt'] ?? '')) === '') $units++;
@@ -1989,6 +1975,33 @@ function fees_charges_left(array $member, ?array $cfg = null, ?array $entries = 
         $take = min($credit, $c['amount']); $credit -= $take;
         $out[$c['entryId']] = ['left' => $c['amount'] - $take, 'amount' => $c['amount'], 'due' => (string)$c['day']];
     }
+    return $out;
+}
+
+/**
+ * Compliance state, status history and suspensions for many members, three
+ * queries for the whole list — what fees_balance() otherwise reads per member
+ * (policy state, the status log, suspensions: four or more queries each). A
+ * list that called fees_balance() without it ran those for every row.
+ *
+ * @return array<string, array> memberId => the $comp argument fees_balance() takes
+ */
+function fees_comp_batch(array $ids): array {
+    $out = [];
+    if (!$ids) return $out;
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $comp = []; $hist = []; $susp = [];
+    $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
+    // The same reading as fees_compliance_cutoff(): a suspension past its end date no longer pauses anything.
+    foreach (db_all("SELECT personId, kind, issuedAt, startsAt, endsAt FROM sanctions WHERE personId IN ($ph) AND status = 'active' AND kind IN ('eviction','suspension') ORDER BY issuedAt", $ids) as $sx) {
+        $pid = (string)$sx['personId'];
+        if ($sx['kind'] === 'suspension' && (string)$sx['endsAt'] !== '' && substr((string)$sx['endsAt'], 0, 10) < $today) continue;
+        if ($sx['kind'] === 'eviction') $comp[$pid] = ['cutoff' => substr((string)$sx['issuedAt'], 0, 10), 'state' => 'evicted', 'final' => true];
+        elseif (($comp[$pid]['state'] ?? '') !== 'evicted') $comp[$pid] = ['cutoff' => substr((string)$sx['startsAt'], 0, 10), 'state' => 'suspended', 'final' => false];
+    }
+    foreach (db_all("SELECT memberId, status, since FROM member_status_log WHERE memberId IN ($ph) ORDER BY since, id", $ids) as $h) $hist[(string)$h['memberId']][] = $h;
+    foreach (db_all("SELECT personId, status, startsAt, endsAt, clearedAt FROM sanctions WHERE personId IN ($ph) AND kind = 'suspension'", $ids) as $sx) $susp[(string)$sx['personId']][] = $sx;
+    foreach ($ids as $id) $out[$id] = ($comp[$id] ?? ['cutoff' => '', 'state' => 'clear', 'final' => false]) + ['history' => $hist[$id] ?? [], 'suspensions' => $susp[$id] ?? []];
     return $out;
 }
 
@@ -2817,10 +2830,12 @@ function admin_fees_arrears(array $p): array {
     if ($ids) {
         foreach (array_chunk($ids, 400) as $chunk) {
             $ph = implode(',', array_fill(0, count($chunk), '?'));
+            $compOf = fees_comp_batch($chunk);
             foreach (db_all("SELECT * FROM members WHERE memberId IN ($ph)", $chunk) as $m) {
                 if ($scope !== null && !in_array((string)($m['centre'] ?? ''), $scope, true)) continue;
                 $entries = $byMember[(string)$m['memberId']] ?? [];
-                $b = fees_balance($m, $cfg, null, $entries);
+                // Every family's compliance and history from three queries for the chunk, never per row.
+                $b = fees_balance($m, $cfg, null, $entries, $compOf[(string)$m['memberId']] ?? null);
                 if ((int)$b['payable'] <= 0) continue;
                 $totalPayable += (int)$b['payable'];
                 // What is left on each charge, and so how old the debt is and what it is made of.

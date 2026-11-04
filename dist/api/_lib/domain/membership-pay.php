@@ -465,6 +465,8 @@ function membership_invoice_send(array $inv, ?array $m = null): array {
  * verifier pressing twice, settle once.
  */
 function membership_settle(string $invoiceId, string $via, string $reference, string $by, array $extra = []): array {
+    // The suite stands in for a ledger that refuses the post.
+    if (!empty($GLOBALS['__membership_settle_throw'])) throw new RuntimeException('ledger_failed');
     $res = db_tx(static function () use ($invoiceId, $via, $reference, $by, $extra) {
         $inv = membership_invoice_by('invoiceId', $invoiceId);
         if (!$inv) return ['ok' => false, 'error' => 'not_found'];
@@ -1009,10 +1011,24 @@ function admin_membership_offline_verify(array $p): array {
     }
     $inv = membership_invoice_by('invoiceId', (string)$op['invoiceId']);
     if (!$inv || (string)$inv['status'] !== 'open') return ['ok' => false, 'error' => 'not_open'];
-    db_update('offline_payments', ['status' => 'verified', 'verifiedBy' => $by, 'verifiedAt' => now_iso()], ['id' => $op['id']]);
-    $s = membership_settle((string)$op['invoiceId'], (string)$op['method'], (string)$op['reference'], $by, ['paymentId' => $op['paymentId'], 'recordedBy' => $op['recordedBy']]);
+    /* Claimed, not just set: two staff verifying the same transfer at once both
+       passed the `pending` check above. And reverted on ANY failure — settling
+       throws when the ledger refuses the post or two receipts collide, and a
+       throw used to leave the payment "verified" on an invoice still open, with
+       nothing on the account and the guards that stop a second online payment
+       no longer looking at it. */
+    if (!db_exec("UPDATE offline_payments SET status = 'verified', verifiedBy = ?, verifiedAt = ? WHERE id = ? AND status = 'pending'", [$by, now_iso(), $op['id']]))
+        return ['ok' => false, 'error' => 'not_pending'];
+    $revert = static fn() => db_update('offline_payments', ['status' => 'pending', 'verifiedBy' => '', 'verifiedAt' => ''], ['id' => $op['id']]);
+    try {
+        $s = membership_settle((string)$op['invoiceId'], (string)$op['method'], (string)$op['reference'], $by, ['paymentId' => $op['paymentId'], 'recordedBy' => $op['recordedBy']]);
+    } catch (Throwable $e) {
+        $revert();
+        error_log('[membership.offline.verify] ' . $op['paymentId'] . ': ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'settle_failed', 'detail' => 'The payment could not be applied to the invoice, so it is still waiting to be verified. Try again.'];
+    }
     if (empty($s['ok'])) {
-        db_update('offline_payments', ['status' => 'pending', 'verifiedBy' => '', 'verifiedAt' => ''], ['id' => $op['id']]);
+        $revert();
         return $s;
     }
     doc_ack_close((string)$op['paymentId'], 'verified', (string)$s['invoice']['receiptNo']);

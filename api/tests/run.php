@@ -27850,6 +27850,12 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('pay: …and must type the reference they see on it — a different one is refused and audited', ($ver(['confirmReference' => 'GTB-778-2239'])['error'] ?? '') === 'reference_mismatch'
         && db_row("SELECT id FROM audit_log WHERE event = 'membership.offline.verify_mismatch' ORDER BY id DESC LIMIT 1"));
     chk('pay: …and the amount they see on it', ($ver(['confirmAmount' => 1])['error'] ?? '') === 'amount_mismatch');
+    $GLOBALS['__membership_settle_throw'] = true;
+    $vt = $ver([]);
+    unset($GLOBALS['__membership_settle_throw']);
+    chk('pay: when the invoice cannot be settled, the payment goes back to waiting — never "verified" against an open invoice with nothing posted',
+        ($vt['error'] ?? '') === 'settle_failed' && (string)db_row('SELECT status FROM offline_payments WHERE paymentId = ?', [$pend['paymentId']])['status'] === 'pending'
+        && (string)db_row('SELECT status FROM membership_invoices WHERE id = ?', [$invB['id']])['status'] === 'open');
     $vb = $ver([]);
     $invB2 = db_row('SELECT * FROM membership_invoices WHERE id = ?', [$invB['id']]);
     chk('pay: a second person\'s check settles it: paid by transfer, with a receipt and the ledger posted', !empty($vb['ok']) && $invB2['status'] === 'paid' && $invB2['paidVia'] === 'transfer'
@@ -36641,7 +36647,20 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     // A list must not read the ledger once per family (a per-row query in a serialiser is a defect here).
     $src = (string)file_get_contents(__DIR__ . '/../_lib/domain/fees.php');
     $fn = substr($src, strpos($src, 'function admin_fees_arrears('), 3000);
-    chk('who owes · reads the ledger once for the list, and hands each family its rows', substr_count($fn, 'FROM member_ledger') === 1 && str_contains($fn, 'fees_balance($m, $cfg, null, $entries)'));
+    chk('who owes · reads the ledger once for the list, and hands each family its rows', substr_count($fn, 'FROM member_ledger') === 1 && str_contains($fn, 'fees_balance($m, $cfg, null, $entries, $compOf['));
+    /* …and nothing else per family either: compliance, status history and
+       suspensions came from four or more queries for every debtor. Five more
+       families owing must not add queries per family. */
+    $countQ = function () use ($ADM) { $GLOBALS['__db_qcount'] = 0; backend_dispatch('admin.fees.arrears', ['requesterId' => $ADM]); $n = $GLOBALS['__db_qcount']; unset($GLOBALS['__db_qcount']); return $n; };
+    $q1 = $countQ();
+    for ($i = 1; $i <= 5; $i++) {
+        db_insert('members', ['memberId' => 'NGG-MR-Q' . $i, 'fullName' => 'Q ' . $i, 'email' => "q$i@example.org", 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+            'centre' => 'Mr Centre', 'joinDate' => '2026-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
+        fees_post('NGG-MR-Q' . $i, 'dues', 2000, ['periodKey' => '2026-02', 'note' => 'Monthly dues 2026-02', 'by' => 'test']);
+    }
+    $q2 = $countQ();
+    chk('who owes · five more families owing cost no more queries per family (' . $q1 . ' → ' . $q2 . ')', $q2 - $q1 <= 5);
+    foreach (range(1, 5) as $i) { db_exec("DELETE FROM member_ledger WHERE memberId = ?", ['NGG-MR-Q' . $i]); db_exec("DELETE FROM members WHERE memberId = ?", ['NGG-MR-Q' . $i]); }
     // Transactions: every movement with who keyed it; totals for the filter; voids counted, not added.
     $j = backend_dispatch('admin.fees.journal', ['requesterId' => $ADM, 'from' => gmdate('Y-m-d', strtotime('-1 day')), 'to' => gmdate('Y-m-d', strtotime('+1 day')), 'q' => 'NGG-MR-1']);
     $byKind = []; foreach ($j['rows'] ?? [] as $r) $byKind[$r['kind']][] = $r;
@@ -37468,6 +37487,25 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('maths lab · Lite marks with the worked solution and no record; a forged token is refused', !empty($ok['correct']) && !empty($ok['steps']) && !isset($li['item']['key']) && ($tam['error'] ?? '') === 'bad_token');
     foreach (['mlab_state', 'mlab_profile', 'mlab_sessions', 'mlab_enrol'] as $t) db_exec("DELETE FROM $t WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
+})();
+
+// ── Two requests settling one payment: each announces / verifies once ──
+(function () {
+    $now = now_iso();
+    // Donations: the webhook lands while the browser's return is asking Paystack.
+    db_insert('donations', ['reference' => 'NGGD-RACE1', 'email' => 'race@example.org', 'name' => 'Race', 'amount' => 5000, 'currency' => 'NGN', 'status' => 'pending', 'createdAt' => $now]);
+    $n0 = (int)db_row("SELECT COUNT(*) n FROM outbox WHERE kind = 'donation.paid' AND payload LIKE '%NGGD-RACE1%'")['n'];
+    $GLOBALS['__paystack_mock'] = function ($m, $path) {
+        // The other request wins in the meantime.
+        db_exec("UPDATE donations SET status = 'paid', paidAt = ? WHERE reference = 'NGGD-RACE1'", [now_iso()]);
+        event_emit('donation.paid', ['ref' => 'NGGD-RACE1', 'amount' => 5000, 'name' => 'Race']);
+        return ['status' => true, 'data' => ['status' => 'success', 'reference' => 'NGGD-RACE1', 'amount' => 500000, 'currency' => 'NGN', 'channel' => 'card']];
+    };
+    $v = donation_verify('NGGD-RACE1');
+    unset($GLOBALS['__paystack_mock']);
+    $n1 = (int)db_row("SELECT COUNT(*) n FROM outbox WHERE kind = 'donation.paid' AND payload LIKE '%NGGD-RACE1%'")['n'];
+    chk('donations · the return and the webhook together: the gift is announced once, by whichever turned it paid', !empty($v['ok']) && $n1 - $n0 === 1);
+    db_exec("DELETE FROM donations WHERE reference = 'NGGD-RACE1'");
 })();
 
 // ── A fine lifted and issued again owes again; a voided dues month stays void ──
