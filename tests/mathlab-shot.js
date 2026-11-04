@@ -150,6 +150,15 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
       if(!(await walk(page))) problems.push(name+': never reached the practice questions by studying the steps');
       if(errs.length) problems.push(name+': '+errs[0]);
       await page.screenshot({path:path.join(OUT,'mathlab-'+name+'.png'),fullPage:true}); shots++; console.log('  📸 mathlab-'+name+'.png'); await page.close(); }
+    /* The map opens ONE stage — the focus stage, the one holding the next lesson — and opening another closes it (owner). */
+    { const page=await browser.newPage({viewport:{width:1080,height:1000}}); await page.goto(BASE+'/tests/_ml_fixture.html',{waitUntil:'networkidle'});
+      await page.click('.mlb-navb:nth-child(2)'); await page.waitForSelector('.mlb-path',{timeout:15000});
+      const st=await page.evaluate(()=>({paths:document.querySelectorAll('.mlb-path').length, open:Array.from(document.querySelectorAll('.mlb-unit.is-open .mlb-unit-t')).map(x=>x.textContent),
+        focus:(document.querySelector('.mlb-unit.is-focus .mlb-unit-t')||{}).textContent, now:!!document.querySelector('.mlb-unit.is-open .mlb-node.is-now')}));
+      if(st.paths!==1||st.open.length!==1||st.open[0]!==st.focus||!st.now) problems.push('map: only the focus stage should be open '+JSON.stringify(st));
+      await page.click('.mlb-unit:not(.is-open) .mlb-unit-tog'); const after=await page.evaluate(()=>({paths:document.querySelectorAll('.mlb-path').length, open:document.querySelectorAll('.mlb-unit.is-open').length}));
+      if(after.paths!==1||after.open!==1) problems.push('map: opening another stage must close the focus stage '+JSON.stringify(after));
+      await page.close(); console.log('  ✓ the map opens only the focus stage'); }
     /* Behaviour, not only pixels: an explorer's readout follows its slider; "Why it works" walks
        one line at a time; the order exercise sends the order the learner made. */
     { const page=await browser.newPage({viewport:{width:1080,height:1000}}); const errs=[]; page.on('pageerror',e=>errs.push(String(e&&e.message)));

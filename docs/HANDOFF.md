@@ -6127,3 +6127,10 @@ stats, the focused player, and the interactive-first Learn page.
   - `run.php` pins every rule. The owed rule was checked by switching it off
     (the suite then fails), and the test uses `mlb_set_state`, not an
     SQLite-only upsert, because the suite also runs on MySQL.
+- **Map: only the focus stage is open** (owner). `MlbMap` derives
+  `focusStage` (the stage holding the next lesson, else the first
+  unfinished, else Stage 1) and renders a path for one stage only. Every
+  other stage is a header button (`.mlb-unit-tog`, `aria-expanded`) with its
+  progress. Opening one closes the rest; closing the open one leaves none
+  open (`-1`). mathlab-shot asserts there is exactly one path and that it is
+  the focus stage's, both on load and after opening another stage.

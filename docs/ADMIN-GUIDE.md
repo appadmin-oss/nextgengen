@@ -4769,7 +4769,10 @@ off as "bad at maths" when a foundation was simply never taught.
   in the Control Room's style. Each stage has a header, followed by its ten
   topics as round buttons: black with a tick when known, gold with *Start* on
   the one to do next, white when open, and grey with a lock when not yet
-  open. The stage boss (a trophy) comes last. Pressing a
+  open. The stage boss (a trophy) comes last. **Only the member's focus
+  stage, the one holding their next lesson and marked *You are here*, is
+  open.** Every other stage shows just its header and progress, and opening
+  one closes the others. Pressing a
   topic shows its name and a *Start* button. On a computer, a side panel shows
   the streak, stars, XP and *Up next*.
 - **A topic is a lesson in steps**, one screen at a time: *Explore* (the

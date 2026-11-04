@@ -9015,7 +9015,7 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-badges li.is-on::before { background: var(--cr-gold-bg); color: var(--cr-gold-fg); }
 
 /* The path: Duolingo's route, drawn in ink and hairline. */
-.mlb-map { gap: 20px; }
+.mlb-map { gap: 10px; }
 .mlb-mapgrid { display: flex; flex-direction: column; gap: 18px; }
 .mlb-rail { display: flex; flex-direction: column; gap: 14px; }
 .mlb-rail .mlb-key-card { display: none; }
@@ -9034,9 +9034,22 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-unit.is-soon { opacity: .6; }
 .mlb-unit-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); background: var(--cr-s1); color: var(--cr-ink); box-shadow: none; }
 .mlb-unit-k { margin: 0; font-size: 12px; font-weight: 500; color: var(--cr-muted-3); font-variant-numeric: tabular-nums; }
+.mlb-unit-h { padding: 6px 10px 6px 6px; }
+.mlb-unit-tog { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "k caret" "t caret" "m caret"; align-items: center; column-gap: 12px; row-gap: 2px;
+  min-height: 52px; padding: 8px 10px; border: 0; border-radius: var(--cr-r); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mlb-unit-tog:hover { background: var(--cr-s3); }
+.mlb-unit-tog .mlb-unit-k { grid-area: k; } .mlb-unit-tog .mlb-unit-t { grid-area: t; display: block; }
+.mlb-unit-tog .mlb-meter { grid-area: m; width: 100%; max-width: 260px; margin-top: 6px; }
+.mlb-unit-tog .mlb-caret { grid-area: caret; font-size: 18px; color: var(--cr-muted-2); transition: transform .2s var(--cr-ease); }
+.mlb-unit.is-open .mlb-caret { transform: rotate(180deg); }
+.mlb-unit.is-closed { gap: 0; }
+.mlb-unit.is-closed .mlb-unit-h { background: var(--cr-bg); }
+.mlb-unit.is-focus .mlb-unit-h { border-color: var(--cr-ink); }
+.mlb-unit.is-focus .mlb-unit-k { color: var(--cr-ink); }
 .mlb-unit-t { margin: 2px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; color: var(--cr-ink); }
 .mlb-unit-b { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: var(--cr-r-sm); border: 1px solid var(--cr-line-2); background: var(--cr-bg); color: var(--cr-ok-fg); font-size: 12.5px; font-weight: 500; text-decoration: none; }
-.mlb-path { list-style: none; margin: 0; padding: 4px 0 16px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.mlb-path { list-style: none; margin: 0; padding: 14px 0 18px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.mlb-node-li:has(.mlb-node-start) { margin-top: 22px; }
 .mlb-node-li { position: relative; transform: translateX(var(--dx, 0)); display: flex; flex-direction: column; align-items: center; }
 .mlb-node-li.is-pop { z-index: 4; }
 .mlb-node { width: 56px; height: 56px; border-radius: 50%; padding: 0; display: grid; place-items: center; cursor: pointer; font-size: 22px;

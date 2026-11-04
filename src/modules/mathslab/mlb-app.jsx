@@ -552,6 +552,7 @@ function MlbMap({ go, lite }) {
   const [st, load] = useMlb(() => lite ? NGGApi.public.mathslabMap() : NGGApi.member.mathslab.map(), [lite]);
   const [startBoss, setBoss] = React.useState(null);
   const [pop, setPop] = React.useState(null);
+  const [openStage, setOpenStage] = React.useState(null);   // null = the focus stage (owner: only it is open)
   React.useEffect(() => {
     if (!pop) return undefined;
     const k = e => { if (e.key === "Escape") { const b = document.getElementById("mlb-node-" + pop); setPop(null); if (b) b.focus(); } };
@@ -566,6 +567,11 @@ function MlbMap({ go, lite }) {
   let current = null;
   for (const s of stages) { if (!s.available) continue; const c = s.comps.find(x => !known(x) && x.state !== "locked" && x.state !== "soon"); if (c) { current = c.id; break; } }
   let lastBand = null;
+  /* The focus stage — the one holding the next lesson (else the first unfinished, else Stage 1) — is
+     the only stage open. Every other stage is its header and progress; opening one closes the rest. */
+  const focusStage = (current && (stages.find(s => s.comps.some(c => c.id === current)) || {}).n)
+    || (stages.find(s => s.available && s.comps.some(c => !known(c))) || stages[0]).n;
+  const shownStage = openStage == null ? focusStage : openStage;
   const curComp = current && stages.reduce((a, s) => a.concat(s.comps.map(c => Object.assign({ stage: s.n, stageTitle: s.title }, c))), []).find(c => c.id === current);
   return (
     <div className="mlb-mapgrid">
@@ -585,12 +591,18 @@ function MlbMap({ go, lite }) {
         return (
           <React.Fragment key={s.n}>
             {newBand ? <div className="mlb-section"><span>{s.band}</span><small>{s.level}</small></div> : null}
-            <section className={"mlb-unit is-" + band + (s.available ? "" : " is-soon")} aria-labelledby={"mlb-st-" + s.n}>
+            <section className={"mlb-unit is-" + band + (s.available ? "" : " is-soon") + (s.n === shownStage ? " is-open" : " is-closed") + (s.n === focusStage ? " is-focus" : "")} aria-labelledby={"mlb-st-" + s.n}>
               <header className="mlb-unit-h">
-                <div><p className="mlb-unit-k">Stage {s.n} · {n} of {s.comps.length}</p><h3 id={"mlb-st-" + s.n} className="mlb-unit-t">{s.title}</h3></div>
+                <button type="button" className="mlb-unit-tog" aria-expanded={s.n === shownStage} aria-controls={"mlb-path-" + s.n}
+                  onClick={() => { setPop(null); setOpenStage(s.n === shownStage ? -1 : s.n); }}>
+                  <span className="mlb-unit-k">Stage {s.n} · {n} of {s.comps.length}{s.n === focusStage ? " · You are here" : ""}</span>
+                  <span id={"mlb-st-" + s.n} className="mlb-unit-t">{s.title}</span>
+                  {s.n !== shownStage ? <span className="mlb-meter"><span style={{ width: Math.round(n / s.comps.length * 100) + "%" }}/></span> : null}
+                  <i className="ph ph-caret-down mlb-caret" aria-hidden="true"/>
+                </button>
                 {s.certificate ? <a className="mlb-unit-b" href={s.certificate.url} target="_blank" rel="noopener"><i className="ph-fill ph-seal-check" aria-hidden="true"/><span>Certificate</span></a> : null}
               </header>
-              <ol className="mlb-path">
+              {s.n === shownStage ? <ol className="mlb-path" id={"mlb-path-" + s.n}>
                 {s.comps.map((c, i) => {
                   const kind = known(c) ? "done" : c.id === current ? "now" : c.state === "locked" ? "locked" : c.state === "soon" ? "soon" : "open";
                   const open = pop === c.id;
@@ -613,7 +625,7 @@ function MlbMap({ go, lite }) {
                     : s.bossReady && !lite ? <button type="button" className="mlb-node is-now is-boss" aria-label={"Face the Stage " + s.n + " boss"} onClick={() => setBoss({ mode: "boss", stage: s.n })}><i className="ph-fill ph-trophy" aria-hidden="true"/></button>
                     : <span className="mlb-node is-locked is-boss" role="img" aria-label="Stage boss: light all ten topics first"><i className="ph-fill ph-trophy" aria-hidden="true"/></span>}
                 </li>
-              </ol>
+              </ol> : null}
             </section>
           </React.Fragment>
         );
