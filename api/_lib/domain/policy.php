@@ -973,7 +973,7 @@ function policy_prelate_repair(int $max = 40): array {
         if ($why === null || $why === (string)$s['reason']) continue;
         db_update('sanctions', ['reason' => substr($why, 0, 240)], ['id' => (int)$s['id']]);
         if ((string)$s['kind'] === 'fine') db_exec("UPDATE member_ledger SET note = ? WHERE memberId = ? AND kind = 'fine' AND periodKey = ?",
-            [substr('Policy fine — ' . $why, 0, 255), (string)$s['personId'], 'sanction-' . (int)$s['id']]);
+            [mb_strcut('Policy fine — ' . $why, 0, 255, 'UTF-8'), (string)$s['personId'], 'sanction-' . (int)$s['id']]);
         $out['reworded']++;
     }
     if ($out['voided'] || $out['reworded']) audit('policy.prelate_repair', 'system', '', $out);
@@ -1262,6 +1262,8 @@ function policy_fine_to_ledger(string $personId, string $type, int $sanctionId, 
         'periodKey' => 'sanction-' . $sanctionId,
         'note' => 'Policy fine' . ($reason !== '' ? ' — ' . $reason : ''),
         'by' => 'policy', 'rule' => $rule,
+        // A sanction issued again after it was lifted owes again (fees_post).
+        'reissue' => true,
     ]);
     /* A conduct rule switched off, or its term cap reached, posts less than
        the sanction says — or nothing. The sanction says the same, or the

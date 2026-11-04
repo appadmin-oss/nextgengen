@@ -76,7 +76,7 @@ const FACE = `function face(seed, w, h) {
 <script src="/dist/data.js"></script>
 <script src="/dist/photos.js"></script>
 <script>window.NGGApi = { admin: {}, public: {} };</script>
-<script src="/dist/app.min.js"></script>
+<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script>
 <script>
 ${FACE}
 var PROGRAM = { program: 'NGG', year: '2026', motto: 'GROW', website: 'nextgengenius.org', phone: '+234 800 000 0000', widthMm: 54, heightMm: 75 };

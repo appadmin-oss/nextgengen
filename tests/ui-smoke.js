@@ -432,7 +432,7 @@ function unzipDocumentXml(buf) {
   window.__errors = [];
   window.addEventListener('error', function (e) { window.__errors.push(String(e.message)); });
 </script>
-<script src="/dist/app.min.js"></script>
+<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script>
 <script>
   var b = new URLSearchParams(location.search).get('board');
   var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'photo' ? 'PhotoEditor'
@@ -4917,7 +4917,7 @@ function unzipDocumentXml(buf) {
       + '<script src="/dist/vendor/react.production.min.js"></script>'
       + '<script src="/dist/vendor/react-dom.production.min.js"></script>'
       + '<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>'
-      + '<script src="/dist/app.min.js"></script></body></html>');
+      + '<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script></body></html>');
     await tP.goto(BASE + '/tests/_teach_fixture.html', { waitUntil: 'networkidle' });
     await tP.waitForFunction(() => typeof window.__navigate === 'function', null, { timeout: 15000 });
     await tP.evaluate(() => window.__navigate('mentor'));
@@ -5032,7 +5032,7 @@ function unzipDocumentXml(buf) {
       + '<script src="/dist/vendor/react.production.min.js"></script>'
       + '<script src="/dist/vendor/react-dom.production.min.js"></script>'
       + '<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>'
-      + '<script src="/dist/app.min.js"></script></body></html>');
+      + '<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script></body></html>');
     await srP.goto(BASE + '/tests/_apply_fixture.html', { waitUntil: 'networkidle' });
     await srP.waitForFunction(() => typeof window.__navigate === 'function', null, { timeout: 15000 });
     await srP.evaluate(() => { history.pushState({}, '', '/apply?g=GL-TEST'); window.__navigate('apply'); });
@@ -5706,7 +5706,7 @@ function unzipDocumentXml(buf) {
       + '<script src="/dist/vendor/react.production.min.js"></script>'
       + '<script src="/dist/vendor/react-dom.production.min.js"></script>'
       + '<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>'
-      + '<script src="/dist/app.min.js"></script></body></html>');
+      + '<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script></body></html>');
     await dP.goto(BASE + '/tests/_door_fixture.html', { waitUntil: 'networkidle' });
     await dP.waitForFunction(() => typeof window.__navigate === 'function', null, { timeout: 15000 });
     await dP.evaluate(() => window.__navigate('mentor'));
@@ -5750,7 +5750,7 @@ function unzipDocumentXml(buf) {
       + '<script src="/dist/vendor/react.production.min.js"></script>'
       + '<script src="/dist/vendor/react-dom.production.min.js"></script>'
       + '<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>'
-      + '<script src="/dist/app.min.js"></script>'
+      + '<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script>'
       + '<script>ReactDOM.createRoot(document.getElementById("x"))'
       + '.render(React.createElement(window.AdminOps));</script></body></html>');
     const opsPage = async (payload) => {

@@ -982,9 +982,12 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
         'amount' => min(FEES_AMOUNT_MAX, $amount),
         'periodKey' => $periodKey,
         'sessionId' => (string)($opts['sessionId'] ?? ''),
-        'note' => substr((string)($opts['note'] ?? ''), 0, 240),
-        'method' => substr((string)($opts['method'] ?? ''), 0, 32),
-        'reference' => substr((string)($opts['reference'] ?? ''), 0, FEES_REF_MAX),
+        /* By characters, never bytes: a byte cut through "—", "₦" or a Yoruba
+           diacritic leaves invalid UTF-8, which strict MySQL refuses (1366) —
+           the fine or payment was then never posted. SQLite took it. */
+        'note' => mb_strcut((string)($opts['note'] ?? ''), 0, 240, 'UTF-8'),
+        'method' => mb_strcut((string)($opts['method'] ?? ''), 0, 32, 'UTF-8'),
+        'reference' => mb_strcut((string)($opts['reference'] ?? ''), 0, FEES_REF_MAX, 'UTF-8'),
         'createdAt' => now_iso(), 'createdBy' => (string)($opts['by'] ?? ''),
     ];
     try {
@@ -1000,6 +1003,24 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
         }
         $have = db_row('SELECT * FROM member_ledger WHERE memberId = ? AND kind = ? AND periodKey = ? LIMIT 1',
             [$memberId, $kind, $periodKey]);
+        /* A VOIDED row under the key is not "already posted". For most kinds it
+           stays void on purpose — a dues month voided by the desk must not be
+           re-charged by the next accrual. But a sanction that is lifted and
+           later issued again (an overturned suspension, the same tier crossed
+           again) must owe again: returning the void row reported the fine as
+           posted while the account charged ₦0, and a re-entry fee then held a
+           child at the door with nothing to pay. The caller asks for that with
+           `reissue`; the row is reinstated (the key is how four readers find a
+           sanction's charge) and the void it replaces is kept in the audit log. */
+        if ($have && !empty($opts['reissue']) && trim((string)($have['voidedAt'] ?? '')) !== '') {
+            $n = db_exec("UPDATE member_ledger SET voidedAt = '', voidedBy = '', voidReason = '', amount = ?, note = ?, createdAt = ?, createdBy = ?
+                           WHERE id = ? AND COALESCE(voidedAt, '') <> ''", [$row['amount'], $row['note'], $row['createdAt'], $row['createdBy'], $have['id']]);
+            if ($n) {
+                audit('fees.reissue', $row['createdBy'], $memberId, ['entryId' => $have['entryId'], 'periodKey' => $periodKey, 'amount' => $row['amount'],
+                    'was' => ['amount' => (int)$have['amount'], 'voidedAt' => (string)$have['voidedAt'], 'voidedBy' => (string)($have['voidedBy'] ?? ''), 'voidReason' => (string)($have['voidReason'] ?? '')]], '');
+                return db_row('SELECT * FROM member_ledger WHERE id = ?', [$have['id']]);
+            }
+        }
         return $have ?: null;
     }
     /* Money in may settle policy fines — a settled re-entry fee is what lets a

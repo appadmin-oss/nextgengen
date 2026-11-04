@@ -36982,6 +36982,28 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
 })();
 
+// ── A fine lifted and issued again owes again; a voided dues month stays void ──
+(function () {
+    $now = now_iso(); $M = 'NGG-REISSUE-1';
+    db_insert('members', ['memberId' => $M, 'fullName' => 'Reissue Kid', 'email' => 're@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+    $f1 = fees_post($M, 'fine', 3000, ['periodKey' => 'sanction-990001', 'note' => 'Policy fine — re-entry', 'by' => 'policy', 'reissue' => true]);
+    db_exec("UPDATE member_ledger SET voidedAt = ?, voidedBy = 'test', voidReason = 'suspension overturned' WHERE entryId = ?", [$now, $f1['entryId']]);
+    $f2 = fees_post($M, 'fine', 3000, ['periodKey' => 'sanction-990001', 'note' => 'Policy fine — re-entry', 'by' => 'policy', 'reissue' => true]);
+    $live = db_row("SELECT * FROM member_ledger WHERE memberId = ? AND periodKey = 'sanction-990001'", [$M]);
+    chk('fines · a sanction lifted and issued again is owed again — the same row reinstated, not reported as posted while the account charged nothing',
+        $f2 && $f2['entryId'] === $f1['entryId'] && trim((string)$live['voidedAt']) === '' && (int)fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$M]))['payable'] === 3000);
+    chk('fines · …and the void it replaced is kept in the audit log', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'fees.reissue' AND meta LIKE '%suspension overturned%' LIMIT 1"));
+    $d1 = fees_post($M, 'dues', 2000, ['periodKey' => '2026-03', 'note' => 'Monthly dues 2026-03', 'by' => 'accrual']);
+    db_exec("UPDATE member_ledger SET voidedAt = ?, voidedBy = 'desk', voidReason = 'not a programme month' WHERE entryId = ?", [$now, $d1['entryId']]);
+    fees_post($M, 'dues', 2000, ['periodKey' => '2026-03', 'note' => 'Monthly dues 2026-03', 'by' => 'accrual']);
+    chk('fines · …while a dues month the desk voided stays void when the accrual runs again', trim((string)db_row("SELECT voidedAt FROM member_ledger WHERE entryId = ?", [$d1['entryId']])['voidedAt']) !== '');
+    $long = str_repeat('Àdúrà — ₦ ', 40);
+    $n = fees_post($M, 'adjustment', 100, ['note' => $long, 'by' => 'test']);
+    chk('ledger · a long note in Yoruba with ₦ and dashes is cut on a character, never mid-character (strict MySQL refuses broken UTF-8)',
+        $n && mb_check_encoding((string)$n['note'], 'UTF-8') && strlen((string)$n['note']) <= 240);
+    db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$M]); db_exec('DELETE FROM members WHERE memberId = ?', [$M]);
+})();
+
 // ── Donations: every figure counted over every gift, on the server ──
 (function () {
     $now = now_iso(); $ADM = 'NGG-DON-ADM';

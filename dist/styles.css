@@ -9016,3 +9016,11 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .mlb-cert-n { font-size: 1.6rem; font-weight: 800; }
 .mlb-cert-c { font-size: 1.25rem; font-weight: 700; }
 @media print { .stt-app .stt-top, .stt-app .stt-tabs, .stt-app .stt-panel-h, .mlb .mlb-nav, .mlb .mlb-actions { display: none; } }
+
+/* The wait while a signed-in area's code is fetched (app.jsx NggChunkGate),
+   and the honest error with a retry when it could not be. */
+.ngg-chunk-wait { min-height: 50vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 32px 16px; color: #4a4a50; font-size: 15px; text-align: center; }
+.ngg-chunk-spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid #e3e1da; border-top-color: #0b0b0c; animation: ngg-chunk-spin .8s linear infinite; }
+@keyframes ngg-chunk-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ngg-chunk-spin { animation: none; } }
+

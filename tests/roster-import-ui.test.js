@@ -71,7 +71,7 @@ const ROSTER = {
 <script src="/dist/vendor/react-dom.production.min.js"></script>
 <script src="/dist/vendor/tanstack-table.min.js"></script>
 <script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
-<script src="/dist/app.min.js"></script>
+<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script>
 <script>
 /* Record every call so the test can assert WHAT was posted, not only that
    something happened — "apply" arriving as false is the whole bug class. */

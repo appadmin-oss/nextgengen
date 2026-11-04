@@ -130,6 +130,57 @@ const NOINDEX_PAGES = ROUTES.filter(r => r.index === false).map(r => r.id);
 /** Compare the registry against the render map. Returns the two ways they can
  *  disagree, plus the rows that are missing a title — the failure that shipped
  *  the Direct Apply page as "Page not found". Pure, so a test can call it. */
+/* ── The signed-in bundle, fetched when a route needs it ──────────────────
+   Production ships two bundles (build.js `MORE`): the public site, and
+   everything behind a sign-in. A public visitor downloads only the first. A
+   route whose page lives in the second waits for it here; so does a public
+   page that switches to a portal when somebody is signed in (NGG_MORE_ROUTES:
+   the dashboard turns into the member portal, Community into its app, the
+   two admin portals mount their workspaces). Anything this list misses is
+   caught by NggChunkGate — a ReferenceError while drawing loads the bundle
+   and draws again — so a missed route costs a moment's wait, never a crash.
+   In dev every file is already loaded (no <meta name="ngg-more">). */
+const NGG_MORE_ROUTES = ["admin", "summer-admin", "club-admin", "circle", "family", "mentor", "instructor", "id-cards", "designer", "dashboard", "community"];
+let nggMorePromise = null;
+function nggMoreUrl() { const m = document.querySelector('meta[name="ngg-more"]'); return m ? m.getAttribute("content") : ""; }
+function nggMoreReady() { return !!window.__nggMoreLoaded || !nggMoreUrl(); }
+function nggNeedMore() {
+  if (nggMoreReady()) return Promise.resolve(true);
+  if (nggMorePromise) return nggMorePromise;
+  nggMorePromise = new Promise((resolve, reject) => {
+    window.__nggMoreReady = () => resolve(true);
+    const el = document.createElement("script");
+    el.src = nggMoreUrl(); el.async = true;
+    el.onerror = () => { nggMorePromise = null; reject(new Error("chunk_failed")); };
+    el.onload = () => { if (!window.__nggMoreLoaded) { nggMorePromise = null; reject(new Error("chunk_failed")); } };
+    document.head.appendChild(el);
+  });
+  return nggMorePromise;
+}
+/* Draws a page once what it needs is loaded: a short wait with words, an
+   honest error with a retry if the bundle could not be fetched (a dropped
+   connection is the commonest case on a phone). */
+class NggChunkGate extends React.Component {
+  constructor(p) { super(p); this.state = { ready: nggMoreReady() || !NGG_MORE_ROUTES.includes(p.page), failed: false, tries: 0 }; }
+  /* Only a name the signed-in bundle defines is this gate's business; any
+     other error is thrown on, up to the app's own handling. */
+  static getDerivedStateFromError(e) { return e && e.name === "ReferenceError" && !nggMoreReady() ? { ready: false, failed: false } : { fatal: e }; }
+  componentDidCatch(e) { if (e && e.name === "ReferenceError" && !nggMoreReady()) this.load(); }
+  componentDidMount() { if (!this.state.ready) this.load(); }
+  componentDidUpdate(prev) { if (prev.page !== this.props.page && !nggMoreReady() && NGG_MORE_ROUTES.includes(this.props.page)) { this.setState({ ready: false }); this.load(); } }
+  load() { nggNeedMore().then(() => this.setState({ ready: true, failed: false }), () => this.setState({ failed: true })); }
+  render() {
+    if (this.state.fatal) throw this.state.fatal;
+    if (this.state.failed) return (
+      <div className="ngg-chunk-wait" role="alert">
+        <p>This part of the site didn’t load. Check your connection and try again.</p>
+        <button type="button" className="btn btn-primary" onClick={() => { this.setState({ failed: false, tries: this.state.tries + 1 }); this.load(); }}>Try again</button>
+      </div>);
+    if (!this.state.ready) return <div className="ngg-chunk-wait" role="status" aria-live="polite"><span className="ngg-chunk-spin" aria-hidden="true"/>Loading…</div>;
+    return this.props.render();
+  }
+}
+
 function routeAudit(renderKeys) {
   const keys = renderKeys || [];
   const ids = ROUTES.map(r => r.id);
@@ -420,54 +471,54 @@ function App() {
   useReveal([page]);
 
   const pages = {
-    home:      <HomePage      setPage={setPage}/>,
-    about:     <AboutPage     setPage={setPage}/>,
-    summer:    <SummerPage    setPage={setPage}/>,
-    centres:   <CentresPage   setPage={setPage}/>,
-    timetable: <TimetableMakerPage setPage={setPage}/>,
-    club:      <ClubPage      setPage={setPage}/>,
-    community:  <CommunityPage setPage={setPage}/>,
-    anchor:    <AnchorPage    setPage={setPage}/>,
-    profile:   <ProfilePage   setPage={setPage}/>,
-    dashboard: <DashboardPage setPage={setPage}/>,
-    learn:     <LearnPage     setPage={setPage}/>,
-    book:      <BookPage      setPage={setPage}/>,
-    media:     <MediaPage     setPage={setPage}/>,
-    parents:   <ParentsPage   setPage={setPage}/>,
-    volunteers:<VolunteersPage setPage={setPage}/>,
-    volunteer: <VolunteerRegisterPage setPage={setPage}/>,
-    "ngg-volunteer": <NggVolunteerPage setPage={setPage}/>,
-    mentors:   <MentorsPage    setPage={setPage}/>,
-    join:      <JoinPage      setPage={setPage}/>,
-    policies:  <PoliciesPage  setPage={setPage}/>,
-    telegram:  <TelegramPage  setPage={setPage}/>,
-    study:     <ToolsApp      setPage={setPage}/>,
-    blog:      <BlogPage      setPage={setPage}/>,
-    contact:   <ContactPage   setPage={setPage}/>,
-    support:   <HelpCentrePage setPage={setPage}/>,
-    "s-status": <StatusPage    setPage={setPage}/>,
-    "v-status": <VolunteerStatusPage setPage={setPage}/>,
-    summerprofile: <SummerProfilePage setPage={setPage}/>,
-    admin:     <ControlRoomPage setPage={setPage}/>,
-    "summer-admin": <SummerAdminPortal setPage={setPage}/>,
-    "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
-    circle:     <CirclePortal   setPage={setPage}/>,
-    family:     <FamilyPage     setPage={setPage}/>,
-    mentor:     <MentorHome/>,
-    instructor: <InstructorHome/>,
-    apply:      <SelfRegisterPage/>,
-    review:     <ReviewDeskPage/>,
-    gate:       <GatePage/>,
-    enrol:      <EnrolDeskPage/>,
-    verify:     <ParentVerifyPage/>,
-    reshoot:    <ReshootPage/>,
-    "id-cards": <IdCardStudioPage setPage={setPage}/>,
-    designer:   <DesignerPage/>,
-    certificate: <CertificatePage/>,
-    notice:     <NoticePage setPage={setPage}/>,
-    pay: <MembershipPayPage setPage={setPage}/>,
-    "journal-entry": <JournalEntryPage/>,
-    legal:      <LegalPage setPage={setPage}/>,
+    home:      () => <HomePage      setPage={setPage}/>,
+    about:     () => <AboutPage     setPage={setPage}/>,
+    summer:    () => <SummerPage    setPage={setPage}/>,
+    centres:   () => <CentresPage   setPage={setPage}/>,
+    timetable: () => <TimetableMakerPage setPage={setPage}/>,
+    club:      () => <ClubPage      setPage={setPage}/>,
+    community:  () => <CommunityPage setPage={setPage}/>,
+    anchor:    () => <AnchorPage    setPage={setPage}/>,
+    profile:   () => <ProfilePage   setPage={setPage}/>,
+    dashboard: () => <DashboardPage setPage={setPage}/>,
+    learn:     () => <LearnPage     setPage={setPage}/>,
+    book:      () => <BookPage      setPage={setPage}/>,
+    media:     () => <MediaPage     setPage={setPage}/>,
+    parents:   () => <ParentsPage   setPage={setPage}/>,
+    volunteers:() => <VolunteersPage setPage={setPage}/>,
+    volunteer: () => <VolunteerRegisterPage setPage={setPage}/>,
+    "ngg-volunteer": () => <NggVolunteerPage setPage={setPage}/>,
+    mentors:   () => <MentorsPage    setPage={setPage}/>,
+    join:      () => <JoinPage      setPage={setPage}/>,
+    policies:  () => <PoliciesPage  setPage={setPage}/>,
+    telegram:  () => <TelegramPage  setPage={setPage}/>,
+    study:     () => <ToolsApp      setPage={setPage}/>,
+    blog:      () => <BlogPage      setPage={setPage}/>,
+    contact:   () => <ContactPage   setPage={setPage}/>,
+    support:   () => <HelpCentrePage setPage={setPage}/>,
+    "s-status": () => <StatusPage    setPage={setPage}/>,
+    "v-status": () => <VolunteerStatusPage setPage={setPage}/>,
+    summerprofile: () => <SummerProfilePage setPage={setPage}/>,
+    admin:     () => <ControlRoomPage setPage={setPage}/>,
+    "summer-admin": () => <SummerAdminPortal setPage={setPage}/>,
+    "club-admin":   () => <ClubAdminPortal   setPage={setPage}/>,
+    circle:     () => <CirclePortal   setPage={setPage}/>,
+    family:     () => <FamilyPage     setPage={setPage}/>,
+    mentor:     () => <MentorHome/>,
+    instructor: () => <InstructorHome/>,
+    apply:      () => <SelfRegisterPage/>,
+    review:     () => <ReviewDeskPage/>,
+    gate:       () => <GatePage/>,
+    enrol:      () => <EnrolDeskPage/>,
+    verify:     () => <ParentVerifyPage/>,
+    reshoot:    () => <ReshootPage/>,
+    "id-cards": () => <IdCardStudioPage setPage={setPage}/>,
+    designer:   () => <DesignerPage/>,
+    certificate: () => <CertificatePage/>,
+    notice:     () => <NoticePage setPage={setPage}/>,
+    pay: () => <MembershipPayPage setPage={setPage}/>,
+    "journal-entry": () => <JournalEntryPage/>,
+    legal:      () => <LegalPage setPage={setPage}/>,
   };
 
   /* ── The drift guard ──────────────────────────────────────────────────────
@@ -493,7 +544,7 @@ function App() {
       <div className="app-shell app-shell-admin">
         <SkipLink/>
         <OfflineBanner/>
-        {pages[page]}
+        <NggChunkGate page={page} render={pages[page]}/>
         <ToastHost/>
         <DialogHost/>
         {/* The Control Room has its own palette (⌘K, CONTROL_ROOM.md §4.1). */}
@@ -512,7 +563,7 @@ function App() {
       <div id="ngg-route-live" aria-live="polite" aria-atomic="true" className="sr-only"/>
       <main id="main" style={{flex:1}}>
         <PageTransition pageKey={page}>
-          {page === "_notfound" ? <NotFound setPage={setPage}/> : (pages[page] || <NotFound setPage={setPage}/>)}
+          {page === "_notfound" || !pages[page] ? <NotFound setPage={setPage}/> : <NggChunkGate page={page} render={pages[page]}/>}
         </PageTransition>
       </main>
       <Footer setPage={setPage} page={page}/>
