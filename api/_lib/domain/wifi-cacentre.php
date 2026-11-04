@@ -88,6 +88,8 @@ function wifi_cac_request(string $typ, array $claims, string $secret, int $ts): 
 function wifi_cac_post(string $typ, array $claims, int $timeout = 20): array {
     $secret = wifi_cac_secret();
     if ($secret === '') return ['ok' => false, 'error' => 'not_configured'];
+    // Test seam: $GLOBALS['__wifi_cac_post_mock'] = fn($typ, $claims) => the gate's answer.
+    if (isset($GLOBALS['__wifi_cac_post_mock']) && is_callable($GLOBALS['__wifi_cac_post_mock'])) return ($GLOBALS['__wifi_cac_post_mock'])($typ, $claims);
     $rq = wifi_cac_request($typ, $claims, $secret, time());
     $ch = curl_init($rq['url']);
     curl_setopt_array($ch, [
@@ -231,32 +233,65 @@ function wifi_cac_pages(array $people, ?int $budget = null): array {
  * sends loses Wi-Fi there); several partial pushes when it does not, which
  * withdraw nobody — said so in the result rather than hidden.
  */
+/** At most this many requests in one push, however often a 406 splits a part. */
+const WIFI_CAC_MAX_CALLS = 120;
+
+/** A refusal from CACENTRE's host firewall (ModSecurity answers 406), not from CACENTRE. */
+function wifi_cac_firewalled(array $res): bool {
+    return (int)($res['http'] ?? 0) === 406 || str_contains((string)($res['error'] ?? ''), '406');
+}
+
 function wifi_cac_push(string $by = 'cron'): array {
     if (!wifi_cac_ready()) return ['ok' => false, 'error' => 'not_configured'];
     $people = wifi_cac_people();
-    $chunks = wifi_cac_pages($people);
+    $queue = wifi_cac_pages($people);
     /* `full` says "this is everybody", and CACENTRE withdraws anyone of ours
-       missing from it — so it may only be said when the whole roster went in
-       ONE push. Paged, it is false and nobody is withdrawn; the result says
-       so rather than leaving it to be inferred. */
-    $full = count($chunks) === 1;
-    $r = ['ok' => true, 'at' => now_iso(), 'by' => $by, 'sent' => count($people), 'full' => $full, 'applied' => 0, 'refused' => 0, 'gone' => 0,
-          'unknownSites' => [], 'refusals' => [], 'error' => ''];
-    foreach ($chunks as $chunk) {
-        $res = wifi_cac_post('wifi.roster', ['full' => $full, 'people' => $chunk]);
+       missing from it — so it is only said when the whole roster goes in ONE
+       request, first time. Otherwise every request carries one sync id, its
+       place (part n) and whether it is the last: a CACENTRE that reads `sync`
+       withdraws people once the last part of an unbroken set lands; one that
+       does not ignores the field, and nobody is withdrawn. */
+    $single = count($queue) === 1;
+    $syncId = bin2hex(random_bytes(8));
+    $r = ['ok' => true, 'at' => now_iso(), 'by' => $by, 'sent' => count($people), 'full' => false, 'applied' => 0, 'refused' => 0, 'gone' => 0,
+          'unknownSites' => [], 'refusals' => [], 'firewalled' => [], 'error' => '', 'synced' => false];
+    $part = 0; $calls = 0; $split = false;
+    while ($queue) {
+        if (++$calls > WIFI_CAC_MAX_CALLS) { $r['ok'] = false; $r['error'] = 'too_many_calls'; break; }
+        $chunk = array_shift($queue);
+        $full = $single && !$split;
+        /* A person the firewall refused is missing from the set, so the set may
+           not be called complete: nobody is withdrawn this time. */
+        $last = !$queue && !$r['firewalled'];
+        $claims = ['full' => $full, 'people' => $chunk, 'sync' => ['id' => $syncId, 'part' => $part + 1, 'last' => $last]];
+        $res = wifi_cac_post('wifi.roster', $claims);
+        if (empty($res['ok']) && wifi_cac_firewalled($res)) {
+            /* CACENTRE's host refused the request before CACENTRE saw it — too
+               big for the host's limit, or something in it trips a firewall
+               rule. Halve it and try each half; one person who is still
+               refused alone is set aside and named, and the rest go through. */
+            $split = true;
+            if (count($chunk) > 1) { $h = intdiv(count($chunk), 2); array_unshift($queue, array_slice($chunk, 0, $h), array_slice($chunk, $h)); }
+            else $r['firewalled'][] = (string)($chunk[0]['id'] ?? '');
+            continue;
+        }
         if (empty($res['ok'])) { $r['ok'] = false; $r['error'] = (string)($res['error'] ?? 'refused'); $r['http'] = (int)($res['http'] ?? 0); break; }
+        $part++;
+        if ($full) $r['full'] = true;
+        if (!empty($res['sync']['complete'])) $r['synced'] = true;
         $r['applied'] += (int)($res['applied'] ?? 0); $r['refused'] += (int)($res['refused'] ?? 0); $r['gone'] += (int)($res['gone'] ?? 0);
         foreach ((array)($res['unknownSites'] ?? []) as $code => $n) $r['unknownSites'][(string)$code] = ($r['unknownSites'][(string)$code] ?? 0) + (int)$n;
         foreach ((array)($res['results'] ?? []) as $x) if (empty($x['ok']) && count($r['refusals']) < 20) $r['refusals'][] = ['id' => (string)($x['id'] ?? ''), 'error' => (string)($x['error'] ?? '')];
     }
-    $r['partial'] = !$r['ok'] || $r['refused'] > 0;
-    $r['pages'] = count($chunks);
-    /* Paged means `full` could not be said, so CACENTRE withdrew nobody. Said
-       here in words, because the difference only shows up as somebody who
-       left still being on the Wi-Fi, which nothing else would explain. */
-    if ($r['ok'] && !$full) {
-        $r['note'] = 'Sent in ' . $r['pages'] . ' parts because the roster is larger than one request may carry, so nobody was withdrawn. '
-            . 'Anybody suspended is still sent as off. Raise the host\'s request-body limit, or wifi.cac_body_max, to send it whole.';
+    $r['pages'] = $part;
+    $r['partial'] = !$r['ok'] || $r['refused'] > 0 || (bool)$r['firewalled'];
+    if ($r['firewalled']) {
+        $r['note'] = count($r['firewalled']) . ' ' . (count($r['firewalled']) === 1 ? 'person was' : 'people were') . ' refused by CACENTRE’s host firewall (406) even sent alone, so '
+            . 'something in their record trips a firewall rule there: ' . implode(', ', array_slice($r['firewalled'], 0, 10)) . (count($r['firewalled']) > 10 ? ', …' : '')
+            . '. Everybody else went through. Nobody was withdrawn this time, because the list was not complete. Check those records (name, email), or ask CACENTRE’s host which rule fired.';
+    } elseif ($r['ok'] && !$r['full'] && !$r['synced']) {
+        $r['note'] = 'Sent in ' . $part . ' parts, and CACENTRE did not confirm the set as complete, so nobody was withdrawn. '
+            . 'Anybody suspended is still sent as off. CACENTRE withdraws people from a roster sent in parts once it is updated to read `sync`.';
     }
     setting_set(WIFI_CAC_LAST, $r, $by);
     return $r;

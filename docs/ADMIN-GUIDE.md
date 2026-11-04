@@ -4510,6 +4510,17 @@ says so with *Try again* rather than showing a PIN that no longer works.
 - **Speeds follow down**: the network's defaults, then a region's own, then a
   centre's own. Set only what differs; "set here" switched off means "follow".
 
+
+**When the list doesn't reach CACENTRE (406).**
+- A 406 means CACENTRE's web host refused the request before CACENTRE saw it.
+- NGG now splits the list and tries again in smaller parts, so everybody else still gets through.
+- Anybody refused even when sent alone is named in the Wi-Fi status note. Check that person's name and email for unusual characters, or ask CACENTRE's host which firewall rule fired.
+
+**Who loses Wi-Fi.**
+- Only an active (or graduated) member is on.
+- A deleted, merged, inactive, suspended or pending record is off at the next send.
+- Once CACENTRE is updated, someone who stops being on the list at all (deleted from NGG) is withdrawn too.
+
 ## Courses: placing every child (Members → Courses) and Course health (Learning)
 
 A child's courses decide their lessons, Community channels, timetable and which instructors' classes they are in. They are now set **once, here**, and every portal reads the same list.

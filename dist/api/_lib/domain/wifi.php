@@ -90,7 +90,7 @@ const WIFI_CASE_WORDS = [
     'summer'    => 'A Summer School participant, within their edition’s dates',
     'feesOwing' => 'Fees owing (only when that rule is switched on)',
     'overLimit' => 'Used up their data allowance (for today or this month)',
-    'blocked'   => 'Suspended, evicted or inactive',
+    'blocked'   => 'Suspended, evicted, inactive, deleted or merged',
     'override'  => 'Set by hand for this person',
     'outside'   => 'Outside their edition’s dates',
     'not_member'=> 'Not an NGG member record',
@@ -276,7 +276,11 @@ function wifi_access_for(array $m, array $ctx = []): array {
     $staff = wifi_is_staff($m);
     $status = strtolower((string)($m['status'] ?? 'active'));
     $conduct = (string)(($ctx['policy'] ?? [])['state'] ?? 'clear');
-    if (in_array($status, ['suspended', 'inactive'], true) || in_array($conduct, ['suspended', 'evicted'], true)) $case = 'blocked';
+    /* Allow-listed, not deny-listed: a member is in only while their record is active
+       (or graduated, its own case). Deleted, merged, inactive, suspended — and any
+       status an import brings that this list does not know — is blocked. */
+    $live = in_array($status, ['active', ''], true) || strpos($status, 'graduated') === 0;
+    if (!$live || in_array($conduct, ['suspended', 'evicted'], true)) $case = 'blocked';
     elseif ($staff) $case = 'staff';
     elseif (!member_is_ngg($m)) $case = 'not_member';
     elseif (strpos($status, 'graduated') === 0) $case = 'graduated';

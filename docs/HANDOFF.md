@@ -5894,3 +5894,37 @@ ran — the run read "367 passed, 1 failed" over a suite of 627.
   "no guardian email"; the server deliberately became `noContact` ("no way to
   reach the family") in 19f44ec1 when reminders gained app and phone. The test
   was brought up to the contract.
+
+## 2026-11-04 — Wi-Fi audit fixes (NGG and CACENTRE), and the 406
+
+**The 406 on Control Room → Wi-Fi ("The last list didn't reach CACENTRE … answered 406").**
+- CACENTRE's host (cPanel ModSecurity) refused the request before CACENTRE saw it. NGG already pages at 96 KiB, so either the host's limit is lower, or something in a row trips a firewall rule.
+- The push stopped at the first refusal, so nothing went at all.
+- `wifi_cac_push` now **halves a refused part and retries**. A person still refused when sent alone is set aside and **named** in the result's note (`firewalled`). Everybody else goes through. At most `WIFI_CAC_MAX_CALLS` (120) requests a push.
+- If the named people are always the same, look at their name or email, or ask CACENTRE's host which rule fired.
+
+**Withdrawals finally work for a roster in parts.**
+- Every request carries `sync: {id, part, last}`. CACENTRE (cacentre-site `claude/finme-dues-training-fees-l54o5j` @ 27dc876) withdraws whoever an unbroken, complete set did not list.
+- `last` is never sent when anybody was set aside, so an incomplete list withdraws nobody.
+- The result's `synced` says whether CACENTRE confirmed it.
+- Before this, NGG's ~1,200-person roster was always paged and **nobody was ever withdrawn**.
+
+**Status is allow-listed.**
+- `wifi_access_for` treats only `active`, blank and graduated records as members. Everything else is `blocked`: deleted (self-delete sets `deleted`), merged, inactive, suspended, pending, and anything an import brings.
+- Before, only `suspended`/`inactive` were blocked, and a deleted or merged member kept Wi-Fi.
+
+**Tests.** `api/tests/run.php` has 11 more checks (sync parts, the honest note, the 406 split, statuses). Suite: 6816/0.
+
+**CACENTRE side (same audit; details in its `cac/docs/wifi.md`).**
+- `#` refused in passwords; `#end` passwords replaced.
+- Children are never put on a router at a site that does not filter, hubs included. **The CACENTRE hub was created with filtering off, so children lose Wi-Fi there until a manager turns its filtering on.**
+- Routers report the filter they actually imported.
+- One bad line no longer stops a router's sync.
+- NGG rows need a verdict; junk dates are refused.
+- Afrovanguard password tokens are spent.
+- Names are made one line before they go into router scripts.
+- Tests: full unit suite 6676/0; new MySQL integration test `wifiroster.php` 18/0.
+
+**Left as designed, for the owner to decide.** A CACENTRE override can still turn on somebody NGG has off. That is CACENTRE's rule 2, documented as "on the record, with a reason".
+
+**Deploy order.** Either side can go first: an old CACENTRE ignores `sync`, and the note says nobody was withdrawn. Withdrawals start once both are live. Routers set up before 27dc876 keep the old script until their one-line install is run again; the server-side guards protect them meanwhile.

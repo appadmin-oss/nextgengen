@@ -34248,6 +34248,49 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi→cacentre · the directory key opens no Wi-Fi: only the attendance secret does', !wifi_cac_ready());
     $GLOBALS['CONFIG']['hooks']['attendance_secret'] = str_repeat('a', 40);
     chk('wifi→cacentre · the attendance secret IS the Wi-Fi’s: there is no second one', wifi_cac_ready());
+    // A roster too big for one request goes in parts that share one sync id, so CACENTRE can withdraw people.
+    $sent = [];
+    $GLOBALS['__wifi_cac_post_mock'] = function ($typ, $claims) use (&$sent) {
+        $sent[] = $claims; $sy = $claims['sync'] ?? null;
+        return ['ok' => true, 'applied' => count($claims['people']), 'refused' => 0, 'gone' => 0,
+                'sync' => $sy ? ['complete' => !empty($sy['last'])] : null];
+    };
+    $keepMax = $GLOBALS['CONFIG']['wifi']['cac_body_max'] ?? null;
+    $GLOBALS['CONFIG']['wifi']['cac_body_max'] = 4096;
+    $pr = wifi_cac_push('test');
+    $ids = array_unique(array_map(fn($c) => $c['sync']['id'] ?? '', $sent));
+    $nParts = count($sent);
+    chk('wifi→cacentre · a paged roster: every part carries the same sync id and its place, n of N', $nParts > 1 && count($ids) === 1 && reset($ids) !== ''
+        && array_map(fn($c) => $c['sync']['part'], $sent) === range(1, $nParts) && array_map(fn($c) => $c['sync']['last'], $sent) === array_merge(array_fill(0, $nParts - 1, false), [true])
+        && !in_array(true, array_map(fn($c) => $c['full'], $sent), true));
+    chk('…and when CACENTRE confirms the set complete, the push says so and makes no "nobody withdrawn" note', !empty($pr['synced']) && !isset($pr['note']));
+    $sent = [];
+    $GLOBALS['__wifi_cac_post_mock'] = fn($typ, $claims) => ['ok' => true, 'applied' => count($claims['people']), 'refused' => 0, 'gone' => 0];
+    $pr = wifi_cac_push('test');
+    chk('…but a CACENTRE that does not read sync yet is reported honestly: nobody was withdrawn', empty($pr['synced']) && str_contains((string)($pr['note'] ?? ''), 'nobody was withdrawn'));
+    // CACENTRE's host firewall answering 406: the part is halved until it goes through, and one person refused alone is named, not the whole list lost.
+    $GLOBALS['CONFIG']['wifi']['cac_body_max'] = 1 << 20;
+    $bad = wifi_cac_people()[0]['id'] ?? '';
+    $sent = [];
+    $GLOBALS['__wifi_cac_post_mock'] = function ($typ, $claims) use (&$sent, $bad) {
+        if (count($claims['people']) > 40 || in_array($bad, array_column($claims['people'], 'id'), true)) return ['ok' => false, 'error' => 'CACENTRE answered 406.', 'http' => 406];
+        $sent[] = $claims; return ['ok' => true, 'applied' => count($claims['people']), 'refused' => 0, 'gone' => 0, 'sync' => ['complete' => !empty($claims['sync']['last'])]];
+    };
+    $pr = wifi_cac_push('test');
+    $through = array_merge(...array_map(fn($c) => array_column($c['people'], 'id'), $sent ?: [['people' => []]]));
+    chk('wifi→cacentre · a 406 from CACENTRE’s host splits the list until each part goes through; everybody else arrives', $pr['ok'] && count($through) === count(wifi_cac_people()) - 1 && !in_array($bad, $through, true));
+    chk('…the one person refused even alone is named, and nothing is called complete (nobody withdrawn)', $pr['firewalled'] === [$bad] && empty($pr['synced'])
+        && !in_array(true, array_map(fn($c) => $c['sync']['last'], $sent), true) && str_contains((string)$pr['note'], $bad));
+    chk('…and the parts that went through are numbered 1..n in order', array_map(fn($c) => $c['sync']['part'], $sent) === range(1, count($sent)));
+    unset($GLOBALS['__wifi_cac_post_mock']);
+    if ($keepMax === null) unset($GLOBALS['CONFIG']['wifi']['cac_body_max']); else $GLOBALS['CONFIG']['wifi']['cac_body_max'] = $keepMax;
+    // Only a live record is a member: deleted, merged and unknown statuses are blocked, not "on".
+    foreach (['deleted', 'merged', 'pending', 'weird-import'] as $stz) {
+        $dz = wifi_access_for(['memberId' => 'NGG-WX-' . $stz, 'type' => 'NGG', 'status' => $stz, 'role' => 'member'], ['usage' => null, 'policy' => null]);
+        chk('wifi · a member whose record is ' . $stz . ' has no Wi-Fi (blocked, not the member default)', $dz['case'] === 'blocked' && $dz['access'] === 'off');
+    }
+    $dz = wifi_access_for(['memberId' => 'NGG-WX-act', 'type' => 'NGG', 'status' => 'active', 'role' => 'member'], ['usage' => null, 'policy' => null]);
+    chk('wifi · an active member still gets the member case', $dz['case'] === 'member');
     $GLOBALS['CONFIG']['dir_push_secret'] = '';
 
     // Members keep their PIN on their own dashboard. A centre whose NGG router still fetches keeps NGG's PIN;
