@@ -28,8 +28,8 @@ Dev-mode boot takes about a minute (Babel in the browser); browser suites need
 throwaway `api/config.php` and refuse to run if one exists — run them one
 after another.
 
-Known pre-existing failure (fails on the untouched base too, not yours to hide):
-PHP suite "portal: reading an entry marks it read".
+PHP suite: 6805 passed, 0 failed on 4 Nov 2026 (the earlier "portal: reading
+an entry marks it read" failure no longer reproduces).
 
 ---
 
@@ -39,6 +39,22 @@ PHP suite "portal: reading an entry marks it read".
 `docs/HANDOFF.md` for exactly what exists (Stages 1–7, the climb, mastery,
 reviews, bosses, courses, Lite) and what does not. The name is **Maths Lab**.
 Continue from it rather than starting again.
+
+**Done since (4 Nov 2026, `e8f4236e`):** the Arcade teaser is a link to
+`/study/lab` that reads `mathslab.home`; the old ladder's client code
+(`MathLab`, `MathPaper`, `MathMarked`, `NGGApi.member.mathlab`, the `.ml-*`
+rules) is removed; `ui-smoke.js` and `mathlab-shot.js` cover the new Lab in a
+browser. The old SERVER ops (`mathlab.php`, `arcade.php` `mathStart`/
+`mathSubmit`) are kept: issued level certificates must keep verifying, and
+they are what a progress migration would read.
+
+**Open, found 4 Nov:** the documents domain (`df531900`, `documents.php`)
+issues `NGG-ML-LL-` certificates when an OLD-ladder level is cleared, and
+nothing can clear one any more. The new Lab's course certificate
+(`mlb_certificate`) has its own code and is not in `documents.php`, so it is
+not under Family → Money → Documents and not on `/verify/<number>`. One
+certificate system is the fix: issue the course certificate through
+`documents.php`.
 
 ### Background (the plan)
 
