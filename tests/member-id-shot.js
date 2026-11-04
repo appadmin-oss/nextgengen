@@ -108,7 +108,7 @@ function loadChromium() {
 <script src="/dist/data.js"></script>
 <script src="/dist/photos.js"></script>
 <script>window.NGGApi = { admin: {}, public: {} };</script>
-<script src="/dist/app.min.js"></script>
+<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script>
 <script>
 var SHOT_MEMBERS = ${JSON.stringify(members)};
 var FACE_URL = ${JSON.stringify('__FACE__')};

@@ -185,13 +185,12 @@ function membership_invoice_create(array $m, string $by, int $applicationId = 0,
     $total = array_sum(array_map(static fn($i) => (int)$i['amount'], $items));
     if ($total <= 0) return ['ok' => false, 'error' => 'nothing_to_pay'];
     $row = [
-        'invoiceId' => 'NGG-INV-' . strtoupper(rand_hex(5)),
         'memberId' => (string)$m['memberId'], 'applicationId' => $applicationId,
         'payToken' => rand_hex(20), 'items' => json_encode($items, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         'total' => $total, 'currency' => (string)$terms['currency'], 'startDate' => $start,
         'status' => 'open', 'createdBy' => substr($by, 0, 64), 'createdAt' => now_iso(),
     ];
-    db_insert('membership_invoices', $row);
+    $row = doc_invoice_insert($row);   // numbered NGG-INV-YYYY-#####, in the same transaction (documents.php)
     audit('membership.invoice.create', $by, (string)$m['memberId'], ['invoiceId' => $row['invoiceId'], 'total' => $total, 'start' => $start]);
     return ['ok' => true, 'invoice' => membership_invoice_by('invoiceId', $row['invoiceId'])];
 }
@@ -240,12 +239,12 @@ function membership_balance_invoice(array $m, string $by): array {
     foreach ($open as $o) db_update('membership_invoices', ['status' => 'void', 'voidReason' => 'superseded: the balance changed'], ['id' => $o['id']]);
     $terms = membership_fee_terms();
     $row = [
-        'invoiceId' => 'NGG-BAL-' . strtoupper(rand_hex(5)), 'memberId' => $mid, 'applicationId' => 0, 'payToken' => rand_hex(20),
+        'memberId' => $mid, 'applicationId' => 0, 'payToken' => rand_hex(20),
         'items' => json_encode([['kind' => 'balance', 'label' => 'Balance due on ' . gmdate('j M Y'), 'detail' => 'Dues and fees on the account', 'amount' => $due, 'periodKey' => '']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         'total' => $due, 'currency' => (string)$terms['currency'], 'startDate' => gmdate('Y-m-d'),
         'status' => 'open', 'purpose' => 'balance', 'createdBy' => substr($by, 0, 64), 'createdAt' => now_iso(),
     ];
-    db_insert('membership_invoices', $row);
+    $row = doc_invoice_insert($row);
     audit('membership.balance.invoice', $by, $mid, ['invoiceId' => $row['invoiceId'], 'total' => $due, 'superseded' => count($open)]);
     return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode($row['payToken']), 'invoiceId' => $row['invoiceId'], 'total' => $due];
 }
@@ -397,12 +396,12 @@ function membership_advance_invoice(array $m, int $months, string $by): array {
     }
     foreach ($open as $o) db_update('membership_invoices', ['status' => 'void', 'voidReason' => 'superseded: a new payment was asked for'], ['id' => $o['id']]);
     $row = [
-        'invoiceId' => 'NGG-ADV-' . strtoupper(rand_hex(5)), 'memberId' => $mid, 'applicationId' => 0, 'payToken' => rand_hex(20),
+        'memberId' => $mid, 'applicationId' => 0, 'payToken' => rand_hex(20),
         'items' => json_encode($q['items'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         'total' => $q['total'], 'currency' => (string)$terms['currency'], 'startDate' => gmdate('Y-m-d'),
         'status' => 'open', 'purpose' => 'advance', 'createdBy' => substr($by, 0, 64), 'createdAt' => now_iso(),
     ];
-    db_insert('membership_invoices', $row);
+    $row = doc_invoice_insert($row);
     audit('membership.advance.invoice', $by, $mid, ['invoiceId' => $row['invoiceId'], 'total' => $q['total'], 'months' => $months, 'through' => $q['through'], 'superseded' => count($open)]);
     return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode($row['payToken']), 'invoiceId' => $row['invoiceId'], 'total' => $q['total'], 'through' => $q['through']];
 }
@@ -460,23 +459,14 @@ function membership_invoice_send(array $inv, ?array $m = null): array {
 
 /* ── Settling: the one place an invoice becomes paid ─────────────────────── */
 
-/** The next receipt number: NGG-RCT-<year>-<serial>, minted from the highest serial, never a count. */
-function membership_receipt_no(): string {
-    $y = gmdate('Y');
-    $hi = 0;
-    foreach (db_all("SELECT receiptNo FROM membership_invoices WHERE receiptNo LIKE ?", ['NGG-RCT-' . $y . '-%']) as $r) {
-        $n = (int)substr((string)$r['receiptNo'], strlen('NGG-RCT-' . $y . '-'));
-        if ($n > $hi) $hi = $n;
-    }
-    return 'NGG-RCT-' . $y . '-' . str_pad((string)($hi + 1), 5, '0', STR_PAD_LEFT);
-}
-
 /**
  * Mark an invoice paid: its charges and the payment on the ledger, a receipt,
  * and the family thanked. Idempotent — a webhook and a callback racing, or a
  * verifier pressing twice, settle once.
  */
 function membership_settle(string $invoiceId, string $via, string $reference, string $by, array $extra = []): array {
+    // The suite stands in for a ledger that refuses the post.
+    if (!empty($GLOBALS['__membership_settle_throw'])) throw new RuntimeException('ledger_failed');
     $res = db_tx(static function () use ($invoiceId, $via, $reference, $by, $extra) {
         $inv = membership_invoice_by('invoiceId', $invoiceId);
         if (!$inv) return ['ok' => false, 'error' => 'not_found'];
@@ -495,54 +485,17 @@ function membership_settle(string $invoiceId, string $via, string $reference, st
             'note' => ($balance ? 'Balance payment ' : ($purpose === 'advance' ? 'Paid ahead ' : 'Joining invoice ')) . $invoiceId . ' — ' . (MPAY_METHODS[$via] ?? ($via === 'paystack' ? 'Paystack' : $via)),
             'method' => $via, 'reference' => $reference, 'by' => $by]);
         if (!$credit) throw new RuntimeException('ledger_failed');
+        /* The receipt is numbered and frozen inside this transaction
+           (documents.php): no payment without its receipt, no receipt number
+           without its payment, and no gap in the series if either fails. */
+        $rcp = doc_receipt_issue($inv, $via, $reference, $extra);
         db_update('membership_invoices', ['status' => 'paid', 'paidVia' => $via, 'paidAt' => now_iso(),
-            'receiptNo' => membership_receipt_no(), 'receiptToken' => rand_hex(16)] + ($via === 'paystack' ? ['paystackRef' => $reference] : []), ['id' => $inv['id']]);
+            'receiptNo' => $rcp['no'], 'receiptToken' => rand_hex(16)] + ($via === 'paystack' ? ['paystackRef' => $reference] : []), ['id' => $inv['id']]);
         audit('membership.invoice.paid', $by, $memberId, ['invoiceId' => $invoiceId, 'via' => $via, 'reference' => $reference, 'total' => (int)$inv['total']] + $extra);
         return ['ok' => true, 'invoice' => membership_invoice_by('invoiceId', $invoiceId)];
     });
     if (!empty($res['ok']) && empty($res['already'])) $res['receipt'] = membership_send_receipt($res['invoice']);
     return $res;
-}
-
-/** The receipt as a standalone, printable document. */
-function membership_receipt_html(array $inv): string {
-    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$inv['memberId']]) ?: [];
-    $cfg = fees_settings();
-    $c = function_exists('org_contact') ? org_contact() : [];
-    $off = (string)$inv['paidVia'] !== 'paystack'
-        ? db_row("SELECT * FROM offline_payments WHERE invoiceId = ? AND status = 'verified' ORDER BY id DESC LIMIT 1", [(string)$inv['invoiceId']]) : null;
-    $method = (string)$inv['paidVia'] === 'paystack' ? 'Paystack (online)' : (MPAY_METHODS[(string)$inv['paidVia']] ?? (string)$inv['paidVia']);
-    $ref = (string)$inv['paidVia'] === 'paystack' ? (string)$inv['paystackRef'] : (string)($off['reference'] ?? '');
-    $row = static fn($k, $v) => '<tr><th>' . esc_html($k) . '</th><td>' . $v . '</td></tr>';
-    $lines = '';
-    foreach (membership_items($inv) as $it) $lines .= '<tr><td><b>' . esc_html($it['label']) . '</b>' . (!empty($it['detail']) ? '<div class="d">' . esc_html($it['detail']) . '</div>' : '') . '</td><td class="n">' . esc_html(fees_money_text((int)$it['amount'], $cfg)) . '</td></tr>';
-    $paidAt = $inv['paidAt'] ? gmdate('j F Y, H:i', (int)strtotime((string)$inv['paidAt'])) . ' UTC' : '';
-    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">'
-        . '<title>Receipt ' . esc_html($inv['receiptNo']) . ' · Next Generation Genius</title><style>'
-        . 'body{margin:0;background:#eef0f4;font:15px/1.55 Inter,"Segoe UI",Helvetica,Arial,sans-serif;color:#1c2442}'
-        . '.r{max-width:720px;margin:32px auto;background:#fff;border-radius:16px;box-shadow:0 20px 50px -30px rgba(12,20,50,.35);overflow:hidden}'
-        . '.h{background:#0c1432;color:#fff;padding:28px 36px;display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap}'
-        . '.h img{height:48px;background:#fff;border-radius:50%;padding:3px}.h b{display:block;font-size:20px}.h span{color:#c9cfe2;font-size:13px}'
-        . '.paid{border:2px solid #2f9e44;color:#1d7a33;border-radius:8px;padding:6px 14px;font-weight:800;letter-spacing:.14em;background:#e9f7ee}'
-        . '.b{padding:28px 36px}h1{font-size:22px;margin:0 0 4px}.mut{color:#5a6488;font-size:13.5px}'
-        . 'table{width:100%;border-collapse:collapse;margin-top:18px}th{text-align:left;color:#5a6488;font-weight:500;padding:6px 0;width:38%;vertical-align:top}td{padding:6px 0;vertical-align:top}'
-        . '.items td{border-bottom:1px solid #eceef2;padding:12px 0}.n{text-align:right;white-space:nowrap}.d{color:#5a6488;font-size:13px}'
-        . '.tot td{font-size:18px;font-weight:800;border:0;padding-top:14px}.f{padding:20px 36px 30px;color:#5a6488;font-size:12.5px;border-top:1px solid #eceef2}'
-        . '.pr{margin:0 36px 28px}.pr button{font:inherit;padding:10px 18px;border-radius:10px;border:1px solid #c9cfe2;background:#fff;cursor:pointer}'
-        . '@media print{body{background:#fff}.r{box-shadow:none;margin:0}.pr{display:none}}'
-        . '</style></head><body><main class="r">'
-        . '<div class="h"><div style="display:flex;gap:14px;align-items:center"><img src="/assets/logo.png" alt=""><div><b>Next Generation Genius</b><span>Afrovanguard · Official receipt</span></div></div><div class="paid">PAID</div></div>'
-        . '<div class="b"><h1>Receipt ' . esc_html($inv['receiptNo']) . '</h1><div class="mut">Thank you. This receipt confirms the payment below in full.</div>'
-        . '<table>' . $row('Member', esc_html((string)($m['fullName'] ?? '')) . ' · ' . esc_html((string)(($m['displayId'] ?? '') ?: $inv['memberId'])))
-        . $row('Centre', esc_html((string)($m['centre'] ?? '')))
-        . $row('Invoice', esc_html($inv['invoiceId']))
-        . $row('Paid', esc_html($paidAt))
-        . $row('Method', esc_html($method) . ($ref !== '' ? ' · ref <code>' . esc_html($ref) . '</code>' : ''))
-        . ($off ? $row('Paid by', esc_html((string)$off['payerName'])) : '')
-        . '</table><table class="items">' . $lines . '<tr class="tot"><td>Total paid</td><td class="n">' . esc_html(fees_money_text((int)$inv['total'], $cfg)) . '</td></tr></table></div>'
-        . '<div class="pr"><button onclick="window.print()">Print or save as PDF</button></div>'
-        . '<div class="f">Next Generation Genius, an Afrovanguard programme' . (!empty($c['email']) ? ' · ' . esc_html((string)$c['email']) : '') . (!empty($c['phone']) ? ' · ' . esc_html((string)$c['phone']) : '')
-        . '. Keep this receipt for your records. Questions about it: quote ' . esc_html($inv['receiptNo']) . '.</div></main></body></html>';
 }
 
 /** Thank the family, with the receipt. */
@@ -561,13 +514,33 @@ function membership_send_receipt(array $inv): array {
                 ? '<p style="margin:12px 0 0;font-size:14px">The payment is held on ' . esc_html($first) . '’s account and meets each charge on the day it falls due, so there is nothing more to pay until it is used up. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'
                 : '<p style="margin:12px 0 0;font-size:14px">From next month the commitment fee is ' . esc_html(fees_money_text((int)fees_settings()['monthlyDues'])) . ' a month. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'),
         'ctaLabel' => 'View and print the receipt',
-        'ctaUrl' => membership_receipt_url($inv),
+        'ctaUrl' => membership_receipt_url($inv),   // receipt.php renders the frozen receipt (documents.php)
         'footNote' => 'With thanks from the Next Generation Genius team.',
     ]));
     return ['ok' => (bool)$ok, 'to' => mask_email($to)];
 }
 
 /* ── Paystack ────────────────────────────────────────────────────────────── */
+
+/**
+ * Paystack's charge on a payment of $net, when the family bears it: the
+ * smallest gross whose own Paystack charge leaves at least $net for NGG.
+ * 0 when it is switched off. Whole naira, rounded up — NGG is never short by a
+ * kobo. The flat part is waived when the GROSS is under the threshold, so the
+ * waiver is tested on the gross; past the cap, the cap is the charge.
+ */
+function paystack_family_charge(int $net, ?array $cfg = null): int {
+    $cfg = $cfg ?? fees_settings();
+    if ($net <= 0 || empty($cfg['payFeeOn'])) return 0;
+    $rate = max(0, (int)$cfg['payFeeBps']) / 10000;
+    if ($rate >= 1) return 0;
+    $flat = max(0, (int)$cfg['payFeeFlat']); $under = max(0, (int)$cfg['payFeeFlatUnder']); $cap = max(0, (int)$cfg['payFeeCap']);
+    $gross = (int)ceil($net / (1 - $rate) - 1e-9);
+    if ($flat > 0 && $gross >= $under) $gross = (int)ceil(($net + $flat) / (1 - $rate) - 1e-9);
+    $fee = $gross - $net;
+    if ($cap > 0 && $fee > $cap) $fee = $cap;
+    return max(0, $fee);
+}
 
 /** What the family sees at /pay/<token>: no ledger, no other child, nothing to enumerate. */
 function public_membership_invoice(array $p): array {
@@ -584,8 +557,12 @@ function public_membership_invoice(array $p): array {
         'firstName' => explode(' ', trim((string)($m['fullName'] ?? '')))[0] ?? '', 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? ''),
         'paidAt' => (string)$inv['paidAt'], 'receiptNo' => (string)$inv['receiptNo'],
         'receiptUrl' => (string)$inv['status'] === 'paid' ? membership_receipt_url($inv) : '',
+        'invoiceUrl' => doc_view_url(doc_for_invoice($inv)),   // the printable invoice (documents.php)
         'pendingOffline' => $pending ? ['method' => MPAY_METHODS[(string)$pending['method']] ?? '', 'at' => (string)$pending['recordedAt']] : null,
         'paystack' => $terms['paystack'], 'bank' => $terms['bank'],
+        /* Paying online adds Paystack's charge; paying by transfer does not. Said before anybody presses Pay.
+           A paid invoice shows the charge that was actually taken with it. */
+        'onlineFee' => (string)$inv['status'] === 'paid' ? (int)($inv['processingFee'] ?? 0) : ($terms['paystack'] ? paystack_family_charge((int)$inv['total']) : 0),
     ]];
 }
 
@@ -599,16 +576,35 @@ function public_membership_pay_init(array $p): array {
     // An offline payment awaiting its check would be paid twice.
     if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [(string)$inv['invoiceId']])) return ['ok' => false, 'error' => 'offline_pending'];
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$inv['memberId']]) ?: [];
+    /* A balance link is a quote of what was owed THEN. Settled another way
+       since — cash at the desk, an approved claim, a waiver — and the old link
+       still took the full amount online: the family paid twice and held the
+       difference as credit. The balance is read again here; changed, the old
+       invoice is withdrawn and the family is sent to one for today's figure. */
+    if ((string)($inv['purpose'] ?? '') === 'balance' && $m && function_exists('fees_balance')) {
+        $due = (int)(fees_balance($m)['payable'] ?? 0);
+        if ($due !== (int)$inv['total']) {
+            db_exec("UPDATE membership_invoices SET status = 'void', voidReason = ? WHERE id = ? AND status = 'open'", ['superseded: the balance changed before payment', $inv['id']]);
+            audit('membership.balance.superseded', 'system', (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'was' => (int)$inv['total'], 'now' => $due]);
+            if ($due <= 0) return ['ok' => false, 'error' => 'nothing_to_pay'];
+            $fresh = membership_balance_invoice($m, 'system');
+            return ['ok' => false, 'error' => 'balance_changed', 'detail' => (string)($fresh['payUrl'] ?? '')];
+        }
+    }
     $email = membership_contact($m);
     if ($email === '') return ['ok' => false, 'error' => 'no_email'];
     $ref = 'NGGM-' . strtoupper(rand_hex(8));
-    $r = paystack_http('POST', '/transaction/initialize', ['email' => $email, 'amount' => (int)$inv['total'] * 100, 'currency' => (string)$inv['currency'],
+    /* The family bears Paystack's charge: the checkout is for the invoice plus the charge, and the charge
+       rides in the transaction's own metadata (set here, server-side), so verify knows what THIS checkout
+       was for even if the setting changes before the family pays. The invoice — and the ledger — stay the fee. */
+    $fee = paystack_family_charge((int)$inv['total']);
+    $r = paystack_http('POST', '/transaction/initialize', ['email' => $email, 'amount' => ((int)$inv['total'] + $fee) * 100, 'currency' => (string)$inv['currency'],
         'reference' => $ref, 'callback_url' => membership_pay_url($inv),
-        'metadata' => ['invoiceId' => (string)$inv['invoiceId'], 'memberId' => (string)$inv['memberId'], 'kind' => 'ngg_membership']]);
+        'metadata' => ['invoiceId' => (string)$inv['invoiceId'], 'memberId' => (string)$inv['memberId'], 'kind' => 'ngg_membership', 'processingFee' => $fee]]);
     if (empty($r['status']) || empty($r['data']['authorization_url'])) return ['ok' => false, 'error' => 'init_failed'];
     db_update('membership_invoices', ['paystackRef' => $ref], ['id' => $inv['id']]);
-    audit('membership.paystack.init', null, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $ref], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'authorizationUrl' => (string)$r['data']['authorization_url'], 'reference' => $ref];
+    audit('membership.paystack.init', null, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $ref, 'processingFee' => $fee], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'authorizationUrl' => (string)$r['data']['authorization_url'], 'reference' => $ref, 'total' => (int)$inv['total'], 'processingFee' => $fee];
 }
 
 /**
@@ -634,18 +630,30 @@ function membership_paystack_verify(string $reference): array {
         && !db_row("SELECT id FROM audit_log WHERE event = 'membership.paystack.unapplied' AND meta LIKE ? LIMIT 1", ['%"' . $reference . '"%'])) {
         audit('membership.paystack.unapplied', 'paystack', (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $reference, 'amount' => (int)($d['amount'] ?? 0), 'currency' => (string)($d['currency'] ?? ''), 'invoiceStatus' => (string)$inv['status']]);
     }
+    if ($succeeded && (string)$inv['status'] !== 'open' && !$appliedHere)
+        unapplied_record($reference, 'unapplied', $inv, (int)round(((int)($d['amount'] ?? 0)) / 100), (string)($d['currency'] ?? 'NGN'));
     if ((string)$inv['status'] === 'paid') return ['ok' => true, 'status' => 'paid', 'invoice' => $inv];
     if ((string)$inv['status'] !== 'open') {
         if ($succeeded) return ['ok' => false, 'error' => 'not_open', 'detail' => 'This invoice was cancelled after the payment started. The payment is recorded and the centre will refund or apply it.'];
         return ['ok' => true, 'status' => (string)$inv['status'], 'invoice' => $inv];
     }
     if (!$succeeded) return ['ok' => true, 'status' => (string)($d['status'] ?? 'pending'), 'invoice' => $inv];
-    if ((string)($d['reference'] ?? '') !== $reference || (int)($d['amount'] ?? 0) !== (int)$inv['total'] * 100
+    /* The charge this checkout carried, from the transaction's own metadata (we set it at initialise; a
+       checkout started before the family bore the charge has none). It may not exceed the invoice itself. */
+    $fee = max(0, (int)($d['metadata']['processingFee'] ?? 0));
+    if ($fee > (int)$inv['total']) $fee = -1;
+    if ($fee < 0 || (string)($d['reference'] ?? '') !== $reference || (int)($d['amount'] ?? 0) !== ((int)$inv['total'] + max(0, $fee)) * 100
         || strtoupper((string)($d['currency'] ?? '')) !== strtoupper((string)$inv['currency'])) {
         audit('membership.paystack.mismatch', null, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $reference, 'amount' => (int)($d['amount'] ?? 0), 'currency' => (string)($d['currency'] ?? '')]);
+        // Money that DID arrive, for an amount the invoice does not match: on the record for a person.
+        if ($succeeded && (string)($d['reference'] ?? '') === $reference)
+            unapplied_record($reference, 'mismatch', $inv, (int)round(((int)($d['amount'] ?? 0)) / 100), (string)($d['currency'] ?? 'NGN'));
         return ['ok' => false, 'error' => 'payment_mismatch'];
     }
-    $s = membership_settle((string)$inv['invoiceId'], 'paystack', $reference, 'paystack', ['channel' => (string)($d['channel'] ?? '')]);
+    // The charge is recorded on the invoice (for the receipt), never on the ledger: it is Paystack's, not something owed to NGG.
+    db_update('membership_invoices', ['processingFee' => $fee], ['id' => $inv['id']]);
+    $s = membership_settle((string)$inv['invoiceId'], 'paystack', $reference, 'paystack', ['channel' => (string)($d['channel'] ?? ''),
+        'last4' => (string)($d['authorization']['last4'] ?? '')]);
     return ['ok' => !empty($s['ok']), 'status' => !empty($s['ok']) ? 'paid' : 'failed', 'invoice' => $s['invoice'] ?? $inv, 'error' => $s['error'] ?? null];
 }
 
@@ -698,6 +706,7 @@ function membership_invoice_row(array $inv, array $members, array $pending, stri
         'items' => membership_items($inv), 'createdAt' => (string)$inv['createdAt'], 'sentTo' => $inv['sentTo'] ? mask_email((string)$inv['sentTo']) : '', 'sentAt' => (string)$inv['sentAt'],
         'paidVia' => (string)$inv['paidVia'], 'paidAt' => (string)$inv['paidAt'], 'receiptNo' => (string)$inv['receiptNo'],
         'receiptUrl' => (string)$inv['status'] === 'paid' ? membership_receipt_url($inv) : '', 'payUrl' => (string)$inv['status'] === 'open' ? membership_pay_url($inv) : '',
+        'invoiceUrl' => doc_view_url(doc_for_invoice($inv)),
         'offline' => $op ? [
             'paymentId' => (string)$op['paymentId'], 'status' => (string)$op['status'], 'amount' => (int)$op['amount'], 'method' => (string)$op['method'],
             'methodLabel' => MPAY_METHODS[(string)$op['method']] ?? '', 'payerName' => (string)$op['payerName'], 'bankName' => (string)$op['bankName'],
@@ -745,12 +754,12 @@ function admin_membership_invoices(array $p): array {
        invoice since voided or paid another way, or an amount that does not
        match) — never silently dropped. In scope only. */
     $alerts = [];
-    foreach (db_all("SELECT event, subject, meta, at FROM audit_log WHERE event IN ('membership.paystack.unapplied', 'membership.paystack.mismatch') ORDER BY id DESC LIMIT 100") as $a) {
-        if ($scope !== null && !admin_centre_allowed($g['requester'], (string)(db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [(string)$a['subject']])['centre'] ?? ''))) continue;
-        $meta = json_decode((string)$a['meta'], true) ?: [];
-        $alerts[] = ['kind' => $a['event'] === 'membership.paystack.mismatch' ? 'mismatch' : 'unapplied', 'memberId' => (string)$a['subject'], 'at' => (string)$a['at'],
-            'invoiceId' => (string)($meta['invoiceId'] ?? ''), 'reference' => (string)($meta['reference'] ?? ''), 'amount' => (int)round(((int)($meta['amount'] ?? 0)) / 100), 'status' => (string)($meta['invoiceStatus'] ?? '')];
-        if (count($alerts) >= 30) break;
+    unapplied_backfill();
+    foreach (db_all("SELECT * FROM unapplied_payments WHERE status = 'open' ORDER BY id DESC LIMIT 200") as $a) {
+        if ($scope !== null && !admin_centre_allowed($g['requester'], (string)(db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [(string)$a['memberId']])['centre'] ?? ''))) continue;
+        $alerts[] = ['id' => (int)$a['id'], 'kind' => (string)$a['cause'], 'memberId' => (string)$a['memberId'], 'at' => (string)$a['createdAt'],
+            'invoiceId' => (string)$a['invoiceId'], 'reference' => (string)$a['reference'], 'amount' => (int)$a['amount'],
+            'fullName' => (string)(db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [(string)$a['memberId']])['fullName'] ?? '')];
     }
     $counts = [];
     foreach (db_all('SELECT status, COUNT(*) c FROM membership_invoices WHERE 1 = 1' . $scopeSql . ' GROUP BY status', $scopeArgs) as $c) $counts[(string)$c['status']] = (int)$c['c'];
@@ -982,8 +991,9 @@ function admin_membership_offline_record(array $p): array {
         'paidOn' => $paidOn, 'evidenceSha256' => $ev['sha'], 'evidenceFile' => $file, 'evidenceType' => $ev['type'], 'evidenceBytes' => strlen($ev['bytes']),
         'note' => mb_substr(trim((string)($p['note'] ?? '')), 0, 500), 'status' => 'pending', 'recordedBy' => $by, 'recordedAt' => now_iso()];
     db_insert('offline_payments', $row);
+    $ack = doc_ack_issue($row);   // the family's acknowledgement: not a receipt, no receipt number (documents.php)
     audit('membership.offline.record', $by, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'paymentId' => $row['paymentId'], 'amount' => $amount, 'method' => $method, 'reference' => $reference, 'evidence' => $ev['sha']], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'paymentId' => $row['paymentId'], 'status' => 'pending'];
+    return ['ok' => true, 'paymentId' => $row['paymentId'], 'status' => 'pending', 'ackUrl' => doc_view_url($ack)];
 }
 
 function membership_offline_for_staff(array $g, string $paymentId): array {
@@ -1016,14 +1026,30 @@ function admin_membership_offline_verify(array $p): array {
     }
     $inv = membership_invoice_by('invoiceId', (string)$op['invoiceId']);
     if (!$inv || (string)$inv['status'] !== 'open') return ['ok' => false, 'error' => 'not_open'];
-    db_update('offline_payments', ['status' => 'verified', 'verifiedBy' => $by, 'verifiedAt' => now_iso()], ['id' => $op['id']]);
-    $s = membership_settle((string)$op['invoiceId'], (string)$op['method'], (string)$op['reference'], $by, ['paymentId' => $op['paymentId'], 'recordedBy' => $op['recordedBy']]);
+    /* Claimed, not just set: two staff verifying the same transfer at once both
+       passed the `pending` check above. And reverted on ANY failure — settling
+       throws when the ledger refuses the post or two receipts collide, and a
+       throw used to leave the payment "verified" on an invoice still open, with
+       nothing on the account and the guards that stop a second online payment
+       no longer looking at it. */
+    if (!db_exec("UPDATE offline_payments SET status = 'verified', verifiedBy = ?, verifiedAt = ? WHERE id = ? AND status = 'pending'", [$by, now_iso(), $op['id']]))
+        return ['ok' => false, 'error' => 'not_pending'];
+    $revert = static fn() => db_update('offline_payments', ['status' => 'pending', 'verifiedBy' => '', 'verifiedAt' => ''], ['id' => $op['id']]);
+    try {
+        $s = membership_settle((string)$op['invoiceId'], (string)$op['method'], (string)$op['reference'], $by, ['paymentId' => $op['paymentId'], 'recordedBy' => $op['recordedBy']]);
+    } catch (Throwable $e) {
+        $revert();
+        error_log('[membership.offline.verify] ' . $op['paymentId'] . ': ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'settle_failed', 'detail' => 'The payment could not be applied to the invoice, so it is still waiting to be verified. Try again.'];
+    }
     if (empty($s['ok'])) {
-        db_update('offline_payments', ['status' => 'pending', 'verifiedBy' => '', 'verifiedAt' => ''], ['id' => $op['id']]);
+        $revert();
         return $s;
     }
+    doc_ack_close((string)$op['paymentId'], 'verified', (string)$s['invoice']['receiptNo']);
     audit('membership.offline.verify', $by, (string)$op['memberId'], ['paymentId' => $op['paymentId'], 'invoiceId' => $op['invoiceId']], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'receiptNo' => (string)$s['invoice']['receiptNo'], 'receiptUrl' => membership_receipt_url($s['invoice']), 'receipt' => $s['receipt'] ?? null];
+    $rd = doc_for_receipt($s['invoice']);
+    return ['ok' => true, 'receiptNo' => (string)$s['invoice']['receiptNo'], 'receiptUrl' => $rd ? doc_view_url($rd) : membership_receipt_url($s['invoice']), 'receipt' => $s['receipt'] ?? null];
 }
 
 /** admin.membership.offline.reject — the claim does not hold up; say why. The invoice stays open. */
@@ -1036,6 +1062,7 @@ function admin_membership_offline_reject(array $p): array {
     $reason = trim((string)($p['reason'] ?? ''));
     if (mb_strlen($reason) < MPAY_REASON_MIN) return ['ok' => false, 'error' => 'reason_required', 'detail' => 'Say why, in at least ' . MPAY_REASON_MIN . ' characters.'];
     db_update('offline_payments', ['status' => 'rejected', 'verifiedBy' => $by, 'verifiedAt' => now_iso(), 'rejectReason' => mb_substr($reason, 0, 500)], ['id' => $op['id']]);
+    doc_ack_close((string)$op['paymentId'], 'rejected');
     audit('membership.offline.reject', $by, (string)$op['memberId'], ['paymentId' => $op['paymentId'], 'reason' => $reason], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
@@ -1051,4 +1078,67 @@ function admin_membership_evidence(array $p): array {
     if (hash_file('sha256', $path) !== (string)$op['evidenceSha256']) return ['ok' => false, 'error' => 'evidence_altered'];
     audit('membership.offline.evidence_viewed', (string)$g['requester']['memberId'], (string)$op['memberId'], ['paymentId' => $op['paymentId']], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'path' => $path, 'type' => (string)$op['evidenceType']];
+}
+
+/* ── Money that arrived and could not be applied ─────────────────────────────
+   A Paystack payment for an invoice voided or paid another way meanwhile, or
+   for an amount its invoice does not match. It used to live only in the audit
+   log — shown as the latest thirty, with no way to say it had been dealt with.
+   One row per payment reference (unique), and a person resolves it: applied
+   to the family's account, refunded (at Paystack), or dismissed with a reason. */
+function unapplied_record(string $reference, string $cause, array $inv, int $amount, string $currency): void {
+    try {
+        db_insert('unapplied_payments', ['reference' => $reference, 'source' => 'paystack', 'cause' => $cause, 'invoiceId' => (string)$inv['invoiceId'],
+            'memberId' => (string)$inv['memberId'], 'amount' => max(0, $amount), 'currency' => strtoupper($currency ?: 'NGN'), 'status' => 'open', 'createdAt' => now_iso()]);
+    } catch (\Throwable $e) {
+        if (!(function_exists('fees_is_duplicate') && fees_is_duplicate($e))) error_log('[unapplied] ' . $e->getMessage());
+    }
+}
+
+/** The audit-log rows from before the table existed, brought in once each (the reference is unique). */
+function unapplied_backfill(): void {
+    if (setting_raw('unapplied_backfilled') !== null) return;
+    foreach (db_all("SELECT event, subject, meta, at FROM audit_log WHERE event IN ('membership.paystack.unapplied', 'membership.paystack.mismatch') ORDER BY id") as $a) {
+        $meta = json_decode((string)$a['meta'], true) ?: [];
+        if ((string)($meta['reference'] ?? '') === '') continue;
+        try {
+            db_insert('unapplied_payments', ['reference' => (string)$meta['reference'], 'source' => 'paystack',
+                'cause' => $a['event'] === 'membership.paystack.mismatch' ? 'mismatch' : 'unapplied', 'invoiceId' => (string)($meta['invoiceId'] ?? ''),
+                'memberId' => (string)$a['subject'], 'amount' => (int)round(((int)($meta['amount'] ?? 0)) / 100), 'currency' => strtoupper((string)($meta['currency'] ?? 'NGN')) ?: 'NGN',
+                'status' => 'open', 'createdAt' => (string)$a['at']]);
+        } catch (\Throwable $e) { /* already there */ }
+    }
+    setting_set('unapplied_backfilled', gmdate('c'), 'system');
+}
+
+/**
+ * admin.fees.unapplied.resolve — {id, decision: apply|refund|dismiss, note}.
+ * Apply posts the money to the family's account (once: the row's own key);
+ * refund records that it was returned at Paystack; dismiss needs a reason.
+ */
+function admin_unapplied_resolve(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $row = db_row('SELECT * FROM unapplied_payments WHERE id = ? LIMIT 1', [(int)($p['id'] ?? 0)]);
+    if (!$row) return ['ok' => false, 'error' => 'not_found'];
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$row['memberId']]);
+    if ($m && !admin_centre_allowed($g['requester'], (string)($m['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
+    if ((string)$row['status'] !== 'open') return ['ok' => false, 'error' => 'already_resolved'];
+    $action = (string)($p['decision'] ?? '');   // not `action`: the route spends that word on choosing the op
+    $note = trim(mb_substr((string)($p['note'] ?? ''), 0, 240));
+    $by = (string)($g['requester']['memberId'] ?? '');
+    if (!in_array($action, ['apply', 'refund', 'dismiss'], true)) return ['ok' => false, 'error' => 'bad_action'];
+    if ($action !== 'apply' && strlen($note) < 3) return ['ok' => false, 'error' => 'reason_required'];
+    if ($by !== '' && $by === (string)$row['memberId']) return ['ok' => false, 'error' => 'own_account'];
+    $entry = '';
+    if ($action === 'apply') {
+        if (!$m) return ['ok' => false, 'error' => 'not_found', 'detail' => 'The member this payment was for no longer exists — refund it instead.'];
+        $e = fees_post((string)$row['memberId'], 'payment', (int)$row['amount'], ['periodKey' => 'unapplied:' . (int)$row['id'], 'method' => 'paystack',
+            'reference' => (string)$row['reference'], 'note' => 'Paystack payment applied by hand' . ($note !== '' ? ' — ' . $note : ''), 'by' => $by]);
+        if (!$e) return ['ok' => false, 'error' => 'post_failed'];
+        $entry = (string)$e['entryId'];
+    }
+    db_update('unapplied_payments', ['status' => ['apply' => 'applied', 'refund' => 'refunded', 'dismiss' => 'dismissed'][$action], 'note' => $note,
+        'ledgerEntryId' => $entry, 'resolvedAt' => now_iso(), 'resolvedBy' => $by], ['id' => (int)$row['id']]);
+    audit('fees.unapplied.' . $action, $by, (string)$row['memberId'], ['reference' => (string)$row['reference'], 'amount' => (int)$row['amount'], 'note' => $note], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'status' => ['apply' => 'applied', 'refund' => 'refunded', 'dismiss' => 'dismissed'][$action], 'entryId' => $entry];
 }

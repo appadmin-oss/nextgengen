@@ -58,33 +58,31 @@ if (!hash_equals($configured, $given)) {
     exit;
 }
 
-/**
- * The jobs an external scheduler may name, and what each costs.
- *
- * Deliberately the same set the tick runs, and deliberately named — a caller
- * that can ask for arbitrary work is a caller that can ask for expensive work.
+/*
+ * The jobs are the scheduler's own registry (web_cron_jobs) — one list, so the
+ * outside scheduler and the visitor tick can never disagree about what exists.
+ * `all` (the default) runs everything due, most overdue first, within
+ * WEB_CRON_EXT_BUDGET — under Cloudflare's 100 s — and marks the outside
+ * scheduler as the driver: for the next five minutes visitors' pages do no
+ * background work at all, which is the point. A named job runs now, whatever
+ * its interval. `crm` is kept as the old name of crm_push.
  */
-$JOBS = [
-    'deliver'   => fn() => function_exists('deliveries_dispatch') ? deliveries_dispatch(20) : null,
-    'reminders' => fn() => web_cron_reminders(),
-    'maint'     => fn() => web_cron_maintenance(),
-    'accrue'    => fn() => web_cron_accrue(),
-    'crm'       => fn() => function_exists('crm_push_run') ? crm_push_run() : null,
-];
-
+$JOBS = array_map(static fn($j) => $j[1], web_cron_jobs());
 $want = trim((string)($_GET['job'] ?? 'all'));
+if ($want === 'crm') $want = 'crm_push';
+$started = microtime(true);
 if ($want === '' || $want === 'all') {
-    $run = $JOBS;
+    web_cron_touch('external');
+    if (function_exists('set_time_limit')) @set_time_limit(WEB_CRON_EXT_BUDGET + 10);
+    $result = web_cron_tick((float)WEB_CRON_EXT_BUDGET, 99);
+    if (!empty($result['busy'])) $result = ['all' => 'busy'];
 } elseif (isset($JOBS[$want])) {
-    $run = [$want => $JOBS[$want]];
+    $result = web_cron_run_now([$want => $JOBS[$want]]);
 } else {
     http_response_code(400);
     echo "unknown job: {$want}\navailable: " . implode(', ', array_keys($JOBS)) . ", all\n";
     exit;
 }
-
-$started = microtime(true);
-$result = web_cron_run_now($run);
 $ms = (int)round((microtime(true) - $started) * 1000);
 
 audit('cron.external', 'cron', '', ['jobs' => $result, 'ms' => $ms], client_ip());
@@ -93,5 +91,5 @@ audit('cron.external', 'cron', '', ['jobs' => $result, 'ms' => $ms], client_ip()
    a non-zero exit from `curl -f` plus one legible line is what either needs. */
 $bad = array_filter($result, fn($v) => $v === 'error');
 http_response_code($bad ? 500 : 200);
-foreach ($result as $name => $state) echo str_pad($name, 12) . $state . "\n";
+foreach ($result as $name => $state) echo str_pad($name, 13) . $state . "\n";
 echo "took {$ms}ms\n";

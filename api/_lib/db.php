@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 213;
+const NGG_SCHEMA_TARGET = 224;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6150,6 +6150,230 @@ function db_migrate(PDO $db): void {
            already at 23:xx is left alone rather than wrapped past midnight.
            The two staff lines that typed a clock time move with it. */
         213 => NGG_FORMATION_HOUR_LATER,
+        // An appeal can be against a SANCTION (a warning, Dormant Track, a
+        // suspension, an eviction), not only a charge — and it records who
+        // reviewed it, who must not be the person who issued it.
+        214 => "ALTER TABLE member_requests ADD COLUMN refSanctionId INTEGER NOT NULL DEFAULT 0;",
+        /* What a member learnt OUTSIDE NGG (another site, an app, a school
+           club), logged by them with a video, screenshots or pictures and
+           notes, or brought in from a platform's report — and confirmed by an
+           instructor. And the kind of recognition staff give (academic,
+           consistency, …) on the awards a member is shown. */
+        215 => "
+            CREATE TABLE IF NOT EXISTS learning_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              entryId TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL,
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              platform TEXT NOT NULL DEFAULT '',
+              providerId TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL DEFAULT '',
+              progress TEXT NOT NULL DEFAULT '',
+              hours REAL NOT NULL DEFAULT 0,
+              doneOn TEXT NOT NULL DEFAULT '',
+              link TEXT NOT NULL DEFAULT '',
+              mediaJson TEXT NOT NULL DEFAULT '[]',
+              notes TEXT NOT NULL DEFAULT '',
+              source TEXT NOT NULL DEFAULT 'member',
+              status TEXT NOT NULL DEFAULT 'pending',
+              reviewedBy TEXT NOT NULL DEFAULT '',
+              reviewedAt TEXT NOT NULL DEFAULT '',
+              reviewNote TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_llog_member ON learning_log(memberId, doneOn);
+            CREATE INDEX IF NOT EXISTS idx_llog_status ON learning_log(status, centre);
+            ALTER TABLE awards ADD COLUMN category TEXT NOT NULL DEFAULT '';
+        ",
+        /* 216 — dues and payment notices (domain/dues-notices.php): one row per
+         * thing a family or the fees desk was told — an upcoming charge, an
+         * overdue balance, a payment note received or decided, a desk nudge —
+         * with the channels it actually went by. The unique key is what stops a
+         * 15-minute cron telling anybody the same thing twice. */
+        216 => "
+            CREATE TABLE IF NOT EXISTS dues_notices (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL DEFAULT '',
+              kind TEXT NOT NULL,
+              refKey TEXT NOT NULL,
+              title TEXT NOT NULL DEFAULT '',
+              amount INTEGER NOT NULL DEFAULT 0,
+              dueOn TEXT NOT NULL DEFAULT '',
+              channelsJson TEXT NOT NULL DEFAULT '{}',
+              reached INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'sending',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_dues_notices ON dues_notices(memberId, kind, refKey);
+            CREATE INDEX IF NOT EXISTS idx_dues_notices_at ON dues_notices(createdAt);
+        ",
+        /* 217 — the family bears Paystack's charge on an online payment. The invoice keeps the fee
+           (`total`, what the ledger posts); the charge taken with it is recorded beside it for the receipt. */
+        217 => "
+            ALTER TABLE membership_invoices ADD COLUMN processingFee INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* 218 — staff broadcasts shown in Community: the post remembers the message it came from
+           (one post per source; withdrawn with it), and a notice remembers whether it goes there. */
+        218 => "
+            ALTER TABLE community_posts ADD COLUMN sourceRef TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_community_posts_source ON community_posts(sourceRef);
+            ALTER TABLE notices ADD COLUMN communityOn INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* 219 — Maths Lab (docs/MATH-LAB-PLAN.md): each member's place on the map, their
+           profile (XP, streak, climb), sessions (questions as competency/form/seed, never keys)
+           and course enrolments. */
+        219 => "
+            CREATE TABLE IF NOT EXISTS mlab_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, memberId TEXT NOT NULL, comp TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'none',
+              p REAL NOT NULL DEFAULT 0.15, attempts INTEGER NOT NULL DEFAULT 0, correct INTEGER NOT NULL DEFAULT 0, fast INTEGER NOT NULL DEFAULT 0,
+              nextReview TEXT NOT NULL DEFAULT '', masteredAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mlab_state ON mlab_state(memberId, comp);
+            CREATE TABLE IF NOT EXISTS mlab_profile (
+              memberId TEXT PRIMARY KEY, xp INTEGER NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0, lastDay TEXT NOT NULL DEFAULT '',
+              freezes INTEGER NOT NULL DEFAULT 0, climbStage INTEGER NOT NULL DEFAULT 1, climbDone INTEGER NOT NULL DEFAULT 0, momentum INTEGER NOT NULL DEFAULT 0,
+              xpDay TEXT NOT NULL DEFAULT '', xpToday INTEGER NOT NULL DEFAULT 0, bosses TEXT NOT NULL DEFAULT '{}', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS mlab_sessions (
+              sessionId TEXT PRIMARY KEY, memberId TEXT NOT NULL, mode TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '', items TEXT NOT NULL DEFAULT '[]',
+              resp TEXT NOT NULL DEFAULT '{}', startedAt TEXT NOT NULL DEFAULT '', finishedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mlab_sessions_member ON mlab_sessions(memberId, startedAt);
+            CREATE TABLE IF NOT EXISTS mlab_enrol (memberId TEXT NOT NULL, courseId TEXT NOT NULL, enrolledAt TEXT NOT NULL DEFAULT '');
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mlab_enrol ON mlab_enrol(memberId, courseId);
+        ",
+        220 => "
+            /* The ledger read by date: the Transactions journal filters on
+               createdAt, and nothing indexed it. On MySQL the same step widens
+               periodKey (VARCHAR(32) there, TEXT here) to 96 characters: keys of
+               38-52 characters were written and refused or truncated there. */
+            CREATE INDEX IF NOT EXISTS idx_mledg_created ON member_ledger (createdAt);
+        ",
+        221 => "
+            /* Money that arrived and could not be applied — a Paystack payment
+               for an invoice voided or paid another way meanwhile, or an amount
+               that does not match its invoice. It lived only as audit-log rows,
+               with no way to say it had been dealt with. One row per payment
+               reference, resolved by a person: applied to the account,
+               refunded, or dismissed with a reason. */
+            CREATE TABLE IF NOT EXISTS unapplied_payments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              reference TEXT NOT NULL,
+              source TEXT NOT NULL DEFAULT 'paystack',
+              cause TEXT NOT NULL DEFAULT 'unapplied',
+              invoiceId TEXT DEFAULT '',
+              memberId TEXT DEFAULT '',
+              amount INTEGER NOT NULL DEFAULT 0,
+              currency TEXT DEFAULT 'NGN',
+              status TEXT NOT NULL DEFAULT 'open',
+              note TEXT DEFAULT '',
+              ledgerEntryId TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              resolvedAt TEXT DEFAULT '',
+              resolvedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_unapplied_ref ON unapplied_payments (reference);
+            CREATE INDEX IF NOT EXISTS idx_unapplied_status ON unapplied_payments (status, createdAt);
+        ",
+        /* 222 — the Saturday formation, versioned (domain/saturday-formation.php).
+         * One row per block per VERSION of the day: the main day (scope ''), a
+         * centre's own day ('centre:<centreId>'), one Saturday everywhere
+         * ('date:YYYY-MM-DD') or at one centre ('date:YYYY-MM-DD@<centreId>').
+         * saturday_formation had blockKey UNIQUE, which cannot hold versions;
+         * its rows are copied in as the main day and it is left unread. `kind`
+         * names what a block is for (check-in, mentor breakout, classes, break,
+         * close), so reminders follow the block rather than a fixed key or time.
+         * saturday_formation_dates: a Saturday that is off (no NGG), with a note. */
+        222 => "
+            CREATE TABLE IF NOT EXISTS saturday_formation_blocks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scope TEXT NOT NULL DEFAULT '', blockKey TEXT NOT NULL, sort INTEGER DEFAULT 0,
+              startTime TEXT NOT NULL, endTime TEXT NOT NULL, title TEXT NOT NULL, flow TEXT DEFAULT '',
+              purpose TEXT DEFAULT '', quote TEXT DEFAULT '', forJson TEXT DEFAULT '', kind TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sfb ON saturday_formation_blocks(scope, blockKey);
+            INSERT INTO saturday_formation_blocks (scope, blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson, kind, updatedAt, updatedBy)
+              SELECT '', blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson,
+                     CASE blockKey WHEN 'checkin' THEN 'checkin' WHEN 'musing' THEN 'mentor' WHEN 'division' THEN 'classes' WHEN 'break' THEN 'break' WHEN 'close' THEN 'close' ELSE '' END,
+                     updatedAt, updatedBy
+                FROM saturday_formation WHERE status = 'active';
+            CREATE TABLE IF NOT EXISTS saturday_formation_dates (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              onDate TEXT NOT NULL, centreId TEXT NOT NULL DEFAULT '', off INTEGER NOT NULL DEFAULT 0, note TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sfd ON saturday_formation_dates(onDate, centreId);
+        ",
+        /* 223 — the registration checklist (domain/registration-checklist.php).
+         * reg_checklist_items: the items staff define for the NGG programme
+         * (retired, never deleted, so history keeps its titles). The automatic
+         * items are not stored: the record answers them every time it is read.
+         * reg_checklists: one per member, with the supervisor helping them and
+         * the last progress counted (for the list's filters and sort).
+         * reg_checklist_state: an admin item verified or rejected for a member.
+         * reg_checklist_submissions: every piece of evidence offered, with the
+         * verdict and the reason in words, accepted or refused.
+         * reg_checklist_sends: the reminder ledger, so nothing is sent twice. */
+        223 => "
+            CREATE TABLE IF NOT EXISTS reg_checklist_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              itemId TEXT NOT NULL UNIQUE, title TEXT NOT NULL, help TEXT NOT NULL DEFAULT '',
+              evidence TEXT NOT NULL DEFAULT 'none', presence INTEGER NOT NULL DEFAULT 0, maxAgeDays INTEGER NOT NULL DEFAULT 0,
+              sort INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
+              createdAt TEXT NOT NULL DEFAULT '', createdBy TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', updatedBy TEXT NOT NULL DEFAULT '',
+              retiredAt TEXT NOT NULL DEFAULT '', retiredBy TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS reg_checklists (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'open', done INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
+              supervisorId TEXT NOT NULL DEFAULT '', supervisorKind TEXT NOT NULL DEFAULT '', supervisorName TEXT NOT NULL DEFAULT '',
+              assignedAt TEXT NOT NULL DEFAULT '', assignedBy TEXT NOT NULL DEFAULT '', startedAt TEXT NOT NULL DEFAULT '', startedBy TEXT NOT NULL DEFAULT '',
+              completedAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rcl_sup ON reg_checklists(supervisorId, status);
+            CREATE INDEX IF NOT EXISTS idx_rcl_status ON reg_checklists(status);
+            CREATE TABLE IF NOT EXISTS reg_checklist_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, itemId TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'verified',
+              submissionId TEXT NOT NULL DEFAULT '', at TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_rcl_state ON reg_checklist_state(memberId, itemId);
+            CREATE TABLE IF NOT EXISTS reg_checklist_submissions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              submissionId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, itemKey TEXT NOT NULL, supervisorId TEXT NOT NULL,
+              url TEXT NOT NULL DEFAULT '', ext TEXT NOT NULL DEFAULT '', mime TEXT NOT NULL DEFAULT '', bytes INTEGER NOT NULL DEFAULT 0,
+              capturedOn TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', verdict TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rcl_sub ON reg_checklist_submissions(memberId, itemKey);
+            CREATE TABLE IF NOT EXISTS reg_checklist_sends (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sendKey TEXT NOT NULL UNIQUE, channel TEXT NOT NULL DEFAULT '', recipient TEXT NOT NULL DEFAULT '',
+              memberId TEXT NOT NULL DEFAULT '', sentAt TEXT NOT NULL DEFAULT ''
+            );
+        
+",
+        /* 224 — NGG's printed documents (domain/documents.php). doc_serials: one
+         * counter per series (INV-2026, RCP-2026, ML-2026), bumped inside the
+         * transaction that writes the record, so a number exists only if its
+         * record does. documents: every invoice, receipt, acknowledgement and
+         * Math Lab certificate issued: its number, whose it is, what it settles
+         * (sourceKey, unique, so issuing is idempotent), a private view token,
+         * and for a receipt or certificate the frozen copy it is printed from.
+         * A superseded certificate keeps its row and names its successor. */
+        224 => "
+            CREATE TABLE IF NOT EXISTS doc_serials (series TEXT PRIMARY KEY, last INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS documents (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              docNo TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, memberId TEXT NOT NULL DEFAULT '', sourceKey TEXT NOT NULL UNIQUE,
+              status TEXT NOT NULL DEFAULT 'issued', supersededBy TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '',
+              token TEXT NOT NULL UNIQUE, irn TEXT NOT NULL DEFAULT '', issuedAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_documents_member ON documents(memberId, kind);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

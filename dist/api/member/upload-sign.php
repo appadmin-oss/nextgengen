@@ -16,8 +16,18 @@
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 
-$s = require_member_session();
+/* Members and staff. One exception: a volunteer signed in with their card may
+   sign registration evidence, because a volunteer can be the registration
+   supervisor who has to attach it (domain/registration-checklist.php). */
+$s = require_session();
+if (function_exists('session_is_cardholder') && session_is_cardholder($s)
+    && !(strtolower((string)($s['role'] ?? '')) === 'volunteer' && empty($s['kiosk']) && (string)(read_json_body()['kind'] ?? '') === 'evidence')) {
+    json_error('forbidden', 403);
+}
 require_method('POST');
+/* Kinds stored as what the file is (a PDF stays a PDF): community posts, hand-ins,
+   and registration evidence (domain/registration-checklist.php). */
+const UPLOAD_MEDIA_AWARE_KINDS = ['post', 'assignment', 'evidence'];
 
 // Cheap abuse throttle — a member should never need dozens of signatures/min.
 rate_limit_check('upload.sign');
@@ -45,7 +55,7 @@ $kinds = $cfg['kinds'] ?? [];
 // The kind is strictly sanitised first so it can never escape the base folder.
 if (isset($kinds[$kind])) {
     $spec = $kinds[$kind];
-} elseif ($kind === 'post' || $kind === 'assignment') {
+} elseif (in_array($kind, UPLOAD_MEDIA_AWARE_KINDS, true)) {
     /* Community feed media. FOUR kinds, not two.
      *
      * This used to be image-or-video, and everything that was not a video was
@@ -67,7 +77,7 @@ if (isset($kinds[$kind])) {
      */
     $mk = upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     $spec = ['resource_type' => $mk === 'raw' ? 'raw' : ($mk === 'video' ? 'video' : 'image'),
-             'folder' => $kind === 'assignment' ? 'assignments' : 'community'];
+             'folder' => $kind === 'assignment' ? 'assignments' : ($kind === 'evidence' ? 'evidence' : 'community')];
 } elseif (preg_match('/^[a-z][a-z0-9_-]{1,30}$/', $kind)) {
     $spec = ['resource_type' => 'image', 'folder' => $kind];
 } else {
@@ -89,7 +99,7 @@ if ($useStore) {
        shrunk by the browser (api-client.js shrinkForUpload). */
     /* A post or a hand-in is what the file is (Cloudinary files a PDF under
        `image`, which here would refuse it); any other image kind takes images. */
-    $mediaAware0 = $kind === 'post' || $kind === 'assignment';
+    $mediaAware0 = in_array($kind, UPLOAD_MEDIA_AWARE_KINDS, true);
     $mk = !$mediaAware0 && $resourceType === 'image' ? 'image' : upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     $sc = $CONFIG['storage'] ?? [];
     /* Already stored? The same bytes (verified hash and size) are handed back
@@ -141,7 +151,7 @@ if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) { $r =
 $isImage = $resourceType === 'image' || ($resourceType === 'auto' && upload_media_kind((string)($body['mediaKind'] ?? '')) === 'image' && isset($body['mediaKind']));
 /* A hand-in is media-aware like a post: a PDF stays a PDF, a recording is
    stored as audio/video, a photo is compressed. */
-$mediaAware = $kind === 'post' || $kind === 'assignment';
+$mediaAware = in_array($kind, UPLOAD_MEDIA_AWARE_KINDS, true);
 if (!$mediaAware && $isImage) {
     $incoming = media_incoming_transformation($kind);
     $signParams['transformation'] = $incoming;

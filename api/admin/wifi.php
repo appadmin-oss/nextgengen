@@ -24,6 +24,7 @@ if ($method === 'GET') {
     elseif ($view === 'load')     $res = gs_call('admin.wifi.load', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['plan', 'poll'])));
     elseif ($view === 'usage')    $res = gs_call('admin.wifi.usage', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['period', 'centre', 'q', 'sort', 'page', 'pageSize'])));
     elseif ($view === 'cacentre') $res = gs_call('admin.wifi.cacentre', ['requesterId' => $mid]);
+    elseif ($view === 'starts')   $res = gs_call('admin.wifi.cacentre.starts', ['requesterId' => $mid]);
     elseif ($view === 'setup')    $res = gs_call('admin.wifi.gateway.setup', ['requesterId' => $mid, 'gatewayId' => $_GET['gatewayId'] ?? '']);
     else                          $res = gs_call('admin.wifi.overview', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {

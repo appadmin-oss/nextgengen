@@ -115,7 +115,7 @@ async function crSupOpen(ctx, caseNo) {
         act: m.files.length ? { l: "Open file", run: () => window.open(NGGApi.admin.support.fileUrl(c.caseNo, m.files[0].id), "_blank", "noopener") } : null })), empty: "No messages." },
       (r.context || []).length ? { h: "What we already know", rows: r.context } : null,
       { h: "This category asks for", list: (c.ask || []).map(a => ({ icon: "check", t: a })) },
-      { h: "Their other cases", list: (r.others || []).map(o => ({ icon: "lifebuoy", t: o.subject, s: "Case " + o.caseNo + " · " + (meta.statuses[o.status] || o.status), act: { l: "Open", run: () => crSupOpen(ctx, o.caseNo) } })), empty: "None." },
+      { h: "Their other cases", list: (r.others || []).map(o => ({ icon: "lifebuoy", t: o.subject, s: "Case " + o.caseNo + " · " + (meta.statuses[o.status] || o.status), act: { l: "Open case", run: () => crSupOpen(ctx, o.caseNo) } })), empty: "None." },
     ],
     actions: [
       { l: "Reply", primary: true, run: () => replyForm(false) },

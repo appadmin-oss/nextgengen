@@ -15,7 +15,7 @@ switch ($action) {
     case 'ward.notify': $res = gs_call('family.ward.notify', $base + ['linkId' => $b['linkId'] ?? '', 'notify' => is_array($b['notify'] ?? null) ? $b['notify'] : []]); break;
     case 'request':     $res = gs_call('family.request.create', $base + ['linkId' => $b['linkId'] ?? '', 'kind' => $b['kind'] ?? '', 'subject' => $b['subject'] ?? '',
                                                           'body' => $b['body'] ?? '', 'fromDate' => $b['fromDate'] ?? '', 'toDate' => $b['toDate'] ?? '',
-                                                          'refEntryId' => $b['refEntryId'] ?? '', 'proofUrl' => (string)($b['proofUrl'] ?? ''),
+                                                          'refEntryId' => $b['refEntryId'] ?? '', 'refSanctionId' => (int)($b['refSanctionId'] ?? 0), 'proofUrl' => (string)($b['proofUrl'] ?? ''),
                                                           'amount' => $b['amount'] ?? null, 'reference' => (string)($b['reference'] ?? ''), 'paidAt' => (string)($b['paidAt'] ?? ''),
                                                           'parts' => is_array($b['parts'] ?? null) ? $b['parts'] : null]); break;
     // Anchor: the week for a parent's link (domain/circle.php).

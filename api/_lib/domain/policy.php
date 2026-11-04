@@ -746,18 +746,56 @@ function policy_late_bands(array $cfg): array {
     unset($b);
     return $out;
 }
-/** What a late at $minute earns: a band, or ['review' => true]. */
+/**
+ * What a late at $minute earns: a band, ['review' => true], or — before the
+ * first band — ['before' => true], which is not a late at all and costs
+ * nothing. It used to answer the FIRST BAND for any minute below it, so a
+ * late logged by an older definition (the ladder's "past resumption + grace",
+ * before the rulebook of 30 Oct 2026) was re-read by the rulebook and
+ * charged under a band its own arrival time contradicts: "Arrived 09:21
+ * (09:45 to before 10:00) — 3 frog jumps". Every caller now asks `before`.
+ */
 function policy_band_for(array $cfg, int $minute): array {
     $bands = policy_late_bands($cfg);
     $review = (string)($cfg['reviewFrom'] ?? '');
-    if ($review !== '' && $minute >= policy_minutes($review)) return ['review' => true, 'from' => $review, 'fine' => 0, 'jumps' => 0, 'to' => ''];
+    if ($review !== '' && $minute >= policy_minutes($review)) return ['review' => true, 'before' => false, 'from' => $review, 'fine' => 0, 'jumps' => 0, 'to' => ''];
+    if ($minute < $bands[0]['min']) return ['review' => false, 'before' => true, 'from' => $bands[0]['from'], 'min' => $bands[0]['min'], 'fine' => 0, 'jumps' => 0, 'to' => ''];
     $pick = $bands[0];
     foreach ($bands as $b) if ($b['min'] <= $minute) $pick = $b;
-    return $pick + ['review' => false];
+    return $pick + ['review' => false, 'before' => false];
 }
-/** "₦500 and 3 frog jumps", "5 frog jumps", or "" — one phrase, used everywhere a penalty is written down. */
+/** "₦500 and 3 frog jumps", "5 frog jumps", or "" — for a RULE (what a band or an absence costs in all). A sanction row names only its own penalty: see policy_session_reason. */
 function policy_penalty_text(int $fine, int $jumps, string $word): string {
     return implode(' and ', array_filter([$fine > 0 ? policy_naira($fine) . ' fine' : '', $jumps > 0 ? $jumps . ' ' . $word : '']));
+}
+
+/**
+ * The words on one rulebook sanction row, built from its kind and tier — so
+ * the issue, the repair of an older row and the ledger note say the same
+ * thing. ONE PENALTY PER ROW: a fine says money and nothing else (the same
+ * words become the fee-ledger note a family pays against), the exercise says
+ * the exercise. They used to share one sentence — the fine row read "₦500
+ * fine and 3 frog jumps" and the exercise row of an absence "₦1,000 fine and
+ * 7 frog jumps" beside a count of 7, so the desk's "How many" column read as
+ * if it counted money. Null for a tier this does not word.
+ */
+function policy_session_reason(string $personId, string $kind, int $tier, int $amount, array $cfg): ?string {
+    $word = (string)($cfg['jumpWord'] ?? 'frog jumps');
+    $late = static function (string $d) use ($personId, $cfg): string {
+        $min = policy_arrival_minute($personId, $d);
+        $at = $min !== null ? sprintf('%02d:%02d', intdiv($min, 60), $min % 60) : 'late';
+        if ($min === null) return 'Late on ' . policy_day_text($d);
+        $b = policy_band_for($cfg, $min);
+        $band = $b['review'] ? 'at or after ' . $b['from'] : ($b['before'] ? 'before ' . $b['from'] : $b['from'] . ($b['to'] !== '' ? ' to before ' . $b['to'] : ' or later'));
+        return 'Arrived ' . $at . ' on ' . policy_day_text($d) . ' (' . $band . ')';
+    };
+    if ($kind === 'fine' && $tier >= POLICY_T_LATE_FINE && $tier < POLICY_T_LATE_JUMPS)
+        return $late(policy_day_of($tier - POLICY_T_LATE_FINE)) . ' — ' . policy_naira($amount) . ' lateness fine.';
+    if ($kind === 'corrective' && $tier >= POLICY_T_LATE_JUMPS && $tier < POLICY_T_ABS_JUMPS)
+        return $late(policy_day_of($tier - POLICY_T_LATE_JUMPS)) . ' — ' . $amount . ' ' . $word . '.';
+    if ($kind === 'corrective' && $tier >= POLICY_T_ABS_JUMPS && $tier < POLICY_T_REVIEW)
+        return 'Absent on ' . policy_day_text(policy_day_of($tier - POLICY_T_ABS_JUMPS)) . ' without permission — ' . $amount . ' ' . $word . '.';
+    return null;
 }
 /** Local minute of the person's arrival that day, from their attendance row; null when there is none. */
 function policy_arrival_minute(string $personId, string $date): ?int {
@@ -787,10 +825,192 @@ function policy_unexcused_absences(string $personId, string $from, string $to): 
         $cover = function_exists('member_absence_cover') ? member_absence_cover($personId, (string)$r['date']) : '';
         if (!in_array($cover, ['approved', 'academic', 'open'], true)) $out[] = (string)$r['date'];
     }
+    $out = array_merge($out, policy_halfday_pairs($personId, $from, $to));
+    sort($out);
     return $out;
 }
 
+/**
+ * Two half-days make one absence (owner, 31 Oct 2026). A day with a check-in
+ * and no sign-out is a HALF-DAY, not an absence: the child came. It carries no
+ * absence fine and no exercise of its own; every second one in the window
+ * counts once towards the absences that lead to a suspension, dated on that
+ * second day. Excused days are not counted, as for absences.
+ *
+ * @return list<string> the date of every second half-day in [from, to]
+ */
+function policy_halfday_pairs(string $personId, string $from, string $to): array {
+    $days = [];
+    foreach (db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'halfday' AND (voidedAt IS NULL OR voidedAt = '') AND date >= ? AND date <= ? ORDER BY date", [$personId, $from, $to]) as $r) {
+        $cover = function_exists('member_absence_cover') ? member_absence_cover($personId, (string)$r['date']) : '';
+        if (!in_array($cover, ['approved', 'academic', 'open'], true)) $days[] = (string)$r['date'];
+    }
+    $out = [];
+    foreach ($days as $i => $d) if ($i % 2 === 1) $out[] = $d;
+    return $out;
+}
+
+/** The note a no-sign-out half-day carries. Starts "Incomplete", so the
+ *  repair tools and a late sign-out (policy_checkout_landed) find it. */
+const POLICY_NOSIGNOUT_NOTE = 'Incomplete day — signed in, no sign-out: a half-day.';
+const POLICY_HALFDAY_REASON = 'A day signed in with no sign-out is a half-day, not an absence (policy change, 31 Oct 2026).';
+
+/**
+ * Every live "Incomplete" ABSENCE becomes a half-day. Before 31 Oct 2026 a day
+ * with no sign-out was counted as a whole absence and fined as one; the child
+ * had come. Per person, in ONE transaction: the absences are voided with that
+ * reason, a half-day is logged for each day, and the person's standing is
+ * worked out again — so the day's absence fine is lifted (a paid one becomes
+ * credit), and a suspension it tipped is lifted with it.
+ *
+ * Why per person and bounded. The first version converted every row, then
+ * re-worked everybody, then set a done-flag: on a shared host the run hit PHP's
+ * time limit part-way, the rows already converted were never selected again,
+ * and their people were never re-worked — the absences gone from the record,
+ * the fines still on the account. Now a person is converted and re-worked
+ * together or not at all, a call does at most $max people, and the next call
+ * carries on. A second pass re-works anybody an earlier run left half-done
+ * (a converted day whose absence fine still stands). Cheap when there is
+ * nothing to do: two queries.
+ *
+ * @return array{converted:int, people:int, reworked:int, more:bool}
+ */
+function policy_nosignout_to_halfday(int $max = 40): array {
+    $out = ['converted' => 0, 'people' => 0, 'reworked' => 0, 'more' => false];
+    $ids = db_all("SELECT DISTINCT personId, personType FROM infractions WHERE kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '') LIMIT " . ($max + 1));
+    if (count($ids) > $max) { $out['more'] = true; $ids = array_slice($ids, 0, $max); }
+    foreach ($ids as $who) {
+        $id = (string)$who['personId']; $t = in_array((string)$who['personType'], ['student', 'volunteer', 'member'], true) ? (string)$who['personType'] : 'student';
+        $out['converted'] += (int)db_tx(static function () use ($id, $t) {
+            $rows = db_all("SELECT id, date, byId FROM infractions WHERE personId = ? AND kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id]);
+            foreach ($rows as $r) {
+                db_update('infractions', ['voidedAt' => now_iso(), 'voidedBy' => 'system', 'voidReason' => POLICY_HALFDAY_REASON], ['id' => (int)$r['id']]);
+                policy_log($id, $t, 'halfday', (string)$r['date'], POLICY_NOSIGNOUT_NOTE, (string)$r['byId'] ?: 'system');
+            }
+            policy_relift($id, $t);
+            return count($rows);
+        });
+        $out['people']++;
+    }
+    /* Left half-done by an earlier run: a day converted, its absence fine still owed. */
+    $stuck = db_all("SELECT DISTINCT s.personId, s.personType FROM sanctions s JOIN infractions i ON i.personId = s.personId AND i.kind = 'absence' AND i.voidReason = ?
+                     WHERE s.kind = 'fine' AND s.issuedBy = 'system' AND s.status IN ('pending','paid') AND s.tier >= 500000 AND s.tier < ? LIMIT " . ($max + 1),
+                    [POLICY_HALFDAY_REASON, POLICY_T_LATE_FINE]);
+    if (count($stuck) > $max) { $out['more'] = true; $stuck = array_slice($stuck, 0, $max); }
+    foreach ($stuck as $who) {
+        $t = in_array((string)$who['personType'], ['student', 'volunteer', 'member'], true) ? (string)$who['personType'] : 'student';
+        if (policy_relift((string)$who['personId'], $t) > 0) $out['reworked']++;
+    }
+    if ($out['converted'] || $out['reworked']) audit('policy.nosignout_halfday', 'system', '', $out);
+    return $out;
+}
+
+const POLICY_PRELATE_TAG = 'Not late under the rulebook';
+
+/**
+ * Lates recorded for arrivals BEFORE lateness begins, undone. Two definitions
+ * of "late" ran side by side: the older ladder logged a member late from
+ * resumption + grace (09:01, 09:21), the rulebook (30 Oct 2026) only from
+ * its first band (09:30). The rulebook then re-read every late on record and,
+ * for an arrival before its first band, charged the first band anyway — fines
+ * on the account and frog jumps on the desk's list, under a band the arrival
+ * time on the same line contradicts.
+ *
+ * Per person, in ONE transaction (the half-day repair's lesson: a person is
+ * corrected and re-worked together or not at all): each such late is voided
+ * with the reason, the day is kept as `tardy` (they did come after
+ * resumption — seen, costs nothing), and the person is re-worked, so the
+ * band's fine is lifted off the account — a paid one stands as credit — and
+ * exercise still owed is lifted. Exercise already DONE stays done: that
+ * happened, and is not undone by a record. Also rewrites the words of older
+ * rulebook rows to one penalty per row (policy_session_reason), and the fee
+ * ledger's note with them. Bounded: at most $max people a call, `more` says
+ * the next call carries on. Only while the member rulebook is `session`.
+ *
+ * @return array{voided:int, people:int, refunded:int, reworded:int, more:bool}
+ */
+function policy_prelate_repair(int $max = 40): array {
+    $out = ['voided' => 0, 'people' => 0, 'refunded' => 0, 'reworded' => 0, 'more' => false];
+    if (!policy_is_session('member')) return $out;
+    $cfg = policy_for('member');
+    $first = policy_late_bands($cfg)[0];
+    $res = (string)$cfg['resumption'];
+    $byPerson = [];
+    foreach (db_all("SELECT i.id, i.personId, i.date, a.checkInAt FROM infractions i JOIN attendance a ON a.studentId = i.personId AND a.date = i.date
+                     WHERE i.kind = 'late' AND i.personType = 'member' AND (i.voidedAt IS NULL OR i.voidedAt = '') AND a.checkInAt IS NOT NULL AND a.checkInAt <> ''
+                     ORDER BY i.personId, i.date") as $r) {
+        $t = strtotime((string)$r['checkInAt']); if (!$t) continue;
+        $min = attendance_minutes_at((int)$t);
+        if ($min < $first['min']) $byPerson[(string)$r['personId']][] = ['id' => (int)$r['id'], 'date' => (string)$r['date'], 'min' => $min];
+    }
+    if (count($byPerson) > $max) { $out['more'] = true; $byPerson = array_slice($byPerson, 0, $max, true); }
+    foreach ($byPerson as $id => $rows) {
+        $id = (string)$id;
+        [$n, $refunded] = db_tx(static function () use ($id, $rows, $first, $res) {
+            $paidBefore = (int)(db_row("SELECT COUNT(*) c FROM sanctions WHERE personId = ? AND kind = 'fine' AND status = 'paid' AND tier >= ? AND tier < ?", [$id, POLICY_T_LATE_FINE, POLICY_T_LATE_JUMPS])['c'] ?? 0);
+            foreach ($rows as $r) {
+                $at = sprintf('%02d:%02d', intdiv($r['min'], 60), $r['min'] % 60);
+                db_update('infractions', ['voidedAt' => now_iso(), 'voidedBy' => 'system',
+                    'voidReason' => POLICY_PRELATE_TAG . ': arrived ' . $at . ', and lateness begins at ' . $first['from'] . '.'], ['id' => $r['id']]);
+                if ($r['min'] > policy_minutes($res)) policy_log($id, 'member', 'tardy', $r['date'], 'Arrived ' . $at . ' — after ' . $res . ', before lateness begins at ' . $first['from'] . ': seen, costs nothing.');
+            }
+            policy_relift($id, 'member');
+            $paidAfter = (int)(db_row("SELECT COUNT(*) c FROM sanctions WHERE personId = ? AND kind = 'fine' AND status = 'paid' AND tier >= ? AND tier < ?", [$id, POLICY_T_LATE_FINE, POLICY_T_LATE_JUMPS])['c'] ?? 0);
+            return [count($rows), $paidBefore - $paidAfter];
+        });
+        $out['voided'] += $n; $out['refunded'] += $refunded; $out['people']++;
+    }
+    /* One penalty per row: older rulebook rows said the fine and the exercise in
+       one sentence. Reworded from the row's own tier and amount; a fine's ledger
+       note moves with it, because that note is what the family reads. */
+    $word = (string)$cfg['jumpWord'];
+    $old = db_all("SELECT id, personId, kind, tier, amount, reason FROM sanctions WHERE issuedBy = 'system' AND (
+                     (kind = 'fine' AND tier >= ? AND tier < ? AND reason LIKE ?) OR (kind = 'corrective' AND tier >= ? AND tier < ? AND reason LIKE ?)) LIMIT 201",
+                  [POLICY_T_LATE_FINE, POLICY_T_LATE_JUMPS, '%' . $word . '%', POLICY_T_ABS_JUMPS, POLICY_T_REVIEW, '%₦%']);
+    if (count($old) > 200) { $out['more'] = true; $old = array_slice($old, 0, 200); }
+    foreach ($old as $s) {
+        $why = policy_session_reason((string)$s['personId'], (string)$s['kind'], (int)$s['tier'], (int)$s['amount'], $cfg);
+        if ($why === null || $why === (string)$s['reason']) continue;
+        db_update('sanctions', ['reason' => substr($why, 0, 240)], ['id' => (int)$s['id']]);
+        if ((string)$s['kind'] === 'fine') db_exec("UPDATE member_ledger SET note = ? WHERE memberId = ? AND kind = 'fine' AND periodKey = ?",
+            [mb_strcut('Policy fine — ' . $why, 0, 255, 'UTF-8'), (string)$s['personId'], 'sanction-' . (int)$s['id']]);
+        $out['reworded']++;
+    }
+    if ($out['voided'] || $out['reworded']) audit('policy.prelate_repair', 'system', '', $out);
+    return $out;
+}
+
+/** admin.policy.prelate.run — apply the correction now, and say what changed. */
+function admin_policy_prelate_run(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $t0 = microtime(true); $sum = ['voided' => 0, 'people' => 0, 'refunded' => 0, 'reworded' => 0, 'more' => false];
+    do {
+        $r = policy_prelate_repair(40);
+        foreach (['voided', 'people', 'refunded', 'reworded'] as $k) $sum[$k] += $r[$k];
+        $sum['more'] = $r['more'];
+    } while ($r['more'] && microtime(true) - $t0 < 20);
+    audit('policy.prelate.run', (string)$g['requester']['memberId'], '', $sum, (string)($p['ip'] ?? ''));
+    return ['ok' => true] + $sum;
+}
+
+/** admin.policy.halfday.run — apply the half-day rule to past days now, and say what changed. */
+function admin_policy_halfday_run(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $t0 = microtime(true); $sum = ['converted' => 0, 'people' => 0, 'reworked' => 0, 'more' => false];
+    do {
+        $r = policy_nosignout_to_halfday(40);
+        foreach (['converted', 'people', 'reworked'] as $k) $sum[$k] += $r[$k];
+        $sum['more'] = $r['more'];
+    } while ($r['more'] && microtime(true) - $t0 < 20);
+    audit('policy.halfday.run', (string)$g['requester']['memberId'], '', $sum, (string)($p['ip'] ?? ''));
+    return ['ok' => true] + $sum;
+}
+
 // ── Infractions ─────────────────────────────────────────────────────────────
+
+/** A sanction, as a family reads it in "Appeal: …". */
+const POLICY_APPEAL_WORDS = ['warning' => 'a warning', 'dormant' => 'the Dormant Track', 'suspension' => 'a suspension', 'eviction' => 'an eviction',
+    'fine' => 'a fine', 'corrective' => 'corrective exercise', 'review' => 'a management review'];
 
 const POLICY_INFRACTIONS = ['absence', 'late', 'tardy', 'halfday', 'no_checkout', 'idcard_missing', 'idcard_lost', 'review_missed', 'misconduct'];
 
@@ -824,7 +1044,7 @@ function policy_checkout_landed(string $personId, string $type, string $date, st
     if ($personId === '' || $date === '') return 0;
     $n = db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = 'Signed out; the sign-out arrived after the nightly check.'
                   WHERE personId = ? AND date = ? AND (voidedAt IS NULL OR voidedAt = '')
-                    AND (kind = 'no_checkout' OR (kind = 'absence' AND note LIKE 'Incomplete%'))",
+                    AND (kind = 'no_checkout' OR (kind IN ('absence','halfday') AND note LIKE 'Incomplete%'))",
                  [now_iso(), substr($byId, 0, 64), $personId, $date]);
     if ($n > 0) {
         audit('policy.checkout_landed', $byId, $personId, ['date' => $date, 'voided' => $n]);
@@ -1030,12 +1250,31 @@ function policy_fine_to_ledger(string $personId, string $type, int $sanctionId, 
     if ($type !== 'member' || $amount <= 0 || $sanctionId <= 0) return;
     if (!function_exists('fees_post')) return;
     if (!db_row('SELECT id FROM members WHERE memberId = ? LIMIT 1', [$personId])) return;
-    fees_post($personId, 'fine', $amount, [
+    /* The fine NAMES its conduct rule, from what the sanction is (its tier),
+       never from its wording: a late band's fine is a lateness fine, an absence
+       fine an absence fine, anything else (a re-entry fee, an ID card) is under
+       no conduct cap. */
+    $tier = (int)(db_row('SELECT tier FROM sanctions WHERE id = ?', [$sanctionId])['tier'] ?? 0);
+    $rule = ($tier >= POLICY_T_LATE_FINE && $tier < POLICY_T_LATE_JUMPS) || ($tier > 0 && $tier < 1000) ? 'late'
+          : ($tier >= 500000 && $tier < POLICY_T_LATE_FINE ? 'absent' : '');
+    $row = fees_post($personId, 'fine', $amount, [
         // The sanction id IS the period key: one ledger row per sanction, ever.
         'periodKey' => 'sanction-' . $sanctionId,
         'note' => 'Policy fine' . ($reason !== '' ? ' — ' . $reason : ''),
-        'by' => 'policy',
+        'by' => 'policy', 'rule' => $rule,
+        // A sanction issued again after it was lifted owes again (fees_post).
+        'reissue' => true,
     ]);
+    /* A conduct rule switched off, or its term cap reached, posts less than
+       the sanction says — or nothing. The sanction says the same, or the
+       conduct board goes on asking for money the account never charged. */
+    $posted = $row ? (int)$row['amount'] : 0;
+    if ($posted <= 0) {
+        db_update('sanctions', ['status' => 'lifted', 'clearedAt' => now_iso(), 'clearedBy' => 'rule',
+            'reason' => mb_substr(trim($reason . ' Not charged: the ' . ($rule !== '' ? $rule : 'conduct') . ' rule is off or its term cap is reached.'), 0, 240)], ['id' => $sanctionId]);
+    } elseif ($posted < $amount) {
+        db_update('sanctions', ['amount' => $posted, 'reason' => mb_substr(trim($reason . ' Reduced to ' . policy_naira($posted) . ' by the term cap.'), 0, 240)], ['id' => $sanctionId]);
+    }
 }
 
 /**
@@ -1157,7 +1396,8 @@ function policy_states_for(array $personIds, string $type = 'student'): array {
             $state = 'clear'; $until = ''; $owed = 0; $proposed = []; $jumps = 0; $reentry = 0;
             foreach ($live[$id] ?? [] as $s) {
                 $kind = (string)$s['kind'];
-                if ($kind === 'fine') { $owed += (int)$s['amount']; continue; }
+                // Owed is active or pending, exactly as policy_state() reads it — a proposed fine is not owed yet.
+                if ($kind === 'fine') { if (in_array((string)$s['status'], ['active', 'pending'], true)) $owed += (int)$s['amount']; continue; }
                 if ($kind === 'corrective') { if ((string)$s['status'] === 'pending') $jumps += (int)$s['amount']; continue; }
                 if ((string)$s['status'] === 'proposed') { $proposed[] = ['kind' => $kind, 'reason' => (string)$s['reason']]; continue; }
                 if ($kind === 'eviction') { $state = 'evicted'; }
@@ -1341,6 +1581,9 @@ function policy_apply_session(string $personId, string $type, array $cfg, string
         $d = (string)$l['date']; $n = policy_day_number($d);
         $min = policy_arrival_minute($personId, $d);
         $b = policy_band_for($cfg, $min ?? policy_late_bands($cfg)[0]['min']);
+        /* Arrived before lateness begins: not a late under this rulebook, so
+           nothing is issued (policy_prelate_repair voids the entry itself). */
+        if ($b['before']) continue;
         $at = $min !== null ? sprintf('%02d:%02d', intdiv($min, 60), $min % 60) : 'late';
         $when = 'Arrived ' . $at . ' on ' . policy_day_text($d);
         if ($b['review']) {
@@ -1348,12 +1591,10 @@ function policy_apply_session(string $personId, string $type, array $cfg, string
                 'reason' => $when . ' — at or after ' . $b['from'] . ': for management review and appropriate disciplinary action.'])) $issued[] = 'review';
             continue;
         }
-        $band = $b['from'] . ($b['to'] !== '' ? ' to before ' . $b['to'] : ' or later');
-        $all = policy_penalty_text($b['fine'], $b['jumps'], $word);
         if ($b['fine'] > 0 && policy_issue($personId, $type, 'fine', POLICY_T_LATE_FINE + $n, ['amount' => $b['fine'], 'status' => 'pending',
-            'reason' => $when . ' (' . $band . ') — ' . $all . '.'])) $issued[] = 'fine';
+            'reason' => policy_session_reason($personId, 'fine', POLICY_T_LATE_FINE + $n, $b['fine'], $cfg)])) $issued[] = 'fine';
         if ($b['jumps'] > 0 && policy_issue($personId, $type, 'corrective', POLICY_T_LATE_JUMPS + $n, ['amount' => $b['jumps'], 'status' => 'pending',
-            'reason' => $when . ' (' . $band . ') — ' . $b['jumps'] . ' ' . $word . '.'])) $issued[] = 'corrective';
+            'reason' => policy_session_reason($personId, 'corrective', POLICY_T_LATE_JUMPS + $n, $b['jumps'], $cfg)])) $issued[] = 'corrective';
     }
     $jumps = (int)$cfg['absenceJumps']; $fine = (int)($cfg['absenceFine'] ?? 0);
     $unexcused = [];
@@ -1363,12 +1604,22 @@ function policy_apply_session(string $personId, string $type, array $cfg, string
         if (in_array($cover, ['approved', 'academic', 'open'], true)) continue;
         $unexcused[] = $d;
         if ($jumps > 0 && policy_issue($personId, $type, 'corrective', POLICY_T_ABS_JUMPS + policy_day_number($d), ['amount' => $jumps, 'status' => 'pending',
-            'reason' => 'Absent on ' . policy_day_text($d) . ' without permission — ' . policy_penalty_text($fine, $jumps, $word) . '.'])) $issued[] = 'corrective';
+            'reason' => policy_session_reason($personId, 'corrective', POLICY_T_ABS_JUMPS + policy_day_number($d), $jumps, $cfg)])) $issued[] = 'corrective';
     }
     // Per session: every N absences without permission is a suspension, and its re-entry fee.
     $every = max(1, (int)$cfg['suspendAfterAbsences']);
     $bySession = [];
     foreach ($unexcused as $d) { [$a] = policy_session_bounds($personId, $d); $bySession[$a][] = $d; }
+    /* Two half-days (signed in, no sign-out) count as one absence in their
+       session — paired within the session, dated on the second. */
+    $halves = [];
+    foreach (db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'halfday' AND (voidedAt IS NULL OR voidedAt = '') ORDER BY date", [$personId]) as $h) {
+        $d = (string)$h['date'];
+        $cover = function_exists('member_absence_cover') ? member_absence_cover($personId, $d) : '';
+        if (in_array($cover, ['approved', 'academic', 'open'], true)) continue;
+        [$a] = policy_session_bounds($personId, $d); $halves[$a][] = $d;
+    }
+    foreach ($halves as $a => $ds) { foreach ($ds as $i => $d) if ($i % 2 === 1) $bySession[$a][] = $d; sort($bySession[$a]); }
     foreach ($bySession as $start => $days) {
         $times = min(9, intdiv(count($days), $every));
         for ($j = 1; $j <= $times; $j++) {
@@ -1411,21 +1662,33 @@ function policy_reentry_owed(array $sanctions, array $suspension): ?array {
 }
 
 /**
- * A payment or waiver landed: a re-entry fee the account now covers is marked
- * paid, which is what lets the child back in. Read the way every screen reads
- * the account — payments against the oldest charges first.
+ * A payment, a waiver or a refund landed: the account decides which policy
+ * fines are settled. Every member fine is a charge on the fee ledger, and
+ * payments go to the oldest charges first — the way every money screen reads
+ * the account. A fine the account now covers is marked paid (which is what
+ * lets a child back in after a suspension's re-entry fee); one this sync had
+ * marked paid that the account no longer covers (a payment voided) is owed
+ * again. Only the RE-ENTRY fee used to be read this way, so a family who paid
+ * a late or absence fine online saw ₦0 on their account while the conduct
+ * board went on saying "Fines owed" and freezing awards — two ledgers
+ * disagreeing about the same money. A fine settled by hand (clearedBy is a
+ * person) is that person's decision and is left alone.
  */
-function policy_reentry_sync(string $memberId): int {
-    $due = db_all("SELECT id, tier FROM sanctions WHERE personId = ? AND kind = 'fine' AND status = 'pending' AND tier >= ?", [$memberId, POLICY_T_REENTRY]);
+function policy_fines_sync(string $memberId): int {
+    $due = db_all("SELECT id, status, clearedBy FROM sanctions WHERE personId = ? AND kind = 'fine' AND (status = 'pending' OR (status = 'paid' AND clearedBy = 'ledger'))", [$memberId]);
     if (!$due || !function_exists('fees_entry_left')) return 0;
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]); if (!$m) return 0;
     $n = 0;
     foreach ($due as $f) {
         $left = fees_entry_left($m, 'sanction-' . (int)$f['id']);
-        if ($left === 0) { db_update('sanctions', ['status' => 'paid', 'clearedAt' => now_iso(), 'clearedBy' => 'ledger'], ['id' => (int)$f['id']]); $n++; }
+        if ($left === null) continue;   // not on the ledger: nothing to read it by
+        if ((string)$f['status'] === 'pending' && $left === 0) { db_update('sanctions', ['status' => 'paid', 'clearedAt' => now_iso(), 'clearedBy' => 'ledger'], ['id' => (int)$f['id']]); $n++; }
+        elseif ((string)$f['status'] === 'paid' && $left > 0) { db_update('sanctions', ['status' => 'pending', 'clearedAt' => '', 'clearedBy' => ''], ['id' => (int)$f['id']]); $n++; }
     }
     return $n;
 }
+/** The older name, kept for any caller still using it. */
+function policy_reentry_sync(string $memberId): int { return policy_fines_sync($memberId); }
 
 // ── Check-in enforcement ────────────────────────────────────────────────────
 
@@ -1525,6 +1788,8 @@ function policy_on_checkin(string $personId, string $type, string $date, array $
  * gap (host down for a week) is caught up rather than skipped.
  */
 function policy_sweep_absences(?string $upto = null): array {
+    policy_nosignout_to_halfday();
+    policy_prelate_repair();
     $pol = policy_settings();
     if (empty($pol['enabled'])) return ['ok' => true, 'skipped' => 'policy_disabled'];
     $cfg = programme_settings();
@@ -1577,10 +1842,10 @@ function policy_sweep_absences(?string $upto = null): array {
                     if (policy_log($id, $type, 'absence', $d, 'No check-in scan on a programme day.')) $absences++;
                 } elseif (!empty($pol['checkoutRequired']) && $present[$id] === '' && !isset($outHeld[(string)$row['centre']])) {
                     // Scanned in, never scanned out. Logged as its own fact so
-                    // the ledger says what actually happened, and as an absence
-                    // because the blueprint counts a missing scan as one.
+                    // the ledger says what actually happened, and as a half-day:
+                    // they came, so it is not an absence (two make one).
                     policy_log($id, $type, 'no_checkout', $d, 'Checked in but never scanned out.');
-                    if (policy_log($id, $type, 'absence', $d, 'Incomplete scan — no check-out (§1.3).')) $absences++;
+                    policy_log($id, $type, 'halfday', $d, POLICY_NOSIGNOUT_NOTE);
                     $noCheckout++;
                 }
             }
@@ -1607,6 +1872,8 @@ function policy_sweep_absences(?string $upto = null): array {
  * from the day the rule first applied (`policy_member_checkout_since`).
  */
 function policy_sweep_member_absences(?string $upto = null): array {
+    policy_nosignout_to_halfday();
+    policy_prelate_repair();
     if (!policy_enabled_for('member')) return ['ok' => true, 'skipped' => 'member_policy_disabled'];
     $cal = member_programme_settings();
     if (empty($cal['enabled'])) return ['ok' => true, 'skipped' => 'no_member_calendar'];
@@ -1664,7 +1931,7 @@ function policy_sweep_member_absences(?string $upto = null): array {
                 // Signed in, never signed out — left before closing time, or
                 // walked past the desk. The day was not completed.
                 policy_log($id, 'member', 'no_checkout', $d, 'Signed in but never signed out.');
-                if (policy_log($id, 'member', 'absence', $d, 'Incomplete day — no sign-out.')) $absences++;
+                policy_log($id, 'member', 'halfday', $d, POLICY_NOSIGNOUT_NOTE);
             }
         }
         setting_set('policy_member_swept_through', $d, 'system');
@@ -1949,6 +2216,11 @@ function admin_policy_sanction_update(array $p): array {
     $s = db_row('SELECT * FROM sanctions WHERE id = ?', [$sid]);
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     $pg = policy_subject_gate($g['requester'], (string)$s['personId']); if (!$pg['ok']) return $pg;
+    /* Not while it is under appeal: confirming an eviction (or setting any
+       sanction going) before its appeal is heard makes the appeal decoration. */
+    if ($status === 'active' && (string)$s['status'] === 'proposed' && function_exists('db_row')
+        && db_row("SELECT id FROM member_requests WHERE kind = 'appeal' AND refSanctionId = ? AND status = 'open' LIMIT 1", [$sid]))
+        return ['ok' => false, 'error' => 'under_appeal', 'detail' => 'This is under appeal. Decide the appeal first, in Requests.'];
     db_update('sanctions', [
         'status' => $status,
         'clearedAt' => in_array($status, ['active', 'proposed'], true) ? '' : now_iso(),
@@ -2208,7 +2480,7 @@ function admin_attendance_held_decide(array $p): array {
             if ($type === 'member' && function_exists('member_absence_cover') && member_absence_cover($id, $date) === 'academic') continue;
             if ($byDepartures) {
                 policy_log($id, $type, 'no_checkout', $date, 'Signed in but never signed out — counted by staff after the day was held.', $by);
-                if (policy_log($id, $type, 'absence', $date, 'Incomplete day — no sign-out; counted by staff after the day was held.', $by)) { $logged++; policy_apply($id, $type); }
+                if (policy_log($id, $type, 'halfday', $date, POLICY_NOSIGNOUT_NOTE, $by)) { $logged++; policy_apply($id, $type); }
             } elseif (policy_log($id, $type, 'absence', $date, 'No check-in — counted by staff after the day was held.', $by)) { $logged++; policy_apply($id, $type); }
         }
     }
@@ -2284,7 +2556,7 @@ function admin_policy_absence_repair(array $p): array {
     $onlyCentre = trim((string)($p['centre'] ?? ''));
     $ph = implode(',', array_fill(0, count($types), '?'));
     $rows = db_all("SELECT id, personId, personType, kind, date, note FROM infractions
-                    WHERE personType IN ($ph) AND kind IN ('absence','no_checkout') AND byId = 'system' AND " . policy_sweep_note_sql() . "
+                    WHERE personType IN ($ph) AND kind IN ('absence','no_checkout','halfday') AND byId = 'system' AND " . policy_sweep_note_sql() . "
                       AND (voidedAt IS NULL OR voidedAt = '') AND date >= ? AND date <= ? ORDER BY date",
                    array_merge($types, [$from, $to]));
     // Each person's centre, per type, in one read each — never per row.
@@ -2493,7 +2765,8 @@ function policy_fresh_start_run(array $members, string $asOf, bool $imported, st
                 $mrow = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$e['memberId']]);
                 $left = $mrow ? (int)(fees_entry_left($mrow, (string)$e['periodKey']) ?? 0) : 0;
                 if ($left <= 0) continue;
-                fees_post((string)$e['memberId'], 'waiver', $left, ['periodKey' => 'fresh-start:' . $asOf . ':' . (string)$e['periodKey'], 'by' => $by, 'note' => mb_substr($why . ' (imported fine)', 0, 240)]);
+                // Counted only when the waiver actually landed: the report used to count waivers that were never posted.
+                if (!fees_post((string)$e['memberId'], 'waiver', $left, ['periodKey' => 'fresh-start:' . $asOf . ':' . (string)$e['periodKey'], 'by' => $by, 'note' => mb_substr($why . ' (imported fine)', 0, 240)])) continue;
                 $imp++; $impTotal += $left; $people[(string)$e['memberId']] = true;
             }
         }
@@ -2540,12 +2813,18 @@ const POLICY_CORRECTIVE_MAX = 500;
 function admin_policy_correctives(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $rows = [];
-    foreach (db_all("SELECT s.id, s.personId, s.amount, s.reason, s.issuedAt, m.fullName, m.displayId, COALESCE(m.centre,'') centre
+    foreach (db_all("SELECT s.id, s.personId, s.tier, s.amount, s.reason, s.issuedAt, m.fullName, m.displayId, COALESCE(m.centre,'') centre
                      FROM sanctions s JOIN members m ON m.memberId = s.personId
-                     WHERE s.kind = 'corrective' AND s.status = 'pending' ORDER BY m.centre, m.fullName, s.issuedAt LIMIT 3000") as $r) {
+                     WHERE s.kind = 'corrective' AND s.status = 'pending' ORDER BY m.centre, m.fullName, s.tier LIMIT 3000") as $r) {
         if (!admin_centre_allowed($g['requester'], (string)$r['centre'])) continue;
+        /* The day and what it was for, from the tier: a rulebook row is keyed
+           by its day, so the desk can sort and read "Absent · Sat 17 Oct"
+           without parsing a sentence. Older or hand-issued rows have neither. */
+        $t = (int)$r['tier'];
+        [$for, $day] = $t >= POLICY_T_LATE_JUMPS && $t < POLICY_T_ABS_JUMPS ? ['late', policy_day_of($t - POLICY_T_LATE_JUMPS)]
+            : ($t >= POLICY_T_ABS_JUMPS && $t < POLICY_T_REVIEW ? ['absence', policy_day_of($t - POLICY_T_ABS_JUMPS)] : ['other', '']);
         $rows[] = ['id' => (int)$r['id'], 'memberId' => (string)$r['personId'], 'fullName' => (string)$r['fullName'], 'displayId' => (string)$r['displayId'],
-                   'centre' => (string)$r['centre'], 'count' => (int)$r['amount'], 'reason' => (string)$r['reason'], 'issuedAt' => (string)$r['issuedAt']];
+                   'centre' => (string)$r['centre'], 'count' => (int)$r['amount'], 'for' => $for, 'date' => $day, 'reason' => (string)$r['reason'], 'issuedAt' => (string)$r['issuedAt']];
     }
     return ['ok' => true, 'rows' => $rows, 'total' => array_sum(array_column($rows, 'count')), 'word' => (string)policy_for('member')['jumpWord'], 'max' => POLICY_CORRECTIVE_MAX];
 }

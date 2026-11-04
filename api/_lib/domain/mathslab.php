@@ -1,0 +1,361 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Maths Lab — the engine (docs/MATH-LAB-PLAN.md §9).
+ *
+ * Members (free) climb from MC-001 to their real level on performance and
+ * speed, then learn, practise, prove mastery, and keep it through spaced
+ * reviews. Everything is marked here: the browser is sent questions, never
+ * keys, and every question is regenerated from (competency, form, seed).
+ * Non-members get Maths Lab Lite: practice with marking and worked solutions,
+ * no record.
+ */
+
+const MLB_CHECK_ITEMS = 10;       // a mastery check
+const MLB_CHECK_PASS = 85;        // % (the curriculum's proposed bar)
+const MLB_BOSS_PASS = 80;
+const MLB_PRACTICE_ITEMS = 8;
+const MLB_GATE_ITEMS = 6;
+const MLB_DAY_PRACTICE_XP = 60;   // practice XP cap a day: no grinding
+const MLB_GOOD = ['known', 'mastered', 'secure', 'longterm'];
+const MLB_STATE_ORDER = ['none' => 0, 'learning' => 1, 'review' => 1, 'practising' => 2, 'ready' => 3, 'known' => 4, 'mastered' => 5, 'secure' => 6, 'longterm' => 7];
+
+/* ── Who may use the full Lab ── */
+function mlb_member(array $p): ?array {
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
+    if (!$m || (string)$m['status'] !== 'active') return null;
+    return function_exists('member_is_ngg') && !member_is_ngg($m) ? null : $m;
+}
+function mlb_today(): string { return function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d'); }
+
+/* ── Profile and state ── */
+function mlb_profile(string $mid): array {
+    $p = db_row('SELECT * FROM mlab_profile WHERE memberId = ?', [$mid]);
+    if ($p) return $p;
+    $now = now_iso();
+    db_insert('mlab_profile', ['memberId' => $mid, 'xp' => 0, 'streak' => 0, 'lastDay' => '', 'freezes' => 0, 'climbStage' => 1, 'climbDone' => 0,
+        'momentum' => 0, 'xpDay' => '', 'xpToday' => 0, 'bosses' => '{}', 'createdAt' => $now, 'updatedAt' => $now]);
+    return db_row('SELECT * FROM mlab_profile WHERE memberId = ?', [$mid]);
+}
+function mlb_states(string $mid): array {
+    $out = [];
+    foreach (db_all('SELECT * FROM mlab_state WHERE memberId = ?', [$mid]) as $r) $out[$r['comp']] = $r;
+    return $out;
+}
+function mlb_set_state(string $mid, string $comp, array $patch): void {
+    $patch['updatedAt'] = now_iso();
+    if (db_row('SELECT id FROM mlab_state WHERE memberId = ? AND comp = ?', [$mid, $comp])) db_update('mlab_state', $patch, ['memberId' => $mid, 'comp' => $comp]);
+    else db_insert('mlab_state', $patch + ['memberId' => $mid, 'comp' => $comp, 'state' => 'none', 'p' => 0.15, 'attempts' => 0, 'correct' => 0, 'fast' => 0, 'nextReview' => '', 'masteredAt' => '']);
+}
+function mlb_rank(string $state): int { return MLB_STATE_ORDER[$state] ?? 0; }
+/** A competency the learner may work on: every prerequisite is known or better, or not yet taught in the Lab. */
+function mlb_unlocked(string $comp, array $states): bool {
+    foreach (mlb_comp($comp)['needs'] ?? [] as $need) {
+        if (!mlb_available($need)) continue;
+        if (!in_array($states[$need]['state'] ?? 'none', MLB_GOOD, true)) return false;
+    }
+    return true;
+}
+function mlb_award_xp(string $mid, int $xp, bool $practice = false): int {
+    $p = mlb_profile($mid); $day = mlb_today();
+    $today = (string)$p['xpDay'] === $day ? (int)$p['xpToday'] : 0;
+    if ($practice) $xp = max(0, min($xp, MLB_DAY_PRACTICE_XP - $today));
+    db_update('mlab_profile', ['xp' => (int)$p['xp'] + $xp, 'xpDay' => $day, 'xpToday' => $today + ($practice ? $xp : 0), 'updatedAt' => now_iso()], ['memberId' => $mid]);
+    return $xp;
+}
+/** A day counts once a session is finished. A missed day is covered by a freeze (earned every 7 days, at most 2). */
+function mlb_touch_streak(string $mid): void {
+    $p = mlb_profile($mid); $day = mlb_today();
+    if ((string)$p['lastDay'] === $day) return;
+    $gap = $p['lastDay'] ? (int)round((strtotime($day) - strtotime((string)$p['lastDay'])) / 86400) : 99;
+    $streak = (int)$p['streak']; $fr = (int)$p['freezes'];
+    if ($gap === 1) $streak++;
+    elseif ($gap === 2 && $fr > 0) { $streak++; $fr--; }
+    else $streak = 1;
+    if ($streak % 7 === 0) $fr = min(2, $fr + 1);
+    db_update('mlab_profile', ['streak' => $streak, 'freezes' => $fr, 'lastDay' => $day, 'updatedAt' => now_iso()], ['memberId' => $mid]);
+}
+
+/** A light knowledge-tracing step: how likely is it the learner knows this, after this answer? */
+function mlb_bkt(float $p, bool $ok, bool $typed): float {
+    $slip = 0.1; $guess = $typed ? 0.05 : 0.25; $learn = 0.15;
+    $post = $ok ? $p * (1 - $slip) / ($p * (1 - $slip) + (1 - $p) * $guess) : $p * $slip / ($p * $slip + (1 - $p) * (1 - $guess));
+    return round(min(0.995, $post + (1 - $post) * $learn), 4);
+}
+
+/* ── Building a session ── */
+function mlb_pick_items(array $comps, int $n, bool $preferTyped = false): array {
+    $items = []; $i = 0; $guard = 0;
+    while (count($items) < $n && $guard++ < $n * 6 && $comps) {
+        $c = $comps[$i % count($comps)]; $i++;
+        $forms = mlb_forms()[$c] ?? []; if (!$forms) continue;
+        $f = random_int(0, count($forms) - 1); $seed = random_int(1, 2000000000);
+        if ($preferTyped) {
+            for ($t = 0; $t < count($forms); $t++) { $it = mlb_item($c, ($f + $t) % count($forms), $seed); if (!empty($it['typed'])) { $f = ($f + $t) % count($forms); break; } }
+        }
+        $items[] = ['c' => $c, 'f' => $f, 's' => $seed];
+    }
+    return $items;
+}
+
+/** mathslab.start — {mode: climb|practice|check|review|boss, comp?, stage?} */
+function mlb_start(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $mid = (string)$m['memberId']; $prof = mlb_profile($mid); $states = mlb_states($mid);
+    $mode = (string)($p['mode'] ?? ''); $comp = (string)($p['comp'] ?? ''); $ref = '';
+    if ($mode === 'climb') {
+        if ((int)$prof['climbDone']) return ['ok' => false, 'error' => 'climb_done'];
+        $st = (int)$prof['climbStage']; $ref = (string)$st;
+        $n = (int)$prof['momentum'] >= 3 ? 4 : MLB_GATE_ITEMS;
+        $comps = mlb_stages()[$st]['comps'];
+        $items = mlb_pick_items(array_slice((function ($a) { shuffle($a); return $a; })($comps), 0, $n), $n, true);
+    } elseif ($mode === 'practice' || $mode === 'check') {
+        if (!mlb_available($comp)) return ['ok' => false, 'error' => 'not_available'];
+        if (!mlb_unlocked($comp, $states)) return ['ok' => false, 'error' => 'locked', 'needs' => array_values(array_filter(mlb_comp($comp)['needs'], fn($x) => !in_array($states[$x]['state'] ?? 'none', MLB_GOOD, true) && mlb_available($x)))];
+        $ref = $comp;
+        $items = mlb_pick_items([$comp], $mode === 'check' ? MLB_CHECK_ITEMS : MLB_PRACTICE_ITEMS);
+    } elseif ($mode === 'review') {
+        $due = mlb_due($states); if (!$due) return ['ok' => false, 'error' => 'nothing_due'];
+        $items = mlb_pick_items(array_slice($due, 0, 6), min(6, count($due)), true);
+    } elseif ($mode === 'boss') {
+        $st = (int)($p['stage'] ?? 0); $ref = (string)$st;
+        $comps = mlb_stages()[$st]['comps'] ?? [];
+        if (!$comps || !mlb_stage_available($st)) return ['ok' => false, 'error' => 'not_available'];
+        foreach ($comps as $c) if (!in_array($states[$c]['state'] ?? 'none', MLB_GOOD, true)) return ['ok' => false, 'error' => 'boss_locked'];
+        $items = mlb_pick_items($comps, 12);
+    } else return ['ok' => false, 'error' => 'bad_mode'];
+    $sid = 'MLS-' . strtoupper(rand_hex(8));
+    db_insert('mlab_sessions', ['sessionId' => $sid, 'memberId' => $mid, 'mode' => $mode, 'ref' => $ref, 'items' => json_encode($items), 'resp' => '{}', 'startedAt' => now_iso(), 'finishedAt' => '']);
+    return ['ok' => true, 'sessionId' => $sid, 'mode' => $mode, 'ref' => $ref,
+        'title' => mlb_session_title($mode, $ref),
+        'items' => array_map(static fn($x) => mlb_public(mlb_item($x['c'], $x['f'], $x['s'])) + ['comp' => $x['c'], 'compTitle' => mlb_comp($x['c'])['title']], $items)];
+}
+function mlb_session_title(string $mode, string $ref): string {
+    if ($mode === 'climb') return 'Stage ' . $ref . ' gate · ' . mlb_stages()[(int)$ref]['title'];
+    if ($mode === 'boss') return 'Stage ' . $ref . ' boss · ' . mlb_stages()[(int)$ref]['title'];
+    if ($mode === 'review') return 'Review: keep what you know';
+    $c = mlb_comp($ref); return ($mode === 'check' ? 'Mastery check · ' : 'Practice · ') . ($c['title'] ?? '');
+}
+function mlb_session(string $mid, string $sid): ?array {
+    $s = db_row('SELECT * FROM mlab_sessions WHERE sessionId = ? AND memberId = ?', [$sid, $mid]);
+    return $s ?: null;
+}
+
+/** mathslab.answer — one answer. Practice says at once whether it is right; a gate, check, review or boss says so at the end. */
+function mlb_answer(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $mid = (string)$m['memberId'];
+    $s = mlb_session($mid, (string)($p['sessionId'] ?? '')); if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$s['finishedAt'] !== '') return ['ok' => false, 'error' => 'finished'];
+    $items = json_decode((string)$s['items'], true); $i = (int)($p['index'] ?? -1);
+    if (!isset($items[$i])) return ['ok' => false, 'error' => 'bad_index'];
+    $resp = json_decode((string)$s['resp'], true) ?: [];
+    if (isset($resp[$i])) return ['ok' => false, 'error' => 'already_answered'];
+    $x = $items[$i]; $it = mlb_item($x['c'], $x['f'], $x['s']);
+    $mk = mlb_mark($it, $p['answer'] ?? '');
+    $resp[$i] = ['ok' => $mk['ok'], 'ms' => max(0, (int)($p['ms'] ?? 0)), 'hints' => min(2, max(0, (int)($p['hints'] ?? 0))), 'conf' => (string)($p['conf'] ?? ''),
+        'a' => is_array($p['answer'] ?? null) ? $p['answer'] : mb_substr((string)($p['answer'] ?? ''), 0, 120)];
+    db_update('mlab_sessions', ['resp' => json_encode($resp)], ['sessionId' => $s['sessionId']]);
+    $out = ['ok' => true, 'recorded' => true, 'answered' => count($resp), 'total' => count($items)];
+    if ((string)$s['mode'] === 'practice') {
+        $st = mlb_states($mid)[$x['c']] ?? null;
+        $pk = mlb_bkt((float)($st['p'] ?? 0.15), $mk['ok'] && $resp[$i]['hints'] < 2, !empty($it['typed']));
+        $att = (int)($st['attempts'] ?? 0) + 1; $cor = (int)($st['correct'] ?? 0) + ($mk['ok'] ? 1 : 0);
+        $cur = (string)($st['state'] ?? 'none'); $new = $cur;
+        if (mlb_rank($cur) < mlb_rank('known')) $new = $pk >= 0.85 && $att >= 6 && $cor >= 5 ? 'ready' : ($pk >= 0.6 ? 'practising' : 'learning');
+        mlb_set_state($mid, $x['c'], ['p' => $pk, 'attempts' => $att, 'correct' => $cor, 'state' => $new]);
+        $out += ['correct' => $mk['ok'], 'why' => $mk['why'], 'formNote' => $mk['form'], 'answer' => mlb_answer_text($it), 'steps' => $it['steps'], 'state' => $new, 'p' => $pk,
+            'xp' => $mk['ok'] ? mlb_award_xp($mid, $resp[$i]['hints'] ? 1 : 2, true) : 0];
+    }
+    return $out;
+}
+
+/** mathslab.finish — score the session and move the map. Answers and solutions for every question are shown now. */
+function mlb_finish(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $mid = (string)$m['memberId'];
+    $s = mlb_session($mid, (string)($p['sessionId'] ?? '')); if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$s['finishedAt'] !== '') return ['ok' => false, 'error' => 'finished'];
+    db_update('mlab_sessions', ['finishedAt' => now_iso()], ['sessionId' => $s['sessionId']]);
+    $items = json_decode((string)$s['items'], true); $resp = json_decode((string)$s['resp'], true) ?: [];
+    $review = []; $right = 0; $fast = 0; $missed = [];
+    foreach ($items as $i => $x) {
+        $it = mlb_item($x['c'], $x['f'], $x['s']); $r = $resp[$i] ?? null; $ok = $r && $r['ok'];
+        if ($ok) { $right++; if ($r['ms'] > 0 && $r['ms'] <= (int)$it['secs'] * 1000) $fast++; } else $missed[$x['c']] = true;
+        $review[] = ['comp' => $x['c'], 'stem' => $it['stem'], 'lines' => $it['lines'] ?? null, 'diagram' => $it['diagram'] ?? null, 'your' => $r['a'] ?? '', 'options' => $it['options'] ?? null,
+            'correct' => (bool)$ok, 'answer' => mlb_answer_text($it), 'steps' => $it['steps']];
+    }
+    $n = count($items); $pct = $n ? (int)round($right * 100 / $n) : 0;
+    $mode = (string)$s['mode']; $ref = (string)$s['ref']; $xp = 0; $msg = ''; $changes = [];
+    $states = mlb_states($mid); $now = time();
+    $setGood = function (string $c, string $state, int $days) use ($mid, $now, &$changes, $states) {
+        if (mlb_rank($states[$c]['state'] ?? 'none') >= mlb_rank($state)) return;
+        mlb_set_state($mid, $c, ['state' => $state, 'p' => max((float)($states[$c]['p'] ?? 0), 0.9), 'fast' => $state === 'known' ? 1 : 0,
+            'nextReview' => $days ? gmdate('Y-m-d', $now + $days * 86400) : '', 'masteredAt' => in_array($state, ['mastered', 'known'], true) ? now_iso() : (string)($states[$c]['masteredAt'] ?? '')]);
+        $changes[] = ['comp' => $c, 'to' => $state];
+    };
+    if ($mode === 'climb') {
+        $st = (int)$ref; $prof = mlb_profile($mid); $comps = mlb_stages()[$st]['comps'];
+        if ($right === $n && $fast >= $n - 1) {
+            foreach ($comps as $c) $setGood($c, 'known', 5);
+            $next = $st + 1; $done = !mlb_stage_available($next) ? 1 : 0;
+            db_update('mlab_profile', ['climbStage' => $next, 'climbDone' => $done, 'momentum' => (int)$prof['momentum'] + 1, 'updatedAt' => now_iso()], ['memberId' => $mid]);
+            $xp = mlb_award_xp($mid, 50);
+            $msg = $done ? 'Stage ' . $st . ' cleared — you have climbed as far as the Lab teaches so far.' : 'Stage ' . $st . ' cleared. On to Stage ' . $next . '.';
+        } elseif ($right >= $n - 2) {
+            foreach ($comps as $c) { if (isset($missed[$c])) { mlb_set_state($mid, $c, ['state' => 'learning']); $changes[] = ['comp' => $c, 'to' => 'learning']; } else $setGood($c, 'known', 5); }
+            db_update('mlab_profile', ['climbDone' => 1, 'momentum' => 0, 'updatedAt' => now_iso()], ['memberId' => $mid]);
+            $xp = mlb_award_xp($mid, 30);
+            $msg = 'You know most of Stage ' . $st . '. Your learning starts with the topics you missed.';
+        } else {
+            db_update('mlab_profile', ['climbDone' => 1, 'momentum' => 0, 'updatedAt' => now_iso()], ['memberId' => $mid]);
+            $msg = 'This is your level: your learning starts in Stage ' . $st . '.';
+        }
+    } elseif ($mode === 'check') {
+        if ($pct >= MLB_CHECK_PASS) { $setGood($ref, 'mastered', 10); $xp = mlb_award_xp($mid, 100); $msg = 'Mastered! A quick review in about 10 days will make it stick.'; }
+        else { mlb_set_state($mid, $ref, ['state' => 'practising', 'p' => min((float)($states[$ref]['p'] ?? 0.5), 0.7)]); $msg = 'Not yet — ' . $pct . '%. The bar is ' . MLB_CHECK_PASS . '%. Practise the questions you missed, then try again.'; }
+    } elseif ($mode === 'review') {
+        foreach ($items as $i => $x) {
+            $c = $x['c']; $cur = (string)($states[$c]['state'] ?? 'none'); $ok = !empty($resp[$i]['ok']);
+            if ($ok) { $to = $cur === 'mastered' || $cur === 'known' ? 'secure' : 'longterm'; mlb_set_state($mid, $c, ['state' => $to, 'nextReview' => $to === 'secure' ? gmdate('Y-m-d', $now + 45 * 86400) : '']); $changes[] = ['comp' => $c, 'to' => $to]; $xp += mlb_award_xp($mid, 50); }
+            else { mlb_set_state($mid, $c, ['state' => 'review', 'p' => 0.5, 'nextReview' => '']); $changes[] = ['comp' => $c, 'to' => 'review']; }
+        }
+        $msg = $right === $n ? 'Everything held. Brilliant memory.' : 'Some topics slipped — they are marked for a quick refresh.';
+    } elseif ($mode === 'boss') {
+        if ($pct >= MLB_BOSS_PASS) {
+            $prof = mlb_profile($mid); $b = json_decode((string)$prof['bosses'], true) ?: []; $b[$ref] = mlb_today();
+            db_update('mlab_profile', ['bosses' => json_encode($b), 'updatedAt' => now_iso()], ['memberId' => $mid]);
+            $xp = mlb_award_xp($mid, 300); $msg = 'Boss defeated — Stage ' . $ref . ' is complete.';
+        } else $msg = 'The boss wins this time (' . $pct . '%, need ' . MLB_BOSS_PASS . '%). Strengthen the topics you missed and come back.';
+    } else {
+        $msg = $right . ' of ' . $n . ' right.';
+    }
+    mlb_touch_streak($mid);
+    return ['ok' => true, 'mode' => $mode, 'right' => $right, 'total' => $n, 'pct' => $pct, 'fast' => $fast, 'xp' => $xp, 'message' => $msg, 'changes' => $changes, 'review' => $review];
+}
+
+/* ── Reading the map ── */
+function mlb_due(array $states): array {
+    $today = mlb_today(); $out = [];
+    foreach ($states as $c => $s) if ((string)$s['nextReview'] !== '' && (string)$s['nextReview'] <= $today && in_array($s['state'], ['known', 'mastered', 'secure'], true)) $out[] = $c;
+    return $out;
+}
+function mlb_next(array $prof, array $states): array {
+    if ($due = mlb_due($states)) return ['mode' => 'review', 'label' => 'Review ' . count($due) . ' topic' . (count($due) === 1 ? '' : 's') . ' before they fade', 'count' => count($due)];
+    if (!(int)$prof['climbDone']) return ['mode' => 'climb', 'stage' => (int)$prof['climbStage'], 'label' => 'Continue your climb: Stage ' . (int)$prof['climbStage'] . ' gate'];
+    foreach (mlb_competencies() as $c) if (($states[$c['id']]['state'] ?? '') === 'ready') return ['mode' => 'check', 'comp' => $c['id'], 'label' => 'Prove it: mastery check on ' . $c['title']];
+    foreach (mlb_competencies() as $c) if (in_array($states[$c['id']]['state'] ?? '', ['learning', 'practising', 'review'], true)) return ['mode' => 'practice', 'comp' => $c['id'], 'label' => 'Keep going: ' . $c['title']];
+    foreach (mlb_competencies() as $c) if (mlb_available($c['id']) && ($states[$c['id']]['state'] ?? 'none') === 'none' && mlb_unlocked($c['id'], $states)) return ['mode' => 'practice', 'comp' => $c['id'], 'label' => 'Start something new: ' . $c['title']];
+    return ['mode' => 'none', 'label' => 'You have finished everything the Lab teaches so far.'];
+}
+
+function mlb_view_state(string $id, array $states): string {
+    if (!mlb_available($id)) return 'soon';
+    $s = (string)($states[$id]['state'] ?? 'none');
+    if ($s === 'none') return mlb_unlocked($id, $states) ? 'open' : 'locked';
+    return $s;
+}
+
+/** mathslab.home — the learner's dashboard. */
+function mlb_home(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $mid = (string)$m['memberId']; $prof = mlb_profile($mid); $states = mlb_states($mid);
+    $count = ['mastered' => 0, 'learning' => 0, 'due' => count(mlb_due($states))];
+    foreach ($states as $s) { if (in_array($s['state'], MLB_GOOD, true)) $count['mastered']++; elseif (in_array($s['state'], ['learning', 'practising', 'ready', 'review'], true)) $count['learning']++; }
+    $avail = count(array_filter(array_keys(mlb_competencies()), 'mlb_available'));
+    $enrol = array_column(db_all('SELECT courseId FROM mlab_enrol WHERE memberId = ?', [$mid]), 'courseId');
+    return ['ok' => true, 'name' => explode(' ', trim((string)$m['fullName']))[0], 'xp' => (int)$prof['xp'], 'level' => mlb_level((int)$prof['xp']),
+        'streak' => (int)$prof['streak'], 'freezes' => (int)$prof['freezes'], 'climb' => ['stage' => (int)$prof['climbStage'], 'done' => (bool)$prof['climbDone'], 'momentum' => (int)$prof['momentum']],
+        'next' => mlb_next($prof, $states), 'counts' => $count + ['available' => $avail, 'total' => 170], 'badges' => mlb_badges($prof, $states),
+        'courses' => array_map(static fn($c) => mlb_course_view($c, $states, $enrol, $prof), array_values(mlb_courses()))];
+}
+function mlb_level(int $xp): array {
+    $names = ['Apprentice', 'Analyst', 'Strategist', 'Architect', 'Grandmaster']; $bands = [0, 500, 1500, 3500, 7000];
+    $i = 0; foreach ($bands as $k => $b) if ($xp >= $b) $i = $k;
+    return ['n' => $i + 1, 'name' => $names[$i], 'next' => $bands[$i + 1] ?? null, 'from' => $bands[$i]];
+}
+function mlb_badges(array $prof, array $states): array {
+    $good = count(array_filter($states, static fn($s) => in_array($s['state'], MLB_GOOD, true)));
+    $long = count(array_filter($states, static fn($s) => $s['state'] === 'longterm'));
+    $bosses = count(json_decode((string)$prof['bosses'], true) ?: []);
+    $defs = [['first-star', 'First star', 'Your first topic known or mastered', $good >= 1], ['ten-stars', 'Ten stars', '10 topics known or mastered', $good >= 10],
+        ['climber', 'Climber', 'Finished the climb to your level', (bool)$prof['climbDone']], ['boss', 'Boss slayer', 'Defeated a stage boss', $bosses >= 1],
+        ['week', 'Seven-day streak', '7 days in a row', (int)$prof['streak'] >= 7], ['memory', 'Iron memory', 'A topic held after two reviews', $long >= 1]];
+    return array_map(static fn($d) => ['id' => $d[0], 'name' => $d[1], 'what' => $d[2], 'earned' => (bool)$d[3]], $defs);
+}
+
+/** mathslab.map — every stage, every star. */
+function mlb_map(array $p): array {
+    $m = mlb_member($p); $states = $m ? mlb_states((string)$m['memberId']) : [];
+    $prof = $m ? mlb_profile((string)$m['memberId']) : null; $bosses = $prof ? (json_decode((string)$prof['bosses'], true) ?: []) : [];
+    $stages = [];
+    foreach (mlb_stages() as $n => $st) {
+        $comps = array_map(static fn($id) => ['id' => $id, 'title' => mlb_comp($id)['title'], 'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon')], $st['comps']);
+        $stages[] = ['n' => $n, 'title' => $st['title'], 'strand' => $st['strand'], 'available' => mlb_stage_available($n), 'comps' => $comps,
+            'boss' => isset($bosses[(string)$n]), 'bossReady' => $m && mlb_stage_available($n) && !array_filter($comps, static fn($c) => !in_array($c['state'], MLB_GOOD, true))];
+    }
+    return ['ok' => true, 'member' => (bool)$m, 'stages' => $stages];
+}
+
+/** mathslab.comp — one competency: what it is, a worked example, where the learner stands. */
+function mlb_comp_view(array $p): array {
+    $id = (string)($p['comp'] ?? ''); $c = mlb_comp($id); if (!$c) return ['ok' => false, 'error' => 'not_found'];
+    $m = mlb_member($p); $states = $m ? mlb_states((string)$m['memberId']) : []; $s = $states[$id] ?? null;
+    $ex = mlb_available($id) ? mlb_item($id, 0, random_int(1, 2000000000)) : null;
+    return ['ok' => true, 'comp' => ['id' => $id, 'title' => $c['title'], 'stage' => $c['stage'], 'stageTitle' => mlb_stages()[$c['stage']]['title'], 'strand' => $c['strand'],
+        'needs' => array_map(static fn($n) => ['id' => $n, 'title' => mlb_comp($n)['title'], 'state' => mlb_view_state($n, $states)], $c['needs'])],
+        'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon'), 'p' => $s ? (float)$s['p'] : 0, 'attempts' => $s ? (int)$s['attempts'] : 0,
+        'nextReview' => $s ? (string)$s['nextReview'] : '',
+        'example' => $ex ? ['stem' => $ex['stem'], 'diagram' => $ex['diagram'] ?? null, 'lines' => $ex['lines'] ?? null, 'answer' => mlb_answer_text($ex), 'steps' => $ex['steps']] : null];
+}
+
+/* ── Courses ── */
+function mlb_course_view(array $c, array $states, array $enrol, ?array $prof): array {
+    $ids = []; foreach ($c['stages'] as $st) $ids = array_merge($ids, mlb_stages()[$st]['comps']);
+    $avail = array_values(array_filter($ids, 'mlb_available'));
+    $done = count(array_filter($ids, static fn($id) => in_array($states[$id]['state'] ?? '', MLB_GOOD, true)));
+    $bosses = $prof ? (json_decode((string)$prof['bosses'], true) ?: []) : [];
+    $allBoss = !array_filter($c['stages'], static fn($st) => !isset($bosses[(string)$st]));
+    return ['id' => $c['id'], 'title' => $c['title'], 'promise' => $c['promise'], 'for' => $c['for'], 'hours' => $c['hours'], 'stages' => $c['stages'],
+        'available' => count($avail) === count($ids), 'total' => count($ids), 'done' => $done, 'pct' => count($ids) ? (int)floor($done * 100 / count($ids)) : 0,
+        'enrolled' => in_array($c['id'], $enrol, true), 'complete' => $done === count($ids) && $allBoss && count($avail) === count($ids)];
+}
+function mlb_enrol(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $cid = (string)($p['courseId'] ?? ''); if (!isset(mlb_courses()[$cid])) return ['ok' => false, 'error' => 'not_found'];
+    if (!db_row('SELECT 1 FROM mlab_enrol WHERE memberId = ? AND courseId = ?', [$m['memberId'], $cid])) db_insert('mlab_enrol', ['memberId' => $m['memberId'], 'courseId' => $cid, 'enrolledAt' => now_iso()]);
+    return ['ok' => true];
+}
+/** mathslab.certificate — a course certificate, with a code anyone can check. */
+function mlb_certificate(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $cid = (string)($p['courseId'] ?? ''); $c = mlb_courses()[$cid] ?? null; if (!$c) return ['ok' => false, 'error' => 'not_found'];
+    $v = mlb_course_view($c, mlb_states((string)$m['memberId']), [$cid], mlb_profile((string)$m['memberId']));
+    if (!$v['complete']) return ['ok' => false, 'error' => 'not_complete'];
+    $code = strtoupper(substr(hash_hmac('sha256', $m['memberId'] . '|' . $cid, (string)($GLOBALS['CONFIG']['cookie_secret'] ?? '')), 0, 12));
+    return ['ok' => true, 'name' => (string)$m['fullName'], 'course' => $c['title'], 'stages' => $c['stages'], 'code' => $code, 'date' => mlb_today()];
+}
+
+/* ── Maths Lab Lite (non-members): practice and marking, no record ── */
+function mlb_lite_token(array $x): string {
+    $body = b64url(json_encode(['c' => $x['c'], 'f' => $x['f'], 's' => $x['s'], 'e' => time() + 3600]));
+    return $body . '.' . b64url(hash_hmac('sha256', 'lite|' . $body, (string)($GLOBALS['CONFIG']['cookie_secret'] ?? ''), true));
+}
+function mlb_lite_item(array $p): array {
+    $c = (string)($p['comp'] ?? '');
+    if (!mlb_available($c)) return ['ok' => false, 'error' => 'not_available'];
+    $x = ['c' => $c, 'f' => random_int(0, count(mlb_forms()[$c]) - 1), 's' => random_int(1, 2000000000)];
+    return ['ok' => true, 'token' => mlb_lite_token($x), 'item' => mlb_public(mlb_item($c, $x['f'], $x['s'])) + ['comp' => $c, 'compTitle' => mlb_comp($c)['title']]];
+}
+function mlb_lite_check(array $p): array {
+    $t = (string)($p['token'] ?? ''); $dot = strpos($t, '.');
+    if ($dot === false) return ['ok' => false, 'error' => 'bad_token'];
+    $body = substr($t, 0, $dot);
+    if (!hash_equals(b64url(hash_hmac('sha256', 'lite|' . $body, (string)($GLOBALS['CONFIG']['cookie_secret'] ?? ''), true)), substr($t, $dot + 1))) return ['ok' => false, 'error' => 'bad_token'];
+    $x = json_decode(b64url_decode($body), true);
+    if (!is_array($x) || (int)($x['e'] ?? 0) < time()) return ['ok' => false, 'error' => 'expired'];
+    $it = mlb_item((string)$x['c'], (int)$x['f'], (int)$x['s']); if (!$it) return ['ok' => false, 'error' => 'bad_token'];
+    $mk = mlb_mark($it, $p['answer'] ?? '');
+    return ['ok' => true, 'correct' => $mk['ok'], 'why' => $mk['why'], 'formNote' => $mk['form'], 'answer' => mlb_answer_text($it), 'steps' => $it['steps']];
+}

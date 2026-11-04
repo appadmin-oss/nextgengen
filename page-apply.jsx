@@ -271,6 +271,10 @@ function ClubApplyPage({ setPage }) {
   const [done, setDone] = React.useState(null);           // { ref, updated, first, email, centre }
   const [busy, setBusy] = React.useState(false);
   const [sendErr, setSendErr] = React.useState("");
+  /* Changing an application already sent needs the code emailed to that
+     address (the server sends it when the same child applies again). */
+  const [codeAsk, setCodeAsk] = React.useState(null);   // { text } once a code has been emailed
+  const [editCode, setEditCode] = React.useState("");
   const [toast, setToast] = React.useState("");
   const [pol, setPol] = React.useState("");
   const [offer, setOffer] = React.useState(null);
@@ -384,11 +388,19 @@ function ClubApplyPage({ setPage }) {
           heardOther: v.heardOther || "", promoCode: (v.promoCode || "").trim().toUpperCase(),
         },
         consents,
+        ...(codeAsk && editCode.trim() ? { editCode: editCode.trim() } : {}),
       });
+      setCodeAsk(null); setEditCode("");
       try { localStorage.removeItem(APF_DRAFT_KEY); } catch (_) {}
       setDone({ ref: (r && r.ref) || "", updated: !!(r && r.updated), queued: !!(r && r.queued), first: v.firstName, email: v.email, centre: v.centre, phone: v.parent1Phone || v.mobile });
       scrollTop();
     } catch (e) {
+      const code = (e && (e.code || e.message)) || "";
+      if (code === "edit_code_sent" || code === "edit_code_wrong") {
+        const m = (e.data && e.data.message) || (code === "edit_code_wrong" ? "That code is not right. Check the latest email from NGG." : "This child has already applied. We emailed a 6-digit code: enter it to update the application.");
+        setCodeAsk({ text: m }); setSendErr(""); if (code === "edit_code_sent") setEditCode("");
+        return;
+      }
       const w = apfServerWhy(e);
       setSendErr(w.text);
       if (w.step >= 0 && steps[w.step]) { setTried(t => Object.assign({}, t, { [steps[w.step].id]: true })); go(w.step); setSendErr(w.text); }
@@ -472,6 +484,18 @@ function ClubApplyPage({ setPage }) {
                 </div>
               )}
               {sendErr && <div className="apf-errsum" role="alert"><b><i className="ph ph-warning-circle" aria-hidden="true"/>{sendErr}</b></div>}
+              {codeAsk && (
+                <div className="apf-note apf-code" role="alert">
+                  <i className="ph ph-envelope-simple" aria-hidden="true"/>
+                  <div className="apf-code-in">
+                    <span>{codeAsk.text}</span>
+                    <label className="apf-code-l" htmlFor="apf-editcode">6-digit code</label>
+                    <input id="apf-editcode" className="apf-input apf-code-f" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={editCode}
+                      onChange={e => setEditCode(e.target.value.replace(/\D/g, "").slice(0, 6))}/>
+                    <span className="apf-hint">Then press Send again. Didn’t get it? Press Send with the box empty and we send a new one.</span>
+                  </div>
+                </div>
+              )}
               {st.id === "about" && seen && (
                 <div className="apf-note" role="note"><i className="ph ph-info" aria-hidden="true"/>
                   <span>{seen.open ? "Looks like this child has applied before. Sending this will update that application instead of creating a second one."
@@ -485,6 +509,7 @@ function ClubApplyPage({ setPage }) {
                   <span>NGG is for ages 10 to 17. At 18 and over, members join NGV, our leadership class: mentor younger members, lead projects and grow as a young leader.</span>
                   <div className="apf-ngv-row">
                     <a href={apfNgvHref(ngvUrl, v)} className="apf-ngv-btn" rel="noopener">Register for NGV<i className="ph ph-arrow-right" aria-hidden="true"/></a>
+                    <a href="/join/volunteer" className="apf-ngv-alt" onClick={e => { e.preventDefault(); setPage("ngg-volunteer"); }}>Or volunteer with NGG at a centre</a>
                     <span>Wrong date of birth? Fix it below.</span>
                   </div>
                 </div>
@@ -501,11 +526,11 @@ function ClubApplyPage({ setPage }) {
               <div className="apf-inlinebar">
                 {step > 0 && <button type="button" className="apf-btn apf-btn--ghost" onClick={() => go(step - 1)}><i className="ph ph-arrow-left" aria-hidden="true"/>Back</button>}
                 <span className="apf-grow apf-left">{step === last ? "Last step" : (last - step) + " to go"}</span>
-                <ApfNext step={step} last={last} busy={busy} next={next}/>
+                <ApfNext step={step} last={last} busy={busy} next={next} nextL={(steps[step + 1] || {}).l}/>
               </div>
             )}
           </>}
-          {done && <ApfDone done={done} sibling={sibling} restart={restart}/>}
+          {done && <ApfDone done={done} sibling={sibling} restart={restart} setPage={setPage}/>}
         </div>
 
         {rightOn && (
@@ -532,7 +557,7 @@ function ClubApplyPage({ setPage }) {
           <div className="apf-bar-in">
             {step > 0 && <button type="button" className="apf-btn apf-btn--ghost" onClick={() => go(step - 1)}><i className="ph ph-arrow-left" aria-hidden="true"/>Back</button>}
             <span className="apf-grow"/>
-            <ApfNext step={step} last={last} busy={busy} next={next}/>
+            <ApfNext step={step} last={last} busy={busy} next={next} nextL={(steps[step + 1] || {}).l}/>
           </div>
         </div>
       )}
@@ -542,8 +567,10 @@ function ClubApplyPage({ setPage }) {
   );
 }
 
-function ApfNext({ step, last, busy, next }) {
-  const l = step === last ? (busy ? "Sending…" : "Send application") : step === last - 1 ? "Review" : "Continue";
+/* The forward button names where it goes ("Next: School"), and the step before
+   the last says what happens there — not "Continue" / "Review". */
+function ApfNext({ step, last, busy, next, nextL }) {
+  const l = step === last ? (busy ? "Sending…" : "Send application") : step === last - 1 ? "Check my answers" : nextL ? "Next: " + nextL : "Next step";
   return <button type="button" className="apf-btn apf-btn--ink" onClick={next} disabled={busy} aria-busy={busy || undefined}>{l}<i className={"ph " + (step === last ? "ph-paper-plane-tilt" : "ph-arrow-right")} aria-hidden="true"/></button>;
 }
 function ApfTip({ id, small }) {
@@ -1000,7 +1027,7 @@ function ApfReview({ v, age, go }) {
   );
 }
 
-function ApfDone({ done, sibling, restart }) {
+function ApfDone({ done, sibling, restart, setPage }) {
   const steps = [["We check the details", "Usually within 3 working days. If something’s missing we’ll call the main contact."],
     ["Pay with the link we send", "Only after acceptance. Paystack or bank transfer; the receipt is emailed to you."],
     ["Come to " + (done.centre || "your centre") + " on Saturday", "Bring this reference. Your ID card is printed from the photo you sent."]];
@@ -1017,6 +1044,7 @@ function ApfDone({ done, sibling, restart }) {
         <button type="button" className="apf-btn apf-btn--ghost" onClick={restart}>Start a new application</button>
       </div>
       <span className="apf-hint">Applying for a brother or sister? We’ll keep the parent, address and centre details so you don’t type them again.</span>
+      <span className="apf-hint">To see where it stands later, enter this reference and your email under “Check your status” on the <a href="/contact" onClick={e => { e.preventDefault(); setPage && setPage("contact"); }}>contact page</a>.</span>
     </section>
   );
 }

@@ -8,6 +8,13 @@
    request is findable after it is decided: in the history, by its id (search,
    deep link, ⌘K), on the member's record, and by the Inbox's own search.
 
+   The claims here are raised by a PARENT, from the family account. A child
+   cannot record a payment from their own app any more — they have one button,
+   "Ask my parent", and the parent confirms it with the reference they are the
+   ones to hold (member_request_create()'s `ask_parent`, domain/family.php
+   §"A child asks their parent"). The request lands in the same queue either
+   way, which is what this file is about; who raised it is the part that moved.
+
    Run:  node tests/request-history.test.js
    ========================================================================== */
 'use strict';
@@ -25,6 +32,10 @@ const CFG = path.join(ROOT, 'api', 'config.php');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ngg-rh-'));
 const DB = path.join(TMP, 'ngg.db');
 const ADMIN = 'NGG-RH-ADM', MEM = 'NGG-2026-4829';
+/* raisedBy is only trusted in the shape `guardian:GDN-` + 10 hex, so the
+   guardian id has to be a real one or the claim records no parent and the
+   withdraw below finds nothing. */
+const GDN = 'GDN-ADA0000002', LINK = 'RH-LINK-1';
 const CSRF = 'rh-csrf-0123456789abcdef';
 
 let seq = 0;
@@ -67,26 +78,34 @@ function cleanup() {
     php(`db_migrate(db_conn());
       db_insert('centres', ['centreId'=>'CEN-RH-1','name'=>'Egbeda','code'=>'EG','color'=>'#e9a21b','status'=>'active','slug'=>'egbeda','createdAt'=>now_iso()]);
       db_insert('members', ['memberId'=>'${ADMIN}','fullName'=>'Adaeze Okafor','email'=>'adaeze@afrovanguard.org.ng','type'=>'NGG','status'=>'active','role'=>'super_admin','centre'=>'Egbeda','totpSecret'=>'JBSWY3DPEHPK3PXP','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);
-      db_insert('members', ['memberId'=>'${MEM}','fullName'=>'Dada Jesimiel Oyeniran','email'=>'dj@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','displayId'=>'026-001','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`, ['bootstrap']);
+      db_insert('members', ['memberId'=>'${MEM}','fullName'=>'Dada Jesimiel Oyeniran','email'=>'dj@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','displayId'=>'026-001','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);
+      db_insert('guardians', ['guardianId'=>'${GDN}','email'=>'folasade@example.org','fullName'=>'Folasade Adeyemi','status'=>'active','sessionEpoch'=>1,'createdAt'=>now_iso(),'updatedAt'=>now_iso()]);
+      db_insert('guardian_wards', ['linkId'=>'${LINK}','guardianId'=>'${GDN}','memberId'=>'${MEM}','relationship'=>'parent','status'=>'active','via'=>'code','decidedAt'=>now_iso(),'createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`, ['bootstrap']);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT, path.join(ROOT, '_router.php')], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
-    const memTok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${MEM}'"), false);`, ['session']);
     const admTok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
-    const call = (tok, url, body) => fetch(BASE + url, { method: body ? 'POST' : 'GET',
-      headers: { Cookie: 'ngg_sess=' + tok + '; ngg_csrf=' + CSRF, 'X-NGG-CSRF': CSRF, 'Content-Type': 'application/json', Accept: 'application/json' },
+    const famTok = php(`echo session_issue_family(db_row("SELECT * FROM guardians WHERE guardianId = '${GDN}'"));`, ['session']);
+    const call = (tok, url, body, cookie = 'ngg_sess') => fetch(BASE + url, { method: body ? 'POST' : 'GET',
+      headers: { Cookie: cookie + '=' + tok + '; ngg_csrf=' + CSRF, 'X-NGG-CSRF': CSRF, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: body ? JSON.stringify(body) : undefined }).then(async r => ({ status: r.status, json: await r.json().catch(() => null) }));
+    /* The family account's one write route; the guardian comes from the
+       cookie, never the body, so linkId is all that says which child. */
+    const famPost = (body) => call(famTok, '/api/family/account.php', body, 'ngg_sess_family');
 
-    console.log('three ₦18,000 claims through the member route, then decided through the admin route');
+    console.log('three ₦18,000 claims from the family account, then decided through the admin route');
+    chk('a child still cannot record a payment from their own app',
+        (await call(php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${MEM}'"), false);`, ['session']),
+                    '/api/member/self.php', { kind: 'payment', amount: 18000, reference: 'GTB-000' })).json?.error === 'ask_parent');
     const ids = [];
     for (let i = 0; i < 3; i++) {
-      const r = await call(memTok, '/api/member/self.php', { kind: 'payment', amount: 18000, reference: 'GTB-55' + i, paidAt: '2026-10-20' });
+      const r = await famPost({ action: 'request', linkId: LINK, kind: 'payment', amount: 18000, reference: 'GTB-55' + i, paidAt: '2026-10-20' });
       ids.push(r.json && r.json.request && r.json.request.requestId);
     }
-    chk('the member raised three claims', ids.every(Boolean) && new Set(ids).size === 3);
+    chk('the parent raised three claims', ids.every(Boolean) && new Set(ids).size === 3);
     const [A, D, W] = ids;
     const ap = await call(admTok, '/api/admin/requests.php', { requestId: A, approve: true, decision: 'Found it on the statement.', amount: 18000 });
     const dc = await call(admTok, '/api/admin/requests.php', { requestId: D, approve: false, decision: 'This one is the same transfer as the first.' });
-    const wd = await call(memTok, '/api/member/self.php', { action: 'withdraw', requestId: W });
+    const wd = await famPost({ action: 'withdraw', requestId: W });
     chk('one approved, one declined, one withdrawn', ap.status === 200 && dc.status === 200 && wd.status === 200);
     const inbox = await call(admTok, '/api/admin/requests.php?status=open');
     chk('none of them is in the Inbox any more (the case that led nowhere)', inbox.json && inbox.json.requests.length === 0);
@@ -165,7 +184,7 @@ function cleanup() {
     chk('the record has a Requests part listing all three, with outcomes', ids.every(id => rec.includes(id)) && /Approved/.test(rec) && /Declined/.test(rec) && /Withdrawn/.test(rec));
 
     console.log('the Inbox search');
-    const N = (await call(memTok, '/api/member/self.php', { kind: 'payment', amount: 5000, reference: 'NEW-1' })).json.request.requestId;
+    const N = (await famPost({ action: 'request', linkId: LINK, kind: 'payment', amount: 5000, reference: 'NEW-1' })).json.request.requestId;
     await P.goto(BASE + '/control/inbox/requests', { waitUntil: 'domcontentloaded' });
     await waitForBoot(P);
     await P.waitForSelector('.cr-ib-row', { timeout: 60000 });

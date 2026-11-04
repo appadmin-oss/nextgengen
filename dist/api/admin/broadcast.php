@@ -14,6 +14,7 @@ if ($method === 'GET') {
         'linkPage'    => $body['linkPage'] ?? '',
         'audience'    => $body['audience'] ?? 'all',
         'email'       => !empty($body['email']),
+        'community'   => !empty($body['community']),
         'ip'          => client_ip(),
     ]);
 } else {

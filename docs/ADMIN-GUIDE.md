@@ -113,7 +113,7 @@ not shown at all, so your sidebar may be shorter than a colleague's.
 
 | Section | What it is for |
 |---|---|
-| Members | The year-round roster. Search, filter, edit, bulk actions, ID printing. |
+| Members | The year-round roster. Search, filter, edit, bulk actions, ID printing. **Registration**: each new member's registration checklist and who is helping them. |
 | Applications | People who applied and have not been processed yet. |
 | Volunteers | Volunteer roster and their status. |
 | Mentors / Mentorship | Mentor records and mentor–member pairings. |
@@ -491,6 +491,73 @@ Every change a staff account makes is written to the **audit log**
 (System → Audit trail) with who, what and when. A bulk run is **one** entry
 naming the action, the count and every refusal — not one entry per row —
 so "who suspended forty people on Tuesday" has a readable answer.
+
+### Registration: helping a new member finish registering
+
+Control Room → Members → **Registration** (`people`). Every NGG member has a
+registration checklist; a member accepted from an application gets theirs at
+once. A named **supervisor** at the member's centre helps them through it, and
+the member and their guardians see how far along they are.
+
+The checklist has two kinds of item:
+
+- **From the record.** Guardian linked, consents recorded (taking part,
+  emergency medical care and records granted; photos and the website answered),
+  photo on file, date of birth, school, emergency contact, courses placed, the
+  membership fee paid (only while fees are switched on) and the ID card
+  printed (a proof does not count). These are done when the member's record
+  shows them, and only then: a photo of a birth certificate does not give the
+  record a date of birth. Fix the record, and the item passes.
+- **Items staff add.** A title, what the supervisor should do, the evidence it
+  takes (a photo, a document, or a note), whether the supervisor must be at the
+  member's centre that day, and how old the evidence may be.
+
+| You want to… | Do this |
+|---|---|
+| See who has not finished | **Show: Still registering**. Each row has their progress, what is left and who is helping. **Nobody helping yet** lists the ones without a supervisor. |
+| Give a member a supervisor | Open the member → **Assign a supervisor**, or select several from one centre → **Assign a supervisor**. Pick from **Suggested** and press **Assign**. |
+| Understand a suggestion | Each line says why, from what the system already holds: check-ins at that centre's gate on recent Saturdays and in the last six weeks, the check-in desk rota, the timetable there, what the person says they are free for, how many members they already support, and that their safeguarding is cleared. A member's own mentor is marked **Already their mentor**. |
+| Ask someone who has not been at the centre lately | Under **Not seen at …**, press **Assign with a reason** and say why. The reason is kept in the audit log. Nobody uncleared is ever listed. |
+| See what is left for one member, and the evidence | Open the member. **Still to do**, **Done** and **Evidence submitted** (every attempt, accepted or refused, with the reason). **Open file** shows a submitted file. |
+| Reject an item that was verified | Open the member → **Done** → **Reject**, and say what was wrong. It reopens and the supervisor is told why. Items from the record cannot be rejected: correct the record. |
+| Add, change, reorder or retire an item | **Add an item** at the top; open an item under **Items staff added** to **Change**, **Move up**, **Move down** or **Retire** it. A retired item leaves every checklist but keeps its history; **Bring it back** restores it. |
+| Start checklists for members who joined before this existed | **Start N checklists** at the top (at most 500 a press; it says how many are left). Nobody is told until a supervisor is assigned. |
+| Help a member yourself | Assign yourself, then use **Show: Mine to help**. Open the member and press **Submit** (or **Check again** for an item from the record). |
+
+**Who may supervise.** Staff holding `people` whose centres include the
+member's; an NGG mentor at that centre whose screening is recorded; an NGG
+volunteer mentor or instructor at that centre whose safeguarding is cleared.
+Nobody supports more than 12 members at once: a thirteenth is refused and
+named. The assignment checks all of this again when you press it, member by
+member, whatever the screen showed; a scoped admin is refused for members
+outside their centres.
+
+**What counts as evidence.** The supervisor submits from **My registrations**
+in the Mentor Portal (My role → My registrations), or from this screen if they
+are staff. An item counts only when the evidence is the kind the item asks for
+(a photo is JPG, PNG, WebP or HEIC; a document is a PDF, a Word file or a photo
+of the page; at most 10 MB, uploaded here, not a link elsewhere), is no older
+than the item allows, comes from the member's assigned supervisor, and — when
+the item says so — the supervisor checked in at the member's centre that day.
+A refused attempt says why in words, and is kept.
+
+**Who is told.** The supervisor, in the app, when they are assigned and once a
+week while any of their members has items open. The guardians, by email and
+in the family account, once a week, with only the things the family can do
+(consents, the photo, date of birth, school, an emergency contact, the fee).
+The member sees "Your registration: 6 of 9 done" on **Me**, with what is left
+and the supervisor's first name; a guardian sees the same on **Today**. Neither
+sees any evidence, or anyone else's.
+
+| Refusal | What it means |
+|---|---|
+| cannot supervise there | Not staff with `people` for that centre, and not a cleared NGG mentor or volunteer there. |
+| not seen at the centre — give a reason | No check-in, rota or class there in six weeks. Assign with a reason, or pick someone suggested. |
+| the supervisor is at the cap | They already support 12 members. |
+| not in a centre you administer | Outside your centre scope. |
+| This item needs a photo; that is a PDF | The evidence was the wrong kind of file. |
+| That is 45 days old | Older than the item accepts. |
+| This item needs you at … | The supervisor had not checked in at the member's centre that day. |
 
 ---
 
@@ -952,6 +1019,67 @@ back.
 The NGG join form asks for a **division first**, then a course inside it, and
 says what joining costs before anybody applies.
 
+### Reviewing applications (Inbox → Applications)
+
+| You want to… | Do this |
+|---|---|
+| Accept a child | **Accept & create member**: the start date, and the centre when the application names none. Each child is their own member, even when brothers and sisters applied from one parent's email. A declined application, or a child who is now outside 10 to 17, is refused with the reason. |
+| Put a child on the waiting list | **Waitlist**. The family is emailed and the main parent is texted. The application stays in the inbox, marked *Waitlisted*, and you accept it from there when a place opens. |
+| Decline | **Reject**, with an optional line the family reads in the email and text. |
+| See only your centres | A centre-limited admin sees, exports, accepts and declines their own centres' applicants only. |
+
+A family who sends the form again for the same child (same email and date of
+birth) is emailed a 6-digit code and must enter it before the application
+changes. Without it, anyone who knew the email and the birthday could replace
+a child's guardian and photo.
+
+### Volunteer registrations (Mentors → Volunteers)
+
+Both volunteer forms (Summer School at /volunteer, NGG all year at
+/join/volunteer) now ask for **two referees** and a signed **safeguarding
+declaration**. An applicant **under 18** names a parent or guardian who agrees.
+
+- The review shows the referees, the declaration and the guardian; under-18s
+  carry an *Under 18 · guardian* chip. Approving one asks you to confirm you
+  have **spoken to the guardian**; that is recorded as their consent.
+- Approval issues the ID, but a volunteer sees children (the instructor
+  roster, the mentor portal) only once **safeguarding is set to Cleared**.
+  Contact the referees before you clear them.
+- Somebody already volunteering for one programme who applies for the other
+  is a new application; approving it makes them serve **both**.
+- NGG's form only offers centres that run the Club. **Settings → Sign-ups**
+  now has a separate switch for NGG volunteer registration.
+
+### Invoices, receipts and certificates (from 4 Nov 2026)
+
+Every invoice, receipt and Math Lab certificate is a printable A4 page.
+Open one, then press **Print or save as PDF**.
+
+- **Numbers** follow on with no gaps: `NGG-INV-2026-00001`,
+  `NGG-RCP-2026-00001` and `NGG-ML-13-2026-00001` (13 is the level). A
+  cancelled invoice keeps its number and says it was cancelled. Invoices and
+  receipts made before 4 Nov keep the numbers they were issued with.
+- **A receipt never changes.** It is printed from what it said when the
+  payment settled. A later rename or fee change does not touch it.
+- **A transfer still being checked** gets an *Acknowledgement*, not a
+  receipt. The receipt follows when the second person confirms it.
+- **Certificates** are given automatically when a member clears a Math Lab
+  level (70%). Clearing it later at 90% or more gives a Distinction
+  certificate. The old one then says "replaced".
+- **Families** find them in the Family Portal under Money → Documents.
+- **Verify:** the QR code opens `/verify/<number>`. Anyone holding the
+  document can check it there with the check code printed under the QR.
+  Without the code, nothing is shown.
+
+**Details on documents** (Money → Membership payments → *Details on
+documents*): the legal name, RC number, TIN, address, fees contact,
+signatories, VAT and days to pay.
+- A blank detail is left off the page.
+- Issued receipts and certificates keep the details they were issued with.
+  A detail that was blank on them prints once you fill it in.
+- VAT is *Exempt* by default. At 7.5% the VAT is shown inside the amount
+  charged, so the total stays what the account charged.
+
 ### Joining fees: the membership invoice
 
 Nothing is paid until a child is **accepted**. In **Inbox → Applications**,
@@ -975,9 +1103,71 @@ Nobody can use it, the super admin included. A member whose dues were settled to
 a date before then still shows "Membership and dues settled up to …" on their
 Fees, and those periods are still never charged. To take money off an account
 now: record the payment that was made, or waive a specific amount with its
-reason (Money → the member's account).
+reason (Money → the member's account). A waiver is capped at what is **payable
+now** — the training place is never part of it (it is written off by the MOU,
+not waived), so waiving more than is owed cannot leave credit behind.
+
+**Reading a member's account** (Money → Dues & arrears → open a member). It
+reads like a bank statement, in three parts:
+
+- **The summary**: *Payable now* in large type, and beside it the sum that
+  makes it — what was charged, by kind (membership, monthly dues, fines,
+  adjustments), less what was received, by kind (payments, waivers) — so
+  **Total charged − Total received = Payable now** on the page. When more has
+  been paid than charged it says *In credit*. The programme month, reminders
+  and the MOU are listed here, each with its button.
+- **What is owed**: every charge with something left on it, oldest first by
+  the day it fell due — payments always settle the oldest charge first, so the
+  top line is what the next payment pays — with what was paid of it and what
+  is left.
+- **Statement**: every entry, newest first, with a charge or payment column
+  and the balance after it. A voided entry stays listed, struck out of the
+  figures. Open any line to see it or void it.
+
+The **training place** sits below, on its own: it is covered by NGG and never
+in the figures above. (Before 3 Nov 2026 the account showed *Charged* with the
+training place inside it, and the figures did not add up.) The family's Fees
+page reads payments the same way: a charge partly paid shows what was already
+paid of it.
+
+**The money report for a period** (Money → Dues & arrears → Transactions).
+Pick *From* and *To*; above the list of entries is a **statement for the
+period** for every account in your centres: *Owed at the open*, plus
+*Charged*, less *Received*, less *Waived* (and any other credits), equals
+*Owed at the close* — the sum is printed, so it can be checked on the page.
+*Collected* is what was received as a share of what was due. *Month by month*
+gives the same sum for each month (each opens where the last closed) and
+downloads as a CSV for the treasurer. The figures are real money only — the
+training place is never in them — and "owed" is net: a family paid ahead
+offsets a debt elsewhere, so the per-family list is **Who owes**. *What* and
+*State* narrow the list of entries but not the statement (fines on their own
+have no opening balance); a member search narrows both, which gives one
+family's year as a statement.
+
+**What a payable is made of.** Wherever a figure owed is broken down — the
+family's *To pay now*, the member's *To pay*, the *made of* column on Who owes —
+the lines come from one place and add up to it: monthly commitment fees grouped
+with their months named (a missed month is said: "February – April, June
+2026"), membership, each fine with its reason, and, for a member who left before
+the MOU was complete, the **training place** line. That line used to be missing,
+so a family that left early saw a breakdown smaller than the amount asked for.
+
+**On their phones.** A member's Money screen and the family's Fees page read
+the same account. The member's card for the training place says where they
+are: *Earning off · N%*, *MOU complete* with its date, or *Owed* if they left
+before completing. Each month on the family statement closes on *Owed at
+month end*, and the latest agrees with *To pay now*. Both call monthly dues
+the **commitment fee**.
 
 The family pays through the link (Paystack), or by bank transfer or cash.
+
+**Money that arrived and could not be applied.** When a family pays an invoice
+that was replaced or cancelled while their payment page was open, or pays an
+amount that does not match, the money is listed at the top of **Money →
+Membership payments** until somebody decides it: **Apply to account** (posted as
+a payment, so their balance goes down), **Refunded** (refund it in Paystack
+first, then record the refund reference) or **Dismiss** (with a reason). Each
+decision is recorded with the name of who made it.
 
 **Paying the balance online.** After joining, a member's account (their
 dashboard) and the family portal show **Pay ₦… online** whenever there is
@@ -990,6 +1180,24 @@ invoice is cancelled as *superseded* and the next press makes a new one for the
 new figure. A transfer waiting to be verified blocks online payment until it is
 checked, so nobody pays twice. Policy fines on the conduct ledger are not
 included yet; dues, training fees and fines posted to the fees ledger are.
+
+**Paystack's charge is paid by the family (from 3 Nov 2026).** Paying online,
+the family pays what is owed **plus Paystack's charge**, worked out so that
+after Paystack takes its cut NGG receives the whole amount. The figure is shown
+before anybody presses Pay — on the pay page ("₦7,000 plus Paystack's ₦209
+charge"), on the family app's **Pay ₦7,209 online** button and pay sheet, and
+on the member's own account — with the free way beside it: **a bank transfer to
+NGG has no charge**. The account records only the ₦7,000; the charge is
+Paystack's, not something owed to NGG. The receipt lists it as *Paystack
+charge* and its total is what left the family's account.
+
+The terms live under **Money → Dues & arrears → Amounts → Paying online**:
+the switch (off = NGG absorbs the charge), the percentage (1.5%), the flat
+charge (₦100), the payment size under which the flat charge is waived (₦2,500)
+and the cap (₦2,000) — Paystack's local card terms. If your Paystack plan
+differs, change them there. A checkout started before a change keeps the
+charge it was started with. Donations are unchanged: a donor gives what they
+choose.
 
 **Money → Membership payments** lists every invoice, joining and balance:
 
@@ -1036,6 +1244,23 @@ active. Everything below is set on that tab.
 - **When a day is excluded** — later than N minutes, past the red line, a half
   day, no check-out, safeguarding not cleared. An excluded day is kept with its
   reason, and the volunteer sees it.
+
+**Reading a pay period.** Each period is a settlement that has to close:
+*Earned*, less what was *paid to volunteers*, less what was *kept for NGG
+fines*, less what was *held for Afrovanguard's fines*, is *Still to pay*. The
+sum is printed beside the figure, so "₦40,000 earned, ₦6,000 to pay" is
+explained on the page. The list's *NGG fines owed* column is what each
+volunteer owes NGG now; what pay will take is worked out when it is paid.
+
+### Donations
+
+**Money → Donations** (the Settings capability). Every figure is counted over
+every gift: *Raised* (and by channel), *Gifts* and *donors* (one donor giving
+twice is one donor), *Largest gift*, and *Not completed*. A checkout that
+Paystack has not confirmed is *Pending* for 48 hours and *Abandoned* after
+that: nobody paid, and it is not money on its way. *By month* is what was
+raised in each month (CSV for the treasurer). The list shows the newest 500;
+**Export CSV** has every gift.
 - **Pay period** — weekly, every two weeks or monthly, and the most days paid in
   one period (0 = no limit; days over it are kept as excluded).
 
@@ -1721,6 +1946,43 @@ words. The member's panel and this drawer are drawn by one component from one
 server answer, so they cannot disagree. On a day or week rate, "still to come"
 reaches as far as the meeting calendar is set.
 
+### Telling families about dues — before, after, and when they say they paid
+
+**Money → Dues & arrears → Reminders** (needs `fees`; a centre-scoped admin
+sees and sends for their own centres). Three kinds of message reach a family,
+and every one goes to **every linked guardian**, not one email address:
+
+| Message | When | Where it goes |
+|---|---|---|
+| **Before it falls due** | *N* days before monthly dues (the 1st) or a membership renewal (the join anniversary) — 7 by default | the family app of each guardian, each guardian's email and the parent email on the record, Telegram where a guardian's phone is linked to the NGG bot, SMS (off by default; one per family, only when Telegram did not reach them), and the member's own portal |
+| **Arrears reminder** | money already owed, no more often than every *N* days (at least 7) | the same channels |
+| **Payment note received / answered** | the moment a parent sends *I've paid*, and when the desk approves or declines it | the family app and email; the answer says what is still to pay — or, when nothing is owed today, the next amount and date |
+
+- **Each family hears once per due date.** December's dues and a renewal that
+  fall on the same day are one notice with both lines and the total. The
+  background job and the **Send today's … now** button share one log, so
+  pressing it, or the job running every 15 minutes, never tells anyone twice.
+- **Who is not told, and why** — a family paid ahead past the date (their
+  credit is spent on the charges in date order), a family that asked not to be
+  chased (*Stop reminders* on their account), and a family with no way to be
+  reached (no linked guardian, no parent email, no phone). The **Coming up**
+  table shows, for the next fortnight, each family, what falls due, the amount,
+  the day they will be told (or *Told* with the date), and how many apps,
+  emails and phones will reach them — *No way to reach them* is the list to fix
+  in People → Members.
+- **Sent to families** is the record: each notice, its amount, and the
+  channels that actually delivered it. *Nobody reached* means every channel
+  failed — usually no mail server and no linked guardian.
+- **Payment notes waiting**: open *I've paid* notes. When one waits longer than
+  the hours set (48 by default, 12 to 168), every staff member holding `fees`
+  for that centre gets one nudge a day saying how many and how old the oldest
+  is. The notes themselves are answered in **Inbox → Member requests**.
+
+**Settings** — *Amounts → Before dues fall due*: the switch, how many days
+before (1–30), each channel, and the desk nudge. Telegram and SMS are listed as
+*not available on this site* until the bot or the SMS gateway is set up under
+Settings. Notices start when dues are on; they need nothing else switched on.
+
 ### Conduct & fines — one home for fines
 
 **Money → Conduct & fines** is where fines live, start to finish. It has four
@@ -1981,12 +2243,13 @@ from which people may sign out. Leave one blank for no closing time.
   Somebody who leaves early has no sign-out for the day, which the conduct
   policy counts.
 - **A sign-out that arrives late still counts.** The nightly check counts a
-  day with a sign-in and no sign-out as an absence. If the sign-out reaches NGG
+  day with a sign-in and no sign-out as a **half-day** (two make one absence;
+  no absence fine). If the sign-out reaches NGG
   afterwards (a CACENTRE gate departure delivered late, or CACENTRE's
   **Send NGG the check-outs it missed … from the last 31 days**), it is stamped
-  at the time it happened and that day's "no sign-out" absence is voided, with
+  at the time it happened and that day's "no sign-out" half-day is voided, with
   the reason kept. A member's record shows such a day once: **No sign-out ·
-  counted absent** until the sign-out arrives, then **Present** with its time.
+  half-day** until the sign-out arrives, then **Present** with its time.
 - An admin in the Control Room kiosk can **Let them go early…** with a written
   reason (a sick child collected by a parent). It is recorded in the audit
   trail as an early sign-out. A check-in desk cannot do this.
@@ -2173,6 +2436,33 @@ also acknowledge from Messages — signing the notice there is the same thing.
 
 **Quick message** is the old one-line notification, kept for short alerts.
 
+### Announcements reach the member portal and Community (from 3 Nov 2026)
+
+What you announce no longer lives only behind the bell:
+
+- **In the member portal**, an unread quick message, club announcement or
+  official notice from the last fortnight sits at the **top of the member's
+  Today**, ahead of their to-dos, until they read it (a notice opens on its own
+  page; a message opens in their notifications). It is also in the bell, as
+  before.
+- **In Community**, each one can be posted as a **pinned Announcement in the
+  commons**, by the person who sent it (for a club announcement, by its
+  approver). It is posted once however often it is resent, and an official
+  notice that is **withdrawn comes down from Community too**.
+  - Quick message: **Show it in Community** (on by default).
+  - Official notice: **Delivery → Show it in Community** (on by default; it
+    links to the full notice).
+  - Club announcement: the **Community** channel chip (on for new ones).
+  - A message for **one centre** is headed "For Egbeda centre — …", because the
+    commons is shared by every centre. A **Summer School-only** message, or one
+    for **guardians only**, never goes to Community — it is the NGG members'
+    space; the screen says so and the sender is told.
+- **Money reminders never go to Community** — they are one family's business.
+  The member sees their own in their portal, in words for them: "₦7,000 due
+  1 Dec — your parent or guardian has been told" before it falls due, and "Your
+  account: ₦2,000 to pay — your parent or guardian has been sent a reminder"
+  for arrears. The child is told, never chased.
+
 ### Club announcements (Club portal → Announcements)
 
 A coordinator or centre lead writes an announcement; an **admin approves** it
@@ -2338,6 +2628,9 @@ not the child's:
   number), the date, and a photo of the receipt if they have one. It arrives in **Member requests** as *Payment made*, marked *From
   their family account*, and moves no money until you approve it against the
   statement — exactly as a member's claim used to.
+  The parent is told at once that it arrived (with their reference and how
+  long checking takes), and told again — in the family app and by email — when
+  you approve or decline it.
 - **The child asks.** The member's app no longer has *I've made a payment*. On
   their account screen there is one button, **Ask my parent**: every connected
   parent gets a message in their family account and an email asking them to
@@ -2452,6 +2745,31 @@ hours the family app shows. The doors, the grace minutes and when sign-out opens
 **attendance settings** (Control Room → Settings), which the family app now reads rather
 than printing a fixed 09:00 and 14:00 — if sign-out is set to open at 14:00, move it to
 15:00 there so families are not let go before the day ends. On the
+the Saturday, block by block, with what members do, what mentors watch for, what
+instructors deliver, what admin must have ready and what families are told. Every portal
+and the Saturday reminders read it; change a block and they all change.
+
+| You want to… | Do this |
+|---|---|
+| Change a block's time, name or words | Open the block → **Change this block**. With **Move the blocks after it too** on (the default), a later end moves the rest of the day with it, keeping every length and gap. Off, a time that runs into the next block is refused and named. |
+| Add a block | **Add a block**: its name, what it comes after, how many minutes. The blocks after it move later by its length. |
+| Remove, reorder or copy a block | Open the block → **Remove this block** (the blocks after it move up), **Move up** / **Move down** (the two swap places; the day still ends when it did), **Duplicate**. |
+| Start the day at a different time | **Move the day**: the whole day, or from one block on, to a new start. Nothing may run past midnight or move more than five hours at once. |
+| Give one centre a different day | **A centre's own day**: a copy of the main day, used at that centre every Saturday until you remove it. |
+| Change one Saturday only | **Change one Saturday**: that Saturday everywhere, or at one centre. It starts as a copy of the day in force there. |
+| Cancel a Saturday | **Mark a Saturday off**, everywhere or at one centre, with a line families read. Nothing is sent that day and every portal says so. A note without "off" is shown above that Saturday's plan. |
+
+Which day applies at a centre on a Saturday is the first that exists of: that
+Saturday at that centre → that Saturday everywhere → the centre's own day → the
+main day. **Versions of the day** lists them; the address names the one on
+screen, so a link opens it. A centre-scoped admin changes only their own
+centres' days. **What it is for** on each block (check-in, mentor breakout,
+classes, break, close) decides the reminders: members are not reminded at
+check-in, instructors are reminded at the classes block, the mentor breakout
+sets the mentors' planning window. Families who take check-in news get the plan
+an hour before the day starts (never before 8:00), a not-arrived notice 45
+minutes in and the close at the day's end, all by their child's centre's day.
+On the
 Saturday register a mentor ticks, per child, the values seen and the duties: On time
 (the gate's arrival time is shown), Assignment in, Checked out — and can **Add detail**: one line
 (up to 500 characters) of what they saw, saved with the register. It shows under the child's name,
@@ -2461,6 +2779,9 @@ opens their profile; **Go to the weekly review** takes the mentor straight to Af
 **The Saturday plan (Before).** The mentor's part of the day is the
 **Musing & mentor breakout** block of the formation schedule (9:30–11:00 by
 default), so its window — and what follows it — come from Control Room →
+**Musing & mentor breakout** block of the formation schedule (8:30–10:00 by
+default; the block whose kind is *Mentor breakout*, at the mentor's centre, that
+Saturday), so its window — and what follows it — come from Control Room →
 Learning → Saturday formation, never from a fixed number. The *Pod huddle*
 always opens it (the register is taken there) and the *Close* always ends it;
 between them the mentor times every item in five-minute steps, moves items up
@@ -3386,8 +3707,14 @@ Change, Test and Remove act on that one service.
 ### Make.com
 
 Make.com is set up from **Settings → Integrations → Make.com**: work down the three numbered steps — signing key, Make's webhook
-(then **Send test**), scheduler addresses. Each key is shown once, on the
+(then **Send test**), the scheduler address. Each key is shown once, on the
 panel, until you press **I've copied it**; afterwards only how it ends.
+The scheduler address is ONE address that runs every background job that is
+due. Best, put it in the CACENTRE gate as the secret `NGG_CRON_URL` (Cloudflare
+→ the gate worker → Settings → Variables and Secrets): the gate calls it every
+minute and visitors' pages then do no background work. Otherwise one Make
+scenario or a cPanel cron, every minute. Older one-per-job addresses
+(`&job=…`) still work.
 The scenarios to build in Make are listed under the steps, each saying which
 step it still needs, with its build steps and an example to copy. Replacing a
 key stops the old one at once. **Turn off** refuses Make's calls and pauses its
@@ -4266,3 +4593,58 @@ Each kind of item now opens with what matters and the action already drafted:
   too dark, it is blurry”) in words a family can act on; **Open their record** is
   on member photos.
 
+
+
+## Appeals
+
+A member (from Records) or a parent (from the family account) can appeal any
+decision on the record: a warning, the Dormant Track, a suspension, an
+eviction, a fine or a fee. It arrives in **Requests**.
+
+- **Overturn it** lifts the decision and everything it carried (its fine, a
+  suspension's re-entry fee). **Keep it** leaves it standing. Both need a
+  reason; the family reads it.
+- Whoever issued or confirmed the decision can't decide its appeal
+  ("somebody else reviews the appeal").
+- A proposed eviction can't be confirmed while its appeal is open.
+
+## Achievements and learning outside NGG
+
+**Achievements are worked out, not typed.** A member's Records page and the
+family's Growth page show them: days attended (10, 25, 50, 100, 200),
+sessions in a row and on time in a row, lessons completed, full marks, stars
+from instructors, confirmed outside learning, and a top-three place at their
+centre for attendance or lessons this month or last. A streak counts programme
+days; only a real absence breaks it, never a day away with permission or a
+day the gate was down. Staff add their own recognitions (academic,
+consistency, conduct, leadership, creativity, service, sport) from
+**Learning → How members are doing**, opening a member.
+
+**Learning outside NGG.** A member logs something they learnt on another site
+or app from **Records → Learning outside NGG**: what, where, how far, hours,
+and a video, screenshots or pictures, a link or notes. It waits in
+**Learning → How members are doing** until somebody with the Curriculum
+permission confirms it or sends it back with a note. Only confirmed entries
+count. **Bring in a report** takes a platform's progress export (CSV or Excel):
+rows are matched by printed ID, then by name; unmatched rows are listed, and
+nothing is added until you press Add. Report rows arrive confirmed.
+
+**How each member is doing** lists every active member in your centres:
+lessons done here, average score, outside learning and hours, days attended in
+the last 90, and when they last learnt anything. "Nothing learnt in 30 days"
+is the list to follow up.
+
+
+## Photos: stored in the bucket, optimised once, served from the bucket
+
+New uploads go to the file-storage bucket (R2) once one is set in **Settings →
+API keys → File storage**. Cloudinary is asked **once** per photo for the sizes
+the pages use; the small copies are stored back in the bucket and every page
+loads them from there, so viewing photos costs no Cloudinary credits.
+
+In **Settings → Diagnostics → Photo storage**:
+- **Move held photos to the bucket**: the photos still kept on this server. The
+  server copy is kept; missing files are left alone. It also runs every hour.
+- **Optimise photos**: makes the sizes now. It also runs every ten minutes.
+- **Use their Cloudinary photos**: for a record whose file is gone but whose
+  person has a photo in Cloudinary.

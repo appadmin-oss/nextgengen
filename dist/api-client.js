@@ -6,6 +6,16 @@
 (function (global) {
   const BASE = '/api';
 
+  /* The image cloud and hosts (site-config `img`), for nggImgFetchParts in
+     photos.js — card printing frames a bucket photo through Cloudinary's fetch.
+     Page views never do: they are served from the bucket (nggImg). */
+  function setImgCfg(c) {
+    if (!c || typeof c !== 'object') return;
+    const v = { cloud: String(c.cloud || ''), hosts: Array.isArray(c.hosts) ? c.hosts.map(h => String(h).toLowerCase()) : [] };
+    global.__nggImgCfg = v;
+    try { localStorage.setItem('ngg_img', JSON.stringify(v)); } catch (_) {}
+  }
+
   function getCookie(name) {
     const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'));
     return m ? decodeURIComponent(m[1]) : '';
@@ -231,6 +241,7 @@
       try { _configCache = await request('/public/config.php'); }
       catch (__) { _configCache = { uploads: { enabled: false } }; }
     }
+    setImgCfg(_configCache.img);
     return _configCache;
   }
 
@@ -1049,6 +1060,17 @@
       curriculumUpload:   (file) => { const fd = new FormData(); fd.append('file', file); return request('/member/curriculum.php', { body: fd, timeout: 180000 }); },
       stateGet:  (keys) => request('/member/state.php' + qs({ keys: Array.isArray(keys) ? keys.join(',') : keys })),
       stateSet:  (key, value) => request('/member/state.php', { body: { key, value } }),
+      /* Maths Lab (docs/MATH-LAB-PLAN.md) — marked on the server; the client never holds a key. */
+      mathslab: {
+        home:   () => request('/member/mathslab.php'),
+        map:    () => request('/member/mathslab.php?view=map'),
+        comp:   (comp) => request('/member/mathslab.php' + qs({ view: 'comp', comp })),
+        cert:   (course) => request('/member/mathslab.php' + qs({ view: 'certificate', course })),
+        start:  (mode, opts) => request('/member/mathslab.php', { body: Object.assign({ action: 'start', mode }, opts || {}) }),
+        answer: (sessionId, index, answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'answer', sessionId, index, answer }, extra || {}) }),
+        finish: (sessionId) => request('/member/mathslab.php', { body: { action: 'finish', sessionId } }),
+        enrol:  (courseId) => request('/member/mathslab.php', { body: { action: 'enrol', courseId } }),
+      },
       tools: {
         decks:   () => request('/member/tools.php?view=decks'),
         deck:    (deckId) => request('/member/tools.php' + qs({ view: 'deck', deckId })),
@@ -1077,6 +1099,13 @@
       wifiPassword: (password) => request('/member/wifi.php', { body: { action: 'password', password } }),
       // Their volunteer wallet, when they volunteer with NGG (domain/volunteer-pay.php); null when they don't.
       volunteerPay: () => request('/member/volunteer-pay.php'),
+      /* The registration checklist (domain/registration-checklist.php): the members I
+         supervise, my own progress, and evidence for one item. */
+      regcheck: {
+        mine:     () => request('/member/registration-checklist.php' + qs({ view: 'mine' })),
+        progress: () => request('/member/registration-checklist.php' + qs({ view: 'progress' })),
+        submit:   (body) => request('/member/registration-checklist.php', { body: Object.assign({}, body || {}, { action: 'submit' }) }),
+      },
       volunteerBank: (d) => request('/member/volunteer-pay.php', { body: { action: 'bank', bankName: d.bankName, accountNumber: d.accountNumber, accountName: d.accountName } }),
       /* Self-service. No memberId travels in any of these — the server reads it
          from the session, which is what keeps them from being an enumeration
@@ -1099,6 +1128,11 @@
       projectMark:  (projectId, status, note) => request('/member/projects.php', { body: { projectId, status, note: note || '' } }),
       withdrawRequest: (requestId) => request('/member/self.php', { body: { action: 'withdraw', requestId } }),
       compliance:   () => request('/member/compliance.php'),
+      // What I have done well, worked out from my records; and what I learnt outside NGG (domain/achievements.php).
+      achievements: () => request('/member/achievements.php'),
+      learning:       () => request('/member/learning.php'),
+      learningAdd:    (data) => request('/member/learning.php', { body: { action: 'add', data } }),
+      learningRemove: (entryId) => request('/member/learning.php', { body: { action: 'remove', entryId } }),
       coach:        (messages) => request('/member/coach.php', { body: { messages } }),
       companion:    () => request('/member/companion.php'),
       /* Opportunities that fit me (domain/opportunities.php); save toggles my bookmark. */
@@ -1271,6 +1305,11 @@
       securityRevokeOthers: () => request('/member/security.php', { body: { action: 'revoke_others' } }),
     },
     public: {
+      /* Maths Lab Lite — anyone: a question with a signed token, then marking with the worked solution. */
+      mathslabMap:   () => request('/public/mathslab.php?view=map'),
+      mathslabComp:  (comp) => request('/public/mathslab.php' + qs({ view: 'comp', comp })),
+      mathslabItem:  (comp) => request('/public/mathslab.php' + qs({ comp })),
+      mathslabCheck: (token, answer) => request('/public/mathslab.php', { body: { token, answer } }),
       /* The help centre's answers (api/public/help.php). No case is opened publicly. */
       help: (q) => request('/public/help.php' + (q ? qs({ q }) : '')),
       telegram:   () => request('/public/telegram.php'),
@@ -1353,7 +1392,7 @@
         submit:  (t, photoUrl, submissionId) => request('/public/reshoot.php', { body: { t, photoUrl, submissionId: submissionId || '' } }),
       },
       timetable: (centre) => request('/public/timetable.php' + qs({ centre: centre || '' })),
-      formation: (audience) => request('/public/formation.php' + qs({ audience: audience || 'member' })),
+      formation: (audience, opts) => request('/public/formation.php' + qs(Object.assign({ audience: audience || 'member' }, opts || {}))),
       timetableSave: (body) => request('/public/timetable-save.php', { body }),
       timetableLoad: (k) => request('/public/timetable-save.php' + qs({ k })),
       timetableTerm: () => request('/public/timetable-term.php'),
@@ -1388,6 +1427,8 @@
       verify:   (data) => request('/family/verify.php', { body: data }),
       logout:   (everywhere) => request('/family/logout.php', { body: { everywhere: !!everywhere } }),
       ward:     (linkId) => request('/family/ward.php' + qs({ link: linkId })),
+      // A ward's registration progress: done, what is left, who is helping (first name).
+      registration: (linkId) => request('/family/registration.php' + qs({ link: linkId })),
       // A child's Anchor week, for a parent's link; writes go through act('anchor.confirm' | 'anchor.remark').
       anchor:   (linkId) => request('/family/anchor.php' + qs({ link: linkId })),
       pay:      (linkId) => request('/family/pay.php', { body: { link: linkId } }),
@@ -1498,8 +1539,11 @@
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
       },
       formation: {
-        list: () => request('/admin/formation.php'),
+        list: (scope) => request('/admin/formation.php' + qs({ scope: scope || '' })),
         save: (block) => request('/admin/formation.php', { body: Object.assign({ action: 'save' }, block || {}) }),
+        /* One op per verb on one route: add, remove, move, shift, version.create,
+           version.delete, day.set — every one names its `scope` (the version). */
+        act: (action, args) => request('/admin/formation.php', { body: Object.assign({}, args || {}, { action: action }) }),
       },
       /* Opportunities shown to members (Learning → Opportunities). Capability: content. */
       /* Sign-in & security (domain/mfa.php): who has a second step, the policy per kind, and the desk's actions. */
@@ -1619,6 +1663,16 @@
         board:  (rating) => request('/admin/companion.php' + qs({ rating: rating || '' })),
         assess: (memberIds) => request('/admin/companion.php', { body: { action: 'assess', memberIds } }),
       },
+      /* Learning outside NGG, confirmed by an instructor; how each member is doing; achievements (domain/achievements.php). */
+      learning: {
+        list:        (status, memberId) => request('/admin/learning.php' + qs({ view: 'list', status: status || 'pending', memberId: memberId || '' })),
+        overview:    (centre) => request('/admin/learning.php' + qs({ view: 'overview', centre: centre || '' })),
+        achievements: (memberId) => request('/admin/learning.php' + qs({ view: 'achievements', memberId })),
+        review:      (entryIds, decision, note) => request('/admin/learning.php', { body: { action: 'review', entryIds, decision, note: note || '' } }),
+        importRows:  (platform, rows, apply) => request('/admin/learning.php', { body: { action: 'import', platform, rows, apply: !!apply } }),
+        award:       (memberId, d) => request('/admin/learning.php', { body: Object.assign({ action: 'award', memberId }, d) }),
+        awardRemove: (awardId) => request('/admin/learning.php', { body: { action: 'awardRemove', awardId } }),
+      },
       /* Where a course leads: the awarding bodies outside NGG, what each
          awards, and who holds one (domain/providers.php). */
       providers: {
@@ -1723,6 +1777,15 @@
         health:    (o) => request('/admin/courses.php' + qs(Object.assign({ view: 'health' }, o || {}))),
         set:       (action, memberIds, extra) => request('/admin/courses.php', { body: Object.assign({ action, memberIds }, extra || {}) }),
       },
+      /* The registration checklist (domain/registration-checklist.php). Capability: people. */
+      regcheck: {
+        list:    (o) => request('/admin/registration-checklist.php' + qs(Object.assign({ view: 'list' }, o || {}))),
+        ids:     (o) => request('/admin/registration-checklist.php' + qs(Object.assign({ view: 'list', ids: 1 }, o || {}))),
+        member:  (memberId) => request('/admin/registration-checklist.php' + qs({ view: 'member', memberId })),
+        suggest: (memberIds) => request('/admin/registration-checklist.php' + qs({ view: 'suggest', memberIds: (memberIds || []).join(',') })),
+        items:   () => request('/admin/registration-checklist.php' + qs({ view: 'items' })),
+        act:     (action, body) => request('/admin/registration-checklist.php', { body: Object.assign({}, body || {}, { action }) }),
+      },
       engagementPortal: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'portal' }, opts || {}))),
       /* Whether the community is a community: reply rate, distinct voices,
          reach, return rate, answer speed, and the posts nobody answered. */
@@ -1793,16 +1856,18 @@
       mentorSupport: (data) => request('/admin/mentor-support.php', { body: data }),
       applications: {
         list:    (q) => request('/admin/applications.php' + qs(q || {})),
-        status:  (id, status, message) => request('/admin/applications.php', { body: { id, status, message: message || '' } }),
+        /* Waitlisting or refusing tells the family: `message` is the desk's own words
+           (empty sends the standard line); `notify: false` files the status quietly. */
+        status:  (id, status, message, opts) => request('/admin/applications.php', { body: Object.assign({ id, status, message: message || '' }, opts || {}) }),
         message: (id, message) => request('/admin/applications.php', { body: { action: 'message', id, message } }),
-        // `startDate` prices the first month's commitment fee (only the meeting days left are charged).
-        convert: (id, startDate) => request('/admin/applications.php', { body: { action: 'convert', id, startDate: startDate || '' } }),
+        // `startDate` prices the first month's commitment fee (only the meeting days left are charged); `centre` when the application has none.
+        convert: (id, startDate, centre) => request('/admin/applications.php', { body: { action: 'convert', id, startDate: startDate || '', centre: centre || '' } }),
         update:  (id, data) => request('/admin/applications.php', { body: { action: 'update', id, data } }),
         remove:  (id) => request('/admin/applications.php', { body: { action: 'delete', id } }),
       },
       newsletter:   () => request('/admin/newsletter.php'),
       newsletterSend: (subject, body) => request('/admin/newsletter.php', { body: { subject, body } }),
-      donations:    () => request('/admin/donations.php'),
+      donations:    (o) => request('/admin/donations.php' + qs({ export: o && o.export ? 1 : '' })),
       comments:     (status) => request('/admin/comments.php' + qs({ status: status || 'pending' })),
       commentModerate: (commentId, act) => request('/admin/comments.php', { body: { commentId, do: act } }),
       promos: {
@@ -1969,6 +2034,10 @@
         recover: () => request('/admin/photo-framing.php', { body: { action: 'recover' }, timeout: 180000 }),
         lost:    () => request('/admin/photo-framing.php', { body: { action: 'lost' }, timeout: 120000 }),
         restore: (name, data) => request('/admin/photo-framing.php', { body: { action: 'restore', name, data }, timeout: 120000 }),
+        cloud:    () => request('/admin/photo-framing.php', { body: { action: 'cloud' }, timeout: 120000 }),
+        useCloud: (name, place, rowId, url) => request('/admin/photo-framing.php', { body: { action: 'useCloud', name, place, rowId, url } }),
+        toBucket: () => request('/admin/photo-framing.php', { body: { action: 'toBucket' }, timeout: 120000 }),
+        variants: () => request('/admin/photo-framing.php', { body: { action: 'variants' }, timeout: 120000 }),
       },
       membership: {
         list:     (status) => request('/admin/membership.php' + qs({ status: status || '' })),
@@ -1978,6 +2047,8 @@
         bank:     (bank) => request('/admin/membership.php', { body: { action: 'bank', bank } }),
         bankConfirm: (confirmAccountNumber) => request('/admin/membership.php', { body: { action: 'bankConfirm', confirmAccountNumber } }),
         bankCancel:  () => request('/admin/membership.php', { body: { action: 'bankCancel' } }),
+        // The legal details on every invoice, receipt and certificate: read, or save with `data`.
+        documents:   (data) => data ? request('/admin/membership.php', { body: { action: 'documents', data } }) : request('/admin/membership.php' + qs({ view: 'documents' })),
         // The evidence travels as a data URL, compressed in the browser first (a host refuses big bodies).
         record:   (data) => request('/admin/membership.php', { body: Object.assign({ action: 'record' }, data), timeout: 120000 }),
         verify:   (paymentId, confirmReference, confirmAmount, checked) => request('/admin/membership.php', { body: { action: 'verify', paymentId, confirmReference, confirmAmount, checked: !!checked } }),
@@ -2000,6 +2071,8 @@
         // CACENTRE runs the Wi-Fi; NGG sends its people and its say (domain/wifi-cacentre.php).
         cacentre: () => request('/admin/wifi.php' + qs({ view: 'cacentre' })),
         cacentrePush: () => request('/admin/wifi.php', { body: { action: 'cacentrePush' }, timeout: 120000 }),
+        // Everybody still on a starting password, within the admin's centres, to hand out.
+        cacentreStarts: () => request('/admin/wifi.php' + qs({ view: 'starts' }), { timeout: 60000 }),
         gatewayMoved: (gatewayId, undo) => request('/admin/wifi.php', { body: { action: 'moved', gatewayId, undo: !!undo } }),
         testAtNextFetch: (gatewayId) => request('/admin/wifi.php', { body: { action: 'test', gatewayId } }),
         speedSave: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'speed' }, data) }),
@@ -2075,6 +2148,8 @@
         settingsSet: (data) => request('/admin/fees.php', { body: { action: 'settings', data } }),
         member:      (memberId) => request('/admin/fees.php' + qs({ view: 'member', memberId })),
         arrears:     (limit) => request('/admin/fees.php' + qs({ view: 'arrears', limit })),
+        journal:     (f) => request('/admin/fees.php' + qs(Object.assign({ view: 'journal' }, f || {}))),
+        unappliedResolve: (id, decision, note) => request('/admin/fees.php', { body: { action: 'unappliedResolve', id, decision, note } }),
         training: (q) => request('/admin/fees.php' + qs(Object.assign({ view: 'training' }, q || {}))),
         /* Find anybody's account, not only a debtor's — the arrears list holds
            people who owe, so it could never answer "has Ada paid?". */
@@ -2083,6 +2158,8 @@
         void:        (entryId, reason) => request('/admin/fees.php', { body: { action: 'void', entryId, reason } }),
         mou:         (memberId) => request('/admin/fees.php', { body: { action: 'mou', memberId } }),
         remindOff:   (memberId, off) => request('/admin/fees.php', { body: { action: 'remindOff', memberId, off } }),
+        notices:     () => request('/admin/fees.php' + qs({ view: 'notices' })),
+        noticesRun:  () => request('/admin/fees.php', { body: { action: 'noticesRun' } }),
         charge:      (memberId, kind, amount, reason, note) => request('/admin/fees.php', { body: { action: 'charge', memberId, kind, amount, reason, note } }),
         fineImport:  (rows, opts) => request('/admin/fees.php', { body: Object.assign({ action: 'fineImport', rows }, opts || {}) }),
         waive:       (memberId, amount, reason) => request('/admin/fees.php', { body: { action: 'waive', memberId, amount, reason } }),
@@ -2118,6 +2195,8 @@
         heldDecide:(id, decision) => request('/admin/policy.php', { body: { action: 'heldDecide', id, decision } }),
         unmatched: (id, personId, personType, dismiss) => request('/admin/policy.php', { body: { action: 'unmatchedMatch', id, personId: personId || '', personType: personType || 'member', dismiss: !!dismiss } }),
         repair:    (opts) => request('/admin/policy.php', { body: Object.assign({ action: 'repair' }, opts || {}) }),
+        halfday:   () => request('/admin/policy.php', { body: { action: 'halfday' } }),
+        prelate:   () => request('/admin/policy.php', { body: { action: 'prelate' } }),
         freshStart:(opts) => request('/admin/policy.php', { body: Object.assign({ action: 'freshStart' }, opts || {}) }),
         correctives: () => request('/admin/policy.php' + qs({ view: 'correctives' })),
         correctivesDone: (ids) => request('/admin/policy.php', { body: { action: 'correctivesDone', ids } }),
@@ -2235,7 +2314,8 @@
       },
       volunteers: {
         list:    (programme) => request('/admin/volunteers.php' + qs({ programme: programme || '' })),
-        approve: (id) => request('/admin/volunteers.php', { body: { action: 'approve', id } }),
+        /* An under-18 applicant is approved only with `guardianConfirmed`: staff spoke to the guardian on the form. */
+        approve: (id, guardianConfirmed) => request('/admin/volunteers.php', { body: { action: 'approve', id, guardianConfirmed: !!guardianConfirmed } }),
         decline: (id, reason) => request('/admin/volunteers.php', { body: { action: 'decline', id, reason: reason || '' } }),
         safeguard: (volunteerId, status) => request('/admin/volunteers.php', { body: { action: 'safeguard', volunteerId, status } }),
         // Portal access, granted per person by a super admin. caps ⊆ ['summer','club'].
@@ -2498,6 +2578,8 @@
   API.portalBeat = (portal, seconds) => request('/member/beat.php', { body: { portal: portal, seconds: seconds } });
 
   global.NGGApi = API;
+  // The image cloud and hosts, read once a load (card printing; nggImgFetchParts in photos.js).
+  if (global.document) setTimeout(() => { getConfig().catch(() => {}); }, 0);
   global.NGGApiBase = BASE;
 
   /* How long people actually use the portals. Time counts only while the page

@@ -222,6 +222,8 @@ const VENDOR_LIBS = {
      its own TensorFlow.js; the models load from /vendor/human/models/. */
   human: { js: ["/vendor/human/human.js"], global: "Human" },
   qrcode: { js: ["/vendor/qrcode.min.js"], global: "qrcode" },
+  // KaTeX 0.16.11 — maths typesetting for the Maths Lab (woff2 fonts only).
+  katex: { js: ["/vendor/katex/katex.min.js"], css: ["/vendor/katex/katex.min.css"], global: "katex" },
   // Filerobot 5.0.0 — the photo editor. Built by vendor-build.js with React
   // aliased to our page globals, so it must load AFTER React (it always does:
   // React is in the document head, this is fetched from a click).
@@ -791,7 +793,7 @@ function TopNav({ page, setPage }) {
             <BrandLogo size={42}/>
             <div className="brand-word">
               <b>Next Generation Genius</b>
-              <span>Afrovanguard · est. 2024</span>
+              <span>Afrovanguard · est. 2023</span>
             </div>
           </a>
 
@@ -1213,7 +1215,7 @@ function Footer({ setPage, page }) {
                 <BrandLogo size={52}/>
                 <div>
                   <div className="footer-brand-line">Next Generation Genius</div>
-                  <div className="footer-brand-tag">An Afrovanguard movement · est. 2024</div>
+                  <div className="footer-brand-tag">An Afrovanguard movement · est. 2023</div>
                 </div>
               </div>
               <p>
@@ -1348,7 +1350,7 @@ function humanizeError(message, code) {
    THE ADMIN ACTION LAYER — one selection primitive, one bulk bar, one runner.
 
    Every screen in this console had rolled its own. There were at least six
-   variants of "tick some rows and do a thing to them": AdminApplications kept a
+   variants of "tick some rows and do a thing to them": the old applications screen (removed) kept a
    Set and awaited a loop, SummerPending kept a Set called `ticked` with its own
    bar, the review desk kept `picked` and passed an `onBulk` up, the assessment
    screen kept an object map, the mentor sheet took an array of ids, and the two
@@ -2271,7 +2273,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={startCamera}>{value ? "Re-take" : "Take photo"}</button>
             <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy ? "Uploading…" : "Upload"}</button>
-            {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setZoom(true)}>View</button>}
+            {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setZoom(true)}>View larger</button>}
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("link")}>Paste link</button>
             {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange("")}>Remove</button>}
             <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadPicked(f); e.target.value = ""; }}/>

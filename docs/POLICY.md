@@ -50,7 +50,10 @@ that would go past the limit is refused with how many are left.
 
 ### 1.3 Check-in & AI verification
 - Every student scans their slip / student ID **IN and OUT** daily at the checkpoint.
-- Fail to scan → the AI logs a **full absence** for the day. No manual overrides.
+- Fail to scan IN → the AI logs a **full absence** for the day.
+- Scanned IN but not OUT → a **half-day**, not an absence (from 31 Oct 2026):
+  the child came. Two half-days count as one absence. A half-day carries no
+  absence fine. A sign-out that arrives late (a gate back-fill) clears it.
 - **Musing Period** is compulsory; late/missing it downgrades the day to a
   **half-day**, accelerating the dormancy track.
 
@@ -124,13 +127,38 @@ Decorum/silence before superiors and in strategy sessions. Talking over a
 superior, arguing directives in public, or bypassing the chain is a dishonour
 against the vision.
 
+### 3.2a Safeguarding comes before the chain
+The chain of command and §3.2 are for running the programme. They never apply
+to a child's safety. Any child, parent or volunteer who is worried about harm —
+abuse, bullying, an adult's behaviour, a child being unsafe at home or at a
+centre — may go **straight to anyone they trust**: a mentor, any admin, the
+safeguarding lead, or the executive portal. They do not have to go through the
+person they are worried about, or ask permission. Doing so is never a breach
+of honour or silence, and nobody may be sanctioned for raising a concern in
+good faith.
+
 ### 3.3 Crisis resolution (the safety valve)
 1. On-ground issues flow step-by-step up the chain.
 2. Formal escalation: document and transmit digitally to the executive portal
    (cacentre@afrovanguard.org.ng). No scenes on the floor.
 
+## Part IV-A — Appeals and review
+Any decision on a person's record can be appealed: a warning, the Dormant
+Track, a suspension, an eviction, a fine or a fee.
+- A member appeals from Records; a parent from the family account. They name
+  the decision and say what happened.
+- **A different person reviews it.** Whoever issued or confirmed the decision
+  cannot decide its appeal.
+- **A reason either way.** Overturned or kept, the family is told why.
+- **Overturned** lifts the decision and everything it carried: its fine comes
+  off the account (a paid one becomes credit), a suspension's re-entry fee goes
+  with it.
+- **An eviction is not confirmed while its appeal is open.**
+- One appeal per decision.
+
 ## Part IV — Reinstatement after eviction
-1. **365-day cool-off** — fully barred for one calendar year; no appeals.
+1. **365-day cool-off** — fully barred for one calendar year, once any appeal
+   (Part IV-A) has been decided.
 2. **Mandatory training** — pass **CIMC 1** (Community Influencing Master Class 1).
 3. **Reinstatement fine** — ₦10,000 before the AI profile / credentials reactivate.
 
@@ -240,10 +268,37 @@ thresholds → Stricter than Summer School**:
 
 1. **Every late is fined, from the first** (default ₦500), on the member's
    account. This is in addition to the suspension ladder.
-2. **No grace band.** Arriving after resumption (plus any grace minutes) is
-   late — there is no "tardy" in between for members.
-3. **A day with no sign-out is incomplete** and counts as an absence, as §1.3
-   does for Summer School. Sign-out opens at the closing time set in
+2. **When "late" begins depends on the rulebook in force.** Under the older
+   *ladder*, arriving after resumption (plus any grace minutes) was late. Under
+   the **member rulebook** (the default since 30 Oct 2026) a member is late
+   only from the **first lateness band** (09:30 by default); arriving between
+   resumption and that time is recorded as *tardy* — seen, and it costs
+   nothing. Each band carries its own fine and frog jumps; from the review
+   time on, a late goes to management instead.
+
+   *Lates before the first band (correction, 3 Nov 2026).* Lates the ladder
+   had logged for arrivals such as 09:01 or 09:21 were later charged by the
+   rulebook under its first band — "Arrived 09:21 (09:45 to before 10:00) —
+   3 frog jumps". That is corrected: an arrival before the first band is never
+   charged, and each such late on record is voided ("Not late under the
+   rulebook"), kept as tardy, and its fine lifted — a fine already paid stays
+   on the account as credit. Frog jumps already done stay done. The nightly
+   check applies this by itself; **Compliance → Correct lates before the first
+   band** applies it at once and says what changed.
+
+   *One penalty per entry.* A fine and the frog jumps that go with it are two
+   entries: the fine says only the money (its words are also the line on the
+   family's account), the exercise says only the exercise. The frog-jumps list
+   shows what each set was for (Late / Absent) and the day.
+
+   *Fines owed reads the account.* A policy fine the family's payments cover
+   (oldest charges first, as every money screen reads it) is marked paid by
+   itself, and owed again if that payment is voided — so the conduct board,
+   the roster and the family's account agree. A fine a person settled or
+   waived by hand is left as they set it.
+3. **A day with no sign-out is a half-day** (since 31 Oct 2026; it was a whole
+   absence before, and those days were converted). Two half-days count as one
+   absence. Sign-out opens at the closing time set in
    Settings, so leaving early means no sign-out. This applies from the day the
    rule first took effect; earlier days are not counted.
 

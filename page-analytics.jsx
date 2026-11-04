@@ -1283,7 +1283,7 @@ function AnalyticsWorkspace() {
                     {anFmt(c.evidence || 0)}
                   </td>
                   <td className="mono">{anFmt(c.stars)}</td>
-                  <td><button className="an-open" onClick={() => openDrill("centre-students", c.name + " — students", { centre: c.name })}>Open →</button></td>
+                  <td><button className="an-open" onClick={() => openDrill("centre-students", c.name + " — students", { centre: c.name })} aria-label={"List the students at " + c.name}>List students →</button></td>
                 </tr>
               ))}
             </tbody>
@@ -1424,7 +1424,7 @@ function AnalyticsWorkspace() {
         : <div className="an-grid an-gal">{ev.gallery.slice(0, 12).map(a => {
           const photo = (a.evidence || []).find(e => e.type === "photo" && e.url);
           return <div key={a.activityId} className="an-card click" style={{ padding: 10 }} onClick={() => showEvidence(a)}>
-            <div className="an-thumb">{photo ? <img src={photo.url} alt="" loading="lazy"/> : "🖼"}</div>
+            <div className="an-thumb">{photo ? <img src={nggImg(photo.url, "small")} alt="" loading="lazy"/> : "🖼"}</div>
             <b style={{ display: "block", marginTop: 9, fontSize: 14 }}>{a.title}</b>
             <div style={{ color: "var(--ink-400)", fontSize: 12, margin: "2px 0 6px" }}>{a.category} · {a.centre || "All"} · {a.date}</div>
             <div className="an-ev">{(a.evidence || []).map((e, i) => <span key={i} className="an-evtype" style={{ fontSize: 10 }}>{e.type}</span>)}</div>

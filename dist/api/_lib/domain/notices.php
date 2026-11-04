@@ -250,7 +250,7 @@ function notice_public(array $n): array {
 /** The desk's view: the source text too, and the counts. */
 function notice_admin(array $n, ?array $counts = null): array {
     return notice_public($n) + ['body' => (string)$n['body'], 'audience' => (string)$n['audience'], 'reach' => (string)$n['reach'],
-            'emailOn' => (bool)(int)$n['emailOn'], 'createdAt' => (string)$n['createdAt'], 'updatedAt' => (string)$n['updatedAt'],
+            'emailOn' => (bool)(int)$n['emailOn'], 'communityOn' => (bool)(int)($n['communityOn'] ?? 0), 'createdAt' => (string)$n['createdAt'], 'updatedAt' => (string)$n['updatedAt'],
             'stats' => safe_json((string)$n['stats']) ?: null, 'remindedAt' => (string)$n['remindedAt'],
             'scheduledAt' => (string)($n['scheduledAt'] ?? ''), 'scheduledBy' => (string)($n['scheduledBy'] ?? '')]
         + ($counts ?? []);
@@ -286,7 +286,9 @@ function notice_clean(array $p): array {
     $aud = trim((string)($p['audience'] ?? 'all')) ?: 'all';
     if (!notice_audience_ok($aud)) return ['ok' => false, 'error' => 'bad_audience', 'field' => 'audience', 'detail' => 'Choose everyone, a programme, or one of the centres.'];
     $reach = (string)($p['reach'] ?? 'both');
-    $row += ['audience' => $aud, 'reach' => isset(NOTICE_REACH[$reach]) ? $reach : 'both', 'needsAck' => !empty($p['needsAck']) ? 1 : 0, 'emailOn' => !empty($p['emailOn']) ? 1 : 0];
+    $row += ['audience' => $aud, 'reach' => isset(NOTICE_REACH[$reach]) ? $reach : 'both', 'needsAck' => !empty($p['needsAck']) ? 1 : 0, 'emailOn' => !empty($p['emailOn']) ? 1 : 0,
+        // Also shown in Community as a pinned Announcement (community_announce) — members' audiences only.
+        'communityOn' => !empty($p['communityOn']) ? 1 : 0];
     return ['ok' => true, 'row' => $row];
 }
 
@@ -356,7 +358,7 @@ function admin_notices_save(array $p): array {
            out: re-addressing a sent notice is a new notice, and an
            acknowledgement asked for afterwards would reach nobody's inbox as
            something to sign. */
-        $row = array_diff_key($c['row'], ['audience' => 1, 'reach' => 1, 'emailOn' => 1, 'needsAck' => 1]);
+        $row = array_diff_key($c['row'], ['audience' => 1, 'reach' => 1, 'emailOn' => 1, 'needsAck' => 1, 'communityOn' => 1]);
         db_update('notices', $row + ['correctedBy' => $by, 'correctedAt' => $now, 'correctionNote' => $note, 'updatedAt' => $now], ['noticeId' => $id]);
         audit('notice.correct', $by, $id, ['note' => $note], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'notice' => notice_admin_counted(notice_get($id)), 'corrected' => true];
@@ -393,7 +395,7 @@ function admin_notices_publish(array $p): array {
  */
 function notice_publish_run(array $n, string $by, string $ip, bool $scheduled = false): array {
     if ((string)$n['status'] !== 'draft') return ['ok' => false, 'error' => 'already_published', 'detail' => 'This notice has already gone out.'];
-    $c = notice_clean($n + ['needsAck' => (int)$n['needsAck'], 'emailOn' => (int)$n['emailOn']]); if (!$c['ok']) return $c;
+    $c = notice_clean($n + ['needsAck' => (int)$n['needsAck'], 'emailOn' => (int)$n['emailOn'], 'communityOn' => (int)($n['communityOn'] ?? 0)]); if (!$c['ok']) return $c;
     $members = notice_members($n);
     if (count($members) > NOTICE_AUDIENCE_MAX) return ['ok' => false, 'error' => 'too_many', 'detail' => 'A notice reaches at most ' . NOTICE_AUDIENCE_MAX . ' members at once; choose a programme or a centre.'];
     if (!$members) return ['ok' => false, 'error' => 'nobody', 'detail' => 'Nobody is in that audience.'];
@@ -443,6 +445,12 @@ function notice_publish_run(array $n, string $by, string $ip, bool $scheduled = 
             try { db_insert('notice_mail', ['noticeId' => $id, 'email' => $e, 'name' => mb_substr($name, 0, 160), 'status' => 'queued', 'createdAt' => $now0]); $stats['emailsQueued']++; }
             catch (Throwable $e2) { /* already queued for this address */ }
         }
+    }
+    /* In Community too, when asked: a pinned Announcement in the commons that links to the notice in full. */
+    if ((int)($n['communityOn'] ?? 0) && function_exists('community_announce')) {
+        $fit = community_announce_fits((string)$n['audience'], $reach);
+        $cp = $fit['ok'] ? community_announce($by, 'notice:' . $id, $title, $excerpt, $fit['centre'], '/notice/' . rawurlencode($id)) : ['ok' => false];
+        $stats['community'] = !empty($cp['ok']) ? 1 : 0;
     }
     db_update('notices', ['stats' => json_encode($stats)], ['noticeId' => $id]);
     audit($scheduled ? 'notice.publish.scheduled' : 'notice.publish', $by, $id, ['audience' => (string)$n['audience'], 'reach' => $reach] + $stats, $ip);
@@ -554,6 +562,8 @@ function admin_notices_withdraw(array $p): array {
     $by = (string)$g['requester']['memberId'];
     db_update('notices', ['status' => 'withdrawn', 'withdrawnBy' => $by, 'withdrawnAt' => now_iso(), 'withdrawReason' => $why, 'updatedAt' => now_iso()], ['noticeId' => (string)$n['noticeId']]);
     db_exec("UPDATE notice_mail SET status = 'cancelled' WHERE noticeId = ? AND status = 'queued'", [(string)$n['noticeId']]);
+    // Its Community announcement comes down with it — a withdrawn notice is not left pinned.
+    if (function_exists('community_announce_withdraw')) community_announce_withdraw('notice:' . (string)$n['noticeId'], $by);
     audit('notice.withdraw', $by, (string)$n['noticeId'], ['reason' => $why], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'notice' => notice_admin(notice_get((string)$n['noticeId']))];
 }

@@ -380,7 +380,7 @@ function family_ward(array $p): array {
                          'late' => array_map(static fn($r) => ['date' => (string)$r['date'], 'minutes' => (int)$r['lateMinutes']], $late)],
         'conduct' => ['enabled' => !empty($conduct['enabled']), 'state' => (string)($conduct['state'] ?? ''), 'until' => (string)($conduct['until'] ?? ''),
                       'reason' => (string)($conduct['reason'] ?? ''), 'finesOwed' => (int)($conduct['finesOwed'] ?? 0),
-                      'fines' => array_slice($conduct['fines'] ?? [], 0, 6)],
+                      'fines' => array_slice($conduct['fines'] ?? [], 0, 6), 'decisions' => $conduct['decisions'] ?? []],
         'fees' => $acct ? ['enabled' => true, 'outstanding' => (int)$acct['outstanding'], 'payable' => (int)$acct['payable'],
                            'currency' => (string)($acct['currency'] ?? ''),
                            'outstandingText' => fees_money_text((int)$acct['outstanding']), 'payableText' => fees_money_text((int)$acct['payable']),
@@ -392,8 +392,12 @@ function family_ward(array $p): array {
                            'status' => $u['progress'] ? (string)$u['progress']['status'] : 'not_started'], array_slice($next, 0, 5))],
         'timetable' => function_exists('member_timetable') ? array_diff_key(member_timetable(['memberId' => $mid]), ['ok' => 1, 'course' => 1]) : null,   // instructors by title and surname
         'companion' => function_exists('companion_public') ? companion_public($comp ?: null) : null,
+        // What they have done well, worked out (domain/achievements.php): a family sees more than the fines.
+        'achievements' => function_exists('member_achievements_for') ? array_diff_key(member_achievements_for($m), ['ok' => 1]) : null,
         // Growth over the term, written to a parent (no staff-only records): mp_growth in mentor-portal.php.
         'growth' => function_exists('mp_growth') ? mp_growth($mid, 'family') : null,
+        // Invoices, receipts, acknowledgements and Math Lab certificates, each with its private link (documents.php).
+        'documents' => function_exists('documents_for_member') ? documents_for_member($mid) : [],
         'requests' => array_map('member_request_public', $reqs),
         // Excused absences this session, of the two allowed (member_excuses, POLICY §1.1).
         'excuses' => function_exists('member_excuses') ? array_diff_key(member_excuses($m), ['days' => 1]) : null,
@@ -422,7 +426,7 @@ function family_request_create(array $p): array {
         'memberId' => (string)$l['memberId'], 'kind' => $kind,
         'subject' => (string)($p['subject'] ?? ''), 'body' => (string)($p['body'] ?? ''),
         'fromDate' => (string)($p['fromDate'] ?? ''), 'toDate' => (string)($p['toDate'] ?? ''),
-        'refEntryId' => (string)($p['refEntryId'] ?? ''), 'proofUrl' => (string)($p['proofUrl'] ?? ''), 'ip' => (string)($p['ip'] ?? ''),
+        'refEntryId' => (string)($p['refEntryId'] ?? ''), 'refSanctionId' => (int)($p['refSanctionId'] ?? 0), 'proofUrl' => (string)($p['proofUrl'] ?? ''), 'ip' => (string)($p['ip'] ?? ''),
         'amount' => $p['amount'] ?? null, 'reference' => (string)($p['reference'] ?? ''), 'paidAt' => (string)($p['paidAt'] ?? ''), 'parts' => $p['parts'] ?? null,
         'raisedBy' => 'guardian:' . $gid,
         'raisedByName' => trim((string)($g['fullName'] ?? '')) !== '' ? (string)$g['fullName'] : 'A parent (' . mask_email((string)($g['email'] ?? '')) . ')',

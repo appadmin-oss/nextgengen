@@ -22,28 +22,91 @@
  */
 
 /*
- * THE CONNECTION IS THE DIRECTORY'S (domain/directory-push.php). Same key
- * (DIR_PUSH_SECRET_NGG / dir_push_secret), same CACENTRE address
- * (dir_push_url), same signer and sender. Only the document type differs:
- * `wifi.roster` for the people and NGG's say, `wifi.card` for one member's
- * Wi-Fi to show on their own dashboard. There is no Wi-Fi key of its own.
+ * THE CONNECTION IS ATTENDANCE'S (owner, 2026-10-31). NGG already shares one
+ * secret with the gate at CACENTRE — hooks.attendance_secret here, NGG_SECRET on
+ * the gate — for card lookups and check-ins. The Wi-Fi rides it: every call is a
+ * JSON POST to the gate (CACENTRE's address, /v1/issuers/ngg/wifi), signed the way
+ * the gate signs to NGG (X-NGG-Timestamp, X-NGG-Signature = sha256=HMAC(secret,
+ * ts.body)). The gate checks it, spends the signature once, and passes it to
+ * CACENTRE. So the Wi-Fi works wherever attendance does: no key of its own, and the
+ * directory key carries the directory only. `typ` is `wifi.roster` for the people
+ * and NGG's say, `wifi.card` for one member's Wi-Fi (and the starting-password list).
  *
- * PASSWORDS ARE SET ON THE MEMBER'S DASHBOARD. The member opens Me → Wi-Fi in
- * this app and chooses their own; the app passes it to CACENTRE, which holds
- * it sealed and never sends it back (wifi_cac_member_view). There are no PINs.
+ * PASSWORDS: CACENTRE gives everybody a starting password and holds it sealed. A
+ * member sees theirs on their dashboard until they choose their own; a member with
+ * no email is handed it at the gate when they check in, or by an admin from the
+ * starting-password list (admin_wifi_cac_starts).
  */
 
 /** Must match WifiStore::ROSTER_MAX at CACENTRE: one push carries at most this many. */
 const WIFI_CAC_MAX = 5000;
+
+/**
+ * The most a single push may weigh, in bytes.
+ *
+ * Not CACENTRE's limit — the HOST'S. CACENTRE sits on cPanel, and
+ * ModSecurity's `SecRequestBodyNoFilesLimit` defaults to 131072 bytes and
+ * REJECTS a larger body in phase 2, before PHP runs. cPanel's rules deny with
+ * `status:406`, so what comes back is an error page, not JSON, and the gate
+ * could only report "CACENTRE answered 406". A roster of 1,200 people is
+ * ~218KB: every push failed, so nothing was applied at all.
+ *
+ * 96 KiB leaves room for the envelope and for a host that trims the limit
+ * further. Raise it with `$CONFIG['wifi']['cac_body_max']` if the host's
+ * limit has been raised to match — the number that matters is theirs.
+ */
+const WIFI_CAC_BODY_MAX = 98304;
+
+/** Room for {"typ":…,"full":…,"people":[]} and the replay nonce. */
+const WIFI_CAC_ENVELOPE = 160;
 const WIFI_CAC_EVERY = 900;        // seconds between pushes from the web-cron tick
 const WIFI_CAC_LAST = 'wifi_cac_last';
 const WIFI_CAC_ROUTER_FRESH = 86400; // an NGG gateway heard from within this still serves its centre
 
-function wifi_cac_ready(): bool { return dirpush_ready(); }
+/** The attendance secret NGG shares with the gate; empty while attendance is not connected. */
+function wifi_cac_secret(): string {
+    $s = trim((string)(getenv('NGG_GATE_SECRET') ?: ($GLOBALS['CONFIG']['hooks']['attendance_secret'] ?? '')));
+    return strlen($s) >= 16 ? $s : '';
+}
 
-/** POST one Wi-Fi document over the directory's connection. */
-function wifi_cac_post(string $path, string $typ, array $claims, int $timeout = 60): array {
-    return dirpush_post(dirpush_base() . $path, dirpush_sign($typ, $claims), $timeout);
+function wifi_cac_ready(): bool { return wifi_cac_secret() !== '' && function_exists('curl_init'); }
+
+/**
+ * One Wi-Fi call, as the gate checks it (gate/src/wifi.ts): the body, and its
+ * signature over "ts.body" with the attendance secret — NGG's own scheme.
+ *
+ * @return array{url:string, body:string, headers:list<string>}
+ */
+function wifi_cac_request(string $typ, array $claims, string $secret, int $ts): array {
+    /* `n`: two identical calls in one second must not look like a replay to the gate. */
+    $body = json_encode(['typ' => $typ] + $claims + ['n' => bin2hex(random_bytes(8))], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return ['url' => dirpush_base() . '/v1/issuers/ngg/wifi', 'body' => $body, 'headers' => ['Content-Type: application/json', 'Accept: application/json',
+        'X-NGG-Timestamp: ' . $ts, 'X-NGG-Signature: sha256=' . hash_hmac('sha256', $ts . '.' . $body, $secret)]];
+}
+
+/** POST one Wi-Fi call to the gate, on the attendance connection. */
+function wifi_cac_post(string $typ, array $claims, int $timeout = 20): array {
+    $secret = wifi_cac_secret();
+    if ($secret === '') return ['ok' => false, 'error' => 'not_configured'];
+    $rq = wifi_cac_request($typ, $claims, $secret, time());
+    $ch = curl_init($rq['url']);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_HTTPHEADER => $rq['headers'], CURLOPT_POSTFIELDS => $rq['body'],
+    ]);
+    $raw = curl_exec($ch); $err = curl_error($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($err !== '' || $raw === false) { error_log('[wifi-cac] ' . ($err ?: 'no response')); return ['ok' => false, 'error' => 'unreachable']; }
+    $json = json_decode((string)$raw, true);
+    /* The gate answers JSON on this route, always. Anything else came from somewhere
+       that does not know the route — a gate not yet redeployed proxies an unknown
+       /v1 path through to the site, which answers with a web page. */
+    if (!is_array($json)) return ['ok' => false, 'error' => 'gate_not_updated', 'http' => $code];
+    if (empty($json['ok'])) {
+        error_log('[wifi-cac] HTTP ' . $code . ' ' . json_encode($json));
+        if (!isset($json['error']) && isset($json['code'])) $json['error'] = $json['code'];
+    }
+    return $json + ['http' => $code];
 }
 
 /** The reason CACENTRE shows a person, in NGG's words, for a case of the access table. */
@@ -83,21 +146,42 @@ function wifi_cac_people(): array {
     foreach ($parts as $s) {
         $id = (string)$s['studentId']; $ed = $eds[(string)$s['cohortId']] ?? null;
         $d = wifi_access_for_participant($s, $ed, ['settings' => wifi_settings((string)$s['centre']), 'account' => $acc['summer|' . $id] ?? null, 'today' => $today, 'usage' => null]);
-        $out[] = ['id' => 'summer-' . $id, 'kind' => 'participant', 'name' => trim((string)$s['fullName']), 'email' => '',
+        $out[] = wifi_cac_trim(['id' => 'summer-' . $id, 'kind' => 'participant', 'name' => trim((string)$s['fullName']), 'email' => '',
             'printedId' => wifi_username_for('summer', $s), 'homeSite' => $codes[(string)$s['centre']] ?? '',
-            'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => (string)($ed['endDate'] ?? '')];
+            'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => (string)($ed['endDate'] ?? '')]);
     }
     return $out;
 }
 
 /** One member's roster row: the same row the push sends, built for one person. */
+/**
+ * Drop the fields that are empty anyway.
+ *
+ * CACENTRE reads every optional field as `$r['x'] ?? ''`, so an absent one
+ * and an empty one mean exactly the same thing there — but the empty one
+ * still costs its name and quotes in every row, and what the roster is paged
+ * against is counted in BYTES. `"why":"","validUntil":""` alone is 24 bytes
+ * a person; on a roster of 1,200 that is a page of its own.
+ *
+ * `id`, `kind` and `verdict` always travel, and that is not tidiness:
+ * CACENTRE refuses a row without the first two, and an ABSENT verdict reads
+ * there as `on` (`$r['verdict'] ?? 'on'`) — so dropping an empty one would
+ * quietly put somebody on the internet.
+ */
+function wifi_cac_trim(array $row): array {
+    foreach ($row as $k => $v) {
+        if ($v === '' && !in_array($k, ['id', 'kind', 'verdict'], true)) unset($row[$k]);
+    }
+    return $row;
+}
+
 function wifi_cac_member_row(array $m, array $codes, array $policy, array $owing, array $acc): array {
     $id = (string)$m['memberId']; $staff = wifi_is_staff($m);
     $d = wifi_access_for($m, ['settings' => wifi_settings((string)$m['centre']), 'policy' => $policy[$id] ?? null, 'feesOwing' => !empty($owing[$id]),
         'account' => $acc['member|' . $id] ?? null, 'usage' => null]);
-    return ['id' => $id, 'kind' => $staff ? 'staff' : 'member', 'name' => trim((string)$m['fullName']), 'email' => strtolower(trim((string)$m['email'])),
+    return wifi_cac_trim(['id' => $id, 'kind' => $staff ? 'staff' : 'member', 'name' => trim((string)$m['fullName']), 'email' => strtolower(trim((string)$m['email'])),
         'printedId' => wifi_username_for('member', $m), 'homeSite' => $staff ? '' : ($codes[(string)$m['centre']] ?? ''),
-        'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => ''];
+        'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => '']);
 }
 
 /** The row for one member, read fresh, for CACENTRE to add them at once if it has not been sent them yet. */
@@ -112,6 +196,37 @@ function wifi_cac_me(array $m): ?array {
 }
 
 /**
+ * The roster, cut into pushes that fit through the host's door.
+ *
+ * By BYTES, not by a count of people: a count cannot know how long anybody's
+ * name or email is, and the limit that rejects us is counted in bytes. Each
+ * row is measured as it will actually be encoded.
+ *
+ * `WIFI_CAC_MAX` still bounds a page as well — CACENTRE refuses a longer list
+ * outright (`too_many`) — so whichever runs out first ends the page.
+ *
+ * A single row bigger than the budget cannot be split, so it goes alone and
+ * is refused honestly by the host rather than silently dropped here.
+ *
+ * @param  list<array<string,mixed>> $people
+ * @return list<list<array<string,mixed>>>  at least one page, possibly empty
+ */
+function wifi_cac_pages(array $people, ?int $budget = null): array {
+    $budget = $budget ?? (int)($GLOBALS['CONFIG']['wifi']['cac_body_max'] ?? WIFI_CAC_BODY_MAX);
+    $budget = max(4096, $budget) - WIFI_CAC_ENVELOPE;
+    $pages = []; $cur = []; $size = 0;
+    foreach ($people as $row) {
+        $n = strlen((string)json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) + 1;  // +1 for the comma
+        if ($cur !== [] && ($size + $n > $budget || count($cur) >= WIFI_CAC_MAX)) {
+            $pages[] = $cur; $cur = []; $size = 0;
+        }
+        $cur[] = $row; $size += $n;
+    }
+    if ($cur !== [] || $pages === []) $pages[] = $cur;
+    return $pages;
+}
+
+/**
  * Send everybody. One full push when the list fits (anybody NGG no longer
  * sends loses Wi-Fi there); several partial pushes when it does not, which
  * withdraw nobody — said so in the result rather than hidden.
@@ -119,18 +234,30 @@ function wifi_cac_me(array $m): ?array {
 function wifi_cac_push(string $by = 'cron'): array {
     if (!wifi_cac_ready()) return ['ok' => false, 'error' => 'not_configured'];
     $people = wifi_cac_people();
-    $chunks = array_chunk($people, WIFI_CAC_MAX) ?: [[]];
+    $chunks = wifi_cac_pages($people);
+    /* `full` says "this is everybody", and CACENTRE withdraws anyone of ours
+       missing from it — so it may only be said when the whole roster went in
+       ONE push. Paged, it is false and nobody is withdrawn; the result says
+       so rather than leaving it to be inferred. */
     $full = count($chunks) === 1;
     $r = ['ok' => true, 'at' => now_iso(), 'by' => $by, 'sent' => count($people), 'full' => $full, 'applied' => 0, 'refused' => 0, 'gone' => 0,
           'unknownSites' => [], 'refusals' => [], 'error' => ''];
     foreach ($chunks as $chunk) {
-        $res = wifi_cac_post('/api/wifi-roster.php?issuer=ngg', 'wifi.roster', ['full' => $full, 'people' => $chunk]);
-        if (empty($res['ok'])) { $r['ok'] = false; $r['error'] = (string)($res['error'] ?? 'refused'); break; }
+        $res = wifi_cac_post('wifi.roster', ['full' => $full, 'people' => $chunk]);
+        if (empty($res['ok'])) { $r['ok'] = false; $r['error'] = (string)($res['error'] ?? 'refused'); $r['http'] = (int)($res['http'] ?? 0); break; }
         $r['applied'] += (int)($res['applied'] ?? 0); $r['refused'] += (int)($res['refused'] ?? 0); $r['gone'] += (int)($res['gone'] ?? 0);
         foreach ((array)($res['unknownSites'] ?? []) as $code => $n) $r['unknownSites'][(string)$code] = ($r['unknownSites'][(string)$code] ?? 0) + (int)$n;
         foreach ((array)($res['results'] ?? []) as $x) if (empty($x['ok']) && count($r['refusals']) < 20) $r['refusals'][] = ['id' => (string)($x['id'] ?? ''), 'error' => (string)($x['error'] ?? '')];
     }
     $r['partial'] = !$r['ok'] || $r['refused'] > 0;
+    $r['pages'] = count($chunks);
+    /* Paged means `full` could not be said, so CACENTRE withdrew nobody. Said
+       here in words, because the difference only shows up as somebody who
+       left still being on the Wi-Fi, which nothing else would explain. */
+    if ($r['ok'] && !$full) {
+        $r['note'] = 'Sent in ' . $r['pages'] . ' parts because the roster is larger than one request may carry, so nobody was withdrawn. '
+            . 'Anybody suspended is still sent as off. Raise the host\'s request-body limit, or wifi.cac_body_max, to send it whole.';
+    }
     setting_set(WIFI_CAC_LAST, $r, $by);
     return $r;
 }
@@ -151,7 +278,7 @@ function wifi_cac_tick(): array {
  * down too, and the rest wait for the next tick.
  */
 function wifi_cac_mail_starts(): array {
-    $r = wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', ['op' => 'startPending'], 20);
+    $r = wifi_cac_post('wifi.card', ['op' => 'startPending'], 20);
     if (empty($r['ok'])) return ['ok' => false, 'error' => (string)($r['error'] ?? 'unreachable')];
     $sent = []; $failed = 0; $failRun = 0;
     foreach ((array)($r['people'] ?? []) as $x) {
@@ -178,7 +305,7 @@ function wifi_cac_mail_starts(): array {
     }
     $marked = 0;
     if ($sent) {
-        $c = wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', ['op' => 'startSent', 'sent' => $sent], 20);
+        $c = wifi_cac_post('wifi.card', ['op' => 'startSent', 'sent' => $sent], 20);
         $marked = (int)($c['marked'] ?? 0);
     }
     return ['ok' => true, 'sent' => count($sent), 'failed' => $failed, 'marked' => $marked];
@@ -194,9 +321,32 @@ function wifi_cac_gate(array $p): array {
 function admin_wifi_cac_status(array $p): array {
     $g = wifi_gate($p); if (!$g['ok']) return $g;
     $last = setting_get(WIFI_CAC_LAST);
-    return ['ok' => true, 'configured' => wifi_cac_ready(), 'url' => dirpush_base(), 'routersUrl' => dirpush_base() . '/admin/wifi.php', 'every' => WIFI_CAC_EVERY,
+    return ['ok' => true, 'configured' => wifi_cac_ready(), 'url' => dirpush_base() . '/v1/issuers/ngg/wifi', 'routersUrl' => dirpush_base() . '/admin/wifi.php', 'every' => WIFI_CAC_EVERY,
             'sites' => (object)array_filter(array_map(fn($c) => strtolower(trim((string)$c['code'])), array_column(db_all('SELECT name, code FROM centres'), null, 'name'))),
             'canSend' => $g['scope'] === null, 'last' => is_array($last) ? $last : null];
+}
+
+/**
+ * Everybody still on a starting password, for admins to hand out (owner,
+ * 2026-10-31): members with no email, or whose email never arrives, are given
+ * theirs by a person. Within the admin's own centres. Never a chosen password.
+ */
+function admin_wifi_cac_starts(array $p): array {
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    if (!wifi_cac_ready()) return ['ok' => false, 'error' => 'not_configured'];
+    $r = wifi_cac_post('wifi.card', ['op' => 'startList'], 30);
+    if (empty($r['ok'])) return ['ok' => false, 'error' => (string)($r['error'] ?? 'unreachable')];
+    $centre = array_column(db_all('SELECT memberId, centre FROM members'), 'centre', 'memberId');
+    $out = [];
+    foreach ((array)($r['people'] ?? []) as $x) {
+        $c = (string)($centre[(string)($x['id'] ?? '')] ?? '');
+        if (!wifi_scope_has($g['scope'], $c)) continue;
+        $out[] = ['id' => (string)$x['id'], 'name' => (string)($x['name'] ?? ''), 'printedId' => (string)($x['printedId'] ?? ''),
+                  'username' => (string)($x['username'] ?? ''), 'code' => (string)($x['code'] ?? ''), 'centre' => $c];
+    }
+    usort($out, fn($a, $b) => [$a['centre'], $a['name']] <=> [$b['centre'], $b['name']]);
+    audit('wifi.cacentre.starts', (string)$g['requester']['memberId'], 'ngg', ['n' => count($out)]);
+    return ['ok' => true, 'people' => $out];
 }
 
 function admin_wifi_cac_push(array $p): array {
@@ -234,7 +384,7 @@ function wifi_cac_card(string $localId, string $op = 'show', string $password = 
     $claims = ['id' => $localId, 'op' => in_array($op, ['setPassword', 'newStartCode'], true) ? $op : 'show'];
     if ($op === 'setPassword') $claims['password'] = $password;
     if ($me !== null) $claims['me'] = $me;
-    return wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', $claims, 15);
+    return wifi_cac_post('wifi.card', $claims, 15);
 }
 
 /**

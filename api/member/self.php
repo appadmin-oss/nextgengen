@@ -44,7 +44,7 @@ if ($method === 'GET') {
             'amount' => $b['amount'] ?? null, 'reference' => $b['reference'] ?? '', 'parts' => is_array($b['parts'] ?? null) ? $b['parts'] : null,
             'proofUrl' => $b['proofUrl'] ?? '', 'paidAt' => $b['paidAt'] ?? '',
             'fromDate' => $b['fromDate'] ?? '', 'toDate' => $b['toDate'] ?? '',
-            'refEntryId' => $b['refEntryId'] ?? '', 'ip' => client_ip(), 'fromMember' => true]);
+            'refEntryId' => $b['refEntryId'] ?? '', 'refSanctionId' => (int)($b['refSanctionId'] ?? 0), 'ip' => client_ip(), 'fromMember' => true]);
     }
 } else {
     json_error('method_not_allowed', 405);

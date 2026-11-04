@@ -292,7 +292,7 @@ function DashRecords({ onRaise }) {
                 </div>
                 {c.revoked
                   ? <span className="mono" style={{ fontSize: 11, color: "#b03535" }}>REVOKED</span>
-                  : <a className="btn btn-ghost btn-sm" href={"/cert/" + c.certId}>View</a>}
+                  : <a className="btn btn-ghost btn-sm" href={"/cert/" + c.certId} aria-label={"Open certificate " + c.certId}>Open certificate</a>}
               </div>
             )))}
           </div>
@@ -1024,7 +1024,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                   <section id="sec-today" className="ngg-anchor"><DashboardToday today={today} member={m} onMutate={onMutate} session={session}/></section>
                   <section id="sec-assignments" className="ngg-anchor"><DashboardAssignments assignments={data.assignments || []} onMutate={onMutate}/></section>
                   {/* The Saturday Formation Schedule, the member's part of each block (an NGG member's Saturday; Summer School keeps its own). */}
-                  {(m.type || "NGG") === "NGG" && typeof FormationDay === "function" && <section id="sec-saturday" className="ngg-anchor"><FormationDay audience="member" compact={true}/></section>}
+                  {(m.type || "NGG") === "NGG" && typeof FormationDay === "function" && <section id="sec-saturday" className="ngg-anchor"><FormationDay audience="member" centre={m.centre || ""} compact={true}/></section>}
                   {mentor && <section id="sec-checkin" className="ngg-anchor"><DashboardCheckin/></section>}
                   <section id="sec-activity" className="ngg-anchor"><DashboardActivityFeed memberId={m.memberId} session={session} reloadKey={mutateSeq}/></section>
                   <section id="sec-journal" className="ngg-anchor"><DashboardJournal onMutate={onMutate}/></section>
@@ -1157,7 +1157,7 @@ function DashboardSidebar({ m, first, account, ngv, fines, counts, mentorNamed, 
       <div className="ngg-side-inner">
         <button className="ngg-side-brand" onClick={onEditProfile} title="Edit your profile">
           {hasPhoto
-            ? <img src={m.photoUrl} alt="" className="ngg-side-avatar-img" onError={(e) => { e.target.style.display = "none"; }}/>
+            ? <img src={nggImg(m.photoUrl, "avatar")} alt="" className="ngg-side-avatar-img" onError={(e) => { e.target.style.display = "none"; }}/>
             : <Avatar seed={m.memberId.charCodeAt(m.memberId.length - 1) % 20 + 1} size={40} ring/>}
           <span className="ngg-side-brand-text"><b>{first}</b><span className="mono">{m.memberId}</span></span>
         </button>
@@ -1217,7 +1217,7 @@ function DashboardKpis({ session, prog, stats, account, acctState }) {
       <div className="ngg-kpi">
         <div className="ngg-kpi-top"><span className="ngg-kpi-l">Account</span>{owed != null && <span className={"chip " + (owed > 0 ? "chip-coral" : "chip-lime")}>{owed > 0 ? "Due" : "Clear"}</span>}</div>
         <div className={"ngg-kpi-n" + (owed === 0 ? " is-clear" : "")}>{account ? (owed > 0 ? naira(owed) : "Clear") : "—"}</div>
-        <div className="ngg-kpi-s">{account ? (owed > 0 ? "outstanding" : "nothing outstanding")
+        <div className="ngg-kpi-s">{account ? (owed > 0 ? "outstanding · your parent or guardian pays it from the family account" : "nothing outstanding")
           : acctState === "disabled" ? "not enabled yet"
           : acctState === "error" ? "unavailable"
           : acctState === "hidden" ? "—"
@@ -1285,7 +1285,7 @@ function DashboardProfileModal({ m, onClose, onSaved, onAsk }) {
         <div className="admin-fields">
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {hasPhoto
-              ? <img src={d.photoUrl} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover" }} onError={(e) => { e.target.style.display = "none"; }}/>
+              ? <img src={nggImg(d.photoUrl, "face")} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover" }} onError={(e) => { e.target.style.display = "none"; }}/>
               : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--cream-100)", display: "grid", placeItems: "center", fontSize: 28 }}>🙂</div>}
             <div className="admin-upload-row">
               <input type="text" className="admin-input" value={d.photoUrl} onChange={(e) => set("photoUrl", e.target.value)} placeholder="Upload → or paste a photo URL"/>
@@ -1599,7 +1599,7 @@ function DashboardMissionRow({ m, onSubmit, busy, done, disabled }) {
       </div>
       {!done && !disabled && (
         <button className="btn btn-primary btn-sm dash-mission-cta" onClick={onSubmit} disabled={busy}>
-          {busy ? "…" : (m.proof === "none" ? "Done" : "Submit")}
+          {busy ? "…" : (m.proof === "none" ? "Mark it done" : "Send my proof")}
         </button>
       )}
     </div>
@@ -1680,7 +1680,7 @@ function AssignmentCard({ a, onMutate }) {
           <div className="dash-assign-actions">
             <Uploader kind="submission" accept="*/*" onUploaded={(url) => setFileUrl(url)} compact/>
             {fileUrl && <a className="dash-assign-filelink" href={fileUrl} target="_blank" rel="noopener noreferrer">✓ file attached</a>}
-            <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy}>{busy ? "…" : (sub ? "Update" : "Submit")}</button>
+            <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy}>{busy ? "…" : (sub ? "Update my answer" : "Hand it in")}</button>
           </div>
         </div>
       )}
@@ -2025,7 +2025,8 @@ function DashboardObligations({ account }) {
         <React.Fragment>
           <div className="dash-account-figure">{naira(owed)}</div>
           <div className="dash-account-sub">to pay</div>
-          {a.payOnline && <PayBalanceButton amountText={naira(owed)} pay={() => NGGApi.member.feesPay()}/>}
+          {a.payOnline && <PayBalanceButton amountText={naira(owed + (a.payFee || 0))} pay={() => NGGApi.member.feesPay()}/>}
+          {a.payOnline && a.payFee > 0 && <p className="pay-balance-note">Includes Paystack’s {naira(a.payFee)} charge for paying online. A bank transfer to NGG has no charge.</p>}
         </React.Fragment>
       ) : (
         <React.Fragment>
@@ -2217,7 +2218,7 @@ function DashboardCheckin() {
         <div className="dci-done">
           <span className={"dci-done-chip is-" + (d.checkin.wellbeing === "Okay" ? "ok" : "warn")}>{(DCI_FEEL.find(f => f[0] === d.checkin.wellbeing) || DCI_FEEL[0])[1]}</span>
           <span className="dci-muted">{"Checked in this week" + (d.checkin.note ? " · “" + d.checkin.note + "”" : "")}</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => setEdit(true)}>Change</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEdit(true)}>Change my check-in</button>
         </div>
       ) : (
         <div className="dci-form">
@@ -2263,7 +2264,7 @@ function DashboardMentor({ mentor }) {
       <div className="eyebrow" style={{color:"var(--ink-500)"}}>YOUR MENTOR</div>
       <div className="dash-mentor-row">
         {mentor.photoUrl
-          ? <img className="dash-mentor-avatar" src={mentor.photoUrl} alt={mentor.fullName}/>
+          ? <img className="dash-mentor-avatar" src={nggImg(mentor.photoUrl, "face")} alt={mentor.fullName}/>
           : <div className="dash-mentor-avatar dash-mentor-avatar-fallback">{(mentor.fullName || "?").charAt(0)}</div>}
         <div>
           <div className="dash-mentor-name">{mentor.fullName}</div>

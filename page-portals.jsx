@@ -921,7 +921,7 @@ function GateLinks({ scope }) {
                 <td><span className={"chip " + (GATE_KINDS[g.kind] || GATE_KINDS.desk).chip}>{(GATE_KINDS[g.kind] || GATE_KINDS.desk).label}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(linkFor(g)); toast.success("Link copied."); }}>Copy link</button>
-                  <a className="btn btn-ghost btn-sm" href={linkFor(g)} target="_blank" rel="noreferrer">Open</a>
+                  <a className="btn btn-ghost btn-sm" href={linkFor(g)} target="_blank" rel="noreferrer">Open the page</a>
                   <div className="mono admin-cell-sub" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{(g.path || "/gate?g=") + g.gateId}</div>
                 </td>
                 <td>{g.hasPassword ? <span className="chip chip-lime">🔑 password</span> : <span className="chip status-archived">admin only</span>}</td>
@@ -4265,7 +4265,7 @@ function SummerKiosk({ onCheckin }) {
           {!result && <div className="summer-result idle"><i className="ph" aria-hidden="true">◎</i><div>Ready — scan a card.</div></div>}
           {result && result.student && !result.refused && !result.tooEarly && (
             <div className={"summer-result " + (result.already ? "dupe" : result.status === "late" ? "late" : "ok")}>
-              <div className="summer-result-av">{result.student.photoUrl ? <img src={result.student.photoUrl} alt=""/> : (result.student.fullName || "?").charAt(0)}</div>
+              <div className="summer-result-av">{result.student.photoUrl ? <img src={nggImg(result.student.photoUrl, "face")} alt=""/> : (result.student.fullName || "?").charAt(0)}</div>
               <div className="summer-result-nm">{result.student.fullName}</div>
               <div className="summer-result-msg">{result.out ? (result.already ? "Already signed out today" : result.early ? "Signed out early — reason recorded" : "Signed out →") : result.already ? "Already checked in today" : "Checked in ✓"}</div>
               <div className="mono summer-result-id">{result.student.studentId}{result.student.track ? " · " + result.student.track : ""}</div>

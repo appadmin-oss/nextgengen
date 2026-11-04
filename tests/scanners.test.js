@@ -120,7 +120,7 @@ function php(body) {
 <script src="/dist/vendor/react-dom.production.min.js"></script>
 <script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
 <script>window.NGGApi = new Proxy({}, { get: function () { return function () { return Promise.resolve({}); }; } });</script>
-<script src="/dist/app.min.js"></script>
+<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script>
 </body></html>`);
 
   server = spawn('php', ['-S', `127.0.0.1:${PORT}`, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });

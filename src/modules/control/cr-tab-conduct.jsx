@@ -360,7 +360,7 @@ function crCfImportedBlocks(d, ctx) {
   const I = d.imported;
   if (!I || !I.open) return [{ type: "list", span: 6, title: "Brought over by upload", rows: [{ icon: "tray-arrow-down", onClick: () => crCfImportedLoad(ctx),
     t: "See every fine, due and membership charge an upload put on an account",
-    s: "And correct one that was recorded as the wrong kind — a register’s dues read as fines before the upload knew a Dues column.", m: "Open" }] }];
+    s: "And correct one that was recorded as the wrong kind — a register’s dues read as fines before the upload knew a Dues column.", m: "Show charges" }] }];
   if (I.loading && !I.data) return [{ type: "note", span: 6, icon: "hourglass", text: "Loading what was brought over…" }];
   if (I.err) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load what was brought over.", sub: crErr(I.err, ""), act: { l: "Try again", run: () => crCfImportedLoad(ctx) } }];
   const D = I.data, T = D.totals || {}, live = (D.rows || []).filter(r => r.live);
@@ -638,6 +638,8 @@ function crCfComplianceBlocks(d, ctx) {
   return out;
 }
 
+/** What a set of corrective exercise was for, as the desk's list says it. */
+const CR_CF_FOR = { late: "Late", absence: "Absent" };
 /** "frog jumps" → "Frog jumps". */
 function crCfCap(w) { w = String(w || ""); return w.charAt(0).toUpperCase() + w.slice(1); }
 
@@ -650,12 +652,15 @@ function crCfCorrectiveBlocks(d, ctx, word) {
   const C = d.correctives;
   if (!C || !(C.rows || []).length) return [];
   return [{ type: "table", span: 6, title: crCfCap(word) + " to do (" + crNum(C.total) + ")", search: "Search by name or centre",
-    sub: "Tick them off as they are done at the centre.",
-    cols: ["Member", "Centre", { l: "How many", num: true }, { l: "Why", wrap: true }],
+    sub: "Exercise owed at the centre — not money; fines are under Policy fines owed. Tick each set off as it is done.",
+    /* The count column is named for what it counts. It said "How many" beside a
+       reason that also named the absence fine, so 7 read as if it were money. */
+    cols: ["Member", "Centre", "For", { l: crCfCap(word), num: true }, { l: "Why", wrap: true }],
     rows: C.rows.map(r => ({ key: String(r.id), cells: [
       { k: "person", t: r.fullName, s: r.displayId || r.memberId }, { k: "text", t: r.centre || "—" },
+      { k: "text", t: CR_CF_FOR[r.for] || "Other", s: r.date ? crCfDay(r.date) : "", v: r.date || "" },
       { k: "num", t: crNum(r.count), v: r.count }, { k: "text", t: r.reason } ] })),
-    filters: ["Centre"],
+    filters: ["Centre", "For"],
     bulk: [{ l: "Mark done", max: C.max || 500, run: async keys => {
       try { const r = await NGGApi.admin.policy.correctivesDone(keys.map(Number)); ctx.toast(crPlural(r.done, "set") + " of " + word + " done."); crCfRefresh(ctx); }
       catch (e) { ctx.toast(crErr(e, "Couldn’t mark those done."), null, true); return false; }
@@ -1235,6 +1240,20 @@ Object.assign(CR_TAB_DEFS, {
       if (v === "compliance") {
         if (ctx.can("people")) out.push({ l: "Fresh start…", icon: "sparkle", run: () => crCfFreshStart(ctx) });
         out.push({ l: "Repair absences", icon: "first-aid-kit", run: () => crCfRepairForm(ctx) });
+        /* The no-sign-out rule (a half-day, not an absence) applied to past days now,
+           with what changed — rather than waiting for the hourly maintenance. */
+        if (ctx.can("people")) out.push({ l: "Apply half-days to past days", icon: "circle-half", run: async () => {
+          try { const r = await NGGApi.admin.policy.halfday();
+            ctx.toast(r.converted || r.reworked ? crPlural(r.converted, "day") + " made a half-day for " + crPlural(r.people, "person", "people") + (r.reworked ? " · " + crPlural(r.reworked, "person", "people") + "’s fines corrected" : "") + (r.more ? " · more left, press again" : "") + "." : "Nothing to change: every day with no sign-out is already a half-day.");
+            crCfRefresh(ctx); } catch (e) { ctx.toast(crErr(e, "Couldn’t apply it."), null, true); } } });
+        /* Lates recorded for arrivals before lateness begins (the older definition)
+           undone now, with their fines refunded — the nightly check does it too. */
+        if (ctx.can("people")) out.push({ l: "Correct lates before the first band", icon: "clock-counter-clockwise", run: async () => {
+          try { const r = await NGGApi.admin.policy.prelate();
+            ctx.toast(r.voided || r.reworded ? [r.voided ? crPlural(r.voided, "late") + " undone for " + crPlural(r.people, "person", "people") : "",
+              r.refunded ? crPlural(r.refunded, "paid fine") + " refunded as credit" : "", r.reworded ? crPlural(r.reworded, "entry", "entries") + " reworded" : "",
+              r.more ? "more left, press again" : ""].filter(Boolean).join(" · ") + "." : "Nothing to correct: every late on record arrived at or after the first band.");
+            crCfRefresh(ctx); } catch (e) { ctx.toast(crErr(e, "Couldn’t correct them."), null, true); } } });
         out.push({ l: "Refresh", icon: "arrows-clockwise", run: () => crCfRefresh(ctx) });
       }
       return out;

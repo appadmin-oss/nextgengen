@@ -154,7 +154,7 @@ Object.assign(Mp9Portal.prototype, {
       compEarlier: (c.history || []).slice(1, 6).map(h => { const x = RATE[h.rating] || [h.rating, "#c9c6bc"]; const m2 = h.metrics || {};
         return { w: mp9Date(m2.from) + " – " + mp9Date(m2.to), v: x[0], n: (h.focus || [])[0] || "", hasN: !!(h.focus || [])[0], fg: x[0] === "Going well" ? "#1d6b30" : x[0] === "Needs a push" ? "#7a5600" : "#4a4a50", dot: x[1] }; }),
       cp: {
-        tabs: [["week", "This week", "ph ph-sun-horizon", false], ["review", "Review", "ph ph-arrows-clockwise", !done], ["ask", "Ask", "ph ph-sparkle", false]].map(([k, l, icon, dot]) => ({ l, icon, dot, on: cpTab === k ? "true" : "false", bg: cpTab === k ? "#fff" : "transparent", sh: cpTab === k ? "0 1px 2px rgba(11,11,12,.12)" : "none", fw: cpTab === k ? 700 : 500, go: () => set({ cpTab: k }) })),
+        tabs: [["week", "This week", "ph ph-sun-horizon", false], ["review", "Weekly review", "ph ph-arrows-clockwise", !done], ["ask", "Ask", "ph ph-sparkle", false]].map(([k, l, icon, dot]) => ({ l, icon, dot, on: cpTab === k ? "true" : "false", bg: cpTab === k ? "#fff" : "transparent", sh: cpTab === k ? "0 1px 2px rgba(11,11,12,.12)" : "none", fw: cpTab === k ? 700 : 500, go: () => set({ cpTab: k }) })),
         tWeek: cpTab === "week", tReview: cpTab === "review", tAsk: cpTab === "ask",
         kept: kept.length ? kept : [{ icon: "ph ph-sparkle", fg: "#4a4a50", t: "Nothing kept yet", s: "Save a summary of a Companion chat and it stays here for the session.", when: "" }],
         canEnd: msgs.length > 1,
@@ -207,13 +207,17 @@ Object.assign(Mp9Portal.prototype, {
   moneyVals(go) {
     const s = this.state, st = this.dd("stmt") || {}, cp = this.dd("comp9") || {}, t = this.dd("today") || {}, a = t.account || {};
     const lines = (st.lines || []).filter(l => !l.void);
-    const rows = lines.map(l => ({ d: mp9Date(l.date), w: (l.note || l.kind) + (l.real === false ? " · programme cost" : ""), c: l.charge ? mp9Naira(l.charge) : "", p: l.credit ? mp9Naira(l.credit) : "", bal: mp9Naira(l.runningPayable), isPay: !!l.credit }));
+    const rows = lines.map(l => { const x = mp9LedgerWhat(l); return { d: mp9Date(l.date), w: x.w, sub: x.sub, c: l.charge ? mp9Naira(l.charge) : "", p: l.credit ? mp9Naira(l.credit) : "", bal: mp9Naira(l.runningPayable), isPay: !!l.credit }; });
     const fines = (cp.fines || []);
     return {
-      ledger: rows.length ? (s.ledgerAll ? rows : rows.slice(-8)) : [{ d: "–", w: st.enabled === false ? "Nothing is being charged on this account" : "Nothing charged yet", c: "", p: "", bal: mp9Naira(0), isPay: false }],
+      /* Only the last eight show at first, so the balance they start from is
+         stated rather than left to look like an error in the first row. */
+      ledger: rows.length ? (s.ledgerAll || rows.length <= 8 ? rows : [{ d: "", w: "Brought forward", sub: (rows.length - 8) + " earlier entries", c: "", p: "", bal: mp9Naira(lines[lines.length - 9].runningPayable), isPay: false }].concat(rows.slice(-8))) : [{ d: "–", w: st.enabled === false ? "Nothing is being charged on this account" : "Nothing charged yet", c: "", p: "", bal: mp9Naira(0), isPay: false }],
       ledgerMore: rows.length > 8 && !s.ledgerAll, ledgerN: rows.length, showLedger: () => this.setState({ ledgerAll: true }),
-      mou: { done: true, cost: a.trainingFee ? mp9Naira(a.trainingFee) : "Covered", note: "Covered by NGG while you serve. It is only yours to pay if you leave before your MOU is complete.", status: "Active" },
-      finesList: fines.length ? fines.map(f => ({ d: mp9Date(f.issuedAt), t: f.reason, a: mp9Naira(f.amount), st: f.status === "pending" ? "Being reviewed" : "Owed", fg: "#b0361c", strike: "none" }))
+      owedList: (st.owed || []).map(o => ({ w: o.label, s: o.detail || "", a: mp9Naira(o.amount) })),
+      owedNone: !(st.owed || []).length,
+      mou: mp9MouCard(st.training, a),
+      finesList: fines.length ? fines.map(f => ({ d: mp9Date(f.issuedAt), t: mp9Plain(f.reason), a: mp9Naira(f.amount), st: "Owed", fg: "#b0361c", strike: "none" }))
         : [{ d: "", t: "No fines. Keep it that way.", a: "", st: "", fg: "#1d6b30", strike: "none" }],
       /* A member does not record payments: their parent does, from the family
          account. "Ask my parent" opens the panel below the money screen. */
@@ -228,7 +232,10 @@ Object.assign(Mp9Portal.prototype, {
     const away = "I'll be away" + (ex ? " · " + ex.left + " of " + ex.max + " absences left" : "");
     const KINDS = [["I'll be away", "leave", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD, blank if you do not know)", "Why"], away],
       ["Academic leave (exams or a school programme)", "academic", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD)", "What it’s for, and the school"]],
-      ["Ask for a replacement ID", "idcard", ["Say why"]], ["Correct my details", "details", ["What needs changing"]], ["Appeal a charge", "appeal", ["Which charge, and why"]], ["Something else", "help", ["Anything else the desk should know"]]];
+      ["Ask for a replacement ID", "idcard", ["Say why"]], ["Correct my details", "details", ["What needs changing"]]]
+      /* Each decision that still stands can be appealed by name. Somebody who didn't make it reviews it. */
+      .concat(((this.dd("comp9") || {}).decisions || []).filter(d => !d.underAppeal).map(d => ["Appeal: " + d.what + (d.amount ? " · " + mp9Naira(d.amount) : ""), "appeal", ["Why it's wrong"], null, { refSanctionId: d.id, subject: "Appeal: " + d.what }]))
+      .concat([["Appeal a charge", "appeal", ["Which charge, and why"]], ["Something else", "help", ["Anything else the desk should know"]]]);
     const K = KINDS.find(k => k[0] === s.rKind);
     const f = s.rF || {};
     const rOk = !!K && (K[1] === "leave" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && !!(f[K[2][2]] || "").trim() : K[1] === "academic" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][1]] || "") && (f[K[2][2]] || "").trim().length >= 10 : !!(f[K[2][0]] || "").trim());
@@ -240,16 +247,50 @@ Object.assign(Mp9Portal.prototype, {
         withdraw: () => NGGApi.member.withdrawRequest(x.requestId).then(() => { this.refresh(["reqs"]); this.toast("Request withdrawn"); }).catch(e => this.toast(mp9Err(e))) }; });
     return {
       rec: { attended: att.present || 0, ran: att.daysRan || 0, pct: att.rateKnown ? att.rate + "%" : "no term calendar set" },
-      certs: (r.certificates || []).map(c => ({ t: c.certId + (c.revoked ? " · revoked" : ""), d: String(c.issuedAt || "").slice(0, 10), url: "/cert/" + c.certId })),
+      certs: (r.certificates || []).map(c => ({ t: c.certId + (c.revoked ? " · revoked" : ""), d: String(c.issuedAt || "").slice(0, 10), url: "/cert/" + c.certId, openA: "Open certificate " + c.certId, open: () => { location.href = "/cert/" + encodeURIComponent(c.certId); } })),
       days: days.length ? (s.daysAll ? days : days.slice(0, 6)) : [{ d: "No days recorded yet", st: "", i: "—", o: "—", fg: "#6b6b72" }], daysMore: !s.daysAll && days.length > 6, showDays: () => this.setState({ daysAll: true }),
       reqKinds: KINDS.map(k => ({ k: k[3] || k[0], on: s.rKind === k[0] ? "true" : "false", ring: s.rKind === k[0] ? "#0b0b0c" : "#d6d4cc", bw: s.rKind === k[0] ? "2px" : "1px", pick: () => this.setState({ rKind: k[0], rF: {} }) })),
       rHas: !!K, rFields: K ? K[2].map(fl => ({ f: fl, v: f[fl] || "", on: e => this.setState({ rF: { ...this.state.rF, [fl]: e.target.value } }) })) : [],
       rCant: !rOk, rOp: rOk ? 1 : 0.4, rCancel: () => this.setState({ rKind: null, rF: {} }),
       rSend: () => { if (!rOk) return; const v = i => (f[K[2][i]] || "").trim();
         const body = (K[1] === "leave" || K[1] === "academic") ? { kind: K[1], fromDate: v(0), toDate: v(1), body: v(2) }
-          : { kind: K[1], subject: f.subject || "", body: v(0) };
-        NGGApi.member.raiseRequest(body).then(() => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs"]); this.toast("Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
+          : Object.assign({ kind: K[1], subject: f.subject || "", body: v(0) }, K[4] || {});
+        NGGApi.member.raiseRequest(body).then(() => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs", "comp9"]); this.toast("Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
       reqList: list.length ? list : [{ t: "You haven’t asked the desk anything yet", key: "none", gone: false, hasReply: false, reply: "", canWithdraw: false, sFg: "#6b6b72", sText: "", when: "–", withdraw: () => {} }],
+      ...this.achVals(),
+    };
+  },
+  /* Achievements, worked out from the records (domain/achievements.php), and
+     learning outside NGG: logged here with a video, screenshots or pictures,
+     confirmed by an instructor. */
+  achVals() {
+    const s = this.state, A = this.dd("ach") || {}, L = this.dd("llog") || {}, o = s.out || {};
+    const ach = (A.items || []).map(x => ({ icon: "ph ph-" + (x.icon || "medal"), t: x.t, s: x.s || "" }));
+    const set = p => this.setState(st => ({ out: { ...(st.out || {}), ...p } }));
+    const F = [["title", "What you learnt or made", "e.g. Responsive web design, part 1"], ["platform", "Where", "e.g. freeCodeCamp, Khan Academy, Scratch"],
+      ["progress", "How far (optional)", "e.g. 20 of 40 steps, or finished"], ["hours", "Hours spent (optional)", "e.g. 3"], ["link", "Link (optional)", "https://…"]];
+    const files = o.files || [];
+    const ok = !!(o.title || "").trim() && !!(o.platform || "").trim() && (files.length > 0 || /^https:\/\//.test(o.link || "") || (o.notes || "").trim().length >= 20) && !o.busy;
+    const ST = { pending: ["Waiting for an instructor", "#7a5600"], confirmed: ["Confirmed", "#1d6b30"], returned: ["Sent back", "#b0361c"] };
+    return {
+      achLead: ach.length ? "Worked out from your attendance, lessons and what staff recognised." : "Your achievements appear here as you attend, finish lessons and are recognised.",
+      ach, achNext: (A.next || []).map(x => ({ icon: "ph ph-" + (x.icon || "flag"), t: x.t })),
+      outForm: !!o.open, outOpen: () => set({ open: true }), outCancel: () => this.setState({ out: {} }),
+      outFields: F.map(f => ({ f: f[1], ph: f[2], v: o[f[0]] || "", on: e => set({ [f[0]]: e.target.value }) })),
+      outNotes: o.notes || "", outOnNotes: e => set({ notes: e.target.value }),
+      outFileL: o.busy ? "Uploading…" : files.length ? files.length + " added · add more" : "Add a video, screenshots or pictures",
+      outOnFiles: e => { const list = Array.from(e.target.files || []).slice(0, 8 - files.length); if (!list.length) return; set({ busy: true });
+        Promise.all(list.map(f => NGGApi.uploadFile(f, "assignment").then(u => ({ url: mp9Abs(u.url), kind: /^video\//.test(f.type) ? "video" : /pdf/.test(f.type) ? "pdf" : "image" }))))
+          .then(up => set({ busy: false, files: files.concat(up) })).catch(err => { set({ busy: false }); this.toast(mp9Err(err)); }); },
+      outCant: !ok, outOp: ok ? 1 : 0.4,
+      outSend: () => { if (!ok) return; set({ busy: true });
+        NGGApi.member.learningAdd({ title: o.title, platform: o.platform, progress: o.progress || "", hours: +o.hours || 0, link: o.link || "", notes: o.notes || "", media: files })
+          .then(() => { this.setState({ out: {} }); this.refresh(["llog", "ach"]); this.toast("Sent. An instructor will confirm it."); })
+          .catch(err => { set({ busy: false }); this.toast(mp9Err(err)); }); },
+      outList: (L.entries || []).map(x => { const st = ST[x.status] || [x.status, "#4a4a50"];
+        return { t: x.title, st: st[0], fg: st[1], s: [x.platform, x.progress, x.hours ? x.hours + " h" : "", (x.media || []).length ? (x.media.length + " file" + (x.media.length === 1 ? "" : "s")) : "", x.doneOn].filter(Boolean).join(" · "),
+          hasNote: !!x.reviewNote, note: x.reviewNote ? "Instructor: " + x.reviewNote : "", canRemove: x.status !== "confirmed",
+          remove: () => NGGApi.member.learningRemove(x.entryId).then(() => { this.refresh(["llog"]); this.toast("Removed"); }).catch(err => this.toast(mp9Err(err))) }; }),
     };
   },
   meVals() {
@@ -377,7 +418,7 @@ Object.assign(Mp9Portal.prototype, {
     const Mst = M ? ((s.mState || {})[M.missionId] || M.status || "todo") : "todo";
     const evSent = !!M && (Mst !== "todo" && Mst !== "rejected");
     return {
-      sat: { date: satIso ? mp9Date(satIso, { weekday: "long", day: "numeric", month: "long" }) : "Saturday", time: f.hours || "9:00am – 3:00pm", theme: f.theme || "Think. Create. Lead. Serve.", room: me.centre + " centre" },
+      sat: { date: satIso ? mp9Date(satIso, { weekday: "long", day: "numeric", month: "long" }) : "Saturday", time: f.off ? "No NGG this Saturday" : f.hours || "9:00am – 3:00pm", theme: f.theme || "Think. Create. Lead. Serve.", room: me.centre + " centre" },
       plan: (f.blocks || []).map(b => ({ t: b.start, a: b.title + ((b.for && b.for.member && b.for.member[0]) ? " · " + b.for.member[0] : "") })).concat(f.blocks && f.blocks.length ? [] : [{ t: "", a: f.error ? "The plan couldn’t load." : "The Saturday plan isn’t published yet." }]),
       ch: M ? { t: M.title, cat: M.type || "Mission", due: "Before Saturday", d: M.prompt || "", builds: [] } : { t: "No mission this week", cat: "Mission", due: "", d: "When the week’s mission opens, it shows here.", builds: [] },
       builds: M ? [M.type || "Reflect", (M.xp || 0) + " XP", M.estimatedMin ? "About " + M.estimatedMin + " min" : ""].filter(Boolean) : [],
@@ -914,7 +955,7 @@ Object.assign(Mp9Portal.prototype, {
       onDone={(msg) => { this.setState({ handIn: null }); this.refresh(["dash", "today"]); this.toast(msg); }}/> : null;
     const rest = this.slotEndInner();
     // The view switch goes after the profile, never above the area's tabs: on a phone it pushed them off the first screen.
-    const view = s.scr === "me" ? <>{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{typeof Mp9VolWallet === "function" ? <Mp9VolWallet/> : null}{this.viewSwitch()}</> : null;
+    const view = s.scr === "me" ? <>{typeof RclProgress === "function" ? <RclProgress who="member"/> : null}{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{typeof Mp9VolWallet === "function" ? <Mp9VolWallet/> : null}{this.viewSwitch()}</> : null;
     return handEl || view ? <>{view}{rest}{handEl}</> : rest;
   },
   slotEndInner() {
@@ -933,7 +974,7 @@ Object.assign(Mp9Portal.prototype, {
     const evals = (s.scr === "growth" || s.scr === "sat")
       ? <Mp9Evals data={this.dd("evals")} err={s.er.evals} busy={!!s.ld.evals} retry={() => this.load("evals")} latestOnly={s.scr === "sat"} mentor={this.mentorInfo().first}/> : null;
     // The formation day is the staff-edited schedule with the member's own part (tests/mentor-v15); it sits in the column.
-    if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" compact={true}/>{evals}</div>;
+    if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" centre={this.me().centre || ""} compact={true}/>{evals}</div>;
     if (evals) return <div className="m9x-slot">{evals}</div>;
     return null;
   },
@@ -1435,4 +1476,38 @@ function Mp9Notifications({ items, loading, error, retry, isRead, unreadOnly, se
       {typeof NggPushCard === "function" ? <div className="m9n-push"><NggPushCard surface="member" compact title="Get these on your phone"/></div> : null}
     </div>
   </>;
+}
+
+/* A statement line in a member's words. The stored note is written for the
+   ledger ("Monthly dues 2026-07", "Policy fine — Missed 2026-07-03 — ₦1,000
+   absence fine."): ISO months and days read as dates, and an amount the row
+   already prints in its own column is not said twice. */
+const MP9_KIND_L = { membership: "Membership fee", dues: "Commitment fee", fine: "Fine", payment: "Payment", waiver: "Waived", adjustment: "Adjustment", training: "Training place", writeoff: "Training earned off", refund: "Refund" };
+function mp9Plain(t) {
+  /* "Commitment fee" is the name families, notices and receipts use; the
+     ledger's own "Monthly dues" stays in the ledger. */
+  return String(t || "").replace(/^Monthly dues\b/, "Commitment fee").replace(/^Policy fine — /, "Fine — ")
+    .replace(/\s*—\s*₦[\d,]+\s+([^—]+?)\.?$/, " — $1")
+    .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (m, y, mo, d) => mp9Date(m) || m)
+    .replace(/\b(\d{4})-(\d{2})\b/g, (m, y, mo) => { const n = Number(mo); return n >= 1 && n <= 12 ? new Date(Date.UTC(Number(y), n - 1, 1)).toLocaleString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }) : m; })
+    .replace(/^Commitment fee (?=[A-Z])/, "Commitment fee · ")
+    .trim();
+}
+function mp9LedgerWhat(l) {
+  const raw = mp9Plain(l.note) || MP9_KIND_L[l.kind] || l.kind || "";
+  /* The first clause leads; what follows a dash or a bracket is detail. */
+  const cut = raw.search(/\s+—\s+|\s+\(/);
+  let w = cut > 0 ? raw.slice(0, cut) : raw, sub = cut > 0 ? raw.slice(cut).replace(/^\s+—\s+/, "").replace(/^\s+\((.*)\)$/, "$1") : "";
+  if (l.real === false) sub = sub ? sub + " · covered by NGG, not a bill" : "Covered by NGG, not a bill";
+  return { w, sub };
+}
+/* The training place card: what it costs, how much service has earned off,
+   and the one state that turns it into money (left before the MOU). */
+function mp9MouCard(t, a) {
+  t = t || {};
+  const cost = t.cost || (a && a.trainingFee) || 0;
+  if (t.owed > 0) return { cost: mp9Naira(t.owed), note: "You left before your MOU was complete, so the part of the training place your service had not earned off is now owed.", status: "Owed", bg: "#fbeae6", fg: "#9b2c14" };
+  if (t.mouDone) return { cost: cost ? mp9Naira(cost) : "Covered", note: "Your MOU is complete. The training place is yours, and nothing about it is owed.", status: t.mouAt ? "MOU complete · " + mp9Date(t.mouAt) : "MOU complete", bg: "#e9f6ec", fg: "#1d6b30" };
+  const pct = cost > 0 ? Math.min(100, Math.floor((t.covered || 0) * 100 / cost)) : 0;
+  return { cost: cost ? mp9Naira(cost) : "Covered", note: "Covered by NGG while you serve" + (cost ? " — " + mp9Naira(t.covered || 0) + " earned off so far" : "") + ". It is only yours to pay if you leave before your MOU is complete.", status: cost ? "Earning off · " + pct + "%" : "In training", bg: "#eef2f8", fg: "#1f4a7a" };
 }

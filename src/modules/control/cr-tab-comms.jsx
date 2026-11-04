@@ -19,23 +19,26 @@ function crAnnSend(ctx) {
   const label = id => { const a = aud.find(x => x.id === id); return a ? (a.id === "all" ? "everyone" : a.l) + " (" + crNum(a.n) + ")" : id; };
   ctx.form({
     title: "Quick message", submit: "Send", busyLabel: "Sending…",
-    intro: "It appears in members’ notification feed. Email is optional and limited to 300 at a time.",
-    values: { title: "", body: "", audience: "all", linkPage: "", email: false },
+    intro: "It appears in members’ notification feed, and — unless you turn it off — as a pinned announcement in Community. Email is optional and limited to 300 at a time.",
+    values: { title: "", body: "", audience: "all", linkPage: "", email: false, community: true },
     fields: [
       { id: "title", l: "Title", req: true, max: 140 },
       { id: "body", l: "Message", type: "textarea", rows: 5, max: 2000 },
       { id: "audience", l: "Who gets it", type: "select", req: true, opts: aud.map(a => [a.id, (a.id === "all" ? "Everyone" : a.l) + " · " + crNum(a.n)]) },
       { id: "linkPage", l: "Open a page when tapped", ph: "anchor, dashboard, blog…", max: 60 },
       { id: "email", l: "Email it as well", type: "switch" },
+      /* Community is every NGG centre's space: a message for one centre says so in its first line there. */
+      { id: "community", l: "Show it in Community", type: "switch", help: "A pinned announcement in the commons, posted as you. Not for a Summer School-only message — Community is for NGG members." },
     ],
     onSubmit: async v => {
-      const ok = await ctx.confirm({ title: "Send to " + label(v.audience) + "?", body: "“" + v.title + "” goes to their notification feed" + (v.email ? " and their inbox" : "") + ". It can’t be recalled.", cta: "Send" });
+      const ok = await ctx.confirm({ title: "Send to " + label(v.audience) + "?", body: "“" + v.title + "” goes to their notification feed" + (v.email ? " and their inbox" : "") + (v.community ? ", and is pinned in Community" : "") + ". It can’t be recalled.", cta: "Send" });
       if (!ok) return { fieldErrors: {} };
-      const r = await NGGApi.admin.broadcast({ title: v.title.trim(), body: v.body, audience: v.audience, linkPage: v.linkPage.trim(), email: !!v.email });
+      const r = await NGGApi.admin.broadcast({ title: v.title.trim(), body: v.body, audience: v.audience, linkPage: v.linkPage.trim(), email: !!v.email, community: !!v.community });
       ctx.reload();
       return r;
     },
-    done: (v, r) => "Sent to " + label(v.audience) + (v.email ? " · emailed " + crNum((r && r.emailed) || 0) : "") + ".",
+    done: (v, r) => "Sent to " + label(v.audience) + (v.email ? " · emailed " + crNum((r && r.emailed) || 0) : "")
+      + (r && r.community ? (r.community.posted ? " · pinned in Community" : " · not posted in Community" + (r.community.why ? ": " + r.community.why : "")) : "") + ".",
   });
 }
 function crNlSend(ctx) {
@@ -164,8 +167,8 @@ function NoticeEditor({ d, ctx, id }) {
   const [nid, setNid] = React.useState(n0 ? n0.noticeId : "");
   const [status, setStatus] = React.useState(n0 ? n0.status : "draft");
   const pub = status === "published";
-  const [f, setF] = React.useState(() => n0 ? { org: n0.org, kind: n0.kind, subject: n0.subject, signoff: n0.signoff, audience: n0.audience, reach: n0.reach, needsAck: !!n0.needsAck, emailOn: !!n0.emailOn }
-    : { org: "", kind: "", subject: "", signoff: "", audience: "all", reach: Object.keys(R)[0] || "both", needsAck: false, emailOn: false });
+  const [f, setF] = React.useState(() => n0 ? { org: n0.org, kind: n0.kind, subject: n0.subject, signoff: n0.signoff, audience: n0.audience, reach: n0.reach, needsAck: !!n0.needsAck, emailOn: !!n0.emailOn, communityOn: !!n0.communityOn }
+    : { org: "", kind: "", subject: "", signoff: "", audience: "all", reach: Object.keys(R)[0] || "both", needsAck: false, emailOn: false, communityOn: true });
   const [head, setHead] = React.useState(!!(n0 && (n0.org || n0.kind)));
   const [sign, setSign] = React.useState(!!(n0 && n0.signoff));
   const [body, setBody] = React.useState(n0 ? n0.body : "");
@@ -192,7 +195,7 @@ function NoticeEditor({ d, ctx, id }) {
   const payload = () => {
     const L = live.current, v = L.f;
     return { noticeId: L.nid || undefined, org: L.head ? v.org : "", kind: L.head ? v.kind : "", subject: v.subject, signoff: L.sign ? v.signoff : "", body: L.body,
-      audience: v.audience, reach: v.reach, needsAck: !!v.needsAck, emailOn: !!v.emailOn, correctionNote: L.pub ? L.note : undefined,
+      audience: v.audience, reach: v.reach, needsAck: !!v.needsAck, emailOn: !!v.emailOn, communityOn: !!v.communityOn, correctionNote: L.pub ? L.note : undefined,
       baseUpdatedAt: last.current ? last.current.updatedAt : undefined };
   };
   const valid = () => { const L = live.current; return L.f.subject.trim().length >= 3 && L.body.trim().length >= 2; };
@@ -371,7 +374,7 @@ function NoticeEditor({ d, ctx, id }) {
   const takeTheirs = () => {
     const n = conflict; if (!n) return;
     last.current = n; ver.current++;
-    setF(x => Object.assign({}, x, { org: n.org, kind: n.kind, subject: n.subject, signoff: n.signoff, audience: n.audience, reach: n.reach, needsAck: !!n.needsAck, emailOn: !!n.emailOn }));
+    setF(x => Object.assign({}, x, { org: n.org, kind: n.kind, subject: n.subject, signoff: n.signoff, audience: n.audience, reach: n.reach, needsAck: !!n.needsAck, emailOn: !!n.emailOn, communityOn: !!n.communityOn }));
     setHead(!!(n.org || n.kind)); setSign(!!n.signoff); setSched(n.scheduledAt || "");
     if (bodyRef.current) bodyRef.current.innerHTML = n.html || "";
     setBody(n.body); live.current.body = n.body;
@@ -427,7 +430,9 @@ function NoticeEditor({ d, ctx, id }) {
   const aud = d.audiences || [], audN = (aud.find(a => a.id === f.audience) || {}).n;
   const audName = crNtAud(d, f.audience);
   const reachLine = audN == null ? "" : "Reaches " + crPlural(audN, "member") + (f.reach === "both" ? " and their families" : f.reach === "guardians" ? "’ families only" : " only") + ".";
-  const extras = [f.needsAck ? "Asks them to acknowledge it" : "", f.emailOn ? "Emailed as well" : ""].filter(Boolean).join(" · ");
+  /* Community carries members' notices only: guardians-only, or Summer School-only, cannot go there — said, and switched off. */
+  const cmNo = f.reach === "guardians" ? "Guardians only — Community is the members’ space." : f.audience === "Summer" ? "Summer School only — Community is for NGG members." : "";
+  const extras = [f.needsAck ? "Asks them to acknowledge it" : "", f.emailOn ? "Emailed as well" : "", f.communityOn && !cmNo ? "Pinned in Community" : ""].filter(Boolean).join(" · ");
   const words = ntWords(body);
   const saveText = { new: "Not saved yet", dirty: pub ? "Unsaved correction" : "Editing…", saving: "Saving…", saved: pub ? "Published · nothing changed yet" : "Saved", error: save.msg || "Couldn’t save it" }[save.s];
   const official = head && (f.org || f.kind);
@@ -456,6 +461,7 @@ function NoticeEditor({ d, ctx, id }) {
         <h2 id="nte-how" className="nte-sec-h">Delivery</h2>
         <div className="nte-row"><span><b>Ask them to acknowledge it</b><em>{pub ? "Fixed once it has gone out — nobody was asked to sign it then." : "Readers confirm they have read and understood it, and you see who has not."}</em></span><CrSwitch on={f.needsAck} disabled={pub} label="Ask readers to acknowledge it" onChange={v => set("needsAck", v)}/></div>
         <div className="nte-row"><span><b>Email it as well</b><em>{pub ? "Fixed once it has gone out." : "Every member and family address, once each."}</em></span><CrSwitch on={f.emailOn} disabled={pub} label="Email it as well" onChange={v => set("emailOn", v)}/></div>
+        <div className="nte-row"><span><b>Show it in Community</b><em>{pub ? "Fixed once it has gone out; withdrawing the notice takes it down there too." : cmNo || "A pinned announcement in the commons that links to the notice. A notice for one centre names it."}</em></span><CrSwitch on={f.communityOn && !cmNo} disabled={pub || !!cmNo} label="Show it in Community" onChange={v => set("communityOn", v)}/></div>
       </section>
       {!pub && <section className="nte-sec" aria-labelledby="nte-when">
         <h2 id="nte-when" className="nte-sec-h">When</h2>
@@ -605,7 +611,7 @@ async function crNtCopy(ctx, n) {
 /** A copy of a notice as a new draft — the same parts and audience, nothing of its history — opened in the editor. */
 async function crNtDuplicate(ctx, n) {
   try {
-    const r = await NGGApi.admin.notices.save({ org: n.org, kind: n.kind, subject: n.subject, body: n.body, signoff: n.signoff, audience: n.audience, reach: n.reach, needsAck: !!n.needsAck, emailOn: !!n.emailOn });
+    const r = await NGGApi.admin.notices.save({ org: n.org, kind: n.kind, subject: n.subject, body: n.body, signoff: n.signoff, audience: n.audience, reach: n.reach, needsAck: !!n.needsAck, emailOn: !!n.emailOn, communityOn: !!n.communityOn });
     ctx.setData(x => Object.assign({}, x, { notices: [r.notice].concat(x.notices || []) }));
     ctx.setSub(r.notice.noticeId + "/edit");
     ctx.toast("A copy, as a new draft. Nothing has been sent.");
@@ -638,7 +644,7 @@ function crNtDetail(d, ctx) {
     { l: "Correct…", run: () => crNtEdit(ctx, n) }, { l: "Withdraw…", run: () => crNtWithdraw(ctx, n) },
   ] : [];
   out.push({ type: "note", span: 6, icon: n.status === "draft" ? "pencil-simple" : n.status === "published" ? "megaphone" : "prohibit", tone: st[1] === "bad" ? "bad" : null,
-    text: st[0] + " · " + crNtAud(d, n.audience) + " · " + ((d.reachLabels || {})[n.reach] || "") + (n.needsAck ? " · asks for acknowledgement" : "") + (n.emailOn ? " · by email too" : ""),
+    text: st[0] + " · " + crNtAud(d, n.audience) + " · " + ((d.reachLabels || {})[n.reach] || "") + (n.needsAck ? " · asks for acknowledgement" : "") + (n.emailOn ? " · by email too" : "") + (n.communityOn ? " · pinned in Community" : ""),
     sub: n.status === "draft" ? (n.scheduledAt ? "Scheduled: it goes out by itself " + crDate(n.scheduledAt, true) + ", as it stands then. Nobody has it yet." : "Check it below, then publish. Nobody has it yet.")
       : n.status === "published" ? "Published " + crDate(n.publishedAt) + (n.stats ? " to " + crPlural(n.stats.members || 0, "member") + " and " + crPlural(n.stats.families || 0, "family account") + (n.stats.emailsQueued ? ", " + crNum(n.stats.emailsQueued) + " emails" : "") : "") + "." + (n.correctedAt ? " Corrected " + crDate(n.correctedAt) + "." : "")
       : "Withdrawn " + crDate(n.withdrawnAt) + ": " + n.withdrawReason,

@@ -20,13 +20,16 @@ if ($method === 'GET') {
         readfile($res['path']);
         exit;
     }
-    $res = gs_call('admin.membership.invoices', ['requesterId' => $mid, 'status' => $_GET['status'] ?? '']);
+    // The legal details every invoice, receipt and certificate prints (domain/documents.php).
+    if ($view === 'documents') $res = gs_call('admin.documents.settings', ['requesterId' => $mid]);
+    else $res = gs_call('admin.membership.invoices', ['requesterId' => $mid, 'status' => $_GET['status'] ?? '']);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $map = [
         'create' => 'admin.membership.invoice.create', 'resend' => 'admin.membership.invoice.resend', 'void' => 'admin.membership.invoice.void',
         'bank' => 'admin.membership.bank.set', 'bankConfirm' => 'admin.membership.bank.confirm', 'bankCancel' => 'admin.membership.bank.cancel',
         'record' => 'admin.membership.offline.record',
+        'documents' => 'admin.documents.settings',
         'verify' => 'admin.membership.offline.verify', 'reject' => 'admin.membership.offline.reject',
     ];
     $action = (string)($b['action'] ?? '');

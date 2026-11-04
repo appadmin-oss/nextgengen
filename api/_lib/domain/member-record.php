@@ -35,18 +35,20 @@ function admin_member_record(array $p): array {
     // Attendance: the days they came, and the absences the nightly sweep recorded.
     $att = db_all('SELECT date, status, checkInAt, checkOutAt, lateMinutes FROM attendance WHERE studentId = ? AND date >= ? ORDER BY date DESC', [$id, $since]);
     $absent = db_all("SELECT date, note FROM infractions WHERE personId = ? AND kind = 'absence' AND date >= ? AND COALESCE(voidedAt,'') = '' ORDER BY date DESC", [$id, $since]);
-    /* One row a day. A day they came but never signed out is absent by the
-       rule (the sweep logs it), not present AND absent: it shows once, as
-       "no sign-out", and counts once, as the absence it is. */
+    /* One row a day. A day they came but never signed out is a HALF-DAY
+       (since 31 Oct 2026; it was an absence before): it shows once, as "no
+       sign-out", and counts as half a day attended. */
     $absentOn = array_column($absent, 'date', 'date');
+    $halfOn = array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'halfday' AND note LIKE 'Incomplete%' AND date >= ? AND COALESCE(voidedAt,'') = ''", [$id, $since]), 'date', 'date');
     $late = count(array_filter($att, static fn($a) => !isset($absentOn[(string)$a['date']]) && in_array((string)$a['status'], ['late', 'tardy'], true)));
     $came = count(array_filter($att, static fn($a) => !isset($absentOn[(string)$a['date']])));
+    $halves = count(array_filter($att, static fn($a) => isset($halfOn[(string)$a['date']]) && !isset($absentOn[(string)$a['date']])));
     $cameOn = array_column($att, 'date', 'date');
-    $out['attendance'] = ['present' => $came, 'late' => $late, 'absent' => count($absent),
-        'rate' => ($came + count($absent)) > 0 ? (int)round(100 * $came / ($came + count($absent))) : null,
+    $out['attendance'] = ['present' => $came, 'late' => $late, 'absent' => count($absent), 'halfDays' => $halves,
+        'rate' => ($came + count($absent)) > 0 ? (int)round(100 * ($came - $halves / 2) / ($came + count($absent))) : null,
         'recent' => array_slice(array_merge(
             array_map(static fn($a) => ['date' => (string)$a['date'],
-                'kind' => isset($absentOn[(string)$a['date']]) ? 'incomplete' : (in_array((string)$a['status'], ['late', 'tardy'], true) ? 'late' : 'present'),
+                'kind' => isset($absentOn[(string)$a['date']]) || isset($halfOn[(string)$a['date']]) ? 'incomplete' : (in_array((string)$a['status'], ['late', 'tardy'], true) ? 'late' : 'present'),
                 'in' => substr((string)$a['checkInAt'], 11, 5), 'out' => substr((string)$a['checkOutAt'], 11, 5), 'lateMinutes' => (int)($a['lateMinutes'] ?? 0)], $att),
             array_map(static fn($a) => ['date' => (string)$a['date'], 'kind' => 'absent', 'in' => '', 'out' => '', 'lateMinutes' => 0],
                 array_values(array_filter($absent, static fn($a) => !isset($cameOn[(string)$a['date']]))))), 0, 40)];
@@ -66,6 +68,7 @@ function admin_member_record(array $p): array {
         $entries = fees_entries($id);
         $b = fees_balance($m, null, null, $entries);
         $out['fees'] = ['payable' => (int)$b['payable'], 'outstanding' => (int)$b['outstanding'], 'charged' => (int)$b['charged'], 'credited' => (int)$b['credited'],
+            'realCharged' => (int)$b['realCharged'], 'realCredited' => (int)$b['realCredited'],
             'programmeCost' => (int)$b['programmeCost'], 'programmeCovered' => (int)$b['programmeCovered'], 'phase' => (string)($b['tenure']['phase'] ?? ''),
             'recent' => array_map(static fn($e) => ['date' => substr((string)$e['createdAt'], 0, 10), 'kind' => (string)$e['kind'], 'direction' => (string)$e['direction'],
                 'amount' => (int)$e['amount'], 'note' => (string)($e['note'] ?? ''), 'voided' => (string)($e['voidedAt'] ?? '') !== ''], array_slice(array_reverse($entries), 0, 12))];

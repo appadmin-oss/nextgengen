@@ -330,7 +330,9 @@ function checkManifest() {
   for (const rel of onDisk) {
     const entry = manifest[rel];
     if (!entry) { console.error('  ✗ ' + rel + ' is in vendor/ but not in VERSIONS.json'); bad++; continue; }
-    const h = sha(fs.readFileSync(path.join(VENDOR, rel)));
+    // The full digest: the manifest records all 64 hex characters, and sha() above is a 16-character
+    // short form for the recipe's own build log. Comparing the two failed every file.
+    const h = crypto.createHash('sha256').update(fs.readFileSync(path.join(VENDOR, rel))).digest('hex');
     if (h !== entry.sha256) {
       console.error('  ✗ ' + rel + ' does not match VERSIONS.json (disk ' + h + ' vs manifest ' + entry.sha256 + ')');
       bad++;

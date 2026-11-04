@@ -30,7 +30,7 @@ declare(strict_types=1);
 /** The kinds a member may raise, and what each is called on screen. */
 const MEMBER_REQUEST_KINDS = [
     'payment' => 'Payment made',
-    'appeal'  => 'Appeal a charge',
+    'appeal'  => 'Appeal',
     'leave'   => 'Leave of absence',
     /* Academic leave: weeks away for school exams or a school programme,
        approved by the desk with the school's letter where there is one. Its
@@ -439,6 +439,7 @@ function member_request_public(array $r): array
         'toDate'    => (string)($r['toDate'] ?? ''),
         'decision'  => (string)($r['decision'] ?? ''),
         'decidedAt' => (string)($r['decidedAt'] ?? ''),
+        'refSanctionId' => (int)($r['refSanctionId'] ?? 0),
         'createdAt' => (string)($r['createdAt'] ?? ''),
         'byFamily'  => (string)($r['raisedBy'] ?? '') !== '',
         'topic'     => (string)($r['topic'] ?? ''),
@@ -513,7 +514,8 @@ function member_statement(array $p): array
        off. It is not a ledger row (it moves as nothing — it is the rest of a
        charge already on the account), so it closes the statement as a line of
        its own, and the payable total agrees with every other screen. */
-    $owed = (int)(fees_balance($m, $cfg)['trainingOwed'] ?? 0);
+    $bal  = fees_balance($m, $cfg);
+    $owed = (int)($bal['trainingOwed'] ?? 0);
     if ($owed > 0) {
         $payable += $owed;
         $lines[] = ['date' => gmdate('Y-m-d'), 'kind' => 'training', 'note' => 'Training fee not earned off — left before the MOU was complete',
@@ -526,7 +528,22 @@ function member_statement(array $p): array
             'member' => ['fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
                          'centre' => (string)($m['centre'] ?? ''), 'level' => (string)($m['level'] ?? '')],
             'lines' => $lines,
-            'closingPayable' => $payable, 'closingTotal' => $total];
+            'closingPayable' => $payable, 'closingTotal' => $total,
+            /* What the payable is made of, the same lines the family's Fees page
+               shows (fees_owed_made) — the money screen said only "membership,
+               dues and any fines" beside the total. */
+            'owed' => fees_owed_made($m, $cfg, null, $bal)['lines'],
+            /* The training place, in the words a member is owed about it. The
+               money screen used to print "MOU done" for every member, including
+               one a month into the programme — so it reads the record now. */
+            'training' => [
+                'cost'     => (int)($bal['trainingCharged'] ?? 0),
+                'covered'  => (int)($bal['programmeCovered'] ?? 0),
+                'owed'     => $owed,
+                'mouDone'  => trim((string)($m['mouAt'] ?? '')) !== '' || !empty($bal['tenure']['graduated']),
+                'mouAt'    => (string)($m['mouAt'] ?? ''),
+                'left'     => !empty($bal['tenure']['left']),
+            ]];
 }
 
 // ── The record ───────────────────────────────────────────────────────────────
@@ -576,8 +593,8 @@ function member_records(array $p): array
                     'revoked' => trim((string)($c['revokedAt'] ?? '')) !== ''];
     }
 
-    // A day with no sign-out was counted absent by the rule: say so, not "present".
-    $incomplete = array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id]), 'date', 'date');
+    // A day with no sign-out is a half-day by the rule: say so, not "present".
+    $incomplete = array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind IN ('absence','halfday') AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id]), 'date', 'date');
     $present = count($days);
     return ['ok' => true, 'attendance' => [
         'present' => $present,
@@ -591,7 +608,7 @@ function member_records(array $p): array
             'in' => substr((string)($d['checkInAt'] ?? ''), 11, 5),
             'out' => substr((string)($d['checkOutAt'] ?? ''), 11, 5),
             'method' => (string)($d['method'] ?? ''),
-        ] + (isset($incomplete[(string)$d['date']]) ? ['status' => 'no sign-out, counted absent'] : []), $days),
+        ] + (isset($incomplete[(string)$d['date']]) ? ['status' => 'no sign-out, a half-day'] : []), $days),
     ], 'certificates' => $certs, 'member' => [
         'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
         'centre' => (string)($m['centre'] ?? ''), 'level' => (string)($m['level'] ?? ''),
@@ -734,6 +751,19 @@ function member_request_create(array $p): array
         if ($ref !== '' && db_row('SELECT id FROM member_ledger WHERE entryId = ? AND memberId = ? LIMIT 1', [$ref, $id])) {
             $row['refEntryId'] = $ref;
         }
+        /* Or a SANCTION of theirs — a warning, Dormant Track, a suspension, an
+           eviction, a fine. Their own, still standing, and not already under
+           appeal: one appeal per decision, so the desk decides it once. */
+        $sid = (int)($p['refSanctionId'] ?? 0);
+        if ($sid > 0) {
+            $sn = db_row("SELECT id, kind, reason, status FROM sanctions WHERE id = ? AND personId = ? LIMIT 1", [$sid, $id]);
+            if (!$sn) return ['ok' => false, 'error' => 'not_found', 'detail' => 'That decision is not on this record.'];
+            if (!in_array((string)$sn['status'], ['active', 'proposed', 'pending'], true)) return ['ok' => false, 'error' => 'not_standing', 'detail' => 'That decision no longer stands, so there is nothing to appeal.'];
+            if (db_row("SELECT id FROM member_requests WHERE kind = 'appeal' AND refSanctionId = ? AND status = 'open' LIMIT 1", [$sid]))
+                return ['ok' => false, 'error' => 'already_appealed', 'detail' => 'This is already under appeal. You will be told the decision.'];
+            $row['refSanctionId'] = $sid;
+            if ($row['subject'] === '') $row['subject'] = 'Appeal: ' . (POLICY_APPEAL_WORDS[(string)$sn['kind']] ?? (string)$sn['kind']);
+        }
         if ($row['subject'] === '') $row['subject'] = 'Appeal';
     } elseif ($kind === 'idcard') {
         if ($row['subject'] === '') $row['subject'] = 'Replacement ID card';
@@ -741,6 +771,8 @@ function member_request_create(array $p): array
 
     db_insert('member_requests', $row);
     audit('member.request.create', $id, $row['requestId'], ['kind' => $kind], (string)($p['ip'] ?? ''));
+    // A parent who says they paid hears at once that it arrived, and what happens next (dues-notices.php).
+    if ($kind === 'payment' && function_exists('dues_claim_ack')) dues_claim_ack($row);
     /* The desk is told once, when it is raised. Not on every edit — a queue
        that pings is a queue that gets muted. */
     // …and the people who can decide it, at the member's centre: the bell, a push, and an email (push.php).
@@ -1094,6 +1126,20 @@ function admin_request_decide(array $p): array
     if ((string)$r['kind'] === 'feedback' || ((string)($r['topic'] ?? '') !== '' && isset(MEMBER_FEEDBACK_TOPICS[(string)$r['topic']]))) return admin_feedback_answer($g, $r, $rCentre, $p);
 
     $approve = !empty($p['approve']);
+    /* THE REVIEW. An appeal against a sanction is decided by somebody other
+       than the person who issued or confirmed it — a decision is not reviewed
+       by its author — and with a reason either way: upheld or not, the family
+       is owed the why. Upheld, the sanction is overturned (lifted), which takes
+       its fine off the account and, for a suspension, its re-entry fee. */
+    $appealOf = null;
+    if ((string)$r['kind'] === 'appeal' && (int)($r['refSanctionId'] ?? 0) > 0) {
+        $appealOf = db_row('SELECT * FROM sanctions WHERE id = ? LIMIT 1', [(int)$r['refSanctionId']]);
+        $me = (string)($g['requester']['memberId'] ?? '');
+        if ($appealOf && $me !== '' && in_array($me, [(string)$appealOf['issuedBy'], (string)($appealOf['clearedBy'] ?? '')], true))
+            return ['ok' => false, 'error' => 'needs_second_person', 'detail' => 'You made this decision, so somebody else reviews the appeal.'];
+        if (trim((string)($p['decision'] ?? '')) === '')
+            return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Say why, either way. The family sees it.'];
+    }
     /* The permission cap holds at the desk too: several requests may each have
        fitted when filed, and approving all of them would grant more than the
        session allows. Counted against what is already APPROVED. */
@@ -1146,14 +1192,44 @@ function admin_request_decide(array $p): array
         if (isset($pp['error'])) return ['ok' => false, 'error' => $pp['error'], 'detail' => $pp['detail']];
         if ($pp['parts']) $parts = $pp['parts'];
     }
+    /* The same rules as a payment recorded at the desk (fees_payment_guard):
+       not one's own account, not around a joining invoice, and a bank reference
+       accepted once — this path used to post with none of them. */
+    if ($approve && (string)$r['kind'] === 'payment' && function_exists('fees_payment_guard')) {
+        $chk = $parts ? array_map(static fn($x) => ['method' => (string)$x['method'], 'reference' => (string)$x['reference']], $parts)
+                      : [['method' => 'claim', 'reference' => (string)$r['reference']]];
+        $no = fees_payment_guard((string)$r['memberId'], $by, $chk, (string)($p['ip'] ?? ''));
+        if ($no) return $no;
+    }
+    /* CLAIM the request before any money moves. The status was checked on a
+       row read at the top, so two approvals close together (a double press, a
+       retry, two desks) both passed it and each posted the payment — one
+       transfer, two credits on the ledger. Only one caller turns `open` into
+       a decision; the other is told it was already decided. */
+    $claimed = db_exec("UPDATE member_requests SET status = ?, updatedAt = ? WHERE id = ? AND status = 'open'",
+        [$approve ? 'approved' : 'declined', now_iso(), (int)$r['id']]);
+    if (!$claimed) return ['ok' => false, 'error' => 'already_decided'];
+    $unclaim = static fn() => db_exec("UPDATE member_requests SET status = 'open', updatedAt = ? WHERE id = ?", [now_iso(), (int)$r['id']]);
     if ($parts && function_exists('fees_post')) {
         $ids = [];
+        // All parts or none: a claim half-posted and then refused is two truths about one payment.
+        try {
+        db_tx(static function () use (&$parts, &$ids, $r, $rid, $by) {
         foreach ($parts as $k => $x) {
             $entry = fees_post((string)$r['memberId'], 'payment', (int)$x['amount'], [
+                // Keyed by the request, so the same claim can never post twice.
+                'periodKey' => 'mreq:' . $rid . ':' . $k,
                 'note' => 'Payment confirmed from member claim ' . $rid . ' — ' . member_payment_part_text($x),
                 'method' => $x['method'], 'reference' => $x['reference'] !== '' ? $x['reference'] : ($x['receivedBy'] !== '' ? 'cash to ' . $x['receivedBy'] : ''), 'by' => $by,
             ]);
-            if ($entry) { $ids[] = (string)$entry['entryId']; $parts[$k]['entryId'] = (string)$entry['entryId']; }
+            if (!$entry) throw new \RuntimeException('payment part not posted');
+            $ids[] = (string)$entry['entryId']; $parts[$k]['entryId'] = (string)$entry['entryId'];
+        }
+        });
+        } catch (Throwable $e) {
+            $unclaim();
+            error_log('[request.decide] ' . $rid . ': ' . $e->getMessage());
+            return ['ok' => false, 'error' => 'post_failed', 'detail' => 'The payment could not be posted to the account, so the request is still open. Try again.'];
         }
         $patch['ledgerEntryId'] = implode(',', $ids);
         $patch['amount'] = array_sum(array_map(static fn($x) => (int)$x['amount'], $parts));
@@ -1162,16 +1238,27 @@ function admin_request_decide(array $p): array
         $amount = fees_money($p['amount'] ?? null, (int)$r['amount']);
         if ($amount > 0) {
             $entry = fees_post((string)$r['memberId'], 'payment', $amount, [
+                'periodKey' => 'mreq:' . $rid,
                 'note' => 'Payment confirmed from member claim ' . $rid
                         . ((string)$r['reference'] !== '' ? ' (ref ' . $r['reference'] . ')' : ''),
                 'method' => 'claim', 'reference' => (string)$r['reference'], 'by' => $by,
             ]);
-            if ($entry) $patch['ledgerEntryId'] = (string)$entry['entryId'];
+            /* A post that did not land is not an approval: the family would be
+               told "approved" while no money reached the account. */
+            if (!$entry) {
+                $unclaim();
+                return ['ok' => false, 'error' => 'post_failed', 'detail' => 'The payment could not be posted to the account, so the request is still open. Try again.'];
+            }
+            $patch['ledgerEntryId'] = (string)$entry['entryId'];
             $patch['amount'] = $amount;
         }
     }
 
     db_update('member_requests', $patch, ['id' => (int)$r['id']]);
+    if ($appealOf && $approve && in_array((string)$appealOf['status'], ['active', 'proposed', 'pending'], true) && function_exists('admin_policy_sanction_update')) {
+        admin_policy_sanction_update(['requesterId' => (string)$g['requester']['memberId'], 'sanctionId' => (int)$appealOf['id'], 'status' => 'lifted',
+            'note' => 'Appeal ' . $rid . ' upheld: ' . mb_substr($reason, 0, 200)]);
+    }
     /* An absence request decides a fine that was being held (policy_apply's
        absence rule): declined, the absences it covered are fined now; approved,
        they are not. Approved academic leave goes further — its days were never
@@ -1179,7 +1266,7 @@ function admin_request_decide(array $p): array
        which lifts anything they caused. */
     if (in_array((string)$r['kind'], ['leave', 'academic'], true) && (string)$r['memberId'] !== '' && function_exists('policy_apply')) {
         if ($approve && (string)$r['kind'] === 'academic') {
-            db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = ? WHERE personId = ? AND kind IN ('absence', 'no_checkout') AND date >= ? AND date <= ? AND (voidedAt IS NULL OR voidedAt = '')",
+            db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = ? WHERE personId = ? AND kind IN ('absence', 'no_checkout', 'halfday') AND date >= ? AND date <= ? AND (voidedAt IS NULL OR voidedAt = '')",
                 [now_iso(), $by, 'Academic leave ' . $rid . ' approved', (string)$r['memberId'], (string)$r['fromDate'], (string)($r['toDate'] ?: $r['fromDate'])]);
         }
         policy_apply((string)$r['memberId'], 'member');
@@ -1194,6 +1281,8 @@ function admin_request_decide(array $p): array
     member_request_tell($r, (MEMBER_REQUEST_KINDS[(string)$r['kind']] ?? 'Request') . ' — ' . ($approve ? 'approved' : 'declined'),
         'has been ' . ($approve ? 'approved.' : 'declined.'),
         $reason !== '' ? $reason : ($approve ? 'Your request has been approved.' : 'Your request was declined.'));
+    // A payment note's answer reaches every guardian, in the family app and by their channels (dues-notices.php).
+    if ((string)$r['kind'] === 'payment' && function_exists('dues_claim_decided')) dues_claim_decided($r, $approve, (int)($patch['amount'] ?? $r['amount']), $reason);
     $after = db_row('SELECT * FROM member_requests WHERE id = ? LIMIT 1', [(int)$r['id']]);
     return ['ok' => true, 'request' => member_request_public($after ?: [])];
 }

@@ -115,6 +115,35 @@ const FEES_DEFAULTS = [
     'remindEnabled' => false,
     'remindEveryDays' => 14,
     'remindMinBalance' => 1,
+    /* Notices BEFORE a charge falls due (domain/dues-notices.php): the month's
+       dues and a membership renewal, `noticeDaysBefore` days ahead, to every
+       guardian linked to the child. On by default wherever dues are on — a
+       family should hear what is coming before it is owed, not only once it is
+       late. The channels are the family's: the family app's inbox, email,
+       Telegram (free, where the guardian has connected it) and SMS (paid, off
+       by default; tried only when Telegram did not reach them). The same
+       channels carry the arrears reminders and the payment-note replies. */
+    'noticeEnabled' => true,
+    'noticeDaysBefore' => 7,
+    'noticeApp' => true,
+    'noticeEmail' => true,
+    'noticeTelegram' => true,
+    'noticeSms' => false,
+    /* A payment a parent says they made waits for the fees desk to check it.
+       Past this many hours unchecked, the desk is nudged once a day. */
+    'claimStaffHours' => 48,
+    /* ── Paying online: who bears Paystack's charge ─────────────────────────
+     * On by default: a family paying online pays Paystack's charge on top, so
+     * NGG receives the whole fee. The charge is grossed up — worked out on the
+     * amount Paystack will actually take it from — so what reaches NGG is never
+     * short. Paystack's local card terms: 1.5% + ₦100, the ₦100 waived on a
+     * transaction under ₦2,500, capped at ₦2,000. Paystack changes these, so
+     * they are settings, not constants. A bank transfer to NGG carries none. */
+    'payFeeOn' => true,
+    'payFeeBps' => 150,          // 1.5% in basis points
+    'payFeeFlat' => 100,
+    'payFeeFlatUnder' => 2500,
+    'payFeeCap' => 2000,
     /* ── Uprating ─────────────────────────────────────────────────────────
      * Naira inflation erodes a fixed figure fast: ₦75,000 set today is worth
      * noticeably less in two years, and a programme that never revisits its
@@ -150,6 +179,18 @@ const FEES_DEFAULTS = [
  * form may move them and how much work one pass may do.
  */
 const FEES_REMIND_MIN_DAYS = 7;
+/** How far ahead a notice of an upcoming charge may go: a day at the least,
+ *  a month at the most — further out, it is news nobody acts on. */
+const FEES_NOTICE_DAYS_MIN = 1;
+const FEES_NOTICE_DAYS_MAX = 30;
+/** When the desk is nudged about payment notes nobody has checked: from half a
+ *  day to a week. */
+const FEES_CLAIM_HOURS_MIN = 12;
+const FEES_CLAIM_HOURS_MAX = 168;
+/* Ceilings on the Paystack charge settings: a typo (1500 for 1.5%) must not put 15% on a family's bill. */
+const FEES_PAYFEE_BPS_MAX = 500;      // 5%
+const FEES_PAYFEE_FLAT_MAX = 1000;
+const FEES_PAYFEE_CAP_MAX = 10000;
 /** A year. Past this, "remind them" is not what the setting means any more. */
 const FEES_REMIND_MAX_DAYS = 365;
 /** How far apart an uprate interval may be set, in months. */
@@ -161,6 +202,15 @@ const FEES_UPRATE_NOTE_DAYS = 30;
 /** Batch sizes. Every one of these is a bound on how much a single press or a
  *  single cron tick may do, so a mis-click cannot walk an entire roster. */
 const FEES_SCAN_MAX = 2000;          // rows one pass may read, whatever is asked
+/** The ledger's periodKey column holds this many characters on both databases (migration 220). */
+const FEES_PERIODKEY_MAX = 96;
+/** A unique-key collision, on SQLite or MySQL — and nothing else. */
+function fees_is_duplicate(\Throwable $e): bool {
+    $m = strtolower($e->getMessage());
+    if (str_contains($m, 'unique constraint') || str_contains($m, 'duplicate entry')) return true;
+    $info = $e instanceof \PDOException ? ($e->errorInfo ?? null) : null;
+    return is_array($info) && (int)($info[1] ?? 0) === 1062;
+}
 const FEES_ACCRUE_BATCH = 500;       // default members per accrual press
 const FEES_REMIND_BATCH = 50;        // default sends per press
 const FEES_REMIND_BATCH_MAX = 200;   // ceiling on one press, however it is asked
@@ -199,6 +249,13 @@ function fees_bounds(): array {
         'phaseMax'       => FEES_PHASE_MAX,
         'remindMinDays'  => FEES_REMIND_MIN_DAYS,
         'remindMaxDays'  => FEES_REMIND_MAX_DAYS,
+        'noticeDaysMin'  => FEES_NOTICE_DAYS_MIN,
+        'noticeDaysMax'  => FEES_NOTICE_DAYS_MAX,
+        'claimHoursMin'  => FEES_CLAIM_HOURS_MIN,
+        'claimHoursMax'  => FEES_CLAIM_HOURS_MAX,
+        'payFeeBpsMax'   => FEES_PAYFEE_BPS_MAX,
+        'payFeeFlatMax'  => FEES_PAYFEE_FLAT_MAX,
+        'payFeeCapMax'   => FEES_PAYFEE_CAP_MAX,
         'uprateMaxPct'   => FEES_UPRATE_MAX_PCT,
         'uprateEveryMin' => FEES_UPRATE_EVERY_MIN,
         'uprateEveryMax' => FEES_UPRATE_EVERY_MAX,
@@ -317,6 +374,18 @@ function fees_settings_save(array $in, string $by): array {
            told, rather than getting a daily chase that nobody asked to defend. */
         'remindEveryDays' => max(FEES_REMIND_MIN_DAYS, min(FEES_REMIND_MAX_DAYS, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']) ?: (int)$cur['remindEveryDays'])),
         'remindMinBalance' => fees_money($in['remindMinBalance'] ?? null, (int)$cur['remindMinBalance']),
+        'noticeEnabled'  => $bool('noticeEnabled'),
+        'noticeDaysBefore' => max(FEES_NOTICE_DAYS_MIN, min(FEES_NOTICE_DAYS_MAX, (int)($in['noticeDaysBefore'] ?? $cur['noticeDaysBefore']) ?: (int)$cur['noticeDaysBefore'])),
+        'noticeApp'      => $bool('noticeApp'),
+        'noticeEmail'    => $bool('noticeEmail'),
+        'noticeTelegram' => $bool('noticeTelegram'),
+        'noticeSms'      => $bool('noticeSms'),
+        'claimStaffHours' => max(FEES_CLAIM_HOURS_MIN, min(FEES_CLAIM_HOURS_MAX, (int)($in['claimStaffHours'] ?? $cur['claimStaffHours']) ?: (int)$cur['claimStaffHours'])),
+        'payFeeOn'        => $bool('payFeeOn'),
+        'payFeeBps'       => max(0, min(FEES_PAYFEE_BPS_MAX, (int)($in['payFeeBps'] ?? $cur['payFeeBps']))),
+        'payFeeFlat'      => max(0, min(FEES_PAYFEE_FLAT_MAX, (int)($in['payFeeFlat'] ?? $cur['payFeeFlat']))),
+        'payFeeFlatUnder' => max(0, min(FEES_PAYFEE_CAP_MAX * 100, (int)($in['payFeeFlatUnder'] ?? $cur['payFeeFlatUnder']))),
+        'payFeeCap'       => max(0, min(FEES_PAYFEE_CAP_MAX, (int)($in['payFeeCap'] ?? $cur['payFeeCap']))),
         /* Uprating. `upratePct` of 0 switches it off, which is the default —
            raising what families are charged is not something to inherit. */
         'upratePct' => max(0, min(FEES_UPRATE_MAX_PCT, (int)($in['upratePct'] ?? $cur['upratePct']))),
@@ -900,6 +969,12 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
        unique index — two payments in the same month are two real events. Give
        each its own key unless the caller pinned one deliberately. */
     if ($periodKey === '') $periodKey = $kind . ':' . bin2hex(random_bytes(6));
+    /* A key longer than the column is shortened HERE, the same way on both
+       databases: kept readable and made unique by a hash of the whole key.
+       MySQL's column was VARCHAR(32) while keys of 38–52 characters were
+       written (the fresh-start waiver, the membership import): strict MySQL
+       refused them and non-strict truncated them into one another. */
+    if (strlen($periodKey) > FEES_PERIODKEY_MAX) $periodKey = substr($periodKey, 0, FEES_PERIODKEY_MAX - 13) . '#' . substr(md5($periodKey), 0, 12);
     $row = [
         'entryId' => 'FEE-' . strtoupper(bin2hex(random_bytes(6))),
         'memberId' => $memberId, 'kind' => $kind,
@@ -907,24 +982,52 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
         'amount' => min(FEES_AMOUNT_MAX, $amount),
         'periodKey' => $periodKey,
         'sessionId' => (string)($opts['sessionId'] ?? ''),
-        'note' => substr((string)($opts['note'] ?? ''), 0, 240),
-        'method' => substr((string)($opts['method'] ?? ''), 0, 32),
-        'reference' => substr((string)($opts['reference'] ?? ''), 0, FEES_REF_MAX),
+        /* By characters, never bytes: a byte cut through "—", "₦" or a Yoruba
+           diacritic leaves invalid UTF-8, which strict MySQL refuses (1366) —
+           the fine or payment was then never posted. SQLite took it. */
+        'note' => mb_strcut((string)($opts['note'] ?? ''), 0, 240, 'UTF-8'),
+        'method' => mb_strcut((string)($opts['method'] ?? ''), 0, 32, 'UTF-8'),
+        'reference' => mb_strcut((string)($opts['reference'] ?? ''), 0, FEES_REF_MAX, 'UTF-8'),
         'createdAt' => now_iso(), 'createdBy' => (string)($opts['by'] ?? ''),
     ];
     try {
         db_insert('member_ledger', $row);
     } catch (Throwable $e) {
-        // Already posted for this period — the desired state, not a failure.
+        /* Only a DUPLICATE KEY means "already posted for this period" — the
+           desired state. Anything else (a lock timeout, a value the column
+           refused) is a failure and is said to be one: it used to be read as
+           "already posted", so an entry that never landed was reported as done. */
+        if (!fees_is_duplicate($e)) {
+            error_log('[fees_post] ' . $memberId . ' ' . $kind . ' ' . $periodKey . ': ' . $e->getMessage());
+            return null;
+        }
         $have = db_row('SELECT * FROM member_ledger WHERE memberId = ? AND kind = ? AND periodKey = ? LIMIT 1',
             [$memberId, $kind, $periodKey]);
+        /* A VOIDED row under the key is not "already posted". For most kinds it
+           stays void on purpose — a dues month voided by the desk must not be
+           re-charged by the next accrual. But a sanction that is lifted and
+           later issued again (an overturned suspension, the same tier crossed
+           again) must owe again: returning the void row reported the fine as
+           posted while the account charged ₦0, and a re-entry fee then held a
+           child at the door with nothing to pay. The caller asks for that with
+           `reissue`; the row is reinstated (the key is how four readers find a
+           sanction's charge) and the void it replaces is kept in the audit log. */
+        if ($have && !empty($opts['reissue']) && trim((string)($have['voidedAt'] ?? '')) !== '') {
+            $n = db_exec("UPDATE member_ledger SET voidedAt = '', voidedBy = '', voidReason = '', amount = ?, note = ?, createdAt = ?, createdBy = ?
+                           WHERE id = ? AND COALESCE(voidedAt, '') <> ''", [$row['amount'], $row['note'], $row['createdAt'], $row['createdBy'], $have['id']]);
+            if ($n) {
+                audit('fees.reissue', $row['createdBy'], $memberId, ['entryId' => $have['entryId'], 'periodKey' => $periodKey, 'amount' => $row['amount'],
+                    'was' => ['amount' => (int)$have['amount'], 'voidedAt' => (string)$have['voidedAt'], 'voidedBy' => (string)($have['voidedBy'] ?? ''), 'voidReason' => (string)($have['voidReason'] ?? '')]], '');
+                return db_row('SELECT * FROM member_ledger WHERE id = ?', [$have['id']]);
+            }
+        }
         return $have ?: null;
     }
-    /* Money in may settle a re-entry fee, and a settled one is what lets a
+    /* Money in may settle policy fines — a settled re-entry fee is what lets a
        suspended child back through the door — asked here, where every
        payment and waiver passes, so no desk can forget to. */
-    if ($isCredit && function_exists('policy_reentry_sync')) {
-        try { policy_reentry_sync($memberId); } catch (Throwable $e) { error_log('[fees_post] reentry sync: ' . $e->getMessage()); }
+    if ($isCredit && function_exists('policy_fines_sync')) {
+        try { policy_fines_sync($memberId); } catch (Throwable $e) { error_log('[fees_post] fines sync: ' . $e->getMessage()); }
     }
     return $row;
 }
@@ -1181,7 +1284,7 @@ function admin_fees_training(array $p): array {
     $filter = in_array($p['filter'] ?? '', FEES_TRAINING_FILTERS, true) ? (string)$p['filter'] : 'all';
     $sort = in_array($p['sort'] ?? '', FEES_TRAINING_SORTS, true) ? (string)$p['sort'] : 'charged';
     $q = mb_strtolower(trim((string)($p['q'] ?? '')));
-    $limit = max(1, min(FEES_ARREARS_PAGE_MAX, (int)($p['limit'] ?? FEES_ARREARS_PAGE)));
+    $limit = (int)($p['limit'] ?? 0) > 0 ? min(FEES_ARREARS_PAGE_MAX, (int)$p['limit']) : FEES_ARREARS_PAGE;   // '' from the route is the default, not one row
     $scope = admin_centre_names_in_scope($g['requester']);
     /* Inactive members too: a leaver who owes the rest of the fee is exactly
        who this list has to show. */
@@ -1194,24 +1297,10 @@ function admin_fees_training(array $p): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $ledger = [];
         foreach (db_all("SELECT * FROM member_ledger WHERE memberId IN ($ph) ORDER BY id", $ids) as $e) $ledger[(string)$e['memberId']][] = $e;
-        $comp = [];
-        $today = attendance_today();
-        // The same reading as fees_compliance_cutoff(): a suspension past its end date no longer pauses anything.
-        foreach (db_all("SELECT personId, kind, issuedAt, startsAt, endsAt FROM sanctions WHERE personId IN ($ph) AND status = 'active' AND kind IN ('eviction','suspension') ORDER BY issuedAt", $ids) as $sx) {
-            $pid = (string)$sx['personId'];
-            if ($sx['kind'] === 'suspension' && (string)$sx['endsAt'] !== '' && substr((string)$sx['endsAt'], 0, 10) < $today) continue;
-            if ($sx['kind'] === 'eviction') $comp[$pid] = ['cutoff' => substr((string)$sx['issuedAt'], 0, 10), 'state' => 'evicted', 'final' => true];
-            elseif (($comp[$pid]['state'] ?? '') !== 'evicted') $comp[$pid] = ['cutoff' => substr((string)$sx['startsAt'], 0, 10), 'state' => 'suspended', 'final' => false];
-        }
-        /* The status history and every suspension, for the serving-days count —
-           one query each for the chunk, as above. */
-        $hist = []; $susp = [];
-        foreach (db_all("SELECT memberId, status, since FROM member_status_log WHERE memberId IN ($ph) ORDER BY since, id", $ids) as $h) $hist[(string)$h['memberId']][] = $h;
-        foreach (db_all("SELECT personId, status, startsAt, endsAt, clearedAt FROM sanctions WHERE personId IN ($ph) AND kind = 'suspension'", $ids) as $sx) $susp[(string)$sx['personId']][] = $sx;
+        $compOf = fees_comp_batch($ids);
         foreach ($chunk as $m) {
             $mid = (string)$m['memberId'];
-            $b = fees_balance($m, $cfg, null, $ledger[$mid] ?? [],
-                              ($comp[$mid] ?? ['cutoff' => '', 'state' => 'clear', 'final' => false]) + ['history' => $hist[$mid] ?? [], 'suspensions' => $susp[$mid] ?? []]);
+            $b = fees_balance($m, $cfg, null, $ledger[$mid] ?? [], $compOf[$mid]);
             $t = $b['tenure'];
             $units = 0;
             foreach ($ledger[$mid] ?? [] as $e) if ((string)$e['kind'] === 'training' && (string)$e['direction'] === 'charge' && trim((string)($e['voidedAt'] ?? '')) === '') $units++;
@@ -1251,6 +1340,41 @@ function admin_fees_training(array $p): array {
             'trainingMonths' => (int)$cfg['trainingMonths'], 'serviceMonths' => (int)$cfg['serviceMonths']];
 }
 
+/** Was the member ACTIVE on any day in [from, to)? From their status history (member_status_history), oldest first. */
+function fees_active_between(array $hist, string $from, string $to): bool {
+    $n = count($hist);
+    for ($i = 0; $i < $n; $i++) {
+        if ((string)$hist[$i]['status'] !== 'active') continue;
+        $a = (string)$hist[$i]['since'];
+        $b = $hist[$i + 1]['since'] ?? '9999-12-31';
+        if ($a < $to && $b > $from) return true;
+    }
+    return false;
+}
+
+/**
+ * The next batch of NGG members to bring up to date, from where the last run
+ * stopped, wrapping round at the end. Both doors (the nightly tick and the
+ * button) used `ORDER BY id LIMIT N` with no cursor, so a programme with more
+ * members than one batch never reached the rest — its docblock said they were
+ * "caught up over successive ticks", and they were not.
+ */
+function fees_accrue_batch(int $limit, array $cfg): array {
+    $after = (int)(setting_raw('fees_accrue_cursor') ?? 0);
+    $rows = db_all("SELECT * FROM members WHERE status = 'active' AND (type IS NULL OR type <> 'Summer') AND id > ? ORDER BY id LIMIT " . $limit, [$after]);
+    $tot = ['members' => 0, 'membership' => 0, 'dues' => 0, 'training' => 0, 'atCap' => 0, 'noJoinDate' => 0, 'wrapped' => count($rows) < $limit];
+    foreach ($rows as $m) {
+        $r = fees_accrue_member($m, $cfg);
+        $tot['members']++;
+        $tot['membership'] += $r['membership']; $tot['dues'] += $r['dues']; $tot['training'] += $r['training'];
+        if ($r['skipped'] === 'at_cap') $tot['atCap']++;
+        if ($r['skipped'] === 'no_join_date') $tot['noJoinDate']++;
+    }
+    // Past the end: the next run starts from the beginning again.
+    setting_set('fees_accrue_cursor', $tot['wrapped'] ? 0 : (int)end($rows)['id'], 'accrual');
+    return $tot;
+}
+
 /**
  * Bring a member's charges up to date.
  *
@@ -1266,6 +1390,10 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     $cfg = $cfg ?? fees_settings();
     $out = ['membership' => 0, 'dues' => 0, 'training' => 0, 'skipped' => ''];
     if (empty($cfg['enabled'])) { $out['skipped'] = 'disabled'; return $out; }
+    /* NGG members only. A Summer School participant converted to an account is an
+       `active` member row with a join date (admin2.php), and the nightly run used to
+       charge them membership, dues and a training place they never took. */
+    if (function_exists('member_is_ngg') && !member_is_ngg($member)) { $out['skipped'] = 'not_ngg'; return $out; }
     if ((string)($member['status'] ?? 'active') !== 'active') { $out['skipped'] = 'not_active'; return $out; }
     $memberId = (string)$member['memberId'];
     /* The terms this member's training place runs on, fixed the first time
@@ -1276,6 +1404,16 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     if ($ten['start'] === '') { $out['skipped'] = 'no_join_date'; return $out; }
     $bal = fees_balance($member, $cfg, $asOf);
     if (!empty($bal['atCap'])) { $out['skipped'] = 'at_cap'; return $out; }
+    /* The ceiling is checked before EVERY posting, not once before the run: a member
+       just under it with a backlog used to have every month posted past it. */
+    $owed = max(0, (int)$bal['realCharged'] - (int)$bal['realCredited']);
+    $cap = (int)($bal['cap'] ?? 0);
+    $room = static function (int $amt) use (&$owed, $cap): bool { return $cap <= 0 || $owed + $amt <= $cap; };
+    /* Only periods the member was ACTIVE in. The loops walk from the start date to
+       today and the run used to check only today's status, so a member away for six
+       months was charged all six on return. member_status_log is the record. */
+    $hist = member_status_history($member);
+    $activeIn = static fn(string $from, string $to): bool => fees_active_between($hist, $from, $to);
 
     /* Membership renews on the anniversary of joining. The 'once' key from the
        one-off era is still what a 0-month cycle posts, so a deployment that
@@ -1285,11 +1423,15 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     if ((int)$cfg['membershipFee'] > 0) {
         foreach (fees_membership_periods($ten['start'], $asOf ?? gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) {
             if ($settled !== '' && (string)$per['due'] <= $settled) continue;
+            $every = max(1, (int)$cfg['membershipEveryMonths']);
+            $end = $per['key'] === 'once' ? fees_add_days((string)$per['due'], 1) : gmdate('Y-m-d', (int)strtotime($per['due'] . ' 00:00:00 UTC +' . $every . ' months'));
+            if (!$activeIn((string)$per['due'], $end)) continue;
+            if (!$room((int)$cfg['membershipFee'])) { $out['skipped'] = 'at_cap'; break; }
             $label = $per['key'] === 'once' ? 'Membership fee'
                 : 'Membership fee — year ' . substr($per['key'], 1) . ' from ' . $per['due'];
             if (fees_post($memberId, 'membership', (int)$cfg['membershipFee'],
                           ['periodKey' => $per['key'], 'note' => $label, 'by' => 'accrual'])) {
-                $out['membership']++;
+                $out['membership']++; $owed += (int)$cfg['membershipFee'];
             }
         }
     }
@@ -1301,11 +1443,13 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
                left in it — the same figure their joining invoice quoted
                (membership_prorate), so the two cannot disagree. A charge
                already on the ledger is never re-priced. */
+            if (!$activeIn($mk . '-01', gmdate('Y-m-d', (int)strtotime($mk . '-01 00:00:00 UTC +1 month')))) continue;
             $amt = (int)$cfg['monthlyDues'];
             if ($mk === $firstMonth && function_exists('membership_prorate')) $amt = membership_prorate($amt, $ten['start'], $member)['amount'];
+            if ($amt > 0 && !$room($amt)) { $out['skipped'] = 'at_cap'; break; }
             if ($amt > 0 && fees_post($memberId, 'dues', $amt,
-                          ['periodKey' => $mk, 'note' => ($mk === $firstMonth && $amt < (int)$cfg['monthlyDues'] ? 'Commitment fee ' . $mk . ' (from ' . $ten['start'] . ')' : 'Monthly dues ' . $mk), 'by' => 'accrual'])) {
-                $out['dues']++;
+                          ['periodKey' => $mk, 'note' => 'Monthly dues ' . $mk . ($mk === $firstMonth && $amt < (int)$cfg['monthlyDues'] ? ' (part month, from ' . $ten['start'] . ')' : ''), 'by' => 'accrual'])) {
+                $out['dues']++; $owed += $amt;
             }
         }
     }
@@ -1396,7 +1540,9 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
  *   nothing PAYABLE               see below — this is the one that matters
  *   under remindMinBalance        not worth a message
  *   reminded within everyDays     the floor, which is 7 days minimum
- *   no guardian email             nothing to send to
+ *   no way to reach the family    no linked guardian account, no email and
+ *                                 no phone (dues_contacts — a guardian with
+ *                                 only a family-app account IS reachable)
  *
  * PAYABLE, not outstanding. A member halfway through their service carries a
  * large training charge that is being written off as they go; chasing them for
@@ -1406,7 +1552,7 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
 function fees_reminder_candidates(?array $cfg = null, int $limit = FEES_CANDIDATE_MAX): array {
     $cfg = $cfg ?? fees_settings();
     $out = ['due' => [], 'skipped' => ['off' => 0, 'optedOut' => 0, 'nothingPayable' => 0,
-                                       'underMinimum' => 0, 'tooSoon' => 0, 'noEmail' => 0]];
+                                       'underMinimum' => 0, 'tooSoon' => 0, 'noContact' => 0]];
     if (empty($cfg['enabled']) || empty($cfg['remindEnabled'])) { $out['skipped']['off'] = 1; return $out; }
     $everyDays = max(FEES_REMIND_MIN_DAYS, (int)$cfg['remindEveryDays']);
     $minBal = max(1, (int)$cfg['remindMinBalance']);
@@ -1419,10 +1565,11 @@ function fees_reminder_candidates(?array $cfg = null, int $limit = FEES_CANDIDAT
         if ((int)$bal['payable'] < $minBal) { $out['skipped']['underMinimum']++; continue; }
         $last = strtotime((string)($m['duesRemindedAt'] ?? '')) ?: 0;
         if ($last > 0 && ($now - $last) < $everyDays * 86400) { $out['skipped']['tooSoon']++; continue; }
-        $to = trim((string)($m['parentEmail'] ?? ''));
-        if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) { $out['skipped']['noEmail']++; continue; }
+        $ct = function_exists('dues_contacts') ? dues_contacts($m) : ['guardianIds' => [], 'emails' => array_filter([trim((string)($m['parentEmail'] ?? ''))]), 'phones' => []];
+        if (!$ct['guardianIds'] && !$ct['emails'] && !$ct['phones']) { $out['skipped']['noContact']++; continue; }
         $out['due'][] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],
-                         'to' => $to, 'payable' => (int)$bal['payable'],
+                         'to' => (string)($ct['emails'][0] ?? ''), 'reach' => ['app' => count($ct['guardianIds']), 'email' => count($ct['emails']), 'phones' => count($ct['phones'])],
+                         'payable' => (int)$bal['payable'],
                          'lastRemindedAt' => (string)($m['duesRemindedAt'] ?? ''), 'row' => $m];
     }
     $out['everyDays'] = $everyDays;
@@ -1470,13 +1617,25 @@ function fees_reminder_send(array $cand, ?array $cfg = null): bool {
     }
     $body .= '<p style="margin:0 0 10px">If any of this looks wrong, or if now is a difficult time, please reply to this '
           . 'message or speak to your centre coordinator — we would rather hear from you than not.</p>';
-    $html = email_template([
-        'title' => 'Account balance', 'intro' => $first . '\'s account has an amount to pay.',
-        'bodyHtml' => $body,
-        'footNote' => 'You are receiving this because you are ' . $first . '\'s guardian at Next Generation Genius. '
-                    . 'Tell your centre coordinator if you would prefer not to receive these.',
-    ]);
-    $ok = (bool)@send_mail($cand['to'], $first . '\'s account — ' . $money((int)$bal['payable']) . ' to pay', $html);
+    /* Every channel the family has, to every linked guardian — the family app,
+       email, Telegram, SMS if switched on (dues-notices.php) — not one email to
+       the address on the child's record. One per family per day at most. */
+    $parts = [];
+    foreach (['membership' => 'membership', 'dues' => 'dues', 'fine' => 'fines'] as $k => $label) {
+        $v = (int)($bal['byKind'][$k] ?? 0);
+        if ($v > 0) $parts[] = $label . ' ' . $money($v);
+    }
+    $plain = $first . '\'s account has ' . $money((int)$bal['payable']) . ' to pay' . ($parts ? ' (' . implode(', ', $parts) . ')' : '')
+           . '. Pay from the family app, or tell us there if you already have. If now is a difficult time, speak to your centre coordinator.';
+    $res = function_exists('dues_notice_send')
+        ? dues_notice_send($m, 'arrears', gmdate('Y-m-d'), ['title' => $first . '\'s account: ' . $money((int)$bal['payable']) . ' to pay', 'intro' => $first . '\'s account has an amount to pay.',
+            'subject' => $first . '\'s account — ' . $money((int)$bal['payable']) . ' to pay', 'text' => $plain, 'html' => $body, 'amount' => (int)$bal['payable'],
+            'footNote' => 'You are receiving this because you are ' . $first . '\'s guardian at Next Generation Genius. Tell your centre coordinator if you would prefer not to receive these.',
+            // In the member's own portal, in words for them: what is owed, and that home has been told.
+            'member' => ['title' => 'Your account: ' . $money((int)$bal['payable']) . ' to pay',
+                'text' => 'Your parent or guardian has been sent a reminder. If it has been paid, they can tell us in the family app.']], $cfg)
+        : ['sent' => false];
+    $ok = !empty($res['sent']);
     /* Stamped whether or not the transport succeeded. The alternative is a
      * mailer that is failing quietly and a family reminded on every single cron
      * tick because nothing recorded the attempt. */
@@ -1558,6 +1717,7 @@ function admin_fees_member(array $p): array {
         'balance' => $bal = fees_balance($m, $cfg),
         'training' => fees_training_watch($m, $cfg, $bal),
         'entries' => array_reverse($entries),          // newest first for reading
+        'account' => fees_account_statement($m, $bal, $cfg),
         'remindOff' => (int)($m['duesRemindOff'] ?? 0) === 1,
         'settings' => $cfg,
     ]];
@@ -1565,6 +1725,50 @@ function admin_fees_member(array $p): array {
 
 /** Record a payment received. Admin-entered: this is the reconciliation step,
  *  not a gateway callback. */
+/**
+ * The rules every payment recorded by a person passes, whichever door it comes
+ * through — the desk (admin_fees_payment) and a family's claim approved from the
+ * inbox (member_request_decide). The claim path used to post with none of them,
+ * so the same transfer slip could be credited once at the desk and again as a
+ * claim, and an operator could approve a claim on their own account.
+ *
+ *   · nobody credits their own account;
+ *   · an open joining invoice is paid through Membership payments, where a
+ *     second person checks it, never around it;
+ *   · a bank reference is money that arrived once: accepted once, across desk
+ *     payments, offline claims and approved family claims — and a transfer
+ *     needs one.
+ *
+ * @param list<array{method:string,reference:string}> $parts
+ * @return array|null a refusal, or null when it may be posted
+ */
+function fees_payment_guard(string $memberId, string $by, array $parts, string $ip = ''): ?array {
+    if ($by === $memberId) return ['ok' => false, 'error' => 'own_account'];
+    if (db_row("SELECT invoiceId FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose = 'joining' LIMIT 1", [$memberId])) {
+        return ['ok' => false, 'error' => 'use_invoice', 'detail' => 'This member has an unpaid joining invoice. Record the payment against it (Membership payments), where it is checked by a second person.'];
+    }
+    $keys = [];
+    foreach ($parts as $x) {
+        $refKey = function_exists('membership_ref_key') ? membership_ref_key((string)($x['reference'] ?? '')) : '';
+        if (!in_array((string)($x['method'] ?? 'cash'), ['cash', 'claim'], true) && strlen($refKey) < 4)
+            return ['ok' => false, 'error' => 'reference_required', 'detail' => 'The transaction reference on the slip or alert.'];
+        if ($refKey === '') continue;
+        if (isset($keys[$refKey])) return ['ok' => false, 'error' => 'reference_reused', 'detail' => 'The same reference is given twice.'];
+        $keys[$refKey] = (string)$x['reference'];
+    }
+    if ($keys) {
+        $seen = false;
+        foreach (array_keys($keys) as $k) if (db_row("SELECT invoiceId FROM offline_payments WHERE referenceKey = ? AND status <> 'rejected' LIMIT 1", [$k])) { $seen = true; break; }
+        if (!$seen) foreach (db_all("SELECT reference FROM member_ledger WHERE kind = 'payment' AND reference <> '' AND (voidedAt IS NULL OR voidedAt = '')") as $lr)
+            if (isset($keys[membership_ref_key((string)$lr['reference'])])) { $seen = true; break; }
+        if ($seen) {
+            audit('fees.payment.reused_reference', $by, $memberId, ['reference' => implode(', ', $keys)], $ip);
+            return ['ok' => false, 'error' => 'reference_reused', 'detail' => 'That reference is already recorded.'];
+        }
+    }
+    return null;
+}
+
 function admin_fees_payment(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
@@ -1577,20 +1781,9 @@ function admin_fees_payment(array $p): array {
     /* Nobody credits their own account, and the joining invoice is not paid
        around: crediting it here and then voiding the invoice skipped the
        evidence and the second person (domain/membership-pay.php). */
-    if ($by === $id) return ['ok' => false, 'error' => 'own_account'];
-    if (function_exists('membership_invoice_by') && db_row("SELECT invoiceId FROM membership_invoices WHERE memberId = ? AND status = 'open' LIMIT 1", [$id])) {
-        return ['ok' => false, 'error' => 'use_invoice', 'detail' => 'This member has an unpaid joining invoice. Record the payment against it (Membership payments), where it is checked by a second person.'];
-    }
-    /* A bank reference is money that arrived once: it is accepted once,
-       across manual payments and offline claims alike. */
     $method = (string)($p['method'] ?? 'cash');
-    $refKey = function_exists('membership_ref_key') ? membership_ref_key((string)($p['reference'] ?? '')) : '';
-    if ($method !== 'cash' && strlen($refKey) < 4) return ['ok' => false, 'error' => 'reference_required', 'detail' => 'The transaction reference on the slip or alert.'];
-    if ($refKey !== '') {
-        $seen = db_row("SELECT invoiceId FROM offline_payments WHERE referenceKey = ? AND status <> 'rejected' LIMIT 1", [$refKey]);
-        if (!$seen) foreach (db_all("SELECT reference FROM member_ledger WHERE kind = 'payment' AND reference <> '' AND (voidedAt IS NULL OR voidedAt = '')") as $lr) if (membership_ref_key((string)$lr['reference']) === $refKey) { $seen = true; break; }
-        if ($seen) { audit('fees.payment.reused_reference', $by, $id, ['reference' => (string)$p['reference']], (string)($p['ip'] ?? '')); return ['ok' => false, 'error' => 'reference_reused', 'detail' => 'That reference is already recorded.']; }
-    }
+    $no = fees_payment_guard($id, $by, [['method' => $method, 'reference' => (string)($p['reference'] ?? '')]], (string)($p['ip'] ?? ''));
+    if ($no) return $no;
     $e = fees_post($id, 'payment', $amount, [
         'note' => (string)($p['note'] ?? ''), 'method' => (string)($p['method'] ?? 'cash'),
         'reference' => (string)($p['reference'] ?? ''), 'by' => $by,
@@ -1682,7 +1875,12 @@ function admin_fees_waive(array $p): array {
     $before = fees_balance($m);
     $asked = fees_money($p['amount'] ?? null, 0);
     if ($asked <= 0) return ['ok' => false, 'error' => 'bad_amount'];
-    $amount = min($asked, (int)$before['outstanding']);
+    /* Capped at what the family is ASKED for. It was capped at `outstanding`,
+       which also holds the training place (covered, never billed): a ₦50,000
+       waiver on a ₦24,870 balance went through, and the ₦25,130 over stood as
+       credit that quietly paid the coming months. The place is written off by
+       the MOU, not waived here. */
+    $amount = min($asked, (int)$before['payable']);
     if ($amount <= 0) return ['ok' => false, 'error' => 'nothing_outstanding'];
     $by = (string)($g['requester']['memberId'] ?? '');
     $e = fees_post($id, 'waiver', $amount, ['note' => substr($reason, 0, 240), 'by' => $by]);
@@ -1748,6 +1946,221 @@ function fees_unpaid_of(array $member, array $kinds, ?string $through = null, ?a
     }
     return $unpaid;
 }
+/**
+ * What is left on EACH live charge (training excluded), keyed by entryId —
+ * payments and waivers applied to the oldest real charges first, the one
+ * reading fees_unpaid_of() and fees_entry_left() use. A screen that says what
+ * an amount owed is made of must ask this, not walk the list in its own
+ * order: the family's Fees page walked the charges newest-first until they
+ * added up, so a fine posted today for last month's absence took the
+ * "part paid" remainder that really belonged to an older charge.
+ *
+ * @return array<string, array{left:int, amount:int}>
+ */
+function fees_charges_left(array $member, ?array $cfg = null, ?array $entries = null, ?array $ten = null): array {
+    $cfg = $cfg ?? fees_settings();
+    $ten = $ten ?? fees_tenure($member, $cfg);
+    $memberDues = [];
+    if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
+    $charges = []; $credit = 0;
+    foreach ($entries ?? fees_entries((string)$member['memberId']) as $e) {
+        if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
+        $kind = (string)$e['kind'];
+        if ((string)$e['direction'] === 'charge') { if ($kind !== 'training') $charges[] = ['entryId' => (string)$e['entryId'], 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)]; }
+        elseif ($kind !== 'writeoff') $credit += (int)$e['amount'];
+    }
+    usort($charges, static fn($a, $b) => [$a['day'], $a['id']] <=> [$b['day'], $b['id']]);
+    $out = [];
+    foreach ($charges as $c) {
+        $take = min($credit, $c['amount']); $credit -= $take;
+        $out[$c['entryId']] = ['left' => $c['amount'] - $take, 'amount' => $c['amount'], 'due' => (string)$c['day']];
+    }
+    return $out;
+}
+
+/**
+ * Compliance state, status history and suspensions for many members, three
+ * queries for the whole list — what fees_balance() otherwise reads per member
+ * (policy state, the status log, suspensions: four or more queries each). A
+ * list that called fees_balance() without it ran those for every row.
+ *
+ * @return array<string, array> memberId => the $comp argument fees_balance() takes
+ */
+function fees_comp_batch(array $ids): array {
+    $out = [];
+    if (!$ids) return $out;
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $comp = []; $hist = []; $susp = [];
+    $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
+    // The same reading as fees_compliance_cutoff(): a suspension past its end date no longer pauses anything.
+    foreach (db_all("SELECT personId, kind, issuedAt, startsAt, endsAt FROM sanctions WHERE personId IN ($ph) AND status = 'active' AND kind IN ('eviction','suspension') ORDER BY issuedAt", $ids) as $sx) {
+        $pid = (string)$sx['personId'];
+        if ($sx['kind'] === 'suspension' && (string)$sx['endsAt'] !== '' && substr((string)$sx['endsAt'], 0, 10) < $today) continue;
+        if ($sx['kind'] === 'eviction') $comp[$pid] = ['cutoff' => substr((string)$sx['issuedAt'], 0, 10), 'state' => 'evicted', 'final' => true];
+        elseif (($comp[$pid]['state'] ?? '') !== 'evicted') $comp[$pid] = ['cutoff' => substr((string)$sx['startsAt'], 0, 10), 'state' => 'suspended', 'final' => false];
+    }
+    foreach (db_all("SELECT memberId, status, since FROM member_status_log WHERE memberId IN ($ph) ORDER BY since, id", $ids) as $h) $hist[(string)$h['memberId']][] = $h;
+    foreach (db_all("SELECT personId, status, startsAt, endsAt, clearedAt FROM sanctions WHERE personId IN ($ph) AND kind = 'suspension'", $ids) as $sx) $susp[(string)$sx['personId']][] = $sx;
+    foreach ($ids as $id) $out[$id] = ($comp[$id] ?? ['cutoff' => '', 'state' => 'clear', 'final' => false]) + ['history' => $hist[$id] ?? [], 'suspensions' => $susp[$id] ?? []];
+    return $out;
+}
+
+/**
+ * What a member's payable is MADE OF, in lines a family reads at a glance —
+ * the one answer every screen gives (family Fees, the member's Money screen,
+ * Who owes). The lines add up to `payable`, always, and the sum is checked
+ * here rather than trusted to each screen:
+ *
+ *   - each open charge's LEFT, read the way payments are applied (oldest
+ *     first, fees_charges_left), so a part-paid charge says what it was;
+ *   - monthly dues grouped into one line with the months named — and a gap
+ *     said, not papered over ("February – April, June 2026");
+ *   - the training place when it became owed on leaving before the MOU. It
+ *     is in the payable but on no ledger charge, so every breakdown built
+ *     from charges alone came up short by exactly that, for exactly the
+ *     families most likely to dispute it.
+ *
+ * Grouping moved here from the family app (fp3Lines), which did the sum in
+ * the browser and could only ever see ledger charges.
+ *
+ * @return array{payable:int, lines:list<array>, ok:bool}
+ */
+function fees_owed_made(array $m, ?array $cfg = null, ?array $entries = null, ?array $bal = null): array {
+    $cfg = $cfg ?? fees_settings();
+    $entries = $entries ?? fees_entries((string)$m['memberId']);
+    $bal = $bal ?? fees_balance($m, $cfg, null, $entries);
+    $byId = []; foreach ($entries as $e) $byId[(string)$e['entryId']] = $e;
+    $groups = []; $order = [];
+    foreach (fees_charges_left($m, $cfg, $entries, $bal['tenure'] ?? null) as $eid => $l) {
+        if ($l['left'] <= 0 || !isset($byId[$eid])) continue;
+        $e = $byId[$eid]; $kind = (string)$e['kind']; $per = (string)($e['periodKey'] ?? '');
+        $note = trim((string)$e['note']);
+        $key = $kind === 'dues' ? 'dues' : $kind . ':' . $eid;
+        if (!isset($groups[$key])) {
+            $order[] = $key;
+            $groups[$key] = ['key' => $key, 'kind' => $kind, 'label' => fees_made_label($kind, $note), 'detail' => '', 'amount' => 0, 'n' => 0,
+                             'paid' => 0, 'of' => 0, 'periods' => [], 'due' => (string)$l['due']];
+        }
+        $g = &$groups[$key];
+        $g['amount'] += $l['left']; $g['n']++;
+        if ($l['left'] < $l['amount']) { $g['paid'] += $l['amount'] - $l['left']; $g['of'] += $l['amount']; }
+        if (preg_match('/^\d{4}-\d{2}$/', $per)) $g['periods'][] = $per;
+        if ($kind !== 'dues') $g['detail'] = fees_made_detail($kind, $note, $per);
+        unset($g);
+    }
+    $lines = [];
+    foreach ($order as $k) {
+        $g = $groups[$k];
+        if ($g['kind'] === 'dues') {
+            if ($g['n'] > 1) $g['label'] .= ' × ' . $g['n'] . ' months';
+            $g['detail'] = fees_month_spans($g['periods']);
+        }
+        if ($g['paid'] > 0) $g['detail'] = trim($g['detail'] . ($g['detail'] !== '' ? ' · ' : '') . fees_money_text($g['paid'], $cfg) . ' already paid' . ($g['n'] === 1 ? ' of ' . fees_money_text($g['of'], $cfg) : ''));
+        $lines[] = $g;
+    }
+    $owed = (int)($bal['trainingOwed'] ?? 0);
+    if ($owed > 0) $lines[] = ['key' => 'training_owed', 'kind' => 'training_owed', 'label' => 'Training place',
+        'detail' => 'Left before the MOU was complete — the part service had not yet earned off', 'amount' => $owed, 'n' => 1, 'paid' => 0, 'of' => 0, 'periods' => [], 'due' => ''];
+    /* Biggest first is not the order a family pays in; the oldest is. Dues sit
+       where their oldest month falls; the training balance closes the list. */
+    $payable = (int)$bal['payable'];
+    $sum = array_sum(array_column($lines, 'amount'));
+    return ['payable' => $payable, 'lines' => $lines, 'ok' => $sum === $payable];
+}
+/** "Membership fee", "Fine", "Adjustment" — the line's name; its particulars go in the detail. */
+function fees_made_label(string $kind, string $note): string {
+    if ($kind === 'dues') return 'Commitment fee';
+    if ($kind === 'membership') return 'Membership fee';
+    if ($kind === 'fine') return 'Fine';
+    if ($note !== '') { $cut = preg_split('/\s+—\s+/u', $note, 2); return (string)$cut[0]; }
+    return ucfirst($kind);
+}
+function fees_made_detail(string $kind, string $note, string $per): string {
+    $d = fn($iso) => ($t = strtotime($iso . 'T12:00:00Z')) ? gmdate('j M Y', $t) : $iso;
+    if ($kind === 'membership') {
+        if (preg_match('/year (\d+) from (\d{4}-\d{2}-\d{2})/', $note, $x)) return 'Year ' . $x[1] . ', from ' . $d($x[2]);
+        return $note !== 'Membership fee' ? preg_replace('/^Membership fee\s*—\s*/u', '', $note) : '';
+    }
+    $rest = preg_split('/\s+—\s+/u', $note, 2)[1] ?? '';
+    // "Absent on Sat 17 Oct 2026 with no absence request — ₦1,000 absence fine." → the reason, not the amount again
+    $rest = preg_replace('/\s*—\s*₦[\d,]+(?: [a-z]+)? fine\.?$/u', '', $rest);
+    return preg_replace_callback('/\b(\d{4}-\d{2}-\d{2})\b/', fn($x) => $d($x[1]), $rest);
+}
+/** ['2026-02','2026-03','2026-05'] → "February – March, May 2026". Gaps are said. */
+function fees_month_spans(array $periods): string {
+    $ps = array_values(array_unique($periods)); sort($ps);
+    if (!$ps) return '';
+    $idx = fn($p) => (int)substr($p, 0, 4) * 12 + (int)substr($p, 5, 2) - 1;
+    $runs = []; $start = $prev = $ps[0];
+    foreach (array_slice($ps, 1) as $p) { if ($idx($p) === $idx($prev) + 1) { $prev = $p; continue; } $runs[] = [$start, $prev]; $start = $prev = $p; }
+    $runs[] = [$start, $prev];
+    $name = fn($p) => gmdate('F', strtotime($p . '-01T12:00:00Z')); $yr = fn($p) => substr($p, 0, 4);
+    $oneYear = $yr($ps[0]) === $yr(end($ps));
+    $parts = array_map(function ($r) use ($name, $yr, $oneYear) {
+        $a = $name($r[0]) . ($oneYear ? '' : ' ' . $yr($r[0])); $b = $name($r[1]) . ($oneYear ? '' : ' ' . $yr($r[1]));
+        return $r[0] === $r[1] ? $a : $a . ' – ' . $b;
+    }, $runs);
+    return implode(', ', $parts) . ($oneYear ? ' ' . $yr($ps[0]) : '');
+}
+
+/**
+ * One member's account as an accountant reads it, built on the server so the
+ * screen adds nothing up:
+ *
+ *   summary    charged by kind − received by kind = payable now (a sum that
+ *              reconciles, on the page)
+ *   open       each charge with something left on it, oldest first, what is
+ *              left and what was paid of it (fees_charges_left)
+ *   statement  every entry in the order it was posted, with charge / credit
+ *              columns and the running balance; a voided entry is listed and
+ *              moves nothing. The training place is not money anybody is
+ *              asked for, so it is not in the statement — it has its own
+ *              section — unless it became owed on leaving, which is a line.
+ *
+ * Before 3 Nov 2026 the account showed four tiles that did not reconcile and a
+ * list of amounts with no balance, so nobody could trace how the payable was
+ * reached.
+ */
+function fees_account_statement(array $m, array $bal, ?array $cfg = null, ?array $entries = null): array {
+    $cfg = $cfg ?? fees_settings();
+    $entries = $entries ?? fees_entries((string)$m['memberId']);
+    $leftBy = fees_charges_left($m, $cfg, $entries);
+    $charged = []; $received = []; $rows = []; $run = 0;
+    foreach ($entries as $e) {
+        $kind = (string)$e['kind']; $amt = (int)$e['amount']; $void = trim((string)($e['voidedAt'] ?? '')) !== '';
+        if ($kind === 'training' || $kind === 'writeoff') continue;   // the place: its own section
+        $isCharge = (string)$e['direction'] === 'charge';
+        if (!$void) {
+            $run += $isCharge ? $amt : -$amt;
+            $k = $kind === 'adjustment' ? ($isCharge ? 'adjustment' : 'credit_adjustment') : $kind;
+            if ($isCharge) $charged[$k] = ($charged[$k] ?? 0) + $amt; else $received[$k] = ($received[$k] ?? 0) + $amt;
+        }
+        $rows[] = ['entryId' => (string)$e['entryId'], 'date' => substr((string)$e['createdAt'], 0, 10), 'kind' => $kind,
+            'periodKey' => (string)($e['periodKey'] ?? ''), 'note' => (string)$e['note'], 'void' => $void, 'voidReason' => (string)($e['voidReason'] ?? ''),
+            'charge' => $isCharge ? $amt : 0, 'credit' => $isCharge ? 0 : $amt, 'balance' => $run,
+            'left' => $isCharge && !$void ? (int)($leftBy[(string)$e['entryId']]['left'] ?? 0) : null];
+    }
+    $trainingOwed = (int)($bal['trainingOwed'] ?? 0);
+    if ($trainingOwed > 0) {
+        $run += $trainingOwed; $charged['training_owed'] = $trainingOwed;
+        $rows[] = ['entryId' => '', 'date' => '', 'kind' => 'training_owed', 'periodKey' => '', 'note' => 'Left before the MOU was complete: what service had not yet earned off the training place',
+            'void' => false, 'voidReason' => '', 'charge' => $trainingOwed, 'credit' => 0, 'balance' => $run, 'left' => $trainingOwed];
+    }
+    /* In the allocator's own order — by the day each charge fell due — which is
+       the order payments settle them, so the top line is what the next payment pays. */
+    $rowBy = []; foreach ($rows as $r) if ($r['entryId'] !== '') $rowBy[$r['entryId']] = $r;
+    $open = [];
+    foreach ($leftBy as $id => $l) {
+        if ($l['left'] <= 0 || !isset($rowBy[$id])) continue;
+        $r = $rowBy[$id];
+        $open[] = ['entryId' => $id, 'date' => $r['date'], 'due' => substr((string)$l['due'], 0, 10), 'kind' => $r['kind'], 'periodKey' => $r['periodKey'], 'note' => $r['note'],
+                   'amount' => $l['amount'], 'left' => $l['left'], 'paid' => $l['amount'] - $l['left']];
+    }
+    return ['summary' => ['charged' => $charged, 'received' => $received, 'chargedTotal' => array_sum($charged), 'receivedTotal' => array_sum($received),
+                          'payable' => (int)$bal['payable'], 'credit' => max(0, -$run)],
+            'open' => $open, 'statement' => array_reverse($rows)];   // newest first on screen; the balance on each line is as at that line
+}
+
 /**
  * What is still owed on ONE charge, identified by its period key — payments
  * and waivers applied to the oldest real charges first, exactly as
@@ -2010,7 +2423,10 @@ function admin_fees_lookup(array $p): array {
                   /* Both figures: `payable` is what to ask for, `charged` proves
                      an account exists at all for somebody who owes nothing. */
                   'payable' => (int)$b['payable'], 'charged' => (int)$b['charged'],
-                  'credited' => (int)$b['credited'], 'phase' => (string)$b['tenure']['phase']];
+                  'credited' => (int)$b['credited'], 'phase' => (string)$b['tenure']['phase'],
+                  /* The real money, so Charged − Received = Payable on screen; `charged`
+                     also holds the training place, which nobody is asked to pay. */
+                  'realCharged' => (int)$b['realCharged'], 'realCredited' => (int)$b['realCredited']];
     }
     return ['ok' => true, 'members' => $out, 'q' => $q,
             'truncated' => count($rows) > FEES_LOOKUP_MAX, 'max' => FEES_LOOKUP_MAX];
@@ -2055,6 +2471,8 @@ function member_fees_account(array $p): array {
             'kind' => (string)$e['kind'], 'direction' => (string)$e['direction'],
             'amount' => (int)$e['amount'], 'note' => (string)$e['note'],
             'createdAt' => (string)$e['createdAt'],
+            // The month a dues charge is FOR ("2026-10"), not the day it was posted: "this month's fee" is decided by it.
+            'period' => preg_match('/^\d{4}-\d{2}$/', (string)($e['periodKey'] ?? '')) ? (string)$e['periodKey'] : '',
             'void' => trim((string)($e['voidedAt'] ?? '')) !== '',
             /* Deliberately absent: `createdBy`, `voidedBy`, `method`,
                `reference`. Which member of staff posted a row and which bank
@@ -2100,6 +2518,8 @@ function member_fees_account(array $p): array {
         'remindOff' => (int)($m['duesRemindOff'] ?? 0) === 1,
         // Paystack is configured: the account can offer "Pay online" (membership_balance_invoice).
         'payOnline' => function_exists('paystack_secret') && paystack_secret() !== '',
+        // Paystack's charge on paying today's balance online, when the family bears it (paystack_family_charge).
+        'payFee' => function_exists('paystack_secret') && paystack_secret() !== '' && function_exists('paystack_family_charge') ? paystack_family_charge((int)$bal['payable'], $cfg) : 0,
         'currency' => (string)$cfg['currency'],
     ]];
 }
@@ -2113,10 +2533,24 @@ function admin_fees_void(array $p): array {
     if ($e) { $sg = fees_scope_gate($g['requester'], (string)$e['memberId']); if (!$sg['ok']) return $sg; }
     if (!$e) return ['ok' => false, 'error' => 'not_found'];
     if (trim((string)($e['voidedAt'] ?? '')) !== '') return ['ok' => false, 'error' => 'already_void'];
+    /* An entry another record stands behind is reversed THERE, not voided here:
+       voiding an invoice's payment left the invoice paid, with its numbered
+       receipt, while the account said unpaid; voiding a volunteer-pay deduction
+       left the payout recorded as having taken it. */
+    $pk = (string)($e['periodKey'] ?? ''); $cb = (string)($e['createdBy'] ?? '');
+    if (str_starts_with($pk, 'minv:') || str_starts_with($cb, 'invoice:')) {
+        return ['ok' => false, 'error' => 'void_at_source', 'detail' => 'This came from a membership invoice. Void the invoice in Membership payments, so the invoice, its receipt and the account agree.'];
+    }
+    if (str_starts_with($pk, 'volpay:')) {
+        return ['ok' => false, 'error' => 'void_at_source', 'detail' => 'This was taken from volunteer pay. Correct it in Volunteer pay, so the payout and the account agree.'];
+    }
     $by = (string)($g['requester']['memberId'] ?? '');
     db_update('member_ledger', ['voidedAt' => now_iso(), 'voidedBy' => $by,
                                 'voidReason' => substr($reason, 0, 240)], ['entryId' => $entryId]);
     audit('fees.void', $by, (string)$e['memberId'], ['entryId' => $entryId, 'amount' => (int)$e['amount'], 'reason' => $reason], (string)($p['ip'] ?? ''));
+    /* A voided payment can leave a fine the ledger had settled owed again; a
+       voided charge can settle the next one. The conduct board reads the same. */
+    if (function_exists('policy_fines_sync')) { try { policy_fines_sync((string)$e['memberId']); } catch (Throwable $ex) { error_log('[fees_void] fines sync: ' . $ex->getMessage()); } }
     return ['ok' => true];
 }
 
@@ -2173,17 +2607,9 @@ function admin_fees_accrue(array $p): array {
     $cfg = fees_settings();
     if (empty($cfg['enabled'])) return ['ok' => false, 'error' => 'fees_disabled'];
     $limit = max(1, min(FEES_SCAN_MAX, (int)($p['limit'] ?? FEES_ACCRUE_BATCH)));
-    $rows = db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . $limit);
-    $tot = ['members' => 0, 'membership' => 0, 'dues' => 0, 'training' => 0, 'atCap' => 0, 'noJoinDate' => 0];
-    foreach ($rows as $m) {
-        $r = fees_accrue_member($m, $cfg);
-        $tot['members']++;
-        $tot['membership'] += $r['membership']; $tot['dues'] += $r['dues']; $tot['training'] += $r['training'];
-        if ($r['skipped'] === 'at_cap') $tot['atCap']++;
-        if ($r['skipped'] === 'no_join_date') $tot['noJoinDate']++;
-    }
+    $tot = fees_accrue_batch($limit, $cfg);
     audit('fees.accrue', (string)($g['requester']['memberId'] ?? ''), 'fees', $tot, (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'accrued' => $tot, 'scanned' => count($rows), 'limit' => $limit];
+    return ['ok' => true, 'accrued' => $tot, 'scanned' => $tot['members'], 'limit' => $limit, 'more' => !$tot['wrapped']];
 }
 
 /**
@@ -2242,27 +2668,192 @@ function admin_fees_remind_run(array $p): array {
  * large only because their training fee has not been written off yet is not the
  * person to call.
  */
+const FEES_JOURNAL_PAGE = 100;
+const FEES_JOURNAL_MAX = 500;
+const FEES_JOURNAL_KINDS = ['membership', 'dues', 'fine', 'adjustment', 'payment', 'waiver', 'writeoff', 'training'];
+
+/**
+ * admin.fees.journal — every money movement across the accounts in scope, for
+ * a period: who it was for, what it was, how it came, the reference, WHO
+ * POSTED IT, and a void with who voided it and why. The question it exists to
+ * answer is "what came in this month, by what means, and who keyed it" — the
+ * one an auditor asks first, and one no screen here could answer: each
+ * account showed its own lines and nothing showed them together.
+ *
+ * Filters are allow-listed by name (kind, direction, method, state); an
+ * unknown value falls back to everything rather than erroring. The totals
+ * are for the whole filter, not the drawn page. Scope is applied in the
+ * query, per row.
+ */
+function admin_fees_journal(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $day = static fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) ? (string)$v : '';
+    $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
+    $from = $day($p['from'] ?? '') ?: substr($today, 0, 8) . '01';
+    $to = $day($p['to'] ?? '') ?: $today;
+    if ($to < $from) [$from, $to] = [$to, $from];
+    $toNext = gmdate('Y-m-d', strtotime($to . ' 00:00:00 UTC') + 86400);
+    $where = ['l.createdAt >= ?', 'l.createdAt < ?']; $args = [$from, $toNext];
+    $kind = (string)($p['kind'] ?? '');
+    if (in_array($kind, FEES_JOURNAL_KINDS, true)) { $where[] = 'l.kind = ?'; $args[] = $kind; }
+    $dir = (string)($p['direction'] ?? '');
+    if (in_array($dir, ['charge', 'credit'], true)) { $where[] = 'l.direction = ?'; $args[] = $dir; }
+    $state = (string)($p['state'] ?? '');
+    if ($state === 'void') $where[] = "(l.voidedAt IS NOT NULL AND l.voidedAt <> '')";
+    elseif ($state === 'live') $where[] = "(l.voidedAt IS NULL OR l.voidedAt = '')";
+    $q = trim(mb_substr((string)($p['q'] ?? ''), 0, 80));
+    if ($q !== '') { $where[] = '(LOWER(m.fullName) LIKE ? OR LOWER(l.memberId) LIKE ? OR LOWER(l.reference) LIKE ?)'; $like = '%' . mb_strtolower($q) . '%'; array_push($args, $like, $like, $like); }
+    $scope = admin_centre_names_in_scope($g['requester']);
+    if ($scope !== null) {
+        if (!$scope) return ['ok' => true, 'rows' => [], 'total' => 0, 'from' => $from, 'to' => $to, 'totals' => ['received' => 0, 'byMethod' => [], 'charged' => 0, 'byKind' => [], 'waived' => 0, 'voided' => 0]];
+        $where[] = 'm.centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; array_push($args, ...$scope);
+    }
+    $sqlWhere = implode(' AND ', $where);
+    $base = "FROM member_ledger l LEFT JOIN members m ON m.memberId = l.memberId WHERE $sqlWhere";
+    // Totals for the whole filter, live rows only — a voided entry is counted as voided, not as money.
+    $totals = ['received' => 0, 'byMethod' => [], 'charged' => 0, 'byKind' => [], 'waived' => 0, 'voided' => 0];
+    foreach (db_all("SELECT l.kind, l.direction, l.method, l.voidedAt, l.amount $base", $args) as $r) {
+        if (trim((string)($r['voidedAt'] ?? '')) !== '') { $totals['voided']++; continue; }
+        $k = (string)$r['kind']; $a = (int)$r['amount'];
+        if ($k === 'training' || $k === 'writeoff') continue;   // the place: never money anybody is asked for
+        if ((string)$r['direction'] === 'charge') { $totals['charged'] += $a; $totals['byKind'][$k] = ($totals['byKind'][$k] ?? 0) + $a; }
+        elseif ($k === 'payment') { $totals['received'] += $a; $m = (string)$r['method'] !== '' ? (string)$r['method'] : 'other'; $totals['byMethod'][$m] = ($totals['byMethod'][$m] ?? 0) + $a; }
+        elseif ($k === 'waiver') $totals['waived'] += $a;
+    }
+    $roll = fees_journal_roll($from, $toNext, $scope, $q);
+    $total = (int)(db_row("SELECT COUNT(*) c $base", $args)['c'] ?? 0);
+    /* The route passes every query field through, so "not given" arrives as ''
+       and (int)'' is 0 — which the floor turned into ONE row a page. A missing
+       or nonsense limit is the default, never the minimum. */
+    $limit = (int)($p['limit'] ?? 0) > 0 ? min(FEES_JOURNAL_MAX, (int)$p['limit']) : FEES_JOURNAL_PAGE;
+    $offset = max(0, (int)($p['offset'] ?? 0));
+    $rows = db_all("SELECT l.*, m.fullName, m.centre $base ORDER BY l.createdAt DESC, l.id DESC LIMIT $limit OFFSET $offset", $args);
+    // Who posted and who voided, by name: one query for every id on the page.
+    $people = array_values(array_unique(array_filter(array_merge(array_column($rows, 'createdBy'), array_column($rows, 'voidedBy')),
+        static fn($x) => $x !== '' && $x !== null)));
+    $names = [];
+    if ($people) {
+        $ph = implode(',', array_fill(0, count($people), '?'));
+        foreach (db_all("SELECT memberId, fullName FROM members WHERE memberId IN ($ph)", $people) as $r) $names[(string)$r['memberId']] = (string)$r['fullName'];
+    }
+    $who = static fn($id) => $id === '' ? '' : ($names[$id] ?? (in_array($id, ['accrual', 'policy', 'system', 'paystack', 'ledger'], true) ? ['accrual' => 'Automatic (dues)', 'policy' => 'Automatic (conduct)', 'system' => 'Automatic', 'paystack' => 'Paystack', 'ledger' => 'Automatic'][$id] : $id));
+    return ['ok' => true, 'from' => $from, 'to' => $to, 'total' => $total, 'limit' => $limit, 'offset' => $offset, 'totals' => $totals, 'roll' => $roll,
+        'rows' => array_map(static fn($r) => [
+            'entryId' => (string)$r['entryId'], 'memberId' => (string)$r['memberId'], 'fullName' => (string)($r['fullName'] ?? ''), 'centre' => (string)($r['centre'] ?? ''),
+            'kind' => (string)$r['kind'], 'direction' => (string)$r['direction'], 'amount' => (int)$r['amount'], 'periodKey' => (string)$r['periodKey'],
+            'note' => (string)$r['note'], 'method' => (string)$r['method'], 'reference' => (string)$r['reference'],
+            'at' => (string)$r['createdAt'], 'by' => $who((string)($r['createdBy'] ?? '')),
+            'void' => trim((string)($r['voidedAt'] ?? '')) !== '', 'voidedAt' => (string)($r['voidedAt'] ?? ''),
+            'voidedBy' => $who((string)($r['voidedBy'] ?? '')), 'voidReason' => (string)($r['voidReason'] ?? ''),
+        ], $rows)];
+}
+
+/**
+ * The period as a statement of account for the whole book: what was owed when
+ * it opened, what was charged, what came in, what was waived or credited, and
+ * what was owed when it closed — a sum that must reconcile, month by month.
+ *
+ * Real money only (the training place and its write-offs are never owed), live
+ * entries only, and deliberately NOT narrowed by the journal's kind, direction
+ * or state filters: "fines only" has no opening balance. Centre scope and a
+ * member search do narrow it, so one family's year reads the same way.
+ *
+ * "Owed" here is the net of every account — money paid ahead offsets a debt
+ * elsewhere in the sum — and is labelled so on screen; Who owes is the gross.
+ */
+const FEES_ROLL_MONTHS_MAX = 24;
+function fees_journal_roll(string $from, string $toNext, ?array $scope, string $q): array {
+    $where = ["(l.voidedAt IS NULL OR l.voidedAt = '')", "l.kind NOT IN ('training','writeoff')", 'l.createdAt < ?']; $args = [$toNext];
+    if ($q !== '') { $where[] = '(LOWER(m.fullName) LIKE ? OR LOWER(l.memberId) LIKE ?)'; $like = '%' . mb_strtolower($q) . '%'; array_push($args, $like, $like); }
+    if ($scope !== null) {
+        if (!$scope) return ['opening' => 0, 'charged' => 0, 'received' => 0, 'waived' => 0, 'otherCredit' => 0, 'closing' => 0, 'months' => [], 'monthsCut' => false];
+        $where[] = 'm.centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; array_push($args, ...$scope);
+    }
+    $sql = "SELECT CASE WHEN l.createdAt < ? THEN '' ELSE SUBSTR(l.createdAt, 1, 7) END mon, l.direction, l.kind, SUM(l.amount) s
+            FROM member_ledger l LEFT JOIN members m ON m.memberId = l.memberId
+            WHERE " . implode(' AND ', $where) . " GROUP BY mon, l.direction, l.kind";
+    $opening = 0; $byMonth = [];
+    foreach (db_all($sql, array_merge([$from], $args)) as $r) {
+        $a = (int)$r['s']; $charge = (string)$r['direction'] === 'charge';
+        if ((string)$r['mon'] === '') { $opening += $charge ? $a : -$a; continue; }
+        $mm = &$byMonth[(string)$r['mon']];
+        $mm = ($mm ?? ['charged' => 0, 'received' => 0, 'waived' => 0, 'otherCredit' => 0]);
+        if ($charge) $mm['charged'] += $a;
+        elseif ($r['kind'] === 'payment') $mm['received'] += $a;
+        elseif ($r['kind'] === 'waiver') $mm['waived'] += $a;
+        else $mm['otherCredit'] += $a;
+        unset($mm);
+    }
+    ksort($byMonth);
+    $run = $opening; $sum = ['charged' => 0, 'received' => 0, 'waived' => 0, 'otherCredit' => 0]; $months = [];
+    foreach ($byMonth as $mon => $x) {
+        $open = $run;
+        $run += $x['charged'] - $x['received'] - $x['waived'] - $x['otherCredit'];
+        foreach ($sum as $k => $_) $sum[$k] += $x[$k];
+        $months[] = ['month' => $mon, 'opening' => $open] + $x + ['closing' => $run];
+    }
+    $cut = count($months) > FEES_ROLL_MONTHS_MAX;
+    return ['opening' => $opening] + $sum + ['closing' => $run,
+            'months' => $cut ? array_slice($months, -FEES_ROLL_MONTHS_MAX) : $months, 'monthsCut' => $cut];
+}
+
+/** The ageing bands a collector reads debt by: how long the oldest unpaid naira has been due. */
+const FEES_AGE_BANDS = [['current', 'Up to 30 days overdue', 0], ['d31', '31–60 days', 31], ['d61', '61–90 days', 61], ['d90', 'Over 90 days', 91]];
+function fees_age_band(int $days): string {
+    $k = 'current'; foreach (FEES_AGE_BANDS as [$key, , $from]) if ($days >= $from) $k = $key; return $k;
+}
+
+/**
+ * Who owes, as a collector reads it: what each family owes, how long the oldest
+ * unpaid charge has been due, when they last paid, and what the debt is made of
+ * — and the whole book aged into bands that add up to the total.
+ *
+ * ONE ledger read for the list. It used to read every member's ledger again
+ * inside the loop (fees_balance → fees_entries), a query per row; now the rows
+ * are read once, grouped, and handed to fees_balance / fees_charges_left.
+ */
 function admin_fees_arrears(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
-    $limit = max(1, min(FEES_ARREARS_PAGE_MAX, (int)($p['limit'] ?? FEES_ARREARS_PAGE)));
-    $owedBy = [];
-    foreach (db_all("SELECT memberId, direction, amount, kind FROM member_ledger WHERE voidedAt = '' OR voidedAt IS NULL") as $e) {
+    $limit = (int)($p['limit'] ?? 0) > 0 ? min(FEES_ARREARS_PAGE_MAX, (int)$p['limit']) : FEES_ARREARS_PAGE;   // '' from the route is the default, not one row
+    $byMember = []; $owedBy = [];
+    foreach (db_all("SELECT * FROM member_ledger ORDER BY id") as $e) {
         $id = (string)$e['memberId'];
-        $owedBy[$id] = $owedBy[$id] ?? 0;
-        $owedBy[$id] += ((string)$e['direction'] === 'charge' ? 1 : -1) * (int)$e['amount'];
+        $byMember[$id][] = $e;
+        if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
+        $owedBy[$id] = ($owedBy[$id] ?? 0) + ((string)$e['direction'] === 'charge' ? 1 : -1) * (int)$e['amount'];
     }
     $ids = array_keys(array_filter($owedBy, fn($v) => $v > 0));
-    $out = []; $totalPayable = 0;
+    $out = []; $totalPayable = 0; $bands = array_fill_keys(array_column(FEES_AGE_BANDS, 0), 0);
     $scope = admin_centre_names_in_scope($g['requester']);
+    $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
     if ($ids) {
         foreach (array_chunk($ids, 400) as $chunk) {
             $ph = implode(',', array_fill(0, count($chunk), '?'));
+            $compOf = fees_comp_batch($chunk);
             foreach (db_all("SELECT * FROM members WHERE memberId IN ($ph)", $chunk) as $m) {
                 if ($scope !== null && !in_array((string)($m['centre'] ?? ''), $scope, true)) continue;
-                $b = fees_balance($m, $cfg);
+                $entries = $byMember[(string)$m['memberId']] ?? [];
+                // Every family's compliance and history from three queries for the chunk, never per row.
+                $b = fees_balance($m, $cfg, null, $entries, $compOf[(string)$m['memberId']] ?? null);
                 if ((int)$b['payable'] <= 0) continue;
                 $totalPayable += (int)$b['payable'];
+                // What is left on each charge, and so how old the debt is and what it is made of.
+                $kindOf = []; foreach ($entries as $e) $kindOf[(string)$e['entryId']] = (string)$e['kind'];
+                $made = ['dues' => 0, 'membership' => 0, 'fine' => 0, 'training' => (int)$b['trainingOwed'], 'other' => 0]; $oldest = ''; $ageOf = [];
+                foreach (fees_charges_left($m, $cfg, $entries, $b['tenure']) as $eid => $l) {
+                    if ($l['left'] <= 0) continue;
+                    $k = $kindOf[$eid] ?? 'other'; $made[isset($made[$k]) ? $k : 'other'] += $l['left'];
+                    $due = substr((string)$l['due'], 0, 10);
+                    if ($due !== '' && ($oldest === '' || $due < $oldest)) $oldest = $due;
+                    $days = $due !== '' ? max(0, (int)floor((strtotime($today . ' UTC') - strtotime($due . ' UTC')) / 86400)) : 0;
+                    $bands[fees_age_band($days)] += $l['left'];
+                }
+                // Training owed on leaving has no charge row of its own: it is as old as the leaving, counted current.
+                $made['other'] += max(0, (int)$b['payable'] - array_sum($made));
+                $days = $oldest !== '' ? max(0, (int)floor((strtotime($today . ' UTC') - strtotime($oldest . ' UTC')) / 86400)) : 0;
+                $last = null;
+                foreach (array_reverse($entries) as $e) if ((string)$e['kind'] === 'payment' && trim((string)($e['voidedAt'] ?? '')) === '') { $last = $e; break; }
                 $out[] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],
                           'centre' => (string)($m['centre'] ?? ''),
                           'payable' => (int)$b['payable'], 'outstanding' => (int)$b['outstanding'],
@@ -2270,15 +2861,21 @@ function admin_fees_arrears(array $p): array {
                           'atCap' => !empty($b['atCap']),
                           'phase' => (string)$b['tenure']['phase'],
                           'remindOff' => (int)($m['duesRemindOff'] ?? 0) === 1,
-                          'guardianPhone' => (string)($m['parentPhone'] ?? '')];
+                          'guardianPhone' => (string)($m['parentPhone'] ?? ''),
+                          'oldestDue' => $oldest, 'daysOverdue' => $days, 'band' => fees_age_band($days),
+                          'made' => $made,
+                          'lastPaid' => $last ? ['date' => substr((string)$last['createdAt'], 0, 10), 'amount' => (int)$last['amount'], 'method' => (string)$last['method']] : null];
             }
         }
     }
     usort($out, fn($a, $b) => $b['payable'] <=> $a['payable']);
     $matched = count($out);
+    $bandRows = array_map(fn($x) => ['key' => $x[0], 'label' => $x[1], 'amount' => (int)$bands[$x[0]]], FEES_AGE_BANDS);
+    // Training owed on leaving is in the payable but on no charge: counted current, so the bands add up to the total.
+    $gap = $totalPayable - array_sum($bands); if ($gap > 0) $bandRows[0]['amount'] += $gap;
     return ['ok' => true, 'arrears' => array_slice($out, 0, $limit),
             'matched' => $matched, 'truncated' => $matched > $limit,
-            'totalPayable' => $totalPayable, 'settings' => $cfg];
+            'totalPayable' => $totalPayable, 'aging' => $bandRows, 'settings' => $cfg];
 }
 
 /* ══ Bulk fines: a sheet of fines, matched to members, checked before written ══

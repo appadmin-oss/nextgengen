@@ -2,32 +2,18 @@
 declare(strict_types=1);
 
 /**
- * Web-cron — opportunistic maintenance for hosts with NO SSH/cron.
+ * Web-cron — background work for hosts with NO SSH/cron.
  *
- * A normal web request, at most once per interval, drains the integration
- * outbox, sends due parent-verification reminders, and (less often) runs the
- * daily maintenance that used to live in api/tools/run-jobs.php. The work runs
- * AFTER the response is flushed to the client (fastcgi_finish_request when
- * available) and is wrapped so it can NEVER disrupt the request. A non-blocking
- * flock stops concurrent requests from stampeding, and per-job marker files
- * throttle each job independently.
- *
- * Cadence (overridable via $CONFIG['webcron']):
- *   deliver   every 60s   — integration bus (Chat/webhook/Sheets, escalations)
- *   reminders every 900s  — parent-verification re-nudge + stalled alerts
- *   maint     every 3600s — publish scheduled posts, expire promo, GC, trim,
- *                             roll due desk passwords
- *   accrue    every 86400s — bring fee charges up to date (no-op when fees are
- *                             switched off)
- *
- * Disable entirely with $CONFIG['webcron']['enabled'] = false (e.g. when a real
- * cron drives api/tools/*). CLI SAPI never schedules it.
- *
- * A host that HAS a scheduler can drive the same jobs from outside instead —
- * api/public/cron.php, with $CONFIG['cron_key'] set. Same jobs, same lock, same
- * heartbeats; see that file. Opportunistic web-cron and an external scheduler
- * are safe to run together, which matters during a migration from one to the
- * other.
+ * Two doors, one scheduler (see "THE SCHEDULER" below):
+ *   · an outside scheduler fetching api/public/cron.php every minute or few —
+ *     the gate's Cloudflare Worker, a cPanel cron, an uptime pinger. The fast
+ *     path: while it runs, visitors' pages do no background work.
+ *   · otherwise, after a visitor's response has been handed back, one short
+ *     budgeted tick (WEB_CRON_BUDGET seconds, one network job at most).
+ * Every job, its interval and whether it talks to another server is in
+ * web_cron_jobs(); an interval can be overridden in $CONFIG['webcron'][job].
+ * Disable the visitor tick entirely with $CONFIG['webcron']['enabled'] = false.
+ * CLI never schedules it.
  */
 
 function web_cron_cfg(string $key, int $default): int {
@@ -47,11 +33,83 @@ function web_cron_marker(string $job): string {
     return web_cron_dir() . '/' . preg_replace('/[^a-z0-9_]/i', '', $job) . '.at';
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE SCHEDULER (rebuilt 31 Oct 2026)
+
+   Why it was rebuilt. On this class of host a PHP worker stays busy for the
+   whole tick even after the page has gone, and the host allows only a handful
+   (CloudLinux "entry processes"; past them, 508 and timeouts). The old tick
+   ran ~25 jobs in a fixed order, several of them network calls of up to 20 s
+   each, for up to 45 s — and on LiteSpeed it never detached at all
+   (response_detach), so the VISITOR waited for it. That is "the site times
+   out, it is slow" with nothing in any log.
+
+   What it does now:
+   · One registry of jobs (web_cron_jobs): interval, the work, and whether it
+     talks to another server ('net').
+   · A visitor's tick does at most WEB_CRON_BUDGET seconds and at most ONE
+     network job. Due jobs go most-overdue first, and a job whose last run
+     will not fit in what is left of the budget waits for a fresh tick rather
+     than overrunning it. Nothing is lost: an unrun job is still due.
+   · When an outside scheduler drives the jobs (api/public/cron.php — the
+     gate's Cloudflare Worker, a cPanel cron, an uptime pinger), visitors' pages
+     do no background work at all. That is the fast path, and the one to use.
+   · Every run that took any time is logged (PHP error log), a slow one is on
+     the ops screen with what took the time, and the heartbeat row is written
+     at most every ten minutes per job rather than on every tick.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const WEB_CRON_BUDGET = 8;            // seconds a visitor's request may spend
+const WEB_CRON_EXT_BUDGET = 50;       // the outside scheduler's run, under Cloudflare's 100 s
+const WEB_CRON_SLOW = 5;              // a job or run this long is on the ops screen
+const WEB_CRON_EXTERNAL_FRESH = 300;  // an outside run this recent means visitors do nothing
+
+/**
+ * Every background job: name => [interval seconds, work, net]. `net` is true
+ * for a job that talks to another server (mail, SMS, push, webhooks, CACENTRE,
+ * Cloudinary) — the ones whose time is not ours to control.
+ */
+function web_cron_jobs(): array {
+    $J = [];
+    $add = static function (string $name, int $every, ?callable $fn, bool $net) use (&$J) { if ($fn) $J[$name] = [web_cron_cfg($name, $every), $fn, $net]; };
+    $has = static fn(string $f) => function_exists($f) ? $f : null;
+    $add('deliver',      60,     fn() => deliveries_dispatch(8), true);                          // the integration bus: Chat, webhooks, Sheets
+    $add('reminders',    900,    'web_cron_reminders', true);                                    // parent verification, dues reminders
+    $add('photo_asks',   60,     $has('ids_photo_drain'), true);                                 // id-studio.php: a batch a minute
+    $add('maint',        3600,   'web_cron_maintenance', false);
+    $add('accrue',       86400,  'web_cron_accrue', false);                                      // fees: idempotent, daily
+    $add('editions',     21600,  $has('summer_editions_close_elapsed'), false);
+    $add('vol_thanks',   60,     $has('summer_thanks_drain'), true);
+    $add('notice_sched', 60,     $has('notice_schedule_run'), false);                            // before notice_mail: most-overdue order keeps it first
+    $add('notice_mail',  60,     $has('notice_mail_drain'), true);
+    $add('push',         60,     $has('push_flush'), true);
+    $add('push_gc',      86400,  $has('push_gc'), false);
+    $add('mentorship',   21600,  $has('ms_rules_run'), false);
+    $add('mentor_jobs',  600,    $has('mpa_tick'), true);
+    $add('assign_auto',  21600,  $has('assignment_auto_issue'), false);
+    $add('wifi_silent',  900,    $has('wifi_silent_digest'), true);
+    $add('club_ann',     600,    $has('cp_ann_due_tick'), true);
+    $add('media_sweep',  86400,  $has('media_obj_sweep'), true);
+    if (defined('MEDIA_REFRESH_SECONDS')) $add('media_usage', MEDIA_REFRESH_SECONDS, $has('media_usage_refresh'), true);
+    $add('clocks',       60,     fn() => chess_clock_sweep(40), false);
+    $add('crm_push',     900,    $has('crm_push_run'), true);
+    $add('eng_snapshot', 604800, $has('engagement_snapshot_week'), false);
+    if (defined('WIFI_CAC_EVERY')) $add('wifi_cac', WIFI_CAC_EVERY, $has('wifi_cac_tick'), true);
+    $add('volpay',       3600,   $has('volpay_tick'), false);
+    $add('dirpush',      3600,   $has('dirpush_tick'), true);
+    $add('photos_bucket', 3600,  $has('photo_store_to_bucket_tick'), true);   // held photos into the bucket, a batch an hour until none are left
+    $add('regcheck',     3600,   $has('rcl_tick'), true);                     // registration checklist: recount, remind supervisors and families weekly
+    $add('photo_sizes',  600,    $has('photo_variants_tick'), true);          // each bucket photo's sizes, made once by Cloudinary, stored beside it
+    // Once: tracks that name courses exactly become chosen courses (curriculum.php).
+    if (function_exists('member_courses_backfill_once') && defined('MEMBER_COURSES_BACKFILL') && (string)setting_raw(MEMBER_COURSES_BACKFILL) === '')
+        $add('courses_backfill', 60, 'member_courses_backfill_once', false);
+    return $J;
+}
+
 /** True at most once per $interval seconds for $job — and claims the slot. */
 function web_cron_due(string $job, int $interval): bool {
     $marker = web_cron_marker($job);
-    $last = @filemtime($marker) ?: 0;
-    if (time() - $last < $interval) return false;
+    if (time() - (@filemtime($marker) ?: 0) < $interval) return false;
     @touch($marker);
     return true;
 }
@@ -61,80 +119,107 @@ function web_cron_touch(string $job): void {
     @touch(web_cron_marker($job));
 }
 
+/** How long a job took last time, in seconds (0 when never measured). */
+function web_cron_est(string $job): float {
+    $v = @file_get_contents(web_cron_marker('dur_' . $job));
+    return $v === false ? 0.0 : (float)$v;
+}
+
 /**
- * Run named jobs on demand — the admin "run now" path.
- *
- * Guarded by the SAME lock as the background tick, so a manual run and a
- * shutdown-hook tick can never stampede the same work. If the tick holds the
- * lock the job reports 'busy' rather than queueing behind it. Each job is
- * wrapped so one failing does not stop the rest, mirrors the heartbeat the
- * scheduled path stamps, and is journalled either way.
+ * Does a job expected to take $est seconds fit, with $spent of $budget gone?
+ * The start of a run (under half a second spent) always fits, so a job longer
+ * than the whole budget still runs — first, on its own — and nothing starves.
+ */
+function web_cron_fits(float $spent, float $est, float $budget): bool {
+    return $spent < 0.5 || ($spent < $budget && $spent + $est <= $budget);
+}
+
+/**
+ * Run what is due, within a budget. Most overdue first; at most $netMax jobs
+ * that talk to another server; a job whose last run will not fit in what is
+ * left waits for a fresh run (the first job of a run always fits, so nothing
+ * starves). Returns [job => 'ran'|'error'|'waits'] for what was due, or
+ * ['busy' => true] when another run holds the lock.
+ */
+function web_cron_tick(float $budget, int $netMax): array {
+    $t0 = microtime(true);
+    $GLOBALS['__web_cron_took'] = [];
+    $lock = @fopen(web_cron_dir() . '/.lock', 'c');
+    if (!$lock) return [];
+    if (!@flock($lock, LOCK_EX | LOCK_NB)) { @fclose($lock); return ['busy' => true]; }
+    $out = [];
+    try {
+        $now = time(); $due = [];
+        foreach (web_cron_jobs() as $name => [$every, $fn, $net]) {
+            $age = $now - (@filemtime(web_cron_marker($name)) ?: 0);
+            if ($age >= $every) $due[$name] = [$age / max(1, $every), $fn, $net];
+        }
+        uasort($due, static fn($x, $y) => $y[0] <=> $x[0]);
+        $nets = 0;
+        foreach ($due as $name => [, $fn, $net]) {
+            $spent = microtime(true) - $t0;
+            if (($net && $nets >= $netMax) || !web_cron_fits($spent, web_cron_est($name), $budget)) { $out[$name] = 'waits'; continue; }
+            web_cron_touch($name);                        // claimed before it runs: a second run never doubles it
+            if ($net) $nets++;
+            $t = microtime(true);
+            $ok = web_cron_guard($name, $fn);
+            @file_put_contents(web_cron_marker('dur_' . $name), (string)round(microtime(true) - $t, 2));
+            $out[$name] = $ok ? 'ran' : 'error';
+        }
+    } finally { @flock($lock, LOCK_UN); @fclose($lock); }
+    web_cron_log_tick($t0, $out);
+    return $out;
+}
+
+/**
+ * Run named jobs now, ignoring their intervals — the admin "run now" path and
+ * a scheduler asking for one job. Same lock as the tick, so the two never
+ * stampede; 'busy' when a tick holds it. Does NOT detach: the caller waits.
  *
  * $jobs is [name => callable]; returns [name => 'ran'|'error'|'busy'].
  */
 function web_cron_run_now(array $jobs): array {
     $out = [];
     $lock = @fopen(web_cron_dir() . '/.lock', 'c');
-    if ($lock && @flock($lock, LOCK_EX | LOCK_NB)) {
-        try {
-            if (function_exists('set_time_limit')) @set_time_limit(60);
-            foreach ($jobs as $name => $fn) {
-                try {
-                    $fn();
-                    web_cron_touch($name);
-                    if (function_exists('ops_record')) ops_record('cron', $name, 'ran (manual)');
-                    $out[$name] = 'ran';
-                } catch (Throwable $e) {
-                    error_log('[webcron:manual:' . $name . '] ' . $e->getMessage());
-                    if (function_exists('ops_record')) ops_record('error', 'webcron:' . $name, $e->getMessage(), basename($e->getFile()) . ':' . $e->getLine());
-                    $out[$name] = 'error';
-                }
-            }
-        } finally { @flock($lock, LOCK_UN); }
-        @fclose($lock);
-    } else {
+    if (!$lock || !@flock($lock, LOCK_EX | LOCK_NB)) {
         if ($lock) @fclose($lock);
-        foreach (array_keys($jobs) as $name) $out[$name] = 'busy';
+        return array_fill_keys(array_keys($jobs), 'busy');
     }
+    try {
+        if (function_exists('set_time_limit')) @set_time_limit(60);
+        foreach ($jobs as $name => $fn) {
+            web_cron_touch($name);
+            $out[$name] = web_cron_guard($name, $fn) ? 'ran' : 'error';
+        }
+    } finally { @flock($lock, LOCK_UN); @fclose($lock); }
     return $out;
 }
 
 /**
- * Run $fn AFTER the response has been sent to the client.
- *
- * For work that a user must not wait on and must not be failed by. The
- * registration desk is the case that forced this: sending the parent's consent
- * link does SMS (15s timeout, two providers tried in turn) and SMTP (15s) —
- * up to ~45s of network I/O, inline, AFTER the child's row was already
- * committed. Past PHP's max_execution_time the request dies, the desk shows a
- * connection error, and the child is registered anyway. Staff then retry and
- * hit a duplicate warning for a registration that actually worked.
- *
- * Under CLI (the test runner) it runs inline, so behaviour stays observable
- * rather than happening after the assertions.
- */
-/**
  * Hand the finished response back to the client, then keep working.
  *
- * FPM can genuinely detach. Everywhere else — Apache mod_php, CGI, the built-in
- * server, which is to say the no-SSH shared hosting this whole file exists to
- * serve — the best available move is to push the bytes out and let
- * Content-Length (see _lib/response.php) tell the browser the body is complete.
- *
- * The loop matters. A single ob_end_flush() pops ONE buffer level, and there is
- * routinely more than one: the `output_buffering` ini default, mod_deflate, and
- * anything a handler opened. Popping one of three leaves the response exactly
- * where it was — sitting in a buffer while the caller waits.
- *
- * One helper rather than two copies, because the two copies drifted: this was
- * inlined in after_response() and simply missing from web_cron_run().
+ * FPM detaches with fastcgi_finish_request, LiteSpeed (most cPanel hosts) with
+ * litespeed_finish_request — its fastcgi alias was removed from PHP, and
+ * missing it meant the visitor waited for the whole tick (WordPress hit the
+ * same with wp-cron, core ticket 54668). Anywhere else — Apache mod_php, CGI,
+ * the built-in server — push the bytes out and let Content-Length (see
+ * _lib/response.php) tell the browser the body is complete. Every buffer
+ * level, not one: output_buffering, mod_deflate and a handler's own can all be
+ * open, and popping one of three leaves the response where it was.
  */
 function response_detach(): void {
     if (function_exists('fastcgi_finish_request')) { @fastcgi_finish_request(); return; }
+    if (function_exists('litespeed_finish_request')) { @litespeed_finish_request(); return; }
     while (ob_get_level() > 0) { @ob_end_flush(); }
     @flush();
 }
 
+/**
+ * Run $fn AFTER the response has been sent — for work a user must not wait on
+ * and must not be failed by (the registration desk's consent SMS and email,
+ * ~45 s of network I/O when both providers are tried). Under CLI (the tests)
+ * it runs inline, so it stays observable.
+ */
 function after_response(string $label, callable $fn): void {
     if (PHP_SAPI === 'cli') {
         try { $fn(); } catch (\Throwable $e) { error_log('[after:' . $label . '] ' . $e->getMessage()); }
@@ -144,7 +229,6 @@ function after_response(string $label, callable $fn): void {
         response_detach();
         @ignore_user_abort(true);
         if (function_exists('set_time_limit')) @set_time_limit(60);
-        // Never disrupt anything: the response has already gone.
         try { $fn(); } catch (\Throwable $e) { error_log('[after:' . $label . '] ' . $e->getMessage()); }
     });
 }
@@ -159,116 +243,64 @@ function web_cron_schedule(): void {
     register_shutdown_function('web_cron_run');
 }
 
+/** Has the outside scheduler run recently? Then visitors' pages do no background work. */
+function web_cron_external_fresh(): bool {
+    return time() - (@filemtime(web_cron_marker('external')) ?: 0) < WEB_CRON_EXTERNAL_FRESH;
+}
+
 /**
- * The shutdown worker. Flushes the response first, then does throttled work.
- *
- * The flush is not a nicety, it is the whole contract. This is registered from
- * bootstrap, which makes it the FIRST shutdown function on every request — it
- * runs before any after_response() a handler registered. It used to detach only
- * under FPM, so on every other SAPI the finished response sat in the output
- * buffer through up to 45s of deliveries, reminders and maintenance, and
- * after_response added its own SMS/SMTP time on top. The browser saw nothing,
- * api-client aborted the write at 60s, and a registration that had already
- * committed was reported to the user as "check your connection".
+ * The shutdown worker: the FIRST shutdown function on every request (it is
+ * registered from bootstrap, ahead of any after_response). It detaches before
+ * anything else — that is the whole contract — and then, unless an outside
+ * scheduler is doing the work, runs one budgeted tick.
  */
 function web_cron_run(): void {
     response_detach();
     try {
+        if (web_cron_external_fresh()) return;
         @ignore_user_abort(true);
-        if (function_exists('set_time_limit')) @set_time_limit(45);
-        $lock = @fopen(web_cron_dir() . '/.lock', 'c');
-        if (!$lock) return;
-        if (@flock($lock, LOCK_EX | LOCK_NB)) {
-            try {
-                if (web_cron_due('deliver', web_cron_cfg('deliver', 60)))       web_cron_guard('deliveries_dispatch', fn() => deliveries_dispatch(8));
-                if (web_cron_due('reminders', web_cron_cfg('reminders', 900)))  web_cron_guard('reminders', 'web_cron_reminders');
-                // Photo requests (id-studio.php): the queued people of a campaign, a batch a minute.
-                if (web_cron_due('photo_asks', web_cron_cfg('photo_asks', 60)) && function_exists('ids_photo_drain')) web_cron_guard('photo_asks', fn() => ids_photo_drain());
-                if (web_cron_due('maint', web_cron_cfg('maint', 3600)))         web_cron_guard('maintenance', 'web_cron_maintenance');
-                // Once: tracks that name courses exactly become chosen courses (curriculum.php).
-                if (function_exists('member_courses_backfill_once') && (string)setting_raw(MEMBER_COURSES_BACKFILL) === '') web_cron_guard('courses_backfill', 'member_courses_backfill_once');
-                /* Fee accrual. Its own slot rather than a ride on maintenance,
-                   because it is the one job an operator will want to reason
-                   about on its own — "has anybody been charged today" — and a
-                   shared heartbeat cannot answer that. Daily by default: dues
-                   are monthly and the day rate is per meeting day, so nothing
-                   here is more urgent than that, and every charge it posts is
-                   idempotent so a missed tick costs nothing. */
-                if (web_cron_due('accrue', web_cron_cfg('accrue', 86400)))       web_cron_guard('fees_accrue', 'web_cron_accrue');
-                // An edition whose season has ended closes, and its Summer-only centres retire with it.
-                if (web_cron_due('editions', web_cron_cfg('editions', 21600)) && function_exists('summer_editions_close_elapsed')) web_cron_guard('editions_close', fn() => summer_editions_close_elapsed());
-                // The thank-yous a closed season queued for its volunteers, a batch a minute (summer-editions.php).
-                if (web_cron_due('vol_thanks', web_cron_cfg('vol_thanks', 60)) && function_exists('summer_thanks_drain')) web_cron_guard('vol_thanks', fn() => summer_thanks_drain());
-                // Official notices' email copies, a batch a minute (domain/notices.php).
-                // Notices scheduled for later go out when their minute comes — before the mail drain, so their email starts in the same tick.
-                if (web_cron_due('notice_sched', web_cron_cfg('notice_sched', 60)) && function_exists('notice_schedule_run')) web_cron_guard('notice_sched', fn() => notice_schedule_run());
-                if (web_cron_due('notice_mail', web_cron_cfg('notice_mail', 60)) && function_exists('notice_mail_drain')) web_cron_guard('notice_mail', fn() => notice_mail_drain());
-                /* Push notifications held for quiet hours or a burst go out
-                   when their time comes, as one summary per person (push.php). */
-                if (web_cron_due('push', web_cron_cfg('push', 60)) && function_exists('push_flush')) web_cron_guard('push', fn() => push_flush());
-                if (web_cron_due('push_gc', web_cron_cfg('push_gc', 86400)) && function_exists('push_gc')) web_cron_guard('push_gc', fn() => push_gc());
-                // Mentorship's adaptive rules (R1–R8): nudges for a mentor or a lead, never a child.
-                if (web_cron_due('mentorship', web_cron_cfg('mentorship', 21600)) && function_exists('ms_rules_run')) web_cron_guard('mentorship_rules', fn() => ms_rules_run());
-                // Mentor Portal jobs (AUTOMATIONS.md): each runs at its own Lagos time;
-                // this tick only asks whether a slot has come. Family messages held
-                // for quiet hours go out here too.
-                if (web_cron_due('mentor_jobs', web_cron_cfg('mentor_jobs', 600)) && function_exists('mpa_tick')) web_cron_guard('mentor_jobs', fn() => mpa_tick());
-                // Cloudinary usage: read every six hours, alert as it climbs, pause uploads when full.
-                // Lessons set their own homework when their week begins (assignments.php), every six hours.
-                if (web_cron_due('assign_auto', web_cron_cfg('assign_auto', 21600)) && function_exists('assignment_auto_issue')) web_cron_guard('assign_auto', fn() => assignment_auto_issue());
-                // A Wi-Fi gateway silent for an hour: one digest per region lead (wifi-regions.php).
-                if (web_cron_due('wifi_silent', web_cron_cfg('wifi_silent', 900)) && function_exists('wifi_silent_digest')) web_cron_guard('wifi_silent', fn() => wifi_silent_digest());
-                // Club announcements an admin scheduled: sent when their time comes (domain/club-portal.php).
-                if (web_cron_due('club_ann', web_cron_cfg('club_ann', 600)) && function_exists('cp_ann_due_tick')) web_cron_guard('club_ann', fn() => cp_ann_due_tick());
-                // Bucket files nothing uses any more (a week old): deleted, daily (media-objects.php).
-                if (web_cron_due('media_sweep', web_cron_cfg('media_sweep', 86400)) && function_exists('media_obj_sweep')) web_cron_guard('media_sweep', fn() => media_obj_sweep());
-                if (web_cron_due('media_usage', web_cron_cfg('media_usage', MEDIA_REFRESH_SECONDS)) && function_exists('media_usage_refresh')) web_cron_guard('media_usage', fn() => media_usage_refresh());
-                /* Flag anybody whose clock ran out while nobody was watching.
-                 * The board poll catches this the instant somebody looks; two
-                 * players who both closed the tab leave a game open forever,
-                 * holding up a tournament round that cannot then close. */
-                if (web_cron_due('clocks', web_cron_cfg('clocks', 60)))          web_cron_guard('chess_clocks', fn() => chess_clock_sweep(40));
-                // Weekly engagement snapshot — captured opportunistically at most
-                // once every 7 days even with no external cron. Idempotent per
-                // week, so a slightly-early or -late firing just refreshes the row.
-                // The CACENTRE CRM's Audience: NGG's adults, pushed (signed). A no-op with no secret set.
-                if (web_cron_due('crm_push', web_cron_cfg('crm_push', 900)) && function_exists('crm_push_run')) web_cron_guard('crm_push', fn() => crm_push_run());
-                if (web_cron_due('eng_snapshot', web_cron_cfg('eng_snapshot', 604800))) web_cron_guard('engagement_snapshot', fn() => engagement_snapshot_week());
-                /* One page of each roster to CACENTRE's person directory, so
-                   one human is one record across the estate's five apps
-                   instead of several unrelated rows. Hourly: the sweep is a
-                   rolling one, so this is how fast the whole roster is
-                   revisited rather than how urgent any single row is, and
-                   every row upserts on its source key so a missed tick costs
-                   nothing. Does nothing at all until a push secret is set. */
-                /* NGG's people and NGG's say about each, to CACENTRE, which runs
-                   the Wi-Fi (domain/wifi-cacentre.php). Every 15 minutes, so a
-                   suspension here is off there within the quarter hour. Does
-                   nothing until WIFI_SECRET_NGG is set. */
-                if (web_cron_due('wifi_cac', web_cron_cfg('wifi_cac', WIFI_CAC_EVERY)) && function_exists('wifi_cac_tick')) web_cron_guard('wifi_cacentre', fn() => wifi_cac_tick());
-                /* Volunteer pay: each finished day decided once (domain/volunteer-pay.php). Hourly. */
-                if (web_cron_due('volpay', web_cron_cfg('volpay', 3600)) && function_exists('volpay_tick')) web_cron_guard('volunteer_pay', fn() => volpay_tick());
-                if (web_cron_due('dirpush', web_cron_cfg('dirpush', 3600)) && function_exists('dirpush_tick')) web_cron_guard('directory_push', fn() => dirpush_tick());
-            } finally { @flock($lock, LOCK_UN); }
-        }
-        @fclose($lock);
+        if (function_exists('set_time_limit')) @set_time_limit(30);
+        web_cron_tick((float)web_cron_cfg('budget', WEB_CRON_BUDGET), 1);
     } catch (Throwable $e) { /* a web-cron tick must never disrupt anything */ }
 }
 
-/** Run one job, swallowing (but logging) any failure so others still run.
- *
- * Every run is journalled, success included. This hook swallows throwables by
- * design so a background job cannot break a page — which also meant that when
- * reminders and integration deliveries stopped, they stopped silently. The
- * heartbeat is what turns "nothing happened" into something a screen can say.
+/**
+ * A run's log line: every run that took a second or more to the PHP error log,
+ * a slow one to the ops screen with what took the time — the evidence for
+ * "the site is slow" on a host with no shell.
  */
-function web_cron_guard(string $label, callable $fn): void {
+function web_cron_log_tick(float $t0, array $out): void {
+    $took = round(microtime(true) - $t0, 1);
+    $jobs = (array)($GLOBALS['__web_cron_took'] ?? []);
+    if (!$jobs) return;
+    arsort($jobs);
+    $waits = count(array_filter($out, static fn($v) => $v === 'waits'));
+    $what = implode(', ', array_map(static fn($k, $v) => $k . ' ' . $v . 's', array_keys($jobs), $jobs)) . ($waits ? '; ' . $waits . ' left for the next run' : '');
+    if ($took >= 1) error_log('[webcron] run ' . $took . 's: ' . $what);
+    if ($took >= WEB_CRON_SLOW && function_exists('ops_record')) ops_record('warn', 'webcron:tick', 'Slow background run', mb_substr($took . 's — ' . $what, 0, 255));
+}
+
+/**
+ * Run one job, swallowing (and journalling) any failure so the rest still run.
+ * The heartbeat row is what turns "nothing happened" into something a screen
+ * can say; it is two queries, so it is written at most every ten minutes per
+ * job (the marker files answer "has it run" for the health check). A slow job
+ * is named on the ops screen. Returns whether it succeeded.
+ */
+function web_cron_guard(string $label, callable $fn): bool {
     try {
+        $t = microtime(true);
         $fn();
-        if (function_exists('ops_record')) ops_record('cron', $label, 'ran');
+        $took = microtime(true) - $t;
+        $GLOBALS['__web_cron_took'][$label] = round($took, 1);
+        $hb = web_cron_marker('hb_' . $label);
+        if (function_exists('ops_record') && time() - (@filemtime($hb) ?: 0) >= 600) { ops_record('cron', $label, 'ran'); @touch($hb); }
+        if ($took >= WEB_CRON_SLOW && function_exists('ops_record')) ops_record('warn', 'webcron:' . $label, 'Slow background job', 'took ' . round($took, 1) . 's');
+        return true;
     } catch (Throwable $e) {
         error_log('[webcron:' . $label . '] ' . $e->getMessage());
         if (function_exists('ops_record')) ops_record('error', 'webcron:' . $label, $e->getMessage(), basename($e->getFile()) . ':' . $e->getLine());
+        return false;
     }
 }
 
@@ -289,6 +321,13 @@ function web_cron_reminders(): void {
     if (function_exists('fees_reminders_run')) {
         try { fees_reminders_run(FEES_REMIND_CRON_BATCH); }
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'fees.reminders', $e->getMessage()); }
+    }
+    /* Notices BEFORE a charge falls due, the payment-note nudge to the fees
+       desk (domain/dues-notices.php). Once a day for the roster scan; nothing
+       is ever said twice, whatever the cadence. Guarded on its own. */
+    if (function_exists('dues_notices_run')) {
+        try { dues_notices_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'dues.notices', $e->getMessage()); }
     }
 
     /* And note — never apply — an overdue amounts review. An uprate that is only
@@ -405,11 +444,7 @@ function web_cron_accrue(): void {
     $cfg = fees_settings();
     if (empty($cfg['enabled'])) return;
     $limit = max(1, min(FEES_SCAN_MAX, (int)web_cron_cfg('accrueBatch', FEES_ACCRUE_BATCH)));
-    $n = 0;
-    foreach (db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . $limit) as $m) {
-        fees_accrue_member($m, $cfg);
-        $n++;
-    }
+    $n = function_exists('fees_accrue_batch') ? (int)fees_accrue_batch($limit, $cfg)['members'] : 0;
     if ($n && function_exists('ops_record')) ops_record('cron', 'fees_accrue', $n . ' member(s) brought up to date');
 }
 

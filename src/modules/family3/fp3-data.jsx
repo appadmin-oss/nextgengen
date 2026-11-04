@@ -12,7 +12,13 @@
 /* Soft avatar tones, one per child by their id, so a child keeps their colour. */
 const FP3_TONES = ["#f4e1c1", "#d4e6ea", "#e3dcf1", "#dcebd9", "#f3d9d6", "#e6e0d2"];
 function fp3Tone(id) { let h = 0; String(id || "").split("").forEach(c => { h = (h * 31 + c.charCodeAt(0)) >>> 0; }); return FP3_TONES[h % FP3_TONES.length]; }
-function fp3First(n) { return String(n || "").trim().split(/\s+/)[0] || ""; }
+/** What to call somebody: their first name — or, when the name on file starts with a title, the title and surname
+    ("Mrs Chukwujeme", never "Good evening, Mrs"). */
+function fp3First(n) {
+  const w = String(n || "").trim().split(/\s+/).filter(Boolean);
+  if (w.length > 1 && /^(mr|mrs|ms|miss|mx|dr|prof|chief|pastor|rev|engr|barr|alhaji|alhaja|sir|lady|hon|deaconess|deacon|elder)\.?$/i.test(w[0])) return w[0] + " " + w[w.length - 1];
+  return w[0] || "";
+}
 const FP3_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const FP3_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "Sat 31 Oct" from an ISO date or datetime; '' when there is none. Dates are calendar dates, read without a timezone shift. */
@@ -58,36 +64,43 @@ const FP3_HOME_TIPS = {
 };
 /* WAEC bands, as the handoff gives them (API_DATA §1). */
 const FP3_GRADES = [[75, "A1"], [70, "B2"], [65, "B3"], [60, "C4"], [55, "C5"], [50, "C6"], [45, "D7"], [40, "E8"], [0, "F9"]];
-const FP3_ICON = { "file-text": "ph ph-file-text", "warning-circle": "ph ph-warning-circle", megaphone: "ph ph-megaphone" };
+const FP3_ICON = { "file-text": "ph ph-file-text", "warning-circle": "ph ph-warning-circle", megaphone: "ph ph-megaphone", wallet: "ph ph-wallet" };
 
-/** Group the open charges into lines a parent can read: "Monthly commitment fee × 15", not fifteen rows. */
-function fp3Lines(lines) {
-  const by = {};
-  (lines || []).forEach(l => {
-    const k = l.kind === "dues" ? "dues" : l.kind === "fine" ? "fine:" + l.label : l.kind + ":" + l.label;
-    if (!by[k]) by[k] = { label: l.kind === "dues" ? "Commitment fee" : fp3Note(l.label), kind: l.kind, amount: 0, n: 0, detail: "" };
-    by[k].amount += l.amount; by[k].n++;
-  });
-  return Object.keys(by).map(k => { const x = by[k]; return Object.assign({}, x, { label: x.n > 1 ? x.label + " × " + x.n + " months" : x.label, detail: x.n > 1 ? "Unpaid months" : "" }); });
-}
-
+/* The grouping of open charges into lines ("Commitment fee × 15 months") is the
+   server's now — fees_owed_made — so this app and the member's screen agree. */
 /** A ledger note as a parent reads it: dates in words, "Monthly dues 2026-10" as the month. */
 function fp3Note(t) {
   return String(t || "").replace(/Monthly dues (\d{4})-(\d{2})\b/g, (_, y, m) => "Commitment fee · " + ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][+m - 1] + " " + y)
-    .replace(/\b(\d{4}-\d{2}-\d{2})\b/g, d => fp3Long(d)).replace(/^Policy fine — /, "Fine: ");
+    .replace(/\b(\d{4}-\d{2}-\d{2})\b/g, d => fp3Long(d)).replace(/^Policy fine — /, "Fine: ")
+    /* The amount is printed beside the line; a fine's note that repeats it ("— ₦1,000 absence fine.") says it twice. */
+    .replace(/\s+—\s+₦[\d,]+(?: [a-z]+)? fine\.?$/, "");
 }
 
 /** "2027-01" → "January 2027". */
 function fp3Month(mk) { const d = new Date(String(mk) + "-01T12:00:00Z"); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }); }
 
+/** How the family will be told about money, from the centre's own settings — never a channel that is off. */
+function fp3TellTerms(TM) {
+  const CH = { app: "here in the family app", email: "by email", telegram: "on Telegram", sms: "by text" };
+  const ch = (TM.channels || []).map(c => CH[c]).filter(Boolean);
+  const how = ch.length > 1 ? ch.slice(0, -1).join(", ") + " and " + ch[ch.length - 1] : ch[0] || "";
+  if (!how) return "";
+  return (TM.noticeDays ? " You’ll hear " + how + " " + TM.noticeDays + (TM.noticeDays === 1 ? " day" : " days") + " before each charge falls due." : "")
+    + (TM.remindEvery ? " While something is owed, a reminder comes every " + TM.remindEvery + " days." : "");
+}
+
 /** What the amount owed is made of, in one line a parent reads at a glance: "Commitment fees for 22 months, membership and a fine". */
 function fp3Owed(lines) {
-  const n = { dues: 0, membership: 0, fine: 0, other: 0 };
-  (lines || []).forEach(l => { const k = n[l.kind] !== undefined ? l.kind : "other"; n[k] += l.kind === "dues" ? (/× (\d+)/.exec(l.label) ? +/× (\d+)/.exec(l.label)[1] : 1) : 1; });
+  const n = { dues: 0, membership: 0, fine: 0, training_owed: 0, other: 0 };
+  (lines || []).forEach(l => { const k = n[l.kind] !== undefined ? l.kind : "other"; n[k] += l.kind === "dues" ? (l.n || 1) : 1; });
   const parts = [];
-  if (n.dues) parts.push(n.dues === 1 ? "this month’s commitment fee" : "commitment fees for " + n.dues + " months");
+  /* "This month’s" only when the one fee owed IS this month’s: October’s, owed in November, is named. */
+  const due1 = (lines || []).find(l => l.kind === "dues"), now = new Date(), thisMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+  const p1 = due1 && due1.periods && due1.periods.length === 1 ? due1.periods[0] : "";
+  if (n.dues) parts.push(n.dues > 1 ? "commitment fees for " + n.dues + " months" : !p1 || p1 === thisMonth ? "this month’s commitment fee" : "the commitment fee for " + fp3Month(p1));
   if (n.membership) parts.push(n.membership === 1 ? "membership" : "membership for " + n.membership + " years");
   if (n.fine) parts.push(n.fine === 1 ? "a fine" : n.fine + " fines");
+  if (n.training_owed) parts.push("the training place, after leaving before the MOU was complete");
   if (n.other) parts.push(n.other === 1 ? "one other charge" : n.other + " other charges");
   const s = parts.length > 1 ? parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] : (parts[0] || "");
   return s ? s.charAt(0).toUpperCase() + s.slice(1) + "." : "";
@@ -121,7 +134,7 @@ function fp3Ward(link, d, today) {
     strip.push(seen[iso] ? (lateOn[iso] ? "l" : "p") : a.rateKnown ? "a" : "x");
   }
   const fees3 = d.fees3 || null;
-  const fines = ((d.conduct || {}).fines || []).filter(f => f.status !== "paid" && f.status !== "void").map((f, i) => ({ id: "fine-" + i + "-" + (f.issuedAt || ""), amount: f.amount, when: fp3Date(f.issuedAt), reason: f.reason }));
+  const fines = ((d.conduct || {}).fines || []).filter(f => f.status !== "paid" && f.status !== "void").map((f, i) => ({ id: "fine-" + i + "-" + (f.issuedAt || ""), amount: f.amount, when: fp3Date(f.issuedAt), reason: fp3Note(f.reason) }));
   const rq = (d.requests || []).map(r => ({ id: r.requestId, kind: r.kind, kindLabel: r.kindLabel, status: r.status, at: fp3Date(r.createdAt), subject: r.subject,
     from: r.fromDate ? fp3Date(r.fromDate) : "", to: r.toDate ? fp3Date(r.toDate) : "", reply: [].concat((r.comments || []).map(m => m.byName + " · " + fp3Date(String(m.at).slice(0, 10)) + ": " + m.text), r.decision ? [r.decision] : []).join("\n\n") }));
   const results = (d.results || []).map(r => ({ id: r.id, name: r.name, school: r.school, baseline: !!r.baseline, status: r.status, due: fp3Date(r.due),
@@ -140,13 +153,14 @@ function fp3Ward(link, d, today) {
     timetable: tt,
     attendance: { rate: a.rateKnown ? a.rate : null, rateKnown: !!a.rateKnown, present: a.present || 0, daysRan: a.daysRan || 0, recent: strip,
       late: (a.late || []).map(r => ({ date: fp3Date(r.date), minutes: r.minutes })) },
-    conduct: { state: fines.length || ((d.conduct || {}).state && !["good", "clear", ""].includes(d.conduct.state)) ? "warn" : "good", reason: (d.conduct || {}).reason || "", fines },
+    conduct: { state: fines.length || ((d.conduct || {}).state && !["good", "clear", ""].includes(d.conduct.state)) ? "warn" : "good", reason: (d.conduct || {}).reason || "", fines, decisions: (d.conduct || {}).decisions || [] },
+    achievements: d.achievements || { items: [], next: [] },
     charges: (d.charges || []).map(c => ({ id: c.entryId, label: fp3Note(c.note) + " · " + "₦" + Number(c.amount).toLocaleString("en"), when: fp3Date(c.createdAt) })),
     fees: fees3 ? {
-      enabled: true, payable: fees3.payable, outstanding: fees3.outstanding, payOnline: fees3.payOnline, offlinePending: fees3.offlinePending,
-      lines: fp3Lines(fees3.lines), next: fees3.next.map(x => ({ label: x.label, when: fp3Date(x.date), amount: x.amount })),
-      joining: fees3.joining ? { invoiceId: fees3.joining.invoiceId, start: fp3Date(fees3.joining.start), items: fees3.joining.items } : null,
-      entries: fees3.entries.map((e, i) => ({ id: e.id || "E" + i, when: fp3Date(e.date), month: e.month, kind: e.kind, note: fp3Note(e.note), amount: e.amount, dir: e.dir, void: e.void })),
+      enabled: true, payable: fees3.payable, outstanding: fees3.outstanding, payOnline: fees3.payOnline, payFee: fees3.payFee || 0, offlinePending: fees3.offlinePending,
+      lines: (fees3.lines || []).map(l => ({ label: l.label, detail: l.detail || "", amount: l.amount, kind: l.kind, n: l.n || 1, periods: l.periods || [] })), next: fees3.next.map(x => ({ label: x.label, when: fp3Date(x.date), amount: x.amount })),
+      joining: fees3.joining ? { invoiceId: fees3.joining.invoiceId, start: fp3Date(fees3.joining.start), items: fees3.joining.items, total: fees3.joining.total || 0 } : null,
+      entries: fees3.entries.map((e, i) => ({ id: e.id || "E" + i, when: fp3Date(e.date), month: e.month, kind: e.kind, note: fp3Note(e.note), amount: e.amount, dir: e.dir, void: e.void, balance: e.balance })),
       programme: Object.assign({}, fees3.programme, { serviceStarts: fp3Long(fees3.programme.serviceStarts), completes: fp3Long(fees3.programme.completes) }),
       terms: fees3.terms, bank: fees3.bank,
       ahead: fees3.ahead ? Object.assign({}, fees3.ahead, { paidThroughL: fees3.ahead.paidThrough ? fp3Month(fees3.ahead.paidThrough) : "" }) : null,
@@ -177,5 +191,5 @@ function fp3Events(rows) {
 /** Inbox rows, in the design's shape. `ward` is the child's link, or 'all' for a household notice. */
 function fp3Inbox(rows) {
   return (rows || []).map(r => ({ id: r.id, cat: r.cat, ward: r.wardLinkId || "all", icon: FP3_ICON[r.icon] || "ph ph-envelope-simple", h: r.title, b: r.body,
-    t: fp3Ago(r.at), from: r.from, unread: !!r.unread, sign: !!r.sign, signed: r.signedAt ? fp3Date(r.signedAt) : "", href: r.href || "" }));
+    t: fp3Ago(r.at), from: r.from, unread: !!r.unread, sign: !!r.sign, signed: r.signedAt ? fp3Date(r.signedAt) : "", href: r.href || "", act: r.act || "" }));
 }

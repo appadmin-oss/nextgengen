@@ -77,6 +77,15 @@ require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
 require $ROOT . '/_lib/object-store.php';
+/* What the Club form sends with every child application (club_apply_details + the agreements). */
+const CLUBTEST_DETAILS = ['filledBy' => 'parent', 'school' => 'egbeda senior high school', 'class' => 'JSS 2', 'classArm' => 'B',
+    'address' => '12 Ola Street, Egbeda', 'resState' => 'Lagos', 'resLga' => 'Alimosho', 'originState' => 'Ogun', 'originLga' => '',
+    'nationality' => 'Nigerian', 'parent1Rel' => 'Mother', 'parent1Name' => 'adunni adebayo', 'parent1Phone' => '8031234567',
+    'parent2None' => true, 'hobbies' => ['Reading'], 'influenceAreas' => ['Education'], 'heardFrom' => 'WhatsApp', 'promoCode' => ''];
+const CLUBTEST_WHY = 'I want to learn to build things that help the people in my community.';
+const CLUBTEST_CONSENTS = ['participation' => true, 'medical' => true, 'data' => true, 'comms' => true, 'media' => true, 'site_visibility' => true, 'trips' => false];
+/* Two referees, the form's minimum for a volunteer (volunteer_apply_safeguarding). */
+const VOLTEST_REFS = [['name' => 'Ref One', 'contact' => 'ref1@example.com', 'relation' => 'Teacher'], ['name' => 'Ref Two', 'contact' => '08030000001', 'relation' => 'Employer']];
 require $ROOT . '/_lib/telegram.php';
 require $ROOT . '/_lib/nudges.php';
 /* Every domain file, discovered rather than listed.
@@ -534,13 +543,13 @@ setting_set('intake_photo_required', '0', 'test');
 chk('post publishes with slug', !empty(backend_dispatch('admin.posts.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'blog', 'title' => 'First Post', 'body' => 'Hi', 'status' => 'published']])['slug']));
 chk('public reads published post', count(backend_dispatch('public.posts', ['kind' => 'blog'])['posts']) === 1);
 chk('newsletter idempotent', backend_dispatch('public.newsletter', ['email' => 'sub@example.com'])['ok'] && backend_dispatch('public.newsletter', ['email' => 'sub@example.com'])['ok']);
-chk('apply validates age', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Kid', 'lastName' => 'Test', 'email' => 'k@example.com', 'phone' => '08031234000', 'dob' => '1985-01-01'])['error'] === 'bad_age');
+chk('apply validates age', backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'Kid', 'lastName' => 'Test', 'email' => 'k@example.com', 'phone' => '08031234000', 'dob' => '1985-01-01'])['error'] === 'bad_age');
 // Headshot required on intake (teen + volunteer) when the gate is on (default).
 setting_set('intake_photo_required', '1', 'test');
-chk('apply requires a headshot when the gate is on', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'No', 'lastName' => 'Photo', 'email' => 'nophoto@example.com', 'phone' => '08031234111', 'dob' => '2012-01-01'])['error'] === 'photo_required');
-chk('apply passes with a valid cloudinary headshot', !empty(backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'With', 'lastName' => 'Photo', 'email' => 'withphoto@example.com', 'phone' => '08031234112', 'dob' => '2012-01-01', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'])['ok']));
+chk('apply requires a headshot when the gate is on', backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'No', 'lastName' => 'Photo', 'email' => 'nophoto@example.com', 'phone' => '08031234111', 'dob' => '2012-01-01'])['error'] === 'photo_required');
+chk('apply passes with a valid cloudinary headshot', !empty(backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'summer', 'sex' => 'Male', 'firstName' => 'With', 'lastName' => 'Photo', 'email' => 'withphoto@example.com', 'phone' => '08031234112', 'dob' => '2012-01-01', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'])['ok']));
 setting_set('intake_photo_required', '0', 'test');
-chk('apply skips the headshot gate when disabled', !empty(backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Gate', 'lastName' => 'Off', 'email' => 'gateoff@example.com', 'phone' => '08031234113', 'dob' => '2012-01-01'])['ok']));
+chk('apply skips the headshot gate when disabled', !empty(backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'summer', 'sex' => 'Male', 'firstName' => 'Gate', 'lastName' => 'Off', 'email' => 'gateoff@example.com', 'phone' => '08031234113', 'dob' => '2012-01-01'])['ok']));
 
 // ── Volunteer registration (public taxonomy: admin | mentor | instructor) ──
 $vctx = backend_dispatch('public.volunteer.context', []);
@@ -550,13 +559,13 @@ chk('volunteer context serves the faculty catalogue', is_array($vctx['faculties'
 // An active centre must exist for volunteer intake (centre is now required).
 db_insert('centres', ['centreId' => 'CEN-VOL', 'name' => 'Testville', 'code' => 'TVL', 'color' => '#4C6FFF', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 $vFac = $vctx['faculties'][0];
-chk('volunteer apply rejects unknown role', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'chef', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110009', 'dob' => '1990-01-01'])['error'] === 'bad_role');
-chk('volunteer apply rejects a missing centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'No', 'lastName' => 'Centre', 'email' => 'nocentre@example.com', 'phone' => '08031110077', 'dob' => '1990-01-01'])['error'] === 'centre_required');
-chk('volunteer apply rejects an invalid centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Centre', 'email' => 'badcentre@example.com', 'phone' => '08031110078', 'dob' => '1990-01-01', 'centre' => 'Nowhere'])['error'] === 'invalid_centre');
-chk('mentor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'No', 'lastName' => 'Fac', 'email' => 'nofac@example.com', 'phone' => '08031110076', 'dob' => '1990-01-01', 'centre' => 'Testville'])['error'] === 'faculty_required');
-chk('instructor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Fac2', 'email' => 'nofac2@example.com', 'phone' => '08031110075', 'dob' => '1990-01-01', 'centre' => 'Testville', 'courses' => ['Practical Coding']])['error'] === 'faculty_required');
-chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110001', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Basket Weaving']])['error'] === 'course_required');
-chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['ok'] === true);
+chk('volunteer apply rejects unknown role', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'chef', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110009', 'dob' => '1990-01-01'])['error'] === 'bad_role');
+chk('volunteer apply rejects a missing centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'No', 'lastName' => 'Centre', 'email' => 'nocentre@example.com', 'phone' => '08031110077', 'dob' => '1990-01-01'])['error'] === 'centre_required');
+chk('volunteer apply rejects an invalid centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Centre', 'email' => 'badcentre@example.com', 'phone' => '08031110078', 'dob' => '1990-01-01', 'centre' => 'Nowhere'])['error'] === 'invalid_centre');
+chk('mentor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'No', 'lastName' => 'Fac', 'email' => 'nofac@example.com', 'phone' => '08031110076', 'dob' => '1990-01-01', 'centre' => 'Testville'])['error'] === 'faculty_required');
+chk('instructor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Fac2', 'email' => 'nofac2@example.com', 'phone' => '08031110075', 'dob' => '1990-01-01', 'centre' => 'Testville', 'courses' => ['Practical Coding']])['error'] === 'faculty_required');
+chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110001', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Basket Weaving']])['error'] === 'course_required');
+chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['ok'] === true);
 chk('volunteer centre stored on application', db_row("SELECT centre FROM applications WHERE email = 'vol-admin@example.com'")['centre'] === 'Testville');
 chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications WHERE email = 'vol-admin@example.com'")['phone'] === '+2348031234567');
 /* ── The headshot a browser can actually produce ──────────────────────────────
@@ -583,7 +592,7 @@ chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications 
     $phSeq = 0;
     $apply = function ($email, $photo) use (&$phSeq) {
         $phSeq++;
-        return backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Female',
+        return backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Female',
             'role' => 'admin', 'firstName' => 'Photo', 'lastName' => 'Case', 'email' => $email,
             'phone' => '080522' . sprintf('%05d', 1000 + $phSeq), 'dob' => '1990-01-01',
             'centre' => 'Photoville', 'why' => 'I care.', 'photoUrl' => $photo]);
@@ -629,17 +638,17 @@ chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications 
     setting_set('intake_photo_required', $keep === '' ? '0' : $keep, 'test');
 })();
 
-chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Practical Coding', 'Piano', 'Basket Weaving'], 'visibilityConsent' => true])['ok'] === true);
+chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Practical Coding', 'Piano', 'Basket Weaving'], 'visibilityConsent' => true])['ok'] === true);
 chk('instructor faculty stored on application', db_row("SELECT faculty FROM applications WHERE email = 'vol-teach@example.com'")['faculty'] === $vFac);
 chk('volunteer visibility consent stored on application', (int)db_row("SELECT visibilityConsent FROM applications WHERE email = 'vol-teach@example.com'")['visibilityConsent'] === 1);
 chk('instructor courses stored filtered to catalogue', json_decode((string)db_row("SELECT courses FROM applications WHERE email = 'vol-teach@example.com'")['courses'], true) === ['Practical Coding', 'Piano']);
-chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['duplicate'] === true);
+chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['duplicate'] === true);
 chk('volunteer.applied event queued for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.applied'")['c'] === 2);
 // Standardised intake: structured name + DOB stored; legacy `name` composed.
 chk('structured name + dob stored on application', (function () { $r = db_row("SELECT firstName,lastName,dob,name FROM applications WHERE email='vol-teach@example.com'"); return $r && $r['firstName'] === 'Vol' && $r['lastName'] === 'Teach' && $r['dob'] === '1990-01-01' && $r['name'] === 'Vol Teach'; })());
-chk('apply rejects a malformed dob', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Dob', 'email' => 'baddob@example.com', 'phone' => '08031110099', 'dob' => 'not-a-date'])['error'] === 'bad_dob');
-chk('apply rejects an under-16 volunteer', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Too', 'lastName' => 'Young', 'email' => 'young@example.com', 'phone' => '08031110098', 'dob' => '2015-01-01'])['error'] === 'dob_too_young');
-chk('apply requires a first name', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'lastName' => 'Only', 'email' => 'nofirst@example.com', 'phone' => '08031110097', 'dob' => '1990-01-01'])['error'] === 'bad_firstName');
+chk('apply rejects a malformed dob', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Dob', 'email' => 'baddob@example.com', 'phone' => '08031110099', 'dob' => 'not-a-date'])['error'] === 'bad_dob');
+chk('apply rejects an under-16 volunteer', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Too', 'lastName' => 'Young', 'email' => 'young@example.com', 'phone' => '08031110098', 'dob' => '2015-01-01'])['error'] === 'dob_too_young');
+chk('apply requires a first name', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'lastName' => 'Only', 'email' => 'nofirst@example.com', 'phone' => '08031110097', 'dob' => '1990-01-01'])['error'] === 'bad_firstName');
 // The HTTP endpoint builds the gs_call payload from the request body; the
 // domain tests above dispatch straight to public.apply and so never catch a
 // field the endpoint forgets to forward. `sex` is required on every intake and
@@ -680,7 +689,7 @@ chk('old card freed on reassign', db_row('SELECT status FROM qr_codes WHERE toke
 chk('void retires a card + detaches student', backend_dispatch('admin.summer.qr.void', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok])['ok'] === true && db_row('SELECT status FROM qr_codes WHERE token = ?', [$qtok])['status'] === 'void' && db_row('SELECT token FROM summer_students WHERE studentId = ?', [$qrKid])['token'] === '');
 chk('void card cannot be reassigned', backend_dispatch('admin.summer.qr.reassign', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok, 'studentId' => $qrKid])['error'] === 'card_void');
 
-chk('phone is required on volunteer intake', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Phone', 'email' => 'nophone@example.com', 'dob' => '1990-01-01', 'courses' => ['Practical Coding']])['error'] === 'phone_required');
+chk('phone is required on volunteer intake', backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Phone', 'email' => 'nophone@example.com', 'dob' => '1990-01-01', 'courses' => ['Practical Coding']])['error'] === 'phone_required');
 
 // ── Volunteer review desk: approve → ID + QR + profile; decline ──
 $volAppId = (int)db_row("SELECT id FROM applications WHERE email = 'vol-teach@example.com'")['id'];
@@ -760,7 +769,7 @@ chk('email cta button is navy, not gold', str_contains($__tpl, 'linear-gradient(
 chk('email carries a hidden preheader', str_contains($__tpl, 'mso-hide:all'));
 chk('email footer carries a reply path + contact', str_contains($__tpl, 'Reply to this email') && str_contains($__tpl, 'afrovanguard.org'));
 $GLOBALS['__mail_sink'] = [];
-$__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'Glad to help']);
+$__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'Glad to help']);
 /* Random, not the row id: the reference used to print how many applications
    the programme had received on every one of them, and let a named person's
    status be found by walking the numbers. */
@@ -769,7 +778,7 @@ chk('apply returns a traceable reference that is not the row id',
 $__ack = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'));
 chk('volunteer application acknowledges the applicant', count($__ack) === 1 && str_contains($__ack[0]['subject'], 'volunteer application'));
 chk('ack is on-brand + names role + carries the reference', str_contains($__ack[0]['html'], '#0c1432') && str_contains($__ack[0]['html'], 'Mentor') && str_contains($__ack[0]['html'], (string)$__ap['ref']));
-$__dup = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'again']);
+$__dup = backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'again']);
 chk('resubmit is a no-op duplicate with the same reference', $__dup['duplicate'] === true && $__dup['ref'] === $__ap['ref']);
 chk('duplicate does not re-acknowledge', count(array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'))) === 1);
 unset($GLOBALS['__mail_sink']);
@@ -1022,7 +1031,7 @@ chk('overview: twelve weeks of check-ins, oldest first, ending this week', (func
     return count($c) === 12 && $c[0]['from'] < $c[11]['from'] && $c[11]['from'] <= gmdate('Y-m-d') && strtotime($c[11]['from']) > time() - 8 * 86400;
 })());
 chk('overview: recent activity names the person who did it', array_key_exists('actorName', (backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['recent'][0] ?? ['actorName' => ''])));
-backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Applicant', 'lastName' => 'One', 'email' => 'app1@example.com', 'phone' => '08031110030', 'dob' => '2011-01-01', 'track' => 'Music', 'centre' => 'Ayobo']);
+backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'Applicant', 'lastName' => 'One', 'email' => 'app1@example.com', 'phone' => '08031110030', 'dob' => '2011-01-01', 'track' => 'Music', 'centre' => 'Ayobo']);
 $apps = backend_dispatch('admin.applications.list', ['requesterId' => 'NGG-2025-0099', 'kind' => 'teen'])['applications'];
 chk('applications listed', count($apps) >= 1);
 $appId = $apps[0]['id'];
@@ -1104,14 +1113,14 @@ chk('idcard proportion is editable, clamped, and preserves branding', (function 
     // height clamps into range, width persists, and the earlier motto survives the partial save (merge)
     return (float)$id['widthMm'] === 55.0 && (float)$id['heightMm'] === 100.0 && $id['motto'] === 'EMPOWERED 360°';
 })());
-chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'X', 'lastName' => 'Y', 'email' => 'x@example.com', 'phone' => '08031110050', 'dob' => '2011-01-01'])['error'] === 'applications_closed');
+chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'X', 'lastName' => 'Y', 'email' => 'x@example.com', 'phone' => '08031110050', 'dob' => '2011-01-01'])['error'] === 'applications_closed');
 chk('newsletter list works', is_array(backend_dispatch('admin.newsletter.list', ['requesterId' => 'NGG-2025-0099'])['subscribers']));
 
 // ── Program tagging (Summer vs Anchor) + convert respects program ──
 backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['applications_open' => true]]);
 backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Summer', 'lastName' => 'Kid', 'email' => 'summer1@example.com', 'phone' => '08031110031', 'dob' => '2013-01-01', 'track' => 'Dance', 'centre' => 'Egbeda', 'program' => 'summer']);
 chk('summer application tagged', db_row("SELECT program FROM applications WHERE email='summer1@example.com'")['program'] === 'summer');
-backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Anchor', 'lastName' => 'Kid', 'email' => 'anchor1@example.com', 'phone' => '08031110032', 'dob' => '2010-01-01', 'track' => 'Tech', 'centre' => 'Egbeda', 'program' => 'anchor']);
+backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'Anchor', 'lastName' => 'Kid', 'email' => 'anchor1@example.com', 'phone' => '08031110032', 'dob' => '2010-01-01', 'track' => 'Tech', 'centre' => 'Egbeda', 'program' => 'anchor']);
 $anchorApp = db_row("SELECT id FROM applications WHERE email='anchor1@example.com'")['id'];
 $convA = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $anchorApp]);
 chk('anchor applicant becomes NGG member', db_row('SELECT type FROM members WHERE memberId=?', [$convA['memberId']])['type'] === 'NGG');
@@ -1119,7 +1128,7 @@ $summerAppId = db_row("SELECT id FROM applications WHERE email='summer1@example.
 $convS = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $summerAppId]);
 chk('summer applicant becomes Summer member', db_row('SELECT type FROM members WHERE memberId=?', [$convS['memberId']])['type'] === 'Summer');
 chk('invalid program falls back to anchor', (function () {
-    backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Junk', 'lastName' => 'Prog', 'email' => 'junkprog@example.com', 'phone' => '08031110033', 'dob' => '2011-06-01', 'program' => 'bogus']);
+    backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Male', 'firstName' => 'Junk', 'lastName' => 'Prog', 'email' => 'junkprog@example.com', 'phone' => '08031110033', 'dob' => '2011-06-01', 'program' => 'bogus']);
     return db_row("SELECT program FROM applications WHERE email='junkprog@example.com'")['program'] === 'anchor';
 })());
 
@@ -1155,7 +1164,18 @@ chk('club apply: the agreements are in the ledger with the policy version, trips
     return count($rows) === 7 && $by['media'] === 'granted' && $by['trips'] === 'declined'
         && !array_filter($rows, fn($x) => $x['policyVersion'] !== '2026.10' || $x['method'] !== 'online-application');
 })());
-$cr2 = $clubApp(['why' => 'I want to become an engineer who builds bridges across Lagos.']);
+/* Changing an application already sent needs the code emailed to its address:
+   an email and a date of birth are not a secret. */
+$cr2a = $clubApp(['why' => 'I want to become an engineer who builds bridges across Lagos.']);
+$crId = (int)db_row("SELECT id FROM applications WHERE email = 'club.family@example.com'")['id'];
+chk('club apply: the same child again without the emailed code changes nothing, and a code is sent',
+    ($cr2a['error'] ?? '') === 'edit_code_sent' && strpos((string)db_row('SELECT why FROM applications WHERE id = ?', [$crId])['why'], 'engineer') === false);
+chk('club apply: …a wrong code is refused', ($clubApp(['why' => 'I want to become an engineer who builds bridges across Lagos.', 'editCode' => '000000'])['error'] ?? '') === 'edit_code_wrong');
+$crDet = json_decode((string)db_row('SELECT details FROM applications WHERE id = ?', [$crId])['details'], true);
+$crDet['_edit'] = ['hash' => hash('sha256', $crId . '|123456'), 'exp' => gmdate('Y-m-d\TH:i:s\Z', time() + 600), 'tries' => 0];
+db_update('applications', ['details' => json_encode($crDet)], ['id' => $crId]);
+chk('club apply: the change code never reaches the admin desk', !isset(backend_dispatch('admin.applications.list', ['requesterId' => 'NGG-2025-0099', 'kind' => 'teen'])['applications'][0]['details']['_edit']));
+$cr2 = $clubApp(['why' => 'I want to become an engineer who builds bridges across Lagos.', 'editCode' => '123456']);
 chk('club apply: the same child again (email + date of birth) updates the application, same reference', !empty($cr2['updated']) && $cr2['ref'] === $cr1['ref']
     && (int)db_row("SELECT COUNT(*) c FROM applications WHERE email = 'club.family@example.com'")['c'] === 1
     && strpos((string)db_row("SELECT why FROM applications WHERE email = 'club.family@example.com'")['why'], 'engineer') !== false);
@@ -1305,17 +1325,320 @@ chk('summer signup: Apply finds the live public sign-up link — the centre\'s o
     db_exec("UPDATE gate_links SET status = 'revoked' WHERE gateId IN ('SELF-ALL', 'SELF-EG', 'SELF-OLD', 'DESK-AY')");
     return $none['url'] === '' && $eg['url'] === '/apply?g=SELF-EG' && $eg['centre'] === 'Egbeda' && $ay['url'] === '/apply?g=SELF-ALL' && $any['url'] === '/apply?g=SELF-ALL';
 })());
+db_update('applications', ['centre' => 'Egbeda'], ['id' => (int)$crow['id']]);   // the family's choice, as the form files it
 $cconv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$crow['id']]);
 $cmem = db_row('SELECT * FROM members WHERE memberId = ?', [$cconv['memberId'] ?? '']);
 chk('club apply → member: the parent by name and number, the school and class, the agreements inherited', $cmem
     && $cmem['parentName'] === 'Adunni Adebayo' && $cmem['parentPhone'] === '08031234567' && $cmem['school'] === 'Egbeda Senior High School' && (json_decode((string)$cmem['profileJson'], true)['class'] ?? '') === 'JSS 2'
     && (int)db_row("SELECT COUNT(DISTINCT type) c FROM consents WHERE studentId = ? AND policyVersion = '2026.10'", [$cmem['memberId']])['c'] === 7
     && (consent_state($cmem['memberId'])['media']['status'] ?? '') === 'granted');
+// ── Application review fixes (siblings, consent, scope, waitlist, volunteers' safeguarding) ──
+(function () {
+    $now = now_iso(); $A = 'NGG-2025-0099';
+    foreach ([['CEN-AF1', 'Afton', 'ngg'], ['CEN-AF2', 'Afvale', 'summer']] as [$cid, $cn, $pr]) db_insert('centres', ['centreId' => $cid, 'name' => $cn, 'code' => substr($cid, -3), 'color' => '#123456', 'status' => 'active', 'programmes' => $pr, 'createdAt' => $now]);
+    $kid = fn(array $o) => backend_dispatch('public.apply', array_merge(['kind' => 'teen', 'program' => 'anchor', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY,
+        'sex' => 'Female', 'lastName' => 'Sibling', 'email' => 'fam-af@example.com', 'phone' => '08031117000', 'centre' => 'Afton', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'], $o));
+    $k1 = $kid(['firstName' => 'Kemi', 'dob' => gmdate('Y-m-d', strtotime('-12 years'))]);
+    $k2 = $kid(['firstName' => 'Tobi', 'sex' => 'Male', 'dob' => gmdate('Y-m-d', strtotime('-14 years'))]);
+    $id1 = (int)db_row("SELECT id FROM applications WHERE email = 'fam-af@example.com' AND firstName = 'Kemi'")['id'];
+    $id2 = (int)db_row("SELECT id FROM applications WHERE email = 'fam-af@example.com' AND firstName = 'Tobi'")['id'];
+    chk('review fix · siblings on one parent email are two applications', !empty($k1['ok']) && !empty($k2['ok']) && $id1 && $id2 && $id1 !== $id2);
+    $c1 = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id1]);
+    $c2 = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id2]);
+    chk('review fix · the second child becomes their own member, not "already had a record"', !empty($c1['memberId']) && !empty($c2['memberId']) && empty($c2['existed']) && $c1['memberId'] !== $c2['memberId']
+        && db_row('SELECT fullName FROM members WHERE memberId = ?', [$c2['memberId']])['fullName'] === 'Tobi Sibling');
+    chk('review fix · converting the same child twice still finds their record', !empty(backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id2])['existed']));
+    chk('an accepted NGG applicant’s registration checklist starts at once, one each, never twice (domain/registration-checklist.php)',
+        (int)db_row('SELECT COUNT(*) c FROM reg_checklists WHERE memberId IN (?, ?)', [$c1['memberId'], $c2['memberId']])['c'] === 2
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'regcheck.start' AND meta LIKE ?", ['%' . $c2['memberId'] . '%'])['c'] === 1);
+    chk('review fix · a Club application without the guardian, school and agreements is refused',
+        (backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'anchor', 'firstName' => 'No', 'lastName' => 'Details', 'sex' => 'Male', 'email' => 'nodet@example.com', 'phone' => '08031117001', 'dob' => gmdate('Y-m-d', strtotime('-13 years')), 'centre' => 'Afton', 'why' => CLUBTEST_WHY])['error'] ?? '') === 'details_required');
+    // Convert's guards: declined, age today, a centre.
+    $k3 = $kid(['firstName' => 'Ada', 'email' => 'fam-af3@example.com', 'dob' => gmdate('Y-m-d', strtotime('-11 years'))]);
+    $id3 = (int)db_row("SELECT id FROM applications WHERE email = 'fam-af3@example.com'")['id'];
+    db_update('applications', ['status' => 'rejected'], ['id' => $id3]);
+    chk('review fix · a declined application cannot be converted', (backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id3])['error'] ?? '') === 'rejected');
+    db_update('applications', ['status' => 'new', 'dob' => gmdate('Y-m-d', strtotime('-19 years'))], ['id' => $id3]);
+    chk('review fix · nor one whose applicant is now past 17', (backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id3])['error'] ?? '') === 'bad_age');
+    db_update('applications', ['dob' => gmdate('Y-m-d', strtotime('-11 years')), 'centre' => ''], ['id' => $id3]);
+    chk('review fix · a blank centre is asked for, never quietly Egbeda', (backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id3])['error'] ?? '') === 'centre_required');
+    chk('review fix · marking a child "accepted" without converting is refused (Convert makes the member)', (backend_dispatch('admin.applications.status', ['requesterId' => $A, 'id' => $id3, 'status' => 'accepted'])['error'] ?? '') === 'use_convert');
+    // Waitlist: the family is told, and the application stays reachable.
+    db_update('applications', ['centre' => 'Afton'], ['id' => $id3]);
+    $GLOBALS['__mail_sink'] = [];
+    $w = backend_dispatch('admin.applications.status', ['requesterId' => $A, 'id' => $id3, 'status' => 'waitlist']);
+    unset($GLOBALS['__mail_sink']);
+    chk('review fix · waitlisting tells the family', !empty($w['ok']) && in_array('email', $w['told'] ?? [], true));
+    $wl = backend_dispatch('admin.applications.list', ['requesterId' => $A, 'kind' => 'teen', 'status' => 'new,reviewing,waitlist'])['applications'];
+    chk('review fix · a waitlisted child is still on the desk, and can be converted from there', in_array($id3, array_map('intval', array_column($wl, 'id')), true)
+        && !empty(backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id3])['memberId']));
+    // Centre scope: a scoped admin sees and acts on their own centre's applicants only.
+    db_insert('members', ['memberId' => 'AF-SCOPED', 'fullName' => 'Scoped Afvale', 'email' => 'afscoped@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Afvale', 'centreScope' => json_encode(['CEN-AF2']), 'createdAt' => $now, 'updatedAt' => $now]);
+    $k4 = $kid(['firstName' => 'Zara', 'email' => 'fam-af4@example.com', 'dob' => gmdate('Y-m-d', strtotime('-13 years'))]);
+    $id4 = (int)db_row("SELECT id FROM applications WHERE email = 'fam-af4@example.com'")['id'];
+    $sl = backend_dispatch('admin.applications.list', ['requesterId' => 'AF-SCOPED', 'kind' => 'teen'])['applications'] ?? null;
+    chk('review fix · a centre-scoped admin does not see another centre\'s children', is_array($sl) && !in_array($id4, array_map('intval', array_column($sl, 'id')), true));
+    chk('review fix · …nor convert, decline or edit them', (backend_dispatch('admin.application.convert', ['requesterId' => 'AF-SCOPED', 'id' => $id4])['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('admin.applications.status', ['requesterId' => 'AF-SCOPED', 'id' => $id4, 'status' => 'rejected'])['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('admin.application.update', ['requesterId' => 'AF-SCOPED', 'id' => $id4, 'data' => ['name' => 'X Y']])['error'] ?? '') === 'out_of_scope');
+
+    // ── Volunteers ──
+    $vol = fn(array $o) => backend_dispatch('public.apply', array_merge(['kind' => 'volunteer', 'program' => 'anchor', 'role' => 'mentor', 'sex' => 'Female', 'firstName' => 'Vee', 'lastName' => 'Lun',
+        'email' => 'vee@example.com', 'phone' => '08031117100', 'dob' => '1995-02-02', 'centre' => 'Afton', 'faculty' => 'Mentoring', 'courses' => ['One-to-one mentoring'],
+        'why' => 'I want to give back.', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg', 'referees' => VOLTEST_REFS, 'declaration' => true], $o));
+    chk('review fix · a volunteer needs two referees and the declaration', ($vol(['referees' => [VOLTEST_REFS[0]]])['error'] ?? '') === 'referees_required'
+        && ($vol(['declaration' => false])['error'] ?? '') === 'declaration_required');
+    chk('review fix · NGG\'s volunteer door only offers centres that run the Club', ($vol(['centre' => 'Afvale'])['error'] ?? '') === 'centre_not_offered');
+    $teen = gmdate('Y-m-d', strtotime('-16 years -2 months'));
+    chk('review fix · a 16-year-old must name a guardian who agrees', ($vol(['email' => 'v16@example.com', 'dob' => $teen])['error'] ?? '') === 'guardian_required'
+        && ($vol(['email' => 'v16@example.com', 'dob' => $teen, 'guardian' => ['name' => 'Mum Lun', 'phone' => '08031117101']])['error'] ?? '') === 'guardian_consent_required');
+    $r16 = $vol(['email' => 'v16@example.com', 'dob' => $teen, 'guardian' => ['name' => 'Mum Lun', 'phone' => '08031117101', 'consent' => true]]);
+    $a16 = (int)db_row("SELECT id FROM applications WHERE email = 'v16@example.com'")['id'];
+    chk('review fix · …and is not approved until staff confirm they spoke to the guardian', !empty($r16['ok'])
+        && (backend_dispatch('admin.volunteers.approve', ['requesterId' => $A, 'id' => $a16])['error'] ?? '') === 'guardian_consent_required');
+    $ok16 = backend_dispatch('admin.volunteers.approve', ['requesterId' => $A, 'id' => $a16, 'guardianConfirmed' => true]);
+    chk('review fix · …then approved with the consent recorded, and screening still pending', !empty($ok16['ok']) && ($ok16['safeguarding'] ?? '') === 'pending'
+        && (bool)db_row("SELECT id FROM consents WHERE studentId = ? AND type = 'volunteer_guardian' AND status = 'granted'", [$ok16['volunteer']['volunteerId']]));
+    // A Summer volunteer applying at the Club is a second application, and approval widens them to both.
+    $wasOpen = setting_raw('volunteer_applications_open'); setting_set('volunteer_applications_open', '1', 'test');
+    $sv = backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'admin', 'sex' => 'Male', 'firstName' => 'Sam', 'lastName' => 'Both', 'email' => 'sam-both@example.com', 'phone' => '08031117200', 'dob' => '1990-01-01',
+        'centre' => 'Afvale', 'why' => 'Summer help.', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg', 'referees' => VOLTEST_REFS, 'declaration' => true]);
+    $sid = (int)db_row("SELECT id FROM applications WHERE email = 'sam-both@example.com'")['id'];
+    setting_set('volunteer_applications_open', $wasOpen === null ? '1' : (string)$wasOpen, 'test');
+    backend_dispatch('admin.volunteers.approve', ['requesterId' => $A, 'id' => $sid]);
+    $nv = $vol(['email' => 'sam-both@example.com', 'firstName' => 'Sam', 'lastName' => 'Both', 'role' => 'admin', 'faculty' => 'Operations', 'courses' => ['Logistics']]);
+    chk('review fix · a Summer volunteer applying for the Club is a new application, not the Summer reference back', !empty($nv['ok']) && empty($nv['duplicate']) && !empty($sv['ok'])
+        && (int)db_row("SELECT COUNT(*) c FROM applications WHERE email = 'sam-both@example.com'")['c'] === 2);
+    $nid = (int)db_row("SELECT id FROM applications WHERE email = 'sam-both@example.com' ORDER BY id DESC LIMIT 1")['id'];
+    $wv = backend_dispatch('admin.volunteers.approve', ['requesterId' => $A, 'id' => $nid]);
+    chk('review fix · …and approving it makes them serve both, not "already"', ($wv['widened'] ?? '') === 'both' && empty($wv['already'])
+        && db_row("SELECT programme FROM volunteers WHERE lower(email) = 'sam-both@example.com'")['programme'] === 'both');
+    // The instructor roster shows children only after screening clears.
+    db_insert('volunteers', ['volunteerId' => 'VOL-AF-INS', 'fullName' => 'Ins Tructor', 'email' => 'ins-af@example.com', 'role' => 'instructor', 'courses' => json_encode(['Practical Coding']), 'centre' => 'Afton', 'token' => 'TOK-AF-INS', 'status' => 'active', 'safeguarding' => 'pending', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('review fix · an instructor whose screening has not cleared sees no children', (public_instructor_roster(['token' => 'TOK-AF-INS', 'email' => 'ins-af@example.com'])['error'] ?? '') === 'safeguarding_pending');
+    db_update('volunteers', ['safeguarding' => 'cleared'], ['volunteerId' => 'VOL-AF-INS']);
+    chk('review fix · …and the room once it has', !empty(public_instructor_roster(['token' => 'TOK-AF-INS', 'email' => 'ins-af@example.com'])['ok']));
+    chk('review fix · a scoped admin cannot clear or decline another centre\'s volunteer', (backend_dispatch('admin.volunteers.safeguard', ['requesterId' => 'AF-SCOPED', 'volunteerId' => 'VOL-AF-INS', 'status' => 'cleared'])['error'] ?? '') === 'out_of_scope');
+
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-AF-INS' OR lower(email) IN ('v16@example.com', 'sam-both@example.com')");
+    db_exec("DELETE FROM applications WHERE email LIKE 'fam-af%' OR email IN ('vee@example.com', 'v16@example.com', 'sam-both@example.com', 'nodet@example.com')");
+    db_exec("DELETE FROM members WHERE memberId = 'AF-SCOPED' OR email LIKE 'fam-af%'");
+    db_exec("DELETE FROM centres WHERE centreId IN ('CEN-AF1', 'CEN-AF2')");
+})();
 chk('schools: a school the family typed joins the list once their child is accepted', (function () {
     school_learn('Bright Future Model College, Egbeda', 'Alimosho', 'Lagos');
     $h = backend_dispatch('public.schools', ['q' => 'bright future model'])['schools'];
     return $h && $h[0]['name'] === 'Bright Future Model College, Egbeda';
 })());
+
+/* ── The registration checklist (domain/registration-checklist.php) ─────────
+ * Every new NGG member is helped to finish registering. What this guards: the
+ * automatic items are answered by the record and nothing else (evidence never
+ * ticks one); staff define, edit, reorder and retire their own items; the
+ * suggested supervisors are cleared, at the member's centre and not over the
+ * cap, each with reasons in words; the assignment re-derives all of that per
+ * row and refuses out of scope; evidence counts only of the declared type,
+ * fresh enough, from the assigned supervisor, and at the centre that day when
+ * the item says so; staff can reject and the item reopens; reminders go once.
+ * Its fixtures (two centres, check-ins on recent Saturdays) are rolled back at
+ * the end, so no later section sees them.
+ */
+(function () { $__db = db_conn(); $__db->beginTransaction(); try {
+    $SU = 'NGG-2025-0099';
+    $now = now_iso(); $today = attendance_today();
+    $C1 = 'CEN-RCL-1'; $C2 = 'CEN-RCL-2';
+    db_insert('centres', ['centreId' => $C1, 'name' => 'Rcl Town', 'code' => 'RT', 'color' => '#123456', 'status' => 'active', 'slug' => 'rcl-town', 'createdAt' => $now]);
+    db_insert('centres', ['centreId' => $C2, 'name' => 'Rcl Far', 'code' => 'RF', 'color' => '#654321', 'status' => 'active', 'slug' => 'rcl-far', 'createdAt' => $now]);
+    $mem = fn(string $id, string $name, string $centre, array $x = []) => db_insert('members', $x + ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.org',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $centre, 'createdAt' => $now, 'updatedAt' => $now]);
+    $mem('NGG-RCL-M1', 'Tobi Rcl', 'Rcl Town');
+    $mem('NGG-RCL-M2', 'Bisi Rcl', 'Rcl Town');
+    $mem('NGG-RCL-M3', 'Kunle Rcl', 'Rcl Far');
+    $mem('SUM-RCL-1', 'Summer Rcl', 'Rcl Town', ['type' => 'Summer']);
+    $mem('NGG-RCL-SC', 'Scoped Rcl', 'Rcl Far', ['role' => 'club_admin', 'centreScope' => json_encode([$C2])]);
+    $vol = fn(string $id, string $name, string $sg, array $x = []) => db_insert('volunteers', $x + ['volunteerId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.org',
+        'role' => 'mentor', 'status' => 'active', 'safeguarding' => $sg, 'programme' => 'ngg', 'centre' => 'Rcl Town', 'centreId' => $C1, 'createdAt' => $now]);
+    $vol('VOL-RCL-A', 'Amaka Rcl', 'cleared');
+    $vol('VOL-RCL-B', 'Bode Rcl', 'pending');
+    $vol('VOL-RCL-C', 'Chidi Rcl', 'cleared');
+    $vol('VOL-RCL-D', 'Dayo Rcl', 'cleared');
+    $vol('VOL-RCL-E', 'Efe Rcl', 'cleared', ['programme' => 'summer']);
+    $vol('VOL-RCL-F', 'Femi Rcl', 'cleared');
+    db_insert('mentors', ['mentorId' => 'MEN-RCL-1', 'fullName' => 'Femi Rcl', 'email' => 'vol-rcl-f@example.org', 'status' => 'active', 'centre' => 'Rcl Town', 'centreId' => $C1,
+        'programme' => 'ngg', 'volunteerId' => 'VOL-RCL-F', 'checkedAt' => $now, 'availability' => 'Saturday mornings', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentor_matches', ['matchId' => 'MM-RCL-1', 'memberId' => 'NGG-RCL-M1', 'mentorId' => 'MEN-RCL-1', 'centre' => 'Rcl Town', 'status' => 'active', 'updatedAt' => $now]);
+    $sats = rcl_saturdays($today, 6);
+    $att = fn(string $who, string $day, string $cid) => db_insert('attendance', ['cohortId' => '', 'studentId' => $who, 'date' => $day, 'checkInAt' => $day . 'T08:00:00Z',
+        'method' => 'test', 'status' => 'present', 'lateMinutes' => 0, 'centreId' => $cid, 'createdAt' => $now]);
+    // A: four of the last five Saturdays at Rcl Town (not the newest, which may be today). B and D: there too. F: once.
+    foreach ([1, 2, 3, 4] as $i) { $att('VOL-RCL-A', $sats[$i], $C1); $att('VOL-RCL-B', $sats[$i], $C1); }
+    $att('VOL-RCL-D', $sats[1], $C1); $att('VOL-RCL-F', $sats[2], $C1); $att('VOL-RCL-E', $sats[1], $C1);
+    $att('VOL-RCL-C', $sats[1], $C2);                                         // C was seen, but at another centre
+    for ($i = 0; $i < RCL_SUPERVISOR_MAX; $i++) db_insert('reg_checklists', ['memberId' => 'RCL-LOAD-' . $i, 'status' => 'open', 'supervisorId' => 'VOL-RCL-D', 'startedAt' => $now, 'updatedAt' => $now]);
+
+    // ── Automatic items: the record decides.
+    chk('regcheck: a Summer School account gets no checklist, an NGG member does',
+        !rcl_start(db_row("SELECT * FROM members WHERE memberId = 'SUM-RCL-1'"), $SU) && rcl_start(db_row("SELECT * FROM members WHERE memberId = 'NGG-RCL-M1'"), $SU)
+        && !rcl_start(db_row("SELECT * FROM members WHERE memberId = 'NGG-RCL-M1'"), $SU));
+    $b = fn(string $id) => rcl_build([db_row('SELECT * FROM members WHERE memberId = ?', [$id])])[$id];
+    $st = fn(string $id) => array_column($b($id)['items'], 'done', 'key');
+    $s0 = $st('NGG-RCL-M1');
+    chk('regcheck: a blank record leaves every automatic item open', !$s0['auto:guardian'] && !$s0['auto:consents'] && !$s0['auto:photo'] && !$s0['auto:dob']
+        && !$s0['auto:school'] && !$s0['auto:emergency'] && !$s0['auto:courses'] && !$s0['auto:idcard']);
+    chk('regcheck: the fee item is there exactly when membership fees are on', isset($s0['auto:fee']) === (bool)membership_fee_terms()['enabled']);
+    db_update('members', ['dob' => '2012-04-05', 'school' => 'Rcl Grammar', 'parentPhone' => '0803 111 2222', 'courses' => '["Chess"]', 'displayId' => '026-901'], ['memberId' => 'NGG-RCL-M1']);
+    db_insert('guardians', ['guardianId' => 'G-RCL-1', 'email' => 'g-rcl-1@example.org', 'fullName' => 'Mama Rcl', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-RCL-1', 'guardianId' => 'G-RCL-1', 'memberId' => 'NGG-RCL-M1', 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (['participation' => 'granted', 'medical' => 'granted', 'data' => 'granted', 'media' => 'declined'] as $t => $v)
+        db_insert('consents', ['studentId' => 'NGG-RCL-M1', 'type' => $t, 'status' => $v, 'method' => 'Paper form', 'actorName' => 'Mama Rcl', 'createdAt' => $now]);
+    chk('regcheck: a missing consent keeps consents open (the website answer is not given yet)', !$st('NGG-RCL-M1')['auto:consents']);
+    db_insert('consents', ['studentId' => 'NGG-RCL-M1', 'type' => 'site_visibility', 'status' => 'granted', 'method' => 'Paper form', 'actorName' => 'Mama Rcl', 'createdAt' => $now]);
+    db_insert('card_runs', ['runId' => 'RUN-RCL-P', 'kind' => 'member', 'mode' => 'proof', 'startedAt' => $now]);
+    db_insert('card_issues', ['runId' => 'RUN-RCL-P', 'subjectType' => 'member', 'subjectId' => 'NGG-RCL-M1', 'displayId' => '026-901', 'ok' => 1, 'at' => $now]);
+    $s1 = $st('NGG-RCL-M1');
+    chk('regcheck: guardian, consents, dob, school, emergency contact and courses pass from the record', $s1['auto:guardian'] && $s1['auto:consents'] && $s1['auto:dob']
+        && $s1['auto:school'] && $s1['auto:emergency'] && $s1['auto:courses']);
+    chk('regcheck: a proof is nobody’s card — the ID card item stays open', !$s1['auto:idcard']);
+    db_insert('card_runs', ['runId' => 'RUN-RCL-1', 'kind' => 'member', 'mode' => 'print', 'startedAt' => $now]);
+    db_insert('card_issues', ['runId' => 'RUN-RCL-1', 'subjectType' => 'member', 'subjectId' => 'NGG-RCL-M1', 'displayId' => '026-901', 'ok' => 1, 'at' => $now]);
+    chk('regcheck: a real printed card with the printed ID passes it', $st('NGG-RCL-M1')['auto:idcard']);
+    chk('regcheck: an emergency contact may be a collector instead of a parent phone', (function () use ($st, $now) {
+        db_insert('member_collectors', ['memberId' => 'NGG-RCL-M2', 'name' => 'Aunty', 'relation' => 'Aunt', 'phone' => '08030000000', 'createdAt' => $now]);
+        return $st('NGG-RCL-M2')['auto:emergency'] && !$st('NGG-RCL-M2')['auto:dob'];
+    })());
+
+    // ── Admin items: create, edit, reorder, retire, restore.
+    $save = fn(array $x, string $who = 'NGG-2025-0099') => backend_dispatch('admin.regcheck.item.save', ['requesterId' => $who] + $x);
+    chk('regcheck items: a member cannot define items (people only)', ($save(['title' => 'Nope'], 'NGG-RCL-M1')['error'] ?? '') === 'forbidden');
+    chk('regcheck items: a title of two letters is refused, in words', ($save(['title' => 'ab'])['error'] ?? '') === 'title_required' && ($save(['title' => 'ab'])['message'] ?? '') !== '');
+    chk('regcheck items: evidence is a photo, a document or a note', ($save(['title' => 'Video thing', 'evidence' => 'video'])['error'] ?? '') === 'bad_evidence');
+    chk('regcheck items: an age limit needs a file to date', ($save(['title' => 'Talk', 'evidence' => 'none', 'maxAgeDays' => 30])['error'] ?? '') === 'age_needs_file');
+    $I1 = $save(['title' => 'Proof of adress', 'help' => 'A utility bill.', 'evidence' => 'document', 'maxAgeDays' => 90])['item']['itemId'] ?? '';
+    $I2 = $save(['title' => 'Photo with their guardian at the centre', 'evidence' => 'photo', 'presence' => true, 'maxAgeDays' => 30])['item']['itemId'] ?? '';
+    $I3 = $save(['title' => 'Welcome talk given', 'evidence' => 'none', 'presence' => true])['item']['itemId'] ?? '';
+    $I4 = $save(['title' => 'Old form', 'evidence' => 'none'])['item']['itemId'] ?? '';
+    $ed = $save(['itemId' => $I1, 'title' => 'Proof of address', 'help' => 'A utility bill or a bank letter.', 'evidence' => 'document', 'maxAgeDays' => 90]);
+    chk('regcheck items: created and edited', $I1 && $I2 && $I3 && $I4 && ($ed['item']['title'] ?? '') === 'Proof of address' && ($ed['item']['maxAgeDays'] ?? 0) === 90);
+    backend_dispatch('admin.regcheck.item.move', ['requesterId' => $SU, 'itemId' => $I3, 'dir' => 'up']);
+    $order = array_column(rcl_items_active(), 'itemId');
+    chk('regcheck items: moved up one place', array_search($I3, $order, true) === array_search($I2, $order, true) - 1);
+    $ret = backend_dispatch('admin.regcheck.item.retire', ['requesterId' => $SU, 'itemId' => $I4, 'retire' => true]);
+    $list = backend_dispatch('admin.regcheck.items', ['requesterId' => $SU]);
+    $i4 = array_values(array_filter($list['items'], fn($i) => $i['itemId'] === $I4))[0] ?? [];
+    chk('regcheck items: retiring takes it off every checklist and keeps it, marked retired', !empty($ret['ok']) && !in_array($I4, array_column(rcl_items_active(), 'itemId'), true)
+        && ($i4['status'] ?? '') === 'retired' && ($i4['retiredAt'] ?? '') !== '' && !in_array($I4, array_column($b('NGG-RCL-M1')['items'], 'key'), true));
+    backend_dispatch('admin.regcheck.item.retire', ['requesterId' => $SU, 'itemId' => $I4, 'retire' => false]);
+    chk('regcheck items: and can be brought back', in_array($I4, array_column(rcl_items_active(), 'itemId'), true));
+    backend_dispatch('admin.regcheck.item.retire', ['requesterId' => $SU, 'itemId' => $I4]);
+    chk('regcheck items: one audit event per change', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event LIKE 'regcheck.item.%'")['c'] === 9);
+
+    // ── Suggestions.
+    $sg = backend_dispatch('admin.regcheck.suggest', ['requesterId' => $SU, 'memberIds' => ['NGG-RCL-M1']]);
+    $sid = array_column($sg['suggested'] ?? [], 'id');
+    $A = array_values(array_filter($sg['suggested'] ?? [], fn($x) => $x['id'] === 'VOL-RCL-A'))[0] ?? [];
+    $F = array_values(array_filter($sg['suggested'] ?? [], fn($x) => $x['id'] === 'VOL-RCL-F'))[0] ?? [];
+    chk('regcheck suggest: cleared NGG people seen at the centre are suggested', in_array('VOL-RCL-A', $sid, true) && in_array('VOL-RCL-F', $sid, true));
+    chk('regcheck suggest: an uncleared volunteer is never suggested, nor listed', !in_array('VOL-RCL-B', array_merge($sid, array_column($sg['others'], 'id'), array_column($sg['full'], 'id')), true));
+    chk('regcheck suggest: a Summer School volunteer is not eligible for an NGG member', !in_array('VOL-RCL-E', array_merge($sid, array_column($sg['others'], 'id')), true));
+    chk('regcheck suggest: someone with no presence at the centre (seen elsewhere) is not suggested, only listed to pick with a reason',
+        !in_array('VOL-RCL-C', $sid, true) && in_array('VOL-RCL-C', array_column($sg['others'], 'id'), true));
+    chk('regcheck suggest: someone at the cap is not suggested, and is named as full', !in_array('VOL-RCL-D', $sid, true) && in_array('VOL-RCL-D', array_column($sg['full'], 'id'), true));
+    chk('regcheck suggest: the reasons are words — Saturdays at the centre, workload, clearance',
+        str_contains($A['why'] ?? '', 'Checked in at Rcl Town on 4 of the last 5 Saturdays') && str_contains($A['why'] ?? '', 'No members to support yet') && str_contains($A['why'] ?? '', 'Safeguarding cleared'));
+    chk('regcheck suggest: the member’s own mentor is one person (mentor + volunteer), marked, with their stated availability',
+        !empty($F['existingMentor']) && str_contains($F['why'] ?? '', 'Already their mentor') && str_contains($F['why'] ?? '', 'Saturday mornings') && count(array_keys($sid, 'VOL-RCL-F', true)) === 1);
+    chk('regcheck suggest: the best placed comes first', ($sg['suggested'][0]['id'] ?? '') === 'VOL-RCL-A');
+    chk('regcheck suggest: members from two centres at once are refused', (backend_dispatch('admin.regcheck.suggest', ['requesterId' => $SU, 'memberIds' => ['NGG-RCL-M1', 'NGG-RCL-M3']])['error'] ?? '') === 'mixed_centres');
+
+    // ── Assignment re-checks everything, per row.
+    $as = fn(array $ids, string $sup, string $reason = '', string $who = 'NGG-2025-0099') => backend_dispatch('admin.regcheck.assign', ['requesterId' => $who, 'memberIds' => $ids, 'supervisorId' => $sup, 'reason' => $reason]);
+    $err = fn(array $r) => $r['results'][0]['error'] ?? ($r['error'] ?? '');
+    $aud0 = (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'regcheck.assign'")['c'];
+    chk('regcheck assign: an uncleared volunteer is refused whatever the screen sent', $err($as(['NGG-RCL-M1'], 'VOL-RCL-B')) === 'not_eligible');
+    chk('regcheck assign: someone at the cap is refused, the cap named', $err($as(['NGG-RCL-M1'], 'VOL-RCL-D')) === 'supervisor_full');
+    chk('regcheck assign: someone not seen at the centre needs a typed reason', $err($as(['NGG-RCL-M1'], 'VOL-RCL-C')) === 'not_present');
+    $withWhy = $as(['NGG-RCL-M1'], 'VOL-RCL-C', 'Covers the Saturday desk from next week');
+    $audW = db_row("SELECT meta FROM audit_log WHERE event = 'regcheck.assign' ORDER BY id DESC LIMIT 1");
+    chk('regcheck assign: with a reason they are assigned, and the reason is in the audit', ($withWhy['applied'] ?? 0) === 1 && str_contains((string)$audW['meta'], 'Covers the Saturday desk') && str_contains((string)$audW['meta'], 'notPresent'));
+    chk('regcheck assign: your own account is refused', $err($as([$SU], 'VOL-RCL-A')) === 'own_account');
+    $sc = $as(['NGG-RCL-M1', 'NGG-RCL-M3'], 'VOL-RCL-A', '', 'NGG-RCL-SC');
+    chk('regcheck assign: a scoped admin is refused per row out of scope, and A cannot supervise at Rcl Far', ($sc['results'][0]['error'] ?? '') === 'out_of_scope' && ($sc['results'][1]['error'] ?? '') === 'not_eligible' && ($sc['applied'] ?? -1) === 0);
+    $ok = $as(['NGG-RCL-M1', 'NGG-RCL-M2', 'SUM-RCL-1'], 'VOL-RCL-A');
+    chk('regcheck assign: A takes two members; a Summer account is refused by name', ($ok['applied'] ?? 0) === 2 && ($ok['results'][2]['error'] ?? '') === 'not_a_member'
+        && db_row("SELECT supervisorId FROM reg_checklists WHERE memberId = 'NGG-RCL-M2'")['supervisorId'] === 'VOL-RCL-A');
+    chk('regcheck assign: again is unchanged, reported as such', ($as(['NGG-RCL-M1'], 'VOL-RCL-A')['unchanged'] ?? 0) === 1);
+    chk('regcheck assign: one audit event per run', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'regcheck.assign'")['c'] === $aud0 + 8);
+    chk('regcheck assign: the supervisor is told', (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'VOL-RCL-A' AND title LIKE 'You are helping%'"));
+
+    // ── Evidence: verified, not declared.
+    $sub = fn(string $who, string $key, array $x = [], string $mid = 'NGG-RCL-M1') => backend_dispatch('member.regcheck.submit', ['requesterId' => $who, 'memberId' => $mid, 'itemKey' => $key] + $x);
+    $jpg = 'https://res.cloudinary.com/demo/image/upload/v1/evidence/rcl.jpg';
+    chk('regcheck evidence: only the assigned supervisor may submit', ($sub('VOL-RCL-C', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $today])['error'] ?? '') === 'not_assigned');
+    $auto = $sub('VOL-RCL-A', 'auto:photo', ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000]);
+    chk('regcheck evidence: a photo uploaded against an automatic item does not tick it — the record decides', ($auto['accepted'] ?? true) === false && !$st('NGG-RCL-M1')['auto:photo']
+        && db_row("SELECT verdict FROM reg_checklist_submissions WHERE memberId = 'NGG-RCL-M1' AND itemKey = 'auto:photo' ORDER BY id DESC LIMIT 1")['verdict'] === 'record_fails');
+    db_update('members', ['photoUrl' => $jpg], ['memberId' => 'NGG-RCL-M1']);
+    chk('regcheck evidence: once the record has it, checking again passes', ($sub('VOL-RCL-A', 'auto:photo')['accepted'] ?? false) === true && $st('NGG-RCL-M1')['auto:photo']);
+    $pdf = $sub('VOL-RCL-A', $I2, ['url' => 'https://res.cloudinary.com/demo/image/upload/v1/evidence/form.pdf', 'mime' => 'application/pdf', 'bytes' => 2000, 'capturedOn' => $today]);
+    chk('regcheck evidence: a PDF for a photo item is refused, saying what it is', ($pdf['error'] ?? '') === 'wrong_type' && str_contains($pdf['reason'] ?? '', 'a PDF'));
+    chk('regcheck evidence: a .jpg that says it is a PDF is refused', ($sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'application/pdf', 'bytes' => 2000, 'capturedOn' => $today])['error'] ?? '') === 'wrong_type');
+    chk('regcheck evidence: a file from somewhere else is refused', ($sub('VOL-RCL-A', $I2, ['url' => 'https://evil.example/x.jpg', 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $today])['error'] ?? '') === 'evidence_not_ours');
+    chk('regcheck evidence: too large is refused', ($sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => RCL_EVIDENCE_MAX_BYTES + 1, 'capturedOn' => $today])['error'] ?? '') === 'too_large');
+    $old = gmdate('Y-m-d', strtotime($today . 'T12:00:00Z') - 45 * 86400);
+    $stale = $sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $old]);
+    chk('regcheck evidence: older than the item allows is refused, with the age in words', ($stale['error'] ?? '') === 'stale' && str_contains($stale['reason'] ?? '', '45 days old'));
+    $np = $sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $today]);
+    chk('regcheck evidence: a presence item without a check-in at the centre today is refused', ($np['error'] ?? '') === 'not_present' && str_contains($np['reason'] ?? '', 'Rcl Town'));
+    db_exec("DELETE FROM attendance WHERE studentId = 'VOL-RCL-A' AND date = ?", [$today]);
+    $att('VOL-RCL-A', $today, $C2);
+    chk('regcheck evidence: a check-in at another centre that day does not count', ($sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $today])['error'] ?? '') === 'not_present');
+    db_exec("UPDATE attendance SET centreId = ? WHERE studentId = 'VOL-RCL-A' AND date = ?", [$C1, $today]);
+    $yes = $sub('VOL-RCL-A', $I2, ['url' => $jpg, 'mime' => 'image/jpeg', 'bytes' => 2000, 'capturedOn' => $today]);
+    chk('regcheck evidence: the right file, fresh, by the supervisor at the centre that day is verified', ($yes['accepted'] ?? false) === true
+        && db_row('SELECT status FROM reg_checklist_state WHERE memberId = ? AND itemId = ?', ['NGG-RCL-M1', $I2])['status'] === 'verified');
+    chk('regcheck evidence: a note item needs the note', ($sub('VOL-RCL-A', $I3)['error'] ?? '') === 'note_missing'
+        && ($sub('VOL-RCL-A', $I3, ['note' => 'Talked through the Saturday day with Tobi and his mother.'])['accepted'] ?? false) === true);
+    chk('regcheck evidence: a scanned bill as a PDF is a document', ($sub('VOL-RCL-A', $I1, ['url' => 'https://res.cloudinary.com/demo/image/upload/v1/evidence/bill.pdf', 'mime' => 'application/pdf', 'bytes' => 90000, 'capturedOn' => $today])['accepted'] ?? false) === true);
+    $refusals = db_all("SELECT verdict, reason FROM reg_checklist_submissions WHERE memberId = 'NGG-RCL-M1' AND verdict = 'refused'");
+    chk('regcheck evidence: every refused attempt is kept, each with its reason', count($refusals) >= 7 && !array_filter($refusals, fn($r) => trim((string)$r['reason']) === ''));
+
+    // ── Staff reject: the item reopens and the supervisor is told.
+    chk('regcheck reject: an automatic item cannot be rejected (correct the record instead)', (backend_dispatch('admin.regcheck.reject', ['requesterId' => $SU, 'memberId' => 'NGG-RCL-M1', 'itemKey' => 'auto:photo', 'reason' => 'Blurred'])['error'] ?? '') === 'record_decides');
+    chk('regcheck reject: needs a reason', (backend_dispatch('admin.regcheck.reject', ['requesterId' => $SU, 'memberId' => 'NGG-RCL-M1', 'itemKey' => $I2, 'reason' => 'x'])['error'] ?? '') === 'reason_required');
+    chk('regcheck reject: a scoped admin cannot reject outside their centres', (backend_dispatch('admin.regcheck.reject', ['requesterId' => 'NGG-RCL-SC', 'memberId' => 'NGG-RCL-M1', 'itemKey' => $I2, 'reason' => 'Face not visible'])['error'] ?? '') === 'out_of_scope');
+    $rj = backend_dispatch('admin.regcheck.reject', ['requesterId' => $SU, 'memberId' => 'NGG-RCL-M1', 'itemKey' => $I2, 'reason' => 'Face not visible in the photo']);
+    $i2 = array_values(array_filter($b('NGG-RCL-M1')['items'], fn($i) => $i['key'] === $I2))[0] ?? [];
+    chk('regcheck reject: the item reopens with the reason, and the supervisor is notified', !empty($rj['reopened']) && ($i2['status'] ?? '') === 'rejected' && ($i2['rejectReason'] ?? '') === 'Face not visible in the photo'
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'VOL-RCL-A' AND body = 'Face not visible in the photo'"));
+
+    // ── What the member, the family and the supervisor see.
+    $pr = backend_dispatch('member.regcheck.progress', ['requesterId' => 'NGG-RCL-M1']);
+    $json = json_encode($pr);
+    chk('regcheck progress: the member sees N of M, what is left, and the helper’s first name only', !empty($pr['started']) && $pr['total'] > $pr['done'] && in_array('Photo with their guardian at the centre', $pr['left'], true)
+        && $pr['helper'] === 'Amaka' && !str_contains($json, 'Amaka Rcl') && !str_contains($json, 'res.cloudinary.com'));
+    chk('regcheck progress: the guardian sees the same through their own link, nobody else’s', (backend_dispatch('family.regcheck', ['guardianId' => 'G-RCL-1', 'linkId' => 'GW-RCL-1'])['done'] ?? -1) === $pr['done']
+        && (backend_dispatch('family.regcheck', ['guardianId' => 'G-OTHER', 'linkId' => 'GW-RCL-1'])['error'] ?? '') === 'not_found');
+    $mine = backend_dispatch('member.regcheck.mine', ['requesterId' => 'VOL-RCL-A']);
+    chk('regcheck mine: the supervisor’s list has their two members, with whether they are at the centre today',
+        count($mine['members'] ?? []) === 2 && !empty(array_column($mine['members'], 'presentToday', 'memberId')['NGG-RCL-M1']));
+    $list = backend_dispatch('admin.regcheck.list', ['requesterId' => $SU, 'filter' => 'open', 'q' => 'rcl']);
+    chk('regcheck list: staff see open checklists with progress and supervisor; an unknown sort falls back', ($list['total'] ?? 0) >= 2
+        && in_array('Amaka Rcl', array_column($list['rows'], 'supervisorName'), true) && !empty(backend_dispatch('admin.regcheck.list', ['requesterId' => $SU, 'sort' => 'DROP TABLE'])['ok']));
+    chk('regcheck list: a scoped admin sees only their centres', !in_array('NGG-RCL-M1', array_column(backend_dispatch('admin.regcheck.list', ['requesterId' => 'NGG-RCL-SC', 'filter' => 'all'])['rows'] ?? [], 'memberId'), true));
+
+    // ── Reminders: once.
+    db_insert('guardians', ['guardianId' => 'G-RCL-2', 'email' => 'g-rcl-2@example.org', 'fullName' => 'Papa Rcl', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-RCL-2', 'guardianId' => 'G-RCL-2', 'memberId' => 'NGG-RCL-M2', 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    $t1 = rcl_tick(); $t2 = rcl_tick();
+    chk('regcheck reminders: the supervisor and the family are reminded once a week, however often the job runs',
+        (int)db_row("SELECT COUNT(*) c FROM reg_checklist_sends WHERE sendKey LIKE 'week:VOL-RCL-A:%'")['c'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM reg_checklist_sends WHERE sendKey LIKE 'family:NGG-RCL-M2:G-RCL-2:%'")['c'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['c'] === 1
+        && $t1['sent'] >= 2 && $t2['sent'] === 0);
+    chk('regcheck reminders: the family is told only what the family can do', str_contains((string)db_row("SELECT body FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['body'], 'Date of birth')
+        && !str_contains((string)db_row("SELECT body FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['body'], 'ID card printed'));
+    chk('regcheck: the web-cron schedules the job', isset(web_cron_jobs()['regcheck']));
+} finally { if ($__db->inTransaction()) $__db->rollBack(); } })();
 
 // ── Contact form ──
 chk('contact stores message', !empty(backend_dispatch('public.contact', ['name' => 'Ada Visitor', 'email' => 'ada@example.com', 'message' => 'I would love to learn more about mentoring.', 'purpose' => 'mentor'])['ref']));
@@ -1745,6 +2068,31 @@ chk('the honeypot: an empty hp is a person, a filled one is a script', !bot_trap
     && !bot_trap_tripped(['identifier' => 'x']) && bot_trap_tripped(['identifier' => 'x', 'hp' => 'http://spam.example']));
 
 // ── Web-cron (no-SSH host: opportunistic maintenance without cron) ──
+/* The scheduler (rebuilt 31 Oct 2026): a budget, one network job a visitor's run, most overdue first. */
+chk('scheduler · every job says how often and whether it talks to another server', (function () {
+    foreach (web_cron_jobs() as $name => $j) if (!is_int($j[0]) || $j[0] < 15 || !is_callable($j[1]) || !is_bool($j[2])) return false;
+    return isset(web_cron_jobs()['deliver'], web_cron_jobs()['maint'], web_cron_jobs()['reminders']);
+})());
+chk('scheduler · a run takes at most one network job and leaves the rest due, unclaimed', (function () {
+    $nets = array_keys(array_filter(web_cron_jobs(), fn($j) => $j[2]));
+    foreach (array_keys(web_cron_jobs()) as $n) @touch(web_cron_marker($n));                 // nothing due…
+    foreach (array_slice($nets, 0, 2) as $n) @touch(web_cron_marker($n), time() - 10 * 86400 * 30);   // …but two network jobs
+    $GLOBALS['__test_net_ran'] = 0;
+    $out = web_cron_tick(8.0, 1);
+    $ran = array_keys(array_filter($out, fn($v) => $v !== 'waits'));
+    $waits = array_keys(array_filter($out, fn($v) => $v === 'waits'));
+    $left = $waits ? time() - (int)filemtime(web_cron_marker($waits[0])) : 0;
+    return count($ran) === 1 && count($waits) === 1 && $left > 86400;
+})());
+chk('scheduler · a job whose last run will not fit what is left of the budget waits for a fresh run', web_cron_fits(0.0, 30.0, 8.0) && web_cron_fits(2.0, 5.0, 8.0)
+    && !web_cron_fits(3.0, 6.0, 8.0) && !web_cron_fits(8.5, 0.0, 8.0));
+chk('scheduler · an outside run makes visitors\' pages do no background work', (function () {
+    @touch(web_cron_marker('external'));
+    $a = web_cron_external_fresh();
+    @touch(web_cron_marker('external'), time() - 3600);
+    return $a && !web_cron_external_fresh();
+})());
+chk('scheduler · the response is handed back on LiteSpeed too, not only FPM', str_contains((string)file_get_contents(__DIR__ . '/../_lib/webcron.php'), 'litespeed_finish_request'));
 chk('web_cron_due fires once then throttles', (function () {
     $a = web_cron_due('unit_test_job', 3600); $b = web_cron_due('unit_test_job', 3600); return $a === true && $b === false;
 })());
@@ -4501,7 +4849,7 @@ chk('…while the QR on the card we already print passes, with the warning it de
        standard volunteer card's QR is 98 units, about 9mm, or 0.31mm a square.
        That is real and it scans — it is also close enough to the floor to be
        worth saying, so it warns rather than either blocking or staying silent. */
-    $t = ['name' => 'Real card', 'kind' => 'volunteer', 'w' => 590, 'h' => 972, 'safe' => 30,
+    $t = ['name' => 'Real card', 'kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'w' => 590, 'h' => 972, 'safe' => 30,
           'elements' => [
               ['id' => 's', 'type' => 'text', 'x' => 80, 'y' => 400, 'w' => 430, 'h' => 56, 'text' => '{{surname}}'],
               ['id' => 'r', 'type' => 'text', 'x' => 80, 'y' => 470, 'w' => 430, 'h' => 40, 'text' => '{{roleFaculty}}'],
@@ -6731,7 +7079,7 @@ chk('centre: an insecure (non-https) link is rejected', backend_dispatch('admin.
 // Restore the chat.whatsapp.com invite for the apply-echo assertion below.
 backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'whatsappUrl' => 'https://chat.whatsapp.com/ABC123']]);
 setting_set('volunteer_applications_open', '1', 'system');
-$waApply = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Wa', 'lastName' => 'Joiner', 'email' => 'wa-join@example.com', 'phone' => '08031119009', 'dob' => '1990-01-01', 'centre' => 'Ayobo Hub']);
+$waApply = backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Wa', 'lastName' => 'Joiner', 'email' => 'wa-join@example.com', 'phone' => '08031119009', 'dob' => '1990-01-01', 'centre' => 'Ayobo Hub']);
 chk('apply returns the selected centre whatsapp link', ($waApply['whatsapp'] ?? '') === 'https://chat.whatsapp.com/ABC123');
 chk('centre: public meta exposes a PII-safe lead (consented → first name only)', (function () {
     $m = centre_public_meta(['area' => 'A', 'address' => 'B', 'meetDays' => 'Sat', 'meetTime' => '9', 'leadVolunteerId' => 'VOL-LEAD-1']);
@@ -16812,7 +17160,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
         $m = fn() => db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
         // Charge last month at 1000, then raise, then charge this month.
-        fees_accrue_member($m(), null, gmdate('Y-m-d', strtotime('-1 month')));
+        /* "first day of last month", not "-1 month": on the 31st, -1 month is the 1st of THIS month. */
+        fees_accrue_member($m(), null, gmdate('Y-m-d', strtotime('first day of last month')));
         fees_uprate_apply('test');
         fees_accrue_member($m());
         $amounts = array_map('intval', array_column(
@@ -17517,7 +17866,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $pv = $p2['preview'];
         foreach (['due', 'count', 'skipped', 'everyDays', 'enabled'] as $k) if (!array_key_exists($k, $pv)) return false;
         // Every exclusion is NAMED — "it will send 4 of 60" is not checkable.
-        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'noEmail'] as $k) {
+        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'noContact'] as $k) {
             if (!array_key_exists($k, $pv['skipped'])) return false;
         }
         // A preview does not send: the stamp is untouched by looking.
@@ -17624,6 +17973,14 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('volunteer pay · today is not decided until it is over', $row('VOL-PAY-1', gmdate('Y-m-d')) === null);
     chk('volunteer pay · run again, nothing is decided twice', (backend_dispatch('admin.volpay.accrue', ['requesterId' => $ADM])['decided'] ?? -1) === 0 && !empty($a['ok'])
         && (int)db_row("SELECT COUNT(*) n FROM volunteer_pay WHERE volunteerId IN ($in)")['n'] === 7);
+    /* Past the first batch: decided days are left out of the read, so a run
+       always reaches the next undecided one. Skipping them after the read kept
+       re-reading the same first rows once a batch's worth were decided. */
+    $att('VOL-PAY-3', $d(6), ['checkOutAt' => $d(6) . 'T15:00:00Z']);
+    $GLOBALS['__volpay_accrue_max'] = 1;
+    $b1 = backend_dispatch('admin.volpay.accrue', ['requesterId' => $ADM]);
+    unset($GLOBALS['__volpay_accrue_max']);
+    chk('volunteer pay · with a batch of one and seven days already decided, the run still decides the next day', ($b1['decided'] ?? 0) === 1 && $row('VOL-PAY-3', $d(6)) !== null);
     $set(['amount' => 4000]);
     chk('volunteer pay · a new rate never rewrites a day already earned', $row('VOL-PAY-1', $d(2))['amount'] === 2500);
 
@@ -17647,6 +18004,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('volunteer pay · paying settles each volunteer’s earned days of the period, as one payout; nothing owed is reported unchanged',
         ($res['VOL-PAY-1']['amount'] ?? 0) === 5000 && ($res['VOL-PAY-1']['days'] ?? 0) === 2 && ($res['VOL-PAY-2']['state'] ?? '') === 'unchanged');
     chk('volunteer pay · paid once: a second run pays nothing', ($pay(['VOL-PAY-1'], $wk)['results'][0]['state'] ?? '') === 'unchanged');
+    /* Two runs at once: the other takes VOL-PAY-4's days between this run's
+       plan and its claim. This run must not record a payout for them. */
+    $before = (int)db_row("SELECT COUNT(*) n FROM volunteer_payouts WHERE volunteerId = 'VOL-PAY-4'")['n'];
+    $GLOBALS['__volpay_before_claim'] = static function ($plan) use ($wk) { db_exec("UPDATE volunteer_pay SET payoutId = 'VP-OTHERRUN' WHERE volunteerId = 'VOL-PAY-4' AND periodKey = ? AND payoutId = ''", [$wk]); };
+    $race = $pay(['VOL-PAY-4'], $wk);
+    unset($GLOBALS['__volpay_before_claim']);
+    chk('volunteer pay · two runs at once: the one that lost the days records no second payout and pays nobody twice',
+        ($race['results'][0]['state'] ?? '') === 'unchanged' && (int)db_row("SELECT COUNT(*) n FROM volunteer_payouts WHERE volunteerId = 'VOL-PAY-4'")['n'] === $before);
+    db_exec("UPDATE volunteer_pay SET payoutId = '' WHERE payoutId = 'VP-OTHERRUN'");
     chk('volunteer pay · a paid day cannot be excluded', ($day('exclude', 'VOL-PAY-1', $d(2), 'wrong')['error'] ?? '') === 'already_paid');
     $w = backend_dispatch('admin.volpay.volunteer', ['requesterId' => $ADM, 'volunteerId' => 'VOL-PAY-1'])['wallet'] ?? [];
     chk('volunteer pay · the wallet: nothing owed after payment, 5,000 earned and paid', ($w['owed'] ?? -1) === 0 && $w['earned'] === 5000 && $w['paid'] === 5000);
@@ -17731,6 +18097,10 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $pv = backend_dispatch('admin.volpay.period', ['requesterId' => $ADM, 'period' => $wk]);
     $pr = array_column($pv['rows'] ?? [], null, 'volunteerId');
     chk('volunteer pay · the period list carries each volunteer’s bank and NGG fines, in grouped reads', isset($pr['VOL-PAY-3']['bank']['last4'], $pr['VOL-PAY-3']['finesNgg']));
+    $T = $pv['totals'] ?? [];
+    chk('volunteer pay · the period settles as a sum: earned = paid to the bank + NGG fines kept + Afrovanguard fines held + still to pay, with NGG\'s ₦1,000 in it',
+        !empty($T['settles']) && ($T['payouts'] ?? 0) >= 1 && ($T['fineNgg'] ?? 0) >= 1000
+        && $T['paidOut'] + $T['fineNgg'] + $T['fineAv'] + $T['unpaid'] === $T['earned']);
 
     $clean();
     if (is_array($keep)) setting_set('volunteerPay', $keep, 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'volunteerPay'");
@@ -21808,7 +22178,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $again = $apply([$row('Clm Fresh')], ['applicants' => $apps]);
     chk('applicants: the same file twice files them once', ($again['applicants']['already'] ?? 0) === 1
         && (int)db_row("SELECT COUNT(*) c FROM applications WHERE importKey = 'intake:clm form only'")['c'] === 1);
-    $cv = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => (int)$app['id']]);
+    $cv = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => (int)$app['id'], 'centre' => 'Egbeda']);
     $made = $byName('Clm Form Only');
     chk('applicants: confirming one makes the member, with a claimed member ID — an empty email no longer "finds" a stranger',
         !empty($cv['ok']) && empty($cv['existed']) && $made && (string)$made['displayId'] !== ''
@@ -22864,11 +23234,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE email LIKE 'audit-%'");
 
     // ── Admission carries the intake across ───────────────────────────────
-    backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Female',
+    backend_dispatch('public.apply', ['kind' => 'teen', 'details' => ['parent1Phone' => '08031119001'] + CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'sex' => 'Female',
         'firstName' => 'Zainab', 'otherName' => 'Ade', 'lastName' => 'Okoro',
         'email' => 'audit-guardian@example.com', 'phone' => '08031119001',
         'dob' => '2012-04-18', 'track' => 'Tech', 'centre' => 'Egbeda',
-        'program' => 'anchor', 'why' => 'I want to build things that work.']);
+        'program' => 'anchor', 'why' => 'I want to build things that work for the people around me.']);
     $app = db_row("SELECT * FROM applications WHERE email = 'audit-guardian@example.com' LIMIT 1");
     chk('admission: the application is recorded', !empty($app));
 
@@ -22883,7 +23253,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('admission: the guardian\'s email reaches the field the reminders read',
         (string)$mem['parentEmail'] === 'audit-guardian@example.com');
     chk('admission: …and their phone number does too',
-        (string)$mem['parentPhone'] === (string)$app['phone'] && (string)$mem['parentPhone'] !== '');
+        (string)$mem['parentPhone'] === (string)(json_decode((string)$app['details'], true)['parent1Phone'] ?? '') && (string)$mem['parentPhone'] !== '');
     /* A programme for ten- to seventeen-year-olds cannot reconstruct a date of
        birth after the fact, and this was the moment the record became
        permanent. */
@@ -23867,6 +24237,22 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             return ($r['error'] ?? '') === 'already_decided';
         })());
 
+    chk('self-service (desk): two approvals of one claim close together post the money once — the second finds a decided request, and a payment already posted under the claim\'s key is never posted again',
+        (function () use ($ADMIN, $MEM, $claim) {
+            $rid = $claim['request']['requestId'];
+            $n0 = (int)db_row("SELECT COUNT(*) n FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$MEM])['n'];
+            // The race's other half: the row read as still open while the first approval is landing.
+            db_exec("UPDATE member_requests SET status = 'open' WHERE requestId = ?", [$rid]);
+            $r = admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $rid, 'approve' => true, 'decision' => 'again']);
+            $n1 = (int)db_row("SELECT COUNT(*) n FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$MEM])['n'];
+            // Whichever guard stops it (the reference already recorded, or the claim's own key), no second payment lands.
+            $again = fees_post($MEM, 'payment', 3000, ['periodKey' => 'mreq:' . $rid, 'note' => 'again', 'by' => 'test']);
+            $n2 = (int)db_row("SELECT COUNT(*) n FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$MEM])['n'];
+            db_exec("UPDATE member_requests SET status = 'approved' WHERE requestId = ?", [$rid]);
+            return $n1 === $n0 && $n2 === $n0 && $again && str_starts_with((string)$again['periodKey'], 'mreq:')
+                && in_array($r['error'] ?? 'ok', ['ok', 'reference_reused', 'already_decided'], true);
+        })());
+
     // ── The history: every request, findable by the id an alert carries ──
     $hist = admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'pageSize' => 100]);
     $byId = array_column($hist['requests'] ?? [], null, 'requestId');
@@ -24574,7 +24960,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     summer_thanks_drain(500);
     $f2 = db_row("SELECT status, attempts FROM volunteer_thanks WHERE cohortId = 'SUM-THX' AND volunteerId = 'VT-1'");
     chk('thanks: an email that did not go is tried again on the next run', $f1['status'] === 'failed' && $f2['status'] === 'sent' && (int)$f2['attempts'] === 2);
-    chk('thanks: the web-cron sends the rest', str_contains((string)file_get_contents(__DIR__ . '/../_lib/webcron.php'), 'summer_thanks_drain()'));
+    chk('thanks: the background scheduler sends the rest', isset(web_cron_jobs()['vol_thanks']) && web_cron_jobs()['vol_thanks'][1] === 'summer_thanks_drain');
     unset($GLOBALS['__mail_sink']);
     db_exec("DELETE FROM volunteer_thanks WHERE cohortId = 'SUM-THX'"); db_exec("DELETE FROM summer_cohorts WHERE cohortId = 'SUM-THX'");
     db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VT-%'"); db_exec("DELETE FROM attendance WHERE studentId LIKE 'VT-%'");
@@ -24656,7 +25042,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_insert('centres', ['centreId' => 'CEN-VPR', 'name' => 'Progville', 'code' => 'PGV', 'color' => '#224466', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
     $keep = setting_raw('intake_photo_required');
     setting_set('intake_photo_required', '0', 'test');
-    $apply = fn($email, $phone, $prog) => backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Female', 'role' => 'admin',
+    $apply = fn($email, $phone, $prog) => backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Female', 'role' => 'admin',
         'firstName' => 'Prog', 'lastName' => 'Vol', 'email' => $email, 'phone' => $phone, 'dob' => '1990-01-01', 'centre' => 'Progville', 'why' => 'x']
         + ($prog === null ? [] : ['programme' => $prog]));
     chk('volunteers: an unknown programme is refused', ($apply('vpr0@example.com', '08061110000', 'weekends')['error'] ?? '') === 'bad_programme');
@@ -25577,7 +25963,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     policy_sweep_member_absences(gmdate('Y-m-d', strtotime($today . ' -1 day')));
     $nc = array_column(db_all("SELECT date FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'no_checkout'"), 'date');
     chk('strict: a member who signed in and never out has an incomplete day', in_array($d1, $nc, true)
-        && (bool)db_row("SELECT id FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'absence' AND date = ?", [$d1]));
+        && (bool)db_row("SELECT id FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'halfday' AND date = ?", [$d1])
+        && !db_row("SELECT id FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'absence' AND date = ?", [$d1]));
     chk('strict: …but not for days before the rule applied', !in_array($d0, $nc, true));
 
     chk('strict: the settings save keeps the three NGG rules', (function () {
@@ -25994,15 +26381,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     setting_set('policy_member_swept_through', $ago(8), 'system');
     policy_sweep_member_absences($ago(1));
     $live = fn() => array_column(db_all("SELECT kind FROM infractions WHERE personId = 'NGG-LO-1' AND date = ? AND (voidedAt IS NULL OR voidedAt = '')", [$sat]), 'kind');
-    chk('late sign-out: the sweep counts a day with no sign-out absent (the rule)', in_array('absence', $live(), true) && in_array('no_checkout', $live(), true));
+    chk('late sign-out: the sweep counts a day with no sign-out as a half-day, not an absence', in_array('halfday', $live(), true) && in_array('no_checkout', $live(), true) && !in_array('absence', $live(), true));
 
     $rec = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-LO-1']);
     $onSat = array_values(array_filter($rec['attendance']['recent'] ?? [], fn($r) => $r['date'] === $sat));
     chk('late sign-out: the record shows that Saturday once, as no sign-out — not present AND absent', count($onSat) === 1 && $onSat[0]['kind'] === 'incomplete' && $onSat[0]['in'] === '07:34');
-    chk('late sign-out: …and counts it once, as the absence it is', ($rec['attendance']['present'] ?? -1) === 0 && ($rec['attendance']['absent'] ?? -1) === 1);
+    chk('late sign-out: …and counts it once, as a half-day — they came', ($rec['attendance']['present'] ?? -1) === 1 && ($rec['attendance']['absent'] ?? -1) === 0 && ($rec['attendance']['halfDays'] ?? -1) === 1);
     $own = backend_dispatch('member.records', ['memberId' => 'NGG-LO-1']);
     $ownSat = array_values(array_filter($own['attendance']['days'] ?? [], fn($r) => $r['date'] === $sat));
-    chk('late sign-out: the member\'s own records say it was counted absent, not "present"', ($ownSat[0]['status'] ?? '') === 'no sign-out, counted absent');
+    chk('late sign-out: the member\'s own records say it was a half-day, not "present"', ($ownSat[0]['status'] ?? '') === 'no sign-out, a half-day');
 
     // Days later the gate's back-fill delivers the departure, with its own time.
     $tz = (int)attendance_settings()['tzOffset'];
@@ -26010,7 +26397,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $h = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'NGG-LO-1', 'action' => 'out', 'date' => $sat, 'scannedAt' => $leftAt]]]);
     $row = db_row('SELECT checkOutAt FROM attendance WHERE studentId = ? AND date = ?', ['NGG-LO-1', $sat]);
     chk('late sign-out: a departure re-sent days later is stamped at the time it happened, not now', ($h['results'][0]['status'] ?? '') === 'marked' && (string)$row['checkOutAt'] === $leftAt);
-    chk('late sign-out: …and the no-sign-out absence and its no_checkout are voided', $live() === []);
+    chk('late sign-out: …and the no-sign-out half-day and its no_checkout are voided', $live() === []);
     chk('late sign-out: …with the reason kept', (bool)db_row("SELECT 1 FROM infractions WHERE personId = 'NGG-LO-1' AND date = ? AND voidReason LIKE 'Signed out%'", [$sat]));
     $rec2 = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-LO-1']);
     $onSat2 = array_values(array_filter($rec2['attendance']['recent'] ?? [], fn($r) => $r['date'] === $sat));
@@ -26812,7 +27199,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $ts = backend_dispatch('admin.timetable.save', ['requesterId' => 'NGG-SEP-SUP', 'data' => ['centreId' => 'CEN-SEP-S', 'course' => 'Guitar', 'weekday' => 6, 'startTime' => '10:00', 'endTime' => '11:00']]);
     chk('separation: …and refuses a class there, saying how to fix it', ($ts['error'] ?? '') === 'centre_not_ngg' && str_contains($ts['detail'], 'People → Centres'));
     chk('separation: Summer School\'s public centre pages do not list a Club-only centre', !in_array('Sep Club House', $names(public_centres_list()['centres']), true) && (public_centre_page(['slug' => 'sep-club'])['error'] ?? '') === 'not_found');
-    $ap = backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'anchor', 'firstName' => 'Sep', 'lastName' => 'Kid', 'dob' => '2014-01-01', 'sex' => 'Female',
+    $ap = backend_dispatch('public.apply', ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'program' => 'anchor', 'firstName' => 'Sep', 'lastName' => 'Kid', 'dob' => '2014-01-01', 'sex' => 'Female',
         'centre' => 'sep summer venue', 'track' => 'guitar', 'why' => str_repeat('I want to learn. ', 3), 'email' => 'sepkid@example.com', 'phone' => '08030000000']);
     chk('separation: an NGG application to a Summer-only venue is refused by name', ($ap['error'] ?? '') === 'centre_not_offered' && str_contains($ap['detail'] ?? '', 'Sep Summer Venue'));
     $cu = fn($d) => backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-SEP-SUP', 'data' => $d + ['name' => 'Sep New', 'color' => '#76B043']]);
@@ -27068,7 +27455,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     // With a model: its reading wins field by field, cleaned against allow-lists; the IDs the rules saw are kept.
     $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) {
-        return ['ok' => true, 'provider' => 'openai', 'text' => json_encode(['kind' => 'volunteer', 'centre' => 'planwick', 'which' => 'all', 'backs' => 'short',
+        return ['ok' => true, 'provider' => 'openai', 'text' => json_encode(['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'centre' => 'planwick', 'which' => 'all', 'backs' => 'short',
             'paper' => 'tabloid', 'dpi' => 999, 'ids' => ['VOL-1', '<script>'], 'names' => ['Ada Obi', 'DROP TABLE;'], 'limit' => 5000, 'order' => 'name', 'marks' => 'yes', 'extra' => 'x',
             'profileSeen' => $profile])];
     };
@@ -27310,7 +27697,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // The design each card type prints with: a published front of the same kind, or the standard card.
     $draft = backend_dispatch('admin.card.template.save', ['requesterId' => $CARDADM, 'template' => ['id' => '', 'name' => 'Unpublished member', 'kind' => 'member', 'face' => 'front', 'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => []]]);
     chk('id studio: a draft cannot be assigned — nobody may print a draft', (backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'member', 'templateId' => $draft['templateId']])['error'] ?? '') === 'not_published');
-    chk('id studio: a design for another kind of card is refused', (backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'volunteer', 'templateId' => $TIDX])['error'] ?? '') === 'wrong_kind');
+    chk('id studio: a design for another kind of card is refused', (backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'templateId' => $TIDX])['error'] ?? '') === 'wrong_kind');
     $ds = backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'member', 'templateId' => $TIDX]);
     $dst = backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM]);
     chk('id studio: a published member design is assigned, with the version the server holds', !empty($ds['ok']) && ($dst['designs']->member['templateId'] ?? '') === $TIDX
@@ -27362,8 +27749,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     // ── Applying with a division ──
     backend_dispatch('admin.fees.settings.set', ['requesterId' => $A1, 'data' => ['enabled' => true, 'membershipFee' => 10000, 'membershipEveryMonths' => 12, 'monthlyDues' => 4000, 'trainingFee' => 0, 'balanceCap' => 0, 'remindEnabled' => false]]);
-    $apply = fn(array $o) => backend_dispatch('public.apply', array_merge(['kind' => 'teen', 'program' => 'anchor', 'firstName' => 'Pay', 'lastName' => 'Kid', 'dob' => gmdate('Y-m-d', strtotime('-13 years')),
-        'sex' => 'female', 'phone' => '08031112222', 'photoUrl' => '', 'centre' => '', 'why' => 'I like robots'], $o));
+    $apply = fn(array $o) => backend_dispatch('public.apply', array_merge(['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'program' => 'anchor', 'firstName' => 'Pay', 'lastName' => 'Kid', 'dob' => gmdate('Y-m-d', strtotime('-13 years')),
+        'sex' => 'female', 'phone' => '08031112222', 'photoUrl' => '', 'centre' => '', 'why' => 'I like robots and I want to build one that helps my grandmother.'], $o));
     $GLOBALS['CONFIG']['intake_photo_required'] = false; setting_set('intake_photo_required', '0', 'test');
     $bad = $apply(['email' => 'pay-x@example.com', 'division' => 'Media & Content Strategy', 'track' => 'Robotics']);
     chk('pay: an application refuses a course from another division', ($bad['error'] ?? '') === 'course_not_in_division');
@@ -27376,7 +27763,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // ── Accepted → one invoice, sent ──
     $GLOBALS['__mail_sink'] = [];
     $start = gmdate('Y-m-d', strtotime('+3 days'));
-    $cv = backend_dispatch('admin.application.convert', ['requesterId' => $A1, 'id' => (int)$appA['id'], 'startDate' => $start]);
+    $cv = backend_dispatch('admin.application.convert', ['requesterId' => $A1, 'id' => (int)$appA['id'], 'startDate' => $start, 'centre' => 'Egbeda']);
     $memA = db_row('SELECT * FROM members WHERE memberId = ?', [(string)($cv['memberId'] ?? '')]);
     $invA = $memA ? db_row('SELECT * FROM membership_invoices WHERE memberId = ?', [$memA['memberId']]) : null;
     $itemsA = $invA ? membership_items($invA) : [];
@@ -27410,7 +27797,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $vv = backend_dispatch('public.membership.pay.verify', ['token' => $invA['payToken'], 'reference' => $ref]);
     $invA2 = db_row('SELECT * FROM membership_invoices WHERE id = ?', [$invA['id']]);
     $led = db_all('SELECT kind, amount, periodKey FROM member_ledger WHERE memberId = ? ORDER BY id', [$memA['memberId']]);
-    chk('pay: the right payment settles it: paid, numbered receipt', ($vv['invoice']['status'] ?? '') === 'paid' && $invA2['paidVia'] === 'paystack' && preg_match('/^NGG-RCT-\d{4}-\d{5}$/', $invA2['receiptNo']));
+    chk('pay: the right payment settles it: paid, numbered receipt', ($vv['invoice']['status'] ?? '') === 'paid' && $invA2['paidVia'] === 'paystack' && preg_match('/^NGG-RCP-\d{4}-\d{5}$/', $invA2['receiptNo']));
     chk('pay: …the charges and the payment are on the member\'s ledger, once', count(array_filter($led, fn($l) => $l['kind'] === 'payment')) === 1
         && array_sum(array_map(fn($l) => $l['kind'] === 'payment' ? (int)$l['amount'] : 0, $led)) === (int)$invA['total']
         && count(array_filter($led, fn($l) => $l['kind'] === 'dues')) === 1 && count(array_filter($led, fn($l) => $l['kind'] === 'membership')) === 1);
@@ -27423,15 +27810,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('pay: settling twice and the dues accrual afterwards post nothing more — the ledger agrees with the invoice',
         count(db_all("SELECT id FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$memA['memberId']])) === 1
         && (int)db_row("SELECT SUM(amount) s FROM member_ledger WHERE memberId = ? AND kind = 'dues'", [$memA['memberId']])['s'] === $wantDues);
-    $html = membership_receipt_html($invA2);
-    chk('pay: the receipt is a document of its own: number, member, method, reference, total', str_contains($html, $invA2['receiptNo']) && str_contains($html, 'PAID') && str_contains($html, $ref) && str_contains($html, 'Pay Kid'));
+    $html = doc_render_receipt(doc_for_receipt($invA2));
+    chk('pay: the receipt is a document of its own: number, member, method, reference, total', str_contains($html, $invA2['receiptNo']) && str_contains($html, 'Paid in full') && str_contains($html, $ref) && str_contains($html, 'Pay Kid'));
     unset($GLOBALS['__paystack_mock']);
 
     // ── Offline: a claim until a second person checks it ──
     $mkMember = function (string $email) use ($apply, $A1) {
         $apply(['email' => $email, 'division' => 'Creative & Performing Arts', 'track' => 'Adire']);
         $a = db_row('SELECT * FROM applications WHERE email = ? ORDER BY id DESC LIMIT 1', [$email]);
-        $c = backend_dispatch('admin.application.convert', ['requesterId' => $A1, 'id' => (int)$a['id']]);
+        $c = backend_dispatch('admin.application.convert', ['requesterId' => $A1, 'id' => (int)$a['id'], 'centre' => 'Egbeda']);
         return db_row('SELECT * FROM membership_invoices WHERE memberId = ?', [(string)$c['memberId']]);
     };
     $invB = $mkMember('pay-b@example.com');
@@ -27463,6 +27850,12 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('pay: …and must type the reference they see on it — a different one is refused and audited', ($ver(['confirmReference' => 'GTB-778-2239'])['error'] ?? '') === 'reference_mismatch'
         && db_row("SELECT id FROM audit_log WHERE event = 'membership.offline.verify_mismatch' ORDER BY id DESC LIMIT 1"));
     chk('pay: …and the amount they see on it', ($ver(['confirmAmount' => 1])['error'] ?? '') === 'amount_mismatch');
+    $GLOBALS['__membership_settle_throw'] = true;
+    $vt = $ver([]);
+    unset($GLOBALS['__membership_settle_throw']);
+    chk('pay: when the invoice cannot be settled, the payment goes back to waiting — never "verified" against an open invoice with nothing posted',
+        ($vt['error'] ?? '') === 'settle_failed' && (string)db_row('SELECT status FROM offline_payments WHERE paymentId = ?', [$pend['paymentId']])['status'] === 'pending'
+        && (string)db_row('SELECT status FROM membership_invoices WHERE id = ?', [$invB['id']])['status'] === 'open');
     $vb = $ver([]);
     $invB2 = db_row('SELECT * FROM membership_invoices WHERE id = ?', [$invB['id']]);
     chk('pay: a second person\'s check settles it: paid by transfer, with a receipt and the ledger posted', !empty($vb['ok']) && $invB2['status'] === 'paid' && $invB2['paidVia'] === 'transfer'
@@ -27471,7 +27864,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mailsB = $GLOBALS['__mail_sink'];
     chk('pay: …the family gets thanks and the receipt — and no payment link', count(array_filter($mailsB, fn($m) => str_contains($m['subject'], 'Thank you'))) === 1
         && !array_filter($mailsB, fn($m) => str_contains($m['subject'], 'Complete')));
-    chk('pay: the receipt names the method, the reference and who paid', (function () use ($invB2) { $h = membership_receipt_html($invB2); return str_contains($h, 'Bank transfer') && str_contains($h, 'GTB-778-2231') && str_contains($h, 'Mrs Kid'); })());
+    chk('pay: the receipt names the method, the reference and who paid', (function () use ($invB2) { $h = doc_render_receipt(doc_for_receipt($invB2)); return str_contains($h, 'Bank transfer') && str_contains($h, 'GTB-778-2231') && str_contains($h, 'Mrs Kid'); })());
     chk('pay: a verified payment cannot be verified or rejected again', ($ver([])['error'] ?? '') === 'not_pending');
 
     // Once, ever: the evidence and the reference.
@@ -28461,8 +28854,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('portal: a concern never lands on the child\'s mentoring record', (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1'")['c'] === $before);
 
     // Messages: a journal entry shared with the mentor reaches them; a private one never does.
-    db_insert('journal', ['entryId' => 'JMP1', 'memberId' => 'NGG-MPK2', 'title' => 'My week', 'body' => 'I tried', 'visibility' => 'mentor', 'isPrivate' => 0, 'createdAt' => '2026-10-08T09:00:00Z']);
-    db_insert('journal', ['entryId' => 'JMP2', 'memberId' => 'NGG-MPK2', 'title' => 'Secret', 'body' => 'Private', 'visibility' => 'private', 'isPrivate' => 1, 'createdAt' => '2026-10-08T09:00:00Z']);
+    /* RELATIVE, because what reads them is. `mp_shared_entries()` asks for the
+       last 21 days, so a fixture pinned to a fixed date is a test with an
+       expiry: this one passed until 2026-10-29 and failed every day after,
+       for no reason but the calendar. */
+    $jAt = gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 86400);
+    db_insert('journal', ['entryId' => 'JMP1', 'memberId' => 'NGG-MPK2', 'title' => 'My week', 'body' => 'I tried', 'visibility' => 'mentor', 'isPrivate' => 0, 'createdAt' => $jAt]);
+    db_insert('journal', ['entryId' => 'JMP2', 'memberId' => 'NGG-MPK2', 'title' => 'Secret', 'body' => 'Private', 'visibility' => 'private', 'isPrivate' => 1, 'createdAt' => $jAt]);
     $ms = backend_dispatch('member.mentor.messages', $p('NGG-MP1'));
     $ids = array_column($ms['messages'], 'id');
     chk('portal: shared journal entries and check-ins reach the mentor; private entries never', in_array('journal:JMP1', $ids, true) && !in_array('journal:JMP2', $ids, true)
@@ -29443,8 +29841,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && str_contains(crm_push_last(), '1 refused by CACENTRE'));
 
     chk('crm: the secret is an API key on the Settings screen, sealed', isset(SERVICE_KEYS['cacentre']) && SERVICE_KEYS['cacentre']['fields'][0][0] === 'cacentre.crm_secret' && SERVICE_KEYS['cacentre']['fields'][0][2] === 'secret');
-    chk('crm: the web-cron and the external cron both run it', str_contains((string)file_get_contents(dirname(__DIR__) . '/_lib/webcron.php'), 'crm_push_run()')
-        && str_contains((string)file_get_contents(dirname(__DIR__) . '/public/cron.php'), 'crm_push_run()'));
+    chk('crm: the scheduler runs it, and the outside scheduler reads the same registry', isset(web_cron_jobs()['crm_push'])
+        && str_contains((string)file_get_contents(dirname(__DIR__) . '/public/cron.php'), 'web_cron_jobs()'));
 
     $GLOBALS['__crm_push_transport'] = null;
     $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
@@ -29890,52 +30288,180 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
 // ── The Saturday Formation Schedule: seeded once, read per audience, edited by content, sent once ──
 (function () {
-    db_exec('DELETE FROM saturday_formation'); db_exec('DELETE FROM saturday_formation_sends');
+    db_exec('DELETE FROM saturday_formation_blocks'); db_exec('DELETE FROM saturday_formation_dates'); db_exec('DELETE FROM saturday_formation_sends');
+    $now = now_iso();
+    foreach ([['SF-C1', 'Sfton', 'SFT'], ['SF-C2', 'Sfvale', 'SFV']] as [$cid, $cn, $cc]) db_insert('centres', ['centreId' => $cid, 'name' => $cn, 'code' => $cc, 'color' => '#123456', 'status' => 'active', 'createdAt' => $now]);
     $m = public_formation(['audience' => 'mentor']);
     $keys = array_column($m['blocks'], 'key');
     chk('formation · seeded from the programme schedule: nine blocks, 9:00 to 3:00, in order',
         $keys === ['checkin', 'musing', 'vanboja', 'anthem', 'special', 'division', 'break', 'chess', 'close'] && $m['blocks'][0]['start'] === '09:00' && end($m['blocks'])['end'] === '15:00');
     chk('formation · the day’s hours are the table’s, not typed: the public page says 9:00am – 3:00pm', $m['hours'] === '9:00am – 3:00pm' && sf_day_bounds()['startHm'] === '09:00');
+    chk('formation · what each block is FOR is its kind (check-in, mentor breakout, classes, break, close)',
+        array_column($m['blocks'], 'kind', 'key') === ['checkin' => 'checkin', 'musing' => 'mentor', 'vanboja' => '', 'anthem' => '', 'special' => '', 'division' => 'classes', 'break' => 'break', 'chess' => '', 'close' => 'close']);
+    /* The rest of this block runs on an 8:00 day. The day's times are data,
+       not code: every reader follows the blocks, so the logic is checked on a
+       day that is not the seeded one. The seeded main day is restored at the end. */
+    foreach (db_all("SELECT id, startTime, endTime FROM saturday_formation_blocks WHERE scope = ''") as $x)
+        db_update('saturday_formation_blocks', ['startTime' => sf_hhmm(sf_minutes((string)$x['startTime']) - 60), 'endTime' => sf_hhmm(sf_minutes((string)$x['endTime']) - 60)], ['id' => (int)$x['id']]);
+    $m = public_formation(['audience' => 'mentor']);
+    chk('formation · on an 8:00 day the hours follow the blocks', $m['hours'] === '8:00am – 2:00pm' && $m['start'] === '08:00' && $m['end'] === '14:00' && sf_day_bounds()['startHm'] === '08:00');
     chk('formation · each audience reads its own part (mentor: the key question; parent: one line)',
         in_array('Take the register and note who is here.', $m['blocks'][1]['part'], true) && $m['blocks'][1]['quote'] === 'Who are you becoming, and what evidence do we have?'
         && is_string(public_formation(['audience' => 'parent'])['blocks'][1]['part']) && !isset($m['blocks'][1]['for']));
     chk('formation · an unknown audience falls back to member, never to everything', public_formation(['audience' => 'nobody'])['audience'] === 'member');
-    $n = (int)db_row('SELECT COUNT(*) c FROM saturday_formation')['c']; public_formation([]);
-    chk('formation · the seed runs once; the table is the timetable', $n === 9 && (int)db_row('SELECT COUNT(*) c FROM saturday_formation')['c'] === 9);
+    $n = (int)db_row("SELECT COUNT(*) c FROM saturday_formation_blocks WHERE scope = ''")['c']; public_formation([]);
+    chk('formation · the seed runs once; the table is the timetable', $n === 9 && (int)db_row("SELECT COUNT(*) c FROM saturday_formation_blocks WHERE scope = ''")['c'] === 9);
     chk('formation · editing a block needs the content capability', empty(admin_formation_save(['requesterId' => 'NOBODY', 'key' => 'chess', 'start' => '13:10'])['ok']));
+    chk('formation · the next Saturday is today on a Saturday, else the coming one (Lagos)',
+        sf_next_saturday(strtotime('2026-10-30T12:00:00Z')) === '2026-10-31' && sf_next_saturday(strtotime('2026-10-31T10:00:00Z')) === '2026-10-31' && sf_next_saturday(strtotime('2026-10-31T23:30:00Z')) === '2026-11-07');
     chk('formation · ledger: a send happens once per day, slot, person and channel',
         sf_once('2026-10-17', 'block:chess', 'M-1', 'push') === true && sf_once('2026-10-17', 'block:chess', 'M-1', 'push') === false && sf_once('2026-10-17', 'block:chess', 'M-1', 'email') === true);
     chk('formation · the tick does nothing on a weekday', sf_tick(strtotime('2026-10-16T08:00:00Z'))['saturday'] === false);
     $r = sf_tick(strtotime('2026-10-17T08:31:00Z'));   // 9:31 Lagos, a Saturday
     chk('formation · on Saturday at 9:31 Lagos the breakout block is open', $r['saturday'] === true && $r['date'] === '2026-10-17');
     // Families: a guardian who takes check-in news hears the plan, the not-arrived notice and the close; one who does not hears nothing.
-    $now = now_iso();
-    foreach ([['SF-K1', 'Ada Here'], ['SF-K2', 'Bayo Away']] as [$id, $nm]) db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'email' => strtolower($id) . '@sf.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
-    foreach ([['SF-G1', 'g1@sf.example', 'SF-K1', '{"checkin":true}'], ['SF-G2', 'g2@sf.example', 'SF-K2', '{"checkin":true}'], ['SF-G3', 'g3@sf.example', 'SF-K1', '{"checkin":false}']] as $i => [$gid, $em, $kid, $nt]) {
+    foreach ([['SF-K1', 'Ada Here', 'Sfton'], ['SF-K2', 'Bayo Away', 'Sfton'], ['SF-K4', 'Dayo Vale', 'Sfvale']] as [$id, $nm, $cn]) db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'email' => strtolower($id) . '@sf.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $cn, 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['SF-G1', 'g1@sf.example', 'SF-K1', '{"checkin":true}'], ['SF-G2', 'g2@sf.example', 'SF-K2', '{"checkin":true}'], ['SF-G3', 'g3@sf.example', 'SF-K1', '{"checkin":false}'], ['SF-G4', 'g4@sf.example', 'SF-K4', '{"checkin":true}']] as $i => [$gid, $em, $kid, $nt]) {
         db_insert('guardians', ['guardianId' => $gid, 'email' => $em, 'fullName' => 'G ' . $i, 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
         db_insert('guardian_wards', ['linkId' => 'SFL-' . $i, 'guardianId' => $gid, 'memberId' => $kid, 'status' => 'active', 'notify' => $nt, 'createdAt' => $now]);
     }
     db_insert('attendance', ['cohortId' => '', 'studentId' => 'SF-K1', 'token' => '', 'date' => '2026-10-17', 'checkInAt' => '2026-10-17T06:55:00Z', 'method' => 'qr']);
     db_insert('mentor_register', ['onDate' => '2026-10-17', 'subjectId' => 'SF-K1', 'mentorId' => 'X', 'here' => 1, 'observed' => '["Courage"]', 'checks' => '["On time","Assignment in"]', 'updatedAt' => $now]);
-    $slots = static fn($slot) => array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE onDate = '2026-10-17' AND slot = ?", [$slot]), 'recipient');
-    sf_tick(strtotime('2026-10-17T07:05:00Z'));   // 8:05 Lagos — before the day starts now
-    chk('formation · nothing goes to families before the day’s first block (9:00)', $slots('parent:plan') === []);
-    sf_tick(strtotime('2026-10-17T08:05:00Z'));   // 9:05 Lagos
+    $slots = static fn($slot, $d = '2026-10-17') => array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE onDate = ? AND slot = ? ORDER BY recipient", [$d, $slot]), 'recipient');
+    sf_tick(strtotime('2026-10-17T07:05:00Z'));   // 8:05 Lagos
     $plan = $slots('parent:plan');
-    chk('formation · 9:00 plan: every linked guardian, whatever they once chose (always on)', in_array('g1@sf.example|SF-K1', $plan, true) && in_array('g2@sf.example|SF-K2', $plan, true) && in_array('g3@sf.example|SF-K1', $plan, true));
-    sf_tick(strtotime('2026-10-17T08:50:00Z'));   // 9:50 Lagos
-    chk('formation · 9:45 not-arrived notice: the absent member only', $slots('parent:absent') === ['g2@sf.example|SF-K2']);
-    sf_tick(strtotime('2026-10-17T14:05:00Z'));   // 3:05pm Lagos
-    $close = $slots('parent:close'); sort($close);
-    chk('formation · 3:00 close: both guardians of the member who was here, nobody for the one who was not', $close === ['g1@sf.example|SF-K1', 'g3@sf.example|SF-K1']);
+    chk('formation · 8:00 plan: every linked guardian, whatever they once chose (always on)', in_array('g1@sf.example|SF-K1', $plan, true) && in_array('g2@sf.example|SF-K2', $plan, true) && in_array('g3@sf.example|SF-K1', $plan, true));
+    sf_tick(strtotime('2026-10-17T07:50:00Z'));   // 8:50 Lagos
+    chk('formation · 8:45 not-arrived notice: the absent members only', $slots('parent:absent') === ['g2@sf.example|SF-K2', 'g4@sf.example|SF-K4']);
+    sf_tick(strtotime('2026-10-17T13:05:00Z'));   // 2:05pm Lagos
+    $close = $slots('parent:close');
+    chk('formation · 2:00 close: both guardians of the member who was here, nobody for the one who was not', $close === ['g1@sf.example|SF-K1', 'g3@sf.example|SF-K1']);
     $lines = implode(' | ', sf_day_lines('SF-K1', '2026-10-17', sf_blocks()));
     chk('formation · the close says arrival, values seen and the duties', str_contains($lines, 'Checked in at 7:55am') && str_contains($lines, 'courage') && str_contains($lines, 'on time, assignment handed in'));
-    $n = count($slots('parent:close')); sf_tick(strtotime('2026-10-17T14:20:00Z'));
+    chk('formation · the close names the day\'s own blocks and the check-in time from the timetable', str_contains($lines, 'Division classes') && str_contains($lines, 'due at check-in, 8:00am') && !str_contains($lines, 'National anthem'));
+    $n = count($slots('parent:close')); sf_tick(strtotime('2026-10-17T13:20:00Z'));
     chk('formation · a second tick sends nothing twice', count($slots('parent:close')) === $n);
-    chk('formation · member reminders go to members in the building', in_array('SF-K1', $slots('block:close'), true) || in_array('SF-K1', array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE slot LIKE 'block:%' AND recipient = 'SF-K1'"), 'recipient'), true));
+    chk('formation · member reminders go to members in the building', in_array('SF-K1', array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE slot LIKE 'block:%' AND recipient = 'SF-K1'"), 'recipient'), true));
+    chk('formation · no member reminder for the check-in block (they are checking in)', !in_array('SF-K1', $slots('block:checkin'), true));
+
+    // ── Editing the day: times ripple, nothing overlaps, blocks come and go ──
+    $A = ['requesterId' => 'NGG-2025-0099'];
+    $day = static fn($scope = '') => array_column(sf_blocks($scope), null, 'key');
+    $r = admin_formation_save($A + ['key' => 'musing', 'end' => '10:15']);
+    $d = $day();
+    chk('formation · a longer block moves the blocks after it by the same amount (ripple)', !empty($r['ok']) && $r['moved'] === 7 && $d['vanboja']['start'] === '10:15' && $d['close']['end'] === '14:15' && $d['checkin']['start'] === '08:00');
+    admin_formation_save($A + ['key' => 'musing', 'end' => '10:00']);
+    chk('formation · …and back again, every length kept', $day()['close']['end'] === '14:00' && $day()['vanboja']['start'] === '10:00');
+    $r = admin_formation_save($A + ['key' => 'musing', 'end' => '10:20', 'ripple' => false]);
+    chk('formation · without the ripple, a time that overlaps the next block is refused and named', ($r['error'] ?? '') === 'overlap' && str_contains($r['message'], 'Musing') && str_contains($r['message'], 'before') && $day()['musing']['end'] === '10:00');
+    chk('formation · a block must end after it starts; times are 24-hour', (admin_formation_save($A + ['key' => 'chess', 'start' => '13:00', 'end' => '12:00'])['error'] ?? '') === 'end_before_start'
+        && (admin_formation_save($A + ['key' => 'chess', 'start' => '1pm'])['error'] ?? '') === 'bad_time');
+    $r = admin_formation_save($A + ['key' => 'chess', 'title' => 'Chess & strategy', 'kind' => 'classes', 'for' => ['parent' => 'Strategy over the board.']]);
+    $c = $day()['chess'];
+    chk('formation · a block\'s name, kind and one audience\'s part change without touching the others', !empty($r['ok']) && $c['title'] === 'Chess & strategy' && $c['kind'] === 'classes' && $c['for']['parent'] === 'Strategy over the board.' && !empty($c['for']['member']));
+    chk('formation · an unknown kind is refused', (admin_formation_save($A + ['key' => 'chess', 'kind' => 'party'])['error'] ?? '') === 'bad_kind');
+    admin_formation_save($A + ['key' => 'chess', 'title' => 'Chess', 'kind' => '']);
+    $r = admin_formation_add($A + ['after' => 'anthem', 'title' => 'Guest talk', 'minutes' => 20]);
+    $d = $day(); $keys = array_keys($d);
+    chk('formation · a new block goes where it is put, and the day after it moves on by its length',
+        !empty($r['ok']) && $r['key'] === 'guest-talk' && array_search('guest-talk', $keys, true) === array_search('anthem', $keys, true) + 1
+        && $d['guest-talk']['start'] === $d['anthem']['end'] && $d['close']['end'] === '14:20' && !array_filter($r['checks'], static fn($c) => $c['level'] === 'error'));
+    chk('formation · a second block of the same name gets its own key', admin_formation_add($A + ['after' => 'guest-talk', 'title' => 'Guest talk', 'minutes' => 10])['key'] === 'guest-talk-2');
+    $r = admin_formation_remove($A + ['key' => 'guest-talk-2']); admin_formation_remove($A + ['key' => 'guest-talk']);
+    chk('formation · removing a block closes its gap: the day ends when it did', !empty($r['ok']) && !isset($day()['guest-talk']) && $day()['close']['end'] === '14:00' && count($day()) === 9);
+    $r = admin_formation_add($A + ['copyOf' => 'vanboja']);
+    $d = $day();
+    chk('formation · duplicating a block copies its parts, its length and its place', !empty($r['ok']) && $d[$r['key']]['title'] === $d['vanboja']['title'] . ' (copy)'
+        && $d[$r['key']]['for'] == $d['vanboja']['for'] && $d[$r['key']]['start'] === $d['vanboja']['end']);
+    admin_formation_remove($A + ['key' => $r['key']]);
+    $before = $day();
+    $r = admin_formation_move($A + ['key' => 'chess', 'dir' => 'up']);
+    $d = $day(); $keys = array_keys($d);
+    chk('formation · moving a block up swaps it with the one before, each keeping its length; the day still ends when it did',
+        !empty($r['ok']) && array_search('chess', $keys, true) < array_search('break', $keys, true) && $d['chess']['start'] === $before['break']['start']
+        && sf_minutes($d['chess']['end']) - sf_minutes($d['chess']['start']) === sf_minutes($before['chess']['end']) - sf_minutes($before['chess']['start']) && $d['close']['end'] === '14:00');
+    admin_formation_move($A + ['key' => 'chess', 'dir' => 'down']);
+    chk('formation · …and down again restores the day', array_keys($day()) === array_keys($before) && $day()['chess']['start'] === $before['chess']['start']);
+    chk('formation · moving the first block up changes nothing', !empty(admin_formation_move($A + ['key' => 'checkin', 'dir' => 'up'])['unchanged']));
+    $r = admin_formation_shift($A + ['startAt' => '09:00']);
+    chk('formation · the whole day moves at once ("we start at 9 this term")', !empty($r['ok']) && $r['minutes'] === 60 && public_formation([])['hours'] === '9:00am – 3:00pm');
+    admin_formation_shift($A + ['minutes' => -60]);
+    chk('formation · a shift past midnight, or by more than five hours, is refused', ($r2 = admin_formation_shift($A + ['minutes' => 600]))['error'] === 'too_far' && public_formation([])['hours'] === '8:00am – 2:00pm');
+    chk('formation · the last block cannot be removed from a day (a day needs one)', (function () use ($A) {
+        admin_formation_version_create($A + ['scope' => 'date:2027-02-06']);
+        foreach (array_slice(array_column(sf_blocks('date:2027-02-06'), 'key'), 1) as $k) admin_formation_remove($A + ['scope' => 'date:2027-02-06', 'key' => $k]);
+        $k = sf_blocks('date:2027-02-06')[0]['key'];
+        $r = admin_formation_remove($A + ['scope' => 'date:2027-02-06', 'key' => $k]);
+        admin_formation_version_delete($A + ['scope' => 'date:2027-02-06']);
+        return ($r['error'] ?? '') === 'last_block';
+    })());
+
+    // ── Versions: a centre's own day, one Saturday everywhere, one Saturday at one centre ──
+    $r = admin_formation_version_create($A + ['scope' => 'centre:Sfton']);
+    chk('formation · a centre\'s own day starts as a copy of the main day, named by the centre\'s id (a rename leaves it in place)', !empty($r['ok']) && $r['scope'] === 'centre:SF-C1' && count(sf_blocks('centre:SF-C1')) === 9);
+    admin_formation_shift($A + ['scope' => 'centre:SF-C1', 'startAt' => '09:00']);
+    chk('formation · the centre\'s day is read at that centre, and only there', public_formation(['centre' => 'Sfton'])['hours'] === '9:00am – 3:00pm' && public_formation(['centre' => 'SF-C2'])['hours'] === '8:00am – 2:00pm' && public_formation([])['hours'] === '8:00am – 2:00pm');
+    chk('formation · a version of the day that does not exist cannot be edited (create it first)', (admin_formation_save($A + ['scope' => 'centre:SF-C2', 'key' => 'chess', 'title' => 'X'])['error'] ?? '') === 'bad_scope');
+    chk('formation · one Saturday\'s change must be a Saturday, and not one that has passed',
+        (admin_formation_version_create($A + ['scope' => 'date:2027-01-08'])['error'] ?? '') === 'bad_scope' && (admin_formation_version_create($A + ['scope' => 'date:2020-01-04'])['error'] ?? '') === 'past_date');
+    admin_formation_version_create($A + ['scope' => 'date:2027-01-09']);
+    admin_formation_save($A + ['scope' => 'date:2027-01-09', 'key' => 'special', 'title' => 'Founders’ day assembly']);
+    $r = admin_formation_version_create($A + ['scope' => 'date:2027-01-09@SF-C1']);
+    $d1 = sf_day('2027-01-09', 'SF-C1'); $d2 = sf_day('2027-01-09', 'SF-C2'); $d3 = sf_day('2027-01-16', 'SF-C1');
+    chk('formation · that Saturday at that centre starts from what was in force there (that Saturday\'s change)', $r['from'] === sf_scope_label('date:2027-01-09') && $d1['scope'] === 'date:2027-01-09@SF-C1' && array_column($d1['blocks'], 'title', 'key')['special'] === 'Founders’ day assembly');
+    chk('formation · the order is: that Saturday at that centre, that Saturday, the centre\'s own day, the main day',
+        $d2['scope'] === 'date:2027-01-09' && $d3['scope'] === 'centre:SF-C1' && sf_day('2027-01-16', 'SF-C2')['scope'] === '' && $d1['changed'] && $d2['changed'] && !$d3['changed']);
+    admin_formation_shift($A + ['scope' => 'date:2027-01-09@SF-C1', 'startAt' => '09:00']);
+    chk('formation · a Saturday is read for a date (portals pass the next one)', public_formation(['centre' => 'Sfton', 'date' => '2027-01-09'])['changed'] === true && public_formation(['centre' => 'Sfton', 'date' => '2027-01-09'])['date'] === '2027-01-09');
+    $lst = admin_formation_list($A + ['scope' => 'date:2027-01-09@SF-C1']);
+    chk('formation · the editor lists every version, in words, and the one it is showing', $lst['scope'] === 'date:2027-01-09@SF-C1' && $lst['label'] === 'Saturday 9 Jan 2027 at Sfton'
+        && in_array('Sfton’s own day', array_column($lst['versions'], 'label'), true) && $lst['versions'][0]['label'] === 'Every Saturday' && $lst['hours'] === '9:00am – 3:00pm');
+    chk('formation · an unknown version in the editor falls back to the main day rather than failing', admin_formation_list($A + ['scope' => 'centre:NOPE'])['scope'] === '');
+
+    // ── A Saturday off ──
+    chk('formation · a Saturday off needs a line families will read', (admin_formation_day_set($A + ['date' => '2027-01-09', 'centre' => 'SF-C2', 'off' => true])['error'] ?? '') === 'note_required'
+        && (admin_formation_day_set($A + ['date' => '2027-01-08', 'off' => true, 'note' => 'x'])['error'] ?? '') === 'not_saturday');
+    admin_formation_day_set($A + ['date' => '2027-01-09', 'centre' => 'Sfvale', 'off' => true, 'note' => 'The hall is being painted.']);
+    $p = public_formation(['centre' => 'Sfvale', 'date' => '2027-01-09']);
+    chk('formation · that centre\'s portals say it is off, and why, and show no blocks', $p['off'] === true && $p['note'] === 'The hall is being painted.' && $p['blocks'] === [] && public_formation(['centre' => 'Sfton', 'date' => '2027-01-09'])['off'] === false);
+    chk('formation · the editor lists the Saturdays off', in_array('2027-01-09', array_column(admin_formation_list($A)['offDays'], 'date'), true));
+
+    // ── The day as it happens follows the centre's day that Saturday ──
+    sf_tick(strtotime('2027-01-09T07:05:00Z'));   // 8:05 Lagos: Sfton starts at 9:00 that day, Sfvale is off
+    chk('formation · the plan goes an hour before that centre\'s day (never before 8:00); a centre that is off hears nothing', $slots('parent:plan', '2027-01-09') === ['g1@sf.example|SF-K1', 'g2@sf.example|SF-K2', 'g3@sf.example|SF-K1']);
+    sf_tick(strtotime('2027-01-09T07:50:00Z'));   // 8:50: 45 minutes into the main day, but Sfton has not started
+    chk('formation · the not-arrived notice waits for that centre\'s day: nothing at 8:50 when it starts at 9:00', $slots('parent:absent', '2027-01-09') === []);
+    sf_tick(strtotime('2027-01-09T08:50:00Z'));   // 9:50
+    chk('formation · …and goes 45 minutes after it starts', $slots('parent:absent', '2027-01-09') === ['g1@sf.example|SF-K1', 'g2@sf.example|SF-K2', 'g3@sf.example|SF-K1']);
+    sf_tick(strtotime('2027-01-09T13:05:00Z'));   // 2:05pm: the main day's close, not Sfton's (3:00pm)
+    chk('formation · the close follows that centre\'s end, not 2:00', $slots('parent:close', '2027-01-09') === []);
+    admin_formation_day_set($A + ['date' => '2027-01-09', 'centre' => 'Sfvale', 'off' => false]);
+    chk('formation · putting a Saturday back on removes the off row', !db_row("SELECT id FROM saturday_formation_dates WHERE onDate = '2027-01-09' AND centreId = 'SF-C2'"));
+
+    // ── Centre scope: a scoped admin edits their own centres' days only ──
+    db_insert('members', ['memberId' => 'SF-ADM-S', 'fullName' => 'Sfton Admin', 'email' => 'sfadm@sf.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Sfton', 'centreScope' => json_encode(['SF-C1']), 'createdAt' => $now, 'updatedAt' => $now]);
+    $S = ['requesterId' => 'SF-ADM-S'];
+    chk('formation · a centre-scoped admin can change their own centre\'s day', !empty(admin_formation_save($S + ['scope' => 'centre:SF-C1', 'key' => 'chess', 'title' => 'Chess club'])['ok']));
+    chk('formation · …but not the main day, another centre\'s, or every centre\'s Saturday',
+        (admin_formation_save($S + ['key' => 'chess', 'title' => 'X'])['error'] ?? '') === 'out_of_scope'
+        && (admin_formation_version_create($S + ['scope' => 'centre:SF-C2'])['error'] ?? '') === 'out_of_scope'
+        && (admin_formation_day_set($S + ['date' => '2027-01-16', 'off' => true, 'note' => 'x'])['error'] ?? '') === 'out_of_scope');
+
+    // ── Removing a version, and the audit trail ──
+    chk('formation · the main day cannot be removed', (admin_formation_version_delete($A + ['scope' => ''])['error'] ?? '') === 'bad_scope');
+    $r = admin_formation_version_delete($A + ['scope' => 'date:2027-01-09@SF-C1']);
+    chk('formation · removing a Saturday\'s change goes back to what applied before', !empty($r['ok']) && sf_day('2027-01-09', 'SF-C1')['scope'] === 'date:2027-01-09');
+    chk('formation · every change is one audit event, by version', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'formation.day.shift' AND subject = 'formation:centre:SF-C1'")['c'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'formation.version.delete'")['c'] >= 1);
+    chk('formation · the mentor breakout window follows the kind, not the key', (function () {
+        $w = mp_breakout_window('2027-01-16', []);
+        return $w['start'] === '08:30' && $w['end'] === '10:00' && mp_breakout_next('2027-01-16', []) === 'Vanboja';
+    })() || (mp_breakout_window()['minutes'] === 90));
+
     db_exec("DELETE FROM guardian_wards WHERE linkId LIKE 'SFL-%'"); db_exec("DELETE FROM guardians WHERE guardianId LIKE 'SF-G%'");
-    db_exec("DELETE FROM attendance WHERE studentId LIKE 'SF-K%'"); db_exec("DELETE FROM mentor_register WHERE subjectId LIKE 'SF-K%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'SF-K%'");
-    db_exec('DELETE FROM saturday_formation_sends');
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'SF-K%'"); db_exec("DELETE FROM mentor_register WHERE subjectId LIKE 'SF-K%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'SF-K%' OR memberId = 'SF-ADM-S'");
+    db_exec('DELETE FROM saturday_formation_sends'); db_exec("DELETE FROM saturday_formation_blocks WHERE scope <> ''"); db_exec('DELETE FROM saturday_formation_dates');
+    db_exec("DELETE FROM centres WHERE centreId IN ('SF-C1', 'SF-C2')");
     // Migration 213: the schedule a site already had, an hour on — whatever it had been edited to; a 23:xx block is not wrapped.
     db_exec('DELETE FROM saturday_formation');
     db_insert('saturday_formation', ['blockKey' => 'a', 'sort' => 0, 'startTime' => '08:00', 'endTime' => '08:30', 'title' => 'A', 'forJson' => '{"admin":["Gate open with the check-in desk staffed by 7:50."]}']);
@@ -29947,6 +30473,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $mv['a']['startTime'] === '09:00' && $mv['a']['endTime'] === '09:30' && $mv['b']['startTime'] === '14:45' && $mv['b']['endTime'] === '15:00'
         && $mv['c']['startTime'] === '23:30' && str_contains($mv['a']['forJson'], 'staffed by 8:50') && str_contains($mv['b']['forJson'], 'closed by 3:15'));
     db_exec('DELETE FROM saturday_formation');
+    db_exec("DELETE FROM saturday_formation_blocks WHERE scope = ''");   // the seeded 9:00 day comes back on the next read
 })();
 
 /* ── Opportunities (domain/opportunities.php): staff-edited, matched to the member's age ── */
@@ -30388,6 +30915,18 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
         return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => $kobo, 'currency' => 'NGN', 'channel' => 'card', 'metadata' => ['invoiceId' => $inv2['invoiceId']]]];
     };
+    /* The link is a quote of what was owed then. Paid in part at the desk
+       since, the old link must not take the full amount online. */
+    $desk = fees_post('BAL-1', 'payment', 500, ['periodKey' => 'test:bal:desk', 'note' => 'Cash at the desk', 'method' => 'cash', 'by' => 'test']);
+    $stale = backend_dispatch('public.membership.pay.init', ['token' => $inv2['payToken']]);
+    $inv3 = db_row("SELECT * FROM membership_invoices WHERE memberId = 'BAL-1' AND status = 'open' ORDER BY id DESC LIMIT 1");
+    chk('balance · an old link after money arrived another way is not paid: it is withdrawn and the family is sent to today\'s amount',
+        ($stale['error'] ?? '') === 'balance_changed' && db_row('SELECT status FROM membership_invoices WHERE invoiceId = ?', [$inv2['invoiceId']])['status'] === 'void'
+        && $inv3 && (int)$inv3['total'] === (int)$inv2['total'] - 500 && ($stale['detail'] ?? '') === '/pay/' . $inv3['payToken']);
+    // Back to the figure the rest of this block pays.
+    db_exec('UPDATE member_ledger SET voidedAt = ?, voidReason = ? WHERE entryId = ?', [$now, 'test', $desk['entryId']]);
+    db_exec("UPDATE membership_invoices SET status = 'void' WHERE id = ?", [$inv3['id']]);
+    db_exec("UPDATE membership_invoices SET status = 'open', voidReason = '' WHERE invoiceId = ?", [$inv2['invoiceId']]);
     $init = backend_dispatch('public.membership.pay.init', ['token' => $inv2['payToken']]);
     $charges = (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'BAL-1' AND direction = 'charge'")['c'];
     $kobo = 100;   // ₦1 paid against the balance
@@ -31575,7 +32114,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('club portal: app-only to guardians when none has a family account is refused, not sent to nobody', ($un['error'] ?? '') === 'unreachable' && str_contains((string)($un['message'] ?? ''), 'Nobody'));
     chk('club portal: members by SMS alone is refused; members by app, or guardians by app or email, is fine', cp_ann_unreachable('members', ['sms']) !== ''
         && cp_ann_unreachable('members', ['app']) === '' && cp_ann_unreachable('guardians', ['email']) === '' && cp_ann_unreachable('guardians', ['app']) === '' && cp_ann_unreachable('both', ['app']) === '');
-    chk('club portal: new announcements start on App and Email (Telegram too once a bot is set), never SMS', cp_ann_default_channels() === ['app', 'email']);
+    chk('club portal: new announcements start on App, Email and Community (Telegram too once a bot is set), never SMS', cp_ann_default_channels() === ['app', 'email', 'community']);
 
     // In-app reaches guardians: their family account's inbox, once each.
     db_insert('guardians', ['guardianId' => 'G-CPA', 'email' => 'p1@cp.example', 'fullName' => 'Mrs Alpha', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
@@ -33613,32 +34152,48 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $all = []; foreach (wifi_cac_people() as $r) $all[$r['id']] = $r;
     $p = fn($id) => $all[$id] ?? [];
     chk('wifi→cacentre · an active member goes as an NGG member, on, at their centre’s card code', ($p('NGG-CP-ACT')['kind'] ?? '') === 'member' && $p('NGG-CP-ACT')['verdict'] === 'on'
-        && $p('NGG-CP-ACT')['homeSite'] === 'cp' && $p('NGG-CP-ACT')['printedId'] === '026-701' && $p('NGG-CP-ACT')['why'] === '' && $p('NGG-CP-ACT')['email'] === 'ngg-cp-act@example.com');
+        && $p('NGG-CP-ACT')['homeSite'] === 'cp' && $p('NGG-CP-ACT')['printedId'] === '026-701'
+        && ($p('NGG-CP-ACT')['why'] ?? '') === '' && $p('NGG-CP-ACT')['email'] === 'ngg-cp-act@example.com');
     chk('wifi→cacentre · a suspension here is NGG saying off, with the reason in words', ($p('NGG-CP-SUS')['verdict'] ?? '') === 'off' && $p('NGG-CP-SUS')['why'] === WIFI_CASE_WORDS['blocked']);
     chk('wifi→cacentre · a hand-set override here travels as NGG’s say', ($p('NGG-CP-OVR')['verdict'] ?? '') === 'off' && $p('NGG-CP-OVR')['why'] === WIFI_CASE_WORDS['override']);
-    chk('wifi→cacentre · a mentor goes as staff, with no home site (staff sign in anywhere)', ($p('NGG-CP-MEN')['kind'] ?? '') === 'staff' && $p('NGG-CP-MEN')['homeSite'] === '');
+    chk('wifi→cacentre · a mentor goes as staff, with no home site (staff sign in anywhere)',
+        ($p('NGG-CP-MEN')['kind'] ?? '') === 'staff' && ($p('NGG-CP-MEN')['homeSite'] ?? '') === '');
     chk('wifi→cacentre · a participant goes within their edition, until its end date', ($p('summer-SS-CP-1')['kind'] ?? '') === 'participant' && $p('summer-SS-CP-1')['verdict'] === 'on'
         && $p('summer-SS-CP-1')['validUntil'] === gmdate('Y-m-d', strtotime($today . ' +10 days')) && $p('summer-SS-CP-1')['printedId'] === 'CP-26-001');
     chk('wifi→cacentre · a Summer-type member record is not sent as a member', !isset($all['SUM-CP-1']));
+    /* The PROPERTY, not a fixed list: an empty field may be left out (absent
+       and empty are the same to CACENTRE, and the roster is paged by bytes),
+       but a field outside the agreed set may never appear. Pinning the exact
+       list would fail for a reason that has nothing to do with privacy. */
+    $agreed = ['id', 'kind', 'name', 'email', 'printedId', 'homeSite', 'verdict', 'why', 'validUntil'];
     $keys = []; foreach ($all as $r) $keys += array_flip(array_keys($r));
-    chk('wifi→cacentre · only the agreed fields travel: no phone, birthday, guardian or money', array_keys($keys) == ['id', 'kind', 'name', 'email', 'printedId', 'homeSite', 'verdict', 'why', 'validUntil']);
+    chk('wifi→cacentre · only the agreed fields travel: no phone, birthday, guardian or money'
+        . (($x = array_diff(array_keys($keys), $agreed)) ? ' — ' . implode(', ', $x) : ''), !$x);
+    chk('wifi→cacentre · and the three that decide anything are always there',
+        !array_filter($all, fn($r) => !isset($r['id'], $r['kind'], $r['verdict'])));
 
-    // The envelope: what CACENTRE's WifiEnvelope::verify() checks, re-done here.
+    // The call: what the gate (gate/src/wifi.ts) checks, re-done here — NGG's own attendance scheme.
     $sec = str_repeat('k', 40); $t0 = 1800000000;
-    $tok = dirpush_sign('wifi.roster', ['full' => true, 'people' => [$p('NGG-CP-ACT')]], $sec, $t0);
-    [$v, $body, $mac] = explode('.', $tok);
-    $unb = fn($s) => base64_decode(strtr($s, '-_', '+/') . str_repeat('=', (4 - strlen($s) % 4) % 4));
-    $c = json_decode($unb($body), true);
-    chk('wifi→cacentre · the roster rides the directory’s connection: its v1 envelope, as NGG, typed wifi.roster', $v === 'v1' && hash_equals(hash_hmac('sha256', $body, $sec, true), $unb($mac))
-        && $c['iss'] === 'ngg' && $c['typ'] === 'wifi.roster' && $c['exp'] - $c['iat'] === 300 && $c['full'] === true && $c['people'][0]['id'] === 'NGG-CP-ACT');
+    $rq = wifi_cac_request('wifi.roster', ['full' => true, 'people' => [$p('NGG-CP-ACT')]], $sec, $t0);
+    $hd = []; foreach ($rq['headers'] as $h) { [$k, $v] = explode(': ', $h, 2); $hd[$k] = $v; }
+    $c = json_decode($rq['body'], true);
+    chk('wifi→cacentre · the roster rides the attendance connection: to the gate, signed sha256=HMAC(attendance secret, ts.body)',
+        str_ends_with($rq['url'], '/v1/issuers/ngg/wifi') && $hd['X-NGG-Timestamp'] === (string)$t0
+        && hash_equals('sha256=' . hash_hmac('sha256', $t0 . '.' . $rq['body'], $sec), $hd['X-NGG-Signature'])
+        && $c['typ'] === 'wifi.roster' && $c['full'] === true && $c['people'][0]['id'] === 'NGG-CP-ACT');
+    chk('wifi→cacentre · two identical calls are never the same signature (the gate spends each once)',
+        wifi_cac_request('wifi.card', ['op' => 'show', 'id' => 'x'], $sec, $t0)['body'] !== wifi_cac_request('wifi.card', ['op' => 'show', 'id' => 'x'], $sec, $t0)['body']);
 
-    // One connection: the Wi-Fi is on exactly when the directory push is, with its key.
-    $GLOBALS['CONFIG']['dir_push_secret'] = '';
-    chk('wifi→cacentre · with no directory key nothing is sent', (wifi_cac_push('test')['error'] ?? '') === 'not_configured' && (wifi_cac_tick()['skipped'] ?? '') === 'no key');
-    $GLOBALS['CONFIG']['dir_push_secret'] = 'changeme-changeme-changeme-changeme-12';
-    chk('wifi→cacentre · a placeholder key counts as no key', !wifi_cac_ready());
+    // One connection: the Wi-Fi is on exactly when attendance is, with its secret.
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = '';
+    chk('wifi→cacentre · with no attendance secret nothing is sent', (wifi_cac_push('test')['error'] ?? '') === 'not_configured' && (wifi_cac_tick()['skipped'] ?? '') === 'no key');
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = 'short';
+    chk('wifi→cacentre · a secret too short to be one counts as none', !wifi_cac_ready());
     $GLOBALS['CONFIG']['dir_push_secret'] = str_repeat('d', 40);
-    chk('wifi→cacentre · the directory’s key IS the Wi-Fi’s: there is no second one', wifi_cac_ready() && !function_exists('wifi_cac_secret'));
+    chk('wifi→cacentre · the directory key opens no Wi-Fi: only the attendance secret does', !wifi_cac_ready());
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = str_repeat('a', 40);
+    chk('wifi→cacentre · the attendance secret IS the Wi-Fi’s: there is no second one', wifi_cac_ready());
+    $GLOBALS['CONFIG']['dir_push_secret'] = '';
 
     // Members keep their PIN on their own dashboard. A centre whose NGG router still fetches keeps NGG's PIN;
     // once it has moved, Me → Wi-Fi asks CACENTRE — and says so honestly when CACENTRE can't be reached.
@@ -33651,7 +34206,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi→cacentre · once it has moved, the dashboard asks CACENTRE, and an outage is an honest error, never NGG’s stale PIN', wifi_cac_serves($C, false)
         && empty($g['ok']) && ($g['error'] ?? '') === 'cacentre_unreachable' && !isset($g['wifi']));
     db_exec("DELETE FROM wifi_gateways WHERE gatewayId = 'GCP000001'");
-    $GLOBALS['CONFIG']['dir_push_secret'] = ''; $GLOBALS['CONFIG']['dir_push_url'] = '';
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = ''; $GLOBALS['CONFIG']['dir_push_url'] = '';
 
     // Who may: the status for anybody with network; sending only for somebody who sees every centre.
     $mem('NGG-CP-SA', ['role' => 'super_admin']);
@@ -33665,7 +34220,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $mg = $sv['gateway']['gatewayId']; $mk = $sv['key'];
     backend_dispatch('wifi.feed', ['gatewayId' => $mg, 'key' => $mk, 'since' => 0]);
     chk('wifi→cacentre · a router can’t be marked moved before NGG is connected', (backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg])['error'] ?? '') === 'cacentre_not_connected');
-    $GLOBALS['CONFIG']['dir_push_secret'] = str_repeat('d', 40);
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = str_repeat('a', 40);
     chk('wifi→cacentre · while it still fetches from NGG, its members keep NGG’s PIN', !wifi_cac_serves($C, false));
     $mv = backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg]);
     chk('wifi→cacentre · marked moved, its members see CACENTRE’s PIN at once, not a day later', !empty($mv['ok']) && $mv['gateway']['movedAt'] !== '' && wifi_cac_serves($C, false));
@@ -33679,7 +34234,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi→cacentre · back to NGG: it is fed again, with a full list', !empty($bk['ok']) && $bk['gateway']['movedAt'] === '' && !empty($f2['ok']) && !empty($f2['full']));
     chk('wifi→cacentre · marking it twice changes nothing', !empty(backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg, 'undo' => true])['unchanged']));
     db_exec("DELETE FROM wifi_gateways WHERE gatewayId = ?", [$mg]);
-    $GLOBALS['CONFIG']['dir_push_secret'] = '';
+    // The starting-password list is admin-only, and asks nothing of CACENTRE until NGG is connected.
+    chk('wifi→cacentre · an admin without network cannot see starting passwords', (backend_dispatch('admin.wifi.cacentre.starts', ['requesterId' => 'NGG-CP-ADM'])['error'] ?? '') === 'forbidden');
+    $GLOBALS['CONFIG']['hooks']['attendance_secret'] = '';
+    chk('wifi→cacentre · before attendance is connected the list says so', (backend_dispatch('admin.wifi.cacentre.starts', ['requesterId' => 'NGG-CP-SA'])['error'] ?? '') === 'not_configured');
     $hook = (string)file_get_contents(__DIR__ . '/../hooks/wifi-feed.php');
     $set = (string)file_get_contents(__DIR__ . '/../_lib/domain/wifi-setup.php');
     chk('wifi · a MikroTik is refused with 200, which RouterOS keeps (it drops a 4xx body); others keep the status', str_contains($hook, "\$ros ? 200 :"));
@@ -34437,10 +34995,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && (int)db_row("SELECT COUNT(*) c FROM integrations WHERE name = 'Make.com'")['c'] === 1 && $c2['make']['destination']['url'] === 'https://hook.us1.make.com/other456');
 
     $k = backend_dispatch('admin.make.cron', $A);
-    $u = $k['urls'][1]['url'] ?? '';
+    $u = $k['urls'][0]['url'] ?? '';
     parse_str((string)parse_url($u, PHP_URL_QUERY), $q);
-    chk('make ui: the scheduler key is made here, and the addresses carry it', !empty($k['ok']) && count($k['urls']) === 4 && cron_key_effective() === ($q['key'] ?? '-')
-        && ($q['job'] ?? '') === 'reminders' && strpos(json_encode(setting_get('make_link')), (string)$q['key']) === false);
+    chk('make ui: the scheduler key is made here, and its one address carries it — every job that is due, every minute', !empty($k['ok']) && count($k['urls']) === 1 && cron_key_effective() === ($q['key'] ?? '-')
+        && !isset($q['job']) && $k['urls'][0]['every'] === 'Every minute' && strpos(json_encode(setting_get('make_link')), (string)$q['key']) === false);
 
     $off = backend_dispatch('admin.make.off', $A);
     chk('make ui: turning off closes the door and pauses the events, but keeps the scheduler', make_secret() === '' && $off['make']['destination']['status'] === 'paused' && cron_key_effective() !== '');
@@ -34787,7 +35345,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? '');
     $cat = ngg_volunteer_catalogue();
     $area = array_key_first($cat); $act = $cat[$area][0];
-    $base = ['kind' => 'volunteer', 'program' => 'anchor', 'role' => 'mentor', 'sex' => 'Female', 'firstName' => 'Ngozi', 'lastName' => 'Door',
+    $base = ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'program' => 'anchor', 'role' => 'mentor', 'sex' => 'Female', 'firstName' => 'Ngozi', 'lastName' => 'Door',
              'phone' => '08031239999', 'dob' => '1995-05-05', 'centre' => $centre, 'why' => 'All year, every Saturday.',
              'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'];
     chk('ngg door: NGG has its own catalogue, not the Summer School courses', $cat && !in_array($act, academy_courses(), true));
@@ -35060,7 +35618,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $save = setting_get('fees');
     setting_set('fees', ['enabled' => true, 'trainingFee' => 300000, 'trainingBasis' => 'total', 'trainingMonths' => 18,
                          'serviceMonths' => 18, 'membershipFee' => 0, 'monthlyDues' => 0, 'balanceCap' => 0] + FEES_DEFAULTS, 'test');
-    $ago = fn(int $months, int $days = 0) => gmdate('Y-m-d', strtotime("-$months months -$days days"));
+    /* Months back from today, the day clamped to the month's length: "-20 months" from
+       31 October is 31 February, which PHP rolls into March — a whole month short. */
+    $ago = function (int $months, int $days = 0): string {
+        $t = new DateTimeImmutable('today', new DateTimeZone('UTC'));
+        $m = $t->modify('first day of this month')->modify("-$months months");
+        $d = min((int)$t->format('j'), (int)$m->format('t'));
+        return $m->setDate((int)$m->format('Y'), (int)$m->format('n'), $d)->modify("-$days days")->format('Y-m-d');
+    };
     db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-TF9-%'");
     db_exec("DELETE FROM member_status_log WHERE memberId LIKE 'NGG-TF9-%'");
     db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-TF9-%'");
@@ -35129,6 +35694,20 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("UPDATE members SET mouAt = '' WHERE memberId = 'NGG-TF9-GONE'");
     $st = backend_dispatch('member.statement', ['memberId' => 'NGG-TF9-GONE']);
     chk('fee: …and their statement closes on the same figure', !empty($st['ok']) && (int)$st['closingPayable'] === (int)$bg['payable']);
+    /* What a family is asked for is MADE OF lines that add up to it. The
+       training balance owed on leaving is on no charge, so every breakdown
+       built from charges alone came up short by exactly that. */
+    $made = fees_owed_made($row('NGG-TF9-GONE'));
+    $fv = family_fees_view($row('NGG-TF9-GONE'));
+    $sum = fn($ls) => array_sum(array_map(fn($l) => (int)$l['amount'], $ls));
+    chk('owed · a member who left before the MOU: the breakdown names the training place and adds up to what is payable',
+        $made['ok'] && $sum($made['lines']) === (int)$bg['payable'] && (end($made['lines'])['kind'] ?? '') === 'training_owed');
+    chk('owed · …and the family\'s Fees page and the member\'s own statement give the same lines',
+        $sum($fv['lines'] ?? []) === (int)$fv['payable'] && in_array('training_owed', array_column($fv['lines'], 'kind'), true)
+        && array_column($st['owed'] ?? [], 'amount') === array_column($made['lines'], 'amount'));
+    chk('owed · months are named and a gap is said, not papered over',
+        fees_month_spans(['2026-04', '2026-02', '2026-03', '2026-06']) === 'February – April, June 2026'
+        && fees_month_spans(['2026-12', '2027-01']) === 'December 2026 – January 2027' && fees_month_spans(['2026-10']) === 'October 2026');
 
     // The status log is written where the row is.
     $sus = $mk('NGG-TF9-SUS', $ago(25));
@@ -35475,20 +36054,23 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $r = admin_applications_message(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'message' => 'Which centre is nearest to you?']);
     unset($GLOBALS['__mail_fail']);
     $kept = json_decode((string)db_row('SELECT messages FROM applications WHERE id = ?', [$aid])['messages'], true);
-    chk('applications · an email that fails is said to have failed — and the words are still kept', ($r['error'] ?? '') === 'not_sent' && !empty($r['detail'])
+    chk('applications · an email that fails is said to have failed — and the words are still kept', ($r['error'] ?? '') === 'not_sent' && !empty($r['message'])
         && count($kept) === 2 && $kept[1]['sent'] === false);
     chk('applications · an empty ask is refused, with why', (admin_applications_message(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'message' => ' '])['error'] ?? '') === 'empty');
     $GLOBALS['__mail_sink'] = [];
     $r = admin_applications_set_status(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'status' => 'waitlist', 'message' => 'Ada is on our waiting list; we will email when a place opens.']);
-    chk('applications · waitlisting with a message tells the family, and says it did', !empty($r['ok']) && $r['told'] === true && count($GLOBALS['__mail_sink']) === 1
+    chk('applications · waitlisting with a message tells the family, and says it did', !empty($r['ok']) && $r['told'] === ['email'] && count($GLOBALS['__mail_sink']) === 1
         && str_contains($GLOBALS['__mail_sink'][0]['subject'], 'waiting list'));
     $GLOBALS['__mail_sink'] = [];
-    $r = admin_applications_set_status(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'status' => 'rejected']);
-    chk('applications · with no message the status changes and nobody is written to', !empty($r['ok']) && $r['told'] === false && !$GLOBALS['__mail_sink']
+    $r = admin_applications_set_status(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'status' => 'rejected', 'notify' => false]);
+    chk('applications · filed quietly (notify off), the status changes and nobody is written to', !empty($r['ok']) && $r['told'] === [] && !$GLOBALS['__mail_sink']
         && db_row('SELECT status FROM applications WHERE id = ?', [$aid])['status'] === 'rejected');
+    $r = admin_applications_set_status(['requesterId' => 'NGG-IBX-ADM', 'id' => $aid, 'status' => 'waitlist']);
+    chk('applications · with no message the family gets the standard line, and it is kept', $r['told'] === ['email'] && count($GLOBALS['__mail_sink']) === 1
+        && str_contains((string)$GLOBALS['__mail_sink'][0]['html'], 'waiting list'));
     $list = admin_applications_list(['requesterId' => 'NGG-IBX-ADM']);
     $me = array_values(array_filter($list['applications'] ?? [], fn($x) => (int)$x['id'] === (int)$aid))[0] ?? null;
-    chk('applications · the list says how often this address applied before, and what it was told', $me && $me['earlierApps'] === 1 && count($me['messages']) === 3);
+    chk('applications · the list says how often this address applied before, and what it was told', $me && $me['earlierApps'] === 1 && count($me['messages']) === 4);
     chk('applications · a stranger\'s address is not "already with us"', $me && $me['known'] === null);
     unset($GLOBALS['__mail_sink']);
     db_exec("DELETE FROM applications WHERE email = 'apply.ibx@example.org'"); db_exec("DELETE FROM contact_messages WHERE ref = 'MSG-IBX1'");
@@ -35645,7 +36227,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     setting_set('policy_member_swept_through', $ago(3), 'system');
     policy_sweep_member_absences($d1);
     db_exec("UPDATE members SET status = 'active' WHERE status = 'zz_co_hold'");
-    $inc = fn($id, $d) => (bool)db_row("SELECT 1 FROM infractions WHERE personId = ? AND date = ? AND kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id, $d]);
+    $inc = fn($id, $d) => (bool)db_row("SELECT 1 FROM infractions WHERE personId = ? AND date = ? AND kind = 'halfday' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id, $d]);
     $h = db_row("SELECT * FROM attendance_held_days WHERE date = ? AND centre = 'Co Ikeja' AND personType = 'member'", [$d1]);
     chk('sign-outs · a centre where everybody came and no sign-out arrived is HELD, as sign-outs', $h && $h['cause'] === 'checkout' && (int)$h['expected'] === 4 && (int)$h['present'] === 0
         && str_contains((string)$h['why'], 'No sign-outs arrived from Co Ikeja'));
@@ -35658,7 +36240,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('sign-outs · the desk is told the held day is about sign-outs', $mine && $mine[0]['cause'] === 'checkout');
     $r = admin_attendance_held_decide(['requesterId' => $SU, 'id' => (int)$h['id'], 'decision' => 'count']);
     chk('sign-outs · "they left without signing out" logs an incomplete day for each, as the person deciding', !empty($r['ok']) && $r['logged'] === 4 && $inc('NGG-CO-2', $d1)
-        && (string)db_row("SELECT byId FROM infractions WHERE personId = 'NGG-CO-2' AND date = ? AND kind = 'absence'", [$d1])['byId'] === $SU);
+        && (string)db_row("SELECT byId FROM infractions WHERE personId = 'NGG-CO-2' AND date = ? AND kind = 'halfday'", [$d1])['byId'] === $SU);
     hooks_attendance(['source' => 'cacentre-gate', 'events' => [['ref' => 'NGG-CO-2', 'date' => $d1, 'scannedAt' => $d1 . 'T14:40:00Z', 'action' => 'out']]]);
     chk('sign-outs · …and a sign-out that arrives afterwards still clears it', !$inc('NGG-CO-2', $d1));
 
@@ -35781,8 +36363,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $f1 = $sc('NGG-RB-1', 'fine', POLICY_T_LATE_FINE + policy_day_number($d1)); $j1 = $sc('NGG-RB-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d1));
     chk('rulebook · 09:38: a ₦500 fine and 3 frog jumps, the fine on the account', $f1 && (int)$f1['amount'] === 500 && $j1 && (int)$j1['amount'] === 3 && $j1['status'] === 'pending'
         && (bool)db_row("SELECT 1 FROM member_ledger WHERE memberId = 'NGG-RB-1' AND periodKey = ? AND amount = 500", ['sanction-' . $f1['id']]));
-    chk('rulebook · …and the late says what it cost, in words', str_contains((string)db_row("SELECT note FROM infractions WHERE personId = 'NGG-RB-1' AND date = ? AND kind = 'late'", [$d1])['note'], 'Arrived 09:38')
-        && str_contains((string)$f1['reason'], '₦500 fine and 3 frog jumps'));
+    chk('rulebook · …and the late says what it cost, in words — one penalty per row: the fine says money, the exercise says the exercise', str_contains((string)db_row("SELECT note FROM infractions WHERE personId = 'NGG-RB-1' AND date = ? AND kind = 'late'", [$d1])['note'], 'Arrived 09:38')
+        && str_contains((string)$f1['reason'], '₦500 lateness fine') && !str_contains((string)$f1['reason'], 'frog jumps')
+        && str_contains((string)$j1['reason'], '3 frog jumps') && !str_contains((string)$j1['reason'], '₦'));
     chk('rulebook · 09:50: 5 frog jumps and no fine', !$sc('NGG-RB-1', 'fine', POLICY_T_LATE_FINE + policy_day_number($d2)) && (int)$sc('NGG-RB-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d2))['amount'] === 5);
     $rv = $sc('NGG-RB-1', 'review', POLICY_T_REVIEW + policy_day_number($d3));
     chk('rulebook · 10:05: for management review — no automatic fine or jumps, but on the board awaiting a person', $rv && $rv['status'] === 'proposed'
@@ -35896,6 +36479,369 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
     foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'attendance' => 'studentId', 'member_requests' => 'memberId', 'assignment_submissions' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-RB-%'");
     db_exec("DELETE FROM assignments WHERE assignmentId LIKE 'ASG-RB-%'");
+})();
+
+
+// ── Arrivals before lateness begins are not lates: the band lookup, the issue, and the repair of what was charged ──
+(function () {
+    $now = now_iso(); $ADM = 'NGG-PL-ADM';
+    $keep = []; foreach (['policy', 'memberProgramme'] as $k) $keep[$k] = setting_raw($k);
+    $today = attendance_today(); $ago = fn($n) => gmdate('Y-m-d', strtotime($today . ' UTC') - $n * 86400);
+    member_programme_settings_save(['enabled' => true, 'startDate' => $ago(60), 'endDate' => $ago(-30), 'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'test');
+    $rules = ['enabled' => true, 'rulebook' => 'session', 'checkoutRequired' => false, 'absenceFine' => 1000, 'resumption' => '09:00',
+        'lateBands' => [['from' => '09:30', 'fine' => 500, 'jumps' => 3], ['from' => '09:45', 'fine' => 0, 'jumps' => 5]], 'reviewFrom' => '10:00',
+        'absenceJumps' => 7, 'suspendAfterAbsences' => 9, 'suspendDays' => 7, 'reentryFee' => 5000, 'permittedAbsences' => 5, 'formalAfterDays' => 21, 'evidenceFine' => 0, 'jumpWord' => 'frog jumps'];
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true, 'member' => $rules], 'test');
+    $mk = fn($id, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Pl ' . $id, 'email' => strtolower($id) . '@example.org', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'centre' => 'Pl Centre', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk($ADM, ['role' => 'super_admin', 'centre' => '']);
+    foreach (range(1, 3) as $i) $mk('NGG-PL-' . $i);
+    $cfg = policy_for('member');
+    $local = fn($d, $hm) => strtotime($d . ' ' . $hm . ':00 UTC') - (int)attendance_settings()['tzOffset'] * 60;
+    $came = fn($id, $d, $hm) => db_insert('attendance', ['cohortId' => '', 'studentId' => $id, 'token' => '', 'date' => $d, 'checkInAt' => gmdate('Y-m-d\TH:i:s\Z', $local($d, $hm)), 'method' => 'gate', 'centre' => 'Pl Centre', 'createdAt' => $now]);
+    $sc = fn($id, $kind, $tier) => db_row('SELECT * FROM sanctions WHERE personId = ? AND kind = ? AND tier = ?', [$id, $kind, $tier]);
+
+    $b1 = policy_band_for($cfg, 9 * 60 + 21); $b2 = policy_band_for($cfg, 9 * 60 + 30); $b3 = policy_band_for($cfg, 9 * 60 + 50);
+    chk('pre-band · 09:21 is before lateness begins — no band, nothing owed; 09:30 is the first band; 09:50 the second',
+        $b1['before'] === true && $b1['fine'] === 0 && $b1['jumps'] === 0 && $b2['before'] === false && $b2['from'] === '09:30' && $b3['from'] === '09:45');
+
+    // A late on record for a 09:21 arrival (the older definition logged it) issues nothing now.
+    [$dA, $dB, $dC] = [$ago(10), $ago(9), $ago(8)];
+    $came('NGG-PL-1', $dA, '09:21'); policy_log('NGG-PL-1', 'member', 'late', $dA, 'Scanned after resumption + grace.');
+    policy_apply('NGG-PL-1', 'member');
+    chk('pre-band · a late on record for a 09:21 arrival issues no fine and no frog jumps',
+        !$sc('NGG-PL-1', 'fine', POLICY_T_LATE_FINE + policy_day_number($dA)) && !$sc('NGG-PL-1', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($dA)));
+
+    // What the old engine left behind: a 09:01 and a 09:21 charged under the first band — one fine already PAID — and old one-sentence wording.
+    $came('NGG-PL-2', $dA, '09:01'); policy_log('NGG-PL-2', 'member', 'late', $dA, 'old');
+    $came('NGG-PL-2', $dB, '09:21'); policy_log('NGG-PL-2', 'member', 'late', $dB, 'old');
+    $came('NGG-PL-2', $dC, '09:38'); policy_log('NGG-PL-2', 'member', 'late', $dC, 'a real late');
+    $old = 'Arrived 09:01 (09:30 to before 09:45) — ₦500 fine and 3 frog jumps.';
+    foreach ([$dA, $dB] as $d) {
+        policy_issue('NGG-PL-2', 'member', 'fine', POLICY_T_LATE_FINE + policy_day_number($d), ['amount' => 500, 'status' => 'pending', 'reason' => $old]);
+        policy_issue('NGG-PL-2', 'member', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($d), ['amount' => 3, 'status' => 'pending', 'reason' => $old]);
+    }
+    $paid = $sc('NGG-PL-2', 'fine', POLICY_T_LATE_FINE + policy_day_number($dA));
+    fees_post('NGG-PL-2', 'payment', 500, ['by' => 'test', 'method' => 'cash', 'note' => 'paid the late fine']);
+    db_update('sanctions', ['status' => 'paid'], ['id' => (int)$paid['id']]);
+    policy_apply('NGG-PL-2', 'member');   // the real 09:38 late is charged as it should be
+    $absD = $ago(12);
+    policy_issue('NGG-PL-3', 'member', 'corrective', POLICY_T_ABS_JUMPS + policy_day_number($absD), ['amount' => 7, 'status' => 'pending', 'reason' => 'Absent on X without permission — ₦1,000 fine and 7 frog jumps.']);
+    policy_log('NGG-PL-3', 'member', 'absence', $absD, 'No check-in on a member programme day.');
+
+    $r = policy_prelate_repair();
+    $liveLates = fn($id) => array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'late' AND (voidedAt IS NULL OR voidedAt = '') ORDER BY date", [$id]), 'date');
+    chk('pre-band repair · the lates for 09:01 and 09:21 are voided with the reason, the real 09:38 late stands',
+        $liveLates('NGG-PL-2') === [$dC] && $liveLates('NGG-PL-1') === []
+        && str_starts_with((string)db_row("SELECT voidReason FROM infractions WHERE personId = 'NGG-PL-2' AND date = ? AND kind = 'late'", [$dB])['voidReason'], POLICY_PRELATE_TAG . ': arrived 09:21, and lateness begins at 09:30'));
+    chk('pre-band repair · …the day is kept as seen-after-resumption (tardy), which costs nothing',
+        (bool)db_row("SELECT 1 FROM infractions WHERE personId = 'NGG-PL-2' AND date = ? AND kind = 'tardy'", [$dB]));
+    $pending = $sc('NGG-PL-2', 'fine', POLICY_T_LATE_FINE + policy_day_number($dB));
+    chk('pre-band repair · the unpaid fine and both sets of frog jumps are lifted, and the fines are off the account',
+        $pending['status'] === 'lifted' && $sc('NGG-PL-2', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($dA))['status'] === 'lifted'
+        && $sc('NGG-PL-2', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($dB))['status'] === 'lifted'
+        && (string)db_row("SELECT voidedAt FROM member_ledger WHERE memberId = 'NGG-PL-2' AND periodKey = ?", ['sanction-' . $pending['id']])['voidedAt'] !== '');
+    chk('pre-band repair · the fine already PAID is refunded: lifted, its charge voided, the payment left standing as credit',
+        $sc('NGG-PL-2', 'fine', POLICY_T_LATE_FINE + policy_day_number($dA))['status'] === 'lifted'
+        && (string)db_row("SELECT voidedAt FROM member_ledger WHERE memberId = 'NGG-PL-2' AND periodKey = ?", ['sanction-' . $paid['id']])['voidedAt'] !== ''
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-PL-2' AND kind = 'payment' AND (voidedAt IS NULL OR voidedAt = '')")['c'] === 1
+        && $r['refunded'] === 1);
+    $real = $sc('NGG-PL-2', 'fine', POLICY_T_LATE_FINE + policy_day_number($dC));
+    chk('pre-band repair · the real late keeps its ₦500 fine and 3 frog jumps', $real && $real['status'] === 'pending' && (int)$real['amount'] === 500
+        && $sc('NGG-PL-2', 'corrective', POLICY_T_LATE_JUMPS + policy_day_number($dC))['status'] === 'pending');
+    $abs = $sc('NGG-PL-3', 'corrective', POLICY_T_ABS_JUMPS + policy_day_number($absD));
+    chk('pre-band repair · an older exercise row that also named the fine is reworded to the exercise alone',
+        $abs['reason'] === 'Absent on ' . policy_day_text($absD) . ' without permission — 7 frog jumps.' && $abs['status'] === 'pending');
+    chk('pre-band repair · it says what it did', $r['voided'] === 3 && $r['people'] === 2 && $r['reworded'] >= 1 && $r['more'] === false
+        && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'policy.prelate_repair'"));
+    chk('pre-band repair · a second run finds nothing to do', policy_prelate_repair() === ['voided' => 0, 'people' => 0, 'refunded' => 0, 'reworded' => 0, 'more' => false]);
+    chk('pre-band repair · the nightly member check runs it', str_contains((string)(new ReflectionFunction('policy_sweep_member_absences'))->getFileName(), 'policy.php')
+        && preg_match('/function policy_sweep_member_absences[^{]*\{\s*policy_nosignout_to_halfday\(\);\s*policy_prelate_repair\(\);/', (string)file_get_contents(__DIR__ . '/../_lib/domain/policy.php')) === 1);
+    $ed = 'NGG-PL-ED'; $mk($ed, ['role' => 'editor', 'centre' => '']);
+    chk('pre-band repair · on demand: needs the People permission, then answers with the counts',
+        (backend_dispatch('admin.policy.prelate.run', ['requesterId' => $ed])['error'] ?? '') === 'forbidden'
+        && ($run = backend_dispatch('admin.policy.prelate.run', ['requesterId' => $ADM]))['ok'] === true && array_key_exists('refunded', $run));
+
+    // The conduct board and the family's account agree about a fine: what the ledger has settled is paid, both ways.
+    $absF = 500000 + policy_day_number($ago(15));
+    policy_issue('NGG-PL-1', 'member', 'fine', $absF, ['amount' => 1000, 'status' => 'pending', 'reason' => 'Absent — ₦1,000 absence fine.']);
+    chk('fines sync · before any payment the board says ₦1,000 owed', policy_state('NGG-PL-1', 'member')['finesOwed'] === 1000);
+    $pay = fees_post('NGG-PL-1', 'payment', 1000, ['by' => 'test', 'method' => 'paystack', 'note' => 'paid online']);
+    $fs = $sc('NGG-PL-1', 'fine', $absF);
+    chk('fines sync · a payment that covers it settles the fine (not only a re-entry fee): paid by the ledger, nothing owed on the board or the roster',
+        $fs['status'] === 'paid' && $fs['clearedBy'] === 'ledger' && policy_state('NGG-PL-1', 'member')['finesOwed'] === 0
+        && policy_states_for(['NGG-PL-1'], 'member')['NGG-PL-1']['finesOwed'] === 0);
+    $vd = backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => (string)$pay['entryId'], 'reason' => 'the transfer bounced']);
+    chk('fines sync · the payment voided: the fine is owed again, on both', !empty($vd['ok']) && $sc('NGG-PL-1', 'fine', $absF)['status'] === 'pending'
+        && policy_state('NGG-PL-1', 'member')['finesOwed'] === 1000);
+    db_update('sanctions', ['status' => 'waived', 'clearedBy' => $ADM], ['id' => (int)$fs['id']]);
+    fees_post('NGG-PL-1', 'payment', 1000, ['by' => 'test', 'method' => 'cash', 'note' => 'more']);
+    chk('fines sync · a fine a person settled by hand is theirs: the ledger does not touch it', $sc('NGG-PL-1', 'fine', $absF)['status'] === 'waived');
+    policy_issue('NGG-PL-1', 'member', 'fine', 4242, ['amount' => 700, 'status' => 'proposed', 'reason' => 'proposed, not owed']);
+    chk('fines owed · a proposed fine is not owed — the roster reads it as the record does',
+        policy_states_for(['NGG-PL-1'], 'member')['NGG-PL-1']['finesOwed'] === policy_state('NGG-PL-1', 'member')['finesOwed']);
+
+    $cl = backend_dispatch('admin.policy.correctives', ['requesterId' => $ADM]);
+    $mine = array_values(array_filter($cl['rows'], fn($r) => $r['memberId'] === 'NGG-PL-2'));
+    chk('frog jumps list · each set says what it was for and on which day', $mine && $mine[0]['for'] === 'late' && $mine[0]['date'] === $dC && $mine[0]['count'] === 3
+        && !str_contains($mine[0]['reason'], '₦'));
+
+    // Under the older ladder, "late" means past resumption + grace: the repair leaves it alone.
+    $came('NGG-PL-3', $dB, '09:21'); policy_log('NGG-PL-3', 'member', 'late', $dB, 'ladder late');
+    policy_settings_save(['member' => ['rulebook' => 'ladder'] + $rules], 'test');
+    chk('pre-band repair · not under the ladder rulebook, whose definition of late is different', policy_prelate_repair()['voided'] === 0 && $liveLates('NGG-PL-3') === [$dB]);
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'attendance' => 'studentId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-PL-%'");
+})();
+
+
+// ── Money read one way: the family's breakdown, the account figures, the waiver cap, the dues label ──
+(function () {
+    $now = now_iso(); $ADM = 'NGG-MR-ADM';
+    $keep = setting_raw('fees');
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'trainingFee' => 60000] + FEES_DEFAULTS, 'test');
+    foreach ([[$ADM, 'super_admin', ''], ['NGG-MR-1', 'member', '2026-01-01'], ['NGG-MR-2', 'member', gmdate('Y-m-d', strtotime('-40 days'))]] as [$id, $role, $join])
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Mr ' . $id, 'email' => strtolower($id) . '@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => $role,
+            'centre' => 'Mr Centre', 'joinDate' => $join, 'createdAt' => $now, 'updatedAt' => $now]);
+    // A fine posted first, then a January commitment fee back-filled after it, then ₦1,000 paid.
+    fees_post('NGG-MR-1', 'training', 60000, ['periodKey' => 'total', 'note' => 'Training fee — the place', 'by' => 'test']);
+    fees_post('NGG-MR-1', 'fine', 1000, ['periodKey' => 'fine-x', 'note' => 'Policy fine — Absent on Sat 31 Oct 2026 — ₦1,000 absence fine.', 'by' => 'test']);
+    fees_post('NGG-MR-1', 'dues', 2000, ['periodKey' => '2026-01', 'note' => 'Monthly dues 2026-01', 'by' => 'test']);
+    fees_post('NGG-MR-1', 'payment', 1000, ['by' => 'test', 'method' => 'cash', 'note' => 'cash']);
+    $m1 = db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-1'");
+    $v = family_fees_view($m1); $by = []; foreach ($v['lines'] as $l) $by[$l['kind']] = $l;
+    chk('money · the family\'s breakdown reads payments as the account does (oldest first): January ₦1,000 left of ₦2,000, the fine ₦1,000 — not "January ₦2,000" and no fine',
+        ($by['dues']['amount'] ?? 0) === 1000 && ($by['dues']['of'] ?? 0) === 2000 && ($by['fine']['amount'] ?? 0) === 1000 && ($by['fine']['of'] ?? -1) === 0);
+    chk('money · …and its lines add up to what it asks for', array_sum(array_column($v['lines'], 'amount')) === $v['payable'] && $v['payable'] === 2000);
+    chk('statement · the family statement carries the balance after each entry: the newest is what is owed (₦2,000), the training place moves nothing',
+        ($v['entries'][0]['balance'] ?? null) === 2000 && count(array_unique(array_map(fn($e) => $e['balance'], array_filter($v['entries'], fn($e) => $e['kind'] === 'training')))) === 1
+        && min(array_map(fn($e) => $e['balance'], $v['entries'])) >= 0);
+    /* The member's money screen printed "MOU done" for every member. It reads
+       the record now: a member serving has not completed it, one with mouAt has. */
+    $tr = member_statement(['memberId' => 'NGG-MR-1'])['training'] ?? [];
+    chk('statement · the training place is the record\'s: ₦60,000, nothing owed, MOU not yet complete for a member still serving',
+        ($tr['cost'] ?? 0) === 60000 && ($tr['owed'] ?? -1) === 0 && ($tr['mouDone'] ?? null) === false && ($tr['left'] ?? null) === false);
+    db_exec("UPDATE members SET mouAt = ? WHERE memberId = 'NGG-MR-1'", [$now]);
+    $tr = member_statement(['memberId' => 'NGG-MR-1'])['training'] ?? [];
+    chk('statement · …and complete, with its date, once the MOU is signed off', ($tr['mouDone'] ?? null) === true && ($tr['mouAt'] ?? '') === $now && ($tr['covered'] ?? 0) === 60000);
+    db_exec("UPDATE members SET mouAt = '' WHERE memberId = 'NGG-MR-1'");
+    $b1 = fees_balance($m1);
+    chk('money · the account\'s real figures add up: charged − received = payable, the training place apart',
+        $b1['realCharged'] - $b1['realCredited'] === $b1['payable'] && $b1['realCharged'] === 3000 && $b1['charged'] === 63000);
+    $lk = backend_dispatch('admin.fees.lookup', ['requesterId' => $ADM, 'q' => 'NGG-MR-1']);
+    $row = array_values(array_filter($lk['members'] ?? [], fn($x) => $x['memberId'] === 'NGG-MR-1'))[0] ?? [];
+    chk('money · the account search carries the real figures too', ($row['realCharged'] ?? 0) === 3000 && ($row['realCredited'] ?? 0) === 1000);
+    $bad = fees_post('NGG-MR-1', 'adjustment', 9999, ['periodKey' => 'oops', 'note' => 'keyed by mistake', 'by' => 'test']);
+    backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => (string)$bad['entryId'], 'reason' => 'keyed by mistake']);
+    $acct = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-MR-1'])['account']['account'] ?? null;
+    $S = $acct['summary'] ?? [];
+    chk('statement · the summary is a sum that reconciles: charged by kind − received by kind = payable now, the training place not in it',
+        $S && $S['chargedTotal'] === 3000 && $S['receivedTotal'] === 1000 && $S['chargedTotal'] - $S['receivedTotal'] === $S['payable']
+        && ($S['charged']['dues'] ?? 0) === 2000 && ($S['charged']['fine'] ?? 0) === 1000 && !isset($S['charged']['training']) && ($S['received']['payment'] ?? 0) === 1000);
+    $st = $acct['statement'] ?? [];
+    chk('statement · every entry with the balance after it, newest first, ending on what is payable; a voided entry is listed and moves nothing',
+        $st && $st[0]['void'] === true && $st[0]['balance'] === $st[1]['balance'] && $st[1]['balance'] === 2000
+        && !array_filter($st, fn($r) => $r['kind'] === 'training'));
+    chk('statement · what is owed: each open charge oldest first, what is left and what was paid of it',
+        array_map(fn($o) => [$o['kind'], $o['amount'], $o['paid'], $o['left']], $acct['open'] ?? []) === [['dues', 2000, 1000, 1000], ['fine', 1000, 0, 1000]]);
+    $w = backend_dispatch('admin.fees.waive', ['requesterId' => $ADM, 'memberId' => 'NGG-MR-1', 'amount' => 50000, 'reason' => 'hardship']);
+    chk('money · a waiver is capped at what is payable, not at a total holding the training place — no credit appears from nowhere',
+        !empty($w['ok']) && $w['waived'] === 2000 && $w['clamped'] === true && fees_balance($m1)['payable'] === 0 && fees_balance($m1)['realCredited'] === 3000);
+    // The debt book: aged, one ledger read, the bands add up to the total.
+    $wa = backend_dispatch('admin.fees.arrears', ['requesterId' => $ADM]);
+    $mine = array_values(array_filter($wa['arrears'] ?? [], fn($r) => $r['memberId'] === 'NGG-MR-1'))[0] ?? null;
+    chk('who owes · the bands add up to the total payable', array_sum(array_column($wa['aging'] ?? [], 'amount')) === ($wa['totalPayable'] ?? -1));
+    chk('who owes · each family says how long the oldest unpaid charge has been due, when they last paid, and what the debt is made of',
+        $mine === null || ($mine['oldestDue'] !== '' && $mine['daysOverdue'] >= 0 && in_array($mine['band'], ['current', 'd31', 'd61', 'd90'], true)
+            && isset($mine['made']['dues']) && array_sum($mine['made']) === $mine['payable'] && ($mine['lastPaid']['amount'] ?? 0) === 1000));
+    $nq = 0; $GLOBALS['__dbq_probe'] = true;
+    // A list must not read the ledger once per family (a per-row query in a serialiser is a defect here).
+    $src = (string)file_get_contents(__DIR__ . '/../_lib/domain/fees.php');
+    $fn = substr($src, strpos($src, 'function admin_fees_arrears('), 3000);
+    chk('who owes · reads the ledger once for the list, and hands each family its rows', substr_count($fn, 'FROM member_ledger') === 1 && str_contains($fn, 'fees_balance($m, $cfg, null, $entries, $compOf['));
+    /* …and nothing else per family either: compliance, status history and
+       suspensions came from four or more queries for every debtor. Five more
+       families owing must not add queries per family. */
+    $countQ = function () use ($ADM) { $GLOBALS['__db_qcount'] = 0; backend_dispatch('admin.fees.arrears', ['requesterId' => $ADM]); $n = $GLOBALS['__db_qcount']; unset($GLOBALS['__db_qcount']); return $n; };
+    $q1 = $countQ();
+    for ($i = 1; $i <= 5; $i++) {
+        db_insert('members', ['memberId' => 'NGG-MR-Q' . $i, 'fullName' => 'Q ' . $i, 'email' => "q$i@example.org", 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+            'centre' => 'Mr Centre', 'joinDate' => '2026-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
+        fees_post('NGG-MR-Q' . $i, 'dues', 2000, ['periodKey' => '2026-02', 'note' => 'Monthly dues 2026-02', 'by' => 'test']);
+    }
+    $q2 = $countQ();
+    chk('who owes · five more families owing cost no more queries per family (' . $q1 . ' → ' . $q2 . ')', $q2 - $q1 <= 5);
+    foreach (range(1, 5) as $i) { db_exec("DELETE FROM member_ledger WHERE memberId = ?", ['NGG-MR-Q' . $i]); db_exec("DELETE FROM members WHERE memberId = ?", ['NGG-MR-Q' . $i]); }
+    // Transactions: every movement with who keyed it; totals for the filter; voids counted, not added.
+    $j = backend_dispatch('admin.fees.journal', ['requesterId' => $ADM, 'from' => gmdate('Y-m-d', strtotime('-1 day')), 'to' => gmdate('Y-m-d', strtotime('+1 day')), 'q' => 'NGG-MR-1']);
+    $byKind = []; foreach ($j['rows'] ?? [] as $r) $byKind[$r['kind']][] = $r;
+    chk('transactions · the payment is listed with how it came and who keyed it', ($byKind['payment'][0]['method'] ?? '') === 'cash' && ($byKind['payment'][0]['by'] ?? '') === 'test');
+    chk('transactions · totals for the whole filter: received by method, charged by kind, the training place never in them',
+        ($j['totals']['received'] ?? 0) === 1000 && ($j['totals']['byMethod']['cash'] ?? 0) === 1000 && !isset($j['totals']['byKind']['training'])
+        && ($j['totals']['charged'] ?? 0) === 3000);
+    /* The period as a statement of account: owed at the start + charged − received
+       − waived − other credits = owed at the end, month by month, and the end
+       agrees with what the account says is owed. */
+    $R = $j['roll'] ?? [];
+    $rec = static fn($x) => $x['opening'] + $x['charged'] - $x['received'] - $x['waived'] - $x['otherCredit'] === $x['closing'];
+    $b1now = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-1'"));
+    chk('report · the period reconciles: nothing owed before, ₦3,000 charged, ₦1,000 received, ₦2,000 waived, and it closes on the account\'s own figure — the training place and the voided line in none of it',
+        $R && $rec($R) && $R['opening'] === 0 && $R['charged'] === 3000 && $R['received'] === 1000 && $R['waived'] === 2000 && $R['closing'] === $b1now['realCharged'] - $b1now['realCredited']);
+    chk('report · …and so does every month in it, each opening where the last closed',
+        !empty($R['months']) && count(array_filter($R['months'], $rec)) === count($R['months']) && $R['months'][0]['opening'] === $R['opening'] && end($R['months'])['closing'] === $R['closing']);
+    $tmp = fees_post('NGG-MR-1', 'fine', 1500, ['periodKey' => 'roll-probe', 'note' => 'Roll probe', 'by' => 'test']);
+    $owedMR = 0; foreach (['NGG-MR-1', 'NGG-MR-2'] as $x) { $bx = fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$x])); $owedMR += $bx['realCharged'] - $bx['realCredited']; }
+    $jl = backend_dispatch('admin.fees.journal', ['requesterId' => $ADM, 'from' => gmdate('Y-m-d', strtotime('+1 day')), 'to' => gmdate('Y-m-d', strtotime('+2 days')), 'q' => 'NGG-MR-', 'kind' => 'fine']);
+    chk('report · a later period opens on what was owed, and a kind filter does not narrow the balance (fines alone have no opening)',
+        isset($jl['roll']) && $owedMR !== 0 && $jl['roll']['opening'] === $owedMR && $jl['roll']['closing'] === $owedMR && $jl['roll']['charged'] === 0 && $jl['roll']['months'] === []);
+    backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => (string)($tmp['entryId'] ?? ''), 'reason' => 'test probe']);
+    $j2 = backend_dispatch('admin.fees.journal', ['requesterId' => $ADM, 'q' => 'NGG-MR-1', 'kind' => 'nonsense', 'state' => 'void', 'from' => 'yesterday']);
+    chk('transactions · an unknown filter falls back rather than erroring, and a voided entry is counted as voided, not as money',
+        !empty($j2['ok']) && preg_match('/^\d{4}-\d{2}-01$/', (string)$j2['from']) === 1 && ($j2['totals']['voided'] ?? 0) >= 1 && ($j2['totals']['charged'] ?? -1) === 0);
+    db_insert('members', ['memberId' => 'NGG-MR-SC', 'fullName' => 'Scoped', 'email' => 'sc@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin',
+        'centre' => 'Elsewhere', 'centreScope' => json_encode(['Elsewhere']), 'createdAt' => $now, 'updatedAt' => $now, 'capsExtra' => json_encode(['fees'])]);
+    $j3 = backend_dispatch('admin.fees.journal', ['requesterId' => 'NGG-MR-SC', 'q' => 'NGG-MR-1']);
+    chk('transactions · a centre-scoped reader sees only their centres', !empty($j3['ok']) ? ($j3['total'] ?? 1) === 0 : in_array($j3['error'] ?? '', ['forbidden'], true));
+    $jr = backend_dispatch('admin.fees.journal', ['requesterId' => $ADM, 'limit' => '', 'offset' => '']);
+    chk('transactions · a limit the route passes as blank is the default page, not one row', ($jr['limit'] ?? 0) === FEES_JOURNAL_PAGE && count($jr['rows'] ?? []) === min(FEES_JOURNAL_PAGE, (int)($jr['total'] ?? 0)) && ($jr['total'] ?? 0) > 1);
+    chk('transactions · needs the Fees permission', (backend_dispatch('admin.fees.journal', ['requesterId' => 'NGG-MR-2'])['error'] ?? '') !== '');
+    // One transfer is credited once, whichever door it comes through.
+    $desk = backend_dispatch('admin.fees.payment', ['requesterId' => $ADM, 'memberId' => 'NGG-MR-2', 'amount' => 2000, 'method' => 'transfer', 'reference' => 'TRF-77701']);
+    $claim = member_request_create(['memberId' => 'NGG-MR-2', 'kind' => 'payment', 'amount' => 2000, 'reference' => 'trf 77701', 'paidAt' => gmdate('Y-m-d')]);
+    $dec = backend_dispatch('admin.requests.decide', ['requesterId' => $ADM, 'requestId' => $claim['request']['requestId'], 'approve' => true, 'decision' => 'ok']);
+    chk('payments · a family claim for a transfer already recorded at the desk is refused, not credited twice',
+        !empty($desk['ok']) && ($dec['error'] ?? '') === 'reference_reused'
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-MR-2' AND kind = 'payment'")['c'] === 1
+        && db_row('SELECT status FROM member_requests WHERE requestId = ?', [$claim['request']['requestId']])['status'] === 'open');
+    $own = member_request_create(['memberId' => $ADM, 'kind' => 'payment', 'amount' => 500, 'reference' => 'TRF-OWN-1', 'paidAt' => gmdate('Y-m-d')]);
+    chk('payments · nobody approves a payment onto their own account from the inbox either',
+        !empty($own['ok']) && (backend_dispatch('admin.requests.decide', ['requesterId' => $ADM, 'requestId' => $own['request']['requestId'], 'approve' => true, 'decision' => 'ok'])['error'] ?? '') === 'own_account');
+    $inv = fees_post('NGG-MR-2', 'payment', 700, ['periodKey' => 'minv:MINV-TEST-1', 'by' => 'paystack', 'method' => 'paystack']);
+    $vp = fees_post('NGG-MR-2', 'payment', 300, ['periodKey' => 'volpay:VP-TEST-1', 'by' => 'test', 'method' => 'volunteer-pay']);
+    chk('void · an invoice payment or a volunteer-pay deduction is corrected where it started, never voided on the account alone',
+        (backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => $inv['entryId'], 'reason' => 'x'])['error'] ?? '') === 'void_at_source'
+        && (backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => $vp['entryId'], 'reason' => 'x'])['error'] ?? '') === 'void_at_source'
+        && (string)db_row('SELECT voidedAt FROM member_ledger WHERE entryId = ?', [$inv['entryId']])['voidedAt'] === '');
+    // One owed figure everywhere: the overview reads what families are asked for, never the training place.
+    db_insert('members', ['memberId' => 'NGG-MR-TP', 'fullName' => 'Place Only', 'email' => 'tp@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => 'Mr Centre', 'joinDate' => gmdate('Y-m-d'), 'createdAt' => $now, 'updatedAt' => $now]);
+    fees_post('NGG-MR-TP', 'training', 60000, ['periodKey' => 'total', 'note' => 'Training fee — the place', 'by' => 'test']);
+    $ov = backend_dispatch('admin.members.overview', ['requesterId' => $ADM]);
+    $payableAll = 0; $owingAll = 0;
+    foreach (db_all("SELECT * FROM members WHERE memberId IN (SELECT DISTINCT memberId FROM member_ledger)") as $mm) { $bb = fees_balance($mm); $pp = (int)$bb['realCharged'] - (int)$bb['realCredited']; if ($pp > 0) { $payableAll += $pp; $owingAll++; } }
+    $dues = $ov['overview']['dues'] ?? null;
+    chk('overview · "Families owing" and "Payable" are the families asked for money and what they are asked for — a training place alone is neither',
+        $dues && $dues['outstanding'] === $payableAll && $dues['people'] === $owingAll && fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-TP'"))['realCharged'] === 0);
+    // A fine's conduct rule is named, never guessed from a word inside another word; a capped fine's sanction says what was charged.
+    chk('conduct rules · "chocolate", "plate" and "escalated" are not lateness; "late" and "lateness" are',
+        conduct_rule_key(['note' => 'Ate the chocolate in class']) === '' && conduct_rule_key(['note' => 'Broke a plate']) === ''
+        && conduct_rule_key(['note' => 'Matter escalated']) === '' && conduct_rule_key(['note' => 'Late to the session']) === 'late'
+        && conduct_rule_key(['note' => 'lateness, third time']) === 'late' && conduct_rule_key(['note' => 'Missed Saturday']) === 'absent');
+    $keepRule = db_row("SELECT * FROM conduct_rules WHERE reason = 'late' ORDER BY id LIMIT 1");
+    if ($keepRule) db_update('conduct_rules', ['active' => 1, 'capTerm' => 700], ['id' => (int)$keepRule['id']]);
+    else db_insert('conduct_rules', ['ruleId' => 'RULE-LATE-T', 'reason' => 'late', 'name' => 'Late', 'whenText' => '', 'amount' => 500, 'capTerm' => 700, 'active' => 1, 'createdBy' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    $d1 = policy_day_number(gmdate('Y-m-d')); 
+    policy_issue('NGG-MR-2', 'member', 'fine', POLICY_T_LATE_FINE + $d1, ['amount' => 500, 'status' => 'pending', 'reason' => 'Arrived 09:35 — ₦500 lateness fine.']);
+    policy_issue('NGG-MR-2', 'member', 'fine', POLICY_T_LATE_FINE + $d1 - 7, ['amount' => 500, 'status' => 'pending', 'reason' => 'Arrived 09:40 — ₦500 lateness fine.']);
+    policy_issue('NGG-MR-2', 'member', 'fine', POLICY_T_LATE_FINE + $d1 - 14, ['amount' => 500, 'status' => 'pending', 'reason' => 'Arrived 09:41 — ₦500 lateness fine.']);
+    $sx = fn($t) => db_row("SELECT * FROM sanctions WHERE personId = 'NGG-MR-2' AND kind = 'fine' AND tier = ?", [$t]);
+    $l1 = $sx(POLICY_T_LATE_FINE + $d1); $l2 = $sx(POLICY_T_LATE_FINE + $d1 - 7); $l3 = $sx(POLICY_T_LATE_FINE + $d1 - 14);
+    chk('conduct rules · a policy fine the term cap trims says the amount charged; one it refuses is lifted, not left owed with nothing on the account',
+        (int)$l1['amount'] === 500 && (int)$l2['amount'] === 200 && $l3['status'] === 'lifted' && $l3['clearedBy'] === 'rule'
+        && !db_row("SELECT 1 FROM member_ledger WHERE memberId = 'NGG-MR-2' AND periodKey = ?", ['sanction-' . $l3['id']]));
+    if ($keepRule) db_update('conduct_rules', ['active' => $keepRule['active'], 'capTerm' => $keepRule['capTerm']], ['id' => (int)$keepRule['id']]);
+    else db_exec("DELETE FROM conduct_rules WHERE ruleId = 'RULE-LATE-T'");
+    db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-MR-%'");
+    // Money that arrived and could not be applied: recorded once, decided by a person, applied once.
+    $invRow = ['invoiceId' => 'MINV-UNAP-1', 'memberId' => 'NGG-MR-2'];
+    unapplied_record('NGGM-UNAPTEST000001', 'unapplied', $invRow, 2500, 'NGN');
+    unapplied_record('NGGM-UNAPTEST000001', 'unapplied', $invRow, 2500, 'NGN');
+    $ua = db_row("SELECT * FROM unapplied_payments WHERE reference = 'NGGM-UNAPTEST000001'");
+    chk('unapplied · a payment that could not be applied is recorded once per reference, open, for the right family',
+        $ua && $ua['status'] === 'open' && (int)$ua['amount'] === 2500 && (int)db_row("SELECT COUNT(*) c FROM unapplied_payments WHERE reference = 'NGGM-UNAPTEST000001'")['c'] === 1);
+    $ml = backend_dispatch('admin.membership.invoices', ['requesterId' => $ADM]);
+    chk('unapplied · Membership payments lists it with its id, so it can be decided', (bool)array_filter($ml['alerts'] ?? [], fn($a) => ($a['reference'] ?? '') === 'NGGM-UNAPTEST000001' && ($a['id'] ?? 0) > 0));
+    chk('unapplied · refunding or dismissing needs a reason', (backend_dispatch('admin.fees.unapplied.resolve', ['requesterId' => $ADM, 'id' => (int)$ua['id'], 'decision' => 'dismiss', 'note' => ''])['error'] ?? '') === 'reason_required');
+    $before = (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'"))['realCredited'];
+    $ap = backend_dispatch('admin.fees.unapplied.resolve', ['requesterId' => $ADM, 'id' => (int)$ua['id'], 'decision' => 'apply', 'note' => 'paid the replaced invoice']);
+    chk('unapplied · applying it posts the payment to the account, once, and it leaves the list',
+        !empty($ap['ok']) && (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'"))['realCredited'] === $before + 2500
+        && (backend_dispatch('admin.fees.unapplied.resolve', ['requesterId' => $ADM, 'id' => (int)$ua['id'], 'decision' => 'apply'])['error'] ?? '') === 'already_resolved'
+        && !array_filter(backend_dispatch('admin.membership.invoices', ['requesterId' => $ADM])['alerts'] ?? [], fn($a) => ($a['reference'] ?? '') === 'NGGM-UNAPTEST000001'));
+    db_exec("DELETE FROM unapplied_payments WHERE reference LIKE 'NGGM-UNAPTEST%'");
+    $m2 = db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-2'");
+    fees_accrue_member($m2);
+    $first = db_row("SELECT note, amount FROM member_ledger WHERE memberId = 'NGG-MR-2' AND kind = 'dues' ORDER BY periodKey LIMIT 1");
+    chk('money · a part first month is "Monthly dues" like every other month, and says it is a part month',
+        $first && str_starts_with((string)$first['note'], 'Monthly dues ') && ((int)$first['amount'] === 2000 || str_contains((string)$first['note'], '(part month, from ')));
+    if ($keep === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'fees'", [$keep]);
+    foreach (['member_ledger' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-MR-%'");
+})();
+
+
+// ── Charging runs: NGG members only, never for months away, never past the ceiling, and everybody reached ──
+(function () {
+    $now = now_iso();
+    $keep = setting_raw('fees'); $keepCur = setting_raw('fees_accrue_cursor');
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'trainingFee' => 0, 'balanceCap' => 0] + FEES_DEFAULTS, 'test');
+    $m0 = gmdate('Y-m', strtotime(gmdate('Y-m-15') . ' UTC'));
+    $mAgo = fn($n) => gmdate('Y-m', strtotime(gmdate('Y-m-15') . " UTC -$n months"));
+    $mk = function ($id, $type, $join) use ($now) {
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Acc ' . $id, 'email' => strtolower($id) . '@example.org', 'type' => $type, 'status' => 'active',
+            'role' => 'member', 'centre' => 'Acc Centre', 'joinDate' => $join, 'createdAt' => $now, 'updatedAt' => $now]);
+        return db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
+    };
+    $keys = fn($id, $kind) => array_column(db_all("SELECT periodKey FROM member_ledger WHERE memberId = ? AND kind = ? ORDER BY periodKey", [$id, $kind]), 'periodKey');
+
+    $sum = $mk('SUM-ACC-1', 'Summer', $mAgo(3) . '-01');
+    $r = fees_accrue_member($sum, fees_settings());
+    chk('accrual · a Summer School participant with an account is never charged membership, dues or a training place',
+        $r['skipped'] === 'not_ngg' && !db_row("SELECT 1 FROM member_ledger WHERE memberId = 'SUM-ACC-1'"));
+
+    // Active for two months, away (inactive) for three, back for two.
+    $away = $mk('NGG-ACC-2', 'NGG', $mAgo(6) . '-01');
+    db_exec("DELETE FROM member_status_log WHERE memberId = 'NGG-ACC-2'");
+    foreach ([['active', $mAgo(6) . '-01'], ['inactive', $mAgo(4) . '-01'], ['active', $mAgo(1) . '-01']] as [$st, $since])
+        db_insert('member_status_log', ['memberId' => 'NGG-ACC-2', 'status' => $st, 'since' => $since, 'source' => 'test', 'recordedAt' => $now]);
+    fees_accrue_member($away, fees_settings());
+    chk('accrual · months the member was away are not charged on their return — only the months they were active',
+        $keys('NGG-ACC-2', 'dues') === [$mAgo(6), $mAgo(5), $mAgo(1), $m0]);
+
+    // The ceiling holds for every posting, not just at the start of the run.
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'trainingFee' => 0, 'balanceCap' => 9000] + FEES_DEFAULTS, 'test');
+    $capped = $mk('NGG-ACC-3', 'NGG', $mAgo(8) . '-01');
+    $rc = fees_accrue_member($capped, fees_settings());
+    $b = fees_balance($capped, fees_settings());
+    chk('accrual · a backlog stops at the ceiling: nothing is posted that would take the account past it', $b['realCharged'] <= 9000 && $b['realCharged'] >= 7000 && $rc['skipped'] === 'at_cap');
+
+    // Everybody is reached: the run carries on from where the last one stopped, and wraps.
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'trainingFee' => 0, 'balanceCap' => 0] + FEES_DEFAULTS, 'test');
+    db_exec("DELETE FROM settings WHERE settingKey = 'fees_accrue_cursor'");
+    $active = (int)db_row("SELECT COUNT(*) c FROM members WHERE status = 'active' AND (type IS NULL OR type <> 'Summer')")['c'];
+    $seen = 0; $runs = 0;
+    do { $t = fees_accrue_batch(2, fees_settings()); $seen += $t['members']; $runs++; } while (!$t['wrapped'] && $runs < 10000);
+    chk('accrual · successive runs of a small batch reach every NGG member once, then start again from the beginning',
+        $seen === $active && (int)(setting_raw('fees_accrue_cursor') ?? -1) === 0);
+    chk('accrual · …and never pick up a Summer account', !db_row("SELECT 1 FROM member_ledger WHERE memberId = 'SUM-ACC-1'"));
+
+    // A ledger entry either lands or is reported as not landing; a long key fits the same way on both databases.
+    $long = 'fresh-start:2026-11-03:import:membership:' . str_repeat('x', 80);
+    $a = fees_post('NGG-ACC-2', 'waiver', 100, ['periodKey' => $long, 'by' => 'test']);
+    $b2 = fees_post('NGG-ACC-2', 'waiver', 100, ['periodKey' => $long, 'by' => 'test']);
+    chk('ledger · a key longer than the column is shortened to fit (one row), and the same key again is the same row, not a second waiver',
+        $a && strlen((string)$a['periodKey']) <= FEES_PERIODKEY_MAX && $b2 && $b2['entryId'] === $a['entryId']
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-ACC-2' AND kind = 'waiver'")['c'] === 1);
+    chk('ledger · only a duplicate key reads as "already posted"; any other failure is a failure',
+        fees_is_duplicate(new \PDOException('SQLSTATE[23000]: Integrity constraint violation: 19 UNIQUE constraint failed: member_ledger.memberId'))
+        && fees_is_duplicate(new \PDOException("SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'x' for key 'idx_mledg_accrual'"))
+        && !fees_is_duplicate(new \PDOException('SQLSTATE[HY000]: General error: 1205 Lock wait timeout exceeded'))
+        && !fees_is_duplicate(new \PDOException("SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'periodKey'")));
+    chk('ledger · the schema is at 220 and the ledger is indexed by date', NGG_SCHEMA_TARGET >= 220
+        && (bool)db_row("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_mledg_created'"));
+    if ($keep === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'fees'", [$keep]);
+    if ($keepCur === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees_accrue_cursor'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'fees_accrue_cursor'", [$keepCur]);
+    foreach (['member_ledger', 'member_status_log', 'members'] as $t) db_exec("DELETE FROM $t WHERE memberId IN ('SUM-ACC-1','NGG-ACC-2','NGG-ACC-3')");
 })();
 
 
@@ -36043,6 +36989,720 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     foreach (['notice_reads' => "noticeId = '$id'", 'notice_mail' => "noticeId = '$id'", 'notices' => "noticeId = '$id'", 'notifications' => "linkRef = '$id'", 'guardian_notices' => "guardianId = 'GRD-NT-1'",
               'guardian_wards' => "guardianId = 'GRD-NT-1'", 'guardians' => "guardianId = 'GRD-NT-1'", 'members' => "memberId LIKE 'NGG-NT-%'", 'centres' => "centreId = 'CEN-NT-1'"] as $t => $w2) db_exec("DELETE FROM $t WHERE $w2");
 })();
+
+
+/* ── A day signed in with no sign-out is a half-day, not an absence (31 Oct 2026) ── */
+(function () {
+    $now = now_iso();
+    foreach (['NGG-HD-1', 'NGG-HD-2'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => 'Half ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    $keepPol = setting_raw('policy');
+    policy_settings_save(['member' => ['enabled' => true, 'absenceFine' => 1000]], 'test');
+    $fine = fn($id) => db_row("SELECT status FROM sanctions WHERE personId = ? AND kind = 'fine' AND tier >= 500000 AND tier < ?", [$id, POLICY_T_LATE_FINE]);
+    // Logged under the old rule: an absence for the day, and its fine.
+    policy_log('NGG-HD-1', 'member', 'no_checkout', '2026-10-17', 'Signed in but never signed out.');
+    policy_log('NGG-HD-1', 'member', 'absence', '2026-10-17', 'Incomplete day — no sign-out.');
+    policy_apply('NGG-HD-1', 'member');
+    $had = $fine('NGG-HD-1');
+    $r = policy_nosignout_to_halfday();
+    $live = fn($k, $d) => (bool)db_row("SELECT 1 FROM infractions WHERE personId = 'NGG-HD-1' AND kind = ? AND date = ? AND (voidedAt IS NULL OR voidedAt = '')", [$k, $d]);
+    chk('half-day · an old no-sign-out absence becomes a half-day', $r['converted'] >= 1 && !$live('absence', '2026-10-17') && $live('halfday', '2026-10-17'));
+    chk('half-day · …and its absence fine is lifted in the same step', $had && ($had['status'] ?? '') === 'pending' && ($fine('NGG-HD-1')['status'] ?? '') === 'lifted');
+    chk('half-day · nothing left to do is two queries and no change', policy_nosignout_to_halfday() === ['converted' => 0, 'people' => 0, 'reworked' => 0, 'more' => false]);
+    // Left half-done by an earlier run: converted, but the fine still owed.
+    policy_log('NGG-HD-2', 'member', 'absence', '2026-10-24', 'Incomplete day — no sign-out.');
+    policy_apply('NGG-HD-2', 'member');
+    db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = 'system', voidReason = ? WHERE personId = 'NGG-HD-2' AND kind = 'absence'", [$now, POLICY_HALFDAY_REASON]);
+    $stuckBefore = $fine('NGG-HD-2');
+    $r2 = policy_nosignout_to_halfday();
+    chk('half-day · a person an earlier run left half-done is re-worked: the fine comes off', ($stuckBefore['status'] ?? '') === 'pending' && $r2['reworked'] === 1 && ($fine('NGG-HD-2')['status'] ?? '') === 'lifted');
+    $run = backend_dispatch('admin.policy.halfday.run', ['requesterId' => 'NGG-2025-0099']);
+    chk('half-day · an admin can apply it now and is told what changed', !empty($run['ok']) && $run['converted'] === 0 && $run['more'] === false);
+    // Two half-days in a window count as one absence; one does not.
+    chk('half-day · one half-day is not an absence', count(policy_unexcused_absences('NGG-HD-1', '2026-10-01', '2026-10-31')) === 0);
+    policy_log('NGG-HD-1', 'member', 'halfday', '2026-10-24', POLICY_NOSIGNOUT_NOTE);
+    chk('half-day · two half-days count as one absence, dated on the second', policy_unexcused_absences('NGG-HD-1', '2026-10-01', '2026-10-31') === ['2026-10-24']);
+    if ($keepPol === null) db_exec("DELETE FROM settings WHERE settingKey = 'policy'"); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$keepPol, 'policy']);
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-HD-%'");
+})();
+
+
+/* ── An appeal against a decision, reviewed by somebody else ── */
+(function () {
+    $now = now_iso(); $SU = 'NGG-2025-0099';
+    db_insert('members', ['memberId' => 'NGG-AP-1', 'fullName' => 'Appeal Kid', 'email' => 'ap1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-AP-ADM', 'fullName' => 'Second Admin', 'email' => 'ap-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    // A suspension the first admin issued by hand, with its fine.
+    backend_dispatch('admin.policy.sanction.issue', ['requesterId' => $SU, 'personId' => 'NGG-AP-1', 'kind' => 'suspension', 'reason' => 'Fighting at the desk', 'days' => 7]);
+    $sn = db_row("SELECT * FROM sanctions WHERE personId = 'NGG-AP-1' AND kind = 'suspension'");
+    $c = member_compliance(['memberId' => 'NGG-AP-1']);
+    chk('appeal · the member sees the decision by name, to appeal it', ($c['decisions'][0]['id'] ?? 0) === (int)$sn['id'] && $c['decisions'][0]['what'] === 'A suspension');
+    $r = backend_dispatch('member.request.create', ['memberId' => 'NGG-AP-1', 'kind' => 'appeal', 'body' => 'It was not me, ask the coordinator.', 'refSanctionId' => (int)$sn['id']]);
+    chk('appeal · raised against the suspension', !empty($r['ok']) && $r['request']['refSanctionId'] === (int)$sn['id'] && $r['request']['subject'] === 'Appeal: a suspension');
+    chk('appeal · once: a second appeal of the same decision is refused', (backend_dispatch('member.request.create', ['memberId' => 'NGG-AP-1', 'kind' => 'appeal', 'body' => 'again', 'refSanctionId' => (int)$sn['id']])['error'] ?? '') === 'already_appealed');
+    chk('appeal · somebody else\'s decision cannot be named', (backend_dispatch('member.request.create', ['memberId' => 'NGG-AP-1', 'kind' => 'appeal', 'body' => 'x', 'refSanctionId' => 999999])['error'] ?? '') === 'not_found');
+    $rid = $r['request']['requestId'];
+    chk('appeal · the admin who issued it cannot decide its appeal', (backend_dispatch('admin.requests.decide', ['requesterId' => $SU, 'requestId' => $rid, 'approve' => true, 'decision' => 'fine'])['error'] ?? '') === 'needs_second_person');
+    chk('appeal · upheld or not, the reviewer says why', (backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-AP-ADM', 'requestId' => $rid, 'approve' => true, 'decision' => ''])['error'] ?? '') === 'need_reason');
+    $d = backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-AP-ADM', 'requestId' => $rid, 'approve' => true, 'decision' => 'The coordinator confirms it was somebody else.']);
+    $after = db_row("SELECT status, note FROM sanctions WHERE id = ?", [(int)$sn['id']]);
+    chk('appeal · upheld by a second person: the suspension is overturned, with the appeal on it', !empty($d['ok']) && $after['status'] === 'lifted' && str_contains((string)$after['note'], $rid));
+    // A proposed eviction cannot be confirmed while its appeal is open.
+    policy_issue('NGG-AP-1', 'member', 'eviction', 99, ['status' => 'proposed', 'reason' => 'test']);
+    $ev = db_row("SELECT id FROM sanctions WHERE personId = 'NGG-AP-1' AND kind = 'eviction'");
+    backend_dispatch('member.request.create', ['memberId' => 'NGG-AP-1', 'kind' => 'appeal', 'body' => 'Please review this.', 'refSanctionId' => (int)$ev['id']]);
+    chk('appeal · an eviction is not confirmed while its appeal is open', (backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU, 'sanctionId' => (int)$ev['id'], 'status' => 'active'])['error'] ?? '') === 'under_appeal');
+    foreach (['sanctions' => 'personId', 'member_requests' => 'memberId', 'member_ledger' => 'memberId', 'members' => 'memberId'] as $t => $col) db_exec("DELETE FROM $t WHERE $col LIKE 'NGG-AP-%'");
+})();
+
+
+/* ── Achievements, worked out; learning outside NGG, confirmed ── */
+(function () {
+    $now = now_iso(); $SU = 'NGG-2025-0099';
+    db_insert('members', ['memberId' => 'NGG-AC-1', 'fullName' => 'Ada Achiever', 'displayId' => '026-901', 'email' => 'ac1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-AC-2', 'fullName' => 'Bo Second', 'displayId' => '026-902', 'email' => 'ac2@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $today = attendance_today();
+    for ($i = 1; $i <= 12; $i++) { $d = gmdate('Y-m-d', strtotime($today . ' UTC') - $i * 86400);
+        db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-AC-1', 'date' => $d, 'checkInAt' => $d . 'T08:00:00Z', 'checkOutAt' => $d . 'T15:00:00Z', 'method' => 'test', 'createdAt' => $now]); }
+    $a = member_achievements(['memberId' => 'NGG-AC-1']);
+    $t = array_column($a['items'], 't');
+    chk('achievements · 10 days attended is reached, worked out from attendance', !empty($a['ok']) && in_array('10 days attended', $t, true) && $a['stats']['days'] === 12 && $a['stats']['fullDays'] === 12);
+    chk('achievements · the next goal is within reach and counted', ($a['next'][0]['t'] ?? '') === '13 more days to 25 days attended');
+    chk('achievements · a place at the centre for attendance this month or last', (bool)array_filter($a['items'], fn($x) => $x['kind'] === 'place' && str_starts_with($x['t'], '1st at Egbeda')));
+    // Staff give a recognition; the member sees it.
+    $w = backend_dispatch('admin.members.award.add', ['requesterId' => $SU, 'memberId' => 'NGG-AC-1', 'name' => 'Best in Coding', 'category' => 'academic', 'period' => 'Term 1 2026']);
+    $a2 = member_achievements(['memberId' => 'NGG-AC-1']);
+    chk('achievements · a recognition from staff is shown, with its kind', !empty($w['ok']) && ($a2['items'][0]['t'] ?? '') === 'Best in Coding' && str_contains($a2['items'][0]['s'], 'Academic'));
+    chk('achievements · a recognition needs a name', (backend_dispatch('admin.members.award.add', ['requesterId' => $SU, 'memberId' => 'NGG-AC-1', 'name' => ''])['error'] ?? '') === 'name_required');
+
+    // Learning outside NGG.
+    chk('outside · needs evidence: a video, picture, link or a few lines', (backend_dispatch('member.learning.add', ['memberId' => 'NGG-AC-1', 'data' => ['title' => 'Loops', 'platform' => 'Scratch']])['error'] ?? '') === 'evidence_required');
+    $e = backend_dispatch('member.learning.add', ['memberId' => 'NGG-AC-1', 'data' => ['title' => 'Responsive Web Design: 20 steps', 'platform' => 'freeCodeCamp', 'hours' => 3,
+        'media' => [['url' => 'https://res.example.com/a.mp4', 'kind' => 'video'], 'javascript:alert(1)', 'https://res.example.com/b.png']]]);
+    chk('outside · logged with its video and picture; a bad link is dropped', !empty($e['ok']) && $e['entry']['status'] === 'pending' && count($e['entry']['media']) === 2 && $e['entry']['media'][0]['kind'] === 'video');
+    chk('outside · it waits for an instructor and counts for nothing yet', member_achievements(['memberId' => 'NGG-AC-1'])['stats']['outside'] === 0);
+    chk('outside · sending back needs a note', (backend_dispatch('admin.learning.review', ['requesterId' => $SU, 'entryIds' => [$e['entry']['entryId']], 'decision' => 'returned'])['error'] ?? '') === 'note_required');
+    $rv = backend_dispatch('admin.learning.review', ['requesterId' => $SU, 'entryIds' => [$e['entry']['entryId'], 'LRN-NOPE'], 'decision' => 'confirmed']);
+    chk('outside · confirmed per entry; an unknown one is named, not hidden', !empty($rv['ok']) && $rv['applied'] === 1 && $rv['results'][1]['error'] === 'not_found');
+    $st = member_achievements(['memberId' => 'NGG-AC-1'])['stats'];
+    chk('outside · once confirmed it counts, with its hours', $st['outside'] === 1 && (float)$st['outsideHours'] === 3.0);
+    chk('outside · a confirmed entry stays on the record', (backend_dispatch('member.learning.remove', ['memberId' => 'NGG-AC-1', 'entryId' => $e['entry']['entryId']])['error'] ?? '') === 'confirmed');
+    // A platform's report.
+    $rows = [['id' => '026-902', 'title' => 'Python basics', 'progress' => '60%', 'hours' => 4], ['name' => 'ada achiever', 'title' => 'Python basics', 'progress' => '100%'], ['name' => 'Nobody Here', 'title' => 'x']];
+    $chk = backend_dispatch('admin.learning.import', ['requesterId' => $SU, 'platform' => 'Khan Academy', 'rows' => $rows]);
+    chk('report · the check matches by printed ID and by name, refuses the unknown, writes nothing', !empty($chk['ok']) && $chk['add'] === 2 && $chk['refused'] === 1 && !$chk['applied']
+        && !db_row("SELECT 1 x FROM learning_log WHERE source = 'report'"));
+    $ap = backend_dispatch('admin.learning.import', ['requesterId' => $SU, 'platform' => 'Khan Academy', 'rows' => $rows, 'apply' => true]);
+    chk('report · applied, the rows arrive confirmed', $ap['add'] === 2 && (int)db_row("SELECT COUNT(*) c FROM learning_log WHERE source = 'report' AND status = 'confirmed'")['c'] === 2);
+    chk('report · the same report again adds nothing', backend_dispatch('admin.learning.import', ['requesterId' => $SU, 'platform' => 'Khan Academy', 'rows' => $rows, 'apply' => true])['add'] === 0);
+    $ov = backend_dispatch('admin.learning.overview', ['requesterId' => $SU, 'centre' => 'Egbeda']);
+    $mine = array_values(array_filter($ov['members'] ?? [], fn($x) => $x['memberId'] === 'NGG-AC-1'));
+    chk('overview · how each member is doing: attendance, outside learning, last learnt', $mine && $mine[0]['days90'] === 12 && $mine[0]['outside'] === 2 && $mine[0]['lastLearnt'] === $today);
+    foreach (['attendance' => 'studentId', 'learning_log' => 'memberId', 'awards' => 'subjectId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'NGG-AC-%'");
+})();
+
+
+/* ── A lost photo file whose photo is still in Cloudinary ── */
+(function () {
+    $now = now_iso(); $SU = 'NGG-2025-0099';
+    $gone = str_repeat('ab', 16) . '.jpg';
+    $cloud = 'https://res.cloudinary.com/demo-ngg/image/upload/v1/headshots/pc1.jpg';
+    db_insert('members', ['memberId' => 'NGG-PC-1', 'fullName' => 'Pat Cloud', 'email' => 'pc1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '',
+        'photoUrl' => '/api/public/photo.php?p=' . $gone, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('photo_change_requests', ['requestId' => 'PCR-PC-1', 'subjectType' => 'member', 'subjectId' => 'NGG-PC-1', 'photoUrl' => $cloud, 'requestedAt' => $now]);
+    $r = backend_dispatch('admin.photos.cloud', ['requesterId' => $SU]);
+    $mine = array_values(array_filter($r['items'] ?? [], fn($x) => $x['name'] === $gone));
+    chk('photos · a missing file is matched to the Cloudinary photo held for the same person', $mine && $mine[0]['who'] === 'Pat Cloud' && in_array($cloud, $mine[0]['candidates'], true));
+    chk('photos · only a photo held for that person can be used', (backend_dispatch('admin.photos.use_cloud', ['requesterId' => $SU, 'name' => $gone, 'place' => $mine[0]['place'], 'rowId' => $mine[0]['rowId'],
+        'url' => 'https://res.cloudinary.com/demo-ngg/image/upload/v1/someone-else.jpg'])['error'] ?? '') === 'not_a_match');
+    $u = backend_dispatch('admin.photos.use_cloud', ['requesterId' => $SU, 'name' => $gone, 'place' => $mine[0]['place'], 'rowId' => $mine[0]['rowId'], 'url' => $cloud]);
+    chk('photos · chosen, the record shows the Cloudinary photo and the file is no longer missing', !empty($u['ok'])
+        && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PC-1'")['photoUrl'] === $cloud && !isset((photo_store_missing_map() ?? [])[$gone]));
+    db_exec("DELETE FROM photo_change_requests WHERE requestId = 'PCR-PC-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PC-1'");
+})();
+
+
+/* ── Dues and payment notices (domain/dues-notices.php) ────────────────────
+   A family hears what is coming before it is owed, on every channel and to
+   every linked guardian; arrears reach a guardian who has only the family
+   app; a payment note is acknowledged and answered; the desk is nudged. */
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099';
+    $keep = setting_get('fees');
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'trainingFee' => 0,
+        'noticeEnabled' => true, 'noticeDaysBefore' => 7, 'noticeApp' => true, 'noticeEmail' => true, 'noticeTelegram' => true, 'noticeSms' => false,
+        'remindEnabled' => true, 'remindEveryDays' => 14, 'remindMinBalance' => 1, 'claimStaffHours' => 48] + FEES_DEFAULTS, 'test');
+    $mk = static function (string $id, string $name, string $parentEmail, array $x = []) use ($now) {
+        db_insert('members', $x + ['memberId' => $id, 'fullName' => $name, 'email' => '', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => '2025-12-01', 'parentEmail' => $parentEmail, 'parentPhone' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    };
+    $mk('NGG-DN-1', 'Ada Notice', 'parent.dn1@example.com');
+    $mk('NGG-DN-2', 'Bola Ahead', 'parent.dn2@example.com');
+    $mk('NGG-DN-3', 'Chi AppOnly', '');                  // reachable only through a guardian's family app
+    $mk('NGG-DN-4', 'Dayo Quiet', 'parent.dn4@example.com', ['duesRemindOff' => 1]);
+    foreach ([['GDN-DN00000001', 'mum.dn1@example.com', 'NGG-DN-1'], ['GDN-DN00000003', '', 'NGG-DN-3']] as [$gid, $em, $mid]) {
+        db_insert('guardians', ['guardianId' => $gid, 'email' => $em, 'fullName' => 'Guardian ' . $mid, 'phone' => '', 'status' => 'active', 'createdAt' => $now]);
+        db_insert('guardian_wards', ['linkId' => 'GW-' . $gid, 'guardianId' => $gid, 'memberId' => $mid, 'relationship' => 'parent', 'status' => 'active', 'createdAt' => $now]);
+    }
+    fees_post('NGG-DN-2', 'payment', 9000, ['note' => 'Paid ahead', 'method' => 'transfer', 'reference' => 'AHEAD-1', 'by' => $ADM]);
+    $sv = backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['noticeDaysBefore' => 999, 'claimStaffHours' => 1, 'noticeSms' => true, 'noticeTelegram' => false]]);
+    $c2 = fees_settings();
+    chk('dues notices: the settings are saved through the Fees screen, bounded — days before at most 30, the desk nudge at least 12 hours',
+        !empty($sv['ok']) && $c2['noticeDaysBefore'] === FEES_NOTICE_DAYS_MAX && $c2['claimStaffHours'] === FEES_CLAIM_HOURS_MIN && $c2['noticeSms'] === true && $c2['noticeTelegram'] === false);
+    backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['noticeDaysBefore' => 7, 'claimStaffHours' => 48, 'noticeSms' => false, 'noticeTelegram' => true]]);
+    $cfg = fees_settings();
+
+    // Six days before 1 December: December's dues and the first renewal fall due together.
+    $T = '2026-11-25';
+    $items = dues_upcoming_for(db_row("SELECT * FROM members WHERE memberId = 'NGG-DN-1'"), $cfg, $T);
+    chk('dues notices: what falls due within the window, after the credit — December’s dues and the renewal on the same day',
+        array_column($items, 'kind') === ['dues', 'membership'] && $items[0]['due'] === '2026-12-01' && $items[1]['due'] === '2026-12-01');
+    chk('dues notices: eleven days out, nothing is due yet', dues_upcoming_for(db_row("SELECT * FROM members WHERE memberId = 'NGG-DN-1'"), $cfg, '2026-11-20') === []);
+    $c = dues_upcoming_candidates($T, $cfg);
+    $ids = array_map(static fn($d) => (string)$d['member']['memberId'], $c['due']);
+    chk('dues notices: a family paid ahead past it, and one that asked not to be chased, are not told — each counted',
+        in_array('NGG-DN-1', $ids, true) && in_array('NGG-DN-3', $ids, true) && !in_array('NGG-DN-2', $ids, true) && !in_array('NGG-DN-4', $ids, true)
+        && $c['skipped']['paidAhead'] >= 1 && $c['skipped']['optedOut'] >= 1);
+
+    $GLOBALS['__mail_sink'] = [];
+    $r = dues_notices_run($T, true);
+    $mails = array_values(array_filter($GLOBALS['__mail_sink'], static fn($m) => in_array((string)$m['to'], ['mum.dn1@example.com', 'parent.dn1@example.com'], true)));
+    $row = db_row("SELECT * FROM dues_notices WHERE memberId = 'NGG-DN-1' AND kind = 'upcoming'");
+    $gn = db_row("SELECT * FROM guardian_notices WHERE guardianId = 'GDN-DN00000001' AND kind = 'dues-upcoming'");
+    chk('dues notices: one notice per family per due date — the family app, the guardian’s email and the parent email on the record, naming both charges and the total',
+        $r['upcoming'] >= 2 && $row && $row['status'] === 'sent' && (int)$row['amount'] === 7000 && $row['dueOn'] === '2026-12-01'
+        && count($mails) === 2 && in_array('mum.dn1@example.com', array_column($mails, 'to'), true) && in_array('parent.dn1@example.com', array_column($mails, 'to'), true)
+        && str_contains($mails[0]['html'], 'Commitment fee · December 2026') && str_contains($mails[0]['html'], 'Membership renewal')
+        && $gn && str_contains((string)$gn['title'], 'due 1 Dec') && (json_decode((string)$row['channelsJson'], true)['app'] ?? 0) === 1);
+    chk('dues notices: a guardian with only the family app is told there, about that child',
+        (bool)db_row("SELECT 1 FROM guardian_notices WHERE guardianId = 'GDN-DN00000003' AND kind = 'dues-upcoming' AND memberId = 'NGG-DN-3'"));
+    chk('dues notices: the member sees it in their own portal too', (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-DN-1' AND kind = 'money'"));
+    $GLOBALS['__mail_sink'] = [];
+    $again = dues_notices_run($T, true);
+    chk('dues notices: never said twice, whatever the cron does', $again['upcoming'] === 0 && $GLOBALS['__mail_sink'] === []
+        && (int)db_row("SELECT COUNT(*) c FROM dues_notices WHERE memberId = 'NGG-DN-1' AND kind = 'upcoming'")['c'] === 1);
+    $state = setting_get('dues_notices_state');
+    chk('dues notices: the daily scan marks the day done, so a 15-minute tick does not rescan the roster', ($state['doneOn'] ?? '') === $T);
+    $cfgOff = $cfg; $cfgOff['noticeEnabled'] = false;
+    chk('dues notices: switched off, nobody is listed', !empty(dues_upcoming_candidates($T, $cfgOff)['off']) && dues_upcoming_candidates($T, $cfgOff)['due'] === []);
+
+    // Arrears: a guardian with only the family app is reachable — no longer skipped as "no email".
+    fees_post('NGG-DN-3', 'dues', 2000, ['periodKey' => '2026-10', 'note' => 'Dues — October', 'by' => 'accrual']);
+    $ac = fees_reminder_candidates();
+    chk('dues reminders: a family reachable only by the app is a candidate, and nobody is counted as “no email” any more',
+        in_array('NGG-DN-3', array_column($ac['due'], 'memberId'), true) && array_key_exists('noContact', $ac['skipped']) && !array_key_exists('noEmail', $ac['skipped']));
+    $GLOBALS['__mail_sink'] = [];
+    foreach ($ac['due'] as $cand) if ($cand['memberId'] === 'NGG-DN-3') fees_reminder_send($cand);
+    chk('dues reminders: the arrears reminder lands in the family app with the alerts, and the stamp is set', (bool)db_row("SELECT 1 FROM guardian_notices WHERE guardianId = 'GDN-DN00000003' AND kind = 'dues-arrears' AND cat = 'alert' AND memberId = 'NGG-DN-3'")
+        && (string)db_row("SELECT duesRemindedAt FROM members WHERE memberId = 'NGG-DN-3'")['duesRemindedAt'] !== ''
+        && (bool)db_row("SELECT 1 FROM dues_notices WHERE memberId = 'NGG-DN-3' AND kind = 'arrears' AND status = 'sent'"));
+
+    // A payment note: acknowledged at once, answered when decided. Two months are on the account first.
+    foreach (['2026-10', '2026-11'] as $pk) fees_post('NGG-DN-1', 'dues', 2000, ['periodKey' => $pk, 'note' => 'Dues — ' . $pk, 'by' => 'accrual']);
+    $GLOBALS['__mail_sink'] = [];
+    $cr = member_request_create(['memberId' => 'NGG-DN-1', 'kind' => 'payment', 'amount' => 2000, 'reference' => 'TRF-DN-1', 'raisedBy' => 'guardian:GDN-DN00000001', 'body' => 'Paid by transfer']);
+    $rid = (string)($cr['request']['requestId'] ?? db_row("SELECT requestId FROM member_requests WHERE memberId = 'NGG-DN-1' AND kind = 'payment' ORDER BY id DESC LIMIT 1")['requestId']);
+    $ack = db_row("SELECT * FROM guardian_notices WHERE guardianId = 'GDN-DN00000001' AND kind = 'dues-claim_ack'");
+    chk('payment notes: the parent hears at once that it arrived, with the reference and what happens next',
+        !empty($cr['ok']) && $ack && str_contains((string)$ack['body'], 'TRF-DN-1') && str_contains((string)$ack['body'], 'within 2 days')
+        && (bool)array_filter($GLOBALS['__mail_sink'], static fn($m) => str_contains((string)$m['subject'], 'We have your payment note')));
+    $dc = backend_dispatch('admin.requests.decide', ['requesterId' => $ADM, 'requestId' => $rid, 'approve' => true, 'amount' => 2000]);
+    $ans = db_row("SELECT * FROM guardian_notices WHERE guardianId = 'GDN-DN00000001' AND kind = 'dues-claim_decided'");
+    chk('payment notes: the answer reaches the family app, with what is still to pay', !empty($dc['ok']) && $ans && str_contains((string)$ans['title'], 'Payment confirmed')
+        && str_contains((string)$ans['body'], 'Still to pay'));
+
+    // The desk: notes waiting past the hours set are a nudge, once a day per person.
+    db_insert('member_requests', ['requestId' => 'REQ-DNOLD00001', 'memberId' => 'NGG-DN-1', 'kind' => 'payment', 'status' => 'open', 'subject' => 'Payment of ₦2,000', 'body' => '',
+        'amount' => 2000, 'reference' => 'OLD-1', 'proofUrl' => '', 'paidAt' => '', 'fromDate' => '', 'toDate' => '', 'refEntryId' => '', 'decision' => '', 'decidedBy' => '', 'decidedAt' => '',
+        'ledgerEntryId' => '', 'createdAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 3 * 86400), 'updatedAt' => $now, 'raisedBy' => '']);
+    $n1 = dues_claims_staff_nudge($T, $cfg); $n2 = dues_claims_staff_nudge($T, $cfg);
+    chk('payment notes: waiting more than two days, the fees desk is nudged — once a day', $n1 >= 1 && $n2 === 0
+        && (bool)db_row("SELECT 1 FROM dues_notices WHERE memberId = ? AND kind = 'claim_staff' AND refKey = ?", [$ADM, $T])
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = ? AND title LIKE '%payment note%waiting to be checked'", [$ADM]));
+
+    // The Control Room: what is coming, what was sent, what is waiting.
+    $nv = backend_dispatch('admin.fees.notices', ['requesterId' => $ADM, 'today' => '2026-11-20']);
+    $mine = array_values(array_filter($nv['coming'] ?? [], static fn($x) => $x['memberId'] === 'NGG-DN-1'))[0] ?? null;
+    chk('Money → Reminders: who will be told, on which day, by which channels — and what was sent', !empty($nv['ok']) && $mine && $mine['tellOn'] === '2026-11-24'
+        && $mine['dueOn'] === '2026-12-01' && $mine['amount'] === 7000 && $mine['told'] !== '' && $mine['reach']['email'] === 2
+        && (bool)array_filter($nv['history'], static fn($h) => $h['memberId'] === 'NGG-DN-1' && $h['kind'] === 'upcoming') && $nv['claims']['open'] >= 1);
+    chk('Money → Reminders: a member without the Fees permission is refused', empty(backend_dispatch('admin.fees.notices', ['requesterId' => 'NGG-DN-1'])['ok']));
+
+    unset($GLOBALS['__mail_sink']);
+    setting_set('fees', is_array($keep) ? $keep : [], 'test');
+    setting_set('dues_notices_state', null, 'test');
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-DN-%'"); db_exec("DELETE FROM member_requests WHERE memberId LIKE 'NGG-DN-%'");
+    db_exec("DELETE FROM guardian_wards WHERE memberId LIKE 'NGG-DN-%'"); db_exec("DELETE FROM guardians WHERE guardianId LIKE 'GDN-DN%'");
+})();
+
+/* ── Parents pay Paystack's charge (membership-pay.php paystack_family_charge) ──
+   The family pays the dues plus Paystack's charge; NGG receives the whole dues;
+   the ledger records only the dues; the receipt shows the charge. */
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099';
+    $keep = setting_get('fees');
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000] + FEES_DEFAULTS, 'test');
+    $cfg = fees_settings();
+    // Paystack keeps 1.5% (+₦100 from ₦2,500), at most ₦2,000. What reaches NGG after its charge on the gross:
+    $kept = static function (int $net) use ($cfg) { $g = $net + paystack_family_charge($net, $cfg);
+        $c = min((int)$cfg['payFeeCap'], (int)ceil($g * $cfg['payFeeBps'] / 10000 + ($g >= (int)$cfg['payFeeFlatUnder'] ? (int)$cfg['payFeeFlat'] : 0))); return $g - $c; };
+    $ok = true;
+    foreach ([500, 2000, 2400, 2462, 2470, 2500, 7000, 25000, 120000, 500000] as $net) {
+        $k = $kept($net); $fee = paystack_family_charge($net, $cfg);
+        if ($k < $net || $k > $net + 2) { $ok = false; fwrite(STDERR, "net $net fee $fee kept $k\n"); }
+    }
+    chk('paystack charge: after Paystack takes its cut of what the family pays, NGG has the whole amount — under ₦2,500, across the flat-charge line, and at the cap',
+        $ok && paystack_family_charge(2000, $cfg) === 31 && paystack_family_charge(7000, $cfg) === 209 && paystack_family_charge(500000, $cfg) === 2000);
+    chk('paystack charge: switched off, or nothing owed, there is none', paystack_family_charge(7000, ['payFeeOn' => false] + $cfg) === 0 && paystack_family_charge(0, $cfg) === 0);
+    $sv = backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['payFeeBps' => 15000, 'payFeeCap' => 999999]]);
+    chk('paystack charge: a typo cannot put 150% on a bill — the settings are bounded', !empty($sv['ok']) && fees_settings()['payFeeBps'] === FEES_PAYFEE_BPS_MAX && fees_settings()['payFeeCap'] === FEES_PAYFEE_CAP_MAX);
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000] + FEES_DEFAULTS, 'test');
+
+    db_insert('members', ['memberId' => 'NGG-PF-1', 'fullName' => 'Pay Fee', 'email' => '', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'joinDate' => '2025-12-01', 'parentEmail' => 'parent.pf1@example.com', 'createdAt' => $now, 'updatedAt' => $now]);
+    fees_post('NGG-PF-1', 'dues', 7000, ['periodKey' => '2026-10', 'note' => 'Monthly dues 2026-10', 'by' => 'accrual']);
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    $sent = null; $paid = null;
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) use (&$sent, &$paid) {
+        if (strpos($path, '/transaction/initialize') === 0) { $sent = $body; return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/pf1', 'reference' => $body['reference']]]; }
+        $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
+        return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => $paid ?? $sent['amount'], 'currency' => 'NGN', 'channel' => 'card', 'metadata' => $sent['metadata']]];
+    };
+    $acct = backend_dispatch('member.fees.account', ['memberId' => 'NGG-PF-1'])['account'] ?? (member_fees_account(['memberId' => 'NGG-PF-1'])['account'] ?? []);
+    chk('paystack charge: the account quotes it before anybody presses Pay', ($acct['payFee'] ?? -1) === 209);
+    $bi = membership_balance_invoice(db_row("SELECT * FROM members WHERE memberId = 'NGG-PF-1'"), 'test');
+    $inv = membership_invoice_by('invoiceId', (string)$bi['invoiceId']);
+    $pub = public_membership_invoice(['token' => $inv['payToken']])['invoice'] ?? [];
+    chk('paystack charge: the pay page shows the invoice at the dues, and the charge beside it', (int)$inv['total'] === 7000 && ($pub['onlineFee'] ?? 0) === 209 && ($pub['total'] ?? 0) === 7000);
+    $in = backend_dispatch('public.membership.pay.init', ['token' => $inv['payToken']]);
+    chk('paystack charge: the checkout is for the dues plus the charge, and the charge rides in the transaction itself',
+        !empty($in['ok']) && (int)$sent['amount'] === 7209 * 100 && (int)$sent['metadata']['processingFee'] === 209);
+    $paid = 7000 * 100;
+    chk('paystack charge: a payment of the bare dues against a checkout that carried the charge does not settle it',
+        (membership_paystack_verify((string)$in['reference'])['error'] ?? '') === 'payment_mismatch');
+    $paid = null;
+    $v = membership_paystack_verify((string)$in['reference']);
+    $inv2 = membership_invoice_by('invoiceId', (string)$bi['invoiceId']);
+    $credit = (int)db_row("SELECT COALESCE(SUM(amount),0) s FROM member_ledger WHERE memberId = 'NGG-PF-1' AND kind = 'payment'")['s'];
+    chk('paystack charge: paid, the account takes the dues — not the charge — and nothing is owed',
+        ($v['status'] ?? '') === 'paid' && $credit === 7000 && (int)$inv2['processingFee'] === 209 && (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-PF-1'"), $cfg)['payable'] === 0);
+    $html = doc_render_receipt(doc_for_receipt($inv2));
+    chk('paystack charge: the receipt names it as Paystack’s, and the total is what left the family’s account',
+        str_contains($html, 'Paystack charge') && str_contains($html, fees_money_text(7209, $cfg)));
+    $after = public_membership_invoice(['token' => $inv2['payToken']])['invoice'] ?? [];
+    chk('paystack charge: the paid page shows the charge that was actually taken', ($after['onlineFee'] ?? 0) === 209);
+
+    unset($GLOBALS['__paystack_mock'], $GLOBALS['CONFIG']['paystack']);
+    setting_set('fees', is_array($keep) ? $keep : [], 'test');
+    db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-PF-1'"); db_exec("DELETE FROM membership_invoices WHERE memberId = 'NGG-PF-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PF-1'");
+})();
+
+/* ── Staff broadcasts reach Community and the member's portal ───────────────
+   A quick message, a club announcement and an official notice become ONE pinned
+   Announcement in the commons each, by the sender; a withdrawn notice comes down;
+   Summer-only and guardians-only messages stay out; money reminders never go
+   there, and the member is told of theirs in their own words. */
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099';
+    community_ensure_channels();
+    $q = backend_dispatch('admin.broadcast', ['requesterId' => $ADM, 'title' => 'Centre closed on Saturday', 'body' => 'Water works on the road. See you the week after.', 'audience' => 'all', 'community' => true]);
+    $post = db_row("SELECT * FROM community_posts WHERE sourceRef LIKE 'qm:%' ORDER BY id DESC LIMIT 1");
+    chk('broadcast → Community: a quick message is pinned in the commons as an Announcement, by the sender',
+        !empty($q['ok']) && !empty($q['community']['posted']) && $post && $post['kind'] === 'announce' && (int)$post['pinned'] === 1 && $post['authorId'] === $ADM
+        && $post['status'] === 'published' && str_starts_with((string)$post['body'], 'Centre closed on Saturday')
+        && (string)db_row("SELECT slug FROM community_channels WHERE channelId = ?", [$post['channelId']])['slug'] === 'commons');
+    $again = community_announce($ADM, (string)$post['sourceRef'], 'Centre closed on Saturday', 'x');
+    chk('broadcast → Community: once per message — the same source posts nothing new', !empty($again['existed']) && (int)db_row("SELECT COUNT(*) c FROM community_posts WHERE sourceRef = ?", [$post['sourceRef']])['c'] === 1);
+    $n0 = (int)db_row("SELECT COUNT(*) c FROM community_posts WHERE kind = 'announce'")['c'];
+    $qs = backend_dispatch('admin.broadcast', ['requesterId' => $ADM, 'title' => 'Summer kit list', 'body' => 'Bring a water bottle.', 'audience' => 'Summer', 'community' => true]);
+    $qn = backend_dispatch('admin.broadcast', ['requesterId' => $ADM, 'title' => 'Quiet one', 'body' => 'Bell only.', 'audience' => 'all']);
+    chk('broadcast → Community: a Summer School-only message is not posted, and the sender is told why; unasked, nothing is posted',
+        !empty($qs['ok']) && empty($qs['community']['posted']) && str_contains((string)$qs['community']['why'], 'Summer') && array_key_exists('community', $qn) && $qn['community'] === null
+        && (int)db_row("SELECT COUNT(*) c FROM community_posts WHERE kind = 'announce'")['c'] === $n0);
+    $qc = backend_dispatch('admin.broadcast', ['requesterId' => $ADM, 'title' => 'Bring your cards', 'body' => 'ID check at the door.', 'audience' => 'Egbeda', 'community' => true]);
+    $pc = db_row("SELECT body FROM community_posts WHERE sourceRef LIKE 'qm:%' ORDER BY id DESC LIMIT 1");
+    chk('broadcast → Community: a message for one centre says so in its first line, because the commons is every centre’s',
+        !empty($qc['community']['posted']) && str_starts_with((string)$pc['body'], 'For Egbeda centre — Bring your cards'));
+    chk('broadcast → Community: only staff post announcements — a member cannot be made the author', (community_announce('NGG-2025-0001', 'qm:test-member', 'x', 'y')['error'] ?? '') === 'not_staff'
+        || !db_row("SELECT 1 FROM members WHERE memberId = 'NGG-2025-0001' AND role = 'member'"));
+
+    // An official notice: posted with a link to the whole notice, and taken down when it is withdrawn.
+    $sv = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'org' => 'NGG', 'kind' => 'Notice', 'subject' => 'New term dates', 'body' => 'Term starts on 9 January.', 'signoff' => 'The Programme Office',
+        'audience' => 'all', 'reach' => 'both', 'communityOn' => true]);
+    $nid = (string)($sv['notice']['noticeId'] ?? '');
+    $pub = backend_dispatch('admin.notices.publish', ['requesterId' => $ADM, 'noticeId' => $nid]);
+    $np = db_row("SELECT * FROM community_posts WHERE sourceRef = ?", ['notice:' . $nid]);
+    chk('notice → Community: published with “Show it in Community”, it is pinned there with a link to the notice in full',
+        $nid !== '' && !empty($pub['ok']) && $np && $np['kind'] === 'announce' && str_contains((string)$np['body'], '/notice/' . $nid) && !empty($sv['notice']['communityOn']));
+    $wd = backend_dispatch('admin.notices.withdraw', ['requesterId' => $ADM, 'noticeId' => $nid, 'reason' => 'Dates changed again']);
+    chk('notice → Community: withdrawn, it comes down from Community too', !empty($wd['ok']) && db_row("SELECT status FROM community_posts WHERE sourceRef = ?", ['notice:' . $nid])['status'] === 'removed');
+    $sg = backend_dispatch('admin.notices.save', ['requesterId' => $ADM, 'org' => 'NGG', 'kind' => 'Notice', 'subject' => 'For parents only', 'body' => 'Consent forms are due.', 'signoff' => 'Office',
+        'audience' => 'all', 'reach' => 'guardians', 'communityOn' => true]);
+    backend_dispatch('admin.notices.publish', ['requesterId' => $ADM, 'noticeId' => (string)($sg['notice']['noticeId'] ?? '')]);
+    chk('notice → Community: a notice for guardians only never goes there', !db_row("SELECT 1 FROM community_posts WHERE sourceRef = ?", ['notice:' . (string)($sg['notice']['noticeId'] ?? '')]));
+
+    // A club announcement: Community is a channel; guardians-only skips it.
+    chk('club announcement → Community: Community counts as reaching members, and alone it cannot reach guardians',
+        cp_ann_unreachable('members', ['community']) === '' && cp_ann_unreachable('guardians', ['community']) !== '');
+    db_insert('club_announcements', ['annId' => 'ANN-CMTEST01', 'title' => 'Robotics fair', 'body' => 'Show your builds on Saturday.', 'aud' => 'members', 'centre' => 'all',
+        'channels' => json_encode(['community']), 'status' => 'approved', 'sendAt' => '', 'byId' => $ADM, 'byName' => 'Admin', 'approvedById' => $ADM, 'approvedByName' => 'Admin',
+        'note' => '', 'sentAt' => '', 'stats' => '', 'smsBody' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    $st = cp_ann_send(['me' => db_row("SELECT * FROM members WHERE memberId = ?", [$ADM])], db_row("SELECT * FROM club_announcements WHERE annId = 'ANN-CMTEST01'"));
+    chk('club announcement → Community: sent with the Community channel, it is pinned there once and counted', ($st['community'] ?? 0) === 1
+        && (bool)db_row("SELECT 1 FROM community_posts WHERE sourceRef = 'ann:ANN-CMTEST01' AND kind = 'announce' AND pinned = 1"));
+
+    // Money stays out of Community; the member hears of their own reminder in words for them.
+    chk('reminders: no money reminder is ever a Community post', !db_row("SELECT 1 FROM community_posts WHERE sourceRef LIKE 'dues%' OR body LIKE '%to pay%'"));
+    db_insert('members', ['memberId' => 'NGG-AN-1', 'fullName' => 'Ama Notice', 'email' => '', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'joinDate' => '2025-12-01', 'parentEmail' => 'parent.an1@example.com', 'createdAt' => $now, 'updatedAt' => $now]);
+    $keep = setting_get('fees');
+    setting_set('fees', ['enabled' => true, 'monthlyDues' => 2000, 'membershipFee' => 5000, 'remindEnabled' => true, 'remindMinBalance' => 1] + FEES_DEFAULTS, 'test');
+    fees_post('NGG-AN-1', 'dues', 2000, ['periodKey' => '2026-10', 'note' => 'Monthly dues 2026-10', 'by' => 'accrual']);
+    foreach (fees_reminder_candidates()['due'] as $cand) if ($cand['memberId'] === 'NGG-AN-1') fees_reminder_send($cand);
+    $mn = db_row("SELECT * FROM notifications WHERE memberId = 'NGG-AN-1' AND kind = 'money' ORDER BY id DESC LIMIT 1");
+    chk('reminders: the member sees an arrears reminder in their own portal, told — not chased — and pointed at Fees',
+        $mn && str_starts_with((string)$mn['title'], 'Your account:') && str_contains((string)$mn['body'], 'parent or guardian') && (string)$mn['linkPage'] === 'money');
+    setting_set('fees', is_array($keep) ? $keep : [], 'test');
+    db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-AN-1'"); db_exec("DELETE FROM notifications WHERE memberId = 'NGG-AN-1'"); db_exec("DELETE FROM dues_notices WHERE memberId = 'NGG-AN-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-AN-1'"); db_exec("DELETE FROM club_announcements WHERE annId = 'ANN-CMTEST01'");
+})();
+
+
+/* ── The Wi-Fi roster has to fit through the host's door ─────────────────── */
+(function () {
+    /* CACENTRE is on cPanel, where ModSecurity's SecRequestBodyNoFilesLimit
+       defaults to 131072 bytes and rejects a larger body in PHASE 2 — before
+       PHP runs — with cPanel's 406. A roster of 1,200 people is ~218KB, so
+       every push failed and nothing was applied at all. Measured, not
+       assumed: the test builds the body the way the push does and weighs it. */
+    $row = fn($i) => ['id' => sprintf('NGG-WFP-%05d', $i), 'kind' => 'member',
+        'name' => 'Testerly Namesworth ' . $i, 'email' => 'someone.longish' . $i . '@example.org',
+        'printedId' => sprintf('026-%04d', $i), 'homeSite' => 'eg', 'verdict' => 'on'];
+    $people = array_map($row, range(1, 1200));
+
+    $weigh = fn(array $page, bool $full) => strlen((string)json_encode(
+        ['typ' => 'wifi.roster', 'full' => $full, 'people' => $page, 'n' => str_repeat('a', 16)],
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+
+    chk('wifi roster · the old single push really was over the host\'s limit (the bug)',
+        $weigh($people, true) > 131072);
+
+    $pages = wifi_cac_pages($people);
+    chk('wifi roster · it is cut into more than one page now', count($pages) > 1);
+    $over = array_values(array_filter($pages, fn($pg) => $weigh($pg, false) > WIFI_CAC_BODY_MAX));
+    chk('wifi roster · and EVERY page fits the budget' . ($over ? ' — ' . count($over) . ' did not' : ''), !$over);
+    chk('wifi roster · …with room under the host\'s own 128KB default',
+        !array_filter($pages, fn($pg) => $weigh($pg, false) >= 131072));
+    /* Empty fields are dropped, but never the three that decide anything —
+       an ABSENT verdict reads as `on` at CACENTRE, so dropping an empty one
+       would quietly put somebody on the internet. */
+    chk('wifi roster · empty fields are dropped to fit more people in a page',
+        wifi_cac_trim(['id' => 'X', 'kind' => 'member', 'name' => '', 'email' => '', 'verdict' => 'off', 'why' => '', 'validUntil' => ''])
+        === ['id' => 'X', 'kind' => 'member', 'verdict' => 'off']);
+    chk('wifi roster · …and an empty verdict is NEVER dropped (absent reads as "on" there)',
+        array_key_exists('verdict', wifi_cac_trim(['id' => 'X', 'kind' => 'member', 'verdict' => ''])));
+
+    chk('wifi roster · nobody is lost or duplicated in the cutting',
+        array_sum(array_map('count', $pages)) === count($people)
+        && count(array_unique(array_merge(...array_map(fn($pg) => array_column($pg, 'id'), $pages)))) === count($people));
+
+    /* The property that matters more than the paging: `full` may only be said
+       when the WHOLE roster went in one push, because CACENTRE withdraws
+       anybody missing from a full one. */
+    chk('wifi roster · a roster that fits still goes as ONE full push',
+        count(wifi_cac_pages(array_map($row, range(1, 20)))) === 1);
+    chk('wifi roster · an empty roster is still one (empty) page, not none',
+        wifi_cac_pages([]) === [[]]);
+
+    /* A row too big to split is not silently dropped — it goes alone. */
+    $huge = ['id' => 'NGG-WFP-HUGE', 'kind' => 'member', 'name' => str_repeat('x', 200000), 'verdict' => 'on'];
+    $hp = wifi_cac_pages([$row(1), $huge, $row(2)]);
+    chk('wifi roster · a single row bigger than the budget goes alone, never dropped',
+        array_sum(array_map('count', $hp)) === 3
+        && count(array_filter($hp, fn($pg) => count($pg) === 1 && $pg[0]['id'] === 'NGG-WFP-HUGE')) === 1);
+
+    /* The budget follows the host, not us. */
+    $GLOBALS['CONFIG']['wifi']['cac_body_max'] = 1048576;
+    chk('wifi roster · a host with a bigger door can be told, and then it goes whole',
+        count(wifi_cac_pages($people)) === 1);
+    unset($GLOBALS['CONFIG']['wifi']['cac_body_max']);
+
+})();
+
+/* ── Maths Lab (docs/MATH-LAB-PLAN.md): questions, the climb, mastery, review, Lite ── */
+(function () {
+    $now = now_iso();
+    // Every form, many seeds: the key it derives is marked right, and no multiple choice repeats an option.
+    $bad = 0; $n = 0;
+    foreach (mlb_forms() as $c => $forms) foreach ($forms as $fi => $f) for ($s = 1; $s <= 25; $s++) {
+        $it = mlb_item($c, $fi, $s * 104729); $n++;
+        $resp = in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key'];
+        if (!mlb_mark($it, $resp)['ok']) $bad++;
+        if (isset($it['options']) && count(array_unique($it['options'])) !== count($it['options'])) $bad++;
+        if (mlb_public($it) !== array_diff_key(mlb_public($it), ['key' => 1, 'steps' => 1, 'whys' => 1])) $bad++;
+    }
+    chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 70);
+    chk('maths lab · the map holds all 170 competencies, and the drafted graph is used where written', count(mlb_competencies()) === 170 && mlb_comp('MC-049')['needs'] === ['MC-048', 'MC-045', 'MC-027']);
+    // Marking is generous about form, strict about value.
+    $e = ['kind' => 'expr', 'key' => '8x-12', 'form' => 'expanded'];
+    chk('maths lab · an expression is marked by value (any order), and the form rule asks for it expanded', mlb_mark($e, '-12 + 8x')['ok'] && !mlb_mark($e, '8x+12')['ok']
+        && !mlb_mark($e, '4(2x-3)')['ok'] && mlb_mark($e, '4(2x-3)')['form'] !== null);
+    $f = ['kind' => 'frac', 'key' => '3/4', 'form' => 'lowest'];
+    chk('maths lab · a fraction must be in lowest terms where that is the skill, and "1,250" is 1250', mlb_mark($f, '3/4')['ok'] && !mlb_mark($f, '6/8')['ok'] && mlb_mark($f, '6/8')['form'] !== null
+        && mlb_mark(['kind' => 'num', 'key' => '1250'], '₦1,250')['ok'] && mlb_expr_eval('2+2*', []) === null);
+
+    db_insert('members', ['memberId' => 'NGG-ML-1', 'fullName' => 'Lab Learner', 'email' => 'ml1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SUM-ML-2', 'fullName' => 'Summer Kid', 'email' => 'ml2@example.com', 'type' => 'Summer', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('maths lab · the full Lab is for NGG members only', (mlb_home(['memberId' => 'SUM-ML-2'])['error'] ?? '') === 'members_only' && !empty(mlb_home(['memberId' => 'NGG-ML-1'])['ok']));
+    $answerAll = static function (array $st, bool $right, int $ms = 1000) {
+        $sess = db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$st['sessionId']]);
+        foreach (json_decode($sess['items'], true) as $i => $x) {
+            $it = mlb_item($x['c'], $x['f'], $x['s']);
+            $a = $right ? (in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key']) : (in_array($it['kind'], ['mcq', 'error'], true) ? ((int)$it['key'] + 1) % count($it['options']) : ($it['kind'] === 'pair' ? ['999', '999'] : '99999'));
+            mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $st['sessionId'], 'index' => $i, 'answer' => $a, 'ms' => $ms]);
+        }
+        return mlb_finish(['memberId' => 'NGG-ML-1', 'sessionId' => $st['sessionId']]);
+    };
+    // The climb: a clean, fast gate lights the whole stage and moves on.
+    $g1 = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb']);
+    chk('maths lab · a new member starts the climb at Stage 1 with a gate of typed questions, and no keys reach the browser',
+        !empty($g1['ok']) && $g1['ref'] === '1' && count($g1['items']) === MLB_GATE_ITEMS && !isset($g1['items'][0]['key']) && !isset($g1['items'][0]['steps']));
+    $r1 = $answerAll($g1, true);
+    $st1 = mlb_states('NGG-ML-1');
+    chk('maths lab · all right and fast clears the whole stage as known (fast-tracked), with a review booked in days, and moves on',
+        $r1['right'] === MLB_GATE_ITEMS && ($st1['MC-001']['state'] ?? '') === 'known' && ($st1['MC-010']['state'] ?? '') === 'known' && (string)$st1['MC-005']['nextReview'] !== ''
+        && (int)mlb_profile('NGG-ML-1')['climbStage'] === 2);
+    // A slow gate does not fast-track, and a poor one ends the climb where the gaps are.
+    $g2 = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb']); $r2 = $answerAll($g2, false);
+    chk('maths lab · a gate with most answers wrong ends the climb: learning starts in that stage', (int)mlb_profile('NGG-ML-1')['climbDone'] === 1 && (int)mlb_profile('NGG-ML-1')['climbStage'] === 2
+        && (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb'])['error'] ?? '') === 'climb_done' && mlb_home(['memberId' => 'NGG-ML-1'])['next']['mode'] === 'practice');
+    // Practice: instant feedback and a probability that rises; then the mastery check.
+    $pr = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'practice', 'comp' => 'MC-011']);
+    $x = json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$pr['sessionId']])['items'], true)[0];
+    $it = mlb_item($x['c'], $x['f'], $x['s']);
+    $fb = mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pr['sessionId'], 'index' => 0, 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key'], 'ms' => 4000]);
+    chk('maths lab · practice says at once whether an answer is right, with the worked solution and XP', !empty($fb['correct']) && is_array($fb['steps']) && $fb['xp'] > 0 && $fb['p'] > 0.15
+        && (mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pr['sessionId'], 'index' => 0, 'answer' => '1'])['error'] ?? '') === 'already_answered');
+    chk('maths lab · a topic whose prerequisites are not known is refused, and named', (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'practice', 'comp' => 'MC-049'])['error'] ?? '') === 'locked');
+    db_exec("UPDATE mlab_state SET state = 'ready', p = 0.9 WHERE memberId = 'NGG-ML-1' AND comp = 'MC-011'");
+    $ck = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'check', 'comp' => 'MC-011']); $rc = $answerAll($ck, true, 20000);
+    chk('maths lab · passing a mastery check (85%) lights the star as mastered with a review in about 10 days, and +100 XP',
+        $rc['pct'] === 100 && mlb_states('NGG-ML-1')['MC-011']['state'] === 'mastered' && $rc['xp'] === 100 && count($rc['review']) === MLB_CHECK_ITEMS);
+    // Review: a due topic that holds becomes secure; one that slips needs a refresh.
+    db_exec("UPDATE mlab_state SET nextReview = ? WHERE memberId = 'NGG-ML-1' AND comp IN ('MC-011', 'MC-001')", [gmdate('Y-m-d', time() - 86400)]);
+    $rv = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'review']); $rr = $answerAll($rv, true);
+    chk('maths lab · due reviews that hold move the topics on (mastered → secure, known → secure)', $rr['right'] === 2 && mlb_states('NGG-ML-1')['MC-011']['state'] === 'secure' && mlb_states('NGG-ML-1')['MC-001']['state'] === 'secure');
+    // Lite: anyone, marked by a signed token; a tampered token is refused.
+    $li = mlb_lite_item(['comp' => 'MC-045']);
+    $x = json_decode(b64url_decode(explode('.', $li['token'])[0]), true); $it = mlb_item($x['c'], (int)$x['f'], (int)$x['s']);
+    $ok = mlb_lite_check(['token' => $li['token'], 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key']]);
+    $tam = mlb_lite_check(['token' => b64url(json_encode(['c' => 'MC-045', 'f' => 0, 's' => 1, 'e' => time() + 99])) . '.' . explode('.', $li['token'])[1], 'answer' => '1']);
+    chk('maths lab · Lite marks with the worked solution and no record; a forged token is refused', !empty($ok['correct']) && !empty($ok['steps']) && !isset($li['item']['key']) && ($tam['error'] ?? '') === 'bad_token');
+    foreach (['mlab_state', 'mlab_profile', 'mlab_sessions', 'mlab_enrol'] as $t) db_exec("DELETE FROM $t WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
+})();
+
+// ── Two requests settling one payment: each announces / verifies once ──
+(function () {
+    $now = now_iso();
+    // Donations: the webhook lands while the browser's return is asking Paystack.
+    db_insert('donations', ['reference' => 'NGGD-RACE1', 'email' => 'race@example.org', 'name' => 'Race', 'amount' => 5000, 'currency' => 'NGN', 'status' => 'pending', 'createdAt' => $now]);
+    $n0 = (int)db_row("SELECT COUNT(*) n FROM outbox WHERE kind = 'donation.paid' AND payload LIKE '%NGGD-RACE1%'")['n'];
+    $GLOBALS['__paystack_mock'] = function ($m, $path) {
+        // The other request wins in the meantime.
+        db_exec("UPDATE donations SET status = 'paid', paidAt = ? WHERE reference = 'NGGD-RACE1'", [now_iso()]);
+        event_emit('donation.paid', ['ref' => 'NGGD-RACE1', 'amount' => 5000, 'name' => 'Race']);
+        return ['status' => true, 'data' => ['status' => 'success', 'reference' => 'NGGD-RACE1', 'amount' => 500000, 'currency' => 'NGN', 'channel' => 'card']];
+    };
+    $v = donation_verify('NGGD-RACE1');
+    unset($GLOBALS['__paystack_mock']);
+    $n1 = (int)db_row("SELECT COUNT(*) n FROM outbox WHERE kind = 'donation.paid' AND payload LIKE '%NGGD-RACE1%'")['n'];
+    chk('donations · the return and the webhook together: the gift is announced once, by whichever turned it paid', !empty($v['ok']) && $n1 - $n0 === 1);
+    db_exec("DELETE FROM donations WHERE reference = 'NGGD-RACE1'");
+})();
+
+// ── A fine lifted and issued again owes again; a voided dues month stays void ──
+(function () {
+    $now = now_iso(); $M = 'NGG-REISSUE-1';
+    db_insert('members', ['memberId' => $M, 'fullName' => 'Reissue Kid', 'email' => 're@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+    $f1 = fees_post($M, 'fine', 3000, ['periodKey' => 'sanction-990001', 'note' => 'Policy fine — re-entry', 'by' => 'policy', 'reissue' => true]);
+    db_exec("UPDATE member_ledger SET voidedAt = ?, voidedBy = 'test', voidReason = 'suspension overturned' WHERE entryId = ?", [$now, $f1['entryId']]);
+    $f2 = fees_post($M, 'fine', 3000, ['periodKey' => 'sanction-990001', 'note' => 'Policy fine — re-entry', 'by' => 'policy', 'reissue' => true]);
+    $live = db_row("SELECT * FROM member_ledger WHERE memberId = ? AND periodKey = 'sanction-990001'", [$M]);
+    chk('fines · a sanction lifted and issued again is owed again — the same row reinstated, not reported as posted while the account charged nothing',
+        $f2 && $f2['entryId'] === $f1['entryId'] && trim((string)$live['voidedAt']) === '' && (int)fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$M]))['payable'] === 3000);
+    chk('fines · …and the void it replaced is kept in the audit log', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'fees.reissue' AND meta LIKE '%suspension overturned%' LIMIT 1"));
+    $d1 = fees_post($M, 'dues', 2000, ['periodKey' => '2026-03', 'note' => 'Monthly dues 2026-03', 'by' => 'accrual']);
+    db_exec("UPDATE member_ledger SET voidedAt = ?, voidedBy = 'desk', voidReason = 'not a programme month' WHERE entryId = ?", [$now, $d1['entryId']]);
+    fees_post($M, 'dues', 2000, ['periodKey' => '2026-03', 'note' => 'Monthly dues 2026-03', 'by' => 'accrual']);
+    chk('fines · …while a dues month the desk voided stays void when the accrual runs again', trim((string)db_row("SELECT voidedAt FROM member_ledger WHERE entryId = ?", [$d1['entryId']])['voidedAt']) !== '');
+    $long = str_repeat('Àdúrà — ₦ ', 40);
+    $n = fees_post($M, 'adjustment', 100, ['note' => $long, 'by' => 'test']);
+    chk('ledger · a long note in Yoruba with ₦ and dashes is cut on a character, never mid-character (strict MySQL refuses broken UTF-8)',
+        $n && mb_check_encoding((string)$n['note'], 'UTF-8') && strlen((string)$n['note']) <= 240);
+    db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$M]); db_exec('DELETE FROM members WHERE memberId = ?', [$M]);
+})();
+
+// ── Donations: every figure counted over every gift, on the server ──
+(function () {
+    $now = now_iso(); $ADM = 'NGG-DON-ADM';
+    $keep = db_all('SELECT * FROM donations');
+    db_exec('DELETE FROM donations');
+    db_insert('members', ['memberId' => $ADM, 'fullName' => 'Don Admin', 'email' => 'don-adm@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    $old = gmdate('Y-m-d\TH:i:s\Z', strtotime('-40 days')); $stale = gmdate('Y-m-d\TH:i:s\Z', strtotime('-3 days'));
+    $i = 0; $add = function ($amt, $st, $at, $ch = 'card', $em = null) use (&$i) { $i++;
+        db_insert('donations', ['reference' => 'NGGD-T' . $i, 'email' => $em ?? "d$i@example.org", 'name' => "D$i", 'amount' => $amt, 'currency' => 'NGN', 'status' => $st, 'channel' => $ch, 'createdAt' => $at, 'paidAt' => $st === 'paid' ? $at : '']); };
+    $add(5000, 'paid', $now, 'card', 'same@example.org'); $add(20000, 'paid', $now, 'bank_transfer', 'same@example.org'); $add(3000, 'paid', $old, 'card');
+    $add(1000, 'pending', $now); $add(2500, 'pending', $stale);
+    $r = backend_dispatch('admin.donations.list', ['requesterId' => $ADM]);
+    $S = $r['summary'] ?? [];
+    chk('donations · raised, gifts, donors and the largest gift are counted on the server over every gift',
+        ($S['raised'] ?? 0) === 28000 && $S['gifts'] === 3 && $S['donors'] === 2 && $S['largest'] === 20000 && $S['average'] === 9333);
+    $by = array_column($r['donations'] ?? [], 'status', 'reference');
+    chk('donations · a checkout never confirmed after 48 hours is abandoned, not pending — counted apart, and said on its row',
+        $S['pending'] === 1 && $S['abandoned'] === 1 && ($by['NGGD-T5'] ?? '') === 'abandoned' && ($by['NGGD-T4'] ?? '') === 'pending');
+    chk('donations · months and channels add up to what was raised',
+        array_sum(array_column($r['months'] ?? [], 'amount')) === 28000 && count($r['months']) === 2 && array_sum(array_column($r['channels'] ?? [], 'amount')) === 28000);
+    $x = backend_dispatch('admin.donations.list', ['requesterId' => $ADM, 'export' => true]);
+    chk('donations · the export is every gift, with its cap named', count($x['donations'] ?? []) === 5 && ($x['cap'] ?? 0) === DONATIONS_EXPORT_MAX && empty($x['cutOff']));
+    db_exec('DELETE FROM donations'); foreach ($keep as $k) { unset($k['id']); db_insert('donations', $k); }
+    db_exec("DELETE FROM members WHERE memberId = ?", [$ADM]);
+})();
+
+
+/* ── Photos: stored in the bucket, optimised ONCE by Cloudinary, served from the bucket ── */
+(function () {
+    $now = now_iso(); $SU = 'NGG-2025-0099';
+    $keep = [$GLOBALS['CONFIG']['storage'] ?? null, $GLOBALS['CONFIG']['cloudinary'] ?? null];
+    $png = (function () { $im = imagecreatetruecolor(40, 40); imagefill($im, 0, 0, imagecolorallocate($im, 200, 40, 40)); ob_start(); imagepng($im); return ob_get_clean(); })();
+    $put = photo_store_put('data:image/png;base64,' . base64_encode($png));
+    preg_match('/[0-9a-f]{32}\.png/', (string)($put['url'] ?? ''), $mm); $id = $mm[0] ?? '';
+    $local = '/api/public/photo.php?p=' . $id;
+    db_insert('members', ['memberId' => 'NGG-BK-1', 'fullName' => 'Bucket One', 'email' => 'bk1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '',
+        'photoUrl' => $local, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('photo_change_requests', ['requestId' => 'PCR-BK-1', 'subjectType' => 'member', 'subjectId' => 'NGG-BK-1', 'photoUrl' => 'https://next.example.org' . $local, 'requestedAt' => $now]);
+    chk('bucket · with no bucket set, nothing moves and it says why', $id !== '' && (photo_store_to_bucket()['error'] ?? '') === 'no_bucket');
+    $GLOBALS['CONFIG']['storage'] = ['endpoint' => 'https://acc.r2.cloudflarestorage.com', 'bucket' => 'ngg-media', 'access_key' => 'AK', 'secret_key' => 'SK', 'public_base' => 'https://pub-x.r2.dev', 'folder' => 'ngg'];
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'nggcloud', 'api_key' => 'k', 'api_secret' => 's'];
+    $puts = []; $GLOBALS['__store_http_mock'] = function ($m, $k, $b = '', $x = []) use (&$puts) { $puts[] = [$m, $k, strlen($b), $x['content-type'] ?? '']; return ['code' => 200, 'body' => '']; };
+    $r = backend_dispatch('admin.photos.to_bucket', ['requesterId' => $SU]);
+    $want = 'https://pub-x.r2.dev/ngg/photos/' . $id;
+    $mine = array_values(array_filter($puts, fn($p) => $p[1] === 'ngg/photos/' . $id));
+    chk('bucket · the held photo is uploaded once, under its own name, as what it is', $mine && $mine[0][0] === 'PUT' && $mine[0][3] === 'image/png' && $mine[0][2] > 100);
+    chk('bucket · every record naming it now points at the bucket — relative and absolute', !empty($r['ok'])
+        && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-BK-1'")['photoUrl'] === $want
+        && db_row("SELECT photoUrl FROM photo_change_requests WHERE requestId = 'PCR-BK-1'")['photoUrl'] === $want);
+    chk('bucket · the local file is kept', photo_store_find($id) !== '');
+    // Optimised once: each size fetched from Cloudinary a single time, stored beside the photo, and only then marked.
+    $webp = 'RIFF' . pack('V', 26) . 'WEBPVP8 ' . str_repeat("\0", 18);
+    $asked = []; $GLOBALS['__photo_download_mock'] = function ($u) use (&$asked, $webp) { $asked[] = $u; return $webp; };
+    $puts = [];
+    $v = backend_dispatch('admin.photos.variants', ['requesterId' => $SU]);
+    $sizes = array_keys(PHOTO_VARIANTS);
+    $stored = array_map(fn($p) => $p[1], array_filter($puts, fn($p) => str_starts_with($p[1], 'ngg/photos/' . substr($id, 0, 32) . '__')));
+    $askedMine = array_values(array_filter($asked, fn($u) => str_contains($u, rawurlencode($want))));
+    chk('sizes · every size is made by Cloudinary once and stored in the bucket as WebP', !empty($v['ok']) && $v['made'] >= 1
+        && count($askedMine) === count($sizes) && str_starts_with($askedMine[0], 'https://res.cloudinary.com/nggcloud/image/fetch/f_webp,q_auto,')
+        && count($stored) === count($sizes) && in_array('ngg/photos/' . substr($id, 0, 32) . '__headshot.webp', $stored, true));
+    chk('sizes · …and only then is the record marked, so a page serves them from the bucket', db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-BK-1'")['photoUrl'] === $want . '?nv=1'
+        && db_row("SELECT photoUrl FROM photo_change_requests WHERE requestId = 'PCR-BK-1'")['photoUrl'] === $want . '?nv=1');
+    $asked = [];
+    chk('sizes · run again, Cloudinary is not asked again (a view never reaches it)', backend_dispatch('admin.photos.variants', ['requesterId' => $SU])['made'] === 0 && $asked === []);
+    // A refused size marks nothing.
+    db_exec("UPDATE members SET photoUrl = ? WHERE memberId = 'NGG-BK-1'", [$want]);
+    db_exec("UPDATE photo_change_requests SET photoUrl = ? WHERE requestId = 'PCR-BK-1'", [$want]);
+    $GLOBALS['__photo_download_mock'] = fn($u) => '';
+    $f = photo_variants_run();
+    chk('sizes · if Cloudinary does not answer, nothing is marked and the original is shown', $f['failed'] >= 1 && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-BK-1'")['photoUrl'] === $want);
+    // The sizes the pages ask for are the sizes stored.
+    preg_match_all("/^\s+(\w+):\s+'([^']+)'/m", substr((string)file_get_contents(dirname(__DIR__, 2) . '/photos.js'), (int)strpos((string)file_get_contents(dirname(__DIR__, 2) . '/photos.js'), 'const NGG_IMG_SIZES')), $js, PREG_SET_ORDER);
+    $jsSizes = []; foreach ($js as $row) { if (isset($jsSizes[$row[1]])) break; $jsSizes[$row[1]] = $row[2]; }
+    chk('sizes · the page asks for exactly the sizes the server stores (photos.js = PHOTO_VARIANTS)', $jsSizes === PHOTO_VARIANTS);
+    // Edits: a bucket photo is edited by fetch and the finished photo saved back into the bucket.
+    $uploads = 0; $GLOBALS['__cloudinary_upload_mock'] = function () use (&$uploads) { $uploads++; return 'https://res.cloudinary.com/nggcloud/image/upload/v1/x.jpg'; };
+    $src = 'https://pub-x.r2.dev/ngg/headshot/2026/10/abc.jpg';
+    $ad = cloudinary_adopt($src . '?nv=1');
+    $fetch = 'https://res.cloudinary.com/nggcloud/image/fetch/' . rawurlencode($src);
+    chk('edit · a bucket photo is edited by fetch, never copied into Cloudinary', !empty($ad['ok']) && $ad['url'] === $fetch && $uploads === 0);
+    $ed = cloudinary_apply($fetch, 'c_fill,g_face,w_600,h_750,e_improve:30');
+    chk('edit · the steps sit before the address, and the clean photo and the steps read back', $ed === 'https://res.cloudinary.com/nggcloud/image/fetch/c_fill,g_face,w_600,h_750,e_improve:30/' . rawurlencode($src)
+        && cloudinary_base($ed) === $fetch && photo_chain_of($ed) === 'c_fill,g_face,w_600,h_750,e_improve:30');
+    $GLOBALS['__photo_download_mock'] = fn($u) => str_contains($u, 'f_webp') ? $webp : $png;
+    $puts = [];
+    $m = photo_materialise($ed);
+    $e = 'https://pub-x.r2.dev/ngg/photos/e_' . substr(hash('sha256', $png), 0, 32) . '.png';
+    chk('edit · the finished photo is saved in the bucket, named by its bytes, with its sizes made at once', $m === $e . '?nv=1' && $uploads === 0
+        && count(array_filter($puts, fn($p) => str_ends_with($p[1], '.webp'))) === count($sizes));
+    unset($GLOBALS['__photo_download_mock'], $GLOBALS['__store_http_mock'], $GLOBALS['__cloudinary_upload_mock']);
+    foreach (['storage', 'cloudinary'] as $j => $k) { if ($keep[$j] === null) unset($GLOBALS['CONFIG'][$k]); else $GLOBALS['CONFIG'][$k] = $keep[$j]; }
+    db_exec("DELETE FROM photo_change_requests WHERE requestId = 'PCR-BK-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-BK-1'");
+})();
+
+// ── NGG documents: numbers without gaps, receipts that do not change, certificates that supersede, verification by code ──
+(function () { $__db = db_conn(); $__db->beginTransaction(); try {
+    $now = now_iso();
+    setting_set(DOC_SETTING, ['legalName' => 'Next Generation Genius Initiative', 'rcNo' => '', 'tin' => '1234-0001', 'feesOfficer' => 'Ade Fees', 'mathlabCoach' => '', 'programmeDirector' => 'Dee Director', 'vat' => 'exempt', 'dueDays' => 10], 'test');
+    db_insert('members', ['memberId' => 'NGG-DOC-1', 'fullName' => 'Tobi Bakare', 'email' => '', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'displayId' => '026-099', 'parentName' => 'Adeola Bakare', 'parentEmail' => 'adeola@example.com', 'joinDate' => '2026-10-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    setting_set('membership_pay', ['bankName' => 'GTBank', 'accountName' => 'Next Generation Genius Initiative', 'accountNumber' => '0123456789'], 'test');
+    $row = static fn($total) => ['memberId' => 'NGG-DOC-1', 'applicationId' => 0, 'payToken' => rand_hex(20), 'total' => $total, 'currency' => 'NGN', 'startDate' => '2026-11-01',
+        'items' => json_encode([['kind' => 'dues', 'label' => 'Commitment fee', 'detail' => 'monthly dues', 'periodKey' => '2026-11', 'amount' => $total]]),
+        'status' => 'open', 'purpose' => 'balance', 'createdBy' => 'test', 'createdAt' => $now];
+    $a = doc_invoice_insert($row(2000)); $b = doc_invoice_insert($row(4000));
+    $y = doc_year(); $n = static fn($no) => (int)substr($no, -5);
+    chk('documents · an invoice is numbered NGG-INV-YYYY-#####, and the next is the next', preg_match('/^NGG-INV-' . $y . '-\d{5}$/', $a['invoiceId']) && $n($b['invoiceId']) === $n($a['invoiceId']) + 1);
+    // The counter is a row in the same transaction as the record: rolled back with it (a savepoint stands in for the failed invoice here).
+    db_exec('SAVEPOINT doc_gap'); doc_mint('INV-' . doc_year()); db_exec('ROLLBACK TO SAVEPOINT doc_gap'); db_exec('RELEASE SAVEPOINT doc_gap');
+    $c = doc_invoice_insert($row(1000));
+    chk('documents · a number minted in a transaction that fails is not lost: no gap', $n($c['invoiceId']) === $n($b['invoiceId']) + 1);
+    chk('documents · the invoice has its record of issue, a check code and a private link', ($d = doc_by('docNo', $a['invoiceId'])) && $d['kind'] === 'invoice' && strlen($d['token']) === 32
+        && preg_match('/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/', doc_check_code($a['invoiceId'])));
+
+    $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [$b['invoiceId']]);
+    chk('documents · an invoice is due, then overdue after its days to pay, never stored', doc_invoice_state($inv)['state'] === 'due'
+        && doc_invoice_state(['createdAt' => '2020-01-01T09:00:00Z', 'status' => 'open'] + $inv)['state'] === 'overdue' && doc_invoice_state(['status' => 'void'] + $inv)['state'] === 'void');
+    $html = doc_render_invoice($inv, doc_for_invoice($inv));
+    chk('documents · the invoice prints its number, the amount, the narration, the payer and a QR', str_contains($html, $b['invoiceId']) && str_contains($html, '₦4,000.00')
+        && str_contains($html, 'INV-' . substr($b['invoiceId'], -5)) && str_contains($html, 'Adeola Bakare') && str_contains($html, '<svg class="qr"') && str_contains($html, 'Four thousand naira only.'));
+    chk('documents · a blank detail is left off, never printed as a placeholder', !str_contains($html, 'RC ') && str_contains($html, 'TIN 1234-0001') && !str_contains($html, '[0'));
+
+    $r = db_tx(static fn() => doc_receipt_issue($inv, 'paystack', 'NGGM-TEST', ['last4' => '4417', 'channel' => 'card']));
+    chk('documents · a receipt is NGG-RCP-YYYY-#####, with the card the gateway reported', preg_match('/^NGG-RCP-' . $y . '-\d{5}$/', $r['no']) && $r['data']['method']['text'] === 'Card •••• 4417, Paystack');
+    db_update('members', ['centre' => 'Somewhere else', 'fullName' => 'Renamed Child'], ['memberId' => 'NGG-DOC-1']);
+    setting_set(DOC_SETTING, ['legalName' => 'Next Generation Genius Initiative', 'rcNo' => '7654321', 'tin' => '9999-0002', 'feesOfficer' => 'Someone New', 'vat' => 'exempt', 'dueDays' => 10], 'test');
+    $rh = doc_render_receipt(doc_by('docNo', $r['no']));
+    chk('documents · a receipt is printed from what it said when issued: a later rename changes nothing', str_contains($rh, 'Tobi Bakare') && str_contains($rh, 'Egbeda') && !str_contains($rh, 'Renamed Child'));
+    chk('documents · …its details are the ones it was issued with, and a detail that was blank then prints now', str_contains($rh, 'TIN 1234-0001') && str_contains($rh, 'Ade Fees') && str_contains($rh, 'RC 7654321'));
+
+    $code = doc_check_code($r['no']);
+    $no = public_document_verify(['no' => $r['no'], 'code' => 'AAAA-BBBB-CCCC']); $nx = public_document_verify(['no' => 'NGG-RCP-1999-00001', 'code' => $code]);
+    chk('documents · verify: a wrong code and an unknown number get the same answer, and nothing about anybody', ($no['error'] ?? '') === 'not_matched' && ($nx['error'] ?? '') === 'not_matched' && !isset($no['holder']));
+    $ok = public_document_verify(['no' => strtolower($r['no']), 'code' => strtolower(str_replace('-', '', $code))]);
+    chk('documents · verify: the right code names the document, the holder by first name and initial, and the amount', !empty($ok['ok']) && $ok['kind'] === 'receipt' && $ok['holder'] === 'Tobi B.' && $ok['amount'] === 400000 && $ok['status'] === 'issued');
+
+    chk('documents · amounts in words', doc_words(4000) === 'Four thousand naira only.' && doc_words(1234567) === 'One million two hundred and thirty-four thousand five hundred and sixty-seven naira only.' && doc_words(15) === 'Fifteen naira only.');
+    chk('documents · VAT at 7.5% is inside what was charged, so the total is the ledger\'s', doc_vat_inside(107500, 'standard') === 7500 && doc_vat_inside(107500, 'exempt') === 0);
+
+    $c1 = doc_ml_issue('NGG-DOC-1', 13, 75, 9, 12, 1);
+    chk('documents · clearing a Math Lab level gives a Pass certificate, NGG-ML-LL-YYYY-#####', $c1 && preg_match('/^NGG-ML-13-' . $y . '-\d{5}$/', $c1['docNo']) && empty(doc_data($c1)['distinction']));
+    chk('documents · clearing it again below 90% issues nothing more', doc_ml_issue('NGG-DOC-1', 13, 80, 10, 12, 2) === null);
+    $c2 = doc_ml_issue('NGG-DOC-1', 13, 92, 11, 12, 2);
+    $old = doc_by('docNo', $c1['docNo']);
+    chk('documents · 90% or more later gives a Distinction certificate that supersedes the Pass', $c2 && !empty(doc_data($c2)['distinction']) && $old['status'] === 'superseded' && $old['supersededBy'] === $c2['docNo']);
+    chk('documents · and a Distinction is not issued twice', doc_ml_issue('NGG-DOC-1', 13, 100, 12, 12, 3) === null);
+    chk('documents · only a member is given one (a certificate names its holder), and only at the pass mark', doc_ml_issue('NOBODY', 13, 95, 12, 12, 1) === null && doc_ml_issue('NGG-DOC-1', 14, 60, 7, 12, 1) === null);
+    $ch = doc_render_certificate(doc_by('docNo', $c2['docNo']));
+    chk('documents · the certificate prints the level, the score, the paper, the pattern and its verification', str_contains($ch, 'Level 13: Vectors in Three Dimensions') && str_contains($ch, '92% (11 of 12)')
+        && str_contains($ch, 'Standard paper') && str_contains($ch, 'a·b = |a||b| cos θ') && str_contains($ch, 'Distinction') && str_contains($ch, $c2['docNo']));
+    $vs = public_document_verify(['no' => $c1['docNo'], 'code' => doc_check_code($c1['docNo'])]);
+    chk('documents · verify: a superseded certificate says so, and names what replaced it', !empty($vs['ok']) && $vs['status'] === 'superseded' && $vs['supersededBy'] === $c2['docNo']);
+    chk('documents · every level has the formula its certificate draws', count(doc_ml_formulas()) === count(mathlab_levels()));
+
+    $list = documents_for_member('NGG-DOC-1');
+    chk('documents · the family sees invoices and certificates, each with its private link', count(array_filter($list, fn($x) => $x['kind'] === 'invoice')) === 3
+        && count(array_filter($list, fn($x) => $x['kind'] === 'certificate')) === 2 && !array_filter($list, fn($x) => !str_contains($x['url'], 'document.php?t=')));
+    [$st, $page] = doc_render_token(doc_by('docNo', $c2['docNo'])['token']);
+    chk('documents · a private link renders its document; a made-up one does not', $st === 200 && str_contains($page, 'data-doc="certificate"') && doc_render_token(str_repeat('a', 32))[0] === 404);
+} finally { if ($__db->inTransaction()) $__db->rollBack(); } })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

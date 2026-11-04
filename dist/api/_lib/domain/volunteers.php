@@ -532,8 +532,10 @@ function admin_volunteer_safeguard(array $p): array {
     // in_progress: screening has started (references asked for). Anything but cleared is not cleared.
     if (!in_array($status, ['pending', 'in_progress', 'cleared'], true)) return ['ok' => false, 'error' => 'bad_status'];
     $volunteerId = (string)($p['volunteerId'] ?? '');
-    $n = db_update('volunteers', ['safeguarding' => $status, 'updatedAt' => now_iso()], ['volunteerId' => $volunteerId]);
-    if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    $v = db_row('SELECT centre FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)$v['centre'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    db_update('volunteers', ['safeguarding' => $status, 'updatedAt' => now_iso()], ['volunteerId' => $volunteerId]);
     audit('volunteer.safeguard', $g['requester']['memberId'], $volunteerId, ['status' => $status], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
@@ -597,19 +599,30 @@ function public_instructor_roster(array $p): array {
     $v = db_row("SELECT * FROM volunteers WHERE token = ? AND status = 'active' LIMIT 1", [$token]);
     if (!$v || $email === '' || strtolower((string)$v['email']) !== $email) return ['ok' => false, 'error' => 'not_authorised'];
     if ((string)$v['role'] !== 'instructor') return ['ok' => false, 'error' => 'not_instructor'];
+    /* Children's names are shown to a volunteer only once their screening has
+       cleared: approval makes the record, safeguarding decides the contact. */
+    if ((string)($v['safeguarding'] ?? '') !== 'cleared') return ['ok' => false, 'error' => 'safeguarding_pending', 'message' => 'Your safeguarding check has not cleared yet. Your centre will tell you when it has.'];
     $courses = json_decode((string)($v['courses'] ?? ''), true) ?: [];
     if (!$courses) return ['ok' => true, 'courses' => [], 'students' => []];
     $ph = implode(',', array_fill(0, count($courses), '?'));
     $rows = db_all("SELECT studentId, fullName, track FROM summer_students WHERE status = 'active' AND regStatus = 'verified' AND track IN ($ph) ORDER BY fullName", $courses);
     $today = gmdate('Y-m-d');
+    // Days and today's presence for the whole room in two grouped reads, not two per child.
+    $days = []; $here = [];
+    if ($rows) {
+        $ids = array_column($rows, 'studentId'); $iph = implode(',', array_fill(0, count($ids), '?'));
+        foreach (db_all("SELECT studentId, COUNT(*) c, SUM(CASE WHEN date = ? THEN 1 ELSE 0 END) t FROM attendance WHERE studentId IN ($iph) GROUP BY studentId", array_merge([$today], $ids)) as $a) {
+            $days[(string)$a['studentId']] = (int)$a['c']; $here[(string)$a['studentId']] = (int)$a['t'] > 0;
+        }
+    }
     $students = [];
     foreach ($rows as $r) {
         // First names only — this view exists for the room, not for data export.
         $students[] = [
             'firstName' => explode(' ', trim((string)$r['fullName']))[0],
             'course' => $r['track'],
-            'days' => (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$r['studentId']])['c'] ?? 0),
-            'todayPresent' => (bool)db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$r['studentId'], $today]),
+            'days' => $days[(string)$r['studentId']] ?? 0,
+            'todayPresent' => $here[(string)$r['studentId']] ?? false,
         ];
     }
     return ['ok' => true, 'courses' => $courses, 'students' => $students];
@@ -625,12 +638,25 @@ function admin_volunteers_list(array $p): array {
         $pw = $prog === 'both' ? " AND COALESCE(programme,'summer') = 'both'" : " AND COALESCE(NULLIF(programme,''),'summer') IN (?, 'both')";
         if ($prog !== 'both') $pargs = [$prog];
     }
-    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, sex, email, phone, role, courses, centre, faculty, programme, visibilityConsent, why, photoUrl, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing')" . $pw . " ORDER BY id DESC LIMIT 200", $pargs);
+    /* A scoped admin's volunteers are their centres', applicants included,
+       filtered in the query, above the caps, never on the drawn page. */
+    $scope = admin_centre_names_in_scope($g['requester']);
+    if ($scope !== null) {
+        if (!$scope) $scope = ['\0'];
+        $pw .= ' AND centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; $pargs = array_merge($pargs, $scope);
+    }
+    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, sex, email, phone, role, courses, centre, faculty, programme, visibilityConsent, why, photoUrl, details, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing', 'waitlist')" . $pw . " ORDER BY id DESC LIMIT 200", $pargs);
     foreach ($pending as &$a) {
         $a['courses'] = json_decode((string)($a['courses'] ?? ''), true) ?: [];
         $a['ref'] = function_exists('intake_reference') ? intake_reference('volunteer', (int)$a['id']) : '';
         $a['dobAge'] = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : null;
         $a['programme'] = volunteer_programme($a);
+        /* What safeguarding the form gathered: referees, the declaration and,
+           under 18, the guardian. The review shows it and flags a minor. */
+        $det = json_decode((string)($a['details'] ?? ''), true) ?: [];
+        unset($det['_edit']);
+        $a['details'] = $det ?: null;
+        $a['minor'] = $a['dobAge'] !== null && $a['dobAge'] < 18;
     }
     unset($a);
     /* photoUrl is on the row because the editor shows it: without it the
@@ -651,12 +677,6 @@ function admin_volunteers_list(array $p): array {
         unset($v['capsExtra']);
     }
     unset($v);
-    // A scoped admin's volunteers are their centres' — applicants included.
-    $scope = admin_centre_names_in_scope($g['requester']);
-    if ($scope !== null) {
-        $in = static fn($r) => in_array((string)($r['centre'] ?? ''), $scope, true);
-        $pending = array_values(array_filter($pending, $in)); $roster = array_values(array_filter($roster, $in));
-    }
     return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster, 'programmes' => VOL_PROGRAMMES, 'scoped' => $scope !== null,
         'titles' => STAFF_HONORIFICS, 'titleDefault' => STAFF_HONORIFIC_DEFAULT];
 }
@@ -901,9 +921,28 @@ function admin_volunteer_approve(array $p): array {
     // email) surfaces the existing record instead of minting a duplicate.
     $existing = db_row('SELECT * FROM volunteers WHERE applicationId = ? OR lower(email) = ? LIMIT 1', [$id, strtolower((string)$a['email'])]);
     if ($existing) {
+        /* The same person applying for the other programme is not "already
+           done": a Summer volunteer approved for the Club now serves both. */
+        $have = volunteer_programme($existing); $want = volunteer_programme($a);
+        $widened = '';
+        if ((int)$existing['applicationId'] !== $id && $have !== $want && $have !== 'both') {
+            $widened = 'both';
+            db_update('volunteers', ['programme' => 'both', 'programmeAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => (int)$existing['id']]);
+            audit('volunteer.programme', $g['requester']['memberId'], (string)$existing['volunteerId'], ['from' => $have, 'to' => 'both', 'applicationId' => $id], (string)($p['ip'] ?? ''));
+            $existing['programme'] = 'both';
+        }
         db_update('applications', ['status' => 'accepted'], ['id' => $id]);
-        return ['ok' => true, 'already' => true, 'volunteer' => volunteer_public($existing) + ['token' => $existing['token']]];
+        return ['ok' => true, 'already' => $widened === '', 'widened' => $widened, 'volunteer' => volunteer_public($existing) + ['token' => $existing['token']]];
     }
+    /* Under 18: the guardian named on the form must have agreed, and staff
+       confirm they have spoken to them. It is recorded as a consent, as a
+       member's promotion to NGV records theirs. */
+    $det = json_decode((string)($a['details'] ?? ''), true) ?: [];
+    $age = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : -1;
+    $minor = $age < 18;
+    if ($minor && (empty($det['guardian']['consentOnForm']) || empty($p['guardianConfirmed'])))
+        return ['ok' => false, 'error' => 'guardian_consent_required',
+                'message' => 'Under 18' . ($age < 0 ? ' (no date of birth)' : '') . ': speak to the guardian named on the application' . (!empty($det['guardian']['name']) ? ' (' . $det['guardian']['name'] . ')' : '') . ', then confirm their consent to approve.'];
     // Instructors must be reachable by phone before an ID goes out.
     if ((string)$a['role'] === 'instructor' && trim((string)($a['phone'] ?? '')) === '') {
         return ['ok' => false, 'error' => 'phone_required'];
@@ -934,12 +973,15 @@ function admin_volunteer_approve(array $p): array {
     ]);
     db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned', 'studentId' => $volunteerId, 'assignedName' => (string)$a['name'], 'createdAt' => now_iso(), 'assignedAt' => now_iso(), 'expiresAt' => volunteer_card_expiry(volunteer_programme($a), (string)$c['cohortId'])]);
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
+    if ($minor) db_insert('consents', ['studentId' => $volunteerId, 'type' => 'volunteer_guardian', 'status' => 'granted', 'method' => 'staff_confirmed',
+        'actorName' => (string)($det['guardian']['name'] ?? ''), 'policyVersion' => VOLUNTEER_DECLARATION_VERSION, 'createdAt' => now_iso()]);
 
     $sent = volunteer_send_id($volunteerId);
-    audit('volunteer.approve', $g['requester']['memberId'], $volunteerId, ['applicationId' => $id, 'channels' => $sent], (string)($p['ip'] ?? ''));
+    audit('volunteer.approve', $g['requester']['memberId'], $volunteerId, ['applicationId' => $id, 'channels' => $sent, 'minor' => $minor], (string)($p['ip'] ?? ''));
     event_emit('volunteer.approved', ['ref' => $volunteerId, 'name' => (string)$a['name'], 'role' => (string)$a['role'], 'status' => 'active']);
     $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ?', [$volunteerId]);
-    return ['ok' => true, 'volunteer' => volunteer_public($v) + ['token' => $token], 'idSent' => $sent];
+    // Approval makes the record; working with children waits for screening, and the screen says so.
+    return ['ok' => true, 'volunteer' => volunteer_public($v) + ['token' => $token], 'idSent' => $sent, 'safeguarding' => (string)($v['safeguarding'] ?? 'pending')];
 }
 
 /**
@@ -1142,13 +1184,17 @@ function admin_volunteer_decline(array $p): array {
     $id = (int)($p['id'] ?? 0);
     $a = db_row("SELECT * FROM applications WHERE id = ? AND kind = 'volunteer' LIMIT 1", [$id]);
     if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)($a['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
     db_update('applications', ['status' => 'rejected'], ['id' => $id]);
     $reason = substr(trim((string)($p['reason'] ?? '')), 0, 500);
     if (!empty($a['email'])) {
+        // The Club takes volunteers all year; the Summer School reopens with its season.
+        $again = volunteer_programme($a) === 'summer' ? 'Registration reopens every Summer School season, and we would be glad to hear from you again.'
+            : 'NGG takes volunteers all year, and you are welcome to apply again later.';
         @send_mail((string)$a['email'], 'About your NGG volunteer registration', email_template([
             'title' => 'Thank you for offering your time',
-            'intro' => 'Hello ' . esc_html((string)$a['name']) . ' — we reviewed your volunteer registration.',
-            'bodyHtml' => '<p style="margin:0 0 10px">We can&rsquo;t take you on this intake' . ($reason !== '' ? ': ' . esc_html($reason) : '.') . '</p><p style="margin:0">Registrations reopen every season — we&rsquo;d genuinely love to see you again.</p>',
+            'intro' => 'Hello ' . esc_html((string)$a['name']) . ', we reviewed your volunteer registration.',
+            'bodyHtml' => '<p>We can&rsquo;t take you on this time' . ($reason !== '' ? ': ' . esc_html($reason) : '.') . '</p><p>' . esc_html($again) . '</p>',
         ]));
     }
     audit('volunteer.decline', $g['requester']['memberId'], (string)$id, ['reason' => $reason !== ''], (string)($p['ip'] ?? ''));

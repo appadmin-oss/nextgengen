@@ -99,6 +99,10 @@ function writeConfig(cronKey) {
     chk('the right key runs the named job', one.status === 200 && /^accrue\s+ran$/m.test(one.body));
     chk('…and reports how long it took, for a cron log', /took \d+ms/.test(one.body));
 
+    /* `all` runs what is DUE. Earlier runs leave their markers in the cache, so
+       start from a fresh install's state: nothing has run, everything is due. */
+    const wc = path.join(ROOT, 'api', '_cache', 'webcron');
+    for (const f of (fs.existsSync(wc) ? fs.readdirSync(wc) : [])) if (f.endsWith('.at')) { try { fs.unlinkSync(path.join(wc, f)); } catch (_) {} }
     const all = await get('/api/public/cron.php?key=' + KEY);
     chk('with no job named it runs them all',
       all.status === 200 && ['deliver', 'reminders', 'maint', 'accrue'].every((j) => new RegExp('^' + j + '\\s+\\w+$', 'm').test(all.body)));

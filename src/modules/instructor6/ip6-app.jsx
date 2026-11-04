@@ -112,7 +112,7 @@ class Ip6Portal extends React.Component {
       if (this.state.course !== t.course || this.state.centre !== t.centre) this.setState(slot);
       this.load('cls', () => ip6Api.cls(slot)); this.load('hist', () => ip6Api.hist(slot)); this.load('board', () => ip6Api.board(t.course, t.centre));
       this.load('curr', () => ip6Api.curr());
-      this.load('form', () => NGGApi.public.formation('instructor'));
+      this.load('form', () => NGGApi.public.formation('instructor', { centre: t.centre || '' }));
       this.load('me', () => NGGApi.auth.me());
       this.load('comm', () => NGGApi.member.community.channels().then(c => { const ch = ((c && c.channels) || []).find(x => x.kind === 'course' && (x.name || '').toLowerCase() === String(t.course).toLowerCase()) || ((c && c.channels) || []).find(x => x.slug === ip6Slug(t.course));
         if (!ch) return { channel: null, posts: [], hw: null };

@@ -336,7 +336,40 @@ function crSyPhotoDirHint(dir) {
    and no record changes. */
 function CrSyPhotoRecover({ ctx }) {
   const [st, setSt] = React.useState({ busy: "", note: "" });
+  const [cloud, setCloud] = React.useState(null);   // the missing photos, with the Cloudinary photos held for the same people
   const fileRef = React.useRef(null);
+  const findCloud = async () => {
+    setSt({ busy: "cloud", note: "Looking for the same people’s photos in Cloudinary…" });
+    try { const r = await NGGApi.admin.photoFrame.cloud(); setCloud(r.items || []);
+      setSt({ busy: "", note: r.items.length ? crPlural(r.withCandidates, "missing photo") + " of " + crNum(r.items.length) + " have a Cloudinary photo for the same person. Pick one for each." : "No photos are missing." }); }
+    catch (e) { setSt({ busy: "", note: crErr(e, "Couldn’t look.") }); }
+  };
+  /* Stored in the bucket, optimised once by Cloudinary, served from the bucket (domain/photos.php). */
+  const noBucket = e => e && (e.code === "no_bucket" || e.code === "not_possible" || (e.data && ["no_bucket", "not_possible"].includes(e.data.error)));
+  const toBucket = async () => {
+    setSt({ busy: "bucket", note: "Moving held photos into the bucket…" });
+    try { const r = await NGGApi.admin.photoFrame.toBucket();
+      setSt({ busy: "", note: (r.moved ? crPlural(r.moved, "photo") + " moved into the bucket; " + crPlural(r.rows, "record") + " now point at it. " : "Nothing moved. ")
+        + (r.left ? crNum(r.left) + " still held — press again, or leave it: it carries on by itself every hour. " : "None left on this server. ")
+        + (r.failed ? crNum(r.failed) + " the bucket refused (" + (r.errors || []).join("; ") + "). " : "")
+        + (r.missing ? crNum(r.missing) + " missing files were left alone." : "") }); ctx.reload(); }
+    catch (e) { setSt({ busy: "", note: noBucket(e) ? "No bucket is set. Add R2 (or any S3-compatible store) in Settings → API keys → File storage first." : crErr(e, "The move didn’t finish.") }); }
+  };
+  const optimise = async () => {
+    setSt({ busy: "sizes", note: "Making each photo’s sizes once, into the bucket…" });
+    try { const r = await NGGApi.admin.photoFrame.variants();
+      setSt({ busy: "", note: (r.made ? crPlural(r.made, "photo") + " optimised; pages now load their small copies from the bucket. " : "Nothing new to optimise. ")
+        + (r.left ? crNum(r.left) + " left — it carries on by itself every ten minutes. " : "")
+        + (r.failed ? crNum(r.failed) + " couldn’t be done (shown as they are for now)." : "") }); }
+    catch (e) { setSt({ busy: "", note: noBucket(e) ? "Needs a bucket (Settings → API keys → File storage) and a Cloudinary account with credits." : crErr(e, "That didn’t finish.") }); }
+  };
+  const useCloud = async (x, url) => {
+    setSt({ busy: "cloud", note: "Pointing " + (x.who || "the record") + " at that photo…" });
+    try { await NGGApi.admin.photoFrame.useCloud(x.name, x.place, x.rowId, url);
+      setCloud(c => (c || []).filter(y => !(y.name === x.name && y.rowId === x.rowId && y.place === x.place)));
+      setSt({ busy: "", note: (x.who || "The record") + " now shows their Cloudinary photo." }); ctx.reload(); }
+    catch (e) { setSt({ busy: "", note: crErr(e, "Couldn’t change it.") }); }
+  };
   const search = async () => {
     setSt({ busy: "search", note: "Searching this hosting account…" });
     try {
@@ -375,10 +408,21 @@ function CrSyPhotoRecover({ ctx }) {
       <div className="cr-sy-frame-acts">
         <button type="button" className="cr-btn is-sm is-primary" disabled={!!st.busy} onClick={search}>{st.busy === "search" ? "Searching…" : "Search this account"}</button>
         <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={() => fileRef.current && fileRef.current.click()}>Restore from a backup</button>
+        <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={toBucket}>{st.busy === "bucket" ? "Moving…" : "Move held photos to the bucket"}</button>
+        <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={optimise}>{st.busy === "sizes" ? "Optimising…" : "Optimise photos"}</button>
+        <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={findCloud}>{st.busy === "cloud" ? "Looking…" : "Use their Cloudinary photos"}</button>
         <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={copyNames}>Copy the missing file names</button>
         <input ref={fileRef} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden aria-label="Photo files from a backup" onChange={e => { restore(e.target.files); e.target.value = ""; }}/>
       </div>
       {st.note && <p className="cr-hint" role="status" aria-live="polite">{st.note}</p>}
+      {cloud && cloud.length > 0 && <ul className="cr-sy-cloud">
+        {cloud.map(x => <li key={x.place + x.rowId + x.name} className="cr-sy-cloud-row">
+          <span className="cr-sy-cloud-who"><b>{x.who || x.ids.join(", ") || "Unknown record"}</b> <span className="cr-hint">{x.place}</span></span>
+          {x.candidates.length ? <span className="cr-sy-cloud-picks">{x.candidates.map(u => <button key={u} type="button" className="cr-sy-cloud-pick" disabled={!!st.busy}
+            onClick={() => useCloud(x, u)} aria-label={"Use this photo for " + (x.who || "this record")}><img src={u.replace("/upload/", "/upload/c_fill,w_96,h_96/")} alt="" loading="lazy" width="48" height="48"/></button>)}</span>
+            : <span className="cr-hint">No Cloudinary photo held for this person — restore from a backup, or ask for a new one.</span>}
+        </li>)}
+      </ul>}
     </div>
   );
 }
@@ -729,7 +773,7 @@ const CR_SY_MAKE_SCENARIOS = [
       "Map data.totals and data.centres into a Google Docs or Slides template and share it with the director."],
     body: "{\"action\":\"impact\"}" },
 ];
-const CR_SY_JOB_LABEL = { deliver: "Sending events", reminders: "Reminders", maint: "Absence check and upkeep", editions: "Season dates", accrue: "Fees" };
+const CR_SY_JOB_LABEL = { all: "Every background job that is due", deliver: "Sending events", reminders: "Reminders", maint: "Absence check and upkeep", editions: "Season dates", accrue: "Fees" };
 
 function crSyMakeState(m) {
   const done = [m.secretSet, !!(m.destination && m.destination.status === "active"), m.cronSet];
@@ -804,7 +848,7 @@ function CrSyMake({ ctx, make }) {
       body: "Every scheduled call using the old addresses stops at once — Make’s, and any cPanel cron or uptime monitor." }))) return;
     const r = await NGGApi.admin.integrations.makeCron();
     setM(r.make);
-    setReveal({ title: "Copy the scheduler addresses now", note: "One Make scenario per address: a Schedule trigger at the interval shown, then HTTP → Make a request (GET) to the address.",
+    setReveal({ title: "Copy the scheduler address now", note: "Best: put it in the CACENTRE gate as the secret NGG_CRON_URL (Cloudflare → the gate worker → Settings → Variables and Secrets) — the gate calls it every minute. Or one Make scenario: a Schedule trigger every minute, then HTTP → Make a request (GET) to it.",
       items: (r.urls || []).map(u => ({ l: u.every + " — " + (CR_SY_JOB_LABEL[u.job] || u.job), v: u.url })) });
   });
   const connect = () => ctx.form({
@@ -860,7 +904,7 @@ function CrSyMake({ ctx, make }) {
           </CrSyMakeStep>
 
           <CrSyMakeStep n={3} done={st.done[2]} title="Scheduler" what="Keeps the background jobs on time when nobody is visiting the site."
-            action={<button type="button" className={"cr-btn is-sm" + (st.done[0] && st.done[1] && !st.done[2] ? " is-primary" : "")} disabled={!m.sealed || !!busy} onClick={makeCron}>{busy === "cron" ? "Making…" : m.cronSet ? "Replace" : "Make addresses"}</button>}>
+            action={<button type="button" className={"cr-btn is-sm" + (st.done[0] && st.done[1] && !st.done[2] ? " is-primary" : "")} disabled={!m.sealed || !!busy} onClick={makeCron}>{busy === "cron" ? "Making…" : m.cronSet ? "Replace" : "Make the address"}</button>}>
             <ul className="cr-mk-jobs" aria-label="Background jobs">
               {jobs.map(j => (
                 <li key={j.job} className={j.stale ? "is-late" : "is-ok"}>
@@ -870,7 +914,7 @@ function CrSyMake({ ctx, make }) {
                 </li>
               ))}
             </ul>
-            {m.cronSet && late.length > 0 && <span className="cr-mk-state">Late jobs usually mean a scheduler scenario is off in Make, or its address was replaced here.</span>}
+            {m.cronSet && late.length > 0 && <span className="cr-mk-state">Late jobs usually mean nothing is calling the scheduler address: the gate’s NGG_CRON_URL is missing or old, or a Make scenario is off.</span>}
           </CrSyMakeStep>
         </ol>
 
@@ -988,7 +1032,7 @@ const crSyGenCtx = { current: null };
 const CR_SY_ATT_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Volunteers"], ["default", "Everyone else"]];
 const CR_SY_CLOSE_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Summer volunteers"]];
 const CR_SY_IDLE = [["900", "15 minutes"], ["1800", "30 minutes (default)"], ["3600", "1 hour"], ["14400", "4 hours"], ["43200", "12 hours — a full working day"], ["0", "Never — only for a locked, private office"]];
-const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled", "face_check_enabled"];
+const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "ngg_volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled", "face_check_enabled"];
 const CR_SY_ID_KEYS = ["program", "year", "motto", "validityDays", "website", "phone", "address", "logoLockup", "logoOkun"];
 const crSyTime = v => !v || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use a time like 09:00.";
 const crSyInt = (lo, hi, what) => v => /^-?\d+$/.test(String(v).trim()) && +v >= lo && +v <= hi ? "" : "Enter " + what + " from " + lo + " to " + hi + ".";
@@ -1003,9 +1047,10 @@ function crSyGenForm(d, part) {
     type: "form", span: 6, key: "settings-" + (part || "general"),
     groups: [
       { part: "general", h: "Sign-ups", help: "Whether the public forms take new applications.", rows: [
-        tog("applications_open", "Teen applications open"),
+        tog("applications_open", "NGG membership applications open"),
         tog("mentor_applications_open", "Mentor applications open"),
-        tog("volunteer_applications_open", "Volunteer registration open"),
+        tog("volunteer_applications_open", "Summer School volunteer registration open", "The seasonal form at /volunteer."),
+        tog("ngg_volunteer_applications_open", "NGG volunteer registration open", "The year-round form at /join/volunteer."),
         tog("intake_photo_required", "Require a headshot on the public forms", "Teen, volunteer and kiosk. Off: the photo is optional at sign-up and can be added later through Photo review or the ID Card Studio."),
         tog("photo_gate_issuance", "Hold the ID until the photo is approved", "The ID is bound only once parent consent is in and the headshot is approved in Photo review. A registration with no photo is never held."),
         tog("geofence_enabled", "Geo-fenced registration", "Picks the centre by location and refuses off-site sign-ups. Map each centre’s point under Members → Centres."),
@@ -1265,7 +1310,7 @@ function CrSyKeyCard({ ctx, s, open, onToggle }) {
           return k ? <span className="cr-key-peek cr-mono">{k.kind === "secret" ? "•••• " + k.ending : k.value}</span> : null; })()}
         <CrPill tone={st.tone} t={st.t}/>
         {s.connected || s.setHere
-          ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Manage"}</button>
+          ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Manage key"}</button>
           : s.providers ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Set up"}</button>
           : <button type="button" className="cr-btn is-sm" onClick={() => crSyKeyEdit(ctx, s)}>Add key</button>}
       </div>
@@ -1677,7 +1722,7 @@ function crSyRoleForm(ctx, d, m) {
   const opts = crSyRoleOpts(d.reg, m.role);
   ctx.closeDrawer();
   ctx.form({
-    title: "Change role · " + (m.fullName || m.memberId), submit: "Continue",
+    title: "Change role · " + (m.fullName || m.memberId), submit: "Change role",
     intro: "A role is a fixed bundle of capabilities. You can only give roles that reach no further than your own.",
     values: { role: m.role },
     fields: [{ id: "role", l: "Role", type: "chips", req: true, opts: opts.concat([["member", "No staff access"]]),
@@ -1747,7 +1792,7 @@ function crSyStaffOpen(ctx, d, m) {
 function crSyGrant(ctx, d) {
   const opts = crSyRoleOpts(d.reg, null);
   ctx.form({
-    title: "Grant staff access", submit: "Continue", busyLabel: "Finding them…",
+    title: "Grant staff access", submit: "Find them", busyLabel: "Finding them…",
     intro: "Give a member a staff role. They get an email inviting them to sign in, and set up two-factor sign-in the first time they open the Control Room.",
     values: { who: "", role: "" },
     fields: [
@@ -1801,7 +1846,8 @@ Object.assign(CR_TAB_DEFS, {
           sub: "Nobody can grant a role that reaches further than their own, and the last active super admin can’t be demoted." },
         noCentre.length ? { type: "note", span: 6, icon: "warning", tone: "warn",
           text: crPlural(noCentre.length, "account") + " with no access yet: " + noCentre.map(m => m.fullName || m.memberId).join(", ") + ".",
-          sub: (noCentre.length === 1 ? "This role works" : "These roles work") + " only for named centres. Open " + (noCentre.length === 1 ? "them" : "each") + " and choose Capabilities and centres." } : null,
+          sub: (noCentre.length === 1 ? "This role works" : "These roles work") + " only for named centres. Open " + (noCentre.length === 1 ? "them" : "each") + " and choose Capabilities and centres.",
+          act: { l: "Choose centres for " + (noCentre[0].fullName || noCentre[0].memberId), run: () => crSyAccessForm(ctx, d, noCentre[0]) } } : null,
         { type: "table", span: 6, title: "Staff", sub: crPlural(d.staff.length, "account") + (d.total > d.staff.length ? " · showing the first " + crNum(d.staff.length) + " of " + crNum(d.total) : ""), nosel: true,
           cols: ["Person", "Role", "Centres", "Can access"],
           rows: d.staff.map(m => {

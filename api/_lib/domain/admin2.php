@@ -802,7 +802,19 @@ function admin_applications_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $where = []; $params = [];
     if (!empty($p['kind'])) { $where[] = 'kind = ?'; $params[] = $p['kind']; }
-    if (!empty($p['status'])) { $where[] = 'status = ?'; $params[] = $p['status']; }
+    if (!empty($p['status'])) {
+        /* One status or several ("new,reviewing,waitlist"): a waitlisted child
+           stays on a screen someone can act from. */
+        $sts = array_values(array_intersect(array_map('trim', explode(',', (string)$p['status'])), APP_STATUSES));
+        if ($sts) { $where[] = 'status IN (' . implode(',', array_fill(0, count($sts), '?')) . ')'; $params = array_merge($params, $sts); }
+    }
+    /* A centre-scoped admin sees their centres' applicants only, filtered
+       here, above the cap, never on the drawn page. */
+    $scope = admin_centre_names_in_scope($g['requester']);
+    if ($scope !== null) {
+        if (!$scope) return ['ok' => true, 'applications' => [], 'scoped' => true];
+        $where[] = 'centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; $params = array_merge($params, $scope);
+    }
     $sql = 'SELECT * FROM applications' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY id DESC LIMIT 500';
     $rows = db_all($sql, $params);
     // Enrich each row so the admin detail view has everything structured:
@@ -813,6 +825,7 @@ function admin_applications_list(array $p): array {
         $r['dobAge'] = !empty($r['dob']) && function_exists('dob_age') ? dob_age((string)$r['dob']) : null;
         // The Club application's other answers, and the agreements as given.
         $r['details'] = json_decode((string)($r['details'] ?? ''), true) ?: null;
+        if (is_array($r['details'])) unset($r['details']['_edit']);   // a change code's hash is nobody's to read
     }
     unset($r);
     /* Agreements: the latest decision per type for each application, in one read. */
@@ -843,45 +856,79 @@ function admin_applications_list(array $p): array {
         $r['messages'] = json_decode((string)($r['messages'] ?? ''), true) ?: [];
     }
     unset($r);
-    return ['ok' => true, 'applications' => $rows];
+    return ['ok' => true, 'applications' => $rows, 'scoped' => $scope !== null];
+}
+
+const APP_STATUSES = ['new', 'reviewing', 'accepted', 'rejected', 'waitlist'];
+
+/** The application, if this admin may act on it: [row, null] or [null, refusal]. */
+function app_for_admin(array $g, int $id): array {
+    $a = db_row('SELECT * FROM applications WHERE id = ? LIMIT 1', [$id]);
+    if (!$a) return [null, ['ok' => false, 'error' => 'not_found']];
+    if (!admin_centre_allowed($g['requester'], (string)($a['centre'] ?? ''))) return [null, ['ok' => false, 'error' => 'out_of_scope']];
+    return [$a, null];
 }
 
 function admin_applications_set_status(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $id = (int)($p['id'] ?? 0);
     $status = (string)($p['status'] ?? '');
-    if (!in_array($status, ['new', 'reviewing', 'accepted', 'rejected', 'waitlist'], true)) return ['ok' => false, 'error' => 'bad_status'];
-    $a = db_row('SELECT * FROM applications WHERE id = ? LIMIT 1', [$id]);
-    if (!$a) return ['ok' => false, 'error' => 'not_found'];
-    $message = trim(mb_substr((string)($p['message'] ?? ''), 0, APPLICATION_MESSAGE_MAX));
+    if (!in_array($status, APP_STATUSES, true)) return ['ok' => false, 'error' => 'bad_status'];
+    [$a, $no] = app_for_admin($g, $id); if ($no) return $no;
+    /* Accepting a child is Convert: it makes the member. Marking "accepted"
+       here left an application nobody could convert any more. */
+    if ($status === 'accepted' && (string)$a['kind'] === 'teen') return ['ok' => false, 'error' => 'use_convert', 'message' => 'Use Accept & create member: it makes the member record.'];
+    if ((string)$a['status'] === $status) return ['ok' => true, 'unchanged' => true, 'told' => []];
     db_update('applications', ['status' => $status], ['id' => $id]);
-    /* A waitlist or a refusal the applicant never hears about is a family
-       still waiting by the phone. With a message, they are told, in the
-       desk's words, and the message is kept on the application. */
-    $told = $message !== '' ? application_tell($a, $g['requester'], $status, $message) : false;
-    audit('admin.application.status', $g['requester']['memberId'], (string)$id, ['status' => $status, 'told' => $told], (string)($p['ip'] ?? ''));
+    /* A waitlist or a refusal the family never hears about is a family still
+       waiting by the phone. They are told in the desk's words when the desk
+       wrote some, and in the standard line otherwise. `notify: false` files
+       the status quietly; "reviewing" on its own says nothing. */
+    $message = trim(mb_substr((string)($p['message'] ?? ''), 0, APPLICATION_MESSAGE_MAX));
+    if ($message === '' && ($p['notify'] ?? true) !== false) $message = application_default_line($a, $status, trim(mb_substr((string)($p['reason'] ?? ''), 0, 300)));
+    $told = $message !== '' ? application_tell($a, $g['requester'], $status, $message) : [];
+    audit('admin.application.status', $g['requester']['memberId'], (string)$id, ['status' => $status, 'from' => (string)$a['status'], 'told' => $told], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'told' => $told];
 }
 
 const APPLICATION_MESSAGE_MAX = 2000;
 const APPLICATION_MESSAGES_MAX = 20;
 
-/** Email the applicant and keep what was said on the application. */
-function application_tell(array $a, array $by, string $what, string $message): bool {
+/** The standard words for a waitlist or a refusal; '' for a status that says nothing. */
+function application_default_line(array $a, string $status, string $reason = ''): string {
+    $first = explode(' ', trim((string)$a['name']))[0] ?: 'your child';
+    $at = (string)($a['centre'] ?? '') !== '' ? ' at ' . $a['centre'] : '';
+    if ($status === 'waitlist') return 'Thank you for applying. ' . $first . '’s place is on our waiting list' . $at . '. We will contact you as soon as a place opens.';
+    if ($status === 'rejected') return 'Thank you for applying. We are not able to offer ' . $first . ' a place this time' . ($reason !== '' ? ': ' . rtrim($reason, '.') . '.' : '.') . ' You are welcome to apply again.';
+    return '';
+}
+
+/**
+ * The one way an applicant is told anything: email to the application's
+ * address, a text to the main parent's phone (the email may be the child's
+ * own), and the words kept on the application. Returns the channels that went.
+ */
+function application_tell(array $a, array $by, string $what, string $message): array {
     $list = json_decode((string)($a['messages'] ?? ''), true) ?: [];
-    if (count($list) >= APPLICATION_MESSAGES_MAX) return false;
+    if (count($list) >= APPLICATION_MESSAGES_MAX) return [];
+    $ref = function_exists('intake_reference') ? intake_reference((string)($a['kind'] ?? 'teen'), (int)$a['id']) : '';
+    $sent = [];
     $email = strtolower(trim((string)($a['email'] ?? '')));
-    $sent = false;
     if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) && function_exists('send_mail') && function_exists('email_template')) {
-        $ref = function_exists('intake_reference') ? intake_reference((string)($a['kind'] ?? 'teen'), (int)$a['id']) : '';
         $subject = ['waitlist' => 'Your NGG application: on the waiting list', 'rejected' => 'Your NGG application', 'accepted' => 'Your NGG application: accepted',
                     'ask' => 'About your NGG application: one thing we need', 'reviewing' => 'About your NGG application'][$what] ?? 'About your NGG application';
-        $sent = (bool)@send_mail($email, $subject, email_template(['eyebrow' => 'Next Generation Genius · Applications', 'title' => $subject,
-            'bodyHtml' => '<p style="margin:0 0 10px">' . nl2br(esc_html($message)) . '</p>',
-            'footNote' => ($ref !== '' ? 'Reference ' . $ref . '. ' : '') . 'Reply to this email if you have a question.']));
+        if (@send_mail($email, $subject, email_template(['eyebrow' => 'Next Generation Genius · Applications', 'title' => $subject,
+            'bodyHtml' => '<p>' . nl2br(esc_html($message)) . '</p>',
+            'footNote' => ($ref !== '' ? 'Reference ' . $ref . '. ' : '') . 'Reply to this email if you have a question.']))) $sent[] = 'email';
+    }
+    $det = json_decode((string)($a['details'] ?? ''), true) ?: [];
+    $ph = (string)($det['parent1Phone'] ?? '') ?: (string)($a['phone'] ?? '');
+    if ($ph !== '' && function_exists('sms_send')) {
+        $r = sms_send($ph, 'NGG: ' . mb_substr($message, 0, 300) . ($ref !== '' ? ' Ref ' . $ref . '.' : ''));
+        if (!empty($r['ok'])) $sent[] = 'sms';
     }
     $list[] = ['at' => now_iso(), 'by' => (string)($by['memberId'] ?? ''), 'byName' => explode(' ', trim((string)($by['fullName'] ?? '')))[0] ?? '',
-               'what' => $what, 'text' => $message, 'sent' => $sent];
+               'what' => $what, 'text' => $message, 'sent' => (bool)$sent, 'via' => $sent];
     db_update('applications', ['messages' => json_encode($list, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 'updatedAt' => now_iso()], ['id' => (int)$a['id']]);
     return $sent;
 }
@@ -893,31 +940,54 @@ function application_tell(array $a, array $by, string $what, string $message): b
  */
 function admin_applications_message(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-    $a = db_row('SELECT * FROM applications WHERE id = ? LIMIT 1', [(int)($p['id'] ?? 0)]);
-    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    [$a, $no] = app_for_admin($g, (int)($p['id'] ?? 0)); if ($no) return $no;
     $message = trim(mb_substr((string)($p['message'] ?? ''), 0, APPLICATION_MESSAGE_MAX));
-    if (mb_strlen($message) < 5) return ['ok' => false, 'error' => 'empty', 'detail' => 'Write what you need from them.'];
-    if (!filter_var(trim((string)($a['email'] ?? '')), FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'no_email', 'detail' => 'This application has no email address to write to. Call the number on it instead.'];
-    if (count(json_decode((string)($a['messages'] ?? ''), true) ?: []) >= APPLICATION_MESSAGES_MAX) return ['ok' => false, 'error' => 'too_many', 'detail' => 'This application already has ' . APPLICATION_MESSAGES_MAX . ' messages. Decide it, or call them.'];
+    if (mb_strlen($message) < 5) return ['ok' => false, 'error' => 'empty', 'message' => 'Write what you need from them.'];
+    if (!filter_var(trim((string)($a['email'] ?? '')), FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'no_email', 'message' => 'This application has no email address to write to. Call the number on it instead.'];
+    if (count(json_decode((string)($a['messages'] ?? ''), true) ?: []) >= APPLICATION_MESSAGES_MAX) return ['ok' => false, 'error' => 'too_many', 'message' => 'This application already has ' . APPLICATION_MESSAGES_MAX . ' messages. Decide it, or call them.'];
     $sent = application_tell($a, $g['requester'], 'ask', $message);
     if ((string)$a['status'] === 'new') db_update('applications', ['status' => 'reviewing'], ['id' => (int)$a['id']]);
     audit('admin.application.message', $g['requester']['memberId'], (string)$a['id'], ['sent' => $sent], (string)($p['ip'] ?? ''));
-    if (!$sent) return ['ok' => false, 'error' => 'not_sent', 'detail' => 'The email did not go. It is kept on the application; try again, or call them.'];
-    return ['ok' => true, 'sent' => true];
+    if (!in_array('email', $sent, true)) return ['ok' => false, 'error' => 'not_sent', 'message' => 'The email did not go. It is kept on the application; try again, or call them.'];
+    return ['ok' => true, 'sent' => $sent];
 }
 
 function admin_application_convert(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $id = (int)($p['id'] ?? 0);
-    $a = db_row('SELECT * FROM applications WHERE id = ? LIMIT 1', [$id]);
-    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    [$a, $no] = app_for_admin($g, $id); if ($no) return $no;
     if ($a['kind'] !== 'teen') return ['ok' => false, 'error' => 'only_teen_apps'];   // mentor apps → mentors, handled separately
+    if ((string)$a['status'] === 'rejected') return ['ok' => false, 'error' => 'rejected', 'message' => 'This application was declined. Set it back to reviewing first if that was a mistake.'];
+    /* The age is checked again: an application can wait months, and the
+       programme is for 10 to 17 year olds on the day they become a member. */
+    $ageNow = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : -1;
+    if ((string)($a['program'] ?? '') === 'anchor' && ($ageNow < 10 || $ageNow > 17)) return ['ok' => false, 'error' => 'bad_age', 'message' => 'NGG members are 10 to 17. This applicant is ' . ($ageNow < 0 ? 'missing a date of birth' : $ageNow) . '.'];
+    $centreIn = trim((string)($p['centre'] ?? '')) ?: trim((string)($a['centre'] ?? ''));
+    if ($centreIn === '') return ['ok' => false, 'error' => 'centre_required', 'message' => 'Choose the centre this member will attend.'];
+    /* A centre staff type in here must be a real one; the application's own
+       centre is kept as the family chose it (the form has always accepted a
+       centre name the directory does not list yet). */
+    if (trim((string)($p['centre'] ?? '')) !== '') {
+        $cRow = db_row("SELECT name FROM centres WHERE lower(name) = ? AND status = 'active' LIMIT 1", [mb_strtolower($centreIn)]);
+        if (!$cRow) return ['ok' => false, 'error' => 'bad_centre', 'message' => $centreIn . ' is not an active centre.'];
+        $centreIn = (string)$cRow['name'];
+    }
+    if (!admin_centre_allowed($g['requester'], $centreIn)) return ['ok' => false, 'error' => 'out_of_scope'];
+    $a['centre'] = $centreIn;
     // Don't double-provision.
-    /* By email only when there is one: `lower(email) = ''` matches every
-       member with none, and an imported applicant often has none — the
-       convert then "found" a stranger and made nobody. */
+    /* The same CHILD, not the same email: siblings share a parent's email, so
+       a member already holding it is this applicant only when their date of
+       birth (or, with none on file, their name) matches too. By email only
+       when there is one: `lower(email) = ''` matches every member with none. */
     $__em = strtolower(trim((string)$a['email']));
-    $existing = $__em !== '' ? db_row('SELECT memberId FROM members WHERE lower(email) = ? LIMIT 1', [$__em]) : null;
+    $existing = null;
+    if ($__em !== '') {
+        foreach (db_all('SELECT memberId, fullName, dob FROM members WHERE lower(email) = ? OR lower(COALESCE(parentEmail, \'\')) = ?', [$__em, $__em]) as $m) {
+            $sameDob = (string)$m['dob'] !== '' && (string)$m['dob'] === (string)$a['dob'];
+            $sameName = (string)$m['dob'] === '' && mb_strtolower(trim((string)$m['fullName'])) === mb_strtolower(trim((string)$a['name']));
+            if ($sameDob || $sameName) { $existing = $m; break; }
+        }
+    }
     if ($existing) { db_update('applications', ['status' => 'accepted'], ['id' => $id]); return ['ok' => true, 'memberId' => $existing['memberId'], 'existed' => true]; }
     // Summer applicants become Summer Students; Anchor/NGG applicants become
     // full NGG members. Falls back to Summer for legacy rows with no program.
@@ -959,7 +1029,7 @@ function admin_application_convert(array $p): array {
     $__m = [
         'memberId' => $newId, 'fullName' => $a['name'], 'email' => $intakeEmail,
         'type' => $type, 'status' => 'active', 'role' => 'member',
-        'centre' => $a['centre'] ?: 'Egbeda', 'track' => $a['track'] ?: '',
+        'centre' => $a['centre'], 'track' => $a['track'] ?: '',
         'photoUrl' => (string)($a['photoUrl'] ?? ''),
         'dob' => (string)($a['dob'] ?? ''),
         'parentEmail' => $intakeEmail,
@@ -1018,10 +1088,10 @@ function admin_application_convert(array $p): array {
     @send_mail($intakeEmail, 'Welcome to Next Generation Genius',
         email_template([
             'title' => 'You\'re in, ' . explode(' ', (string)$a['name'])[0] . '.',
-            'intro' => $type === 'Summer' ? 'Your place in Summer Students is confirmed.' : 'Your place in the NGG cohort is confirmed.',
+            'intro' => $type === 'Summer' ? 'Your place at Summer School is confirmed.' : 'Your place at Next Generation Genius is confirmed.',
             'bodyHtml' => 'We\'ll be in touch shortly with your start details. The member ID is <b>' . esc_html($newId) . '</b>.'
                 . ($welcome !== ''
-                    ? '<p style="margin:14px 0 0">Set a password using the button below — after that they can sign in with the member ID alone, without waiting on this inbox. The link is good for seven days.</p>'
+                    ? '<p>Set a password using the button below — after that they can sign in with the member ID alone, without waiting on this inbox. The link is good for seven days.</p>'
                     : ''),
             'ctaLabel' => $welcome !== '' ? 'Set a password' : 'Open the member portal',
             'ctaUrl' => $welcome !== '' ? $welcome : (($GLOBALS['CONFIG']['app_origin'] ?? '') . '/#dashboard'),
@@ -1042,6 +1112,7 @@ function admin_application_convert(array $p): array {
         }
     }
     audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id, 'type' => $type, 'start' => $start], (string)($p['ip'] ?? ''));
+    if (function_exists('rcl_start_for_new_member')) rcl_start_for_new_member($newId, (string)$g['requester']['memberId']);   // registration checklist (domain/registration-checklist.php)
     return ['ok' => true, 'memberId' => $newId, 'invoice' => $invoice];
 }
 
@@ -1050,9 +1121,10 @@ function admin_application_convert(array $p): array {
 function admin_application_update(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $id = (int)($p['id'] ?? 0);
-    $a = db_row('SELECT id FROM applications WHERE id = ? LIMIT 1', [$id]);
-    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    [$a, $no] = app_for_admin($g, $id); if ($no) return $no;
     $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    // Moving an applicant to a centre outside this admin's scope is the same as acting on it there.
+    if (array_key_exists('centre', $d) && !admin_centre_allowed($g['requester'], trim((string)$d['centre']))) return ['ok' => false, 'error' => 'out_of_scope'];
     $row = [];
     if (array_key_exists('name', $d)) { $name = trim((string)$d['name']); if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name']; $row['name'] = substr($name, 0, 120); }
     if (array_key_exists('email', $d)) {
@@ -1078,8 +1150,7 @@ function admin_application_update(array $p): array {
 function admin_application_delete(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $id = (int)($p['id'] ?? 0);
-    $a = db_row('SELECT id, name FROM applications WHERE id = ? LIMIT 1', [$id]);
-    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    [$a, $no] = app_for_admin($g, $id); if ($no) return $no;
     db_exec('DELETE FROM applications WHERE id = ?', [$id]);
     audit('admin.application.delete', $g['requester']['memberId'], (string)$id, ['name' => (string)$a['name']], (string)($p['ip'] ?? ''));
     return ['ok' => true];

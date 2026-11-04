@@ -27,16 +27,16 @@ const MP9_NEED = {
   today: ["today", "dash", "mine", "chat", "form", "mom", "jm", "circle"], mentor: ["chat", "mine"], growth: ["mine", "courage", "mom", "jm", "evals"],
   results: ["res"], companion: ["comp"], sat: ["form", "dash", "evals"], learn: ["cur", "dash", "opps"], timetable: ["tt", "cur"],
   journal: ["jm", "chat"], opps: ["opps"], community: ["feed", "prj"], passport: ["rec"], me: ["circle", "sec", "rec"],
-  money: ["stmt", "comp9"], records: ["rec", "reqs"], help: [], more: [],
+  money: ["stmt", "comp9"], records: ["rec", "reqs", "comp9", "ach", "llog"], help: [], more: [],
 };
 const MP9_LOADERS = {
   today: () => NGGApi.member.today(), dash: () => NGGApi.member.dashboard(), mine: () => NGGApi.member.pod.read("mine"),
   chat: () => NGGApi.member.chat(), notifs: () => NGGApi.member.notifications(), state: () => NGGApi.member.stateGet(MP9_STATE_KEYS),
-  form: () => NGGApi.public.formation("member"), courage: () => NGGApi.member.courage(), mom: () => NGGApi.member.momentum(),
+  form: self => NGGApi.public.formation("member", { centre: (self && self.me && self.me().centre) || "" }), courage: () => NGGApi.member.courage(), mom: () => NGGApi.member.momentum(),
   jm: () => NGGApi.member.journalMine(0), res: () => NGGApi.member.results(""), comp: () => NGGApi.member.companion(),
   cur: () => NGGApi.member.curriculum(), tt: () => NGGApi.member.timetable(), opps: () => NGGApi.member.opps(),
   feed: () => NGGApi.member.community.feed("all", "latest", 0), rec: () => NGGApi.member.records(), circle: () => NGGApi.member.circle(),
-  sec: () => NGGApi.member.security(), phc: () => NGGApi.member.photoChange.mine(), stmt: () => NGGApi.member.statement(), comp9: () => NGGApi.member.compliance(),
+  sec: () => NGGApi.member.security(), phc: () => NGGApi.member.photoChange.mine(), stmt: () => NGGApi.member.statement(), comp9: () => NGGApi.member.compliance(), ach: () => NGGApi.member.achievements(), llog: () => NGGApi.member.learning(),
   reqs: () => NGGApi.member.requests(), prj: () => NGGApi.member.projects(),
   // The mentor's Saturday evaluations of me: criteria, a strength and a next step — never their ratings or notes.
   evals: () => NGGApi.member.pod.read("evals"),
@@ -265,7 +265,7 @@ class Mp9Portal extends React.Component {
   load(key) {
     const fn = MP9_LOADERS[key]; if (!fn) return Promise.resolve(null);
     this.setState(s => ({ ld: { ...s.ld, [key]: true }, er: { ...s.er, [key]: null } }));
-    return fn().then(r => { this.setState(s => ({ d: { ...s.d, [key]: r }, ld: { ...s.ld, [key]: false } })); return r; })
+    return fn(this).then(r => { this.setState(s => ({ d: { ...s.d, [key]: r }, ld: { ...s.ld, [key]: false } })); return r; })
       .catch(e => { this.setState(s => ({ ld: { ...s.ld, [key]: false }, er: { ...s.er, [key]: e } })); return null; });
   }
   refresh(keys) { (keys || []).forEach(k => this.load(k)); }
@@ -419,7 +419,23 @@ class Mp9Portal extends React.Component {
   /* ── Today ───────────────────────────────────────────────────────────── */
   todayVals(go) {
     const t = this.dd("today") || {}, a = t.account, mf = this.mentorInfo().first;
-    const todo = (t.todo || []).map((x, i) => {
+    /* What NGG has announced, at the top of Today until it is read — a quick message, a club
+       announcement or an official notice from the last fortnight — not only a dot on the bell.
+       Reading it here marks it read, so it leaves Today the way it leaves the bell. */
+    const s0 = this.state, since = Date.now() - 14 * 86400000;
+    const news = ((this.dd("notifs") || {}).notifications || [])
+      .filter(n => (n.kind === "announcement" || n.kind === "notice") && !(s0.goneIds || {})[n.notifId] && !mp9NotifRead(n, s0) && new Date(n.createdAt).getTime() >= since)
+      .slice(0, 3).map(n => {
+        const a = n.action || {}, notice = a.page === "notice" && a.ref;
+        return { icon: "ph ph-megaphone", t: n.title || "From NGG", s: String(n.body || "").slice(0, 140) + (String(n.body || "").length > 140 ? "…" : ""), cta: notice ? "Read the notice" : "Read",
+          go: () => {
+            this.setState(st => ({ readIds: { ...(st.readIds || {}), [n.notifId]: 1 } }));
+            NGGApi.member.markRead(n.notifId, false).catch(() => {});
+            if (notice) location.assign("/notice/" + encodeURIComponent(a.ref)); else this.setState({ notif: true });
+          }, tone: "info" };
+      });
+    const todo = news.concat(t.todo || []).map((x, i) => {
+      if (x.go) return { icon: x.icon, t: x.t, s: x.s, cta: x.cta, go: x.go, fg: MP9_TONE[x.tone] || "#4a4a50", bt: i ? "1px solid #f0efea" : "0" };
       const scr = MP9_ROUTE[x.route] || (/results/.test(x.route) ? "results" : /money|account/.test(x.route) ? "money" : /learn/.test(x.route) ? "learn" : /mentor/.test(x.route) ? "mentor" : "today");
       return { icon: "ph ph-" + x.icon, t: x.title, s: x.subtitle, cta: x.cta, go: go(scr), fg: MP9_TONE[x.tone] || "#4a4a50", bt: i ? "1px solid #f0efea" : "0" };
     });
@@ -871,8 +887,8 @@ class Mp9Portal extends React.Component {
         .concat(st.finesOwed ? [["Fines owed", mp9Naira(st.finesOwed), pips(1, 1, "#b0361c"), "Pay, or appeal from Records"]] : []).map(([k2, v, p, s2]) => ({ k: k2, v, pips: p, s: s2 })),
       hasCan: susp, can: ["Read lessons and do assignments", "Write in your journal", "Message your mentor"], cant: ["Check in at the centre", "Join Saturday sessions", "Earn points or awards"],
       stepsH: ev ? "To ask for reinstatement" : susp ? "To come back on time" : "To clear this",
-      steps: (ev ? [["ph ph-file-text", "Write to the Governing Council", "Say what happened and what will change. Your mentor can help.", "Start", raise("appeal", "Reinstatement")], ["ph ph-users", "Family meeting", "The coordinator will call your parents to book it.", "", null]]
-        : susp ? [].concat(st.finesOwed ? [["ph-fill ph-warning-circle", "Pay the " + mp9Naira(st.finesOwed) + " fine", "Or appeal it if you think it’s wrong", "Pay", go("money")]] : []).concat([["ph ph-handshake", "Talk to your mentor", "Make a plan to arrive on time", "Message", go("mentor")], ["ph ph-alarm", "Set a Saturday alarm", "We also send a reminder Friday evening and Saturday morning", "", null]])
+      steps: (ev ? [["ph ph-file-text", "Write to the Governing Council", "Say what happened and what will change. Your mentor can help.", "Write the letter", raise("appeal", "Reinstatement")], ["ph ph-users", "Family meeting", "The coordinator will call your parents to book it.", "", null]]
+        : susp ? [].concat(st.finesOwed ? [["ph-fill ph-warning-circle", "Pay the " + mp9Naira(st.finesOwed) + " fine", "Fines are paid by your parent or guardian. Think it’s wrong? You can appeal it.", "Ask my parent to pay", go("money")]] : []).concat([["ph ph-handshake", "Talk to your mentor", "Make a plan to arrive on time", "Message", go("mentor")], ["ph ph-alarm", "Set a Saturday alarm", "We also send a reminder Friday evening and Saturday morning", "", null]])
         : [["ph ph-map-pin", "Be at the centre by " + (st.lateRedline || "08:30") + " Saturday", "Reminders go out Friday evening and Saturday morning", "", null], ["ph ph-calendar-x", "Can’t come? Tell us before Friday 6pm", "An excused absence doesn’t count", "Tell us", raise("leave", "")], ["ph ph-handshake", "Talk to your mentor", "If something is making Saturdays hard, they can help", "Message", go("mentor")]])
         .map(([icon, t2, s2, goL, fn]) => ({ icon, t: t2, s: s2, goL, go: fn, hasGo: !!fn, fg: icon.includes("warning") ? "#b0361c" : "#4a4a50" })),
       appeal: raise("appeal", "Review my standing") };
