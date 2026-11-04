@@ -540,12 +540,67 @@ function CrMoJournalFilter({ ctx }) {
     </form>
   );
 }
+/* The period as a statement of account for the books in view: owed when it
+   opened, what was charged, what came in, what was waived or credited, owed
+   when it closed. Every figure is the server's (admin.fees.journal → roll), and
+   the sum is shown, not implied — a report that does not add up on its face is
+   the one nobody trusts. Real money only; the training place is never owed. */
+function CrMoPeriodStatement({ jr }) {
+  const R = jr.roll, from = crDate(jr.from), to = crDate(jr.to);
+  const owed = n => n < 0 ? "In credit " + fmtMoney(-n) : fmtMoney(n);
+  const narrowed = !!((jr.filter || {}).q);
+  return (
+    <div className="cr-stmt">
+      <div className="cr-stmt-due">
+        <span className="cr-stmt-k">Owed at the close · {to}</span>
+        <b className="cr-stmt-big">{owed(R.closing)}</b>
+        <span className="cr-stmt-sub">{R.closing === R.opening ? "No change over the period." : (R.closing > R.opening ? "Up " : "Down ") + fmtMoney(Math.abs(R.closing - R.opening)) + " on the opening."} Net of money paid ahead; Who owes lists each family.</span>
+        <dl className="cr-stmt-facts">
+          <div><dt>Period</dt><dd>{from} – {to}</dd></div>
+          <div><dt>Collected</dt><dd>{R.charged + R.opening > 0 ? Math.round(R.received * 100 / (R.charged + Math.max(0, R.opening))) + "% of what was due" : "Nothing was due"}</dd></div>
+          {narrowed ? <div><dt>Accounts</dt><dd>Only those matching the search</dd></div> : null}
+        </dl>
+      </div>
+      <table className="cr-recon" aria-label={"How the amount owed moved from " + from + " to " + to}>
+        <tbody>
+          <tr><th scope="row">Owed at the open · {from}</th><td>{owed(R.opening)}</td></tr>
+          <tr><th scope="row">Charged</th><td>+ {fmtMoney(R.charged)}</td></tr>
+          <tr><th scope="row">Received</th><td>− {fmtMoney(R.received)}</td></tr>
+          <tr><th scope="row">Waived</th><td>− {fmtMoney(R.waived)}</td></tr>
+          {R.otherCredit ? <tr><th scope="row">Other credits</th><td>− {fmtMoney(R.otherCredit)}</td></tr> : null}
+          <tr className="is-grand"><th scope="row">Owed at the close · {to}</th><td>{owed(R.closing)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+function crMoMonthName(mk) { const d = new Date(mk + "-01T12:00:00Z"); return isNaN(d) ? mk : d.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }); }
 function crMoJournalBlocks(d, ctx) {
   const jr = d.jr, out = [{ type: "custom", span: 6, render: () => <CrMoJournalFilter ctx={ctx}/> }];
   if (!jr) return out.concat([{ type: "note", span: 6, icon: "spinner", text: "Loading the transactions…" }]);
   if (jr.err) return out.concat([{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the transactions.", sub: crErr(jr.err, ""), act: { l: "Try again", run: () => crMoJournalLoad(ctx, d.jf || {}) } }]);
   const T = jr.totals || {}, methods = Object.keys(T.byMethod || {});
   const period = crDate(jr.from) + " – " + crDate(jr.to);
+  const R = jr.roll;
+  if (R) {
+    out.push({ type: "custom", span: 6, title: "Statement for the period", sub: "Owed at the open, plus what was charged, less what came in — the figure it closes on. Not narrowed by What or State: a fine has no opening balance.",
+      render: () => <CrMoPeriodStatement jr={Object.assign({}, jr, { filter: d.jf || {} })}/> });
+    const M = R.months || [];
+    if (M.length > 1) out.push({ type: "table", span: 6, title: "Month by month", nosel: true,
+      sub: "Each month opens where the last closed" + (R.monthsCut ? " · the last " + M.length + " months" : ""),
+      action: "Download CSV", onAction: () => crDownloadCsv("money-by-month-" + jr.from + "-to-" + jr.to,
+        ["Month", "Owed at open", "Charged", "Received", "Waived", "Other credits", "Owed at close"],
+        M.map(m => [m.month, m.opening, m.charged, m.received, m.waived, m.otherCredit, m.closing])),
+      cols: ["Month", { l: "Owed at open", num: true }, { l: "Charged", num: true }, { l: "Received", num: true }, { l: "Waived", num: true }, { l: "Owed at close", num: true }],
+      rows: M.slice().reverse().map(m => ({ key: m.month, cells: [
+        { k: "text", t: crMoMonthName(m.month), v: m.month },
+        { k: "num", t: fmtMoney(m.opening), v: m.opening },
+        { k: "num", t: fmtMoney(m.charged), v: m.charged },
+        { k: "num", t: crMoLess(m.received), v: m.received },
+        { k: "num", t: crMoLess(m.waived + m.otherCredit), s: m.otherCredit ? fmtMoney(m.otherCredit) + " other credits" : "", v: m.waived + m.otherCredit },
+        { k: "num", t: fmtMoney(m.closing), v: m.closing },
+      ] })) });
+  }
   out.push({ type: "kpis", span: 6, title: "In this period", sub: period, items: [
     { l: "Received", v: fmtMoney(T.received || 0), tone: "flat", s: methods.length ? methods.map(m => (CR_MO_METHOD_L[m] || m) + " " + fmtMoney(T.byMethod[m])).join(" · ") : "No payments" },
     { l: "Charged", v: fmtMoney(T.charged || 0), tone: "flat", s: Object.keys(T.byKind || {}).map(k => (CR_MO_KIND[k] || k) + " " + fmtMoney(T.byKind[k])).join(" · ") || "Nothing charged" },

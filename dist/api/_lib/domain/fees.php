@@ -1263,7 +1263,7 @@ function admin_fees_training(array $p): array {
     $filter = in_array($p['filter'] ?? '', FEES_TRAINING_FILTERS, true) ? (string)$p['filter'] : 'all';
     $sort = in_array($p['sort'] ?? '', FEES_TRAINING_SORTS, true) ? (string)$p['sort'] : 'charged';
     $q = mb_strtolower(trim((string)($p['q'] ?? '')));
-    $limit = max(1, min(FEES_ARREARS_PAGE_MAX, (int)($p['limit'] ?? FEES_ARREARS_PAGE)));
+    $limit = (int)($p['limit'] ?? 0) > 0 ? min(FEES_ARREARS_PAGE_MAX, (int)$p['limit']) : FEES_ARREARS_PAGE;   // '' from the route is the default, not one row
     $scope = admin_centre_names_in_scope($g['requester']);
     /* Inactive members too: a leaver who owes the rest of the fee is exactly
        who this list has to show. */
@@ -2588,8 +2588,12 @@ function admin_fees_journal(array $p): array {
         elseif ($k === 'payment') { $totals['received'] += $a; $m = (string)$r['method'] !== '' ? (string)$r['method'] : 'other'; $totals['byMethod'][$m] = ($totals['byMethod'][$m] ?? 0) + $a; }
         elseif ($k === 'waiver') $totals['waived'] += $a;
     }
+    $roll = fees_journal_roll($from, $toNext, $scope, $q);
     $total = (int)(db_row("SELECT COUNT(*) c $base", $args)['c'] ?? 0);
-    $limit = max(1, min(FEES_JOURNAL_MAX, (int)($p['limit'] ?? FEES_JOURNAL_PAGE)));
+    /* The route passes every query field through, so "not given" arrives as ''
+       and (int)'' is 0 — which the floor turned into ONE row a page. A missing
+       or nonsense limit is the default, never the minimum. */
+    $limit = (int)($p['limit'] ?? 0) > 0 ? min(FEES_JOURNAL_MAX, (int)$p['limit']) : FEES_JOURNAL_PAGE;
     $offset = max(0, (int)($p['offset'] ?? 0));
     $rows = db_all("SELECT l.*, m.fullName, m.centre $base ORDER BY l.createdAt DESC, l.id DESC LIMIT $limit OFFSET $offset", $args);
     // Who posted and who voided, by name: one query for every id on the page.
@@ -2601,7 +2605,7 @@ function admin_fees_journal(array $p): array {
         foreach (db_all("SELECT memberId, fullName FROM members WHERE memberId IN ($ph)", $people) as $r) $names[(string)$r['memberId']] = (string)$r['fullName'];
     }
     $who = static fn($id) => $id === '' ? '' : ($names[$id] ?? (in_array($id, ['accrual', 'policy', 'system', 'paystack', 'ledger'], true) ? ['accrual' => 'Automatic (dues)', 'policy' => 'Automatic (conduct)', 'system' => 'Automatic', 'paystack' => 'Paystack', 'ledger' => 'Automatic'][$id] : $id));
-    return ['ok' => true, 'from' => $from, 'to' => $to, 'total' => $total, 'limit' => $limit, 'offset' => $offset, 'totals' => $totals,
+    return ['ok' => true, 'from' => $from, 'to' => $to, 'total' => $total, 'limit' => $limit, 'offset' => $offset, 'totals' => $totals, 'roll' => $roll,
         'rows' => array_map(static fn($r) => [
             'entryId' => (string)$r['entryId'], 'memberId' => (string)$r['memberId'], 'fullName' => (string)($r['fullName'] ?? ''), 'centre' => (string)($r['centre'] ?? ''),
             'kind' => (string)$r['kind'], 'direction' => (string)$r['direction'], 'amount' => (int)$r['amount'], 'periodKey' => (string)$r['periodKey'],
@@ -2610,6 +2614,55 @@ function admin_fees_journal(array $p): array {
             'void' => trim((string)($r['voidedAt'] ?? '')) !== '', 'voidedAt' => (string)($r['voidedAt'] ?? ''),
             'voidedBy' => $who((string)($r['voidedBy'] ?? '')), 'voidReason' => (string)($r['voidReason'] ?? ''),
         ], $rows)];
+}
+
+/**
+ * The period as a statement of account for the whole book: what was owed when
+ * it opened, what was charged, what came in, what was waived or credited, and
+ * what was owed when it closed — a sum that must reconcile, month by month.
+ *
+ * Real money only (the training place and its write-offs are never owed), live
+ * entries only, and deliberately NOT narrowed by the journal's kind, direction
+ * or state filters: "fines only" has no opening balance. Centre scope and a
+ * member search do narrow it, so one family's year reads the same way.
+ *
+ * "Owed" here is the net of every account — money paid ahead offsets a debt
+ * elsewhere in the sum — and is labelled so on screen; Who owes is the gross.
+ */
+const FEES_ROLL_MONTHS_MAX = 24;
+function fees_journal_roll(string $from, string $toNext, ?array $scope, string $q): array {
+    $where = ["(l.voidedAt IS NULL OR l.voidedAt = '')", "l.kind NOT IN ('training','writeoff')", 'l.createdAt < ?']; $args = [$toNext];
+    if ($q !== '') { $where[] = '(LOWER(m.fullName) LIKE ? OR LOWER(l.memberId) LIKE ?)'; $like = '%' . mb_strtolower($q) . '%'; array_push($args, $like, $like); }
+    if ($scope !== null) {
+        if (!$scope) return ['opening' => 0, 'charged' => 0, 'received' => 0, 'waived' => 0, 'otherCredit' => 0, 'closing' => 0, 'months' => [], 'monthsCut' => false];
+        $where[] = 'm.centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; array_push($args, ...$scope);
+    }
+    $sql = "SELECT CASE WHEN l.createdAt < ? THEN '' ELSE SUBSTR(l.createdAt, 1, 7) END mon, l.direction, l.kind, SUM(l.amount) s
+            FROM member_ledger l LEFT JOIN members m ON m.memberId = l.memberId
+            WHERE " . implode(' AND ', $where) . " GROUP BY mon, l.direction, l.kind";
+    $opening = 0; $byMonth = [];
+    foreach (db_all($sql, array_merge([$from], $args)) as $r) {
+        $a = (int)$r['s']; $charge = (string)$r['direction'] === 'charge';
+        if ((string)$r['mon'] === '') { $opening += $charge ? $a : -$a; continue; }
+        $mm = &$byMonth[(string)$r['mon']];
+        $mm = ($mm ?? ['charged' => 0, 'received' => 0, 'waived' => 0, 'otherCredit' => 0]);
+        if ($charge) $mm['charged'] += $a;
+        elseif ($r['kind'] === 'payment') $mm['received'] += $a;
+        elseif ($r['kind'] === 'waiver') $mm['waived'] += $a;
+        else $mm['otherCredit'] += $a;
+        unset($mm);
+    }
+    ksort($byMonth);
+    $run = $opening; $sum = ['charged' => 0, 'received' => 0, 'waived' => 0, 'otherCredit' => 0]; $months = [];
+    foreach ($byMonth as $mon => $x) {
+        $open = $run;
+        $run += $x['charged'] - $x['received'] - $x['waived'] - $x['otherCredit'];
+        foreach ($sum as $k => $_) $sum[$k] += $x[$k];
+        $months[] = ['month' => $mon, 'opening' => $open] + $x + ['closing' => $run];
+    }
+    $cut = count($months) > FEES_ROLL_MONTHS_MAX;
+    return ['opening' => $opening] + $sum + ['closing' => $run,
+            'months' => $cut ? array_slice($months, -FEES_ROLL_MONTHS_MAX) : $months, 'monthsCut' => $cut];
 }
 
 /** The ageing bands a collector reads debt by: how long the oldest unpaid naira has been due. */
@@ -2630,7 +2683,7 @@ function fees_age_band(int $days): string {
 function admin_fees_arrears(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
-    $limit = max(1, min(FEES_ARREARS_PAGE_MAX, (int)($p['limit'] ?? FEES_ARREARS_PAGE)));
+    $limit = (int)($p['limit'] ?? 0) > 0 ? min(FEES_ARREARS_PAGE_MAX, (int)$p['limit']) : FEES_ARREARS_PAGE;   // '' from the route is the default, not one row
     $byMember = []; $owedBy = [];
     foreach (db_all("SELECT * FROM member_ledger ORDER BY id") as $e) {
         $id = (string)$e['memberId'];

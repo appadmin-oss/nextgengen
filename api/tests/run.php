@@ -36143,6 +36143,22 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('transactions · totals for the whole filter: received by method, charged by kind, the training place never in them',
         ($j['totals']['received'] ?? 0) === 1000 && ($j['totals']['byMethod']['cash'] ?? 0) === 1000 && !isset($j['totals']['byKind']['training'])
         && ($j['totals']['charged'] ?? 0) === 3000);
+    /* The period as a statement of account: owed at the start + charged − received
+       − waived − other credits = owed at the end, month by month, and the end
+       agrees with what the account says is owed. */
+    $R = $j['roll'] ?? [];
+    $rec = static fn($x) => $x['opening'] + $x['charged'] - $x['received'] - $x['waived'] - $x['otherCredit'] === $x['closing'];
+    $b1now = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-MR-1'"));
+    chk('report · the period reconciles: nothing owed before, ₦3,000 charged, ₦1,000 received, ₦2,000 waived, and it closes on the account\'s own figure — the training place and the voided line in none of it',
+        $R && $rec($R) && $R['opening'] === 0 && $R['charged'] === 3000 && $R['received'] === 1000 && $R['waived'] === 2000 && $R['closing'] === $b1now['realCharged'] - $b1now['realCredited']);
+    chk('report · …and so does every month in it, each opening where the last closed',
+        !empty($R['months']) && count(array_filter($R['months'], $rec)) === count($R['months']) && $R['months'][0]['opening'] === $R['opening'] && end($R['months'])['closing'] === $R['closing']);
+    $tmp = fees_post('NGG-MR-1', 'fine', 1500, ['periodKey' => 'roll-probe', 'note' => 'Roll probe', 'by' => 'test']);
+    $owedMR = 0; foreach (['NGG-MR-1', 'NGG-MR-2'] as $x) { $bx = fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$x])); $owedMR += $bx['realCharged'] - $bx['realCredited']; }
+    $jl = backend_dispatch('admin.fees.journal', ['requesterId' => $ADM, 'from' => gmdate('Y-m-d', strtotime('+1 day')), 'to' => gmdate('Y-m-d', strtotime('+2 days')), 'q' => 'NGG-MR-', 'kind' => 'fine']);
+    chk('report · a later period opens on what was owed, and a kind filter does not narrow the balance (fines alone have no opening)',
+        isset($jl['roll']) && $owedMR !== 0 && $jl['roll']['opening'] === $owedMR && $jl['roll']['closing'] === $owedMR && $jl['roll']['charged'] === 0 && $jl['roll']['months'] === []);
+    backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => (string)($tmp['entryId'] ?? ''), 'reason' => 'test probe']);
     $j2 = backend_dispatch('admin.fees.journal', ['requesterId' => $ADM, 'q' => 'NGG-MR-1', 'kind' => 'nonsense', 'state' => 'void', 'from' => 'yesterday']);
     chk('transactions · an unknown filter falls back rather than erroring, and a voided entry is counted as voided, not as money',
         !empty($j2['ok']) && preg_match('/^\d{4}-\d{2}-01$/', (string)$j2['from']) === 1 && ($j2['totals']['voided'] ?? 0) >= 1 && ($j2['totals']['charged'] ?? -1) === 0);
@@ -36150,6 +36166,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         'centre' => 'Elsewhere', 'centreScope' => json_encode(['Elsewhere']), 'createdAt' => $now, 'updatedAt' => $now, 'capsExtra' => json_encode(['fees'])]);
     $j3 = backend_dispatch('admin.fees.journal', ['requesterId' => 'NGG-MR-SC', 'q' => 'NGG-MR-1']);
     chk('transactions · a centre-scoped reader sees only their centres', !empty($j3['ok']) ? ($j3['total'] ?? 1) === 0 : in_array($j3['error'] ?? '', ['forbidden'], true));
+    $jr = backend_dispatch('admin.fees.journal', ['requesterId' => $ADM, 'limit' => '', 'offset' => '']);
+    chk('transactions · a limit the route passes as blank is the default page, not one row', ($jr['limit'] ?? 0) === FEES_JOURNAL_PAGE && count($jr['rows'] ?? []) === min(FEES_JOURNAL_PAGE, (int)($jr['total'] ?? 0)) && ($jr['total'] ?? 0) > 1);
     chk('transactions · needs the Fees permission', (backend_dispatch('admin.fees.journal', ['requesterId' => 'NGG-MR-2'])['error'] ?? '') !== '');
     // One transfer is credited once, whichever door it comes through.
     $desk = backend_dispatch('admin.fees.payment', ['requesterId' => $ADM, 'memberId' => 'NGG-MR-2', 'amount' => 2000, 'method' => 'transfer', 'reference' => 'TRF-77701']);

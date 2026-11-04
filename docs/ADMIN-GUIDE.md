@@ -1002,6 +1002,27 @@ training place inside it, and the figures did not add up.) The family's Fees
 page reads payments the same way: a charge partly paid shows what was already
 paid of it.
 
+**The money report for a period** (Money → Dues & arrears → Transactions).
+Pick *From* and *To*; above the list of entries is a **statement for the
+period** for every account in your centres: *Owed at the open*, plus
+*Charged*, less *Received*, less *Waived* (and any other credits), equals
+*Owed at the close* — the sum is printed, so it can be checked on the page.
+*Collected* is what was received as a share of what was due. *Month by month*
+gives the same sum for each month (each opens where the last closed) and
+downloads as a CSV for the treasurer. The figures are real money only — the
+training place is never in them — and "owed" is net: a family paid ahead
+offsets a debt elsewhere, so the per-family list is **Who owes**. *What* and
+*State* narrow the list of entries but not the statement (fines on their own
+have no opening balance); a member search narrows both, which gives one
+family's year as a statement.
+
+**On their phones.** A member's Money screen and the family's Fees page read
+the same account. The member's card for the training place says where they
+are: *Earning off · N%*, *MOU complete* with its date, or *Owed* if they left
+before completing. Each month on the family statement closes on *Owed at
+month end*, and the latest agrees with *To pay now*. Both call monthly dues
+the **commitment fee**.
+
 The family pays through the link (Paystack), or by bank transfer or cash.
 
 **Money that arrived and could not be applied.** When a family pays an invoice

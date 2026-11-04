@@ -5575,3 +5575,34 @@ check that fails without it (mutation-checked).
     one row per reference, listed on Membership payments with Apply to account
     / Refunded / Dismiss (`admin.fees.unapplied.resolve`); the old audit rows
     are brought in once (`unapplied_backfill`). Merge policy: BLOCK.
+
+## 4 Nov 2026 — Statements and reports read as statements
+
+- **Member money screen** (`mp9-more.jsx`, design source
+  `docs/design/portals/member-portal-v9.dc.html`, regenerated with
+  `tools/dc-compile.js`). The training card printed a hardcoded "MOU done" for
+  every member; `member_statement` now returns a `training` block (cost,
+  covered, owed, mouDone/mouAt, left) and the card reads it. Ledger rows are
+  `.m9x-led-*` classes with a container query: on a narrow panel the
+  description leads and the figures sit labelled beneath it. Notes are shown
+  in words (`mp9Plain`: months and days as dates, the fine amount not
+  repeated, "Commitment fee" — the name families and receipts use). The
+  last-eight view states the balance brought forward.
+- **Family statement**: `family_fees_view` entries carry `balance` (real
+  money after the entry; training and voids move nothing); each month closes
+  on *Owed at month end*. The Fines card goes through `fp3Note`.
+- **Period report**: `admin.fees.journal` returns `roll` from
+  `fees_journal_roll()` — opening, charged, received, waived, otherCredit,
+  closing, and `months` (≤ 24, each opening where the last closed). Not
+  narrowed by kind/direction/state; narrowed by scope and member search.
+  Drawn on Transactions as a statement for the period plus a month-by-month
+  table with CSV.
+- **Bug fixed on the way**: `/api/admin/fees.php` passes `limit` as `''`
+  when the client sends none, and `max(1, (int)'')` made Transactions draw
+  **one row a page**; the training list had the same floor. A blank or
+  nonsense limit is now the default page. Test: "a limit the route passes as
+  blank is the default page, not one row".
+- PHP suite 6588 passed (all new tests mutation-checked). UI smoke 367/1 —
+  the one failure (Math Lab `.ml-ladder` timeout) reproduces on the commit
+  before this work.
+
