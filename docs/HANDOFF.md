@@ -5998,6 +5998,29 @@ ran — the run read "367 passed, 1 failed" over a suite of 627.
   four Learn pages, the order exercise and a figure question, and drives a
   slider, the proof walk-through and the order buttons.
 
+## 2026-11-04 (night) — Wi-Fi tested on a real RouterOS; the routers and Afrovanguard fixed
+
+The owner reported the CACENTRE Wi-Fi and Afrovanguard's still not working.
+
+**How it was tested.** RouterOS 7.19.4 (MikroTik CHR) ran under QEMU against a local CACENTRE on MariaDB, over HTTPS with a test CA. The setup was CACENTRE's real one-line install, followed by 1,500+ people, suspensions, withdrawals, password changes, a two-page full list and the filter.
+
+**What only a real router showed (fixed in cacentre-site 6ed0144):**
+- **Every scheduled sync failed at its end.** RouterOS logged "user's policy does not allow to edit this script". The state scripts were made during the install with full permissions, and the schedule runs with `read,write,test,ftp`. So a router updated once at install and never again.
+- **The apply loop pinned the CPU at 100% for hours on a large list.** It looked each user up by name three times per line. It now reads the router's users once and writes only changes: 1,527 users in under 30s.
+- **A dead sync froze the router until a reboot.** The busy flag now clears on error and expires after five skipped runs.
+- **Every router must run its one-line install again** to get the fixed script.
+
+**Afrovanguard (afrovanguard-site 01d8724).**
+- Its roster went as one base64 token, so anything over about 640 members was a 406 at CACENTRE's host. Measured: 700 members = 140 KB, 1,500 = 302 KB.
+- It now sends parts under one sync id, with the same split-on-406 as NGG's `wifi_cac_push`. CACENTRE's Afrovanguard endpoint reads `sync`.
+
+**Deploy all three:**
+- NGG (e32e3e66 and later)
+- cacentre-site (6ed0144, the cPanel package from its release branch)
+- afrovanguard-site (01d8724)
+
+Then run each router's one-line install again.
+
 ## 4 Nov 2026 — Maths Lab: clean, structured redesign
 
 Audit found: map stars stretched to ~60 px with topic names only in
