@@ -84,6 +84,8 @@ const VOLPAY_REASONS = [
 const VOLPAY_AMOUNT_MAX = 500000;
 const VOLPAY_PAY_MAX = 500;       // volunteers paid in one press
 const VOLPAY_ACCRUE_MAX = 5000;   // check-ins decided in one run; the rest at the next
+/** The batch size; the suite shrinks it to prove a run past the first batch moves on. */
+function volpay_accrue_max(): int { return max(1, (int)($GLOBALS['__volpay_accrue_max'] ?? VOLPAY_ACCRUE_MAX)); }
 const VOLPAY_METHODS = ['transfer' => 'Bank transfer', 'cash' => 'Cash', 'other' => 'Other'];
 const VOLPAY_BANK_RECENT_H = 48;  // a change this recent is flagged on the pay desk
 const VOLPAY_FINE_METHOD = 'volunteer_pay';
@@ -208,8 +210,17 @@ function volpay_accrue(?string $until = null): array {
     if (!$byPerson) return ['ok' => true, 'decided' => 0, 'earned' => 0];
     $ids = array_keys($byPerson);
     $in = implode(',', array_fill(0, count($ids), '?'));
-    $att = db_all("SELECT studentId, date, checkInAt, checkOutAt, lateMinutes, redline, halfDay, centre FROM attendance
-                    WHERE date >= ? AND date <= ? AND studentId IN ($in) ORDER BY date, checkInAt LIMIT " . VOLPAY_ACCRUE_MAX, array_merge([$from, $until], $ids));
+    /* Days already decided are left out HERE, not after the read. The batch
+       starts at the fixed start date and is capped, so skipping them in PHP
+       meant that once VOLPAY_ACCRUE_MAX check-ins had been decided every run
+       read the same first rows, decided nothing and said there was more — and
+       no later day was ever decided or paid. A check-in is by a volunteer id
+       or by the member id the volunteer row carries. */
+    $att = db_all("SELECT a.studentId, a.date, a.checkInAt, a.checkOutAt, a.lateMinutes, a.redline, a.halfDay, a.centre FROM attendance a
+                    WHERE a.date >= ? AND a.date <= ? AND a.studentId IN ($in)
+                      AND NOT EXISTS (SELECT 1 FROM volunteer_pay vp WHERE vp.day = a.date
+                          AND (vp.volunteerId = a.studentId OR vp.volunteerId IN (SELECT v.volunteerId FROM volunteers v WHERE v.memberId = a.studentId AND v.memberId <> '')))
+                    ORDER BY a.date, a.checkInAt LIMIT " . volpay_accrue_max(), array_merge([$from, $until], $ids));
     if (!$att) return ['ok' => true, 'decided' => 0, 'earned' => 0];
     $done = [];
     foreach (db_all('SELECT volunteerId, day FROM volunteer_pay WHERE day >= ? AND day <= ?', [$from, $until]) as $r) $done[$r['volunteerId'] . '|' . $r['day']] = true;
@@ -243,14 +254,22 @@ function volpay_accrue(?string $until = null): array {
         [$pk] = volpay_period((string)$a['date'], $cfg['frequency']);
         if ($status === 'earned' && (int)$cfg['maxDaysPerPeriod'] > 0 && ($inPeriod[$vid . '|' . $pk] ?? 0) >= (int)$cfg['maxDaysPerPeriod']) { $status = 'excluded'; $reason = 'period_cap'; }
         if ($status === 'earned') $inPeriod[$vid . '|' . $pk] = ($inPeriod[$vid . '|' . $pk] ?? 0) + 1;
-        db_insert('volunteer_pay', ['volunteerId' => $vid, 'day' => (string)$a['date'], 'centre' => (string)(($a['centre'] ?? '') !== '' ? $a['centre'] : ($v['centre'] ?? '')),
-            'status' => $status, 'amount' => $status === 'earned' ? (int)$cfg['amount'] : 0, 'rate' => (int)$cfg['amount'], 'reason' => $reason,
-            'activity' => $actText, 'periodKey' => $pk, 'decidedAt' => $now]);
+        /* The hourly web-cron and a press of "Decide finished days now" can
+           overlap: a day the other run decided first is skipped, never a reason
+           to stop the rest of the run part-way. */
+        try {
+            db_insert('volunteer_pay', ['volunteerId' => $vid, 'day' => (string)$a['date'], 'centre' => (string)(($a['centre'] ?? '') !== '' ? $a['centre'] : ($v['centre'] ?? '')),
+                'status' => $status, 'amount' => $status === 'earned' ? (int)$cfg['amount'] : 0, 'rate' => (int)$cfg['amount'], 'reason' => $reason,
+                'activity' => $actText, 'periodKey' => $pk, 'decidedAt' => $now]);
+        } catch (Throwable $e) {
+            if (function_exists('fees_is_duplicate') && fees_is_duplicate($e)) { if ($status === 'earned') $inPeriod[$vid . '|' . $pk]--; continue; }
+            throw $e;
+        }
         $decided++; if ($status === 'earned') $earned++;
         if ($status === 'excluded') $excl[$vid][$pk][] = [(string)$a['date'], $reason];
     }
     volpay_tell_excluded($excl, $byVol);
-    return ['ok' => true, 'decided' => $decided, 'earned' => $earned, 'more' => count($att) >= VOLPAY_ACCRUE_MAX];
+    return ['ok' => true, 'decided' => $decided, 'earned' => $earned, 'more' => count($att) >= volpay_accrue_max()];
 }
 
 /** The web-cron tick: once an hour is plenty, a day is decided once it is over. */
@@ -624,6 +643,29 @@ function admin_volpay_pay(array $p): array {
         $results[$id] = null;
     }
 
+    /* CLAIM each volunteer's days, and write their payout, before anything
+       leaves this server. The days were read with `payoutId = ''` and only
+       marked at the end, so two runs close together (a double press, two
+       desks) built the same plan: Afrovanguard settled the fine twice, a
+       second payout and a second NGG fine payment were recorded, and the
+       volunteer was told twice that they had been paid. Now one run wins each
+       volunteer's days, in a transaction with the payout row; the other finds
+       them taken and reports `unchanged`. */
+    // The suite stands in for a second run that claims days between planning and claiming.
+    if (isset($GLOBALS['__volpay_before_claim']) && is_callable($GLOBALS['__volpay_before_claim'])) ($GLOBALS['__volpay_before_claim'])($plan);
+    foreach ($plan as $id => $x) {
+        $won = db_tx(static function () use ($x, $id, $key, $method, $ref, $me) {
+            $in = implode(',', array_map(static fn($r) => (int)$r['id'], $x['rows']));
+            $n = db_exec("UPDATE volunteer_pay SET payoutId = ? WHERE id IN ($in) AND payoutId = ''", [$x['pid']]);
+            if ($n !== count($x['rows'])) { db_exec("UPDATE volunteer_pay SET payoutId = '' WHERE payoutId = ?", [$x['pid']]); return false; }
+            db_insert('volunteer_payouts', ['payoutId' => $x['pid'], 'volunteerId' => $id, 'periodKey' => $key, 'amount' => $x['gross'] - $x['fineNgg'], 'gross' => $x['gross'],
+                'fineNgg' => $x['fineNgg'], 'fineAv' => 0, 'bankLine' => '', 'days' => count($x['rows']),
+                'method' => $method, 'reference' => $ref, 'paidAt' => now_iso(), 'paidBy' => $me]);
+            return true;
+        });
+        if (!$won) { unset($plan[$id]); $results[$id] = ['volunteerId' => $id, 'state' => 'unchanged', 'error' => 'already_paid']; }
+    }
+
     /* Afrovanguard's fines: one request for what is owed, one to settle it.
        Unreachable, they stay owed there and nobody is paid less for them. */
     $avNote = '';
@@ -652,11 +694,8 @@ function admin_volpay_pay(array $p): array {
     foreach ($plan as $id => $x) {
         $net = $x['gross'] - $x['fineNgg'] - $x['fineAv'];
         $bankLine = $method === 'transfer' ? volpay_bank_line($x['v']) : '';
-        db_insert('volunteer_payouts', ['payoutId' => $x['pid'], 'volunteerId' => $id, 'periodKey' => $key, 'amount' => $net, 'gross' => $x['gross'],
-            'fineNgg' => $x['fineNgg'], 'fineAv' => $x['fineAv'], 'bankLine' => $bankLine, 'days' => count($x['rows']),
-            'method' => $method, 'reference' => $ref, 'paidAt' => now_iso(), 'paidBy' => $me]);
-        $in = implode(',', array_map(static fn($r) => (int)$r['id'], $x['rows']));
-        db_exec("UPDATE volunteer_pay SET payoutId = ? WHERE id IN ($in) AND payoutId = ''", [$x['pid']]);
+        // The payout was written when its days were claimed; now it carries what Afrovanguard took.
+        db_update('volunteer_payouts', ['amount' => $net, 'fineAv' => $x['fineAv'], 'bankLine' => $bankLine], ['payoutId' => $x['pid']]);
         if ($x['fineNgg'] > 0) fees_post((string)$x['v']['memberId'], 'payment', $x['fineNgg'], ['method' => VOLPAY_FINE_METHOD, 'reference' => $x['pid'],
             'periodKey' => 'volpay:' . $x['pid'], 'note' => 'Fines taken from volunteer pay, ' . ($span[2] ?? $key), 'by' => $me]);
         $off = [];
@@ -702,6 +741,13 @@ function admin_volpay_payout_void(array $p): array {
     db_exec("UPDATE volunteer_pay SET payoutId = '' WHERE payoutId = ?", [(string)$po['payoutId']]);
     if ((int)($po['fineNgg'] ?? 0) > 0) db_exec("UPDATE member_ledger SET voidedAt = ?, voidedBy = ?, voidReason = ? WHERE kind = 'payment' AND method = ? AND reference = ? AND (voidedAt IS NULL OR voidedAt = '')",
         [now_iso(), $me, 'Volunteer payout voided: ' . $why, VOLPAY_FINE_METHOD, (string)$po['payoutId']]);
+    /* …and the conduct record agrees: a fine this payout had settled reads
+       "paid" until the fines are re-read, while the account owes it again — and
+       a re-entry fee in that state lets a child back in unpaid. */
+    if ((int)($po['fineNgg'] ?? 0) > 0 && function_exists('policy_fines_sync')) {
+        $vm = (string)(db_row('SELECT memberId FROM volunteers WHERE volunteerId = ? LIMIT 1', [(string)$po['volunteerId']])['memberId'] ?? '');
+        if ($vm !== '') { try { policy_fines_sync($vm); } catch (Throwable $e) { error_log('[volpay.void] fines sync: ' . $e->getMessage()); } }
+    }
     audit('volpay.payout.void', $me, 'volunteer:' . $po['volunteerId'], ['payoutId' => $po['payoutId'], 'amount' => (int)$po['amount'], 'fineNgg' => (int)($po['fineNgg'] ?? 0), 'fineAv' => (int)($po['fineAv'] ?? 0), 'why' => $why], (string)($p['ip'] ?? ''));
     $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [(string)$po['volunteerId']]);
     if ($v) volpay_notify($v, 'A pay record was corrected', 'The payment of ₦' . number_format((int)$po['amount']) . ' recorded for ' . ((volpay_period_of_key((string)$po['periodKey']) ?? [2 => ''])[2])

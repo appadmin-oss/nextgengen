@@ -1201,12 +1201,24 @@ function admin_request_decide(array $p): array
         $no = fees_payment_guard((string)$r['memberId'], $by, $chk, (string)($p['ip'] ?? ''));
         if ($no) return $no;
     }
+    /* CLAIM the request before any money moves. The status was checked on a
+       row read at the top, so two approvals close together (a double press, a
+       retry, two desks) both passed it and each posted the payment — one
+       transfer, two credits on the ledger. Only one caller turns `open` into
+       a decision; the other is told it was already decided. */
+    $claimed = db_exec("UPDATE member_requests SET status = ?, updatedAt = ? WHERE id = ? AND status = 'open'",
+        [$approve ? 'approved' : 'declined', now_iso(), (int)$r['id']]);
+    if (!$claimed) return ['ok' => false, 'error' => 'already_decided'];
+    $unclaim = static fn() => db_exec("UPDATE member_requests SET status = 'open', updatedAt = ? WHERE id = ?", [now_iso(), (int)$r['id']]);
     if ($parts && function_exists('fees_post')) {
         $ids = [];
         // All parts or none: a claim half-posted and then refused is two truths about one payment.
+        try {
         db_tx(static function () use (&$parts, &$ids, $r, $rid, $by) {
         foreach ($parts as $k => $x) {
             $entry = fees_post((string)$r['memberId'], 'payment', (int)$x['amount'], [
+                // Keyed by the request, so the same claim can never post twice.
+                'periodKey' => 'mreq:' . $rid . ':' . $k,
                 'note' => 'Payment confirmed from member claim ' . $rid . ' — ' . member_payment_part_text($x),
                 'method' => $x['method'], 'reference' => $x['reference'] !== '' ? $x['reference'] : ($x['receivedBy'] !== '' ? 'cash to ' . $x['receivedBy'] : ''), 'by' => $by,
             ]);
@@ -1214,6 +1226,11 @@ function admin_request_decide(array $p): array
             $ids[] = (string)$entry['entryId']; $parts[$k]['entryId'] = (string)$entry['entryId'];
         }
         });
+        } catch (Throwable $e) {
+            $unclaim();
+            error_log('[request.decide] ' . $rid . ': ' . $e->getMessage());
+            return ['ok' => false, 'error' => 'post_failed', 'detail' => 'The payment could not be posted to the account, so the request is still open. Try again.'];
+        }
         $patch['ledgerEntryId'] = implode(',', $ids);
         $patch['amount'] = array_sum(array_map(static fn($x) => (int)$x['amount'], $parts));
         $patch['parts'] = json_encode($parts, JSON_UNESCAPED_UNICODE);
@@ -1221,11 +1238,18 @@ function admin_request_decide(array $p): array
         $amount = fees_money($p['amount'] ?? null, (int)$r['amount']);
         if ($amount > 0) {
             $entry = fees_post((string)$r['memberId'], 'payment', $amount, [
+                'periodKey' => 'mreq:' . $rid,
                 'note' => 'Payment confirmed from member claim ' . $rid
                         . ((string)$r['reference'] !== '' ? ' (ref ' . $r['reference'] . ')' : ''),
                 'method' => 'claim', 'reference' => (string)$r['reference'], 'by' => $by,
             ]);
-            if ($entry) $patch['ledgerEntryId'] = (string)$entry['entryId'];
+            /* A post that did not land is not an approval: the family would be
+               told "approved" while no money reached the account. */
+            if (!$entry) {
+                $unclaim();
+                return ['ok' => false, 'error' => 'post_failed', 'detail' => 'The payment could not be posted to the account, so the request is still open. Try again.'];
+            }
+            $patch['ledgerEntryId'] = (string)$entry['entryId'];
             $patch['amount'] = $amount;
         }
     }

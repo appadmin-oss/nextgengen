@@ -17973,6 +17973,14 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('volunteer pay · today is not decided until it is over', $row('VOL-PAY-1', gmdate('Y-m-d')) === null);
     chk('volunteer pay · run again, nothing is decided twice', (backend_dispatch('admin.volpay.accrue', ['requesterId' => $ADM])['decided'] ?? -1) === 0 && !empty($a['ok'])
         && (int)db_row("SELECT COUNT(*) n FROM volunteer_pay WHERE volunteerId IN ($in)")['n'] === 7);
+    /* Past the first batch: decided days are left out of the read, so a run
+       always reaches the next undecided one. Skipping them after the read kept
+       re-reading the same first rows once a batch's worth were decided. */
+    $att('VOL-PAY-3', $d(6), ['checkOutAt' => $d(6) . 'T15:00:00Z']);
+    $GLOBALS['__volpay_accrue_max'] = 1;
+    $b1 = backend_dispatch('admin.volpay.accrue', ['requesterId' => $ADM]);
+    unset($GLOBALS['__volpay_accrue_max']);
+    chk('volunteer pay · with a batch of one and seven days already decided, the run still decides the next day', ($b1['decided'] ?? 0) === 1 && $row('VOL-PAY-3', $d(6)) !== null);
     $set(['amount' => 4000]);
     chk('volunteer pay · a new rate never rewrites a day already earned', $row('VOL-PAY-1', $d(2))['amount'] === 2500);
 
@@ -17996,6 +18004,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('volunteer pay · paying settles each volunteer’s earned days of the period, as one payout; nothing owed is reported unchanged',
         ($res['VOL-PAY-1']['amount'] ?? 0) === 5000 && ($res['VOL-PAY-1']['days'] ?? 0) === 2 && ($res['VOL-PAY-2']['state'] ?? '') === 'unchanged');
     chk('volunteer pay · paid once: a second run pays nothing', ($pay(['VOL-PAY-1'], $wk)['results'][0]['state'] ?? '') === 'unchanged');
+    /* Two runs at once: the other takes VOL-PAY-4's days between this run's
+       plan and its claim. This run must not record a payout for them. */
+    $before = (int)db_row("SELECT COUNT(*) n FROM volunteer_payouts WHERE volunteerId = 'VOL-PAY-4'")['n'];
+    $GLOBALS['__volpay_before_claim'] = static function ($plan) use ($wk) { db_exec("UPDATE volunteer_pay SET payoutId = 'VP-OTHERRUN' WHERE volunteerId = 'VOL-PAY-4' AND periodKey = ? AND payoutId = ''", [$wk]); };
+    $race = $pay(['VOL-PAY-4'], $wk);
+    unset($GLOBALS['__volpay_before_claim']);
+    chk('volunteer pay · two runs at once: the one that lost the days records no second payout and pays nobody twice',
+        ($race['results'][0]['state'] ?? '') === 'unchanged' && (int)db_row("SELECT COUNT(*) n FROM volunteer_payouts WHERE volunteerId = 'VOL-PAY-4'")['n'] === $before);
+    db_exec("UPDATE volunteer_pay SET payoutId = '' WHERE payoutId = 'VP-OTHERRUN'");
     chk('volunteer pay · a paid day cannot be excluded', ($day('exclude', 'VOL-PAY-1', $d(2), 'wrong')['error'] ?? '') === 'already_paid');
     $w = backend_dispatch('admin.volpay.volunteer', ['requesterId' => $ADM, 'volunteerId' => 'VOL-PAY-1'])['wallet'] ?? [];
     chk('volunteer pay · the wallet: nothing owed after payment, 5,000 earned and paid', ($w['owed'] ?? -1) === 0 && $w['earned'] === 5000 && $w['paid'] === 5000);
@@ -24218,6 +24235,22 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             $r = admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $claim['request']['requestId'],
                                        'approve' => true, 'decision' => 'again']);
             return ($r['error'] ?? '') === 'already_decided';
+        })());
+
+    chk('self-service (desk): two approvals of one claim close together post the money once — the second finds a decided request, and a payment already posted under the claim\'s key is never posted again',
+        (function () use ($ADMIN, $MEM, $claim) {
+            $rid = $claim['request']['requestId'];
+            $n0 = (int)db_row("SELECT COUNT(*) n FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$MEM])['n'];
+            // The race's other half: the row read as still open while the first approval is landing.
+            db_exec("UPDATE member_requests SET status = 'open' WHERE requestId = ?", [$rid]);
+            $r = admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $rid, 'approve' => true, 'decision' => 'again']);
+            $n1 = (int)db_row("SELECT COUNT(*) n FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$MEM])['n'];
+            // Whichever guard stops it (the reference already recorded, or the claim's own key), no second payment lands.
+            $again = fees_post($MEM, 'payment', 3000, ['periodKey' => 'mreq:' . $rid, 'note' => 'again', 'by' => 'test']);
+            $n2 = (int)db_row("SELECT COUNT(*) n FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$MEM])['n'];
+            db_exec("UPDATE member_requests SET status = 'approved' WHERE requestId = ?", [$rid]);
+            return $n1 === $n0 && $n2 === $n0 && $again && str_starts_with((string)$again['periodKey'], 'mreq:')
+                && in_array($r['error'] ?? 'ok', ['ok', 'reference_reused', 'already_decided'], true);
         })());
 
     // ── The history: every request, findable by the id an alert carries ──
