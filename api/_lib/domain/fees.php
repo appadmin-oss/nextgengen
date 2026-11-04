@@ -1972,6 +1972,104 @@ function fees_charges_left(array $member, ?array $cfg = null, ?array $entries = 
 }
 
 /**
+ * What a member's payable is MADE OF, in lines a family reads at a glance —
+ * the one answer every screen gives (family Fees, the member's Money screen,
+ * Who owes). The lines add up to `payable`, always, and the sum is checked
+ * here rather than trusted to each screen:
+ *
+ *   - each open charge's LEFT, read the way payments are applied (oldest
+ *     first, fees_charges_left), so a part-paid charge says what it was;
+ *   - monthly dues grouped into one line with the months named — and a gap
+ *     said, not papered over ("February – April, June 2026");
+ *   - the training place when it became owed on leaving before the MOU. It
+ *     is in the payable but on no ledger charge, so every breakdown built
+ *     from charges alone came up short by exactly that, for exactly the
+ *     families most likely to dispute it.
+ *
+ * Grouping moved here from the family app (fp3Lines), which did the sum in
+ * the browser and could only ever see ledger charges.
+ *
+ * @return array{payable:int, lines:list<array>, ok:bool}
+ */
+function fees_owed_made(array $m, ?array $cfg = null, ?array $entries = null, ?array $bal = null): array {
+    $cfg = $cfg ?? fees_settings();
+    $entries = $entries ?? fees_entries((string)$m['memberId']);
+    $bal = $bal ?? fees_balance($m, $cfg, null, $entries);
+    $byId = []; foreach ($entries as $e) $byId[(string)$e['entryId']] = $e;
+    $groups = []; $order = [];
+    foreach (fees_charges_left($m, $cfg, $entries, $bal['tenure'] ?? null) as $eid => $l) {
+        if ($l['left'] <= 0 || !isset($byId[$eid])) continue;
+        $e = $byId[$eid]; $kind = (string)$e['kind']; $per = (string)($e['periodKey'] ?? '');
+        $note = trim((string)$e['note']);
+        $key = $kind === 'dues' ? 'dues' : $kind . ':' . $eid;
+        if (!isset($groups[$key])) {
+            $order[] = $key;
+            $groups[$key] = ['key' => $key, 'kind' => $kind, 'label' => fees_made_label($kind, $note), 'detail' => '', 'amount' => 0, 'n' => 0,
+                             'paid' => 0, 'of' => 0, 'periods' => [], 'due' => (string)$l['due']];
+        }
+        $g = &$groups[$key];
+        $g['amount'] += $l['left']; $g['n']++;
+        if ($l['left'] < $l['amount']) { $g['paid'] += $l['amount'] - $l['left']; $g['of'] += $l['amount']; }
+        if (preg_match('/^\d{4}-\d{2}$/', $per)) $g['periods'][] = $per;
+        if ($kind !== 'dues') $g['detail'] = fees_made_detail($kind, $note, $per);
+        unset($g);
+    }
+    $lines = [];
+    foreach ($order as $k) {
+        $g = $groups[$k];
+        if ($g['kind'] === 'dues') {
+            if ($g['n'] > 1) $g['label'] .= ' × ' . $g['n'] . ' months';
+            $g['detail'] = fees_month_spans($g['periods']);
+        }
+        if ($g['paid'] > 0) $g['detail'] = trim($g['detail'] . ($g['detail'] !== '' ? ' · ' : '') . fees_money_text($g['paid'], $cfg) . ' already paid' . ($g['n'] === 1 ? ' of ' . fees_money_text($g['of'], $cfg) : ''));
+        $lines[] = $g;
+    }
+    $owed = (int)($bal['trainingOwed'] ?? 0);
+    if ($owed > 0) $lines[] = ['key' => 'training_owed', 'kind' => 'training_owed', 'label' => 'Training place',
+        'detail' => 'Left before the MOU was complete — the part service had not yet earned off', 'amount' => $owed, 'n' => 1, 'paid' => 0, 'of' => 0, 'periods' => [], 'due' => ''];
+    /* Biggest first is not the order a family pays in; the oldest is. Dues sit
+       where their oldest month falls; the training balance closes the list. */
+    $payable = (int)$bal['payable'];
+    $sum = array_sum(array_column($lines, 'amount'));
+    return ['payable' => $payable, 'lines' => $lines, 'ok' => $sum === $payable];
+}
+/** "Membership fee", "Fine", "Adjustment" — the line's name; its particulars go in the detail. */
+function fees_made_label(string $kind, string $note): string {
+    if ($kind === 'dues') return 'Commitment fee';
+    if ($kind === 'membership') return 'Membership fee';
+    if ($kind === 'fine') return 'Fine';
+    if ($note !== '') { $cut = preg_split('/\s+—\s+/u', $note, 2); return (string)$cut[0]; }
+    return ucfirst($kind);
+}
+function fees_made_detail(string $kind, string $note, string $per): string {
+    $d = fn($iso) => ($t = strtotime($iso . 'T12:00:00Z')) ? gmdate('j M Y', $t) : $iso;
+    if ($kind === 'membership') {
+        if (preg_match('/year (\d+) from (\d{4}-\d{2}-\d{2})/', $note, $x)) return 'Year ' . $x[1] . ', from ' . $d($x[2]);
+        return $note !== 'Membership fee' ? preg_replace('/^Membership fee\s*—\s*/u', '', $note) : '';
+    }
+    $rest = preg_split('/\s+—\s+/u', $note, 2)[1] ?? '';
+    // "Absent on Sat 17 Oct 2026 with no absence request — ₦1,000 absence fine." → the reason, not the amount again
+    $rest = preg_replace('/\s*—\s*₦[\d,]+(?: [a-z]+)? fine\.?$/u', '', $rest);
+    return preg_replace_callback('/\b(\d{4}-\d{2}-\d{2})\b/', fn($x) => $d($x[1]), $rest);
+}
+/** ['2026-02','2026-03','2026-05'] → "February – March, May 2026". Gaps are said. */
+function fees_month_spans(array $periods): string {
+    $ps = array_values(array_unique($periods)); sort($ps);
+    if (!$ps) return '';
+    $idx = fn($p) => (int)substr($p, 0, 4) * 12 + (int)substr($p, 5, 2) - 1;
+    $runs = []; $start = $prev = $ps[0];
+    foreach (array_slice($ps, 1) as $p) { if ($idx($p) === $idx($prev) + 1) { $prev = $p; continue; } $runs[] = [$start, $prev]; $start = $prev = $p; }
+    $runs[] = [$start, $prev];
+    $name = fn($p) => gmdate('F', strtotime($p . '-01T12:00:00Z')); $yr = fn($p) => substr($p, 0, 4);
+    $oneYear = $yr($ps[0]) === $yr(end($ps));
+    $parts = array_map(function ($r) use ($name, $yr, $oneYear) {
+        $a = $name($r[0]) . ($oneYear ? '' : ' ' . $yr($r[0])); $b = $name($r[1]) . ($oneYear ? '' : ' ' . $yr($r[1]));
+        return $r[0] === $r[1] ? $a : $a . ' – ' . $b;
+    }, $runs);
+    return implode(', ', $parts) . ($oneYear ? ' ' . $yr($ps[0]) : '');
+}
+
+/**
  * One member's account as an accountant reads it, built on the server so the
  * screen adds nothing up:
  *
@@ -2706,7 +2804,7 @@ function admin_fees_arrears(array $p): array {
                 $totalPayable += (int)$b['payable'];
                 // What is left on each charge, and so how old the debt is and what it is made of.
                 $kindOf = []; foreach ($entries as $e) $kindOf[(string)$e['entryId']] = (string)$e['kind'];
-                $made = ['dues' => 0, 'membership' => 0, 'fine' => 0, 'other' => 0]; $oldest = ''; $ageOf = [];
+                $made = ['dues' => 0, 'membership' => 0, 'fine' => 0, 'training' => (int)$b['trainingOwed'], 'other' => 0]; $oldest = ''; $ageOf = [];
                 foreach (fees_charges_left($m, $cfg, $entries, $b['tenure']) as $eid => $l) {
                     if ($l['left'] <= 0) continue;
                     $k = $kindOf[$eid] ?? 'other'; $made[isset($made[$k]) ? $k : 'other'] += $l['left'];

@@ -440,7 +440,7 @@ class Fp3Portal extends React.Component {
     if (active && loaded && sec === "money") {
       const F = w.fees, P = F.programme || {}, TM = F.terms || {}, J = F.joining, first = w.member.first;
       const pend = !!F.offlinePending, online = F.payOnline && !pend;
-      const KI = { dues: "ph ph-calendar-check", membership: "ph ph-identification-badge", fine: "ph ph-warning", adjustment: "ph ph-pencil-simple-line", payment: "ph ph-arrow-down-left", waiver: "ph ph-hand-heart", training: "ph ph-graduation-cap", writeoff: "ph ph-graduation-cap" };
+      const KI = { training_owed: "ph ph-graduation-cap", dues: "ph ph-calendar-check", membership: "ph ph-identification-badge", fine: "ph ph-warning", adjustment: "ph ph-pencil-simple-line", payment: "ph ph-arrow-down-left", waiver: "ph ph-hand-heart", training: "ph ph-graduation-cap", writeoff: "ph ph-graduation-cap" };
       const lines = J ? J.items : F.lines;
       const ref = J ? J.invoiceId : "NGG-BAL-" + String(w.member.displayId || "").replace(/-/g, "");
       const isPlace = r => r.kind === "training" || r.kind === "writeoff";

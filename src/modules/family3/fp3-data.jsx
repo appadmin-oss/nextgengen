@@ -66,27 +66,8 @@ const FP3_HOME_TIPS = {
 const FP3_GRADES = [[75, "A1"], [70, "B2"], [65, "B3"], [60, "C4"], [55, "C5"], [50, "C6"], [45, "D7"], [40, "E8"], [0, "F9"]];
 const FP3_ICON = { "file-text": "ph ph-file-text", "warning-circle": "ph ph-warning-circle", megaphone: "ph ph-megaphone", wallet: "ph ph-wallet" };
 
-/** Group the open charges into lines a parent can read: "Monthly commitment fee × 15", not fifteen rows. */
-function fp3Lines(lines) {
-  const by = {};
-  (lines || []).forEach(l => {
-    const k = l.kind === "dues" ? "dues" : l.kind === "fine" ? "fine:" + l.label : l.kind + ":" + l.label;
-    if (!by[k]) by[k] = { label: l.kind === "dues" ? "Commitment fee" : fp3Note(l.label), kind: l.kind, amount: 0, n: 0, detail: "", periods: [], paid: 0, of: 0 };
-    by[k].amount += l.amount; by[k].n++;
-    /* Part paid: the server says what the charge was (`of`), so ₦2,000 left on a ₦5,000 membership is not read as its price. */
-    if (l.of > 0) { by[k].paid += l.of - l.amount; by[k].of += l.of; }
-    if (/^\d{4}-\d{2}$/.test(l.period || "")) by[k].periods.push(l.period);
-  });
-  /* The months a dues line is for, by name: "October 2026", or "August – October 2026" — never just "Unpaid months". */
-  const span = ps => { const o = ps.slice().sort(); if (!o.length) return ""; const a = fp3Month(o[0]), b = fp3Month(o[o.length - 1]);
-    return a === b ? a : a.split(" ")[1] === b.split(" ")[1] ? a.split(" ")[0] + " – " + b : a + " – " + b; };
-  const naira = n => "₦" + Number(n).toLocaleString("en");
-  return Object.keys(by).map(k => { const x = by[k], when = x.kind === "dues" ? span(x.periods) : "";
-    const part = x.paid > 0 ? naira(x.paid) + " already paid" + (x.n === 1 ? " of " + naira(x.of) : "") : "";
-    return Object.assign({}, x, { label: x.n > 1 ? x.label + " × " + x.n + " months" : x.label,
-      detail: [when || (x.n > 1 ? "Unpaid months" : ""), part].filter(Boolean).join(" · ") }); });
-}
-
+/* The grouping of open charges into lines ("Commitment fee × 15 months") is the
+   server's now — fees_owed_made — so this app and the member's screen agree. */
 /** A ledger note as a parent reads it: dates in words, "Monthly dues 2026-10" as the month. */
 function fp3Note(t) {
   return String(t || "").replace(/Monthly dues (\d{4})-(\d{2})\b/g, (_, y, m) => "Commitment fee · " + ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][+m - 1] + " " + y)
@@ -110,8 +91,8 @@ function fp3TellTerms(TM) {
 
 /** What the amount owed is made of, in one line a parent reads at a glance: "Commitment fees for 22 months, membership and a fine". */
 function fp3Owed(lines) {
-  const n = { dues: 0, membership: 0, fine: 0, other: 0 };
-  (lines || []).forEach(l => { const k = n[l.kind] !== undefined ? l.kind : "other"; n[k] += l.kind === "dues" ? (/× (\d+)/.exec(l.label) ? +/× (\d+)/.exec(l.label)[1] : 1) : 1; });
+  const n = { dues: 0, membership: 0, fine: 0, training_owed: 0, other: 0 };
+  (lines || []).forEach(l => { const k = n[l.kind] !== undefined ? l.kind : "other"; n[k] += l.kind === "dues" ? (l.n || 1) : 1; });
   const parts = [];
   /* "This month’s" only when the one fee owed IS this month’s: October’s, owed in November, is named. */
   const due1 = (lines || []).find(l => l.kind === "dues"), now = new Date(), thisMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
@@ -119,6 +100,7 @@ function fp3Owed(lines) {
   if (n.dues) parts.push(n.dues > 1 ? "commitment fees for " + n.dues + " months" : !p1 || p1 === thisMonth ? "this month’s commitment fee" : "the commitment fee for " + fp3Month(p1));
   if (n.membership) parts.push(n.membership === 1 ? "membership" : "membership for " + n.membership + " years");
   if (n.fine) parts.push(n.fine === 1 ? "a fine" : n.fine + " fines");
+  if (n.training_owed) parts.push("the training place, after leaving before the MOU was complete");
   if (n.other) parts.push(n.other === 1 ? "one other charge" : n.other + " other charges");
   const s = parts.length > 1 ? parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] : (parts[0] || "");
   return s ? s.charAt(0).toUpperCase() + s.slice(1) + "." : "";
@@ -176,7 +158,7 @@ function fp3Ward(link, d, today) {
     charges: (d.charges || []).map(c => ({ id: c.entryId, label: fp3Note(c.note) + " · " + "₦" + Number(c.amount).toLocaleString("en"), when: fp3Date(c.createdAt) })),
     fees: fees3 ? {
       enabled: true, payable: fees3.payable, outstanding: fees3.outstanding, payOnline: fees3.payOnline, payFee: fees3.payFee || 0, offlinePending: fees3.offlinePending,
-      lines: fp3Lines(fees3.lines), next: fees3.next.map(x => ({ label: x.label, when: fp3Date(x.date), amount: x.amount })),
+      lines: (fees3.lines || []).map(l => ({ label: l.label, detail: l.detail || "", amount: l.amount, kind: l.kind, n: l.n || 1, periods: l.periods || [] })), next: fees3.next.map(x => ({ label: x.label, when: fp3Date(x.date), amount: x.amount })),
       joining: fees3.joining ? { invoiceId: fees3.joining.invoiceId, start: fp3Date(fees3.joining.start), items: fees3.joining.items, total: fees3.joining.total || 0 } : null,
       entries: fees3.entries.map((e, i) => ({ id: e.id || "E" + i, when: fp3Date(e.date), month: e.month, kind: e.kind, note: fp3Note(e.note), amount: e.amount, dir: e.dir, void: e.void, balance: e.balance })),
       programme: Object.assign({}, fees3.programme, { serviceStarts: fp3Long(fees3.programme.serviceStarts), completes: fp3Long(fees3.programme.completes) }),

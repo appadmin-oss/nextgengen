@@ -17757,6 +17757,10 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $pv = backend_dispatch('admin.volpay.period', ['requesterId' => $ADM, 'period' => $wk]);
     $pr = array_column($pv['rows'] ?? [], null, 'volunteerId');
     chk('volunteer pay · the period list carries each volunteer’s bank and NGG fines, in grouped reads', isset($pr['VOL-PAY-3']['bank']['last4'], $pr['VOL-PAY-3']['finesNgg']));
+    $T = $pv['totals'] ?? [];
+    chk('volunteer pay · the period settles as a sum: earned = paid to the bank + NGG fines kept + Afrovanguard fines held + still to pay, with NGG\'s ₦1,000 in it',
+        !empty($T['settles']) && ($T['payouts'] ?? 0) >= 1 && ($T['fineNgg'] ?? 0) >= 1000
+        && $T['paidOut'] + $T['fineNgg'] + $T['fineAv'] + $T['unpaid'] === $T['earned']);
 
     $clean();
     if (is_array($keep)) setting_set('volunteerPay', $keep, 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'volunteerPay'");
@@ -35187,6 +35191,20 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("UPDATE members SET mouAt = '' WHERE memberId = 'NGG-TF9-GONE'");
     $st = backend_dispatch('member.statement', ['memberId' => 'NGG-TF9-GONE']);
     chk('fee: …and their statement closes on the same figure', !empty($st['ok']) && (int)$st['closingPayable'] === (int)$bg['payable']);
+    /* What a family is asked for is MADE OF lines that add up to it. The
+       training balance owed on leaving is on no charge, so every breakdown
+       built from charges alone came up short by exactly that. */
+    $made = fees_owed_made($row('NGG-TF9-GONE'));
+    $fv = family_fees_view($row('NGG-TF9-GONE'));
+    $sum = fn($ls) => array_sum(array_map(fn($l) => (int)$l['amount'], $ls));
+    chk('owed · a member who left before the MOU: the breakdown names the training place and adds up to what is payable',
+        $made['ok'] && $sum($made['lines']) === (int)$bg['payable'] && (end($made['lines'])['kind'] ?? '') === 'training_owed');
+    chk('owed · …and the family\'s Fees page and the member\'s own statement give the same lines',
+        $sum($fv['lines'] ?? []) === (int)$fv['payable'] && in_array('training_owed', array_column($fv['lines'], 'kind'), true)
+        && array_column($st['owed'] ?? [], 'amount') === array_column($made['lines'], 'amount'));
+    chk('owed · months are named and a gap is said, not papered over',
+        fees_month_spans(['2026-04', '2026-02', '2026-03', '2026-06']) === 'February – April, June 2026'
+        && fees_month_spans(['2026-12', '2027-01']) === 'December 2026 – January 2027' && fees_month_spans(['2026-10']) === 'October 2026');
 
     // The status log is written where the row is.
     $sus = $mk('NGG-TF9-SUS', $ago(25));
@@ -36962,6 +36980,32 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('maths lab · Lite marks with the worked solution and no record; a forged token is refused', !empty($ok['correct']) && !empty($ok['steps']) && !isset($li['item']['key']) && ($tam['error'] ?? '') === 'bad_token');
     foreach (['mlab_state', 'mlab_profile', 'mlab_sessions', 'mlab_enrol'] as $t) db_exec("DELETE FROM $t WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
+})();
+
+// ── Donations: every figure counted over every gift, on the server ──
+(function () {
+    $now = now_iso(); $ADM = 'NGG-DON-ADM';
+    $keep = db_all('SELECT * FROM donations');
+    db_exec('DELETE FROM donations');
+    db_insert('members', ['memberId' => $ADM, 'fullName' => 'Don Admin', 'email' => 'don-adm@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    $old = gmdate('Y-m-d\TH:i:s\Z', strtotime('-40 days')); $stale = gmdate('Y-m-d\TH:i:s\Z', strtotime('-3 days'));
+    $i = 0; $add = function ($amt, $st, $at, $ch = 'card', $em = null) use (&$i) { $i++;
+        db_insert('donations', ['reference' => 'NGGD-T' . $i, 'email' => $em ?? "d$i@example.org", 'name' => "D$i", 'amount' => $amt, 'currency' => 'NGN', 'status' => $st, 'channel' => $ch, 'createdAt' => $at, 'paidAt' => $st === 'paid' ? $at : '']); };
+    $add(5000, 'paid', $now, 'card', 'same@example.org'); $add(20000, 'paid', $now, 'bank_transfer', 'same@example.org'); $add(3000, 'paid', $old, 'card');
+    $add(1000, 'pending', $now); $add(2500, 'pending', $stale);
+    $r = backend_dispatch('admin.donations.list', ['requesterId' => $ADM]);
+    $S = $r['summary'] ?? [];
+    chk('donations · raised, gifts, donors and the largest gift are counted on the server over every gift',
+        ($S['raised'] ?? 0) === 28000 && $S['gifts'] === 3 && $S['donors'] === 2 && $S['largest'] === 20000 && $S['average'] === 9333);
+    $by = array_column($r['donations'] ?? [], 'status', 'reference');
+    chk('donations · a checkout never confirmed after 48 hours is abandoned, not pending — counted apart, and said on its row',
+        $S['pending'] === 1 && $S['abandoned'] === 1 && ($by['NGGD-T5'] ?? '') === 'abandoned' && ($by['NGGD-T4'] ?? '') === 'pending');
+    chk('donations · months and channels add up to what was raised',
+        array_sum(array_column($r['months'] ?? [], 'amount')) === 28000 && count($r['months']) === 2 && array_sum(array_column($r['channels'] ?? [], 'amount')) === 28000);
+    $x = backend_dispatch('admin.donations.list', ['requesterId' => $ADM, 'export' => true]);
+    chk('donations · the export is every gift, with its cap named', count($x['donations'] ?? []) === 5 && ($x['cap'] ?? 0) === DONATIONS_EXPORT_MAX && empty($x['cutOff']));
+    db_exec('DELETE FROM donations'); foreach ($keep as $k) { unset($k['id']); db_insert('donations', $k); }
+    db_exec("DELETE FROM members WHERE memberId = ?", [$ADM]);
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

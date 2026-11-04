@@ -529,6 +529,10 @@ function member_statement(array $p): array
                          'centre' => (string)($m['centre'] ?? ''), 'level' => (string)($m['level'] ?? '')],
             'lines' => $lines,
             'closingPayable' => $payable, 'closingTotal' => $total,
+            /* What the payable is made of, the same lines the family's Fees page
+               shows (fees_owed_made) — the money screen said only "membership,
+               dues and any fines" beside the total. */
+            'owed' => fees_owed_made($m, $cfg, null, $bal)['lines'],
             /* The training place, in the words a member is owed about it. The
                money screen used to print "MOU done" for every member, including
                one a month into the programme — so it reads the record now. */

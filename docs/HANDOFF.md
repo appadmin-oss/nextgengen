@@ -5606,3 +5606,25 @@ check that fails without it (mutation-checked).
   the one failure (Math Lab `.ml-ladder` timeout) reproduces on the commit
   before this work.
 
+## 4 Nov 2026 (later) — One breakdown of what is owed; Volunteer pay and Donations add up
+
+- **`fees_owed_made()`** (fees.php) is the one answer to "what is the payable
+  made of": open charges left (oldest-first allocation), dues grouped with
+  months named and gaps said (`fees_month_spans`), fines with their reason
+  (amount not repeated), and a `training_owed` line when a member left before
+  the MOU. It returns `ok` = the lines sum to `payable`. Read by
+  `family_fees_view` (the old browser grouping `fp3Lines` is gone),
+  `member_statement` → `owed` (shown on the member's To pay card, design source
+  regenerated), and Who owes' `made.training`. Before this, a member who left
+  early had a payable larger than every breakdown of it.
+- **Volunteer pay**: `admin.volpay.period` totals carry `paidOut`, `fineNgg`,
+  `fineAv`, `payouts` and `settles` (earned = paid + fines kept/held + unpaid).
+  The tab draws it as a settlement statement; the per-row column is renamed
+  *NGG fines owed*.
+- **Donations**: `admin_donations_list` counts raised, gifts, distinct donors,
+  largest, average, pending and abandoned (> `DONATION_ABANDON_HOURS` = 48)
+  over every row, plus `months` and `channels`; `export=1` returns every row
+  to `DONATIONS_EXPORT_MAX` (named when hit). The screen counted three of its
+  four tiles from the newest 500 rows.
+- Still open: a Money overview tab (needs a registry entry in `cr-pages.jsx`).
+

@@ -10,13 +10,20 @@
    ========================================================================== */
 
 /* ── Donations ── */
-const CR_MO_DON_CAP = 500;   // admin_donations_list returns the newest 500
+const CR_MO_DON_CH = { card: "Card", bank_transfer: "Bank transfer", bank: "Bank", ussd: "USSD", qr: "QR", mobile_money: "Mobile money", other: "Other" };
 const CR_MO_DON_STATUS = { paid: ["Paid", "ok"], pending: ["Pending", "warn"], failed: ["Failed", "bad"], abandoned: ["Abandoned", "neutral"] };
 function crMoDonStatus(s) { return CR_MO_DON_STATUS[s] || [s ? s[0].toUpperCase() + s.slice(1) : "—", "neutral"]; }
-function crMoDonExport(rows) {
-  crDownloadCsv("donations-" + new Date().toISOString().slice(0, 10),
-    ["Reference", "Name", "Email", "Amount", "Currency", "Status", "Channel", "Started", "Paid"],
-    rows.map(r => [r.reference, r.name, r.email, r.amount, r.currency, r.status, r.channel, r.createdAt, r.paidAt]));
+/* The CSV is every gift (the server's export, to a cap it names), not the 500
+   rows drawn on the page. */
+async function crMoDonExport(ctx) {
+  try {
+    const r = await NGGApi.admin.donations({ export: true });
+    const rows = r.donations || [];
+    crDownloadCsv("donations-" + new Date().toISOString().slice(0, 10),
+      ["Reference", "Name", "Email", "Amount", "Currency", "Status", "Channel", "Started", "Paid"],
+      rows.map(x => [x.reference, x.name, x.email, x.amount, x.currency, x.status, x.channel, x.createdAt, x.paidAt]));
+    if (r.cutOff) ctx.toast("The newest " + crNum(r.cap) + " gifts were exported — the most one file holds.");
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t export the donations.")); }
 }
 function crMoDonOpen(ctx, r) {
   const st = crMoDonStatus(r.status);
@@ -31,7 +38,7 @@ Object.assign(CR_TAB_DEFS, {
   donations: {
     skeleton: ["kpis", "table"],
     load: async () => NGGApi.admin.donations(),
-    actions: (d) => [{ l: "Export CSV", icon: "download-simple", primary: true, disabled: !(d.donations || []).length, why: "No donations to export yet.", run: () => crMoDonExport(d.donations || []) }],
+    actions: (d, ctx) => [{ l: "Export CSV", icon: "download-simple", primary: true, disabled: !(d.donations || []).length, why: "No donations to export yet.", run: () => crMoDonExport(ctx) }],
     blocks: (d, ctx) => {
       const rows = d.donations || [];
       const paid = rows.filter(r => r.status === "paid");
@@ -40,14 +47,24 @@ Object.assign(CR_TAB_DEFS, {
         text: "Donations are off. Nobody can give through the site until Paystack is set up.",
         sub: "Add the Paystack secret key under Settings → API keys (or paystack.secret in api/config.php), and point the Paystack webhook at /api/hooks/paystack.php.",
         act: ctx.can("settings") ? { l: "Add the Paystack key", run: () => ctx.go("settings", "keys") } : null });
+      /* Every figure is the server's, over every gift (admin_donations_list → summary).
+         These four used to be counted here from the newest 500 rows. */
+      const S = d.summary || { raised: d.totalPaid || 0, gifts: paid.length, donors: 0, largest: 0, average: 0, pending: 0, abandoned: 0, abandonHours: 48 };
+      const ch = (d.channels || []).map(c => (CR_MO_DON_CH[c.channel] || c.channel) + " " + fmtMoney(c.amount)).join(" · ");
       out.push({ type: "kpis", span: 6, items: [
-        { l: "Raised", v: fmtMoney(d.totalPaid || 0), tone: "flat" },
-        { l: "Paid gifts", v: crNum(paid.length) + (rows.length >= CR_MO_DON_CAP ? "+" : ""), tone: "flat" },
-        { l: "Pending", v: crNum(rows.filter(r => r.status === "pending").length), tone: "flat" },
-        { l: "Largest gift", v: paid.length ? fmtMoney(Math.max.apply(null, paid.map(r => +r.amount || 0))) : "—", tone: "flat" },
+        { l: "Raised", v: fmtMoney(S.raised || 0), tone: "flat", s: ch || "Nothing paid yet" },
+        { l: "Gifts", v: crNum(S.gifts || 0), tone: "flat", s: S.donors ? "from " + crPlural(S.donors, "donor") + (S.average ? " · " + fmtMoney(S.average) + " on average" : "") : "" },
+        { l: "Largest gift", v: S.largest ? fmtMoney(S.largest) : "—", tone: "flat" },
+        { l: "Not completed", v: crNum((S.pending || 0) + (S.abandoned || 0)), tone: "flat",
+          s: crNum(S.pending || 0) + " still open · " + crNum(S.abandoned || 0) + " abandoned (older than " + (S.abandonHours || 48) + " hours, never paid)" },
       ] });
+      const M = d.months || [];
+      if (M.length) out.push({ type: "table", span: 6, title: "By month", nosel: true, sub: "Paid gifts, by the month they were paid · the last " + crPlural(M.length, "month"),
+        action: "Download CSV", onAction: () => crDownloadCsv("donations-by-month", ["Month", "Gifts", "Raised"], M.map(m => [m.month, m.gifts, m.amount])),
+        cols: ["Month", { l: "Gifts", num: true }, { l: "Raised", num: true }],
+        rows: M.map(m => ({ key: m.month, cells: [{ k: "text", t: crMoMonthName(m.month), v: m.month }, { k: "num", t: crNum(m.gifts), v: m.gifts }, { k: "num", t: fmtMoney(m.amount), v: m.amount }] })) });
       out.push({ type: "table", span: 6, title: "Gifts", nosel: true,
-        sub: rows.length >= CR_MO_DON_CAP ? "The newest " + crNum(CR_MO_DON_CAP) + " are shown; the total raised counts every paid gift." : "Newest first",
+        sub: (d.shown || rows.length) < ((d.summary || {}).rows || 0) ? "The newest " + crNum(d.shown || rows.length) + " of " + crNum(d.summary.rows) + " are listed; every figure above counts them all, and Export CSV has them all." : "Newest first",
         cols: ["Donor", { l: "Reference" }, { l: "Amount", num: true }, "Status", "When"],
         rows: rows.map(r => { const st = crMoDonStatus(r.status); const when = r.paidAt || r.createdAt; return { key: r.reference, open: () => crMoDonOpen(ctx, r), cells: [
           { k: "strong", t: r.name || r.email || "Anonymous", s: r.name ? r.email : "" },
@@ -441,7 +458,7 @@ const CR_MO_BAND = { current: "Up to 30 days", d31: "31–60 days", d61: "61–9
 /** What one family's debt is made of: "Dues ₦18,000 · Fines ₦1,000". */
 function crMoMade(m) {
   if (!m) return "";
-  return [["dues", "Dues"], ["membership", "Membership"], ["fine", "Fines"], ["other", "Other"]].filter(k => m[k[0]] > 0).map(k => k[1] + " " + fmtMoney(m[k[0]])).join(" · ");
+  return [["dues", "Dues"], ["membership", "Membership"], ["fine", "Fines"], ["training", "Training place (left early)"], ["other", "Other"]].filter(k => m[k[0]] > 0).map(k => k[1] + " " + fmtMoney(m[k[0]])).join(" · ");
 }
 /* ══ Who owes: the debt book, aged ═══════════════════════════════════════════
    What a collector needs and the old list did not say: HOW LONG the oldest
@@ -575,6 +592,37 @@ function CrMoPeriodStatement({ jr }) {
   );
 }
 function crMoMonthName(mk) { const d = new Date(mk + "-01T12:00:00Z"); return isNaN(d) ? mk : d.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }); }
+/* A pay period as a settlement that closes: what volunteers earned, and where
+   every naira of it went — to their bank, to NGG's fines, held for
+   Afrovanguard's — or that it is still to pay. Five tiles used to sit side by
+   side with nothing tying them, so "earned" and "to pay" could not be
+   reconciled from the page. The sum is the server's (admin.volpay.period). */
+function CrVpSettlement({ p, held }) {
+  const t = p.totals || {};
+  return (
+    <div className="cr-stmt">
+      <div className="cr-stmt-due">
+        <span className="cr-stmt-k">Still to pay for {p.label}</span>
+        <b className="cr-stmt-big">{fmtMoney(t.unpaid || 0)}</b>
+        <span className="cr-stmt-sub">{!(t.earned > 0) ? "Nothing has been earned in this period yet." : t.unpaid > 0 ? (p.ended ? "The period has ended: it can be paid now." : "It can be paid once the period ends, " + crDate(p.end) + ".") : "Everything earned in this period has been settled."}</span>
+        <dl className="cr-stmt-facts">
+          <div><dt>Volunteers</dt><dd>{crNum(t.people || 0)}</dd></div>
+          <div><dt>Days</dt><dd>{crNum(t.daysEarned || 0)} earned · {crNum(t.daysExcluded || 0)} excluded, each with its reason</dd></div>
+          <div><dt>For Afrovanguard</dt><dd>{fmtMoney(held)} held from pay in all, to hand over</dd></div>
+        </dl>
+      </div>
+      <table className="cr-recon" aria-label={"How " + p.label + "’s earnings were settled"}>
+        <tbody>
+          <tr><th scope="row">Earned</th><td>{fmtMoney(t.earned || 0)}</td></tr>
+          <tr><th scope="row">Paid to volunteers{t.payouts ? " · " + crPlural(t.payouts, "payout") : ""}</th><td>− {fmtMoney(t.paidOut || 0)}</td></tr>
+          <tr><th scope="row">Kept for NGG fines</th><td>− {fmtMoney(t.fineNgg || 0)}</td></tr>
+          <tr><th scope="row">Held for Afrovanguard fines</th><td>− {fmtMoney(t.fineAv || 0)}</td></tr>
+          <tr className="is-grand"><th scope="row">Still to pay</th><td>{fmtMoney(t.unpaid || 0)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
 function crMoJournalBlocks(d, ctx) {
   const jr = d.jr, out = [{ type: "custom", span: 6, render: () => <CrMoJournalFilter ctx={ctx}/> }];
   if (!jr) return out.concat([{ type: "note", span: 6, icon: "spinner", text: "Loading the transactions…" }]);
@@ -1319,12 +1367,10 @@ Object.assign(CR_TAB_DEFS, {
       out.push({ type: "custom", span: 6, render: (c, phone) => phone
         ? <select className="cr-select" aria-label="Pay period" value={p.period} onChange={e => { ctx.closeDrawer(); ctx.setSub(e.target.value); }}>{p.periods.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select>
         : <CrSeg label="Pay period" value={p.period} options={p.periods.slice(0, 6)} onChange={v => { ctx.closeDrawer(); ctx.setSub(v); }}/> });
-      out.push({ type: "kpis", span: 6, title: p.label, sub: p.current ? "The period running now · it can be paid after " + crDate(p.end) : p.ended ? "Ended " + crDate(p.end) : "", items: [
-        { l: "To pay", v: fmtMoney(t.unpaid || 0), tone: "flat" }, { l: "Earned", v: fmtMoney(t.earned || 0), tone: "flat" },
-        { l: "Volunteers", v: crNum(t.people || 0), tone: "flat" }, { l: "Days earned · excluded", v: crNum(t.daysEarned || 0) + " · " + crNum(t.daysExcluded || 0), tone: "flat" },
-        { l: "Fines held for Afrovanguard", v: fmtMoney(d.avFinesHeld || 0), tone: "flat", s: "Taken off pay for Afrovanguard’s fines: hand it over" } ] });
+      out.push({ type: "custom", span: 6, title: p.label, sub: p.current ? "The period running now · it can be paid after " + crDate(p.end) : p.ended ? "Ended " + crDate(p.end) : "",
+        render: () => <CrVpSettlement p={p} held={d.avFinesHeld || 0}/> });
       out.push({ type: "table", span: 6, title: "Volunteers in this period", sub: "Open one for their days, to exclude or restore a day, and their payouts",
-        cols: ["Volunteer", { l: "Days earned", num: true }, { l: "Excluded", num: true }, { l: "Earned", num: true }, { l: "To pay", num: true }, { l: "NGG fines", num: true }, "Bank", "State"],
+        cols: ["Volunteer", { l: "Days earned", num: true }, { l: "Excluded", num: true }, { l: "Earned", num: true }, { l: "To pay", num: true }, { l: "NGG fines owed", num: true }, "Bank", "State"],
         rows: (p.rows || []).map(r => { const st = CR_VP_STATE[r.state] || [r.state, "neutral"]; return { key: r.volunteerId, open: () => crVpWallet(ctx, r), cells: [
           { k: "person", t: r.name, s: [r.volunteerId, r.centre].filter(Boolean).join(" · ") }, { k: "num", t: crNum(r.earnedDays), v: r.earnedDays }, { k: "num", t: crNum(r.excludedDays), v: r.excludedDays },
           { k: "num", t: fmtMoney(r.amount), v: r.amount }, { k: "num", t: fmtMoney(r.unpaid), v: r.unpaid }, { k: "num", t: fmtMoney(r.finesNgg || 0), v: r.finesNgg || 0 },

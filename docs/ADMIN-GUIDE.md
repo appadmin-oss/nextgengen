@@ -1016,6 +1016,14 @@ offsets a debt elsewhere, so the per-family list is **Who owes**. *What* and
 have no opening balance); a member search narrows both, which gives one
 family's year as a statement.
 
+**What a payable is made of.** Wherever a figure owed is broken down — the
+family's *To pay now*, the member's *To pay*, the *made of* column on Who owes —
+the lines come from one place and add up to it: monthly commitment fees grouped
+with their months named (a missed month is said: "February – April, June
+2026"), membership, each fine with its reason, and, for a member who left before
+the MOU was complete, the **training place** line. That line used to be missing,
+so a family that left early saw a breakdown smaller than the amount asked for.
+
 **On their phones.** A member's Money screen and the family's Fees page read
 the same account. The member's card for the training place says where they
 are: *Earning off · N%*, *MOU complete* with its date, or *Owed* if they left
@@ -1108,6 +1116,23 @@ active. Everything below is set on that tab.
 - **When a day is excluded** — later than N minutes, past the red line, a half
   day, no check-out, safeguarding not cleared. An excluded day is kept with its
   reason, and the volunteer sees it.
+
+**Reading a pay period.** Each period is a settlement that has to close:
+*Earned*, less what was *paid to volunteers*, less what was *kept for NGG
+fines*, less what was *held for Afrovanguard's fines*, is *Still to pay*. The
+sum is printed beside the figure, so "₦40,000 earned, ₦6,000 to pay" is
+explained on the page. The list's *NGG fines owed* column is what each
+volunteer owes NGG now; what pay will take is worked out when it is paid.
+
+### Donations
+
+**Money → Donations** (the Settings capability). Every figure is counted over
+every gift: *Raised* (and by channel), *Gifts* and *donors* (one donor giving
+twice is one donor), *Largest gift*, and *Not completed*. A checkout that
+Paystack has not confirmed is *Pending* for 48 hours and *Abandoned* after
+that: nobody paid, and it is not money on its way. *By month* is what was
+raised in each month (CSV for the treasurer). The list shows the newest 500;
+**Export CSV** has every gift.
 - **Pay period** — weekly, every two weeks or monthly, and the most days paid in
   one period (0 = no limit; days over it are kept as excluded).
 

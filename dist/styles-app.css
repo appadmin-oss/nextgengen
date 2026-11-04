@@ -10552,6 +10552,14 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
    <main>, which already carries the screen's padding. ──────────────────── */
 .m9x-slot { margin: 0 0 16px; }
 .m9x-slot:empty { display: none; }
+/* What the member's "To pay" is made of: the same lines as the family's Fees page. */
+.m9x-owed { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; }
+.m9x-owed:empty { display: none; }
+.m9x-owed-r { display: flex; align-items: baseline; gap: 12px; padding: 7px 0; border-top: 1px solid #f0efea; font-size: 13.5px; }
+.m9x-owed-w { flex: 1; min-width: 0; color: #0b0b0c; }
+.m9x-owed-s { display: block; font-size: 12.5px; color: #6b6b72; }
+.m9x-owed-s:empty { display: none; }
+.m9x-owed-a { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* The member's account statement. Five columns on a wide panel; on a narrow
    one the description takes its own line and the three figures sit labelled
    beneath it — squeezing five columns into a phone wrapped "Monthly dues"

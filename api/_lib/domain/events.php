@@ -283,11 +283,49 @@ function donation_verify(string $reference): array {
     return ['ok' => true, 'status' => (string)$d['status']];
 }
 
+/** A checkout older than this that Paystack never confirmed was abandoned, not "pending". */
+const DONATION_ABANDON_HOURS = 48;
+const DONATIONS_LIST_MAX = 500;
+const DONATIONS_EXPORT_MAX = 20000;
+/**
+ * The donations ledger. Every figure is counted over EVERY row, on the server:
+ * the screen used to count paid gifts, pending and the largest gift from the
+ * newest 500 rows it had drawn, so past 500 gifts it under-reported all three
+ * while "Raised" (the one server figure) counted everything — four tiles that
+ * disagreed about the same gifts. A checkout nobody finished is "abandoned"
+ * after DONATION_ABANDON_HOURS; it was "pending" for ever.
+ * `export=1` returns every row (to a cap that is named) for the CSV.
+ */
 function admin_donations_list(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
-    $rows = db_all('SELECT reference, email, name, amount, currency, status, channel, createdAt, paidAt FROM donations ORDER BY id DESC LIMIT 500');
-    $total = (int)(db_row("SELECT COALESCE(SUM(amount),0) s FROM donations WHERE status='paid'")['s'] ?? 0);
-    return ['ok' => true, 'donations' => $rows, 'totalPaid' => $total, 'enabled' => paystack_secret() !== ''];
+    $cut = gmdate('Y-m-d\TH:i:s', time() - DONATION_ABANDON_HOURS * 3600);
+    $export = !empty($p['export']);
+    $rows = db_all('SELECT reference, email, name, amount, currency, status, channel, createdAt, paidAt FROM donations ORDER BY id DESC LIMIT ' . ($export ? DONATIONS_EXPORT_MAX + 1 : DONATIONS_LIST_MAX));
+    $cutOff = $export && count($rows) > DONATIONS_EXPORT_MAX;
+    if ($cutOff) array_pop($rows);
+    foreach ($rows as &$r) { if ((string)$r['status'] === 'pending' && (string)$r['createdAt'] < $cut) $r['status'] = 'abandoned'; } unset($r);
+    $sum = db_row("SELECT COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) raised,
+                          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) gifts,
+                          COALESCE(MAX(CASE WHEN status = 'paid' THEN amount END), 0) largest,
+                          COUNT(DISTINCT CASE WHEN status = 'paid' THEN LOWER(email) END) donors,
+                          SUM(CASE WHEN status = 'pending' AND createdAt >= ? THEN 1 ELSE 0 END) pending,
+                          SUM(CASE WHEN status = 'pending' AND createdAt < ? THEN 1 ELSE 0 END) abandoned,
+                          COUNT(*) n FROM donations", [$cut, $cut]) ?? [];
+    $months = [];
+    foreach (db_all("SELECT SUBSTR(paidAt, 1, 7) mon, COUNT(*) gifts, SUM(amount) amount FROM donations
+                      WHERE status = 'paid' AND paidAt <> '' AND paidAt IS NOT NULL GROUP BY SUBSTR(paidAt, 1, 7) ORDER BY mon DESC LIMIT 12") as $m)
+        $months[] = ['month' => (string)$m['mon'], 'gifts' => (int)$m['gifts'], 'amount' => (int)$m['amount']];
+    $channels = [];
+    foreach (db_all("SELECT channel, COUNT(*) gifts, SUM(amount) amount FROM donations WHERE status = 'paid' GROUP BY channel ORDER BY SUM(amount) DESC") as $c)
+        $channels[] = ['channel' => (string)$c['channel'] !== '' ? (string)$c['channel'] : 'other', 'gifts' => (int)$c['gifts'], 'amount' => (int)$c['amount']];
+    $raised = (int)($sum['raised'] ?? 0);
+    return ['ok' => true, 'donations' => $rows, 'totalPaid' => $raised, 'enabled' => paystack_secret() !== '',
+            'summary' => ['raised' => $raised, 'gifts' => (int)($sum['gifts'] ?? 0), 'donors' => (int)($sum['donors'] ?? 0), 'largest' => (int)($sum['largest'] ?? 0),
+                          'average' => (int)($sum['gifts'] ?? 0) > 0 ? (int)round($raised / (int)$sum['gifts']) : 0,
+                          'pending' => (int)($sum['pending'] ?? 0), 'abandoned' => (int)($sum['abandoned'] ?? 0), 'rows' => (int)($sum['n'] ?? 0),
+                          'abandonHours' => DONATION_ABANDON_HOURS],
+            'months' => $months, 'channels' => $channels,
+            'shown' => count($rows), 'cap' => $export ? DONATIONS_EXPORT_MAX : DONATIONS_LIST_MAX, 'cutOff' => $cutOff];
 }
 
 /* ── Peer interaction: emoji reactions + moderated comments on posts ───────── */

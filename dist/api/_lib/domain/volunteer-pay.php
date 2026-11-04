@@ -368,6 +368,17 @@ function admin_volpay_period(array $p): array {
         $out[] = $o;
         $tot['earned'] += $o['amount']; $tot['unpaid'] += $o['unpaid']; $tot['people']++; $tot['daysEarned'] += $o['earnedDays']; $tot['daysExcluded'] += $o['excludedDays'];
     }
+    /* How the period's earnings were settled, as a sum that must close:
+       earned = paid to the bank + kept for NGG fines + held for Afrovanguard
+       + still to pay. The tiles used to sit side by side with nothing tying
+       them, so "₦40,000 earned, ₦6,000 to pay" left ₦34,000 unexplained. */
+    $tot['paidOut'] = 0; $tot['fineNgg'] = 0; $tot['fineAv'] = 0; $tot['payouts'] = 0;
+    foreach (db_all("SELECT o.amount, o.gross, o.fineNgg, o.fineAv, v.centre FROM volunteer_payouts o LEFT JOIN volunteers v ON v.volunteerId = o.volunteerId
+                      WHERE o.periodKey = ? AND (o.voidedAt IS NULL OR o.voidedAt = '')", [$key]) as $o) {
+        if ($scope !== null && !in_array((string)$o['centre'], $scope, true)) continue;
+        $tot['paidOut'] += (int)$o['amount']; $tot['fineNgg'] += (int)$o['fineNgg']; $tot['fineAv'] += (int)$o['fineAv']; $tot['payouts']++;
+    }
+    $tot['settles'] = $tot['paidOut'] + $tot['fineNgg'] + $tot['fineAv'] + $tot['unpaid'] === $tot['earned'];
     return ['ok' => true, 'period' => $key, 'label' => $span[2] ?? $key, 'start' => $span[0] ?? '', 'end' => $span[1] ?? '',
             'ended' => $span !== null && $span[1] < date('Y-m-d'), 'current' => $key === $cur,
             'periods' => array_map(static fn($k) => [$k, (volpay_period_of_key($k) ?? [2 => $k])[2]], $keys),

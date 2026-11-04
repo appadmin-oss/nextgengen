@@ -99,17 +99,12 @@ function family_fees_view(array $m): ?array {
        the way the account is (fees_charges_left — payments to the oldest
        first), newest first on screen. A part-paid charge says what it was
        (`of`), so "Membership ₦2,000" is not read as the price of membership. */
-    $ledger = fees_entries($mid);   // read from the ledger itself: the member's account view withholds the entry key
-    $leftBy = fees_charges_left($m, $cfg, $ledger);
-    $lines = [];
-    foreach (array_reverse($ledger) as $e) {
-        $l = $leftBy[(string)$e['entryId']] ?? null;   // live, non-training charges only
-        if (!$l || $l['left'] <= 0) continue;
-        $per = (string)($e['periodKey'] ?? '');
-        $lines[] = ['label' => (string)$e['note'] !== '' ? (string)$e['note'] : ucfirst((string)$e['kind']), 'kind' => (string)$e['kind'], 'amount' => $l['left'],
-            'of' => $l['left'] < $l['amount'] ? $l['amount'] : 0, 'detail' => substr((string)$e['createdAt'], 0, 10),
-            'period' => preg_match('/^\d{4}-\d{2}$/', $per) ? $per : ''];
-    }
+    /* What the payable is made of — one server answer (fees_owed_made) shared
+       with the member's Money screen and Who owes: grouped, oldest first, a
+       part-paid charge saying what it was, and the training place when it
+       became owed on leaving (it is on no charge, so a list built from charges
+       alone came up short by exactly that). */
+    $lines = fees_owed_made($m, $cfg)['lines'];
     $inv = db_row("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' ORDER BY id DESC LIMIT 1", [$mid]);
     /* What is still to come in the next two months, after what was paid ahead: the commitment fee on the 1st
        and a renewal on the joining anniversary (dues_coming_charges — the notices read the same answer). */

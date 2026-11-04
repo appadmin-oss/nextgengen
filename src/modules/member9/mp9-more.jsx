@@ -214,6 +214,8 @@ Object.assign(Mp9Portal.prototype, {
          stated rather than left to look like an error in the first row. */
       ledger: rows.length ? (s.ledgerAll || rows.length <= 8 ? rows : [{ d: "", w: "Brought forward", sub: (rows.length - 8) + " earlier entries", c: "", p: "", bal: mp9Naira(lines[lines.length - 9].runningPayable), isPay: false }].concat(rows.slice(-8))) : [{ d: "–", w: st.enabled === false ? "Nothing is being charged on this account" : "Nothing charged yet", c: "", p: "", bal: mp9Naira(0), isPay: false }],
       ledgerMore: rows.length > 8 && !s.ledgerAll, ledgerN: rows.length, showLedger: () => this.setState({ ledgerAll: true }),
+      owedList: (st.owed || []).map(o => ({ w: o.label, s: o.detail || "", a: mp9Naira(o.amount) })),
+      owedNone: !(st.owed || []).length,
       mou: mp9MouCard(st.training, a),
       finesList: fines.length ? fines.map(f => ({ d: mp9Date(f.issuedAt), t: mp9Plain(f.reason), a: mp9Naira(f.amount), st: "Owed", fg: "#b0361c", strike: "none" }))
         : [{ d: "", t: "No fines. Keep it that way.", a: "", st: "", fg: "#1d6b30", strike: "none" }],

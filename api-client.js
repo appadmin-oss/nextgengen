@@ -1833,7 +1833,7 @@
       },
       newsletter:   () => request('/admin/newsletter.php'),
       newsletterSend: (subject, body) => request('/admin/newsletter.php', { body: { subject, body } }),
-      donations:    () => request('/admin/donations.php'),
+      donations:    (o) => request('/admin/donations.php' + qs({ export: o && o.export ? 1 : '' })),
       comments:     (status) => request('/admin/comments.php' + qs({ status: status || 'pending' })),
       commentModerate: (commentId, act) => request('/admin/comments.php', { body: { commentId, do: act } }),
       promos: {
