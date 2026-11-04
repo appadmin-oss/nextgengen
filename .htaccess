@@ -287,6 +287,10 @@ object-src 'none'"
   # The Timetable Maker's landing is one prerendered file, not a folder: a
   # timetable/ directory would turn the maker's own /timetable into a directory.
   RewriteRule ^timetable/about/?$ timetable-about.html [L]
+  # A document's QR opens /verify/<number>?c=<check code> (domain/documents.php).
+  # Only an NGG document number takes this road: /verify?t=… stays the SPA's
+  # parent-consent page.
+  RewriteRule ^verify/(NGG-[A-Za-z0-9-]+)/?$ api/public/doc-verify.php?no=$1 [QSA,L]
   RewriteRule ^(assets|uploads|api|vendor|apps-script|docs)/ - [L]
 
   # Everything else → index.html (SPA fallback)

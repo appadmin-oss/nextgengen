@@ -2047,6 +2047,8 @@
         bank:     (bank) => request('/admin/membership.php', { body: { action: 'bank', bank } }),
         bankConfirm: (confirmAccountNumber) => request('/admin/membership.php', { body: { action: 'bankConfirm', confirmAccountNumber } }),
         bankCancel:  () => request('/admin/membership.php', { body: { action: 'bankCancel' } }),
+        // The legal details on every invoice, receipt and certificate: read, or save with `data`.
+        documents:   (data) => data ? request('/admin/membership.php', { body: { action: 'documents', data } }) : request('/admin/membership.php' + qs({ view: 'documents' })),
         // The evidence travels as a data URL, compressed in the browser first (a host refuses big bodies).
         record:   (data) => request('/admin/membership.php', { body: Object.assign({ action: 'record' }, data), timeout: 120000 }),
         verify:   (paymentId, confirmReference, confirmAmount, checked) => request('/admin/membership.php', { body: { action: 'verify', paymentId, confirmReference, confirmAmount, checked: !!checked } }),

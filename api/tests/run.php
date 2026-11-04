@@ -27764,7 +27764,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $vv = backend_dispatch('public.membership.pay.verify', ['token' => $invA['payToken'], 'reference' => $ref]);
     $invA2 = db_row('SELECT * FROM membership_invoices WHERE id = ?', [$invA['id']]);
     $led = db_all('SELECT kind, amount, periodKey FROM member_ledger WHERE memberId = ? ORDER BY id', [$memA['memberId']]);
-    chk('pay: the right payment settles it: paid, numbered receipt', ($vv['invoice']['status'] ?? '') === 'paid' && $invA2['paidVia'] === 'paystack' && preg_match('/^NGG-RCT-\d{4}-\d{5}$/', $invA2['receiptNo']));
+    chk('pay: the right payment settles it: paid, numbered receipt', ($vv['invoice']['status'] ?? '') === 'paid' && $invA2['paidVia'] === 'paystack' && preg_match('/^NGG-RCP-\d{4}-\d{5}$/', $invA2['receiptNo']));
     chk('pay: …the charges and the payment are on the member\'s ledger, once', count(array_filter($led, fn($l) => $l['kind'] === 'payment')) === 1
         && array_sum(array_map(fn($l) => $l['kind'] === 'payment' ? (int)$l['amount'] : 0, $led)) === (int)$invA['total']
         && count(array_filter($led, fn($l) => $l['kind'] === 'dues')) === 1 && count(array_filter($led, fn($l) => $l['kind'] === 'membership')) === 1);
@@ -27777,8 +27777,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('pay: settling twice and the dues accrual afterwards post nothing more — the ledger agrees with the invoice',
         count(db_all("SELECT id FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$memA['memberId']])) === 1
         && (int)db_row("SELECT SUM(amount) s FROM member_ledger WHERE memberId = ? AND kind = 'dues'", [$memA['memberId']])['s'] === $wantDues);
-    $html = membership_receipt_html($invA2);
-    chk('pay: the receipt is a document of its own: number, member, method, reference, total', str_contains($html, $invA2['receiptNo']) && str_contains($html, 'PAID') && str_contains($html, $ref) && str_contains($html, 'Pay Kid'));
+    $html = doc_render_receipt(doc_for_receipt($invA2));
+    chk('pay: the receipt is a document of its own: number, member, method, reference, total', str_contains($html, $invA2['receiptNo']) && str_contains($html, 'Paid in full') && str_contains($html, $ref) && str_contains($html, 'Pay Kid'));
     unset($GLOBALS['__paystack_mock']);
 
     // ── Offline: a claim until a second person checks it ──
@@ -27825,7 +27825,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mailsB = $GLOBALS['__mail_sink'];
     chk('pay: …the family gets thanks and the receipt — and no payment link', count(array_filter($mailsB, fn($m) => str_contains($m['subject'], 'Thank you'))) === 1
         && !array_filter($mailsB, fn($m) => str_contains($m['subject'], 'Complete')));
-    chk('pay: the receipt names the method, the reference and who paid', (function () use ($invB2) { $h = membership_receipt_html($invB2); return str_contains($h, 'Bank transfer') && str_contains($h, 'GTB-778-2231') && str_contains($h, 'Mrs Kid'); })());
+    chk('pay: the receipt names the method, the reference and who paid', (function () use ($invB2) { $h = doc_render_receipt(doc_for_receipt($invB2)); return str_contains($h, 'Bank transfer') && str_contains($h, 'GTB-778-2231') && str_contains($h, 'Mrs Kid'); })());
     chk('pay: a verified payment cannot be verified or rejected again', ($ver([])['error'] ?? '') === 'not_pending');
 
     // Once, ever: the evidence and the reference.
@@ -37221,7 +37221,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $credit = (int)db_row("SELECT COALESCE(SUM(amount),0) s FROM member_ledger WHERE memberId = 'NGG-PF-1' AND kind = 'payment'")['s'];
     chk('paystack charge: paid, the account takes the dues — not the charge — and nothing is owed',
         ($v['status'] ?? '') === 'paid' && $credit === 7000 && (int)$inv2['processingFee'] === 209 && (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-PF-1'"), $cfg)['payable'] === 0);
-    $html = membership_receipt_html($inv2);
+    $html = doc_render_receipt(doc_for_receipt($inv2));
     chk('paystack charge: the receipt names it as Paystack’s, and the total is what left the family’s account',
         str_contains($html, 'Paystack charge') && str_contains($html, fees_money_text(7209, $cfg)));
     $after = public_membership_invoice(['token' => $inv2['payToken']])['invoice'] ?? [];
@@ -37531,6 +37531,73 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     foreach (['storage', 'cloudinary'] as $j => $k) { if ($keep[$j] === null) unset($GLOBALS['CONFIG'][$k]); else $GLOBALS['CONFIG'][$k] = $keep[$j]; }
     db_exec("DELETE FROM photo_change_requests WHERE requestId = 'PCR-BK-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-BK-1'");
 })();
+
+// ── NGG documents: numbers without gaps, receipts that do not change, certificates that supersede, verification by code ──
+(function () { $__db = db_conn(); $__db->beginTransaction(); try {
+    $now = now_iso();
+    setting_set(DOC_SETTING, ['legalName' => 'Next Generation Genius Initiative', 'rcNo' => '', 'tin' => '1234-0001', 'feesOfficer' => 'Ade Fees', 'mathlabCoach' => '', 'programmeDirector' => 'Dee Director', 'vat' => 'exempt', 'dueDays' => 10], 'test');
+    db_insert('members', ['memberId' => 'NGG-DOC-1', 'fullName' => 'Tobi Bakare', 'email' => '', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'displayId' => '026-099', 'parentName' => 'Adeola Bakare', 'parentEmail' => 'adeola@example.com', 'joinDate' => '2026-10-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    setting_set('membership_pay', ['bankName' => 'GTBank', 'accountName' => 'Next Generation Genius Initiative', 'accountNumber' => '0123456789'], 'test');
+    $row = static fn($total) => ['memberId' => 'NGG-DOC-1', 'applicationId' => 0, 'payToken' => rand_hex(20), 'total' => $total, 'currency' => 'NGN', 'startDate' => '2026-11-01',
+        'items' => json_encode([['kind' => 'dues', 'label' => 'Commitment fee', 'detail' => 'monthly dues', 'periodKey' => '2026-11', 'amount' => $total]]),
+        'status' => 'open', 'purpose' => 'balance', 'createdBy' => 'test', 'createdAt' => $now];
+    $a = doc_invoice_insert($row(2000)); $b = doc_invoice_insert($row(4000));
+    $y = doc_year(); $n = static fn($no) => (int)substr($no, -5);
+    chk('documents · an invoice is numbered NGG-INV-YYYY-#####, and the next is the next', preg_match('/^NGG-INV-' . $y . '-\d{5}$/', $a['invoiceId']) && $n($b['invoiceId']) === $n($a['invoiceId']) + 1);
+    // The counter is a row in the same transaction as the record: rolled back with it (a savepoint stands in for the failed invoice here).
+    db_exec('SAVEPOINT doc_gap'); doc_mint('INV-' . doc_year()); db_exec('ROLLBACK TO SAVEPOINT doc_gap'); db_exec('RELEASE SAVEPOINT doc_gap');
+    $c = doc_invoice_insert($row(1000));
+    chk('documents · a number minted in a transaction that fails is not lost: no gap', $n($c['invoiceId']) === $n($b['invoiceId']) + 1);
+    chk('documents · the invoice has its record of issue, a check code and a private link', ($d = doc_by('docNo', $a['invoiceId'])) && $d['kind'] === 'invoice' && strlen($d['token']) === 32
+        && preg_match('/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/', doc_check_code($a['invoiceId'])));
+
+    $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [$b['invoiceId']]);
+    chk('documents · an invoice is due, then overdue after its days to pay, never stored', doc_invoice_state($inv)['state'] === 'due'
+        && doc_invoice_state(['createdAt' => '2020-01-01T09:00:00Z', 'status' => 'open'] + $inv)['state'] === 'overdue' && doc_invoice_state(['status' => 'void'] + $inv)['state'] === 'void');
+    $html = doc_render_invoice($inv, doc_for_invoice($inv));
+    chk('documents · the invoice prints its number, the amount, the narration, the payer and a QR', str_contains($html, $b['invoiceId']) && str_contains($html, '₦4,000.00')
+        && str_contains($html, 'INV-' . substr($b['invoiceId'], -5)) && str_contains($html, 'Adeola Bakare') && str_contains($html, '<svg class="qr"') && str_contains($html, 'Four thousand naira only.'));
+    chk('documents · a blank detail is left off, never printed as a placeholder', !str_contains($html, 'RC ') && str_contains($html, 'TIN 1234-0001') && !str_contains($html, '[0'));
+
+    $r = db_tx(static fn() => doc_receipt_issue($inv, 'paystack', 'NGGM-TEST', ['last4' => '4417', 'channel' => 'card']));
+    chk('documents · a receipt is NGG-RCP-YYYY-#####, with the card the gateway reported', preg_match('/^NGG-RCP-' . $y . '-\d{5}$/', $r['no']) && $r['data']['method']['text'] === 'Card •••• 4417, Paystack');
+    db_update('members', ['centre' => 'Somewhere else', 'fullName' => 'Renamed Child'], ['memberId' => 'NGG-DOC-1']);
+    setting_set(DOC_SETTING, ['legalName' => 'Next Generation Genius Initiative', 'rcNo' => '7654321', 'tin' => '9999-0002', 'feesOfficer' => 'Someone New', 'vat' => 'exempt', 'dueDays' => 10], 'test');
+    $rh = doc_render_receipt(doc_by('docNo', $r['no']));
+    chk('documents · a receipt is printed from what it said when issued: a later rename changes nothing', str_contains($rh, 'Tobi Bakare') && str_contains($rh, 'Egbeda') && !str_contains($rh, 'Renamed Child'));
+    chk('documents · …its details are the ones it was issued with, and a detail that was blank then prints now', str_contains($rh, 'TIN 1234-0001') && str_contains($rh, 'Ade Fees') && str_contains($rh, 'RC 7654321'));
+
+    $code = doc_check_code($r['no']);
+    $no = public_document_verify(['no' => $r['no'], 'code' => 'AAAA-BBBB-CCCC']); $nx = public_document_verify(['no' => 'NGG-RCP-1999-00001', 'code' => $code]);
+    chk('documents · verify: a wrong code and an unknown number get the same answer, and nothing about anybody', ($no['error'] ?? '') === 'not_matched' && ($nx['error'] ?? '') === 'not_matched' && !isset($no['holder']));
+    $ok = public_document_verify(['no' => strtolower($r['no']), 'code' => strtolower(str_replace('-', '', $code))]);
+    chk('documents · verify: the right code names the document, the holder by first name and initial, and the amount', !empty($ok['ok']) && $ok['kind'] === 'receipt' && $ok['holder'] === 'Tobi B.' && $ok['amount'] === 400000 && $ok['status'] === 'issued');
+
+    chk('documents · amounts in words', doc_words(4000) === 'Four thousand naira only.' && doc_words(1234567) === 'One million two hundred and thirty-four thousand five hundred and sixty-seven naira only.' && doc_words(15) === 'Fifteen naira only.');
+    chk('documents · VAT at 7.5% is inside what was charged, so the total is the ledger\'s', doc_vat_inside(107500, 'standard') === 7500 && doc_vat_inside(107500, 'exempt') === 0);
+
+    $c1 = doc_ml_issue('NGG-DOC-1', 13, 75, 9, 12, 1);
+    chk('documents · clearing a Math Lab level gives a Pass certificate, NGG-ML-LL-YYYY-#####', $c1 && preg_match('/^NGG-ML-13-' . $y . '-\d{5}$/', $c1['docNo']) && empty(doc_data($c1)['distinction']));
+    chk('documents · clearing it again below 90% issues nothing more', doc_ml_issue('NGG-DOC-1', 13, 80, 10, 12, 2) === null);
+    $c2 = doc_ml_issue('NGG-DOC-1', 13, 92, 11, 12, 2);
+    $old = doc_by('docNo', $c1['docNo']);
+    chk('documents · 90% or more later gives a Distinction certificate that supersedes the Pass', $c2 && !empty(doc_data($c2)['distinction']) && $old['status'] === 'superseded' && $old['supersededBy'] === $c2['docNo']);
+    chk('documents · and a Distinction is not issued twice', doc_ml_issue('NGG-DOC-1', 13, 100, 12, 12, 3) === null);
+    chk('documents · only a member is given one (a certificate names its holder), and only at the pass mark', doc_ml_issue('NOBODY', 13, 95, 12, 12, 1) === null && doc_ml_issue('NGG-DOC-1', 14, 60, 7, 12, 1) === null);
+    $ch = doc_render_certificate(doc_by('docNo', $c2['docNo']));
+    chk('documents · the certificate prints the level, the score, the paper, the pattern and its verification', str_contains($ch, 'Level 13: Vectors in Three Dimensions') && str_contains($ch, '92% (11 of 12)')
+        && str_contains($ch, 'Standard paper') && str_contains($ch, 'a·b = |a||b| cos θ') && str_contains($ch, 'Distinction') && str_contains($ch, $c2['docNo']));
+    $vs = public_document_verify(['no' => $c1['docNo'], 'code' => doc_check_code($c1['docNo'])]);
+    chk('documents · verify: a superseded certificate says so, and names what replaced it', !empty($vs['ok']) && $vs['status'] === 'superseded' && $vs['supersededBy'] === $c2['docNo']);
+    chk('documents · every level has the formula its certificate draws', count(doc_ml_formulas()) === count(mathlab_levels()));
+
+    $list = documents_for_member('NGG-DOC-1');
+    chk('documents · the family sees invoices and certificates, each with its private link', count(array_filter($list, fn($x) => $x['kind'] === 'invoice')) === 3
+        && count(array_filter($list, fn($x) => $x['kind'] === 'certificate')) === 2 && !array_filter($list, fn($x) => !str_contains($x['url'], 'document.php?t=')));
+    [$st, $page] = doc_render_token(doc_by('docNo', $c2['docNo'])['token']);
+    chk('documents · a private link renders its document; a made-up one does not', $st === 200 && str_contains($page, 'data-doc="certificate"') && doc_render_token(str_repeat('a', 32))[0] === 404);
+} finally { if ($__db->inTransaction()) $__db->rollBack(); } })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

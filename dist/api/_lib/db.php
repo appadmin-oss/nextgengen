@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 223;
+const NGG_SCHEMA_TARGET = 224;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6355,7 +6355,25 @@ function db_migrate(PDO $db): void {
               sendKey TEXT NOT NULL UNIQUE, channel TEXT NOT NULL DEFAULT '', recipient TEXT NOT NULL DEFAULT '',
               memberId TEXT NOT NULL DEFAULT '', sentAt TEXT NOT NULL DEFAULT ''
             );
-        ",
+        
+",
+        /* 224 — NGG's printed documents (domain/documents.php). doc_serials: one
+         * counter per series (INV-2026, RCP-2026, ML-2026), bumped inside the
+         * transaction that writes the record, so a number exists only if its
+         * record does. documents: every invoice, receipt, acknowledgement and
+         * Math Lab certificate issued: its number, whose it is, what it settles
+         * (sourceKey, unique, so issuing is idempotent), a private view token,
+         * and for a receipt or certificate the frozen copy it is printed from.
+         * A superseded certificate keeps its row and names its successor. */
+        224 => "
+            CREATE TABLE IF NOT EXISTS doc_serials (series TEXT PRIMARY KEY, last INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS documents (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              docNo TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, memberId TEXT NOT NULL DEFAULT '', sourceKey TEXT NOT NULL UNIQUE,
+              status TEXT NOT NULL DEFAULT 'issued', supersededBy TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '',
+              token TEXT NOT NULL UNIQUE, irn TEXT NOT NULL DEFAULT '', issuedAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_documents_member ON documents(memberId, kind);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

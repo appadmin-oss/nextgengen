@@ -5764,3 +5764,42 @@ From a read-through of both journeys; each item has a test in the
 - Tests: the registration checklist section of `api/tests/run.php` (rolled back
   after it runs) and the convert check beside the convert test;
   `tests/registration-checklist.test.js` (in `test:all`, `npm run test:regcheck`).
+
+## 2026-11-04 — NGG documents: invoice, receipt, acknowledgement, Math Lab certificate
+
+From the handoff `design_handoff_ngg_documents`. `api/_lib/domain/documents.php`
+owns all of it; migration 224 adds `doc_serials` and `documents`.
+
+- **Numbers without gaps.** `doc_mint()` bumps a counter row in the same
+  transaction as the record, so a rolled-back invoice takes its number with it.
+  The invoice number IS `membership_invoices.invoiceId`, so the pay page, the
+  emails, the narration and the paper carry one number. The receipt number is
+  minted inside `membership_settle()`'s transaction. Old `NGG-INV-xxxxx`,
+  `NGG-BAL-`, `NGG-ADV-` and `NGG-RCT-` numbers are kept, never renumbered.
+- **Frozen receipts and certificates.** `documents.data` holds what they said,
+  including the legal details filled in at issue. A detail blank then takes
+  today's value, because a blank was never printed as a fact.
+  An invoice is rendered fresh, with its status derived (due, overdue, paid,
+  void).
+- **No server PDF.** The host has no headless browser. The page is printed by
+  the browser; fonts come from `/assets/fonts` (the CSP has no font host), and
+  the icons and the QR are inline SVG. A page that runs past one sheet hides its
+  print button and says so.
+- **Verification.** `/verify/<number>?c=<check code>` (`.htaccess` →
+  `api/public/doc-verify.php`). Numbers are sequential and so guessable; the
+  code (an HMAC of the number) is the key. A wrong code and an unknown number get
+  the same answer. Rate-limited (`doc.verify`).
+- **Acknowledgement**, not a receipt, for a transfer the desk recorded and a
+  second person has not checked. It carries the payment's own id, not a receipt
+  number, so a refused transfer leaves no receipt number behind.
+- **Certificates** on a member's first clear of a level; a later 90%+ issues a
+  Distinction one and the old one verifies as superseded. The paper printed is
+  the real one (Foundation, Standard or Stretch), not the handoff's two-way
+  rule. Each level carries its `formula` in `mathlab_levels()`; blurbs 8 and 14
+  were aligned with the handoff.
+- Departures from the handoff: no `pay.ngg.ng/INV-#####` short link (an
+  invoice number in a URL would let anyone enumerate families' invoices), so
+  the pay QR and link are the private `/pay/<token>`; billing address prints
+  only where the application recorded one.
+- Tests: the documents block at the end of `api/tests/run.php`.
+

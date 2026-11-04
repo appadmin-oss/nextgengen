@@ -1520,11 +1520,13 @@ function MembershipPayPage({ setPage }) {
                 <tr><td>{inv.status === "paid" ? "Total paid" : "Total to pay"}</td><td>{money(inv.total + (inv.status === "paid" ? (inv.onlineFee || 0) : 0))}</td></tr>
               </tfoot>
             </table>
+            {inv.invoiceUrl && inv.status !== "paid" && <p className="mpay-print"><a href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer">Print or save this invoice</a></p>}
             {err && <div className="mpay-err" role="alert">{err}</div>}
             {inv.status === "paid" ? (
               <div className="mpay-done">
                 <p>Paid {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : ""}. Receipt <b>{inv.receiptNo}</b> has been emailed to you.</p>
                 <a className="btn btn-primary" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer">View and print the receipt</a>
+                {inv.invoiceUrl && <a className="btn btn-ghost" href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer">View the invoice</a>}
               </div>
             ) : inv.status === "void" ? (
               <div className="mpay-msg"><p>{inv.purpose === "balance" || inv.purpose === "advance" ? "This amount is out of date because the account changed. Open the account again and press Pay online for the current figure." : "This invoice was cancelled. Contact your centre if you think that is a mistake."}</p></div>

@@ -101,34 +101,34 @@ const text = pg => pg.evaluate(() => document.body.innerText);
 
     console.log('Control Room → Learning → Saturday formation');
     const P = await open(ADMIN, true, '/control/learning/formation');
-    chk('the main day: every Saturday, nine blocks, 8:00am – 2:00pm', await until(P, () => /Every Saturday · 8:00am – 2:00pm/.test(document.body.innerText) && document.querySelectorAll('tbody tr').length === 9, null, 60000));
+    chk('the main day: every Saturday, nine blocks, 9:00am – 3:00pm', await until(P, () => /Every Saturday · 9:00am – 3:00pm/.test(document.body.innerText) && document.querySelectorAll('tbody tr').length === 9, null, 60000));
 
     await P.click('tr:has-text("Musing")');
     await until(P, () => /Change this block/.test(document.body.innerText));
     await P.click('button:has-text("Change this block")');
-    await dialog(P, [['#crf-end', '10:15']], 'Save block');
+    await dialog(P, [['#crf-end', '11:15']], 'Save block');
     chk('a longer breakout says the blocks after it moved too', await until(P, () => /7 blocks after it moved too/.test(document.body.innerText)));
-    chk('…the day now ends at 2:15pm, on screen and on the server', await until(P, () => /8:00am – 2:15pm/.test(document.body.innerText)) && end('') === '14:15');
+    chk('…the day now ends at 3:15pm, on screen and on the server', await until(P, () => /9:00am – 3:15pm/.test(document.body.innerText)) && end('') === '15:15');
 
     await P.click('button:has-text("Add a block")');
     const anthem = php(`echo 'anthem';`);
     await dialog(P, [['#crf-title', 'Guest talk'], ['#crf-after', anthem], ['#crf-minutes', '20']], 'Add');
     chk('a new block goes where it was put, and the day after it moves on', await until(P, () => /Guest talk added\. \d+ blocks after it moved too/.test(document.body.innerText) && document.querySelectorAll('tbody tr').length === 10)
-      && php(`$k = array_column(sf_blocks(), 'key'); echo array_search('guest-talk', $k) === array_search('anthem', $k) + 1 ? 'y' : 'n';`) === 'y' && end('') === '14:35');
+      && php(`$k = array_column(sf_blocks(), 'key'); echo array_search('guest-talk', $k) === array_search('anthem', $k) + 1 ? 'y' : 'n';`) === 'y' && end('') === '15:35');
     await P.click('tr:has-text("Guest talk")');
     await until(P, () => /Remove this block/.test(document.body.innerText));
     await P.click('button:has-text("Remove this block")');
-    chk('removing it closes its gap', await until(P, () => /Guest talk removed\. The blocks after it moved up/.test(document.body.innerText) && document.querySelectorAll('tbody tr').length === 9) && end('') === '14:15');
+    chk('removing it closes its gap', await until(P, () => /Guest talk removed\. The blocks after it moved up/.test(document.body.innerText) && document.querySelectorAll('tbody tr').length === 9) && end('') === '15:15');
 
     await P.click('button:has-text("A centre’s own day")');
     await dialog(P, [['#crf-centre', 'CEN-FM-1']], 'Create');
     chk('a centre’s own day opens, named in words and in the address', await until(P, () => /Egbeda’s own day/.test(document.body.innerText) && /\/control\/learning\/formation\/centre:CEN-FM-1$/.test(location.pathname)));
     chk('the versions are listed to choose between', await until(P, () => /Versions of the day/.test(document.body.innerText) && /Showing/.test(document.body.innerText)));
     await P.click('button:has-text("Move the day")');
-    await dialog(P, [['#crf-startAt', '09:00']], 'Move');
-    chk('the whole centre day moves to 9:00, the main day stays', await until(P, () => /9:00am – 3:15pm/.test(document.body.innerText)) && end('centre:CEN-FM-1') === '15:15' && end('') === '14:15');
+    await dialog(P, [['#crf-startAt', '10:00']], 'Move');
+    chk('the whole centre day moves to 10:00, the main day stays', await until(P, () => /10:00am – 4:15pm/.test(document.body.innerText)) && end('centre:CEN-FM-1') === '16:15' && end('') === '15:15');
     await P.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(P);
-    chk('a refresh opens the same version (the URL is the state)', await until(P, () => /Egbeda’s own day · 9:00am – 3:15pm/.test(document.body.innerText), null, 60000));
+    chk('a refresh opens the same version (the URL is the state)', await until(P, () => /Egbeda’s own day · 10:00am – 4:15pm/.test(document.body.innerText), null, 60000));
 
     await P.click('button:has-text("Mark a Saturday off")');
     await dialog(P, [['#crf-date', sat], ['#crf-centre', 'CEN-FM-2']], 'Save');
@@ -142,7 +142,7 @@ const text = pg => pg.evaluate(() => document.body.innerText);
     console.log('a member at that centre');
     await browser.close().catch(() => {}); browser = await launch();
     const M = await open(MEM, false, '/dashboard/saturday', 420, 900);
-    chk('the member sees their centre’s day (9:00), not the main one', await until(M, () => /Saturday formation · 9:00am – 3:15pm/.test((document.querySelector('.sf-day') || {}).innerText || ''), null, 60000));
+    chk('the member sees their centre’s day (10:00), not the main one', await until(M, () => /Saturday formation · 10:00am – 4:15pm/.test((document.querySelector('.sf-day') || {}).innerText || ''), null, 60000));
     chk('…dated, at their centre', await until(M, () => /Egbeda/.test((document.querySelector('.sf-head') || {}).innerText || '')));
     chk('the public read for the centre that is off says so, with no blocks', php(`$r = public_formation(['centre' => 'Ayobo', 'date' => '${sat}']); echo $r['off'] && !$r['blocks'] && $r['note'] === 'The hall is being painted.' ? 'y' : 'n';`) === 'y');
     chk('no page errors', errs.length === 0);

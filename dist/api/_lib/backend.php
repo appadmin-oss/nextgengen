@@ -407,6 +407,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.membership.pay.init'      => 'public_membership_pay_init',
             'public.membership.pay.verify'    => 'public_membership_pay_verify',
             'admin.membership.invoices'       => 'admin_membership_invoices',
+            'admin.documents.settings'        => 'admin_documents_settings',  // legal details printed on every document
             'admin.membership.invoice.create' => 'admin_membership_invoice_create',
             'admin.membership.invoice.resend' => 'admin_membership_invoice_resend',
             'admin.membership.invoice.void'   => 'admin_membership_invoice_void',
@@ -1278,6 +1279,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.volunteer.context' => 'public_volunteer_context',
             'public.volunteer.status'  => 'public_volunteer_status',
             'public.cert'             => 'public_cert',
+            'public.document.verify'  => 'public_document_verify',     // documents.php: /verify/<number>?c=<code>
             'public.siteContent'      => 'public_site_content',
             'public.instructorRoster' => 'public_instructor_roster',
             // Self-registration: the public link, and the desk that checks it.

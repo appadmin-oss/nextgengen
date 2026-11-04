@@ -1098,6 +1098,26 @@ function CrMembershipPayments({ ctx }) {
     onSubmit: async v => { try { const r = await NGGApi.admin.membership.bank(v); load(); return r; } catch (e) { throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); } },
     done: (v, r) => r && r.applied === false ? "Proposed. It applies when a second person confirms it." : "Saved.",
   });
+  /* The legal details every invoice, receipt and certificate prints (domain/documents.php).
+     A blank one is left off the page rather than printed as a placeholder. */
+  const docs = async () => {
+    let cur;
+    try { cur = await NGGApi.admin.membership.documents(); } catch (e) { ctx.toast(crMpErr(e, "Couldn’t open the document details."), null, true); return; }
+    const v = cur.settings || {};
+    ctx.form({
+      title: "Details on documents", submit: "Save",
+      intro: "Printed on every invoice, receipt and Math Lab certificate." + ((cur.gaps || []).length ? " Still missing: " + cur.gaps.join(", ") + "." : ""),
+      values: Object.assign({}, v, { dueDays: String(v.dueDays || 10) }),
+      fields: [{ id: "legalName", l: "Legal name", req: true, max: 120 }, { id: "rcNo", l: "RC number", max: 20 }, { id: "tin", l: "TIN", max: 24 },
+        { id: "address", l: "Registered address", max: 200 }, { id: "feesEmail", l: "Fees email", type: "email", max: 120 }, { id: "feesPhone", l: "Fees phone", max: 32 },
+        { id: "feesOfficer", l: "Fees Officer (signs invoices and receipts)", max: 80 }, { id: "mathlabCoach", l: "Math Lab Coach", max: 80 },
+        { id: "programmeDirector", l: "Programme Director", max: 80 },
+        { id: "vat", l: "VAT", type: "select", opts: [["exempt", "Exempt (education)"], ["standard", "7.5%, inside the amounts charged"]] },
+        { id: "dueDays", l: "Days to pay an invoice", im: "numeric", pattern: /^\d{1,2}$/, patternMsg: "1 to 60 days." }],
+      onSubmit: async x => { try { return await NGGApi.admin.membership.documents(Object.assign({}, x, { dueDays: parseInt(x.dueDays, 10) || 10 })); } catch (e) { throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); } },
+      done: () => "Saved. Issued receipts and certificates keep the details they were issued with; a detail that was blank on them now prints.",
+    });
+  };
   const bp = d.bankPending;
   const bankConfirm = () => ctx.form({
     title: "Confirm the new bank account", intro: bp ? bp.byName + " asked to change the account to " + bp.bank.bankName + " · " + bp.bank.accountName + ". Check it against the bank’s own letter or statement, then type the account number from THAT, not from this screen." : "",
@@ -1162,6 +1182,7 @@ function CrMembershipPayments({ ctx }) {
         <CrSeg label="Show" value={filter} onChange={setFilter} options={[["", "All"], ["pending", "To verify" + (c.pending ? " · " + c.pending : "")], ["open", "Unpaid"], ["paid", "Paid"], ["void", "Void"]]}/>
         <span className="cr-grow"/>
         <button type="button" className="cr-btn is-sm" onClick={bank}><CrIcon n="bank"/>{d.bank && d.bank.accountNumber ? "Bank: " + d.bank.bankName + " · " + d.bank.accountNumber : "Add bank details"}</button>
+        <button type="button" className="cr-btn is-sm" onClick={docs}><CrIcon n="file-text"/>Details on documents</button>
         <button type="button" className="cr-btn is-sm" disabled={!t.enabled} onClick={invoiceFor}><CrIcon n="plus"/>Invoice a member</button>
       </div>
       {!rows.length ? <p className="cr-tempty">{filter === "pending" ? "Nothing is waiting to be verified." : "No joining invoices yet. They are made when an NGG applicant is accepted."}</p> : (
@@ -1183,6 +1204,7 @@ function CrMembershipPayments({ ctx }) {
                       {inv.status === "paid" && <span className="cr-hint">{inv.paidVia === "paystack" ? "Paystack" : (op && op.methodLabel) || inv.paidVia} · {crDate(inv.paidAt)}{op && op.verifiedByName ? " · checked by " + op.verifiedByName : ""}</span>}
                     </td>
                     <td className="cr-mp-acts">
+                      {inv.invoiceUrl && <a className="cr-btn is-sm" href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer" aria-label={"Open invoice " + inv.invoiceId + " to print"}><CrIcon n="file-text"/>Invoice</a>}
                       {inv.status === "paid" && <a className="cr-btn is-sm" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer"><CrIcon n="receipt"/>{inv.receiptNo}</a>}
                       {op && op.status === "pending" && <>
                         <a className="cr-btn is-sm" href={NGGApi.admin.membership.evidenceUrl(op.paymentId)} target="_blank" rel="noopener noreferrer"><CrIcon n="file-magnifying-glass"/>Evidence</a>

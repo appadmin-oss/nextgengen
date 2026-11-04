@@ -5166,3 +5166,19 @@ CREATE TABLE IF NOT EXISTS reg_checklist_sends (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (223) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 224 · NGG's printed documents: one counter per series, and every document issued ──
+CREATE TABLE IF NOT EXISTS doc_serials (
+  series VARCHAR(32) NOT NULL PRIMARY KEY,
+  last INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS documents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  docNo VARCHAR(40) NOT NULL, kind VARCHAR(16) NOT NULL, memberId VARCHAR(64) NOT NULL DEFAULT '', sourceKey VARCHAR(160) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'issued', supersededBy VARCHAR(40) NOT NULL DEFAULT '', data MEDIUMTEXT NULL,
+  token VARCHAR(40) NOT NULL, irn VARCHAR(120) NOT NULL DEFAULT '', issuedAt VARCHAR(40) NOT NULL DEFAULT '', updatedAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_doc_no (docNo), UNIQUE KEY uq_doc_source (sourceKey), UNIQUE KEY uq_doc_token (token),
+  KEY idx_documents_member (memberId, kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (224) ON DUPLICATE KEY UPDATE version = version;

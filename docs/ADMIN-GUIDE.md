@@ -1050,6 +1050,36 @@ declaration**. An applicant **under 18** names a parent or guardian who agrees.
 - NGG's form only offers centres that run the Club. **Settings → Sign-ups**
   now has a separate switch for NGG volunteer registration.
 
+### Invoices, receipts and certificates (from 4 Nov 2026)
+
+Every invoice, receipt and Math Lab certificate is a printable A4 page.
+Open one, then press **Print or save as PDF**.
+
+- **Numbers** follow on with no gaps: `NGG-INV-2026-00001`,
+  `NGG-RCP-2026-00001` and `NGG-ML-13-2026-00001` (13 is the level). A
+  cancelled invoice keeps its number and says it was cancelled. Invoices and
+  receipts made before 4 Nov keep the numbers they were issued with.
+- **A receipt never changes.** It is printed from what it said when the
+  payment settled. A later rename or fee change does not touch it.
+- **A transfer still being checked** gets an *Acknowledgement*, not a
+  receipt. The receipt follows when the second person confirms it.
+- **Certificates** are given automatically when a member clears a Math Lab
+  level (70%). Clearing it later at 90% or more gives a Distinction
+  certificate. The old one then says "replaced".
+- **Families** find them in the Family Portal under Money → Documents.
+- **Verify:** the QR code opens `/verify/<number>`. Anyone holding the
+  document can check it there with the check code printed under the QR.
+  Without the code, nothing is shown.
+
+**Details on documents** (Money → Membership payments → *Details on
+documents*): the legal name, RC number, TIN, address, fees contact,
+signatories, VAT and days to pay.
+- A blank detail is left off the page.
+- Issued receipts and certificates keep the details they were issued with.
+  A detail that was blank on them prints once you fill it in.
+- VAT is *Exempt* by default. At 7.5% the VAT is shown inside the amount
+  charged, so the total stays what the account charged.
+
 ### Joining fees: the membership invoice
 
 Nothing is paid until a child is **accepted**. In **Inbox → Applications**,
