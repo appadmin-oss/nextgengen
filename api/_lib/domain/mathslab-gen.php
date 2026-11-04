@@ -165,7 +165,7 @@ function mlb_forms(): array {
     static $f = null;
     if ($f !== null) return $f;
 
-    return $f = [
+    $f = [
     /* ═══ Stage 1 — Number Consciousness ═══ */
     'MC-001' => [
         static function (MlbRng $r) { $n = $r->int(6, 19);
@@ -856,6 +856,10 @@ function mlb_forms(): array {
                 ['$S_n = \\frac{n}{2}\\left(2a + (n - 1)d\\right)$.', '$S_{' . $n . '} = \\frac{' . $n . '}{2}(' . (2 * $a) . ' + ' . (($n - 1) * $d) . ') = ' . intdiv($n * (2 * $a + ($n - 1) * $d), 2) . '$.'], 'Pair the first and last terms.', 'procedure', 50); },
     ],
     ] + (function_exists('mlb_forms_upper') ? mlb_forms_upper() : []);   // Stages 8–17: mathslab-gen-upper.php
+    /* Two proof forms for every topic with a "Why it works" (mathslab-why.php), appended AFTER the
+       topic's own forms so no existing form changes its index (a session stores form numbers). */
+    if (function_exists('mlb_why_forms')) foreach (mlb_why_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    return $f;
 }
 
 /** One question, reproducible from (competency, form, seed). */
@@ -977,6 +981,10 @@ function mlb_expr_equal(string $key, string $got, bool $positive = false): bool 
  */
 function mlb_mark(array $it, $resp): array {
     $kind = $it['kind'];
+    if ($kind === 'order') {
+        $got = is_array($resp) ? array_map('intval', array_values($resp)) : [];
+        return ['ok' => $got === array_map('intval', $it['key']), 'why' => null, 'form' => null];
+    }
     if ($kind === 'mcq' || $kind === 'error') {
         $i = is_numeric($resp) ? (int)$resp : -1;
         $ok = $i === (int)$it['key'];
@@ -1037,6 +1045,7 @@ function mlb_answer_text(array $it): string {
     if ($it['kind'] === 'num' && ($it['unit'] ?? '') === '°') return mlb_p((float)$it['key']) . '°';
     switch ($it['kind']) {
         case 'mcq': case 'error': return (string)$it['options'][(int)$it['key']];
+        case 'order': return implode(' → ', array_map(static fn($k, $i) => ($i + 1) . '. ' . $it['options'][$k], $it['key'], array_keys($it['key'])));
         case 'pair': $L = $it['labels'] ?? ['x', 'y']; return '$' . $L[0] . ' = ' . $it['key'][0] . '$, $' . $L[1] . ' = ' . $it['key'][1] . '$';
         case 'frac': $f = mlb_parse_frac((string)$it['key']); return '$' . mlb_ftex($f[0], $f[1]) . '$';
         case 'expr': return '$' . str_replace(['sqrt(', '*'], ['\\sqrt(', ''], (string)$it['key']) . '$';

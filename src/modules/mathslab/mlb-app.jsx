@@ -168,6 +168,10 @@ function MlbHome({ go, startPlay, onNotMember }) {
         <div className="mlb-xpbar" role="progressbar" aria-label="Progress to the next level" aria-valuenow={pct} aria-valuemin="0" aria-valuemax="100"><span style={{ width: pct + "%" }}/></div>
         {nx.mode !== "none" ? <button type="button" className="mlb-go" onClick={begin}><i className="ph ph-play-circle" aria-hidden="true"/>{nx.label}</button> : <p className="mlb-hero-p">{nx.label}</p>}
       </section>
+      {d.roots && d.roots.length ? <section className="mlb-card" aria-labelledby="mlb-hroot"><h3 id="mlb-hroot" className="mlb-h3">Fix the foundation first</h3>
+        <p className="mlb-p">What you are finding hard rests on something underneath it. Start there.</p>
+        <ul className="mlb-roots">{d.roots.map(x => <li key={x.comp}><div><b>{x.title}</b><small>Underneath {x.behind.slice(0, 2).join(", ")}</small></div>
+          <button type="button" className="stt-btn is-go" onClick={() => go({ v: "learn", comp: x.comp })}>Start here</button></li>)}</ul></section> : null}
       {!d.climb.done ? <section className="mlb-card"><h3 className="mlb-h3">How the climb works</h3>
         <p className="mlb-p">Each stage opens with a short gate of typed questions. Get them all right, quickly, and the whole stage lights up and you jump to the next. Miss a few, and your learning starts exactly where the gaps are. Anything you skip is checked again in a few days, so rushing never counts.</p>
         <p className="mlb-meta">Now at Stage {d.climb.stage}{d.climb.momentum >= 3 ? " · on a roll: shorter gates" : ""}.</p></section> : null}
@@ -175,7 +179,7 @@ function MlbHome({ go, startPlay, onNotMember }) {
         <ul className="mlb-badges">{d.badges.map(b => <li key={b.id} className={b.earned ? "is-on" : ""}><i className={"ph " + (b.earned ? "ph-seal-check" : "ph-seal")} aria-hidden="true"/><b>{b.name}</b><span>{b.what}</span></li>)}</ul></section>
       <section className="mlb-card"><div className="mlb-row"><h3 className="mlb-h3">Your courses</h3><button type="button" className="stt-btn" onClick={() => go({ v: "courses" })}>All courses</button></div>
         <ul className="mlb-mini">{d.courses.filter(c => c.enrolled || c.available).slice(0, 3).map(c => <li key={c.id}><span>{c.title}</span><span className="mlb-meter"><span style={{ width: c.pct + "%" }}/></span><b>{c.pct}%</b></li>)}</ul></section>
-      <p className="mlb-meta">{d.counts.available} of {d.counts.total} topics are open in this preview; the rest are being prepared.</p>
+      <p className="mlb-meta">{d.counts.available < d.counts.total ? d.counts.available + " of " + d.counts.total + " topics are open in this preview; the rest are being prepared." : "All " + d.counts.total + " points of the framework are open, from why 1 + 1 = 2 to calculus, mechanics and beyond."}</p>
     </div>
   );
 }
@@ -204,11 +208,12 @@ function MlbMap({ go, lite }) {
   if (st.phase === "error") return <SttState kind="error" text={"Couldn’t load the map. " + mlbErr(st.e)} retry={load}/>;
   return (
     <div className="mlb-map">
+      {st.d.bands ? <MlbFramework bands={st.d.bands}/> : null}
       <p className="mlb-p">Every star is a topic. Lit stars are known; the brighter halo means it has stayed with you through a review. Tap a star to learn it.</p>
       <ul className="mlb-legend"><li className="is-known">Known</li><li className="is-learning">Learning</li><li className="is-open">Ready to learn</li><li className="is-locked">Locked</li><li className="is-soon">In preparation</li></ul>
       {st.d.stages.map(s => (
         <section key={s.n} className={"mlb-stage" + (s.available ? "" : " is-soon")} aria-labelledby={"mlb-st-" + s.n}>
-          <div className="mlb-row"><h3 id={"mlb-st-" + s.n} className="mlb-h3"><span className="mlb-stn">Stage {s.n}</span> {s.title}</h3>
+          <div className="mlb-row"><h3 id={"mlb-st-" + s.n} className="mlb-h3"><span className="mlb-stn">Stage {s.n}</span> {s.title}{s.level ? <span className="mlb-band">{s.level}</span> : null}</h3>
             {!s.available ? <span className="mlb-chip">In preparation</span>
               : s.certificate ? <a className="stt-btn" href={s.certificate.url} target="_blank" rel="noopener"><i className="ph ph-certificate" aria-hidden="true"/>Stage certificate</a>
               : s.boss ? <span className="mlb-chip is-ok">Boss defeated</span>
@@ -217,6 +222,17 @@ function MlbMap({ go, lite }) {
         </section>
       ))}
     </div>
+  );
+}
+
+/* The 170-Point Mathematics Mastery Framework, from MLB_BANDS (one table, server-side). */
+function MlbFramework({ bands }) {
+  return (
+    <section className="mlb-card" aria-labelledby="mlb-fw-h">
+      <h3 id="mlb-fw-h" className="mlb-h3">The 170-Point Mathematics Mastery Framework</h3>
+      <p className="mlb-p">From why 1 + 1 = 2, through WAEC and Further Mathematics, and beyond. No blind memorisation: the key results come with the argument that makes them true. No neglected foundations: every topic opens only when what it builds on is known, and a topic that keeps going wrong is traced back to the gap underneath it.</p>
+      <ul className="mlb-bands">{bands.map(b => <li key={b.id}><b>{b.name}</b><span>{b.level}</span><span>{b.stages} · {b.topics} points</span><span>{b.what}</span></li>)}</ul>
+    </section>
   );
 }
 
@@ -236,10 +252,11 @@ function MlbLearn({ comp, go, startPlay, lite }) {
         <h2 className="mlb-h2">{c.title}</h2>
         <p className="mlb-chip is-state">{MLB_STATE_L[state] || state}</p>
         {!lite && state !== "soon" ? <div className="mlb-ready"><span>How sure we are you know it</span><span className="mlb-meter is-big"><span style={{ width: pct + "%" }}/></span><b>{pct}%</b></div> : null}
-        {c.needs.length ? <p className="mlb-meta">Builds on: {c.needs.map((n, i) => <React.Fragment key={n.id}>{i ? ", " : ""}<button type="button" className="mlb-link" onClick={() => go({ v: "learn", comp: n.id })}>{n.title}</button>{n.state === "soon" ? " (in preparation)" : ""}</React.Fragment>)}</p> : null}
+        {c.needs.length ? <p className="mlb-meta">Builds on: {c.needs.map((n, i) => <React.Fragment key={n.id}>{i ? ", " : ""}<button type="button" className="mlb-link" onClick={() => go({ v: "learn", comp: n.id })}>{n.title}</button>{n.state === "soon" ? " (in preparation)" : n.ahead ? " (introduced here; the full topic is in Stage " + n.ahead + ")" : ""}</React.Fragment>)}</p> : null}
         {state === "locked" ? <p className="mlb-warn">Locked: light up the topics it builds on first.</p> : null}
         {state === "soon" ? <p className="mlb-warn">This topic is being prepared and will open soon.</p> : null}
       </section>
+      {st.d.why ? <MlbWhy key={c.id} why={st.d.why}/> : null}
       {ex ? <section className="mlb-card" aria-labelledby="mlb-we"><h3 id="mlb-we" className="mlb-h3">Worked example</h3>
         <MlbMath as="p" className="mlb-stem" text={ex.stem}/><MlbDiagram d={ex.diagram}/>
         {ex.lines ? <ol className="mlb-lines">{ex.lines.map((l, i) => <li key={i}><MlbMath text={l}/></li>)}</ol> : null}
@@ -256,11 +273,30 @@ function MlbLearn({ comp, go, startPlay, lite }) {
   );
 }
 
+/* ── Why it works: the argument one line at a time, each with its reason ── */
+function MlbWhy({ why }) {
+  const [shown, setShown] = React.useState(1);
+  const all = shown >= why.steps.length;
+  return (
+    <section className="mlb-card mlb-why" aria-labelledby="mlb-why-h">
+      <h3 id="mlb-why-h" className="mlb-h3">Why it works</h3>
+      <MlbMath as="p" className="mlb-why-idea" text={why.idea}/>
+      <p className="mlb-why-claim">We show: <MlbMath text={why.claim}/></p>
+      <ol className="mlb-why-steps" aria-live="polite">{why.steps.slice(0, shown).map((s, i) => (
+        <li key={i}><MlbMath className="mlb-why-s" text={s.s}/><span className="mlb-why-r"><b>Because</b><MlbMath text={s.r}/></span></li>))}</ol>
+      {!all ? <div className="mlb-actions"><button type="button" className="stt-btn" onClick={() => setShown(n => n + 1)}>Next line</button>
+        <button type="button" className="mlb-link" onClick={() => setShown(why.steps.length)}>Show the whole argument</button></div>
+        : <p className="mlb-meta">Every line uses only what came before it. Practice includes questions on this argument: why a line is true, and putting it in order.</p>}
+    </section>
+  );
+}
+
 /* ── Answer entry ── */
 const MLB_KEYS = { expr: ["x", "y", "^", "(", ")", "/", "−", "√("], num: ["−", ".", "/"], frac: ["/", "−"], ratio: [":"], pair: ["−"] };
 function MlbInput({ item, value, onChange, onEnter, disabled }) {
   const ref = React.useRef(null);
   const ins = t => { const v = (value || "") + (t === "−" ? "-" : t === "√(" ? "sqrt(" : t); onChange(v); setTimeout(() => ref.current && ref.current.focus(), 0); };
+  if (item.kind === "order") return <MlbOrder item={item} value={value} onChange={onChange} disabled={disabled}/>;
   if (item.kind === "pair") {
     const v = Array.isArray(value) ? value : ["", ""];
     return <div className="mlb-pair">{(item.labels || ["x", "y"]).map((l, i) => <label key={l} className="mlb-pairf"><MlbMath text={"$" + l + " =$"}/>
@@ -273,7 +309,30 @@ function MlbInput({ item, value, onChange, onEnter, disabled }) {
           placeholder={item.kind === "frac" ? "e.g. 3/4" : item.kind === "ratio" ? "e.g. 3:4" : item.kind === "expr" ? "e.g. 3x+2" : "Your answer"} aria-label="Your answer"
           onChange={e => onChange(e.target.value)} onKeyDown={e => e.key === "Enter" && onEnter()}/>{item.unit && item.unit !== "₦" ? <span className="mlb-unit">{item.unit}</span> : null}</div>
       {item.kind === "expr" && value ? <p className="mlb-preview" aria-live="polite">Reads as: <MlbMath text={"$" + String(value).replace(/sqrt\(/g, "\\sqrt(").replace(/\*/g, "\\times ") + "$"}/></p> : null}
+      {item.dp != null ? <p className="mlb-meta mlb-rule">Give your answer correct to {item.dp === 0 ? "the nearest whole number" : item.dp + " decimal place" + (item.dp > 1 ? "s" : "")}.</p> : null}
       <div className="mlb-keys">{(MLB_KEYS[item.kind] || []).map(k => <button key={k} type="button" className="mlb-key" disabled={disabled} onClick={() => ins(k)} aria-label={"Type " + k}>{k}</button>)}</div>
+    </div>
+  );
+}
+
+/* "Put the argument in order": move buttons, never a drag (CLAUDE.md §9). The value is the
+   option indexes in the learner's order; it starts as the order shown. */
+function MlbOrder({ item, value, onChange, disabled }) {
+  const ids = item.options.map((_, i) => i);
+  const v = Array.isArray(value) && value.length === ids.length ? value : ids;
+  React.useEffect(() => { if (!(Array.isArray(value) && value.length === ids.length)) onChange(ids); }, [item]); // eslint-disable-line
+  const [said, setSaid] = React.useState("");
+  const move = (pos, d) => { const n = v.slice(), t = pos + d; if (t < 0 || t >= n.length) return; [n[pos], n[t]] = [n[t], n[pos]]; onChange(n); setSaid("Moved to position " + (t + 1) + " of " + n.length + "."); };
+  return (
+    <div className="mlb-order">
+      <p className="mlb-meta">Use the arrows to put the lines in order, first line at the top.</p>
+      <ol className="mlb-order-list">{v.map((k, pos) => (
+        <li key={k} className="mlb-order-row"><span className="mlb-order-n">{pos + 1}</span><MlbMath className="mlb-order-t" text={item.options[k]}/>
+          <span className="mlb-order-btns">
+            <button type="button" className="mlb-key" disabled={disabled || pos === 0} aria-label={"Move line " + (pos + 1) + " up"} onClick={() => move(pos, -1)}><i className="ph ph-arrow-up" aria-hidden="true"/></button>
+            <button type="button" className="mlb-key" disabled={disabled || pos === v.length - 1} aria-label={"Move line " + (pos + 1) + " down"} onClick={() => move(pos, 1)}><i className="ph ph-arrow-down" aria-hidden="true"/></button>
+          </span></li>))}</ol>
+      <p className="mlb-sr" aria-live="polite">{said}</p>
     </div>
   );
 }
@@ -416,6 +475,14 @@ function MlbProgress({ go }) {
           {d.due ? <button type="button" className="stt-btn" onClick={() => go({ v: "home" })}>Review them</button> : <p className="mlb-meta">Nothing is fading.</p>}</section>
       </div>
 
+      <section className="mlb-card" aria-labelledby="mlb-roots-h"><h3 id="mlb-roots-h" className="mlb-h3">Foundations to fix first</h3>
+        {d.roots && d.roots.length ? <React.Fragment><p className="mlb-p">These are the earliest topics underneath what you are finding hard. Fixing them first makes the hard topics easier; practising the hard ones harder does not.</p>
+          <ul className="mlb-roots">{d.roots.map(x => (
+            <li key={x.comp}><div><b>{x.title}</b><small>Stage {x.stage} · underneath {x.behind.slice(0, 3).join(", ")}{x.behind.length > 3 ? " and " + (x.behind.length - 3) + " more" : ""}</small></div>
+              <button type="button" className="stt-btn is-go" onClick={() => go({ v: "learn", comp: x.comp })}>Start here</button></li>))}</ul></React.Fragment>
+          : <p className="mlb-p">No hidden gaps found. When a topic keeps going wrong, we trace it back to the foundation underneath it and show it here.</p>}
+      </section>
+
       <section className="mlb-card"><h3 className="mlb-h3">Mistakes that keep coming back</h3>
         {d.mistakes.length ? <ul className="mlb-miss">{d.mistakes.map(x => (
           <li key={x.comp}><div><b>{x.title}</b><span className="mlb-meta">{x.wrong} wrong recently</span>
@@ -423,6 +490,10 @@ function MlbProgress({ go }) {
             <button type="button" className="stt-btn" onClick={() => go({ v: "learn", comp: x.comp })}>Practise it</button></li>))}</ul>
           : <p className="mlb-p">Nothing repeating. Mistakes you make in practice will gather here, with the reason, so you can go straight back to them.</p>}
       </section>
+
+      {d.bands ? <section className="mlb-card"><h3 className="mlb-h3">The 170-point framework</h3>
+        <ul className="mlb-bands">{d.bands.map(b => <li key={b.name}><b>{b.name}</b><span>{b.level}</span>
+          <span className="mlb-meter"><span style={{ width: Math.round(b.mastered / b.total * 100) + "%" }}/></span><span>{b.mastered} of {b.total} points</span></li>)}</ul></section> : null}
 
       <section className="mlb-card"><h3 className="mlb-h3">Stages</h3>
         <ul className="mlb-stages">{d.stages.map(x => (

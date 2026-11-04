@@ -37621,12 +37621,45 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $bad = 0; $n = 0;
     foreach (mlb_forms() as $c => $forms) foreach ($forms as $fi => $f) for ($s = 1; $s <= 25; $s++) {
         $it = mlb_item($c, $fi, $s * 104729); $n++;
-        $resp = in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key'];
+        $resp = in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'];
         if (!mlb_mark($it, $resp)['ok']) $bad++;
         if (isset($it['options']) && count(array_unique($it['options'])) !== count($it['options'])) $bad++;
         if (mlb_public($it) !== array_diff_key(mlb_public($it), ['key' => 1, 'steps' => 1, 'whys' => 1])) $bad++;
     }
     chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 170);
+    /* "Why it works": the founding idea is understanding, so the proofs are held to it. Each is a
+       chain of DISTINCT statements with DISTINCT reasons (the justify form uses the other reasons as
+       wrong options, so a repeat would make two options right), and both proof forms mark right. */
+    $wbad = [];
+    foreach (mlb_why() as $id => [$idea, $claim, $steps]) {
+        if (!mlb_comp($id) || count($steps) < 3 || count(array_unique(array_column($steps, 0))) !== count($steps) || count(array_unique(array_column($steps, 1))) !== count($steps)) { $wbad[] = $id; continue; }
+        $fs = mlb_forms()[$id]; $nf = count($fs);
+        for ($sd = 1; $sd <= 12; $sd++) {
+            $j = mlb_item($id, $nf - 2, $sd * 7); $o = mlb_item($id, $nf - 1, $sd * 7);
+            if ($j['kind'] !== 'mcq' || $j['dim'] !== 'reasoning' || $j['lines'] !== array_column($steps, 0) || !mlb_mark($j, $j['key'])['ok']) { $wbad[] = "$id/justify"; break; }
+            $inOrder = array_map(static fn($k) => $o['options'][$k], $o['key']);
+            if ($o['kind'] !== 'order' || $inOrder !== array_column($steps, 0) || $o['options'] === array_column($steps, 0)
+                || !mlb_mark($o, $o['key'])['ok'] || mlb_mark($o, array_reverse($o['key']))['ok'] || mlb_mark($o, '0,1,2')['ok'] || isset(mlb_public($o)['key'])) { $wbad[] = "$id/order"; break; }
+        }
+    }
+    chk('maths lab · every "why it works" proof is a chain of distinct statements and reasons, its "why is this line true?" marks the line\'s own reason, and its "put it in order" accepts only the order of the argument (never shown already in order)' . ($wbad ? ' (' . implode(', ', array_slice($wbad, 0, 6)) . ')' : ''),
+        $wbad === [] && count(mlb_why()) >= 80 && isset(mlb_why()['MC-002'], mlb_why()['MC-077'], mlb_why()['MC-103'], mlb_why()['MC-152']));
+    chk('maths lab · the topic view carries its proof, and a topic without one carries none', (mlb_comp_view(['comp' => 'MC-077'])['why']['steps'][0]['r'] ?? '') !== '' && mlb_comp_view(['comp' => 'MC-048'])['why'] === null);
+    // The framework's five bands cover every stage exactly once, in order.
+    $cover = []; foreach (MLB_BANDS as $b) for ($k = $b['from']; $k <= $b['to']; $k++) $cover[] = $k;
+    chk('maths lab · the 170-point framework\'s bands cover Stages 1–17 exactly once, and the map carries them', $cover === range(1, 17) && count(mlb_map([])['bands']) === count(MLB_BANDS) && mlb_map([])['stages'][9]['level'] === 'SSS · WASSCE Mathematics');
+    // No neglected foundations: a struggling topic is traced back to the earliest gap underneath it.
+    $gs = [];
+    foreach (mlb_competencies() as $id => $c) if ($c['n'] <= 48) $gs[$id] = ['state' => 'known', 'p' => 0.95, 'attempts' => 8];
+    $gs['MC-044'] = ['state' => 'none', 'p' => 0, 'attempts' => 0]; $gs['MC-045'] = ['state' => 'learning', 'p' => 0.4, 'attempts' => 2];
+    $gs['MC-049'] = ['state' => 'learning', 'p' => 0.3, 'attempts' => 6];
+    $rg = mlb_root_gaps($gs);
+    $gs2 = $gs; $gs2['MC-044']['state'] = 'known'; $gs2['MC-045']['state'] = 'known';
+    chk('maths lab · a struggling topic (multi-step equations) is traced past the gap above it (brackets) to the earliest one underneath (like terms), and nothing is reported once those are known',
+        count($rg) === 1 && $rg[0]['comp'] === 'MC-044' && $rg[0]['behind'] === [mlb_comp('MC-049')['title']] && mlb_root_gaps($gs2) === []);
+    // A prerequisite from a later stage never locks an earlier topic (055 needs 091/094 from Stage 10).
+    $fw = []; foreach (mlb_competencies() as $id => $c) if ($c['n'] <= 54) $fw[$id] = ['state' => 'known'];
+    chk('maths lab · a topic whose prerequisite is in a LATER stage is not locked by it (Graphical solution needs Stage 10 coordinates)', mlb_unlocked('MC-055', $fw) && !mlb_unlocked('MC-094', $fw) && in_array('MC-091', mlb_comp('MC-055')['needs'], true));
     /* Spot the error must make a child CHECK the working: the mistake moves
        between lines from one item to the next. Every such form used to put it
        on the same line every time, which teaches where the answer sits. And
@@ -37659,7 +37692,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $sess = db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$st['sessionId']]);
         foreach (json_decode($sess['items'], true) as $i => $x) {
             $it = mlb_item($x['c'], $x['f'], $x['s']);
-            $a = $right ? (in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key']) : (in_array($it['kind'], ['mcq', 'error'], true) ? ((int)$it['key'] + 1) % count($it['options']) : ($it['kind'] === 'pair' ? ['999', '999'] : '99999'));
+            $a = $right ? (in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key']) : (in_array($it['kind'], ['mcq', 'error'], true) ? ((int)$it['key'] + 1) % count($it['options']) : ($it['kind'] === 'pair' ? ['999', '999'] : ($it['kind'] === 'order' ? array_reverse($it['key']) : '99999')));
             mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $st['sessionId'], 'index' => $i, 'answer' => $a, 'ms' => $ms]);
         }
         return mlb_finish(['memberId' => 'NGG-ML-1', 'sessionId' => $st['sessionId']]);
@@ -37681,7 +37714,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $pr = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'practice', 'comp' => 'MC-011']);
     $x = json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$pr['sessionId']])['items'], true)[0];
     $it = mlb_item($x['c'], $x['f'], $x['s']);
-    $fb = mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pr['sessionId'], 'index' => 0, 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key'], 'ms' => 4000]);
+    $fb = mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pr['sessionId'], 'index' => 0, 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'], 'ms' => 4000]);
     chk('maths lab · practice says at once whether an answer is right, with the worked solution and XP', !empty($fb['correct']) && is_array($fb['steps']) && $fb['xp'] > 0 && $fb['p'] > 0.15
         && (mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pr['sessionId'], 'index' => 0, 'answer' => '1'])['error'] ?? '') === 'already_answered');
     chk('maths lab · a topic whose prerequisites are not known is refused, and named', (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'practice', 'comp' => 'MC-049'])['error'] ?? '') === 'locked');
@@ -37706,7 +37739,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     // Lite: anyone, marked by a signed token; a tampered token is refused.
     $li = mlb_lite_item(['comp' => 'MC-045']);
     $x = json_decode(b64url_decode(explode('.', $li['token'])[0]), true); $it = mlb_item($x['c'], (int)$x['f'], (int)$x['s']);
-    $ok = mlb_lite_check(['token' => $li['token'], 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair'], true) ? $it['key'] : (string)$it['key']]);
+    $ok = mlb_lite_check(['token' => $li['token'], 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key']]);
     $tam = mlb_lite_check(['token' => b64url(json_encode(['c' => 'MC-045', 'f' => 0, 's' => 1, 'e' => time() + 99])) . '.' . explode('.', $li['token'])[1], 'answer' => '1']);
     chk('maths lab · Lite marks with the worked solution and no record; a forged token is refused', !empty($ok['correct']) && !empty($ok['steps']) && !isset($li['item']['key']) && ($tam['error'] ?? '') === 'bad_token');
     foreach (['mlab_state', 'mlab_profile', 'mlab_sessions', 'mlab_enrol'] as $t) db_exec("DELETE FROM $t WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");

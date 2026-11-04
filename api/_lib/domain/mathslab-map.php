@@ -233,6 +233,25 @@ const MLB_STAGE_STRAND = [1 => 'Number', 2 => 'Number', 3 => 'Number', 4 => 'Num
     8 => 'Geometry & Measure', 9 => 'Geometry & Measure', 10 => 'Graphs & Functions', 11 => 'Algebra', 12 => 'Statistics & Trigonometry',
     13 => 'Further Algebra', 14 => 'Matrices & Vectors', 15 => 'Trigonometry & Analytic Geometry', 16 => 'Calculus', 17 => 'Mechanics & Beyond'];
 
+/**
+ * The 170-Point Mathematics Mastery Framework in five bands: where each stage sits on the road
+ * from arithmetic through WAEC and Further Mathematics to beyond. One table; the map, the Lite
+ * page and the Progress screen all read it (CLAUDE.md §11 — never a second list).
+ */
+const MLB_BANDS = [
+    ['id' => 'foundations', 'name' => 'Foundations', 'level' => 'Primary', 'from' => 1, 'to' => 4,
+     'what' => 'Why numbers work: counting, place value, the four operations, fractions, ratio and everyday arithmetic.'],
+    ['id' => 'junior', 'name' => 'Algebra and number', 'level' => 'JSS · BECE', 'from' => 5, 'to' => 7,
+     'what' => 'Letters for numbers, equations as balances, factorisation, indices, surds, logarithms and sequences.'],
+    ['id' => 'waec', 'name' => 'WAEC core', 'level' => 'SSS · WASSCE Mathematics', 'from' => 8, 'to' => 12,
+     'what' => 'Geometry and mensuration, graphs, quadratics, polynomials, trigonometry and statistics.'],
+    ['id' => 'further', 'name' => 'Further Mathematics', 'level' => 'WASSCE Further Mathematics', 'from' => 13, 'to' => 16,
+     'what' => 'Sets and logic, functions, series, matrices, vectors, advanced trigonometry, conics and calculus.'],
+    ['id' => 'beyond', 'name' => 'Beyond', 'level' => 'Mechanics · university · research', 'from' => 17, 'to' => 17,
+     'what' => 'Mechanics, probability distributions, proof by induction, differential equations and modelling.'],
+];
+function mlb_band(int $stage): array { foreach (MLB_BANDS as $b) if ($stage >= $b['from'] && $stage <= $b['to']) return $b; return MLB_BANDS[0]; }
+
 /** The reviewed draft edges for Stages 5–7 (plan Appendix C). Competency number → numbers it needs. */
 const MLB_EDGES = [
     41 => [15, 18], 42 => [41], 43 => [42, 23], 44 => [43, 22], 45 => [44, 23], 46 => [43, 24], 47 => [42, 18], 48 => [47, 22],
