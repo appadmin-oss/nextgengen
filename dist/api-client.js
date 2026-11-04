@@ -1066,6 +1066,7 @@
         map:    () => request('/member/mathslab.php?view=map'),
         comp:   (comp) => request('/member/mathslab.php' + qs({ view: 'comp', comp })),
         cert:   (course) => request('/member/mathslab.php' + qs({ view: 'certificate', course })),
+        progress: () => request('/member/mathslab.php' + qs({ view: 'progress' })),
         start:  (mode, opts) => request('/member/mathslab.php', { body: Object.assign({ action: 'start', mode }, opts || {}) }),
         answer: (sessionId, index, answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'answer', sessionId, index, answer }, extra || {}) }),
         finish: (sessionId) => request('/member/mathslab.php', { body: { action: 'finish', sessionId } }),

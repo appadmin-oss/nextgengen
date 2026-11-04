@@ -48,13 +48,10 @@ browser. The old SERVER ops (`mathlab.php`, `arcade.php` `mathStart`/
 `mathSubmit`) are kept: issued level certificates must keep verifying, and
 they are what a progress migration would read.
 
-**Open, found 4 Nov:** the documents domain (`df531900`, `documents.php`)
-issues `NGG-ML-LL-` certificates when an OLD-ladder level is cleared, and
-nothing can clear one any more. The new Lab's course certificate
-(`mlb_certificate`) has its own code and is not in `documents.php`, so it is
-not under Family → Money → Documents and not on `/verify/<number>`. One
-certificate system is the fix: issue the course certificate through
-`documents.php`.
+**Done 4 Nov (later):** one certificate system — stage certificates every ten
+topics and the course certificate after, as NGG documents in the committed
+design; spot-the-error and diagnosis questions fixed; a Progress view with
+recurring mistakes. See the last entry of `docs/HANDOFF.md`.
 
 ### Background (the plan)
 

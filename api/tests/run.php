@@ -36632,6 +36632,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $cr = backend_dispatch('admin.policy.correctives', ['requesterId' => $ADM]);
     $row = array_values(array_filter($cr['rows'], fn($r) => $r['memberId'] === 'NGG-WR-2'))[0] ?? null;
     chk('rules · the frog jumps to do say which rule they are for', $row && $row['for'] === 'rule' && $row['rule'] === 'No uniform' && $row['count'] === 5);
+    /* A breach costs BOTH halves: the desk sees the fine for the same incident
+       beside the jumps, so the exercise is never read as standing in for it. */
+    chk('rules · …and the fine for that same breach beside them (₦500, owed)', $row && ($row['fine']['amount'] ?? 0) === 500 && ($row['fine']['status'] ?? '') === 'pending');
 
     $sc = backend_dispatch('admin.policy.ruleBreach', ['requesterId' => 'NGG-WR-LEAD', 'ruleId' => $rid, 'personIds' => ['NGG-WR-3', 'NGG-WR-X', 'NGG-WR-NOPE', 'NGG-WR-LEAD'], 'date' => $today]);
     $v = array_column($sc['results'], null, 'personId');
@@ -36765,6 +36768,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $mine = array_values(array_filter($cl['rows'], fn($r) => $r['memberId'] === 'NGG-PL-2'));
     chk('frog jumps list · each set says what it was for and on which day', $mine && $mine[0]['for'] === 'late' && $mine[0]['date'] === $dC && $mine[0]['count'] === 3
         && !str_contains($mine[0]['reason'], '₦'));
+    $lf = $sc('NGG-PL-2', 'fine', POLICY_T_LATE_FINE + policy_day_number($dC));
+    chk('frog jumps list · …with the late band\'s fine for the same day, read from its own row, or none where the band has none',
+        $lf ? (($mine[0]['fine']['amount'] ?? -1) === (int)$lf['amount'] && ($mine[0]['fine']['status'] ?? '') === (string)$lf['status']) : $mine[0]['fine'] === null);
 
     // Under the older ladder, "late" means past resumption + grace: the repair leaves it alone.
     $came('NGG-PL-3', $dB, '09:21'); policy_log('NGG-PL-3', 'member', 'late', $dB, 'ladder late');
@@ -37621,6 +37627,22 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         if (mlb_public($it) !== array_diff_key(mlb_public($it), ['key' => 1, 'steps' => 1, 'whys' => 1])) $bad++;
     }
     chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 70);
+    /* Spot the error must make a child CHECK the working: the mistake moves
+       between lines from one item to the next. Every such form used to put it
+       on the same line every time, which teaches where the answer sits. And
+       no form may give the same answer to every child. */
+    $fixed = [];
+    foreach (mlb_forms() as $c => $forms) foreach ($forms as $fi => $f) {
+        $keys = [];
+        for ($sd = 1; $sd <= 60; $sd++) { $it = mlb_item($c, $fi, $sd * 7919 + 13); $keys[is_array($it['key']) ? json_encode($it['key']) : (string)$it['key']] = 1; }
+        $it0 = mlb_item($c, $fi, 7);
+        if ($it0['kind'] === 'error' && count($keys) < 2) $fixed[] = "$c/$fi error line";
+        if ($it0['kind'] !== 'mcq' && $it0['kind'] !== 'error' && count($keys) < 2) $fixed[] = "$c/$fi constant";
+    }
+    chk('maths lab · every spot-the-error form puts its mistake on more than one line, and no typed form has one answer for everybody' . ($fixed ? ' (' . implode(', ', $fixed) . ')' : ''), $fixed === []);
+    $diag = [];
+    for ($sd = 1; $sd <= 80; $sd++) { $it = mlb_item('MC-013', 1, $sd * 31); $diag[$it['options'][$it['key']]] = 1; }
+    chk('maths lab · "what mistake, if any" has more than one right answer — including "nothing, it is right"', count($diag) >= 3 && isset($diag['Nothing — the answer is right']));
     chk('maths lab · the map holds all 170 competencies, and the drafted graph is used where written', count(mlb_competencies()) === 170 && mlb_comp('MC-049')['needs'] === ['MC-048', 'MC-045', 'MC-027']);
     // Marking is generous about form, strict about value.
     $e = ['kind' => 'expr', 'key' => '8x-12', 'form' => 'expanded'];
@@ -37671,6 +37693,16 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("UPDATE mlab_state SET nextReview = ? WHERE memberId = 'NGG-ML-1' AND comp IN ('MC-011', 'MC-001')", [gmdate('Y-m-d', time() - 86400)]);
     $rv = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'review']); $rr = $answerAll($rv, true);
     chk('maths lab · due reviews that hold move the topics on (mastered → secure, known → secure)', $rr['right'] === 2 && mlb_states('NGG-ML-1')['MC-011']['state'] === 'secure' && mlb_states('NGG-ML-1')['MC-001']['state'] === 'secure');
+    // Progress: what keeps going wrong, why, and where to go; a topic since mastered is not chased.
+    $pg = backend_dispatch('mathslab.progress', ['memberId' => 'NGG-ML-1']);
+    $mc = array_column($pg['mistakes'] ?? [], null, 'comp');
+    chk('maths lab · progress names the topics that keep going wrong, each with a reason, and never one since mastered',
+        !empty($pg['ok']) && count($pg['mistakes']) >= 1 && count($pg['mistakes']) <= 6 && !isset($mc['MC-011'])
+        && !array_filter($pg['mistakes'], fn($x) => trim((string)$x['why']) === '' || $x['wrong'] < 1 || mlb_comp($x['comp']) === null));
+    chk('maths lab · …and the last fortnight in numbers: answered, right, and every stage open to them with its count',
+        $pg['recent']['answered'] >= MLB_GATE_ITEMS * 2 && $pg['recent']['right'] < $pg['recent']['answered'] && count($pg['stages']) === 7
+        && $pg['stages'][0]['mastered'] === 10 && $pg['stages'][0]['total'] === 10 && $pg['certificates'] === []);
+    chk('maths lab · a Summer account has no progress here', (backend_dispatch('mathslab.progress', ['memberId' => 'SUM-ML-2'])['error'] ?? '') === 'members_only');
     // Lite: anyone, marked by a signed token; a tampered token is refused.
     $li = mlb_lite_item(['comp' => 'MC-045']);
     $x = json_decode(b64url_decode(explode('.', $li['token'])[0]), true); $it = mlb_item($x['c'], (int)$x['f'], (int)$x['s']);
@@ -37882,6 +37914,59 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && count(array_filter($list, fn($x) => $x['kind'] === 'certificate')) === 2 && !array_filter($list, fn($x) => !str_contains($x['url'], 'document.php?t=')));
     [$st, $page] = doc_render_token(doc_by('docNo', $c2['docNo'])['token']);
     chk('documents · a private link renders its document; a made-up one does not', $st === 200 && str_contains($page, 'data-doc="certificate"') && doc_render_token(str_repeat('a', 32))[0] === 404);
+
+    /* The new Maths Lab's COURSE certificate is an NGG document too: numbered,
+       verifiable, in the family's Documents — one certificate system, not a
+       printed page with a code nothing could check. */
+    $mlbRef = backend_dispatch('mathslab.certificate', ['memberId' => 'NGG-DOC-1', 'courseId' => 'number-foundations']);
+    chk('maths lab certificate · a course not completed is refused', ($mlbRef['error'] ?? '') === 'not_complete' && mlb_issue_certificates('NGG-DOC-1') === []);
+    foreach ([1, 2, 3, 4] as $stN) foreach (mlb_stages()[$stN]['comps'] as $cId) mlb_set_state('NGG-DOC-1', $cId, ['state' => 'mastered']);
+    db_update('mlab_profile', ['bosses' => json_encode(['1' => '2026-11-01', '2' => '2026-11-01', '3' => '2026-11-02', '4' => '2026-11-03'])], ['memberId' => 'NGG-DOC-1']);
+    // Stage 1 alone first: ten topics and its boss earn the STAGE certificate, and not the course one.
+    db_update('mlab_profile', ['bosses' => json_encode(['1' => '2026-11-01'])], ['memberId' => 'NGG-DOC-1']);
+    foreach ([2, 3, 4] as $stN) mlb_set_state('NGG-DOC-1', mlb_stages()[$stN]['comps'][0], ['state' => 'practising']);
+    $s1 = mlb_issue_certificates('NGG-DOC-1', [1 => 92]);
+    chk('maths lab certificate · every ten topics: a stage passed (all ten mastered, boss beaten) earns a stage certificate, NGG-MLS-YYYY-#####, and no course one yet',
+        count($s1) === 1 && $s1[0]['scope'] === 'stage' && $s1[0]['stage'] === 1 && preg_match('/^NGG-MLS-' . $y . '-\d{5}$/', $s1[0]['no']));
+    $sp = doc_render_certificate(doc_by('docNo', $s1[0]['no']));
+    chk('maths lab certificate · the stage certificate is the committed design\'s level layout: STAGE 01, its strand, the boss score from that session',
+        str_contains($sp, 'Stage 1: ' . mlb_stages()[1]['title']) && str_contains($sp, '<small>STAGE</small><b>01</b>') && str_contains($sp, 'beaten (92%)')
+        && str_contains($sp, 'Number Foundations') && !str_contains($sp, 'paper</span>'));
+    foreach ([2, 3, 4] as $stN) mlb_set_state('NGG-DOC-1', mlb_stages()[$stN]['comps'][0], ['state' => 'mastered']);
+    db_update('mlab_profile', ['bosses' => json_encode(['1' => '2026-11-01', '2' => '2026-11-01', '3' => '2026-11-02', '4' => '2026-11-03'])], ['memberId' => 'NGG-DOC-1']);
+    $issued = mlb_issue_certificates('NGG-DOC-1');
+    $courseI = array_values(array_filter($issued, fn($x) => $x['scope'] === 'course'));
+    chk('maths lab certificate · the rest of the stages, then the FULL course certificate after them, numbered NGG-MLC-YYYY-#####',
+        array_column(array_filter($issued, fn($x) => $x['scope'] === 'stage'), 'stage') === [2, 3, 4] && end($issued)['scope'] === 'course'
+        && count($courseI) === 1 && $courseI[0]['course'] === 'Number Foundations' && preg_match('/^NGG-MLC-' . $y . '-\d{5}$/', $courseI[0]['no']));
+    $issued = $courseI;
+    chk('maths lab certificate · …once: the next session issues nothing new', mlb_issue_certificates('NGG-DOC-1') === []);
+    $mc = backend_dispatch('mathslab.certificate', ['memberId' => 'NGG-DOC-1', 'courseId' => 'number-foundations']);
+    chk('maths lab certificate · the Lab\'s Certificate button returns that same document, with its check code and links',
+        !empty($mc['ok']) && $mc['no'] === $issued[0]['no'] && $mc['code'] === doc_check_code($mc['no'])
+        && str_contains($mc['url'], 'document.php?t=') && str_contains($mc['verifyUrl'], '/verify/' . $mc['no']));
+    $mv = public_document_verify(['no' => $mc['no'], 'code' => $mc['code']]);
+    chk('maths lab certificate · /verify knows it: the course, completed, a holder named only by first name and initial',
+        !empty($mv['ok']) && $mv['what'] === 'Maths Lab course: Number Foundations' && $mv['result'] === 'Completed' && preg_match('/^\S+ [A-Z]\.$/u', $mv['holder']));
+    $titles = array_column(documents_for_member('NGG-DOC-1'), 'title');
+    chk('maths lab certificate · …and the family sees it, and each stage certificate, under Documents', in_array('Maths Lab · Number Foundations', $titles, true)
+        && in_array('Maths Lab · Stage 1: ' . mlb_stages()[1]['title'], $titles, true) && count(array_filter($titles, fn($t) => str_starts_with($t, 'Maths Lab · Stage '))) === 4);
+    $vst = public_document_verify(['no' => $s1[0]['no'], 'code' => doc_check_code($s1[0]['no'])]);
+    chk('maths lab certificate · a stage certificate verifies too', !empty($vst['ok']) && $vst['result'] === 'Passed' && str_starts_with($vst['what'], 'Maths Lab stage 1: '));
+    $mapC = backend_dispatch('mathslab.map', ['memberId' => 'NGG-DOC-1']);
+    chk('maths lab certificate · the map links each stage\'s certificate where it has one', ($mapC['stages'][0]['certificate']['no'] ?? '') === $s1[0]['no'] && ($mapC['stages'][5]['certificate'] ?? null) === null);
+    $mp = doc_render_certificate(doc_by('docNo', $mc['no']));
+    chk('maths lab certificate · its A4 page names the course and what it took, with its verification', str_contains($mp, 'has completed the Maths Lab course')
+        && str_contains($mp, 'Number Foundations') && str_contains($mp, 'every stage boss beaten') && str_contains($mp, $mc['no']) && !str_contains($mp, 'paper</span>'));
+    $mh = backend_dispatch('mathslab.home', ['memberId' => 'NGG-DOC-1']);
+    $nf = array_values(array_filter($mh['courses'], fn($c) => $c['id'] === 'number-foundations'))[0] ?? [];
+    chk('maths lab certificate · the course list links that certificate (the document itself, never a second drawing)',
+        ($nf['certificate']['no'] ?? '') === $mc['no'] && str_contains($nf['certificate']['url'] ?? '', 'document.php?t=')
+        && !array_filter($mh['courses'], fn($c) => $c['id'] !== 'number-foundations' && $c['certificate'] !== null)
+        && array_column($nf['stageCertificates'] ?? [], 'stage') === [1, 2, 3, 4]);
+    // A topic that slips in a later review does not take back a course completed.
+    mlb_set_state('NGG-DOC-1', mlb_stages()[1]['comps'][0], ['state' => 'review']);
+    chk('maths lab certificate · an issued certificate stands after a topic slips', ($r2 = backend_dispatch('mathslab.certificate', ['memberId' => 'NGG-DOC-1', 'courseId' => 'number-foundations'])) && !empty($r2['ok']) && $r2['no'] === $mc['no']);
 } finally { if ($__db->inTransaction()) $__db->rollBack(); } })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

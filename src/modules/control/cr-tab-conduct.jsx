@@ -667,14 +667,23 @@ function crCfCorrectiveBlocks(d, ctx, word) {
   const C = d.correctives;
   if (!C || !(C.rows || []).length) return [];
   return [{ type: "table", span: 6, title: crCfCap(word) + " to do (" + crNum(C.total) + ")", search: "Search by name or centre",
-    sub: "Exercise owed at the centre — not money; fines are under Policy fines owed. Tick each set off as it is done.",
+    /* Both halves of the penalty, side by side. This line used to read "not
+       money; fines are under Policy fines owed" over the jumps alone, which a
+       coordinator read as "fines are not monetary". A late, an absence or a
+       broken rule usually costs BOTH: the fine is money on the member's
+       account, the exercise is done here. Ticking a set off clears the
+       exercise only; the fine stays owed until it is paid or waived. */
+    sub: "Done here at the centre, on top of any fine. The fine for the same incident is money on the member's account (Policy fines owed) — ticking the " + word + " off does not clear it.",
     /* The count column is named for what it counts. It said "How many" beside a
        reason that also named the absence fine, so 7 read as if it were money. */
-    cols: ["Member", "Centre", "For", { l: crCfCap(word), num: true }, { l: "Why", wrap: true }],
+    cols: ["Member", "Centre", "For", { l: crCfCap(word), num: true }, { l: "Fine for it", num: true }, { l: "Why", wrap: true }],
     rows: C.rows.map(r => ({ key: String(r.id), cells: [
       { k: "person", t: r.fullName, s: r.displayId || r.memberId }, { k: "text", t: r.centre || "—" },
       { k: "text", t: r.for === "rule" ? (r.rule || "A rule") : CR_CF_FOR[r.for] || "Other", s: r.date ? crCfDay(r.date) : "", v: r.date || "" },
-      { k: "num", t: crNum(r.count), v: r.count }, { k: "text", t: r.reason } ] })),
+      { k: "num", t: crNum(r.count), v: r.count },
+      { k: "num", t: r.fine ? fmtMoney(r.fine.amount) : "—", v: r.fine ? r.fine.amount : 0,
+        s: r.fine ? ({ pending: "owed", paid: "paid", waived: "waived", cleared: "cleared", lifted: "lifted" }[r.fine.status] || r.fine.status) : "no fine" },
+      { k: "text", t: r.reason } ] })),
     filters: ["Centre", "For"],
     bulk: [{ l: "Mark done", max: C.max || 500, run: async keys => {
       try { const r = await NGGApi.admin.policy.correctivesDone(keys.map(Number)); ctx.toast(crPlural(r.done, "set") + " of " + word + " done."); crCfRefresh(ctx); }

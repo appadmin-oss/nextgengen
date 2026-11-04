@@ -633,3 +633,10 @@ Official notices and announcements (`domain/notices.php`).
   `readAt`, `ackAt`, `ackName`. Unique on (`noticeId`, `readerKey`).
 - `notice_mail` — the email queue: one row per address per notice, `status`
   `queued` | `sent` | `failed` (after 3 attempts) | `cancelled` (withdrawn).
+
+## `documents` — certificates' source keys (migration 224 table)
+One row per issued document (`domain/documents.php`); `sourceKey` is UNIQUE and makes issuing idempotent. Certificates (`kind = 'certificate'`):
+- `ml:<memberId>:<level>:pass|distinction` — the retired Math Lab ladder's level certificates (`NGG-ML-LL-YYYY-#####`), kept for verification.
+- `mlbs:<memberId>:<stage>` — a Maths Lab **stage** certificate (`NGG-MLS-YYYY-#####`); `data.program = 'mathslab'`, `data.scope = 'stage'`, `stage`, `stageTitle`, `strand`, `topics`, `bossPct` (null when not issued by the boss session), `course`.
+- `mlb:<memberId>:<courseId>` — a Maths Lab **course** certificate (`NGG-MLC-YYYY-#####`); `data.program = 'mathslab'`, `courseId`, `course`, `promise`, `stages`, `topics`, `hours`.
+Serial series in `doc_serials`: `ML-YYYY`, `MLS-YYYY`, `MLC-YYYY`.

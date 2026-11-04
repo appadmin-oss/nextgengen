@@ -8715,6 +8715,8 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .mlb-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .mlb-chip { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #eef0f6; color: var(--mlb-ink); font-size: 12.5px; font-weight: 700; }
 .mlb-chip.is-ok { background: #e3f5ea; color: var(--mlb-ok); }
+/* A certificate chip is a link to the document: tappable, not underlined. */
+a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-decoration: none; }
 .mlb-chip.is-state { margin: 0; }
 .mlb-meter { display: inline-block; flex: 1 1 80px; height: 8px; border-radius: 999px; background: #eceef4; overflow: hidden; vertical-align: middle; }
 .mlb-meter span { display: block; height: 100%; background: #f5b026; }
@@ -8775,6 +8777,9 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .mlb-opt { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 10px 14px; border-radius: 14px; border: 1.5px solid var(--mlb-line); background: #fff; font: inherit; color: var(--mlb-ink); text-align: left; cursor: pointer; }
 .mlb-opt.is-on { border-color: var(--mlb-night); background: #f1f3fb; }
 .mlb-opt.is-right { border-color: var(--mlb-ok); background: #e9f7ee; }
+/* The option they picked, when it was wrong: marked as well as the right one, with a cross so it is not colour alone. */
+.mlb-opt.is-wrong { border-color: var(--mlb-no); background: #fdeeee; }
+.mlb-opt.is-wrong .mlb-opt-l::after { content: " ✕"; color: var(--mlb-no); }
 .mlb-opt-l { flex: 0 0 28px; height: 28px; border-radius: 50%; background: #eef0f6; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
 .mlb-entry { display: flex; flex-direction: column; gap: 8px; }
 .mlb-inrow { display: flex; align-items: center; gap: 8px; }
@@ -8803,12 +8808,25 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .mlb-big { margin: 0; font-size: 1.8rem; font-weight: 800; }
 .mlb-big small { font-size: .9rem; font-weight: 600; color: var(--mlb-ink-2); }
 .mlb-tex { font-family: "Cambria Math", Georgia, serif; }
-.mlb-cert { background: #fff; border: 6px double #c9a227; border-radius: 12px; padding: 34px 22px; text-align: center; color: var(--mlb-ink); }
-.mlb-cert h2 { font-size: 1.7rem; margin: 6px 0 14px; }
-.mlb-cert p { margin: 4px 0; }
-.mlb-cert-k { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 12.5px; color: #7a5600; }
-.mlb-cert-n { font-size: 1.6rem; font-weight: 800; }
-.mlb-cert-c { font-size: 1.25rem; font-weight: 700; }
+/* Progress: recurring mistakes, stages, certificates. */
+.mlb-miss, .mlb-stages, .mlb-certs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.mlb-miss li { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--mlb-line); }
+.mlb-miss li:first-child { border-top: 0; padding-top: 0; }
+.mlb-miss li > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mlb-miss .mlb-p { margin: 4px 0 0; }
+.mlb-miss .stt-btn { flex: none; white-space: nowrap; }
+/* A row that wraps by itself: name and count on one line, the meter across the
+   full width under them — at any panel width, with or without a container. */
+.mlb-stages li { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 14px; }
+.mlb-stages li b { flex: 1 1 14ch; min-width: 0; }
+.mlb-stages li .mlb-meter { order: 9; flex: 1 1 100%; }
+.mlb-stages li.is-done b { color: var(--mlb-ok); }
+.mlb-stages .mlb-stn { color: var(--mlb-ink-2); font-weight: 700; }
+.mlb-certs li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.mlb-certs a { display: inline-flex; gap: 6px; align-items: center; font-weight: 700; color: var(--mlb-ink); }
+/* "Course complete" on the dark result banner: the link reads as a link there (white, underlined), not the browser's blue. */
+.mlb-cert-new { display: flex; gap: 8px; align-items: baseline; }
+.mlb-cert-new a { color: #fff; text-decoration: underline; text-underline-offset: 3px; font-weight: 700; }
 @media print { .stt-app .stt-top, .stt-app .stt-tabs, .stt-app .stt-panel-h, .mlb .mlb-nav, .mlb .mlb-actions { display: none; } }
 /* ── /join/volunteer: NGG's volunteer registration (NggVolunteerPage) ─────────
    Classes only; every colour is a token. The error tone has its own pair of

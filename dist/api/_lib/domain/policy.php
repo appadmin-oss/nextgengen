@@ -3081,9 +3081,26 @@ function admin_policy_correctives(array $p): array {
         if (($parts = policy_rule_tier_parts($t)) && $parts[0] === POLICY_T_RULE_JUMPS) {
             $for = 'rule'; $day = policy_day_of($parts[2]); $ruleName = (string)(policy_rules_index()['bySeq'][$parts[1]]['name'] ?? '');
         }
+        /* The FINE for the same incident, keyed the way policy_apply_* keys it:
+           a late band's fine, the absent day's fine, a rule breach's fine. The
+           desk used to see the jumps alone under a line saying "not money", and
+           read it as the punishment instead of a fine — when it is both. */
+        $fineTier = $for === 'late' ? POLICY_T_LATE_FINE + ($t - POLICY_T_LATE_JUMPS)
+            : ($for === 'absence' ? 500000 + ($t - POLICY_T_ABS_JUMPS)
+            : ($for === 'rule' ? POLICY_T_RULE_FINE + ($t - POLICY_T_RULE_JUMPS) : 0));
         $rows[] = ['id' => (int)$r['id'], 'memberId' => (string)$r['personId'], 'fullName' => (string)$r['fullName'], 'displayId' => (string)$r['displayId'],
-                   'centre' => (string)$r['centre'], 'count' => (int)$r['amount'], 'for' => $for, 'rule' => $ruleName, 'date' => $day, 'reason' => (string)$r['reason'], 'issuedAt' => (string)$r['issuedAt']];
+                   'centre' => (string)$r['centre'], 'count' => (int)$r['amount'], 'for' => $for, 'rule' => $ruleName, 'date' => $day, 'reason' => (string)$r['reason'], 'issuedAt' => (string)$r['issuedAt'],
+                   'fineTier' => $fineTier, 'fine' => null];
     }
+    // The fines, in one query per 500 people — never one per row.
+    $ids = array_values(array_unique(array_column(array_filter($rows, static fn($x) => $x['fineTier'] > 0), 'memberId')));
+    $fines = [];
+    foreach (array_chunk($ids, 500) as $chunk) {
+        foreach (db_all("SELECT personId, tier, amount, status FROM sanctions WHERE kind = 'fine' AND personId IN (" . implode(',', array_fill(0, count($chunk), '?')) . ')', $chunk) as $f)
+            $fines[(string)$f['personId'] . '|' . (int)$f['tier']] = ['amount' => (int)$f['amount'], 'status' => (string)$f['status']];
+    }
+    foreach ($rows as &$x) { $x['fine'] = $x['fineTier'] > 0 ? ($fines[$x['memberId'] . '|' . $x['fineTier']] ?? null) : null; unset($x['fineTier']); }
+    unset($x);
     return ['ok' => true, 'rows' => $rows, 'total' => array_sum(array_column($rows, 'count')), 'word' => (string)policy_for('member')['jumpWord'], 'max' => POLICY_CORRECTIVE_MAX];
 }
 /** admin.policy.correctives.done — {ids}: marked done at the centre, each answered, one audit event. */

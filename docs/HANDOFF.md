@@ -5928,3 +5928,38 @@ ran — the run read "367 passed, 1 failed" over a suite of 627.
 **Left as designed, for the owner to decide.** A CACENTRE override can still turn on somebody NGG has off. That is CACENTRE's rule 2, documented as "on the record, with a reason".
 
 **Deploy order.** Either side can go first: an old CACENTRE ignores `sync`, and the note says nobody was withdrawn. Withdrawals start once both are live. Routers set up before 27dc876 keep the old script until their one-line install is run again; the server-side guards protect them meanwhile.
+
+## 2026-11-04 — One certificate system for the Maths Lab; better questions; Progress; fines beside frog jumps
+
+- **Certificates.** The documents domain (`df531900`) issued certificates only
+  for the retired ladder's levels, and the new Lab printed its own uncheckable
+  page. Now: a **stage certificate** every ten topics (all mastered + the stage
+  boss; `doc_mlb_stage_issue`, `NGG-MLS-`) and the full **course certificate**
+  after every stage of a course (`doc_mlb_issue`, `NGG-MLC-`), both in the
+  committed certificate design (`doc_render_certificate`, the level layout for
+  a stage), in Family → Documents, on `/verify`. Issued by
+  `mlb_issue_certificates()` at the end of every session (and on Lab home, for
+  anyone who had already earned one); the Lab's own certificate box
+  (`MlbCert`, `.mlb-cert`) is deleted — the Lab links the documents (Map,
+  Courses, Progress, the result banner). The X-Frame-Options DENY on the API
+  is why it links rather than frames.
+- **Questions.** An audit of 40 seeds × every form found every spot-the-error
+  form put the mistake on the same line (MC-022 line 1; MC-027, MC-049 line 2;
+  MC-045 line 1). `mlb_error_of()` picks among genuine mistakes on different
+  lines, later lines carrying the mistake forward. "What mistake did X make?"
+  (MC-013) now has four outcomes including "nothing — it is right"; "which is
+  equal to N" varies its form; one comparison in four is "="; profit/loss %
+  is drawn from ten rates, not five. A test sweeps every form for a fixed
+  error line or a constant typed answer; it was shown failing on the old
+  generator on exactly MC-022/1, MC-027/2, MC-045/2, MC-049/1.
+- **Features.** `mathslab.progress`: each stage's topics, boss and
+  certificate; every certificate; the mistakes that keep coming back (wrong
+  answers in the last 40 sessions, re-generated from their seeds and
+  re-marked, with the misconception or hint as the reason, and "Practise it");
+  the last 14 days with "sure but wrong". In practice, a wrong pick is marked
+  (✕) as well as the right one.
+- **Compliance wording.** The frog-jumps table said "not money; fines are under
+  Policy fines owed", read as "fines are not monetary". It now says the jumps
+  are on top of the fine, and each row shows *Fine for it* — the fine for the
+  same incident (late band, absent day, rule breach, keyed by tier) and its
+  status (`admin_policy_correctives`, one query per 500 people).

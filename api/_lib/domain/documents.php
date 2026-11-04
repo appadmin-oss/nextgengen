@@ -116,6 +116,10 @@ function doc_year(?string $iso = null): string { return doc_local($iso ?? now_is
 function doc_invoice_no(): string { $y = doc_year(); return 'NGG-INV-' . $y . '-' . str_pad((string)doc_mint('INV-' . $y), 5, '0', STR_PAD_LEFT); }
 function doc_receipt_no(): string { $y = doc_year(); return 'NGG-RCP-' . $y . '-' . str_pad((string)doc_mint('RCP-' . $y), 5, '0', STR_PAD_LEFT); }
 function doc_cert_no(int $level): string { $y = doc_year(); return 'NGG-ML-' . str_pad((string)$level, 2, '0', STR_PAD_LEFT) . '-' . $y . '-' . str_pad((string)doc_mint('ML-' . $y), 5, '0', STR_PAD_LEFT); }
+/** A Maths Lab COURSE certificate: NGG-MLC-2026-00001 (the old ladder's level ones are NGG-ML-<level>-…). */
+function doc_mlc_no(): string { $y = doc_year(); return 'NGG-MLC-' . $y . '-' . str_pad((string)doc_mint('MLC-' . $y), 5, '0', STR_PAD_LEFT); }
+/** A Maths Lab STAGE certificate (the "semi" one, every ten topics): NGG-MLS-2026-00001. */
+function doc_mls_no(): string { $y = doc_year(); return 'NGG-MLS-' . $y . '-' . str_pad((string)doc_mint('MLS-' . $y), 5, '0', STR_PAD_LEFT); }
 /** "INV-03317": the invoice's short number, for a transfer narration. */
 function doc_short(string $no): string { return preg_match('/^NGG-([A-Z]+)-\d{4}-(\d+)$/', $no, $m) ? $m[1] . '-' . $m[2] : $no; }
 
@@ -299,6 +303,71 @@ function doc_ml_issue(string $memberId, int $level, int $pct, int $correct, int 
     });
 }
 
+/**
+ * A Maths Lab course certificate (domain/mathslab.php), issued when a member
+ * has mastered every topic of a course and beaten each of its stage bosses.
+ *
+ * The new Lab used to print its own page with its own code, which nothing
+ * could check: it was not under Family → Money → Documents and /verify did
+ * not know it, while the documents domain went on issuing certificates only
+ * for the RETIRED ladder's levels, which nobody can clear any more. One
+ * certificate system now: the same record, numbering, check code, private
+ * link and verify page as every other NGG document.
+ *
+ * Once per member per course (the sourceKey), and frozen at issue: a topic
+ * that slips in a later review does not take back a course completed.
+ * Returns [document, issuedNow].
+ */
+function doc_mlb_issue(string $memberId, string $courseId): ?array {
+    $m = db_row('SELECT memberId, fullName FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    $c = function_exists('mlb_courses') ? (mlb_courses()[$courseId] ?? null) : null;
+    if (!$m || !$c) return null;
+    $key = 'mlb:' . $memberId . ':' . $courseId;
+    if ($have = doc_by('sourceKey', $key)) return [$have, false];
+    $topics = 0; foreach ($c['stages'] as $st) $topics += count(mlb_stages()[$st]['comps'] ?? []);
+    $doc = db_tx(static function () use ($m, $c, $memberId, $key, $topics) {
+        $no = doc_mlc_no();
+        return doc_record('certificate', $no, $memberId, $key, [
+            'program' => 'mathslab', 'no' => $no, 'name' => (string)$m['fullName'], 'courseId' => (string)$c['id'], 'course' => (string)$c['title'],
+            'promise' => (string)$c['promise'], 'stages' => array_values(array_map('intval', $c['stages'])), 'topics' => $topics, 'hours' => (int)$c['hours'],
+            'awarded' => now_iso(), 'org' => doc_org_freeze()]);
+    });
+    return [$doc, true];
+}
+/**
+ * A Maths Lab STAGE certificate: one per stage of ten topics, when all ten are
+ * mastered and the stage boss is beaten. It is the step on the way; the course
+ * certificate (doc_mlb_issue) is the whole. Same design as every certificate
+ * here, frozen at issue, once per member per stage. `bossPct` is recorded
+ * when the issuing session was the boss itself; otherwise it is left off the
+ * page rather than invented. Returns [document, issuedNow].
+ */
+function doc_mlb_stage_issue(string $memberId, int $stage, ?int $bossPct = null): ?array {
+    $m = db_row('SELECT memberId, fullName FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    $st = function_exists('mlb_stages') ? (mlb_stages()[$stage] ?? null) : null;
+    if (!$m || !$st) return null;
+    $key = 'mlbs:' . $memberId . ':' . $stage;
+    if ($have = doc_by('sourceKey', $key)) return [$have, false];
+    $course = '';
+    foreach (mlb_courses() as $c) if (in_array($stage, array_map('intval', $c['stages']), true)) { $course = (string)$c['title']; break; }
+    $doc = db_tx(static function () use ($m, $st, $stage, $memberId, $key, $bossPct, $course) {
+        $no = doc_mls_no();
+        return doc_record('certificate', $no, $memberId, $key, [
+            'program' => 'mathslab', 'scope' => 'stage', 'no' => $no, 'name' => (string)$m['fullName'], 'stage' => $stage, 'stageTitle' => (string)$st['title'],
+            'strand' => (string)$st['strand'], 'topics' => count($st['comps']), 'bossPct' => $bossPct, 'course' => $course,
+            'awarded' => now_iso(), 'org' => doc_org_freeze()]);
+    });
+    return [$doc, true];
+}
+
+/** What a certificate is about, in a few words, whichever programme issued it. */
+function doc_cert_title(array $doc): string {
+    $x = doc_data($doc);
+    if (($x['program'] ?? '') === 'mathslab' && ($x['scope'] ?? '') === 'stage') return 'Maths Lab · Stage ' . (int)$x['stage'] . ': ' . (string)$x['stageTitle'];
+    if (($x['program'] ?? '') === 'mathslab') return 'Maths Lab · ' . (string)($x['course'] ?? '');
+    return 'Math Lab · Level ' . (int)($x['level'] ?? 0) . ': ' . (string)($x['levelName'] ?? '');
+}
+
 /* ── Who may see which ─────────────────────────────────────────────────── */
 
 /** A member's documents, newest first, with private links: for the Family Portal and the member. */
@@ -316,8 +385,7 @@ function documents_for_member(string $memberId): array {
         if ($off) $out[] = ['kind' => 'ack', 'no' => (string)$a['docNo'], 'title' => 'Acknowledgement', 'state' => 'pending', 'at' => (string)$off['recordedAt'], 'amount' => (int)$off['amount'], 'url' => doc_view_url($a)];
     }
     foreach (db_all("SELECT * FROM documents WHERE kind = 'certificate' AND memberId = ? ORDER BY id DESC LIMIT 40", [$memberId]) as $c) {
-        $x = doc_data($c);
-        $out[] = ['kind' => 'certificate', 'no' => (string)$c['docNo'], 'title' => 'Math Lab · Level ' . (int)($x['level'] ?? 0) . ': ' . (string)($x['levelName'] ?? ''),
+        $out[] = ['kind' => 'certificate', 'no' => (string)$c['docNo'], 'title' => doc_cert_title($c),
                   'state' => (string)$c['status'], 'at' => (string)$c['issuedAt'], 'amount' => null, 'url' => doc_view_url($c)];
     }
     usort($out, static fn($a, $b) => strcmp($b['at'], $a['at']));
@@ -332,7 +400,11 @@ function public_document_verify(array $p): array {
     if (!$doc || !doc_code_ok($no, (string)($p['code'] ?? ''))) return ['ok' => false, 'error' => 'not_matched'];
     $d = doc_data($doc); $first = static fn($n) => trim(explode(' ', trim((string)$n))[0] . ' ' . mb_substr((string)(explode(' ', trim((string)$n))[1] ?? ''), 0, 1) . (str_contains(trim((string)$n), ' ') ? '.' : ''));
     $out = ['ok' => true, 'no' => $no, 'kind' => (string)$doc['kind'], 'issuedAt' => (string)$doc['issuedAt'], 'status' => (string)$doc['status'], 'supersededBy' => (string)($doc['supersededBy'] ?? '')];
-    if ($doc['kind'] === 'certificate') $out += ['holder' => $first($d['name'] ?? ''), 'what' => 'Level ' . (int)$d['level'] . ': ' . $d['levelName'], 'result' => !empty($d['distinction']) ? 'Distinction' : 'Pass'];
+    if ($doc['kind'] === 'certificate') $out += ($d['program'] ?? '') === 'mathslab'
+        ? (($d['scope'] ?? '') === 'stage'
+            ? ['holder' => $first($d['name'] ?? ''), 'what' => 'Maths Lab stage ' . (int)$d['stage'] . ': ' . $d['stageTitle'], 'result' => 'Passed']
+            : ['holder' => $first($d['name'] ?? ''), 'what' => 'Maths Lab course: ' . $d['course'], 'result' => 'Completed'])
+        : ['holder' => $first($d['name'] ?? ''), 'what' => 'Level ' . (int)$d['level'] . ': ' . $d['levelName'], 'result' => !empty($d['distinction']) ? 'Distinction' : 'Pass'];
     if ($doc['kind'] === 'receipt') $out += ['holder' => $first($d['member']['name'] ?? ''), 'what' => 'Payment for invoice ' . ($d['invoiceNo'] ?? ''),
         'amount' => array_sum(array_column($d['lines'] ?? [], 'kobo')), 'at' => (string)($d['paidAt'] ?? '')];
     if ($doc['kind'] === 'invoice') {
@@ -580,7 +652,23 @@ function doc_ml_formulas(): array {
 
 /** The Math Lab certificate, landscape, from its frozen copy. */
 function doc_render_certificate(array $doc): string {
-    $d = doc_data($doc); $s = doc_org_for($d); $n = (int)$d['level'];
+    $d = doc_data($doc); $s = doc_org_for($d); $n = (int)($d['level'] ?? 0);
+    $stageCert = ($d['program'] ?? '') === 'mathslab' && ($d['scope'] ?? '') === 'stage';
+    $course = ($d['program'] ?? '') === 'mathslab' && !$stageCert;
+    if ($stageCert) {
+        /* The stage certificate IS the level layout of the committed design:
+           a two-digit badge, its strand, the standard met — for a stage. */
+        $n = (int)$d['stage'];
+        $d += ['levelName' => (string)$d['stageTitle'], 'blurb' => 'All ' . (int)$d['topics'] . ' topics of this stage mastered, and its stage boss beaten'
+            . ((string)($d['course'] ?? '') !== '' ? ' — a step towards the course certificate in ' . $d['course'] . '.' : '.')];
+    }
+    if ($course) {
+        /* A course certificate in the same sheet: what changes is the claim
+           (a course completed, not a paper passed) and the evidence beside it. */
+        $st = (array)($d['stages'] ?? []); $range = $st ? (count($st) > 1 ? $st[0] . '–' . $st[count($st) - 1] : (string)$st[0]) : '';
+        $d += ['levelName' => (string)$d['course'], 'blurb' => (string)$d['promise'], 'strand' => 'Stages ' . $range];
+        $n = (int)($st[0] ?? 1);
+    }
     $all = doc_ml_formulas(); $pat = '';
     for ($i = 0; $i < 90 && $all; $i++) $pat .= '<span' . ($i % 4 === 1 ? ' class="g"' : '') . '>' . doc_e($all[($i * 5 + $n) % count($all)]) . '</span>';
     $dist = !empty($d['distinction']);
@@ -606,18 +694,31 @@ function doc_render_certificate(array $doc): string {
         . '</style>';
     $body = $css . '<article class="sheet cert" data-doc="certificate"><div class="pat" aria-hidden="true">' . $pat . '</div><div class="glow" aria-hidden="true"></div>'
         . ($sup ? '<span class="supd">Superseded by ' . doc_e((string)$doc['supersededBy']) . '</span>' : '')
-        . '<div class="cg"><div class="cl"><div class="brand"><img src="/assets/logo.png" alt="Next Generation Genius"><div><b>Next Generation Genius</b><small>The Math Lab</small></div></div>'
-        . '<span class="lab"><i></i>Certificate of achievement</span><span class="who">' . doc_e((string)$d['name']) . '</span>'
-        . '<span class="met">has met the assessment standard for</span><span class="lv">Level ' . $n . ': ' . doc_e((string)$d['levelName']) . '</span>'
+        . '<div class="cg"><div class="cl"><div class="brand"><img src="/assets/logo.png" alt="Next Generation Genius"><div><b>Next Generation Genius</b><small>' . ($course || $stageCert ? 'The Maths Lab' : 'The Math Lab') . '</small></div></div>'
+        . '<span class="lab"><i></i>' . ($course ? 'Certificate of completion' : 'Certificate of achievement') . '</span><span class="who">' . doc_e((string)$d['name']) . '</span>'
+        . ($course ? '<span class="met">has completed the Maths Lab course</span><span class="lv">' . doc_e((string)$d['course']) . '</span>'
+                   : '<span class="met">has met the assessment standard for</span><span class="lv">' . ($stageCert ? 'Stage ' : 'Level ') . $n . ': ' . doc_e((string)$d['levelName']) . '</span>')
         . '<span class="blurb">' . doc_e((string)$d['blurb']) . '</span>'
-        . '<div class="sigs">' . doc_sign($s, $s['mathlabCoach'], 'Math Lab Coach') . doc_sign($s, $s['programmeDirector'], 'Programme Director') . '</div></div>'
-        . '<div class="cr"><div class="badge"><i class="h1"></i><i class="h2"></i><i class="h3"></i><div class="c"><small>MATH LAB</small><b>' . str_pad((string)$n, 2, '0', STR_PAD_LEFT) . '</b><span>' . doc_e((string)$d['strand']) . ' strand</span></div></div>'
-        . '<span class="res ' . ($dist ? 'r-d' : 'r-p') . '"><i></i>' . ($dist ? 'Distinction · ' . DOC_DISTINCTION_PCT . '% and above' : 'Pass · ' . MATHLAB_PASS_PCT . '% and above') . '</span>'
-        . '<div class="det kv"><span>Assessment</span><span>' . doc_e((string)$d['paper']) . ' paper</span><span>Score</span><span>' . (int)$d['pct'] . '% (' . (int)$d['correct'] . ' of ' . (int)$d['total'] . ')</span>'
-        . '<span>Class band</span><span>' . doc_e((string)$d['band']) . '</span><span>Awarded</span><span>' . doc_e(doc_local((string)$d['awarded'], 'j F Y')) . '</span></div>'
+        . '<div class="sigs">' . doc_sign($s, $s['mathlabCoach'], $course || $stageCert ? 'Maths Lab Coach' : 'Math Lab Coach') . doc_sign($s, $s['programmeDirector'], 'Programme Director') . '</div></div>'
+        . ($stageCert
+            ? '<div class="cr"><div class="badge"><i class="h1"></i><i class="h2"></i><i class="h3"></i><div class="c"><small>STAGE</small><b>' . str_pad((string)$n, 2, '0', STR_PAD_LEFT) . '</b><span>' . doc_e((string)$d['strand']) . ' strand</span></div></div>'
+              . '<span class="res r-p"><i></i>Stage passed · ' . (int)$d['topics'] . ' of ' . (int)$d['topics'] . ' topics</span>'
+              . '<div class="det kv"><span>Topics</span><span>' . (int)$d['topics'] . ' mastered</span><span>Stage boss</span><span>beaten' . ($d['bossPct'] !== null ? ' (' . (int)$d['bossPct'] . '%)' : '') . '</span>'
+              . ((string)($d['course'] ?? '') !== '' ? '<span>Course</span><span>' . doc_e((string)$d['course']) . '</span>' : '')
+              . '<span>Awarded</span><span>' . doc_e(doc_local((string)$d['awarded'], 'j F Y')) . '</span></div>'
+            : '')
+        . ($stageCert ? '' : ($course
+            ? '<div class="cr"><div class="badge"><i class="h1"></i><i class="h2"></i><i class="h3"></i><div class="c"><small>MATHS LAB</small><b>' . (int)$d['topics'] . '</b><span>topics mastered</span></div></div>'
+              . '<span class="res r-d"><i></i>Completed · every topic mastered</span>'
+              . '<div class="det kv"><span>Course</span><span>' . doc_e((string)$d['strand']) . '</span><span>Topics</span><span>' . (int)$d['topics'] . ' mastered, every stage boss beaten</span>'
+              . '<span>Study time</span><span>about ' . (int)$d['hours'] . ' hours</span><span>Awarded</span><span>' . doc_e(doc_local((string)$d['awarded'], 'j F Y')) . '</span></div>'
+            : '<div class="cr"><div class="badge"><i class="h1"></i><i class="h2"></i><i class="h3"></i><div class="c"><small>MATH LAB</small><b>' . str_pad((string)$n, 2, '0', STR_PAD_LEFT) . '</b><span>' . doc_e((string)$d['strand']) . ' strand</span></div></div>'
+              . '<span class="res ' . ($dist ? 'r-d' : 'r-p') . '"><i></i>' . ($dist ? 'Distinction · ' . DOC_DISTINCTION_PCT . '% and above' : 'Pass · ' . MATHLAB_PASS_PCT . '% and above') . '</span>'
+              . '<div class="det kv"><span>Assessment</span><span>' . doc_e((string)$d['paper']) . ' paper</span><span>Score</span><span>' . (int)$d['pct'] . '% (' . (int)$d['correct'] . ' of ' . (int)$d['total'] . ')</span>'
+              . '<span>Class band</span><span>' . doc_e((string)$d['band']) . '</span><span>Awarded</span><span>' . doc_e(doc_local((string)$d['awarded'], 'j F Y')) . '</span></div>'))
         . '<div class="cv">' . doc_qr_svg(doc_verify_url((string)$doc['docNo']), 'Verification code') . '<div><b>Verify at ' . doc_e(preg_replace('#^https?://#', '', doc_origin())) . '/verify</b><span class="mono">' . doc_e((string)$doc['docNo']) . '</span><span class="mono">' . doc_e(doc_code_line($doc)) . '</span></div></div>'
         . '</div></div><div class="bstrip"><span></span><span></span></div></article>';
-    return doc_page('Math Lab certificate ' . $doc['docNo'], $body, true);
+    return doc_page(($course || $stageCert ? 'Maths Lab certificate ' : 'Math Lab certificate ') . $doc['docNo'], $body, true);
 }
 
 /** Render whatever a private token names. Returns [status, html]. */

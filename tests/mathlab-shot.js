@@ -49,6 +49,17 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
             {id:'climber',name:'Climber',what:'Finished the climb to your level',earned:true},
             {id:'week',name:'Seven-day streak',what:'7 days in a row',earned:false}],
     courses:[{id:'C-ALG',title:'Algebra foundations',pct:35,enrolled:true,available:true}]};
+  /* Progress, from the same learner: the first stage is fully mastered (its
+     ten topics are the first ten open) and has its certificate; the mistakes
+     are on the topics in progress, which is where mistakes would be. */
+  const PROGRESS={ok:true,xp:HOME.xp,level:HOME.level,streak:HOME.streak,due:0,badges:HOME.badges,
+    recent:{answered:64,right:51,sureWrong:3},
+    stages:MAP.stages.filter(s=>s.available).map(s=>({n:s.n,title:s.title,strand:s.strand,total:s.comps.length,
+      mastered:s.comps.filter(c=>c.state==='mastered').length,started:s.comps.some(c=>c.state!=='open'),boss:s.n===1,
+      certificate:s.n===1?{no:'NGG-MLS-2026-00007',url:'#'}:null})),
+    certificates:[{no:'NGG-MLS-2026-00007',title:'Maths Lab · Stage 1: '+MAP.stages[0].title,at:'2026-11-02T10:00:00Z',url:'#'}],
+    mistakes:LEARNING.map((id,k)=>{const c=SRC.stages.reduce((a,s)=>a.concat(s.comps),[]).find(x=>x.id===id);
+      return {comp:id,title:c.title,wrong:[4,3,2][k],why:['Line them up by place value before you add.','Exchange a ten for ten ones when the top digit is smaller.','Check by adding the answer back.'][k],last:'2026-11-03T09:00:00Z'};})};
   fs.writeFileSync(FIX,`<!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">
@@ -62,9 +73,9 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
 <script src="/dist/${manifest.bundle.file}"></script>
 <script>
  var Q=new URLSearchParams(location.search);
- var HOME=${JSON.stringify(HOME)}, MAP=${JSON.stringify(MAP)};
+ var HOME=${JSON.stringify(HOME)}, MAP=${JSON.stringify(MAP)}, PROGRESS=${JSON.stringify(PROGRESS)};
  window.NGGApi=window.NGGApi||{}; window.NGGApi.member=window.NGGApi.member||{};
- window.NGGApi.member.mathslab={ home:function(){return Promise.resolve(HOME);}, map:function(){return Promise.resolve(MAP);} };
+ window.NGGApi.member.mathslab={ home:function(){return Promise.resolve(HOME);}, map:function(){return Promise.resolve(MAP);}, progress:function(){return Promise.resolve(PROGRESS);} };
  window.NGGApi.member.arcade={ home:function(){return Promise.resolve({
      games:[{key:'maths',name:'Number Rush',icon:'\\u26a1',blurb:'Twenty sums against the clock.',skill:'Mental arithmetic',kind:'type',questions:20,seconds:90,best:140,plays:3,tier:2,isDaily:true}],
      daily:'maths',dailyDone:false,streak:6,stars:9,programme:'ngg',totalPlays:14});},
@@ -98,7 +109,9 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
     await shoot('arcade','view=arcade',{width:1080,height:900},'.ml-teaser-n');
     await shoot('home','',{width:1080,height:1000},'.mlb-hero',null);
     await shoot('map','',{width:1080,height:1000},'.mlb-stars','.mlb-navb:nth-child(2)');
+    await shoot('progress','',{width:1080,height:1000},'.mlb-miss','.mlb-navb:nth-child(4)');
     await shoot('home-phone','',{width:390,height:844},'.mlb-hero',null);
+    await shoot('progress-phone','',{width:390,height:844},'.mlb-miss','.mlb-navb:nth-child(4)');
     await shoot('map-phone','',{width:390,height:844},'.mlb-stars','.mlb-navb:nth-child(2)');
   } finally { await browser.close(); srv.kill(); try{fs.unlinkSync(FIX);}catch(_){} }
   if(problems.length){problems.forEach(p=>console.log('  ✗ '+p));console.log('\n❌ MATHS LAB SHOTS: '+problems.length+' problem(s)');process.exit(1);}

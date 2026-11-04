@@ -126,7 +126,7 @@ function MathsLab({ me }) {
       {route.v === "map" ? <MlbMap go={go}/>
         : route.v === "learn" ? <MlbLearn comp={route.comp} go={go} startPlay={setPlay}/>
         : route.v === "courses" ? <MlbCourses go={go}/>
-        : route.v === "progress" ? <MlbProgress/>
+        : route.v === "progress" ? <MlbProgress go={go}/>
         : <MlbHome go={go} startPlay={setPlay} onNotMember={() => setLite(true)}/>}
     </div>
   );
@@ -209,7 +209,9 @@ function MlbMap({ go, lite }) {
       {st.d.stages.map(s => (
         <section key={s.n} className={"mlb-stage" + (s.available ? "" : " is-soon")} aria-labelledby={"mlb-st-" + s.n}>
           <div className="mlb-row"><h3 id={"mlb-st-" + s.n} className="mlb-h3"><span className="mlb-stn">Stage {s.n}</span> {s.title}</h3>
-            {!s.available ? <span className="mlb-chip">In preparation</span> : s.boss ? <span className="mlb-chip is-ok">Boss defeated</span>
+            {!s.available ? <span className="mlb-chip">In preparation</span>
+              : s.certificate ? <a className="stt-btn" href={s.certificate.url} target="_blank" rel="noopener"><i className="ph ph-certificate" aria-hidden="true"/>Stage certificate</a>
+              : s.boss ? <span className="mlb-chip is-ok">Boss defeated</span>
               : s.bossReady && !lite ? <button type="button" className="stt-btn is-go" onClick={() => setBoss({ mode: "boss", stage: s.n })}>Face the boss</button> : null}</div>
           <MlbStars stage={s} onPick={c => go({ v: "learn", comp: c.id })}/>
         </section>
@@ -316,7 +318,7 @@ function MlbPlayer({ start, onDone, go }) {
         <MlbDiagram d={it.diagram}/>
         {it.lines ? <ol className="mlb-lines">{it.lines.map((l, k) => <li key={k}><MlbMath text={l}/></li>)}</ol> : null}
         {choice ? <div className="mlb-opts" role="radiogroup" aria-label="Choose an answer">{it.options.map((o, k) => (
-          <button key={k} type="button" role="radio" aria-checked={val === k} disabled={!!fb} className={"mlb-opt" + (val === k ? " is-on" : "") + (fb && fb.answer === o ? " is-right" : "")} onClick={() => setVal(k)}>
+          <button key={k} type="button" role="radio" aria-checked={val === k} disabled={!!fb} className={"mlb-opt" + (val === k ? " is-on" : "") + (fb && fb.answer === o ? " is-right" : "") + (fb && !fb.correct && val === k ? " is-wrong" : "")} onClick={() => setVal(k)}>
             <span className="mlb-opt-l">{String.fromCharCode(65 + k)}</span><MlbMath text={o}/></button>))}</div>
           : <MlbInput item={it} value={val} onChange={setVal} onEnter={submit} disabled={!!fb}/>}
         {!fb ? <div className="mlb-conf" role="radiogroup" aria-label="How sure are you?"><span>How sure are you?</span>{[["sure", "Sure"], ["think", "Think so"], ["guess", "Guessing"]].map(([k, l]) =>
@@ -346,6 +348,10 @@ function MlbResult({ res, onDone, go }) {
         <h2 className="mlb-hero-h">{res.right} of {res.total}</h2>
         <p className="mlb-hero-p">{res.message}</p>
         {res.xp ? <p className="mlb-xp">+{res.xp} XP</p> : null}
+        {(res.certificates || []).map(c => (
+          /* The session that completed a course: the certificate exists now — a numbered NGG document the family also sees under Documents. */
+          <p key={c.no} className="mlb-hero-p mlb-cert-new"><i className="ph-fill ph-certificate" aria-hidden="true"/> {c.scope === "stage" ? "Stage passed" : "Course complete"}: <b>{c.title}</b>. Certificate {c.no} —{" "}
+            <a href={c.url} target="_blank" rel="noopener">open it</a>.</p>))}
         {res.changes.length ? <p className="mlb-hero-p">{res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length} star{res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length === 1 ? "" : "s"} lit.</p> : null}
         <div className="mlb-actions"><button type="button" className="mlb-go" onClick={onDone}>Continue</button><button type="button" className="stt-btn" onClick={() => go({ v: "map" })}>See the map</button></div>
       </section>
@@ -362,8 +368,6 @@ function MlbResult({ res, onDone, go }) {
 /* ── Courses (Coursera-style) ── */
 function MlbCourses({ go }) {
   const [st, load] = useMlb(() => NGGApi.member.mathslab.home(), []);
-  const [cert, setCert] = React.useState(null);
-  if (cert) return <MlbCert cert={cert} onDone={() => setCert(null)}/>;
   if (st.phase === "loading") return <SttState kind="loading"/>;
   if (st.phase === "error") return <SttState kind="error" text={"Couldn’t load the courses. " + mlbErr(st.e)} retry={load}/>;
   const enrol = id => NGGApi.member.mathslab.enrol(id).then(load, () => {});
@@ -378,40 +382,67 @@ function MlbCourses({ go }) {
           {!c.available ? <span className="mlb-chip">In preparation</span>
             : c.enrolled ? <button type="button" className="mlb-go" onClick={() => go({ v: "map" })}>Continue</button>
             : <button type="button" className="mlb-go" onClick={() => enrol(c.id)}>Enrol — free</button>}
-          {c.complete ? <button type="button" className="stt-btn" onClick={() => NGGApi.member.mathslab.cert(c.id).then(setCert, () => {})}><i className="ph ph-certificate" aria-hidden="true"/>Certificate</button> : null}
+          {/* The certificate is the NGG document (documents.php) in its own
+              design, numbered and checkable at /verify — opened, never redrawn here. */}
+          {c.certificate ? <a className="stt-btn" href={c.certificate.url} target="_blank" rel="noopener"><i className="ph ph-certificate" aria-hidden="true"/>Course certificate</a> : null}
         </div>
-        {c.available ? <p className="mlb-meta">The certificate is earned when every topic is lit and every stage boss is defeated.</p> : null}
+        {/* A stage certificate for every ten topics; the course certificate above is the whole. */}
+        {(c.stageCertificates || []).length ? <div className="mlb-actions mlb-stagecerts">
+          {c.stageCertificates.map(x => <a key={x.no} className="mlb-chip is-ok" href={x.url} target="_blank" rel="noopener">Stage {x.stage} certificate</a>)}
+        </div> : null}
+        {c.available ? <p className="mlb-meta">Each stage of ten topics earns a stage certificate when all ten are lit and its boss is defeated; the course certificate follows when every stage is done.</p> : null}
       </section>))}</div>
   );
 }
-function MlbCert({ cert, onDone }) {
+/* ── Progress ── */
+/* ── Progress ──
+   Where you stand, and what to do about it: each stage's topics, its boss and
+   its certificate; every certificate earned; the mistakes that keep coming
+   back, each with the reason and a way to practise it; and the last two
+   weeks, including the answers you were sure of and got wrong. */
+function MlbProgress({ go }) {
+  const [st, load] = useMlb(() => NGGApi.member.mathslab.progress(), []);
+  if (st.phase === "loading") return <SttState kind="loading" text="Reading your progress…"/>;
+  if (st.phase === "error") return <SttState kind="error" text={"Couldn’t load your progress. " + mlbErr(st.e)} retry={load}/>;
+  const d = st.d, r = d.recent, pct = r.answered ? Math.round(r.right / r.answered * 100) : null;
   return (
     <div className="mlb-stack">
-      <div className="mlb-cert" role="document">
-        <p className="mlb-cert-k">Next Generation Genius · Maths Lab</p>
-        <h2>Certificate of completion</h2>
-        <p>This certifies that</p><p className="mlb-cert-n">{cert.name}</p>
-        <p>has completed the course</p><p className="mlb-cert-c">{cert.course}</p>
-        <p className="mlb-meta">{new Date(cert.date + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} · Verification code {cert.code}</p>
+      <div className="mlb-grid">
+        <section className="mlb-card"><h3 className="mlb-h3">Level</h3><p className="mlb-big">{d.level.name}<small> · {d.xp} XP</small></p></section>
+        <section className="mlb-card"><h3 className="mlb-h3">Last 14 days</h3>
+          <p className="mlb-big">{pct === null ? "—" : pct + "%"}<small>{r.answered ? " right of " + r.answered : " nothing answered yet"}</small></p>
+          {r.sureWrong ? <p className="mlb-meta">{r.sureWrong} answer{r.sureWrong === 1 ? "" : "s"} you were sure of turned out wrong — those are the ones worth a second look.</p> : null}</section>
+        <section className="mlb-card"><h3 className="mlb-h3">Due for review</h3><p className="mlb-big">{d.due}</p>
+          {d.due ? <button type="button" className="stt-btn" onClick={() => go({ v: "home" })}>Review them</button> : <p className="mlb-meta">Nothing is fading.</p>}</section>
       </div>
-      <div className="mlb-actions"><button type="button" className="mlb-go" onClick={() => window.print()}>Print or save as PDF</button><button type="button" className="stt-btn" onClick={onDone}>Back</button></div>
-    </div>
-  );
-}
 
-/* ── Progress ── */
-function MlbProgress() {
-  const [st, load] = useMlb(() => NGGApi.member.mathslab.home(), []);
-  if (st.phase === "loading") return <SttState kind="loading"/>;
-  if (st.phase === "error") return <SttState kind="error" text={"Couldn’t load your progress. " + mlbErr(st.e)} retry={load}/>;
-  const d = st.d;
-  return (
-    <div className="mlb-grid">
-      <section className="mlb-card"><h3 className="mlb-h3">Stars lit</h3><p className="mlb-big">{d.counts.mastered}<small> of {d.counts.available} open</small></p></section>
-      <section className="mlb-card"><h3 className="mlb-h3">Learning now</h3><p className="mlb-big">{d.counts.learning}</p></section>
-      <section className="mlb-card"><h3 className="mlb-h3">Due for review</h3><p className="mlb-big">{d.counts.due}</p></section>
-      <section className="mlb-card"><h3 className="mlb-h3">Level</h3><p className="mlb-big">{d.level.name}<small> · {d.xp} XP</small></p></section>
-      <section className="mlb-card mlb-span"><h3 className="mlb-h3">Badges</h3><ul className="mlb-badges">{d.badges.map(b => <li key={b.id} className={b.earned ? "is-on" : ""}><i className={"ph " + (b.earned ? "ph-seal-check" : "ph-seal")} aria-hidden="true"/><b>{b.name}</b><span>{b.what}</span></li>)}</ul></section>
+      <section className="mlb-card"><h3 className="mlb-h3">Mistakes that keep coming back</h3>
+        {d.mistakes.length ? <ul className="mlb-miss">{d.mistakes.map(x => (
+          <li key={x.comp}><div><b>{x.title}</b><span className="mlb-meta">{x.wrong} wrong recently</span>
+            {x.why ? <MlbMath as="p" className="mlb-p" text={x.why}/> : null}</div>
+            <button type="button" className="stt-btn" onClick={() => go({ v: "learn", comp: x.comp })}>Practise it</button></li>))}</ul>
+          : <p className="mlb-p">Nothing repeating. Mistakes you make in practice will gather here, with the reason, so you can go straight back to them.</p>}
+      </section>
+
+      <section className="mlb-card"><h3 className="mlb-h3">Stages</h3>
+        <ul className="mlb-stages">{d.stages.map(x => (
+          <li key={x.n} className={x.mastered === x.total ? "is-done" : x.started ? "is-on" : ""}>
+            <span className="mlb-stn">Stage {x.n}</span><b>{x.title}</b>
+            <span className="mlb-meter"><span style={{ width: Math.round(x.mastered / x.total * 100) + "%" }}/></span>
+            <span className="mlb-meta">{x.mastered} of {x.total}{x.boss ? " · boss beaten" : ""}</span>
+            {x.certificate ? <a className="mlb-chip is-ok" href={x.certificate.url} target="_blank" rel="noopener">Certificate</a> : null}
+          </li>))}</ul>
+        <p className="mlb-meta">Ten topics and the stage boss earn a stage certificate; every stage of a course earns its course certificate.</p>
+      </section>
+
+      <section className="mlb-card"><h3 className="mlb-h3">Certificates</h3>
+        {d.certificates.length ? <ul className="mlb-certs">{d.certificates.map(c => (
+          <li key={c.no}><a href={c.url} target="_blank" rel="noopener"><i className="ph ph-certificate" aria-hidden="true"/>{c.title}</a><span className="mlb-meta">{c.no}</span></li>))}</ul>
+          : <p className="mlb-p">None yet. Your first comes with your first stage: all ten topics and its boss.</p>}
+        <p className="mlb-meta">Each one is kept with your family's documents and can be checked by anyone at /verify.</p>
+      </section>
+
+      <section className="mlb-card"><h3 className="mlb-h3">Badges</h3><ul className="mlb-badges">{d.badges.map(b => <li key={b.id} className={b.earned ? "is-on" : ""}><i className={"ph " + (b.earned ? "ph-seal-check" : "ph-seal")} aria-hidden="true"/><b>{b.name}</b><span>{b.what}</span></li>)}</ul></section>
     </div>
   );
 }

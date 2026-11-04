@@ -1067,8 +1067,19 @@ Open one, then press **Print or save as PDF**.
   the old twenty-one-level ladder (70%, or a Distinction at 90%). That ladder
   was replaced on 3 Nov 2026 by the **Maths Lab** at `/study/lab` (the
   Arcade's *Maths Lab* band opens it), so no new level certificates are
-  issued; every one already issued stays valid and verifiable. The Maths Lab's
-  own course certificates are shown from its **Courses** tab.
+  issued; every one already issued stays valid and verifiable.
+- **Maths Lab certificates** come in two kinds, both NGG documents (numbered,
+  in the family's Documents, checkable at `/verify`, printed in the same
+  certificate design):
+  - a **stage certificate** (`NGG-MLS-…`) for every stage of ten topics, when
+    all ten are mastered and the stage boss is beaten — it records the boss
+    score when the boss was the session that earned it;
+  - the **course certificate** (`NGG-MLC-…`), the full one, once every stage
+    of a course is done.
+  They are issued automatically the moment they are earned (a member who had
+  already earned one gets it the next time they open the Lab), once each, and
+  a topic that later slips in a review does not take one back. In the Lab they
+  are linked from the Map (each stage), Courses and Progress.
 - **Families** find them in the Family Portal under Money → Documents.
 - **Verify:** the QR code opens `/verify/<number>`. Anyone holding the
   document can check it there with the check code printed under the QR.
@@ -2109,6 +2120,11 @@ the Management notice states it, every figure editable:
 - **Frog jumps** are listed on Compliance under *Frog jumps to do*, with who,
   how many and why; select and **Mark done** as they are done at the centre.
   They never block anybody.
+- **A fine is money; frog jumps are on top of it.** A late, an absence or a
+  broken rule usually costs both. Each set of frog jumps shows, in *Fine for
+  it*, the fine charged for the same incident and whether it is owed, paid or
+  waived. Ticking the jumps off clears the exercise only; the fine stays on the
+  member's account (*Policy fines owed*) until it is paid or waived.
 
 *Which rulebook* can be set back to the older ladder (warnings, Dormant Track,
 eviction), whose settings are kept under *NGG members — the older ladder*.

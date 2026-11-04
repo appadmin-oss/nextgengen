@@ -142,6 +142,22 @@ function mlb_error(string $task, array $lines, int $bad, string $wrongLine, stri
         'hint' => 'Check each line follows from the one before it.', 'dim' => $dim, 'secs' => 45, 'typed' => false];
 }
 
+/**
+ * Spot the error, with the mistake on a DIFFERENT line from one item to the
+ * next. Every such form used to put it on the same line every time (integers:
+ * line 1; fractions and equations: line 2), so a child learned where the
+ * answer sits, not how to check working. Each variant is a genuine mistake:
+ * [bad line (0-based), the lines as shown — later lines carry the mistake
+ * forward, as a real slip would — and why it is wrong].
+ */
+function mlb_error_of(MlbRng $r, string $task, array $right, array $variants, string $dim = 'reasoning'): array {
+    [$bad, $shown, $why] = $variants[$r->int(0, count($variants) - 1)];
+    return ['kind' => 'error', 'stem' => $task, 'lines' => array_values($shown),
+        'options' => array_map(static fn($i) => 'Line ' . ($i + 1), array_keys($shown)), 'key' => $bad,
+        'steps' => array_merge(['The first mistake is in line ' . ($bad + 1) . ': ' . $why, 'The correct working:'], array_map(static fn($l, $i) => ($i + 1) . '. ' . $l, $right, array_keys($right))),
+        'hint' => 'Check each line follows from the one before it.', 'dim' => $dim, 'secs' => 45, 'typed' => false];
+}
+
 /* ── The forms, competency by competency ──────────────────────────────── */
 
 /** Competency id → list of forms (each fn(MlbRng): item). Stages 1–7 in this preview. */
@@ -181,9 +197,11 @@ function mlb_forms(): array {
     ],
     'MC-003' => [
         static function (MlbRng $r) { $m = $r->int(12, 99);
-            return mlb_mcq($r, 'Which of these is equal to $' . $m . '$?', '$' . $m . ' + 0$',
+            // The "do nothing" can be said several ways; the right option was always "m + 0", which is a pattern, not the idea.
+            $right = $r->pick(['$' . $m . ' + 0$', '$0 + ' . $m . '$', '$' . $m . ' - 0$']);
+            return mlb_mcq($r, 'Which of these is equal to $' . $m . '$?', $right,
                 [['$' . $m . ' \\times 0$', 'Multiplying by 0 gives 0, not ' . $m . '.'], ['$0 - ' . $m . '$', 'That is a negative number.'], ['$' . $m . ' - ' . $m . '$', 'Taking a number from itself leaves nothing: 0.']],
-                ['Adding 0 adds nothing, so the number stays the same.', '$' . $m . ' + 0 = ' . $m . '$. Zero is the "do nothing" number for addition.'],
+                ['Adding or taking away 0 changes nothing, so the number stays the same.', $right . ' $= ' . $m . '$. Zero is the "do nothing" number for adding and subtracting.'],
                 'What happens when you add nothing?', 'concept', 25); },
         static function (MlbRng $r) { $m = $r->int(20, 90); $k = $r->int(3, 15);
             return mlb_typed('num', 'Work out $' . $m . ' - ' . $m . ' + ' . $k . '$.', (string)$k,
@@ -215,6 +233,15 @@ function mlb_forms(): array {
     ],
     'MC-006' => [
         static function (MlbRng $r) { do { $a = $r->int(12, 98); $b = (int)strrev((string)$a); } while ($a % 10 === 0 || $a === $b);
+            /* One in four is EQUAL, written another way ("47 ☐ 40 + 7"): if "=" is
+               never the answer, it is never really an option. */
+            if ($r->int(0, 3) === 0) {
+                $t = intdiv($a, 10) * 10; $o = $a % 10;
+                return mlb_mcq($r, 'Which sign makes this true? $' . $a . ' \\;\\square\\; ' . $t . ' + ' . $o . '$', '$=$',
+                    [['$>$', $t . ' + ' . $o . ' is ' . $a . ' — the two sides are the same number.'], ['$<$', $t . ' + ' . $o . ' is ' . $a . ' — the two sides are the same number.']],
+                    ['Work out the right-hand side: $' . $t . ' + ' . $o . ' = ' . $a . '$.', 'Both sides are ' . $a . ', so $' . $a . ' = ' . $t . ' + ' . $o . '$.'],
+                    'Work out each side before you compare.', 'concept', 20);
+            }
             $rel = $a < $b ? '<' : '>';
             return mlb_mcq($r, 'Which sign makes this true? $' . $a . ' \\;\\square\\; ' . $b . '$', '$' . $rel . '$',
                 [['$' . ($rel === '<' ? '>' : '<') . '$', 'Compare the tens digits first — they matter more than the ones.'], ['$=$', 'The numbers have the same digits in a different order, so they are not equal.']],
@@ -287,13 +314,25 @@ function mlb_forms(): array {
                 ['The ones column needs more than it has, so regroup: take a hundred, make it 10 tens, then take a ten to make 10 ones.', '$' . $a . ' - ' . $b . ' = ' . ($a - $b) . '$.'],
                 'When the top digit is too small, exchange from the next column.', 'procedure', 45); },
         static function (MlbRng $r) { do { $a = 100 * $r->int(4, 9) + $r->int(1, 4); $b = 100 * $r->int(1, 3) + 10 * $r->int(5, 9) + $r->int(5, 9);
-                $wrong = (int)(abs(intdiv($a, 100) - intdiv($b, 100)) . abs(intdiv($a % 100, 10) - intdiv($b % 100, 10)) . abs($a % 10 - $b % 10)); } while ($wrong === $a - $b);
-            $who = $r->pick(MLB_NAMES);
-            return mlb_mcq($r, $who . ' worked out $' . $a . ' - ' . $b . ' = ' . $wrong . '$. What mistake did ' . $who . ' make?',
-                'Took the smaller digit from the bigger one in each column instead of regrouping',
-                [['Added instead of subtracting', 'Adding would give ' . ($a + $b) . ', not ' . $wrong . '.'], ['Nothing — the answer is right', 'Check by adding back: $' . $wrong . ' + ' . $b . ' \\ne ' . $a . '$.'],
-                 ['Forgot to carry when adding', 'This is a subtraction; the fault is in exchanging, not carrying.']],
-                ['In the ones column, ' . ($a % 10) . ' − ' . ($b % 10) . ' needs an exchange; ' . $who . ' did ' . ($b % 10) . ' − ' . ($a % 10) . ' instead.', 'Regrouping properly gives $' . $a . ' - ' . $b . ' = ' . ($a - $b) . '$.'],
+                $flip = (int)(abs(intdiv($a, 100) - intdiv($b, 100)) . abs(intdiv($a % 100, 10) - intdiv($b % 100, 10)) . abs($a % 10 - $b % 10)); } while ($flip === $a - $b);
+            $who = $r->pick(MLB_NAMES); $true = $a - $b;
+            /* Which mistake — or none. The answer was always "took the smaller
+               digit from the bigger", so the item tested recognising a sentence;
+               now the working itself has to be checked. */
+            $FLIP = 'Took the smaller digit from the bigger one in each column instead of regrouping';
+            $ADD = 'Added instead of subtracting'; $OK = 'Nothing — the answer is right';
+            $NOREDUCE = 'Exchanged a ten but did not take it away from the tens column';
+            $story = $r->pick(['flip', 'flip', 'ok', 'add', 'noreduce']);
+            [$shown, $right, $steps] = [
+                'flip' => [$flip, $FLIP, ['In the ones column, ' . ($a % 10) . ' − ' . ($b % 10) . ' needs an exchange; ' . $who . ' did ' . ($b % 10) . ' − ' . ($a % 10) . ' instead.', 'Regrouping properly gives $' . $a . ' - ' . $b . ' = ' . $true . '$.']],
+                'ok' => [$true, $OK, ['Check by adding back: $' . $true . ' + ' . $b . ' = ' . $a . '$.', 'So the working is right.']],
+                'add' => [$a + $b, $ADD, ['$' . ($a + $b) . '$ is bigger than ' . $a . ': a subtraction cannot give more than it started with.', 'It is $' . $a . ' + ' . $b . '$. The difference is $' . $true . '$.']],
+                'noreduce' => [$true + 10, $NOREDUCE, ['The answer is exactly 10 too big: a ten was borrowed for the ones but never taken from the tens.', 'Regrouping properly gives $' . $a . ' - ' . $b . ' = ' . $true . '$.']],
+            ][$story];
+            $all = [$FLIP => 'Check the columns where the top digit is smaller.', $ADD => 'Adding would give ' . ($a + $b) . '.', $OK => 'Check by adding back: $' . $shown . ' + ' . $b . '$.',
+                    $NOREDUCE => 'Compare the answer with the right one: is it exactly 10 out?'];
+            $wrong = []; foreach ($all as $t => $why) if ($t !== $right) $wrong[] = [$t, $why];
+            return mlb_mcq($r, $who . ' worked out $' . $a . ' - ' . $b . ' = ' . $shown . '$. What mistake, if any, did ' . $who . ' make?', $right, $wrong, $steps,
                 'Check by adding the answer back to ' . $b . '.', 'reasoning', 45); },
     ],
     'MC-014' => [
@@ -378,10 +417,13 @@ function mlb_forms(): array {
                  'The answer is $' . $v . '$.'],
                 'Use a number line, or “minus a minus is plus”.', 'procedure', 30); },
         static function (MlbRng $r) { $a = $r->int(3, 12); $b = $r->int($a + 2, 20);
-            return mlb_error('Find the mistake in this working for $-' . $a . ' - (-' . $b . ')$.',
-                ['$-' . $a . ' - (-' . $b . ') = -' . $a . ' + ' . $b . '$', '$= ' . $b . ' - ' . $a . '$', '$= ' . ($b - $a) . '$'], 0,
-                '$-' . $a . ' - (-' . $b . ') = -' . $a . ' - ' . $b . '$',
-                'subtracting a negative number is the same as adding it, so $-(-' . $b . ')$ becomes $+' . $b . '$.'); },
+            $L1 = '$-' . $a . ' - (-' . $b . ') = -' . $a . ' + ' . $b . '$'; $L2 = '$= ' . $b . ' - ' . $a . '$';
+            return mlb_error_of($r, 'Find the first mistake in this working for $-' . $a . ' - (-' . $b . ')$.', [$L1, $L2, '$= ' . ($b - $a) . '$'], [
+                [0, ['$-' . $a . ' - (-' . $b . ') = -' . $a . ' - ' . $b . '$', '$= -(' . $a . ' + ' . $b . ')$', '$= -' . ($a + $b) . '$'],
+                    'subtracting a negative number is the same as adding it, so $-(-' . $b . ')$ becomes $+' . $b . '$.'],
+                [1, [$L1, '$= ' . $a . ' - ' . $b . '$', '$= ' . ($a - $b) . '$'], '$-' . $a . ' + ' . $b . '$ is $' . $b . ' - ' . $a . '$: the ' . $a . ' is the one being taken away.'],
+                [2, [$L1, $L2, '$= ' . ($b - $a + $r->pick([-2, -1, 1, 2])) . '$'], $b . ' − ' . $a . ' is ' . ($b - $a) . '.'],
+            ]); },
     ],
     'MC-023' => [
         static function (MlbRng $r) { $a = $r->int(2, 12); $b = $r->int(2, 12); $form = $r->int(0, 2);
@@ -429,12 +471,20 @@ function mlb_forms(): array {
             return mlb_typed('frac', 'Work out $\\frac{' . $a . '}{' . $b . '} \\times \\frac{' . $c . '}{' . $d . '}$. Give your answer in its lowest terms.', mlb_frac($a * $c, $b * $d),
                 ['Multiply the tops and multiply the bottoms: $\\frac{' . ($a * $c) . '}{' . ($b * $d) . '}$.', 'In lowest terms: $' . mlb_ftex($a * $c, $b * $d) . '$.'],
                 'Top times top, bottom times bottom.', 'procedure', 35, ['form' => 'lowest']); },
-        static function (MlbRng $r) { $b = $r->pick([3, 4, 5]); $d = $r->pick([2, 3, 6]); if ($b === $d) $d = 7; $a = 1; $c = 1;
-            $L = $b * $d / mlb_gcd($b, $d);
-            return mlb_error('Find the mistake in this working for $\\frac{1}{' . $b . '} + \\frac{1}{' . $d . '}$.',
-                ['$\\frac{1}{' . $b . '} = \\frac{' . ($L / $b) . '}{' . $L . '}$ and $\\frac{1}{' . $d . '} = \\frac{' . ($L / $d) . '}{' . $L . '}$', '$\\frac{' . ($L / $b) . '}{' . $L . '} + \\frac{' . ($L / $d) . '}{' . $L . '} = \\frac{' . ($L / $b + $L / $d) . '}{' . $L . '}$', '$= ' . mlb_ftex((int)($L / $b + $L / $d), (int)$L) . '$'], 1,
-                '$\\frac{' . ($L / $b) . '}{' . $L . '} + \\frac{' . ($L / $d) . '}{' . $L . '} = \\frac{' . ($L / $b + $L / $d) . '}{' . (2 * $L) . '}$',
-                'when the denominators are the same, only the numerators are added — the size of the parts does not change.'); },
+        static function (MlbRng $r) { $b = $r->pick([3, 4, 5]); $d = $r->pick([2, 3, 6]); if ($b === $d) $d = 7;
+            $L = (int)($b * $d / mlb_gcd($b, $d)); $p = intdiv($L, $b); $q = intdiv($L, $d);
+            $fr = static fn($n, $m) => '\\frac{' . $n . '}{' . $m . '}';
+            $L1 = '$\\frac{1}{' . $b . '} = ' . $fr($p, $L) . '$ and $\\frac{1}{' . $d . '} = ' . $fr($q, $L) . '$';
+            $L2 = '$' . $fr($p, $L) . ' + ' . $fr($q, $L) . ' = ' . $fr($p + $q, $L) . '$';
+            return mlb_error_of($r, 'Find the first mistake in this working for $\\frac{1}{' . $b . '} + \\frac{1}{' . $d . '}$.', [$L1, $L2, '$= ' . mlb_ftex($p + $q, $L) . '$'], [
+                [0, ['$\\frac{1}{' . $b . '} = ' . $fr(1, $L) . '$ and $\\frac{1}{' . $d . '} = ' . $fr(1, $L) . '$', '$' . $fr(1, $L) . ' + ' . $fr(1, $L) . ' = ' . $fr(2, $L) . '$', '$= ' . mlb_ftex(2, $L) . '$'],
+                    'changing the bottom to ' . $L . ' means multiplying the top by the same number: $\\frac{1}{' . $b . '} = ' . $fr($p, $L) . '$.'],
+                [1, [$L1, '$' . $fr($p, $L) . ' + ' . $fr($q, $L) . ' = ' . $fr($p + $q, 2 * $L) . '$', '$= ' . mlb_ftex($p + $q, 2 * $L) . '$'],
+                    'when the denominators are the same, only the numerators are added — the size of the parts does not change.'],
+                [1, [$L1, '$' . $fr($p, $L) . ' + ' . $fr($q, $L) . ' = ' . $fr($p * $q, $L) . '$', '$= ' . mlb_ftex($p * $q, $L) . '$'],
+                    'the numerators are added, not multiplied: $' . $p . ' + ' . $q . ' = ' . ($p + $q) . '$.'],
+                [2, [$L1, $L2, '$= ' . $fr($p + $q + 1, $L) . '$'], 'nothing changed from line 2 to line 3 except the numerator — $' . $fr($p + $q, $L) . '$ cannot become $' . $fr($p + $q + 1, $L) . '$.'],
+            ]); },
     ],
     'MC-028' => [
         static function (MlbRng $r) { $d = [$r->int(1, 9), $r->int(1, 9), $r->int(1, 9), $r->int(1, 9)]; $p = $r->int(1, 3); $digit = $d[$p];
@@ -516,7 +566,7 @@ function mlb_forms(): array {
                 'Half of the unit, either side.', 'procedure', 35, ['unit' => 'cm']); },
     ],
     'MC-037' => [
-        static function (MlbRng $r) { $cp = 200 * $r->int(5, 50); $p = $r->pick([10, 20, 25, 40, 50]); $loss = $r->int(0, 3) === 0; $sp = $loss ? $cp * (100 - $p) / 100 : $cp * (100 + $p) / 100;
+        static function (MlbRng $r) { $cp = 200 * $r->int(5, 50); $p = $r->pick([5, 10, 12, 15, 20, 25, 30, 35, 40, 50]); $loss = $r->int(0, 3) === 0; $sp = $loss ? $cp * (100 - $p) / 100 : $cp * (100 + $p) / 100;
             return mlb_typed('num', 'A trader buys a phone case for ₦' . mlb_p($cp) . ' and sells it for ₦' . mlb_p($sp) . '. What is the percentage ' . ($loss ? 'loss' : 'profit') . '?', (string)$p,
                 [($loss ? 'Loss' : 'Profit') . ' $= ' . mlb_n(abs($sp - $cp)) . '$.', 'Percentage ' . ($loss ? 'loss' : 'profit') . ' $= \\frac{' . mlb_n(abs($sp - $cp)) . '}{' . mlb_n($cp) . '} \\times 100 = ' . $p . '\\%$ (always out of the cost price).'],
                 'Compare the gain with what was paid, not with the selling price.', 'application', 45, ['unit' => '%']); },
@@ -588,10 +638,13 @@ function mlb_forms(): array {
                 ['Expand each bracket: $' . $p . 'x + ' . ($p * $a) . '$ and $-' . $q . 'x + ' . ($q * $b) . '$ (minus times minus is plus).', 'Collect: $' . mlb_lterm($cx, 'x') . ' + ' . $cc . '$.'],
                 'The minus sign multiplies both terms in the second bracket.', 'procedure', 50, ['form' => 'expanded']); },
         static function (MlbRng $r) { $k = $r->int(2, 6); $a = $r->int(2, 9);
-            return mlb_error('Find the mistake in this working: expand and simplify $' . $k . '(x - ' . $a . ') + x$.',
-                ['$' . $k . '(x - ' . $a . ') + x = ' . $k . 'x - ' . ($k * $a) . ' + x$', '$= ' . ($k + 1) . 'x - ' . ($k * $a) . '$'], 0,
-                '$' . $k . '(x - ' . $a . ') + x = ' . $k . 'x - ' . $a . ' + x$',
-                'the ' . $k . ' must multiply every term in the bracket, so $-' . $a . '$ becomes $-' . ($k * $a) . '$.'); },
+            $L1 = '$' . $k . '(x - ' . $a . ') + x = ' . $k . 'x - ' . ($k * $a) . ' + x$';
+            return mlb_error_of($r, 'Find the first mistake in this working: expand and simplify $' . $k . '(x - ' . $a . ') + x$.', [$L1, '$= ' . ($k + 1) . 'x - ' . ($k * $a) . '$'], [
+                [0, ['$' . $k . '(x - ' . $a . ') + x = ' . $k . 'x - ' . $a . ' + x$', '$= ' . ($k + 1) . 'x - ' . $a . '$'],
+                    'the ' . $k . ' must multiply every term in the bracket, so $-' . $a . '$ becomes $-' . ($k * $a) . '$.'],
+                [1, [$L1, '$= ' . $k . 'x - ' . ($k * $a) . '$'], 'the lone $x$ is $1x$ and has to be collected: $' . $k . 'x + x = ' . ($k + 1) . 'x$.'],
+                [1, [$L1, '$= ' . ($k + 1) . 'x + ' . ($k * $a) . '$'], 'collecting terms does not change a sign: $-' . ($k * $a) . '$ stays negative.'],
+            ]); },
     ],
     'MC-046' => [
         static function (MlbRng $r) { $p = $r->int(2, 5); $a = $r->nz(-4, 4); $b = $r->int(1, 9);
@@ -620,10 +673,15 @@ function mlb_forms(): array {
                 ['Expand: $' . $a . 'x - ' . ($a * $b) . ' = ' . mlb_lterm($c, 'x') . mlb_sterm($d) . '$.', 'Collect $x$ on one side: $' . mlb_lterm($a - $c, 'x') . ' = ' . ($d + $a * $b) . '$.', 'So $x = ' . $x . '$. Check by putting it back into both sides.'],
                 'Expand the bracket first.', 'procedure', 60); },
         static function (MlbRng $r) { $x = $r->int(2, 10); $a = $r->int(3, 7); $b = $r->int(1, 9); $c = $r->int(1, $a - 1); $d = $a * $x + $b - $c * $x;
-            return mlb_error('Find the first mistake in this working to solve $' . $a . 'x + ' . $b . ' = ' . $c . 'x + ' . $d . '$.',
-                ['$' . $a . 'x - ' . $c . 'x + ' . $b . ' = ' . $d . '$', '$' . ($a - $c) . 'x = ' . $d . ' - ' . $b . '$', '$' . ($a - $c) . 'x = ' . ($d - $b) . '$', '$x = ' . $x . '$'], 1,
-                '$' . ($a - $c) . 'x = ' . $d . ' + ' . $b . '$',
-                'moving $+' . $b . '$ to the other side changes its sign: it becomes $-' . $b . '$.'); },
+            $cx = static fn($n) => $n === 1 ? '' : (string)$n;   // "1x" is written "x"
+            $L1 = '$' . $a . 'x - ' . $cx($c) . 'x + ' . $b . ' = ' . $d . '$'; $L2 = '$' . $cx($a - $c) . 'x = ' . $d . ' - ' . $b . '$'; $L3 = '$' . $cx($a - $c) . 'x = ' . ($d - $b) . '$';
+            return mlb_error_of($r, 'Find the first mistake in this working to solve $' . $a . 'x + ' . $b . ' = ' . $cx($c) . 'x + ' . $d . '$.', [$L1, $L2, $L3, '$x = ' . $x . '$'], [
+                [0, ['$' . $a . 'x + ' . $cx($c) . 'x + ' . $b . ' = ' . $d . '$', '$' . ($a + $c) . 'x = ' . $d . ' - ' . $b . '$', '$' . ($a + $c) . 'x = ' . ($d - $b) . '$', '$x = ' . mlb_ftex($d - $b, $a + $c) . '$'],
+                    'moving $' . $cx($c) . 'x$ from the right to the left changes its sign: it becomes $-' . $cx($c) . 'x$.'],
+                [1, [$L1, '$' . $cx($a - $c) . 'x = ' . $d . ' + ' . $b . '$', '$' . $cx($a - $c) . 'x = ' . ($d + $b) . '$', '$x = ' . mlb_ftex($d + $b, $a - $c) . '$'],
+                    'moving $+' . $b . '$ to the other side changes its sign: it becomes $-' . $b . '$.'],
+            ] + ((($d - $b) - ($a - $c)) !== $x ? [2 => [3, [$L1, $L2, $L3, '$x = ' . (($d - $b) - ($a - $c)) . '$'],
+                    '$' . $cx($a - $c) . 'x$ means ' . ($a - $c) . ' times $x$, so divide by ' . ($a - $c) . ' — do not subtract it.']] : [])); },
     ],
     'MC-050' => [
         static function (MlbRng $r) { $n = $r->int(3, 15); $m = $r->int(2, 6); $a = $r->int(2, 12);

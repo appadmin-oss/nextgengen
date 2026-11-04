@@ -232,7 +232,10 @@ function mlb_finish(array $p): array {
         $msg = $right . ' of ' . $n . ' right.';
     }
     mlb_touch_streak($mid);
-    return ['ok' => true, 'mode' => $mode, 'right' => $right, 'total' => $n, 'pct' => $pct, 'fast' => $fast, 'xp' => $xp, 'message' => $msg, 'changes' => $changes, 'review' => $review];
+    // A session can be the one that completes a course: its certificate is issued now, not when somebody thinks to press a button.
+    $certs = mlb_issue_certificates($mid, $mode === 'boss' && $pct >= MLB_BOSS_PASS ? [(int)$ref => $pct] : []);
+    return ['ok' => true, 'mode' => $mode, 'right' => $right, 'total' => $n, 'pct' => $pct, 'fast' => $fast, 'xp' => $xp, 'message' => $msg, 'changes' => $changes, 'review' => $review,
+            'certificates' => $certs];
 }
 
 /* ── Reading the map ── */
@@ -265,10 +268,16 @@ function mlb_home(array $p): array {
     foreach ($states as $s) { if (in_array($s['state'], MLB_GOOD, true)) $count['mastered']++; elseif (in_array($s['state'], ['learning', 'practising', 'ready', 'review'], true)) $count['learning']++; }
     $avail = count(array_filter(array_keys(mlb_competencies()), 'mlb_available'));
     $enrol = array_column(db_all('SELECT courseId FROM mlab_enrol WHERE memberId = ?', [$mid]), 'courseId');
+    /* A course completed before certificates were NGG documents (or by a
+       session that ended oddly) is certified here, idempotently; then every
+       course carries its certificate's link, in one query. */
+    mlb_issue_certificates($mid);
+    $certs = mlb_course_certs($mid);
     return ['ok' => true, 'name' => explode(' ', trim((string)$m['fullName']))[0], 'xp' => (int)$prof['xp'], 'level' => mlb_level((int)$prof['xp']),
         'streak' => (int)$prof['streak'], 'freezes' => (int)$prof['freezes'], 'climb' => ['stage' => (int)$prof['climbStage'], 'done' => (bool)$prof['climbDone'], 'momentum' => (int)$prof['momentum']],
         'next' => mlb_next($prof, $states), 'counts' => $count + ['available' => $avail, 'total' => 170], 'badges' => mlb_badges($prof, $states),
-        'courses' => array_map(static fn($c) => mlb_course_view($c, $states, $enrol, $prof), array_values(mlb_courses()))];
+        'courses' => array_map(static fn($c) => mlb_course_view($c, $states, $enrol, $prof) + ['certificate' => $certs[$c['id']] ?? null,
+            'stageCertificates' => array_values(array_filter(array_map(static fn($n) => isset($certs['stage:' . $n]) ? ['stage' => (int)$n] + $certs['stage:' . $n] : null, $c['stages'])))], array_values(mlb_courses()))];
 }
 function mlb_level(int $xp): array {
     $names = ['Apprentice', 'Analyst', 'Strategist', 'Architect', 'Grandmaster']; $bands = [0, 500, 1500, 3500, 7000];
@@ -289,11 +298,12 @@ function mlb_badges(array $prof, array $states): array {
 function mlb_map(array $p): array {
     $m = mlb_member($p); $states = $m ? mlb_states((string)$m['memberId']) : [];
     $prof = $m ? mlb_profile((string)$m['memberId']) : null; $bosses = $prof ? (json_decode((string)$prof['bosses'], true) ?: []) : [];
-    $stages = [];
+    $stages = []; $certs = $m ? mlb_course_certs((string)$m['memberId']) : [];
     foreach (mlb_stages() as $n => $st) {
         $comps = array_map(static fn($id) => ['id' => $id, 'title' => mlb_comp($id)['title'], 'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon')], $st['comps']);
         $stages[] = ['n' => $n, 'title' => $st['title'], 'strand' => $st['strand'], 'available' => mlb_stage_available($n), 'comps' => $comps,
-            'boss' => isset($bosses[(string)$n]), 'bossReady' => $m && mlb_stage_available($n) && !array_filter($comps, static fn($c) => !in_array($c['state'], MLB_GOOD, true))];
+            'boss' => isset($bosses[(string)$n]), 'bossReady' => $m && mlb_stage_available($n) && !array_filter($comps, static fn($c) => !in_array($c['state'], MLB_GOOD, true)),
+            'certificate' => $certs['stage:' . $n] ?? null];
     }
     return ['ok' => true, 'member' => (bool)$m, 'stages' => $stages];
 }
@@ -327,14 +337,118 @@ function mlb_enrol(array $p): array {
     if (!db_row('SELECT 1 FROM mlab_enrol WHERE memberId = ? AND courseId = ?', [$m['memberId'], $cid])) db_insert('mlab_enrol', ['memberId' => $m['memberId'], 'courseId' => $cid, 'enrolledAt' => now_iso()]);
     return ['ok' => true];
 }
-/** mathslab.certificate — a course certificate, with a code anyone can check. */
+/**
+ * Every course this member has just completed gets its certificate — an NGG
+ * document (documents.php: numbered, verifiable at /verify, under the
+ * family's Documents). Idempotent: a course already certified is skipped.
+ * Returns the ones issued NOW, so the session result can say so.
+ */
+function mlb_issue_certificates(string $mid, array $bossPct = []): array {
+    if (!function_exists('doc_mlb_issue')) return [];
+    $states = mlb_states($mid); $prof = mlb_profile($mid); $out = [];
+    /* Every ten topics first: a stage certificate when all ten are mastered and
+       the boss is beaten (the "semi" certificate); the course certificate,
+       the full one, only after every stage of the course. */
+    $bosses = json_decode((string)$prof['bosses'], true) ?: [];
+    foreach (mlb_stages() as $n => $st) {
+        if (!isset($bosses[(string)$n]) || !mlb_stage_available((int)$n)) continue;
+        if (array_filter($st['comps'], static fn($id) => !in_array($states[$id]['state'] ?? '', MLB_GOOD, true))) continue;
+        $r = doc_mlb_stage_issue($mid, (int)$n, $bossPct[(int)$n] ?? null);
+        if ($r && $r[1]) $out[] = ['scope' => 'stage', 'stage' => (int)$n, 'title' => 'Stage ' . $n . ': ' . $st['title'], 'no' => (string)$r[0]['docNo'], 'url' => doc_view_url($r[0])];
+    }
+    foreach (mlb_courses() as $cid => $c) {
+        if (!mlb_course_view($c, $states, [], $prof)['complete']) continue;
+        $r = doc_mlb_issue($mid, (string)$cid);
+        if ($r && $r[1]) $out[] = ['scope' => 'course', 'course' => $c['title'], 'title' => $c['title'], 'no' => (string)$r[0]['docNo'], 'url' => doc_view_url($r[0])];
+    }
+    return $out;
+}
+
+/**
+ * mathslab.progress — where a learner stands, and what to do about it.
+ *
+ * Progress used to be four numbers and the badges: nothing a child or a
+ * parent could act on. This reads what the Lab already records:
+ *   · each open stage: topics mastered of ten, the boss, its certificate;
+ *   · every certificate earned (stage and course), each a link to the document;
+ *   · the mistakes that keep coming back: wrong answers over the last 40
+ *     sessions, grouped by topic, with the misconception the wrong option
+ *     names (or the item's hint for a typed answer), so "practise this" has a
+ *     reason attached;
+ *   · the last fourteen days: questions answered, right, and "sure but wrong"
+ *     — the confidence check's reason for existing.
+ * Nothing new is stored: sessions keep the seed of every item, so each one is
+ * re-generated exactly as it was asked and re-marked against the same answer.
+ */
+function mlb_progress(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $mid = (string)$m['memberId']; $states = mlb_states($mid); $prof = mlb_profile($mid);
+    $bosses = json_decode((string)$prof['bosses'], true) ?: []; $certs = mlb_course_certs($mid);
+    $stages = [];
+    foreach (mlb_stages() as $n => $st) {
+        if (!mlb_stage_available((int)$n)) continue;
+        $done = count(array_filter($st['comps'], static fn($id) => in_array($states[$id]['state'] ?? '', MLB_GOOD, true)));
+        $touched = count(array_filter($st['comps'], static fn($id) => ($states[$id]['state'] ?? 'none') !== 'none'));
+        $stages[] = ['n' => (int)$n, 'title' => (string)$st['title'], 'strand' => (string)$st['strand'], 'mastered' => $done, 'total' => count($st['comps']),
+                     'started' => $touched > 0, 'boss' => isset($bosses[(string)$n]), 'certificate' => $certs['stage:' . $n] ?? null];
+    }
+    $certList = [];
+    foreach (db_all("SELECT * FROM documents WHERE kind = 'certificate' AND (sourceKey LIKE ? OR sourceKey LIKE ?) ORDER BY id", ['mlb:' . $mid . ':%', 'mlbs:' . $mid . ':%']) as $d)
+        $certList[] = ['no' => (string)$d['docNo'], 'title' => doc_cert_title($d), 'at' => (string)$d['issuedAt'], 'url' => doc_view_url($d)];
+
+    $since = gmdate('Y-m-d\TH:i:s\Z', time() - 14 * 86400);
+    $miss = []; $recent = ['answered' => 0, 'right' => 0, 'sureWrong' => 0];
+    foreach (db_all('SELECT items, resp, startedAt FROM mlab_sessions WHERE memberId = ? ORDER BY startedAt DESC LIMIT 40', [$mid]) as $se) {
+        $items = json_decode((string)$se['items'], true) ?: []; $resp = json_decode((string)$se['resp'], true) ?: [];
+        foreach ($resp as $i => $r) {
+            if (!isset($items[$i])) continue;
+            $inWindow = (string)$se['startedAt'] >= $since;
+            if ($inWindow) { $recent['answered']++; if (!empty($r['ok'])) $recent['right']++; elseif (($r['conf'] ?? '') === 'sure') $recent['sureWrong']++; }
+            if (!empty($r['ok'])) continue;
+            $x = $items[$i]; $c = (string)$x['c'];
+            $why = '';
+            if ($it = mlb_item($c, (int)$x['f'], (int)$x['s'])) {
+                $mk = mlb_mark($it, $r['a'] ?? '');
+                $why = (string)($mk['why'] ?? '') ?: ($it['kind'] === 'error' ? (string)($it['steps'][0] ?? '') : (string)$it['hint']);
+            }
+            $miss[$c] ??= ['comp' => $c, 'title' => (string)(mlb_comp($c)['title'] ?? $c), 'wrong' => 0, 'why' => $why, 'last' => (string)$se['startedAt']];
+            $miss[$c]['wrong']++;
+        }
+    }
+    // A topic since mastered is not a mistake to chase any more.
+    $miss = array_values(array_filter($miss, static fn($x) => !in_array($states[$x['comp']]['state'] ?? '', MLB_GOOD, true)));
+    usort($miss, static fn($a, $b) => [$b['wrong'], $b['last']] <=> [$a['wrong'], $a['last']]);
+    return ['ok' => true, 'stages' => $stages, 'certificates' => $certList, 'mistakes' => array_slice($miss, 0, 6), 'recent' => $recent,
+            'level' => mlb_level((int)$prof['xp']), 'xp' => (int)$prof['xp'], 'streak' => (int)$prof['streak'], 'due' => count(mlb_due($states)),
+            'badges' => mlb_badges($prof, $states)];
+}
+
+/** courseId (and "stage:N") => {no, url} for every Maths Lab certificate this member holds (one query). */
+function mlb_course_certs(string $mid): array {
+    if (!function_exists('doc_view_url')) return [];
+    $out = [];
+    foreach (db_all("SELECT * FROM documents WHERE kind = 'certificate' AND (sourceKey LIKE ? OR sourceKey LIKE ?)", ['mlb:' . $mid . ':%', 'mlbs:' . $mid . ':%']) as $d) {
+        $k = (string)$d['sourceKey'];
+        $key = str_starts_with($k, 'mlbs:') ? 'stage:' . substr($k, strlen('mlbs:' . $mid . ':')) : substr($k, strlen('mlb:' . $mid . ':'));
+        $out[$key] = ['no' => (string)$d['docNo'], 'url' => doc_view_url($d)];
+    }
+    return $out;
+}
+
+/** mathslab.certificate — a completed course's certificate: the NGG document, issued on first ask if the finish did not. */
 function mlb_certificate(array $p): array {
     $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
     $cid = (string)($p['courseId'] ?? ''); $c = mlb_courses()[$cid] ?? null; if (!$c) return ['ok' => false, 'error' => 'not_found'];
     $v = mlb_course_view($c, mlb_states((string)$m['memberId']), [$cid], mlb_profile((string)$m['memberId']));
-    if (!$v['complete']) return ['ok' => false, 'error' => 'not_complete'];
-    $code = strtoupper(substr(hash_hmac('sha256', $m['memberId'] . '|' . $cid, (string)($GLOBALS['CONFIG']['cookie_secret'] ?? '')), 0, 12));
-    return ['ok' => true, 'name' => (string)$m['fullName'], 'course' => $c['title'], 'stages' => $c['stages'], 'code' => $code, 'date' => mlb_today()];
+    // An issued certificate stands even if a topic has since slipped; only a course never completed is refused.
+    $have = function_exists('doc_by') ? doc_by('sourceKey', 'mlb:' . $m['memberId'] . ':' . $cid) : null;
+    if (!$v['complete'] && !$have) return ['ok' => false, 'error' => 'not_complete'];
+    $r = $have ? [$have, false] : doc_mlb_issue((string)$m['memberId'], $cid);
+    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    $doc = $r[0];
+    return ['ok' => true, 'name' => (string)$m['fullName'], 'course' => $c['title'], 'stages' => $c['stages'], 'no' => (string)$doc['docNo'],
+            'code' => doc_check_code((string)$doc['docNo']), 'url' => doc_view_url($doc), 'verifyUrl' => doc_verify_url((string)$doc['docNo']),
+            'date' => substr((string)$doc['issuedAt'], 0, 10)];
 }
 
 /* ── Maths Lab Lite (non-members): practice and marking, no record ── */
