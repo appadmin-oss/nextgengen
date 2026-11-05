@@ -6187,3 +6187,24 @@ found, all fixed:
   The button is a short verb (*Start the gate*, *Continue*, *Take the
   check*), and ui-smoke reads the card plus the button rather than the old
   long button label.
+- **Courses lock, and enrolling shows it worked** (owner: "the courses
+  should display a proper lock instead of me clicking enrol and nothing
+  happens").
+  - `mlb_reached_stage()` is where the climb placed the learner, or one past
+    the last stage whose every topic is known.
+  - A course opens when its first stage is reached. Otherwise
+    `mlb_course_lock()` gives `locked` and a `lockReason` naming the stage to
+    finish and how far along it is ("Opens at Stage 5. Know all of Stage 4 …
+    first — 3 of 10 so far"). `mlb_enrol` refuses `course_locked` and passes
+    that reason through to the page.
+  - Enrolling shows *Enrolling…*, then *Enrolled* and a line saying so.
+    *Continue* goes to the course's next open topic (the course's `next`).
+- **Map sections behave sensibly** (owner: "closing the map sections is not
+  very smart").
+  - Opening a stage closes the one that was open and scrolls the new one
+    into view.
+  - Closing a stage you went to look at brings your own (focus) stage back,
+    in view; the map is never left with nothing open by accident. Closing
+    your own stage folds it.
+  - A stage you are visiting shows *Back to my stage (Stage N)*.
+  - The e2e covers both, and `run.php` pins the lock and the refusal.

@@ -95,6 +95,33 @@ async function journey(who, W, H, tag) {
   chk(tag + ': the map opens with exactly one stage\'s path and one current lesson', mapOk && mp.paths === 1 && mp.now === 1, JSON.stringify(mp));
   await shot('map');
 
+  // The map's sections: opening another stage closes yours; closing it brings yours back, in view.
+  const other = p.locator('.mlb-unit:not(.is-open) .mlb-unit-tog').nth(1);
+  if (await other.count()) {
+    await other.click(); await p.waitForTimeout(500);
+    const mid = { paths: await p.locator('.mlb-path').count(), back: await p.locator('.mlb-backstage').count(), focusOpen: await p.locator('.mlb-unit.is-focus.is-open').count() };
+    await p.locator('.mlb-unit.is-open .mlb-unit-tog').click(); await p.waitForTimeout(600);
+    const after = { paths: await p.locator('.mlb-path').count(), focusOpen: await p.locator('.mlb-unit.is-focus.is-open').count(),
+      inView: await p.evaluate(() => { const r = document.querySelector('.mlb-unit.is-focus').getBoundingClientRect(); return r.top > -5 && r.top < window.innerHeight; }) };
+    chk(tag + ': opening another stage shows it alone with a way back; closing it brings your own stage back, in view',
+      mid.paths === 1 && mid.back === 1 && mid.focusOpen === 0 && after.paths === 1 && after.focusOpen === 1 && after.inView, JSON.stringify({ mid, after }));
+  }
+
+  // Courses: a course you cannot take yet is locked and says why; enrolling shows that it worked.
+  await p.goto(BASE + '/study/lab/courses', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.mlb-course', { timeout: 60000 });
+  const locked = p.locator('.mlb-course.is-locked');
+  chk(tag + ': a course beyond the learner is locked, with the reason and no Enrol button',
+    await locked.count() >= 1 && /Opens at Stage \d+/.test(await locked.first().innerText()) && !(await locked.first().locator('.mlb-go').count()));
+  const open1 = p.locator('.mlb-course:not(.is-locked):not(.is-enrolled) .mlb-go').first();
+  if (await open1.count()) {
+    await open1.click();
+    const done = await p.waitForSelector('.mlb-course.is-enrolled', { timeout: 15000 }).then(() => true, () => false);
+    chk(tag + ': enrolling shows it worked — the course says Enrolled and Continue names the next topic',
+      done && /Enrolled/i.test(await p.locator('.mlb-course.is-enrolled').first().innerText()) && /Continue/.test(await p.locator('.mlb-course.is-enrolled .mlb-go').first().innerText()));
+  }
+  await shot('courses');
+
   // A lesson: no skip, every step worked, then practice.
   await p.goto(BASE + '/study/lab/learn/MC-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });

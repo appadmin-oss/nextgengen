@@ -9034,6 +9034,9 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-unit.is-closed .mlb-unit-h { background: var(--cr-bg); }
 .mlb-unit.is-focus .mlb-unit-h { border-color: var(--cr-ink); }
 .mlb-unit.is-focus .mlb-unit-k { color: var(--cr-ink); }
+.mlb-unit { scroll-margin-top: 12px; }
+.mlb-unit-h { flex-wrap: wrap; }
+.mlb-backstage { flex: none; margin-right: 4px; }
 .mlb-unit-t { margin: 2px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; color: var(--cr-ink); }
 .mlb-unit-b { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: var(--cr-r-sm); border: 1px solid var(--cr-line-2); background: var(--cr-bg); color: var(--cr-ok-fg); font-size: 12.5px; font-weight: 500; text-decoration: none; }
 .mlb-path { list-style: none; margin: 0; padding: 14px 0 18px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
@@ -9162,6 +9165,17 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-res-txt { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .mlb-res-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 0; }
 .mlb-res-chips:empty { display: none; }
+/* Courses: a locked course is visibly locked, with its reason. */
+.mlb-course { display: flex; flex-direction: column; gap: 8px; }
+.mlb-course .mlb-h3 { margin: 0; }
+.mlb-course-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.mlb-course.is-locked { background: var(--cr-s1); }
+.mlb-course.is-locked .mlb-h3, .mlb-course.is-locked .mlb-p { color: var(--cr-muted-2); }
+.mlb-chip.is-lock { gap: 5px; background: var(--cr-s3); color: var(--cr-muted); }
+.mlb-chip.is-lock::before { display: none; }
+.mlb-lockwhy { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 0; padding: 10px 12px; border-radius: var(--cr-r); background: var(--cr-bg); border: 1px dashed var(--cr-line-strong); color: var(--cr-ink); font-size: 13.5px; line-height: 1.45; }
+.mlb-lockwhy i { margin-top: 2px; color: var(--cr-muted-2); }
+.mlb-okmsg { margin: 0; color: var(--cr-ok-fg); font-weight: 500; font-size: 13.5px; }
 /* Home: header → next step → progress → the rest. */
 .mlb-homehead { display: flex; flex-direction: column; gap: 4px; padding: 0 2px; }
 .mlb-homehead .mlb-h2 { margin: 0; }

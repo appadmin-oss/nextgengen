@@ -37705,6 +37705,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $pracWhy = 0;
     for ($k = 0; $k < 40; $k++) foreach (mlb_pick_items(['MC-002'], 8) as $x) if ($x['f'] >= count(mlb_forms()['MC-002']) - 2) $pracWhy++;
     chk('maths lab · a placement gate, review or boss never asks a "why is line N true?" proof question — practice still does', $whyHit === 0 && $pracWhy > 0);
+    /* Courses lock until their first stage is reached, and say why; enrolling a locked one is refused. */
+    $cv = array_column(mlb_home(['memberId' => 'NGG-ML-1'])['courses'], null, 'id');
+    $el = mlb_enrol(['memberId' => 'NGG-ML-1', 'courseId' => 'further-maths']);
+    chk('maths lab · a course beyond the learner is locked with its reason, and enrolling in it is refused (course_locked); the first course is open',
+        $cv['number-foundations']['locked'] === false && $cv['further-maths']['locked'] === true && str_contains($cv['further-maths']['lockReason'], 'Stage 13')
+        && ($el['error'] ?? '') === 'course_locked' && !db_row("SELECT 1 FROM mlab_enrol WHERE memberId = 'NGG-ML-1' AND courseId = 'further-maths'")
+        && !empty(mlb_enrol(['memberId' => 'NGG-ML-1', 'courseId' => 'number-foundations'])['ok']) && ($cv['number-foundations']['next']['comp'] ?? '') === 'MC-001');
     // The climb: a clean, fast gate lights the whole stage and moves on.
     $g1 = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb']);
     chk('maths lab · a new member starts the climb at Stage 1 with a gate of typed questions, and no keys reach the browser',

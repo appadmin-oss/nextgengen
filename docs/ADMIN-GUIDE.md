@@ -4781,6 +4781,13 @@ off as "bad at maths" when a foundation was simply never taught.
   one closes the others. Pressing a
   topic shows its name and a *Start* button. On a computer, a side panel shows
   the streak, stars, XP and *Up next*.
+- **Courses** open as the member reaches them. A course whose first stage
+  the member has not reached shows **Locked** with the reason, for example
+  "Opens at Stage 5 — know all of Stage 4 first, 3 of 10 so far", and has no
+  Enrol button. Enrolling shows *Enrolled*, and *Continue* goes straight to
+  the course's next topic.
+- **Opening another stage on the map** shows it with *Back to my stage*.
+  Closing it returns to the member's own stage.
 - **A topic is a lesson in steps**, one screen at a time: *Explore* (the
   interactive), *Why it works* (the proof), *Worked example*, then *Practise*
   (with the *Mastery check* and the topics it builds on). A step bar shows

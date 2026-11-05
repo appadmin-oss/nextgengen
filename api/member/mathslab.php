@@ -19,5 +19,5 @@ if ($method === 'GET') {
     rate_limit_check('mathslab.' . $a);
     $res = gs_call($map[$a], array_merge($b, ['memberId' => $mid]));
 } else json_error('method_not_allowed', 405);
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400, isset($res['detail']) ? (string)$res['detail'] : null);
 unset($res['ok']); json_ok($res);

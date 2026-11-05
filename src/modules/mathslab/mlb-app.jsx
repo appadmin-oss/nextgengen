@@ -569,6 +569,15 @@ function MlbMap({ go, lite }) {
   const [startBoss, setBoss] = React.useState(null);
   const [pop, setPop] = React.useState(null);
   const [openStage, setOpenStage] = React.useState(null);   // null = the focus stage (owner: only it is open)
+  const [scrollTo, setScrollTo] = React.useState(0);
+  /* After a stage opens (or the focus stage comes back), bring its header into view: closing the
+     stage above it shifts everything up, and the learner lost their place. */
+  React.useEffect(() => {
+    if (!scrollTo) return;
+    const el = document.getElementById("mlb-unit-" + scrollTo);
+    if (el) { try { el.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (_) { el.scrollIntoView(); } const b = el.querySelector(".mlb-unit-tog"); if (b) b.focus({ preventScroll: true }); }
+    setScrollTo(0);
+  }, [scrollTo]);
   React.useEffect(() => {
     if (!pop) return undefined;
     const k = e => { if (e.key === "Escape") { const b = document.getElementById("mlb-node-" + pop); setPop(null); if (b) b.focus(); } };
@@ -588,6 +597,15 @@ function MlbMap({ go, lite }) {
   const focusStage = (current && (stages.find(s => s.comps.some(c => c.id === current)) || {}).n)
     || (stages.find(s => s.available && s.comps.some(c => !known(c))) || stages[0]).n;
   const shownStage = openStage == null ? focusStage : openStage;
+  /* Owner, 5 Nov 2026: "closing the map sections is not very smart". So: opening a stage closes the
+     one that was open; closing a stage you went to look at brings you back to YOUR stage (never a
+     map with nothing open); closing your own stage folds it; and the stage you open scrolls into view. */
+  const toggleStage = n => {
+    setPop(null);
+    if (n !== shownStage) { setOpenStage(n); setScrollTo(n); return; }
+    if (n !== focusStage) { setOpenStage(null); setScrollTo(focusStage); return; }
+    setOpenStage(-1);
+  };
   const curComp = current && stages.reduce((a, s) => a.concat(s.comps.map(c => Object.assign({ stage: s.n, stageTitle: s.title }, c))), []).find(c => c.id === current);
   return (
     <div className="mlb-mapgrid">
@@ -607,16 +625,18 @@ function MlbMap({ go, lite }) {
         return (
           <React.Fragment key={s.n}>
             {newBand ? <div className="mlb-section"><span>{s.band}</span><small>{s.level}</small></div> : null}
-            <section className={"mlb-unit is-" + band + (s.available ? "" : " is-soon") + (s.n === shownStage ? " is-open" : " is-closed") + (s.n === focusStage ? " is-focus" : "")} aria-labelledby={"mlb-st-" + s.n}>
+            <section id={"mlb-unit-" + s.n} className={"mlb-unit is-" + band + (s.available ? "" : " is-soon") + (s.n === shownStage ? " is-open" : " is-closed") + (s.n === focusStage ? " is-focus" : "")} aria-labelledby={"mlb-st-" + s.n}>
               <header className="mlb-unit-h">
                 <button type="button" className="mlb-unit-tog" aria-expanded={s.n === shownStage} aria-controls={"mlb-path-" + s.n}
-                  onClick={() => { setPop(null); setOpenStage(s.n === shownStage ? -1 : s.n); }}>
+                  onClick={() => toggleStage(s.n)}>
                   <span className="mlb-unit-k">Stage {s.n} · {n} of {s.comps.length}{s.n === focusStage ? " · You are here" : ""}</span>
                   <span id={"mlb-st-" + s.n} className="mlb-unit-t">{s.title}</span>
                   {s.n !== shownStage ? <span className="mlb-meter"><span style={{ width: Math.round(n / s.comps.length * 100) + "%" }}/></span> : null}
                   <i className="ph ph-caret-down mlb-caret" aria-hidden="true"/>
                 </button>
                 {s.certificate ? <a className="mlb-unit-b" href={s.certificate.url} target="_blank" rel="noopener"><i className="ph-fill ph-seal-check" aria-hidden="true"/><span>Certificate</span></a> : null}
+                {s.n === shownStage && s.n !== focusStage ? <button type="button" className="stt-btn mlb-backstage" onClick={() => { setPop(null); setOpenStage(null); setScrollTo(focusStage); }}>
+                  <i className="ph ph-arrow-u-up-left" aria-hidden="true"/>Back to my stage (Stage {focusStage})</button> : null}
               </header>
               {s.n === shownStage ? <ol className="mlb-path" id={"mlb-path-" + s.n}>
                 {s.comps.map((c, i) => {
@@ -963,32 +983,51 @@ function MlbResult({ res, onDone, go, onAgain }) {
 }
 
 /* ── Courses (Coursera-style) ── */
+/* Courses. A course you cannot take yet says so — a lock and the reason, never an Enrol button
+   that does nothing visible. Enrolling shows its progress, then the card says Enrolled and
+   Continue takes you to the course's next topic (not just the map). */
 function MlbCourses({ go }) {
   const [st, load] = useMlb(() => NGGApi.member.mathslab.home(), []);
+  const [busy, setBusy] = React.useState("");
+  const [msg, setMsg] = React.useState({});
   if (st.phase === "loading") return <SttState kind="loading"/>;
   if (st.phase === "error") return <SttState kind="error" text={"Couldn’t load the courses. " + mlbErr(st.e)} retry={load}/>;
-  const enrol = id => NGGApi.member.mathslab.enrol(id).then(load, () => {});
+  const enrol = c => {
+    setBusy(c.id); setMsg(m => Object.assign({}, m, { [c.id]: null }));
+    NGGApi.member.mathslab.enrol(c.id).then(() => { setBusy(""); setMsg(m => Object.assign({}, m, { [c.id]: { ok: true, t: "You’re enrolled in " + c.title + "." } })); load(); },
+      e => { setBusy(""); setMsg(m => Object.assign({}, m, { [c.id]: { ok: false, t: (e && e.detail) || mlbErr(e) } })); });
+  };
   return (
-    <div className="mlb-courses">{st.d.courses.map(c => (
-      <section key={c.id} className="mlb-card mlb-course">
-        <p className="mlb-eyebrow">{c.for} · about {c.hours} hours · Stages {c.stages[0]}–{c.stages[c.stages.length - 1]}</p>
-        <h3 className="mlb-h3">{c.title}</h3>
+    <div className="mlb-courses">{st.d.courses.map(c => {
+      const m = msg[c.id];
+      return (
+      <section key={c.id} className={"mlb-card mlb-course" + (c.locked ? " is-locked" : "") + (c.enrolled ? " is-enrolled" : "")} aria-labelledby={"mlb-c-" + c.id}>
+        <div className="mlb-course-top">
+          <p className="mlb-eyebrow">Stages {c.stages[0]}{c.stages.length > 1 ? "–" + c.stages[c.stages.length - 1] : ""} · about {c.hours} hours · {c.for}</p>
+          {c.locked ? <span className="mlb-chip is-lock"><i className="ph-fill ph-lock-simple" aria-hidden="true"/>Locked</span>
+            : c.complete ? <span className="mlb-chip is-ok">Complete</span> : c.enrolled ? <span className="mlb-chip is-ok">Enrolled</span> : null}
+        </div>
+        <h3 id={"mlb-c-" + c.id} className="mlb-h3">{c.title}</h3>
         <p className="mlb-p">{c.promise}</p>
-        <div className="mlb-ready"><span>{c.done} of {c.total} topics</span><span className="mlb-meter is-big"><span style={{ width: c.pct + "%" }}/></span><b>{c.pct}%</b></div>
+        {c.locked ? <p className="mlb-lockwhy"><i className="ph ph-lock-simple" aria-hidden="true"/>{c.lockReason}</p>
+          : <div className="mlb-ready"><span>{c.done} of {c.total} topics</span><span className="mlb-meter is-big"><span style={{ width: c.pct + "%" }}/></span><b>{c.pct}%</b></div>}
         <div className="mlb-actions">
           {!c.available ? <span className="mlb-chip">In preparation</span>
-            : c.enrolled ? <button type="button" className="mlb-go" onClick={() => go({ v: "map" })}>Continue</button>
-            : <button type="button" className="mlb-go" onClick={() => enrol(c.id)}>Enrol — free</button>}
+            : c.locked ? <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}><i className="ph ph-path" aria-hidden="true"/>Go to my stage</button>
+            : c.enrolled ? <button type="button" className="mlb-go" onClick={() => c.next ? go({ v: "learn", comp: c.next.comp }) : go({ v: "map" })}>{c.next ? "Continue: " + c.next.title : "Continue"}</button>
+            : <button type="button" className="mlb-go" disabled={busy === c.id} onClick={() => enrol(c)}>{busy === c.id ? "Enrolling…" : "Enrol — free"}</button>}
           {/* The certificate is the NGG document (documents.php) in its own
               design, numbered and checkable at /verify — opened, never redrawn here. */}
           {c.certificate ? <a className="stt-btn" href={c.certificate.url} target="_blank" rel="noopener"><i className="ph ph-certificate" aria-hidden="true"/>Course certificate</a> : null}
         </div>
+        {m ? <p className={m.ok ? "mlb-okmsg" : "mlb-warn"} role={m.ok ? "status" : "alert"}>{m.t}</p> : null}
         {/* A stage certificate for every ten topics; the course certificate above is the whole. */}
         {(c.stageCertificates || []).length ? <div className="mlb-actions mlb-stagecerts">
           {c.stageCertificates.map(x => <a key={x.no} className="mlb-chip is-ok" href={x.url} target="_blank" rel="noopener">Stage {x.stage} certificate</a>)}
         </div> : null}
-        {c.available ? <p className="mlb-meta">Each stage of ten topics earns a stage certificate when all ten are lit and its boss is defeated; the course certificate follows when every stage is done.</p> : null}
-      </section>))}</div>
+      </section>); })}
+      <p className="mlb-meta">Each stage of ten topics earns a stage certificate when all ten are known and its boss is beaten; a course certificate follows when every stage of the course is done.</p>
+    </div>
   );
 }
 /* ── Progress ── */

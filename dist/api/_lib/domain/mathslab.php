@@ -389,6 +389,19 @@ function mlb_comp_view(array $p): array {
 }
 
 /* ── Courses ── */
+/**
+ * The furthest stage a learner has REACHED: where the climb placed them, or one past the last
+ * stage whose every topic is known. A course opens when its first stage is reached — a child
+ * in Stage 2 cannot enrol in Further Mathematics and be told nothing (owner, 5 Nov 2026: "the
+ * courses should display a proper lock instead of me clicking enrol and nothing happens").
+ */
+function mlb_reached_stage(?array $prof, array $states): int {
+    $r = max(1, (int)($prof['climbStage'] ?? 1));
+    foreach (mlb_stages() as $n => $st) {
+        if ($st['comps'] && !array_filter($st['comps'], static fn($id) => !in_array($states[$id]['state'] ?? '', MLB_GOOD, true))) $r = max($r, (int)$n + 1);
+    }
+    return min($r, count(mlb_stages()));
+}
 function mlb_course_view(array $c, array $states, array $enrol, ?array $prof): array {
     $ids = []; foreach ($c['stages'] as $st) $ids = array_merge($ids, mlb_stages()[$st]['comps']);
     $avail = array_values(array_filter($ids, 'mlb_available'));
@@ -397,11 +410,26 @@ function mlb_course_view(array $c, array $states, array $enrol, ?array $prof): a
     $allBoss = !array_filter($c['stages'], static fn($st) => !isset($bosses[(string)$st]));
     return ['id' => $c['id'], 'title' => $c['title'], 'promise' => $c['promise'], 'for' => $c['for'], 'hours' => $c['hours'], 'stages' => $c['stages'],
         'available' => count($avail) === count($ids), 'total' => count($ids), 'done' => $done, 'pct' => count($ids) ? (int)floor($done * 100 / count($ids)) : 0,
-        'enrolled' => in_array($c['id'], $enrol, true), 'complete' => $done === count($ids) && $allBoss && count($avail) === count($ids)];
+        'enrolled' => in_array($c['id'], $enrol, true), 'complete' => $done === count($ids) && $allBoss && count($avail) === count($ids)]
+        + mlb_course_lock($c, $states, $prof) + ['next' => (function () use ($ids, $states) {
+            // Where "Continue" takes you: the course's first topic not yet known that is open to you.
+            foreach ($ids as $id) if (mlb_available($id) && !in_array($states[$id]['state'] ?? '', MLB_GOOD, true) && mlb_unlocked($id, $states)) return ['comp' => $id, 'title' => mlb_comp($id)['title']];
+            return null;
+        })()];
+}
+/** {locked, lockReason} — the reason names the stage to finish and how far along it is. */
+function mlb_course_lock(array $c, array $states, ?array $prof): array {
+    $first = (int)$c['stages'][0];
+    if ($first <= mlb_reached_stage($prof, $states)) return ['locked' => false, 'lockReason' => ''];
+    $prev = mlb_stages()[$first - 1];
+    $known = count(array_filter($prev['comps'], static fn($id) => in_array($states[$id]['state'] ?? '', MLB_GOOD, true)));
+    return ['locked' => true, 'lockReason' => 'Opens at Stage ' . $first . '. Know all of Stage ' . ($first - 1) . ' (' . $prev['title'] . ') first — ' . $known . ' of ' . count($prev['comps']) . ' so far.'];
 }
 function mlb_enrol(array $p): array {
     $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
     $cid = (string)($p['courseId'] ?? ''); if (!isset(mlb_courses()[$cid])) return ['ok' => false, 'error' => 'not_found'];
+    $lock = mlb_course_lock(mlb_courses()[$cid], mlb_states((string)$m['memberId']), mlb_profile((string)$m['memberId']));
+    if ($lock['locked']) return ['ok' => false, 'error' => 'course_locked', 'detail' => $lock['lockReason']];
     if (!db_row('SELECT 1 FROM mlab_enrol WHERE memberId = ? AND courseId = ?', [$m['memberId'], $cid])) db_insert('mlab_enrol', ['memberId' => $m['memberId'], 'courseId' => $cid, 'enrolledAt' => now_iso()]);
     return ['ok' => true];
 }
