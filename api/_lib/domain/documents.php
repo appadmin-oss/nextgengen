@@ -515,7 +515,9 @@ function doc_page(string $title, string $body, bool $landscape = false): string 
         . $body . '</div><script>'
         . '(function(){var s=document.querySelector(".sheet"),b=document.getElementById("docPrint");b.addEventListener("click",function(){window.print();});'
         . 'function chk(){var o=s.scrollHeight>' . $h . '+1;document.getElementById("docOver").hidden=!o;b.disabled=o;}'
-        . 'if(document.fonts&&document.fonts.ready)document.fonts.ready.then(chk);else chk();})();</script></body></html>';
+        // ?print=1 (the Lab's Print button): straight to the print dialog once the fonts are in and it fits.
+        . 'function go(){chk();if(/[?&]print=1\\b/.test(location.search)&&!b.disabled)setTimeout(function(){window.print();},250);}'
+        . 'if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);else go();})();</script></body></html>';
 }
 
 function doc_org_head(array $s, string $title, string $no): string {

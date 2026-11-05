@@ -328,9 +328,26 @@ function mlb_home(array $p): array {
             return ['stage' => (int)$st['n'], 'title' => (string)$st['title'], 'band' => mlb_band((int)$st['n'])['name'], 'total' => count($st['comps']),
                     'known' => count(array_filter($st['comps'], static fn($id) => in_array($states[$id]['state'] ?? '', MLB_GOOD, true)))];
         })(),
+        'certificates' => mlb_cert_list((string)$m['memberId']),
         'courses' => array_map(static fn($c) => mlb_course_view($c, $states, $enrol, $prof) + ['certificate' => $certs[$c['id']] ?? null,
             'stageCertificates' => array_values(array_filter(array_map(static fn($n) => isset($certs['stage:' . $n]) ? ['stage' => (int)$n] + $certs['stage:' . $n] : null, $c['stages'])))], array_values(mlb_courses()))];
 }
+/**
+ * Every Maths Lab certificate a member holds, NEWEST FIRST — one list for the
+ * Lab's Certificates tab, its Home banner and Progress. Children could not
+ * find a certificate after passing a stage: it was a link inside the result,
+ * a badge on the map and a line at the foot of Progress, and none of them was
+ * a place called "certificates". {no, title, at, url, scope: stage|course}.
+ */
+function mlb_cert_list(string $mid): array {
+    if (!function_exists('doc_view_url')) return [];
+    $out = [];
+    foreach (db_all("SELECT * FROM documents WHERE kind = 'certificate' AND (sourceKey LIKE ? OR sourceKey LIKE ?) ORDER BY id DESC", ['mlb:' . $mid . ':%', 'mlbs:' . $mid . ':%']) as $d)
+        $out[] = ['no' => (string)$d['docNo'], 'title' => doc_cert_title($d), 'at' => (string)$d['issuedAt'], 'url' => doc_view_url($d),
+                  'scope' => strncmp((string)$d['sourceKey'], 'mlbs:', 5) === 0 ? 'stage' : 'course'];
+    return $out;
+}
+
 function mlb_level(int $xp): array {
     $names = ['Apprentice', 'Analyst', 'Strategist', 'Architect', 'Grandmaster']; $bands = [0, 500, 1500, 3500, 7000];
     $i = 0; foreach ($bands as $k => $b) if ($xp >= $b) $i = $k;
@@ -501,9 +518,7 @@ function mlb_progress(array $p): array {
         $stages[] = ['n' => (int)$n, 'title' => (string)$st['title'], 'strand' => (string)$st['strand'], 'mastered' => $done, 'total' => count($st['comps']),
                      'started' => $touched > 0, 'boss' => isset($bosses[(string)$n]), 'certificate' => $certs['stage:' . $n] ?? null];
     }
-    $certList = [];
-    foreach (db_all("SELECT * FROM documents WHERE kind = 'certificate' AND (sourceKey LIKE ? OR sourceKey LIKE ?) ORDER BY id", ['mlb:' . $mid . ':%', 'mlbs:' . $mid . ':%']) as $d)
-        $certList[] = ['no' => (string)$d['docNo'], 'title' => doc_cert_title($d), 'at' => (string)$d['issuedAt'], 'url' => doc_view_url($d)];
+    $certList = mlb_cert_list($mid);
 
     $since = gmdate('Y-m-d\TH:i:s\Z', time() - 14 * 86400);
     $miss = []; $recent = ['answered' => 0, 'right' => 0, 'sureWrong' => 0];

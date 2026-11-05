@@ -4837,6 +4837,14 @@ off as "bad at maths" when a foundation was simply never taught.
   - one big button: *On to Stage N+1* and its name.
   Completing a course does the same with a trophy. Escape or *Close* returns
   to the result underneath.
+- **Finding a certificate afterwards.** The Lab has a **Certificates** tab:
+  every certificate the member holds, newest first, each with *Open* and
+  *Print*, and what is next to earn underneath.
+  - A certificate not yet opened puts a number on that tab, and a banner at
+    the top of the Lab's Home (*New certificate … Open my certificate*).
+    Opening it clears both.
+  - The celebration has *All my certificates* too.
+  - Families still see every certificate under Documents.
 - **Opening another stage on the map** shows it with *Back to my stage*.
   Closing it returns to the member's own stage.
 - **A topic is a lesson in steps**, one screen at a time: *Explore* (the

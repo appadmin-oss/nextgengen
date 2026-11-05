@@ -6548,3 +6548,41 @@ dialog, the stage name, the certificate, the onward button, the focus, and
 that Escape closes it onto the result: 18 screens clean. Maths Lab e2e 36
 passed, 0 failed. PHP suite 6887 passed, 0 failed. Contrast 21 passed, 0
 failed.
+
+## 5 Nov 2026 — Certificates are findable after a stage
+
+Owner: "most of the times, the users find it hard to find the certificate
+after completing the stage."
+
+Before, a certificate appeared in four places, none of them a place called
+"certificates": a line in the session result, a badge on the map's stage
+header, chips on a course card, and a list at the foot of Progress. Once the
+celebration was closed, a child had nowhere obvious to go.
+
+Now:
+- **A Certificates tab** in the Lab (`MlbCerts`, route
+  `/study/lab/certificates`). Each certificate is a card with *Open* and
+  *Print*, newest first; "Next to earn" sits underneath.
+  - `?print=1` on the document page opens the print dialog once it fits.
+  - The certificates come from `mlb_cert_list()`, one list, now used by Home
+    and Progress too, carrying `scope`.
+- **A "new" marker.** A certificate not yet opened on this device puts a
+  count on the tab and a banner first on the Lab's Home. Opening it, from
+  the banner, the card or the celebration, clears both. It is kept in
+  `localStorage` (`ngg.mlb.certsSeen`): a convenience, not a record.
+- **The celebration** gains *All my certificates*.
+- **On a phone** the five tabs show as icons, each keeping its name for
+  screen readers.
+
+Also fixed: the confetti's `--k` custom property had no fallback, which
+`build.test.js` refuses. That failure arrived with the celebration commit,
+and the build test had not been re-run after it.
+
+Tests:
+- `mathlab-shot.js`, 21 screens clean: the Home banner, the tab with its
+  dot, the card with *Print*, and the dot cleared once opened.
+- `run.php` 6889 passed, 0 failed: Home's certificate list (newest first,
+  scoped) and the print hook.
+- Maths Lab e2e 37 passed, 0 failed.
+- `build.test` 31 passed, 0 failed.
+- Contrast 21 passed, 0 failed.

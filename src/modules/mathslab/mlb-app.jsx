@@ -429,12 +429,33 @@ function MlbExGrowth() {
   </div>;
 }
 
+/* ── Certificates seen on this device: the "new" marker ──
+   A certificate stays "new" (a dot on the tab, a banner on Home) until it has
+   been opened from the Certificates tab or the banner. */
+const MLB_SEEN_KEY = "ngg.mlb.certsSeen";
+function mlbSeen() { try { return JSON.parse(localStorage.getItem(MLB_SEEN_KEY) || "[]"); } catch (_) { return []; } }
+function mlbMarkSeen(nos) {
+  try { const s = mlbSeen(); nos.forEach(n => { if (s.indexOf(n) < 0) s.push(n); }); localStorage.setItem(MLB_SEEN_KEY, JSON.stringify(s.slice(-200))); } catch (_) {}
+  try { window.dispatchEvent(new CustomEvent("mlb:certs-seen")); } catch (_) {}
+}
+function useMlbNewCerts() {
+  const [n, setN] = React.useState(0);
+  React.useEffect(() => {
+    let live = true;
+    const count = () => NGGApi.member.mathslab.home().then(d => { if (live) { const seen = mlbSeen(); setN((d.certificates || []).filter(c => seen.indexOf(c.no) < 0).length); } }, () => {});
+    count();
+    window.addEventListener("mlb:certs-seen", count); window.addEventListener("mlb:certs-new", count);
+    return () => { live = false; window.removeEventListener("mlb:certs-seen", count); window.removeEventListener("mlb:certs-new", count); };
+  }, []);
+  return n;
+}
+
 /* ── Where we are inside /study/lab ── */
 function mlbRoute() {
   const seg = (location.pathname || "").replace(/^\/+|\/+$/g, "").split("/");
   if (seg[0] !== "study" || seg[1] !== "lab") return { v: "home" };
   if (seg[2] === "learn" && /^MC-\d{3}$/.test(seg[3] || "")) return { v: "learn", comp: seg[3] };
-  if (["map", "courses", "progress"].indexOf(seg[2]) >= 0) return { v: seg[2] };
+  if (["map", "courses", "progress", "certificates"].indexOf(seg[2]) >= 0) return { v: seg[2] };
   return { v: "home" };
 }
 function mlbPath(r) { return "/study/lab" + (r.v === "home" ? "" : r.v === "learn" ? "/learn/" + r.comp : "/" + r.v); }
@@ -443,23 +464,27 @@ function MathsLab({ me }) {
   const [route, setRoute] = React.useState(mlbRoute);
   const [play, setPlay] = React.useState(null);           // a running session
   const [lite, setLite] = React.useState(false);          // signed in but not an NGG member
+  const newCerts = useMlbNewCerts();
   const go = React.useCallback(r => { setPlay(null); setRoute(r); try { history.pushState({ page: "study" }, "", mlbPath(r)); window.scrollTo(0, 0); } catch (_) {} }, []);
   React.useEffect(() => { const on = () => { setPlay(null); setRoute(mlbRoute()); }; window.addEventListener("popstate", on); return () => window.removeEventListener("popstate", on); }, []);
   if (me.phase === "loading") return <SttState kind="loading" text="Opening the Maths Lab…"/>;
   if (!me.member || lite) return <MlbLite signedIn={!!me.member} route={route} go={go}/>;
   // Inside .mlb: every colour, border and button in the player reads the Lab's tokens (outside it, none resolved).
   if (play) return <div className="mlb"><MlbPlayer key={play.n || 0} start={play} onDone={() => { setPlay(null); }} go={go} onAgain={() => setPlay(p => Object.assign({}, p, { n: (p.n || 0) + 1 }))}/></div>;
-  const nav = [["home", "Home", "ph-house"], ["map", "Map", "ph-path"], ["courses", "Courses", "ph-graduation-cap"], ["progress", "Progress", "ph-chart-bar"]];
+  const nav = [["home", "Home", "ph-house"], ["map", "Map", "ph-path"], ["courses", "Courses", "ph-graduation-cap"], ["certificates", "Certificates", "ph-certificate"], ["progress", "Progress", "ph-chart-bar"]];
   return (
     <div className="mlb"><div className="mlb-shell">
       <div className="mlb-navwrap"><nav className="mlb-nav" aria-label="Maths Lab">
-        {nav.map(([v, l, ic]) => <button key={v} type="button" className={"mlb-navb" + (route.v === v || (v === "map" && route.v === "learn") ? " is-on" : "")} aria-current={route.v === v ? "page" : undefined} onClick={() => go({ v })}><i className={"ph-fill " + ic} aria-hidden="true"/><span>{l}</span></button>)}
+        {nav.map(([v, l, ic]) => <button key={v} type="button" className={"mlb-navb" + (route.v === v || (v === "map" && route.v === "learn") ? " is-on" : "")} aria-current={route.v === v ? "page" : undefined}
+          aria-label={v === "certificates" && newCerts ? l + ", " + newCerts + " new" : undefined} onClick={() => go({ v })}>
+          <i className={"ph-fill " + ic} aria-hidden="true"/><span>{l}</span>{v === "certificates" && newCerts ? <em className="mlb-navdot" aria-hidden="true">{newCerts}</em> : null}</button>)}
       </nav></div>
       <div className="mlb-main">
         {route.v === "map" ? <MlbMap go={go}/>
           : route.v === "learn" ? <MlbLearn comp={route.comp} go={go} startPlay={setPlay}/>
           : route.v === "courses" ? <MlbCourses go={go}/>
           : route.v === "progress" ? <MlbProgress go={go}/>
+          : route.v === "certificates" ? <MlbCerts go={go}/>
           : <MlbHome go={go} startPlay={setPlay} onNotMember={() => setLite(true)}/>}
       </div>
     </div></div>
@@ -497,6 +522,24 @@ function MlbHome({ go, startPlay, onNotMember }) {
         <h2 id="mlb-hi" className="mlb-h2">Hello, {d.name}.</h2>
         <p className="mlb-p">You are in <b>Stage {f.stage}{f.title ? " · " + f.title : ""}</b>{f.band ? " (" + f.band + ")" : ""}.</p>
       </header>
+
+      {(() => {
+        /* A certificate earned and not yet opened: said first, with the way to it.
+           Children passed a stage and could not find what they had earned. */
+        const seen = mlbSeen(), fresh = (d.certificates || []).filter(c => seen.indexOf(c.no) < 0);
+        if (!fresh.length) return null;
+        const c = fresh[0];
+        return <section className="mlb-certban" aria-labelledby="mlb-certban-h">
+          <i className="ph-fill ph-certificate" aria-hidden="true"/>
+          <div><p className="mlb-eyebrow">{fresh.length > 1 ? fresh.length + " new certificates" : "New certificate"}</p>
+            <h3 id="mlb-certban-h" className="mlb-h3">{c.title}</h3>
+            <p className="mlb-meta">{c.no} · kept in Certificates here, and in your family’s Documents.</p></div>
+          <div className="mlb-certban-acts">
+            <a className="mlb-go" href={c.url} target="_blank" rel="noopener" onClick={() => mlbMarkSeen([c.no])}><i className="ph ph-arrow-square-out" aria-hidden="true"/>Open my certificate</a>
+            <button type="button" className="stt-btn" onClick={() => go({ v: "certificates" })}>All certificates</button>
+          </div>
+        </section>;
+      })()}
 
       <section className="mlb-hero mlb-next" aria-labelledby="mlb-next-h">
         <p className="mlb-eyebrow">Up next · {nx.kind || "Next step"}</p>
@@ -1026,11 +1069,12 @@ function MlbStageWin({ certs, xp, onClose, go }) {
           {!course ? <li className="is-run"><span>Stage boss</span><b><i className="ph-fill ph-sword" aria-hidden="true"/>Beaten</b></li> : null}
           {xp ? <li className="is-xp"><span>This session</span><b><i className="ph-fill ph-lightning" aria-hidden="true"/>+{xp} XP</b></li> : null}
         </ul>
-        <a className="mlb-win-cert" href={c.url} target="_blank" rel="noopener"><i className="ph-fill ph-certificate" aria-hidden="true"/><span><b>Certificate earned</b><em>{c.no} · open it, print it, show your family</em></span><i className="ph ph-arrow-square-out" aria-hidden="true"/></a>
+        <a className="mlb-win-cert" href={c.url} target="_blank" rel="noopener" onClick={() => mlbMarkSeen([c.no])}><i className="ph-fill ph-certificate" aria-hidden="true"/><span><b>Certificate earned</b><em>{c.no} · open it, print it, show your family</em></span><i className="ph ph-arrow-square-out" aria-hidden="true"/></a>
         <div className="mlb-win-acts">
           {more ? <button type="button" className="mlb-go mlb-win-go" onClick={next}>Next <i className="ph ph-arrow-right" aria-hidden="true"/></button>
             : !course && c.next ? <button type="button" className="mlb-go mlb-win-go" onClick={() => { onClose(); go({ v: "map" }); }}>On to Stage {c.next.stage}: {c.next.title} <i className="ph ph-arrow-right" aria-hidden="true"/></button>
             : <button type="button" className="mlb-go mlb-win-go" onClick={() => { onClose(); go({ v: "map" }); }}>See my map <i className="ph ph-arrow-right" aria-hidden="true"/></button>}
+          <button type="button" className="stt-btn" onClick={() => { onClose(); go({ v: "certificates" }); }}><i className="ph ph-certificate" aria-hidden="true"/>All my certificates</button>
           <button type="button" className="stt-btn" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -1045,6 +1089,8 @@ function MlbResult({ res, onDone, go, onAgain }) {
   // A stage or a course completed in this session: celebrate it first, over everything.
   const wins = (res.certificates || []).filter(c => c.scope === "stage").concat((res.certificates || []).filter(c => c.scope === "course"));
   const [winOpen, setWinOpen] = React.useState(wins.length > 0);
+  // Tell the tab bar a certificate arrived, so its "new" dot shows at once.
+  React.useEffect(() => { if (wins.length) try { window.dispatchEvent(new CustomEvent("mlb:certs-new")); } catch (_) {} }, []);
   const lit = res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length;
   const wrong = res.review.filter(q => !q.correct), shown = all ? res.review : wrong;
   const kind = res.mode === "climb" ? "Placement gate" : res.mode === "check" ? "Mastery check" : res.mode === "boss" ? "Stage boss" : res.mode === "review" ? "Review" : "Practice";
@@ -1165,6 +1211,54 @@ function MlbCourses({ go }) {
     </div>
   );
 }
+/* ── Certificates: one place, newest first ──
+   Each certificate as a card: what it is for, its number, when, and Open /
+   Print. What is next to earn sits underneath, so the page is useful before
+   the first one too. Opening a certificate here clears its "new" marker. */
+function MlbCerts({ go }) {
+  const [st, load] = useMlb(() => NGGApi.member.mathslab.home(), []);
+  const [, tick] = React.useState(0);
+  if (st.phase === "loading") return <SttState kind="loading" text="Getting your certificates…"/>;
+  if (st.phase === "error") return <SttState kind="error" text={"Couldn’t load your certificates. " + mlbErr(st.e)} retry={load}/>;
+  const d = st.d, list = d.certificates || [], seen = mlbSeen();
+  const open = c => { mlbMarkSeen([c.no]); tick(x => x + 1); };
+  const printUrl = c => c.url + (c.url.indexOf("?") >= 0 ? "&" : "?") + "print=1";
+  const f = d.focus || {};
+  return (
+    <div className="mlb-stack">
+      <header className="mlb-homehead">
+        <h2 className="mlb-h2">Your certificates</h2>
+        <p className="mlb-p">{list.length ? "Every certificate you have earned in the Maths Lab, newest first. Your family sees them too, under Documents." : "You have not earned a certificate yet. Know all ten topics of a stage and beat its boss to earn your first."}</p>
+      </header>
+      {list.length ? <ul className="mlb-certgrid">{list.map(c => {
+        const isNew = seen.indexOf(c.no) < 0;
+        return <li key={c.no} className={"mlb-certcard" + (c.scope === "course" ? " is-course" : "") + (isNew ? " is-new" : "")}>
+          <div className="mlb-certcard-ic" aria-hidden="true"><i className={"ph-fill " + (c.scope === "course" ? "ph-trophy" : "ph-medal")}/></div>
+          <div className="mlb-certcard-t">
+            {isNew ? <span className="mlb-chip is-ok">New</span> : null}
+            <b>{c.title}</b>
+            <span className="mono">{c.no}</span>
+            <span>{c.scope === "course" ? "Course certificate" : "Stage certificate"}{c.at ? " · " + mlbDate(c.at) : ""}</span>
+          </div>
+          <div className="mlb-certcard-acts">
+            <a className="mlb-go" href={c.url} target="_blank" rel="noopener" onClick={() => open(c)}><i className="ph ph-arrow-square-out" aria-hidden="true"/>Open</a>
+            <a className="stt-btn" href={printUrl(c)} target="_blank" rel="noopener" onClick={() => open(c)}><i className="ph ph-printer" aria-hidden="true"/>Print</a>
+          </div>
+        </li>; })}</ul> : null}
+      <section className="mlb-card mlb-certnext" aria-labelledby="mlb-certnext-h">
+        <h3 id="mlb-certnext-h" className="mlb-h3">Next to earn</h3>
+        <p className="mlb-p">Stage {f.stage}{f.title ? " · " + f.title : ""}: {f.known || 0} of {f.total || 10} topics known{(f.known || 0) >= (f.total || 10) ? ", then beat the boss" : ""}.</p>
+        <div className="mlb-progrow"><span>Stage {f.stage}</span><span className="mlb-meter is-big"><span style={{ width: Math.round((f.known || 0) / Math.max(f.total || 10, 1) * 100) + "%" }}/></span><b>{f.known || 0}/{f.total || 10}</b></div>
+        <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}><i className="ph ph-path" aria-hidden="true"/>Go to my stage</button>
+      </section>
+    </div>
+  );
+}
+function mlbDate(iso) {
+  const d = new Date(iso); if (isNaN(d)) return "";
+  return d.getDate() + " " + ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()] + " " + d.getFullYear();
+}
+
 /* ── Progress ── */
 /* ── Progress ──
    Where you stand, and what to do about it: each stage's topics, its boss and

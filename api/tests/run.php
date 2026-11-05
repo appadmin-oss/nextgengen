@@ -38163,6 +38163,11 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && in_array('Maths Lab · Stage 1: ' . mlb_stages()[1]['title'], $titles, true) && count(array_filter($titles, fn($t) => str_starts_with($t, 'Maths Lab · Stage '))) === 4);
     $vst = public_document_verify(['no' => $s1[0]['no'], 'code' => doc_check_code($s1[0]['no'])]);
     chk('maths lab certificate · a stage certificate verifies too', !empty($vst['ok']) && $vst['result'] === 'Passed' && str_starts_with($vst['what'], 'Maths Lab stage 1: '));
+    $hc = backend_dispatch('mathslab.home', ['memberId' => 'NGG-DOC-1'])['certificates'] ?? [];
+    chk('maths lab certificate · Home carries every certificate in one list, newest first, each marked stage or course (the Certificates tab and its banner)',
+        count($hc) === 5 && $hc[0]['scope'] === 'course' && $hc[0]['no'] === $mc['no'] && end($hc)['no'] === $s1[0]['no'] && end($hc)['scope'] === 'stage'
+        && str_contains($hc[0]['url'], 'document.php?t='));
+    chk('maths lab certificate · a certificate page opened with ?print=1 goes straight to the print dialog', str_contains($mp ?? doc_render_certificate(doc_by('docNo', $mc['no'])), 'print=1'));
     $mapC = backend_dispatch('mathslab.map', ['memberId' => 'NGG-DOC-1']);
     chk('maths lab certificate · the map links each stage\'s certificate where it has one', ($mapC['stages'][0]['certificate']['no'] ?? '') === $s1[0]['no'] && ($mapC['stages'][5]['certificate'] ?? null) === null);
     $mp = doc_render_certificate(doc_by('docNo', $mc['no']));

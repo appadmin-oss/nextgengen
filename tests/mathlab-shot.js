@@ -59,6 +59,9 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
   // The foundation underneath the topics in progress (as mlb_root_gaps would name it).
   const ROOTS=[{comp:open[10],title:SRC.stages[1].comps[0].title,stage:2,behind:LEARNING.map(id=>SRC.stages.reduce((a,s)=>a.concat(s.comps),[]).find(c=>c.id===id).title)}];
   HOME.roots=ROOTS;
+  HOME.focus={stage:2,title:SRC.stages[1].title,band:'Foundations',total:10,known:2};
+  // One certificate, unseen on this device: Home's banner, the tab's dot, the Certificates page.
+  HOME.certificates=[{no:'NGG-MLS-2026-00007',title:'Maths Lab · Stage 1: '+SRC.stages[0].title,at:'2026-11-02T10:00:00Z',url:'#cert',scope:'stage'}];
   const PROGRESS={ok:true,roots:ROOTS,bands:SRC.bands.map(b=>({name:b.name,level:b.level,total:b.topics,mastered:b.id==='foundations'?MASTERED.length:0})),xp:HOME.xp,level:HOME.level,streak:HOME.streak,due:0,badges:HOME.badges,
     recent:{answered:64,right:51,sureWrong:3},
     stages:MAP.stages.filter(s=>s.available).map(s=>({n:s.n,title:s.title,strand:s.strand,total:s.comps.length,
@@ -130,14 +133,32 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
     await shoot('arcade','view=arcade',{width:1080,height:900},'.ml-teaser-n');
     await shoot('home','',{width:1080,height:1000},'.mlb-hero',null);
     await shoot('map','',{width:1080,height:1000},'.mlb-path','.mlb-navb:nth-child(2)');
-    await shoot('progress','',{width:1080,height:1000},'.mlb-miss','.mlb-navb:nth-child(4)');
+    await shoot('progress','',{width:1080,height:1000},'.mlb-miss','.mlb-navb:nth-child(5)');
     await shoot('home-phone','',{width:390,height:844},'.mlb-hero',null);
-    await shoot('progress-phone','',{width:390,height:844},'.mlb-miss','.mlb-navb:nth-child(4)');
+    await shoot('progress-phone','',{width:390,height:844},'.mlb-miss','.mlb-navb:nth-child(5)');
     await shoot('map-phone','',{width:390,height:844},'.mlb-path','.mlb-navb:nth-child(2)');
     await shoot('learn-pythagoras','view=learn&comp=MC-077',{width:1080,height:1000},'.mlb-explore',null);
     await shoot('learn-quadratic-phone','view=learn&comp=MC-103',{width:390,height:844},'.mlb-explore',null);
     await shoot('learn-unit-circle','view=learn&comp=MC-145',{width:1080,height:1000},'.mlb-explore',null);
     await shoot('learn-derivative','view=learn&comp=MC-152',{width:1080,height:1000},'.mlb-explore',null);
+    await shoot('home-certificate','',{width:1080,height:1000},'.mlb-certban',null);
+    await shoot('certificates','',{width:1080,height:900},'.mlb-certcard','.mlb-navb:nth-child(4)');
+    await shoot('certificates-phone','',{width:390,height:844},'.mlb-certcard','.mlb-navb:nth-child(4)');
+    /* After a stage, a child must FIND the certificate: a banner first on Home, a tab named Certificates with a "new" dot,
+       and opening it there clears both. */
+    { const page=await browser.newPage({viewport:{width:1080,height:900}}); await page.goto(BASE+'/tests/_ml_fixture.html',{waitUntil:'networkidle'});
+      await page.evaluate(()=>{try{localStorage.removeItem('ngg.mlb.certsSeen');}catch(_){}}); await page.reload({waitUntil:'networkidle'});
+      const ok1=await page.waitForSelector('.mlb-certban',{timeout:8000}).then(()=>true,()=>false);
+      const dot=await page.locator('.mlb-navb:has-text("Certificates") .mlb-navdot').count();
+      const ban=ok1?await page.innerText('.mlb-certban'):'';
+      if(!ok1||!/New certificate/.test(ban)||!/Open my certificate/.test(ban)||dot!==1) problems.push('certificate findability: banner '+ok1+' dot '+dot+' '+ban.slice(0,80));
+      await page.click('.mlb-navb:has-text("Certificates")'); await page.waitForSelector('.mlb-certcard',{timeout:8000});
+      const card=await page.innerText('.mlb-certcard');
+      if(!/New/.test(card)||!/NGG-MLS-2026-00007/.test(card)||!(await page.locator('.mlb-certcard a:has-text("Print")').count())) problems.push('certificates tab: '+card.slice(0,120));
+      await page.evaluate(()=>{const a=document.querySelector('.mlb-certcard a.mlb-go');a.removeAttribute('target');a.addEventListener('click',e=>e.preventDefault());a.click();});
+      await page.waitForTimeout(400);
+      if(await page.locator('.mlb-navdot').count()) problems.push('certificates: opening it did not clear the new dot');
+      await page.close(); console.log('  ✓ a certificate is easy to find: a banner on Home, a Certificates tab with a new dot, cleared once opened'); }
     await shoot('stage-win','view=win',{width:1080,height:900},'.mlb-win',null);
     await shoot('stage-win-phone','view=win',{width:390,height:844},'.mlb-win',null);
     /* A completed stage is celebrated over everything, as a dialog: the stage by name, the certificate, one way onward. */
