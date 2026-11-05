@@ -6715,3 +6715,101 @@ Two olympiad forms could produce "no solutions" as the answer: MC-176 form 0 and
 - Maths Lab e2e: 42 passed, 0 failed. New: the Home card, the free hint, and the solution and "tomorrow" message at the end, on desktop and phone.
 - a11y: 19 passed, 0 failed.
 - `build.test`: 31 passed, 0 failed.
+
+
+## 5 Nov 2026 — Maths Lab: JAMB-style and SAT-style questions, and timed practice papers
+
+**Owner:** sent JAMB Mathematics past papers (1983–2004) and a digital SAT practice test (#4) with scoring guides for #4 and #11, then: "Proceed. Adapt them all over".
+
+**No copying.** Past papers are copyrighted, so no question is copied. `mathslab-gen-exam.php` holds original generators modelled on the KINDS of question those papers repeat.
+
+**JAMB-style forms.** There are 40, each five-option (A–E) with every wrong option naming its slip. They cover:
+
+- number bases;
+- significant figures;
+- simple interest;
+- ratio sharing;
+- index equations;
+- log combinations;
+- surds;
+- difference of two squares, a² + b² with 2ab, and x + 1/x;
+- completing the square;
+- the factor theorem;
+- quadratic minimum;
+- partial fractions;
+- f(x − a) substitution;
+- inverse functions;
+- binary operations;
+- AP relations and the sum to infinity;
+- linear–quadratic simultaneous equations;
+- joint variation;
+- polygon angles;
+- sector area;
+- rhombus diagonals;
+- similar solids;
+- hemisphere surface area;
+- angle of elevation with the observer's height;
+- the cosine rule with 60°;
+- distance between points;
+- pie-chart angles;
+- the mean after adding a number;
+- median plus mode;
+- standard deviation and mean deviation;
+- vowel probability;
+- three-digit arrangements;
+- the gradient of a curve;
+- y from dy/dx;
+- ∫(k/x + m cos x);
+- the rate of change of a circle's area.
+
+**SAT-style forms.** There are 15: four-option choice (A–D) or typed "grid-in". They cover:
+
+- interpreting a linear model;
+- percent change twice;
+- a word system;
+- an exponential model;
+- a linear function from values;
+- a circle's radius from its general equation;
+- complementary trigonometry;
+- the sum of a quadratic's roots;
+- vertex form;
+- a unit rate;
+- an inequality word problem;
+- an equation from words;
+- similar right triangles;
+- the original price after a coupon.
+
+**Where they go.** The forms are appended to their topics AFTER the deep forms. `mlb_why_at` now subtracts both added sets. `mlb_public` passes `exam` and `letters`.
+
+**Distinct options.** `mlb_jamb` and `mlb_sat` take more slips than they need and keep the first DISTINCT ones. The measured rate of short JAMB questions is at most 5%, and never fewer than four options. That sweep found and fixed three faults:
+
+- a variation answer duplicated by a wrong option worded differently;
+- a² + b² < 2ab, which is impossible for real numbers;
+- two broken stems.
+
+**Papers** (`MLB_PAPERS`, `mlb_exam_pool`, `mlb_exam_pick`, `mlb_exam_report`, `mlb_exams`):
+
+| Paper | Questions | Time | Stages | Mix |
+|---|---|---|---|---|
+| JAMB | 40 | 40 min | 3–16 | all multiple choice, about two thirds exam-style, one topic per question, in syllabus order |
+| SAT | 27 | 43 min | 3–12 plus selected topics | about 7 typed |
+
+- **Modes and ops:** `mathslab.start` mode `exam` with `paper` (no map gate); `mathslab.exams` (GET `?view=exams`).
+- **Time:** `mlb_answer` refuses an answer after minutes + `MLB_EXAM_GRACE` (`time_up`).
+- **Finishing:** `mlb_finish` reports by strand, awards 2 XP per right answer, and changes no map state.
+- **Scores:** JAMB is out of 100. SAT is an estimate on the 200–800 scale, labelled as such, because the College Board's conversion tables are per-form and not reproduced.
+
+**Client:**
+
+- the Exams tab (sixth) and `MlbExams`;
+- the player's exam mode: a server-anchored countdown with auto hand-in, A–E letters (and A–E keys), "Leave it", "Hand in now", and no confidence chips;
+- the result screen's report by area, with "Try another paper";
+- a Home card.
+
+**Tests:**
+
+- `run.php`: 6896 passed, 0 failed. New: the exam form counts and option counts; paper composition for both papers; time-up refusal; score and areas; the map unchanged; history and best score; the SAT scaling bounds.
+- Maths Lab e2e: 48 passed, 0 failed. New, desktop and phone: the Exams page, the clock and A–E letters, leaving a question, handing in, and the report by area.
+- Shots: 22 rendered clean.
+- Contrast: 21 passed, 0 failed.
+- `build.test`: 31 passed, 0 failed.

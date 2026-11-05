@@ -154,14 +154,21 @@ function mlb_start(array $p): array {
         if (!$comps || !mlb_stage_available($st)) return ['ok' => false, 'error' => 'not_available'];
         foreach ($comps as $c) if (!in_array($states[$c]['state'] ?? 'none', MLB_GOOD, true)) return ['ok' => false, 'error' => 'boss_locked'];
         $items = mlb_pick_items($comps, 12, false, true);
+    } elseif ($mode === 'exam') {
+        // A practice paper is open to every member whatever their place on the map: it is exam practice, not a step on the path.
+        $paper = (string)($p['paper'] ?? ''); if (!isset(MLB_PAPERS[$paper])) return ['ok' => false, 'error' => 'bad_paper'];
+        $ref = $paper; $items = mlb_exam_pick($paper);
+        if (count($items) < MLB_PAPERS[$paper]['n']) return ['ok' => false, 'error' => 'not_available'];
     } else return ['ok' => false, 'error' => 'bad_mode'];
     $sid = 'MLS-' . strtoupper(rand_hex(8));
     db_insert('mlab_sessions', ['sessionId' => $sid, 'memberId' => $mid, 'mode' => $mode, 'ref' => $ref, 'items' => json_encode($items), 'resp' => '{}', 'startedAt' => now_iso(), 'finishedAt' => '']);
     return ['ok' => true, 'sessionId' => $sid, 'mode' => $mode, 'ref' => $ref,
         'title' => mlb_session_title($mode, $ref),
+        'minutes' => $mode === 'exam' ? MLB_PAPERS[$ref]['minutes'] : 0,
         'items' => array_map(static fn($x) => mlb_public(mlb_item($x['c'], $x['f'], $x['s'])) + ['comp' => $x['c'], 'compTitle' => mlb_comp($x['c'])['title']], $items)];
 }
 function mlb_session_title(string $mode, string $ref): string {
+    if ($mode === 'exam') return MLB_PAPERS[$ref]['title'] ?? 'Practice paper';
     if ($mode === 'climb') return 'Stage ' . $ref . ' gate · ' . mlb_stages()[(int)$ref]['title'];
     if ($mode === 'boss') return 'Stage ' . $ref . ' boss · ' . mlb_stages()[(int)$ref]['title'];
     if ($mode === 'review') return 'Review: keep what you know';
@@ -181,6 +188,8 @@ function mlb_answer(array $p): array {
     if ((string)$s['finishedAt'] !== '') return ['ok' => false, 'error' => 'finished'];
     $items = json_decode((string)$s['items'], true); $i = (int)($p['index'] ?? -1);
     if (!isset($items[$i])) return ['ok' => false, 'error' => 'bad_index'];
+    // A paper's clock is the server's: an answer after the time (and a short grace for the network) is refused, as the real exam would.
+    if ((string)$s['mode'] === 'exam' && time() > strtotime((string)$s['startedAt']) + 60 * (int)(MLB_PAPERS[(string)$s['ref']]['minutes'] ?? 0) + MLB_EXAM_GRACE) return ['ok' => false, 'error' => 'time_up'];
     $resp = json_decode((string)$s['resp'], true) ?: [];
     if (isset($resp[$i])) return ['ok' => false, 'error' => 'already_answered'];
     $x = $items[$i]; $it = mlb_item($x['c'], $x['f'], $x['s']);
@@ -267,6 +276,11 @@ function mlb_finish(array $p): array {
             foreach (array_keys($missed) as $c) { mlb_set_state($mid, $c, ['state' => 'practising', 'p' => min((float)($states[$c]['p'] ?? 0.6), 0.6), 'owed' => MLB_RETAKE_OWED]); $changes[] = ['comp' => $c, 'to' => 'practising']; }
             $msg = 'The boss wins this time (' . $pct . '%, need ' . MLB_BOSS_PASS . '%). The ' . count($missed) . ' topic' . (count($missed) === 1 ? '' : 's') . ' it caught you on ' . (count($missed) === 1 ? 'is' : 'are') . ' back in practice: master ' . (count($missed) === 1 ? 'it' : 'them') . ' again, then face the boss.';
         }
+    } elseif ($mode === 'exam') {
+        $exam = mlb_exam_report($ref, $items, $resp, (string)$s['startedAt']);
+        $xp = mlb_award_xp($mid, 2 * $right);
+        $weak = array_slice(array_keys(array_filter($exam['areas'], static fn($a) => $a['total'] > 0 && $a['right'] / $a['total'] < 0.6)), 0, 3);
+        $msg = $exam['scoreText'] . '. ' . ($weak ? 'Work on ' . implode(', ', $weak) . ' next — the questions you missed are below, with full working.' : 'Strong across every area. Try another paper: every one is new.');
     } else {
         /* Practice says what to DO next, not the score twice: the screen already shows the score. */
         $msg = $pct >= 85 ? 'Strong work. Keep practising until the mastery check opens.'
@@ -277,7 +291,7 @@ function mlb_finish(array $p): array {
     // A session can be the one that completes a course: its certificate is issued now, not when somebody thinks to press a button.
     $certs = mlb_issue_certificates($mid, $mode === 'boss' && $pct >= MLB_BOSS_PASS ? [(int)$ref => $pct] : []);
     return ['ok' => true, 'mode' => $mode, 'right' => $right, 'total' => $n, 'pct' => $pct, 'fast' => $fast, 'xp' => $xp, 'message' => $msg, 'changes' => $changes, 'review' => $review,
-            'certificates' => $certs];
+            'certificates' => $certs] + ($mode === 'exam' ? ['exam' => $exam] : []);
 }
 
 /* ── Reading the map ── */
@@ -722,5 +736,102 @@ function mlb_daily_answer(array $p): array {
         + mlb_daily_streak($mid);
     if ($done) $out += ['answer' => mlb_answer_text($it), 'steps' => $it['steps']];
     return $out;
+}
+
+/* ── Exam practice papers (JAMB-style and SAT-style) ──
+ * Owner, 5 Nov 2026: "Proceed. Adapt them all over", after sending JAMB Mathematics past
+ * papers and a digital SAT practice test with its scoring guides. A paper is drawn fresh every
+ * time from the Lab's own forms — the exam-style ones written for it (mathslab-gen-exam.php)
+ * first, then other forms of the same shape from the topics that exam examines — so it is never
+ * a copy of a past paper and never the same twice.
+ *
+ *   · JAMB (UTME): 40 five-option questions, 40 minutes, number to calculus (Stages 3–16).
+ *     The UTME reports each subject out of 100, so the score is the percentage right.
+ *   · SAT: one Math module as in the practice test supplied: 27 questions, 43 minutes; about a
+ *     quarter are typed "student-produced responses", the rest four-option choice. The section
+ *     score (200–800) is only an ESTIMATE from the percentage, said so on screen — the College
+ *     Board's own conversion varies with each test form and is not ours to reproduce.
+ *
+ * The clock is the server's (mlb_answer refuses an answer after the time), a paper never moves
+ * the map, and the report breaks the score down by area so the next step is named. */
+const MLB_EXAM_GRACE = 30;
+const MLB_PAPERS = [
+    'jamb' => ['id' => 'jamb', 'title' => 'JAMB-style practice paper', 'exam' => 'jamb', 'n' => 40, 'minutes' => 40, 'stages' => [3, 16], 'typed' => 0,
+        'what' => '40 questions, A–E, in 40 minutes: number and numeration, algebra, geometry and trigonometry, statistics and calculus — the UTME Mathematics syllabus.'],
+    'sat'  => ['id' => 'sat', 'title' => 'SAT-style Math module', 'exam' => 'sat', 'n' => 27, 'minutes' => 43, 'stages' => [3, 12], 'extra' => [94, 98, 104, 111, 147, 166, 167], 'typed' => 7,
+        'what' => '27 questions in 43 minutes, like one Math module of the digital SAT: algebra, advanced maths, problem-solving and data, geometry and trigonometry. About a quarter need a typed answer.'],
+];
+/** The forms a paper may draw: [comp, form, tagged?, typed?] — the paper's own exam-style forms and every other form of the right shape in its syllabus. */
+function mlb_exam_pool(string $paper): array {
+    static $cache = [];
+    if (isset($cache[$paper])) return $cache[$paper];
+    $P = MLB_PAPERS[$paper]; $out = [];
+    foreach (mlb_competencies() as $id => $c) {
+        $in = ((int)$c['stage'] >= $P['stages'][0] && (int)$c['stage'] <= $P['stages'][1]) || in_array((int)$c['n'], $P['extra'] ?? [], true);
+        if (!$in || !mlb_available($id)) continue;
+        foreach (mlb_skill_forms($id) as $f) {
+            $it = mlb_item($id, $f, 1); $tag = (string)($it['exam'] ?? '');
+            if ($tag !== '' && $tag !== $P['exam']) continue;
+            $typed = in_array($it['kind'], ['num', 'frac'], true);
+            if ($it['kind'] === 'mcq' || ($P['typed'] > 0 && $typed)) $out[] = [$id, (int)$f, $tag === $P['exam'], $typed];
+        }
+    }
+    return $cache[$paper] = $out;
+}
+/** Draw a paper: its own exam-style forms first (about two thirds), each topic at most once, in syllabus order. */
+function mlb_exam_pick(string $paper): array {
+    $P = MLB_PAPERS[$paper]; $pool = mlb_exam_pool($paper); shuffle($pool);
+    $n = $P['n']; $wantTyped = $P['typed']; $own = (int)round($n * 2 / 3);
+    $picked = []; $used = []; $typed = 0;
+    $take = static function (array $cand, int $limit) use (&$picked, &$used, &$typed, $n, $wantTyped, $P) {
+        foreach ($cand as [$c, $f, $tag, $isTyped]) {
+            if (count($picked) >= $limit || count($picked) >= $n) return;
+            if (isset($used[$c])) continue;
+            if ($isTyped && $typed >= $wantTyped) continue;
+            if (!$isTyped && $wantTyped > 0 && ($n - count($picked)) <= ($wantTyped - $typed)) continue;   // keep room for the typed ones
+            // A form can branch by seed: the item actually drawn must have the paper's shape.
+            for ($t = 0; $t < 4; $t++) {
+                $seed = random_int(1, 2000000000); $it = mlb_item($c, $f, $seed);
+                $okShape = $it['kind'] === 'mcq' ? (!$isTyped) : ($isTyped && in_array($it['kind'], ['num', 'frac'], true));
+                if (!$okShape) continue;
+                $picked[] = ['c' => $c, 'f' => $f, 's' => $seed]; $used[$c] = true; if ($isTyped) $typed++;
+                break;
+            }
+        }
+    };
+    $take(array_values(array_filter($pool, static fn($x) => $x[2])), $own);
+    $take(array_values(array_filter($pool, static fn($x) => !$x[2])), $n);
+    if (count($picked) < $n) { $used = []; foreach ($picked as $x) $used[$x['c']] = true; $take($pool, $n); }
+    // Syllabus order, number first and calculus last, as a paper reads.
+    usort($picked, static fn($a, $b) => mlb_num($a['c']) <=> mlb_num($b['c']));
+    return $picked;
+}
+/** The score, the time used and the right answers by area (the strand of each topic). */
+function mlb_exam_report(string $paper, array $items, array $resp, string $startedAt): array {
+    $P = MLB_PAPERS[$paper] ?? MLB_PAPERS['jamb']; $areas = []; $right = 0;
+    foreach ($items as $i => $x) {
+        $a = mlb_comp($x['c'])['strand'] ?? 'Mathematics'; $areas[$a] = $areas[$a] ?? ['right' => 0, 'total' => 0];
+        $areas[$a]['total']++; if (!empty($resp[$i]['ok'])) { $areas[$a]['right']++; $right++; }
+    }
+    $n = max(1, count($items)); $pct = (int)round($right * 100 / $n);
+    $used = max(0, time() - (int)strtotime($startedAt)); $limit = 60 * (int)$P['minutes'];
+    $answered = count(array_filter($resp, static fn($r) => ($r['a'] ?? '') !== '' && ($r['a'] ?? null) !== []));
+    if ($P['exam'] === 'sat') { $scaled = 200 + (int)(round(600 * $right / $n / 10) * 10); $scoreText = 'About ' . $scaled . ' on the 200–800 SAT Math scale (an estimate)'; }
+    else { $scaled = $pct; $scoreText = $scaled . ' out of 100, as the UTME reports a subject'; }
+    return ['paper' => $P['id'], 'title' => $P['title'], 'scaled' => $scaled, 'scale' => $P['exam'] === 'sat' ? '200–800 (estimate)' : 'out of 100', 'scoreText' => $scoreText,
+        'minutes' => (int)$P['minutes'], 'usedSecs' => min($used, $limit + MLB_EXAM_GRACE), 'overTime' => $used > $limit + MLB_EXAM_GRACE, 'answered' => $answered, 'areas' => $areas];
+}
+/** mathslab.exams — the papers on offer and this member's last papers, newest first. */
+function mlb_exams(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $hist = [];
+    foreach (db_all("SELECT ref, items, resp, startedAt, finishedAt FROM mlab_sessions WHERE memberId = ? AND mode = 'exam' AND finishedAt <> '' ORDER BY startedAt DESC LIMIT 20", [(string)$m['memberId']]) as $r) {
+        $items = json_decode((string)$r['items'], true) ?: []; $resp = json_decode((string)$r['resp'], true) ?: [];
+        $right = count(array_filter($resp, static fn($x) => !empty($x['ok']))); $n = max(1, count($items)); $P = MLB_PAPERS[(string)$r['ref']] ?? null; if (!$P) continue;
+        $hist[] = ['paper' => $P['id'], 'title' => $P['title'], 'at' => (string)$r['finishedAt'], 'right' => $right, 'total' => count($items), 'pct' => (int)round($right * 100 / $n),
+            'scaled' => $P['exam'] === 'sat' ? 200 + (int)(round(600 * $right / $n / 10) * 10) : (int)round($right * 100 / $n)];
+    }
+    return ['ok' => true, 'papers' => array_values(array_map(static fn($P) => ['id' => $P['id'], 'title' => $P['title'], 'n' => $P['n'], 'minutes' => $P['minutes'], 'what' => $P['what'],
+        'best' => array_reduce($hist, static fn($b, $h) => $h['paper'] === $P['id'] ? max($b, $h['scaled']) : $b, null)], MLB_PAPERS)), 'history' => $hist];
 }
 

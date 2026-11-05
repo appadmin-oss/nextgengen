@@ -8,6 +8,7 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'home');
     if ($view === 'map') $res = gs_call('mathslab.map', ['memberId' => $mid]);
     elseif ($view === 'comp') $res = gs_call('mathslab.comp', ['memberId' => $mid, 'comp' => (string)($_GET['comp'] ?? '')]);
+    elseif ($view === 'exams') $res = gs_call('mathslab.exams', ['memberId' => $mid]);
     elseif ($view === 'daily') $res = gs_call('mathslab.daily', ['memberId' => $mid]);
     elseif ($view === 'progress') $res = gs_call('mathslab.progress', ['memberId' => $mid]);
     elseif ($view === 'certificate') $res = gs_call('mathslab.certificate', ['memberId' => $mid, 'courseId' => (string)($_GET['course'] ?? '')]);

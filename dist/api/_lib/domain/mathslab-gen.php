@@ -862,13 +862,15 @@ function mlb_forms(): array {
     /* The deeper Stage 5–7 forms (mathslab-gen-deep.php) come AFTER the proof pair, for the same
        reason: no form already in use may change its number. mlb_why_at() says where the pair is. */
     if (function_exists('mlb_forms_deep')) foreach (mlb_forms_deep() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    /* Exam-style forms (mathslab-gen-exam.php: JAMB and SAT), last of all for the same reason. */
+    if (function_exists('mlb_forms_exam')) foreach (mlb_forms_exam() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     return $f;
 }
 
 /** Where a topic's two "Why it works" forms sit in its list (justify, then order), or null. */
 function mlb_why_at(string $comp): ?int {
     if (!function_exists('mlb_why') || !isset(mlb_why()[$comp])) return null;
-    $deep = function_exists('mlb_forms_deep') ? count(mlb_forms_deep()[$comp] ?? []) : 0;
+    $deep = (function_exists('mlb_forms_deep') ? count(mlb_forms_deep()[$comp] ?? []) : 0) + (function_exists('mlb_forms_exam') ? count(mlb_forms_exam()[$comp] ?? []) : 0);
     return count(mlb_forms()[$comp] ?? []) - 2 - $deep;
 }
 
@@ -884,7 +886,7 @@ function mlb_item(string $comp, int $form, int $seed): ?array {
 /** What the learner's screen may see: never the key, the solution or the "why" of each option before marking. */
 function mlb_public(array $it): array {
     $out = ['kind' => $it['kind'], 'stem' => $it['stem'], 'dim' => $it['dim'], 'secs' => (int)$it['secs'], 'hint' => (string)$it['hint']];
-    foreach (['options', 'lines', 'diagram', 'unit', 'labels', 'dp'] as $k) if (isset($it[$k])) $out[$k] = $it[$k];
+    foreach (['options', 'lines', 'diagram', 'unit', 'labels', 'dp', 'exam', 'letters'] as $k) if (isset($it[$k])) $out[$k] = $it[$k];
     if (($it['form'] ?? '') === 'lowest' || in_array($it['form'] ?? '', ['expanded', 'simplified'], true)) $out['rule'] = $it['form'];
     return $out;
 }

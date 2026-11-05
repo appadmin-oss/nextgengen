@@ -151,6 +151,23 @@ async function journey(who, W, H, tag) {
     await p.locator('.mlb-daily details .mlb-steps li').count() >= 1 && /Answer:/.test(dt) && /tomorrow/.test(dt), dt.slice(0, 200));
   await shot('daily');
 
+  // Exam practice: a JAMB-style paper runs on a clock, letters its options A–E, lets a question be left, and reports by area.
+  await p.goto(BASE + '/study/lab/exams', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.mlb-paper', { timeout: 60000 });
+  chk(tag + ': the Exams page offers a JAMB-style and an SAT-style paper', await p.locator('.mlb-paper').count() === 2);
+  await p.locator('.mlb-paper.is-jamb .mlb-go').click();
+  await p.waitForSelector('.mlb-clock', { timeout: 30000 });
+  const clk = await p.locator('.mlb-clock').innerText();
+  chk(tag + ': the paper shows its clock (40 minutes) and letters its options A–E',
+    /^\s*(39|40):\d\d/.test(clk) && (await p.locator('.mlb-opt-l').allInnerTexts()).join('') === 'ABCDE'.slice(0, await p.locator('.mlb-opt').count()), clk);
+  await p.locator('.mlb-opt').first().click(); await p.locator('.mlb-q .mlb-actions .mlb-go').click(); await p.waitForTimeout(500);
+  await p.locator('.mlb-q .mlb-actions .stt-btn:has-text("Leave it")').click(); await p.waitForTimeout(500);
+  await p.locator('.mlb-handin').click();
+  await p.waitForSelector('.mlb-exrep', { timeout: 30000 });
+  const rep = await p.locator('.mlb-exrep').innerText();
+  chk(tag + ': handing in shows the score out of 100, how many were answered, and the score by area', /out of 100/.test(rep) && /1 of 40 answered/.test(rep) && await p.locator('.mlb-exareas li').count() >= 3, rep.slice(0, 160));
+  await shot('exam');
+
   // A lesson: no skip, every step worked, then practice.
   await p.goto(BASE + '/study/lab/learn/MC-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });

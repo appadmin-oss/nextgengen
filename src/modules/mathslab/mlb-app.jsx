@@ -455,7 +455,7 @@ function mlbRoute() {
   const seg = (location.pathname || "").replace(/^\/+|\/+$/g, "").split("/");
   if (seg[0] !== "study" || seg[1] !== "lab") return { v: "home" };
   if (seg[2] === "learn" && /^MC-\d{3}$/.test(seg[3] || "")) return { v: "learn", comp: seg[3] };
-  if (["map", "courses", "progress", "certificates", "daily"].indexOf(seg[2]) >= 0) return { v: seg[2] };
+  if (["map", "courses", "progress", "certificates", "daily", "exams"].indexOf(seg[2]) >= 0) return { v: seg[2] };
   return { v: "home" };
 }
 function mlbPath(r) { return "/study/lab" + (r.v === "home" ? "" : r.v === "learn" ? "/learn/" + r.comp : "/" + r.v); }
@@ -471,7 +471,7 @@ function MathsLab({ me }) {
   if (!me.member || lite) return <MlbLite signedIn={!!me.member} route={route} go={go}/>;
   // Inside .mlb: every colour, border and button in the player reads the Lab's tokens (outside it, none resolved).
   if (play) return <div className="mlb"><MlbPlayer key={play.n || 0} start={play} onDone={() => { setPlay(null); }} go={go} onAgain={() => setPlay(p => Object.assign({}, p, { n: (p.n || 0) + 1 }))}/></div>;
-  const nav = [["home", "Home", "ph-house"], ["map", "Map", "ph-path"], ["courses", "Courses", "ph-graduation-cap"], ["certificates", "Certificates", "ph-certificate"], ["progress", "Progress", "ph-chart-bar"]];
+  const nav = [["home", "Home", "ph-house"], ["map", "Map", "ph-path"], ["courses", "Courses", "ph-graduation-cap"], ["certificates", "Certificates", "ph-certificate"], ["progress", "Progress", "ph-chart-bar"], ["exams", "Exams", "ph-exam"]];
   return (
     <div className="mlb"><div className="mlb-shell">
       <div className="mlb-navwrap"><nav className="mlb-nav" aria-label="Maths Lab">
@@ -486,6 +486,7 @@ function MathsLab({ me }) {
           : route.v === "progress" ? <MlbProgress go={go}/>
           : route.v === "certificates" ? <MlbCerts go={go}/>
           : route.v === "daily" ? <MlbDaily go={go}/>
+          : route.v === "exams" ? <MlbExams go={go} startPlay={setPlay}/>
           : <MlbHome go={go} startPlay={setPlay} onNotMember={() => setLite(true)}/>}
       </div>
     </div></div>
@@ -556,6 +557,13 @@ function MlbHome({ go, startPlay, onNotMember }) {
           <p className="mlb-meta">{d.daily.solved || d.daily.done ? "A new problem arrives tomorrow." : "One olympiad problem a day, the same for everyone in NGG. Tough — but the hint is free and you get three tries."}</p></div>
         <button type="button" className={d.daily.done ? "stt-btn" : "mlb-go"} onClick={() => go({ v: "daily" })}>{d.daily.done ? "See the solution" : d.daily.tries ? "Keep going" : "Try it"}</button>
       </section> : null}
+
+      <section className="mlb-excard" aria-labelledby="mlb-excard-h">
+        <span className="mlb-dailycard-i is-exam" aria-hidden="true"><i className="ph-fill ph-exam"/></span>
+        <div><p className="mlb-eyebrow">Exam practice</p><h3 id="mlb-excard-h" className="mlb-h3">JAMB-style and SAT-style papers</h3>
+          <p className="mlb-meta">Timed like the real thing, new every time, marked by area so you know what to work on.</p></div>
+        <button type="button" className="stt-btn" onClick={() => go({ v: "exams" })}>See the papers</button>
+      </section>
 
       <section className="mlb-card mlb-progcard" aria-labelledby="mlb-prog-h">
         <div className="mlb-row"><h3 id="mlb-prog-h" className="mlb-h3">Your progress</h3><button type="button" className="mlb-link" onClick={() => go({ v: "progress" })}>See all progress</button></div>
@@ -893,6 +901,33 @@ function MlbWhy({ why, onDone }) {
 
 /* ── Answer entry ── */
 const MLB_KEYS = { expr: ["x", "y", "^", "(", ")", "/", "−", "√("], num: ["−", "."], frac: ["/", "−"], ratio: [":"], pair: ["−"] };
+/* Exam practice (owner, 5 Nov 2026: "Proceed. Adapt them all over", with JAMB past papers and a
+   digital SAT practice test). A JAMB-style paper and an SAT-style Math module, drawn fresh each
+   time from the Lab's own exam-style questions, timed like the real thing, marked by area. */
+function MlbExams({ go, startPlay }) {
+  const [st, load] = useMlb(() => NGGApi.member.mathslab.exams(), []);
+  if (st.phase === "loading") return <SttState kind="loading" text="Fetching the papers…"/>;
+  if (st.phase === "error") return <SttState kind="error" text={"Couldn’t load the papers. " + mlbErr(st.e)} retry={load}/>;
+  const d = st.d;
+  return (
+    <div className="mlb-stack mlb-exams">
+      <header><h2 className="mlb-h2">Exam practice</h2>
+        <p className="mlb-p">Full timed papers in the style of the exams you will sit. Every paper is new: the questions are written by the Lab in the style of past papers, never copied from them. The clock starts when you press Start; when it runs out the paper is handed in.</p></header>
+      <div className="mlb-papers">{d.papers.map(p => (
+        <section key={p.id} className={"mlb-card mlb-paper is-" + p.id} aria-labelledby={"mlb-paper-" + p.id}>
+          <span className="mlb-paper-i" aria-hidden="true"><i className={"ph-fill " + (p.id === "jamb" ? "ph-exam" : "ph-globe-hemisphere-west")}/></span>
+          <h3 id={"mlb-paper-" + p.id} className="mlb-h3">{p.title}</h3>
+          <p className="mlb-meta">{p.n} questions · {p.minutes} minutes{p.best != null ? " · your best: " + p.best + (p.id === "sat" ? " (estimate)" : "/100") : ""}</p>
+          <p className="mlb-p">{p.what}</p>
+          <button type="button" className="mlb-go" onClick={() => startPlay({ mode: "exam", paper: p.id })}><i className="ph ph-timer" aria-hidden="true"/>Start the paper</button>
+        </section>))}</div>
+      <section className="mlb-card" aria-labelledby="mlb-exhist-h"><h3 id="mlb-exhist-h" className="mlb-h3">Your papers</h3>
+        {d.history.length ? <ul className="mlb-exhist">{d.history.map((h, k) => <li key={k}><span>{h.title}</span><span className="mlb-meta">{mlbDate(h.at)}</span><b>{h.right}/{h.total}</b><span className="mlb-chip">{h.paper === "sat" ? "≈ " + h.scaled : h.scaled + "/100"}</span></li>)}</ul>
+          : <p className="mlb-p">No papers yet. Your scores will collect here, so you can see yourself improve.</p>}</section>
+    </div>
+  );
+}
+
 /* The Daily Olympiad Problem (owner, 5 Nov 2026: "Add more features"; "Make things tough, but
    easy"). One problem a day from the Gods of Maths stages, the same for every member. Tough: it
    is olympiad level, whatever stage you are in. Easy: the hint is free, there are three tries, a
@@ -1041,7 +1076,12 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
   const [praise, setPraise] = React.useState(null);
   const tStart = React.useRef(Date.now());
   const t0 = React.useRef(Date.now());
-  React.useEffect(() => { NGGApi.member.mathslab.start(start.mode, { comp: start.comp, stage: start.stage }).then(setSes, e => setErr(mlbErr(e))); }, []); // eslint-disable-line
+  /* A practice paper runs against the clock, as the exam does: the time left is shown, and at
+     zero the paper is handed in (the server refuses answers after the time anyway). */
+  const [tick, setTick] = React.useState(Date.now());
+  const handedIn = React.useRef(false);
+  React.useEffect(() => { if (!ses || ses.mode !== "exam") return undefined; tStart.current = Date.now(); const h = setInterval(() => setTick(Date.now()), 1000); return () => clearInterval(h); }, [ses]);
+  React.useEffect(() => { NGGApi.member.mathslab.start(start.mode, { comp: start.comp, stage: start.stage, paper: start.paper }).then(setSes, e => setErr(mlbErr(e))); }, []); // eslint-disable-line
   React.useEffect(() => { t0.current = Date.now(); }, [i]);
   /* Keyboard, Duolingo's way: 1–9 pick an answer, Enter checks it or moves on. Never while typing
      in a field (digits there are the answer) or when Enter is pressed on a button (it clicks it). */
@@ -1052,16 +1092,19 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
       const tag = (e.target && e.target.tagName) || "";
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (k.choice && !k.fb && /^[1-9]$/.test(e.key) && Number(e.key) <= k.count) { e.preventDefault(); k.pick(Number(e.key) - 1); return; }
+      if (k.choice && !k.fb && k.letters && /^[a-e]$/i.test(e.key) && "abcde".indexOf(e.key.toLowerCase()) < k.count) { e.preventDefault(); k.pick("abcde".indexOf(e.key.toLowerCase())); return; }
       if (e.key === "Enter" && tag !== "BUTTON" && tag !== "A") { e.preventDefault(); if (k.fb) k.next(); else k.submit(); }
     };
     document.addEventListener("keydown", on); return () => document.removeEventListener("keydown", on);
   }, []);
   if (err) return <SttState kind="error" text={err}><button type="button" className="stt-btn" onClick={onDone}>Back</button></SttState>;
   if (!ses) return <SttState kind="loading" text="Preparing your questions…"/>;
-  if (res) return <MlbResult res={res} onDone={onDone} go={go} onAgain={onAgain && ["practice", "review"].indexOf(res.mode) >= 0 ? onAgain : null}/>;
-  const it = ses.items[i], practice = ses.mode === "practice", last = i === ses.items.length - 1;
+  if (res) return <MlbResult res={res} onDone={onDone} go={go} onAgain={onAgain && ["practice", "review", "exam"].indexOf(res.mode) >= 0 ? onAgain : null}/>;
+  const it = ses.items[i], practice = ses.mode === "practice", last = i === ses.items.length - 1, exam = ses.mode === "exam";
+  const left = exam ? Math.max(0, Math.round((tStart.current + ses.minutes * 60000 - tick) / 1000)) : 0;
+  const lettered = exam || !!it.letters;
   const empty = it.kind === "pair" ? !(Array.isArray(val) && val[0] && val[1]) : it.kind === "mcq" || it.kind === "error" ? val === "" : !String(val || "").trim();
-  const finish = () => { setBusy(true); NGGApi.member.mathslab.finish(ses.sessionId).then(r => { setBusy(false); setRes(Object.assign({}, r, { bestRun: best, secs: Math.round((Date.now() - tStart.current) / 1000) })); }, e => { setBusy(false); setErr(mlbErr(e)); }); };
+  const finish = () => { handedIn.current = true; setBusy(true); NGGApi.member.mathslab.finish(ses.sessionId).then(r => { setBusy(false); setRes(Object.assign({}, r, { bestRun: best, secs: Math.round((Date.now() - tStart.current) / 1000) })); }, e => { setBusy(false); setErr(mlbErr(e)); }); };
   const next = () => { setFb(null); setPraise(null); setVal(""); setConf(""); setHints(0); if (last) finish(); else setI(i + 1); };
   const submit = () => {
     if (empty || busy) return;
@@ -1078,14 +1121,20 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
         } else { setRun(0); setMissed(true); setPraise({ t: r.formNote || mlbNudge({ i, conf }) }); }
         setFb(r);
       } else next();
-    }, e => { setBusy(false); setErr(mlbErr(e)); });
+    }, e => { setBusy(false); if (exam && (e.code || e.message) === "time_up") finish(); else setErr(mlbErr(e)); });
   };
+  // A paper's question may be left: it counts as unanswered (wrong), as a blank does in the exam.
+  const skip = () => { if (busy) return; setBusy(true);
+    NGGApi.member.mathslab.answer(ses.sessionId, i, "", { ms: Date.now() - t0.current }).then(() => { setBusy(false); next(); },
+      e => { setBusy(false); if ((e.code || e.message) === "time_up") finish(); else setErr(mlbErr(e)); }); };
+  if (exam && left === 0 && !handedIn.current && !busy) setTimeout(() => { if (!handedIn.current) finish(); }, 0);
   const choice = it.kind === "mcq" || it.kind === "error";
-  keys.current = { choice, count: choice ? it.options.length : 0, fb, pick: k => setVal(k), submit, next };
+  keys.current = { choice, count: choice ? it.options.length : 0, fb, pick: k => setVal(k), submit, next, letters: lettered };
   return (
     <div className="mlb-play" data-mode={ses.mode}>
       <div className="mlb-playtop"><p className="mlb-eyebrow">{ses.title}</p>
         {practice && run >= 2 ? <span className="mlb-run" aria-label={run + " right in a row"}><i className="ph-fill ph-fire" aria-hidden="true"/>{run}</span> : null}
+        {exam ? <span className={"mlb-clock" + (left <= 300 ? " is-low" : "")} role="timer" aria-label={Math.floor(left / 60) + " minutes " + (left % 60) + " seconds left"}><i className="ph-fill ph-timer" aria-hidden="true"/>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</span> : null}
         <button type="button" className="mlb-back" onClick={onDone}><i className="ph ph-x" aria-hidden="true"/>Leave</button></div>
       <ol className="mlb-pips" aria-label={"Question " + (i + 1) + " of " + ses.items.length}>{ses.items.map((_, k) => <li key={k} className={k < i ? "is-done" : k === i ? "is-on" : ""}/>)}</ol>
       <section className="mlb-q" aria-live="polite">
@@ -1096,10 +1145,11 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
         {it.lines ? <ol className="mlb-lines">{it.lines.map((l, k) => <li key={k}><MlbMath text={l}/></li>)}</ol> : null}
         {choice ? <div className="mlb-opts" role="radiogroup" aria-label="Choose an answer">{it.options.map((o, k) => (
           <button key={k} type="button" role="radio" aria-checked={val === k} disabled={!!fb} className={"mlb-opt" + (val === k ? " is-on" : "") + (fb && fb.answer === o ? " is-right" : "") + (fb && !fb.correct && val === k ? " is-wrong" : "")} onClick={() => setVal(k)}>
-            <span className="mlb-opt-l" aria-hidden="true">{k + 1}</span><MlbMath text={o}/></button>))}</div>
+            <span className="mlb-opt-l" aria-hidden="true">{lettered ? "ABCDE"[k] : k + 1}</span><MlbMath text={o}/></button>))}</div>
           : <MlbInput item={it} value={val} onChange={setVal} onEnter={submit} disabled={!!fb}/>}
-        {choice && !fb ? <p className="mlb-meta mlb-keyhint">Tip: press 1–{it.options.length} to choose and Enter to check.</p> : null}
-        {!fb ? <div className="mlb-conf" role="radiogroup" aria-label="How sure are you?"><span>How sure are you?</span>{[["sure", "Sure"], ["think", "Think so"], ["guess", "Guessing"]].map(([k, l]) =>
+        {choice && !fb ? <p className="mlb-meta mlb-keyhint">Tip: press {lettered ? "A–" + "ABCDE"[it.options.length - 1] : "1–" + it.options.length} to choose and Enter to {exam ? "move on" : "check"}.</p> : null}
+        {exam && !choice ? <p className="mlb-meta mlb-keyhint">Type your answer (a whole number, a decimal or a fraction such as 7/2).</p> : null}
+        {!fb && !exam ? <div className="mlb-conf" role="radiogroup" aria-label="How sure are you?"><span>How sure are you?</span>{[["sure", "Sure"], ["think", "Think so"], ["guess", "Guessing"]].map(([k, l]) =>
           <button key={k} type="button" role="radio" aria-checked={conf === k} className={"mlb-chipb" + (conf === k ? " is-on" : "")} onClick={() => setConf(k)}>{l}</button>)}</div> : null}
         {practice && !fb ? (hints ? <p className="mlb-hint"><i className="ph ph-lightbulb" aria-hidden="true"/><MlbMath text={it.hint}/></p>
           : <button type="button" className="mlb-link" onClick={() => setHints(1)}>Show a hint (earns less XP)</button>) : null}
@@ -1111,7 +1161,9 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
           {fb.xp ? <p className="mlb-xp">+{fb.xp} XP</p> : null}
         </div> : null}
         <div className="mlb-actions">{fb ? <button type="button" className="mlb-go" onClick={next}>{last ? "See how you did" : "Next question"}</button>
-          : <button type="button" className="mlb-go" disabled={empty || busy} onClick={submit}>{busy ? "Checking…" : practice ? "Check" : last ? "Submit" : "Next"}</button>}</div>
+          : <button type="button" className="mlb-go" disabled={empty || busy} onClick={submit}>{busy ? "Checking…" : practice ? "Check" : last ? "Submit" : "Next"}</button>}
+          {exam && !fb ? <button type="button" className="stt-btn" disabled={busy} onClick={skip}>{last ? "Leave it and hand in" : "Leave it, next question"}</button> : null}
+          {exam && !last ? <button type="button" className="stt-btn mlb-handin" disabled={busy} onClick={finish}>Hand in now</button> : null}</div>
       </section>
     </div>
   );
@@ -1186,7 +1238,7 @@ function MlbResult({ res, onDone, go, onAgain }) {
   React.useEffect(() => { if (wins.length) try { window.dispatchEvent(new CustomEvent("mlb:certs-new")); } catch (_) {} }, []);
   const lit = res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length;
   const wrong = res.review.filter(q => !q.correct), shown = all ? res.review : wrong;
-  const kind = res.mode === "climb" ? "Placement gate" : res.mode === "check" ? "Mastery check" : res.mode === "boss" ? "Stage boss" : res.mode === "review" ? "Review" : "Practice";
+  const kind = res.mode === "exam" ? (res.exam && res.exam.title || "Practice paper") : res.mode === "climb" ? "Placement gate" : res.mode === "check" ? "Mastery check" : res.mode === "boss" ? "Stage boss" : res.mode === "review" ? "Review" : "Practice";
   /* The end of a session is the moment that decides whether a child comes back.
      Duolingo's shape: a celebration when it went well, a headline that names it,
      and three tiles — what was earned, how accurate, the best run — each with a
@@ -1217,15 +1269,24 @@ function MlbResult({ res, onDone, go, onAgain }) {
             : mins ? <li className="is-time"><span>Time on task</span><b><i className="ph-fill ph-timer" aria-hidden="true"/>{mins} min</b></li> : null}
         </ul>
         {lit ? <p className="mlb-res-chips"><span className="mlb-chip is-ok"><i className="ph-fill ph-star" aria-hidden="true"/>{lit} star{lit === 1 ? "" : "s"} lit on your map</span></p> : null}
+        {res.exam ? <section className="mlb-exrep" aria-label="Your paper">
+          <p className="mlb-exrep-score"><b>{res.exam.scaled}</b><span>{res.exam.scale}</span></p>
+          <p className="mlb-meta">{res.exam.answered} of {res.total} answered · {Math.floor(res.exam.usedSecs / 60)} min {res.exam.usedSecs % 60} s of {res.exam.minutes} min{res.exam.overTime ? " · handed in when time ran out" : ""}.
+            {res.exam.paper === "sat" ? " The 200–800 figure is an estimate from your percentage; the real conversion differs from test to test." : ""}</p>
+          <ul className="mlb-exareas">{Object.keys(res.exam.areas).map(a => { const x = res.exam.areas[a], pc = Math.round(x.right / Math.max(1, x.total) * 100);
+            return <li key={a} className={pc < 60 ? "is-weak" : ""}><span>{a}</span><span className="mlb-meter"><span style={{ width: pc + "%" }}/></span><b>{x.right}/{x.total}</b></li>; })}</ul>
+        </section> : null}
         {!win && wrong.length ? <p className="mlb-meta">The {wrong.length === 1 ? "one you missed is" : wrong.length + " you missed are"} below, with the working. Going over them is the fastest way up.</p> : null}
         {(res.certificates || []).map(c => (
           /* The session that completed a course: the certificate exists now — a numbered NGG document the family also sees under Documents. */
           <p key={c.no} className="mlb-p mlb-cert-new"><i className="ph-fill ph-certificate" aria-hidden="true"/> {c.scope === "stage" ? "Stage passed" : "Course complete"}: <b>{c.title}</b>. Certificate {c.no} —{" "}
             <a href={c.url} target="_blank" rel="noopener">open it</a>.</p>))}
-        <div className="mlb-actions">{onAgain && res.pct < 85 ? <React.Fragment><button type="button" className="mlb-go" onClick={onAgain}><i className="ph ph-arrow-clockwise" aria-hidden="true"/>Practise again</button>
+        <div className="mlb-actions">{res.mode === "exam" ? <React.Fragment>{onAgain ? <button type="button" className="mlb-go" onClick={onAgain}><i className="ph ph-arrow-clockwise" aria-hidden="true"/>Try another paper</button> : null}
+            <button type="button" className="stt-btn" onClick={() => go({ v: "exams" })}>All papers</button></React.Fragment>
+          : onAgain && res.pct < 85 ? <React.Fragment><button type="button" className="mlb-go" onClick={onAgain}><i className="ph ph-arrow-clockwise" aria-hidden="true"/>Practise again</button>
           <button type="button" className="stt-btn" onClick={onDone}>Back to the topic</button></React.Fragment>
           : <React.Fragment><button type="button" className="mlb-go" onClick={onDone}>Continue</button>{onAgain ? <button type="button" className="stt-btn" onClick={onAgain}>Practise again</button> : null}</React.Fragment>}
-          <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}>See the map</button></div>
+          {res.mode === "exam" ? null : <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}>See the map</button>}</div>
       </section>
       <section className="mlb-card" aria-labelledby="mlb-rev-h">
         <div className="mlb-row"><h3 id="mlb-rev-h" className="mlb-h3">{all ? "Every question" : wrong.length ? "Learn from these " + wrong.length : "Every answer was right"}</h3>

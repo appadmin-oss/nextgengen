@@ -1070,6 +1070,7 @@
         cert:   (course) => request('/member/mathslab.php' + qs({ view: 'certificate', course })),
         progress: () => request('/member/mathslab.php' + qs({ view: 'progress' })),
         daily:  () => request('/member/mathslab.php' + qs({ view: 'daily' })),
+        exams:  () => request('/member/mathslab.php' + qs({ view: 'exams' })),
         dailyAnswer: (answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'daily', answer }, extra || {}) }),
         start:  (mode, opts) => request('/member/mathslab.php', { body: Object.assign({ action: 'start', mode }, opts || {}) }),
         answer: (sessionId, index, answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'answer', sessionId, index, answer }, extra || {}) }),

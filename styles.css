@@ -8815,6 +8815,29 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-dailystats i { color: #b7791f; }
 .mlb-dailystats b { color: var(--mlb-ink); }
 .mlb-daily .mlb-err { margin: 0; color: #b42318; font-size: 13.5px; }
+/* Exam practice: the Home card, the papers, the clock, and the report by area. */
+.mlb-excard { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 16px; background: #f6f7fb; border: 1px solid #e3e6ef; color: var(--mlb-ink); }
+.mlb-excard .mlb-h3 { margin: 2px 0; }
+.mlb-dailycard-i.is-exam { background: var(--mlb-ink); color: #fff; }
+@container (max-width: 560px) { .mlb-excard { grid-template-columns: auto minmax(0, 1fr); } .mlb-excard > button { grid-column: 1 / -1; } }
+.mlb-papers { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.mlb-paper { display: flex; flex-direction: column; gap: 8px; }
+.mlb-paper .mlb-go { margin-top: auto; align-self: flex-start; }
+.mlb-paper-i { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--mlb-ink); color: #fff; font-size: 20px; }
+.mlb-paper.is-sat .mlb-paper-i { background: #f5b026; color: #3b2a00; }
+.mlb-exhist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.mlb-exhist li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid #eceef4; font-size: 14px; }
+.mlb-exhist li:first-child { border-top: 0; }
+.mlb-clock { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #f6f7fb; color: var(--mlb-ink); font-weight: 700; font-variant-numeric: tabular-nums; font-size: 14px; }
+.mlb-clock.is-low { background: #fdecea; color: #b42318; }
+.mlb-exrep { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
+.mlb-exrep-score { margin: 0; display: flex; align-items: baseline; gap: 8px; }
+.mlb-exrep-score b { font-size: 32px; font-weight: 800; color: var(--mlb-ink); font-variant-numeric: tabular-nums; }
+.mlb-exrep-score span { font-size: 14px; color: var(--mlb-ink-2); }
+.mlb-exareas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mlb-exareas li { display: grid; grid-template-columns: minmax(0, 12em) minmax(60px, 1fr) auto; align-items: center; gap: 10px; font-size: 13.5px; color: var(--mlb-ink-2); }
+.mlb-exareas li b { color: var(--mlb-ink); font-variant-numeric: tabular-nums; }
+.mlb-exareas li.is-weak span:first-child { color: #b42318; font-weight: 600; }
 .mlb-bands li.is-summit { background: linear-gradient(135deg, rgba(255, 211, 106, .22), rgba(255, 211, 106, .06)); }
 .mlb-bands li.is-summit .mlb-bands-i { background: #b7791f; color: #fff; }
 .mlb-dia { width: 100%; max-width: 360px; height: auto; display: block; }

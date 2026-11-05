@@ -4794,6 +4794,20 @@ off as "bad at maths" when a foundation was simply never taught.
   - **When it is over** (solved, or out of tries), the answer and the full worked solution are shown.
   - **Rewards:** solving at the first try with no hint earns 50 XP; any other solve earns 25 XP. Home and the page show how many days in a row the member has solved it, and how many in all.
   - It never moves the map: it is a taste of the summit, not a step on the path.
+- **Exam practice (the Exams tab, `/study/lab/exams`).** Two timed papers, open to every member whatever their stage.
+  - **The papers:**
+
+    | Paper | Questions | Time | Score |
+    |---|---|---|---|
+    | JAMB-style | 40, options A–E | 40 minutes | out of 100, as the UTME reports a subject |
+    | SAT-style Math module | 27 | 43 minutes, like the practice test supplied | an estimate on the 200–800 scale |
+
+    On the SAT-style paper about a quarter of the answers are typed. The screen says the 200–800 figure is an estimate, because the College Board's own conversion changes from test to test.
+  - **New every time:** each paper is drawn fresh from the Lab's own questions. Most are written in the style of past JAMB and SAT papers: 40 JAMB-style kinds and 15 SAT-style kinds, modelled on the papers the owner supplied. None is copied from a past paper.
+  - **Timing:** the clock is the server's. At zero the paper is handed in, and late answers are refused. A question can be left blank; it counts as unanswered.
+  - **The report** gives the score, the time used, and the right answers by area (Number, Algebra, Geometry & Measure, …). It names the weak areas to work on.
+  - A paper never changes the map. Papers taken are listed with their scores, and the best score shows on each paper's card.
+  - The same exam-style questions also turn up in ordinary practice of their topics: a JAMB factor-theorem question is practice for *Remainder theorem and factor theorem*.
 - **Stages 5–7 are deeper.** Each algebra topic used to have one or two
   kinds of question. It now has four to six, plus six new proofs: the
   *n*th term, why dividing by a negative reverses an inequality, crossing

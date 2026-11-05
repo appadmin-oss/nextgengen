@@ -37860,6 +37860,37 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && $r1['correct'] && $r1['xp'] === 50 && $r1['dailyStreak'] === 1 && $r1['dailySolved'] === 1 && mlb_home(['memberId' => 'NGG-ML-D'])['daily']['solved'] === true
         && $dsid !== '' && (mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $dsid, 'index' => 0, 'answer' => $right])['error'] ?? '') === 'not_found'
         && (mlb_finish(['memberId' => 'NGG-ML-D', 'sessionId' => $dsid])['error'] ?? '') === 'not_found');
+    /* Exam practice (owner: "Proceed. Adapt them all over" — JAMB past papers and a digital SAT practice
+       test). Original JAMB-style (A–E) and SAT-style forms in the topics they belong to; papers drawn
+       fresh, timed by the server, marked by area, and never moving the map. */
+    $jf = 0; $sf = 0; $short = []; $jfew = 0; $jn = 0;
+    foreach (mlb_forms_exam() as $c => $fs) { $base = count(mlb_forms()[$c]) - count($fs);
+        foreach ($fs as $k => $f) { $tag = mlb_item($c, $base + $k, 3)['exam'] ?? ''; if ($tag === 'jamb') $jf++; elseif ($tag === 'sat') $sf++;
+            for ($sd = 1; $sd <= 40; $sd++) { $it = mlb_item($c, $base + $k, $sd * 211); if (!isset($it['options'])) continue;
+                $want = ($it['exam'] ?? '') === 'jamb' ? 5 : 4; if (count($it['options']) < 4) $short[] = "$c/" . ($base + $k);
+                if ($want === 5) { $jn++; if (count($it['options']) < 5) $jfew++; } } } }
+    chk('maths lab · exam style: at least 40 JAMB-style (A–E) and 15 SAT-style forms, never fewer than four options, a JAMB question shows five in at least 95% of draws, and none of it ends up in a form that makes the proof pair move' . ($short ? ' (' . implode(',', array_unique($short)) . ')' : ''),
+        $jf >= 40 && $sf >= 15 && $short === [] && $jfew <= 0.05 * $jn && mlb_why_at('MC-069') === count(mlb_forms()['MC-069']) - 2 - count(mlb_forms_deep()['MC-069'] ?? []) - count(mlb_forms_exam()['MC-069']));
+    $bm = mlb_map(['memberId' => 'NGG-ML-D']);
+    $ej = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'jamb']); $es = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'sat']);
+    $jOwn = count(array_filter($ej['items'], static fn($x) => ($x['exam'] ?? '') === 'jamb')); $jKinds = array_unique(array_column($ej['items'], 'kind'));
+    $sTyped = count(array_filter($es['items'], static fn($x) => $x['kind'] !== 'mcq'));
+    chk('maths lab · a JAMB-style paper is 40 multiple-choice questions on 40 different topics in 40 minutes, mostly the exam-style forms; an SAT-style module is 27 in 43 minutes with typed answers among them; a paper needs no place on the map',
+        count($ej['items']) === 40 && $ej['minutes'] === 40 && $jKinds === ['mcq'] && $jOwn >= 20 && count(array_unique(array_column($ej['items'], 'comp'))) === 40 && !isset($ej['items'][0]['key'])
+        && count($es['items']) === 27 && $es['minutes'] === 43 && $sTyped >= 5 && $sTyped <= 9 && (mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'gcse'])['error'] ?? '') === 'bad_paper');
+    // Answer half right, then let the clock run out: the server refuses the late answer and the report is by area.
+    $srow = db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$ej['sessionId']]); $its = json_decode((string)$srow['items'], true);
+    foreach ($its as $i => $x) { if ($i >= 30) break; $it = mlb_item($x['c'], $x['f'], $x['s']); mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $ej['sessionId'], 'index' => $i, 'answer' => $i < 20 ? $it['key'] : (($it['key'] + 1) % count($it['options'])), 'ms' => 30000]); }
+    db_update('mlab_sessions', ['startedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 41 * 60 - MLB_EXAM_GRACE)], ['sessionId' => $ej['sessionId']]);
+    $late = mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $ej['sessionId'], 'index' => 35, 'answer' => 0]);
+    $fin = mlb_finish(['memberId' => 'NGG-ML-D', 'sessionId' => $ej['sessionId']]);
+    $areaTot = array_sum(array_column($fin['exam']['areas'], 'total')); $areaRight = array_sum(array_column($fin['exam']['areas'], 'right'));
+    $am = mlb_map(['memberId' => 'NGG-ML-D']); $ex = mlb_exams(['memberId' => 'NGG-ML-D']);
+    chk('maths lab · a paper refuses an answer after its time, scores out of 100 (JAMB) with every question counted in an area, names the weak areas, leaves the map exactly as it was, and is listed with its score',
+        ($late['error'] ?? '') === 'time_up' && $fin['right'] === 20 && $fin['exam']['scaled'] === 50 && $areaTot === 40 && $areaRight === 20 && $fin['exam']['answered'] === 30 && $fin['xp'] === 40
+        && json_encode(array_column($am['stages'], 'comps')) === json_encode(array_column($bm['stages'], 'comps')) && $fin['changes'] === []
+        && ($ex['history'][0]['paper'] ?? '') === 'jamb' && $ex['history'][0]['scaled'] === 50 && count($ex['papers']) === 2 && $ex['papers'][0]['best'] === 50
+        && mlb_exam_report('sat', array_fill(0, 27, ['c' => 'MC-050']), array_fill(0, 27, ['ok' => true, 'a' => '1']), now_iso())['scaled'] === 800);
     /* Courses lock until their first stage is reached, and say why; enrolling a locked one is refused. */
     $cv = array_column(mlb_home(['memberId' => 'NGG-ML-1'])['courses'], null, 'id');
     $el = mlb_enrol(['memberId' => 'NGG-ML-1', 'courseId' => 'further-maths']);
