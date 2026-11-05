@@ -5200,3 +5200,7 @@ INSERT INTO schema_version (version) VALUES (226) ON DUPLICATE KEY UPDATE versio
 ALTER TABLE mlab_state ADD COLUMN studiedAt VARCHAR(32) NOT NULL DEFAULT '';
 ALTER TABLE mlab_state ADD COLUMN owed INT NOT NULL DEFAULT 0;
 INSERT INTO schema_version (version) VALUES (227) ON DUPLICATE KEY UPDATE version = version;
+
+-- 228: the member an application became (convert claims the row; a converted application cannot be declined).
+ALTER TABLE applications ADD COLUMN convertedMemberId VARCHAR(40) NOT NULL DEFAULT '';
+INSERT INTO schema_version (version) VALUES (228) ON DUPLICATE KEY UPDATE version = version;

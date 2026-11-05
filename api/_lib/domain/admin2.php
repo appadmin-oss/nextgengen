@@ -879,6 +879,11 @@ function admin_applications_set_status(array $p): array {
        here left an application nobody could convert any more. */
     if ($status === 'accepted' && (string)$a['kind'] === 'teen') return ['ok' => false, 'error' => 'use_convert', 'message' => 'Use Accept & create member: it makes the member record.'];
     if ((string)$a['status'] === $status) return ['ok' => true, 'unchanged' => true, 'told' => []];
+    /* A child who is already a member is not waitlisted or declined from here:
+       that sent the family a refusal after their welcome, while the member
+       record stayed active. Member lifecycle lives on the member. */
+    if (trim((string)($a['convertedMemberId'] ?? '')) !== '' && $status !== 'accepted')
+        return ['ok' => false, 'error' => 'already_member', 'memberId' => (string)$a['convertedMemberId'], 'message' => 'This applicant is already member ' . $a['convertedMemberId'] . '. Change their membership on the member record.'];
     db_update('applications', ['status' => $status], ['id' => $id]);
     /* A waitlist or a refusal the family never hears about is a family still
        waiting by the phone. They are told in the desk's words when the desk
@@ -957,6 +962,10 @@ function admin_application_convert(array $p): array {
     $id = (int)($p['id'] ?? 0);
     [$a, $no] = app_for_admin($g, $id); if ($no) return $no;
     if ($a['kind'] !== 'teen') return ['ok' => false, 'error' => 'only_teen_apps'];   // mentor apps → mentors, handled separately
+    /* Converted already: the member it became, not a second one. Pressing
+       again (or a second tab) is answered with the same member. */
+    $made = trim((string)($a['convertedMemberId'] ?? ''));
+    if ($made !== '' && db_row('SELECT 1 x FROM members WHERE memberId = ? LIMIT 1', [$made])) return ['ok' => true, 'memberId' => $made, 'existed' => true];
     if ((string)$a['status'] === 'rejected') return ['ok' => false, 'error' => 'rejected', 'message' => 'This application was declined. Set it back to reviewing first if that was a mistake.'];
     /* The age is checked again: an application can wait months, and the
        programme is for 10 to 17 year olds on the day they become a member. */
@@ -988,7 +997,10 @@ function admin_application_convert(array $p): array {
             if ($sameDob || $sameName) { $existing = $m; break; }
         }
     }
-    if ($existing) { db_update('applications', ['status' => 'accepted'], ['id' => $id]); return ['ok' => true, 'memberId' => $existing['memberId'], 'existed' => true]; }
+    if ($existing) {
+        db_update('applications', ['status' => 'accepted', 'convertedMemberId' => (string)$existing['memberId']], ['id' => $id]);
+        return ['ok' => true, 'memberId' => $existing['memberId'], 'existed' => true];
+    }
     // Summer applicants become Summer Students; Anchor/NGG applicants become
     // full NGG members. Falls back to Summer for legacy rows with no program.
     $type = ((string)($a['program'] ?? '') === 'anchor') ? 'NGG' : 'Summer';
@@ -1026,6 +1038,16 @@ function admin_application_convert(array $p): array {
     $division = $type === 'NGG' ? (trim((string)($a['faculty'] ?? '')) ?: (function_exists('club_division_of') ? club_division_of((string)$a['track']) : '')) : '';
     /* An approved applicant becomes a MEMBER, so they are issued a member's
        printed ID at the same moment — see domain/member-id.php. */
+    /* Claim the application by writing the member it becomes. Two presses at
+       once both read "not converted" above; only one of these updates matches,
+       so only one member, one printed ID and one invoice are made. The value
+       is new and unique, so the claim CHANGES the row on MySQL as on SQLite. */
+    $claimed = db_exec("UPDATE applications SET convertedMemberId = ? WHERE id = ? AND COALESCE(convertedMemberId, '') = ?", [$newId, $id, $made]);
+    if (!$claimed) {
+        $now = (string)(db_row('SELECT convertedMemberId FROM applications WHERE id = ?', [$id])['convertedMemberId'] ?? '');
+        return $now !== '' ? ['ok' => true, 'memberId' => $now, 'existed' => true]
+                           : ['ok' => false, 'error' => 'busy', 'message' => 'Someone else is converting this application. Refresh and look again.'];
+    }
     $__m = [
         'memberId' => $newId, 'fullName' => $a['name'], 'email' => $intakeEmail,
         'type' => $type, 'status' => 'active', 'role' => 'member',
@@ -1066,8 +1088,14 @@ function admin_application_convert(array $p): array {
         if ($sch !== '' && function_exists('school_learn')) school_learn($sch, (string)($det['resLga'] ?? ''), (string)($det['resState'] ?? ''));
         if ($intakePhone !== '' && function_exists('club_phone') && club_phone($intakePhone) !== '' && club_phone($intakePhone) !== (string)($det['parent1Phone'] ?? '')) $__m['phone'] = $intakePhone;
     }
-    if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_and_claim($__m, $newId);
-    db_insert('members', $__m);
+    try {
+        if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_and_claim($__m, $newId);
+        db_insert('members', $__m);
+    } catch (\Throwable $e) {
+        // Nothing was made: release the claim so the desk can try again.
+        db_exec('UPDATE applications SET convertedMemberId = ? WHERE id = ? AND convertedMemberId = ?', [$made, $id, $newId]);
+        throw $e;
+    }
     /* The agreements were given on the application; the member inherits them,
        with the policy version and how they were given, never re-asked. */
     $aref = intake_reference('teen', (int)$a['id']);
@@ -1131,6 +1159,14 @@ function admin_application_update(array $p): array {
         $em = trim((string)$d['email']);
         if ($em !== '' && !filter_var($em, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
         $row['email'] = substr($em, 0, 160);
+    }
+    /* The programme decides what a conversion makes (an NGG member or a Summer
+       account) and the date of birth is the age check at conversion: neither
+       may be filed as free text. */
+    if (array_key_exists('program', $d) && !in_array((string)$d['program'], ['anchor', 'summer'], true)) return ['ok' => false, 'error' => 'bad_program'];
+    if (array_key_exists('dob', $d) && trim((string)$d['dob']) !== '') {
+        $dd = trim((string)$d['dob']);
+        if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $dd, $dm) || !checkdate((int)$dm[2], (int)$dm[3], (int)$dm[1]) || $dd > gmdate('Y-m-d')) return ['ok' => false, 'error' => 'bad_dob'];
     }
     if (array_key_exists('age', $d)) { $age = (int)$d['age']; if ($age !== 0 && ($age < 5 || $age > 100)) return ['ok' => false, 'error' => 'bad_age']; $row['age'] = $age; }
     foreach (['phone' => 48, 'centre' => 48, 'track' => 64, 'faculty' => 80, 'program' => 32, 'role' => 32, 'why' => 4000, 'firstName' => 80, 'lastName' => 80, 'otherName' => 80, 'sex' => 16, 'dob' => 16, 'photoUrl' => 512] as $f => $max) {

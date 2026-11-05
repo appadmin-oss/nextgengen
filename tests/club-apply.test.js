@@ -242,6 +242,18 @@ const yearsAgo = (n, md) => (new Date().getFullYear() - n) + '-' + (md || '01-15
     await S.waitForSelector('.apf-review', { timeout: 30000 });
     chk('a reload resumes at the same step with the same answers', /JSS 3/.test(await S.innerText('.apf-review')) && /Saved on this device/.test(await S.innerText('.apf-head')));
     await cont(S);
+    /* Changing an application someone already sent needs the code emailed to
+       that inbox (an email and a date of birth are not a secret). The test
+       holds the inbox: it sets a known code, as the email would carry one. */
+    await S.waitForSelector('#apf-editcode', { timeout: 30000 });
+    chk('sending the same child again asks for the code emailed to that address, and changes nothing yet',
+      /emailed a 6-digit code/.test(await S.innerText('.apf-card')) && JSON.parse(php(`echo db_row("SELECT details FROM applications WHERE email = 'tolu.family@gmail.com'")['details'];`)).class === 'JSS 2');
+    php(`$a = db_row("SELECT id, details FROM applications WHERE email = 'tolu.family@gmail.com'"); $d = json_decode($a['details'], true);`
+      + ` $d['_edit'] = ['hash' => hash('sha256', $a['id'] . '|111222'), 'exp' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 900), 'tries' => 0];`
+      + ` db_update('applications', ['details' => json_encode($d)], ['id' => $a['id']]); echo 1;`);
+    await S.fill('#apf-editcode', '000000'); await cont(S);
+    chk('…a wrong code is refused, by name', await S.waitForFunction(() => /That code is not right/.test((document.querySelector('.apf-card') || {}).innerText || ''), null, { timeout: 15000 }).then(() => true, () => false));
+    await S.fill('#apf-editcode', '111222'); await cont(S);
     await S.waitForSelector('.apf-done', { timeout: 30000 }).catch(async e => { console.error('    page said: ' + (await S.innerText('.apf-card').catch(() => '')).slice(0, 300)); throw e; });
     chk('the same child sent again updates the application, and says so', /Application updated/.test(await S.innerText('.apf-done')) && /updated it with these answers/.test(await S.innerText('.apf-done'))
       && php(`echo db_row("SELECT COUNT(*) c FROM applications WHERE email = 'tolu.family@gmail.com'")['c'];`) === '1'

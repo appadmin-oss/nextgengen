@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 227;
+const NGG_SCHEMA_TARGET = 228;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6405,6 +6405,14 @@ function db_migrate(PDO $db): void {
         227 => "
             ALTER TABLE mlab_state ADD COLUMN studiedAt TEXT NOT NULL DEFAULT '';
             ALTER TABLE mlab_state ADD COLUMN owed INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* 228 — Registration audit (5 Nov 2026): the member an application became. Convert
+           claims the row by writing it (a new, unique value, so the claim changes the row on
+           MySQL and SQLite alike): two presses at once made two members, two printed IDs and
+           two invoices. It also lets the desk refuse to "decline" a child who is already a
+           member, which used to send the family a refusal after a welcome. */
+        228 => "
+            ALTER TABLE applications ADD COLUMN convertedMemberId TEXT NOT NULL DEFAULT '';
         ",
     ];
 

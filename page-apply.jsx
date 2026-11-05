@@ -247,8 +247,18 @@ function apfServerWhy(e) {
     photo_required: "Add a passport photo.",
     centre_not_offered: d.detail || "That centre doesn’t run the Club. Choose another on the first step.",
     upstream_unreachable: "We couldn’t reach the server. Your answers are saved here; try again in a moment.",
+    bad_dob: "Check the date of birth: it must be a real date.",
+    bad_sex: "Choose Female or Male.",
+    bad_email: "Enter a full email address, like name@gmail.com.",
+    phone_required: "Add a mobile number.",
+    bad_division: "Choose the course again: the list has changed since this page opened.",
+    division_required: "Choose a course.",
+    course_not_in_division: d.detail ? d.detail + " Choose the course again." : "Choose the course again.",
+    details_required: d.message || "Some answers did not reach us. Reload the page and send again; your answers are kept.",
   };
-  const step = code === "age_ngv" || code === "bad_age" ? 1 : code === "consent_required" || code === "photo_required" ? 6 : code === "centre_not_offered" ? 0
+  const step = ["age_ngv", "bad_age", "bad_dob", "bad_sex", "bad_email", "phone_required"].includes(code) ? 1
+    : ["bad_division", "division_required", "course_not_in_division"].includes(code) ? 5
+    : code === "consent_required" || code === "photo_required" ? 6 : code === "centre_not_offered" ? 0
     : d.field && APF_FIELD_STEP[d.field] != null ? APF_FIELD_STEP[d.field] : -1;
   return { text: map[code] || (d.field ? "Something in this section needs another look." : "We couldn’t send the application. Your answers are saved here; try again."), step };
 }
@@ -586,6 +596,10 @@ function ApfField({ f, v, set, touch, shown, err, W, offer, offerErr, reloadOffe
      goes; a new one waits for them to leave the field. */
   const [foc, setFoc] = React.useState(false);
   const [hold, setHold] = React.useState(false);
+  /* Typing in the INPUT, not focus anywhere in the field: the email's "Use it"
+     button lives inside the field, so hiding the suggestion on any focus
+     unmounted it the moment it was pressed, and the fix never landed. */
+  const [typing, setTyping] = React.useState(false);
   React.useEffect(() => { if (foc && hold && !err) setHold(false); }, [foc, hold, err]);
   const onFoc = () => { if (!foc) { setFoc(true); setHold(!!shown); } };
   const onOut = e => { if (!e.currentTarget.contains(e.relatedTarget)) setFoc(false); };
@@ -596,7 +610,7 @@ function ApfField({ f, v, set, touch, shown, err, W, offer, offerErr, reloadOffe
   if (f.type === "heading") return <div className={"apf-fld apf-heading" + span}><h2>{f.label}</h2>{f.hint && <span>{f.hint}</span>}</div>;
   const hasLabel = !!f.label && !["toggle", "info", "agree"].includes(f.type);
   let help = null;
-  if (f.id === "email" && !foc) { const fx = apfEmailFix(val); if (fx && fx !== String(val || "").trim().toLowerCase()) help = { tone: "warn", icon: "lightbulb", text: "Did you mean " + fx + "?", fixL: "Use it", fix: () => upd(fx) }; }
+  if (f.id === "email" && !typing) { const fx = apfEmailFix(val); if (fx && fx !== String(val || "").trim().toLowerCase()) help = { tone: "warn", icon: "lightbulb", text: "Did you mean " + fx + "?", fixL: "Use it", fix: () => upd(fx) }; }
   if (f.id === "dob" && age != null && !err) help = { tone: "ok", icon: "check-circle", text: "Age " + age + " today" };
   if (f.id === "surname" && v.firstName && v.surname && !err && !foc) help = { tone: "muted", icon: "identification-card", text: "ID card: " + String(v.surname).toUpperCase() + ", " + v.firstName + (v.middleName ? " " + v.middleName : "") };
   if (f.id === "parent2Phone" && val && apfPhone(val) === apfPhone(v.parent1Phone)) help = { tone: "muted", icon: "info", text: "Same number as the main contact. That’s fine if they share a phone." };
@@ -625,7 +639,7 @@ function ApfField({ f, v, set, touch, shown, err, W, offer, offerErr, reloadOffe
           {f.prefix && <span className="apf-prefix">{f.prefix}</span>}
           <input id={inputId} type={f.inType || "text"} inputMode={f.inputMode} autoComplete={f.ac || "on"} value={val || ""} placeholder={f.ph || ""}
             max={f.inType === "date" ? new Date().toISOString().slice(0, 10) : undefined}
-            onChange={e => upd(e.target.value)} onBlur={blurText} aria-invalid={shown || undefined} aria-describedby={shown ? errId : f.hint ? "apf-hint-" + f.id : undefined}/>
+            onChange={e => upd(e.target.value)} onFocus={() => setTyping(true)} onBlur={() => { setTyping(false); blurText(); }} aria-invalid={shown || undefined} aria-describedby={shown ? errId : f.hint ? "apf-hint-" + f.id : undefined}/>
         </div>
       )}
       {f.type === "textarea" && <ApfTextarea f={f} val={val} upd={upd} touch={touch} shown={shown} inputId={inputId} errId={errId}/>}
@@ -725,6 +739,15 @@ function apfHit(text, q) {
   return words.every(w => t.includes(w));
 }
 
+function apfStarts(text, q) { const t = String(text || "").toLowerCase(), w = String(q || "").trim().toLowerCase(); return w !== "" && t.startsWith(w); }
+/** Matches that begin with the query first, then those with a word beginning with it; otherwise the list's order. */
+function apfRank(items, q) {
+  const w = String(q || "").trim().toLowerCase();
+  if (!w) return items;
+  const score = o => { const t = String(o).toLowerCase(); return t.startsWith(w) ? 0 : (" " + t).includes(" " + w) ? 1 : 2; };
+  return items.map((o, i) => [o, score(o), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(x => x[0]);
+}
+
 /** A searchable picker: a dropdown on a wide form, a full-screen sheet on a phone. */
 function ApfCombo({ f, val, pick, touch, shown, inputId, errId, phone }) {
   const [q, setQ] = React.useState(null);     // null = not typing; shows the value
@@ -746,8 +769,18 @@ function ApfCombo({ f, val, pick, touch, shown, inputId, errId, phone }) {
   }, [qq, f.remote]);
   const list = [], flat = [];
   if (f.groups) f.groups.forEach(([h, items]) => { const it = items.filter(o => apfHit(o, qq)); if (it.length) { list.push({ g: h }); it.forEach(o => { list.push({ o }); flat.push(o); }); } });
-  else if (remote) remote.forEach(r => { list.push({ o: r.name, sub: [r.lga, r.state].filter(Boolean).join(", ") }); flat.push(r.name); });
-  else (f.opts || []).filter(o => apfHit(o, qq)).slice(0, 40).forEach(o => { list.push({ o }); flat.push(o); });
+  else {
+    /* Names that START with what was typed come first, here as on the server:
+       in the list's own (alphabetical) order, "Egbeda Sen" + Enter chose
+       "Anglican Senior Grammar School, Egbeda". The schools near our centres
+       stay offered while the open-data answer is on screen. */
+    const local = apfRank((f.opts || []).filter(o => apfHit(o, qq)), qq).slice(0, 40);
+    if (remote) {
+      const have = new Set(remote.map(r => String(r.name).toLowerCase()));
+      local.filter(o => !have.has(String(o).toLowerCase()) && apfStarts(o, qq)).forEach(o => { list.push({ o }); flat.push(o); });
+      remote.forEach(r => { list.push({ o: r.name, sub: [r.lga, r.state].filter(Boolean).join(", ") }); flat.push(r.name); });
+    } else local.forEach(o => { list.push({ o }); flat.push(o); });
+  }
   const h = Math.min(hi, Math.max(0, flat.length - 1));
   const listId = "apf-lb-" + f.id;
   const choose = o => { pick(o); setQ(null); setOpen(false); setHi(0); };

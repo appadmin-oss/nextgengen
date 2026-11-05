@@ -849,8 +849,13 @@ function public_apply(array $p): array {
     /* A volunteer is a duplicate within the same programme only: somebody who
        registered for the Summer School and then for the Club is two
        applications, not the first one's reference handed back. */
-    $dupe = $kind === 'teen' && $details !== null
-        ? db_row('SELECT id FROM applications WHERE lower(email) = ? AND dob = ? AND kind = ? AND createdAt > ? LIMIT 1', [$email, $dob, $kind, $cutoff])
+    /* A child is a duplicate within the same PROGRAMME, and is matched on
+       date of birth whatever the form: a Club application sent the day after a
+       Summer one for the same child used to come back as the Summer one's
+       reference and was never filed, and two siblings applying to Summer
+       School from one parent's email in a day were collapsed into one. */
+    $dupe = $kind === 'teen'
+        ? db_row("SELECT id FROM applications WHERE lower(email) = ? AND dob = ? AND kind = 'teen' AND COALESCE(NULLIF(program,''),'anchor') = ? AND createdAt > ? LIMIT 1", [$email, $dob, $program, $cutoff])
         : ($kind === 'volunteer'
             ? db_row("SELECT id FROM applications WHERE lower(email) = ? AND kind = 'volunteer' AND COALESCE(NULLIF(programme,''),'summer') = ? AND createdAt > ? LIMIT 1", [$email, $programme ?: 'summer', $cutoff])
             : db_row('SELECT id FROM applications WHERE lower(email) = ? AND kind = ? AND createdAt > ? LIMIT 1', [$email, $kind, $cutoff]));

@@ -1023,7 +1023,8 @@ says what joining costs before anybody applies.
 
 | You want to… | Do this |
 |---|---|
-| Accept a child | **Accept & create member**: the start date, and the centre when the application names none. Each child is their own member, even when brothers and sisters applied from one parent's email. A declined application, or a child who is now outside 10 to 17, is refused with the reason. |
+| Accept a child | **Accept & create member**: the start date, and the centre when the application names none. Each child is their own member, even when brothers and sisters applied from one parent's email. A declined application, or a child who is now outside 10 to 17, is refused with the reason. Pressing it twice, or in two tabs at once, makes **one** member: the second press says *already had a record* and names them. The application remembers the member it became. |
+| A converted child | Cannot be **waitlisted or rejected** from the application (*already a member*): that used to send the family a refusal after their welcome. Change their membership on the member record. |
 | Put a child on the waiting list | **Waitlist**. The family is emailed and the main parent is texted. The application stays in the inbox, marked *Waitlisted*, and you accept it from there when a place opens. |
 | Decline | **Reject**, with an optional line the family reads in the email and text. |
 | See only your centres | A centre-limited admin sees, exports, accepts and declines their own centres' applicants only. |

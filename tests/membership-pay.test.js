@@ -185,6 +185,8 @@ function cleanup() {
 
     const Q = await open('/control', A2);
     await Q.waitForSelector('.cr-app', { timeout: 30000 });
+    // As above: the jump hook arrives with the shell's first commit, which can follow the markup.
+    await Q.waitForFunction(() => typeof window.__adminSection === 'function', null, { timeout: 30000 });
     await Q.evaluate(() => window.__adminSection('membership'));
     await Q.waitForSelector('.cr-mp-table', { timeout: 20000 });
     const evHref = await Q.getAttribute('.cr-mp-table a:has-text("Evidence")', 'href');
@@ -200,12 +202,12 @@ function cleanup() {
     chk('a reference that does not match the record is refused at the field', await Q.waitForFunction(() => /does not match the one recorded/.test(document.querySelector('.cr-sheet')?.innerText || ''), null, { timeout: 10000 }).then(() => true, () => false));
     await Q.fill('#crf-ref', 'gtb 2026 55128');
     await Q.click('.cr-sheet button[type=submit]');
-    chk('the right figures settle it and send the receipt', await crToast(Q, /Verified\. Receipt NGG-RCT-\d{4}-\d{5}/));
+    chk('the right figures settle it and send the receipt', await crToast(Q, /Verified\. Receipt NGG-RCP-\d{4}-\d{5}/));
     const paid = JSON.parse(php(`echo json_encode(db_row("SELECT status, paidVia, receiptNo, receiptToken, payToken FROM membership_invoices WHERE invoiceId = '${inv.invoiceId}'"));`));
     chk('…the invoice is paid by transfer, checked by the second person', paid.status === 'paid' && paid.paidVia === 'transfer'
       && php(`echo db_row("SELECT verifiedBy FROM offline_payments WHERE invoiceId = '${inv.invoiceId}'")['verifiedBy'];`) === A2);
     await Q.waitForFunction(() => /Paid/.test(document.querySelector('.cr-mp-table')?.innerText || ''), null, { timeout: 10000 });
-    chk('…and the row shows the receipt and who checked it', /checked by Bola Ade/.test(await Q.innerText('.cr-mp-table')) && !!(await Q.$('.cr-mp-table a:has-text("NGG-RCT-")')));
+    chk('…and the row shows the receipt and who checked it', /checked by Bola Ade/.test(await Q.innerText('.cr-mp-table')) && !!(await Q.$('.cr-mp-table a:has-text("NGG-RCP-")')));
 
     await Q.evaluate(() => window.__adminSection('centres'));
     // The Control Room's centres page: the Runs filter reads it programme by programme.
@@ -222,7 +224,7 @@ function cleanup() {
     const R = await open('/');
     await R.goto(BASE + '/api/public/receipt.php?t=' + paid.receiptToken, { waitUntil: 'domcontentloaded' });
     const rec = await R.innerText('body');
-    chk('the receipt is a printable document: number, PAID, member, method, reference, total', new RegExp(paid.receiptNo).test(rec) && /PAID/.test(rec) && /Tobi Ade/.test(rec) && /Bank transfer/.test(rec) && /GTB-2026-55128/.test(rec) && /Mrs Ade/.test(rec));
+    chk('the receipt is a printable document: number, paid in full, member, method, reference, total', new RegExp(paid.receiptNo).test(rec) && /Paid in full/i.test(rec) && /Tobi Ade/.test(rec) && /Bank transfer/.test(rec) && /GTB-2026-55128/.test(rec) && /Mrs Ade/.test(rec));
     await R.goto(BASE + '/pay/' + paid.payToken, { waitUntil: 'domcontentloaded' }); await waitForBoot(R);
     await R.waitForSelector('.mpay-title', { timeout: 20000 });
     chk('the payment link of a paid invoice thanks them and links the receipt — it cannot be paid twice', /fully enrolled/.test(await R.innerText('.mpay-title')) && !!(await R.$('a:has-text("View and print the receipt")')) && !(await R.$('.mpay-pay')));

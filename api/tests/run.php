@@ -1372,6 +1372,33 @@ chk('club apply → member: the parent by name and number, the school and class,
     $wl = backend_dispatch('admin.applications.list', ['requesterId' => $A, 'kind' => 'teen', 'status' => 'new,reviewing,waitlist'])['applications'];
     chk('review fix · a waitlisted child is still on the desk, and can be converted from there', in_array($id3, array_map('intval', array_column($wl, 'id')), true)
         && !empty(backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id3])['memberId']));
+    // Registration audit (5 Nov 2026): a conversion is claimed, a member is not declined, edits are checked, a programme is its own duplicate scope.
+    chk('audit · a converted application records the member it became', db_row('SELECT convertedMemberId FROM applications WHERE id = ?', [$id2])['convertedMemberId'] === $c2['memberId']);
+    $before = (int)db_row('SELECT COUNT(*) c FROM members')['c'];
+    db_update('applications', ['dob' => '2001-01-01', 'name' => 'Renamed Child'], ['id' => $id2]);   // the facts the old check matched on have moved
+    $again = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id2]);
+    chk('audit · pressing Convert again answers with the same member, even when the record no longer matches by date of birth', ($again['memberId'] ?? '') === $c2['memberId'] && !empty($again['existed']) && (int)db_row('SELECT COUNT(*) c FROM members')['c'] === $before);
+    chk('audit · a second press that loses the claim makes nothing (the claim is one guarded write)', (function () use ($id2, $c2) {
+        $n = db_exec("UPDATE applications SET convertedMemberId = ? WHERE id = ? AND COALESCE(convertedMemberId, '') = ?", ['NGG-RACE-1', $id2, '']);
+        return $n === 0 && db_row('SELECT convertedMemberId FROM applications WHERE id = ?', [$id2])['convertedMemberId'] === $c2['memberId'];
+    })());
+    $GLOBALS['__mail_sink'] = [];
+    $rej = backend_dispatch('admin.applications.status', ['requesterId' => $A, 'id' => $id2, 'status' => 'rejected']);
+    $sentRej = count($GLOBALS['__mail_sink']); unset($GLOBALS['__mail_sink']);
+    chk('audit · a child who is already a member cannot be declined or waitlisted from the application, and the family is not told so', ($rej['error'] ?? '') === 'already_member' && $sentRej === 0
+        && db_row('SELECT status FROM applications WHERE id = ?', [$id2])['status'] === 'accepted');
+    chk('audit · an application edit refuses a programme that is not one, and a date of birth that is not a date',
+        (backend_dispatch('admin.application.update', ['requesterId' => $A, 'id' => $id1, 'data' => ['program' => 'xyz']])['error'] ?? '') === 'bad_program'
+        && (backend_dispatch('admin.application.update', ['requesterId' => $A, 'id' => $id1, 'data' => ['dob' => '2012-02-30']])['error'] ?? '') === 'bad_dob'
+        && (backend_dispatch('admin.application.update', ['requesterId' => $A, 'id' => $id1, 'data' => ['dob' => gmdate('Y-m-d', strtotime('+2 days'))]])['error'] ?? '') === 'bad_dob'
+        && !empty(backend_dispatch('admin.application.update', ['requesterId' => $A, 'id' => $id1, 'data' => ['program' => 'anchor', 'dob' => gmdate('Y-m-d', strtotime('-12 years'))]])['ok']));
+    $sdob = gmdate('Y-m-d', strtotime('-12 years -40 days'));
+    $sum = backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'summer', 'firstName' => 'Both', 'lastName' => 'Doors', 'sex' => 'Male', 'email' => 'bothdoors@example.com', 'phone' => '08031117090', 'dob' => $sdob, 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg']);
+    $club = $kid(['firstName' => 'Both', 'lastName' => 'Doors', 'sex' => 'Male', 'email' => 'bothdoors@example.com', 'dob' => $sdob]);
+    chk('audit · a Club application the day after a Summer one for the same child is filed, not answered with the Summer reference', !empty($sum['ok']) && !empty($club['ok']) && empty($club['duplicate']) && $club['ref'] !== $sum['ref']
+        && (int)db_row("SELECT COUNT(*) c FROM applications WHERE email = 'bothdoors@example.com'")['c'] === 2);
+    $s2 = backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'summer', 'firstName' => 'Sister', 'lastName' => 'Doors', 'sex' => 'Female', 'email' => 'bothdoors@example.com', 'phone' => '08031117090', 'dob' => gmdate('Y-m-d', strtotime('-10 years')), 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg']);
+    chk('audit · a sibling\'s Summer application from the same email that day is their own, not the first child\'s', !empty($s2['ok']) && empty($s2['duplicate']) && $s2['ref'] !== $sum['ref']);
     // Centre scope: a scoped admin sees and acts on their own centre's applicants only.
     db_insert('members', ['memberId' => 'AF-SCOPED', 'fullName' => 'Scoped Afvale', 'email' => 'afscoped@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Afvale', 'centreScope' => json_encode(['CEN-AF2']), 'createdAt' => $now, 'updatedAt' => $now]);
     $k4 = $kid(['firstName' => 'Zara', 'email' => 'fam-af4@example.com', 'dob' => gmdate('Y-m-d', strtotime('-13 years'))]);

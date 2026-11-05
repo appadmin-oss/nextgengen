@@ -6208,3 +6208,76 @@ found, all fixed:
     your own stage folds it.
   - A stage you are visiting shows *Back to my stage (Stage N)*.
   - The e2e covers both, and `run.php` pins the lock and the refusal.
+
+## 5 Nov 2026 — Registration audit: the NGG application, review and acceptance
+
+Owner asked for an audit of the NGG registration process and every change made
+to it (8fd21f5f, dd69a3be, c30083be, 9b59e618, 910fc0db, 9041e19c, 0c1d92e3,
+a77261e9, 21745ef3, a0ddb750, 85fd94e1, 6b80dadd, e54aa58b and the merges).
+Read end to end: `/join` (page-apply.jsx) → `api/public/apply.php` →
+`public_apply` / `club_apply_details` / `club_apply_consents` / edit codes →
+the Applications inbox (cr-tab-inbox.jsx) → `admin_application_convert` →
+member, consents, card number, invoice, registration checklist.
+
+**Baseline before any change**: PHP 6849/0. `club-apply.test.js` 11 passed,
+2 failed (the run stopped at step 2). `membership-pay.test.js` 21 passed, 1
+failed (stopped at the second admin). `registration-checklist.test.js` 15/0.
+All three are in `test:all`, so `test:all` was red.
+
+Faults found and fixed (each held by a check that fails on the old code):
+
+- **"Use it" on the email suggestion never worked.** The suggestion hid while
+  anything in the field had focus, and its own button is in the field, so
+  pressing it unmounted it before the click landed. A family typing
+  `@gmail` could not take the fix and could not continue. It now hides only
+  while the input itself is being typed in.
+- **The school picker chose the wrong school.** Typing "Egbeda Sen" and
+  pressing Enter took *Anglican Senior Grammar School, Egbeda*, because the
+  local list kept alphabetical order. Names that begin with what was typed
+  now come first (as the server already ranked them), and the local schools
+  near our centres stay offered beside the open-data answer.
+- **Convert could make two members.** Two presses at once (or two tabs) both
+  passed the "already a member?" check and each made a member, a printed ID
+  and an invoice. The re-press check also depended on the date of birth and
+  name still matching. Migration 228 adds `applications.convertedMemberId`.
+  Convert claims the row by writing it, a new unique value, so the guarded
+  update changes the row on MySQL as on SQLite. A re-press answers with that
+  member. A failed insert releases the claim.
+- **A converted child could be declined.** Setting a converted application
+  to *rejected* or *waitlist* emailed and texted the family a refusal while
+  the member stayed active. It is refused now (`already_member`).
+- **Duplicate detection ignored the programme.** A Club application within
+  24h of a Summer one for the same child came back with the Summer
+  reference and was never filed. Summer applications were deduplicated on
+  email alone, so two siblings from one parent's email in a day became one.
+  Both now match email + date of birth + programme.
+- **Application edits took any text** for `program` (which decides whether
+  conversion makes an NGG member or a Summer account) and `dob` (the age
+  check at conversion). Both are validated (`bad_program`, `bad_dob`).
+- **Server refusals the form did not explain** (`course_not_in_division`,
+  `bad_division`, `division_required`, `details_required`, `bad_dob`,
+  `bad_sex`, `bad_email`, `phone_required`) now say what to fix and take the
+  family to that step.
+
+Tests that had rotted (product right, test stale):
+
+- `club-apply`: sending the same child again now asks for the emailed code
+  (21745ef3, deliberate). The test sets a known code, as the inbox would,
+  proves a wrong one is refused, then updates.
+- `membership-pay`: the second admin's page jumped before the jump hook was
+  installed (now waits for it, as the first admin's already did). The
+  receipt number is `NGG-RCP-` since the documents system, and the receipt
+  says *Paid in full*.
+
+Known and left as is (by design or out of scope):
+
+- The edit code allows 5 tries per code. After that, sending again mints a
+  new code and emails it, so the inbox owner hears about every round. The
+  rate limits on `apply` bound it.
+- `public.apply.check` answers seen or open for an email + date of birth.
+  Rate limited, says nothing else. Accepted in 21745ef3.
+- Deleting an application leaves its `APP:<ref>` consent rows. Kept: they
+  are the record that agreement was given.
+
+After: PHP 6856/0, club-apply 50/0, membership-pay 36/0,
+registration-checklist 15/0.
