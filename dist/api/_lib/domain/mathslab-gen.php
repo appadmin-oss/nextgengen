@@ -855,11 +855,21 @@ function mlb_forms(): array {
             return mlb_typed('num', 'Find the sum of the first ' . $n . ' terms of the arithmetic progression $' . $a . ',\\ ' . ($a + $d) . ',\\ ' . ($a + 2 * $d) . ',\\ \\dots$', (string)(intdiv($n * (2 * $a + ($n - 1) * $d), 2)),
                 ['$S_n = \\frac{n}{2}\\left(2a + (n - 1)d\\right)$.', '$S_{' . $n . '} = \\frac{' . $n . '}{2}(' . (2 * $a) . ' + ' . (($n - 1) * $d) . ') = ' . intdiv($n * (2 * $a + ($n - 1) * $d), 2) . '$.'], 'Pair the first and last terms.', 'procedure', 50); },
     ],
-    ] + (function_exists('mlb_forms_upper') ? mlb_forms_upper() : []);   // Stages 8–17: mathslab-gen-upper.php
+    ] + (function_exists('mlb_forms_upper') ? mlb_forms_upper() : []) + (function_exists('mlb_forms_gods') ? mlb_forms_gods() : []);   // 8–17: gen-upper; 18–20: gen-gods   // Stages 8–17: mathslab-gen-upper.php
     /* Two proof forms for every topic with a "Why it works" (mathslab-why.php), appended AFTER the
        topic's own forms so no existing form changes its index (a session stores form numbers). */
     if (function_exists('mlb_why_forms')) foreach (mlb_why_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    /* The deeper Stage 5–7 forms (mathslab-gen-deep.php) come AFTER the proof pair, for the same
+       reason: no form already in use may change its number. mlb_why_at() says where the pair is. */
+    if (function_exists('mlb_forms_deep')) foreach (mlb_forms_deep() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     return $f;
+}
+
+/** Where a topic's two "Why it works" forms sit in its list (justify, then order), or null. */
+function mlb_why_at(string $comp): ?int {
+    if (!function_exists('mlb_why') || !isset(mlb_why()[$comp])) return null;
+    $deep = function_exists('mlb_forms_deep') ? count(mlb_forms_deep()[$comp] ?? []) : 0;
+    return count(mlb_forms()[$comp] ?? []) - 2 - $deep;
 }
 
 /** One question, reproducible from (competency, form, seed). */

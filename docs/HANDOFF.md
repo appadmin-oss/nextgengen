@@ -6586,3 +6586,63 @@ Tests:
 - Maths Lab e2e 37 passed, 0 failed.
 - `build.test` 31 passed, 0 failed.
 - Contrast 21 passed, 0 failed.
+
+
+## 5 Nov 2026 — Maths Lab: Stages 5–7 deepened; the Gods of Maths summit (Stages 18–20)
+
+**Owner:** "Broaden the maths labs stage from stage 5. Go deeper and make them become Gods of Maths". Later in the same turn: "Make things tough, but easy".
+
+### Stages 5–7 are deeper
+
+**Problem.** Stages 5–7 (MC-041 … MC-070) had 1.7–2.4 kinds of question per topic. Seventeen topics had a single kind. Stages 8–17 have 5–6.
+
+**Change.** `mathslab-gen-deep.php` adds 2–4 forms to every one of the thirty topics. Every topic now has at least four forms of its own and at least one with `dim` `'challenge'`. It also adds six proofs (`mlb_why_deep`): MC-041, 052, 055, 059, 066 and 068.
+
+### Form numbers stay stable
+
+A session stores `(topic, form, seed)`, so no form may change its number:
+
+- the deeper forms are appended **after** the proof pair;
+- the proof pair is therefore no longer always the last two forms;
+- `mlb_why_at($comp)` says where the pair is;
+- `mlb_skill_forms($comp)` (replacing `mlb_skill_form_count`) lists the non-proof forms that placement, review and the boss draw from.
+
+The tests that found the proof pair at `count - 2` now use `mlb_why_at`.
+
+### The Gods of Maths summit
+
+`mathslab-gen-gods.php` adds Stages 18–20 at olympiad level:
+
+- **18**: number theory.
+- **19**: combinatorics.
+- **20**: algebra, inequalities and geometry.
+
+There are four forms per topic, and nineteen proofs (`mlb_why_gods`).
+
+**Answers are derived by brute force where possible.** Divisors are listed, routes are walked and arrangements are enumerated, so a formula slip cannot reach a child as a "right" answer.
+
+**Map.** `mathslab-map.php` adds:
+
+- the stage table and strands;
+- the sixth band, `gods`, with `summit: true`, which the map passes through so the client draws a crown;
+- prerequisite edges into the school topics each olympiad topic grows from;
+- the `gods-of-maths` course.
+
+**Totals.** Home's total is now `count(mlb_competencies())`, not a typed 170.
+
+### Client
+
+- The question player shows a **Challenge** chip on challenge items.
+- The framework card names the summit.
+
+### Tests
+
+- `run.php`: 6892 passed, 0 failed. Updated: 200 topics, Stages 1–20 covered by the bands, and proof forms found via `mlb_why_at`. New checks:
+  - four or more forms and a challenge in every Stage 5–7 and Gods topic;
+  - the proof pair kept its numbers;
+  - placement and the boss can draw the new forms;
+  - the band, course, edges and availability are correct.
+- Generator sweep: 60 seeds over every Stage 5–7 and 18–20 form (31,380 items). Every key marks itself right, no option repeats, and no typed form gives everyone the same answer.
+- Maths Lab e2e: 36 passed, 0 failed. The "number key picks an answer" check only runs when the first random question is multiple choice.
+- `build.test`: 31 passed, 0 failed.
+- Contrast: 21 passed, 0 failed.

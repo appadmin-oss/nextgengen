@@ -97,25 +97,28 @@ function mlb_bkt(float $p, bool $ok, bool $typed): float {
 /* ── Building a session ── */
 /**
  * Questions for a session. $skillOnly (the climb's placement gate, reviews and the boss) leaves
- * out the two "Why it works" forms a topic carries at the END of its list (mlb_why_forms):
+ * out the two "Why it works" forms a topic carries (mlb_why_forms; mlb_why_at() says where):
  * those teach the argument and belong in practice and the mastery check — a child placed by
  * "why is line 1 true?" about digit counts is being placed by the wrong question.
  */
-function mlb_skill_form_count(string $c): int {
-    $n = count(mlb_forms()[$c] ?? []);
-    return function_exists('mlb_why') && isset(mlb_why()[$c]) ? max(1, $n - 2) : $n;
+function mlb_skill_forms(string $c): array {
+    $all = array_keys(mlb_forms()[$c] ?? []);
+    $w = function_exists('mlb_why_at') ? mlb_why_at($c) : null;
+    if ($w === null) return $all;
+    $out = array_values(array_filter($all, static fn($i) => $i !== $w && $i !== $w + 1));
+    return $out ?: $all;
 }
 function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false): array {
     $items = []; $i = 0; $guard = 0;
     while (count($items) < $n && $guard++ < $n * 6 && $comps) {
         $c = $comps[$i % count($comps)]; $i++;
         $forms = mlb_forms()[$c] ?? []; if (!$forms) continue;
-        $nf = $skillOnly ? mlb_skill_form_count($c) : count($forms);
-        $f = random_int(0, $nf - 1); $seed = random_int(1, 2000000000);
+        $pool = $skillOnly ? mlb_skill_forms($c) : array_keys($forms); $nf = count($pool);
+        $k = random_int(0, $nf - 1); $seed = random_int(1, 2000000000);
         if ($preferTyped) {
-            for ($t = 0; $t < $nf; $t++) { $it = mlb_item($c, ($f + $t) % $nf, $seed); if (!empty($it['typed'])) { $f = ($f + $t) % $nf; break; } }
+            for ($t = 0; $t < $nf; $t++) { $it = mlb_item($c, $pool[($k + $t) % $nf], $seed); if (!empty($it['typed'])) { $k = ($k + $t) % $nf; break; } }
         }
-        $items[] = ['c' => $c, 'f' => $f, 's' => $seed];
+        $items[] = ['c' => $c, 'f' => $pool[$k], 's' => $seed];
     }
     return $items;
 }
@@ -321,7 +324,7 @@ function mlb_home(array $p): array {
     $certs = mlb_course_certs($mid);
     return ['ok' => true, 'name' => explode(' ', trim((string)$m['fullName']))[0], 'xp' => (int)$prof['xp'], 'level' => mlb_level((int)$prof['xp']),
         'streak' => (int)$prof['streak'], 'freezes' => (int)$prof['freezes'], 'climb' => ['stage' => (int)$prof['climbStage'], 'done' => (bool)$prof['climbDone'], 'momentum' => (int)$prof['momentum']],
-        'next' => ($nx = mlb_next($prof, $states)), 'counts' => $count + ['available' => $avail, 'total' => 170], 'badges' => mlb_badges($prof, $states), 'roots' => mlb_root_gaps($states, 2),
+        'next' => ($nx = mlb_next($prof, $states)), 'counts' => $count + ['available' => $avail, 'total' => count(mlb_competencies())], 'badges' => mlb_badges($prof, $states), 'roots' => mlb_root_gaps($states, 2),
         /* Where the learner is: the stage the next step is in (the climb's stage while climbing), with its progress. */
         'focus' => (function () use ($nx, $prof, $states) {
             $n = (int)($nx['stage'] ?? ((int)$prof['climbDone'] ? 1 : (int)$prof['climbStage'])); $st = mlb_stages()[$n] ?? mlb_stages()[1];
@@ -375,7 +378,7 @@ function mlb_map(array $p): array {
             'certificate' => $certs['stage:' . $n] ?? null];
     }
     $bands = array_map(static fn($b) => ['id' => $b['id'], 'name' => $b['name'], 'level' => $b['level'], 'stages' => $b['from'] === $b['to'] ? 'Stage ' . $b['from'] : 'Stages ' . $b['from'] . '–' . $b['to'],
-        'what' => $b['what'], 'topics' => ($b['to'] - $b['from'] + 1) * 10], MLB_BANDS);
+        'what' => $b['what'], 'topics' => ($b['to'] - $b['from'] + 1) * 10, 'summit' => !empty($b['summit'])], MLB_BANDS);
     return ['ok' => true, 'member' => (bool)$m, 'stages' => $stages, 'bands' => $bands];
 }
 

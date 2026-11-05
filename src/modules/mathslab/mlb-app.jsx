@@ -730,13 +730,13 @@ function MlbStatsBar() {
   );
 }
 
-/* The 170-Point Mathematics Mastery Framework, from MLB_BANDS (one table, server-side). */
+/* The 170-Point Mathematics Mastery Framework and the Gods of Maths summit above it, from MLB_BANDS (one table, server-side). */
 function MlbFramework({ bands }) {
   return (
     <section className="mlb-card mlb-fw" aria-labelledby="mlb-fw-h">
       <div className="mlb-fw-top"><h3 id="mlb-fw-h" className="mlb-h3">The 170-Point Mathematics Mastery Framework</h3>
-        <p className="mlb-p">From why 1 + 1 = 2 to WAEC, Further Mathematics and beyond. Learn why things are true, one foundation at a time.</p></div>
-      <ol className="mlb-bands">{bands.map((b, i) => <li key={b.id}><span className="mlb-bands-i" aria-hidden="true">{i + 1}</span>
+        <p className="mlb-p">From why 1 + 1 = 2 to WAEC, Further Mathematics and beyond — then the Gods of Maths summit, where olympiad problems are won by ideas. Learn why things are true, one foundation at a time.</p></div>
+      <ol className="mlb-bands">{bands.map((b, i) => <li key={b.id} className={b.summit ? "is-summit" : ""}><span className="mlb-bands-i" aria-hidden="true">{b.summit ? <i className="ph-fill ph-crown"/> : i + 1}</span>
         <span className="mlb-bands-t"><b>{b.name}</b><span>{b.level}</span><small>{b.stages} · {b.topics} topics</small></span></li>)}</ol>
     </section>
   );
@@ -997,7 +997,8 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
         <button type="button" className="mlb-back" onClick={onDone}><i className="ph ph-x" aria-hidden="true"/>Leave</button></div>
       <ol className="mlb-pips" aria-label={"Question " + (i + 1) + " of " + ses.items.length}>{ses.items.map((_, k) => <li key={k} className={k < i ? "is-done" : k === i ? "is-on" : ""}/>)}</ol>
       <section className="mlb-q" aria-live="polite">
-        <p className="mlb-qn">Question {i + 1} of {ses.items.length}{ses.mode === "climb" ? " · fast and right clears the stage" : ""}</p>
+        <p className="mlb-qn">Question {i + 1} of {ses.items.length}{ses.mode === "climb" ? " · fast and right clears the stage" : ""}
+          {it.dim === "challenge" ? <span className="mlb-chall"><i className="ph-fill ph-lightning" aria-hidden="true"/>Challenge{practice ? " — take your time; the hint is there if you need it" : ""}</span> : null}</p>
         <MlbMath as="p" className="mlb-stem" text={it.stem}/>
         <MlbDiagram d={it.diagram}/>
         {it.lines ? <ol className="mlb-lines">{it.lines.map((l, k) => <li key={k}><MlbMath text={l}/></li>)}</ol> : null}
@@ -1297,7 +1298,7 @@ function MlbProgress({ go }) {
           : <p className="mlb-p">Nothing repeating. Mistakes you make in practice will gather here, with the reason, so you can go straight back to them.</p>}
       </section>
 
-      {d.bands ? <section className="mlb-card"><h3 className="mlb-h3">The 170-point framework</h3>
+      {d.bands ? <section className="mlb-card"><h3 className="mlb-h3">The 170-point framework and the summit</h3>
         <ul className="mlb-bands">{d.bands.map(b => <li key={b.name}><b>{b.name}</b><span>{b.level}</span>
           <span className="mlb-meter"><span style={{ width: Math.round(b.mastered / b.total * 100) + "%" }}/></span><span>{b.mastered} of {b.total} points</span></li>)}</ul></section> : null}
 

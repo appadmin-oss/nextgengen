@@ -37744,7 +37744,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         if (isset($it['options']) && count(array_unique($it['options'])) !== count($it['options'])) $bad++;
         if (mlb_public($it) !== array_diff_key(mlb_public($it), ['key' => 1, 'steps' => 1, 'whys' => 1])) $bad++;
     }
-    chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 170);
+    chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 200);
     /* "Why it works": the founding idea is understanding, so the proofs are held to it. Each is a
        chain of DISTINCT statements with DISTINCT reasons (the justify form uses the other reasons as
        wrong options, so a repeat would make two options right), and both proof forms mark right. */
@@ -37753,7 +37753,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         if (!mlb_comp($id) || count($steps) < 3 || count(array_unique(array_column($steps, 0))) !== count($steps) || count(array_unique(array_column($steps, 1))) !== count($steps)) { $wbad[] = $id; continue; }
         $fs = mlb_forms()[$id]; $nf = count($fs);
         for ($sd = 1; $sd <= 12; $sd++) {
-            $j = mlb_item($id, $nf - 2, $sd * 7); $o = mlb_item($id, $nf - 1, $sd * 7);
+            $wa = mlb_why_at($id); $j = mlb_item($id, $wa, $sd * 7); $o = mlb_item($id, $wa + 1, $sd * 7);
             if ($j['kind'] !== 'mcq' || $j['dim'] !== 'reasoning' || $j['lines'] !== array_column($steps, 0) || !mlb_mark($j, $j['key'])['ok']) { $wbad[] = "$id/justify"; break; }
             $inOrder = array_map(static fn($k) => $o['options'][$k], $o['key']);
             if ($o['kind'] !== 'order' || $inOrder !== array_column($steps, 0) || $o['options'] === array_column($steps, 0)
@@ -37765,7 +37765,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('maths lab · the topic view carries its proof, and a topic without one carries none', (mlb_comp_view(['comp' => 'MC-077'])['why']['steps'][0]['r'] ?? '') !== '' && mlb_comp_view(['comp' => 'MC-048'])['why'] === null);
     // The framework's five bands cover every stage exactly once, in order.
     $cover = []; foreach (MLB_BANDS as $b) for ($k = $b['from']; $k <= $b['to']; $k++) $cover[] = $k;
-    chk('maths lab · the 170-point framework\'s bands cover Stages 1–17 exactly once, and the map carries them', $cover === range(1, 17) && count(mlb_map([])['bands']) === count(MLB_BANDS) && mlb_map([])['stages'][9]['level'] === 'SSS · WASSCE Mathematics');
+    chk('maths lab · the framework\'s bands (the 170 points and the Gods of Maths summit) cover Stages 1–20 exactly once, and the map carries them', $cover === range(1, 20) && count(mlb_map([])['bands']) === count(MLB_BANDS) && mlb_map([])['stages'][9]['level'] === 'SSS · WASSCE Mathematics');
     // No neglected foundations: a struggling topic is traced back to the earliest gap underneath it.
     $gs = [];
     foreach (mlb_competencies() as $id => $c) if ($c['n'] <= 48) $gs[$id] = ['state' => 'known', 'p' => 0.95, 'attempts' => 8];
@@ -37794,7 +37794,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $diag = [];
     for ($sd = 1; $sd <= 80; $sd++) { $it = mlb_item('MC-013', 1, $sd * 31); $diag[$it['options'][$it['key']]] = 1; }
     chk('maths lab · "what mistake, if any" has more than one right answer — including "nothing, it is right"', count($diag) >= 3 && isset($diag['Nothing — the answer is right']));
-    chk('maths lab · the map holds all 170 competencies, and the drafted graph is used where written', count(mlb_competencies()) === 170 && mlb_comp('MC-049')['needs'] === ['MC-048', 'MC-045', 'MC-027']);
+    chk('maths lab · the map holds all 200 competencies (the 170-point framework and the Gods of Maths summit), and the drafted graph is used where written', count(mlb_competencies()) === 200 && mlb_comp('MC-049')['needs'] === ['MC-048', 'MC-045', 'MC-027']);
     // Marking is generous about form, strict about value.
     $e = ['kind' => 'expr', 'key' => '8x-12', 'form' => 'expanded'];
     chk('maths lab · an expression is marked by value (any order), and the form rule asks for it expanded', mlb_mark($e, '-12 + 8x')['ok'] && !mlb_mark($e, '8x+12')['ok']
@@ -37819,10 +37819,30 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        forms a topic carries at the end of its list (they belong to practice and the check). */
     $whyHit = 0;
     for ($k = 0; $k < 40; $k++) foreach (mlb_pick_items(['MC-001', 'MC-002', 'MC-007', 'MC-077', 'MC-103'], 10, true, true) as $x)
-        if (isset(mlb_why()[$x['c']]) && $x['f'] >= count(mlb_forms()[$x['c']]) - 2) $whyHit++;
+        if (($wa = mlb_why_at($x['c'])) !== null && ($x['f'] === $wa || $x['f'] === $wa + 1)) $whyHit++;
     $pracWhy = 0;
-    for ($k = 0; $k < 40; $k++) foreach (mlb_pick_items(['MC-002'], 8) as $x) if ($x['f'] >= count(mlb_forms()['MC-002']) - 2) $pracWhy++;
+    for ($k = 0; $k < 40; $k++) foreach (mlb_pick_items(['MC-002'], 8) as $x) if ($x['f'] >= mlb_why_at('MC-002')) $pracWhy++;
     chk('maths lab · a placement gate, review or boss never asks a "why is line N true?" proof question — practice still does', $whyHit === 0 && $pracWhy > 0);
+    /* "Go deeper" (owner, 5 Nov 2026): Stages 5–7 carried one or two kinds of question per topic.
+       Every topic there now has at least four of its own, and the new ones were appended AFTER the
+       proof pair, so no form a stored session points at changed its number. */
+    $thin = []; $noCh = [];
+    foreach (mlb_competencies() as $id => $c) {
+        if (!(($c['n'] >= 41 && $c['n'] <= 70) || $c['n'] > 170)) continue;
+        if (count(mlb_skill_forms($id)) < 4) $thin[] = $id;
+        $hasCh = false; foreach (mlb_skill_forms($id) as $fi) if (mlb_item($id, $fi, 11)['dim'] === 'challenge') $hasCh = true;
+        if (!$hasCh) $noCh[] = $id;
+    }
+    $j45 = mlb_item('MC-045', 3, 5);
+    chk('maths lab · every Stage 5–7 and Gods of Maths topic has at least four kinds of question of its own and at least one challenge, and the proof pair kept its numbers (MC-045: forms 0–2 its own, 3–4 the proof, then the new ones)' . ($thin || $noCh ? ' (thin: ' . implode(',', $thin) . '; no challenge: ' . implode(',', $noCh) . ')' : ''),
+        $thin === [] && $noCh === [] && mlb_why_at('MC-045') === 3 && $j45['dim'] === 'reasoning' && isset($j45['lines']) && count(mlb_forms()['MC-045']) === 6 && mlb_item('MC-045', 5, 5)['dim'] === 'challenge');
+    $deepHit = false; for ($k = 0; $k < 60 && !$deepHit; $k++) foreach (mlb_pick_items(['MC-045'], 6, false, true) as $x) if ($x['f'] === 5) $deepHit = true;
+    chk('maths lab · a placement gate or boss can draw a new deeper form even though it sits after the proof pair', $deepHit);
+    $gb = mlb_band(19); $gc = mlb_courses()['gods-of-maths'] ?? null; $gm = array_column(mlb_map([])['bands'], null, 'id');
+    chk('maths lab · Gods of Maths: Stages 18–20 form their own summit band and course, rest on the school topics they grow from, and every olympiad topic is available',
+        $gb['id'] === 'gods' && !empty($gm['gods']['summit']) && empty($gm['waec']['summit']) && $gc && $gc['stages'] === [18, 19, 20]
+        && mlb_comp('MC-171')['needs'] === ['MC-020', 'MC-019'] && mlb_stage_available(18) && mlb_stage_available(19) && mlb_stage_available(20)
+        && isset(mlb_why()['MC-171'], mlb_why()['MC-200'], mlb_why()['MC-052']) && mlb_home(['memberId' => 'NGG-ML-1'])['counts']['total'] === 200);
     /* Courses lock until their first stage is reached, and say why; enrolling a locked one is refused. */
     $cv = array_column(mlb_home(['memberId' => 'NGG-ML-1'])['courses'], null, 'id');
     $el = mlb_enrol(['memberId' => 'NGG-ML-1', 'courseId' => 'further-maths']);

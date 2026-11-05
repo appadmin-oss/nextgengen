@@ -4761,6 +4761,38 @@ off as "bad at maths" when a foundation was simply never taught.
   *Further Mathematics* (WASSCE Further Mathematics, 13–16) and *Beyond*
   (mechanics, university and research, 17). The map shows each stage's band;
   Progress shows how many points of each band a member holds.
+- **Gods of Maths (the summit, Stages 18–20, MC-171 … MC-200).** Above the
+  framework sits a sixth band, marked with a crown, at olympiad level (NMC,
+  Cowbellpedia, PAMO, IMO):
+  - *Stage 18, The Theory of Numbers*: divisors, the Euclidean algorithm,
+    congruences, Fermat and Euler, the Chinese remainder theorem,
+    Diophantine equations, factorials, digit tests and the totient.
+  - *Stage 19, Counting like a God*: casework, arrangements, stars and bars,
+    inclusion–exclusion, pigeonhole, binomial identities, Catalan numbers,
+    recurrences, expected value and invariants.
+  - *Stage 20, The Summit*: Vieta, telescoping, AM–GM, Cauchy–Schwarz,
+    functional equations, polynomials, complex numbers, power of a point,
+    triangle centres and proof.
+
+  Each topic needs the school topics it grows from (e.g. Stage 18 starts
+  from *Prime numbers, HCF and LCM*). Stages 18–20 make the **Gods of Maths**
+  course (60 hours), with its own stage and course certificates. Nineteen of
+  the thirty topics carry a *Why it works* proof, including Euclid's proof
+  that the primes never end and the proof that √2 is irrational.
+- **Tough, but never bare.** Every Stage 5–7 and Gods of Maths topic has at
+  least four kinds of question and at least one **Challenge** question.
+  Challenge questions are marked with a lightning chip in the player.
+  - **What a challenge needs:** an idea rather than the routine, such as a
+    shortcut ($a^2 - b^2$ from $a + b$ and $a - b$), a second step, or a
+    trap the routine falls into.
+  - **Help is always there:** every question still has a hint that names the
+    idea, a worked solution, and a reason for every wrong option. In
+    practice, the challenge chip says *take your time; the hint is there if
+    you need it*.
+- **Stages 5–7 are deeper.** Each algebra topic used to have one or two
+  kinds of question. It now has four to six, plus six new proofs: the
+  *n*th term, why dividing by a negative reverses an inequality, crossing
+  graphs, adding fractions, √(ab) = √a·√b, and what a logarithm undoes.
 - **Why it works.** The foundations (Stages 1–4, starting from why
   1 + 1 = 2) and every topic built on a law, formula or theorem (91 topics
   in all, e.g. Pythagoras, the quadratic formula, the laws of indices,

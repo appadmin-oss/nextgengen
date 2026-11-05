@@ -5,7 +5,7 @@ declare(strict_types=1);
  * Maths Lab — the map (docs/MATH-LAB-PLAN.md §7).
  *
  * 17 stages × 10 competencies, MC-001 … MC-170, from the owner's curriculum,
- * in its order. This file is the ONE place a competency's id, stage, title,
+ * in its order — and above it the Gods of Maths summit, Stages 18–20 (MC-171 … MC-200). This file is the ONE place a competency's id, stage, title,
  * strand and prerequisites are declared; the engine, the screens and the
  * courses all read it.
  *
@@ -225,13 +225,51 @@ function mlb_stage_table(): array {
             'Differential equations and introductory multivariable calculus',
             'Capstone mathematical modelling, numerical methods and research',
         ]],
+        /* Gods of Maths (owner, 5 Nov 2026): the olympiad summit above the 170-point framework. */
+        18 => ['The Theory of Numbers', [
+            'Divisors, primes and the fundamental theorem of arithmetic',
+            'GCD, LCM, the Euclidean algorithm and Bézout',
+            'Modular arithmetic and congruences',
+            'Fermat\'s little theorem and Euler\'s theorem',
+            'Linear congruences and the Chinese remainder theorem',
+            'Linear Diophantine equations and the coin problem',
+            'Legendre\'s formula: prime powers in factorials',
+            'Digit sums, divisibility tests and number bases',
+            'Euler\'s totient and multiplicative functions',
+            'Factoring tricks for Diophantine equations',
+        ]],
+        19 => ['Counting like a God', [
+            'Counting principles, complements and casework',
+            'Arrangements, repetition and restrictions',
+            'Stars and bars: sharing out identical things',
+            'Inclusion–exclusion and derangements',
+            'The pigeonhole principle',
+            'Binomial coefficients and their identities',
+            'Lattice paths and the Catalan numbers',
+            'Recurrences in counting',
+            'Expected value and linearity of expectation',
+            'Invariants, parity and colouring arguments',
+        ]],
+        20 => ['The Summit: Olympiad Algebra, Inequalities and Geometry', [
+            'Vieta\'s formulas and symmetric functions of roots',
+            'Telescoping sums and products',
+            'The AM–GM inequality and optimisation',
+            'Cauchy–Schwarz and the square-mean inequality',
+            'Functional equations',
+            'Polynomials: values, remainders and coefficients',
+            'Complex numbers, the Argand diagram and De Moivre',
+            'Power of a point and circle geometry',
+            'Triangle centres: Heron, the inradius and the circumradius',
+            'Proof and problem-solving strategies',
+        ]],
     ];
 }
 
 /** Each stage's strand — the "road" view of the map. */
 const MLB_STAGE_STRAND = [1 => 'Number', 2 => 'Number', 3 => 'Number', 4 => 'Number', 5 => 'Algebra', 6 => 'Algebra', 7 => 'Algebra',
     8 => 'Geometry & Measure', 9 => 'Geometry & Measure', 10 => 'Graphs & Functions', 11 => 'Algebra', 12 => 'Statistics & Trigonometry',
-    13 => 'Further Algebra', 14 => 'Matrices & Vectors', 15 => 'Trigonometry & Analytic Geometry', 16 => 'Calculus', 17 => 'Mechanics & Beyond'];
+    13 => 'Further Algebra', 14 => 'Matrices & Vectors', 15 => 'Trigonometry & Analytic Geometry', 16 => 'Calculus', 17 => 'Mechanics & Beyond',
+    18 => 'Olympiad Number Theory', 19 => 'Olympiad Combinatorics', 20 => 'Olympiad Algebra & Geometry'];
 
 /**
  * The 170-Point Mathematics Mastery Framework in five bands: where each stage sits on the road
@@ -249,6 +287,10 @@ const MLB_BANDS = [
      'what' => 'Sets and logic, functions, series, matrices, vectors, advanced trigonometry, conics and calculus.'],
     ['id' => 'beyond', 'name' => 'Beyond', 'level' => 'Mechanics · university · research', 'from' => 17, 'to' => 17,
      'what' => 'Mechanics, probability distributions, proof by induction, differential equations and modelling.'],
+    /* The summit above the framework: tough problems, each with a hint that names the idea and a
+       full worked solution (owner: "Make things tough, but easy"). */
+    ['id' => 'gods', 'name' => 'Gods of Maths', 'level' => 'Olympiad · NMC · Cowbellpedia · PAMO · IMO', 'from' => 18, 'to' => 20, 'summit' => true,
+     'what' => 'Number theory, counting, inequalities, functional equations and olympiad geometry — problems that need an idea, not a formula.'],
 ];
 function mlb_band(int $stage): array { foreach (MLB_BANDS as $b) if ($stage >= $b['from'] && $stage <= $b['to']) return $b; return MLB_BANDS[0]; }
 
@@ -266,6 +308,10 @@ const MLB_EDGES = [
     140 => [139, 111], 141 => [83, 112], 142 => [112], 145 => [142, 103], 147 => [96, 102], 148 => [147, 95], 149 => [98], 150 => [148, 105],
     151 => [124], 152 => [151, 93], 153 => [152, 63], 155 => [154, 142, 68], 157 => [153, 98], 158 => [153], 160 => [159, 86],
     161 => [93, 92], 162 => [161, 158], 163 => [138], 165 => [163], 166 => [120, 128], 167 => [119, 94], 168 => [129], 169 => [158, 156], 170 => [157, 159],
+    // Gods of Maths: each olympiad topic rests on the school topics it grows from, not on the capstone.
+    171 => [20, 19], 172 => [171, 20], 173 => [172, 110], 174 => [173, 63], 175 => [173, 172], 176 => [172, 54], 177 => [171, 127], 178 => [173, 110], 179 => [174, 171], 180 => [176, 58],
+    181 => [127, 9], 182 => [181, 127], 183 => [182], 184 => [183, 121], 185 => [181], 186 => [128, 183], 187 => [186], 188 => [181, 70], 189 => [166, 181], 190 => [185, 168],
+    191 => [104, 109], 192 => [129, 59], 193 => [106, 66], 194 => [193, 139], 195 => [125, 168], 196 => [108, 191], 197 => [191, 142], 198 => [79, 76], 199 => [115, 198], 200 => [168, 190],
 ];
 
 function mlb_id(int $n): string { return 'MC-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT); }
@@ -325,5 +371,8 @@ function mlb_courses(): array {
             'promise' => 'Logic, functions, matrices, vectors, advanced trigonometry and calculus.', 'for' => 'SS 2 to SS 3 Further Maths', 'hours' => 45],
         'mechanics-beyond' => ['id' => 'mechanics-beyond', 'title' => 'Mechanics & Beyond', 'stages' => [17],
             'promise' => 'Motion, forces, momentum, statistical inference, proof and modelling.', 'for' => 'Enrichment', 'hours' => 20],
+        'gods-of-maths' => ['id' => 'gods-of-maths', 'title' => 'Gods of Maths', 'stages' => [18, 19, 20],
+            'promise' => 'Olympiad number theory, counting, inequalities, functional equations and geometry — the problems that win medals, solved by ideas you can explain.',
+            'for' => 'Olympiad hopefuls: NMC, Cowbellpedia, PAMO and IMO', 'hours' => 60],
     ];
 }

@@ -24,7 +24,7 @@ declare(strict_types=1);
 function mlb_why(): array {
     static $w = null;
     if ($w !== null) return $w;
-    return $w = mlb_why_1_4() + mlb_why_theorems();
+    return $w = mlb_why_1_4() + mlb_why_theorems() + (function_exists('mlb_why_deep') ? mlb_why_deep() : []) + (function_exists('mlb_why_gods') ? mlb_why_gods() : []);
 }
 
 /** The proof for one competency, or null. */
