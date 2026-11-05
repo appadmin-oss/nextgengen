@@ -4472,10 +4472,10 @@ it, and anything CACENTRE refused. A super admin can press **Send now**.
   in only at the hubs. (A centre that IS a CACENTRE location never shows this:
   NGG names the place with each person, and CACENTRE makes the site the first
   time.)
-- *"doesn't recognise NGG's key"*: the Wi-Fi uses the connection NGG already
-  has with CACENTRE for the person directory, so the key is `DIR_PUSH_SECRET_NGG`.
-  It must be the same value in NGG's `api/config.php` (`dir_push_secret`) and in
-  CACENTRE's `includes/.env`. There is no separate Wi-Fi key.
+- *"doesn't recognise NGG's key"*: the Wi-Fi rides the connection NGG already
+  has with CACENTRE's gate for attendance, so the key is `hooks.attendance_secret`
+  in NGG's `api/config.php`, the same value as `NGG_SECRET` on the gate. Once
+  attendance works, so does this. There is no separate Wi-Fi key.
 - *"NGG isn't sending its people there yet"*: that key isn't set. Until it is,
   the gateways and the members' PINs stay NGG's, as before.
 
