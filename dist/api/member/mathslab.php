@@ -8,6 +8,7 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'home');
     if ($view === 'map') $res = gs_call('mathslab.map', ['memberId' => $mid]);
     elseif ($view === 'comp') $res = gs_call('mathslab.comp', ['memberId' => $mid, 'comp' => (string)($_GET['comp'] ?? '')]);
+    elseif ($view === 'guide') $res = gs_call('mathslab.guide', ['memberId' => $mid, 'stage' => (int)($_GET['stage'] ?? 0)]);
     elseif ($view === 'exams') $res = gs_call('mathslab.exams', ['memberId' => $mid]);
     elseif ($view === 'daily') $res = gs_call('mathslab.daily', ['memberId' => $mid]);
     elseif ($view === 'progress') $res = gs_call('mathslab.progress', ['memberId' => $mid]);
@@ -15,7 +16,7 @@ if ($method === 'GET') {
     else $res = gs_call('mathslab.home', ['memberId' => $mid]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
-    $map = ['start' => 'mathslab.start', 'answer' => 'mathslab.answer', 'finish' => 'mathslab.finish', 'enrol' => 'mathslab.enrol', 'studied' => 'mathslab.studied', 'daily' => 'mathslab.dailyAnswer'];
+    $map = ['start' => 'mathslab.start', 'answer' => 'mathslab.answer', 'finish' => 'mathslab.finish', 'enrol' => 'mathslab.enrol', 'studied' => 'mathslab.studied', 'daily' => 'mathslab.dailyAnswer', 'chest' => 'mathslab.chest'];
     $a = (string)($b['action'] ?? '');
     if (!isset($map[$a])) json_error('bad_action', 400);
     rate_limit_check('mathslab.' . $a);

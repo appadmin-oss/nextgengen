@@ -37890,6 +37890,39 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         count(array_unique($prefixes)) === count($prefixes) && count(array_unique($paths)) === count($paths) && !array_filter($prefixes, static fn($p) => !preg_match('/^[A-Z]{2}$/', $p))
         && LABS['maths']['prefix'] === MLB_PREFIX && LABS['maths']['status'] === 'live' && $badIds === [] && lab_for_comp('MC-1') === null && lab_for_comp('ZZ-001') === null
         && ($ll['labs'][0]['topics'] ?? 0) === 200 && backend_dispatch('labs.list', [])['labs'][0]['id'] === 'maths');
+    /* The path, Duolingo's way (owner, 5 Nov 2026, with screenshots of Duolingo's path and its
+       Guidebook): a Guidebook per stage, a mini review offered after a long stretch of practice and
+       placed on every stage's path, and a chest half way that opens once. */
+    db_insert('members', ['memberId' => 'NGG-ML-P', 'fullName' => 'Path Walker', 'email' => 'mlp@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $g = mlb_guide(['memberId' => 'NGG-ML-P', 'stage' => 7]);
+    $gIdea = array_filter($g['topics'], static fn($t) => $t['idea'] !== null);
+    chk('maths lab · a stage Guidebook lists its ten topics with a worked example each, the key idea where the topic has a proof, and no unknown stage',
+        count($g['topics']) === 10 && count($gIdea) >= 3 && !array_filter($g['topics'], static fn($t) => empty($t['example']['steps'])) && ($g['topics'][7]['title'] ?? '') === mlb_comp('MC-068')['title']
+        && (mlb_guide(['stage' => 99])['error'] ?? '') === 'not_found');
+    $ms0 = mlb_mini_status('NGG-ML-P');
+    foreach (['MC-001', 'MC-002', 'MC-003', 'MC-004', 'MC-005'] as $c) mlb_set_state('NGG-ML-P', $c, ['state' => 'mastered', 'p' => 0.95, 'attempts' => 8, 'correct' => 8, 'masteredAt' => $now]);
+    $pr = mlb_start(['memberId' => 'NGG-ML-P', 'mode' => 'practice', 'comp' => 'MC-001']);
+    $rows = db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$pr['sessionId']]); $its = json_decode((string)$rows['items'], true);
+    $resp = []; for ($i = 0; $i < MLB_MINI_AFTER; $i++) $resp[$i] = ['ok' => $i % 3 !== 0, 'ms' => 1000, 'hints' => 0, 'conf' => '', 'a' => '1'];
+    db_update('mlab_sessions', ['items' => json_encode(array_merge($its, array_fill(0, MLB_MINI_AFTER, $its[0]))), 'resp' => json_encode($resp)], ['sessionId' => $pr['sessionId']]);
+    $ms1 = mlb_mini_status('NGG-ML-P'); $mm = mlb_map(['memberId' => 'NGG-ML-P']);
+    $mini = mlb_start(['memberId' => 'NGG-ML-P', 'mode' => 'mini']);
+    $mrow = json_decode((string)db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$mini['sessionId']])['items'], true);
+    foreach ($mrow as $i => $x) { $it = mlb_item($x['c'], $x['f'], $x['s']); mlb_answer(['memberId' => 'NGG-ML-P', 'sessionId' => $mini['sessionId'], 'index' => $i, 'answer' => $i === 0 ? '__wrong__' : (in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key']), 'ms' => 2000]); }
+    $mf = mlb_finish(['memberId' => 'NGG-ML-P', 'sessionId' => $mini['sessionId']]); $ms2 = mlb_mini_status('NGG-ML-P');
+    chk('maths lab · a mini review is offered only after ' . MLB_MINI_AFTER . ' answers in a day, draws from topics already practised, sends a missed known topic back to review, pays 5 XP a right answer, and resets the count; every stage on the map says whether its own mini review is open',
+        !$ms0['ready'] && $ms1['ready'] && $ms1['answered'] >= MLB_MINI_AFTER && $mini['title'] !== '' && count($mini['items']) >= 3
+        && !array_diff(array_column($mini['items'], 'comp'), ['MC-001', 'MC-002', 'MC-003', 'MC-004', 'MC-005'])
+        && $mf['mode'] === 'mini' && $mf['xp'] === 5 * $mf['right'] && in_array(['comp' => $mrow[0]['c'], 'to' => 'review'], $mf['changes'], true) && !$ms2['ready']
+        && $mm['stages'][0]['miniReady'] === true && $mm['stages'][5]['miniReady'] === false && (mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'mini', 'stage' => 20])['error'] ?? '') === 'not_enough');
+    mlb_set_state('NGG-ML-P', 'MC-006', ['state' => 'mastered', 'p' => 0.95, 'attempts' => 8, 'correct' => 8, 'masteredAt' => $now]);   // the mini review above sent one topic back
+    $c0 = mlb_chest_open(['memberId' => 'NGG-ML-P', 'stage' => 2]); $c1 = mlb_chest_open(['memberId' => 'NGG-ML-P', 'stage' => 1]); $c2 = mlb_chest_open(['memberId' => 'NGG-ML-P', 'stage' => 1]);
+    $csid = db_row("SELECT sessionId FROM mlab_sessions WHERE memberId = 'NGG-ML-P' AND mode = 'chest'")['sessionId'] ?? '';
+    $mm2 = mlb_map(['memberId' => 'NGG-ML-P']);
+    chk('maths lab · a stage chest opens only when ' . MLB_CHEST_AT . ' of its topics are known, pays ' . MLB_CHEST_XP . ' XP once, shows as opened on the map, and cannot be answered or finished as a session',
+        ($c0['error'] ?? '') === 'chest_locked' && $c1['ok'] && $c1['xp'] === MLB_CHEST_XP && ($c2['error'] ?? '') === 'already_open'
+        && $mm2['stages'][0]['chest']['opened'] === true && $mm2['stages'][1]['chest']['opened'] === false && $mm2['stages'][0]['chest']['ready'] === true
+        && (mlb_finish(['memberId' => 'NGG-ML-P', 'sessionId' => $csid])['error'] ?? '') === 'not_found');
     $bm = mlb_map(['memberId' => 'NGG-ML-D']);
     $ej = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'jamb']); $es = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'sat']);
     $jOwn = count(array_filter($ej['items'], static fn($x) => ($x['exam'] ?? '') === 'jamb')); $jKinds = array_unique(array_column($ej['items'], 'kind'));

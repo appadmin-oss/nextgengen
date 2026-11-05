@@ -151,6 +151,21 @@ async function journey(who, W, H, tag) {
     await p.locator('.mlb-daily details .mlb-steps li').count() >= 1 && /Answer:/.test(dt) && /tomorrow/.test(dt), dt.slice(0, 200));
   await shot('daily');
 
+  // The path, Duolingo's way: the sticky header names the stage and opens its Guidebook (key ideas + worked examples).
+  await p.goto(BASE + '/study/lab/map', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.mlb-pathhead', { timeout: 60000 });
+  const ph = await p.locator('.mlb-pathhead').innerText();
+  chk(tag + ': the map has a stage header naming the stage, with a Guidebook button', /Stage \d+/.test(ph) && /Guidebook/.test(ph), ph);
+  chk(tag + ': the open stage shows its chest and its mini review on the path', await p.locator('.mlb-path .mlb-chest').count() === 1 && await p.locator('.mlb-path .is-mini .mlb-node').count() === 1);
+  await p.locator('.mlb-pathhead-b').click();
+  await p.waitForSelector('.mlb-guide-item', { timeout: 30000 });
+  await p.locator('.mlb-guide-ex summary').first().click();
+  chk(tag + ': the Guidebook lists the stage’s ten topics, each with a worked example that opens',
+    await p.locator('.mlb-guide-item').count() === 10 && await p.locator('.mlb-guide-ex[open] .mlb-steps li').count() >= 1 && /\/study\/lab\/guide\/\d+$/.test(p.url()));
+  await shot('guide');
+  await p.locator('.mlb-guidehead .mlb-back').click();
+  chk(tag + ': closing the Guidebook returns to the map', await p.waitForSelector('.mlb-pathhead', { timeout: 30000 }).then(() => true, () => false));
+
   // Exam practice: a JAMB-style paper runs on a clock, letters its options A–E, lets a question be left, and reports by area.
   await p.goto(BASE + '/study/lab/exams', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-paper', { timeout: 60000 });

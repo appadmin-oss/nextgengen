@@ -154,6 +154,12 @@ function mlb_start(array $p): array {
         if (!$comps || !mlb_stage_available($st)) return ['ok' => false, 'error' => 'not_available'];
         foreach ($comps as $c) if (!in_array($states[$c]['state'] ?? 'none', MLB_GOOD, true)) return ['ok' => false, 'error' => 'boss_locked'];
         $items = mlb_pick_items($comps, 12, false, true);
+    } elseif ($mode === 'mini') {
+        // A short look back (owner, 5 Nov 2026: "a mini review feature after a long time of practice").
+        $st = (int)($p['stage'] ?? 0); $ref = $st ? (string)$st : '';
+        $comps = mlb_mini_pick($mid, $states, $st);
+        if (count($comps) < 2) return ['ok' => false, 'error' => 'not_enough'];
+        $items = mlb_pick_items($comps, min(MLB_MINI_ITEMS, max(count($comps), 3)), false, true);
     } elseif ($mode === 'exam') {
         // A practice paper is open to every member whatever their place on the map: it is exam practice, not a step on the path.
         $paper = (string)($p['paper'] ?? ''); if (!isset(MLB_PAPERS[$paper])) return ['ok' => false, 'error' => 'bad_paper'];
@@ -169,6 +175,7 @@ function mlb_start(array $p): array {
 }
 function mlb_session_title(string $mode, string $ref): string {
     if ($mode === 'exam') return MLB_PAPERS[$ref]['title'] ?? 'Practice paper';
+    if ($mode === 'mini') return 'Mini review' . ($ref !== '' ? ' · Stage ' . $ref . ': ' . (mlb_stages()[(int)$ref]['title'] ?? '') : ' · what you learned earlier');
     if ($mode === 'climb') return 'Stage ' . $ref . ' gate · ' . mlb_stages()[(int)$ref]['title'];
     if ($mode === 'boss') return 'Stage ' . $ref . ' boss · ' . mlb_stages()[(int)$ref]['title'];
     if ($mode === 'review') return 'Review: keep what you know';
@@ -176,7 +183,7 @@ function mlb_session_title(string $mode, string $ref): string {
 }
 function mlb_session(string $mid, string $sid): ?array {
     // The daily problem is answered only through mathslab.dailyAnswer (its own tries and reward), never as a session.
-    $s = db_row("SELECT * FROM mlab_sessions WHERE sessionId = ? AND memberId = ? AND mode <> 'daily'", [$sid, $mid]);
+    $s = db_row("SELECT * FROM mlab_sessions WHERE sessionId = ? AND memberId = ? AND mode NOT IN ('daily', 'chest')", [$sid, $mid]);
     return $s ?: null;
 }
 
@@ -276,6 +283,16 @@ function mlb_finish(array $p): array {
             foreach (array_keys($missed) as $c) { mlb_set_state($mid, $c, ['state' => 'practising', 'p' => min((float)($states[$c]['p'] ?? 0.6), 0.6), 'owed' => MLB_RETAKE_OWED]); $changes[] = ['comp' => $c, 'to' => 'practising']; }
             $msg = 'The boss wins this time (' . $pct . '%, need ' . MLB_BOSS_PASS . '%). The ' . count($missed) . ' topic' . (count($missed) === 1 ? '' : 's') . ' it caught you on ' . (count($missed) === 1 ? 'is' : 'are') . ' back in practice: master ' . (count($missed) === 1 ? 'it' : 'them') . ' again, then face the boss.';
         }
+    } elseif ($mode === 'mini') {
+        /* Light, unlike the full review: a right answer pushes a known topic's next review further
+           off; a wrong one sends a known topic back to "review" so it comes back soon. */
+        foreach ($items as $i => $x) {
+            $c = $x['c']; $cur = (string)($states[$c]['state'] ?? 'none'); $ok = !empty($resp[$i]['ok']);
+            if ($ok && in_array($cur, MLB_GOOD, true)) mlb_set_state($mid, $c, ['nextReview' => gmdate('Y-m-d', $now + 21 * 86400)]);
+            elseif (!$ok && in_array($cur, MLB_GOOD, true)) { mlb_set_state($mid, $c, ['state' => 'review', 'nextReview' => '']); $changes[] = ['comp' => $c, 'to' => 'review']; }
+        }
+        $xp = mlb_award_xp($mid, 5 * $right);
+        $msg = $right === $n ? 'Everything you looked back at held. That is what makes it stick.' : ($n - $right) . ' slipped a little — ' . (($n - $right) === 1 ? 'it is' : 'they are') . ' marked for a quick refresh, so ' . (($n - $right) === 1 ? 'it comes' : 'they come') . ' back soon.';
     } elseif ($mode === 'exam') {
         $exam = mlb_exam_report($ref, $items, $resp, (string)$s['startedAt']);
         $xp = mlb_award_xp($mid, 2 * $right);
@@ -291,7 +308,7 @@ function mlb_finish(array $p): array {
     // A session can be the one that completes a course: its certificate is issued now, not when somebody thinks to press a button.
     $certs = mlb_issue_certificates($mid, $mode === 'boss' && $pct >= MLB_BOSS_PASS ? [(int)$ref => $pct] : []);
     return ['ok' => true, 'mode' => $mode, 'right' => $right, 'total' => $n, 'pct' => $pct, 'fast' => $fast, 'xp' => $xp, 'message' => $msg, 'changes' => $changes, 'review' => $review,
-            'certificates' => $certs] + ($mode === 'exam' ? ['exam' => $exam] : []);
+            'certificates' => $certs] + ($mode === 'exam' ? ['exam' => $exam] : []) + ($mode === 'practice' ? ['mini' => mlb_mini_status($mid)] : []);
 }
 
 /* ── Reading the map ── */
@@ -348,6 +365,7 @@ function mlb_home(array $p): array {
         })(),
         'certificates' => mlb_cert_list((string)$m['memberId']),
         'daily' => mlb_daily_summary((string)$m['memberId']),
+        'mini' => mlb_mini_status((string)$m['memberId']),
         'courses' => array_map(static fn($c) => mlb_course_view($c, $states, $enrol, $prof) + ['certificate' => $certs[$c['id']] ?? null,
             'stageCertificates' => array_values(array_filter(array_map(static fn($n) => isset($certs['stage:' . $n]) ? ['stage' => (int)$n] + $certs['stage:' . $n] : null, $c['stages'])))], array_values(mlb_courses()))];
 }
@@ -386,12 +404,14 @@ function mlb_badges(array $prof, array $states): array {
 function mlb_map(array $p): array {
     $m = mlb_member($p); $states = $m ? mlb_states((string)$m['memberId']) : [];
     $prof = $m ? mlb_profile((string)$m['memberId']) : null; $bosses = $prof ? (json_decode((string)$prof['bosses'], true) ?: []) : [];
-    $stages = []; $certs = $m ? mlb_course_certs((string)$m['memberId']) : [];
+    $stages = []; $certs = $m ? mlb_course_certs((string)$m['memberId']) : []; $chests = $m ? mlb_chests((string)$m['memberId']) : [];
     foreach (mlb_stages() as $n => $st) {
         $comps = array_map(static fn($id) => ['id' => $id, 'title' => mlb_comp($id)['title'], 'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon')], $st['comps']);
         $stages[] = ['n' => $n, 'title' => $st['title'], 'strand' => $st['strand'], 'band' => mlb_band((int)$n)['name'], 'bandId' => mlb_band((int)$n)['id'], 'level' => mlb_band((int)$n)['level'], 'available' => mlb_stage_available($n), 'comps' => $comps,
             'boss' => isset($bosses[(string)$n]), 'bossReady' => $m && mlb_stage_available($n) && !array_filter($comps, static fn($c) => !in_array($c['state'], MLB_GOOD, true)),
-            'certificate' => $certs['stage:' . $n] ?? null];
+            'certificate' => $certs['stage:' . $n] ?? null,
+            'chest' => ['opened' => isset($chests[(int)$n]), 'ready' => $m && count(array_filter($comps, static fn($c) => in_array($c['state'], MLB_GOOD, true))) >= MLB_CHEST_AT],
+            'miniReady' => $m && count(array_filter($comps, static fn($c) => !in_array($c['state'], ['none', 'open', 'locked', 'soon'], true))) >= 2];
     }
     $bands = array_map(static fn($b) => ['id' => $b['id'], 'name' => $b['name'], 'level' => $b['level'], 'stages' => $b['from'] === $b['to'] ? 'Stage ' . $b['from'] : 'Stages ' . $b['from'] . '–' . $b['to'],
         'what' => $b['what'], 'topics' => ($b['to'] - $b['from'] + 1) * 10, 'summit' => !empty($b['summit'])], MLB_BANDS);
@@ -833,5 +853,79 @@ function mlb_exams(array $p): array {
     }
     return ['ok' => true, 'papers' => array_values(array_map(static fn($P) => ['id' => $P['id'], 'title' => $P['title'], 'n' => $P['n'], 'minutes' => $P['minutes'], 'what' => $P['what'],
         'best' => array_reduce($hist, static fn($b, $h) => $h['paper'] === $P['id'] ? max($b, $h['scaled']) : $b, null)], MLB_PAPERS)), 'history' => $hist];
+}
+
+/* ── The path, Duolingo's way (owner, 5 Nov 2026: "Improve the map feature. Please research.") ──
+ * Duolingo's path mixes three things into the run of lessons: a Guidebook for each unit (its key
+ * phrases and tips), personalised practice placed along the path and chosen from what is due and
+ * from the learner's own mistakes, and chests that reward reaching the middle. The Lab now has
+ * all three: a Guidebook per stage, a mini review per stage (and after a long stretch of practice),
+ * and a chest once half a stage is known. */
+const MLB_MINI_ITEMS = 5;
+const MLB_MINI_AFTER = 20;     // answers in a day before a mini review is offered
+const MLB_CHEST_AT = 5;        // topics known in a stage to open its chest
+const MLB_CHEST_XP = 25;
+
+/** Topics worth looking back at: recent mistakes first, then what was practised longest ago. */
+function mlb_mini_pick(string $mid, array $states, int $stage = 0): array {
+    $seen = array_filter($states, static fn($s) => (int)($s['attempts'] ?? 0) > 0 || in_array($s['state'] ?? '', MLB_GOOD, true));
+    if ($stage) $seen = array_filter($seen, static fn($s, $c) => (int)(mlb_comp($c)['stage'] ?? 0) === $stage, ARRAY_FILTER_USE_BOTH);
+    $miss = [];
+    foreach (db_all("SELECT items, resp FROM mlab_sessions WHERE memberId = ? AND mode NOT IN ('daily', 'chest') ORDER BY startedAt DESC LIMIT 30", [$mid]) as $r) {
+        $items = json_decode((string)$r['items'], true) ?: []; $resp = json_decode((string)$r['resp'], true) ?: [];
+        foreach ($items as $i => $x) if (isset($resp[$i]) && empty($resp[$i]['ok']) && isset($seen[$x['c']])) $miss[$x['c']] = ($miss[$x['c']] ?? 0) + 1;
+    }
+    arsort($miss);
+    $old = $seen; uasort($old, static fn($a, $b) => strcmp((string)($a['updatedAt'] ?? ''), (string)($b['updatedAt'] ?? '')));
+    $out = array_slice(array_keys($miss), 0, 2);
+    foreach (array_keys($old) as $c) { if (count($out) >= MLB_MINI_ITEMS) break; if (!in_array($c, $out, true) && mlb_available($c)) $out[] = $c; }
+    return array_values(array_filter($out, 'mlb_available'));
+}
+/** After a long stretch of practice today, offer a mini review: answers since the last one. */
+function mlb_mini_status(string $mid): array {
+    $day = mlb_today(); $since = 0; $lastMini = '';
+    $rows = db_all("SELECT mode, resp, startedAt FROM mlab_sessions WHERE memberId = ? AND startedAt >= ? ORDER BY startedAt ASC", [$mid, $day]);
+    foreach ($rows as $r) {
+        if ((string)$r['mode'] === 'mini') { $since = 0; $lastMini = (string)$r['startedAt']; continue; }
+        if (in_array((string)$r['mode'], ['daily', 'chest', 'exam'], true)) continue;
+        $since += count(json_decode((string)$r['resp'], true) ?: []);
+    }
+    $topics = count(mlb_mini_pick($mid, mlb_states($mid)));
+    return ['ready' => $since >= MLB_MINI_AFTER && $topics >= 2, 'answered' => $since, 'after' => MLB_MINI_AFTER, 'topics' => min($topics, MLB_MINI_ITEMS)];
+}
+
+/** Chests opened: stage => day. Recorded as a session row (mode 'chest'), so no new table. */
+function mlb_chests(string $mid): array {
+    $out = []; foreach (db_all("SELECT ref, startedAt FROM mlab_sessions WHERE memberId = ? AND mode = 'chest'", [$mid]) as $r) $out[(int)$r['ref']] = (string)$r['startedAt'];
+    return $out;
+}
+/** mathslab.chest — open a stage's chest: once, and only when half the stage is known. */
+function mlb_chest_open(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $mid = (string)$m['memberId']; $st = (int)($p['stage'] ?? 0); $stage = mlb_stages()[$st] ?? null;
+    if (!$stage) return ['ok' => false, 'error' => 'not_found'];
+    $states = mlb_states($mid);
+    if (count(array_filter($stage['comps'], static fn($c) => in_array($states[$c]['state'] ?? '', MLB_GOOD, true))) < MLB_CHEST_AT) return ['ok' => false, 'error' => 'chest_locked'];
+    $sid = 'MLC-' . strtoupper(substr(sha1($mid . '|chest|' . $st), 0, 16));   // derived: a double press cannot open it twice
+    try { db_insert('mlab_sessions', ['sessionId' => $sid, 'memberId' => $mid, 'mode' => 'chest', 'ref' => (string)$st, 'items' => '[]', 'resp' => '{}', 'startedAt' => now_iso(), 'finishedAt' => now_iso()]); }
+    catch (\Throwable $e) { return ['ok' => false, 'error' => 'already_open']; }
+    if (!db_row('SELECT sessionId FROM mlab_sessions WHERE sessionId = ?', [$sid])) return ['ok' => false, 'error' => 'failed'];
+    return ['ok' => true, 'xp' => mlb_award_xp($mid, MLB_CHEST_XP), 'stage' => $st];
+}
+
+/** mathslab.guide — a stage's Guidebook: each topic's key idea and a worked example (Duolingo's "key phrases"). */
+function mlb_guide(array $p): array {
+    $st = (int)($p['stage'] ?? 0); $stage = mlb_stages()[$st] ?? null;
+    if (!$stage) return ['ok' => false, 'error' => 'not_found'];
+    $m = mlb_member($p); $states = $m ? mlb_states((string)$m['memberId']) : [];
+    $topics = [];
+    foreach ($stage['comps'] as $id) {
+        $c = mlb_comp($id); $why = function_exists('mlb_why_of') ? mlb_why_of($id) : null;
+        $ex = mlb_available($id) ? mlb_item($id, 0, crc32('guide|' . $id) & 0x7FFFFFFF) : null;
+        $topics[] = ['id' => $id, 'title' => $c['title'], 'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon'),
+            'idea' => $why['idea'] ?? null, 'claim' => $why['claim'] ?? null, 'tip' => $ex ? (string)$ex['hint'] : null,
+            'example' => $ex ? ['stem' => $ex['stem'], 'diagram' => $ex['diagram'] ?? null, 'lines' => $ex['lines'] ?? null, 'answer' => mlb_answer_text($ex), 'steps' => $ex['steps']] : null];
+    }
+    return ['ok' => true, 'stage' => $st, 'title' => $stage['title'], 'strand' => $stage['strand'], 'band' => mlb_band($st)['name'], 'level' => mlb_band($st)['level'], 'topics' => $topics];
 }
 

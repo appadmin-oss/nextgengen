@@ -196,7 +196,7 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
       /* Map UI/UX (owner, 5 Nov 2026): every topic on the path is named, every band has a banner with
          its progress, and the jump bar opens a band's first unfinished stage — the summit in one press. */
       await page.click('.mlb-bandnav-b:first-child'); await page.waitForTimeout(300);
-      const lab=await page.evaluate(()=>({labs:document.querySelectorAll('.mlb-path .mlb-node-lab').length, nodes:document.querySelectorAll('.mlb-path .mlb-node').length,
+      const lab=await page.evaluate(()=>({labs:document.querySelectorAll('.mlb-path .mlb-node-lab').length, nodes:document.querySelectorAll('.mlb-path .mlb-node, .mlb-path .mlb-chest').length,
         banners:document.querySelectorAll('.mlb-bandh').length, summit:!!document.querySelector('.mlb-bandh.is-summit .ph-crown'), dots:document.querySelectorAll('.mlb-unit.is-closed .mlb-dots').length}));
       if(lab.labs!==lab.nodes||lab.labs<11||lab.banners!==6||!lab.summit||lab.dots<10) problems.push('map: labels, band banners or dots missing '+JSON.stringify(lab));
       /* "there's no logarithm": the map's search finds every log topic by name. */

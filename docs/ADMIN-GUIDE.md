@@ -4794,6 +4794,16 @@ off as "bad at maths" when a foundation was simply never taught.
   - **When it is over** (solved, or out of tries), the answer and the full worked solution are shown.
   - **Rewards:** solving at the first try with no hint earns 50 XP; any other solve earns 25 XP. Home and the page show how many days in a row the member has solved it, and how many in all.
   - It never moves the map: it is a taste of the summit, not a step on the path.
+- **The path, the way Duolingo's works** (owner, 5 Nov 2026, with screenshots of Duolingo):
+  - **Stage header.** A coloured bar at the top of the map names the stage being scrolled through and its band. It changes as the member scrolls.
+  - **Guidebook.** The book button on the header opens the stage's Guidebook (`/study/lab/guide/N`). It shows each topic's key idea (from its proof, where it has one), the tip to reach for, and a worked example to open. Reading it does not count as studying a topic.
+  - **Chest.** Half way along each stage there is a chest. It opens once five of the stage's ten topics are known, for 25 bonus XP, once only.
+  - **Mini review circle (purple dumbbell).** It sits before each stage's boss: five quick questions from that stage's practised topics. It opens once two topics of the stage have been practised.
+  - **The way back.** A floating arrow appears when the member's next topic is off screen, and takes them straight back to it.
+- **Mini review after a long stretch of practice.** After 20 answers in a day, Home and the end of a practice session offer a five-question mini review of what the member learned EARLIER: their recent mistakes first, then the topics practised longest ago.
+  - A right answer keeps a known topic safe for longer.
+  - A missed one sends it back for a quick refresh, so it reappears in reviews.
+  - Each right answer earns 5 XP. The count starts again after each mini review.
 - **Finding a topic.** The Map has a search box. Type a word (*log*, *fractions*, *circle*) and every matching topic in every stage is listed, with its stage and whether it is open; press one to go to it. Typing *log* finds the three logarithm topics.
 - **Logarithms.** They are taught in Stage 7 (*Logarithms as inverse powers*; *Laws of logarithms and logarithmic equations*) and used in Stage 16.
   - **What is covered:** exact powers; change of base; exponential equations solved with logs; logs of numbers in standard form (the "using tables" questions); $\ln$ and $e$; the curve $y = \log x$; doubling and half-life times; $\ln$ in calculus.

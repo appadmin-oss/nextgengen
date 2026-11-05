@@ -475,11 +475,12 @@ function useMlbNewCerts() {
 function mlbRoute() {
   const seg = (location.pathname || "").replace(/^\/+|\/+$/g, "").split("/");
   if (seg[0] !== "study" || seg[1] !== "lab") return { v: "home" };
-  if (seg[2] === "learn" && /^[A-Z]{2}-\d{3}$/.test(seg[3] || "")) return { v: "learn", comp: seg[3] };   // any Lab's topic id (domain/labs.php); the server says whether it exists
+  if (seg[2] === "learn" && /^[A-Z]{2}-\d{3}$/.test(seg[3] || "")) return { v: "learn", comp: seg[3] };
+  if (seg[2] === "guide" && /^\d{1,2}$/.test(seg[3] || "")) return { v: "guide", stage: Number(seg[3]) };   // any Lab's topic id (domain/labs.php); the server says whether it exists
   if (["map", "courses", "progress", "certificates", "daily", "exams"].indexOf(seg[2]) >= 0) return { v: seg[2] };
   return { v: "home" };
 }
-function mlbPath(r) { return "/study/lab" + (r.v === "home" ? "" : r.v === "learn" ? "/learn/" + r.comp : "/" + r.v); }
+function mlbPath(r) { return "/study/lab" + (r.v === "home" ? "" : r.v === "learn" ? "/learn/" + r.comp : r.v === "guide" ? "/guide/" + r.stage : "/" + r.v); }
 
 function MathsLab({ me }) {
   const [route, setRoute] = React.useState(mlbRoute);
@@ -491,7 +492,8 @@ function MathsLab({ me }) {
   if (me.phase === "loading") return <SttState kind="loading" text="Opening the Maths Lab…"/>;
   if (!me.member || lite) return <MlbLite signedIn={!!me.member} route={route} go={go}/>;
   // Inside .mlb: every colour, border and button in the player reads the Lab's tokens (outside it, none resolved).
-  if (play) return <div className="mlb"><MlbPlayer key={play.n || 0} start={play} onDone={() => { setPlay(null); }} go={go} onAgain={() => setPlay(p => Object.assign({}, p, { n: (p.n || 0) + 1 }))}/></div>;
+  if (play) return <div className="mlb"><MlbPlayer key={(play.mode || "") + (play.n || 0)} start={play} onDone={() => { setPlay(null); }} go={go} onAgain={() => setPlay(p => Object.assign({}, p, { n: (p.n || 0) + 1 }))}
+    onMini={() => setPlay(p => ({ mode: "mini", n: (p.n || 0) + 1 }))}/></div>;
   const nav = [["home", "Home", "ph-house"], ["map", "Map", "ph-path"], ["courses", "Courses", "ph-graduation-cap"], ["certificates", "Certificates", "ph-certificate"], ["progress", "Progress", "ph-chart-bar"], ["exams", "Exams", "ph-exam"]];
   return (
     <div className="mlb"><div className="mlb-shell">
@@ -508,6 +510,7 @@ function MathsLab({ me }) {
           : route.v === "certificates" ? <MlbCerts go={go}/>
           : route.v === "daily" ? <MlbDaily go={go}/>
           : route.v === "exams" ? <MlbExams go={go} startPlay={setPlay}/>
+          : route.v === "guide" ? <MlbGuide stage={route.stage} go={go}/>
           : <MlbHome go={go} startPlay={setPlay} onNotMember={() => setLite(true)}/>}
       </div>
     </div></div>
@@ -577,6 +580,13 @@ function MlbHome({ go, startPlay, onNotMember }) {
           <h3 id="mlb-daily-h" className="mlb-h3">{d.daily.solved ? "Solved today — well done." : d.daily.done ? "Today’s problem is over: see how it goes." : "Today: " + d.daily.compTitle}</h3>
           <p className="mlb-meta">{d.daily.solved || d.daily.done ? "A new problem arrives tomorrow." : "One olympiad problem a day, the same for everyone in NGG. Tough — but the hint is free and you get three tries."}</p></div>
         <button type="button" className={d.daily.done ? "stt-btn" : "mlb-go"} onClick={() => go({ v: "daily" })}>{d.daily.done ? "See the solution" : d.daily.tries ? "Keep going" : "Try it"}</button>
+      </section> : null}
+
+      {d.mini && d.mini.ready ? <section className="mlb-excard is-mini" aria-labelledby="mlb-minicard-h">
+        <span className="mlb-dailycard-i is-mini" aria-hidden="true"><i className="ph-fill ph-barbell"/></span>
+        <div><p className="mlb-eyebrow">Mini review · {d.mini.answered} answers today</p><h3 id="mlb-minicard-h" className="mlb-h3">Lock in what you learned earlier</h3>
+          <p className="mlb-meta">{d.mini.topics} quick questions from your recent mistakes and the topics you practised longest ago.</p></div>
+        <button type="button" className="mlb-go" onClick={() => startPlay({ mode: "mini" })}>Start</button>
       </section> : null}
 
       <section className="mlb-excard" aria-labelledby="mlb-excard-h">
@@ -662,6 +672,22 @@ function mlbFindTopics(stages, q) {
   const own = out.filter(x => x.inTitle);
   return own.length ? own : out;
 }
+/* The chest halfway along each stage (Duolingo's treasure chest): bonus XP once five of its ten
+   topics are known. Opened once; the server refuses a second opening. */
+const MLB_CHEST_INDEX = 4;
+function MlbChestNode({ s, lite, fx, onOpen }) {
+  const [busy, setBusy] = React.useState(false), [err, setErr] = React.useState("");
+  const ch = s.chest || {}, just = fx && fx.stage === s.n;
+  const open = () => { if (busy) return; setBusy(true); setErr(""); NGGApi.member.mathslab.chest(s.n).then(r => { setBusy(false); onOpen(r.xp); }, e => { setBusy(false); setErr(mlbErr(e)); }); };
+  return <li className="mlb-node-li is-chest" style={{ "--dx": "44px" }}>
+    {ch.opened ? <span className="mlb-chest is-open" role="img" aria-label="Chest opened"><i className="ph-fill ph-package" aria-hidden="true"/></span>
+      : ch.ready && !lite ? <button type="button" className="mlb-chest is-ready" onClick={open} disabled={busy} aria-label={"Open the Stage " + s.n + " chest for bonus XP"}><i className="ph-fill ph-treasure-chest" aria-hidden="true"/></button>
+      : <span className="mlb-chest" role="img" aria-label="Chest: opens when five topics of this stage are known"><i className="ph-fill ph-treasure-chest" aria-hidden="true"/></span>}
+    <span className="mlb-node-lab is-l" aria-hidden="true">{just ? "+" + fx.xp + " XP!" : ch.opened ? "Chest opened" : ch.ready ? "Open me!" : "Know 5 topics to open"}</span>
+    {err ? <span className="mlb-err" role="alert">{err}</span> : null}
+    {just ? <span className="mlb-sr" role="status">Chest opened: {fx.xp} bonus XP.</span> : null}
+  </li>;
+}
 function MlbMap({ go, lite }) {
   const [st, load] = useMlb(() => lite ? NGGApi.public.mathslabMap() : NGGApi.member.mathslab.map(), [lite]);
   const [startBoss, setBoss] = React.useState(null);
@@ -669,6 +695,11 @@ function MlbMap({ go, lite }) {
   const [openStage, setOpenStage] = React.useState(null);   // null = the focus stage (owner: only it is open)
   const [scrollTo, setScrollTo] = React.useState(0);
   const [q, setQ] = React.useState("");
+  /* Duolingo's path (owner, 5 Nov 2026, with screenshots): the header names the unit you are
+     scrolling through and opens its Guidebook; a button brings you back to your lesson. */
+  const [head, setHead] = React.useState(0);
+  const [nowOff, setNowOff] = React.useState(0);     // 0: your topic is on screen; 1: it is below; -1: above
+  const [chestFx, setChestFx] = React.useState(null);
   /* After a stage opens (or the focus stage comes back), bring its header into view: closing the
      stage above it shifts everything up, and the learner lost their place. */
   React.useEffect(() => {
@@ -684,6 +715,20 @@ function MlbMap({ go, lite }) {
     document.addEventListener("keydown", k); document.addEventListener("click", c);
     return () => { document.removeEventListener("keydown", k); document.removeEventListener("click", c); };
   }, [pop]);
+  React.useEffect(() => {
+    if (st.phase !== "ok" || typeof IntersectionObserver === "undefined") return undefined;
+    const units = Array.from(document.querySelectorAll(".mlb-unit")), vis = {};
+    const io = new IntersectionObserver(es => {
+      es.forEach(e => { vis[e.target.id] = e.isIntersecting ? e.boundingClientRect.top : null; });
+      const on = Object.keys(vis).filter(k => vis[k] != null).sort((a, b) => vis[a] - vis[b]);
+      if (on.length) setHead(Number(on[0].replace("mlb-unit-", "")));
+    }, { rootMargin: "-90px 0px -55% 0px" });
+    units.forEach(u => io.observe(u));
+    const now = document.querySelector(".mlb-path .mlb-node.is-now");
+    const io2 = now ? new IntersectionObserver(es => es.forEach(e => setNowOff(e.isIntersecting ? 0 : (e.boundingClientRect.top > 0 ? 1 : -1)))) : null;
+    if (io2) io2.observe(now);
+    return () => { io.disconnect(); if (io2) io2.disconnect(); };
+  }, [st.phase, openStage]); // eslint-disable-line
   if (startBoss) return <MlbPlayer start={startBoss} onDone={() => { setBoss(null); load(); }} go={go}/>;
   if (st.phase === "loading") return <SttState kind="loading"/>;
   if (st.phase === "error") return <SttState kind="error" text={"Couldn’t load the map. " + mlbErr(st.e)} retry={load}/>;
@@ -727,6 +772,14 @@ function MlbMap({ go, lite }) {
           <li><span className="mlb-node is-boss is-locked is-mini"><i className="ph-fill ph-trophy" aria-hidden="true"/></span>Stage boss: beat it for the stage certificate</li></ul></section>
     </aside>
     <div className="mlb-map">
+      {(() => { const hs = stages.find(x => x.n === (head || focusStage)) || stages[0];
+        return <div className={"mlb-pathhead is-" + (hs.bandId || "foundations")} aria-live="off">
+          <div className="mlb-pathhead-t"><span>Stage {hs.n} · {hs.band}</span><b>{hs.title}</b></div>
+          <button type="button" className="mlb-pathhead-b" onClick={() => go({ v: "guide", stage: hs.n })} aria-label={"Guidebook for Stage " + hs.n + ": " + hs.title}>
+            <i className="ph-fill ph-notebook" aria-hidden="true"/><span>Guidebook</span></button>
+        </div>; })()}
+      {nowOff !== 0 && current ? <button type="button" className="mlb-jump" onClick={() => { const n = document.querySelector(".mlb-path .mlb-node.is-now"); if (n) { try { n.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (_) { n.scrollIntoView(); } n.focus({ preventScroll: true }); } }}
+        aria-label="Back to my next topic"><i className={"ph-fill " + (nowOff > 0 ? "ph-arrow-down" : "ph-arrow-up")} aria-hidden="true"/></button> : null}
       {/* Owner, 5 Nov 2026: "there's no logarithm" — it was there, inside Stage 7, and nothing
           let a learner find it by name. Search every topic in every stage. */}
       <div className="mlb-mapsearch" role="search">
@@ -775,7 +828,7 @@ function MlbMap({ go, lite }) {
                 {s.comps.map((c, i) => {
                   const kind = known(c) ? "done" : c.id === current ? "now" : c.state === "locked" ? "locked" : c.state === "soon" ? "soon" : "open";
                   const open = pop === c.id;
-                  return (
+                  return [
                     <li key={c.id} className={"mlb-node-li" + (open ? " is-pop" : "")} style={{ "--dx": MLB_PATH_X[i % 10] + "px" }}>
                       {kind === "now" ? <span className="mlb-node-start" aria-hidden="true">Start</span> : null}
                       <button type="button" id={"mlb-node-" + c.id} className={"mlb-node is-" + kind} aria-expanded={open} aria-controls={"mlb-pop-" + c.id}
@@ -788,8 +841,13 @@ function MlbMap({ go, lite }) {
                         <button type="button" className="mlb-go" disabled={kind === "soon"} onClick={() => go({ v: "learn", comp: c.id })}>{kind === "done" ? "Review" : kind === "locked" ? "Have a look" : "Start"}</button>
                       </div> : null}
                     </li>
-                  );
+                  ].concat(i === MLB_CHEST_INDEX ? [<MlbChestNode key={"chest-" + s.n} s={s} lite={lite} fx={chestFx} onOpen={(xp) => { setChestFx({ stage: s.n, xp }); load(); }}/>] : []);
                 })}
+                <li className="mlb-node-li is-mini" style={{ "--dx": "-44px" }}>
+                  {s.miniReady && !lite ? <button type="button" className="mlb-node is-practice" aria-label={"Mini review of Stage " + s.n + ": five quick questions on what you have practised here"} onClick={() => setBoss({ mode: "mini", stage: s.n })}><i className="ph-fill ph-barbell" aria-hidden="true"/></button>
+                    : <span className="mlb-node is-locked" role="img" aria-label="Mini review: opens once you have practised two topics in this stage"><i className="ph-fill ph-barbell" aria-hidden="true"/></span>}
+                  <span className="mlb-node-lab is-r" aria-hidden="true">{s.miniReady && !lite ? "Mini review" : "Mini review (practise 2 topics first)"}</span>
+                </li>
                 <li className="mlb-node-li is-boss" style={{ "--dx": "0px" }}>
                   {s.boss ? <span className="mlb-node is-done is-boss" role="img" aria-label="Stage boss defeated"><i className="ph-fill ph-trophy" aria-hidden="true"/></span>
                     : s.bossReady && !lite ? <button type="button" className="mlb-node is-now is-boss" aria-label={"Face the Stage " + s.n + " boss"} onClick={() => setBoss({ mode: "boss", stage: s.n })}><i className="ph-fill ph-trophy" aria-hidden="true"/></button>
@@ -956,6 +1014,42 @@ function MlbWhy({ why, onDone }) {
 
 /* ── Answer entry ── */
 const MLB_KEYS = { expr: ["x", "y", "^", "(", ")", "/", "−", "√(", "log(", "ln("], num: ["−", "."], frac: ["/", "−"], ratio: [":"], pair: ["−"] };
+/* A stage's Guidebook — Duolingo's book icon on each unit, which opens its "key phrases". Here:
+   each topic's key idea (from its proof, where it has one), the tip to reach for, and a worked
+   example to read before or after practising. Read-only; it never counts as studying a topic. */
+function MlbGuide({ stage, go }) {
+  const [st, load] = useMlb(() => NGGApi.member.mathslab.guide(stage), [stage]);
+  if (st.phase === "loading") return <SttState kind="loading" text="Opening the Guidebook…"/>;
+  if (st.phase === "error") return <SttState kind="error" text={"Couldn’t open the Guidebook. " + mlbErr(st.e)} retry={load}/>;
+  const d = st.d;
+  return (
+    <div className="mlb-stack mlb-guide">
+      <header className="mlb-guidehead">
+        <button type="button" className="mlb-back" onClick={() => go({ v: "map" })}><i className="ph ph-x" aria-hidden="true"/>Close</button>
+        <span className="mlb-guidehead-i" aria-hidden="true"><i className="ph-fill ph-notebook"/></span>
+        <p className="mlb-eyebrow">Stage {d.stage} · {d.band} · {d.level}</p>
+        <h2 className="mlb-h2">{d.title}</h2>
+        <p className="mlb-p">The key ideas of this stage, topic by topic, each with a worked example. Read it before you start, or come back when something will not stick.</p>
+      </header>
+      <h3 className="mlb-guide-k">Key ideas</h3>
+      <ol className="mlb-guide-list">{d.topics.map((t, k) => (
+        <li key={t.id} className="mlb-card mlb-guide-item">
+          <div className="mlb-row"><b className="mlb-guide-t"><span className="mlb-guide-n">{k + 1}</span>{t.title}</b>
+            <span className="mlb-chip">{MLB_GOOD_V.indexOf(t.state) >= 0 ? "Known" : t.state === "locked" ? "Locked" : t.state === "soon" ? "Soon" : "Open"}</span></div>
+          {t.idea ? <MlbMath as="p" className="mlb-guide-idea" text={t.idea}/> : null}
+          {t.claim ? <p className="mlb-guide-claim"><MlbMath text={t.claim}/></p> : null}
+          {t.tip ? <p className="mlb-meta"><i className="ph-fill ph-lightbulb" aria-hidden="true"/> <MlbMath text={t.tip}/></p> : null}
+          {t.example ? <details className="mlb-guide-ex"><summary>Worked example</summary>
+            <MlbMath as="p" text={t.example.stem}/><MlbDiagram d={t.example.diagram}/>
+            {t.example.lines ? <ol className="mlb-lines">{t.example.lines.map((l, j) => <li key={j}><MlbMath text={l}/></li>)}</ol> : null}
+            <ol className="mlb-steps">{t.example.steps.map((x, j) => <li key={j}><MlbMath text={x}/></li>)}</ol>
+            <p><b>Answer:</b> <MlbMath text={t.example.answer}/></p></details> : null}
+          {t.state !== "soon" ? <button type="button" className="stt-btn" onClick={() => go({ v: "learn", comp: t.id })}>{MLB_GOOD_V.indexOf(t.state) >= 0 ? "Review this topic" : "Study this topic"}</button> : null}
+        </li>))}</ol>
+    </div>
+  );
+}
+
 /* Exam practice (owner, 5 Nov 2026: "Proceed. Adapt them all over", with JAMB past papers and a
    digital SAT practice test). A JAMB-style paper and an SAT-style Math module, drawn fresh each
    time from the Lab's own exam-style questions, timed like the real thing, marked by area. */
@@ -1114,7 +1208,7 @@ function mlbNudge({ i, conf }) {
   return MLB_NUDGE[i % MLB_NUDGE.length];
 }
 
-function MlbPlayer({ start, onDone, go, onAgain }) {
+function MlbPlayer({ start, onDone, go, onAgain, onMini }) {
   const [ses, setSes] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [i, setI] = React.useState(0);
@@ -1154,7 +1248,7 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
   }, []);
   if (err) return <SttState kind="error" text={err}><button type="button" className="stt-btn" onClick={onDone}>Back</button></SttState>;
   if (!ses) return <SttState kind="loading" text="Preparing your questions…"/>;
-  if (res) return <MlbResult res={res} onDone={onDone} go={go} onAgain={onAgain && ["practice", "review", "exam"].indexOf(res.mode) >= 0 ? onAgain : null}/>;
+  if (res) return <MlbResult res={res} onDone={onDone} go={go} onMini={onMini} onAgain={onAgain && ["practice", "review", "exam"].indexOf(res.mode) >= 0 ? onAgain : null}/>;
   const it = ses.items[i], practice = ses.mode === "practice", last = i === ses.items.length - 1, exam = ses.mode === "exam";
   const left = exam ? Math.max(0, Math.round((tStart.current + ses.minutes * 60000 - tick) / 1000)) : 0;
   const lettered = exam || !!it.letters;
@@ -1284,7 +1378,7 @@ function MlbStageWin({ certs, xp, onClose, go }) {
 
 /* The result: the score once, what it means, and the mistakes FIRST with their worked solutions
    open — the useful part of a session is the questions you got wrong. */
-function MlbResult({ res, onDone, go, onAgain }) {
+function MlbResult({ res, onDone, go, onAgain, onMini }) {
   const [all, setAll] = React.useState(false);
   // A stage or a course completed in this session: celebrate it first, over everything.
   const wins = (res.certificates || []).filter(c => c.scope === "stage").concat((res.certificates || []).filter(c => c.scope === "course"));
@@ -1293,7 +1387,7 @@ function MlbResult({ res, onDone, go, onAgain }) {
   React.useEffect(() => { if (wins.length) try { window.dispatchEvent(new CustomEvent("mlb:certs-new")); } catch (_) {} }, []);
   const lit = res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length;
   const wrong = res.review.filter(q => !q.correct), shown = all ? res.review : wrong;
-  const kind = res.mode === "exam" ? (res.exam && res.exam.title || "Practice paper") : res.mode === "climb" ? "Placement gate" : res.mode === "check" ? "Mastery check" : res.mode === "boss" ? "Stage boss" : res.mode === "review" ? "Review" : "Practice";
+  const kind = res.mode === "exam" ? (res.exam && res.exam.title || "Practice paper") : res.mode === "mini" ? "Mini review" : res.mode === "climb" ? "Placement gate" : res.mode === "check" ? "Mastery check" : res.mode === "boss" ? "Stage boss" : res.mode === "review" ? "Review" : "Practice";
   /* The end of a session is the moment that decides whether a child comes back.
      Duolingo's shape: a celebration when it went well, a headline that names it,
      and three tiles — what was earned, how accurate, the best run — each with a
@@ -1331,6 +1425,9 @@ function MlbResult({ res, onDone, go, onAgain }) {
           <ul className="mlb-exareas">{Object.keys(res.exam.areas).map(a => { const x = res.exam.areas[a], pc = Math.round(x.right / Math.max(1, x.total) * 100);
             return <li key={a} className={pc < 60 ? "is-weak" : ""}><span>{a}</span><span className="mlb-meter"><span style={{ width: pc + "%" }}/></span><b>{x.right}/{x.total}</b></li>; })}</ul>
         </section> : null}
+        {res.mini && res.mini.ready && onMini ? <div className="mlb-minioffer" role="note"><i className="ph-fill ph-barbell" aria-hidden="true"/>
+          <div><b>You have answered {res.mini.answered} questions today. Brilliant work.</b><span className="mlb-meta">A {res.mini.topics}-question mini review of what you learned earlier will lock it in — it takes about two minutes.</span></div>
+          <button type="button" className="mlb-go" onClick={onMini}>Mini review</button></div> : null}
         {!win && wrong.length ? <p className="mlb-meta">The {wrong.length === 1 ? "one you missed is" : wrong.length + " you missed are"} below, with the working. Going over them is the fastest way up.</p> : null}
         {(res.certificates || []).map(c => (
           /* The session that completed a course: the certificate exists now — a numbered NGG document the family also sees under Documents. */

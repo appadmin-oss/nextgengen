@@ -6869,3 +6869,43 @@ Logs were there, in two Stage 7 topics, but:
   - **Logs:** read in any base, the wrong base refused, the new forms present, the proof pairs where they were.
   - **The Lab registry:** unique prefixes and paths, every Maths id resolving to the Maths Lab, malformed or unknown ids resolving to nothing, `labs.list`.
 - Shots: 23. New: searching "log" finds exactly the three log topics.
+
+
+## 5 Nov 2026 — Maths Lab path: stage header and Guidebook, mini review, chest, the way back
+
+**Owner:** sent screenshots of Duolingo's path (a sticky unit header with a book icon, the unit Guidebook of "key phrases") and asked: "Improve the map feature. Please research. … Add a mini review feature after a long time of practice."
+
+**Research.** Duolingo's blog and reviews describe the path as lessons interleaved with personalised practice placed by spaced repetition and the learner's own mistakes, a Guidebook per unit, chests along the way, and end-of-unit challenges. Sources:
+
+- [blog.duolingo.com/new-duolingo-home-screen-design](https://blog.duolingo.com/new-duolingo-home-screen-design)
+- [blog.duolingo.com/how-to-review-lessons-on-duolingo](https://blog.duolingo.com/how-to-review-lessons-on-duolingo)
+- [blog.duolingo.com/spaced-repetition-for-learning](https://blog.duolingo.com/spaced-repetition-for-learning)
+
+### Server (`domain/mathslab.php`)
+
+- **`mathslab.guide`** (`?view=guide&stage=N`): ten topics, each with:
+  - the key idea and claim from `mlb_why_of`, where the topic has a proof;
+  - the hint as a tip;
+  - a deterministic worked example (`mlb_item(id, 0, crc32('guide|id'))`).
+- **`mathslab.start` mode `mini`** (optional `stage`):
+  - `mlb_mini_pick` takes up to two topics from recent mistakes (last 30 sessions), then the practised topics with the oldest `updatedAt`;
+  - finishing pushes a right known topic's next review out 21 days, sends a missed known topic to `review`, and pays 5 XP a right answer;
+  - `mlb_mini_status` gives `ready` after `MLB_MINI_AFTER` (20) answers since the last mini review today. Home and the practice result carry it.
+- **`mathslab.chest`:**
+  - opens when `MLB_CHEST_AT` (5) stage topics are known, for `MLB_CHEST_XP` (25);
+  - recorded as a session row (`mode` 'chest', `ref` = stage, sessionId derived from member and stage), so it opens once with no migration;
+  - `mlb_session()` excludes `chest` and `daily` rows, so neither can be answered or finished as a session.
+- **`mathslab.map` per stage:** `chest {opened, ready}` and `miniReady`.
+
+### Client (`mlb-app.jsx`)
+
+- `.mlb-pathhead`: a sticky header coloured by band. An IntersectionObserver tracks the unit in view, and the Guidebook button lives on the header.
+- `MlbGuide` at `/study/lab/guide/N`.
+- `MlbChestNode` after topic 5; the mini review node (`.is-practice`) before the boss.
+- `.mlb-jump`: the floating way back to the "now" node, with its direction from an observer.
+- The mini review offer on Home and on the practice result (`onMini` chains a new session).
+
+### Tests
+
+- `run.php`: 6901 passed, 0 failed. New: the Guidebook; the mini review's offer threshold, topic choice, state changes, XP and reset; the chest lock, once-only rule and session refusal.
+- Maths Lab e2e: 56 passed, 0 failed. New, desktop and phone: the stage header, the chest and mini review on the path, and the Guidebook opening, showing ten topics with worked examples, and closing.
