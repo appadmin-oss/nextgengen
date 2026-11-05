@@ -753,14 +753,16 @@ function admin_mfa_act(array $p): array {
                        made in person and spent once, is what proves it is them.
                    A window with no code would admit anybody typing their ID. */
                 attempt_reset('mfa', $id);
-                if ($e) mfa_put($id, 'mfa.bypass', ['until' => time() + $secs, 'at' => time(), 'by' => $me, 'used' => 0]);
-                else mfa_del($id, 'mfa.bypass');
+                // The window: their next sign-in on their email or ID alone goes straight in (auth_window_signin).
+                mfa_put($id, 'mfa.bypass', ['until' => time() + $secs, 'at' => time(), 'by' => $me, 'used' => 0]);
                 $code = mfa_letin_code_new();
                 mfa_put($id, 'mfa.code1', ['h' => password_hash(mfa_letin_norm($code), PASSWORD_DEFAULT), 'exp' => time() + $secs, 'at' => time(), 'by' => $me, 'used' => 0]);
                 $told = mfa_tell_letin($pr, (string)($g['requester']['fullName'] ?? ''), true);
                 // The code is in this response and nowhere else: shown once to the member of staff.
                 $results[] = $res + ['ok' => true, 'code' => $code, 'expires' => time() + $secs, 'until' => time() + $secs,
-                    'signInAs' => $pr['who'] === 'guardian' ? (string)$pr['email'] : mfa_signin_name($pr), 'told' => $told];
+                    'signInAs' => $pr['who'] === 'guardian' ? (string)$pr['email'] : mfa_signin_name($pr),
+                    // Which door: guardians sign in on the family app, everybody else on the main sign-in.
+                    'door' => $pr['who'] === 'guardian' ? 'family' : 'main', 'told' => $told];
                 break;
             case 'reset':
                 if (!$e) { $results[] = $res + ['ok' => true, 'unchanged' => true]; break; }
@@ -811,33 +813,99 @@ function mfa_signin_name(array $pr): string {
  * against the account like a wrong second step. Unknown IDs and wrong codes get
  * the same answer.
  */
+/**
+ * Every account an identifier could be, for the desk's let-in: [[who, id], …].
+ * An email is often SHARED (a parent's address on two or three children), so
+ * this is a list, never one guess; the let-in itself is bound to one account.
+ */
+function mfa_desk_candidates(string $ident, bool $family): array {
+    $ident = strtolower(trim($ident));
+    $cands = [];
+    if ($family) {
+        foreach (db_all("SELECT guardianId FROM guardians WHERE status = 'active' AND (lower(guardianId) = ? OR lower(trim(email)) = ?) LIMIT 10", [$ident, $ident]) as $g) $cands[] = ['guardian', (string)$g['guardianId']];
+    } else {
+        foreach (db_all("SELECT memberId FROM members WHERE status NOT IN ('deleted', 'suspended') AND (lower(memberId) = ? OR (displayId <> '' AND lower(displayId) = ?)
+                         OR lower(trim(email)) = ? OR lower(trim(COALESCE(parentEmail, ''))) = ?) LIMIT 20", [$ident, $ident, $ident, $ident]) as $m) $cands[] = ['member', (string)$m['memberId']];
+        foreach (db_all("SELECT volunteerId FROM volunteers WHERE lower(trim(COALESCE(status,''))) = 'active' AND (lower(volunteerId) = ? OR lower(trim(email)) = ?) LIMIT 10", [$ident, $ident]) as $v) $cands[] = ['volunteer', (string)$v['volunteerId']];
+    }
+    return $cands;
+}
+
+/**
+ * auth.window — Google's "Turn off for 10 minutes": while the desk's window is
+ * open, the person signs in on their email or ID ALONE, with no password, no
+ * emailed code and no second step. ONE sign-in: the window closes when it is
+ * taken, and the one-time code made with it is spent too (one let-in, one way
+ * in). When the identifier is shared, only an account with an open window can
+ * take it, and two at once is refused as ambiguous (they use the code).
+ * Answers {ok, letIn: false} when nothing is open, so the door carries on as
+ * normal and says nothing about whether the account exists.
+ */
+function auth_window_signin(array $p): array {
+    $ip = (string)($p['ip'] ?? '');
+    $family = !empty($p['family']);
+    $open = array_values(array_filter(mfa_desk_candidates((string)($p['identifier'] ?? ''), $family), static fn($c) => mfa_window_open($c[1]) > 0));
+    if (count($open) !== 1) return ['ok' => true, 'letIn' => false];
+    [$who, $id] = $open[0];
+    if (!mfa_window_take($id)) return ['ok' => true, 'letIn' => false];
+    $c = mfa_get($id, 'mfa.code1');
+    if (is_array($c) && empty($c['used'])) mfa_del($id, 'mfa.code1');
+    attempt_reset('mfa', $id);
+    if ($who === 'guardian') {
+        $g = db_row("SELECT * FROM guardians WHERE guardianId = ? LIMIT 1", [$id]);
+        if (!$g) return ['ok' => true, 'letIn' => false];
+        audit('login.success', $id, $id, ['kind' => 'guardian', 'via' => 'desk_window'], $ip);
+        return ['ok' => true, 'letIn' => true, 'guardian' => $g, 'replaceUntil' => mfa_bypass_until($id)];
+    }
+    if ($who === 'volunteer') {
+        $vr = auth_staff_principal($id);
+        if (!$vr) return ['ok' => true, 'letIn' => false];
+        audit('login.success', $id, $id, ['kind' => 'volunteer', 'via' => 'desk_window'], $ip);
+        return ['ok' => true, 'letIn' => true, 'volunteer' => $vr, 'replaceUntil' => mfa_bypass_until($id)];
+    }
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    if (!$m || in_array((string)$m['status'], ['deleted', 'suspended'], true) || (function_exists('auth_password_only') && auth_password_only($m))) return ['ok' => true, 'letIn' => false];
+    auth_fail_reset($m);
+    audit('login.success', $id, $id, ['via' => 'desk_window'], $ip);
+    return ['ok' => true, 'letIn' => true, 'member' => public_member($m), 'replaceUntil' => mfa_bypass_until($id)];
+}
+
 function auth_desk(array $p): array {
     $ip = (string)($p['ip'] ?? '');
-    $ident = trim((string)($p['identifier'] ?? ''));
+    $ident = strtolower(trim((string)($p['identifier'] ?? '')));
     $code = (string)($p['code'] ?? '');
+    $family = !empty($p['family']);
     if ($ident === '' || strlen(mfa_letin_norm($code)) !== 8) return ['ok' => false, 'error' => 'invalid'];
-    $who = ''; $id = '';
-    $mid = function_exists('auth_resolve_member_id') ? auth_resolve_member_id($ident) : '';
-    if ($mid === '') {
-        $byDisplay = db_row('SELECT memberId FROM members WHERE lower(displayId) = ? LIMIT 1', [strtolower($ident)]);
-        if ($byDisplay) $mid = (string)$byDisplay['memberId'];
+    /* Every account this identifier could be. An email is often SHARED — a
+       parent's address on two or three children's records — and the old
+       lookup resolved a shared address to nobody, so a child typing the email
+       they always use was refused with a perfectly good code. The code is
+       bound to ONE account, so trying it against each candidate is safe: it
+       opens only the account it was made for. */
+    $cands = mfa_desk_candidates($ident, $family);
+    if (!$cands) { audit('login.fail.desk', null, '', ['ip' => $ip], $ip); return ['ok' => false, 'error' => 'invalid']; }
+    [$who, $id] = ['', ''];
+    foreach ($cands as [$w, $cid]) {
+        if (attempt_locked('mfa', $cid)) continue;
+        if (mfa_letin_use($cid, $code)) { [$who, $id] = [$w, $cid]; break; }
     }
-    if ($mid !== '' && db_row('SELECT 1 x FROM members WHERE memberId = ? LIMIT 1', [$mid])) { $who = 'member'; $id = $mid; }
-    else {
-        $v = function_exists('auth_find_volunteer') ? auth_find_volunteer($ident) : null;
-        if ($v && ($v['kind'] ?? '') === 'volunteer') { $who = 'volunteer'; $id = (string)$v['id']; }
-    }
-    if ($id === '') { audit('login.fail.desk', null, '', ['ip' => $ip], $ip); return ['ok' => false, 'error' => 'invalid']; }
-    if (attempt_locked('mfa', $id)) return ['ok' => false, 'error' => 'too_many_attempts'];
-    if (!mfa_letin_use($id, $code)) {
-        attempt_fail('mfa', $id, MFA_FAIL_MAX, MFA_FAIL_LOCK);
-        audit('login.fail.desk', $id, $id, ['ip' => $ip], $ip);
-        return ['ok' => false, 'error' => 'invalid'];
+    if ($id === '') {
+        // A wrong code counts against every account it was tried on, like a wrong second step.
+        $locked = false;
+        foreach ($cands as [, $cid]) $locked = attempt_fail('mfa', $cid, MFA_FAIL_MAX, MFA_FAIL_LOCK) || $locked;
+        audit('login.fail.desk', $cands[0][1], $cands[0][1], ['ip' => $ip, 'tried' => count($cands)], $ip);
+        return ['ok' => false, 'error' => $locked && count($cands) === 1 ? 'too_many_attempts' : 'invalid'];
     }
     attempt_reset('mfa', $id);
     // The window a waiting screen would have taken is spent too: one let-in, one way in.
     $w = mfa_get($id, 'mfa.bypass');
     if (is_array($w) && empty($w['used'])) mfa_del($id, 'mfa.bypass');
+    if ($who === 'guardian') {
+        $g = db_row("SELECT * FROM guardians WHERE guardianId = ? LIMIT 1", [$id]);
+        if (!$g) return ['ok' => false, 'error' => 'invalid'];
+        audit('login.success', $id, $id, ['kind' => 'guardian', 'via' => 'desk_code'], $ip);
+        return ['ok' => true, 'guardian' => $g, 'replaceUntil' => mfa_bypass_until($id)];
+    }
     if ($who === 'volunteer') {
         $vr = auth_staff_principal($id);
         if (!$vr) return ['ok' => false, 'error' => 'invalid'];

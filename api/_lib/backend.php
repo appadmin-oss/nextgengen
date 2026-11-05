@@ -27,6 +27,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'auth.setPassword'        => 'auth_set_password',
             'auth.verify'             => 'auth_verify',
             'auth.desk'               => 'auth_desk',     // sign in with a code staff made at the desk (domain/mfa.php)
+            'auth.window'             => 'auth_window_signin', // the desk's 10 minutes: sign in on the email or ID alone (domain/mfa.php)
             'auth.pick'               => 'auth_pick',
             'admin.projects'          => 'admin_projects',
             'admin.projects.people'   => 'admin_projects_people',

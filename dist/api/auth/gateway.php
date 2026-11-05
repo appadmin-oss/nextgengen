@@ -30,6 +30,21 @@ if (strlen($identifier) < 3) json_error('identifier_too_short', 422);
 // An email, or any ID as printed on an account or a card (auth_identifier_ok).
 if (!auth_identifier_ok($identifier)) json_error('bad_identifier_format', 422);
 
+/* Let in at the desk (Members › Sign-in security → Let in for 10 minutes), as
+   Google Workspace does it: inside the window, the email or ID alone signs the
+   person in — once. Nothing open: the door carries on exactly as before. */
+$win = gs_call('auth.window', ['identifier' => $identifier, 'ip' => client_ip()]);
+if (!empty($win['letIn'])) {
+    if (!empty($win['volunteer'])) {
+        session_issue_cardholder($win['volunteer'], 'volunteer', false, ['mfaP' => '']);
+        $csrf = csrf_issue();
+        json_ok(['letIn' => true, 'kind' => 'volunteer', 'member' => community_member_shape($win['volunteer'], 'volunteer'), 'mfa' => '', 'replaceUntil' => (int)($win['replaceUntil'] ?? 0), 'csrf' => $csrf]);
+    }
+    session_issue($win['member'], false, '', false, ['mfaP' => '']);
+    $csrf = csrf_issue();
+    json_ok(['letIn' => true, 'member' => $win['member'], 'mfa' => '', 'replaceUntil' => (int)($win['replaceUntil'] ?? 0), 'csrf' => $csrf]);
+}
+
 $res = gs_call('auth.gateway', ['identifier' => $identifier, 'ip' => client_ip(), 'device' => device_trust_id()]);
 if (empty($res['ok'])) {
     $e = (string)($res['error'] ?? 'failed');

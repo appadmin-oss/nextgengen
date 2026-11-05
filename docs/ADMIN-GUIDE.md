@@ -3971,21 +3971,28 @@ current answer or code first. Where it is required, it cannot be turned off.
   - **Optional:** people are shown the alert.
   - **Required:** anyone without one sets it up before their portal opens.
 - **Actions** on a row, or on a selection:
-  - **Let in for 10 minutes**, as Google Workspace admins do. For somebody
-    who has lost their second step (a forgotten answer, a new phone) or cannot
-    sign in at all. Open their row, press *Let in for 10 minutes*.
-    - You are shown a **one-time code** and the **ID they sign in with**, once.
-      Read both to them.
-    - On the sign-in screen they choose **I have a code from staff**, type
-      their ID and the code, and they are in: **no password, no second step**.
-    - If their second-step screen is already open, it **opens by itself**
-      instead. Nothing to type.
-    - It works **once**, for 10 minutes. A second sign-in is not let through.
-    - They are then taken to **set a new second step**, without the old one.
-    - They are emailed (and sent a notification) that it was done. It is in
-      the audit log.
+  - **Let in for 10 minutes**, as Google Workspace admins do (*Turn off for
+    10 minutes*). For somebody who cannot sign in: a forgotten password or
+    answer, a new phone, an email they cannot open. Open their row and press
+    *Let in for 10 minutes*.
+    - For the next 10 minutes, their sign-in needs **only their email or ID**:
+      they type it, press *Continue*, and they are in. No password, no code,
+      no second step. A guardian types their email on the NGG Family app.
+    - It lets in **one** sign-in. The next one on that email or ID gets the
+      normal door again.
+    - If their second-step screen is already open, it **opens by itself**.
+    - You are also shown a **one-time code**, for somebody who is not in front
+      of you. Read it to them. On any sign-in screen they choose *I have a code
+      from staff* and type their email or ID and the code. It works once,
+      within the 10 minutes.
+    - When two children share one email and both are let in at once, the
+      email is ambiguous: they use the ID on their card, or the code.
+    - Afterwards they are taken to **set a new second step**, without the old
+      one. They are emailed (and notified) that it was done. It is in the
+      audit log.
     - One person at a time, never a bulk action. Do it only with the person in
-      front of you, or on the phone with them.
+      front of you, or on the phone with them: anyone who types their email or
+      ID in those minutes gets in.
   - **Reset.** Clears what they set, so they choose a new one.
   - **Require it** of one person, whatever the policy. **Back to the policy**
     undoes that.

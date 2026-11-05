@@ -1422,6 +1422,8 @@
       support: supportApi('/family/support.php'),
       me:       () => request('/family/me.php'),
       request:  (email) => request('/family/request.php', { body: { email } }),
+      // A code staff made at the desk: the email and the code, no emailed code (domain/mfa.php auth_desk).
+      desk:     (email, code) => request('/family/desk.php', { body: { email, code } }),
       verify:   (data) => request('/family/verify.php', { body: data }),
       logout:   (everywhere) => request('/family/logout.php', { body: { everywhere: !!everywhere } }),
       ward:     (linkId) => request('/family/ward.php' + qs({ link: linkId })),

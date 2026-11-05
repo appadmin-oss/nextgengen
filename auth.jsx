@@ -375,6 +375,13 @@ function SignInModal({ seed, onClose, onVerified }) {
     setErr(""); setBusy(true);
     try {
       const r = await NGGApi.auth.gateway(authTidyId(identifier), hp);
+      /* Let in at the desk for 10 minutes: the ID alone is enough, once. In,
+         and on to choosing a new second step without the old one. */
+      if (r.letIn && r.member) {
+        try { if (r.replaceUntil) sessionStorage.setItem("ngg.mfa.replace", "1"); } catch (_) {}
+        onVerified(r.member, "");
+        return;
+      }
       const m = r.methods || [];
       setMethods(m); setUniform(!!r.uniform);
       if (m.includes("password")) { setStage("password"); }
@@ -624,11 +631,11 @@ function SignInModal({ seed, onClose, onVerified }) {
               <span>Keep me signed in on this device</span>
             </label>
             {submit("Sign in", !password)}
-            {methods.includes("code") && (
-              <div className="signin-alts">
-                <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>{uniform ? "No password? Email me a sign-in code" : "Email me a code instead"}</button>
-              </div>
-            )}
+            <div className="signin-alts">
+              {methods.includes("code") && <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>{uniform ? "No password? Email me a sign-in code" : "Email me a code instead"}</button>}
+              {/* Stuck here (no password, no email) is exactly who staff let in. */}
+              <button type="button" className="signin-link" onClick={() => { setErr(""); setDeskCode(""); setStage("desk"); }}>I have a code from staff</button>
+            </div>
           </form>
         )}
 
@@ -647,7 +654,7 @@ function SignInModal({ seed, onClose, onVerified }) {
               onChange={(v) => { setErr(""); setOtp(v); }} onComplete={(v) => { if (identifier.trim().length >= 3 || seed) verifyOtp(null, v); }}/>
             {fieldErr || (sent && knownId && !seed ? nothingYet : null)}
             {submit("Sign in", otp.replace(/\s/g, "").length !== 6)}
-            <div className="signin-alts">{resend(sendCode)}</div>
+            <div className="signin-alts">{resend(sendCode)}<button type="button" className="signin-link" onClick={() => { setErr(""); setDeskCode(""); setStage("desk"); }}>I have a code from staff</button></div>
           </form>
         )}
 

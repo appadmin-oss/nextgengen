@@ -30753,6 +30753,45 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('mfa · desk sign-in: …it opens the replace window, and the same code does not work twice', mfa_bypass_until('NGG-2026-0901') > time()
         && (auth_desk(['identifier' => 'NGG-2026-0901', 'code' => $dk])['error'] ?? '') === 'invalid');
     chk('mfa · desk sign-in: …and the window for a waiting screen is spent with it (one let-in, one way in)', mfa_window_open('NGG-2026-0901') === 0);
+    // The user's side, with real-life identifiers: a parent's email shared by siblings, a volunteer, a guardian.
+    (function () use ($adm) {
+        $now = now_iso();
+        foreach ([['NGG-DSK-01', 'Tobi Ade', '026-977'], ['NGG-DSK-02', 'Kemi Ade', '026-978']] as [$id, $n, $d])
+            db_insert('members', ['memberId' => $id, 'fullName' => $n, 'email' => 'mum.ade.dsk@example.org', 'displayId' => $d, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+        $c1 = (string)(admin_mfa_act($adm + ['action' => 'bypass', 'people' => [['who' => 'member', 'id' => 'NGG-DSK-02']]])['results'][0]['code'] ?? '');
+        $r1 = auth_desk(['identifier' => 'mum.ade.dsk@example.org', 'code' => $c1]);
+        chk('mfa · desk sign-in: a parent\'s email shared by two children signs in the one the code was made for', !empty($r1['ok']) && ($r1['member']['memberId'] ?? '') === 'NGG-DSK-02');
+        $c2 = (string)(admin_mfa_act($adm + ['action' => 'bypass', 'people' => [['who' => 'member', 'id' => 'NGG-DSK-01']]])['results'][0]['code'] ?? '');
+        chk('mfa · desk sign-in: …and the printed card ID works, typed with spaces', !empty(auth_desk(['identifier' => auth_clean_identifier(' 026 977 '), 'code' => $c2])['ok']));
+        db_conn()->exec("INSERT INTO volunteers (volunteerId, fullName, email, role, status, programme, createdAt) VALUES ('VOL-DSK-1','Vee Desk','vee.desk@example.org','instructor','active','ngg','2026-09-01T00:00:00Z')");
+        $c3 = (string)(admin_mfa_act($adm + ['action' => 'bypass', 'people' => [['who' => 'volunteer', 'id' => 'VOL-DSK-1']]])['results'][0]['code'] ?? '');
+        $r3 = auth_desk(['identifier' => 'vee.desk@example.org', 'code' => $c3]);
+        chk('mfa · desk sign-in: an instructor signs in by email and code', !empty($r3['ok']) && ($r3['volunteer']['volunteerId'] ?? '') === 'VOL-DSK-1');
+        db_insert('guardians', ['guardianId' => 'G-DSK-1', 'email' => 'gee.desk@example.org', 'fullName' => 'Gee Desk', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+        $b4 = admin_mfa_act($adm + ['action' => 'bypass', 'people' => [['who' => 'guardian', 'id' => 'G-DSK-1']]]);
+        $c4 = (string)($b4['results'][0]['code'] ?? '');
+        chk('mfa · desk sign-in: a guardian\'s code says the family app is the door', ($b4['results'][0]['door'] ?? '') === 'family' && ($b4['results'][0]['signInAs'] ?? '') === 'gee.desk@example.org');
+        chk('mfa · desk sign-in: …it does not open the member door', (auth_desk(['identifier' => 'gee.desk@example.org', 'code' => $c4])['error'] ?? '') === 'invalid');
+        $r4 = auth_desk(['identifier' => 'gee.desk@example.org', 'code' => $c4, 'family' => true]);
+        chk('mfa · desk sign-in: …and opens the family app', !empty($r4['ok']) && ($r4['guardian']['guardianId'] ?? '') === 'G-DSK-1');
+        foreach (['NGG-DSK-01', 'NGG-DSK-02', 'VOL-DSK-1', 'G-DSK-1'] as $x) { mfa_grants_close($x); attempt_reset('mfa', $x); }
+        // Google's "Turn off for 10 minutes": the email or ID ALONE signs them in, once.
+        chk('mfa · window: with nothing open, the email alone signs nobody in', empty(auth_window_signin(['identifier' => 'mum.ade.dsk@example.org'])['letIn']));
+        admin_mfa_act($adm + ['action' => 'bypass', 'people' => [['who' => 'member', 'id' => 'NGG-DSK-02']]]);
+        $w1 = auth_window_signin(['identifier' => 'mum.ade.dsk@example.org']);
+        chk('mfa · window: inside it, the shared email alone signs in the child who was let in', !empty($w1['letIn']) && ($w1['member']['memberId'] ?? '') === 'NGG-DSK-02'
+            && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'login.success' AND subject = 'NGG-DSK-02' AND meta LIKE '%desk_window%'"));
+        chk('mfa · window: …once — the next sign-in on that email is not let in', empty(auth_window_signin(['identifier' => 'mum.ade.dsk@example.org'])['letIn']));
+        chk('mfa · window: …and the one-time code made with it is spent too', mfa_get('NGG-DSK-02', 'mfa.code1') === null);
+        admin_mfa_act($adm + ['action' => 'bypass', 'people' => [['who' => 'member', 'id' => 'NGG-DSK-01']]]);
+        admin_mfa_act($adm + ['action' => 'bypass', 'people' => [['who' => 'member', 'id' => 'NGG-DSK-02']]]);
+        chk('mfa · window: two children on one email both open is ambiguous: neither is let in by the email (the card ID still works)',
+            empty(auth_window_signin(['identifier' => 'mum.ade.dsk@example.org'])['letIn']) && (auth_window_signin(['identifier' => '026-977'])['member']['memberId'] ?? '') === 'NGG-DSK-01');
+        admin_mfa_act($adm + ['action' => 'bypass', 'people' => [['who' => 'guardian', 'id' => 'G-DSK-1']]]);
+        chk('mfa · window: a guardian is let in only by the family door', empty(auth_window_signin(['identifier' => 'gee.desk@example.org'])['letIn'])
+            && (auth_window_signin(['identifier' => 'gee.desk@example.org', 'family' => true])['guardian']['guardianId'] ?? '') === 'G-DSK-1');
+        foreach (['NGG-DSK-01', 'NGG-DSK-02', 'VOL-DSK-1', 'G-DSK-1'] as $x) { mfa_grants_close($x); attempt_reset('mfa', $x); }
+    })();
     attempt_reset('mfa', 'NGG-2026-0901');
     mfa_grants_close('NGG-2026-0901');
     $own = admin_mfa_act($adm + ['action' => 'reset', 'people' => [['id' => 'NGG-2025-0099', 'who' => 'member']]]);

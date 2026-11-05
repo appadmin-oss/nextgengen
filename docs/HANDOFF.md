@@ -6456,3 +6456,69 @@ Tests: `mathlab-e2e` 38 passed, 0 failed, 9 more checks than before:
 - the result has a headline and tiles with a word.
 
 Also passing: PHP suite 6875/0, `mathlab-shot` 16 clean, contrast 21/0.
+
+## 5 Nov 2026 — The let-in, from the user's side: four faults, and Google's email-alone window
+
+Owner: "The security features are STILL not working. On the side of the User
+it does not work … We cannot even get past the first!" Then: "For Google, the
+allow for 10 mins works immediately after the email or ID … is inputed."
+
+Reproduced from the user's side on the **production build**, with no
+session, a shared family email, a printed card ID, a guardian and an
+instructor. Faults found, in order of damage:
+
+1. **The production build crashed ("Hold on.") for anyone with a second
+   step.**
+   - `MfaDialog` read `letIn` (added earlier today) above the line that
+     declared it.
+   - In development, in-browser Babel compiles `const` to `var`, so it was
+     `undefined` and harmless. esbuild keeps `const`, so production threw a
+     TDZ ReferenceError on every render of the dialog.
+   - That is every step screen and every setup screen, for every member,
+     instructor and guardian with a second step. The dev-mode `mfa.test.js`
+     could not see it.
+   - Fixed by declaring it first. The new production suite fails on it.
+2. **A shared email resolved to nobody.**
+   - `auth_resolve_member_id` turns an address shared by siblings into an
+     `@shared:` key, so the desk code was refused as `invalid` for the
+     commonest case.
+   - Now `mfa_desk_candidates()` lists every account the identifier could be,
+     and the grant, bound to one of them, picks it.
+3. **The way out was missing where people get stuck.** *I have a code from
+   staff* was on the first screen only. It is now also on the password and
+   emailed-code screens.
+4. **Guardians had no door.** Their code could not be typed anywhere. The
+   family app now has *I have a code from staff* (`api/family/desk.php`). The
+   desk drawer names the door (`door: family`).
+
+**Google's window.** Inside the desk's 10 minutes, the email or ID alone
+signs the person in, with no password, code or second step
+(`auth_window_signin`, op `auth.window`):
+- it runs at the first step: `auth/gateway.php`, and `family/request.php` for
+  guardians;
+- it lets in one sign-in, claimed in one guarded write, and spends the code
+  made with it;
+- if two accounts on one shared email are both open, it is refused as
+  ambiguous;
+- staff accounts and the suspended are refused;
+- it is audited `login.success` with `via: desk_window`;
+- the window is now opened for everybody let in, not only people with a
+  second step: it is a way past the first step.
+
+The weakness is the one Google accepts: anyone who types that email or ID
+inside those minutes gets in. The guards are that it is one sign-in, ten
+minutes, made by a person for one account at a time, and that the owner is
+emailed. The desk copy says so.
+
+New suite **`tests/desk-signin.test.js`**: production build, real backend,
+no session, in `test:all` and `npm run test:desk`. 19 passed, 0 failed:
+- the email alone signs in, then the setup dialog with no crash;
+- the next sign-in on that email gets the password door;
+- the code is spent with the window;
+- after the window: stuck on the password screen, the link is there, a wrong
+  code is refused in words, and the shared email plus the code works;
+- a phone with the printed ID, spaces and all;
+- an instructor's email alone;
+- a guardian with the code, and a guardian's email alone.
+
+PHP suite 6887 passed, 0 failed. `mfa.test.js` 51 passed, 0 failed.

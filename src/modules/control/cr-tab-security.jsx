@@ -62,7 +62,7 @@ async function crSecAct(ctx, action, keys, done) {
 async function crSecLetIn(ctx, row) {
   const ok = await ctx.confirm({
     title: "Let " + (row.name || "them") + " in for 10 minutes?",
-    body: "You get a one-time code to read to them. On the sign-in screen they choose “I have a code from staff” and type their ID and the code: no password, no second step. If their second-step screen is already open, it opens by itself. It works once; then they set a new second step without the old one. Only with the person in front of you, or on the phone with them. They are emailed, and it is in the audit log.",
+    body: "For the next 10 minutes, their next sign-in needs only their email or ID: no password, no code, no second step. Once. If their second-step screen is already open, it opens by itself. You also get a one-time code, for when they are not in front of you. Afterwards they set a new second step without the old one. They are emailed, and it is in the audit log.",
     cta: "Let them in",
   });
   if (!ok) return;
@@ -74,11 +74,16 @@ async function crSecLetIn(ctx, row) {
   ctx.setData(d => Object.assign({}, d, { rev: (d.rev || 0) + 1 }));
   ctx.drawer({
     title: "Code for " + (row.name || row.id), icon: "key",
-    sub: "Works once, until " + crSecTime(x.expires) + ". Not shown again.",
+    sub: "Let in until " + crSecTime(x.expires) + ". Their email or ID alone signs them in, once.",
     stats: [["Code", x.code], ["Sign in as", x.signInAs || row.id], ["Until", crSecTime(x.expires)]],
     sections: [
-      { h: "Tell them", list: [
-        { icon: "sign-in", t: "Open the sign-in screen", s: "Choose “I have a code from staff”." },
+      { h: "At the desk", list: [
+        { icon: "user-circle-check", t: x.door === "family" ? "They open the NGG Family app and type their email" : "They type their email or " + (x.signInAs || "their ID") + " and press Continue", s: "That is all: they are in. One sign-in, until " + crSecTime(x.expires) + "." },
+      ] },
+      { h: "Not with you? Read them the code", list: [
+        x.door === "family"
+          ? { icon: "sign-in", t: "Open the NGG Family app (/family)", s: "Choose “I have a code from staff”." }
+          : { icon: "sign-in", t: "Open the sign-in screen", s: "Choose “I have a code from staff”, on any sign-in screen: the first, the password or the emailed-code one." },
         { icon: "identification-card", t: "Type " + (x.signInAs || "their ID") + " and the code", s: x.code },
         { icon: "shield-check", t: "Set a new second step", s: "They are asked straight away. The old one is not needed." },
       ] },
@@ -172,7 +177,7 @@ Object.assign(CR_TAB_DEFS, {
           tone: d.policy[k] === "required" && c.enrolled < c.total ? "down" : "flat" };
       }) }];
       out.push({ type: "note", span: 6, icon: "key", text: "Somebody who has lost their second step (a forgotten answer, a new phone) can be let in for 10 minutes from their row.",
-        sub: "You are shown a one-time code to read to them. They sign in with their ID and that code, no password, then set a new step. It works once, they are emailed, and it is in the audit log." });
+        sub: "For 10 minutes their email or ID alone signs them in, once, as Google Workspace does it. A one-time code is shown too, for when they are not in front of you. They then set a new step. They are emailed, and it is in the audit log." });
       const bulk = may ? [
         { l: "Reset", max: 200, run: async keys => {
           if (!(await ctx.confirm({ title: "Reset the second step for " + crPlural(keys.length, "person", "people") + "?", body: "What they set is cleared. Where it is required they choose a new one at their next sign-in; otherwise they are reminded.", cta: "Reset", danger: true }))) return false;

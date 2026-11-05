@@ -255,6 +255,11 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
       {busy ? <span className="signin-spin" role="status" aria-label="Working"/> : label}
     </button>
   );
+  /* Declared BEFORE anything reads it. It sat below currentField, which reads
+     it: development's in-browser Babel turns const into var and hid that,
+     while the production build keeps const, so the whole page crashed
+     ("Hold on.") the moment a let-in person reached it. */
+  const letIn = !!(status && status.bypassUntil && status.bypassUntil * 1000 > Date.now());
   // "Your current answer" — asked before anything replaces or removes it.
   // Not while staff have let them in: they came to the desk because it is lost.
   const currentField = enrolled && !letIn ? (
@@ -265,7 +270,6 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     </div>
   ) : null;
 
-  const letIn = !!(status && status.bypassUntil && status.bypassUntil * 1000 > Date.now());
   let title = "Two-step sign-in", sub = null, body = null;
   const pinName = status && status.kind === "guardian" ? "family PIN" : "PIN";
   if (codes) {

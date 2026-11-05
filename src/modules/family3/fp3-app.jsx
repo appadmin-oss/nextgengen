@@ -232,15 +232,34 @@ class Fp3Portal extends React.Component {
 
     if (!signedIn) {
       const step = S.siStep;
-      Object.assign(out, { siEmailStep: step === "email", siCodeStep: step === "code", siEmail: S.siEmail, siCode: S.siCode, siHasErr: !!(S.siErr || S.meErr), siErr: S.siErr || S.meErr,
-        siH: step === "email" ? "See how your child is doing at NGG." : "Check your email",
-        siP: step === "email" ? "Attendance, lessons, fees and what their mentor says, all in one place. We’ll email you a code, so there’s no password to remember." : "We sent a 6-digit code to " + (S.siMasked || S.siEmail) + ". It works for 15 minutes.",
+      Object.assign(out, { siEmailStep: step === "email", siCodeStep: step === "code", siDeskStep: step === "desk", siEmail: S.siEmail, siCode: S.siCode, siDesk: S.siDesk || "", siHasErr: !!(S.siErr || S.meErr), siErr: S.siErr || S.meErr,
+        siH: step === "email" ? "See how your child is doing at NGG." : step === "desk" ? "Code from staff" : "Check your email",
+        siP: step === "email" ? "Attendance, lessons, fees and what their mentor says, all in one place. We’ll email you a code, so there’s no password to remember."
+          : step === "desk" ? "Staff at your centre gave you a one-time code. Type your email and the code: no emailed code needed. It works once, for 10 minutes."
+          : "We sent a 6-digit code to " + (S.siMasked || S.siEmail) + ". It works for 15 minutes.",
+        siToDesk: () => this.setState({ siStep: "desk", siDesk: "", siErr: "" }),
+        onSiDesk: e => this.setState({ siDesk: e.target.value.toUpperCase().slice(0, 9), siErr: "" }),
+        /* Let in at the desk (Members › Sign-in security): email + the staff code, nothing else. */
+        siDeskGo: () => {
+          if (S.siBusy) return;
+          if (!/^\S+@\S+\.\S+$/.test(S.siEmail.trim())) return this.setState({ siErr: FP3_ERRORS.bad_email });
+          if ((S.siDesk || "").replace(/[^A-Za-z0-9]/g, "").length !== 8) return this.setState({ siErr: "The code from staff is 8 letters and numbers, like ABCD-2345." });
+          this.setState({ siBusy: true, siErr: "" });
+          NGGApi.family.desk(S.siEmail.trim(), S.siDesk.trim()).then(() => {
+            try { sessionStorage.setItem("ngg.mfa.replace", "1"); } catch (_) {}
+            this.setState({ siBusy: false, siStep: "email", siDesk: "" }); this.boot(); })
+            .catch(e => this.setState({ siBusy: false, siErr: (e && e.code) === "too_many_attempts" ? "Too many wrong tries. Ask staff for a new code in 15 minutes."
+              : "That email and code don’t match, or the code has expired (it lasts 10 minutes and works once). Ask staff for a new one." }));
+        },
         onSiEmail: e => this.setState({ siEmail: e.target.value, siErr: "" }), onSiCode: e => this.setState({ siCode: e.target.value.replace(/\D/g, "").slice(0, 6), siErr: "" }),
         siSend: () => {
           if (S.siBusy) return;
           if (!/^\S+@\S+\.\S+$/.test(S.siEmail.trim())) return this.setState({ siErr: FP3_ERRORS.bad_email });
           this.setState({ siBusy: true, siErr: "" });
-          NGGApi.family.request(S.siEmail.trim()).then(r => this.setState({ siStep: "code", siBusy: false, siMasked: (r && r.masked) || S.siEmail.trim(), siErr: r && r.delivery === false ? "We couldn’t send the email just now. Try again in a minute." : "" }))
+          NGGApi.family.request(S.siEmail.trim()).then(r => {
+            // Let in at the desk for 10 minutes: the email alone signed them in.
+            if (r && r.letIn) { try { sessionStorage.setItem("ngg.mfa.replace", "1"); } catch (_) {} this.setState({ siBusy: false, siStep: "email" }); this.boot(); return; }
+            this.setState({ siStep: "code", siBusy: false, siMasked: (r && r.masked) || S.siEmail.trim(), siErr: r && r.delivery === false ? "We couldn’t send the email just now. Try again in a minute." : "" }); })
             .catch(e => this.setState({ siBusy: false, siErr: fp3Err(e) }));
         },
         siVerify: () => {
@@ -255,7 +274,7 @@ class Fp3Portal extends React.Component {
             .catch(e => this.setState({ siBusy: false, siErr: fp3Err(e) }));
         },
         siBack: () => this.setState({ siStep: "email", siCode: "", siErr: "" }) });
-      out.onSiKey = e => { if (e.key === "Enter") (S.siStep === "email" ? out.siSend : out.siVerify)(); };
+      out.onSiKey = e => { if (e.key === "Enter") (S.siStep === "email" ? out.siSend : S.siStep === "desk" ? out.siDeskGo : out.siVerify)(); };
       return out;
     }
 
