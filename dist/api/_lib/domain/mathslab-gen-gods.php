@@ -139,8 +139,8 @@ function mlb_forms_gods(): array {
                 'Compare ' . $b . ' with $\\gcd(' . $a . ', ' . $m . ')$.', 'reasoning', 75); },
     ],
     'MC-176' => [
-        static function (MlbRng $r) { do { $a = $r->int(2, 9); $b = $r->int(3, 13); } while (mlb_gcd($a, $b) !== 1 || $a === $b); $c = $r->int(40, 160); $cnt = 0; $ex = [];
-            for ($x = 1; $a * $x < $c; $x++) if (($c - $a * $x) % $b === 0) { $cnt++; if (count($ex) < 3) $ex[] = '(' . $x . ', ' . intdiv($c - $a * $x, $b) . ')'; }
+        static function (MlbRng $r) { do { do { $a = $r->int(2, 9); $b = $r->int(3, 13); } while (mlb_gcd($a, $b) !== 1 || $a === $b); $c = $r->int(40, 160); $cnt = 0; $ex = [];
+            for ($x = 1; $a * $x < $c; $x++) if (($c - $a * $x) % $b === 0) { $cnt++; if (count($ex) < 3) $ex[] = '(' . $x . ', ' . intdiv($c - $a * $x, $b) . ')'; } } while ($cnt === 0);
             return mlb_typed('num', 'How many pairs of POSITIVE integers $(x, y)$ satisfy $' . $a . 'x + ' . $b . 'y = ' . $c . '$?', (string)$cnt,
                 [$cnt ? 'Find one solution, e.g. $' . $ex[0] . '$. The others step by $x + ' . $b . '$, $y - ' . $a . '$ (that keeps $' . $a . 'x + ' . $b . 'y$ the same).' : 'Try each $x$ from 1 while $' . $a . 'x < ' . $c . '$: $' . $c . ' - ' . $a . 'x$ is never a positive multiple of ' . $b . '.',
                  $cnt ? 'Keep stepping while both stay positive: ' . implode(', ', $ex) . ($cnt > 3 ? ', …' : '') . ' — ' . $cnt . ' in all.' : 'So there are none.'],
@@ -224,7 +224,7 @@ function mlb_forms_gods(): array {
             return mlb_typed('num', 'How many pairs of positive integers $(x, y)$ satisfy $x^2 - y^2 = ' . $N . '$?', (string)count($sol),
                 ['Factorise: $(x - y)(x + y) = ' . $N . '$. Both factors are positive, $x - y < x + y$, and they have the SAME parity (their sum is $2x$).', 'Each such factor pair gives one solution: ' . ($sol ? implode(', ', $sol) : 'none') . '. That is ' . count($sol) . '.'],
                 'Write $x^2 - y^2$ as a product.', 'procedure', 90); },
-        static function (MlbRng $r) { $a = $r->int(1, 6); $b = $r->int(1, 6); $c = $r->int(10, 60); $K = $c + $a * $b; $cnt = 0; foreach (mlb_g_divisors($K) as $d) { $x = $d - $b; $y = intdiv($K, $d) - $a; if ($x > 0 && $y > 0) $cnt++; }
+        static function (MlbRng $r) { do { $a = $r->int(1, 6); $b = $r->int(1, 6); $c = $r->int(10, 60); $K = $c + $a * $b; $cnt = 0; foreach (mlb_g_divisors($K) as $d) { $x = $d - $b; $y = intdiv($K, $d) - $a; if ($x > 0 && $y > 0) $cnt++; } } while ($cnt === 0);   // “none” is a trick answer, not an olympiad one
             return mlb_typed('num', 'How many pairs of positive integers $(x, y)$ satisfy $xy + ' . $a . 'x + ' . $b . 'y = ' . $c . '$?', (string)$cnt,
                 ['Add ' . ($a * $b) . ' to both sides so the left factorises (“Simon’s trick”): $(x + ' . $b . ')(y + ' . $a . ') = ' . $K . '$.', 'Try each factor pair of ' . $K . ' with $x + ' . $b . ' > ' . $b . '$ and $y + ' . $a . ' > ' . $a . '$: ' . $cnt . ' solutions.'],
                 'Add a constant to make it factorise.', 'challenge', 120); },

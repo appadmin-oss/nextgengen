@@ -4789,6 +4789,11 @@ off as "bad at maths" when a foundation was simply never taught.
     idea, a worked solution, and a reason for every wrong option. In
     practice, the challenge chip says *take your time; the hint is there if
     you need it*.
+- **The Daily Olympiad Problem** (Home, then `/study/lab/daily`). One Gods of Maths problem a day, the same for every member, whatever stage they are in.
+  - **Help:** the hint is free. There are three tries, and a wrong try names what went wrong.
+  - **When it is over** (solved, or out of tries), the answer and the full worked solution are shown.
+  - **Rewards:** solving at the first try with no hint earns 50 XP; any other solve earns 25 XP. Home and the page show how many days in a row the member has solved it, and how many in all.
+  - It never moves the map: it is a taste of the summit, not a step on the path.
 - **Stages 5–7 are deeper.** Each algebra topic used to have one or two
   kinds of question. It now has four to six, plus six new proofs: the
   *n*th term, why dividing by a negative reverses an inequality, crossing

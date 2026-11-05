@@ -129,6 +129,28 @@ async function journey(who, W, H, tag) {
   }
   await shot('courses');
 
+  // The Daily Olympiad Problem: Home invites it; the page gives a free hint, three tries, then the worked solution.
+  await p.goto(BASE + '/study/lab', { waitUntil: 'domcontentloaded' });
+  const dcard = await p.waitForSelector('.mlb-dailycard', { timeout: 60000 }).then(() => true, () => false);
+  chk(tag + ': Home shows the Daily Olympiad Problem card', dcard);
+  await p.locator('.mlb-dailycard button').click();
+  await p.waitForSelector('.mlb-daily .mlb-stem', { timeout: 30000 });
+  if (!(await p.locator('.mlb-daily .mlb-fb.is-ok, .mlb-daily details').count())) {
+    await p.locator('.mlb-daily .mlb-link').click();
+    chk(tag + ': the daily problem’s hint opens for free', await p.locator('.mlb-daily .mlb-hint').count() === 1);
+    for (let k = 0; k < 3; k++) {
+      if (!(await p.locator('.mlb-daily .mlb-go').count())) break;
+      if (await p.locator('.mlb-daily .mlb-opt:not([disabled])').count()) await p.locator('.mlb-daily .mlb-opt:not([disabled])').first().click();
+      else { const ins = p.locator('.mlb-daily .mlb-in:not([disabled])'); const n = await ins.count(); for (let j = 0; j < n; j++) await ins.nth(j).fill('987654'); }
+      const go = p.locator('.mlb-daily .mlb-go'); if (!(await go.isEnabled())) break;
+      await go.click(); await p.waitForTimeout(700);
+    }
+  }
+  const dt = await p.locator('.mlb-daily').innerText();
+  chk(tag + ': the daily problem ends with its answer and a worked solution, and says a new one comes tomorrow',
+    await p.locator('.mlb-daily details .mlb-steps li').count() >= 1 && /Answer:/.test(dt) && /tomorrow/.test(dt), dt.slice(0, 200));
+  await shot('daily');
+
   // A lesson: no skip, every step worked, then practice.
   await p.goto(BASE + '/study/lab/learn/MC-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });

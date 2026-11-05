@@ -8801,6 +8801,20 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-qn { margin: 0; font-size: 13px; color: var(--mlb-ink-2); font-weight: 600; }
 .mlb-chall { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 211, 106, .18); color: var(--mlb-ink); font-size: 12.5px; font-weight: 700; }
 .mlb-chall i { color: #b7791f; }
+/* The Daily Olympiad Problem: its Home card and its page. */
+.mlb-dailycard { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 16px; background: linear-gradient(135deg, #fff3d1, #fffaf0); border: 1px solid #f5d27a; color: var(--mlb-ink); }
+.mlb-dailycard-i { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: #f5b026; color: #3b2a00; font-size: 22px; }
+.mlb-dailycard .mlb-h3 { margin: 2px 0; }
+.mlb-dailycard.is-solved { background: #f6f7fb; border-color: #e3e6ef; }
+.mlb-dailycard.is-solved .mlb-dailycard-i { background: var(--mlb-ink); color: #fff; }
+@container (max-width: 560px) { .mlb-dailycard { grid-template-columns: auto minmax(0, 1fr); } .mlb-dailycard > button { grid-column: 1 / -1; } }
+.mlb-dailyhead { display: flex; flex-direction: column; gap: 6px; }
+.mlb-dailyhead .mlb-eyebrow i { color: #b7791f; }
+.mlb-dailystats { display: flex; flex-wrap: wrap; gap: 8px; }
+.mlb-dailystats span { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: #f6f7fb; font-size: 13px; color: var(--mlb-ink-2); }
+.mlb-dailystats i { color: #b7791f; }
+.mlb-dailystats b { color: var(--mlb-ink); }
+.mlb-daily .mlb-err { margin: 0; color: #b42318; font-size: 13.5px; }
 .mlb-bands li.is-summit { background: linear-gradient(135deg, rgba(255, 211, 106, .22), rgba(255, 211, 106, .06)); }
 .mlb-bands li.is-summit .mlb-bands-i { background: #b7791f; color: #fff; }
 .mlb-dia { width: 100%; max-width: 360px; height: auto; display: block; }

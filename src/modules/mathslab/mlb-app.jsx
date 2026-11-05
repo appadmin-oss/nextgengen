@@ -455,7 +455,7 @@ function mlbRoute() {
   const seg = (location.pathname || "").replace(/^\/+|\/+$/g, "").split("/");
   if (seg[0] !== "study" || seg[1] !== "lab") return { v: "home" };
   if (seg[2] === "learn" && /^MC-\d{3}$/.test(seg[3] || "")) return { v: "learn", comp: seg[3] };
-  if (["map", "courses", "progress", "certificates"].indexOf(seg[2]) >= 0) return { v: seg[2] };
+  if (["map", "courses", "progress", "certificates", "daily"].indexOf(seg[2]) >= 0) return { v: seg[2] };
   return { v: "home" };
 }
 function mlbPath(r) { return "/study/lab" + (r.v === "home" ? "" : r.v === "learn" ? "/learn/" + r.comp : "/" + r.v); }
@@ -485,6 +485,7 @@ function MathsLab({ me }) {
           : route.v === "courses" ? <MlbCourses go={go}/>
           : route.v === "progress" ? <MlbProgress go={go}/>
           : route.v === "certificates" ? <MlbCerts go={go}/>
+          : route.v === "daily" ? <MlbDaily go={go}/>
           : <MlbHome go={go} startPlay={setPlay} onNotMember={() => setLite(true)}/>}
       </div>
     </div></div>
@@ -547,6 +548,14 @@ function MlbHome({ go, startPlay, onNotMember }) {
         {nx.what ? <p className="mlb-p">{nx.what}</p> : null}
         {nx.mode !== "none" ? <button type="button" className="mlb-go" onClick={begin} aria-describedby="mlb-next-h"><i className="ph ph-play-circle" aria-hidden="true"/>{{ climb: "Start the gate", review: "Start the review", check: "Take the check" }[nx.mode] || (nx.kind === "New topic" ? "Start learning" : "Continue")}</button> : null}
       </section>
+
+      {d.daily ? <section className={"mlb-dailycard" + (d.daily.solved ? " is-solved" : "")} aria-labelledby="mlb-daily-h">
+        <span className="mlb-dailycard-i" aria-hidden="true"><i className="ph-fill ph-crown"/></span>
+        <div><p className="mlb-eyebrow">Daily Olympiad Problem{d.daily.dailyStreak ? " · " + d.daily.dailyStreak + " day" + (d.daily.dailyStreak === 1 ? "" : "s") + " in a row" : ""}</p>
+          <h3 id="mlb-daily-h" className="mlb-h3">{d.daily.solved ? "Solved today — well done." : d.daily.done ? "Today’s problem is over: see how it goes." : "Today: " + d.daily.compTitle}</h3>
+          <p className="mlb-meta">{d.daily.solved || d.daily.done ? "A new problem arrives tomorrow." : "One olympiad problem a day, the same for everyone in NGG. Tough — but the hint is free and you get three tries."}</p></div>
+        <button type="button" className={d.daily.done ? "stt-btn" : "mlb-go"} onClick={() => go({ v: "daily" })}>{d.daily.done ? "See the solution" : d.daily.tries ? "Keep going" : "Try it"}</button>
+      </section> : null}
 
       <section className="mlb-card mlb-progcard" aria-labelledby="mlb-prog-h">
         <div className="mlb-row"><h3 id="mlb-prog-h" className="mlb-h3">Your progress</h3><button type="button" className="mlb-link" onClick={() => go({ v: "progress" })}>See all progress</button></div>
@@ -884,6 +893,69 @@ function MlbWhy({ why, onDone }) {
 
 /* ── Answer entry ── */
 const MLB_KEYS = { expr: ["x", "y", "^", "(", ")", "/", "−", "√("], num: ["−", "."], frac: ["/", "−"], ratio: [":"], pair: ["−"] };
+/* The Daily Olympiad Problem (owner, 5 Nov 2026: "Add more features"; "Make things tough, but
+   easy"). One problem a day from the Gods of Maths stages, the same for every member. Tough: it
+   is olympiad level, whatever stage you are in. Easy: the hint is free, there are three tries, a
+   wrong try names what went wrong, and the full worked solution is shown when it is over. It never
+   moves the map — it is a taste of the summit, not a step on the path. */
+function MlbDaily({ go }) {
+  const [st, load] = useMlb(() => NGGApi.member.mathslab.daily(), []);
+  const [val, setVal] = React.useState(null);
+  const [hint, setHint] = React.useState(false);
+  const [fb, setFb] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const t0 = React.useRef(Date.now());
+  if (st.phase === "loading") return <SttState kind="loading" text="Fetching today’s problem…"/>;
+  if (st.phase === "error") return <SttState kind="error" text={"Couldn’t load today’s problem. " + mlbErr(st.e)} retry={load}/>;
+  const d = st.d, it = d.item, choice = it.kind === "mcq" || it.kind === "error";
+  const done = fb ? fb.done : d.done, solved = fb ? fb.solved : d.solved, tries = fb ? fb.tries : d.tries, left = d.maxTries - tries;
+  const streak = fb ? fb.dailyStreak : d.dailyStreak, total = fb ? fb.dailySolved : d.dailySolved;
+  const steps = (fb && fb.steps) || d.steps || [], answer = (fb && fb.answer) || d.answer;
+  const empty = val == null || val === "" || (Array.isArray(val) && val.some(x => x === ""));
+  const submit = () => {
+    if (busy || empty || done) return;
+    setBusy(true); setErr("");
+    NGGApi.member.mathslab.dailyAnswer(val, { hints: hint ? 1 : 0, ms: Date.now() - t0.current }).then(r => { setFb(r); setBusy(false); if (!r.correct && !r.done && choice) setVal(null); },
+      e => { setBusy(false); setErr("That answer didn’t reach us. " + mlbErr(e)); });
+  };
+  return (
+    <div className="mlb-stack mlb-daily">
+      <header className="mlb-dailyhead">
+        <p className="mlb-eyebrow"><i className="ph-fill ph-crown" aria-hidden="true"/> Daily Olympiad Problem · {d.day}</p>
+        <h2 className="mlb-h2">{it.compTitle}</h2>
+        <p className="mlb-meta">From Stage {it.stage}: {it.stageTitle}. Everyone in NGG has the same problem today. You have {d.maxTries} tries, and the hint is free.</p>
+        <div className="mlb-dailystats" aria-live="polite"><span><i className="ph-fill ph-fire" aria-hidden="true"/><b>{streak}</b> day{streak === 1 ? "" : "s"} in a row</span><span><i className="ph-fill ph-crown" aria-hidden="true"/><b>{total}</b> solved in all</span></div>
+      </header>
+      <section className="mlb-q mlb-card" aria-live="polite">
+        <p className="mlb-qn">{done ? (solved ? "Solved" : "Over for today") : "Try " + (tries + 1) + " of " + d.maxTries}<span className="mlb-chall"><i className="ph-fill ph-lightning" aria-hidden="true"/>Olympiad level</span></p>
+        <MlbMath as="p" className="mlb-stem" text={it.stem}/>
+        <MlbDiagram d={it.diagram}/>
+        {it.lines ? <ol className="mlb-lines">{it.lines.map((l, k) => <li key={k}><MlbMath text={l}/></li>)}</ol> : null}
+        {choice ? <div className="mlb-opts" role="radiogroup" aria-label="Choose an answer">{it.options.map((o, k) => (
+          <button key={k} type="button" role="radio" aria-checked={val === k} disabled={done || busy} className={"mlb-opt" + (val === k ? " is-on" : "") + (done && answer === o ? " is-right" : "")} onClick={() => setVal(k)}>
+            <span className="mlb-opt-l" aria-hidden="true">{k + 1}</span><MlbMath text={o}/></button>))}</div>
+          : <MlbInput item={it} value={val} onChange={setVal} onEnter={submit} disabled={done || busy}/>}
+        {!done ? (hint ? <p className="mlb-hint"><i className="ph ph-lightbulb" aria-hidden="true"/><MlbMath text={it.hint}/></p>
+          : <button type="button" className="mlb-link" onClick={() => setHint(true)}><i className="ph ph-lightbulb" aria-hidden="true"/> Show the hint (it’s free)</button>) : null}
+        {fb && !fb.correct && !fb.done ? <div className="mlb-fb is-no" role="status"><b className="mlb-fb-h"><i className="ph-fill ph-lightbulb" aria-hidden="true"/>Not yet — {left} {left === 1 ? "try" : "tries"} left.</b>
+          {fb.why ? <MlbMath as="p" text={fb.why}/> : fb.formNote ? <p>{fb.formNote}</p> : <p>Check each step again{hint ? "" : ", or open the hint"}.</p>}</div> : null}
+        {err ? <p className="mlb-err" role="alert">{err}</p> : null}
+        {!done ? <button type="button" className="mlb-go" disabled={busy || empty} onClick={submit}>{busy ? "Checking…" : "Check my answer"}</button> : null}
+        {done ? <div className={"mlb-fb " + (solved ? "is-ok is-big" : "is-no")} role="status">
+          <b className="mlb-fb-h"><i className={"ph-fill " + (solved ? "ph-crown" : "ph-book-open")} aria-hidden="true"/>{solved ? (tries === 1 && !hint ? "Solved at the first try — that is olympiad form." : "Solved! Tough problem, and you got there.") : "Out of tries — here is how it goes."}</b>
+          <p>Answer: <MlbMath text={answer}/></p>
+          <details open><summary>Worked solution</summary><ol className="mlb-steps">{steps.map((x, k) => <li key={k}><MlbMath text={x}/></li>)}</ol></details>
+          {fb && fb.xp ? <p className="mlb-xp">+{fb.xp} XP</p> : null}
+          <p className="mlb-meta">A new problem arrives tomorrow.{solved ? "" : " Studying this solution is how the next one gets solved."}</p>
+        </div> : null}
+      </section>
+      <div className="mlb-row"><button type="button" className="stt-btn" onClick={() => go({ v: "home" })}><i className="ph ph-arrow-left" aria-hidden="true"/>Back to the Lab</button>
+        <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}><i className="ph ph-path" aria-hidden="true"/>See the Gods of Maths stages</button></div>
+    </div>
+  );
+}
+
 function MlbInput({ item, value, onChange, onEnter, disabled }) {
   const ref = React.useRef(null);
   const ins = t => { const v = (value || "") + (t === "−" ? "-" : t === "√(" ? "sqrt(" : t); onChange(v); setTimeout(() => ref.current && ref.current.focus(), 0); };

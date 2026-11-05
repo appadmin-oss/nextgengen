@@ -6682,3 +6682,36 @@ There are four forms per topic, and nineteen proofs (`mlb_why_gods`).
 - Maths Lab e2e: 37 passed, 0 failed.
 - Contrast: 21 passed, 0 failed.
 - `build.test`: 31 passed, 0 failed.
+
+
+## 5 Nov 2026 — Maths Lab: the Daily Olympiad Problem
+
+**Owner:** "Add more features to the maths lab"; "Make things tough, but easy".
+
+### How it works
+
+- `mlb_daily_pick($day)` chooses one (topic, form, seed) from the Stage 18–20 skill forms, by hashing the date alone. Every member therefore gets the same problem, and it cannot be chosen from the request.
+- Answers are stored as an ordinary `mlab_sessions` row (`mode` 'daily', `ref` = the day, a sessionId derived from member and day), so no migration was needed. Progress's "mistakes that come back" reads it like any other session.
+
+### Ops
+
+- `mathslab.daily` (GET `?view=daily`) returns the problem. The answer and steps are included only once the problem is over.
+- `mathslab.dailyAnswer` (POST action `daily`) takes one try: three tries in all, hint use recorded, and 50 or 25 XP for a solve. A solve also counts towards the Lab's day streak.
+- `mlb_daily_streak` gives the run of days solved and the total.
+- **Guard:** `mlb_session()` now excludes `mode = 'daily'`, so the daily row cannot be answered or finished through `mathslab.answer` or `mathslab.finish`, which would bypass its tries and reward. A test pins this.
+
+### Client
+
+- The `MlbDaily` view at `/study/lab/daily`.
+- A gold crown card on Home.
+
+### Generator fixes
+
+Two olympiad forms could produce "no solutions" as the answer: MC-176 form 0 and MC-180 form 1. They now redraw until there is at least one solution. "None" is a trick answer, not an olympiad one.
+
+### Tests
+
+- `run.php`: 6893 passed, 0 failed. New: the same problem for two members; answer hidden until over; three tries, then `already_done`; 50 XP and a run of 1 on a first-try solve; Home's daily summary; the session ops refuse the daily row.
+- Maths Lab e2e: 42 passed, 0 failed. New: the Home card, the free hint, and the solution and "tomorrow" message at the end, on desktop and phone.
+- a11y: 19 passed, 0 failed.
+- `build.test`: 31 passed, 0 failed.

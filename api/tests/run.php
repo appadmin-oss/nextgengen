@@ -37843,6 +37843,23 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $gb['id'] === 'gods' && !empty($gm['gods']['summit']) && empty($gm['waec']['summit']) && $gc && $gc['stages'] === [18, 19, 20]
         && mlb_comp('MC-171')['needs'] === ['MC-020', 'MC-019'] && mlb_stage_available(18) && mlb_stage_available(19) && mlb_stage_available(20)
         && isset(mlb_why()['MC-171'], mlb_why()['MC-200'], mlb_why()['MC-052']) && mlb_home(['memberId' => 'NGG-ML-1'])['counts']['total'] === 200);
+    /* The Daily Olympiad Problem: one problem a day from the summit, the same for everybody, three
+       tries, the hint free, the solution only once it is over, and never answerable as a session. */
+    db_insert('members', ['memberId' => 'NGG-ML-D', 'fullName' => 'Daily Solver', 'email' => 'mld@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $d1 = mlb_daily(['memberId' => 'NGG-ML-1']); $d2 = mlb_daily(['memberId' => 'NGG-ML-D']); $px = mlb_daily_pick(mlb_today()); $it = mlb_item($px['c'], $px['f'], $px['s']);
+    $wrong = in_array($it['kind'], ['mcq', 'error'], true) ? ((int)$it['key'] + 1) % count($it['options']) : ($it['kind'] === 'pair' ? ['987654', '987654'] : ($it['kind'] === 'order' ? '0,0' : '987654321'));
+    $right = in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'];
+    $w = []; for ($k = 0; $k < 3; $k++) $w[] = mlb_daily_answer(['memberId' => 'NGG-ML-1', 'answer' => $wrong]);
+    $w4 = mlb_daily_answer(['memberId' => 'NGG-ML-1', 'answer' => $right]); $after = mlb_daily(['memberId' => 'NGG-ML-1']);
+    $r1 = mlb_daily_answer(['memberId' => 'NGG-ML-D', 'answer' => $right]);
+    $dsid = db_row("SELECT sessionId FROM mlab_sessions WHERE memberId = 'NGG-ML-D' AND mode = 'daily'")['sessionId'] ?? '';
+    chk('maths lab · the Daily Olympiad Problem is the same summit problem for everybody, hides its answer until it is over, allows three tries, pays 50 XP for a first-try solve, keeps a run, and cannot be answered as a session',
+        $d1['item']['comp'] === $d2['item']['comp'] && $d1['item']['stem'] === $d2['item']['stem'] && mlb_comp($d1['item']['comp'])['stage'] >= 18 && !isset($d1['item']['key'], $d1['answer'], $d1['steps'])
+        && !$w[0]['correct'] && $w[0]['left'] === 2 && !isset($w[0]['steps']) && $w[2]['done'] && !$w[2]['solved'] && isset($w[2]['steps']) && ($w4['error'] ?? '') === 'already_done'
+        && $after['done'] && !$after['solved'] && isset($after['answer'])
+        && $r1['correct'] && $r1['xp'] === 50 && $r1['dailyStreak'] === 1 && $r1['dailySolved'] === 1 && mlb_home(['memberId' => 'NGG-ML-D'])['daily']['solved'] === true
+        && $dsid !== '' && (mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $dsid, 'index' => 0, 'answer' => $right])['error'] ?? '') === 'not_found'
+        && (mlb_finish(['memberId' => 'NGG-ML-D', 'sessionId' => $dsid])['error'] ?? '') === 'not_found');
     /* Courses lock until their first stage is reached, and say why; enrolling a locked one is refused. */
     $cv = array_column(mlb_home(['memberId' => 'NGG-ML-1'])['courses'], null, 'id');
     $el = mlb_enrol(['memberId' => 'NGG-ML-1', 'courseId' => 'further-maths']);

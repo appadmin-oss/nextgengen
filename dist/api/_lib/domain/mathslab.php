@@ -168,7 +168,8 @@ function mlb_session_title(string $mode, string $ref): string {
     $c = mlb_comp($ref); return ($mode === 'check' ? 'Mastery check · ' : 'Practice · ') . ($c['title'] ?? '');
 }
 function mlb_session(string $mid, string $sid): ?array {
-    $s = db_row('SELECT * FROM mlab_sessions WHERE sessionId = ? AND memberId = ?', [$sid, $mid]);
+    // The daily problem is answered only through mathslab.dailyAnswer (its own tries and reward), never as a session.
+    $s = db_row("SELECT * FROM mlab_sessions WHERE sessionId = ? AND memberId = ? AND mode <> 'daily'", [$sid, $mid]);
     return $s ?: null;
 }
 
@@ -332,6 +333,7 @@ function mlb_home(array $p): array {
                     'known' => count(array_filter($st['comps'], static fn($id) => in_array($states[$id]['state'] ?? '', MLB_GOOD, true)))];
         })(),
         'certificates' => mlb_cert_list((string)$m['memberId']),
+        'daily' => mlb_daily_summary((string)$m['memberId']),
         'courses' => array_map(static fn($c) => mlb_course_view($c, $states, $enrol, $prof) + ['certificate' => $certs[$c['id']] ?? null,
             'stageCertificates' => array_values(array_filter(array_map(static fn($n) => isset($certs['stage:' . $n]) ? ['stage' => (int)$n] + $certs['stage:' . $n] : null, $c['stages'])))], array_values(mlb_courses()))];
 }
@@ -638,3 +640,87 @@ function mlb_lite_check(array $p): array {
     $mk = mlb_mark($it, $p['answer'] ?? '');
     return ['ok' => true, 'correct' => $mk['ok'], 'why' => $mk['why'], 'formNote' => $mk['form'], 'answer' => mlb_answer_text($it), 'steps' => $it['steps']];
 }
+
+/* ── The Daily Olympiad Problem ──
+ * Owner, 5 Nov 2026: "Add more features" and "Make things tough, but easy". One problem a day
+ * from the Gods of Maths stages — the SAME problem for every member that day, so it is something
+ * a centre can talk about — with the hint free to open, three tries, and the full worked
+ * solution once it is solved or the tries are spent. It is open to everybody, whatever stage they
+ * are in: it is a taste of the summit, not a step on the path, so it never moves the map.
+ *
+ * Stored as an ordinary session (mode 'daily', ref = the day): no new table, the record of the
+ * answer is the same shape every other session uses, and Progress's "mistakes that come back"
+ * reads it like any other. The problem is chosen from the date alone, never from the request. */
+const MLB_DAILY_TRIES = 3;
+function mlb_daily_pick(string $day): ?array {
+    $pool = [];
+    foreach (mlb_competencies() as $id => $c) if ((int)$c['stage'] >= 18 && mlb_available($id)) foreach (mlb_skill_forms($id) as $f) $pool[] = [$id, $f];
+    if (!$pool) return null;
+    $k = (crc32('mlb-daily|' . $day) & 0x7FFFFFFF) % count($pool);
+    return ['c' => $pool[$k][0], 'f' => (int)$pool[$k][1], 's' => (crc32('mlb-daily-seed|' . $day) & 0x7FFFFFFF) ?: 1];
+}
+function mlb_daily_row(string $mid, string $day): ?array {
+    return db_row("SELECT * FROM mlab_sessions WHERE memberId = ? AND mode = 'daily' AND ref = ?", [$mid, $day]);
+}
+/** Days solved in a row (today, or up to yesterday while today is still open), and in all. */
+function mlb_daily_streak(string $mid): array {
+    $solved = [];
+    foreach (db_all("SELECT ref, resp FROM mlab_sessions WHERE memberId = ? AND mode = 'daily' ORDER BY ref DESC LIMIT 500", [$mid]) as $r) {
+        $x = (json_decode((string)$r['resp'], true) ?: [])[0] ?? null; if ($x && !empty($x['ok'])) $solved[(string)$r['ref']] = true;
+    }
+    $day = mlb_today(); $t = strtotime($day . 'T12:00:00Z'); $run = 0;
+    if (!isset($solved[$day])) $t -= 86400;
+    while (isset($solved[gmdate('Y-m-d', $t)])) { $run++; $t -= 86400; }
+    return ['dailyStreak' => $run, 'dailySolved' => count($solved)];
+}
+function mlb_daily_state(?array $row): array {
+    $r = $row ? ((json_decode((string)$row['resp'], true) ?: [])[0] ?? null) : null;
+    $tries = (int)($r['tries'] ?? 0); $ok = !empty($r['ok']);
+    return ['tries' => $tries, 'solved' => $ok, 'done' => $ok || $tries >= MLB_DAILY_TRIES, 'hints' => (int)($r['hints'] ?? 0)];
+}
+/** What Home says about today's problem: is it waiting, solved, or spent — and the run. */
+function mlb_daily_summary(string $mid): ?array {
+    $day = mlb_today(); $x = mlb_daily_pick($day); if (!$x) return null;
+    $c = mlb_comp($x['c']); $st = mlb_daily_state(mlb_daily_row($mid, $day));
+    return ['day' => $day, 'compTitle' => $c['title'], 'stage' => (int)$c['stage'], 'solved' => $st['solved'], 'done' => $st['done'], 'tries' => $st['tries']] + mlb_daily_streak($mid);
+}
+/** mathslab.daily — today's problem, and once it is over, its answer and worked solution. */
+function mlb_daily(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $mid = (string)$m['memberId']; $day = mlb_today(); $x = mlb_daily_pick($day);
+    if (!$x) return ['ok' => false, 'error' => 'not_available'];
+    $it = mlb_item($x['c'], $x['f'], $x['s']); $c = mlb_comp($x['c']); $st = mlb_daily_state(mlb_daily_row($mid, $day));
+    $out = ['ok' => true, 'day' => $day, 'maxTries' => MLB_DAILY_TRIES, 'item' => mlb_public($it) + ['comp' => $x['c'], 'compTitle' => $c['title'], 'stage' => (int)$c['stage'], 'stageTitle' => mlb_stages()[(int)$c['stage']]['title']]]
+        + $st + mlb_daily_streak($mid);
+    if ($st['done']) $out += ['answer' => mlb_answer_text($it), 'steps' => $it['steps']];
+    return $out;
+}
+/** mathslab.dailyAnswer — one try at today's problem. Marked on the server against the item rebuilt from the date. */
+function mlb_daily_answer(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $mid = (string)$m['memberId']; $day = mlb_today(); $x = mlb_daily_pick($day);
+    if (!$x) return ['ok' => false, 'error' => 'not_available'];
+    $row = mlb_daily_row($mid, $day);
+    if (!$row) {
+        // One row per member per day: the id is derived, so a double press cannot make two.
+        $sid = 'MLD-' . strtoupper(substr(sha1($mid . '|' . $day), 0, 16));
+        try { db_insert('mlab_sessions', ['sessionId' => $sid, 'memberId' => $mid, 'mode' => 'daily', 'ref' => $day, 'items' => json_encode([$x]), 'resp' => '{}', 'startedAt' => now_iso(), 'finishedAt' => '']); } catch (\Throwable $e) {}
+        $row = mlb_daily_row($mid, $day); if (!$row) return ['ok' => false, 'error' => 'failed'];
+    }
+    $st = mlb_daily_state($row);
+    if ($st['done']) return ['ok' => false, 'error' => 'already_done'];
+    $it = mlb_item($x['c'], $x['f'], $x['s']); $mk = mlb_mark($it, $p['answer'] ?? '');
+    $tries = $st['tries'] + 1; $hints = max($st['hints'], min(2, max(0, (int)($p['hints'] ?? 0))));
+    $resp = [0 => ['ok' => $mk['ok'], 'tries' => $tries, 'hints' => $hints, 'ms' => max(0, (int)($p['ms'] ?? 0)), 'conf' => '',
+        'a' => is_array($p['answer'] ?? null) ? $p['answer'] : mb_substr((string)($p['answer'] ?? ''), 0, 120)]];
+    $done = $mk['ok'] || $tries >= MLB_DAILY_TRIES;
+    db_update('mlab_sessions', ['resp' => json_encode($resp), 'finishedAt' => $done ? now_iso() : ''], ['sessionId' => $row['sessionId']]);
+    // Solved alone at the first try is the summit's full reward; solved with help or a second try still pays.
+    $xp = $mk['ok'] ? mlb_award_xp($mid, $tries === 1 && $hints === 0 ? 50 : 25) : 0;
+    if ($mk['ok']) mlb_touch_streak($mid);
+    $out = ['ok' => true, 'correct' => $mk['ok'], 'why' => $mk['why'], 'formNote' => $mk['form'], 'tries' => $tries, 'left' => MLB_DAILY_TRIES - $tries, 'done' => $done, 'solved' => $mk['ok'], 'xp' => $xp]
+        + mlb_daily_streak($mid);
+    if ($done) $out += ['answer' => mlb_answer_text($it), 'steps' => $it['steps']];
+    return $out;
+}
+
