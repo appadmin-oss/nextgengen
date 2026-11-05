@@ -6404,3 +6404,14 @@ failed, covering:
   refused in words), then the new-step dialog;
 - the desk drawn in v2 classes, with facets, drawer and policy save;
 - the code shown from the drawer, then used to sign in.
+## Wi-Fi: a centre is found by its place, not only its code (2026-11-05, CACENTRE 302fa31)
+
+The Wi-Fi panel said "CACENTRE has no site for EGB (147), AYO (7)": NGG sent
+its centre code, and CACENTRE's sites have their own codes (`egbeda`). Both
+already share one list of places (CACENTRE's locations, which NGG's centres
+follow), so each roster row now also names its place — `homeLocation` (the
+linked `cacLocationId`) or `homeName` (`wifi_cac_places` / `wifi_cac_place`).
+CACENTRE matches the code, then the location, then the name, and makes a
+location's Wi-Fi site itself the first time. Only a place that is not one of
+CACENTRE's locations is still "could not place", and the panel now says to add
+the location there, not to type a code.

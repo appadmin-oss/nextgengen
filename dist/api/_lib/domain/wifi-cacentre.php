@@ -124,8 +124,7 @@ function wifi_cac_why(string $case, string $access): string {
  * from summer_students within their edition's dates.
  */
 function wifi_cac_people(): array {
-    $codes = [];
-    foreach (db_all('SELECT name, code FROM centres') as $c) $codes[(string)$c['name']] = strtolower(trim((string)$c['code']));
+    $codes = wifi_cac_places(db_all('SELECT name, code, cacLocationId FROM centres'));
     $members = db_all('SELECT memberId, displayId, fullName, email, role, status, type, centre FROM members');
     $members = array_values(array_filter($members, fn($m) => member_is_ngg($m) || wifi_is_staff($m)));
     $ids = array_map(fn($m) => (string)$m['memberId'], $members);
@@ -149,10 +148,31 @@ function wifi_cac_people(): array {
         $id = (string)$s['studentId']; $ed = $eds[(string)$s['cohortId']] ?? null;
         $d = wifi_access_for_participant($s, $ed, ['settings' => wifi_settings((string)$s['centre']), 'account' => $acc['summer|' . $id] ?? null, 'today' => $today, 'usage' => null]);
         $out[] = wifi_cac_trim(['id' => 'summer-' . $id, 'kind' => 'participant', 'name' => trim((string)$s['fullName']), 'email' => '',
-            'printedId' => wifi_username_for('summer', $s), 'homeSite' => $codes[(string)$s['centre']] ?? '',
+            'printedId' => wifi_username_for('summer', $s), ...wifi_cac_place($codes, (string)$s['centre']),
             'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => (string)($ed['endDate'] ?? '')]);
     }
     return $out;
+}
+
+/**
+ * Where somebody lives, said so CACENTRE can find it without a hand-made match.
+ *
+ * NGG's centre code (EGB) is not CACENTRE's Wi-Fi site code (egbeda), so the
+ * code alone left a whole centre "with no site" until somebody typed the card
+ * code into CACENTRE. Both systems share ONE list of places — CACENTRE's
+ * locations, which NGG's centres follow — so each row also names the place:
+ * the location id when the centre is linked to one (short), else its name.
+ * CACENTRE matches the code, then the place, and makes the place's Wi-Fi site
+ * itself the first time.
+ */
+function wifi_cac_places(array $centres): array {
+    $out = [];
+    foreach ($centres as $c) $out[(string)$c['name']] = ['homeSite' => strtolower(trim((string)$c['code'])),
+        'homeLocation' => trim((string)($c['cacLocationId'] ?? '')), 'homeName' => trim((string)($c['cacLocationId'] ?? '')) === '' ? trim((string)$c['name']) : ''];
+    return $out;
+}
+function wifi_cac_place(array $places, string $centre): array {
+    return $places[$centre] ?? ['homeSite' => '', 'homeLocation' => '', 'homeName' => trim($centre)];
 }
 
 /** One member's roster row: the same row the push sends, built for one person. */
@@ -182,7 +202,7 @@ function wifi_cac_member_row(array $m, array $codes, array $policy, array $owing
     $d = wifi_access_for($m, ['settings' => wifi_settings((string)$m['centre']), 'policy' => $policy[$id] ?? null, 'feesOwing' => !empty($owing[$id]),
         'account' => $acc['member|' . $id] ?? null, 'usage' => null]);
     return wifi_cac_trim(['id' => $id, 'kind' => $staff ? 'staff' : 'member', 'name' => trim((string)$m['fullName']), 'email' => strtolower(trim((string)$m['email'])),
-        'printedId' => wifi_username_for('member', $m), 'homeSite' => $staff ? '' : ($codes[(string)$m['centre']] ?? ''),
+        'printedId' => wifi_username_for('member', $m), ...($staff ? [] : wifi_cac_place($codes, (string)$m['centre'])),
         'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => '']);
 }
 
@@ -190,8 +210,7 @@ function wifi_cac_member_row(array $m, array $codes, array $policy, array $owing
 function wifi_cac_me(array $m): ?array {
     if (!member_is_ngg($m) && !wifi_is_staff($m)) return null;
     $id = (string)$m['memberId'];
-    $c = db_row('SELECT code FROM centres WHERE name = ? LIMIT 1', [(string)($m['centre'] ?? '')]);
-    $codes = [(string)($m['centre'] ?? '') => strtolower(trim((string)($c['code'] ?? '')))];
+    $codes = wifi_cac_places(db_all('SELECT name, code, cacLocationId FROM centres WHERE name = ? LIMIT 1', [(string)($m['centre'] ?? '')]));
     $policy = function_exists('policy_states_for') ? policy_states_for([$id], 'member') : [];
     $acc = wifi_accounts_existing([['member', $id, '']]);
     return wifi_cac_member_row($m, $codes, $policy, wifi_fees_owing([$id]), $acc);
