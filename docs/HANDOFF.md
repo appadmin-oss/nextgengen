@@ -6281,3 +6281,24 @@ Known and left as is (by design or out of scope):
 
 After: PHP 6856/0, club-apply 50/0, membership-pay 36/0,
 registration-checklist 15/0.
+## Wi-Fi routers at scale: one sync at a time, self-update (2026-11-05, CACENTRE acd6dc5)
+
+Found by running CACENTRE's router setup on RouterOS 7.19.4 with 6,000 people.
+All of it is on CACENTRE's side; NGG's push (sync parts, split-on-406) is
+unchanged. Detail in CACENTRE `cac/docs/wifi.md` → "Scale and self-update".
+
+- **RouterOS does not keep a scheduled script's global variables between
+  runs.** The "sync still running" flag never held, so a new sync started every
+  two minutes beside the last (fourteen at once, CPU 100%, none finished). The
+  guard now reads the router's own job list; what the sync remembers lives in a
+  small `cac-wifi-memo` script.
+- **Routers update themselves.** Every list carries the script's fingerprint
+  (`sv=`); a router on an older script re-installs the setup by itself after a
+  good sync, once per version. The new script is added beside the old before
+  the old is removed. Routers on a setup older than this need the one line run
+  **once more**, and never again for a script change.
+- **Fast when little changes:** a no-change sync at 6,000 went from ~2.8 min to
+  3 s; two changes applied in 9 s. Passwords are readable to the sync
+  (`sensitive`), so unchanged users and profiles are no longer rewritten.
+- A router asking from a version not on record now gets every page of the full
+  list (page 2 used to answer `start_again` for ever).
