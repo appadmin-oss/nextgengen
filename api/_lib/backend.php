@@ -52,6 +52,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.state.get'        => 'member_state_get',
             'member.state.set'        => 'member_state_set',
             'mfa.status'              => 'mfa_status',
+            'mfa.window'              => 'mfa_window_pass',   // a waiting step screen takes the desk's 10-minute window (domain/mfa.php)
             'mfa.enroll.start'        => 'mfa_enroll_start',
             'mfa.enroll.finish'       => 'mfa_enroll_finish',
             'mfa.challenge'           => 'mfa_challenge',
