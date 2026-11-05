@@ -649,6 +649,14 @@ function MlbMap({ go, lite }) {
     if (n !== focusStage) { setOpenStage(null); setScrollTo(focusStage); return; }
     setOpenStage(-1);
   };
+  /* Bands (owner, 5 Nov 2026: "Improve the map UI/UX"): twenty collapsed rows read as one grey
+     list. Each band now has a banner with its own progress, and a jump bar opens a band's first
+     unfinished stage — a learner in Stage 2 can see, and reach, the summit in one press. */
+  const bandInfo = {}; (st.d.bands || []).forEach(b => { bandInfo[b.id] = b; });
+  const bandTally = {}; stages.forEach(s => { const id = s.bandId || "foundations"; const t = bandTally[id] || (bandTally[id] = { k: 0, t: 0, first: s.n, todo: 0 });
+    t.k += s.comps.filter(known).length; t.t += s.comps.length; if (!t.todo && s.comps.some(c => !known(c))) t.todo = s.n; });
+  const jumpBand = id => { const t = bandTally[id]; if (!t) return; const n = t.todo || t.first; setPop(null); setOpenStage(n === focusStage ? null : n); setScrollTo(n); };
+  const dotKind = c => known(c) ? "done" : c.id === current ? "now" : c.state === "locked" || c.state === "soon" ? "locked" : "open";
   const curComp = current && stages.reduce((a, s) => a.concat(s.comps.map(c => Object.assign({ stage: s.n, stageTitle: s.title }, c))), []).find(c => c.id === current);
   return (
     <div className="mlb-mapgrid">
@@ -663,18 +671,28 @@ function MlbMap({ go, lite }) {
           <li><span className="mlb-node is-boss is-locked is-mini"><i className="ph-fill ph-trophy" aria-hidden="true"/></span>Stage boss: beat it for the stage certificate</li></ul></section>
     </aside>
     <div className="mlb-map">
+      <nav className="mlb-bandnav" aria-label="Jump to a band">{Object.keys(bandTally).map(id => { const b = bandInfo[id] || {}, t = bandTally[id];
+        return <button key={id} type="button" className={"mlb-bandnav-b" + (b.summit ? " is-summit" : "") + (t.k === t.t ? " is-done" : "")} onClick={() => jumpBand(id)}
+          aria-label={(b.name || id) + ": " + t.k + " of " + t.t + " topics known"}>{b.summit ? <i className="ph-fill ph-crown" aria-hidden="true"/> : null}<span>{b.name || id}</span><small>{t.k}/{t.t}</small></button>; })}</nav>
       {stages.map(s => {
         const n = s.comps.filter(known).length, band = s.bandId || "foundations", newBand = s.band && s.band !== lastBand; lastBand = s.band;
+        const bi = bandInfo[band] || {}, bt = bandTally[band] || { k: 0, t: 0 };
+        const shut = !n && s.comps.every(c => c.state === "locked" || c.state === "soon") && s.n !== focusStage;
         return (
           <React.Fragment key={s.n}>
-            {newBand ? <div className="mlb-section"><span>{s.band}</span><small>{s.level}</small></div> : null}
+            {newBand ? <div className={"mlb-bandh is-" + band + (bi.summit ? " is-summit" : "")} id={"mlb-band-" + band}>
+              <span className="mlb-bandh-i" aria-hidden="true"><i className={bi.summit ? "ph-fill ph-crown" : "ph-fill ph-flag-banner"}/></span>
+              <span className="mlb-bandh-t"><b>{s.band}</b><small>{s.level}{bi.stages ? " · " + bi.stages : ""}</small></span>
+              <span className="mlb-bandh-n"><span><b>{bt.k}</b> of {bt.t} topics</span><span className="mlb-meter"><span style={{ width: Math.round(bt.k / Math.max(1, bt.t) * 100) + "%" }}/></span></span>
+            </div> : null}
             <section id={"mlb-unit-" + s.n} className={"mlb-unit is-" + band + (s.available ? "" : " is-soon") + (s.n === shownStage ? " is-open" : " is-closed") + (s.n === focusStage ? " is-focus" : "")} aria-labelledby={"mlb-st-" + s.n}>
               <header className="mlb-unit-h">
                 <button type="button" className="mlb-unit-tog" aria-expanded={s.n === shownStage} aria-controls={"mlb-path-" + s.n}
                   onClick={() => toggleStage(s.n)}>
-                  <span className="mlb-unit-k">Stage {s.n} · {n} of {s.comps.length}{s.n === focusStage ? " · You are here" : ""}</span>
+                  <span className="mlb-unit-k">Stage {s.n} · {n} of {s.comps.length}{s.n === focusStage ? " · You are here" : ""}
+                    {shut ? <span className="mlb-unit-lock"><i className="ph-fill ph-lock-simple" aria-hidden="true"/>Opens when the stages before it are known</span> : null}</span>
                   <span id={"mlb-st-" + s.n} className="mlb-unit-t">{s.title}</span>
-                  {s.n !== shownStage ? <span className="mlb-meter"><span style={{ width: Math.round(n / s.comps.length * 100) + "%" }}/></span> : null}
+                  {s.n !== shownStage ? <span className="mlb-dots" aria-hidden="true">{s.comps.map(c => <i key={c.id} className={"is-" + dotKind(c)}/>)}</span> : null}
                   <i className="ph ph-caret-down mlb-caret" aria-hidden="true"/>
                 </button>
                 {s.certificate ? <a className="mlb-unit-b" href={s.certificate.url} target="_blank" rel="noopener"><i className="ph-fill ph-seal-check" aria-hidden="true"/><span>Certificate</span></a> : null}
@@ -692,6 +710,7 @@ function MlbMap({ go, lite }) {
                         aria-label={c.title + " — " + (kind === "now" ? "start here" : MLB_STATE_L[c.state] || c.state)} onClick={e => { e.stopPropagation(); setPop(open ? null : c.id); }}>
                         <i className={kind === "done" ? "ph-fill ph-check-fat" : kind === "locked" || kind === "soon" ? "ph-fill ph-lock-simple" : kind === "now" ? "ph-fill ph-star" : "ph-fill ph-star"} aria-hidden="true"/>
                       </button>
+                      <span className={"mlb-node-lab " + (MLB_PATH_X[i % 10] > 0 ? "is-l" : "is-r") + " is-" + kind} aria-hidden="true">{c.title}</span>
                       {open ? <div id={"mlb-pop-" + c.id} className={"mlb-pop is-" + kind} role="group" aria-label={c.title}>
                         <b>{c.title}</b><span>{kind === "done" ? "Known — it will come back in your reviews." : kind === "locked" ? "Locked: finish the topics before it first." : kind === "soon" ? "Being prepared." : "Topic " + (i + 1) + " of " + s.comps.length}</span>
                         <button type="button" className="mlb-go" disabled={kind === "soon"} onClick={() => go({ v: "learn", comp: c.id })}>{kind === "done" ? "Review" : kind === "locked" ? "Have a look" : "Start"}</button>
@@ -703,6 +722,7 @@ function MlbMap({ go, lite }) {
                   {s.boss ? <span className="mlb-node is-done is-boss" role="img" aria-label="Stage boss defeated"><i className="ph-fill ph-trophy" aria-hidden="true"/></span>
                     : s.bossReady && !lite ? <button type="button" className="mlb-node is-now is-boss" aria-label={"Face the Stage " + s.n + " boss"} onClick={() => setBoss({ mode: "boss", stage: s.n })}><i className="ph-fill ph-trophy" aria-hidden="true"/></button>
                     : <span className="mlb-node is-locked is-boss" role="img" aria-label="Stage boss: light all ten topics first"><i className="ph-fill ph-trophy" aria-hidden="true"/></span>}
+                  <span className="mlb-node-lab is-r is-boss" aria-hidden="true">{s.boss ? "Boss beaten" : "Stage boss"}</span>
                 </li>
               </ol> : null}
             </section>

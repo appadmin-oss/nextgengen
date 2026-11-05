@@ -4824,6 +4824,11 @@ off as "bad at maths" when a foundation was simply never taught.
   3. **Your progress**: topics known, streak, level, and the current stage's
      topics, with *Open the map*;
   4. then foundations to fix, courses, how the climb works, and badges.
+- **The map, made readable (5 Nov 2026).**
+  - **Labels:** every topic on the path is named beside its circle, so a child sees *Division with remainders*, not ten identical stars. The boss is labelled too.
+  - **Band banners:** each band (Foundations … Gods of Maths) opens with a banner showing its level, its stages and how many of its topics the member knows. The summit's banner is gold with a crown.
+  - **Jump bar:** a row of band buttons at the top of the map opens a band's first unfinished stage in one press.
+  - **Closed stages:** each shows ten dots, one per topic (filled = known, gold = next, pale = locked), and says *Opens when the stages before it are known* when it cannot be started yet.
 - **Finding a topic (the path).** The Map is a path, like Duolingo's, drawn
   in the Control Room's style. Each stage has a header, followed by its ten
   topics as round buttons: black with a tick when known, gold with *Start* on

@@ -9048,6 +9048,38 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
   .mlb-map { order: 1; }
 }
 .mlb-section { display: flex; align-items: center; gap: 10px; margin: 6px 0 -4px; color: var(--cr-muted-3); font-size: 12px; font-weight: 500; }
+/* Band banners and the jump bar (map UI/UX, 5 Nov 2026). */
+.mlb-bandnav { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 6px; margin-bottom: 2px; scrollbar-width: thin; }
+.mlb-bandnav-b { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 1px solid var(--cr-line); border-radius: var(--cr-r-pill); background: var(--cr-bg); color: var(--cr-ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mlb-bandnav-b:hover { border-color: var(--cr-ink); }
+.mlb-bandnav-b small { font-size: 12px; font-weight: 500; color: var(--cr-muted-3); font-variant-numeric: tabular-nums; }
+.mlb-bandnav-b.is-done { background: var(--cr-ink); color: var(--cr-on-ink); border-color: var(--cr-ink); }
+.mlb-bandnav-b.is-done small { color: var(--cr-on-ink); }
+.mlb-bandnav-b.is-summit { border-color: var(--cr-gold); background: var(--cr-gold-bg); }
+.mlb-bandnav-b.is-summit i { color: var(--cr-gold-fg); }
+.mlb-bandh { display: flex; align-items: center; gap: 12px; margin: 10px 0 -6px; padding: 12px 14px; border-radius: var(--cr-r-lg); background: var(--cr-s2); color: var(--cr-ink); scroll-margin-top: 12px; }
+.mlb-bandh-i { flex: none; width: 34px; height: 34px; border-radius: var(--cr-r); display: grid; place-items: center; background: var(--cr-ink); color: var(--cr-on-ink); font-size: 17px; }
+.mlb-bandh-t { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mlb-bandh-t b { font-size: 15px; font-weight: 700; }
+.mlb-bandh-t small { font-size: 12.5px; color: var(--cr-muted-3); }
+.mlb-bandh-n { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 12.5px; color: var(--cr-muted-3); font-variant-numeric: tabular-nums; }
+.mlb-bandh-n b { color: var(--cr-ink); font-weight: 700; }
+.mlb-bandh-n .mlb-meter { display: block; flex: none; width: 96px; height: 6px; }
+.mlb-bandh.is-summit { background: linear-gradient(135deg, var(--cr-gold-bg), var(--cr-s2)); }
+.mlb-bandh.is-summit .mlb-bandh-i { background: var(--cr-gold); color: var(--cr-gold-ink); }
+.mlb-unit-lock { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: var(--cr-muted-3); }
+.mlb-dots { grid-area: m; display: flex; gap: 5px; margin-top: 7px; }
+.mlb-dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--cr-bg); border: 1px solid var(--cr-line-strong); }
+.mlb-dots i.is-done { background: var(--cr-ink); border-color: var(--cr-ink); }
+.mlb-dots i.is-now { background: var(--cr-gold); border-color: var(--cr-gold); }
+.mlb-dots i.is-locked { background: var(--cr-s2); border-color: var(--cr-line); }
+.mlb-node-lab { position: absolute; top: 50%; transform: translateY(-50%); width: max-content; max-width: min(150px, 30vw); font-size: 12.5px; font-weight: 600; line-height: 1.25; color: var(--cr-ink); pointer-events: none;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.mlb-node-lab.is-r { left: calc(100% + 12px); text-align: left; }
+.mlb-node-lab.is-l { right: calc(100% + 12px); text-align: right; }
+.mlb-node-lab.is-locked, .mlb-node-lab.is-soon { color: var(--cr-muted-3); font-weight: 500; }
+.mlb-node-lab.is-boss { color: var(--cr-muted-3); }
+.mlb-node-li.is-pop .mlb-node-lab { visibility: hidden; }
 .mlb-section::after { content: ""; flex: 1; height: 1px; background: var(--cr-line); }
 .mlb-section span { color: var(--cr-ink); font-weight: 600; font-size: 13px; }
 .mlb-section small { font-size: 12px; }

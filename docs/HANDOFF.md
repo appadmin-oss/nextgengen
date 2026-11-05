@@ -6646,3 +6646,39 @@ There are four forms per topic, and nineteen proofs (`mlb_why_gods`).
 - Maths Lab e2e: 36 passed, 0 failed. The "number key picks an answer" check only runs when the first random question is multiple choice.
 - `build.test`: 31 passed, 0 failed.
 - Contrast: 21 passed, 0 failed.
+
+
+## 5 Nov 2026 — Maths Lab map UI/UX
+
+**Owner:** "Improve the map UI/UX".
+
+**Faults seen in screenshots:**
+
+- the path's circles carried no names;
+- band headings were 12–13px grey text;
+- 20 collapsed rows looked identical;
+- locked stages did not say why.
+
+**Changes in `MlbMap`:**
+
+- `.mlb-node-lab` titles beside each node, placed on the side away from the zig-zag offset;
+- `.mlb-bandh` band banners with known/total and a meter, from `bandTally` computed over the stages;
+- `.mlb-bandnav` jump bar, which opens a band's first unfinished stage through the existing `openStage` and `scrollTo` mechanism;
+- `.mlb-dots` per-topic dots on closed stages;
+- `.mlb-unit-lock`, the "Opens when…" note.
+
+**Test fixture fix.** `tests/mathlab-shot.js` built its fixture map from a hand-listed set of domain files and so showed Stages 18–20 as "being prepared". It now loads `mathslab-gen-deep.php` and `mathslab-gen-gods.php`.
+
+**New checks:**
+
+- every open node has a label;
+- six band banners, with the summit crowned;
+- dots on the closed stages;
+- the summit jump opens Stage 18.
+
+**Results:**
+
+- Shots: 22 rendered clean.
+- Maths Lab e2e: 37 passed, 0 failed.
+- Contrast: 21 passed, 0 failed.
+- `build.test`: 31 passed, 0 failed.

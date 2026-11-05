@@ -28,7 +28,7 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
   const manifest=JSON.parse(fs.readFileSync(path.join(ROOT,'dist','build-manifest.json'),'utf8'));
   /* The map, straight out of the domain code that serves it. */
   const SRC=JSON.parse(execFileSync('php',['-r',
-    'function db_row(){return null;} require "api/_lib/domain/mathslab-map.php";require "api/_lib/domain/mathslab-gen.php";require "api/_lib/domain/mathslab-gen-upper.php";require "api/_lib/domain/mathslab-why.php";require "api/_lib/domain/mathslab.php";'
+    'function db_row(){return null;} require "api/_lib/domain/mathslab-map.php";require "api/_lib/domain/mathslab-gen.php";require "api/_lib/domain/mathslab-gen-upper.php";require "api/_lib/domain/mathslab-gen-deep.php";require "api/_lib/domain/mathslab-gen-gods.php";require "api/_lib/domain/mathslab-why.php";require "api/_lib/domain/mathslab.php";'
     +'$st=[];foreach(mlb_stages() as $n=>$s){$st[]=["n"=>$n,"title"=>$s["title"],"strand"=>$s["strand"],"available"=>mlb_stage_available($n),'
     +'"comps"=>array_map(fn($id)=>["id"=>$id,"title"=>mlb_comp($id)["title"],"available"=>mlb_available($id)],$s["comps"])];}'
     +'$cv=[];foreach(["MC-002","MC-074","MC-077","MC-103","MC-145","MC-152"] as $id){$v=mlb_comp_view(["comp"=>$id]);unset($v["ok"]);$cv[$id]=$v;}'
@@ -193,7 +193,17 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
       if(st.paths!==1||st.open.length!==1||st.open[0]!==st.focus||!st.now) problems.push('map: only the focus stage should be open '+JSON.stringify(st));
       await page.click('.mlb-unit:not(.is-open) .mlb-unit-tog'); const after=await page.evaluate(()=>({paths:document.querySelectorAll('.mlb-path').length, open:document.querySelectorAll('.mlb-unit.is-open').length}));
       if(after.paths!==1||after.open!==1) problems.push('map: opening another stage must close the focus stage '+JSON.stringify(after));
-      await page.close(); console.log('  ✓ the map opens only the focus stage'); }
+      /* Map UI/UX (owner, 5 Nov 2026): every topic on the path is named, every band has a banner with
+         its progress, and the jump bar opens a band's first unfinished stage — the summit in one press. */
+      await page.click('.mlb-bandnav-b:first-child'); await page.waitForTimeout(300);
+      const lab=await page.evaluate(()=>({labs:document.querySelectorAll('.mlb-path .mlb-node-lab').length, nodes:document.querySelectorAll('.mlb-path .mlb-node').length,
+        banners:document.querySelectorAll('.mlb-bandh').length, summit:!!document.querySelector('.mlb-bandh.is-summit .ph-crown'), dots:document.querySelectorAll('.mlb-unit.is-closed .mlb-dots').length}));
+      if(lab.labs!==lab.nodes||lab.labs<11||lab.banners!==6||!lab.summit||lab.dots<10) problems.push('map: labels, band banners or dots missing '+JSON.stringify(lab));
+      await page.click('.mlb-bandnav-b.is-summit'); await page.waitForTimeout(400);
+      const sum=await page.evaluate(()=>(document.querySelector('.mlb-unit.is-open .mlb-unit-t')||{}).textContent);
+      if(sum!=='The Theory of Numbers') problems.push('map: the summit jump should open Stage 18, opened '+sum);
+      await page.screenshot({path:path.join(OUT,'mathlab-map-summit.png'),fullPage:false}); shots++;
+      await page.close(); console.log('  ✓ the map opens only the focus stage; topics are named; bands jump'); }
     /* Behaviour, not only pixels: an explorer's readout follows its slider; "Why it works" walks
        one line at a time; the order exercise sends the order the learner made. */
     { const page=await browser.newPage({viewport:{width:1080,height:1000}}); const errs=[]; page.on('pageerror',e=>errs.push(String(e&&e.message)));
