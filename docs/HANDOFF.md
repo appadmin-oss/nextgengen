@@ -6139,3 +6139,37 @@ stats, the focused player, and the interactive-first Learn page.
   `styles-app.css`, `.mlb { --cr-ink: var(--navy-900); --cr-nav-on: #e7eaf3; }`,
   re-points the token every Lab ink surface reads. The Control Room keeps its
   black.
+
+## 5 Nov 2026 — Maths Lab: the real thing, end to end (owner: "the site is not working … improve the UX")
+
+Walked the PRODUCTION build against a real backend as a new member would.
+`tests/mathlab-e2e.test.js` now does the same on every run, at desktop and
+phone widths; it is in `test:all` and `npm run test:mathlab-e2e`. What it
+found, all fixed:
+
+- **The question player had no styling.** `MathsLab` returned `<MlbPlayer>`
+  outside `<div class="mlb">`, so none of the Lab's tokens resolved: no
+  borders on the options, and bare "Check", "Leave" and confidence buttons.
+  The fixture shots never caught it, because they render components with
+  stubs. The player is wrapped now, and the e2e asserts computed borders and
+  a filled button inside `.mlb`.
+- **The placement gate asked proof questions** ("why is line 1 true?") of a
+  brand-new child. `mlb_pick_items(…, $skillOnly)` / `mlb_skill_form_count()`
+  leave the two Why-it-works forms out of the climb, reviews and the boss.
+  Practice and the mastery check keep them. Pinned in `run.php`.
+- **Three levels of navigation and three "Maths Lab" headings.** Study tools'
+  tabs, then the Lab's sidebar, a brand line and a hero eyebrow. The Lab's
+  sections are now one segmented control at every width. Inside the Lab, the
+  Study panel heading is kept for screen readers only (`.stt-panel:has(.mlb)
+  > .stt-panel-h`), and the hero eyebrow is gone.
+- **Results** show the score once (a ring), say what to do next, and list the
+  missed questions first with their solutions open. Practice and review offer
+  *Practise again*, which re-keys the player for a fresh session.
+- **Back from practice** opens the topic on its Practise step when it has
+  been studied, not step 1 again.
+- **Keyboard**: 1–9 pick an answer and Enter checks it or moves on; the
+  options are numbered to match. This is ignored while typing in a field,
+  and Enter on a button is left to the button.
+- **Phone**: the stat tiles and the map's stats are one row each; the
+  player's title row keeps *Leave* on it; the number keypad lost the "/"
+  key, which a whole-number answer never needs.

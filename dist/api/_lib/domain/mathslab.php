@@ -95,14 +95,25 @@ function mlb_bkt(float $p, bool $ok, bool $typed): float {
 }
 
 /* ── Building a session ── */
-function mlb_pick_items(array $comps, int $n, bool $preferTyped = false): array {
+/**
+ * Questions for a session. $skillOnly (the climb's placement gate, reviews and the boss) leaves
+ * out the two "Why it works" forms a topic carries at the END of its list (mlb_why_forms):
+ * those teach the argument and belong in practice and the mastery check — a child placed by
+ * "why is line 1 true?" about digit counts is being placed by the wrong question.
+ */
+function mlb_skill_form_count(string $c): int {
+    $n = count(mlb_forms()[$c] ?? []);
+    return function_exists('mlb_why') && isset(mlb_why()[$c]) ? max(1, $n - 2) : $n;
+}
+function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false): array {
     $items = []; $i = 0; $guard = 0;
     while (count($items) < $n && $guard++ < $n * 6 && $comps) {
         $c = $comps[$i % count($comps)]; $i++;
         $forms = mlb_forms()[$c] ?? []; if (!$forms) continue;
-        $f = random_int(0, count($forms) - 1); $seed = random_int(1, 2000000000);
+        $nf = $skillOnly ? mlb_skill_form_count($c) : count($forms);
+        $f = random_int(0, $nf - 1); $seed = random_int(1, 2000000000);
         if ($preferTyped) {
-            for ($t = 0; $t < count($forms); $t++) { $it = mlb_item($c, ($f + $t) % count($forms), $seed); if (!empty($it['typed'])) { $f = ($f + $t) % count($forms); break; } }
+            for ($t = 0; $t < $nf; $t++) { $it = mlb_item($c, ($f + $t) % $nf, $seed); if (!empty($it['typed'])) { $f = ($f + $t) % $nf; break; } }
         }
         $items[] = ['c' => $c, 'f' => $f, 's' => $seed];
     }
@@ -119,7 +130,7 @@ function mlb_start(array $p): array {
         $st = (int)$prof['climbStage']; $ref = (string)$st;
         $n = (int)$prof['momentum'] >= 3 ? 4 : MLB_GATE_ITEMS;
         $comps = mlb_stages()[$st]['comps'];
-        $items = mlb_pick_items(array_slice((function ($a) { shuffle($a); return $a; })($comps), 0, $n), $n, true);
+        $items = mlb_pick_items(array_slice((function ($a) { shuffle($a); return $a; })($comps), 0, $n), $n, true, true);
     } elseif ($mode === 'practice' || $mode === 'check') {
         if (!mlb_available($comp)) return ['ok' => false, 'error' => 'not_available'];
         if (!mlb_unlocked($comp, $states)) return ['ok' => false, 'error' => 'locked', 'needs' => array_values(array_filter(mlb_comp($comp)['needs'], fn($x) => !in_array($states[$x]['state'] ?? 'none', MLB_GOOD, true) && mlb_available($x)))];
@@ -133,13 +144,13 @@ function mlb_start(array $p): array {
         $items = mlb_pick_items([$comp], $mode === 'check' ? MLB_CHECK_ITEMS : MLB_PRACTICE_ITEMS);
     } elseif ($mode === 'review') {
         $due = mlb_due($states); if (!$due) return ['ok' => false, 'error' => 'nothing_due'];
-        $items = mlb_pick_items(array_slice($due, 0, 6), min(6, count($due)), true);
+        $items = mlb_pick_items(array_slice($due, 0, 6), min(6, count($due)), true, true);
     } elseif ($mode === 'boss') {
         $st = (int)($p['stage'] ?? 0); $ref = (string)$st;
         $comps = mlb_stages()[$st]['comps'] ?? [];
         if (!$comps || !mlb_stage_available($st)) return ['ok' => false, 'error' => 'not_available'];
         foreach ($comps as $c) if (!in_array($states[$c]['state'] ?? 'none', MLB_GOOD, true)) return ['ok' => false, 'error' => 'boss_locked'];
-        $items = mlb_pick_items($comps, 12);
+        $items = mlb_pick_items($comps, 12, false, true);
     } else return ['ok' => false, 'error' => 'bad_mode'];
     $sid = 'MLS-' . strtoupper(rand_hex(8));
     db_insert('mlab_sessions', ['sessionId' => $sid, 'memberId' => $mid, 'mode' => $mode, 'ref' => $ref, 'items' => json_encode($items), 'resp' => '{}', 'startedAt' => now_iso(), 'finishedAt' => '']);
@@ -253,7 +264,10 @@ function mlb_finish(array $p): array {
             $msg = 'The boss wins this time (' . $pct . '%, need ' . MLB_BOSS_PASS . '%). The ' . count($missed) . ' topic' . (count($missed) === 1 ? '' : 's') . ' it caught you on ' . (count($missed) === 1 ? 'is' : 'are') . ' back in practice: master ' . (count($missed) === 1 ? 'it' : 'them') . ' again, then face the boss.';
         }
     } else {
-        $msg = $right . ' of ' . $n . ' right.';
+        /* Practice says what to DO next, not the score twice: the screen already shows the score. */
+        $msg = $pct >= 85 ? 'Strong work. Keep practising until the mastery check opens.'
+             : ($pct >= 50 ? 'Getting there. Read the worked solutions for the ones you missed, then practise again.'
+             : 'Go back over the lesson’s worked example, read the solutions below, then try again.');
     }
     mlb_touch_streak($mid);
     // A session can be the one that completes a course: its certificate is issued now, not when somebody thinks to press a button.

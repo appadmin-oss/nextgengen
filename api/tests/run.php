@@ -37697,6 +37697,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         }
         return mlb_finish(['memberId' => 'NGG-ML-1', 'sessionId' => $st['sessionId']]);
     };
+    /* A placement gate, a review and a boss test the SKILL: never one of the two "Why it works"
+       forms a topic carries at the end of its list (they belong to practice and the check). */
+    $whyHit = 0;
+    for ($k = 0; $k < 40; $k++) foreach (mlb_pick_items(['MC-001', 'MC-002', 'MC-007', 'MC-077', 'MC-103'], 10, true, true) as $x)
+        if (isset(mlb_why()[$x['c']]) && $x['f'] >= count(mlb_forms()[$x['c']]) - 2) $whyHit++;
+    $pracWhy = 0;
+    for ($k = 0; $k < 40; $k++) foreach (mlb_pick_items(['MC-002'], 8) as $x) if ($x['f'] >= count(mlb_forms()['MC-002']) - 2) $pracWhy++;
+    chk('maths lab · a placement gate, review or boss never asks a "why is line N true?" proof question — practice still does', $whyHit === 0 && $pracWhy > 0);
     // The climb: a clean, fast gate lights the whole stage and moves on.
     $g1 = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb']);
     chk('maths lab · a new member starts the climb at Stage 1 with a gate of typed questions, and no keys reach the browser',

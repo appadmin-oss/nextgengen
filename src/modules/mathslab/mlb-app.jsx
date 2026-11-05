@@ -447,11 +447,12 @@ function MathsLab({ me }) {
   React.useEffect(() => { const on = () => { setPlay(null); setRoute(mlbRoute()); }; window.addEventListener("popstate", on); return () => window.removeEventListener("popstate", on); }, []);
   if (me.phase === "loading") return <SttState kind="loading" text="Opening the Maths Lab…"/>;
   if (!me.member || lite) return <MlbLite signedIn={!!me.member} route={route} go={go}/>;
-  if (play) return <MlbPlayer start={play} onDone={() => { setPlay(null); }} go={go}/>;
+  // Inside .mlb: every colour, border and button in the player reads the Lab's tokens (outside it, none resolved).
+  if (play) return <div className="mlb"><MlbPlayer key={play.n || 0} start={play} onDone={() => { setPlay(null); }} go={go} onAgain={() => setPlay(p => Object.assign({}, p, { n: (p.n || 0) + 1 }))}/></div>;
   const nav = [["home", "Home", "ph-house"], ["map", "Map", "ph-path"], ["courses", "Courses", "ph-graduation-cap"], ["progress", "Progress", "ph-chart-bar"]];
   return (
     <div className="mlb"><div className="mlb-shell">
-      <div className="mlb-navwrap"><p className="mlb-brand" aria-hidden="true"><i className="ph-fill ph-star-four"/>Maths Lab</p><nav className="mlb-nav" aria-label="Maths Lab">
+      <div className="mlb-navwrap"><nav className="mlb-nav" aria-label="Maths Lab">
         {nav.map(([v, l, ic]) => <button key={v} type="button" className={"mlb-navb" + (route.v === v || (v === "map" && route.v === "learn") ? " is-on" : "")} aria-current={route.v === v ? "page" : undefined} onClick={() => go({ v })}><i className={"ph-fill " + ic} aria-hidden="true"/><span>{l}</span></button>)}
       </nav></div>
       <div className="mlb-main">
@@ -490,7 +491,6 @@ function MlbHome({ go, startPlay, onNotMember }) {
     <div className="mlb-stack">
       <section className="mlb-hero" aria-labelledby="mlb-hi">
         <div className="mlb-hero-sky" aria-hidden="true"/>
-        <p className="mlb-eyebrow">Maths Lab</p>
         <h2 id="mlb-hi" className="mlb-hero-h">Hello, {d.name}.</h2>
         <p className="mlb-hero-p">{d.climb.done ? "You’re at your level. Keep the stars burning." : "Your climb starts at the very beginning and moves fast when you know it."}</p>
         <div className="mlb-hero-stats">
@@ -681,6 +681,9 @@ function MlbLearn({ comp, go, startPlay, lite }) {
   const [studyErr, setStudyErr] = React.useState("");
   const headRef = React.useRef(null);
   React.useEffect(() => { setStep(0); setReached(0); setDone({}); setShown(1); setStudied(null); setStudyErr(""); }, [comp]);
+  /* Coming back to a topic already studied (e.g. after practice) opens on Practise, with every
+     step still one press away — not back at step 1 as if nothing had happened. */
+  React.useEffect(() => { if (st.phase === "ok" && st.d.studied) { setStep(99); setReached(99); } }, [st.phase]); // eslint-disable-line
   const ok = st.phase === "ok", d = ok ? st.d : null;
   const steps = [];
   if (ok) {
@@ -781,7 +784,7 @@ function MlbWhy({ why, onDone }) {
 }
 
 /* ── Answer entry ── */
-const MLB_KEYS = { expr: ["x", "y", "^", "(", ")", "/", "−", "√("], num: ["−", ".", "/"], frac: ["/", "−"], ratio: [":"], pair: ["−"] };
+const MLB_KEYS = { expr: ["x", "y", "^", "(", ")", "/", "−", "√("], num: ["−", "."], frac: ["/", "−"], ratio: [":"], pair: ["−"] };
 function MlbInput({ item, value, onChange, onEnter, disabled }) {
   const ref = React.useRef(null);
   const ins = t => { const v = (value || "") + (t === "−" ? "-" : t === "√(" ? "sqrt(" : t); onChange(v); setTimeout(() => ref.current && ref.current.focus(), 0); };
@@ -827,7 +830,7 @@ function MlbOrder({ item, value, onChange, disabled }) {
 }
 
 /* ── The player: one question per screen ── */
-function MlbPlayer({ start, onDone, go }) {
+function MlbPlayer({ start, onDone, go, onAgain }) {
   const [ses, setSes] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [i, setI] = React.useState(0);
@@ -840,9 +843,22 @@ function MlbPlayer({ start, onDone, go }) {
   const t0 = React.useRef(Date.now());
   React.useEffect(() => { NGGApi.member.mathslab.start(start.mode, { comp: start.comp, stage: start.stage }).then(setSes, e => setErr(mlbErr(e))); }, []); // eslint-disable-line
   React.useEffect(() => { t0.current = Date.now(); }, [i]);
+  /* Keyboard, Duolingo's way: 1–9 pick an answer, Enter checks it or moves on. Never while typing
+     in a field (digits there are the answer) or when Enter is pressed on a button (it clicks it). */
+  const keys = React.useRef(null);
+  React.useEffect(() => {
+    const on = e => {
+      const k = keys.current; if (!k || e.altKey || e.ctrlKey || e.metaKey) return;
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (k.choice && !k.fb && /^[1-9]$/.test(e.key) && Number(e.key) <= k.count) { e.preventDefault(); k.pick(Number(e.key) - 1); return; }
+      if (e.key === "Enter" && tag !== "BUTTON" && tag !== "A") { e.preventDefault(); if (k.fb) k.next(); else k.submit(); }
+    };
+    document.addEventListener("keydown", on); return () => document.removeEventListener("keydown", on);
+  }, []);
   if (err) return <SttState kind="error" text={err}><button type="button" className="stt-btn" onClick={onDone}>Back</button></SttState>;
   if (!ses) return <SttState kind="loading" text="Preparing your questions…"/>;
-  if (res) return <MlbResult res={res} onDone={onDone} go={go}/>;
+  if (res) return <MlbResult res={res} onDone={onDone} go={go} onAgain={onAgain && ["practice", "review"].indexOf(res.mode) >= 0 ? onAgain : null}/>;
   const it = ses.items[i], practice = ses.mode === "practice", last = i === ses.items.length - 1;
   const empty = it.kind === "pair" ? !(Array.isArray(val) && val[0] && val[1]) : it.kind === "mcq" || it.kind === "error" ? val === "" : !String(val || "").trim();
   const finish = () => { setBusy(true); NGGApi.member.mathslab.finish(ses.sessionId).then(r => { setBusy(false); setRes(r); }, e => { setBusy(false); setErr(mlbErr(e)); }); };
@@ -856,9 +872,10 @@ function MlbPlayer({ start, onDone, go }) {
     }, e => { setBusy(false); setErr(mlbErr(e)); });
   };
   const choice = it.kind === "mcq" || it.kind === "error";
+  keys.current = { choice, count: choice ? it.options.length : 0, fb, pick: k => setVal(k), submit, next };
   return (
     <div className="mlb-play" data-mode={ses.mode}>
-      <div className="mlb-row"><p className="mlb-eyebrow">{ses.title}</p><button type="button" className="mlb-back" onClick={onDone}>Leave</button></div>
+      <div className="mlb-playtop"><p className="mlb-eyebrow">{ses.title}</p><button type="button" className="mlb-back" onClick={onDone}><i className="ph ph-x" aria-hidden="true"/>Leave</button></div>
       <ol className="mlb-pips" aria-label={"Question " + (i + 1) + " of " + ses.items.length}>{ses.items.map((_, k) => <li key={k} className={k < i ? "is-done" : k === i ? "is-on" : ""}/>)}</ol>
       <section className="mlb-q" aria-live="polite">
         <p className="mlb-qn">Question {i + 1} of {ses.items.length}{ses.mode === "climb" ? " · fast and right clears the stage" : ""}</p>
@@ -867,8 +884,9 @@ function MlbPlayer({ start, onDone, go }) {
         {it.lines ? <ol className="mlb-lines">{it.lines.map((l, k) => <li key={k}><MlbMath text={l}/></li>)}</ol> : null}
         {choice ? <div className="mlb-opts" role="radiogroup" aria-label="Choose an answer">{it.options.map((o, k) => (
           <button key={k} type="button" role="radio" aria-checked={val === k} disabled={!!fb} className={"mlb-opt" + (val === k ? " is-on" : "") + (fb && fb.answer === o ? " is-right" : "") + (fb && !fb.correct && val === k ? " is-wrong" : "")} onClick={() => setVal(k)}>
-            <span className="mlb-opt-l">{String.fromCharCode(65 + k)}</span><MlbMath text={o}/></button>))}</div>
+            <span className="mlb-opt-l" aria-hidden="true">{k + 1}</span><MlbMath text={o}/></button>))}</div>
           : <MlbInput item={it} value={val} onChange={setVal} onEnter={submit} disabled={!!fb}/>}
+        {choice && !fb ? <p className="mlb-meta mlb-keyhint">Tip: press 1–{it.options.length} to choose and Enter to check.</p> : null}
         {!fb ? <div className="mlb-conf" role="radiogroup" aria-label="How sure are you?"><span>How sure are you?</span>{[["sure", "Sure"], ["think", "Think so"], ["guess", "Guessing"]].map(([k, l]) =>
           <button key={k} type="button" role="radio" aria-checked={conf === k} className={"mlb-chipb" + (conf === k ? " is-on" : "")} onClick={() => setConf(k)}>{l}</button>)}</div> : null}
         {practice && !fb ? (hints ? <p className="mlb-hint"><i className="ph ph-lightbulb" aria-hidden="true"/><MlbMath text={it.hint}/></p>
@@ -887,28 +905,43 @@ function MlbPlayer({ start, onDone, go }) {
   );
 }
 
-function MlbResult({ res, onDone, go }) {
+/* The result: the score once, what it means, and the mistakes FIRST with their worked solutions
+   open — the useful part of a session is the questions you got wrong. */
+function MlbResult({ res, onDone, go, onAgain }) {
+  const [all, setAll] = React.useState(false);
+  const lit = res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length;
+  const wrong = res.review.filter(q => !q.correct), shown = all ? res.review : wrong;
+  const kind = res.mode === "climb" ? "Placement gate" : res.mode === "check" ? "Mastery check" : res.mode === "boss" ? "Stage boss" : res.mode === "review" ? "Review" : "Practice";
   return (
     <div className="mlb-stack">
-      <section className={"mlb-hero mlb-result" + (res.pct >= 85 ? " is-win" : "")}>
-        <div className="mlb-hero-sky" aria-hidden="true"/>
-        <p className="mlb-eyebrow">{res.mode === "climb" ? "Gate" : res.mode === "check" ? "Mastery check" : res.mode === "boss" ? "Stage boss" : res.mode === "review" ? "Review" : "Practice"}</p>
-        <h2 className="mlb-hero-h">{res.right} of {res.total}</h2>
-        <p className="mlb-hero-p">{res.message}</p>
-        {res.xp ? <p className="mlb-xp">+{res.xp} XP</p> : null}
+      <section className={"mlb-card mlb-result" + (res.pct >= 85 ? " is-win" : "")} aria-labelledby="mlb-res-h">
+        <div className="mlb-res-top">
+          <div className="mlb-res-ring" style={{ "--pct": res.pct + "%" }} role="img" aria-label={res.pct + "% right"}><b>{res.pct}%</b></div>
+          <div className="mlb-res-txt">
+            <p className="mlb-eyebrow">{kind}</p>
+            <h2 id="mlb-res-h" className="mlb-h2">{res.right} of {res.total} right</h2>
+            <p className="mlb-p">{res.message}</p>
+            <p className="mlb-res-chips">{res.xp ? <span className="mlb-chip is-ok">+{res.xp} XP</span> : null}{lit ? <span className="mlb-chip is-ok">{lit} star{lit === 1 ? "" : "s"} lit</span> : null}</p>
+          </div>
+        </div>
         {(res.certificates || []).map(c => (
           /* The session that completed a course: the certificate exists now — a numbered NGG document the family also sees under Documents. */
-          <p key={c.no} className="mlb-hero-p mlb-cert-new"><i className="ph-fill ph-certificate" aria-hidden="true"/> {c.scope === "stage" ? "Stage passed" : "Course complete"}: <b>{c.title}</b>. Certificate {c.no} —{" "}
+          <p key={c.no} className="mlb-p mlb-cert-new"><i className="ph-fill ph-certificate" aria-hidden="true"/> {c.scope === "stage" ? "Stage passed" : "Course complete"}: <b>{c.title}</b>. Certificate {c.no} —{" "}
             <a href={c.url} target="_blank" rel="noopener">open it</a>.</p>))}
-        {res.changes.length ? <p className="mlb-hero-p">{res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length} star{res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length === 1 ? "" : "s"} lit.</p> : null}
-        <div className="mlb-actions"><button type="button" className="mlb-go" onClick={onDone}>Continue</button><button type="button" className="stt-btn" onClick={() => go({ v: "map" })}>See the map</button></div>
+        <div className="mlb-actions">{onAgain && res.pct < 85 ? <React.Fragment><button type="button" className="mlb-go" onClick={onAgain}><i className="ph ph-arrow-clockwise" aria-hidden="true"/>Practise again</button>
+          <button type="button" className="stt-btn" onClick={onDone}>Back to the topic</button></React.Fragment>
+          : <React.Fragment><button type="button" className="mlb-go" onClick={onDone}>Continue</button>{onAgain ? <button type="button" className="stt-btn" onClick={onAgain}>Practise again</button> : null}</React.Fragment>}
+          <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}>See the map</button></div>
       </section>
-      <section className="mlb-card"><h3 className="mlb-h3">Every question, with its solution</h3>
-        <ol className="mlb-rev">{res.review.map((q, k) => <li key={k} className={q.correct ? "is-ok" : "is-no"}>
+      <section className="mlb-card" aria-labelledby="mlb-rev-h">
+        <div className="mlb-row"><h3 id="mlb-rev-h" className="mlb-h3">{all ? "Every question" : wrong.length ? "Learn from these " + wrong.length : "Every answer was right"}</h3>
+          <button type="button" className="stt-btn" aria-pressed={all} onClick={() => setAll(!all)}>{all ? "Only the ones I missed" : "Show every question"}</button></div>
+        {shown.length ? <ol className="mlb-rev">{shown.map((q, k) => <li key={k} className={q.correct ? "is-ok" : "is-no"}>
           <MlbMath as="p" text={q.stem}/>{q.lines ? <ol className="mlb-lines">{q.lines.map((l, j) => <li key={j}><MlbMath text={l}/></li>)}</ol> : null}
           <p className="mlb-meta">{q.correct ? "Right" : "Answer"}: <MlbMath text={q.answer}/></p>
-          {!q.correct ? <details><summary>Worked solution</summary><ol className="mlb-steps">{q.steps.map((s, j) => <li key={j}><MlbMath text={s}/></li>)}</ol></details> : null}
-        </li>)}</ol></section>
+          {!q.correct ? <details open><summary>Worked solution</summary><ol className="mlb-steps">{q.steps.map((s, j) => <li key={j}><MlbMath text={s}/></li>)}</ol></details> : null}
+        </li>)}</ol> : <p className="mlb-p">Nothing to go over.</p>}
+      </section>
     </div>
   );
 }
@@ -1040,7 +1073,7 @@ function MlbLitePlay({ comp }) {
       <p className="mlb-qn">Practice · {score[0]} of {score[1]} right this visit</p>
       <MlbMath as="p" className="mlb-stem" text={q.stem}/><MlbDiagram d={q.diagram}/>
       {q.lines ? <ol className="mlb-lines">{q.lines.map((l, k) => <li key={k}><MlbMath text={l}/></li>)}</ol> : null}
-      {choice ? <div className="mlb-opts" role="radiogroup" aria-label="Choose an answer">{q.options.map((o, k) => <button key={k} type="button" role="radio" aria-checked={val === k} disabled={!!fb} className={"mlb-opt" + (val === k ? " is-on" : "")} onClick={() => setVal(k)}><span className="mlb-opt-l">{String.fromCharCode(65 + k)}</span><MlbMath text={o}/></button>)}</div>
+      {choice ? <div className="mlb-opts" role="radiogroup" aria-label="Choose an answer">{q.options.map((o, k) => <button key={k} type="button" role="radio" aria-checked={val === k} disabled={!!fb} className={"mlb-opt" + (val === k ? " is-on" : "")} onClick={() => setVal(k)}><span className="mlb-opt-l" aria-hidden="true">{k + 1}</span><MlbMath text={o}/></button>)}</div>
         : <MlbInput item={q} value={val} onChange={setVal} onEnter={check} disabled={!!fb}/>}
       {fb ? <div className={"mlb-fb " + (fb.correct ? "is-ok" : "is-no")} role="status"><b>{fb.correct ? "Right!" : fb.formNote || "Not quite."}</b>{!fb.correct && fb.why ? <MlbMath as="p" text={fb.why}/> : null}
         <p>Answer: <MlbMath text={fb.answer}/></p><details open={!fb.correct}><summary>Worked solution</summary><ol className="mlb-steps">{fb.steps.map((s, k) => <li key={k}><MlbMath text={s}/></li>)}</ol></details></div> : null}

@@ -4779,6 +4779,14 @@ off as "bad at maths" when a foundation was simply never taught.
   interactive), *Why it works* (the proof), *Worked example*, then *Practise*
   (with the *Mastery check* and the topics it builds on). A step bar shows
   where the member is. *Continue* and *Back* sit at the bottom.
+- **Practising.** Answers are numbered: on a computer, keys 1–9 choose and
+  Enter checks. The result shows the score once, says what to do next, and
+  lists the questions missed first with their worked solutions open.
+  *Practise again* starts a fresh set. Going back to the topic opens it on
+  *Practise*.
+- **The placement gate, reviews and the stage boss test the skill itself.**
+  The "why is this line true?" proof questions appear only in practice and
+  in the mastery check.
 - **Everyone studies; nobody guesses their way through.**
   - **No skipping.** *Continue* opens only once the step has been done: an
     explorer slider moved, every line of the proof read, every line of the

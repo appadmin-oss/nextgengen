@@ -8940,25 +8940,14 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 
 /* Shell: the Control Room's sidebar once wide; its segmented control on a phone. */
 .mlb-shell { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.mlb-brand { display: none; }
 .mlb-navwrap { display: flex; overflow-x: auto; scrollbar-width: none; }
 .mlb-nav { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--cr-r); background: var(--cr-s2); }
 .mlb-navb { min-height: 36px; padding: 0 12px; gap: 6px; border: 0; border-radius: var(--cr-r-sm); background: transparent; color: var(--cr-muted-2); font-size: 13.5px; font-weight: 500; box-shadow: none; }
 .mlb-navb i { font-size: 16px; }
 .mlb-navb:hover { color: var(--cr-ink); }
 .mlb-navb.is-on { background: var(--cr-bg); color: var(--cr-ink); box-shadow: var(--cr-sh-seg); }
-@container (min-width: 980px) {
-  .mlb-shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); gap: 28px; align-items: start; }
-  .mlb-navwrap { position: sticky; top: 16px; flex-direction: column; gap: 14px; padding-right: 14px; border-right: 1px solid var(--cr-line); min-height: 60vh; overflow: visible; }
-  .mlb-brand { display: flex; align-items: center; gap: 8px; margin: 2px 10px 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; color: var(--cr-ink); }
-  .mlb-brand i { color: var(--cr-gold); font-size: 18px; }
-  .mlb-nav { flex-direction: column; padding: 0; background: none; gap: 2px; }
-  .mlb-navb { width: 100%; justify-content: flex-start; gap: 10px; min-height: 34px; padding: 0 10px; font-size: 14px; color: var(--cr-ink); }
-  .mlb-navb i { font-size: 18px; color: var(--cr-muted-2); }
-  .mlb-navb:hover { background: var(--cr-s3); }
-  .mlb-navb.is-on { background: var(--cr-nav-on); font-weight: 600; box-shadow: none; }
-  .mlb-navb.is-on i { color: var(--cr-ink); }
-}
+/* One navigation level: the Lab sits inside Study tools, which already has its own tabs, so the
+   Lab's sections are a segmented control above the content at every width — never a second sidebar. */
 @container (max-width: 420px) { .mlb-nav { display: flex; width: 100%; } .mlb-navb { flex: 1 1 0; justify-content: center; padding: 0 6px; } }
 
 /* Buttons: .cr-btn's shape. Primary is ink; gold is kept for the one live action on Home. */
@@ -8994,7 +8983,6 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-sb { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: var(--cr-bg); font-size: 18px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--cr-ink); min-width: 0; }
 .mlb-sb i { font-size: 18px; color: var(--cr-muted-3); }
 .mlb-sb.is-fire i { color: var(--cr-gold); }
-@container (max-width: 420px) { .mlb-statsbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Home: a page header and a KPI strip, not a poster. */
 .mlb-hero { background: var(--cr-bg); color: var(--cr-ink); border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); box-shadow: none; padding: 22px; gap: 12px; }
@@ -9119,6 +9107,28 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 /* The player: a thin progress bar, the question, plain options, one ink CHECK. */
 .mlb-play { gap: 16px; }
 .mlb-play .mlb-back { color: var(--cr-muted-2); font-weight: 500; text-decoration: none; }
+.mlb-playtop { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mlb-playtop .mlb-eyebrow { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mlb-playtop .mlb-back { flex: none; }
+.mlb-keyhint { display: none; margin: 0; }
+@media (hover: hover) and (pointer: fine) { .mlb-keyhint { display: block; } }
+/* Study tools titles its panel; the Lab's own tabs and headings say the same thing, so the panel's
+   heading stays for screen readers only — a phone saw two titles and four rows of tabs before any content. */
+.stt-panel:has(.mlb) > .stt-panel-h { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Stats stay one row at every width. */
+.mlb-hero-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@container (max-width: 520px) {
+  .mlb-stat { grid-template-columns: 1fr; padding: 10px 12px; }
+  .mlb-stat i { display: none; }
+  .mlb-stat b { font-size: 18px; }
+  .mlb-stat span { font-size: 12px; }
+  .mlb-statsbar { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .mlb-sb { padding: 10px 8px; font-size: 15px; gap: 5px; justify-content: center; }
+  .mlb-sb i { font-size: 16px; }
+  .mlb-sb.is-lvl b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mlb-hero { padding: 18px; }
+  .mlb-hero-h { font-size: 24px; }
+}
 .mlb-pips { gap: 3px; }
 .mlb-pips li { height: 4px; border-radius: 999px; background: var(--cr-s3); }
 .mlb-pips li.is-done { background: var(--cr-ink); } .mlb-pips li.is-on { background: var(--cr-gold); }
@@ -9142,6 +9152,16 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-fb b { font-size: 15px; font-weight: 600; }
 .mlb-fb.is-ok { background: var(--cr-ok-bg); color: var(--cr-ok-fg); border-color: #cfe9d8; }
 .mlb-fb.is-no { background: var(--cr-bad-bg); color: var(--cr-bad-fg); border-color: #f3cccc; }
+/* Result: the score once, as a ring, beside what it means. */
+.mlb-result { display: flex; flex-direction: column; gap: 16px; }
+.mlb-res-top { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.mlb-res-ring { flex: none; width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center;
+  background: radial-gradient(closest-side, var(--cr-bg) 78%, transparent 79%), conic-gradient(var(--cr-ink) var(--pct, 0%), var(--cr-s3) 0); }
+.mlb-result.is-win .mlb-res-ring { background: radial-gradient(closest-side, var(--cr-bg) 78%, transparent 79%), conic-gradient(var(--cr-ok-dot) var(--pct, 0%), var(--cr-s3) 0); }
+.mlb-res-ring b { font-size: 22px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.mlb-res-txt { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mlb-res-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 0; }
+.mlb-res-chips:empty { display: none; }
 @media print { .stt-app .stt-top, .stt-app .stt-tabs, .stt-app .stt-panel-h, .mlb .mlb-nav, .mlb .mlb-actions { display: none; } }
 /* ── /join/volunteer: NGG's volunteer registration (NggVolunteerPage) ─────────
    Classes only; every colour is a token. The error tone has its own pair of
