@@ -34247,10 +34247,17 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        and empty are the same to CACENTRE, and the roster is paged by bytes),
        but a field outside the agreed set may never appear. Pinning the exact
        list would fail for a reason that has nothing to do with privacy. */
-    $agreed = ['id', 'kind', 'name', 'email', 'printedId', 'homeSite', 'verdict', 'why', 'validUntil'];
+    $agreed = ['id', 'kind', 'name', 'email', 'printedId', 'homeSite', 'homeLocation', 'homeName', 'verdict', 'why', 'validUntil'];
     $keys = []; foreach ($all as $r) $keys += array_flip(array_keys($r));
     chk('wifi→cacentre · only the agreed fields travel: no phone, birthday, guardian or money'
         . (($x = array_diff(array_keys($keys), $agreed)) ? ' — ' . implode(', ', $x) : ''), !$x);
+    /* The place travels with the code: NGG's centre code is not CACENTRE's site
+       code, and the code alone left whole centres "with no site". */
+    $cpRow = $p('NGG-CP-ACT');
+    $cpCentre = db_row("SELECT cacLocationId FROM centres WHERE code = 'CP' OR LOWER(code) = 'cp' LIMIT 1");
+    chk('wifi→cacentre · each row names its place as well as its code (location id when linked, else the centre name)',
+        ($cpRow['homeSite'] ?? '') === 'cp' && ((string)($cpCentre['cacLocationId'] ?? '') !== '' ? ($cpRow['homeLocation'] ?? '') === (string)$cpCentre['cacLocationId'] : ($cpRow['homeName'] ?? '') !== ''));
+    chk('wifi→cacentre · staff carry no place', !isset($p('NGG-CP-MEN')['homeName']) && !isset($p('NGG-CP-MEN')['homeLocation']));
     chk('wifi→cacentre · and the three that decide anything are always there',
         !array_filter($all, fn($r) => !isset($r['id'], $r['kind'], $r['verdict'])));
 

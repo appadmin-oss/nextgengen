@@ -4453,9 +4453,12 @@ Data allowances are counted at CACENTRE now, not here.
 The Gateways page shows when the list was last sent, how many people were on
 it, and anything CACENTRE refused. A super admin can press **Send now**.
 
-- *"CACENTRE has no site for CP (12)"*: add a site at CACENTRE (Admin → Wi-Fi →
-  Sites & routers) whose code is the centre's card code, here `cp`. Until then
-  those 12 people can sign in only at the hubs.
+- *"CACENTRE could not place CP (12)"*: the centre is not one of CACENTRE's
+  locations. Add the location at CACENTRE (Attendance → Locations); the next
+  send makes its Wi-Fi site there by itself. Until then those 12 people can sign
+  in only at the hubs. (A centre that IS a CACENTRE location never shows this:
+  NGG names the place with each person, and CACENTRE makes the site the first
+  time.)
 - *"doesn't recognise NGG's key"*: the Wi-Fi uses the connection NGG already
   has with CACENTRE for the person directory, so the key is `DIR_PUSH_SECRET_NGG`.
   It must be the same value in NGG's `api/config.php` (`dir_push_secret`) and in
@@ -4465,11 +4468,11 @@ it, and anything CACENTRE refused. A super admin can press **Send now**.
 
 **Moving a centre's router to CACENTRE.** Once NGG is connected, routers are
 added at CACENTRE: *Add a router at CACENTRE* opens it, and a centre with no
-router says which site code to use there (the centre's card code, in small
-letters). An NGG router moves in three steps, listed on its card under
+router has its site made at CACENTRE from the location of the same name once
+NGG has sent its list — nothing to type. An NGG router moves in three steps, listed on its card under
 *Moving it to CACENTRE*:
 
-1. At CACENTRE, add the site and a router for it.
+1. At CACENTRE, add a router for the centre's site.
 2. Paste CACENTRE's one line on the router. This removes NGG's script.
 3. Press **It now runs from CACENTRE** here.
 
