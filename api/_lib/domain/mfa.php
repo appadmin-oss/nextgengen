@@ -745,20 +745,22 @@ function admin_mfa_act(array $p): array {
         switch ($action) {
             case 'bypass':
             case 'code':
-                // Only someone who HAS a second step can be let past it.
-                if (!$e) { $results[] = $res + ['ok' => false, 'error' => 'not_enrolled', 'detail' => 'They have no second step yet, so nothing stops them signing in.']; $refused[] = 'not_enrolled'; break; }
+                /* One let-in, two doors, both for ten minutes:
+                     · a step screen already open on their device opens by itself
+                       (the window; only for somebody who has a second step);
+                     · on the sign-in screen they type their ID and the CODE shown
+                       to staff, with no password and no second step — the code,
+                       made in person and spent once, is what proves it is them.
+                   A window with no code would admit anybody typing their ID. */
                 attempt_reset('mfa', $id);
-                if ($action === 'bypass') {
-                    mfa_put($id, 'mfa.bypass', ['until' => time() + $secs, 'at' => time(), 'by' => $me, 'used' => 0]);
-                    $told = mfa_tell_letin($pr, (string)($g['requester']['fullName'] ?? ''), false);
-                    $results[] = $res + ['ok' => true, 'until' => time() + $secs, 'told' => $told];
-                } else {
-                    $code = mfa_letin_code_new();
-                    mfa_put($id, 'mfa.code1', ['h' => password_hash(mfa_letin_norm($code), PASSWORD_DEFAULT), 'exp' => time() + $secs, 'at' => time(), 'by' => $me, 'used' => 0]);
-                    $told = mfa_tell_letin($pr, (string)($g['requester']['fullName'] ?? ''), true);
-                    // The code is in this response and nowhere else: shown once to the member of staff.
-                    $results[] = $res + ['ok' => true, 'code' => $code, 'expires' => time() + $secs, 'told' => $told];
-                }
+                if ($e) mfa_put($id, 'mfa.bypass', ['until' => time() + $secs, 'at' => time(), 'by' => $me, 'used' => 0]);
+                else mfa_del($id, 'mfa.bypass');
+                $code = mfa_letin_code_new();
+                mfa_put($id, 'mfa.code1', ['h' => password_hash(mfa_letin_norm($code), PASSWORD_DEFAULT), 'exp' => time() + $secs, 'at' => time(), 'by' => $me, 'used' => 0]);
+                $told = mfa_tell_letin($pr, (string)($g['requester']['fullName'] ?? ''), true);
+                // The code is in this response and nowhere else: shown once to the member of staff.
+                $results[] = $res + ['ok' => true, 'code' => $code, 'expires' => time() + $secs, 'until' => time() + $secs,
+                    'signInAs' => $pr['who'] === 'guardian' ? (string)$pr['email'] : mfa_signin_name($pr), 'told' => $told];
                 break;
             case 'reset':
                 if (!$e) { $results[] = $res + ['ok' => true, 'unchanged' => true]; break; }
@@ -792,6 +794,65 @@ function admin_mfa_act(array $p): array {
     return ['ok' => true, 'action' => $action, 'applied' => $done, 'results' => $results];
 }
 
+/** What the person types beside the code: the ID on their card, else their email. */
+function mfa_signin_name(array $pr): string {
+    if ($pr['who'] === 'member') {
+        $d = trim((string)(db_row('SELECT displayId FROM members WHERE memberId = ? LIMIT 1', [$pr['id']])['displayId'] ?? ''));
+        return $d !== '' ? $d : $pr['id'];
+    }
+    return $pr['id'];
+}
+
+/**
+ * auth.desk — sign in with the code staff made at the desk: the person's ID
+ * (member ID, printed ID, volunteer ID or email) and the code. No password, no
+ * emailed code and no second step: the code was made in person, for this one
+ * account, lives ten minutes and is spent by its first use. A wrong code counts
+ * against the account like a wrong second step. Unknown IDs and wrong codes get
+ * the same answer.
+ */
+function auth_desk(array $p): array {
+    $ip = (string)($p['ip'] ?? '');
+    $ident = trim((string)($p['identifier'] ?? ''));
+    $code = (string)($p['code'] ?? '');
+    if ($ident === '' || strlen(mfa_letin_norm($code)) !== 8) return ['ok' => false, 'error' => 'invalid'];
+    $who = ''; $id = '';
+    $mid = function_exists('auth_resolve_member_id') ? auth_resolve_member_id($ident) : '';
+    if ($mid === '') {
+        $byDisplay = db_row('SELECT memberId FROM members WHERE lower(displayId) = ? LIMIT 1', [strtolower($ident)]);
+        if ($byDisplay) $mid = (string)$byDisplay['memberId'];
+    }
+    if ($mid !== '' && db_row('SELECT 1 x FROM members WHERE memberId = ? LIMIT 1', [$mid])) { $who = 'member'; $id = $mid; }
+    else {
+        $v = function_exists('auth_find_volunteer') ? auth_find_volunteer($ident) : null;
+        if ($v && ($v['kind'] ?? '') === 'volunteer') { $who = 'volunteer'; $id = (string)$v['id']; }
+    }
+    if ($id === '') { audit('login.fail.desk', null, '', ['ip' => $ip], $ip); return ['ok' => false, 'error' => 'invalid']; }
+    if (attempt_locked('mfa', $id)) return ['ok' => false, 'error' => 'too_many_attempts'];
+    if (!mfa_letin_use($id, $code)) {
+        attempt_fail('mfa', $id, MFA_FAIL_MAX, MFA_FAIL_LOCK);
+        audit('login.fail.desk', $id, $id, ['ip' => $ip], $ip);
+        return ['ok' => false, 'error' => 'invalid'];
+    }
+    attempt_reset('mfa', $id);
+    // The window a waiting screen would have taken is spent too: one let-in, one way in.
+    $w = mfa_get($id, 'mfa.bypass');
+    if (is_array($w) && empty($w['used'])) mfa_del($id, 'mfa.bypass');
+    if ($who === 'volunteer') {
+        $vr = auth_staff_principal($id);
+        if (!$vr) return ['ok' => false, 'error' => 'invalid'];
+        audit('login.success', $id, $id, ['kind' => 'volunteer', 'via' => 'desk_code'], $ip);
+        return ['ok' => true, 'volunteer' => $vr, 'replaceUntil' => mfa_bypass_until($id)];
+    }
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    if (!$m || in_array((string)$m['status'], ['deleted', 'suspended'], true)) return ['ok' => false, 'error' => 'invalid'];
+    // Staff answer the console's own authenticator; a desk code is never theirs.
+    if (function_exists('auth_password_only') && auth_password_only($m)) return ['ok' => false, 'error' => 'invalid'];
+    auth_fail_reset($m);
+    audit('login.success', $id, $id, ['via' => 'desk_code'], $ip);
+    return ['ok' => true, 'member' => public_member($m), 'replaceUntil' => mfa_bypass_until($id)];
+}
+
 /** Tell the owner a desk code was issued, as Google alerts on new backup codes. Returns the channels that went. */
 function mfa_tell_letin(array $pr, string $byName, bool $isCode = false): array {
     $sent = [];
@@ -802,7 +863,7 @@ function mfa_tell_letin(array $pr, string $byName, bool $isCode = false): array 
             'eyebrow' => 'Account security',
             'title'   => $isCode ? 'A one-time sign-in code was made for your account' : 'You can sign in without your second step for 10 minutes',
             'intro'   => 'Hi ' . ($first ?: 'there') . ', ' . ($by !== '' ? $by . ' at NGG' : 'NGG staff') . ($isCode
-                ? ' just made a one-time code that lets you past your second sign-in step, good for 10 minutes.'
+                ? ' just made a one-time code that signs you in once, with your ID and no password, for the next 10 minutes.'
                 : ' just let your account sign in once without its second step, for the next 10 minutes.')
                 . ' This is what happens when you ask at the desk because you forgot your answer or changed phones.',
             'bodyHtml'=> '<p>If that was not you, tell your coordinator today. ' . ($isCode ? 'The code works once.' : 'Only one sign-in is let through.') . ' After it, set up a new second step: you will not be asked for the old one.</p>',

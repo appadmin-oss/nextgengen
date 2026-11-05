@@ -850,6 +850,8 @@
       resetConfirm: (creds) => request('/auth/reset-confirm.php', { body: creds }),
       setPassword: (password, current) => request('/auth/set-password.php', { body: { password, current: current || '' } }),
       verify:  (creds) => request('/auth/verify.php', { body: creds }).then(r => withPick(r, creds && creds.remember)),
+      // A code staff made at the desk: the ID and the code, no password (domain/mfa.php auth_desk).
+      desk:    (identifier, code) => request('/auth/desk.php', { body: { identifier, code } }),
       studentLogin: (creds) => request('/auth/student-login.php', { body: creds }),
       me:      () => request('/auth/me.php'),
       /* Two-step sign-in, for whoever is signed in; family: true for a guardian. */

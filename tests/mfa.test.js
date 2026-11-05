@@ -209,6 +209,30 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     chk('…typed on the step screen it passes once', r.ok() && (await r.json()).letIn === true);
     await k2.close(); await kx.close();
 
+    // ── 4b. Let in at the desk with NO password: the ID and the code on the sign-in screen ──
+    r = await post(desk, '/admin/mfa.php', { action: 'bypass', people: [{ id: 'NGG-MF-K2', who: 'member' }] });
+    const lr = r.ok() ? (((await r.json()).results || [])[0] || {}) : {};
+    chk('the desk is shown a code and the ID to sign in with', /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(lr.code || '') && !!lr.signInAs);
+    const kd = await fresh();
+    await kd.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(kd);
+    await kd.waitForSelector('#signin-idp', { timeout: 60000 });
+    await kd.click('button:has-text("I have a code from staff")');
+    await kd.fill('#signin-desk-id', lr.signInAs);
+    await kd.fill('#signin-desk-code', 'WXYZ-2345');
+    await kd.click('.signin-card button[type="submit"]');
+    chk('a wrong code is refused in words', await kd.waitForFunction(() => /don’t match, or the code has expired/.test((document.querySelector('.signin-ferr') || {}).innerText || ''), null, { timeout: 15000 }).then(() => true, () => false));
+    await kd.fill('#signin-desk-code', lr.code.toLowerCase());
+    await kd.click('.signin-card button[type="submit"]');
+    await kd.waitForSelector('#signin-desk-code', { state: 'detached', timeout: 20000 });
+    r = await kd.request.get(BASE + '/api/member/today.php');
+    chk('the ID and the code sign them in: no password, no second step', r.status() === 200);
+    await kd.waitForSelector('.mfa-opt', { timeout: 20000 });
+    chk('…and they are taken to set a new step, without the old one', !(await kd.$('#mfa-cur')) && /Staff let you in until/.test(await kd.innerText('#mfa-sub').catch(() => '')));
+    chk('no page errors (desk sign-in)', kd.errs.length === 0);
+    if (kd.errs.length) console.error(kd.errs.join('\n'));
+    await kd.close();
+
     // ── 5. Policy: the team must have it; the instructor sets up an app at sign-in ──
     r = await post(desk, '/admin/mfa.php', { action: 'policy', policy: { team: 'required' } });
     chk('a super admin requires a second step of the team', r.ok() && (await r.json()).policy.team === 'required');
@@ -283,21 +307,40 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     // ── 7. The Control Room desk ──
     await desk.goto(BASE + '/control/members/security', { waitUntil: 'domcontentloaded' });
     await waitForBoot(desk);
-    await desk.waitForSelector('.mfa-desk table', { timeout: 60000 });
-    const body = await desk.innerText('.mfa-desk');
+    // The current Control Room design: blocks, a server table, drawers (CONTRACT.md), no old panel.
+    await desk.waitForSelector('.cr-tbl tbody tr', { timeout: 60000 });
+    chk('the desk is drawn in the Control Room design (figures, table, policy form), not the old panel',
+      !(await desk.$('.mfa-desk')) && !!(await desk.$('.cr-kpis, .cr-kpi')) && !!(await desk.$('.cr-fgroup')));
+    const body = await desk.innerText('.cr-tbl');
     chk('the desk lists members and the second step each has', /Kemi Okoro/.test(body) && /Private question/.test(body) && !/Ada Admin/.test(body));
-    await desk.click('.mfa-desk-kind:has-text("Instructors")');
-    await desk.waitForFunction(() => /Tunde Instructor/.test(document.querySelector('.mfa-desk').innerText), null, { timeout: 15000 });
-    chk('and the team, with the app', /Authenticator app/.test(await desk.innerText('.mfa-desk table')));
-    await desk.click('.mfa-desk-kind:has-text("Members")');
-    await desk.selectOption('.mfa-desk-filters select', 'none');
-    await desk.waitForFunction(() => document.querySelectorAll('.mfa-desk tbody tr').length === 0 || !/Kemi Okoro/.test(document.querySelector('.mfa-desk').innerText), null, { timeout: 15000 });
-    chk('filtering to “no second step yet” leaves out those who have one', !/Kemi Okoro/.test(await desk.innerText('.mfa-desk')));
-    await desk.click('.mfa-desk-policy summary');
-    const memKind = desk.locator('.mfa-desk-policy-kind').filter({ hasText: 'Members' });
-    await memKind.locator('.mfa-desk-method:has-text("Emailed code") input').uncheck();
-    await desk.click('button:has-text("Save the policy")');
-    await desk.waitForFunction(() => /applies from each person/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    await desk.click('.cr-fchip:has-text("Who")');
+    await desk.locator('.cr-fopts button', { hasText: /^Instructors/ }).click();
+    await desk.waitForFunction(() => /Tunde Instructor/.test(document.querySelector('.cr-tbl').innerText), null, { timeout: 15000 });
+    chk('and the team, with the app', /Authenticator app/.test(await desk.innerText('.cr-tbl')));
+    await desk.click('.cr-fchip:has-text("Who")');
+    await desk.locator('.cr-fopts button', { hasText: /^Members/ }).click();
+    await desk.click('.cr-fchip:has-text("Second step")');
+    await desk.locator('.cr-fopts button', { hasText: 'No second step yet' }).click();
+    await desk.waitForFunction(() => !/Kemi Okoro/.test((document.querySelector('.cr-tbl') || document.body).innerText), null, { timeout: 15000 }).catch(() => {});
+    chk('filtering to “no second step yet” leaves out those who have one', !/Kemi Okoro/.test(await desk.innerText('.cr-main, main')));
+    await desk.click('.cr-clear:has-text("Clear all")').catch(() => {});
+    await desk.waitForFunction(() => /Kemi Okoro/.test((document.querySelector('.cr-tbl') || document.body).innerText), null, { timeout: 15000 });
+    await desk.locator('.cr-tbl tbody tr', { hasText: 'Kemi Okoro' }).click();
+    await desk.waitForSelector('.cr-drawer, [role=dialog]', { timeout: 10000 });
+    chk('a row opens the person, with the desk’s levers', /Let in for 10 minutes/.test(await desk.innerText('.cr-drawer, [role=dialog]')));
+    await desk.click('button:has-text("Let in for 10 minutes")');
+    await desk.click('button:has-text("Let them in")');
+    await desk.waitForFunction(() => /Code for Kemi Okoro/.test(document.body.innerText), null, { timeout: 15000 });
+    const codeTxt = await desk.innerText('body');
+    const shown = (codeTxt.match(/[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}/) || [])[0] || '';
+    chk('letting in from the drawer shows the code and the ID to read out, once', !!shown && /I have a code from staff/.test(codeTxt));
+    r = await post(await fresh(), '/auth/desk.php', { identifier: 'kemi.okoro@mfa.example', code: shown });
+    chk('…and that code signs Kemi in with no password', r.ok());
+    await desk.click('button:has-text("Done")');
+    const memGroup = desk.locator('.cr-fgroup').filter({ hasText: 'Members' }).first();
+    await memGroup.locator('.cr-chip:has-text("Emailed code")').click();
+    await desk.click('.cr-unsaved-save');
+    await desk.waitForFunction(() => /change.? saved/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
     chk('the desk chooses which ways each kind may use', JSON.stringify(q(`mfa_methods_for('member')`)) === JSON.stringify(['question', 'pin', 'app']));
     await shot(desk, 'mfa-desk');
     chk('no page errors (desk)', desk.errs.length === 0);

@@ -6352,3 +6352,55 @@ failures; the old window checks were rewritten to the one-sign-in rule.
 open by itself, checks the new-step dialog asks for nothing old, and checks
 a second sign-in still owes the step and the desk code passes once. Result:
 42 passed, 0 failed.
+
+## 5 Nov 2026 — The let-in needs no password; Sign-in security rebuilt in the Control Room design
+
+Owner: "They do not have to first enter a password", and "fix the UI of the
+security tab. It is not in the updated control room design".
+
+**No password.** The desk's *Let in for 10 minutes* now hands the member of
+staff a one-time code and the ID to sign in with (`signInAs`: the printed ID
+for a member, else the record id). On the sign-in screen, *I have a code from
+staff* takes the ID and the code (`api/auth/desk.php` → `auth.desk` →
+`auth_desk()` in domain/mfa.php) and signs them in with no password and
+nothing owed.
+- The code is the proof. A window with no code would let in anybody who
+  typed their ID in those minutes.
+- The code is made in person, for one account, lives 10 minutes, is stored
+  hashed and is spent once (`mfa_grant_claim`, one guarded write).
+- A wrong code counts against the account like a wrong second step (five,
+  then 15 minutes), and an unknown ID gets the same answer as a wrong code.
+- Staff accounts are refused: theirs is the console's authenticator.
+- Using the code also spends the waiting-screen window: one let-in, one way
+  in. It opens the replace window, so the next screen asks for a new second
+  step without the old one.
+- The let-in is offered to people with no second step too, since it is now a
+  way in rather than a way past a step.
+- The separate *Give a one-time code* action from earlier today is folded
+  into this one. `action: code` still works on the server and does the same.
+
+**The tab.** `cr-tab-security.jsx` was a v1 panel mounted with `crPanel`. It
+is now Control Room v2 data (CONTRACT.md):
+- KPIs per kind of person, and a note on the let-in;
+- one server-paged table, with *Who* and *Second step* as facets and the
+  search on the server;
+- a drawer per person: *Let in for 10 minutes* (primary), *Reset*, *Require
+  it* / *Back to the policy*, *Email a reminder*;
+- the code shown once in its own drawer, with what to tell them;
+- the bulk bar (reset, require, back to the policy, remind; capped at 200,
+  per-row verdicts in the toast);
+- the policy as a form block: per kind, the step and the ways they may
+  choose as chips, held until *Save changes*.
+
+The old `.mfa-desk*` rules are deleted. The row actions read the live ctx
+through `crSecCtx`, as the members tab does: the table's rows are built in
+`load`, whose ctx has no `setData`. That was a real fault, caught by the
+browser test.
+
+Tests: `run.php` 6873 passed, 0 failed (desk sign-in: wrong code, unknown ID,
+right code, single use, window spent). `tests/mfa.test.js` 51 passed, 0
+failed, covering:
+- signing in through the real sign-in screen with an ID and code (a wrong one
+  refused in words), then the new-step dialog;
+- the desk drawn in v2 classes, with facets, drawer and policy save;
+- the code shown from the drawer, then used to sign in.

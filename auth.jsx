@@ -463,6 +463,25 @@ function SignInModal({ seed, onClose, onVerified }) {
     finally { setBusy(false); }
   };
 
+  /* Signed in at the desk: the ID and the code staff were shown, nothing else.
+     The second step is set again next, without the old one (mfa.jsx). */
+  const [deskCode, setDeskCode] = React.useState("");
+  const signInDesk = async (e) => {
+    if (e) e.preventDefault();
+    if (busy) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await NGGApi.auth.desk(authTidyId(identifier), deskCode.trim());
+      try { if (r.replaceUntil) sessionStorage.setItem("ngg.mfa.replace", "1"); } catch (_) {}
+      onVerified(r.member, "");
+    } catch (x) {
+      const c = x.code || x.message;
+      setErr(c === "too_many_attempts" ? "Too many wrong tries. Ask staff for a new code in 15 minutes."
+        : c === "rate_limited" ? humanizeAuthError(c)
+        : "That ID and code don’t match, or the code has expired (it lasts 10 minutes and works once). Ask staff for a new one.");
+    } finally { setBusy(false); }
+  };
+
   // `code` is passed when the sixth digit arrives, before the state has caught up.
   const verifyOtp = async (e, code) => {
     if (e) e.preventDefault();
@@ -531,10 +550,11 @@ function SignInModal({ seed, onClose, onVerified }) {
     </p>
   );
 
-  const title = stage === "enter-otp" ? "Check your email"
+  const title = stage === "desk" ? "Code from staff" : stage === "enter-otp" ? "Check your email"
     : stage === "password" ? "Welcome back"
     : (stage === "reset-request" || stage === "reset-new") ? "Set a new password" : "Sign in";
-  const sub = stage === "id" ? "Use your email, Member ID or the ID on your card."
+  const sub = stage === "desk" ? "Staff at your centre gave you a one-time code. Type your ID and the code. No password needed."
+    : stage === "id" ? "Use your email, Member ID or the ID on your card."
     : stage === "password" ? null
     : stage === "reset-request" ? "We’ll email you a code to set a new password."
     : stage === "reset-new" ? (resetToken ? "Choose a password. You’ll be signed in straight after." : sent ? <>{ifAccount} Enter it, then choose a password.</> : "Enter the code from your email, then choose a password.")
@@ -569,6 +589,23 @@ function SignInModal({ seed, onClose, onVerified }) {
             {submit("Continue", identifier.trim().length < 3)}
             <div className="signin-alts">
               <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-otp"); }}>I have a code</button>
+              <button type="button" className="signin-link" onClick={() => { setErr(""); setDeskCode(""); setStage("desk"); }}>I have a code from staff</button>
+            </div>
+          </form>
+        )}
+
+        {stage === "desk" && (
+          <form onSubmit={signInDesk} className="signin-form" noValidate>
+            <label className="signin-label" htmlFor="signin-desk-id">Email, Member ID or card ID</label>
+            <input id="signin-desk-id" ref={inputRef} className="signin-input" type="text" autoComplete="username" spellCheck="false" autoCapitalize="none"
+              placeholder="026-014" value={identifier} onChange={(e) => { setErr(""); setIdentifier(e.target.value); }}/>
+            <label className="signin-label" htmlFor="signin-desk-code">Code from staff</label>
+            <input id="signin-desk-code" className={"signin-input signin-otp mono" + (err ? " is-bad" : "")} type="text" autoComplete="one-time-code" spellCheck="false" autoCapitalize="characters"
+              placeholder="XXXX-XXXX" maxLength={9} value={deskCode} onChange={(e) => { setErr(""); setDeskCode(e.target.value.toUpperCase()); }} aria-invalid={!!err || undefined}/>
+            {fieldErr}
+            {submit("Sign in", identifier.trim().length < 3 || deskCode.replace(/[^A-Za-z0-9]/g, "").length !== 8)}
+            <div className="signin-alts">
+              <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("id"); }}>Back to sign in</button>
             </div>
           </form>
         )}

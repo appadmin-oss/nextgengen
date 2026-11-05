@@ -3971,24 +3971,21 @@ current answer or code first. Where it is required, it cannot be turned off.
   - **Optional:** people are shown the alert.
   - **Required:** anyone without one sets it up before their portal opens.
 - **Actions** on a row, or on a selection:
-  - **Turn off their second step for 10 minutes** (*Let in for 10 minutes*),
-    as Google Workspace admins do. For somebody at the desk who has forgotten
-    their answer or changed phones. Do it only with the person in front of
-    you.
-    - Their **next sign-in** in those 10 minutes skips the step, **once**. A
-      second sign-in in the same minutes still asks for it.
-    - If their step screen is already open, it **opens by itself** within a
-      few seconds. Nothing to press.
-    - They are then taken to **set a new step**, and are not asked for the old
-      one. Setting it closes the window.
-    - They are emailed (and sent a notification) that it was done.
-  - **Give a one-time code.** For somebody who is not at the desk. The code is
-    shown to you once: read it to them and they type it on their step screen
-    (*Use a backup code or a staff code*). It works once, for 10 minutes.
-    They are emailed that a code was made, and they then set a new step the
-    same way.
-  - Both are one person at a time, never a bulk action, and only for somebody
-    who has a second step. Every use is in the audit log.
+  - **Let in for 10 minutes**, as Google Workspace admins do. For somebody
+    who has lost their second step (a forgotten answer, a new phone) or cannot
+    sign in at all. Open their row, press *Let in for 10 minutes*.
+    - You are shown a **one-time code** and the **ID they sign in with**, once.
+      Read both to them.
+    - On the sign-in screen they choose **I have a code from staff**, type
+      their ID and the code, and they are in: **no password, no second step**.
+    - If their second-step screen is already open, it **opens by itself**
+      instead. Nothing to type.
+    - It works **once**, for 10 minutes. A second sign-in is not let through.
+    - They are then taken to **set a new second step**, without the old one.
+    - They are emailed (and sent a notification) that it was done. It is in
+      the audit log.
+    - One person at a time, never a bulk action. Do it only with the person in
+      front of you, or on the phone with them.
   - **Reset.** Clears what they set, so they choose a new one.
   - **Require it** of one person, whatever the policy. **Back to the policy**
     undoes that.

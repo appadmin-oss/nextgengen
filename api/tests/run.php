@@ -30707,7 +30707,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $b = admin_mfa_act($adm + ['action' => 'bypass', 'people' => $one]);
     $alert = array_slice($GLOBALS['__mail_sink'] ?? [], $sinkBefore);
     chk('mfa · an admin lets a member in without their step for ten minutes', !empty($b['ok']) && $b['applied'] === 1 && abs(mfa_window_open('NGG-2026-0901') - (time() + 600)) < 5);
-    chk('mfa · …the owner is told, as Google alerts', count(array_filter($alert, fn($m) => str_contains($m['subject'], '10 minutes'))) === 1);
+    chk('mfa · …the owner is told, as Google alerts', count(array_filter($alert, fn($m) => str_contains($m['subject'], 'one-time sign-in code'))) === 1);
+    chk('mfa · …and the desk is handed a code and the ID to sign in with', preg_match('/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/', (string)($b['results'][0]['code'] ?? '')) && ($b['results'][0]['signInAs'] ?? '') !== '');
     chk('mfa · …the pause is lifted, and it is audited', !attempt_locked('mfa', 'NGG-2026-0901') && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'admin.mfa.bypass' AND subject = 'NGG-2026-0901'"));
     chk('mfa · the next sign-in owes nothing', mfa_need('NGG-2026-0901', 'member', []) === '');
     chk('mfa · …but only ONE sign-in is let through: the one after it owes the step again', mfa_need('NGG-2026-0901', 'member', []) === 'question');
@@ -30728,9 +30729,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     // The one-time code, for somebody not at the desk.
     $bc = admin_mfa_act($adm + ['action' => 'code', 'people' => $one]);
     $code = (string)($bc['results'][0]['code'] ?? '');
-    chk('mfa · the desk can instead make a one-time code, shown once', !empty($bc['ok']) && preg_match('/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/', $code)
+    chk('mfa · the let-in makes a one-time code, shown once and stored as a hash', !empty($bc['ok']) && preg_match('/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/', $code)
         && !str_contains((string)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-2026-0901' AND stateKey = 'mfa.code1'")['stateValue'], str_replace('-', '', $code)));
-    chk('mfa · …a code is not a window: sign-in still owes the step', mfa_need('NGG-2026-0901', 'member', []) === 'question');
+    chk('mfa · …and the same let-in also opens the window for a step screen already waiting', mfa_window_open('NGG-2026-0901') > time());
     $lv = mfa_verify($kid + ['answer' => strtolower($code)]);
     chk('mfa · …typed on the step screen, in any case, it passes once', !empty($lv['ok']) && !empty($lv['letIn']) && (mfa_verify($kid + ['answer' => $code])['error'] ?? '') === 'wrong_answer');
     attempt_reset('mfa', 'NGG-2026-0901');
@@ -30738,6 +30739,20 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $c2 = (string)(admin_mfa_act($adm + ['action' => 'code', 'people' => $one])['results'][0]['code'] ?? '');
     db_exec("UPDATE member_state SET stateValue = ? WHERE memberId = 'NGG-2026-0901' AND stateKey = 'mfa.code1'", [json_encode(array_merge(mfa_get('NGG-2026-0901', 'mfa.code1'), ['exp' => time() - 1]), JSON_UNESCAPED_SLASHES)]);
     chk('mfa · a code not used inside its ten minutes is dead', (mfa_verify($kid + ['answer' => $c2])['error'] ?? '') === 'wrong_answer');
+    attempt_reset('mfa', 'NGG-2026-0901');
+    mfa_grants_close('NGG-2026-0901');
+    // Signing in with the desk code: the ID and the code, no password, no second step.
+    $dk = (string)(admin_mfa_act($adm + ['action' => 'bypass', 'people' => $one])['results'][0]['code'] ?? '');
+    chk('mfa · desk sign-in: a wrong code is refused, and an unknown ID gets the same answer',
+        (auth_desk(['identifier' => 'NGG-2026-0901', 'code' => 'ABCD-EFGH'])['error'] ?? '') === 'invalid'
+        && (auth_desk(['identifier' => 'NGG-NOBODY-1', 'code' => $dk])['error'] ?? '') === 'invalid');
+    attempt_reset('mfa', 'NGG-2026-0901');
+    $ds = auth_desk(['identifier' => 'NGG-2026-0901', 'code' => strtolower($dk)]);
+    chk('mfa · desk sign-in: the ID and the code sign them in, with no password and nothing owed', !empty($ds['ok']) && ($ds['member']['memberId'] ?? '') === 'NGG-2026-0901' && empty($ds['mfa'])
+        && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'login.success' AND subject = 'NGG-2026-0901' AND meta LIKE '%desk_code%'"));
+    chk('mfa · desk sign-in: …it opens the replace window, and the same code does not work twice', mfa_bypass_until('NGG-2026-0901') > time()
+        && (auth_desk(['identifier' => 'NGG-2026-0901', 'code' => $dk])['error'] ?? '') === 'invalid');
+    chk('mfa · desk sign-in: …and the window for a waiting screen is spent with it (one let-in, one way in)', mfa_window_open('NGG-2026-0901') === 0);
     attempt_reset('mfa', 'NGG-2026-0901');
     mfa_grants_close('NGG-2026-0901');
     $own = admin_mfa_act($adm + ['action' => 'reset', 'people' => [['id' => 'NGG-2025-0099', 'who' => 'member']]]);
