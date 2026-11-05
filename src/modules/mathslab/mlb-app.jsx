@@ -981,10 +981,70 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
   );
 }
 
+/* ── A stage is complete: the celebration, Duolingo's way ──
+   The session that completes a stage (all ten topics known and its boss
+   beaten — the moment its certificate is issued) takes the whole screen: a
+   medal, the stage by name, what was done to earn it, the certificate, and
+   ONE big button onward to the next stage. Then a course, the same way. It
+   is earned, so it is rare, so it is loud. A dialog: Escape closes it, focus
+   is held inside and given back. Confetti only when motion is welcome. */
+function MlbStageWin({ certs, xp, onClose, go }) {
+  const [k, setK] = React.useState(0);
+  const ref = React.useRef(null);
+  const c = certs[k];
+  React.useEffect(() => {
+    const prev = document.activeElement;
+    const t = setTimeout(() => { const b = ref.current && ref.current.querySelector(".mlb-win-go"); b && b.focus(); }, 60);
+    const onKey = e => {
+      if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+      if (e.key === "Tab" && ref.current) {
+        const f = ref.current.querySelectorAll("a[href],button:not([disabled])");
+        if (!f.length) return;
+        if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { clearTimeout(t); document.removeEventListener("keydown", onKey); if (prev && prev.focus) try { prev.focus(); } catch (_) {} };
+  }, []);
+  if (!c) return null;
+  const course = c.scope === "course", more = k < certs.length - 1;
+  const next = () => more ? setK(k + 1) : null;
+  return (
+    <div className="mlb-win-wrap" role="dialog" aria-modal="true" aria-labelledby="mlb-win-h" aria-describedby="mlb-win-p">
+      <div ref={ref} className={"mlb-win" + (course ? " is-course" : "")} key={k}>
+        <div className="mlb-confetti is-big" aria-hidden="true">{Array.from({ length: 28 }, (_, i) => <i key={i} style={{ "--k": i }}/>)}</div>
+        <div className="mlb-win-medal" aria-hidden="true"><span className="mlb-win-rays"/><i className={"ph-fill " + (course ? "ph-trophy" : "ph-medal")}/></div>
+        <p className="mlb-win-eyebrow">{course ? "Course complete" : "Stage " + c.stage + " complete"}</p>
+        <h2 id="mlb-win-h" className="mlb-win-h">{course ? "You finished " + c.course + "!" : "You conquered " + (c.stageTitle || c.title) + "!"}</h2>
+        <p id="mlb-win-p" className="mlb-win-p">{course
+          ? "Every stage of the course, every boss beaten. That is months of steady work, and it shows."
+          : "All " + (c.topics || 10) + " topics known and the boss beaten. You kept going when it was hard, and it paid off."}</p>
+        <ul className="mlb-tiles mlb-win-tiles" aria-label="What you did">
+          {course ? <li className="is-acc"><span>Course</span><b><i className="ph-fill ph-check-circle" aria-hidden="true"/>Complete</b></li>
+            : <li className="is-acc"><span>Topics known</span><b><i className="ph-fill ph-check-circle" aria-hidden="true"/>{c.topics || 10} / {c.topics || 10}</b></li>}
+          {!course ? <li className="is-run"><span>Stage boss</span><b><i className="ph-fill ph-sword" aria-hidden="true"/>Beaten</b></li> : null}
+          {xp ? <li className="is-xp"><span>This session</span><b><i className="ph-fill ph-lightning" aria-hidden="true"/>+{xp} XP</b></li> : null}
+        </ul>
+        <a className="mlb-win-cert" href={c.url} target="_blank" rel="noopener"><i className="ph-fill ph-certificate" aria-hidden="true"/><span><b>Certificate earned</b><em>{c.no} · open it, print it, show your family</em></span><i className="ph ph-arrow-square-out" aria-hidden="true"/></a>
+        <div className="mlb-win-acts">
+          {more ? <button type="button" className="mlb-go mlb-win-go" onClick={next}>Next <i className="ph ph-arrow-right" aria-hidden="true"/></button>
+            : !course && c.next ? <button type="button" className="mlb-go mlb-win-go" onClick={() => { onClose(); go({ v: "map" }); }}>On to Stage {c.next.stage}: {c.next.title} <i className="ph ph-arrow-right" aria-hidden="true"/></button>
+            : <button type="button" className="mlb-go mlb-win-go" onClick={() => { onClose(); go({ v: "map" }); }}>See my map <i className="ph ph-arrow-right" aria-hidden="true"/></button>}
+          <button type="button" className="stt-btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* The result: the score once, what it means, and the mistakes FIRST with their worked solutions
    open — the useful part of a session is the questions you got wrong. */
 function MlbResult({ res, onDone, go, onAgain }) {
   const [all, setAll] = React.useState(false);
+  // A stage or a course completed in this session: celebrate it first, over everything.
+  const wins = (res.certificates || []).filter(c => c.scope === "stage").concat((res.certificates || []).filter(c => c.scope === "course"));
+  const [winOpen, setWinOpen] = React.useState(wins.length > 0);
   const lit = res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length;
   const wrong = res.review.filter(q => !q.correct), shown = all ? res.review : wrong;
   const kind = res.mode === "climb" ? "Placement gate" : res.mode === "check" ? "Mastery check" : res.mode === "boss" ? "Stage boss" : res.mode === "review" ? "Review" : "Practice";
@@ -1000,6 +1060,7 @@ function MlbResult({ res, onDone, go, onAgain }) {
   const mins = res.secs ? Math.max(1, Math.round(res.secs / 60)) : 0;
   return (
     <div className="mlb-stack">
+      {winOpen ? <MlbStageWin certs={wins} xp={res.xp} go={go} onClose={() => setWinOpen(false)}/> : null}
       <section className={"mlb-card mlb-result" + (win ? " is-win" : "")} aria-labelledby="mlb-res-h">
         {win ? <div className="mlb-confetti" aria-hidden="true">{Array.from({ length: 18 }, (_, k) => <i key={k} style={{ "--k": k }}/>)}</div> : null}
         <div className="mlb-res-top">

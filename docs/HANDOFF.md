@@ -6522,3 +6522,29 @@ no session, in `test:all` and `npm run test:desk`. 19 passed, 0 failed:
 - a guardian with the code, and a guardian's email alone.
 
 PHP suite 6887 passed, 0 failed. `mfa.test.js` 51 passed, 0 failed.
+
+## 5 Nov 2026 — A stage complete is celebrated, Duolingo style
+
+Owner: "We need a celebration when each stage is complete. Duolingo style!"
+
+A stage is complete when its certificate is issued: all ten topics known and
+the boss beaten. The session that does it (`mlb_issue_certificates` returns
+the new certificate in `finish`) now opens `MlbStageWin` over the result. It
+shows:
+- a medal with turning rays and confetti;
+- "Stage N complete" and "You conquered <stage>!";
+- a line that praises the persistence, not the person;
+- tiles for topics known, boss beaten and the session's XP;
+- the certificate card;
+- one big button onward to the next stage, named (`next`, added to the stage
+  certificate in `mlb_issue_certificates`).
+
+A course completed in the same session follows with a trophy. It is a real
+dialog (`aria-modal`, focus held and returned, Escape closes), in the
+Control Room tokens, with motion only when the reader has not asked for less.
+
+`mathlab-shot.js` renders it at desktop and phone width and checks the
+dialog, the stage name, the certificate, the onward button, the focus, and
+that Escape closes it onto the result: 18 screens clean. Maths Lab e2e 36
+passed, 0 failed. PHP suite 6887 passed, 0 failed. Contrast 21 passed, 0
+failed.

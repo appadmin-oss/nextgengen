@@ -4828,6 +4828,15 @@ off as "bad at maths" when a foundation was simply never taught.
   there*, *Building up*), and the best run (or the time on task). A good
   session gets a short confetti burst, skipped when the device asks for
   reduced motion.
+- **Completing a stage** (all ten topics known and its boss beaten) takes
+  over the whole screen, Duolingo style:
+  - a medal with rays and confetti, and *Stage N complete* with the stage's
+    name;
+  - tiles for topics known, the boss beaten, and the session's XP;
+  - the certificate just earned, with its number and a link to open it;
+  - one big button: *On to Stage N+1* and its name.
+  Completing a course does the same with a trophy. Escape or *Close* returns
+  to the result underneath.
 - **Opening another stage on the map** shows it with *Back to my stage*.
   Closing it returns to the member's own stage.
 - **A topic is a lesson in steps**, one screen at a time: *Explore* (the

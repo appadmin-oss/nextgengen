@@ -97,8 +97,11 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
      daily:'maths',dailyDone:false,streak:6,stars:9,programme:'ngg',totalPlays:14});},
    board:function(){return Promise.resolve({scope:'week',game:'maths',programme:'ngg',board:[],me:null});},
    start:function(){return Promise.resolve({});}, submit:function(){return Promise.resolve({});} };
+ var WINRES={ok:true,mode:'boss',right:8,total:8,pct:100,xp:40,message:'The stage is yours.',changes:[],review:[],bestRun:8,
+   certificates:[{scope:'stage',stage:1,title:'Stage 1: '+MAP.stages[0].title,stageTitle:MAP.stages[0].title,topics:10,next:{stage:2,title:MAP.stages[1].title},no:'NGG-MLS-2026-00012',url:'#'}]};
  var view=Q.get('view')||'home';
- var C = view==='play' ? React.createElement('div',{className:'mlb'},React.createElement(MlbPlayer,{start:{mode:'practice',comp:'MC-074'},onDone:function(){},go:function(){}}))
+ var C = view==='win' ? React.createElement('div',{className:'mlb'},React.createElement(MlbResult,{res:WINRES,onDone:function(){},go:function(){},onAgain:null}))
+       : view==='play' ? React.createElement('div',{className:'mlb'},React.createElement(MlbPlayer,{start:{mode:'practice',comp:'MC-074'},onDone:function(){},go:function(){}}))
        : view==='learn' ? React.createElement('div',{className:'mlb'},React.createElement(MlbLearn,{comp:Q.get('comp'),go:function(){},startPlay:function(){},lite:Q.get('lite')==='1'}))
        : view==='arcade' ? React.createElement(CmArcade,{auth:{member:{fullName:'Temiloluwa Adeyemi',centre:'Egbeda'}}})
        :                   React.createElement(MathsLab,{me:{phase:'ok',member:{fullName:'Temiloluwa Adeyemi'}}});
@@ -135,6 +138,17 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
     await shoot('learn-quadratic-phone','view=learn&comp=MC-103',{width:390,height:844},'.mlb-explore',null);
     await shoot('learn-unit-circle','view=learn&comp=MC-145',{width:1080,height:1000},'.mlb-explore',null);
     await shoot('learn-derivative','view=learn&comp=MC-152',{width:1080,height:1000},'.mlb-explore',null);
+    await shoot('stage-win','view=win',{width:1080,height:900},'.mlb-win',null);
+    await shoot('stage-win-phone','view=win',{width:390,height:844},'.mlb-win',null);
+    /* A completed stage is celebrated over everything, as a dialog: the stage by name, the certificate, one way onward. */
+    { const page=await browser.newPage({viewport:{width:1080,height:900}}); await page.goto(BASE+'/tests/_ml_fixture.html?view=win',{waitUntil:'networkidle'});
+      const w=await page.waitForSelector('.mlb-win',{timeout:8000}).then(()=>page.evaluate(()=>({dlg:!!document.querySelector('.mlb-win-wrap[role=dialog][aria-modal=true]'),
+        t:(document.querySelector('.mlb-win')||{}).innerText||'', focus:document.activeElement&&document.activeElement.className})),()=>null);
+      if(!w||!w.dlg||!/Stage 1 complete/.test(w.t)||!/Certificate earned/.test(w.t)||!/On to Stage 2/.test(w.t)||!/mlb-win-go/.test(w.focus||'')) problems.push('stage win: '+JSON.stringify(w));
+      await page.keyboard.press('Escape');
+      if(await page.locator('.mlb-win').count()) problems.push('stage win: Escape did not close it');
+      if(!(await page.locator('.mlb-result').count())) problems.push('stage win: the result was not underneath');
+      await page.close(); console.log('  ✓ a completed stage is celebrated as a dialog: named, certificate, onward, Escape closes'); }
     await shoot('player','view=play',{width:1080,height:900},'.mlb-q',null);
     await shoot('player-phone','view=play',{width:390,height:844},'.mlb-q',null);
     /* Lite lessons are studied step by step before their questions appear; walk one through. */

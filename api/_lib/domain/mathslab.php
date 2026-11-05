@@ -457,7 +457,13 @@ function mlb_issue_certificates(string $mid, array $bossPct = []): array {
         if (!isset($bosses[(string)$n]) || !mlb_stage_available((int)$n)) continue;
         if (array_filter($st['comps'], static fn($id) => !in_array($states[$id]['state'] ?? '', MLB_GOOD, true))) continue;
         $r = doc_mlb_stage_issue($mid, (int)$n, $bossPct[(int)$n] ?? null);
-        if ($r && $r[1]) $out[] = ['scope' => 'stage', 'stage' => (int)$n, 'title' => 'Stage ' . $n . ': ' . $st['title'], 'no' => (string)$r[0]['docNo'], 'url' => doc_view_url($r[0])];
+        if ($r && $r[1]) {
+            // What the celebration says next: the stage that opens now, by name.
+            $nx = mlb_stages()[(int)$n + 1] ?? null;
+            $out[] = ['scope' => 'stage', 'stage' => (int)$n, 'title' => 'Stage ' . $n . ': ' . $st['title'], 'stageTitle' => $st['title'], 'topics' => count($st['comps']),
+                'next' => $nx && mlb_stage_available((int)$n + 1) ? ['stage' => (int)$n + 1, 'title' => $nx['title']] : null,
+                'no' => (string)$r[0]['docNo'], 'url' => doc_view_url($r[0])];
+        }
     }
     foreach (mlb_courses() as $cid => $c) {
         if (!mlb_course_view($c, $states, [], $prof)['complete']) continue;
