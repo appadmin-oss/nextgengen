@@ -28,6 +28,8 @@ function AdminSignInSecurity() {
   const [q, setQ] = React.useState("");
   const [query, setQuery] = React.useState("");
   const [offset, setOffset] = React.useState(0);
+  // A one-time code just made at the desk: shown here once, never again.
+  const [issued, setIssued] = React.useState(null);   // null | { name, code, expires }
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -55,12 +57,27 @@ function AdminSignInSecurity() {
   const nameOf = keys => keys.length === 1 && byKey[keys[0]] ? byKey[keys[0]].name : keys.length + " people";
 
   const ACTIONS = [
-    { id: "bypass", label: "Let in for 10 minutes", rowLabel: "Let them in without it for 10 minutes", cap: "people", bulkHidden: true,
+    /* Google Workspace's two answers to a lost second step (Admin console >
+       Users > Security): "Turn off for 10 minutes" and "Get backup
+       verification codes". Both are for one person, both are audited, and
+       the person is told either way. */
+    { id: "bypass", label: "Let in for 10 minutes", rowLabel: "Turn off their second step for 10 minutes", cap: "people", bulkHidden: true,
       pastTense: "let in for 10 minutes",
-      confirm: ({ ids }) => ({ title: "Let " + nameOf(ids) + " in without their second step?",
-        body: "For the next 10 minutes their sign-in will not ask for it — and if they are on the question screen now, it opens. Only do this with the person in front of you. It is recorded in the audit log.",
-        cta: "Let them in" }),
-      run: ids => NGGApi.admin.mfa.act("bypass", people(ids), { minutes: 10 }) },
+      confirm: ({ ids }) => ({ title: "Turn off " + nameOf(ids) + "’s second step for 10 minutes?",
+        body: "Their next sign-in in the next 10 minutes skips it, once. If their step screen is open now, it opens by itself. They are then asked to set a new step, without the old one. The account is less safe for those minutes, so only do this with the person in front of you. They are emailed, and it is recorded in the audit log.",
+        cta: "Turn it off for 10 minutes" }),
+      run: ids => NGGApi.admin.mfa.act("bypass", people(ids)) },
+    { id: "code", label: "Give a one-time code", rowLabel: "Give them a one-time code (10 minutes)", cap: "people", bulkHidden: true,
+      pastTense: "given a one-time code",
+      confirm: ({ ids }) => ({ title: "Make a one-time code for " + nameOf(ids) + "?",
+        body: "For someone who is not at the desk: you read the code to them, and they type it on their step screen. It works once, for 10 minutes, and is shown to you only now. They are emailed that a code was made.",
+        cta: "Make the code" }),
+      run: async ids => {
+        const r = await NGGApi.admin.mfa.act("code", people(ids));
+        const x = ((r && r.results) || [])[0];
+        if (x && x.code) setIssued({ name: nameOf(ids), code: x.code, expires: x.expires });
+        return r;
+      } },
     { id: "reset", label: "Reset", rowLabel: "Reset — they choose a new one", cap: "people", danger: true, pastTense: "reset",
       confirm: ({ count }) => ({ title: "Reset the second step for " + count + (count === 1 ? " person" : " people") + "?",
         body: "What they set is cleared. Where it is required they choose a new one at their next sign-in; otherwise they are reminded.", cta: "Reset" }),
@@ -93,8 +110,8 @@ function AdminSignInSecurity() {
         <div className="admin-section-actions"><button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>Refresh</button></div>
       </div>
       <p className="admin-hint mfa-desk-lede">
-        A second sign-in step, different for each kind of person. A child who has forgotten their answer can be let in for ten minutes from a row’s menu —
-        with them in front of you. Staff use the Control Room’s own authenticator, managed in Access &amp; roles.
+        A second sign-in step, different for each kind of person. Somebody who has lost theirs (a forgotten answer, a new phone) can be let in for ten minutes
+        from a row’s menu, with them in front of you, or given a one-time code to type. Either way they then set a new step. Staff use the Control Room’s own authenticator, managed in Access &amp; roles.
       </p>
 
       <div className="mfa-desk-kinds" role="group" aria-label="Who to show">
@@ -161,6 +178,16 @@ function AdminSignInSecurity() {
         <span className="mono admin-count" role="status" aria-live="polite">{d ? fmtNum(total) + " " + (total === 1 ? "person" : "people") : ""}</span>
       </form>
 
+      {issued && (
+        <section className="admin-panel mfa-desk-code" role="status" aria-live="polite" aria-label="One-time code">
+          <div className="mfa-desk-code-txt">
+            <b>One-time code for {issued.name}</b>
+            <span>Read it to them. It works once, until {mfaDeskTime(issued.expires)}, and is not shown again.</span>
+          </div>
+          <span className="mono mfa-desk-code-v">{issued.code}</span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIssued(null)}>Done</button>
+        </section>
+      )}
       <AdminBulkBar selection={sel} noun="person" hasCap={hasCap} actions={ACTIONS.filter(a => !a.bulkHidden)}/>
 
       {err ? <ErrorState code={err} onRetry={load}/>
@@ -183,7 +210,7 @@ function AdminSignInSecurity() {
                     <td>{r.type ? <>{MFA_DESK_TYPE[r.type] || r.type}{r.since ? <span className="mono acct-row-meta">since {String(r.since).slice(0, 10)}</span> : null}</> : <span className="mfa-desk-none">None</span>}</td>
                     <td className="mfa-desk-flags">
                       {r.required && <span className="chip">Required</span>}
-                      {r.bypassUntil > 0 && <span className="chip chip-lime">Let in until {mfaDeskTime(r.bypassUntil)}</span>}
+                      {r.bypassUntil > 0 && <span className="chip chip-lime">Second step off until {mfaDeskTime(r.bypassUntil)}</span>}
                       {!r.required && !r.bypassUntil && <span className="mfa-desk-dash" aria-hidden="true">—</span>}
                     </td>
                     <td><AdminRowActions id={k} actions={ACTIONS} hasCap={hasCap} noun="person" reload={load} label="Actions"/></td>

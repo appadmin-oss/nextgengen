@@ -30700,16 +30700,46 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('mfa · five wrong answers pause it', ($last['error'] ?? '') === 'too_many_attempts' && (mfa_verify($kid + ['answer' => 'Mrs Okafor'])['error'] ?? '') === 'too_many_attempts');
     chk('mfa · changing the question needs the current answer', (mfa_enroll_finish(['requesterId' => 'NGG-2026-0901', 'who' => 'member', 'type' => 'question', 'question' => MFA_QUESTIONS[1], 'answer' => 'Allen Avenue', 'current' => 'wrong'])['error'] ?? '') !== '');
 
-    // ── The desk: let a child in for ten minutes ──
+    // ── The desk, as Google Workspace's admins: "Turn off for 10 minutes" and "Get backup verification codes" ──
     $adm = ['requesterId' => 'NGG-2025-0099', 'ip' => ''];
     $one = [['id' => 'NGG-2026-0901', 'who' => 'member']];
+    $sinkBefore = count($GLOBALS['__mail_sink'] ?? []);
     $b = admin_mfa_act($adm + ['action' => 'bypass', 'people' => $one]);
-    chk('mfa · an admin lets a member in without their question for ten minutes', !empty($b['ok']) && $b['applied'] === 1 && abs(mfa_bypass_until('NGG-2026-0901') - (time() + 600)) < 5);
-    chk('mfa · while that lasts, sign-in owes nothing and the pause is lifted', mfa_need('NGG-2026-0901', 'member', []) === '' && !attempt_locked('mfa', 'NGG-2026-0901'));
-    chk('mfa · the let-in is audited', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'admin.mfa.bypass' AND subject = 'NGG-2026-0901'"));
+    $alert = array_slice($GLOBALS['__mail_sink'] ?? [], $sinkBefore);
+    chk('mfa · an admin lets a member in without their step for ten minutes', !empty($b['ok']) && $b['applied'] === 1 && abs(mfa_window_open('NGG-2026-0901') - (time() + 600)) < 5);
+    chk('mfa · …the owner is told, as Google alerts', count(array_filter($alert, fn($m) => str_contains($m['subject'], '10 minutes'))) === 1);
+    chk('mfa · …the pause is lifted, and it is audited', !attempt_locked('mfa', 'NGG-2026-0901') && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'admin.mfa.bypass' AND subject = 'NGG-2026-0901'"));
+    chk('mfa · the next sign-in owes nothing', mfa_need('NGG-2026-0901', 'member', []) === '');
+    chk('mfa · …but only ONE sign-in is let through: the one after it owes the step again', mfa_need('NGG-2026-0901', 'member', []) === 'question');
+    chk('mfa · …and having got in, the replace window is open', mfa_bypass_until('NGG-2026-0901') > time());
+    admin_mfa_act($adm + ['action' => 'bypass', 'people' => $one]);
+    $wp = mfa_window_pass($kid);
+    chk('mfa · a step screen already open takes the window (it opens by itself)', !empty($wp['taken']) && empty(mfa_window_pass($kid)['taken']));
     chk('mfa · it is one person at a time, never a list', (admin_mfa_act($adm + ['action' => 'bypass', 'people' => [$one[0], ['id' => 'VOL-INS-26-901', 'who' => 'volunteer']]])['error'] ?? '') === 'one_at_a_time');
-    chk('mfa · and never longer than an hour', (admin_mfa_act($adm + ['action' => 'bypass', 'people' => $one, 'minutes' => 240])['error'] ?? '') === 'bad_minutes');
-    mfa_del('NGG-2026-0901', 'mfa.bypass');
+    chk('mfa · and its length is fixed at ten minutes, as Google fixes it', (admin_mfa_act($adm + ['action' => 'bypass', 'people' => $one, 'minutes' => 240])['error'] ?? '') === 'bad_minutes');
+    // Got in because the step is LOST: the new one is set without the old one, and the window then closes.
+    $repl = mfa_enroll_finish(['requesterId' => 'NGG-2026-0901', 'who' => 'member', 'type' => 'question', 'question' => MFA_QUESTIONS[2], 'answer' => 'Bingo the dog']);
+    chk('mfa · once let in, a forgotten step is replaced without the old answer', !empty($repl['ok']) && count($repl['backupCodes'] ?? []) === 8
+        && !empty(mfa_verify($kid + ['answer' => 'bingo the dog'])['ok']));
+    chk('mfa · …and setting the new step closes the window', mfa_bypass_until('NGG-2026-0901') === 0);
+    chk('mfa · …and the change is audited as made under a let-in', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'mfa.change' AND subject = 'NGG-2026-0901' AND meta LIKE '%\"letIn\":true%'"));
+    chk('mfa · outside it, replacing the step still needs the current answer', (mfa_enroll_finish(['requesterId' => 'NGG-2026-0901', 'who' => 'member', 'type' => 'question', 'question' => MFA_QUESTIONS[1], 'answer' => 'Allen Avenue', 'current' => 'wrong'])['error'] ?? '') === 'current_wrong');
+    attempt_reset('mfa', 'NGG-2026-0901');
+    // The one-time code, for somebody not at the desk.
+    $bc = admin_mfa_act($adm + ['action' => 'code', 'people' => $one]);
+    $code = (string)($bc['results'][0]['code'] ?? '');
+    chk('mfa · the desk can instead make a one-time code, shown once', !empty($bc['ok']) && preg_match('/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/', $code)
+        && !str_contains((string)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-2026-0901' AND stateKey = 'mfa.code1'")['stateValue'], str_replace('-', '', $code)));
+    chk('mfa · …a code is not a window: sign-in still owes the step', mfa_need('NGG-2026-0901', 'member', []) === 'question');
+    $lv = mfa_verify($kid + ['answer' => strtolower($code)]);
+    chk('mfa · …typed on the step screen, in any case, it passes once', !empty($lv['ok']) && !empty($lv['letIn']) && (mfa_verify($kid + ['answer' => $code])['error'] ?? '') === 'wrong_answer');
+    attempt_reset('mfa', 'NGG-2026-0901');
+    mfa_grants_close('NGG-2026-0901');
+    $c2 = (string)(admin_mfa_act($adm + ['action' => 'code', 'people' => $one])['results'][0]['code'] ?? '');
+    db_exec("UPDATE member_state SET stateValue = ? WHERE memberId = 'NGG-2026-0901' AND stateKey = 'mfa.code1'", [json_encode(array_merge(mfa_get('NGG-2026-0901', 'mfa.code1'), ['exp' => time() - 1]), JSON_UNESCAPED_SLASHES)]);
+    chk('mfa · a code not used inside its ten minutes is dead', (mfa_verify($kid + ['answer' => $c2])['error'] ?? '') === 'wrong_answer');
+    attempt_reset('mfa', 'NGG-2026-0901');
+    mfa_grants_close('NGG-2026-0901');
     $own = admin_mfa_act($adm + ['action' => 'reset', 'people' => [['id' => 'NGG-2025-0099', 'who' => 'member']]]);
     chk('mfa · an admin cannot act on their own account here', ($own['results'][0]['error'] ?? '') === 'own_account');
     $rs = admin_mfa_act($adm + ['action' => 'reset', 'people' => $one]);

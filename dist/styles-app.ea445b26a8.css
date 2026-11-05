@@ -12047,6 +12047,11 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 
 /* Members › Sign-in security (src/modules/control/cr-tab-security.jsx). */
 .mfa-desk-lede { margin-top: 0; }
+/* The one-time code, shown once: big enough to read out across a desk. */
+.mfa-desk-code { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin: 12px 0; padding: 14px 16px; border: 1px solid var(--ink-900, #0a1130); border-radius: 12px; background: #fff; }
+.mfa-desk-code-txt { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; }
+.mfa-desk-code-txt span { font-size: 13px; color: var(--ink-500, #4d5577); }
+.mfa-desk-code-v { font-size: 26px; font-weight: 700; letter-spacing: .08em; color: var(--ink-900, #0a1130); user-select: all; }
 .mfa-desk-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 14px 0; }
 .mfa-desk-kind { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--ink-100, #e3e6f0); border-radius: 12px; background: #fff; font: inherit; text-align: left; color: var(--ink-900, #0a1130); cursor: pointer; }
 .mfa-desk-kind:hover { border-color: var(--ink-300, #9aa1bd); }

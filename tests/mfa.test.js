@@ -190,13 +190,24 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     await k2.waitForSelector('.mfa-q', { timeout: 60000 });
     chk('a reload while the step is owed opens it again', /pet or favourite toy/.test(await k2.innerText('.mfa-q')));
     const desk = await as('NGG-MF-ADM', true);
-    r = await post(desk, '/admin/mfa.php', { action: 'bypass', people: [{ id: 'NGG-MF-K2', who: 'member' }], minutes: 10 });
-    chk('a coordinator lets the child in for ten minutes', r.ok() && (await r.json()).applied === 1);
-    await k2.click('button:has-text("I’ve been let in by staff")');
-    await k2.waitForSelector('#mfa-h', { state: 'detached', timeout: 20000 });
+    r = await post(desk, '/admin/mfa.php', { action: 'bypass', people: [{ id: 'NGG-MF-K2', who: 'member' }] });
+    chk('a coordinator turns the child\'s second step off for ten minutes', r.ok() && (await r.json()).applied === 1);
+    // Nothing pressed on the child's side: the screen that was waiting notices by itself.
+    await k2.waitForSelector('.mfa-q', { state: 'detached', timeout: 20000 });
     r = await k2.request.get(BASE + '/api/member/today.php');
-    chk('and the child is in without the answer', r.status() === 200);
-    await k2.close();
+    chk('the waiting step screen opens by itself, and the child is in without the answer', r.status() === 200);
+    await k2.waitForSelector('.mfa-opt', { timeout: 20000 });
+    chk('…and is taken straight to setting a new step, without being asked for the old one', !(await k2.$('#mfa-cur')) && /Staff let you in until/.test(await k2.innerText('#mfa-sub').catch(() => '')));
+    const kx = await fresh();
+    await post(kx, '/auth/request.php', { identifier: 'bayo.adeyemi@mfa.example' });
+    r = await post(kx, '/auth/verify.php', { memberId: 'bayo.adeyemi@mfa.example', otp: otpFor('NGG-MF-K2') });
+    chk('the window let ONE sign-in through: a second sign-in in the same minutes still owes the step', r.ok() && (await r.json()).mfa === 'question');
+    r = await post(desk, '/admin/mfa.php', { action: 'code', people: [{ id: 'NGG-MF-K2', who: 'member' }] });
+    const deskCode = r.ok() ? (((await r.json()).results || [])[0] || {}).code : '';
+    chk('the desk can instead give a one-time code, returned once', /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(deskCode || ''));
+    r = await post(kx, '/auth/mfa.php', { action: 'verify', answer: deskCode });
+    chk('…typed on the step screen it passes once', r.ok() && (await r.json()).letIn === true);
+    await k2.close(); await kx.close();
 
     // ── 5. Policy: the team must have it; the instructor sets up an app at sign-in ──
     r = await post(desk, '/admin/mfa.php', { action: 'policy', policy: { team: 'required' } });

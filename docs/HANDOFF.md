@@ -6303,6 +6303,55 @@ unchanged. Detail in CACENTRE `cac/docs/wifi.md` → "Scale and self-update".
 - A router asking from a version not on record now gets every page of the full
   list (page 2 used to answer `start_again` for ever).
 
+## 5 Nov 2026 — The desk's 10-minute let-in, rebuilt on Google Workspace's model
+
+Owner: "The 10 minutes sign in allowance does not work… It's as though the
+site has no idea it happened." Then: "Do it how Google does it securely", and
+"The Google Workspace admins had the time window".
+
+What Google gives its admins for a user who cannot pass their second step
+(Admin console > Directory > Users > Security):
+
+- **Login challenge > Turn off for 10 minutes.** Per user, fixed length,
+  admin only. Google warns the account is weaker during the window.
+- **2-Step Verification > Get backup verification codes.** The admin sends
+  one code to the user, who signs in with their password and that code.
+
+Faults found in ours (domain/mfa.php, auth/mfa.jsx, cr-tab-security.jsx):
+
+1. **The waiting screen never noticed.** The desk's confirm promised "if they
+   are on the question screen now, it opens", but nothing re-checked. The
+   "I've been let in" button existed only for question and PIN steps, so a
+   volunteer with a new phone (an app step) had no way through at all.
+2. **Getting in did not let them fix anything.** Changing the step demanded
+   the current one, which is the thing they had lost. The help centre's
+   "let you in for ten minutes so you can set it up again" could not happen.
+3. **The window let every sign-in through** for ten minutes, not the person
+   at the desk. A status read cleared any waiting session too.
+4. **Nobody was told.** The owner got no alert, unlike Google's.
+
+Now:
+
+- **Let in for 10 minutes** (`action: bypass`) lets ONE sign-in through. The
+  window is claimed in one guarded write, so a second sign-in in the same
+  minutes still owes the step. The step screen asks every 4 seconds while it
+  is visible (`mfa.window`) and opens by itself. The length is fixed.
+- **Give a one-time code** (`action: code`, new): 8 characters with no
+  0/O/1/I, shown once to the member of staff, stored as a hash in
+  `mfa.code1`, 10 minutes, single use, typed in the backup-code box.
+- Either way in opens a **replace window**: a new step is set without the
+  old one, then both grants close (`mfa_grants_close`). Audited as
+  `mfa.change` with `letIn: true`.
+- The owner is emailed and pushed when either is issued (`mfa_tell_letin`).
+- Neither is offered to somebody with no second step (`not_enrolled`).
+- State keys only (`member_state`), so no migration.
+
+Tests: `run.php` grew to 6868 checks (from 6860 before this change), with 0
+failures; the old window checks were rewritten to the one-sign-in rule.
+`tests/mfa.test.js` no longer presses a button: it waits for the screen to
+open by itself, checks the new-step dialog asks for nothing old, and checks
+a second sign-in still owes the step and the desk code passes once. Result:
+42 passed, 0 failed.
 ## Wi-Fi: a centre is found by its place, not only its code (2026-11-05, CACENTRE 302fa31)
 
 The Wi-Fi panel said "CACENTRE has no site for EGB (147), AYO (7)": NGG sent

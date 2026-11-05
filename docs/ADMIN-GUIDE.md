@@ -3971,11 +3971,24 @@ current answer or code first. Where it is required, it cannot be turned off.
   - **Optional:** people are shown the alert.
   - **Required:** anyone without one sets it up before their portal opens.
 - **Actions** on a row, or on a selection:
-  - **Let them in without it for 10 minutes.** This is for a child at the desk
-    who has forgotten their answer. Do it only with the person in front of
-    you. It is one person at a time, never a bulk action. If they are already
-    on the question screen, they press "I've been let in by staff" and they
-    are in. Every let-in is in the audit log.
+  - **Turn off their second step for 10 minutes** (*Let in for 10 minutes*),
+    as Google Workspace admins do. For somebody at the desk who has forgotten
+    their answer or changed phones. Do it only with the person in front of
+    you.
+    - Their **next sign-in** in those 10 minutes skips the step, **once**. A
+      second sign-in in the same minutes still asks for it.
+    - If their step screen is already open, it **opens by itself** within a
+      few seconds. Nothing to press.
+    - They are then taken to **set a new step**, and are not asked for the old
+      one. Setting it closes the window.
+    - They are emailed (and sent a notification) that it was done.
+  - **Give a one-time code.** For somebody who is not at the desk. The code is
+    shown to you once: read it to them and they type it on their step screen
+    (*Use a backup code or a staff code*). It works once, for 10 minutes.
+    They are emailed that a code was made, and they then set a new step the
+    same way.
+  - Both are one person at a time, never a bulk action, and only for somebody
+    who has a second step. Every use is in the audit log.
   - **Reset.** Clears what they set, so they choose a new one.
   - **Require it** of one person, whatever the policy. **Back to the policy**
     undoes that.
@@ -4174,7 +4187,7 @@ their supporting role. The child sees "Also helping you: … · Coding".
 | "Backup code used — N left" | You signed in with a backup code, not your app | Re-enrol your authenticator soon |
 | A member sees lessons but no assignments | Older builds compared the member's status and centre exactly; an imported "Active", a blank status or "egbeda " matched nothing | Fixed: those compare the way the rest of the record does. A member still sees nothing if they are suspended, or their course is not the assignment's |
 | "Not a Member ID or email" at sign-in | Older builds refused card numbers | Card numbers (`VOL-INS-26-001`, `026-014`) are accepted now |
-| A child cannot remember their sign-in question | Their second step | **Members › Sign-in security** → their row → *Let them in for 10 minutes*, or *Reset* |
+| A child cannot remember their sign-in question, or a volunteer has a new phone | Their second step | **Members › Sign-in security** → their row → *Let in for 10 minutes* (at the desk) or *Give a one-time code* (by phone), or *Reset* |
 | "No phone on your record" at the card door | The volunteer record has no phone, so the card can never be checked | Use *Email me a sign-in code instead*, or add their phone |
 | A screen looks empty | Almost always a filter | **Clear all filters** |
 | "Guardian consent required" on **Promote to NGV** | The member is under 18, or has no date of birth on file. Promotion shares their details with Afrovanguard | Record the guardian's decision under **Publication consent → Share with NextGen Vanguard**, with the guardian's name and how it was given. Then promote |
