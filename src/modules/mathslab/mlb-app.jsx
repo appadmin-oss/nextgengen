@@ -683,7 +683,7 @@ function MlbChestNode({ s, lite, fx, onOpen }) {
     {ch.opened ? <span className="mlb-chest is-open" role="img" aria-label="Chest opened"><i className="ph-fill ph-package" aria-hidden="true"/></span>
       : ch.ready && !lite ? <button type="button" className="mlb-chest is-ready" onClick={open} disabled={busy} aria-label={"Open the Stage " + s.n + " chest for bonus XP"}><i className="ph-fill ph-treasure-chest" aria-hidden="true"/></button>
       : <span className="mlb-chest" role="img" aria-label="Chest: opens when five topics of this stage are known"><i className="ph-fill ph-treasure-chest" aria-hidden="true"/></span>}
-    <span className="mlb-node-lab is-l" aria-hidden="true">{just ? "+" + fx.xp + " XP!" : ch.opened ? "Chest opened" : ch.ready ? "Open me!" : "Know 5 topics to open"}</span>
+    <span className="mlb-node-lab is-l" aria-hidden="true">{just ? "+" + fx.xp + " XP!" : ch.opened ? "Opened" : ch.ready ? "Open me!" : <React.Fragment>Chest<small>at 5 topics</small></React.Fragment>}</span>
     {err ? <span className="mlb-err" role="alert">{err}</span> : null}
     {just ? <span className="mlb-sr" role="status">Chest opened: {fx.xp} bonus XP.</span> : null}
   </li>;
@@ -695,9 +695,8 @@ function MlbMap({ go, lite }) {
   const [openStage, setOpenStage] = React.useState(null);   // null = the focus stage (owner: only it is open)
   const [scrollTo, setScrollTo] = React.useState(0);
   const [q, setQ] = React.useState("");
-  /* Duolingo's path (owner, 5 Nov 2026, with screenshots): the header names the unit you are
-     scrolling through and opens its Guidebook; a button brings you back to your lesson. */
-  const [head, setHead] = React.useState(0);
+  /* Duolingo's path (owner, 5 Nov 2026, with screenshots): the open stage's own banner stays at the
+     top while you scroll its path and opens its Guidebook; a button brings you back to your lesson. */
   const [nowOff, setNowOff] = React.useState(0);     // 0: your topic is on screen; 1: it is below; -1: above
   const [chestFx, setChestFx] = React.useState(null);
   /* After a stage opens (or the focus stage comes back), bring its header into view: closing the
@@ -717,17 +716,10 @@ function MlbMap({ go, lite }) {
   }, [pop]);
   React.useEffect(() => {
     if (st.phase !== "ok" || typeof IntersectionObserver === "undefined") return undefined;
-    const units = Array.from(document.querySelectorAll(".mlb-unit")), vis = {};
-    const io = new IntersectionObserver(es => {
-      es.forEach(e => { vis[e.target.id] = e.isIntersecting ? e.boundingClientRect.top : null; });
-      const on = Object.keys(vis).filter(k => vis[k] != null).sort((a, b) => vis[a] - vis[b]);
-      if (on.length) setHead(Number(on[0].replace("mlb-unit-", "")));
-    }, { rootMargin: "-90px 0px -55% 0px" });
-    units.forEach(u => io.observe(u));
     const now = document.querySelector(".mlb-path .mlb-node.is-now");
     const io2 = now ? new IntersectionObserver(es => es.forEach(e => setNowOff(e.isIntersecting ? 0 : (e.boundingClientRect.top > 0 ? 1 : -1)))) : null;
     if (io2) io2.observe(now);
-    return () => { io.disconnect(); if (io2) io2.disconnect(); };
+    return () => { if (io2) io2.disconnect(); };
   }, [st.phase, openStage]); // eslint-disable-line
   if (startBoss) return <MlbPlayer start={startBoss} onDone={() => { setBoss(null); load(); }} go={go}/>;
   if (st.phase === "loading") return <SttState kind="loading"/>;
@@ -772,12 +764,6 @@ function MlbMap({ go, lite }) {
           <li><span className="mlb-node is-boss is-locked is-mini"><i className="ph-fill ph-trophy" aria-hidden="true"/></span>Stage boss: beat it for the stage certificate</li></ul></section>
     </aside>
     <div className="mlb-map">
-      {(() => { const hs = stages.find(x => x.n === (head || focusStage)) || stages[0];
-        return <div className={"mlb-pathhead is-" + (hs.bandId || "foundations")} aria-live="off">
-          <div className="mlb-pathhead-t"><span>Stage {hs.n} · {hs.band}</span><b>{hs.title}</b></div>
-          <button type="button" className="mlb-pathhead-b" onClick={() => go({ v: "guide", stage: hs.n })} aria-label={"Guidebook for Stage " + hs.n + ": " + hs.title}>
-            <i className="ph-fill ph-notebook" aria-hidden="true"/><span>Guidebook</span></button>
-        </div>; })()}
       {nowOff !== 0 && current ? <button type="button" className="mlb-jump" onClick={() => { const n = document.querySelector(".mlb-path .mlb-node.is-now"); if (n) { try { n.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (_) { n.scrollIntoView(); } n.focus({ preventScroll: true }); } }}
         aria-label="Back to my next topic"><i className={"ph-fill " + (nowOff > 0 ? "ph-arrow-down" : "ph-arrow-up")} aria-hidden="true"/></button> : null}
       {/* Owner, 5 Nov 2026: "there's no logarithm" — it was there, inside Stage 7, and nothing
@@ -821,6 +807,9 @@ function MlbMap({ go, lite }) {
                   <i className="ph ph-caret-down mlb-caret" aria-hidden="true"/>
                 </button>
                 {s.certificate ? <a className="mlb-unit-b" href={s.certificate.url} target="_blank" rel="noopener"><i className="ph-fill ph-seal-check" aria-hidden="true"/><span>Certificate</span></a> : null}
+                {/* Duolingo's book icon on the unit banner: the stage's Guidebook. */}
+                <button type="button" className="mlb-guidebtn" onClick={() => go({ v: "guide", stage: s.n })} aria-label={"Guidebook for Stage " + s.n + ": " + s.title}>
+                  <i className="ph-fill ph-notebook" aria-hidden="true"/><span>Guide</span></button>
                 {s.n === shownStage && s.n !== focusStage ? <button type="button" className="stt-btn mlb-backstage" onClick={() => { setPop(null); setOpenStage(null); setScrollTo(focusStage); }}>
                   <i className="ph ph-arrow-u-up-left" aria-hidden="true"/>Back to my stage (Stage {focusStage})</button> : null}
               </header>
@@ -846,7 +835,7 @@ function MlbMap({ go, lite }) {
                 <li className="mlb-node-li is-mini" style={{ "--dx": "-44px" }}>
                   {s.miniReady && !lite ? <button type="button" className="mlb-node is-practice" aria-label={"Mini review of Stage " + s.n + ": five quick questions on what you have practised here"} onClick={() => setBoss({ mode: "mini", stage: s.n })}><i className="ph-fill ph-barbell" aria-hidden="true"/></button>
                     : <span className="mlb-node is-locked" role="img" aria-label="Mini review: opens once you have practised two topics in this stage"><i className="ph-fill ph-barbell" aria-hidden="true"/></span>}
-                  <span className="mlb-node-lab is-r" aria-hidden="true">{s.miniReady && !lite ? "Mini review" : "Mini review (practise 2 topics first)"}</span>
+                  <span className="mlb-node-lab is-r" aria-hidden="true">Mini review{s.miniReady && !lite ? "" : <small>after 2 topics</small>}</span>
                 </li>
                 <li className="mlb-node-li is-boss" style={{ "--dx": "0px" }}>
                   {s.boss ? <span className="mlb-node is-done is-boss" role="img" aria-label="Stage boss defeated"><i className="ph-fill ph-trophy" aria-hidden="true"/></span>

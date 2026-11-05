@@ -9086,15 +9086,6 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-section { display: flex; align-items: center; gap: 10px; margin: 6px 0 -4px; color: var(--cr-muted-3); font-size: 12px; font-weight: 500; }
 /* Band banners and the jump bar (map UI/UX, 5 Nov 2026). */
 /* The path, Duolingo's way: sticky stage header with its Guidebook, chest, mini review, the way back. */
-.mlb-pathhead { position: sticky; top: 8px; z-index: 6; display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; margin-bottom: 4px; border-radius: 14px; background: var(--cr-ink); color: var(--cr-on-ink); box-shadow: 0 4px 0 rgba(0, 0, 0, .18); }
-.mlb-pathhead.is-junior { background: #1e4fae; } .mlb-pathhead.is-waec { background: #0f6b4c; } .mlb-pathhead.is-further { background: #6b2fa3; } .mlb-pathhead.is-beyond { background: #8a3b06; }
-.mlb-pathhead.is-gods { background: #f5b026; color: #2b1d00; }
-.mlb-pathhead-t { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.mlb-pathhead-t span { font-size: 12.5px; font-weight: 700; letter-spacing: .02em; opacity: .9; }
-.mlb-pathhead-t b { font-size: 17px; font-weight: 700; line-height: 1.25; }
-.mlb-pathhead-b { flex: none; display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px; padding: 6px 10px; border: 0; border-left: 1px solid rgba(255, 255, 255, .28); background: none; color: inherit; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.mlb-pathhead-b i { font-size: 24px; }
-.mlb-pathhead.is-gods .mlb-pathhead-b { border-left-color: rgba(43, 29, 0, .28); }
 .mlb-chest { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 16px; font-size: 34px; color: var(--cr-faint); background: var(--cr-s2); border: 0; }
 .mlb-chest.is-ready { color: #8a5a00; background: #fff3d1; box-shadow: 0 0 0 6px rgba(245, 176, 38, .25); cursor: pointer; animation: mlb-bob 2s var(--cr-ease) infinite; }
 .mlb-chest.is-open { color: var(--cr-gold-fg); background: var(--cr-gold-bg); }
@@ -9217,6 +9208,55 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-node.is-mini { flex: none; width: 28px; height: 28px; font-size: 13px; cursor: default; box-shadow: none; }
 .mlb-node.is-mini.is-now { box-shadow: 0 0 0 3px var(--cr-gold-bg); }
 .mlb-node.is-mini.is-boss { border-radius: var(--cr-r-sm); }
+/* ── Map polish (owner, 5 Nov 2026: "Improve UX. It looks rough"): Duolingo's raised coins in each
+   band's own colour, the open stage's banner as the sticky header with its Guidebook, quiet band
+   dividers, calmer labels. Scoped to .mlb-map so the legend in the rail keeps its own sizes. ── */
+.mlb-unit, .mlb-bandh { --band: #1e4fae; --band-dk: #163a80; --band-ink: #fff; }
+.mlb-unit.is-junior, .mlb-bandh.is-junior { --band: #0f6b4c; --band-dk: #0a4d37; }
+.mlb-unit.is-waec, .mlb-bandh.is-waec { --band: #6b2fa3; --band-dk: #4e2178; }
+.mlb-unit.is-further, .mlb-bandh.is-further { --band: #b4235a; --band-dk: #86193f; }
+.mlb-unit.is-beyond, .mlb-bandh.is-beyond { --band: #8a3b06; --band-dk: #642a03; }
+.mlb-unit.is-gods, .mlb-bandh.is-gods { --band: #f5b026; --band-dk: #b97f0e; --band-ink: #2b1d00; }
+.mlb-map .mlb-unit.is-open .mlb-unit-h { position: sticky; top: 8px; z-index: 6; background: var(--band); border-color: var(--band); color: var(--band-ink); box-shadow: 0 5px 0 var(--band-dk); }
+.mlb-map .mlb-unit.is-open .mlb-unit-t, .mlb-map .mlb-unit.is-open .mlb-unit-k, .mlb-map .mlb-unit.is-open .mlb-caret, .mlb-map .mlb-unit.is-open .mlb-unit-lock { color: var(--band-ink); }
+.mlb-map .mlb-unit.is-open .mlb-unit-k { font-weight: 700; }
+.mlb-map .mlb-unit.is-open .mlb-unit-tog:hover { background: transparent; }
+.mlb-guidebtn { display: none; }
+.mlb-unit.is-open .mlb-guidebtn { flex: none; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 64px; min-height: 52px; padding: 4px 10px;
+  border: 0; border-left: 1px solid rgba(255, 255, 255, .3); background: none; color: var(--band-ink); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.mlb-unit.is-open .mlb-guidebtn i { font-size: 26px; }
+.mlb-unit.is-gods.is-open .mlb-guidebtn { border-left-color: rgba(43, 29, 0, .25); }
+.mlb-map .mlb-unit.is-closed .mlb-unit-h { background: var(--cr-bg); box-shadow: inset 4px 0 0 var(--band); }
+.mlb-map .mlb-unit.is-focus.is-closed .mlb-unit-h { border-color: var(--band); }
+.mlb-unit .mlb-dots i.is-done { background: var(--band); border-color: var(--band); }
+.mlb-map .mlb-path { gap: 24px; padding: 26px 0 24px; }
+.mlb-map .mlb-node { width: 66px; height: 62px; border: 0; font-size: 25px; background: #fff; color: var(--band); box-shadow: 0 6px 0 #d3d8e5, inset 0 0 0 2px #e4e8f1; transition: transform .1s var(--cr-ease), box-shadow .1s var(--cr-ease); }
+.mlb-map .mlb-node:hover { transform: translateY(-1px); }
+.mlb-map button.mlb-node:active { transform: translateY(4px); box-shadow: 0 2px 0 #d3d8e5; }
+.mlb-map .mlb-node.is-done { background: var(--band); color: var(--band-ink); box-shadow: 0 6px 0 var(--band-dk); }
+.mlb-map .mlb-node.is-done:active { box-shadow: 0 2px 0 var(--band-dk); }
+.mlb-map .mlb-node.is-now { width: 74px; height: 70px; background: var(--cr-gold); color: var(--cr-gold-ink); box-shadow: 0 6px 0 #b97f0e, 0 0 0 10px rgba(245, 176, 38, .2); }
+.mlb-map .mlb-node.is-locked, .mlb-map .mlb-node.is-soon { background: #e9ebf1; color: #9aa0b3; box-shadow: 0 6px 0 #cfd4e0; }
+.mlb-map .mlb-node.is-practice { background: #7a3cc0; color: #fff; box-shadow: 0 6px 0 #57288c; }
+.mlb-map .mlb-node.is-boss { width: 80px; height: 72px; border-radius: 22px; font-size: 30px; }
+.mlb-map .mlb-node.is-boss.is-done, .mlb-map .mlb-node.is-boss.is-now { background: var(--cr-gold); color: #3b2a00; box-shadow: 0 6px 0 #b97f0e; }
+.mlb-map .mlb-chest { width: 74px; height: 64px; border-radius: 18px; font-size: 34px; background: #e9ebf1; color: #9aa0b3; box-shadow: 0 6px 0 #cfd4e0; }
+.mlb-map .mlb-chest.is-ready { background: #ffd66b; color: #7a4d00; box-shadow: 0 6px 0 #c9951d, 0 0 0 10px rgba(245, 176, 38, .2); }
+.mlb-map .mlb-chest.is-open { background: #fff3d1; color: #a36d00; box-shadow: 0 6px 0 #e3c46b; }
+.mlb-map .mlb-node-lab { font-size: 13px; font-weight: 500; color: #3d4152; line-height: 1.3; }
+.mlb-map .mlb-node-lab.is-now { font-size: 14px; font-weight: 700; color: var(--cr-ink); }
+.mlb-map .mlb-node-lab.is-locked, .mlb-map .mlb-node-lab.is-soon, .mlb-map .mlb-node-lab.is-boss { color: var(--cr-muted-3); }
+.mlb-map .mlb-node-lab small { display: block; font-size: 12px; font-weight: 500; color: var(--cr-muted-3); }
+.mlb-map .mlb-node-start { background: var(--band); color: var(--band-ink); }
+.mlb-map .mlb-node-start::after { border-top-color: var(--band); }
+.mlb-map .mlb-bandh { background: none; padding: 20px 2px 2px; margin: 10px 0 -6px; border-radius: 0; border-top: 1px solid var(--cr-line); }
+.mlb-map .mlb-bandh.is-summit { background: none; }
+.mlb-map .mlb-bandh-i, .mlb-map .mlb-bandh.is-summit .mlb-bandh-i { width: 30px; height: 30px; border-radius: 9px; font-size: 16px; background: var(--band); color: var(--band-ink); }
+.mlb-map .mlb-bandh-n .mlb-meter span { background: var(--band); }
+.mlb-bandnav { -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent); }
+/* On a phone the gold Start on the path IS "up next": the card above it only pushed the path down. */
+.mlb-rail .mlb-upnext { display: none; }
+@container (min-width: 760px) { .mlb-rail .mlb-upnext { display: flex; } }
 .mlb-fw { margin-top: 6px; }
 .mlb-bands li { background: var(--cr-bg); border: 1px solid var(--cr-line); border-radius: var(--cr-r); }
 .mlb-bands-i { background: var(--cr-s2); color: var(--cr-ink); border-radius: 6px; }

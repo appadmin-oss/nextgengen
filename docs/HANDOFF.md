@@ -6909,3 +6909,14 @@ Logs were there, in two Stage 7 topics, but:
 
 - `run.php`: 6901 passed, 0 failed. New: the Guidebook; the mini review's offer threshold, topic choice, state changes, XP and reset; the chest lock, once-only rule and session refusal.
 - Maths Lab e2e: 56 passed, 0 failed. New, desktop and phone: the stage header, the chest and mini review on the path, and the Guidebook opening, showing ten topics with worked examples, and closing.
+
+
+## 5 Nov 2026 — Maths Lab map: visual polish ("Improve UX. It looks rough")
+
+- The separate sticky path header is gone. The open stage's own banner (`.mlb-unit.is-open .mlb-unit-h`) is now sticky and filled with its band's colour, and the Guidebook is a button inside it (`.mlb-guidebtn`). One header, not two stacked ones.
+- Band colours are custom properties set once per band on `.mlb-unit` / `.mlb-bandh` (`--band`, `--band-dk`, `--band-ink`). Coins, the banner, dots, band icons and the Start bubble all read them. Gold's ink is dark (#2b1d00) so text on it keeps 4.5:1.
+- Nodes are raised coins (a solid `box-shadow` underneath; `:active` presses them down). Chest and mini review take the same shape. The `<small>` sub-labels say when each opens.
+- Band headers are plain dividers. `.mlb-upnext` is hidden in the rail on narrow layouts through a container query (min-width 760px), not a media query, because the Start coin on the path already says the same thing.
+- All rules are scoped under `.mlb-map` and win on specificity: no `!important`. The dead `.mlb-pathhead*` CSS is deleted.
+- `tests/mathlab-e2e.test.js` now asserts that the open banner is `position: sticky`, names its stage, and has a Guidebook button with an `aria-label`.
+- Tests run: PHP suite 6901/0; maths lab e2e 56/0; shots 23 clean; build 31/0; contrast 21/0; no-important clean.
