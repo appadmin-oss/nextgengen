@@ -1193,6 +1193,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'mathslab.studied'        => 'mlb_mark_studied',
             'mathslab.daily'          => 'mlb_daily',
             'mathslab.exams'          => 'mlb_exams',
+            'labs.list'               => 'labs_list',
             'mathslab.dailyAnswer'    => 'mlb_daily_answer',
             'public.mathslab.item'    => 'mlb_lite_item',
             'public.mathslab.check'   => 'mlb_lite_check',

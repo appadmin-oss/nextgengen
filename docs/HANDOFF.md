@@ -6813,3 +6813,59 @@ Two olympiad forms could produce "no solutions" as the answer: MC-176 form 0 and
 - Shots: 22 rendered clean.
 - Contrast: 21 passed, 0 failed.
 - `build.test`: 31 passed, 0 failed.
+
+
+## 5 Nov 2026 — Maths Lab: logarithms made findable, typeable and deeper; groundwork for more Labs
+
+**Owner:** "I also realised there's no logarithm. Also, I need you to prepare we'll be adding more labs".
+
+### Logarithms
+
+Logs were there, in two Stage 7 topics, but:
+
+- nothing let a learner find them by name;
+- an answer could not contain a log;
+- only exact powers were taught.
+
+**Changes:**
+
+- **Map search** (`mlbFindTopics`):
+  - every typed word must match the start of a word in a topic title;
+  - stage titles are used only when no topic title matches, otherwise "log" pulled in "…Mathematical Logic";
+  - a small synonym table (logs/logarithm/ln → log, …).
+- **Typing logs:**
+  - `mlb_expr_eval` reads `log(` (base 10) and `ln(` before single letters, so they are not read as l·o·g;
+  - a log of a non-positive number is unreadable, not a value;
+  - the keypad has `log(` and `ln(`; the preview and the answer text render them.
+- **New log forms** (`mathslab-gen-more.php`):
+  - change of base;
+  - standard-form logs (characteristic and mantissa, bar notation);
+  - ln and e (three ways);
+  - the curve through (1, 0);
+  - making x the subject of y = k·bˣ (a typed log answer, any base accepted);
+  - exponential equations;
+  - log equations;
+  - doubling and half-life;
+  - combining laws;
+  - d/dx ln(ax + b).
+- **Log explorer:** `MlbExLog`, for MC-068, MC-069 and MC-155.
+
+**Proof-pair positions.** `mlb_why_at` is now RECORDED while `mlb_forms` builds the lists (`mlb_why_at_map`), instead of being recomputed by subtracting each appended file. A future file of forms cannot move the proof pair, and the exam test that relied on that arithmetic now reads the stored position.
+
+### Groundwork for more Labs
+
+- **Registry:** `api/_lib/domain/labs.php` — `LABS`, the one registry. Maths is `MC`, `/study/lab`, live.
+- **Helpers:** `LAB_COMP_RE` (`XX-NNN`), `lab_for_comp`, `lab_comp_ok`, and the `labs.list` op (public `?view=labs`).
+- **Ids:** Maths ids come from `MLB_PREFIX`. The client's topic-route pattern accepts any registered prefix.
+- **Guide:** `docs/LABS.md` covers:
+  - registering a Lab;
+  - the content files a Lab brings;
+  - the generator rules the suite enforces;
+  - the mechanical engine changes to make when the SECOND Lab's content exists. They are deliberately not made in advance: an abstraction with one user is a guess about the second.
+
+### Tests
+
+- `run.php`: 6898 passed, 0 failed. New:
+  - **Logs:** read in any base, the wrong base refused, the new forms present, the proof pairs where they were.
+  - **The Lab registry:** unique prefixes and paths, every Maths id resolving to the Maths Lab, malformed or unknown ids resolving to nothing, `labs.list`.
+- Shots: 23. New: searching "log" finds exactly the three log topics.

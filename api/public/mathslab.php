@@ -5,7 +5,7 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'GET') {
     rate_limit_check('mathslab.lite');
     $v = (string)($_GET['view'] ?? 'item');
-    $res = $v === 'map' ? gs_call('mathslab.map', []) : ($v === 'comp' ? gs_call('mathslab.comp', ['comp' => (string)($_GET['comp'] ?? '')]) : gs_call('public.mathslab.item', ['comp' => (string)($_GET['comp'] ?? '')]));
+    $res = $v === 'labs' ? gs_call('labs.list', []) : ($v === 'map' ? gs_call('mathslab.map', []) : ($v === 'comp' ? gs_call('mathslab.comp', ['comp' => (string)($_GET['comp'] ?? '')]) : gs_call('public.mathslab.item', ['comp' => (string)($_GET['comp'] ?? '')])));
 } elseif ($method === 'POST') {
     rate_limit_check('mathslab.lite');
     $b = read_json_body();

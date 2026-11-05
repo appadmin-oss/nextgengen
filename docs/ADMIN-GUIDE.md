@@ -4794,6 +4794,12 @@ off as "bad at maths" when a foundation was simply never taught.
   - **When it is over** (solved, or out of tries), the answer and the full worked solution are shown.
   - **Rewards:** solving at the first try with no hint earns 50 XP; any other solve earns 25 XP. Home and the page show how many days in a row the member has solved it, and how many in all.
   - It never moves the map: it is a taste of the summit, not a step on the path.
+- **Finding a topic.** The Map has a search box. Type a word (*log*, *fractions*, *circle*) and every matching topic in every stage is listed, with its stage and whether it is open; press one to go to it. Typing *log* finds the three logarithm topics.
+- **Logarithms.** They are taught in Stage 7 (*Logarithms as inverse powers*; *Laws of logarithms and logarithmic equations*) and used in Stage 16.
+  - **What is covered:** exact powers; change of base; exponential equations solved with logs; logs of numbers in standard form (the "using tables" questions); $\ln$ and $e$; the curve $y = \log x$; doubling and half-life times; $\ln$ in calculus.
+  - **Explorer:** the log topics have their own, with sliders for a base and a power.
+  - **Typing answers:** a learner can type `log( )` and `ln( )` in an answer, from the keypad or the keyboard. Any base is accepted where the value is the same.
+- **More Labs.** The Lab is built to take more subjects. See `docs/LABS.md` for the developer's how-to. Each Lab will have its own map and questions, and share the engine: practice, checks, reviews, bosses, certificates, the daily problem and the exam papers.
 - **Exam practice (the Exams tab, `/study/lab/exams`).** Two timed papers, open to every member whatever their stage.
   - **The papers:**
 

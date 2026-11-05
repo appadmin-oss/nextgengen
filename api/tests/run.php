@@ -37864,13 +37864,32 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        test). Original JAMB-style (A–E) and SAT-style forms in the topics they belong to; papers drawn
        fresh, timed by the server, marked by area, and never moving the map. */
     $jf = 0; $sf = 0; $short = []; $jfew = 0; $jn = 0;
-    foreach (mlb_forms_exam() as $c => $fs) { $base = count(mlb_forms()[$c]) - count($fs);
+    foreach (mlb_forms_exam() as $c => $fs) { $base = count(mlb_forms()[$c]) - count($fs) - count(mlb_forms_more()[$c] ?? []);   // forms added later sit after the exam ones
         foreach ($fs as $k => $f) { $tag = mlb_item($c, $base + $k, 3)['exam'] ?? ''; if ($tag === 'jamb') $jf++; elseif ($tag === 'sat') $sf++;
             for ($sd = 1; $sd <= 40; $sd++) { $it = mlb_item($c, $base + $k, $sd * 211); if (!isset($it['options'])) continue;
                 $want = ($it['exam'] ?? '') === 'jamb' ? 5 : 4; if (count($it['options']) < 4) $short[] = "$c/" . ($base + $k);
                 if ($want === 5) { $jn++; if (count($it['options']) < 5) $jfew++; } } } }
     chk('maths lab · exam style: at least 40 JAMB-style (A–E) and 15 SAT-style forms, never fewer than four options, a JAMB question shows five in at least 95% of draws, and none of it ends up in a form that makes the proof pair move' . ($short ? ' (' . implode(',', array_unique($short)) . ')' : ''),
-        $jf >= 40 && $sf >= 15 && $short === [] && $jfew <= 0.05 * $jn && mlb_why_at('MC-069') === count(mlb_forms()['MC-069']) - 2 - count(mlb_forms_deep()['MC-069'] ?? []) - count(mlb_forms_exam()['MC-069']));
+        $jf >= 40 && $sf >= 15 && $short === [] && $jfew <= 0.05 * $jn && mlb_why_at('MC-069') === 2 && mlb_item('MC-069', 2, 5)['kind'] === 'mcq' && mlb_item('MC-069', 3, 5)['kind'] === 'order');
+    /* Logarithms (owner: "there's no logarithm"): an answer can be typed with log( or ln( and is
+       read in any base; the log topics teach change of base, exponential equations, standard-form
+       logs, ln and e, the curve, half-lives and ln in calculus; and appending them moved no proof. */
+    $lf = mlb_forms_more(); $mk = count(mlb_forms()['MC-068']) - 1; $lx = mlb_item('MC-068', $mk, 9);
+    $lb = (int)preg_replace('/.*log\((\d+)\)$/', '$1', $lx['key']);
+    chk('maths lab · logarithms: log( and ln( are read (log 100 = 2, ln 1 = 0), an exponential made subject marks right in either base and wrong in the wrong one, the log topics carry the new forms, and every proof pair is where it was',
+        mlb_expr_eval('log(100)', []) === 2.0 && mlb_expr_eval('ln(1)', []) === 0.0 && mlb_expr_eval('log(0)', []) === null
+        && mlb_mark($lx, str_replace('log', 'ln', $lx['key']))['ok'] && !mlb_mark($lx, 'log(y)/log(' . ($lb + 1) . ')')['ok']
+        && count($lf['MC-068']) >= 5 && count($lf['MC-069']) >= 4 && isset($lf['MC-155'])
+        && mlb_why_at('MC-045') === 3 && mlb_why_at('MC-068') === 1 && mlb_item('MC-068', mlb_why_at('MC-068') + 1, 4)['kind'] === 'order');
+    /* More Labs are coming (owner, 5 Nov 2026): one registry, unique prefixes and paths, and every
+       Maths topic id resolves to the Maths Lab by its prefix. docs/LABS.md is the how-to. */
+    $prefixes = array_column(LABS, 'prefix'); $paths = array_column(LABS, 'path'); $badIds = [];
+    foreach (mlb_competencies() as $id => $c) if ((lab_for_comp($id)['id'] ?? '') !== 'maths') $badIds[] = $id;
+    $ll = labs_list();
+    chk('labs · one registry: unique two-letter prefixes and paths, Maths is live with the MC prefix, every Maths topic id resolves to it, a malformed or unknown id resolves to nothing, and labs.list reports the Lab and its size',
+        count(array_unique($prefixes)) === count($prefixes) && count(array_unique($paths)) === count($paths) && !array_filter($prefixes, static fn($p) => !preg_match('/^[A-Z]{2}$/', $p))
+        && LABS['maths']['prefix'] === MLB_PREFIX && LABS['maths']['status'] === 'live' && $badIds === [] && lab_for_comp('MC-1') === null && lab_for_comp('ZZ-001') === null
+        && ($ll['labs'][0]['topics'] ?? 0) === 200 && backend_dispatch('labs.list', [])['labs'][0]['id'] === 'maths');
     $bm = mlb_map(['memberId' => 'NGG-ML-D']);
     $ej = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'jamb']); $es = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'sat']);
     $jOwn = count(array_filter($ej['items'], static fn($x) => ($x['exam'] ?? '') === 'jamb')); $jKinds = array_unique(array_column($ej['items'], 'kind'));

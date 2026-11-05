@@ -199,6 +199,12 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
       const lab=await page.evaluate(()=>({labs:document.querySelectorAll('.mlb-path .mlb-node-lab').length, nodes:document.querySelectorAll('.mlb-path .mlb-node').length,
         banners:document.querySelectorAll('.mlb-bandh').length, summit:!!document.querySelector('.mlb-bandh.is-summit .ph-crown'), dots:document.querySelectorAll('.mlb-unit.is-closed .mlb-dots').length}));
       if(lab.labs!==lab.nodes||lab.labs<11||lab.banners!==6||!lab.summit||lab.dots<10) problems.push('map: labels, band banners or dots missing '+JSON.stringify(lab));
+      /* "there's no logarithm": the map's search finds every log topic by name. */
+      await page.fill('#mlb-mapq', 'log'); await page.waitForTimeout(200); await page.evaluate(()=>window.scrollTo(0,0));
+      const hits=await page.evaluate(()=>Array.from(document.querySelectorAll('.mlb-hit-t b')).map(b=>b.textContent));
+      if(!hits.some(t=>/Logarithms as inverse/.test(t))||!hits.some(t=>/Laws of logarithms/.test(t))||hits.length>4) problems.push('map: searching "log" should find the logarithm topics '+JSON.stringify(hits));
+      await page.locator('.mlb-mapsearch').scrollIntoViewIfNeeded(); await page.locator('.mlb-hits').screenshot({path:path.join(OUT,'mathlab-map-search.png')}); shots++;
+      await page.fill('#mlb-mapq', '');
       await page.click('.mlb-bandnav-b.is-summit'); await page.waitForTimeout(400);
       const sum=await page.evaluate(()=>(document.querySelector('.mlb-unit.is-open .mlb-unit-t')||{}).textContent);
       if(sum!=='The Theory of Numbers') problems.push('map: the summit jump should open Stage 18, opened '+sum);

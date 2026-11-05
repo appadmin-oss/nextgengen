@@ -858,20 +858,25 @@ function mlb_forms(): array {
     ] + (function_exists('mlb_forms_upper') ? mlb_forms_upper() : []) + (function_exists('mlb_forms_gods') ? mlb_forms_gods() : []);   // 8–17: gen-upper; 18–20: gen-gods   // Stages 8–17: mathslab-gen-upper.php
     /* Two proof forms for every topic with a "Why it works" (mathslab-why.php), appended AFTER the
        topic's own forms so no existing form changes its index (a session stores form numbers). */
-    if (function_exists('mlb_why_forms')) foreach (mlb_why_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    $wa = [];
+    if (function_exists('mlb_why_forms')) foreach (mlb_why_forms() as $id => $extra) if (isset($f[$id])) { $wa[$id] = count($f[$id]); $f[$id] = array_merge($f[$id], $extra); }
+    mlb_why_at_map($wa);
     /* The deeper Stage 5–7 forms (mathslab-gen-deep.php) come AFTER the proof pair, for the same
        reason: no form already in use may change its number. mlb_why_at() says where the pair is. */
     if (function_exists('mlb_forms_deep')) foreach (mlb_forms_deep() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     /* Exam-style forms (mathslab-gen-exam.php: JAMB and SAT), last of all for the same reason. */
     if (function_exists('mlb_forms_exam')) foreach (mlb_forms_exam() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    /* Later additions (mathslab-gen-more.php, e.g. the logarithm forms of 5 Nov 2026), last again. */
+    if (function_exists('mlb_forms_more')) foreach (mlb_forms_more() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     return $f;
 }
 
-/** Where a topic's two "Why it works" forms sit in its list (justify, then order), or null. */
+/** Where a topic's two "Why it works" forms sit in its list (justify, then order), or null.
+ *  Recorded while the list is built, so a file of forms appended later can never move it. */
+function mlb_why_at_map(?array $set = null): array { static $m = []; if ($set !== null) $m = $set; return $m; }
 function mlb_why_at(string $comp): ?int {
-    if (!function_exists('mlb_why') || !isset(mlb_why()[$comp])) return null;
-    $deep = (function_exists('mlb_forms_deep') ? count(mlb_forms_deep()[$comp] ?? []) : 0) + (function_exists('mlb_forms_exam') ? count(mlb_forms_exam()[$comp] ?? []) : 0);
-    return count(mlb_forms()[$comp] ?? []) - 2 - $deep;
+    mlb_forms();
+    return mlb_why_at_map()[$comp] ?? null;
 }
 
 /** One question, reproducible from (competency, form, seed). */
@@ -928,7 +933,8 @@ function mlb_expr_eval(string $s, array $vars): ?float {
     $s = str_replace(['−', '×', '÷', '²', '³', '√', ' ', '·', '*'], ['-', '*', '/', '^2', '^3', 'sqrt', '', '*', '*'], $s);
     if ($s === '' || mb_strlen($s) > 120) return null;
     $toks = [];
-    preg_match_all('/sqrt|\d+(?:\.\d+)?|[a-z]|[+\-*\/^()]/', $s, $m);
+    // log( is base 10 and ln( is natural; both are read before single letters, or "log" would be l·o·g.
+    preg_match_all('/sqrt|log|ln|\d+(?:\.\d+)?|[a-z]|[+\-*\/^()]/', $s, $m);
     if (implode('', $m[0]) !== $s) return null;
     $toks = $m[0]; $i = 0; $n = count($toks);
     $peek = static function () use (&$toks, &$i, $n) { return $i < $n ? $toks[$i] : null; };
@@ -937,6 +943,7 @@ function mlb_expr_eval(string $s, array $vars): ?float {
         $t = $peek(); if ($t === null) return null;
         if ($t === '(') { $i++; $v = $expr(); if ($peek() !== ')') return null; $i++; return $v; }
         if ($t === 'sqrt') { $i++; $v = $primary(); return $v === null || $v < 0 ? null : sqrt($v); }
+        if ($t === 'log' || $t === 'ln') { $i++; $v = $primary(); return $v === null || $v <= 0 ? null : ($t === 'log' ? log10($v) : log($v)); }
         if (is_numeric($t)) { $i++; return (float)$t; }
         if (preg_match('/^[a-z]$/', $t)) { $i++; return array_key_exists($t, $vars) ? (float)$vars[$t] : null; }
         return null;
@@ -956,7 +963,7 @@ function mlb_expr_eval(string $s, array $vars): ?float {
         while (true) {
             $t = $peek();
             if ($t === '*' || $t === '/') { $i++; $w = $unary(); if ($w === null) return null; if ($t === '/') { if (abs($w) < 1e-12) return null; $v /= $w; } else $v *= $w; continue; }
-            if ($t !== null && ($t === '(' || $t === 'sqrt' || is_numeric($t) || preg_match('/^[a-z]$/', $t))) { $w = $unary(); if ($w === null) return null; $v *= $w; continue; }
+            if ($t !== null && ($t === '(' || $t === 'sqrt' || $t === 'log' || $t === 'ln' || is_numeric($t) || preg_match('/^[a-z]$/', $t))) { $w = $unary(); if ($w === null) return null; $v *= $w; continue; }
             return $v;
         }
     };
@@ -971,7 +978,7 @@ function mlb_expr_eval(string $s, array $vars): ?float {
 
 /** Are two expressions the same function? Compared at several random points. */
 function mlb_expr_equal(string $key, string $got, bool $positive = false): bool {
-    preg_match_all('/[a-z]/', mb_strtolower(str_replace('sqrt', '', $key . ' ' . $got)), $m);
+    preg_match_all('/[a-z]/', mb_strtolower(str_replace(['sqrt', 'log', 'ln'], '', $key . ' ' . $got)), $m);
     $letters = array_values(array_unique($m[0]));
     $ok = 0;
     for ($t = 0; $t < 14 && $ok < 6; $t++) {
@@ -1060,7 +1067,7 @@ function mlb_answer_text(array $it): string {
         case 'order': return implode(' → ', array_map(static fn($k, $i) => ($i + 1) . '. ' . $it['options'][$k], $it['key'], array_keys($it['key'])));
         case 'pair': $L = $it['labels'] ?? ['x', 'y']; return '$' . $L[0] . ' = ' . $it['key'][0] . '$, $' . $L[1] . ' = ' . $it['key'][1] . '$';
         case 'frac': $f = mlb_parse_frac((string)$it['key']); return '$' . mlb_ftex($f[0], $f[1]) . '$';
-        case 'expr': return '$' . str_replace(['sqrt(', '*'], ['\\sqrt(', ''], (string)$it['key']) . '$';
+        case 'expr': return '$' . str_replace(['sqrt(', 'log(', 'ln(', '*'], ['\\sqrt(', '\\log(', '\\ln(', ''], (string)$it['key']) . '$';
         default: return (isset($it['unit']) && $it['unit'] === '₦' ? '₦' : '') . mlb_p((float)$it['key']) . (isset($it['unit']) && $it['unit'] !== '₦' ? ' ' . $it['unit'] : '');
     }
 }

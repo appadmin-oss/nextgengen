@@ -314,8 +314,10 @@ const MLB_EDGES = [
     191 => [104, 109], 192 => [129, 59], 193 => [106, 66], 194 => [193, 139], 195 => [125, 168], 196 => [108, 191], 197 => [191, 142], 198 => [79, 76], 199 => [115, 198], 200 => [168, 190],
 ];
 
-function mlb_id(int $n): string { return 'MC-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT); }
-function mlb_num(string $id): int { return preg_match('/^MC-(\d{3})$/', $id, $m) ? (int)$m[1] : 0; }
+/** Maths topic ids use the Maths Lab's prefix from the Lab registry (domain/labs.php). */
+const MLB_PREFIX = 'MC';
+function mlb_id(int $n): string { return MLB_PREFIX . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT); }
+function mlb_num(string $id): int { return preg_match('/^' . MLB_PREFIX . '-(\d{3})$/', $id, $m) ? (int)$m[1] : 0; }
 
 /** Every competency: id → {id, n, stage, title, strand, needs[]}. */
 function mlb_competencies(): array {

@@ -186,7 +186,8 @@ const MLB_EXPLORE = {
   riemann: ["MC-158", "MC-159", "MC-160"],
   chance: ["MC-120", "MC-166"],
   series: ["MC-070", "MC-129"],
-  growth: ["MC-038", "MC-063", "MC-068", "MC-169"],
+  growth: ["MC-038", "MC-063", "MC-169"],
+  logs: ["MC-068", "MC-069", "MC-155"],
 };
 /* One small challenge per explorer, in words an eleven-year-old can follow: a thing to DO and a
    thing to notice. The owner's rule: easy to understand, never dumbed down. */
@@ -206,6 +207,7 @@ const MLB_TRY = {
   chance: "Roll 10 times, then 1000 times. When do the bars look most even?",
   series: "Set r to 0.5 and add more terms. Does the total keep growing for ever?",
   growth: "Set the rate to 10% and the years to 30. Which line pulls ahead, and why?",
+  logs: "Set the power to 0. Whatever the base, where is the dot? Now make the power negative: is the number still above zero?",
 };
 function mlbExplorerFor(comp) { for (const k in MLB_EXPLORE) if (MLB_EXPLORE[k].indexOf(comp) >= 0) return k; return null; }
 function MlbExplore({ comp, onDone }) {
@@ -215,7 +217,7 @@ function MlbExplore({ comp, onDone }) {
   const tell = () => { if (told.current || !onDone) return; told.current = true; setTimeout(onDone, 0); };
   const k = mlbExplorerFor(comp); if (!k) return null;
   const E = { numline: MlbExNumline, array: MlbExArray, area: MlbExArea, fraction: MlbExFraction, triangle: MlbExTriangle, pythag: MlbExPythag, sector: MlbExSector,
-    line: MlbExLine, quad: MlbExQuad, unit: MlbExUnit, chord: MlbExChord, riemann: MlbExRiemann, chance: MlbExChance, series: MlbExSeries, growth: MlbExGrowth }[k];
+    line: MlbExLine, quad: MlbExQuad, unit: MlbExUnit, chord: MlbExChord, riemann: MlbExRiemann, chance: MlbExChance, series: MlbExSeries, growth: MlbExGrowth, logs: MlbExLog }[k];
   return (
     <section className="mlb-card mlb-explore" aria-labelledby="mlb-ex-h"
       onInputCapture={e => { if (e.target.closest("input")) tell(); }} onClickCapture={e => { if (e.target.closest(".mlb-ex button")) tell(); }}>
@@ -429,6 +431,25 @@ function MlbExGrowth() {
   </div>;
 }
 
+/* A logarithm undoes a power (owner, 5 Nov 2026: "there's no logarithm"): choose a base and a power,
+   see the number it makes, and the same fact read backwards on the curve y = log_b x. */
+function MlbExLog() {
+  const [b, setB] = React.useState(2), [y, setY] = React.useState(3);
+  const x = Math.pow(b, y), xmax = Math.max(8, Math.pow(b, 3.2)), ymin = -3, ymax = 3.2;
+  const X = v => 24 + v * 286 / xmax, Y = v => 150 - (v - ymin) * 140 / (ymax - ymin);
+  const pts = []; for (let i = 1; i <= 120; i++) { const v = xmax * i / 120; const lv = Math.log(v) / Math.log(b); if (lv >= ymin && lv <= ymax) pts.push(X(v) + "," + Y(lv)); }
+  const inView = x <= xmax && y >= ymin && y <= ymax;
+  return <div className="mlb-ex">
+    <svg className="mlb-dia" viewBox="0 0 320 170" role="img" aria-label={"The curve y equals log base " + b + " of x, with the point x equals " + mlbR(x, 3) + ", y equals " + y}>
+      <line x1="24" y1={Y(0)} x2="312" y2={Y(0)} className="mlb-dia-axis"/><line x1="24" y1="8" x2="24" y2="160" className="mlb-dia-axis"/>
+      <polyline points={pts.join(" ")} className="mlb-dia-line"/>
+      <circle cx={X(1)} cy={Y(0)} r="3.5" className="mlb-dia-dot"/>
+      {inView ? <circle cx={X(x)} cy={Y(y)} r="5" className="mlb-dia-arrow"/> : null}</svg>
+    <MlbSlider label="Base $b$" value={b} min={2} max={10} onChange={setB}/><MlbSlider label="Power $y$" value={y} min={-3} max={3} step={0.5} onChange={setY}/>
+    <MlbExOut><MlbMath text={"$" + b + "^{" + y + "} = " + mlbR(x, 4) + "$, so $\\log_{" + b + "} " + mlbR(x, 4) + " = " + y + "$. The logarithm asks the question backwards: what power of " + b + " gives this number? Every curve passes through $(1, 0)$, because $" + b + "^0 = 1$, and only positive numbers have a logarithm."}/></MlbExOut>
+  </div>;
+}
+
 /* ── Certificates seen on this device: the "new" marker ──
    A certificate stays "new" (a dot on the tab, a banner on Home) until it has
    been opened from the Certificates tab or the banner. */
@@ -454,7 +475,7 @@ function useMlbNewCerts() {
 function mlbRoute() {
   const seg = (location.pathname || "").replace(/^\/+|\/+$/g, "").split("/");
   if (seg[0] !== "study" || seg[1] !== "lab") return { v: "home" };
-  if (seg[2] === "learn" && /^MC-\d{3}$/.test(seg[3] || "")) return { v: "learn", comp: seg[3] };
+  if (seg[2] === "learn" && /^[A-Z]{2}-\d{3}$/.test(seg[3] || "")) return { v: "learn", comp: seg[3] };   // any Lab's topic id (domain/labs.php); the server says whether it exists
   if (["map", "courses", "progress", "certificates", "daily", "exams"].indexOf(seg[2]) >= 0) return { v: seg[2] };
   return { v: "home" };
 }
@@ -624,12 +645,30 @@ function MlbStars({ stage, onPick, decorative }) {
    stage boss at the end. Pressing a lesson opens a small card with its name and a Start
    button — so a name is one press away, never hidden in a tooltip. Escape closes it. */
 const MLB_PATH_X = [0, 44, 72, 44, 0, -44, -72, -44, 0, 44];
+/* Topic search: every word typed must match the start of a word in the topic's title (or, failing that, its stage's title)
+   ("log" finds Logarithms, "frac" finds fractions). A few everyday words map to the Lab's own. */
+const MLB_SYNONYMS = { logs: "log", logarithm: "log", ln: "log", sums: "series", gradient: "gradient", differentiation: "differentiat", integration: "integrat", calculus: "differentiat",
+  percent: "percentage", stats: "statistic", trig: "trigonometr", sine: "sine", graphs: "graph", powers: "power", indices: "indic", surd: "surd", prob: "probabilit" };
+function mlbFindTopics(stages, q) {
+  const words = q.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter(Boolean).map(w => MLB_SYNONYMS[w] || (w.length > 4 && /s$/.test(w) ? w.slice(0, -1) : w));
+  if (!words.length) return [];
+  const out = [];
+  stages.forEach(s => s.comps.forEach(c => {
+    const hay = (c.title + " " + s.title).toLowerCase().split(/[^a-z0-9]+/);
+    if (words.every(w => hay.some(h => h.indexOf(w) === 0))) out.push(Object.assign({ stage: s.n, stageTitle: s.title, inTitle: words.every(w => c.title.toLowerCase().split(/[^a-z0-9]+/).some(h => h.indexOf(w) === 0)) }, c));
+  }));
+  // A topic's own title decides; a stage's title only when no topic title matches ("log" would
+  // otherwise bring in all of "…Mathematical Logic").
+  const own = out.filter(x => x.inTitle);
+  return own.length ? own : out;
+}
 function MlbMap({ go, lite }) {
   const [st, load] = useMlb(() => lite ? NGGApi.public.mathslabMap() : NGGApi.member.mathslab.map(), [lite]);
   const [startBoss, setBoss] = React.useState(null);
   const [pop, setPop] = React.useState(null);
   const [openStage, setOpenStage] = React.useState(null);   // null = the focus stage (owner: only it is open)
   const [scrollTo, setScrollTo] = React.useState(0);
+  const [q, setQ] = React.useState("");
   /* After a stage opens (or the focus stage comes back), bring its header into view: closing the
      stage above it shifts everything up, and the learner lost their place. */
   React.useEffect(() => {
@@ -688,6 +727,22 @@ function MlbMap({ go, lite }) {
           <li><span className="mlb-node is-boss is-locked is-mini"><i className="ph-fill ph-trophy" aria-hidden="true"/></span>Stage boss: beat it for the stage certificate</li></ul></section>
     </aside>
     <div className="mlb-map">
+      {/* Owner, 5 Nov 2026: "there's no logarithm" — it was there, inside Stage 7, and nothing
+          let a learner find it by name. Search every topic in every stage. */}
+      <div className="mlb-mapsearch" role="search">
+        <label htmlFor="mlb-mapq" className="mlb-sr">Find a topic</label>
+        <i className="ph ph-magnifying-glass" aria-hidden="true"/>
+        <input id="mlb-mapq" type="search" className="mlb-in" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a topic — logarithms, fractions, circles…" autoComplete="off"/>
+      </div>
+      {q.trim().length >= 2 ? (() => {
+        const hits = mlbFindTopics(stages, q);
+        return <section className="mlb-card mlb-hits" aria-label="Topics found">
+          <p className="mlb-meta" role="status">{hits.length ? hits.length + " topic" + (hits.length === 1 ? "" : "s") + " found" : "No topic matches “" + q.trim() + "”. Try a shorter word."}</p>
+          {hits.length ? <ul>{hits.slice(0, 15).map(h => <li key={h.id}><button type="button" className="mlb-hit" onClick={() => go({ v: "learn", comp: h.id })}>
+            <span className={"mlb-hit-s is-" + dotKind(h)} aria-hidden="true"/><span className="mlb-hit-t"><b>{h.title}</b><span className="mlb-meta">Stage {h.stage} · {h.stageTitle}</span></span>
+            <span className="mlb-chip">{MLB_GOOD_V.indexOf(h.state) >= 0 ? "Known" : h.state === "locked" ? "Locked" : h.state === "soon" ? "Soon" : "Open"}</span></button></li>)}</ul> : null}
+        </section>;
+      })() : null}
       <nav className="mlb-bandnav" aria-label="Jump to a band">{Object.keys(bandTally).map(id => { const b = bandInfo[id] || {}, t = bandTally[id];
         return <button key={id} type="button" className={"mlb-bandnav-b" + (b.summit ? " is-summit" : "") + (t.k === t.t ? " is-done" : "")} onClick={() => jumpBand(id)}
           aria-label={(b.name || id) + ": " + t.k + " of " + t.t + " topics known"}>{b.summit ? <i className="ph-fill ph-crown" aria-hidden="true"/> : null}<span>{b.name || id}</span><small>{t.k}/{t.t}</small></button>; })}</nav>
@@ -900,7 +955,7 @@ function MlbWhy({ why, onDone }) {
 }
 
 /* ── Answer entry ── */
-const MLB_KEYS = { expr: ["x", "y", "^", "(", ")", "/", "−", "√("], num: ["−", "."], frac: ["/", "−"], ratio: [":"], pair: ["−"] };
+const MLB_KEYS = { expr: ["x", "y", "^", "(", ")", "/", "−", "√(", "log(", "ln("], num: ["−", "."], frac: ["/", "−"], ratio: [":"], pair: ["−"] };
 /* Exam practice (owner, 5 Nov 2026: "Proceed. Adapt them all over", with JAMB past papers and a
    digital SAT practice test). A JAMB-style paper and an SAT-style Math module, drawn fresh each
    time from the Lab's own exam-style questions, timed like the real thing, marked by area. */
@@ -1006,7 +1061,7 @@ function MlbInput({ item, value, onChange, onEnter, disabled }) {
         <input ref={ref} className="mlb-in" value={value || ""} disabled={disabled} inputMode={item.kind === "expr" ? "text" : "decimal"} autoComplete="off" autoCapitalize="off" spellCheck="false"
           placeholder={item.kind === "frac" ? "e.g. 3/4" : item.kind === "ratio" ? "e.g. 3:4" : item.kind === "expr" ? "e.g. 3x+2" : "Your answer"} aria-label="Your answer"
           onChange={e => onChange(e.target.value)} onKeyDown={e => e.key === "Enter" && onEnter()}/>{item.unit && item.unit !== "₦" ? <span className="mlb-unit">{item.unit}</span> : null}</div>
-      {item.kind === "expr" && value ? <p className="mlb-preview" aria-live="polite">Reads as: <MlbMath text={"$" + String(value).replace(/sqrt\(/g, "\\sqrt(").replace(/\*/g, "\\times ") + "$"}/></p> : null}
+      {item.kind === "expr" && value ? <p className="mlb-preview" aria-live="polite">Reads as: <MlbMath text={"$" + String(value).replace(/sqrt\(/g, "\\sqrt(").replace(/log\(/g, "\\log(").replace(/ln\(/g, "\\ln(").replace(/\*/g, "\\times ") + "$"}/></p> : null}
       {item.dp != null ? <p className="mlb-meta mlb-rule">Give your answer correct to {item.dp === 0 ? "the nearest whole number" : item.dp + " decimal place" + (item.dp > 1 ? "s" : "")}.</p> : null}
       <div className="mlb-keys">{(MLB_KEYS[item.kind] || []).map(k => <button key={k} type="button" className="mlb-key" disabled={disabled} onClick={() => ins(k)} aria-label={"Type " + k}>{k}</button>)}</div>
     </div>
