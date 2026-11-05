@@ -4039,11 +4039,11 @@ function unzipDocumentXml(buf) {
     if (await step('the Maths Lab home renders', () => mlb.waitForSelector('.mlb-hero', { timeout: 15000 }))) {
       const h = await mlb.evaluate(() => ({ text: document.querySelector('.mlb').innerText,
         nav: Array.from(document.querySelectorAll('.mlb-navb')).map(x => x.innerText.trim()),
-        go: (document.querySelector('.mlb-go') || {}).innerText || '', errs: window.__errors.slice() }));
+        go: ((document.querySelector('.mlb-next') || {}).innerText || '') + ' ' + ((document.querySelector('.mlb-go') || {}).innerText || ''), errs: window.__errors.slice() }));
       ok('the Lab it opens renders its home with no script error', mlbErrs.length === 0 && h.errs.length === 0);
       if (mlbErrs.length || h.errs.length) console.error('       ', mlbErrs.concat(h.errs).slice(0, 3).join(' | '));
       ok('…greets the member and offers the SAME next step the Arcade band named',
-         /Hello, Amaka/.test(h.text) && /Continue your climb: Stage 4 gate/.test(h.go));
+         /Hello, Amaka/.test(h.text) && /Stage 4 gate/.test(h.go) && /Start the gate/.test(h.go));
       ok('…with its own Home / Map / Courses / Progress', h.nav.join(',') === 'Home,Map,Courses,Progress');
     } else {
       // Say WHY it did not render, not only that it did not.

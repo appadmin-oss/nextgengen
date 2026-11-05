@@ -475,46 +475,62 @@ function useMlb(fn, deps) {
 }
 
 /* ── Home ── */
+/* Home, in the order a learner needs it: where am I → what do I do next (one card, one button)
+   → how am I doing → everything else. Before, the greeting, three numbers, a level bar and the
+   button shared one box, and a paragraph and a long badge list sat at the same weight below it. */
 function MlbHome({ go, startPlay, onNotMember }) {
   const [st, load] = useMlb(() => NGGApi.member.mathslab.home(), []);
   React.useEffect(() => { if (st.phase === "error" && st.e && (st.e.code || st.e.message) === "members_only") onNotMember(); }, [st]); // eslint-disable-line
-  if (st.phase === "loading") return <SttState kind="loading" text="Lighting up your sky…"/>;
+  if (st.phase === "loading") return <SttState kind="loading" text="Getting your Maths Lab ready…"/>;
   if (st.phase === "error") return <SttState kind="error" text={"Couldn’t open the Maths Lab. " + mlbErr(st.e)} retry={load}/>;
-  const d = st.d, lv = d.level, nx = d.next;
+  const d = st.d, lv = d.level, nx = d.next, f = d.focus || { stage: d.climb.stage, title: "", known: 0, total: 10 };
   const pct = lv.next ? Math.round((d.xp - lv.from) / (lv.next - lv.from) * 100) : 100;
   const begin = () => {
     if (nx.mode === "climb") startPlay({ mode: "climb" });
     else if (nx.mode === "review") startPlay({ mode: "review" });
     else if (nx.mode === "check" || nx.mode === "practice") go({ v: "learn", comp: nx.comp });
   };
+  const badges = d.badges.slice().sort((a, b) => (b.earned ? 1 : 0) - (a.earned ? 1 : 0)), earned = badges.filter(b => b.earned).length;
   return (
-    <div className="mlb-stack">
-      <section className="mlb-hero" aria-labelledby="mlb-hi">
-        <div className="mlb-hero-sky" aria-hidden="true"/>
-        <h2 id="mlb-hi" className="mlb-hero-h">Hello, {d.name}.</h2>
-        <p className="mlb-hero-p">{d.climb.done ? "You’re at your level. Keep the stars burning." : "Your climb starts at the very beginning and moves fast when you know it."}</p>
+    <div className="mlb-stack mlb-home">
+      <header className="mlb-homehead">
+        <h2 id="mlb-hi" className="mlb-h2">Hello, {d.name}.</h2>
+        <p className="mlb-p">You are in <b>Stage {f.stage}{f.title ? " · " + f.title : ""}</b>{f.band ? " (" + f.band + ")" : ""}.</p>
+      </header>
+
+      <section className="mlb-hero mlb-next" aria-labelledby="mlb-next-h">
+        <p className="mlb-eyebrow">Up next · {nx.kind || "Next step"}</p>
+        <h3 id="mlb-next-h" className="mlb-next-t">{nx.title || nx.label}</h3>
+        {nx.what ? <p className="mlb-p">{nx.what}</p> : null}
+        {nx.mode !== "none" ? <button type="button" className="mlb-go" onClick={begin} aria-describedby="mlb-next-h"><i className="ph ph-play-circle" aria-hidden="true"/>{{ climb: "Start the gate", review: "Start the review", check: "Take the check" }[nx.mode] || (nx.kind === "New topic" ? "Start learning" : "Continue")}</button> : null}
+      </section>
+
+      <section className="mlb-card mlb-progcard" aria-labelledby="mlb-prog-h">
+        <div className="mlb-row"><h3 id="mlb-prog-h" className="mlb-h3">Your progress</h3><button type="button" className="mlb-link" onClick={() => go({ v: "progress" })}>See all progress</button></div>
         <div className="mlb-hero-stats">
           <div className="mlb-stat"><i className="ph ph-star-four" aria-hidden="true"/><b>{d.counts.mastered}</b><span>of {d.counts.total} topics known</span></div>
           <div className="mlb-stat"><i className="ph ph-fire" aria-hidden="true"/><b>{d.streak}</b><span>day streak{d.freezes ? " · " + d.freezes + " freeze" + (d.freezes > 1 ? "s" : "") : ""}</span></div>
           <div className="mlb-stat"><i className="ph ph-medal" aria-hidden="true"/><b>{lv.name}</b><span>{d.xp} XP{lv.next ? " · " + (lv.next - d.xp) + " to the next level" : ""}</span></div>
         </div>
-        <div className="mlb-xpbar" role="progressbar" aria-label="Progress to the next level" aria-valuenow={pct} aria-valuemin="0" aria-valuemax="100"><span style={{ width: pct + "%" }}/></div>
-        {nx.mode !== "none" ? <button type="button" className="mlb-go" onClick={begin}><i className="ph ph-play-circle" aria-hidden="true"/>{nx.label}</button> : <p className="mlb-hero-p">{nx.label}</p>}
+        <div className="mlb-progrow"><span>Level</span><span className="mlb-xpbar" role="progressbar" aria-label="Progress to the next level" aria-valuenow={pct} aria-valuemin="0" aria-valuemax="100"><span style={{ width: pct + "%" }}/></span><b>{pct}%</b></div>
+        <div className="mlb-progrow"><span>Stage {f.stage}</span><span className="mlb-meter is-big" role="progressbar" aria-label={"Stage " + f.stage + " topics known"} aria-valuenow={f.known} aria-valuemin="0" aria-valuemax={f.total}><span style={{ width: Math.round(f.known / Math.max(f.total, 1) * 100) + "%" }}/></span><b>{f.known}/{f.total}</b></div>
+        <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}><i className="ph ph-path" aria-hidden="true"/>Open the map</button>
       </section>
+
       <div className="mlb-cols"><div className="mlb-col">
       {d.roots && d.roots.length ? <section className="mlb-card" aria-labelledby="mlb-hroot"><h3 id="mlb-hroot" className="mlb-h3">Fix the foundation first</h3>
         <p className="mlb-p">What you are finding hard rests on something underneath it. Start there.</p>
         <ul className="mlb-roots">{d.roots.map(x => <li key={x.comp}><div><b>{x.title}</b><small>Underneath {x.behind.slice(0, 2).join(", ")}</small></div>
           <button type="button" className="stt-btn is-go" onClick={() => go({ v: "learn", comp: x.comp })}>Start here</button></li>)}</ul></section> : null}
-      {!d.climb.done ? <section className="mlb-card"><h3 className="mlb-h3">How the climb works</h3>
-        <p className="mlb-p">Each stage opens with a short gate of typed questions. Get them all right, quickly, and the whole stage lights up and you jump to the next. Miss a few, and your learning starts exactly where the gaps are. Anything you skip is checked again in a few days, so rushing never counts.</p>
-        <p className="mlb-meta">Now at Stage {d.climb.stage}{d.climb.momentum >= 3 ? " · on a roll: shorter gates" : ""}.</p></section> : null}
-      <section className="mlb-card"><div className="mlb-row"><h3 className="mlb-h3">Your courses</h3><button type="button" className="stt-btn" onClick={() => go({ v: "courses" })}>All courses</button></div>
+      <section className="mlb-card"><div className="mlb-row"><h3 className="mlb-h3">Your courses</h3><button type="button" className="mlb-link" onClick={() => go({ v: "courses" })}>All courses</button></div>
         <ul className="mlb-mini">{d.courses.filter(c => c.enrolled || c.available).slice(0, 3).map(c => <li key={c.id}><span>{c.title}</span><span className="mlb-meter"><span style={{ width: c.pct + "%" }}/></span><b>{c.pct}%</b></li>)}</ul></section>
+      {!d.climb.done ? <details className="mlb-card mlb-fold"><summary className="mlb-h3">How the climb works</summary>
+        <p className="mlb-p">Each stage opens with a short gate of questions. Get them all right, quickly, and the whole stage lights up and you jump to the next. Miss a few, and your learning starts exactly where the gaps are. Anything you skip is checked again in a few days, so rushing never counts.</p>
+        <p className="mlb-meta">Now at Stage {d.climb.stage}{d.climb.momentum >= 3 ? " · on a roll: shorter gates" : ""}.</p></details> : null}
       </div><aside className="mlb-col is-side" aria-label="Badges">
-      <section className="mlb-card"><h3 className="mlb-h3">Badges</h3>
-        <ul className="mlb-badges">{d.badges.map(b => <li key={b.id} className={b.earned ? "is-on" : ""}><i className={"ph " + (b.earned ? "ph-seal-check" : "ph-seal")} aria-hidden="true"/><b>{b.name}</b><span>{b.what}</span></li>)}</ul>
-        <p className="mlb-meta">{d.counts.available < d.counts.total ? d.counts.available + " of " + d.counts.total + " topics are open in this preview; the rest are being prepared." : "All " + d.counts.total + " points of the framework are open, from why 1 + 1 = 2 to calculus, mechanics and beyond."}</p></section>
+      <section className="mlb-card"><div className="mlb-row"><h3 className="mlb-h3">Badges</h3><span className="mlb-meta">{earned} of {badges.length}</span></div>
+        <ul className="mlb-badges">{badges.slice(0, 4).map(b => <li key={b.id} className={b.earned ? "is-on" : ""}><i className={"ph " + (b.earned ? "ph-seal-check" : "ph-seal")} aria-hidden="true"/><b>{b.name}</b><span>{b.what}</span></li>)}</ul>
+        {badges.length > 4 ? <button type="button" className="mlb-link" onClick={() => go({ v: "progress" })}>All {badges.length} badges</button> : null}</section>
       </aside></div>
     </div>
   );

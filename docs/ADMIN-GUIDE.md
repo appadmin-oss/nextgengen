@@ -4765,6 +4765,12 @@ off as "bad at maths" when a foundation was simply never taught.
   full topic is.
 - Rounding rules are stated under the answer box ("correct to 2 decimal
   places"). Any answer that rounds to the right value is accepted.
+- **Home** reads top to bottom:
+  1. where the member is (stage and band);
+  2. **Up next**, one step explained in a sentence, with one button;
+  3. **Your progress**: topics known, streak, level, and the current stage's
+     topics, with *Open the map*;
+  4. then foundations to fix, courses, how the climb works, and badges.
 - **Finding a topic (the path).** The Map is a path, like Duolingo's, drawn
   in the Control Room's style. Each stage has a header, followed by its ten
   topics as round buttons: black with a tick when known, gold with *Start* on

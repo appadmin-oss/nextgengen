@@ -283,12 +283,20 @@ function mlb_due(array $states): array {
     return $out;
 }
 function mlb_next(array $prof, array $states): array {
-    if ($due = mlb_due($states)) return ['mode' => 'review', 'label' => 'Review ' . count($due) . ' topic' . (count($due) === 1 ? '' : 's') . ' before they fade', 'count' => count($due)];
-    if (!(int)$prof['climbDone']) return ['mode' => 'climb', 'stage' => (int)$prof['climbStage'], 'label' => 'Continue your climb: Stage ' . (int)$prof['climbStage'] . ' gate'];
-    foreach (mlb_competencies() as $c) if (($states[$c['id']]['state'] ?? '') === 'ready') return ['mode' => 'check', 'comp' => $c['id'], 'label' => 'Prove it: mastery check on ' . $c['title']];
-    foreach (mlb_competencies() as $c) if (in_array($states[$c['id']]['state'] ?? '', ['learning', 'practising', 'review'], true)) return ['mode' => 'practice', 'comp' => $c['id'], 'label' => 'Keep going: ' . $c['title']];
-    foreach (mlb_competencies() as $c) if (mlb_available($c['id']) && ($states[$c['id']]['state'] ?? 'none') === 'none' && mlb_unlocked($c['id'], $states)) return ['mode' => 'practice', 'comp' => $c['id'], 'label' => 'Start something new: ' . $c['title']];
-    return ['mode' => 'none', 'label' => 'You have finished everything the Lab teaches so far.'];
+    /* kind (what sort of step), title (the topic or gate, on its own) and what (one sentence a child
+       understands) let Home lay the next step out as a card rather than one long button label. */
+    if ($due = mlb_due($states)) return ['mode' => 'review', 'label' => 'Review ' . count($due) . ' topic' . (count($due) === 1 ? '' : 's') . ' before they fade', 'count' => count($due),
+        'kind' => 'Review', 'title' => count($due) . ' topic' . (count($due) === 1 ? '' : 's') . ' to refresh', 'what' => 'A few quick questions on things you learned before, so you don’t forget them.'];
+    if (!(int)$prof['climbDone']) { $cs = (int)$prof['climbStage'];
+        return ['mode' => 'climb', 'stage' => $cs, 'label' => 'Continue your climb: Stage ' . $cs . ' gate',
+            'kind' => 'Placement', 'title' => 'Stage ' . $cs . ' gate · ' . (mlb_stages()[$cs]['title'] ?? ''), 'what' => MLB_GATE_ITEMS . ' questions. Get them right and quickly and you skip the whole stage; otherwise your learning starts here.']; }
+    foreach (mlb_competencies() as $c) if (($states[$c['id']]['state'] ?? '') === 'ready') return ['mode' => 'check', 'comp' => $c['id'], 'label' => 'Prove it: mastery check on ' . $c['title'],
+        'kind' => 'Mastery check', 'title' => $c['title'], 'stage' => $c['stage'], 'what' => MLB_CHECK_ITEMS . ' questions, no hints. Pass at ' . MLB_CHECK_PASS . '% and the topic is yours.'];
+    foreach (mlb_competencies() as $c) if (in_array($states[$c['id']]['state'] ?? '', ['learning', 'practising', 'review'], true)) return ['mode' => 'practice', 'comp' => $c['id'], 'label' => 'Keep going: ' . $c['title'],
+        'kind' => 'Keep going', 'title' => $c['title'], 'stage' => $c['stage'], 'what' => 'Practise until the mastery check opens.'];
+    foreach (mlb_competencies() as $c) if (mlb_available($c['id']) && ($states[$c['id']]['state'] ?? 'none') === 'none' && mlb_unlocked($c['id'], $states)) return ['mode' => 'practice', 'comp' => $c['id'], 'label' => 'Start something new: ' . $c['title'],
+        'kind' => 'New topic', 'title' => $c['title'], 'stage' => $c['stage'], 'what' => 'Study the lesson step by step, then practise.'];
+    return ['mode' => 'none', 'label' => 'You have finished everything the Lab teaches so far.', 'kind' => 'All done', 'title' => 'Every topic is lit', 'what' => 'Your reviews will come back when they are due.'];
 }
 
 function mlb_view_state(string $id, array $states): string {
@@ -313,7 +321,13 @@ function mlb_home(array $p): array {
     $certs = mlb_course_certs($mid);
     return ['ok' => true, 'name' => explode(' ', trim((string)$m['fullName']))[0], 'xp' => (int)$prof['xp'], 'level' => mlb_level((int)$prof['xp']),
         'streak' => (int)$prof['streak'], 'freezes' => (int)$prof['freezes'], 'climb' => ['stage' => (int)$prof['climbStage'], 'done' => (bool)$prof['climbDone'], 'momentum' => (int)$prof['momentum']],
-        'next' => mlb_next($prof, $states), 'counts' => $count + ['available' => $avail, 'total' => 170], 'badges' => mlb_badges($prof, $states), 'roots' => mlb_root_gaps($states, 2),
+        'next' => ($nx = mlb_next($prof, $states)), 'counts' => $count + ['available' => $avail, 'total' => 170], 'badges' => mlb_badges($prof, $states), 'roots' => mlb_root_gaps($states, 2),
+        /* Where the learner is: the stage the next step is in (the climb's stage while climbing), with its progress. */
+        'focus' => (function () use ($nx, $prof, $states) {
+            $n = (int)($nx['stage'] ?? ((int)$prof['climbDone'] ? 1 : (int)$prof['climbStage'])); $st = mlb_stages()[$n] ?? mlb_stages()[1];
+            return ['stage' => (int)$st['n'], 'title' => (string)$st['title'], 'band' => mlb_band((int)$st['n'])['name'], 'total' => count($st['comps']),
+                    'known' => count(array_filter($st['comps'], static fn($id) => in_array($states[$id]['state'] ?? '', MLB_GOOD, true)))];
+        })(),
         'courses' => array_map(static fn($c) => mlb_course_view($c, $states, $enrol, $prof) + ['certificate' => $certs[$c['id']] ?? null,
             'stageCertificates' => array_values(array_filter(array_map(static fn($n) => isset($certs['stage:' . $n]) ? ['stage' => (int)$n] + $certs['stage:' . $n] : null, $c['stages'])))], array_values(mlb_courses()))];
 }

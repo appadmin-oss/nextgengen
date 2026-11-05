@@ -6173,3 +6173,17 @@ found, all fixed:
 - **Phone**: the stat tiles and the map's stats are one row each; the
   player's title row keeps *Leave* on it; the number keypad lost the "/"
   key, which a whole-number answer never needs.
+- **Home restructured** (owner: "Improve the structure"). The order is now:
+  1. where you are: "You are in Stage N · title (band)", from `focus` on
+     `mathslab.home`;
+  2. **Up next**, one card with one button;
+  3. **Your progress**: the three stats, the level bar, the current stage's
+     topics known, *Open the map*;
+  4. the rest: foundations to fix, courses, *How the climb works* as a
+     fold-away, and badges (earned first, four shown, link to all).
+
+  `mlb_next()` now also returns `kind`, `title` and `what` (one sentence a
+  child understands), so the card shows the step and its title separately.
+  The button is a short verb (*Start the gate*, *Continue*, *Take the
+  check*), and ui-smoke reads the card plus the button rather than the old
+  long button label.
