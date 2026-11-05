@@ -4800,6 +4800,27 @@ off as "bad at maths" when a foundation was simply never taught.
   "Opens at Stage 5 — know all of Stage 4 first, 3 of 10 so far", and has no
   Enrol button. Enrolling shows *Enrolled*, and *Continue* goes straight to
   the course's next topic.
+- **Each course shows what it holds**: its stages in order, by name, each
+  marked done, *on now* or ahead, with how many of its ten topics the member
+  knows. An enrolled course also says how close the next certificate is
+  ("4 topics to go for your Stage 2 certificate").
+- **Praise in practice**, on Duolingo's pattern:
+  - The words vary from answer to answer.
+  - A run of right answers is counted with a flame, and called out at 3, 5
+    and 8 in a row.
+  - The answer after a miss is greeted ("Back on track").
+  - A wrong answer gets a lift and the working, never just "wrong".
+  - Praise names the work (careful working, coming back, managing without
+    the hint), never the child's cleverness: that keeps them trying at the
+    hard ones.
+  - Practice only. Placement gates, checks and bosses still give no answers
+    until the end.
+- **The end of a session** has a headline (*Perfect!*, *Session complete!*,
+  *Good effort!*, *You finished it. Keep going!*) and three tiles: XP
+  earned, accuracy with a word (*Flawless*, *Amazing*, *Great*, *Getting
+  there*, *Building up*), and the best run (or the time on task). A good
+  session gets a short confetti burst, skipped when the device asks for
+  reduced motion.
 - **Opening another stage on the map** shows it with *Back to my stage*.
   Closing it returns to the member's own stage.
 - **A topic is a lesson in steps**, one screen at a time: *Explore* (the

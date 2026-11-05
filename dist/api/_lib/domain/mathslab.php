@@ -410,7 +410,14 @@ function mlb_course_view(array $c, array $states, array $enrol, ?array $prof): a
     $allBoss = !array_filter($c['stages'], static fn($st) => !isset($bosses[(string)$st]));
     return ['id' => $c['id'], 'title' => $c['title'], 'promise' => $c['promise'], 'for' => $c['for'], 'hours' => $c['hours'], 'stages' => $c['stages'],
         'available' => count($avail) === count($ids), 'total' => count($ids), 'done' => $done, 'pct' => count($ids) ? (int)floor($done * 100 / count($ids)) : 0,
-        'enrolled' => in_array($c['id'], $enrol, true), 'complete' => $done === count($ids) && $allBoss && count($avail) === count($ids)]
+        'enrolled' => in_array($c['id'], $enrol, true), 'complete' => $done === count($ids) && $allBoss && count($avail) === count($ids),
+        /* The path inside the course, so a child can see what it holds and where they are in it:
+           each stage by name, how many of its topics they know, and whether its boss is beaten. */
+        'stageRows' => array_map(static function ($n) use ($states, $bosses) {
+            $st = mlb_stages()[$n];
+            return ['stage' => (int)$n, 'title' => $st['title'], 'total' => count($st['comps']), 'boss' => isset($bosses[(string)$n]),
+                'known' => count(array_filter($st['comps'], static fn($id) => in_array($states[$id]['state'] ?? '', MLB_GOOD, true)))];
+        }, $c['stages'])]
         + mlb_course_lock($c, $states, $prof) + ['next' => (function () use ($ids, $states) {
             // Where "Continue" takes you: the course's first topic not yet known that is open to you.
             foreach ($ids as $id) if (mlb_available($id) && !in_array($states[$id]['state'] ?? '', MLB_GOOD, true) && mlb_unlocked($id, $states)) return ['comp' => $id, 'title' => mlb_comp($id)['title']];

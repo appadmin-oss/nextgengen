@@ -120,6 +120,13 @@ async function journey(who, W, H, tag) {
     chk(tag + ': enrolling shows it worked — the course says Enrolled and Continue names the next topic',
       done && /Enrolled/i.test(await p.locator('.mlb-course.is-enrolled').first().innerText()) && /Continue/.test(await p.locator('.mlb-course.is-enrolled .mlb-go').first().innerText()));
   }
+  {
+    const first = await p.locator('.mlb-course').first().innerText();
+    chk(tag + ': every course shows what it holds: its stages in order, by name, with progress',
+      await p.locator('.mlb-course').first().locator('.mlb-cpath li').count() >= 1 && /Stage \d+ · /.test(first) && /of \d+ topics/.test(first));
+    if (await p.locator('.mlb-course.is-enrolled').count())
+      chk(tag + ': an enrolled course says how close the next certificate is', /to go for your Stage \d+ certificate|boss for your certificate/.test(await p.locator('.mlb-course.is-enrolled').first().innerText()));
+  }
   await shot('courses');
 
   // A lesson: no skip, every step worked, then practice.
@@ -155,13 +162,19 @@ async function journey(who, W, H, tag) {
     await answer();
     const b = p.locator('.mlb-q .mlb-actions .mlb-go').first(); if (await b.count() && await b.isEnabled()) await b.click(); else break;
     await p.waitForTimeout(500);
-    if (k === 0) await shot('feedback');
+    if (k === 0) {
+      await shot('feedback');
+      const fbt = (await p.locator('.mlb-fb .mlb-fb-h').innerText().catch(() => '')).trim();
+      chk(tag + ': each answer gets words that name it (praise or a lift), never a bare verdict', fbt.length > 8 && !/^(Right!|Not quite\.)$/.test(fbt), fbt);
+    }
     const nx = p.locator('.mlb-q .mlb-actions .mlb-go:has-text("Next question"), .mlb-q .mlb-actions .mlb-go:has-text("See how you did")').first();
     if (await nx.count()) { await nx.click(); await p.waitForTimeout(400); }
   }
   const res = await text();
   chk(tag + ': practice ends on a result: the score once, what to do next, the mistakes first',
     await p.locator('.mlb-res-ring').count() === 1 && /right/.test(res) && /(Learn from these|Every answer was right)/.test(res));
+  chk(tag + ': the result celebrates like Duolingo: a headline, and tiles for XP and accuracy with a word', /(Perfect!|complete!|passed!|Good effort!|Keep going!)/.test(res)
+    && await p.locator('.mlb-tiles li').count() >= 2 && /Total XP/.test(res) && /(Flawless|Amazing|Great|Getting there|Building up)/.test(res));
   await shot('result');
   // Leaving the result goes back to the topic — on its Practise step, not step 1 again.
   await p.locator('.mlb-result .mlb-actions button').filter({ hasText: /Back to the topic|Continue/ }).first().click();

@@ -9176,6 +9176,55 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-lockwhy { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 0; padding: 10px 12px; border-radius: var(--cr-r); background: var(--cr-bg); border: 1px dashed var(--cr-line-strong); color: var(--cr-ink); font-size: 13.5px; line-height: 1.45; }
 .mlb-lockwhy i { margin-top: 2px; color: var(--cr-muted-2); }
 .mlb-okmsg { margin: 0; color: var(--cr-ok-fg); font-weight: 500; font-size: 13.5px; }
+/* Praise (Duolingo's psychology, the Control Room's look): the headline names
+   what went well, a run of right answers is counted with a flame, and a big
+   moment (three, five, eight in a row) gets a little lift. No sound, no
+   flashing; motion only when the reader has not asked for less. */
+.mlb-fb-h { display: flex; align-items: center; gap: 8px; }
+.mlb-fb-h i { font-size: 20px; }
+.mlb-fb.is-ok .mlb-fb-h i { color: var(--cr-ok-dot); }
+.mlb-fb.is-no { background: var(--cr-gold-bg); color: var(--cr-gold-fg); border-color: #f1dca0; }
+.mlb-fb.is-no .mlb-fb-h i { color: var(--cr-gold-dot); }
+.mlb-fb.is-big .mlb-fb-h { font-size: 17px; }
+.mlb-fb.is-big .mlb-fb-h i { color: var(--cr-gold-dot); }
+.mlb-run { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; background: var(--cr-gold-bg); color: var(--cr-gold-fg); font-weight: 600; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.mlb-run i { color: var(--cr-gold-dot); }
+@media (prefers-reduced-motion: no-preference) {
+  .mlb-fb { animation: mlb-fb-in .22s ease-out; }
+  .mlb-fb.is-big { animation: mlb-fb-pop .38s cubic-bezier(.2, 1.4, .4, 1); }
+  .mlb-run { animation: mlb-fb-pop .3s cubic-bezier(.2, 1.4, .4, 1); }
+}
+@keyframes mlb-fb-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes mlb-fb-pop { 0% { transform: scale(.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
+/* The end of a session: three tiles, each a word and a figure. */
+.mlb-result { position: relative; overflow: hidden; }
+.mlb-tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.mlb-tiles li { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: var(--cr-r-lg); border: 1px solid var(--cr-line); background: var(--cr-bg); }
+.mlb-tiles span { font-size: 12.5px; font-weight: 600; color: var(--cr-muted); }
+.mlb-tiles b { display: flex; align-items: center; gap: 6px; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--cr-ink); }
+.mlb-tiles .is-xp i, .mlb-tiles .is-run i { color: var(--cr-gold-dot); }
+.mlb-tiles .is-acc i { color: var(--cr-ok-dot); }
+.mlb-tiles .is-time i { color: var(--cr-muted-2); }
+.mlb-confetti { position: absolute; inset: 0 0 auto 0; height: 0; pointer-events: none; }
+.mlb-confetti i { position: absolute; top: -12px; left: calc(var(--k) * 5.5%); width: 7px; height: 11px; border-radius: 2px; opacity: 0;
+  background: var(--cr-gold-dot); }
+.mlb-confetti i:nth-child(3n) { background: var(--cr-ok-dot); }
+.mlb-confetti i:nth-child(4n) { background: var(--cr-ink); }
+@media (prefers-reduced-motion: no-preference) {
+  .mlb-confetti i { animation: mlb-confetti 1.6s cubic-bezier(.2, .6, .4, 1) calc(var(--k) * 40ms) 1 forwards; }
+}
+@keyframes mlb-confetti { 0% { opacity: 1; transform: translateY(0) rotate(0); } 100% { opacity: 0; transform: translateY(220px) rotate(260deg); } }
+/* A course's path: its stages in order, done · on now · ahead. */
+.mlb-cpath { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.mlb-cpath li { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.mlb-cpath-dot { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--cr-s3); color: var(--cr-muted-2); font-size: 13px; }
+.mlb-cpath li.is-done .mlb-cpath-dot { background: var(--cr-ok-dot); color: #fff; }
+.mlb-cpath li.is-cur .mlb-cpath-dot { background: var(--cr-ink); color: var(--cr-on-ink); }
+.mlb-cpath-t { display: flex; flex-direction: column; min-width: 0; }
+.mlb-cpath-t b { font-size: 14px; font-weight: 600; color: var(--cr-ink); }
+.mlb-cpath-t span { font-size: 13px; color: var(--cr-muted); }
+.mlb-cnext { display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 12px; border-radius: var(--cr-r); background: var(--cr-gold-bg); color: var(--cr-gold-fg); font-size: 13.5px; font-weight: 500; }
+.mlb-cnext i { color: var(--cr-gold-dot); font-size: 18px; }
 /* Home: header → next step → progress → the rest. */
 .mlb-homehead { display: flex; flex-direction: column; gap: 4px; padding: 0 2px; }
 .mlb-homehead .mlb-h2 { margin: 0; }

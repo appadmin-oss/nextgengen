@@ -6415,3 +6415,44 @@ CACENTRE matches the code, then the location, then the name, and makes a
 location's Wi-Fi site itself the first time. Only a place that is not one of
 CACENTRE's locations is still "could not place", and the panel now says to add
 the location there, not to type a code.
+
+## 5 Nov 2026 — Maths Lab courses: understandable at a glance, and Duolingo's praise
+
+Owner: "Improve the understandability of courses. Make it more effective.
+You know the psychological effect Duolingo has? The praises and so on."
+
+**Understandable.** Each course card now shows the path inside it
+(`stageRows` from `mlb_course_view`). Every stage is listed by name, marked
+done (all ten known and the boss beaten), on now, or ahead, with "N of 10
+topics". An enrolled course says how close the next certificate is.
+Enrolling says "You're in!" and names the first topic.
+
+**Praise, on Duolingo's pattern but aimed at the work.**
+- The headline varies (`MLB_PRAISE`, eight phrases picked by question
+  index, so never the same twice running).
+- A run of right answers shows a flame counter in the player bar and is
+  called out at 3, 5 and 8.
+- A right answer after a miss is greeted ("Back on track").
+- A right answer with a hint says "next time, try it before the hint". A
+  right guess says to remember why. A quick, sure answer says so.
+- A wrong answer gets a lift (`MLB_NUDGE`) and the working, in gold, not red.
+- The praise names effort and method, never ability, so children keep
+  attempting the hard ones. Practice only: gates, checks and bosses are
+  unchanged and still give nothing until the end.
+
+**The end screen**:
+- a headline by score (*Perfect!* … *You finished it. Keep going!*);
+- tiles for XP, accuracy with a word, and the best run (shown from 2 in a
+  row; the time on task otherwise);
+- the stars lit, and a pointer to the missed questions below;
+- confetti at 85% or more, skipped under `prefers-reduced-motion`.
+
+All of it uses the Control Room tokens. No sound, no new colours.
+
+Tests: `mathlab-e2e` 38 passed, 0 failed, 9 more checks than before:
+- every course card lists its stages by name with progress;
+- an enrolled course states the distance to the next certificate;
+- each answer's headline is more than a bare verdict;
+- the result has a headline and tiles with a word.
+
+Also passing: PHP suite 6875/0, `mathlab-shot` 16 clean, contrast 21/0.

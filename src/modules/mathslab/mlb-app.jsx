@@ -866,6 +866,29 @@ function MlbOrder({ item, value, onChange, disabled }) {
 }
 
 /* ── The player: one question per screen ── */
+/* ── Praise, the way Duolingo does it, aimed at the work rather than the child ──
+   Varied words (the same "Correct!" fifty times stops meaning anything), a
+   run counted out loud at 3, 5 and 8, a lift straight after a miss, and
+   praise that names WHAT went well: careful working, coming back, answering
+   without the hint. Praise for effort and method keeps a child trying when
+   it gets hard; praise for being "smart" makes them avoid the hard ones. */
+const MLB_PRAISE = ["Nice work!", "Correct!", "That’s it!", "Well worked out!", "Spot on!", "Great thinking!", "Exactly right!", "You’ve got this!"];
+const MLB_NUDGE = ["Not quite. This is where the learning happens.", "Close. The working below shows the way.", "Not this time. Read the steps, then you’ll have it.", "Almost. Mistakes like this one are how it sticks."];
+function mlbPraise({ i, run, afterMiss, hinted, conf, ms }) {
+  if (run === 8) return { t: "Eight in a row. Unstoppable!", big: true };
+  if (run === 5) return { t: "Five in a row. You’re on a roll!", big: true };
+  if (run === 3) return { t: "Three in a row!", big: true };
+  if (afterMiss) return { t: "Back on track. That’s how it’s done." };
+  if (conf === "guess") return { t: "Right, and you weren’t sure. Worth remembering why." };
+  if (hinted) return { t: "Got it. Next time, try it before the hint." };
+  if (conf === "sure" && ms && ms < 12000) return { t: "Quick and sure. Nice!" };
+  return { t: MLB_PRAISE[i % MLB_PRAISE.length] };
+}
+function mlbNudge({ i, conf }) {
+  if (conf === "sure") return "Not quite, and you were sure. That’s the most useful mistake to look at.";
+  return MLB_NUDGE[i % MLB_NUDGE.length];
+}
+
 function MlbPlayer({ start, onDone, go, onAgain }) {
   const [ses, setSes] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -876,6 +899,12 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
   const [fb, setFb] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const [res, setRes] = React.useState(null);
+  // The run of right answers in a row, the best run, and whether the last answer missed.
+  const [run, setRun] = React.useState(0);
+  const [best, setBest] = React.useState(0);
+  const [missed, setMissed] = React.useState(false);
+  const [praise, setPraise] = React.useState(null);
+  const tStart = React.useRef(Date.now());
   const t0 = React.useRef(Date.now());
   React.useEffect(() => { NGGApi.member.mathslab.start(start.mode, { comp: start.comp, stage: start.stage }).then(setSes, e => setErr(mlbErr(e))); }, []); // eslint-disable-line
   React.useEffect(() => { t0.current = Date.now(); }, [i]);
@@ -897,21 +926,32 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
   if (res) return <MlbResult res={res} onDone={onDone} go={go} onAgain={onAgain && ["practice", "review"].indexOf(res.mode) >= 0 ? onAgain : null}/>;
   const it = ses.items[i], practice = ses.mode === "practice", last = i === ses.items.length - 1;
   const empty = it.kind === "pair" ? !(Array.isArray(val) && val[0] && val[1]) : it.kind === "mcq" || it.kind === "error" ? val === "" : !String(val || "").trim();
-  const finish = () => { setBusy(true); NGGApi.member.mathslab.finish(ses.sessionId).then(r => { setBusy(false); setRes(r); }, e => { setBusy(false); setErr(mlbErr(e)); }); };
-  const next = () => { setFb(null); setVal(""); setConf(""); setHints(0); if (last) finish(); else setI(i + 1); };
+  const finish = () => { setBusy(true); NGGApi.member.mathslab.finish(ses.sessionId).then(r => { setBusy(false); setRes(Object.assign({}, r, { bestRun: best, secs: Math.round((Date.now() - tStart.current) / 1000) })); }, e => { setBusy(false); setErr(mlbErr(e)); }); };
+  const next = () => { setFb(null); setPraise(null); setVal(""); setConf(""); setHints(0); if (last) finish(); else setI(i + 1); };
   const submit = () => {
     if (empty || busy) return;
     setBusy(true);
-    NGGApi.member.mathslab.answer(ses.sessionId, i, val, { ms: Date.now() - t0.current, hints, conf }).then(r => {
+    const ms = Date.now() - t0.current;
+    NGGApi.member.mathslab.answer(ses.sessionId, i, val, { ms, hints, conf }).then(r => {
       setBusy(false);
-      if (practice) setFb(r); else next();
+      if (practice) {
+        if (r.correct) {
+          const n = run + 1;
+          setRun(n); setBest(b => Math.max(b, n));
+          setPraise(mlbPraise({ i, run: n, afterMiss: missed, hinted: hints > 0, conf, ms }));
+          setMissed(false);
+        } else { setRun(0); setMissed(true); setPraise({ t: r.formNote || mlbNudge({ i, conf }) }); }
+        setFb(r);
+      } else next();
     }, e => { setBusy(false); setErr(mlbErr(e)); });
   };
   const choice = it.kind === "mcq" || it.kind === "error";
   keys.current = { choice, count: choice ? it.options.length : 0, fb, pick: k => setVal(k), submit, next };
   return (
     <div className="mlb-play" data-mode={ses.mode}>
-      <div className="mlb-playtop"><p className="mlb-eyebrow">{ses.title}</p><button type="button" className="mlb-back" onClick={onDone}><i className="ph ph-x" aria-hidden="true"/>Leave</button></div>
+      <div className="mlb-playtop"><p className="mlb-eyebrow">{ses.title}</p>
+        {practice && run >= 2 ? <span className="mlb-run" aria-label={run + " right in a row"}><i className="ph-fill ph-fire" aria-hidden="true"/>{run}</span> : null}
+        <button type="button" className="mlb-back" onClick={onDone}><i className="ph ph-x" aria-hidden="true"/>Leave</button></div>
       <ol className="mlb-pips" aria-label={"Question " + (i + 1) + " of " + ses.items.length}>{ses.items.map((_, k) => <li key={k} className={k < i ? "is-done" : k === i ? "is-on" : ""}/>)}</ol>
       <section className="mlb-q" aria-live="polite">
         <p className="mlb-qn">Question {i + 1} of {ses.items.length}{ses.mode === "climb" ? " · fast and right clears the stage" : ""}</p>
@@ -927,8 +967,8 @@ function MlbPlayer({ start, onDone, go, onAgain }) {
           <button key={k} type="button" role="radio" aria-checked={conf === k} className={"mlb-chipb" + (conf === k ? " is-on" : "")} onClick={() => setConf(k)}>{l}</button>)}</div> : null}
         {practice && !fb ? (hints ? <p className="mlb-hint"><i className="ph ph-lightbulb" aria-hidden="true"/><MlbMath text={it.hint}/></p>
           : <button type="button" className="mlb-link" onClick={() => setHints(1)}>Show a hint (earns less XP)</button>) : null}
-        {fb ? <div className={"mlb-fb " + (fb.correct ? "is-ok" : "is-no")} role="status">
-          <b>{fb.correct ? (conf === "guess" ? "Right — and you weren’t sure. Worth remembering why." : "Right!") : fb.formNote ? fb.formNote : (conf === "sure" ? "Not quite — and you were sure. That’s the most useful mistake to look at." : "Not quite.")}</b>
+        {fb ? <div className={"mlb-fb " + (fb.correct ? "is-ok" : "is-no") + (praise && praise.big ? " is-big" : "")} role="status">
+          <b className="mlb-fb-h"><i className={"ph-fill " + (fb.correct ? (praise && praise.big ? "ph-fire" : "ph-check-circle") : "ph-lightbulb")} aria-hidden="true"/>{praise ? praise.t : fb.correct ? "Correct!" : "Not quite."}</b>
           {!fb.correct && fb.why ? <MlbMath as="p" text={fb.why}/> : null}
           <p>Answer: <MlbMath text={fb.answer}/></p>
           <details open={!fb.correct}><summary>Worked solution</summary><ol className="mlb-steps">{fb.steps.map((s, k) => <li key={k}><MlbMath text={s}/></li>)}</ol></details>
@@ -948,18 +988,36 @@ function MlbResult({ res, onDone, go, onAgain }) {
   const lit = res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length;
   const wrong = res.review.filter(q => !q.correct), shown = all ? res.review : wrong;
   const kind = res.mode === "climb" ? "Placement gate" : res.mode === "check" ? "Mastery check" : res.mode === "boss" ? "Stage boss" : res.mode === "review" ? "Review" : "Practice";
+  /* The end of a session is the moment that decides whether a child comes back.
+     Duolingo's shape: a celebration when it went well, a headline that names it,
+     and three tiles — what was earned, how accurate, the best run — each with a
+     word, not just a number. Praise names the work ("you finished every
+     question", "you came back after a miss"); a low score is "keep going",
+     never a verdict. */
+  const win = res.pct >= 85, perfect = res.pct === 100 && res.total > 0;
+  const head = perfect ? "Perfect!" : win ? (kind === "Practice" || kind === "Review" ? "Session complete!" : kind + " passed!") : res.pct >= 60 ? "Good effort!" : "You finished it. Keep going!";
+  const accWord = perfect ? "Flawless" : res.pct >= 85 ? "Amazing" : res.pct >= 70 ? "Great" : res.pct >= 50 ? "Getting there" : "Building up";
+  const mins = res.secs ? Math.max(1, Math.round(res.secs / 60)) : 0;
   return (
     <div className="mlb-stack">
-      <section className={"mlb-card mlb-result" + (res.pct >= 85 ? " is-win" : "")} aria-labelledby="mlb-res-h">
+      <section className={"mlb-card mlb-result" + (win ? " is-win" : "")} aria-labelledby="mlb-res-h">
+        {win ? <div className="mlb-confetti" aria-hidden="true">{Array.from({ length: 18 }, (_, k) => <i key={k} style={{ "--k": k }}/>)}</div> : null}
         <div className="mlb-res-top">
           <div className="mlb-res-ring" style={{ "--pct": res.pct + "%" }} role="img" aria-label={res.pct + "% right"}><b>{res.pct}%</b></div>
           <div className="mlb-res-txt">
             <p className="mlb-eyebrow">{kind}</p>
-            <h2 id="mlb-res-h" className="mlb-h2">{res.right} of {res.total} right</h2>
-            <p className="mlb-p">{res.message}</p>
-            <p className="mlb-res-chips">{res.xp ? <span className="mlb-chip is-ok">+{res.xp} XP</span> : null}{lit ? <span className="mlb-chip is-ok">{lit} star{lit === 1 ? "" : "s"} lit</span> : null}</p>
+            <h2 id="mlb-res-h" className="mlb-h2">{head}</h2>
+            <p className="mlb-p">{res.right} of {res.total} right. {res.message}</p>
           </div>
         </div>
+        <ul className="mlb-tiles" aria-label="How it went">
+          <li className="is-xp"><span>Total XP</span><b><i className="ph-fill ph-lightning" aria-hidden="true"/>{res.xp || 0}</b></li>
+          <li className="is-acc"><span>{accWord}</span><b><i className="ph-fill ph-target" aria-hidden="true"/>{res.pct}%</b></li>
+          {res.bestRun >= 2 ? <li className="is-run"><span>Best run</span><b><i className="ph-fill ph-fire" aria-hidden="true"/>{res.bestRun} in a row</b></li>
+            : mins ? <li className="is-time"><span>Time on task</span><b><i className="ph-fill ph-timer" aria-hidden="true"/>{mins} min</b></li> : null}
+        </ul>
+        {lit ? <p className="mlb-res-chips"><span className="mlb-chip is-ok"><i className="ph-fill ph-star" aria-hidden="true"/>{lit} star{lit === 1 ? "" : "s"} lit on your map</span></p> : null}
+        {!win && wrong.length ? <p className="mlb-meta">The {wrong.length === 1 ? "one you missed is" : wrong.length + " you missed are"} below, with the working. Going over them is the fastest way up.</p> : null}
         {(res.certificates || []).map(c => (
           /* The session that completed a course: the certificate exists now — a numbered NGG document the family also sees under Documents. */
           <p key={c.no} className="mlb-p mlb-cert-new"><i className="ph-fill ph-certificate" aria-hidden="true"/> {c.scope === "stage" ? "Stage passed" : "Course complete"}: <b>{c.title}</b>. Certificate {c.no} —{" "}
@@ -994,7 +1052,7 @@ function MlbCourses({ go }) {
   if (st.phase === "error") return <SttState kind="error" text={"Couldn’t load the courses. " + mlbErr(st.e)} retry={load}/>;
   const enrol = c => {
     setBusy(c.id); setMsg(m => Object.assign({}, m, { [c.id]: null }));
-    NGGApi.member.mathslab.enrol(c.id).then(() => { setBusy(""); setMsg(m => Object.assign({}, m, { [c.id]: { ok: true, t: "You’re enrolled in " + c.title + "." } })); load(); },
+    NGGApi.member.mathslab.enrol(c.id).then(() => { setBusy(""); setMsg(m => Object.assign({}, m, { [c.id]: { ok: true, t: "You’re in! " + c.title + " is yours. " + (c.next ? "First up: " + c.next.title + "." : "Pick up where the map shows you.") } })); load(); },
       e => { setBusy(""); setMsg(m => Object.assign({}, m, { [c.id]: { ok: false, t: (e && e.detail) || mlbErr(e) } })); });
   };
   return (
@@ -1011,6 +1069,22 @@ function MlbCourses({ go }) {
         <p className="mlb-p">{c.promise}</p>
         {c.locked ? <p className="mlb-lockwhy"><i className="ph ph-lock-simple" aria-hidden="true"/>{c.lockReason}</p>
           : <div className="mlb-ready"><span>{c.done} of {c.total} topics</span><span className="mlb-meter is-big"><span style={{ width: c.pct + "%" }}/></span><b>{c.pct}%</b></div>}
+        {/* What the course holds, in order, and where you are in it: a stage is
+            done (its ten topics known and its boss beaten), on now, or ahead. */}
+        {(c.stageRows || []).length ? <ol className="mlb-cpath" aria-label={"Stages in " + c.title}>{c.stageRows.map((r, k) => {
+          const done = r.known >= r.total && r.boss, cur = !done && !c.locked && c.stageRows.slice(0, k).every(x => x.known >= x.total && x.boss);
+          return <li key={r.stage} className={done ? "is-done" : cur ? "is-cur" : ""}>
+            <span className="mlb-cpath-dot" aria-hidden="true"><i className={"ph-fill " + (done ? "ph-check" : cur ? "ph-play" : c.locked ? "ph-lock-simple" : "ph-circle")}/></span>
+            <span className="mlb-cpath-t"><b>Stage {r.stage} · {r.title}</b><span>{done ? "Done, certificate earned" : r.known + " of " + r.total + " topics" + (r.known >= r.total && !r.boss ? " · boss to beat" : "")}</span></span>
+          </li>; })}</ol> : null}
+        {(() => {
+          // How close the next certificate is: the thing worth coming back for.
+          if (c.locked || c.complete || !c.enrolled) return null;
+          const r = (c.stageRows || []).find(x => !(x.known >= x.total && x.boss));
+          if (!r) return null;
+          const left = r.total - r.known;
+          return <p className="mlb-cnext"><i className="ph-fill ph-certificate" aria-hidden="true"/>{left > 0 ? left + " topic" + (left === 1 ? "" : "s") + " to go for your Stage " + r.stage + " certificate." : "Beat the Stage " + r.stage + " boss for your certificate."}</p>;
+        })()}
         <div className="mlb-actions">
           {!c.available ? <span className="mlb-chip">In preparation</span>
             : c.locked ? <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}><i className="ph ph-path" aria-hidden="true"/>Go to my stage</button>
