@@ -145,6 +145,7 @@ const NGG_LABS = [
     road: "The Physics road", roadP: "From measuring and forces in JSS Basic Science to senior secondary Physics: motion, energy, heat, waves, light, electricity and the atom. Every topic has something to play with before you calculate anything.",
     dailyP: "One puzzle a day from the top of the Physics road, the same for everyone in NGG. The hint is free and you get three tries." },
   { id: "english", seg: "english", title: "English Lab", subject: "English", icon: "ph-book-open-text", exams: true, daily: "Daily Word Challenge", summit: "The senior paper", find: "tenses, idioms, summary", pitch: "in grammar, vocabulary, speech, reading and writing",
+    teach: { label: "The rule", next: "Next example", need: "Read the rule and every example.", claim: "Remember:", because: "Why", contrast: true, foot: "✓ is right, ✗ is the slip people make. In practice, every wrong answer tells you which slip it is." },
     sub: "Words, grammar, speech work, reading and writing — one short step at a time", level: "Top of the road",
     road: "The English road", roadP: "From nouns, tenses and full stops in JSS English Studies to senior secondary English Language: the sounds of English, grammar in use, comprehension, summary, writing well and word power — then the senior paper itself. Every wrong option tells you which slip it is.",
     dailyP: "One challenge a day from the top of the English road, the same for everyone in NGG. The hint is free and you get three tries." },

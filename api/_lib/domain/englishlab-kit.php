@@ -54,6 +54,9 @@ function eng_forms(): array {
     if ($f !== null) return $f;
     $f = [];
     foreach (array_keys(ENG_MODULES) as $fn) $f += $fn();
+    // Forms one module adds to another's topic (articulation questions on the sound topics), APPENDED
+    // after that topic's own forms, so no existing form changes its number.
+    foreach (eng_articulation_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     ksort($f);
     return $f;
 }

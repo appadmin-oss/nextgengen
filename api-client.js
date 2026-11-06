@@ -1082,6 +1082,8 @@
         finish: (sessionId) => request('/member/mathslab.php', { body: { action: 'finish', sessionId, lab: mlabLab() } }),
         enrol:  (courseId) => request('/member/mathslab.php', { body: { action: 'enrol', courseId, lab: mlabLab() } }),
         studied: (comp) => request('/member/mathslab.php', { body: { action: 'studied', comp, lab: mlabLab() } }),
+        voice:  (text, voice) => request('/member/mathslab.php', { body: { action: 'voice', text, voice: voice || 0, lab: mlabLab() } }),
+        listen: (comp, index, audio, mime) => request('/member/mathslab.php', { body: { action: 'listen', comp, index, audio, mime, lab: mlabLab() } }),
       },
       tools: {
         decks:   () => request('/member/tools.php?view=decks'),

@@ -8994,6 +8994,35 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-why-steps li { counter-increment: why; display: grid; grid-template-columns: 28px 1fr; gap: 2px 12px; padding: 12px 14px; border-radius: var(--mlb-r); background: var(--mlb-soft); }
 .mlb-why-steps li::before { content: counter(why); grid-row: span 2; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 999px; background: var(--mlb-night); color: #fff; font-weight: 700; font-size: 13px; }
 .mlb-why-s { color: var(--mlb-ink); line-height: 1.55; }
+/* English Lab · "The rule": right examples (✓) and the slips people make (✗) as a contrast, not a list. */
+.mlb-why-steps.is-contrast li.is-ok { background: #ecf7f0; box-shadow: inset 3px 0 0 var(--mlb-ok); }
+.mlb-why-steps.is-contrast li.is-no { background: #fbeeee; box-shadow: inset 3px 0 0 var(--mlb-no); }
+.mlb-why-steps.is-contrast li.is-no .mlb-why-s { text-decoration: line-through; text-decoration-color: rgba(161, 42, 42, .45); }
+/* English Lab · "Hear and say" (src/modules/mathslab/eng-speak.jsx) */
+.eng-speak .mlb-card { display: grid; gap: 12px; }
+.eng-how-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.eng-how-i { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; padding: 12px 14px; border-radius: var(--mlb-r); background: var(--mlb-soft); }
+.eng-sym { grid-row: span 2; align-self: center; min-width: 52px; text-align: center; font-size: 22px; font-weight: 800; color: var(--mlb-blue-2); }
+.eng-tip { color: var(--mlb-ink); line-height: 1.5; }
+.eng-ex { display: flex; align-items: center; gap: 8px; color: var(--mlb-ink-2); font-weight: 600; }
+.eng-play { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.eng-dots { display: flex; gap: 6px; }
+.eng-dots i { flex: 1; height: 8px; border-radius: 999px; background: var(--mlb-line); }
+.eng-dots i.is-done { background: var(--mlb-ok); }
+.eng-dots i.is-on { background: var(--mlb-amber); }
+.eng-hear-play, .eng-say-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.eng-big { min-height: 56px; min-width: 120px; font-size: 17px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.eng-big .ph { font-size: 24px; }
+.eng-big.is-rec { background: var(--mlb-no); border-color: var(--mlb-no); animation: eng-pulse 1.2s ease-in-out infinite; }
+@keyframes eng-pulse { 50% { box-shadow: 0 0 0 8px rgba(161, 42, 42, .18); } }
+@media (prefers-reduced-motion: reduce) { .eng-big.is-rec { animation: none; } }
+.eng-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.eng-choice { justify-content: center; font-size: 20px; font-weight: 700; min-height: 64px; }
+.eng-choice.is-wrong { border-color: var(--mlb-no); background: #fbeeee; }
+.eng-sentence { font-size: 20px; line-height: 1.6; font-weight: 600; color: var(--mlb-ink); margin: 0; }
+.eng-w.is-ok { color: var(--mlb-ok); }
+.eng-w.is-no { color: var(--mlb-no); text-decoration: underline wavy rgba(161, 42, 42, .5); }
+.eng-self audio { width: 100%; margin-top: 6px; }
 .mlb-why-r { color: var(--mlb-ink-2); font-size: 14.5px; line-height: 1.5; }
 .mlb-why-r b { color: var(--mlb-ok); font-weight: 700; margin-right: 4px; }
 .mlb-fw { display: flex; flex-direction: column; gap: 14px; }

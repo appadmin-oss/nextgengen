@@ -114,3 +114,18 @@ English (6 Nov 2026; owner: *"Build the engine. Make it modular."*) adds no engi
 - **Not yet built:**
   - judged free writing: an essay or a whole letter needs a teacher queue or a rubric-checked model call through the AI layer, never the instant marker;
   - audio for speech work: the Sounds items are written so audio can be attached to the same items.
+
+
+## 6. Teaching before practice: The rule and Hear and say
+
+- **The rule** is the engine's existing teaching step (lab content `why`, read through `mlb_why_of`). English supplies `eng_rules()` (`englishlab-teach.php`): `[rule, reminder, [[example, why], …]]`.
+  - Lines starting `✓`/`✗` are drawn as a contrast, because `NGG_LABS.english.teach.contrast` is set.
+  - The step's words ("The rule", "Next example", "Why") come from `teach`, never from the shared screen.
+  - A test requires every grammar topic to have a rule with at least one ✓ and one ✗.
+- **Hear and say** is lab content `speak` (`eng_speak()`, `englishlab-speech.php`): `how`, `pairs` and `say` per topic. `mathslab.comp` passes it as `speak`, with `speak.audio` (text → recorded clip URLs). The client is `src/modules/mathslab/eng-speak.jsx`, which is in `build.js` `ORDER` and `index.html`, before `mlb-app.jsx`.
+- **The voice is recorded** (`tools/english-voices.py`, Kokoro, Apache-2.0, British voices `bf_emma`, `bm_george`, `bf_isabella`, `bm_lewis`). The clips are committed under `assets/audio/english/`.
+  - Each file is named by a hash of its text (`eng_audio_name()`), so changed text gets a new recording.
+  - Where the voice would misread, `ENG_SAY_PHONEMES` gives the exact phonemes (the verb "record").
+  - The player falls back in order: the recording, then `mathslab.voice` (Spitch, only for the Lab's own text, cached), then the device's best natural voice.
+- **Listening** (`mathslab.listen`) uses Spitch speech-to-text when a key is set (rate-limited, 10 a minute; the target sentence comes from the topic, never from the client). Otherwise the browser's recogniser, otherwise record and play back.
+- **The microphone was denied site-wide** by `Permissions-Policy: microphone=()` (`.htaccess` and `bootstrap.php`), which would have silently broken this step and the portal's voice notes on the live site. It is `microphone=(self)` now.

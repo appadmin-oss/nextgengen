@@ -947,7 +947,9 @@ function MlbLearn({ comp, go, startPlay, lite }) {
   if (ok) {
     const can = ["soon", "locked"].indexOf(d.state) < 0;
     if (can && mlbExplorerFor(d.comp.id)) steps.push({ id: "explore", label: "Explore", need: "Move a slider (or press a button) and watch what changes." });
-    if (d.why) steps.push({ id: "why", label: "Why it works", need: "Read every line of the argument." });
+    const T = mlbLab().teach || {};   // a Lab's own words for its teaching step (NGG_LABS): Maths proves, English states a rule
+    if (d.why) steps.push({ id: "why", label: T.label || "Why it works", need: T.need || "Read every line of the argument." });
+    if (d.speak) steps.push({ id: "speak", label: "Hear and say", need: "Hear the difference in eight rounds and say a sentence." });
     if (d.example) steps.push({ id: "example", label: "Worked example", need: "Show every line of the worked example." });
     steps.push({ id: "practise", label: "Practise", need: "" });
   }
@@ -989,6 +991,7 @@ function MlbLearn({ comp, go, startPlay, lite }) {
         <h3 className="mlb-sr" tabIndex={-1} ref={headRef}>Step {at + 1} of {steps.length}: {cur.label}</h3>
         {cur.id === "explore" ? <MlbExplore comp={c.id} onDone={() => mark("explore")}/> : null}
         {cur.id === "why" ? <MlbWhy key={c.id} why={d.why} onDone={() => mark("why")}/> : null}
+        {cur.id === "speak" ? <EngSpeak key={c.id} comp={c.id} speak={d.speak} onDone={() => mark("speak")}/> : null}
         {cur.id === "example" ? <section className="mlb-card" aria-labelledby="mlb-we"><h3 id="mlb-we" className="mlb-h3">Worked example</h3>
           <MlbMath as="p" className="mlb-stem" text={ex.stem}/><MlbDiagram d={ex.diagram}/>
           {ex.lines ? <ol className="mlb-lines">{ex.lines.map((l, i) => <li key={i}><MlbMath text={l}/></li>)}</ol> : null}
@@ -1024,19 +1027,20 @@ function MlbLearn({ comp, go, startPlay, lite }) {
 
 /* ── Why it works: the argument one line at a time, each with its reason ── */
 function MlbWhy({ why, onDone }) {
+  const T = mlbLab().teach || {};
   const [shown, setShown] = React.useState(1);
   const all = shown >= why.steps.length;
   React.useEffect(() => { if (all && onDone) onDone(); }, [all]); // eslint-disable-line
   return (
     <section className="mlb-card mlb-why" aria-labelledby="mlb-why-h">
-      <h3 id="mlb-why-h" className="mlb-h3">Why it works</h3>
+      <h3 id="mlb-why-h" className="mlb-h3">{T.label || "Why it works"}</h3>
       <MlbMath as="p" className="mlb-why-idea" text={why.idea}/>
-      <p className="mlb-why-claim">What we will show: <MlbMath text={why.claim}/></p>
-      <ol className="mlb-why-steps" aria-live="polite">{why.steps.slice(0, shown).map((s, i) => (
-        <li key={i}><MlbMath className="mlb-why-s" text={s.s}/><span className="mlb-why-r"><b>Because</b><MlbMath text={s.r}/></span></li>))}</ol>
-      {!all ? <div className="mlb-actions"><button type="button" className="stt-btn" onClick={() => setShown(n => n + 1)}>Next line</button>
+      <p className="mlb-why-claim">{T.claim || "What we will show:"} <MlbMath text={why.claim}/></p>
+      <ol className={"mlb-why-steps" + (T.contrast ? " is-contrast" : "")} aria-live="polite">{why.steps.slice(0, shown).map((s, i) => (
+        <li key={i} className={T.contrast ? (/^✗/.test(s.s) ? "is-no" : /^✓/.test(s.s) ? "is-ok" : "") : ""}><MlbMath className="mlb-why-s" text={s.s}/><span className="mlb-why-r"><b>{T.because || "Because"}</b><MlbMath text={s.r}/></span></li>))}</ol>
+      {!all ? <div className="mlb-actions"><button type="button" className="stt-btn" onClick={() => setShown(n => n + 1)}>{T.next || "Next line"}</button>
 </div>
-        : <p className="mlb-meta">Each line only uses things we already know from the lines above it. In practice you will be asked why a line is true, and to put the lines in order.</p>}
+        : <p className="mlb-meta">{T.foot || "Each line only uses things we already know from the lines above it. In practice you will be asked why a line is true, and to put the lines in order."}</p>}
     </section>
   );
 }

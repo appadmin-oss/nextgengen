@@ -1198,6 +1198,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'mathslab.guide'          => 'mlb_guide',
             'mathslab.chest'          => 'mlb_chest_open',
             'mathslab.dailyAnswer'    => 'mlb_daily_answer',
+            'mathslab.voice'          => 'mlb_voice',     // English Lab: a cached Spitch clip of the Lab's own text
+            'mathslab.listen'         => 'mlb_listen',    // English Lab: "Say it", transcribed and matched word by word
             'public.mathslab.item'    => 'mlb_lite_item',
             'public.mathslab.check'   => 'mlb_lite_check',
             // Two-player, turn-based. No free-text op exists by design.

@@ -38256,6 +38256,54 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     foreach (array_keys(ENG_MODULES) as $fn) foreach (array_keys($fn()) as $id) { if (isset($seen[$id])) $dup[] = $id; $seen[$id] = $fn; }
     chk('english lab · every topic on the map comes from exactly one content module in ENG_MODULES, and no module adds a topic the map does not have' . ($dup ? ' (' . implode(', ', $dup) . ')' : ''),
         $dup === [] && ($mods = array_keys($seen)) && sort($mods) && $mods === $ids && count(ENG_MODULES) === 7);
+
+    /* Grammar is TAUGHT before it is practised (owner: "real effective learning. Grammar"): every grammar
+       topic has an explicit rule shown as a contrast — at least one right example (✓) and the slip
+       people make (✗), each with its reason — read through the engine's existing lesson step. */
+    $grammar = ['EN-003', 'EN-004', 'EN-005', 'EN-006', 'EN-011', 'EN-012', 'EN-013', 'EN-014', 'EN-015', 'EN-016', 'EN-017', 'EN-018', 'EN-019', 'EN-020',
+                'EN-031', 'EN-032', 'EN-033', 'EN-034', 'EN-035', 'EN-036', 'EN-037', 'EN-038', 'EN-039', 'EN-040', 'EN-051', 'EN-057', 'EN-080'];
+    $badRule = [];
+    foreach ($grammar as $g) {
+        $w = mlb_why_of($g);
+        $lines = $w ? array_column($w['steps'], 's') : [];
+        if (!$w || trim($w['idea']) === '' || count($w['steps']) < 3 || !array_filter($lines, static fn($l) => str_starts_with($l, '✓')) || !array_filter($lines, static fn($l) => str_starts_with($l, '✗'))
+            || array_filter($w['steps'], static fn($x) => trim($x['r']) === '') || str_contains(json_encode($w, JSON_UNESCAPED_UNICODE), '$')) $badRule[] = $g;
+    }
+    chk('english lab · every grammar topic (' . count($grammar) . ') teaches its rule first, as a contrast: a right example and the slip people make, each with its reason' . ($badRule ? ' (' . implode(', ', $badRule) . ')' : ''),
+        $badRule === [] && !array_diff(array_keys(eng_rules()), $ids));
+
+    // Speaking: the voice speaks only the Lab's own text; listening is matched word by word against the topic's sentence.
+    $sp = eng_speak(); $badSp = [];
+    foreach ($sp as $c => $x) {
+        if (!in_array($c, $ids, true)) $badSp[] = "$c not on the map";
+        foreach ($x['pairs'] ?? [] as $pr) if (count($pr) !== 2 || $pr[0] === $pr[1]) $badSp[] = "$c pair";
+        foreach ($x['how'] ?? [] as $h) if (count($h) !== 3 || trim($h[1]) === '') $badSp[] = "$c how";
+    }
+    $was = $GLOBALS['CONFIG']['tts'] ?? null; unset($GLOBALS['CONFIG']['tts']);
+    $refuse = mlb_voice(['text' => 'Say something rude for free']);
+    $noKey = mlb_voice(['text' => 'The sheep are on the ship.']);
+    $m1 = eng_word_match('The sheep are on the ship.', 'the sheep on the ship');
+    chk('english lab · speaking content is well-formed and on the map; the voice refuses any text that is not the Lab’s own and says plainly when no voice is set up; the word match finds the one word not heard' . ($badSp ? ' (' . implode(', ', $badSp) . ')' : ''),
+        $badSp === [] && ($refuse['error'] ?? '') === 'not_lab_text' && ($noKey['error'] ?? '') === 'tts_not_configured'
+        && array_column($m1, 'ok') === [true, true, false, true, true, true] && $m1[5]['w'] === 'ship.');
+    $GLOBALS['CONFIG']['tts'] = ['spitch_key' => 'test-key'];
+    $GLOBALS['__wisdom_http'] = static fn($m, $path, $b) => $path === '/v1/transcriptions' ? ['code' => 200, 'body' => json_encode(['text' => 'The sheep are on the shop'])] : ['code' => 500, 'body' => ''];
+    $li = mlb_listen(['comp' => 'EN-021', 'index' => 1, 'audio' => 'data:audio/webm;base64,' . base64_encode('fake-audio'), 'mime' => 'audio/webm']);
+    $liBad = mlb_listen(['comp' => 'EN-021', 'index' => 99, 'audio' => base64_encode('x')]);
+    $liBig = mlb_listen(['comp' => 'EN-021', 'index' => 1, 'audio' => base64_encode(str_repeat('a', ENG_LISTEN_MAX + 1))]);
+    unset($GLOBALS['__wisdom_http']);
+    if ($was === null) unset($GLOBALS['CONFIG']['tts']); else $GLOBALS['CONFIG']['tts'] = $was;
+    chk('english lab · "Say it" is transcribed and marked word by word against the TOPIC’s sentence (never one the client sends): “shop” for “ship” is the one word not heard; an unknown sentence and an over-long recording are refused',
+        !empty($li['ok']) && $li['score'] === 0.83 && array_column($li['words'], 'ok') === [true, true, true, true, true, false]
+        && ($liBad['error'] ?? '') === 'not_found' && ($liBig['error'] ?? '') === 'too_long');
+    // The voice is RECORDED (free, the same on every phone): every speaking text has its clip in each of its voices.
+    $missing = [];
+    foreach (eng_audio_jobs() as [$t, $vs, $ph]) foreach ($vs as $v) if (!is_file(dirname(__DIR__, 2) . '/assets/audio/english/' . eng_audio_name($t, $v))) $missing[] = "$t ($v)";
+    chk('english lab · every speaking text is recorded in each of its voices (' . array_sum(array_map(static fn($j) => count($j[1]), eng_audio_jobs())) . ' clips) — run tools/english-voices.py after adding one' . ($missing ? ' (missing: ' . implode('; ', array_slice($missing, 0, 4)) . ')' : ''),
+        $missing === []);
+    $cv = mlb_comp_view(['comp' => 'EN-023']); $cg = mlb_comp_view(['comp' => 'EN-011']); $cm = mlb_comp_view(['comp' => 'MC-001']);
+    chk('english lab · a sound topic’s lesson carries its "Hear and say" material and articulation questions; a grammar topic’s carries its rule; a Maths topic carries neither speaking nor an English rule',
+        !empty($cv['speak']['pairs']) && !empty($cv['speak']['how']) && count($cv['speak']['audio']['thin'] ?? []) === 4 && count($cv['speak']['audio']['I think these three things are mine.'] ?? []) === 2 && count(eng_forms()['EN-023']) === 5 && ($cg['why']['idea'] ?? '') !== '' && $cm['speak'] === null);
     lab_use('maths');
 
     // One member, three Labs: English moves only English.

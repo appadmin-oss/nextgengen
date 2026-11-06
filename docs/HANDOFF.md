@@ -7101,3 +7101,24 @@ Owner: *"Research more and improve the structure."*
   - `labs-client`: 28/0 (adds the `pitch` agreement and `find`).
   - `route-registry`: 60/0.
   - `mathlab-e2e`: 91/0 on two consecutive runs. An earlier run drew a typed English question and showed the test itself typed in capitals on a capitals-sensitive item; the test now respects `case`.
+
+
+## 6 Nov 2026 — English Lab: real teaching for grammar and speaking
+
+Owner: *"I need real effective learning. Grammar … Speaking … Articulation … a bit of Duolingo features. Do not use a shitty voice please … free, dependable, professional and articulate."*
+
+- **Research.**
+  - Explicit rule instruction beats implicit learning by large margins across meta-analyses (d ≈ 0.8–1.0).
+  - Metalinguistic feedback (naming the error) is the strongest feedback type. The Lab already names the slip behind every wrong option.
+  - Perception training with many talkers (HVPT) improves perception and production (g ≈ 0.77).
+  - Articulation is examined directly in oral English.
+- **Grammar.** `eng_rules()` gives 27 topics a contrast-style rule (✓/✗ with reasons), read before practice, using the existing lesson step with the Lab's own words (`teach` in `NGG_LABS`).
+- **Speaking and articulation.**
+  - `eng_speak()` gives 11 topics *How to say it* (place, manner, voicing), *Hear the difference* (eight rounds, four voices, a streak, answers locked until played) and *Say it* (normal or slow model, record, word-by-word result).
+  - Two articulation forms (voiceless dental fricative …) are appended to EN-023 and EN-024. Each wrong option changes one feature and names it.
+- **Voice.** Kokoro (open weights, Apache-2.0), four British voices. 260 clips (2.9 MB) were recorded once by `tools/english-voices.py` and committed. Phonemes were checked against the British model; "record" (verb) is forced by phonemes. Spitch and the device voice are fallbacks only.
+- **Fixed in passing.** `Permissions-Policy` denied the microphone everywhere, which had silently broken the portal's voice notes on the live site. It is now `microphone=(self)` in both places.
+- **Tests.**
+  - PHP: 6934/0. Adds checks that rules are contrasts, the speaking content is well-formed, the voice refuses text that is not the Lab's, word matching, "Say it" against a fake Spitch, and that every text has its recording.
+  - `mathlab-e2e`: 99/0. The rule renders as a contrast and must be read; Hear and say runs eight rounds; the recorded clips load.
+  - `labs-client`: 28/0. `route-registry`: 60/0. `study-tools`: 46/0.

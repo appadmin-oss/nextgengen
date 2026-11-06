@@ -353,6 +353,45 @@ async function english(who, W, H, tag) {
   chk(tag + ': nothing in the English journey errors', log.length === 0, log.slice(0, 3).join(' | '));
   await ctx.close();
 }
+/* English teaching (owner, 6 Nov 2026: "real effective learning. Grammar … Speaking … Articulation"):
+   a grammar lesson opens with The rule as a contrast (✓ green, ✗ struck through red) and must be read
+   through; a sound lesson has Hear and say — how to make the sound, eight listening rounds that unlock
+   only after the word is played, and a Speak button. No voice key here, so the device fallback runs. */
+async function englishTeach(who) {
+  php(`lab_use('english'); foreach (array_merge(mlb_stages()[1]['comps'], mlb_stages()[2]['comps']) as $c) mlb_set_state('${who}', $c, ['state' => 'mastered']);`);
+  const tok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${who}'"), false);`);
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.addCookies([{ name: 'ngg_sess', value: tok, domain: '127.0.0.1', path: '/', httpOnly: true },
+                        { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
+  const p = await ctx.newPage(), log = [];
+  p.on('pageerror', e => log.push('page error: ' + e.message));
+  p.on('response', r => { if (r.url().includes('/api/') && r.status() >= 400 && !/mathslab\.php/.test(r.url())) log.push('HTTP ' + r.status() + ' ' + r.url().replace(BASE, '')); });
+  const clips = [];
+  p.on('response', r => { if (r.url().includes('/assets/audio/english/')) clips.push(r.status()); });
+  await p.goto(BASE + '/study/english/learn/EN-031', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.mlb-why', { timeout: 60000 }).catch(() => {});
+  chk('english: a grammar lesson opens with The rule', /The rule/.test(await p.locator('.mlb-why .mlb-h3').innerText().catch(() => '')) && await p.locator('.mlb-lesson-foot .mlb-go').isDisabled());
+  while (await p.locator('.mlb-why .mlb-actions .stt-btn').count()) await p.locator('.mlb-why .mlb-actions .stt-btn').click();
+  await p.waitForFunction(() => { const b = document.querySelector('.mlb-lesson-foot .mlb-go'); return b && !b.disabled; }, null, { timeout: 10000 }).catch(() => {});
+  chk('english: the rule is a contrast — right examples marked right, the slip struck through — and Continue opens once it is read',
+    await p.locator('.mlb-why-steps.is-contrast li.is-ok').count() >= 2 && await p.locator('.mlb-why-steps.is-contrast li.is-no').count() >= 1 && await p.locator('.mlb-lesson-foot .mlb-go').isEnabled());
+  await p.screenshot({ path: path.join(OUT, 'english-rule.png'), fullPage: true });
+  await p.goto(BASE + '/study/english/learn/EN-021', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.eng-speak', { timeout: 60000 }).catch(() => {});
+  chk('english: a sound lesson has Hear and say, with how to make each sound', await p.locator('.eng-how-i').count() >= 2 && await p.locator('.eng-hear').count() === 1 && await p.locator('.eng-say .mlb-go:has-text("Speak")').count() === 1);
+  chk('english: the answer buttons stay shut until the word has been played', await p.locator('.eng-choice').first().isDisabled());
+  for (let k = 0; k < 8; k++) {
+    await p.locator('.eng-hear-play .mlb-go').click();
+    await p.waitForFunction(() => { const b = document.querySelector('.eng-choice'); return b && !b.disabled; }, null, { timeout: 15000 });
+    await p.locator('.eng-choice').first().click();
+    await p.locator('.eng-hear .mlb-fb .mlb-go').click();
+  }
+  chk('english: eight listening rounds end with a score', /of 8 right/.test(await p.locator('.eng-hear').innerText()));
+  chk('english: the voice is the RECORDED clip — the listening rounds fetched recorded MP3s and every one loaded', clips.length >= 8 && clips.every(c => c === 200 || c === 206 || c === 304), clips.slice(0, 8).join(','));
+  await p.screenshot({ path: path.join(OUT, 'english-hear-say.png'), fullPage: true });
+  chk('english: nothing in the teaching steps errors', log.length === 0, log.slice(0, 3).join(' | '));
+  await ctx.close();
+}
 /* A Physics lesson's explorer asks for the prediction FIRST (predict–observe–explain), in a browser. */
 async function physicsPredict(who) {
   // PH-004 rests on PH-001…003: this learner already knows them.
@@ -406,6 +445,7 @@ async function physicsPredict(who) {
     console.log('English Lab, end to end:');
     await english('NGG-E2E-1', 1280, 900, 'desktop');
     await english('NGG-E2E-2', 390, 844, 'phone');
+    await englishTeach('NGG-E2E-2');
   } catch (e) { fail++; console.error('  ✗ FAIL: ' + (e && e.stack || e));
     try { const pg = browser && browser.contexts()[0] && browser.contexts()[0].pages()[0]; if (pg) await pg.screenshot({ path: path.join(OUT, 'failure.png'), fullPage: true }); } catch (_) {} }
   finally { if (browser) await browser.close(); cleanup(); }

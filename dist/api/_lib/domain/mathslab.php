@@ -474,6 +474,8 @@ function mlb_comp_view(array $p): array {
         'nextReview' => $s ? (string)$s['nextReview'] : '',
         'studied' => $s ? (string)($s['studiedAt'] ?? '') !== '' : false, 'owed' => $s ? (int)($s['owed'] ?? 0) : 0,
         'why' => function_exists('mlb_why_of') ? mlb_why_of($id) : null,
+        // A Lab's speaking material for this topic (lab content 'speak'): the lesson's "Hear and say" step.
+        'speak' => (($l = lab_for_comp($id)) && ($sp = lab_call('speak', $l['id'])[$id] ?? null)) ? $sp + (function_exists('eng_audio_urls') ? ['audio' => eng_audio_urls($sp)] : []) : null,
         'example' => $ex ? ['stem' => $ex['stem'], 'diagram' => $ex['diagram'] ?? null, 'lines' => $ex['lines'] ?? null, 'answer' => mlb_answer_text($ex), 'steps' => $ex['steps']] : null];
 }
 

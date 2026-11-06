@@ -35,6 +35,10 @@ function rate_limit_default(string $op): ?array {
         'auth.gateway.hour'  => ['max' => 120, 'window' => 3600],
         'auth.request.hour'  => ['max' => 30,  'window' => 3600],
         'auth.verify'        => ['max' => 10, 'window' => 60],    // password / OTP / TOTP checks
+        // The English Lab's speaking step: each "Say it" is a PAID speech-to-text call; a voice clip is
+        // paid only the first time (then cached), so it can be looser.
+        'mathslab.listen'    => ['max' => 10, 'window' => 60],
+        'mathslab.voice'     => ['max' => 60, 'window' => 60],
         'family.request'     => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code, like auth.request
         'timetable.save'     => ['max' => 5,  'window' => 60],    // EMAILS a timetable link — mail-amplification
         'timetable.load'     => ['max' => 30, 'window' => 60],    // a link token is a bearer secret; slows guessing

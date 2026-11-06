@@ -22,7 +22,8 @@ declare(strict_types=1);
  *               stages  [n => [title, [ten topic titles]]]   strands [n => strand]
  *               bands   [[id, name, level, from, to, what, summit?]]
  *               edges   [topic number => [numbers it needs]]  courses [id => course]
- *               forms   [topic id => [fn(MlbRng): item]]      why     [topic id => proof] (optional)
+ *               forms   [topic id => [fn(MlbRng): item]]      why     [topic id => proof] (optional; English: the rule)
+ *               speak   [topic id => ['how', 'pairs', 'say']]  (optional; the lesson's "Hear and say" step)
  *   features  what this Lab offers beyond the path: 'daily' (a daily problem from its summit band),
  *             'exams' (timed practice papers), 'explore' (interactive explorers in the client).
  *   noun      what one step on its map is called in copy ("topic").
@@ -49,7 +50,8 @@ const LABS = [
         'docProgram' => 'mathslab', 'emoji' => '📖',
         'what' => 'From nouns, tenses and punctuation to speech work, comprehension, summary and writing well — JSS English Studies through senior secondary English Language.',
         'content' => ['stages' => 'eng_stage_table', 'strands' => 'eng_strands', 'bands' => 'eng_bands', 'edges' => 'eng_edges',
-                      'courses' => 'eng_courses', 'forms' => 'eng_forms', 'formulas' => 'eng_formulas', 'papers' => 'eng_papers'],
+                      'courses' => 'eng_courses', 'forms' => 'eng_forms', 'formulas' => 'eng_formulas', 'papers' => 'eng_papers',
+                      'why' => 'eng_rules', 'speak' => 'eng_speak'],
         'features' => ['daily', 'exams'], 'dailyName' => 'Daily Word Challenge', 'pitch' => 'in grammar, vocabulary, speech, reading and writing'],
 ];
 
