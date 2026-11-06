@@ -16,7 +16,7 @@
 const MLB_STATE_L = { none: "Not started", open: "Ready to learn", locked: "Locked", soon: "In preparation", learning: "Learning", practising: "Practising",
   ready: "Ready to check", review: "Needs a refresh", known: "Known (fast-tracked)", mastered: "Mastered", secure: "Secure", longterm: "Long-term" };
 const MLB_GOOD_V = ["known", "mastered", "secure", "longterm"];
-const MLB_ERR = { members_only: "The full Maths Lab is for NGG members.", locked: "Finish the topics this builds on first.", not_available: "This topic is still in preparation.",
+const MLB_ERR = { members_only: "The full Lab is for NGG members.", locked: "Finish the topics this builds on first.", not_available: "This topic is still in preparation.",
   not_studied: "Study the lesson first: work through every step, then practise.", practice_owed: "Get more practice questions right first — the check can't be retried straight away.", not_ready: "The mastery check opens when your practice shows you are ready.",
   climb_done: "Your climb is finished.", nothing_due: "Nothing is due for review.", boss_locked: "Know every topic in the stage first.", finished: "That session is already finished.",
   network: "You’re offline. Check your connection and try again.", rate_limited: "Slow down a little and try again." };
@@ -51,6 +51,7 @@ function MlbMath({ text, as, className }) {
 /* ── Diagrams: drawn from the question's own numbers ── */
 function MlbDiagram({ d }) {
   if (!d) return null;
+  if (String(d.type || "").indexOf("phy-") === 0) return <PhyDiagram d={d}/>;   // the Physics Lab's figures (phy-visuals.jsx)
   const W = 320;
   if (d.type === "dots") {
     let s = d.seed || 1; const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
@@ -188,6 +189,7 @@ const MLB_EXPLORE = {
   series: ["MC-070", "MC-129"],
   growth: ["MC-038", "MC-063", "MC-169"],
   logs: ["MC-068", "MC-069", "MC-155"],
+  ...PHY_EXPLORE,   // the Physics Lab's explorers (phy-visuals.jsx, loaded first)
 };
 /* One small challenge per explorer, in words an eleven-year-old can follow: a thing to DO and a
    thing to notice. The owner's rule: easy to understand, never dumbed down. */
@@ -208,22 +210,25 @@ const MLB_TRY = {
   series: "Set r to 0.5 and add more terms. Does the total keep growing for ever?",
   growth: "Set the rate to 10% and the years to 30. Which line pulls ahead, and why?",
   logs: "Set the power to 0. Whatever the base, where is the dot? Now make the power negative: is the number still above zero?",
+  ...PHY_TRY,
 };
 function mlbExplorerFor(comp) { for (const k in MLB_EXPLORE) if (MLB_EXPLORE[k].indexOf(comp) >= 0) return k; return null; }
 function MlbExplore({ comp, onDone }) {
   /* Report the first real interaction once, AFTER the event: updating the lesson inside the
      slider's own input event swallowed that first move (the range snapped back). */
-  const told = React.useRef(false);
-  const tell = () => { if (told.current || !onDone) return; told.current = true; setTimeout(onDone, 0); };
+  const told = React.useRef(false); const [tried, setTried] = React.useState(false);
+  const tell = () => { if (told.current) return; told.current = true; setTimeout(() => { setTried(true); if (onDone) onDone(); }, 0); };
   const k = mlbExplorerFor(comp); if (!k) return null;
   const E = { numline: MlbExNumline, array: MlbExArray, area: MlbExArea, fraction: MlbExFraction, triangle: MlbExTriangle, pythag: MlbExPythag, sector: MlbExSector,
-    line: MlbExLine, quad: MlbExQuad, unit: MlbExUnit, chord: MlbExChord, riemann: MlbExRiemann, chance: MlbExChance, series: MlbExSeries, growth: MlbExGrowth, logs: MlbExLog }[k];
+    line: MlbExLine, quad: MlbExQuad, unit: MlbExUnit, chord: MlbExChord, riemann: MlbExRiemann, chance: MlbExChance, series: MlbExSeries, growth: MlbExGrowth, logs: MlbExLog, ...PHY_EXPLORERS }[k];
   return (
     <section className="mlb-card mlb-explore" aria-labelledby="mlb-ex-h"
       onInputCapture={e => { if (e.target.closest("input")) tell(); }} onClickCapture={e => { if (e.target.closest(".mlb-ex button")) tell(); }}>
       <h3 id="mlb-ex-h" className="mlb-h3"><i className="ph ph-sliders-horizontal" aria-hidden="true"/> Explore it</h3>
-      <p className="mlb-ex-try"><b>Try this:</b> {MLB_TRY[k]}</p>
-      <E/>
+      <PhyPredict k={k} tried={tried}>
+        <p className="mlb-ex-try"><b>Try this:</b> {MLB_TRY[k]}</p>
+        <E/>
+      </PhyPredict>
     </section>
   );
 }
@@ -471,33 +476,42 @@ function useMlbNewCerts() {
   return n;
 }
 
-/* ── Where we are inside /study/lab ── */
+/* ── Which Lab, and where we are inside it ──
+   The Lab is the address: /study/lab is Maths (the first Lab's address, kept for every old link),
+   /study/physics is Physics (NGG_LABS in tools-core.jsx, the client half of domain/labs.php). */
+function mlbLab() {
+  const seg = (location.pathname || "").replace(/^\/+|\/+$/g, "").split("/");
+  return (seg[0] === "study" && NGG_LABS.find(l => l.seg === seg[1])) || NGG_LABS[0];
+}
 function mlbRoute() {
   const seg = (location.pathname || "").replace(/^\/+|\/+$/g, "").split("/");
-  if (seg[0] !== "study" || seg[1] !== "lab") return { v: "home" };
+  if (seg[0] !== "study" || !NGG_LABS.some(l => l.seg === seg[1])) return { v: "home" };
   if (seg[2] === "learn" && /^[A-Z]{2}-\d{3}$/.test(seg[3] || "")) return { v: "learn", comp: seg[3] };
   if (seg[2] === "guide" && /^\d{1,2}$/.test(seg[3] || "")) return { v: "guide", stage: Number(seg[3]) };   // any Lab's topic id (domain/labs.php); the server says whether it exists
+  if (seg[2] === "exams" && !mlbLab().exams) return { v: "home" };   // a Lab without papers has no papers screen
   if (["map", "courses", "progress", "certificates", "daily", "exams"].indexOf(seg[2]) >= 0) return { v: seg[2] };
   return { v: "home" };
 }
-function mlbPath(r) { return "/study/lab" + (r.v === "home" ? "" : r.v === "learn" ? "/learn/" + r.comp : r.v === "guide" ? "/guide/" + r.stage : "/" + r.v); }
+function mlbPath(r) { return "/study/" + mlbLab().seg + (r.v === "home" ? "" : r.v === "learn" ? "/learn/" + r.comp : r.v === "guide" ? "/guide/" + r.stage : "/" + r.v); }
 
 function MathsLab({ me }) {
+  const lab = mlbLab();
   const [route, setRoute] = React.useState(mlbRoute);
   const [play, setPlay] = React.useState(null);           // a running session
   const [lite, setLite] = React.useState(false);          // signed in but not an NGG member
   const newCerts = useMlbNewCerts();
   const go = React.useCallback(r => { setPlay(null); setRoute(r); try { history.pushState({ page: "study" }, "", mlbPath(r)); window.scrollTo(0, 0); } catch (_) {} }, []);
   React.useEffect(() => { const on = () => { setPlay(null); setRoute(mlbRoute()); }; window.addEventListener("popstate", on); return () => window.removeEventListener("popstate", on); }, []);
-  if (me.phase === "loading") return <SttState kind="loading" text="Opening the Maths Lab…"/>;
+  if (me.phase === "loading") return <SttState kind="loading" text={"Opening the " + mlbLab().title + "…"}/>;
   if (!me.member || lite) return <MlbLite signedIn={!!me.member} route={route} go={go}/>;
   // Inside .mlb: every colour, border and button in the player reads the Lab's tokens (outside it, none resolved).
-  if (play) return <div className="mlb"><MlbPlayer key={(play.mode || "") + (play.n || 0)} start={play} onDone={() => { setPlay(null); }} go={go} onAgain={() => setPlay(p => Object.assign({}, p, { n: (p.n || 0) + 1 }))}
+  if (play) return <div className={"mlb is-" + lab.id}><MlbPlayer key={(play.mode || "") + (play.n || 0)} start={play} onDone={() => { setPlay(null); }} go={go} onAgain={() => setPlay(p => Object.assign({}, p, { n: (p.n || 0) + 1 }))}
     onMini={() => setPlay(p => ({ mode: "mini", n: (p.n || 0) + 1 }))}/></div>;
-  const nav = [["home", "Home", "ph-house"], ["map", "Map", "ph-path"], ["courses", "Courses", "ph-graduation-cap"], ["certificates", "Certificates", "ph-certificate"], ["progress", "Progress", "ph-chart-bar"], ["exams", "Exams", "ph-exam"]];
+  const nav = [["home", "Home", "ph-house"], ["map", "Map", "ph-path"], ["courses", "Courses", "ph-graduation-cap"], ["certificates", "Certificates", "ph-certificate"], ["progress", "Progress", "ph-chart-bar"]]
+    .concat(lab.exams ? [["exams", "Exams", "ph-exam"]] : []);
   return (
-    <div className="mlb"><div className="mlb-shell">
-      <div className="mlb-navwrap"><nav className="mlb-nav" aria-label="Maths Lab">
+    <div className={"mlb is-" + lab.id}><div className="mlb-shell">
+      <div className="mlb-navwrap"><nav className="mlb-nav" aria-label={lab.title}>
         {nav.map(([v, l, ic]) => <button key={v} type="button" className={"mlb-navb" + (route.v === v || (v === "map" && route.v === "learn") ? " is-on" : "")} aria-current={route.v === v ? "page" : undefined}
           aria-label={v === "certificates" && newCerts ? l + ", " + newCerts + " new" : undefined} onClick={() => go({ v })}>
           <i className={"ph-fill " + ic} aria-hidden="true"/><span>{l}</span>{v === "certificates" && newCerts ? <em className="mlb-navdot" aria-hidden="true">{newCerts}</em> : null}</button>)}
@@ -532,8 +546,8 @@ function useMlb(fn, deps) {
 function MlbHome({ go, startPlay, onNotMember }) {
   const [st, load] = useMlb(() => NGGApi.member.mathslab.home(), []);
   React.useEffect(() => { if (st.phase === "error" && st.e && (st.e.code || st.e.message) === "members_only") onNotMember(); }, [st]); // eslint-disable-line
-  if (st.phase === "loading") return <SttState kind="loading" text="Getting your Maths Lab ready…"/>;
-  if (st.phase === "error") return <SttState kind="error" text={"Couldn’t open the Maths Lab. " + mlbErr(st.e)} retry={load}/>;
+  if (st.phase === "loading") return <SttState kind="loading" text={"Getting your " + mlbLab().title + " ready…"}/>;
+  if (st.phase === "error") return <SttState kind="error" text={"Couldn’t open the " + mlbLab().title + ". " + mlbErr(st.e)} retry={load}/>;
   const d = st.d, lv = d.level, nx = d.next, f = d.focus || { stage: d.climb.stage, title: "", known: 0, total: 10 };
   const pct = lv.next ? Math.round((d.xp - lv.from) / (lv.next - lv.from) * 100) : 100;
   const begin = () => {
@@ -576,9 +590,9 @@ function MlbHome({ go, startPlay, onNotMember }) {
 
       {d.daily ? <section className={"mlb-dailycard" + (d.daily.solved ? " is-solved" : "")} aria-labelledby="mlb-daily-h">
         <span className="mlb-dailycard-i" aria-hidden="true"><i className="ph-fill ph-crown"/></span>
-        <div><p className="mlb-eyebrow">Daily Olympiad Problem{d.daily.dailyStreak ? " · " + d.daily.dailyStreak + " day" + (d.daily.dailyStreak === 1 ? "" : "s") + " in a row" : ""}</p>
+        <div><p className="mlb-eyebrow">{mlbLab().daily}{d.daily.dailyStreak ? " · " + d.daily.dailyStreak + " day" + (d.daily.dailyStreak === 1 ? "" : "s") + " in a row" : ""}</p>
           <h3 id="mlb-daily-h" className="mlb-h3">{d.daily.solved ? "Solved today — well done." : d.daily.done ? "Today’s problem is over: see how it goes." : "Today: " + d.daily.compTitle}</h3>
-          <p className="mlb-meta">{d.daily.solved || d.daily.done ? "A new problem arrives tomorrow." : "One olympiad problem a day, the same for everyone in NGG. Tough — but the hint is free and you get three tries."}</p></div>
+          <p className="mlb-meta">{d.daily.solved || d.daily.done ? "A new problem arrives tomorrow." : mlbLab().dailyP}</p></div>
         <button type="button" className={d.daily.done ? "stt-btn" : "mlb-go"} onClick={() => go({ v: "daily" })}>{d.daily.done ? "See the solution" : d.daily.tries ? "Keep going" : "Try it"}</button>
       </section> : null}
 
@@ -591,7 +605,7 @@ function MlbHome({ go, startPlay, onNotMember }) {
 
       <section className="mlb-excard" aria-labelledby="mlb-excard-h">
         <span className="mlb-dailycard-i is-exam" aria-hidden="true"><i className="ph-fill ph-exam"/></span>
-        <div><p className="mlb-eyebrow">Exam practice</p><h3 id="mlb-excard-h" className="mlb-h3">JAMB-style and SAT-style papers</h3>
+        <div><p className="mlb-eyebrow">Exam practice</p><h3 id="mlb-excard-h" className="mlb-h3">Timed practice papers</h3>
           <p className="mlb-meta">Timed like the real thing, new every time, marked by area so you know what to work on.</p></div>
         <button type="button" className="stt-btn" onClick={() => go({ v: "exams" })}>See the papers</button>
       </section>
@@ -873,8 +887,8 @@ function MlbStatsBar() {
 function MlbFramework({ bands }) {
   return (
     <section className="mlb-card mlb-fw" aria-labelledby="mlb-fw-h">
-      <div className="mlb-fw-top"><h3 id="mlb-fw-h" className="mlb-h3">The 170-Point Mathematics Mastery Framework</h3>
-        <p className="mlb-p">From why 1 + 1 = 2 to WAEC, Further Mathematics and beyond — then the Gods of Maths summit, where olympiad problems are won by ideas. Learn why things are true, one foundation at a time.</p></div>
+      <div className="mlb-fw-top"><h3 id="mlb-fw-h" className="mlb-h3">{mlbLab().road}</h3>
+        <p className="mlb-p">{mlbLab().roadP}</p></div>
       <ol className="mlb-bands">{bands.map((b, i) => <li key={b.id} className={b.summit ? "is-summit" : ""}><span className="mlb-bands-i" aria-hidden="true">{b.summit ? <i className="ph-fill ph-crown"/> : i + 1}</span>
         <span className="mlb-bands-t"><b>{b.name}</b><span>{b.level}</span><small>{b.stages} · {b.topics} topics</small></span></li>)}</ol>
     </section>
@@ -1053,7 +1067,7 @@ function MlbExams({ go, startPlay }) {
         <p className="mlb-p">Full timed papers in the style of the exams you will sit. Every paper is new: the questions are written by the Lab in the style of past papers, never copied from them. The clock starts when you press Start; when it runs out the paper is handed in.</p></header>
       <div className="mlb-papers">{d.papers.map(p => (
         <section key={p.id} className={"mlb-card mlb-paper is-" + p.id} aria-labelledby={"mlb-paper-" + p.id}>
-          <span className="mlb-paper-i" aria-hidden="true"><i className={"ph-fill " + (p.id === "jamb" ? "ph-exam" : "ph-globe-hemisphere-west")}/></span>
+          <span className="mlb-paper-i" aria-hidden="true"><i className={"ph-fill " + (p.id === "sat" ? "ph-globe-hemisphere-west" : "ph-exam")}/></span>
           <h3 id={"mlb-paper-" + p.id} className="mlb-h3">{p.title}</h3>
           <p className="mlb-meta">{p.n} questions · {p.minutes} minutes{p.best != null ? " · your best: " + p.best + (p.id === "sat" ? " (estimate)" : "/100") : ""}</p>
           <p className="mlb-p">{p.what}</p>
@@ -1095,13 +1109,13 @@ function MlbDaily({ go }) {
   return (
     <div className="mlb-stack mlb-daily">
       <header className="mlb-dailyhead">
-        <p className="mlb-eyebrow"><i className="ph-fill ph-crown" aria-hidden="true"/> Daily Olympiad Problem · {d.day}</p>
+        <p className="mlb-eyebrow"><i className="ph-fill ph-crown" aria-hidden="true"/> {mlbLab().daily} · {d.day}</p>
         <h2 className="mlb-h2">{it.compTitle}</h2>
         <p className="mlb-meta">From Stage {it.stage}: {it.stageTitle}. Everyone in NGG has the same problem today. You have {d.maxTries} tries, and the hint is free.</p>
         <div className="mlb-dailystats" aria-live="polite"><span><i className="ph-fill ph-fire" aria-hidden="true"/><b>{streak}</b> day{streak === 1 ? "" : "s"} in a row</span><span><i className="ph-fill ph-crown" aria-hidden="true"/><b>{total}</b> solved in all</span></div>
       </header>
       <section className="mlb-q mlb-card" aria-live="polite">
-        <p className="mlb-qn">{done ? (solved ? "Solved" : "Over for today") : "Try " + (tries + 1) + " of " + d.maxTries}<span className="mlb-chall"><i className="ph-fill ph-lightning" aria-hidden="true"/>Olympiad level</span></p>
+        <p className="mlb-qn">{done ? (solved ? "Solved" : "Over for today") : "Try " + (tries + 1) + " of " + d.maxTries}<span className="mlb-chall"><i className="ph-fill ph-lightning" aria-hidden="true"/>{mlbLab().level}</span></p>
         <MlbMath as="p" className="mlb-stem" text={it.stem}/>
         <MlbDiagram d={it.diagram}/>
         {it.lines ? <ol className="mlb-lines">{it.lines.map((l, k) => <li key={k}><MlbMath text={l}/></li>)}</ol> : null}
@@ -1116,7 +1130,7 @@ function MlbDaily({ go }) {
         {err ? <p className="mlb-err" role="alert">{err}</p> : null}
         {!done ? <button type="button" className="mlb-go" disabled={busy || empty} onClick={submit}>{busy ? "Checking…" : "Check my answer"}</button> : null}
         {done ? <div className={"mlb-fb " + (solved ? "is-ok is-big" : "is-no")} role="status">
-          <b className="mlb-fb-h"><i className={"ph-fill " + (solved ? "ph-crown" : "ph-book-open")} aria-hidden="true"/>{solved ? (tries === 1 && !hint ? "Solved at the first try — that is olympiad form." : "Solved! Tough problem, and you got there.") : "Out of tries — here is how it goes."}</b>
+          <b className="mlb-fb-h"><i className={"ph-fill " + (solved ? "ph-crown" : "ph-book-open")} aria-hidden="true"/>{solved ? (tries === 1 && !hint ? "Solved at the first try — brilliant." : "Solved! Tough problem, and you got there.") : "Out of tries — here is how it goes."}</b>
           <p>Answer: <MlbMath text={answer}/></p>
           <details open><summary>Worked solution</summary><ol className="mlb-steps">{steps.map((x, k) => <li key={k}><MlbMath text={x}/></li>)}</ol></details>
           {fb && fb.xp ? <p className="mlb-xp">+{fb.xp} XP</p> : null}
@@ -1124,7 +1138,7 @@ function MlbDaily({ go }) {
         </div> : null}
       </section>
       <div className="mlb-row"><button type="button" className="stt-btn" onClick={() => go({ v: "home" })}><i className="ph ph-arrow-left" aria-hidden="true"/>Back to the Lab</button>
-        <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}><i className="ph ph-path" aria-hidden="true"/>See the Gods of Maths stages</button></div>
+        <button type="button" className="stt-btn" onClick={() => go({ v: "map" })}><i className="ph ph-path" aria-hidden="true"/>See the {mlbLab().summit} stages</button></div>
     </div>
   );
 }
@@ -1410,7 +1424,7 @@ function MlbResult({ res, onDone, go, onAgain, onMini }) {
         {res.exam ? <section className="mlb-exrep" aria-label="Your paper">
           <p className="mlb-exrep-score"><b>{res.exam.scaled}</b><span>{res.exam.scale}</span></p>
           <p className="mlb-meta">{res.exam.answered} of {res.total} answered · {Math.floor(res.exam.usedSecs / 60)} min {res.exam.usedSecs % 60} s of {res.exam.minutes} min{res.exam.overTime ? " · handed in when time ran out" : ""}.
-            {res.exam.paper === "sat" ? " The 200–800 figure is an estimate from your percentage; the real conversion differs from test to test." : ""}</p>
+            {res.exam.paper === "sat" ? " The 200–800 figure is an estimate from your percentage." : ""}</p>
           <ul className="mlb-exareas">{Object.keys(res.exam.areas).map(a => { const x = res.exam.areas[a], pc = Math.round(x.right / Math.max(1, x.total) * 100);
             return <li key={a} className={pc < 60 ? "is-weak" : ""}><span>{a}</span><span className="mlb-meter"><span style={{ width: pc + "%" }}/></span><b>{x.right}/{x.total}</b></li>; })}</ul>
         </section> : null}
@@ -1523,7 +1537,7 @@ function MlbCerts({ go }) {
     <div className="mlb-stack">
       <header className="mlb-homehead">
         <h2 className="mlb-h2">Your certificates</h2>
-        <p className="mlb-p">{list.length ? "Every certificate you have earned in the Maths Lab, newest first. Your family sees them too, under Documents." : "You have not earned a certificate yet. Know all ten topics of a stage and beat its boss to earn your first."}</p>
+        <p className="mlb-p">{list.length ? "Every certificate you have earned in the " + mlbLab().title + ", newest first. Your family sees them too, under Documents." : "You have not earned a certificate yet. Know all ten topics of a stage and beat its boss to earn your first."}</p>
       </header>
       {list.length ? <ul className="mlb-certgrid">{list.map(c => {
         const isNew = seen.indexOf(c.no) < 0;
@@ -1592,7 +1606,7 @@ function MlbProgress({ go }) {
           : <p className="mlb-p">Nothing repeating. Mistakes you make in practice will gather here, with the reason, so you can go straight back to them.</p>}
       </section>
 
-      {d.bands ? <section className="mlb-card"><h3 className="mlb-h3">The 170-point framework and the summit</h3>
+      {d.bands ? <section className="mlb-card"><h3 className="mlb-h3">{mlbLab().road}</h3>
         <ul className="mlb-bands">{d.bands.map(b => <li key={b.name}><b>{b.name}</b><span>{b.level}</span>
           <span className="mlb-meter"><span style={{ width: Math.round(b.mastered / b.total * 100) + "%" }}/></span><span>{b.mastered} of {b.total} points</span></li>)}</ul></section> : null}
 
@@ -1622,10 +1636,10 @@ function MlbProgress({ go }) {
 /* ── Maths Lab Lite (everyone) ── */
 function MlbLite({ signedIn, route, go }) {
   return (
-    <div className="mlb">
+    <div className={"mlb is-" + mlbLab().id}>
       <section className="mlb-hero">
         <div className="mlb-hero-sky" aria-hidden="true"/>
-        <p className="mlb-eyebrow">Maths Lab Lite</p>
+        <p className="mlb-eyebrow">{mlbLab().title} Lite</p>
         <h2 className="mlb-hero-h">Practise any topic, free.</h2>
         <p className="mlb-hero-p">Every answer is marked with a worked solution. Nothing is saved — NGG members get the full Lab: the climb to their level, mastery, reviews, courses and certificates.</p>
         {!signedIn ? <a className="mlb-go" href="/join" onClick={e => { e.preventDefault(); location.assign("/join"); }}>Join NGG</a> : null}

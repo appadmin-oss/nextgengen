@@ -37765,7 +37765,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('maths lab · the topic view carries its proof, and a topic without one carries none', (mlb_comp_view(['comp' => 'MC-077'])['why']['steps'][0]['r'] ?? '') !== '' && mlb_comp_view(['comp' => 'MC-048'])['why'] === null);
     // The framework's five bands cover every stage exactly once, in order.
     $cover = []; foreach (MLB_BANDS as $b) for ($k = $b['from']; $k <= $b['to']; $k++) $cover[] = $k;
-    chk('maths lab · the framework\'s bands (the 170 points and the Gods of Maths summit) cover Stages 1–20 exactly once, and the map carries them', $cover === range(1, 20) && count(mlb_map([])['bands']) === count(MLB_BANDS) && mlb_map([])['stages'][9]['level'] === 'SSS · WASSCE Mathematics');
+    chk('maths lab · the framework\'s bands (the 170 points and the Gods of Maths summit) cover Stages 1–20 exactly once, and the map carries them', $cover === range(1, 20) && count(mlb_map([])['bands']) === count(MLB_BANDS) && mlb_map([])['stages'][9]['level'] === 'SSS · Senior Mathematics');
     // No neglected foundations: a struggling topic is traced back to the earliest gap underneath it.
     $gs = [];
     foreach (mlb_competencies() as $id => $c) if ($c['n'] <= 48) $gs[$id] = ['state' => 'known', 'p' => 0.95, 'attempts' => 8];
@@ -38043,6 +38043,138 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-ML-1', 'SUM-ML-2')");
 })();
 
+/* ── The Labs: Physics is the second (owner, 6 Nov 2026), on the same engine ──
+ * One engine, content through the registry. What is held here: every Physics question obeys the
+ * Maths Lab's rules; the map is whole; and a member's two Labs never leak into each other — the
+ * climb, states, sessions, the daily problem and the certificates are each the Lab's own. */
+(function () {
+    $now = now_iso();
+    lab_use('physics');
+    $bad = []; $n = 0; $thin = []; $fixed = [];
+    foreach (phy_forms() as $c => $forms) {
+        if (count($forms) < 3) $thin[] = $c;
+        foreach ($forms as $fi => $f) {
+            $keys = [];
+            for ($s = 1; $s <= 30; $s++) {
+                $it = mlb_item($c, $fi, $s * 104729 + 7); $n++;
+                $keys[is_array($it['key']) ? json_encode($it['key']) : (string)$it['key']] = 1;
+                $resp = in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'];
+                if (!mlb_mark($it, $resp)['ok']) $bad[] = "$c/$fi key";
+                if (isset($it['unit']) && $it['kind'] === 'num' && !mlb_mark($it, $it['key'] . ' ' . $it['unit'])['ok']) $bad[] = "$c/$fi unit";
+                if (isset($it['options']) && (count(array_unique($it['options'])) !== count($it['options']) || count($it['options']) < 3)) $bad[] = "$c/$fi options";
+                if (isset(mlb_public($it)['key']) || isset(mlb_public($it)['steps']) || isset(mlb_public($it)['whys'])) $bad[] = "$c/$fi leak";
+                if (!$it['steps'] || trim((string)$it['hint']) === '' || trim((string)$it['stem']) === '') $bad[] = "$c/$fi teaching";
+                if ($it['kind'] === 'num' && !is_numeric((string)$it['key'])) $bad[] = "$c/$fi numeric";
+            }
+            $it0 = mlb_item($c, $fi, 7);
+            if ($it0['kind'] !== 'mcq' && count($keys) < 2) $fixed[] = "$c/$fi";
+        }
+    }
+    $bad = array_values(array_unique($bad));
+    chk('physics lab · every generated question (' . $n . ') marks its own answer right (with or without its unit typed after it), offers at least three distinct options, teaches (steps and a hint), and never sends the key' . ($bad ? ' (' . implode(', ', array_slice($bad, 0, 8)) . ')' : ''),
+        $bad === [] && count(phy_forms()) === 90);
+    chk('physics lab · every topic has at least three kinds of question, and no typed or spot-the-error form gives everybody the same answer' . ($thin || $fixed ? ' (' . implode(', ', array_merge($thin, $fixed)) . ')' : ''), $thin === [] && $fixed === []);
+
+    // The map: six stages of ten, PH-001…PH-060, the bands cover every stage once, edges stay inside the Lab, every course's stages exist.
+    $cover = []; foreach (mlb_bands() as $b) for ($k = $b['from']; $k <= $b['to']; $k++) $cover[] = $k;
+    $ids = array_keys(mlb_competencies()); $outside = [];
+    foreach (mlb_competencies() as $id => $c) foreach ($c['needs'] as $nd) if (!isset(mlb_competencies()[$nd]) || mlb_num($nd) >= mlb_num($id)) $outside[] = "$id→$nd";
+    $cstages = []; foreach (mlb_courses() as $c) $cstages = array_merge($cstages, $c['stages']);
+    chk('physics lab · the map is nine stages of ten (PH-001 … PH-090), every id resolves to the Physics Lab, the bands cover Stages 1–9 exactly once, every prerequisite is an earlier Physics topic, and the courses cover every stage' . ($outside ? ' (' . implode(', ', $outside) . ')' : ''),
+        count(mlb_stages()) === 9 && $ids[0] === 'PH-001' && end($ids) === 'PH-090' && count($ids) === 90 && !array_filter($ids, static fn($i) => (lab_for_comp($i)['id'] ?? '') !== 'physics')
+        && $cover === range(1, 9) && $outside === [] && array_values(array_unique($cstages)) === range(1, 9) && mlb_stage_available(9));
+    $u = mlb_item('PH-004', 0, 5);
+    chk('physics lab · a quantity is answered with or without its unit: "' . $u['key'] . ' N" and "' . $u['key'] . 'N" are right, a different number with the unit is wrong, and digits are never stripped',
+        mlb_mark($u, $u['key'] . ' N')['ok'] && mlb_mark($u, $u['key'] . 'N')['ok'] && !mlb_mark($u, ((int)$u['key'] + 10) . ' N')['ok'] && !mlb_mark($u, $u['key'] . ' 5')['ok']
+        && mlb_answer_text($u) === $u['key'] . ' N');
+    lab_use('maths');
+
+    // Two Labs, one member: nothing leaks between them.
+    db_insert('members', ['memberId' => 'NGG-PH-1', 'fullName' => 'Ada Physics', 'email' => 'ph1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $hp = backend_dispatch('mathslab.home', ['memberId' => 'NGG-PH-1', 'lab' => 'physics']);
+    $hm = backend_dispatch('mathslab.home', ['memberId' => 'NGG-PH-1']);
+    chk('labs · Home is per Lab: Physics counts its 90 topics and Maths its 200, each starting its own climb at Stage 1', ($hp['counts']['total'] ?? 0) === 90 && ($hm['counts']['total'] ?? 0) === 200
+        && ($hp['climb']['stage'] ?? 0) === 1 && ($hm['climb']['stage'] ?? 0) === 1 && str_starts_with((string)($hp['next']['title'] ?? ''), 'Stage 1 gate · Measurement and Matter'));
+    chk('labs · an unknown Lab is refused, never quietly shown as Maths', (backend_dispatch('mathslab.home', ['memberId' => 'NGG-PH-1', 'lab' => 'chemistry'])['error'] ?? '') === 'unknown_lab'
+        && (backend_dispatch('mathslab.map', ['lab' => 'nope'])['error'] ?? '') === 'unknown_lab');
+    // Clear the Physics Stage 1 gate perfectly. The answers are sent WITHOUT a lab: the session knows its own.
+    $st = backend_dispatch('mathslab.start', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'mode' => 'climb']);
+    $row = db_row('SELECT items, lab FROM mlab_sessions WHERE sessionId = ?', [(string)($st['sessionId'] ?? '')]);
+    $its = json_decode((string)($row['items'] ?? '[]'), true) ?: [];
+    lab_use('maths');
+    foreach ($its as $i => $x) { $it = mlb_item($x['c'], $x['f'], $x['s']); backend_dispatch('mathslab.answer', ['memberId' => 'NGG-PH-1', 'sessionId' => $st['sessionId'], 'index' => $i, 'answer' => $it['key'], 'ms' => 1000]); }
+    lab_use('maths');
+    $fin = backend_dispatch('mathslab.finish', ['memberId' => 'NGG-PH-1', 'sessionId' => $st['sessionId']]);
+    $hp2 = backend_dispatch('mathslab.home', ['memberId' => 'NGG-PH-1', 'lab' => 'physics']);
+    $hm2 = backend_dispatch('mathslab.home', ['memberId' => 'NGG-PH-1']);
+    chk('labs · a Physics climb session is recorded as Physics, holds only Physics topics, is answered and scored as Physics even when the request does not say so, and moves the Physics climb alone',
+        ($row['lab'] ?? '') === 'physics' && $its && !array_filter($its, static fn($x) => !str_starts_with($x['c'], 'PH-')) && !empty($fin['ok']) && ($fin['pct'] ?? 0) === 100
+        && ($hp2['climb']['stage'] ?? 0) === 2 && ($hm2['climb']['stage'] ?? 0) === 1 && ($hp2['counts']['mastered'] ?? 0) === 10 && ($hm2['counts']['mastered'] ?? 0) === 0);
+    lab_use('physics');
+    $phStates = array_keys(mlb_states('NGG-PH-1')); lab_use('maths'); $mcStates = array_keys(mlb_states('NGG-PH-1'));
+    chk('labs · a Lab reads only its own topic states', count($phStates) === 10 && !array_filter($phStates, static fn($c) => !str_starts_with($c, 'PH-')) && $mcStates === []);
+    // Each Lab offers its own papers; the daily problem is each Lab's own.
+    $ex = backend_dispatch('mathslab.exams', ['memberId' => 'NGG-PH-1', 'lab' => 'physics']);
+    $exs = backend_dispatch('mathslab.start', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'mode' => 'exam', 'paper' => 'jamb']);
+    $exp = backend_dispatch('mathslab.start', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'mode' => 'exam', 'paper' => 'phy']);
+    $pits = array_column($exp['items'] ?? [], 'comp');
+    chk('labs · Physics offers its own timed paper (and refuses a Maths one): 40 four-option questions on 40 different Physics topics, on a 40-minute clock',
+        array_column($ex['papers'] ?? [], 'id') === ['phy'] && ($exs['error'] ?? '') === 'bad_paper' && count($pits) === 40 && count(array_unique($pits)) === 40
+        && !array_filter($pits, static fn($c) => !str_starts_with($c, 'PH-')) && ($exp['minutes'] ?? 0) === 40 && !array_filter($exp['items'], static fn($it) => $it['kind'] !== 'mcq'));
+    db_exec("DELETE FROM mlab_sessions WHERE memberId = 'NGG-PH-1' AND mode = 'exam'");
+    $dp = backend_dispatch('mathslab.daily', ['memberId' => 'NGG-PH-1', 'lab' => 'physics']);
+    $dm = backend_dispatch('mathslab.daily', ['memberId' => 'NGG-PH-1']);
+    lab_use('physics'); $px = mlb_daily_pick(mlb_today()); $pit = mlb_item($px['c'], $px['f'], $px['s']);
+    $da = backend_dispatch('mathslab.dailyAnswer', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'answer' => $pit['key']]);
+    $dm2 = backend_dispatch('mathslab.daily', ['memberId' => 'NGG-PH-1']);
+    chk('labs · the Physics daily problem comes from its own summit band and is named for it, and solving it does not touch the Maths daily problem',
+        (mlb_comp((string)($dp['item']['comp'] ?? ''))['stage'] ?? 0) === 9 && ($dp['name'] ?? '') === 'Daily Physics Puzzle'
+        && str_starts_with((string)($dm['item']['comp'] ?? ''), 'MC-') && !empty($da['solved']) && empty($dm2['solved']) && empty($dm2['done']));
+    // Certificates: a Physics stage passed is a PHYSICS certificate, on its own key, and the Maths list does not show it.
+    lab_use('physics');
+    foreach (mlb_stages()[1]['comps'] as $c) mlb_set_state('NGG-PH-1', $c, ['state' => 'mastered']);
+    mlb_track_set('NGG-PH-1', ['bosses' => json_encode(['1' => mlb_today()])]);
+    $pc = mlb_issue_certificates('NGG-PH-1', [1 => 90]);
+    $pdoc = doc_by('sourceKey', 'mlbs-PH:NGG-PH-1:1');
+    $pl = mlb_cert_list('NGG-PH-1'); lab_use('maths'); $ml = mlb_cert_list('NGG-PH-1');
+    $ver = $pdoc ? public_document_verify(['no' => $pdoc['docNo'], 'code' => doc_check_code((string)$pdoc['docNo'])]) : [];
+    chk('labs · a Physics stage passed earns a PHYSICS stage certificate (its own key, its own title, verifiable as "Physics Lab"), listed under Physics and not under Maths',
+        count($pc) === 1 && ($pc[0]['scope'] ?? '') === 'stage' && $pdoc && doc_cert_title($pdoc) === 'Physics Lab · Stage 1: Measurement and Matter'
+        && count($pl) === 1 && $ml === [] && str_starts_with((string)($ver['what'] ?? ''), 'Physics Lab stage 1') && !doc_by('sourceKey', 'mlbs:NGG-PH-1:1'));
+    $html = $pdoc ? doc_render_certificate($pdoc) : '';
+    chk('labs · the Physics certificate says Physics Lab and carries Physics formulas behind the name, not Maths ones', str_contains($html, 'The Physics Lab') && str_contains($html, 'F = ma') && !str_contains($html, 'The Maths Lab'));
+    $g = backend_dispatch('mathslab.guide', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'stage' => 3]);
+    $mp = backend_dispatch('mathslab.map', ['memberId' => 'NGG-PH-1', 'lab' => 'physics']);
+    $ll = backend_dispatch('labs.list', []);
+    chk('labs · the Physics Guidebook, map and labs.list read the Physics map (9 stages, its own bands), and labs.list reports both Labs with their sizes',
+        ($g['title'] ?? '') === 'Motion' && count($g['topics'] ?? []) === 10 && !empty($g['topics'][0]['example']['steps']) && count($mp['stages'] ?? []) === 9 && ($mp['bands'][0]['id'] ?? '') === 'phy-basics'
+        && array_column($ll['labs'] ?? [], 'topics', 'id') === ['maths' => 200, 'physics' => 90]);
+    chk('labs · the schema ladder ends at 229 with one Lab track per member per Lab (Maths copied across)', NGG_SCHEMA_TARGET === 229
+        && (int)db_row("SELECT COUNT(*) AS n FROM mlab_track WHERE memberId = 'NGG-PH-1'")['n'] === 2);
+    /* No exam body is named anywhere a learner reads (owner, 6 Nov 2026: "Do NOT mention these exam
+       bodies since we'll not be copying their questions"). Every Lab's questions — stems, options,
+       hints and worked steps, three draws of every form — its map, bands, courses, papers and its
+       labs.list entry. Case-sensitive on purpose: "sat" is a verb in a statistics question. */
+    $bodies = '/\b(WAEC|WASSCE|JAMB|UTME|NECO|BECE|IPhO|IMO|PAMO|NMC|SAT|Cowbellpedia)\b/';
+    $named = [];
+    foreach (array_keys(LABS) as $lid) {
+        lab_use($lid);
+        $txt = json_encode([mlb_map([]), mlb_courses(), mlb_bands(), labs_list()], JSON_UNESCAPED_UNICODE);
+        if (lab_has('exams')) $txt .= json_encode(array_map(static fn($P) => [$P['title'], $P['what']], MLB_PAPERS), JSON_UNESCAPED_UNICODE);
+        if (preg_match($bodies, $txt, $mm)) $named[] = "$lid map/courses/papers: " . $mm[1];
+        foreach (mlb_forms() as $c => $fs) foreach ($fs as $fi => $f) for ($sd = 1; $sd <= 3; $sd++) {
+            $it = mlb_item($c, $fi, $sd * 977);
+            $t = json_encode([$it['stem'], $it['options'] ?? [], $it['steps'], $it['hint'], $it['lines'] ?? [], $it['whys'] ?? []], JSON_UNESCAPED_UNICODE);
+            if (preg_match($bodies, $t, $mm)) { $named[] = "$c/$fi: " . $mm[1]; break; }
+        }
+    }
+    lab_use('maths');
+    chk('labs · no exam body is named anywhere a learner reads, in either Lab' . ($named ? ' (' . implode(', ', array_slice(array_unique($named), 0, 6)) . ')' : ''), $named === []);
+    foreach (['mlab_state', 'mlab_profile', 'mlab_sessions', 'mlab_enrol', 'mlab_track'] as $t) db_exec("DELETE FROM $t WHERE memberId = 'NGG-PH-1'");
+    db_exec("DELETE FROM documents WHERE memberId = 'NGG-PH-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PH-1'");
+    lab_use('maths');
+})();
+
 // ── Two requests settling one payment: each announces / verifies once ──
 (function () {
     $now = now_iso();
@@ -38251,9 +38383,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $mlbRef = backend_dispatch('mathslab.certificate', ['memberId' => 'NGG-DOC-1', 'courseId' => 'number-foundations']);
     chk('maths lab certificate · a course not completed is refused', ($mlbRef['error'] ?? '') === 'not_complete' && mlb_issue_certificates('NGG-DOC-1') === []);
     foreach ([1, 2, 3, 4] as $stN) foreach (mlb_stages()[$stN]['comps'] as $cId) mlb_set_state('NGG-DOC-1', $cId, ['state' => 'mastered']);
-    db_update('mlab_profile', ['bosses' => json_encode(['1' => '2026-11-01', '2' => '2026-11-01', '3' => '2026-11-02', '4' => '2026-11-03'])], ['memberId' => 'NGG-DOC-1']);
+    lab_use('maths'); mlb_track_set('NGG-DOC-1', ['bosses' => json_encode(['1' => '2026-11-01', '2' => '2026-11-01', '3' => '2026-11-02', '4' => '2026-11-03'])]);
     // Stage 1 alone first: ten topics and its boss earn the STAGE certificate, and not the course one.
-    db_update('mlab_profile', ['bosses' => json_encode(['1' => '2026-11-01'])], ['memberId' => 'NGG-DOC-1']);
+    lab_use('maths'); mlb_track_set('NGG-DOC-1', ['bosses' => json_encode(['1' => '2026-11-01'])]);
     foreach ([2, 3, 4] as $stN) mlb_set_state('NGG-DOC-1', mlb_stages()[$stN]['comps'][0], ['state' => 'practising']);
     $s1 = mlb_issue_certificates('NGG-DOC-1', [1 => 92]);
     chk('maths lab certificate · every ten topics: a stage passed (all ten mastered, boss beaten) earns a stage certificate, NGG-MLS-YYYY-#####, and no course one yet',
@@ -38263,7 +38395,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         str_contains($sp, 'Stage 1: ' . mlb_stages()[1]['title']) && str_contains($sp, '<small>STAGE</small><b>01</b>') && str_contains($sp, 'beaten (92%)')
         && str_contains($sp, 'Number Foundations') && !str_contains($sp, 'paper</span>'));
     foreach ([2, 3, 4] as $stN) mlb_set_state('NGG-DOC-1', mlb_stages()[$stN]['comps'][0], ['state' => 'mastered']);
-    db_update('mlab_profile', ['bosses' => json_encode(['1' => '2026-11-01', '2' => '2026-11-01', '3' => '2026-11-02', '4' => '2026-11-03'])], ['memberId' => 'NGG-DOC-1']);
+    lab_use('maths'); mlb_track_set('NGG-DOC-1', ['bosses' => json_encode(['1' => '2026-11-01', '2' => '2026-11-01', '3' => '2026-11-02', '4' => '2026-11-03'])]);
     $issued = mlb_issue_certificates('NGG-DOC-1');
     $courseI = array_values(array_filter($issued, fn($x) => $x['scope'] === 'course'));
     chk('maths lab certificate · the rest of the stages, then the FULL course certificate after them, numbered NGG-MLC-YYYY-#####',

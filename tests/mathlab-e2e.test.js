@@ -240,6 +240,78 @@ async function journey(who, W, H, tag) {
   await ctx.close();
 }
 
+/* The Physics Lab (owner, 6 Nov 2026): the same engine at /study/physics. The tab is there, the map
+   is the Physics map (its own bands, no Maths topic), it offers no exam papers, a lesson's explorer
+   asks for a prediction before it opens and says whether it held, and a session started here is a
+   Physics session the server marks as Physics. Nothing about it touches the member's Maths. */
+async function physics(who, W, H, tag) {
+  const tok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${who}'"), false);`);
+  const ctx = await browser.newContext({ viewport: { width: W, height: H } });
+  await ctx.addCookies([{ name: 'ngg_sess', value: tok, domain: '127.0.0.1', path: '/', httpOnly: true },
+                        { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
+  const p = await ctx.newPage(), log = [];
+  p.on('pageerror', e => log.push('page error: ' + e.message));
+  p.on('response', r => { if (r.url().includes('/api/') && r.status() >= 400) log.push('HTTP ' + r.status() + ' ' + r.url().replace(BASE, '')); });
+  const shot = n => p.screenshot({ path: path.join(OUT, tag + '-physics-' + n + '.png') });
+  await p.goto(BASE + '/study/physics', { waitUntil: 'domcontentloaded' });
+  const ok = await p.waitForSelector('.mlb.is-physics .mlb-hero', { timeout: 60000 }).then(() => true, () => false);
+  chk(tag + ': /study/physics opens the Physics Lab, its tab is selected, and it has its own Exams tab',
+    ok && /Physics Lab/.test(await p.locator('.stt-tab.is-on').innerText()) && await p.locator('.mlb-navb:has-text("Exams")').count() === 1);
+  chk(tag + ': Physics Home starts the Physics climb (Stage 1 · Measurement and Matter)', /Measurement and Matter/.test(await p.locator('.mlb-main').innerText()));
+  await shot('home');
+  await p.goto(BASE + '/study/physics/map', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.mlb-unit.is-open', { timeout: 60000 });
+  const mapText = await p.locator('.mlb-main').innerText();
+  chk(tag + ': the Physics map draws the Physics road: its bands, its nine stages, no Maths stage', /Electricity and the atom/.test(mapText) && /Heat, Waves and Light/.test(mapText) && !/Number Consciousness/.test(mapText)
+    && await p.locator('.mlb-unit').count() === 9);
+  await shot('map');
+  await p.goto(BASE + '/study/physics/exams', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.mlb-paper', { timeout: 60000 }).catch(() => {});
+  chk(tag + ': the Physics Exams page offers the Physics paper only', await p.locator('.mlb-paper').count() === 1 && /Timed Physics paper/.test(await p.locator('.mlb-paper').innerText()));
+  await p.goto(BASE + '/study/physics/learn/PH-001', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });
+  for (let k = 0; k < 12; k++) {
+    if (await p.locator('.mlb-status').count()) break;
+    if (await p.locator('.phy-predict-o:not([disabled])').count()) await p.locator('.phy-predict-o:not([disabled])').first().click();
+    if (await p.locator('.mlb-ex .mlb-sl-in').count()) { await p.locator('.mlb-ex .mlb-sl-in').first().focus(); await p.keyboard.press('ArrowRight'); }
+    else if (await p.locator('.mlb-ex .phy-seg-b:not(.is-on)').count()) await p.locator('.mlb-ex .phy-seg-b:not(.is-on)').first().click();
+    while (await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').count()) await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').click();
+    await p.waitForTimeout(250);
+    const c = p.locator('.mlb-lesson-foot .mlb-go'); if (await c.count() && await c.isEnabled()) await c.click();
+    await p.waitForTimeout(300);
+  }
+  await p.waitForFunction(() => { const b = document.querySelector('.mlb-status .mlb-go'); return b && !b.disabled; }, null, { timeout: 15000 }).catch(() => {});
+  const practise = p.locator('.mlb-status .mlb-go');
+  chk(tag + ': a Physics lesson is studied step by step and opens practice', await practise.count() > 0 && await practise.isEnabled());
+  if (await practise.count()) await practise.click();
+  const playing = await p.waitForSelector('.mlb-q', { timeout: 15000 }).then(() => true, () => false);
+  chk(tag + ': Physics practice starts', playing);
+  await shot('practice');
+  const sess = JSON.parse(php(`echo json_encode(db_row("SELECT lab, items FROM mlab_sessions WHERE memberId = '${who}' ORDER BY startedAt DESC LIMIT 1"));`) || '{}');
+  chk(tag + ': the session is recorded as a Physics session of Physics topics', sess.lab === 'physics' && /PH-001/.test(sess.items || ''), sess.lab);
+  chk(tag + ': nothing in the Physics journey errors', log.length === 0, log.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+/* A Physics lesson's explorer asks for the prediction FIRST (predict–observe–explain), in a browser. */
+async function physicsPredict(who) {
+  // PH-004 rests on PH-001…003: this learner already knows them.
+  php(`foreach (['PH-001','PH-002','PH-003'] as $c) mlb_set_state('${who}', $c, ['state' => 'mastered']);`);
+  const tok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${who}'"), false);`);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.addCookies([{ name: 'ngg_sess', value: tok, domain: '127.0.0.1', path: '/', httpOnly: true }, { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
+  const p = await ctx.newPage();
+  await p.goto(BASE + '/study/physics/learn/PH-004', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.phy-predict-o', { timeout: 60000 });
+  const before = await p.locator('.mlb-explore .mlb-ex').count();
+  await p.locator('.phy-predict-o').first().click();
+  await p.locator('.mlb-ex .phy-seg-b:not(.is-on)').first().click();
+  await p.waitForTimeout(300);
+  chk('physics: the explorer stays shut until a prediction is made, then opens, and after a try says whether the prediction held',
+    before === 0 && await p.locator('.mlb-explore .mlb-ex').count() === 1 && await p.locator('.phy-predict-v').count() === 1);
+  await p.screenshot({ path: path.join(OUT, 'physics-predict.png') });
+  await ctx.close();
+}
+
 (async () => {
   const chromium = loadChromium();
   if (!chromium) { console.log('⏭  maths lab e2e: skipped (playwright not installed)'); process.exit(0); }
@@ -264,6 +336,10 @@ async function journey(who, W, H, tag) {
     console.log('Maths Lab, end to end (production build, real backend):');
     await journey('NGG-E2E-1', 1280, 900, 'desktop');
     await journey('NGG-E2E-2', 390, 844, 'phone');
+    console.log('Physics Lab, end to end:');
+    await physics('NGG-E2E-1', 1280, 900, 'desktop');
+    await physics('NGG-E2E-2', 390, 844, 'phone');
+    await physicsPredict('NGG-E2E-1');
   } catch (e) { fail++; console.error('  ✗ FAIL: ' + (e && e.stack || e));
     try { const pg = browser && browser.contexts()[0] && browser.contexts()[0].pages()[0]; if (pg) await pg.screenshot({ path: path.join(OUT, 'failure.png'), fullPage: true }); } catch (_) {} }
   finally { if (browser) await browser.close(); cleanup(); }

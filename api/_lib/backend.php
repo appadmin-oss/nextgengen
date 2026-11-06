@@ -1316,6 +1316,12 @@ function backend_dispatch(string $op, array $args = []): array {
         return ['ok' => false, 'error' => 'unknown_op', 'detail' => $op];
     }
     $fn = $map[$op];
+    /* Every Lab op names its Lab (`lab`, default maths — every older link is a Maths link). Set here,
+       at the one seam, so no Lab op can draw one subject's map from another's request. An unknown
+       Lab is refused, never quietly shown as Maths. (domain/labs.php) */
+    if ((str_starts_with($op, 'mathslab.') || str_starts_with($op, 'public.mathslab.')) && function_exists('lab_from') && !lab_from($args)) {
+        return ['ok' => false, 'error' => 'unknown_lab'];
+    }
     try {
         /* A club admin's sensitive actions are queued for a second admin
            instead of run (domain/approvals.php). Here, at the one seam every

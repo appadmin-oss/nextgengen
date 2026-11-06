@@ -6,14 +6,15 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $mid = $s['mid'];
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'home');
-    if ($view === 'map') $res = gs_call('mathslab.map', ['memberId' => $mid]);
-    elseif ($view === 'comp') $res = gs_call('mathslab.comp', ['memberId' => $mid, 'comp' => (string)($_GET['comp'] ?? '')]);
-    elseif ($view === 'guide') $res = gs_call('mathslab.guide', ['memberId' => $mid, 'stage' => (int)($_GET['stage'] ?? 0)]);
-    elseif ($view === 'exams') $res = gs_call('mathslab.exams', ['memberId' => $mid]);
-    elseif ($view === 'daily') $res = gs_call('mathslab.daily', ['memberId' => $mid]);
-    elseif ($view === 'progress') $res = gs_call('mathslab.progress', ['memberId' => $mid]);
-    elseif ($view === 'certificate') $res = gs_call('mathslab.certificate', ['memberId' => $mid, 'courseId' => (string)($_GET['course'] ?? '')]);
-    else $res = gs_call('mathslab.home', ['memberId' => $mid]);
+    $lab = ['lab' => (string)($_GET['lab'] ?? 'maths')];   // which Lab (domain/labs.php); the op refuses an unknown one
+    if ($view === 'map') $res = gs_call('mathslab.map', $lab + ['memberId' => $mid]);
+    elseif ($view === 'comp') $res = gs_call('mathslab.comp', $lab + ['memberId' => $mid, 'comp' => (string)($_GET['comp'] ?? '')]);
+    elseif ($view === 'guide') $res = gs_call('mathslab.guide', $lab + ['memberId' => $mid, 'stage' => (int)($_GET['stage'] ?? 0)]);
+    elseif ($view === 'exams') $res = gs_call('mathslab.exams', $lab + ['memberId' => $mid]);
+    elseif ($view === 'daily') $res = gs_call('mathslab.daily', $lab + ['memberId' => $mid]);
+    elseif ($view === 'progress') $res = gs_call('mathslab.progress', $lab + ['memberId' => $mid]);
+    elseif ($view === 'certificate') $res = gs_call('mathslab.certificate', $lab + ['memberId' => $mid, 'courseId' => (string)($_GET['course'] ?? '')]);
+    else $res = gs_call('mathslab.home', $lab + ['memberId' => $mid]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $map = ['start' => 'mathslab.start', 'answer' => 'mathslab.answer', 'finish' => 'mathslab.finish', 'enrol' => 'mathslab.enrol', 'studied' => 'mathslab.studied', 'daily' => 'mathslab.dailyAnswer', 'chest' => 'mathslab.chest'];

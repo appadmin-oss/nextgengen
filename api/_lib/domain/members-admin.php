@@ -370,6 +370,7 @@ function member_merge_policy(): array {
         'dues_notices'           => 'MOVE_UNIQUE',    // one notice per due date; the survivor's stands
         'mlab_state'             => 'MOVE_UNIQUE',    // Maths Lab: one row per topic; the survivor's stands
         'mlab_profile'           => 'MOVE_UNIQUE',
+        'mlab_track'             => 'MOVE_UNIQUE',    // a Lab's climb and bosses, one row per member per Lab
         'mlab_sessions'          => 'MOVE',
         'mlab_enrol'             => 'MOVE_UNIQUE',
         'mentors'                => 'MOVE',

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 228;
+const NGG_SCHEMA_TARGET = 229;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6413,6 +6413,20 @@ function db_migrate(PDO $db): void {
            member, which used to send the family a refusal after a welcome. */
         228 => "
             ALTER TABLE applications ADD COLUMN convertedMemberId TEXT NOT NULL DEFAULT '';
+        ",
+        /* 229: the Labs (domain/labs.php). The climb, its momentum and the bosses beaten are per Lab —
+           Stage 3 of Physics is not Stage 3 of Maths — so they move to one row per member per Lab;
+           the Maths rows are copied across and mlab_profile keeps the shared XP and streak (its
+           old climb columns are left in place and no longer read). Every session records its Lab. */
+        229 => "
+            CREATE TABLE IF NOT EXISTS mlab_track (
+              memberId TEXT NOT NULL, lab TEXT NOT NULL, climbStage INTEGER NOT NULL DEFAULT 1, climbDone INTEGER NOT NULL DEFAULT 0,
+              momentum INTEGER NOT NULL DEFAULT 0, bosses TEXT NOT NULL DEFAULT '{}', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mlab_track ON mlab_track(memberId, lab);
+            INSERT OR IGNORE INTO mlab_track (memberId, lab, climbStage, climbDone, momentum, bosses, createdAt, updatedAt)
+              SELECT memberId, 'maths', climbStage, climbDone, momentum, COALESCE(bosses, '{}'), createdAt, updatedAt FROM mlab_profile;
+            ALTER TABLE mlab_sessions ADD COLUMN lab TEXT NOT NULL DEFAULT 'maths';
         ",
     ];
 

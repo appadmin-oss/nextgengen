@@ -1063,22 +1063,25 @@
       stateGet:  (keys) => request('/member/state.php' + qs({ keys: Array.isArray(keys) ? keys.join(',') : keys })),
       stateSet:  (key, value) => request('/member/state.php', { body: { key, value } }),
       /* Maths Lab (docs/MATH-LAB-PLAN.md) — marked on the server; the client never holds a key. */
+      /* The Labs (domain/labs.php). Every call names its Lab, taken from the ADDRESS the learner is
+         on — /study/physics is the Physics Lab, anything else (/study/lab, the Club page) is Maths —
+         so the URL is the state and a refresh or a shared link opens the same Lab. */
       mathslab: {
-        home:   () => request('/member/mathslab.php'),
-        map:    () => request('/member/mathslab.php?view=map'),
-        comp:   (comp) => request('/member/mathslab.php' + qs({ view: 'comp', comp })),
-        cert:   (course) => request('/member/mathslab.php' + qs({ view: 'certificate', course })),
-        progress: () => request('/member/mathslab.php' + qs({ view: 'progress' })),
-        daily:  () => request('/member/mathslab.php' + qs({ view: 'daily' })),
-        exams:  () => request('/member/mathslab.php' + qs({ view: 'exams' })),
-        guide:  (stage) => request('/member/mathslab.php' + qs({ view: 'guide', stage })),
-        chest:  (stage) => request('/member/mathslab.php', { body: { action: 'chest', stage } }),
-        dailyAnswer: (answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'daily', answer }, extra || {}) }),
-        start:  (mode, opts) => request('/member/mathslab.php', { body: Object.assign({ action: 'start', mode }, opts || {}) }),
-        answer: (sessionId, index, answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'answer', sessionId, index, answer }, extra || {}) }),
-        finish: (sessionId) => request('/member/mathslab.php', { body: { action: 'finish', sessionId } }),
-        enrol:  (courseId) => request('/member/mathslab.php', { body: { action: 'enrol', courseId } }),
-        studied: (comp) => request('/member/mathslab.php', { body: { action: 'studied', comp } }),
+        home:   () => request('/member/mathslab.php' + qs({ lab: mlabLab() })),
+        map:    () => request('/member/mathslab.php' + qs({ view: 'map', lab: mlabLab() })),
+        comp:   (comp) => request('/member/mathslab.php' + qs({ view: 'comp', comp, lab: mlabLab() })),
+        cert:   (course) => request('/member/mathslab.php' + qs({ view: 'certificate', course, lab: mlabLab() })),
+        progress: () => request('/member/mathslab.php' + qs({ view: 'progress', lab: mlabLab() })),
+        daily:  () => request('/member/mathslab.php' + qs({ view: 'daily', lab: mlabLab() })),
+        exams:  () => request('/member/mathslab.php' + qs({ view: 'exams', lab: mlabLab() })),
+        guide:  (stage) => request('/member/mathslab.php' + qs({ view: 'guide', stage, lab: mlabLab() })),
+        chest:  (stage) => request('/member/mathslab.php', { body: { action: 'chest', stage, lab: mlabLab() } }),
+        dailyAnswer: (answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'daily', answer, lab: mlabLab() }, extra || {}) }),
+        start:  (mode, opts) => request('/member/mathslab.php', { body: Object.assign({ action: 'start', mode, lab: mlabLab() }, opts || {}) }),
+        answer: (sessionId, index, answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'answer', sessionId, index, answer, lab: mlabLab() }, extra || {}) }),
+        finish: (sessionId) => request('/member/mathslab.php', { body: { action: 'finish', sessionId, lab: mlabLab() } }),
+        enrol:  (courseId) => request('/member/mathslab.php', { body: { action: 'enrol', courseId, lab: mlabLab() } }),
+        studied: (comp) => request('/member/mathslab.php', { body: { action: 'studied', comp, lab: mlabLab() } }),
       },
       tools: {
         decks:   () => request('/member/tools.php?view=decks'),
@@ -1309,9 +1312,9 @@
     },
     public: {
       /* Maths Lab Lite — anyone: a question with a signed token, then marking with the worked solution. */
-      mathslabMap:   () => request('/public/mathslab.php?view=map'),
-      mathslabComp:  (comp) => request('/public/mathslab.php' + qs({ view: 'comp', comp })),
-      mathslabItem:  (comp) => request('/public/mathslab.php' + qs({ comp })),
+      mathslabMap:   () => request('/public/mathslab.php' + qs({ view: 'map', lab: mlabLab() })),
+      mathslabComp:  (comp) => request('/public/mathslab.php' + qs({ view: 'comp', comp, lab: mlabLab() })),
+      mathslabItem:  (comp) => request('/public/mathslab.php' + qs({ comp, lab: mlabLab() })),
       mathslabCheck: (token, answer) => request('/public/mathslab.php', { body: { token, answer } }),
       /* The help centre's answers (api/public/help.php). No case is opened publicly. */
       help: (q) => request('/public/help.php' + (q ? qs({ q }) : '')),
@@ -2550,6 +2553,12 @@
       rate: (caseNo, rating, note) => request(base, { body: { action: 'rate', caseNo, rating, note: note || '' } }),
       fileUrl: (caseNo, f) => BASE + base + qs({ view: 'file', caseNo, f }),
     };
+  }
+  /** The Lab a page address belongs to: /study/<lab> names it, and /study/lab (the first Lab's
+      address, kept for every old link) and everywhere else mean Maths. The server checks the name. */
+  function mlabLab() {
+    const m = /^\/study\/([a-z]+)/.exec((typeof location !== 'undefined' && location.pathname) || '');
+    return m && m[1] !== 'lab' ? m[1] : 'maths';
   }
   function qs(obj) {
     const parts = [];

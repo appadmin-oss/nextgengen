@@ -79,6 +79,7 @@ const ORDER = [
   'src/modules/tools/tools-core.jsx',
   'src/modules/tools/tools-more.jsx',
   'src/modules/tools/tools-labs.jsx',
+  'src/modules/mathslab/phy-visuals.jsx',
   'src/modules/mathslab/mlb-app.jsx',
   'src/modules/control/cr-tab-learning.jsx',
   'src/modules/control/cr-tab-publishing.jsx',

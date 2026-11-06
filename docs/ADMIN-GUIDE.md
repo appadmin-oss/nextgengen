@@ -4757,8 +4757,8 @@ off as "bad at maths" when a foundation was simply never taught.
 
 - **All 170 points are open**, in 17 stages of ten, grouped into five
   **bands**: *Foundations* (Primary, Stages 1–4), *Algebra and number*
-  (JSS · BECE, 5–7), *WAEC core* (SSS · WASSCE Mathematics, 8–12),
-  *Further Mathematics* (WASSCE Further Mathematics, 13–16) and *Beyond*
+  (JSS · Junior school, 5–7), *Senior core* (SSS · Senior Mathematics, 8–12),
+  *Further Mathematics* (SSS · Further Mathematics, 13–16) and *Beyond*
   (mechanics, university and research, 17). The map shows each stage's band;
   Progress shows how many points of each band a member holds.
 - **Gods of Maths (the summit, Stages 18–20, MC-171 … MC-200).** Above the
@@ -4795,7 +4795,7 @@ off as "bad at maths" when a foundation was simply never taught.
   - **Rewards:** solving at the first try with no hint earns 50 XP; any other solve earns 25 XP. Home and the page show how many days in a row the member has solved it, and how many in all.
   - It never moves the map: it is a taste of the summit, not a step on the path.
 - **The path, the way Duolingo's works** (owner, 5 Nov 2026, with screenshots of Duolingo):
-  - **Stage banner.** The open stage's banner is filled in its band's colour (blue Foundations, green Algebra and number, purple WAEC core, crimson Further Mathematics, brown Beyond, gold Gods of Maths) and stays at the top of the screen while the member scrolls its path.
+  - **Stage banner.** The open stage's banner is filled in its band's colour (blue Foundations, green Algebra and number, purple Senior core, crimson Further Mathematics, brown Beyond, gold Gods of Maths) and stays at the top of the screen while the member scrolls its path.
   - **Guidebook.** The Guide button on that banner opens the stage's Guidebook (`/study/lab/guide/N`). It shows each topic's key idea (from its proof, where it has one), the tip to reach for, and a worked example to open. Reading it does not count as studying a topic.
   - **How it looks** (owner, 5 Nov 2026: "Improve UX. It looks rough"): each topic is a raised coin that presses down when tapped. A known topic's coin is filled in its band's colour; the next topic is gold; a locked topic is grey. Closed stages are quiet cards with a stripe of their band's colour, and band names are plain dividers, not boxes. Labels under the chest and the mini review say when they open ("at 5 topics", "after 2 topics"). On a phone the "Up next" card is hidden, because the gold Start coin on the path already says it.
   - **Chest.** Half way along each stage there is a chest. It opens once five of the stage's ten topics are known, for 25 bonus XP, once only.
@@ -4810,21 +4810,22 @@ off as "bad at maths" when a foundation was simply never taught.
   - **What is covered:** exact powers; change of base; exponential equations solved with logs; logs of numbers in standard form (the "using tables" questions); $\ln$ and $e$; the curve $y = \log x$; doubling and half-life times; $\ln$ in calculus.
   - **Explorer:** the log topics have their own, with sliders for a base and a power.
   - **Typing answers:** a learner can type `log( )` and `ln( )` in an answer, from the keypad or the keyboard. Any base is accepted where the value is the same.
-- **More Labs.** The Lab is built to take more subjects. See `docs/LABS.md` for the developer's how-to. Each Lab will have its own map and questions, and share the engine: practice, checks, reviews, bosses, certificates, the daily problem and the exam papers.
+- **More Labs.** The Physics Lab is the second (below), and English is next. Each Lab has its own map, questions, climb, certificates and papers, and shares the engine. See `docs/LABS.md` for the developer's how-to.
 - **Exam practice (the Exams tab, `/study/lab/exams`).** Two timed papers, open to every member whatever their stage.
   - **The papers:**
 
     | Paper | Questions | Time | Score |
     |---|---|---|---|
-    | JAMB-style | 40, options A–E | 40 minutes | out of 100, as the UTME reports a subject |
-    | SAT-style Math module | 27 | 43 minutes, like the practice test supplied | an estimate on the 200–800 scale |
+    | Timed practice paper | 40, options A–E | 40 minutes | out of 100 |
+    | Timed maths module | 27 | 43 minutes | an estimate on a 200–800 scale |
 
-    On the SAT-style paper about a quarter of the answers are typed. The screen says the 200–800 figure is an estimate, because the College Board's own conversion changes from test to test.
-  - **New every time:** each paper is drawn fresh from the Lab's own questions. Most are written in the style of past JAMB and SAT papers: 40 JAMB-style kinds and 15 SAT-style kinds, modelled on the papers the owner supplied. None is copied from a past paper.
+    On the timed maths module about a quarter of the answers are typed. The screen says the 200–800 figure is an estimate.
+  - **No exam body is named on screen** (owner, 6 Nov 2026: "Do NOT mention these exam bodies since we'll not be copying their questions"). The papers, bands and courses say what they cover, not whose exam they resemble. A test fails if a name creeps back into anything a learner reads.
+  - **New every time:** each paper is drawn fresh from the Lab's own questions, including 40 five-option and 15 typed-or-choice kinds written in the style of the past papers the owner supplied. None is copied from a past paper.
   - **Timing:** the clock is the server's. At zero the paper is handed in, and late answers are refused. A question can be left blank; it counts as unanswered.
   - **The report** gives the score, the time used, and the right answers by area (Number, Algebra, Geometry & Measure, …). It names the weak areas to work on.
   - A paper never changes the map. Papers taken are listed with their scores, and the best score shows on each paper's card.
-  - The same exam-style questions also turn up in ordinary practice of their topics: a JAMB factor-theorem question is practice for *Remainder theorem and factor theorem*.
+  - The same exam-style questions also turn up in ordinary practice of their topics: an exam-style factor-theorem question is practice for *Remainder theorem and factor theorem*.
 - **Stages 5–7 are deeper.** Each algebra topic used to have one or two
   kinds of question. It now has four to six, plus six new proofs: the
   *n*th term, why dividing by a negative reverses an inequality, crossing
@@ -4953,3 +4954,35 @@ off as "bad at maths" when a foundation was simply never taught.
   early proofs use everyday words ("one number word for each object", not
   "one-to-one correspondence"). Keep new copy to that standard: easy to
   follow, never dumbed down.
+
+## Physics Lab (`/study/physics`)
+
+The second Lab (owner, 6 Nov 2026: "make physics a breeze for everyone"). It runs on the same engine as the Maths Lab, so everything in the Maths section applies: the climb, lessons, practice, mastery checks, reviews, bosses, the mini review, chests, certificates and the Daily problem. Its tab sits next to the Maths Lab's in Study tools.
+
+- **The road: nine stages of ten topics (PH-001 … PH-090), in six bands.**
+
+  | Band | Stages | What it covers |
+  |---|---|---|
+  | *Foundations* (JSS · Basic Science) | 1–2 | measurement and matter, forces and machines |
+  | *Mechanics* (SS 1–2) | 3–4 | motion and Newton's laws, energy and momentum, circles, pendulums, floating |
+  | *Heat, waves and light* (SS 2) | 5 | heat, waves, light |
+  | *Electricity and the atom* (SS 3) | 6 | electricity, magnetism and the atom |
+  | *Fields and modern physics* | 7–8 | heat transfer, stationary waves, resonance, Doppler, fields, a.c., electrolysis; photons, energy levels, de Broglie, E = mc², semiconductors, black bodies, X-rays, logic gates |
+  | *Physics Olympiad* (the summit) | 9 | dimensions, estimation, orbits, rotation, magnetic braking, engines and refrigerators, the greenhouse effect, capacitors, relativity, quantum wells |
+
+  Stages 7–8 were added to cover what senior past papers ask most. Stage 9 follows the olympiad problems the owner supplied.
+- **Courses:** Physics Foundations, Mechanics, Heat Waves and Light, Electricity and the Atom, Fields and Modern Physics, and Physics Olympiad. Each earns its own certificate. Stage certificates say "Physics Lab", carry Physics formulas behind the name, and verify at `/verify` like any NGG document.
+- **Every question is our own.** Answers are worked out from the question's numbers, every wrong option is a common mistake, and every question has a hint and worked steps. The olympiad problems come in small guided steps: each step gives the result of the one before, so a learner who missed a step can still do the next. No exam body is named anywhere.
+- **Answers with units.** A learner may type the unit or leave it off ("12", "12 N" and "12N" are all accepted). The unit is shown next to the box and printed with the answer. g is taken as 10 m/s².
+- **Diagrams that follow the standard conventions, with a guide.**
+  - Circuits use the school symbols: the cell's long line is +, and meters are lettered circles, with the voltmeter across the part it measures.
+  - Force diagrams, levers, graphs, ray diagrams (mirrors, refraction, lenses with F and 2F), springs, pendulums, pipes, energy levels and more are drawn from each question's own numbers.
+  - Every diagram has **"How to read this diagram"**: its symbols drawn as a key, and what the figure shows.
+- **Explore it: predict first, then see.** 27 interactive simulations: forces and carts, motion graphs, projectiles, pendulums, waves, circuits, refraction, lenses, moments, springs, pressure, energy, collisions, circular motion, heating curves, gas laws, transformers, half-life, standing waves, the photoelectric effect, orbits and quantum wells.
+  - Each opens with one question: the learner picks what they think will happen. Only then does the simulation appear.
+  - After they try it, it says whether their guess held, and why.
+  - This predict–observe–explain approach is the best-evidenced way to teach with simulations: a wrong guess that is then explained is what sticks.
+  - The simulations stop moving on devices set to reduce motion, and everything works from the keyboard.
+- **The timed Physics paper (Exams tab):** 40 four-option questions in 40 minutes, covering Stages 1–8, drawn fresh every time. Scored out of 100 and broken down by area. A Maths paper cannot be started from the Physics Lab, and the other way round.
+- **Daily Physics Puzzle:** one problem a day from the Physics Olympiad stage, the same for everyone. It is separate from the Daily Olympiad Problem in Maths.
+- **Separate from Maths.** A member's Physics climb, topics, sessions and certificates are their own and never change their Maths ones. XP and the study streak are shared: studying any Lab keeps the streak alive.

@@ -28,7 +28,7 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
   const manifest=JSON.parse(fs.readFileSync(path.join(ROOT,'dist','build-manifest.json'),'utf8'));
   /* The map, straight out of the domain code that serves it. */
   const SRC=JSON.parse(execFileSync('php',['-r',
-    'function db_row(){return null;} require "api/_lib/domain/mathslab-map.php";require "api/_lib/domain/mathslab-gen.php";require "api/_lib/domain/mathslab-gen-upper.php";require "api/_lib/domain/mathslab-gen-deep.php";require "api/_lib/domain/mathslab-gen-gods.php";require "api/_lib/domain/mathslab-why.php";require "api/_lib/domain/mathslab.php";'
+    'function db_row(){return null;} require "api/_lib/domain/labs.php";require "api/_lib/domain/mathslab-map.php";require "api/_lib/domain/mathslab-gen.php";require "api/_lib/domain/mathslab-gen-upper.php";require "api/_lib/domain/mathslab-gen-deep.php";require "api/_lib/domain/mathslab-gen-gods.php";require "api/_lib/domain/mathslab-why.php";require "api/_lib/domain/mathslab.php";'
     +'$st=[];foreach(mlb_stages() as $n=>$s){$st[]=["n"=>$n,"title"=>$s["title"],"strand"=>$s["strand"],"available"=>mlb_stage_available($n),'
     +'"comps"=>array_map(fn($id)=>["id"=>$id,"title"=>mlb_comp($id)["title"],"available"=>mlb_available($id)],$s["comps"])];}'
     +'$cv=[];foreach(["MC-002","MC-074","MC-077","MC-103","MC-145","MC-152"] as $id){$v=mlb_comp_view(["comp"=>$id]);unset($v["ok"]);$cv[$id]=$v;}'

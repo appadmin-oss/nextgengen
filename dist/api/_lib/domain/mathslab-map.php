@@ -16,8 +16,8 @@ declare(strict_types=1);
  * that has no questions yet (a stage still in preparation) never blocks.
  */
 
-/** Stage number → [stage title, [10 competency titles in order]]. */
-function mlb_stage_table(): array {
+/** Stage number → [stage title, [10 competency titles in order]] — the Maths Lab's (LABS['maths']['content']['stages']). */
+function mlb_maths_stage_table(): array {
     static $t = null;
     if ($t !== null) return $t;
     return $t = [
@@ -266,6 +266,7 @@ function mlb_stage_table(): array {
 }
 
 /** Each stage's strand — the "road" view of the map. */
+function mlb_maths_strands(): array { return MLB_STAGE_STRAND; }
 const MLB_STAGE_STRAND = [1 => 'Number', 2 => 'Number', 3 => 'Number', 4 => 'Number', 5 => 'Algebra', 6 => 'Algebra', 7 => 'Algebra',
     8 => 'Geometry & Measure', 9 => 'Geometry & Measure', 10 => 'Graphs & Functions', 11 => 'Algebra', 12 => 'Statistics & Trigonometry',
     13 => 'Further Algebra', 14 => 'Matrices & Vectors', 15 => 'Trigonometry & Analytic Geometry', 16 => 'Calculus', 17 => 'Mechanics & Beyond',
@@ -279,20 +280,21 @@ const MLB_STAGE_STRAND = [1 => 'Number', 2 => 'Number', 3 => 'Number', 4 => 'Num
 const MLB_BANDS = [
     ['id' => 'foundations', 'name' => 'Foundations', 'level' => 'Primary', 'from' => 1, 'to' => 4,
      'what' => 'Why numbers work: counting, place value, the four operations, fractions, ratio and everyday arithmetic.'],
-    ['id' => 'junior', 'name' => 'Algebra and number', 'level' => 'JSS · BECE', 'from' => 5, 'to' => 7,
+    ['id' => 'junior', 'name' => 'Algebra and number', 'level' => 'JSS · Junior school', 'from' => 5, 'to' => 7,
      'what' => 'Letters for numbers, equations as balances, factorisation, indices, surds, logarithms and sequences.'],
-    ['id' => 'waec', 'name' => 'WAEC core', 'level' => 'SSS · WASSCE Mathematics', 'from' => 8, 'to' => 12,
+    ['id' => 'waec', 'name' => 'Senior core', 'level' => 'SSS · Senior Mathematics', 'from' => 8, 'to' => 12,
      'what' => 'Geometry and mensuration, graphs, quadratics, polynomials, trigonometry and statistics.'],
-    ['id' => 'further', 'name' => 'Further Mathematics', 'level' => 'WASSCE Further Mathematics', 'from' => 13, 'to' => 16,
+    ['id' => 'further', 'name' => 'Further Mathematics', 'level' => 'SSS · Further Mathematics', 'from' => 13, 'to' => 16,
      'what' => 'Sets and logic, functions, series, matrices, vectors, advanced trigonometry, conics and calculus.'],
     ['id' => 'beyond', 'name' => 'Beyond', 'level' => 'Mechanics · university · research', 'from' => 17, 'to' => 17,
      'what' => 'Mechanics, probability distributions, proof by induction, differential equations and modelling.'],
     /* The summit above the framework: tough problems, each with a hint that names the idea and a
        full worked solution (owner: "Make things tough, but easy"). */
-    ['id' => 'gods', 'name' => 'Gods of Maths', 'level' => 'Olympiad · NMC · Cowbellpedia · PAMO · IMO', 'from' => 18, 'to' => 20, 'summit' => true,
+    ['id' => 'gods', 'name' => 'Gods of Maths', 'level' => 'Olympiad and competition level', 'from' => 18, 'to' => 20, 'summit' => true,
      'what' => 'Number theory, counting, inequalities, functional equations and olympiad geometry — problems that need an idea, not a formula.'],
 ];
-function mlb_band(int $stage): array { foreach (MLB_BANDS as $b) if ($stage >= $b['from'] && $stage <= $b['to']) return $b; return MLB_BANDS[0]; }
+function mlb_maths_bands(): array { return MLB_BANDS; }
+function mlb_maths_edges(): array { return MLB_EDGES; }
 
 /** The reviewed draft edges for Stages 5–7 (plan Appendix C). Competency number → numbers it needs. */
 const MLB_EDGES = [
@@ -314,50 +316,75 @@ const MLB_EDGES = [
     191 => [104, 109], 192 => [129, 59], 193 => [106, 66], 194 => [193, 139], 195 => [125, 168], 196 => [108, 191], 197 => [191, 142], 198 => [79, 76], 199 => [115, 198], 200 => [168, 190],
 ];
 
-/** Maths topic ids use the Maths Lab's prefix from the Lab registry (domain/labs.php). */
+/** Maths topic ids carry the Maths Lab's prefix from the Lab registry (domain/labs.php). */
 const MLB_PREFIX = 'MC';
-function mlb_id(int $n): string { return MLB_PREFIX . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT); }
-function mlb_num(string $id): int { return preg_match('/^' . MLB_PREFIX . '-(\d{3})$/', $id, $m) ? (int)$m[1] : 0; }
 
-/** Every competency: id → {id, n, stage, title, strand, needs[]}. */
-function mlb_competencies(): array {
-    static $all = null;
-    if ($all !== null) return $all;
-    $all = [];
-    foreach (mlb_stage_table() as $stage => [$stTitle, $titles]) {
+/* ── The map, for whichever Lab this request is about (labs.php: lab_use / lab_call) ──
+ * Every reader below goes through the registry, never through a subject's own function, so the
+ * engine draws the Maths map and the Physics map with the same code. A topic id resolves through
+ * its OWN prefix (lab_for_comp), whatever Lab the request is in. */
+function mlb_stage_table(?string $lab = null): array { return lab_call('stages', $lab); }
+function mlb_strands(?string $lab = null): array { return lab_call('strands', $lab); }
+function mlb_bands(?string $lab = null): array { return lab_call('bands', $lab); }
+function mlb_edges(?string $lab = null): array { return lab_call('edges', $lab); }
+function mlb_band(int $stage, ?string $lab = null): array {
+    $bands = mlb_bands($lab);
+    foreach ($bands as $b) if ($stage >= $b['from'] && $stage <= $b['to']) return $b;
+    return $bands[0] ?? ['id' => 'all', 'name' => '', 'level' => '', 'from' => 1, 'to' => 1, 'what' => ''];
+}
+function mlb_prefix(?string $lab = null): string { return ($lab !== null ? LABS[$lab] : lab_cur())['prefix']; }
+function mlb_id(int $n, ?string $lab = null): string { return mlb_prefix($lab) . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT); }
+/** A topic's number within its own Lab (MC-042 → 42, PH-007 → 7); 0 for anything else. */
+function mlb_num(string $id): int { return lab_for_comp($id) && preg_match(LAB_COMP_RE, $id, $m) ? (int)$m[2] : 0; }
+
+/** Every competency of a Lab (the current one by default): id → {id, n, stage, title, strand, needs[]}. */
+function mlb_competencies(?string $lab = null): array {
+    static $all = [];
+    $lab ??= lab_id();
+    if (isset($all[$lab])) return $all[$lab];
+    $out = []; $edges = mlb_edges($lab); $strands = mlb_strands($lab);
+    $id = static fn(int $n) => mlb_id($n, $lab);
+    foreach (mlb_stage_table($lab) as $stage => [$stTitle, $titles]) {
         foreach ($titles as $i => $title) {
             $n = ($stage - 1) * 10 + $i + 1;
-            $needs = MLB_EDGES[$n] ?? ($i > 0 ? [$n - 1] : ($stage > 1 ? [$n - 1] : []));
-            $all[mlb_id($n)] = ['id' => mlb_id($n), 'n' => $n, 'stage' => $stage, 'title' => $title,
-                'strand' => MLB_STAGE_STRAND[$stage], 'needs' => array_map('mlb_id', $needs)];
+            $needs = $edges[$n] ?? ($i > 0 ? [$n - 1] : ($stage > 1 ? [$n - 1] : []));
+            $out[$id($n)] = ['id' => $id($n), 'n' => $n, 'stage' => $stage, 'title' => $title,
+                'strand' => (string)($strands[$stage] ?? ''), 'needs' => array_map($id, $needs)];
         }
     }
-    return $all;
+    return $all[$lab] = $out;
 }
 
-function mlb_comp(string $id): ?array { return mlb_competencies()[$id] ?? null; }
+/** One topic, from ITS Lab (by prefix), whichever Lab the request is in. */
+function mlb_comp(string $id): ?array { $l = lab_for_comp($id); return $l ? (mlb_competencies($l['id'])[$id] ?? null) : null; }
 
-/** Stage number → {n, title, strand, comps[]}. */
-function mlb_stages(): array {
-    $out = [];
-    foreach (mlb_stage_table() as $stage => [$title]) $out[$stage] = ['n' => $stage, 'title' => $title, 'strand' => MLB_STAGE_STRAND[$stage], 'comps' => []];
-    foreach (mlb_competencies() as $c) $out[$c['stage']]['comps'][] = $c['id'];
+/** Stage number → {n, title, strand, comps[]}, for the current Lab. */
+function mlb_stages(?string $lab = null): array {
+    $out = []; $strands = mlb_strands($lab);
+    foreach (mlb_stage_table($lab) as $stage => [$title]) $out[$stage] = ['n' => $stage, 'title' => $title, 'strand' => (string)($strands[$stage] ?? ''), 'comps' => []];
+    foreach (mlb_competencies($lab) as $c) $out[$c['stage']]['comps'][] = $c['id'];
     return $out;
 }
 
-/** Is this competency taught in the preview (it has question forms)? */
-function mlb_available(string $id): bool { return function_exists('mlb_forms') && (mlb_forms()[$id] ?? []) !== []; }
+/** The question forms of a topic's own Lab. */
+function mlb_forms_of(string $id): array { $l = lab_for_comp($id); return $l ? (lab_call('forms', $l['id'])[$id] ?? []) : []; }
+/** The forms of the current Lab (every topic id → its forms). */
+function mlb_forms(): array { return lab_call('forms'); }
+/** Is this competency taught (it has question forms)? */
+function mlb_available(string $id): bool { return mlb_forms_of($id) !== []; }
 function mlb_stage_available(int $stage): bool {
     foreach (mlb_stages()[$stage]['comps'] ?? [] as $id) if (!mlb_available($id)) return false;
     return isset(mlb_stages()[$stage]);
 }
+/** The courses of the current Lab. */
+function mlb_courses(?string $lab = null): array { return lab_call('courses', $lab); }
 
 /**
  * Courses (plan §6.3): an ordered path through the map with a promise and a
  * certificate. They never fork the map — a competency mastered once counts in
  * every course that holds it.
  */
-function mlb_courses(): array {
+function mlb_maths_courses(): array {
     return [
         'number-foundations' => ['id' => 'number-foundations', 'title' => 'Number Foundations', 'stages' => [1, 2, 3, 4],
             'promise' => 'Counting, place value, the four operations, fractions, decimals, percentages and everyday arithmetic — rebuilt so every later topic has something solid to stand on.',
@@ -368,13 +395,13 @@ function mlb_courses(): array {
         'shape-space' => ['id' => 'shape-space', 'title' => 'Shape, Space & Measure', 'stages' => [8, 9, 10],
             'promise' => 'Angles, triangles, circles, mensuration, bearings and coordinate graphs.', 'for' => 'JSS 3 to SS 2', 'hours' => 30],
         'senior-maths' => ['id' => 'senior-maths', 'title' => 'Senior Secondary Mathematics', 'stages' => [11, 12],
-            'promise' => 'Quadratics, polynomials, number bases, trigonometry, statistics and probability for WASSCE and NECO.', 'for' => 'SS 1 to SS 3', 'hours' => 25],
+            'promise' => 'Quadratics, polynomials, number bases, trigonometry, statistics and probability for the senior school exams.', 'for' => 'SS 1 to SS 3', 'hours' => 25],
         'further-maths' => ['id' => 'further-maths', 'title' => 'Further Mathematics', 'stages' => [13, 14, 15, 16],
             'promise' => 'Logic, functions, matrices, vectors, advanced trigonometry and calculus.', 'for' => 'SS 2 to SS 3 Further Maths', 'hours' => 45],
         'mechanics-beyond' => ['id' => 'mechanics-beyond', 'title' => 'Mechanics & Beyond', 'stages' => [17],
             'promise' => 'Motion, forces, momentum, statistical inference, proof and modelling.', 'for' => 'Enrichment', 'hours' => 20],
         'gods-of-maths' => ['id' => 'gods-of-maths', 'title' => 'Gods of Maths', 'stages' => [18, 19, 20],
             'promise' => 'Olympiad number theory, counting, inequalities, functional equations and geometry — the problems that win medals, solved by ideas you can explain.',
-            'for' => 'Olympiad hopefuls: NMC, Cowbellpedia, PAMO and IMO', 'hours' => 60],
+            'for' => 'Olympiad and maths-competition hopefuls', 'hours' => 60],
     ];
 }

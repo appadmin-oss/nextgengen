@@ -160,8 +160,9 @@ function mlb_error_of(MlbRng $r, string $task, array $right, array $variants, st
 
 /* ── The forms, competency by competency ──────────────────────────────── */
 
-/** Competency id → list of forms (each fn(MlbRng): item). Stages 1–7 in this preview. */
-function mlb_forms(): array {
+/** The Maths Lab's forms: competency id → list of forms (each fn(MlbRng): item). The engine reads
+ *  them through the Lab registry (lab_call('forms')), never by this name. */
+function mlb_maths_forms(): array {
     static $f = null;
     if ($f !== null) return $f;
 
@@ -875,13 +876,14 @@ function mlb_forms(): array {
  *  Recorded while the list is built, so a file of forms appended later can never move it. */
 function mlb_why_at_map(?array $set = null): array { static $m = []; if ($set !== null) $m = $set; return $m; }
 function mlb_why_at(string $comp): ?int {
-    mlb_forms();
+    if ((lab_for_comp($comp)['id'] ?? '') !== 'maths') return null;
+    lab_call('forms', 'maths');
     return mlb_why_at_map()[$comp] ?? null;
 }
 
 /** One question, reproducible from (competency, form, seed). */
 function mlb_item(string $comp, int $form, int $seed): ?array {
-    $forms = mlb_forms()[$comp] ?? [];
+    $forms = mlb_forms_of($comp);
     if (!$forms) return null;
     $form = (($form % count($forms)) + count($forms)) % count($forms);
     $it = ($forms[$form])(new MlbRng($seed ^ (crc32($comp) & 0x7FFFFFFF) ^ ($form * 0x9E3779B1)));
@@ -910,6 +912,18 @@ function mlb_parse_num(string $s): ?float {
     if ($s === '') return null;
     if (preg_match('/^(-?\d+)\s*\/\s*(-?\d+)$/', $s, $m)) return (int)$m[2] === 0 ? null : (int)$m[1] / (int)$m[2];
     return is_numeric($s) ? (float)$s : null;
+}
+
+/**
+ * What a learner typed, with a unit written after the number taken off: the item's own unit first
+ * (so "2 × 10⁸ m/s" against the unit "× 10⁸ m/s" leaves "2"), then any trailing run of letters and
+ * unit symbols ("12 N", "4.5 kg m/s", "30 days"). Digits are never stripped, so "3 4" or "2x3" still
+ * fail to read as a number rather than being read as something the learner did not write.
+ */
+function mlb_strip_unit(string $s, string $unit): string {
+    $s = trim($s);
+    if ($unit !== '' && mb_strlen($s) > mb_strlen($unit) && mb_strtolower(mb_substr($s, -mb_strlen($unit))) === mb_strtolower($unit)) $s = trim(mb_substr($s, 0, -mb_strlen($unit)));
+    return trim((string)preg_replace('/(?<=[\d.])\s*[a-zA-Zµμ°%\/·Ωω²³⁻¹\s.\-]*[a-zA-Zµμ°%\/Ωω²³¹]$/u', '', $s));
 }
 
 /** "a/b", "a", "1 1/2" → [num, den] (den > 0), or null. */
@@ -1019,6 +1033,8 @@ function mlb_mark(array $it, $resp): array {
     if ($s === '') return ['ok' => false, 'why' => null, 'form' => null];
     if ($kind === 'num') {
         $v = mlb_parse_num($s); $k = mlb_parse_num((string)$it['key']);
+        // A quantity's unit typed after the number ("12 N", "2.5 days", "3 × 10⁸ m/s") is not a wrong answer.
+        if ($v === null && isset($it['unit'])) $v = mlb_parse_num(mlb_strip_unit($s, (string)$it['unit']));
         /* "Correct to N decimal places": any answer that rounds to the key is
            right, so typing more digits is never marked wrong; a different
            rounding is. The key is stored already rounded. */

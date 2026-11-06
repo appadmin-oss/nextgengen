@@ -5204,3 +5204,14 @@ INSERT INTO schema_version (version) VALUES (227) ON DUPLICATE KEY UPDATE versio
 -- 228: the member an application became (convert claims the row; a converted application cannot be declined).
 ALTER TABLE applications ADD COLUMN convertedMemberId VARCHAR(40) NOT NULL DEFAULT '';
 INSERT INTO schema_version (version) VALUES (228) ON DUPLICATE KEY UPDATE version = version;
+
+-- 229: the Labs — the climb and bosses per member per Lab; every session records its Lab.
+CREATE TABLE IF NOT EXISTS mlab_track (
+  memberId VARCHAR(64) NOT NULL, lab VARCHAR(16) NOT NULL, climbStage INT NOT NULL DEFAULT 1, climbDone TINYINT NOT NULL DEFAULT 0,
+  momentum INT NOT NULL DEFAULT 0, bosses TEXT, createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_mlab_track (memberId, lab)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT IGNORE INTO mlab_track (memberId, lab, climbStage, climbDone, momentum, bosses, createdAt, updatedAt)
+  SELECT memberId, 'maths', climbStage, climbDone, momentum, COALESCE(bosses, '{}'), createdAt, updatedAt FROM mlab_profile;
+ALTER TABLE mlab_sessions ADD COLUMN lab VARCHAR(16) NOT NULL DEFAULT 'maths';
+INSERT INTO schema_version (version) VALUES (229) ON DUPLICATE KEY UPDATE version = version;

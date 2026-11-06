@@ -8862,6 +8862,66 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-dia-jump { fill: none; stroke: #1e4fae; stroke-width: 3; marker-end: none; } .mlb-dia-jump.is-b { stroke: #c2410c; }
 .mlb-dia-strip { fill: rgba(245, 176, 38, .45); stroke: #9a6a00; stroke-width: 1; }
 .mlb-dia-quad { font-size: 20px; font-weight: 800; fill: #6b7290; } .mlb-dia-quad.is-on { fill: #1e4fae; }
+/* ── Physics Lab figures and explorers (phy-visuals.jsx). One palette for every figure: wires and
+   bodies in ink, the thing being asked about in blue, rays and the "result" arrow in amber/red, and
+   each force a colour of its own so the slider that controls it can share it. ── */
+.phy-dia { max-width: 380px; margin: 4px auto; }
+.phy-dia text { font-family: inherit; }
+.phy-lbl { font-size: 13px; font-weight: 600; fill: var(--mlb-ink); } .phy-lbl.is-b { font-weight: 800; } .phy-lbl.is-ang { fill: #8a3b06; font-weight: 800; } .phy-lbl.is-inv { fill: #fff; }
+.phy-sm { font-size: 12px; fill: var(--mlb-ink-2); }
+.phy-wire { fill: none; stroke: var(--mlb-ink); stroke-width: 2.5; stroke-linejoin: round; } .phy-wire.is-thick { stroke-width: 3.5; } .phy-wire.is-thin { stroke-width: 1.5; }
+.phy-gap { fill: var(--mlb-soft, #f5f7fb); stroke: none; }
+.phy-res { fill: #fff; stroke: var(--mlb-ink); stroke-width: 2.5; }
+.phy-meter { fill: #fff; stroke: var(--mlb-ink); stroke-width: 2.5; }
+.phy-ground { stroke: var(--mlb-ink); stroke-width: 3; } .phy-hatch { stroke: var(--mlb-ink-2); stroke-width: 1.5; }
+.phy-body { fill: #e8edf8; stroke: var(--mlb-ink); stroke-width: 2; }
+.phy-beam { fill: #c9a26b; stroke: #6b4a1c; stroke-width: 1.5; } .phy-pivot { fill: #6b7290; }
+.phy-tick { stroke: var(--mlb-ink); stroke-width: 1.5; }
+.phy-string { stroke: var(--mlb-ink); stroke-width: 2; }
+.phy-mass { fill: #1e4fae; stroke: #163a80; stroke-width: 1.5; } .phy-mass.is-b { fill: #c2410c; stroke: #8a2d08; }
+.phy-dim { stroke: var(--mlb-ink-2); stroke-width: 1.5; } .phy-dim.is-faint { stroke: #c6ccdc; stroke-dasharray: 4 4; fill: none; }
+.phy-area { fill: rgba(245, 176, 38, .35); }
+.phy-axis { stroke: var(--mlb-ink); stroke-width: 2; }
+.phy-curve, .phy-trace { fill: none; stroke: #1e4fae; stroke-width: 3; stroke-linecap: round; } .phy-trace { stroke-dasharray: 6 5; }
+.phy-mirror { stroke: #4a5272; stroke-width: 4; } .phy-normal { stroke: var(--mlb-ink-2); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.phy-ray { stroke: #d97706; stroke-width: 3; fill: none; } .phy-ray.is-faint { stroke-opacity: .35; stroke-dasharray: 4 4; }
+.phy-glass { fill: rgba(30, 79, 174, .1); } .phy-bound { stroke: #1e4fae; stroke-width: 2; }
+.phy-lens { fill: rgba(30, 79, 174, .14); stroke: #1e4fae; stroke-width: 2; } .phy-dot { fill: var(--mlb-ink); }
+.phy-spring { fill: none; stroke: #4a5272; stroke-width: 2.5; stroke-linejoin: round; }
+.phy-bob { fill: #c2410c; stroke: #8a2d08; stroke-width: 1.5; } .phy-angarc { fill: none; stroke: #8a3b06; stroke-width: 1.8; }
+.phy-liquid { fill: rgba(30, 120, 210, .28); } .phy-liquid.is-faint { fill: rgba(30, 120, 210, .12); }
+.phy-piston { fill: #6b7290; } .phy-stone { fill: #6b7290; stroke: var(--mlb-ink); }
+.phy-core { fill: #9aa3b8; stroke: var(--mlb-ink); stroke-width: 1.5; } .phy-coil { fill: none; stroke: #b45309; stroke-width: 2.5; } .phy-coil-line { stroke: #1e4fae; stroke-width: 2.5; }
+.phy-box { fill: #fff; stroke: var(--mlb-line-2); stroke-width: 2; }
+.phy-part { stroke: rgba(0, 0, 0, .25); } .phy-part.is-solid { fill: #1e4fae; } .phy-part.is-liquid { fill: #2f80d6; } .phy-part.is-gas { fill: #c2410c; }
+.phy-wheel { fill: var(--mlb-ink); } .phy-charge { fill: #f5b026; stroke: #8a5a00; stroke-width: 1; }
+.phy-bar.is-pe { fill: #1e4fae; } .phy-bar.is-ke { fill: #c2410c; }
+.phy-atom { fill: #17663a; } .phy-atom.is-gone { fill: #dfe3ec; }
+.phy-arr { color: var(--mlb-ink); } .phy-arr line { stroke: currentColor; stroke-linecap: round; } .phy-arr path { fill: currentColor; }
+.phy-arr.is-0 { color: #1e4fae; } .phy-arr.is-1 { color: #17663a; } .phy-arr.is-2 { color: #7a3cc0; } .phy-arr.is-3 { color: #b91c1c; }
+.phy-arr.is-res { color: #b45309; } .phy-arr.is-ray { color: #d97706; } .phy-arr.is-obj { color: #1e4fae; } .phy-arr.is-img { color: #7a3cc0; }
+.phy-play small { font-weight: 500; color: var(--mlb-ink-2); }
+.phy-seg { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.phy-seg-b { min-height: 40px; padding: 6px 14px; border-radius: 999px; border: 1.5px solid var(--mlb-line-2); background: #fff; color: var(--mlb-ink); font: inherit; font-weight: 600; cursor: pointer; }
+.phy-seg-b.is-on { background: #1e4fae; border-color: #1e4fae; color: #fff; }
+.phy-predict { margin: 0 0 12px; padding: 12px 14px; border-radius: 14px; background: #eef3ff; border: 1.5px solid #c9d7f5; }
+.phy-predict-q { margin: 0 0 10px; color: var(--mlb-ink); line-height: 1.45; } .phy-predict-q i { color: #1e4fae; }
+.phy-predict-opts { display: grid; gap: 8px; }
+.phy-predict-o { text-align: left; min-height: 44px; padding: 8px 14px; border-radius: 12px; border: 1.5px solid #c9d7f5; background: #fff; color: var(--mlb-ink); font: inherit; font-weight: 600; cursor: pointer; }
+.phy-predict-o:disabled { cursor: default; } .phy-predict-o.is-on { border-color: #1e4fae; box-shadow: 0 0 0 2px #1e4fae inset; }
+.phy-predict-h { margin: 8px 0 0; font-size: 13px; color: var(--mlb-ink-2); }
+.phy-predict-v { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: #fff7e0; border: 1.5px solid #f0d488; color: var(--mlb-ink); line-height: 1.5; }
+.phy-predict-v.is-ok { background: #eaf7ef; border-color: #a8d8b9; }
+.phy-level { stroke: #9aa3c4; stroke-width: 2; } .phy-level.is-on { stroke: #1e4fae; stroke-width: 3; }
+.phy-photon { fill: none; stroke-width: 2.5; } .phy-earth { fill: #2f80d6; stroke: #17663a; stroke-width: 3; }
+.phy-curve.is-faint { stroke-opacity: .35; }
+.phy-fig { margin: 4px 0; }
+.phy-read { margin: 6px auto 0; max-width: 380px; font-size: 14px; color: var(--mlb-ink); }
+.phy-read summary { cursor: pointer; font-weight: 700; color: #1e4fae; min-height: 32px; display: flex; align-items: center; gap: 6px; }
+.phy-read p { margin: 6px 0 0; line-height: 1.5; }
+.phy-key { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.phy-key li { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; line-height: 1.4; }
+.phy-key-i { width: 44px; height: 28px; }
 .mlb-explore { container-type: inline-size; }
 .mlb-explore .mlb-h3, .mlb-why .mlb-h3 { display: flex; align-items: center; gap: 8px; }
 .mlb-explore .mlb-h3::before, .mlb-why .mlb-h3::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--mlb-blue); }
@@ -9217,6 +9277,11 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-unit.is-further, .mlb-bandh.is-further { --band: #b4235a; --band-dk: #86193f; }
 .mlb-unit.is-beyond, .mlb-bandh.is-beyond { --band: #8a3b06; --band-dk: #642a03; }
 .mlb-unit.is-gods, .mlb-bandh.is-gods { --band: #f5b026; --band-dk: #b97f0e; --band-ink: #2b1d00; }
+/* The Physics Lab's bands (physicslab-map.php): its own four, never a Maths band's colour by accident. */
+.mlb-unit.is-phy-basics, .mlb-bandh.is-phy-basics { --band: #0b6e8a; --band-dk: #08506a; }
+.mlb-unit.is-phy-mechanics, .mlb-bandh.is-phy-mechanics { --band: #1f5fc4; --band-dk: #164591; }
+.mlb-unit.is-phy-waves, .mlb-bandh.is-phy-waves { --band: #a3378c; --band-dk: #772866; }
+.mlb-unit.is-phy-fields, .mlb-bandh.is-phy-fields { --band: #f5b026; --band-dk: #b97f0e; --band-ink: #2b1d00; }
 .mlb-map .mlb-unit.is-open .mlb-unit-h { position: sticky; top: 8px; z-index: 6; background: var(--band); border-color: var(--band); color: var(--band-ink); box-shadow: 0 5px 0 var(--band-dk); }
 .mlb-map .mlb-unit.is-open .mlb-unit-t, .mlb-map .mlb-unit.is-open .mlb-unit-k, .mlb-map .mlb-unit.is-open .mlb-caret, .mlb-map .mlb-unit.is-open .mlb-unit-lock { color: var(--band-ink); }
 .mlb-map .mlb-unit.is-open .mlb-unit-k { font-weight: 700; }

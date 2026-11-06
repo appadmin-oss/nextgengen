@@ -29,7 +29,8 @@ function mlb_why(): array {
 
 /** The proof for one competency, or null. */
 function mlb_why_of(string $id): ?array {
-    $w = mlb_why()[$id] ?? null;
+    $l = lab_for_comp($id); if (!$l) return null;
+    $w = lab_call('why', $l['id'])[$id] ?? null;
     return $w ? ['idea' => $w[0], 'claim' => $w[1], 'steps' => array_map(static fn($s) => ['s' => $s[0], 'r' => $s[1]], $w[2])] : null;
 }
 

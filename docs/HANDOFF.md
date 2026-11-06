@@ -6920,3 +6920,66 @@ Logs were there, in two Stage 7 topics, but:
 - All rules are scoped under `.mlb-map` and win on specificity: no `!important`. The dead `.mlb-pathhead*` CSS is deleted.
 - `tests/mathlab-e2e.test.js` now asserts that the open banner is `position: sticky`, names its stage, and has a Guidebook button with an `aria-label`.
 - Tests run: PHP suite 6901/0; maths lab e2e 56/0; shots 23 clean; build 31/0; contrast 21/0; no-important clean.
+
+## 6 Nov 2026: The Labs engine, and the Physics Lab
+
+**Requests:**
+- Owner: "Alright then proceed first" (generalise the Lab engine before a second agent builds English).
+- "We need real pro diagrams for physics, examples and visualizations interactive."
+- "We need to make physics a breeze for everyone."
+- "Do NOT mention these exam bodies since we'll not be copying their questions."
+- "Research!"
+- "Make sure diagrams are the standard and they understand how it works."
+- Supplied: senior and university-entrance Physics past papers, and three olympiad problems.
+
+### The engine is Lab-aware
+- `LABS` (`domain/labs.php`) names each Lab's content functions. The engine reads content only through `lab_call()`.
+- `backend_dispatch()` sets the Lab from the op's `lab` argument (default maths) and refuses an unknown one (`unknown_lab`).
+- A topic resolves through its own prefix (`lab_for_comp`), so marking is right whatever the request says.
+- A session records its Lab and is answered and scored in it.
+- Maths functions were renamed to their content names (`mlb_maths_stage_table`, `mlb_maths_forms`, …). `mlb_stage_table()`, `mlb_forms()`, `mlb_bands()`, `mlb_edges()` and `mlb_courses()` are now Lab-aware readers.
+- **Migration 229:**
+  - `mlab_track` holds the climb, momentum and bosses, one row per member per Lab; the Maths rows are copied across. `mlab_profile`'s old climb columns stay in place, unread.
+  - `mlab_sessions.lab` added.
+  - XP and the streak stay shared.
+  - Member merge moves `mlab_track`.
+- **Certificates:**
+  - Maths keeps its `mlb:` and `mlbs:` keys; other Labs use `mlb-<PREFIX>:` and `mlbs-<PREFIX>:`.
+  - Documents carry `lab` and `labTitle`, so the title, `/verify` and the printed sheet name the Lab.
+  - The formula pattern now uses a stride coprime to the list length. A stride of 5 over 40 formulas showed only 8.
+- **Daily problem:** from the Lab's summit band. Maths keeps its old seeds, so today's problem did not change.
+- **Papers:** per Lab (`content.papers`). `mlb_exam_pool`'s cache is keyed by Lab.
+- **Marker:** a typed answer followed by a unit ("12 N", "2 × 10⁸ m/s") is read for items that declare `unit` (`mlb_strip_unit`). Digits are never stripped.
+- **Client:**
+  - `NGG_LABS` in `tools-core.jsx` gives one study tab per Lab at `/study/<seg>`.
+  - `api-client.js` names the Lab from the address (`mlabLab()`).
+  - `mlb-app.jsx` takes its title, daily-problem name, summit name, framework text and Exams tab from the Lab.
+  - `tests/labs-client.test.js` holds the two halves of the registry together.
+
+### The Physics Lab
+- `physicslab-map.php` and `physicslab-gen.php`: nine stages, PH-001…PH-090, 6 bands, 6 courses, a timed paper (40 four-option questions in 40 minutes), and the Daily Physics Puzzle from the Olympiad stage.
+  - Stages 7–8 close the gaps against what the past papers test most (by keyword count): resonance, a.c., photoelectric effect, semiconductors, heat transfer, fields.
+  - Stage 9 follows the olympiad problems: guided multi-step questions on quantum wells, radiation balance, refrigeration cycles and magnetic braking.
+- **`src/modules/mathslab/phy-visuals.jsx`** (loaded before `mlb-app.jsx`; in `build.js` ORDER and `index.html`):
+  - `PhyDiagram`: 18 figure types in school conventions, each with "How to read this diagram" (symbol key and explanation).
+  - 27 explorers, merged into the shared registries.
+  - `PhyPredict`: every explorer opens with a prediction and gives a verdict after the learner tries it.
+- **Research behind the design:**
+  - PhET's implicit-scaffolding paper (Podolefsky et al., arXiv 1306.6544): guidance through affordances and constraints, minimal wording, colour linking, illuminating extremes.
+  - Predict–observe–explain studies, including one in Nigerian classrooms.
+  - Rosengrant, Van Heuvelen and Etkina on free-body diagrams.
+
+### No exam body named
+- Removed from every learner-facing string in both Labs: Maths paper titles and descriptions, band levels ("SSS · Senior Mathematics"), courses and Lab blurbs. Internal ids (`jamb`, `sat`) are unchanged.
+- `api/tests/run.php` sweeps every Lab's questions (three draws of every form), maps, courses, papers and `labs.list`.
+- The sweep was seen to fail on a planted "WAEC".
+
+### Tests
+- **PHP suite:** 6916 passed, 0 failed.
+- **Maths Lab e2e:** 74 passed. It now includes Physics journeys on desktop and phone, the Exams page, and predict-before-explore.
+- **`tests/physicslab-shot.js`** (new, in `test:all`): 29 screens, 18 figure types, 27 explorers, every figure with its guide.
+- **`tests/labs-client.test.js`** (new, in `test:all`): 16 passed.
+- Maths shots, build, contrast and no-important: clean.
+
+### For the English Lab
+`docs/LABS.md` is rewritten as the handover. It notes that free-writing marking needs a new item kind, added once to `mlb_mark()`, and that essay marking needs its own design.

@@ -131,6 +131,20 @@ function sttFormat(v) {
  * titles). Similar tools live under one tab and hand work to each other: a
  * word looked up becomes a flashcard, a missed quiz question becomes a
  * flashcard, a sum with x in it is one press from its graph. */
+/* The Labs, as the browser needs them: the client half of LABS in api/_lib/domain/labs.php (one
+ * row per Lab, same ids and paths; tests/labs-client.test.js fails if the two disagree). Each is a
+ * tab of the study page at /study/<seg> with its own deep addresses (/study/physics/learn/PH-023).
+ * `exams`: it offers timed papers; `daily`: the name of its daily problem; `summit`: its top band. */
+const NGG_LABS = [
+  { id: "maths",   seg: "lab",     title: "Maths Lab",   subject: "Maths",   icon: "ph-function", exams: true,  daily: "Daily Olympiad Problem", summit: "Gods of Maths",
+    sub: "Climb to your level, master every topic, keep it for good", level: "Olympiad level",
+    road: "The 170-Point Mathematics Mastery Framework", roadP: "From why 1 + 1 = 2 to senior school, Further Mathematics and beyond — then the Gods of Maths summit, where olympiad problems are won by ideas. Learn why things are true, one foundation at a time.",
+    dailyP: "One olympiad problem a day, the same for everyone in NGG. Tough — but the hint is free and you get three tries." },
+  { id: "physics", seg: "physics", title: "Physics Lab", subject: "Physics", icon: "ph-atom",     exams: true,  daily: "Daily Physics Puzzle",   summit: "Electricity and the atom",
+    sub: "See it move, then work it out: forces, motion, energy, waves, light and electricity", level: "Top of the road",
+    road: "The Physics road", roadP: "From measuring and forces in JSS Basic Science to senior secondary Physics: motion, energy, heat, waves, light, electricity and the atom. Every topic has something to play with before you calculate anything.",
+    dailyP: "One puzzle a day from the top of the Physics road, the same for everyone in NGG. The hint is free and you get three tries." },
+];
 const STT_TOOLS = [
   { id: "home",   label: "Today",       icon: "ph-sun-horizon",  account: false, sub: "Focus timer, your week and what’s due",
     subs: [] },
@@ -140,10 +154,9 @@ const STT_TOOLS = [
     subs: [["calc", "Calculator"], ["graph", "Graphs"], ["bases", "Number bases"]] },
   { id: "words",  label: "Words",       icon: "ph-book-bookmark",account: false, sub: "Dictionary and typing practice",
     subs: [["dict", "Dictionary"], ["typing", "Typing"]] },
-  /* The Maths Lab (docs/MATH-LAB-PLAN.md): its own screens, so it keeps its deeper
-     addresses (/study/lab/learn/MC-049) — `deep` stops the shell rewriting them. */
-  { id: "lab",    label: "Maths Lab",   icon: "ph-function",     account: false, deep: true, sub: "Climb to your level, master every topic, keep it for good",
-    subs: [] },
+  /* The Labs (docs/LABS.md): each has its own screens, so it keeps its deeper addresses
+     (/study/lab/learn/MC-049, /study/physics/map) — `deep` stops the shell rewriting them. */
+  ...NGG_LABS.map(l => ({ id: l.seg, label: l.title, icon: l.icon, account: false, deep: true, sub: l.sub, subs: [], lab: l.id })),
   { id: "labs",   label: "Course labs", icon: "ph-flask",        account: false, sub: "Tools for Tech, Creative, Media and Business courses",
     subs: [] },
 ];
@@ -254,7 +267,7 @@ function ToolsApp({ setPage }) {
           : tool === "revise" ? (sub === "quiz" ? <SttQuiz/> : sub === "notes" ? <SttNotes/> : <SttFlashcards/>)
           : tool === "maths" ? (sub === "graph" ? <SttGraph/> : sub === "bases" ? <SttBases/> : <SttCalc/>)
           : tool === "words" ? (sub === "typing" ? <SttTyping signedIn={signedIn}/> : <SttDict signedIn={signedIn}/>)
-          : tool === "lab" ? <MathsLab me={me}/>
+          : def.lab ? <MathsLab key={def.lab} me={me}/>
           : <SttLabs/>}
       </main>
     </div>
