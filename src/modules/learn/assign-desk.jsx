@@ -591,7 +591,7 @@ function CurStudyHelper({ units }) {
   return (
     <section className="sth" aria-labelledby="sth-h">
       <div className="sth-head"><i className="ph ph-sparkle" aria-hidden="true"/><div><h3 id="sth-h">Study helper</h3>
-        <p>Stuck on a lesson? Ask, then keep asking until it makes sense \u2014 it remembers what you have already been told. It won\u2019t do your assignment for you.</p></div></div>
+        <p>Stuck on a lesson? Ask, then keep asking until it makes sense — it remembers what you have already been told. It won’t do your assignment for you.</p></div></div>
 
       <label className="sth-field"><span>Lesson</span>
         <select className="sth-input" value={unitId} onChange={e => pickLesson(e.target.value)}>
@@ -605,7 +605,7 @@ function CurStudyHelper({ units }) {
               <p className="sth-bubble">{t.text}</p>
             </li>
           ))}
-          {busy && <li className="sth-turn is-ai"><span className="sth-who">Study helper</span><p className="sth-bubble is-wait">Thinking\u2026</p></li>}
+          {busy && <li className="sth-turn is-ai"><span className="sth-who">Study helper</span><p className="sth-bubble is-wait">Thinking…</p></li>}
           <li ref={endRef} aria-hidden="true"/>
         </ol>
       )}

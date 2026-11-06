@@ -6983,3 +6983,23 @@ Logs were there, in two Stage 7 topics, but:
 
 ### For the English Lab
 `docs/LABS.md` is rewritten as the handover. It notes that free-writing marking needs a new item kind, added once to `mlb_mark()`, and that essay marking needs its own design.
+
+## 6 Nov 2026: The Labs are findable; escape codes in children's screens
+
+- **Owner:** "The SEO for the maths lab is still 100% terrible."
+- **What a crawler used to get.** The SPA served every `/study/...` address the same empty shell: one title ("Study tools · NGG"), one description about flashcards, a canonical of `/study`, no maths in the HTML, and no Lab page in the sitemap.
+- **The fix.** `.htaccess` sends `/study/<x>` to `api/public/lab-page.php`.
+  - It serves the same `index.html` with that page's title, description, canonical, Open Graph, robots and JSON-LD.
+  - JSON-LD types: Course for a Lab, a stage or a course; LearningResource for a topic; BreadcrumbList.
+  - The page's readable content goes inside `#root`: the bands, the stages, a topic's idea and worked example as plain text (LaTeX converted, `lab_seo_text`), and internal links. React replaces it on start.
+  - Anything that is not a Lab gets the shell back untouched, so the Lab registry stays the only list of Labs.
+  - The work lives in `domain/lab-seo.php` (`lab_seo_page`, `lab_seo_shell`, `lab_seo_urls`).
+- **In the app.** `app.jsx` no longer overwrites a Lab view's head. `mlbSeo()` sets the title, canonical and robots per view as the learner navigates; a topic's title is set once it loads. Member-only screens are noindex.
+- **Sitemap.** It now lists every Lab, its courses, every stage guide and every topic: 327 addresses.
+- **Escape codes.** JSX text written as `—` / `’` was rendering literally, for example in the Study helper's intro. Fixed in `assign-desk.jsx` (2 places) and `page-dashboard.jsx` (2 places). A repo-wide search finds none left.
+- **Tests.** The PHP suite gained 3 checks:
+  - unique titles, descriptions and canonicals, readable content with no raw LaTeX, and valid JSON-LD;
+  - noindex on private screens and the untouched shell elsewhere;
+  - the sitemap's count.
+  - Result: 6919 passed, 0 failed.
+- **Competitive analysis** (owner request): published as an artifact, "Maths Lab vs the Field".

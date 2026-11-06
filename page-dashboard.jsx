@@ -2824,7 +2824,7 @@ function DashLessonFeedback({ unitId, mine, onSaved }) {
                     onBlur={() => body !== ((mine && mine.body) || "") && send(signal, body)}/>
         </label>
       )}
-      {saidAt > 0 && <p className="cur-fb-done" role="status">Thank you \u2014 your instructor will see this.</p>}
+      {saidAt > 0 && <p className="cur-fb-done" role="status">Thank you — your instructor will see this.</p>}
     </section>
   );
 }
@@ -2861,7 +2861,7 @@ function DashTermSay({ ask, mine, onSaved }) {
     <form className="dash-card cur-say" onSubmit={save} aria-label={"What " + ask.name + " gave you"}>
       <div className="eyebrow cur-eyebrow">{ask.name.toUpperCase()} IS ENDING</div>
       <h3 className="cur-sec-h">What did this term give you?</h3>
-      <p className="cur-say-q">One or two lines, in your own words. Not today \u2014 the whole term.</p>
+      <p className="cur-say-q">One or two lines, in your own words. Not today — the whole term.</p>
       <label className="cur-say-f">
         <span className="sr-only">What this term gave you</span>
         <textarea rows={3} value={body} maxLength={600} disabled={busy}

@@ -370,6 +370,27 @@ async function as(memberId, admin, viewport) {
     chk('Inbox: approved, the photo the child sent is on their record', q(`db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-MV-K2'")['photoUrl'] ?? ''`) !== ''
       && q(`db_row("SELECT status FROM photo_change_requests WHERE subjectId = 'NGG-MV-K2' ORDER BY id DESC LIMIT 1")['status'] ?? ''`) === 'approved');
     chk('no page errors (admin)', ad.errs.length === 0);
+    /* MP9_AUDIT=dir: every area and every sub-tab, whole pages, desktop and phone — what a child sees. */
+    if (process.env.MP9_AUDIT) {
+      for (const [vw, vh, tag] of [[1280, 2600, 'd'], [390, 2600, 'p']]) {
+        const au = await as('NGG-MV-K1', false, { width: vw, height: vh });
+        await au.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' }); await waitForBoot(au);
+        await au.waitForSelector('.m9-app main', { timeout: 60000 }); await settle(au);
+        const areas = await au.evaluate(t => Array.from(document.querySelectorAll(t === 'd' ? '.m9-app aside nav button' : '.m9-app nav[aria-label="My NGG"] button')).map(b => b.innerText.trim()).filter(Boolean), tag);
+        for (const area of areas) {
+          const sel = (tag === 'd' ? '.m9-app aside nav button' : '.m9-app nav[aria-label="My NGG"] button') + ':has-text("' + area + '")';
+          await au.click(sel).catch(() => {}); await settle(au); await au.waitForTimeout(600);
+          const tabs = await au.evaluate(() => Array.from(document.querySelectorAll('main nav button')).map(b => b.innerText.trim()).filter(Boolean));
+          await au.screenshot({ path: process.env.MP9_AUDIT + '/' + tag + '-' + area.replace(/\W+/g, '_') + '.png', timeout: 8000, animations: 'disabled' }).catch(() => {});
+          fs.appendFileSync(process.env.MP9_AUDIT + '/areas.txt', tag + ' ' + area + ' :: tabs ' + JSON.stringify(tabs) + '\n');
+          for (const tb of tabs.slice(1)) {
+            await au.click('main nav button:has-text("' + tb + '")').catch(() => {}); await settle(au); await au.waitForTimeout(500);
+            await au.screenshot({ path: process.env.MP9_AUDIT + '/' + tag + '-' + area.replace(/\W+/g, '_') + '-' + tb.replace(/\W+/g, '_') + '.png', timeout: 8000, animations: 'disabled' }).catch(e => fs.appendFileSync(process.env.MP9_AUDIT + '/areas.txt', 'shot failed ' + tag + ' ' + area + '/' + tb + '\n'));
+          }
+        }
+        fs.appendFileSync(process.env.MP9_AUDIT + '/areas.txt', tag + ' errors ' + JSON.stringify(au.errs) + '\n');
+      }
+    }
     if (ad.errs.length) console.error(ad.errs.join('\n'));
   } catch (e) {
     failed++;

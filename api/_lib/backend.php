@@ -1194,6 +1194,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'mathslab.daily'          => 'mlb_daily',
             'mathslab.exams'          => 'mlb_exams',
             'labs.list'               => 'labs_list',
+            'public.lab.page'         => 'lab_seo_page',   // a Lab address's head and readable content (domain/lab-seo.php)
             'mathslab.guide'          => 'mlb_guide',
             'mathslab.chest'          => 'mlb_chest_open',
             'mathslab.dailyAnswer'    => 'mlb_daily_answer',

@@ -494,9 +494,28 @@ function mlbRoute() {
 }
 function mlbPath(r) { return "/study/" + mlbLab().seg + (r.v === "home" ? "" : r.v === "learn" ? "/learn/" + r.comp : r.v === "guide" ? "/guide/" + r.stage : "/" + r.v); }
 
+/* Each Lab view's head, kept in step as the learner moves around (the server set it for the first
+   load: domain/lab-seo.php, same wording). A topic's title arrives with the topic, so MlbLearn calls
+   this again once it has it. Member-only screens are noindex. */
+function mlbSeo(r, topicTitle) {
+  try {
+    const lab = mlbLab(), base = "https://next.afrovanguard.org.ng/study/" + lab.seg;
+    const pick = r.v === "learn" ? [(topicTitle || "Topic") + " — " + lab.subject + " practice with worked examples · NGG " + lab.title, base + "/learn/" + r.comp]
+      : r.v === "guide" ? ["Stage " + r.stage + " guide · NGG " + lab.title, base + "/guide/" + r.stage]
+      : r.v === "courses" ? [lab.title + " courses · NGG", base + "/courses"]
+      : [lab.id === "maths" ? "Maths Lab — free maths practice from counting to calculus, with worked examples · NGG" : lab.title + " — free " + lab.subject.toLowerCase() + " practice with diagrams and simulations · NGG", base];
+    document.title = pick[0];
+    const can = document.querySelector('link[rel="canonical"]'); if (can) can.setAttribute("href", pick[1]);
+    const ogu = document.querySelector('meta[property="og:url"]'); if (ogu) ogu.setAttribute("content", pick[1]);
+    const ogt = document.querySelector('meta[property="og:title"]'); if (ogt) ogt.setAttribute("content", pick[0]);
+    const rob = document.querySelector('meta[name="robots"]');
+    if (rob) rob.setAttribute("content", ["progress", "certificates", "daily", "exams"].indexOf(r.v) >= 0 ? "noindex, follow" : "index, follow, max-image-preview:large");
+  } catch (_) {}
+}
 function MathsLab({ me }) {
   const lab = mlbLab();
   const [route, setRoute] = React.useState(mlbRoute);
+  React.useEffect(() => { mlbSeo(route); }, [route]); // eslint-disable-line
   const [play, setPlay] = React.useState(null);           // a running session
   const [lite, setLite] = React.useState(false);          // signed in but not an NGG member
   const newCerts = useMlbNewCerts();
@@ -904,7 +923,10 @@ function MlbFramework({ bands }) {
    Reaching Practise records the study on the server, which refuses practice without it.
    A topic already studied (or known) can be moved through freely. */
 function MlbLearn({ comp, go, startPlay, lite }) {
+  /* The topic's real name in the tab and the canonical, once it has arrived. */
+  const seoTitle = React.useRef("");
   const [st, load] = useMlb(() => lite ? NGGApi.public.mathslabComp(comp) : NGGApi.member.mathslab.comp(comp), [comp, lite]);
+  React.useEffect(() => { const t = st.phase === "ok" && st.d && st.d.comp ? st.d.comp.title : ""; if (t && seoTitle.current !== comp + t) { seoTitle.current = comp + t; mlbSeo({ v: "learn", comp }, t); } }, [st, comp]);
   const [shown, setShown] = React.useState(1);
   const [step, setStep] = React.useState(0);
   const [reached, setReached] = React.useState(0);

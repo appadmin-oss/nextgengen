@@ -284,6 +284,11 @@ object-src 'none'"
   # Don't rewrite known asset paths or the API tree (its own .htaccess wins)
   # Sitemap is generated (static pages + published posts).
   RewriteRule ^sitemap\.xml$ api/public/sitemap.php [L]
+  # A Lab address is served with its own title, description, canonical, JSON-LD and readable
+  # content (api/_lib/domain/lab-seo.php), not the bare shell every SPA address otherwise gets.
+  # Any /study/<x> address goes there; one that is not a Lab gets the plain shell back, so the Lab
+  # registry (domain/labs.php) stays the only list of Labs.
+  RewriteRule ^study/[a-z]+(/.*)?$ api/public/lab-page.php [L]
   # The Timetable Maker's landing is one prerendered file, not a folder: a
   # timetable/ directory would turn the maker's own /timetable into a directory.
   RewriteRule ^timetable/about/?$ timetable-about.html [L]

@@ -423,6 +423,12 @@ function App() {
     // Per-page document title + meta description — actually visible to
     // browser tabs, screen readers, share-link previews and SEO crawlers.
     const meta = PAGE_META[page] || { title: "Page not found · NGG", desc: "" };
+    /* Inside a Lab (/study/lab…, /study/physics…) the Lab sets its own title, description and
+       canonical for each view (mlbSeo in mlb-app.jsx), as the server did for the first load
+       (domain/lab-seo.php). Overwriting them here with "Study tools" is what made every Lab page
+       look like one page to a search engine. */
+    const inLab = page === "study" && typeof NGG_LABS !== "undefined" && NGG_LABS.some(l => new RegExp("^/study/" + l.seg + "(/|$)").test(window.location.pathname || ""));
+    if (inLab) { document.body.setAttribute("data-page", page); document.body.classList.toggle("own-chrome", OWN_CHROME_PAGES.includes(page)); return; }
     document.title = meta.title;
     const m = document.querySelector('meta[name="description"]');
     if (m && meta.desc) m.setAttribute("content", meta.desc);

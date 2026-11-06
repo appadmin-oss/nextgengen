@@ -38170,6 +38170,32 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     }
     lab_use('maths');
     chk('labs · no exam body is named anywhere a learner reads, in either Lab' . ($named ? ' (' . implode(', ', array_slice(array_unique($named), 0, 6)) . ')' : ''), $named === []);
+    /* SEO (owner, 6 Nov 2026: "The SEO for the maths lab is still 100% terrible"): every Lab address is
+       served with its own head and readable content (domain/lab-seo.php). */
+    $shell = '<html><head><title>Next Generation Genius</title><meta name="description" content="x"/><meta name="robots" content="index, follow"/><link rel="canonical" href="https://next.afrovanguard.org.ng/"/><meta property="og:url" content="u"/><meta property="og:title" content="t"/><meta property="og:description" content="d"/></head><body><div id="root"></div></body></html>';
+    $pages = ['/study/lab', '/study/lab/learn/MC-077', '/study/lab/learn/MC-049', '/study/lab/guide/9', '/study/lab/courses', '/study/physics', '/study/physics/learn/PH-049', '/study/physics/guide/3'];
+    $heads = []; $badSeo = [];
+    foreach ($pages as $pg) {
+        $h = lab_seo_shell($shell, $pg);
+        preg_match('/<title>([^<]*)<\/title>/', $h, $t); preg_match('/<meta name="description" content="([^"]*)"/', $h, $d); preg_match('/rel="canonical" href="([^"]*)"/', $h, $cn);
+        $heads[$pg] = [$t[1] ?? '', $d[1] ?? ''];
+        if (($cn[1] ?? '') !== 'https://next.afrovanguard.org.ng' . $pg) $badSeo[] = "$pg canonical " . ($cn[1] ?? '');
+        if (!preg_match('/<div id="root"><main class="seo-page">.*<h1>/s', $h)) $badSeo[] = "$pg no readable content";
+        if (preg_match('/\$[^$<]*\\[a-z]+/', strip_tags(preg_replace('/<script.*?<\/script>/s', '', $h)))) $badSeo[] = "$pg raw LaTeX";
+        preg_match_all('/<script type="application\/ld\+json">(.*?)<\/script>/s', $h, $lds);
+        if (!$lds[1] || array_filter($lds[1], static fn($j) => !is_array(json_decode($j, true)))) $badSeo[] = "$pg JSON-LD";
+    }
+    $titles = array_column($heads, 0); $descs = array_column($heads, 1);
+    $topic = lab_seo_shell($shell, '/study/lab/learn/MC-077');
+    chk('labs seo · every Lab page has its own title and description, its own canonical, readable content (a topic carries its worked example as text, no raw LaTeX) and valid JSON-LD' . ($badSeo ? ' (' . implode('; ', array_slice($badSeo, 0, 5)) . ')' : ''),
+        $badSeo === [] && count(array_unique($titles)) === count($pages) && count(array_unique($descs)) === count($pages)
+        && str_contains($topic, mlb_comp('MC-077')['title']) && str_contains($topic, 'Worked example') && str_contains($topic, '"@type":"LearningResource"') && str_contains($topic, '"isAccessibleForFree":true'));
+    $priv = lab_seo_shell($shell, '/study/lab/progress');
+    chk('labs seo · a member-only screen is noindex, and an address that is not a Lab (or not even under /study) gets the shell back untouched',
+        str_contains($priv, 'content="noindex, follow"') && lab_seo_shell($shell, '/study/revise') === $shell && lab_seo_shell($shell, '/study') === $shell && lab_seo_shell($shell, '/club') === $shell);
+    $urls = array_column(lab_seo_urls(), 0);
+    chk('labs seo · the sitemap offers every Lab, its courses, every stage guide and every topic (' . count($urls) . ' addresses)',
+        in_array('/study/lab', $urls, true) && in_array('/study/physics/learn/PH-090', $urls, true) && in_array('/study/lab/guide/20', $urls, true) && count($urls) === 2 + 2 + 20 + 9 + 200 + 90);
     foreach (['mlab_state', 'mlab_profile', 'mlab_sessions', 'mlab_enrol', 'mlab_track'] as $t) db_exec("DELETE FROM $t WHERE memberId = 'NGG-PH-1'");
     db_exec("DELETE FROM documents WHERE memberId = 'NGG-PH-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PH-1'");
     lab_use('maths');
