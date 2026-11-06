@@ -40,6 +40,15 @@ const LABS = [
         'content' => ['stages' => 'phy_stage_table', 'strands' => 'phy_strands', 'bands' => 'phy_bands', 'edges' => 'phy_edges',
                       'courses' => 'phy_courses', 'forms' => 'phy_forms', 'formulas' => 'phy_formulas', 'papers' => 'phy_papers'],
         'features' => ['daily', 'exams', 'explore'], 'dailyName' => 'Daily Physics Puzzle'],
+    // The third Lab (owner, 6 Nov 2026: "build the engine. Make it modular"): content in a kit and five
+    // modules (englishlab-kit.php and englishlab-{words,grammar,sounds,reading,writing}.php), on the
+    // same engine. No explorers yet, so no 'explore'.
+    'english' => ['id' => 'english', 'title' => 'English Lab', 'subject' => 'English', 'prefix' => 'EN', 'path' => '/study/english', 'status' => 'live', 'icon' => 'ph-book-open-text',
+        'docProgram' => 'mathslab', 'emoji' => '📖',
+        'what' => 'From nouns, tenses and punctuation to speech work, comprehension, summary and writing well — JSS English Studies through senior secondary English Language.',
+        'content' => ['stages' => 'eng_stage_table', 'strands' => 'eng_strands', 'bands' => 'eng_bands', 'edges' => 'eng_edges',
+                      'courses' => 'eng_courses', 'forms' => 'eng_forms', 'formulas' => 'eng_formulas', 'papers' => 'eng_papers'],
+        'features' => ['daily', 'exams'], 'dailyName' => 'Daily Word Challenge'],
 ];
 
 /** A topic id: two capital letters, a dash, three digits. */

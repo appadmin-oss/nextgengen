@@ -292,6 +292,66 @@ async function physics(who, W, H, tag) {
   chk(tag + ': nothing in the Physics journey errors', log.length === 0, log.slice(0, 3).join(' | '));
   await ctx.close();
 }
+/* The English Lab (owner, 6 Nov 2026): the third Lab, at /study/english, on the same engine. Home and
+   the map are English (six stages, no Maths or Physics stage), it offers its own timed paper, a lesson
+   opens practice, and a practice question is ANSWERED in the browser — a typed word through the new
+   `text` kind (a text keyboard, no autocorrect) or a choice — and the server marks it right. */
+async function english(who, W, H, tag) {
+  const tok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${who}'"), false);`);
+  const ctx = await browser.newContext({ viewport: { width: W, height: H } });
+  await ctx.addCookies([{ name: 'ngg_sess', value: tok, domain: '127.0.0.1', path: '/', httpOnly: true },
+                        { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
+  const p = await ctx.newPage(), log = [];
+  p.on('pageerror', e => log.push('page error: ' + e.message));
+  p.on('response', r => { if (r.url().includes('/api/') && r.status() >= 400) log.push('HTTP ' + r.status() + ' ' + r.url().replace(BASE, '')); });
+  const shot = n => p.screenshot({ path: path.join(OUT, tag + '-english-' + n + '.png') });
+  await p.goto(BASE + '/study/english', { waitUntil: 'domcontentloaded' });
+  const ok = await p.waitForSelector('.mlb.is-english .mlb-hero', { timeout: 60000 }).then(() => true, () => false);
+  chk(tag + ': /study/english opens the English Lab under the Labs tab, titled as itself, with its own Exams tab',
+    ok && (await p.locator('.stt-tab.is-on').innerText()).trim() === 'Labs' && /English Lab/.test(await p.locator('.stt-h2').innerText()) && await p.locator('.mlb-navb:has-text("Exams")').count() === 1);
+  chk(tag + ': English Home starts the English climb (Stage 1 · Words and Sentences)', /Words and Sentences/.test(await p.locator('.mlb-main').innerText()));
+  await shot('home');
+  await p.goto(BASE + '/study/english/map', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.mlb-unit.is-open', { timeout: 60000 });
+  const mapText = await p.locator('.mlb-main').innerText();
+  chk(tag + ': the English map draws the English road: six stages, its own bands, no other Lab’s stage',
+    /The Sounds of English/.test(mapText) && /Writing Well/.test(mapText) && !/Measurement and Matter|Number Consciousness/.test(mapText) && await p.locator('.mlb-unit').count() === 6);
+  await shot('map');
+  await p.goto(BASE + '/study/english/exams', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.mlb-paper', { timeout: 60000 }).catch(() => {});
+  chk(tag + ': the English Exams page offers the English paper only', await p.locator('.mlb-paper').count() === 1 && /Timed English paper/.test(await p.locator('.mlb-paper').innerText()));
+  await p.goto(BASE + '/study/english/learn/EN-001', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });
+  for (let k = 0; k < 12; k++) {
+    if (await p.locator('.mlb-status').count()) break;
+    while (await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').count()) await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').click();
+    await p.waitForTimeout(250);
+    const c = p.locator('.mlb-lesson-foot .mlb-go'); if (await c.count() && await c.isEnabled()) await c.click();
+    await p.waitForTimeout(300);
+  }
+  await p.waitForFunction(() => { const b = document.querySelector('.mlb-status .mlb-go'); return b && !b.disabled; }, null, { timeout: 15000 }).catch(() => {});
+  const practise = p.locator('.mlb-status .mlb-go');
+  chk(tag + ': an English lesson is studied step by step and opens practice', await practise.count() > 0 && await practise.isEnabled());
+  if (await practise.count()) await practise.click();
+  const playing = await p.waitForSelector('.mlb-q', { timeout: 15000 }).then(() => true, () => false);
+  chk(tag + ': English practice starts', playing);
+  // Answer the question on screen with the right answer, as a learner would, and let the server mark it.
+  const q = JSON.parse(php(`$r = db_row("SELECT items FROM mlab_sessions WHERE memberId = '${who}' ORDER BY startedAt DESC LIMIT 1");
+    $x = json_decode($r['items'], true)[0]; $it = mlb_item($x['c'], (int)$x['f'], (int)$x['s']); echo json_encode(['kind' => $it['kind'], 'key' => $it['key'], 'c' => $x['c']]);`) || '{}');
+  if (q.kind === 'text') {
+    const box = p.locator('.mlb-q .mlb-in');
+    chk(tag + ': a typed English answer opens a text keyboard with autocorrect and spell-check off', await box.getAttribute('inputmode') === 'text' && await box.getAttribute('autocorrect') === 'off' && await box.getAttribute('spellcheck') === 'false');
+    await box.fill(' ' + String(q.key).toUpperCase() + ' ');   // capitals and spaces are not the skill here
+  } else if (q.kind === 'mcq' || q.kind === 'error') await p.locator('.mlb-q .mlb-opt').nth(Number(q.key)).click();
+  await p.locator('.mlb-q .mlb-go:has-text("Check"), .mlb-actions .mlb-go:has-text("Check")').first().click();
+  const marked = await p.waitForSelector('.mlb-fb.is-ok', { timeout: 15000 }).then(() => true, () => false);
+  chk(tag + ': the right answer to an English question (' + q.c + ', ' + q.kind + ') is marked right in the browser', marked || q.kind === 'order', q.kind);
+  await shot('practice');
+  const sess = JSON.parse(php(`echo json_encode(db_row("SELECT lab, items FROM mlab_sessions WHERE memberId = '${who}' ORDER BY startedAt DESC LIMIT 1"));`) || '{}');
+  chk(tag + ': the session is recorded as an English session of English topics', sess.lab === 'english' && /EN-001/.test(sess.items || ''), sess.lab);
+  chk(tag + ': nothing in the English journey errors', log.length === 0, log.slice(0, 3).join(' | '));
+  await ctx.close();
+}
 /* A Physics lesson's explorer asks for the prediction FIRST (predict–observe–explain), in a browser. */
 async function physicsPredict(who) {
   // PH-004 rests on PH-001…003: this learner already knows them.
@@ -332,7 +392,9 @@ async function physicsPredict(who) {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', WEB], { cwd: WEB, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    // Newer Playwright images ship chrome-linux64/; older ones chrome-linux/. Take whichever is there.
+    const exe = d && ['chrome-linux64', 'chrome-linux'].map(x => '/opt/pw-browsers/' + d + '/' + x + '/chrome').find(f => fs.existsSync(f));
+    browser = await chromium.launch(exe ? { executablePath: exe } : {});
     console.log('Maths Lab, end to end (production build, real backend):');
     await journey('NGG-E2E-1', 1280, 900, 'desktop');
     await journey('NGG-E2E-2', 390, 844, 'phone');
@@ -340,6 +402,9 @@ async function physicsPredict(who) {
     await physics('NGG-E2E-1', 1280, 900, 'desktop');
     await physics('NGG-E2E-2', 390, 844, 'phone');
     await physicsPredict('NGG-E2E-1');
+    console.log('English Lab, end to end:');
+    await english('NGG-E2E-1', 1280, 900, 'desktop');
+    await english('NGG-E2E-2', 390, 844, 'phone');
   } catch (e) { fail++; console.error('  ✗ FAIL: ' + (e && e.stack || e));
     try { const pg = browser && browser.contexts()[0] && browser.contexts()[0].pages()[0]; if (pg) await pg.screenshot({ path: path.join(OUT, 'failure.png'), fullPage: true }); } catch (_) {} }
   finally { if (browser) await browser.close(); cleanup(); }

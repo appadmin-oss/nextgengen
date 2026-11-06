@@ -7055,3 +7055,25 @@ Logs were there, in two Stage 7 topics, but:
   - `study-tools.test.js` 46/0. It adds checks for the four-tab row, the hub listing every Lab, the lit Labs tab with All Labs inside a Lab, and the three old addresses forwarding. A signed-out wait now waits past the loading state.
   - `mathlab-e2e` 73/0: the Physics Lab sits under the Labs tab.
   - `member-v9`: one "Labs" entry in Your apps.
+
+
+## 6 Nov 2026 — The English Lab, the third Lab, built as a kit and modules
+
+Owner: *"Can you build the engine. Make it modular. Research first."*
+
+- **Research.**
+  - The road follows the strands of the English Studies curriculum (vocabulary, structure, speech work, reading and comprehension, composition) from JSS to SS 3.
+  - Writing is taught through sentence combining and other markable parts, because sentence combining has the strongest evidence for improving whole compositions.
+  - Retrieval and spacing come from the shared engine.
+- **Engine.** One new answer kind, `text`, added once to the shared marker (`mlb_text_norm`, `mlb_mark`, `mlb_answer_text`) as `docs/LABS.md` required. No second marker.
+- **Modular content.**
+  - `englishlab-kit.php`: the question builders.
+  - `englishlab-map.php`: six stages of ten, five bands (summit: Writing Well), five courses, a 40-question timed paper.
+  - Five content modules (words, grammar, sounds, reading, writing): 60 topics, 3 forms each, mostly tables of rows.
+- **Registry.** `LABS['english']` (prefix `EN`, `/study/english`, daily + exams) and `NGG_LABS` in `tools-core.jsx`.
+  - The answer box for `text` opens a text keyboard with autocorrect and spell-check off, so a phone cannot answer a spelling question for the learner.
+- **Tests.**
+  - `php api/tests/run.php`: 6928/0 (from 6919/0). Adds the English sweep and the `text`-marker, map, isolation, paper, daily and certificate checks. `labs.list` and the sitemap counts now include English.
+  - `tests/labs-client.test.js`: 22/0. `tests/route-registry.test.js`: 60/0.
+  - `tests/mathlab-e2e.test.js`: 92/0, with a new English journey at desktop and phone. The test also now finds this image's `chrome-linux64` Chromium as well as `chrome-linux`.
+- **Not built.** Judged essays (needs a teacher queue or a rubric-checked AI step) and listening questions (need audio).

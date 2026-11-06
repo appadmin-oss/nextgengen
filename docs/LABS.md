@@ -1,6 +1,6 @@
 # Adding a Lab
 
-The owner (5 Nov 2026): *"Prepare, we'll be adding more labs."* Physics shipped as the second Lab on 6 Nov 2026, and the engine is now Lab-aware. English is next, built by another agent: **this page is its handover**.
+The owner (5 Nov 2026): *"Prepare, we'll be adding more labs."* Physics shipped as the second Lab on 6 Nov 2026 and English as the third the same day; the engine is Lab-aware. **This page is the handover for the next Lab** — English (§5) is the worked example of a Lab built from a kit and modules.
 
 The Maths Lab is the first Lab. Most of what it does is not maths: the climb, practice, mastery
 checks, reviews, the stage boss, certificates, the Daily Problem and the timed exam papers. A
@@ -91,3 +91,24 @@ send the key" rule) is how one copy ends up missing a guard.
 - **The summit is guided.** Olympiad problems are one hard idea cut into steps, each step a question that gives the previous result. Tough, but reachable.
 - **Tests:**
   - `tests/physicslab-shot.js` draws every figure from a real question and every explorer. It fails on an empty figure, a missing reading guide, an explorer that opens before the prediction, or a control that changes nothing.
+
+
+## 5. The English Lab: a Lab built from a kit and modules
+
+English (6 Nov 2026; owner: *"Build the engine. Make it modular."*) adds no engine code except ONE answer kind in the shared marker. Everything else is content, split so a topic is data:
+
+- **`text`, the shared typed-word kind** (`mlb_text_norm()` and `mlb_mark()` in `mathslab-gen.php`). Compares the learner's words to the key and an `accept` list. Curly/straight quotes, spacing and a space before punctuation never matter. Capitals and the final `.`/`?`/`!` matter only when the item sets `case`/`punct`. With right words but wrong capitals it says so (`form`). `mlb_public()` never sends `accept`.
+- **The kit** (`englishlab-kit.php`): `eng_choose`, `eng_type`, `eng_spot`, `eng_order` and `eng_derive`. Each turns a table of rows into a form the engine already runs. `eng_derive` is for rules (plurals, past tenses, comparatives) where the wrong options are the regular rule misapplied (`eng_regular_plural`, `eng_regular_past`).
+- **The map** (`englishlab-map.php`): stages, strands, bands, edges, courses, the paper, and the certificate's background lines.
+- **Five content modules**, one per strand: `englishlab-words` (Stage 1), `-grammar` (Stages 2 and 4), `-sounds` (3), `-reading` (5) and `-writing` (6). `eng_forms()` joins them.
+  - To add a topic: one entry in the map and one in a module.
+  - To add a module: one line in `eng_forms()` and one in `api/_lib/bootstrap.php`.
+- **Append only, still.** A row's position in its table is part of a replayed question (the seed picks the row). New rows go at the END.
+- **Never a `$` in content.** The Lab's screen reads `$…$` as mathematics. The sweep fails on one.
+- **Tests:**
+  - the English block in `api/tests/run.php`: the sweep (the key and every accepted alternative mark themselves right; every wrong option names its slip; no `$`), the `text` marker's promises, the map, isolation from the other Labs, the paper, the daily problem and the certificate;
+  - `tests/labs-client.test.js`;
+  - the English journey in `tests/mathlab-e2e.test.js`, which answers a real practice question in the browser.
+- **Not yet built:**
+  - judged free writing: an essay or a whole letter needs a teacher queue or a rubric-checked model call through the AI layer, never the instant marker;
+  - audio for speech work: the Sounds items are written so audio can be attached to the same items.

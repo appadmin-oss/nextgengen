@@ -112,7 +112,7 @@ function mlb_words(int $n): string {
 
 /* ── Item builders ─────────────────────────────────────────────────────── */
 
-/** A typed answer. $kind: num | frac | expr | ratio | pair. */
+/** A typed answer. $kind: num | frac | expr | ratio | pair | text. */
 function mlb_typed(string $kind, string $stem, $key, array $steps, string $hint, string $dim, int $secs, array $x = []): array {
     return $x + ['kind' => $kind, 'stem' => $stem, 'key' => $key, 'steps' => $steps, 'hint' => $hint, 'dim' => $dim, 'secs' => $secs, 'typed' => true];
 }
@@ -898,6 +898,22 @@ function mlb_public(array $it): array {
     return $out;
 }
 
+/**
+ * A typed WORD or SENTENCE as the marker compares it (the English Lab, 6 Nov 2026: the handover's
+ * "a new kind must be added ONCE, to mlb_mark() and mlb_public(), never in a second marker").
+ * Curly quotes and apostrophes are one character with straight ones, runs of spaces are one space
+ * and a space before punctuation is dropped. Capitals and a final full stop, question mark or
+ * exclamation mark are ignored UNLESS the item says they are the skill ('case' / 'punct'): a
+ * capital-letters question marks "lagos" wrong, a spelling question does not mark "Necessary" wrong.
+ */
+function mlb_text_norm(string $s, bool $case = false, bool $punct = false): string {
+    $s = str_replace(['’', '‘', '`', '“', '”', "\u{00A0}", '–', '—'], ["'", "'", "'", '"', '"', ' ', '-', '-'], $s);
+    $s = trim((string)preg_replace('/\s+/u', ' ', $s));
+    $s = (string)preg_replace('/\s+([,.;:!?])/u', '$1', $s);
+    if (!$punct) $s = rtrim($s, " .!?");
+    return $case ? $s : mb_strtolower($s);
+}
+
 /* ── Marking ─────────────────────────────────────────────────────────────
  * Generous about form, strict about value: "1,250", "₦1250" and "1250.0" are
  * one answer; "3/4" and "0.75" are one number; "8x-12" and "-12+8x" are one
@@ -1031,6 +1047,19 @@ function mlb_mark(array $it, $resp): array {
     }
     $s = trim((string)$resp);
     if ($s === '') return ['ok' => false, 'why' => null, 'form' => null];
+    if ($kind === 'text') {
+        // The key and every accepted alternative, compared as the learner typed them (mlb_text_norm).
+        $case = !empty($it['case']); $punct = !empty($it['punct']);
+        $got = mlb_text_norm($s, $case, $punct);
+        foreach (array_merge([(string)$it['key']], array_map('strval', (array)($it['accept'] ?? []))) as $k) {
+            if ($got === mlb_text_norm($k, $case, $punct)) return ['ok' => true, 'why' => null, 'form' => null];
+        }
+        // Right words, wrong capitals or full stop, on an item whose skill IS those: say so.
+        if ($case || $punct) foreach (array_merge([(string)$it['key']], (array)($it['accept'] ?? [])) as $k) {
+            if (mlb_text_norm($s) === mlb_text_norm((string)$k)) return ['ok' => false, 'why' => null, 'form' => 'Right words — now check the capital letters and the punctuation.'];
+        }
+        return ['ok' => false, 'why' => null, 'form' => null];
+    }
     if ($kind === 'num') {
         $v = mlb_parse_num($s); $k = mlb_parse_num((string)$it['key']);
         // A quantity's unit typed after the number ("12 N", "2.5 days", "3 × 10⁸ m/s") is not a wrong answer.
@@ -1080,6 +1109,7 @@ function mlb_answer_text(array $it): string {
     if ($it['kind'] === 'num' && ($it['unit'] ?? '') === '°') return mlb_p((float)$it['key']) . '°';
     switch ($it['kind']) {
         case 'mcq': case 'error': return (string)$it['options'][(int)$it['key']];
+        case 'text': return (string)$it['key'];
         case 'order': return implode(' → ', array_map(static fn($k, $i) => ($i + 1) . '. ' . $it['options'][$k], $it['key'], array_keys($it['key'])));
         case 'pair': $L = $it['labels'] ?? ['x', 'y']; return '$' . $L[0] . ' = ' . $it['key'][0] . '$, $' . $L[1] . ' = ' . $it['key'][1] . '$';
         case 'frac': $f = mlb_parse_frac((string)$it['key']); return '$' . mlb_ftex($f[0], $f[1]) . '$';

@@ -4815,7 +4815,7 @@ off as "bad at maths" when a foundation was simply never taught.
   - **What is covered:** exact powers; change of base; exponential equations solved with logs; logs of numbers in standard form (the "using tables" questions); $\ln$ and $e$; the curve $y = \log x$; doubling and half-life times; $\ln$ in calculus.
   - **Explorer:** the log topics have their own, with sliders for a base and a power.
   - **Typing answers:** a learner can type `log( )` and `ln( )` in an answer, from the keypad or the keyboard. Any base is accepted where the value is the same.
-- **More Labs.** The Physics Lab is the second (below), and English is next. Each Lab has its own map, questions, climb, certificates and papers, and shares the engine. See `docs/LABS.md` for the developer's how-to.
+- **More Labs.** The Physics Lab is the second and the English Lab the third (both below). Each Lab has its own map, questions, climb, certificates and papers, and shares the engine. See `docs/LABS.md` for the developer's how-to.
 - **Exam practice (the Exams tab, `/study/lab/exams`).** Two timed papers, open to every member whatever their stage.
   - **The papers:**
 
@@ -5020,6 +5020,23 @@ The owner found the portal hard to navigate, unintuitive and patchy. What change
 - **Assignments.** With none set, the card reads "Nothing set right now" without a dangling "· due –".
 - **The Mentor screen** drops the side links that repeated its own tabs; the tabs already carry the
   counts.
+
+## English Lab (`/study/english`)
+
+The third Lab, on the same engine as Maths and Physics: the same climb, practice, mastery checks, stage gates, certificates, Daily problem and timed paper.
+
+- **The road:** six stages of ten topics (EN-001 … EN-060), following English Studies from JSS to SS 3:
+  1. Words and Sentences — parts of speech, plurals, tenses, capital letters, punctuation, spelling, synonyms and antonyms.
+  2. Building Sentences — agreement, prepositions, conjunctions, question tags, tenses, irregular verbs, apostrophes, homophones, prefixes and suffixes, articles.
+  3. The Sounds of English — vowels, diphthongs, consonants, silent letters, word and emphatic stress, rhymes and intonation (written questions in IPA; stress shown in capitals, e.g. reCORD).
+  4. Grammar in Use — passive voice, reported speech, conditionals, phrasal verbs, idioms, clauses, who/whom, tricky agreement, modals, gerunds and infinitives.
+  5. Reading and Meaning — main idea, inference, words in context, fact and opinion, figures of speech, tone, summary, register, nearest and opposite in meaning.
+  6. Writing Well (the summit) — combining sentences, formal and informal letters, paragraphs, linking words, concise writing, common usage errors, semicolons and colons, writing for the occasion, argument.
+- **Questions:** multiple choice (every wrong option names the slip), typed words and short sentences, "which part of this sentence is wrong?", and "put the words in order". A typed answer is marked on the skill: capitals, spacing and the final full stop are ignored unless the question is about them (the capital-letters and punctuation topics).
+- **Courses:** English Foundations, Speech Work, Grammar in Use, Reading and Meaning, Writing Well. Stage certificates say "English Lab".
+- **Daily Word Challenge** comes from Writing Well. **The timed English paper** (Exams tab): 40 four-option questions in 40 minutes across all six stages, new every time.
+- **What it does not do yet:** mark a whole essay or letter. Writing is practised in the parts that can be marked instantly. A judged essay needs a teacher queue or a rubric-checked AI step, and is a separate piece of work. Listening questions (hear the word, pick the sound) need audio and are not in yet.
+- No exam body is named anywhere a learner reads; the questions are NGG's own.
 
 ### The Labs' explorers, easier to use (6 Nov 2026)
 

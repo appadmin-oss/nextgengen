@@ -1181,8 +1181,10 @@ function MlbInput({ item, value, onChange, onEnter, disabled }) {
   return (
     <div className="mlb-entry">
       <div className="mlb-inrow">{item.unit === "₦" ? <span className="mlb-unit">₦</span> : null}
-        <input ref={ref} className="mlb-in" value={value || ""} disabled={disabled} inputMode={item.kind === "expr" ? "text" : "decimal"} autoComplete="off" autoCapitalize="off" spellCheck="false"
-          placeholder={item.kind === "frac" ? "e.g. 3/4" : item.kind === "ratio" ? "e.g. 3:4" : item.kind === "expr" ? "e.g. 3x+2" : "Your answer"} aria-label="Your answer"
+        {/* A typed word or sentence (the English Lab's `text` kind): a text keyboard, and no autocorrect or
+            spell-check — on a spelling question the phone would otherwise answer for the learner. */}
+        <input ref={ref} className="mlb-in" value={value || ""} disabled={disabled} inputMode={item.kind === "expr" || item.kind === "text" ? "text" : "decimal"} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck="false"
+          placeholder={item.kind === "frac" ? "e.g. 3/4" : item.kind === "ratio" ? "e.g. 3:4" : item.kind === "expr" ? "e.g. 3x+2" : item.kind === "text" ? "Type your answer" : "Your answer"} aria-label="Your answer"
           onChange={e => onChange(e.target.value)} onKeyDown={e => e.key === "Enter" && onEnter()}/>{item.unit && item.unit !== "₦" ? <span className="mlb-unit">{item.unit}</span> : null}</div>
       {item.kind === "expr" && value ? <p className="mlb-preview" aria-live="polite">Reads as: <MlbMath text={"$" + String(value).replace(/sqrt\(/g, "\\sqrt(").replace(/log\(/g, "\\log(").replace(/ln\(/g, "\\ln(").replace(/\*/g, "\\times ") + "$"}/></p> : null}
       {item.dp != null ? <p className="mlb-meta mlb-rule">Give your answer correct to {item.dp === 0 ? "the nearest whole number" : item.dp + " decimal place" + (item.dp > 1 ? "s" : "")}.</p> : null}
