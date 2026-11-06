@@ -7,14 +7,8 @@ declare(strict_types=1);
  * only, built with the kit. Append-only.
  */
 function eng_reading_forms(): array {
-    // Short passages, each with its main idea and an inference a reader can defend from the text.
-    $P = [
-        'market' => 'By six in the morning, the market at Oja-Oba is already loud. Traders unload baskets of tomatoes, women balance trays of bread on their heads, and buyers argue cheerfully over prices. By noon the crowd thins, and by dusk only the sweepers remain.',
-        'water' => 'Our village once walked two hours each day to fetch water from the stream. Since the borehole was dug last year, girls who used to miss the first lesson now arrive before the bell, and the clinic reports fewer cases of typhoid.',
-        'phone' => 'Mobile phones have changed how farmers sell their crops. Instead of accepting whatever price a middleman offers, a farmer in Benue can now call three markets, compare prices, and send her yams to the best one.',
-        'reading' => 'Uche did not like books until his uncle gave him a novel about a boy who sailed down the Niger. He finished it in two nights. Now he spends his pocket money at the second-hand bookseller near the motor park.',
-        'harmattan' => 'When the harmattan arrives, the sky turns a dusty grey and the mornings are suddenly cold. Lips crack, skin dries, and dust settles on every table no matter how often it is wiped.',
-    ];
+    // The passages live in the shared bank (eng_passage(), englishlab-kit.php).
+    $P = array_combine($k = ['market', 'water', 'phone', 'reading', 'harmattan'], array_map('eng_passage', $k));
     return [
     'EN-041' => [
         eng_choose([

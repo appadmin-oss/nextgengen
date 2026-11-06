@@ -26,6 +26,8 @@ declare(strict_types=1);
  *   features  what this Lab offers beyond the path: 'daily' (a daily problem from its summit band),
  *             'exams' (timed practice papers), 'explore' (interactive explorers in the client).
  *   noun      what one step on its map is called in copy ("topic").
+ *   pitch     what the Lab's practice is, after "free <subject> practice …" in its page title (lab-seo.php
+ *             and the browser's own title, which reads the same words from NGG_LABS). Maths keeps its own title.
  */
 const LABS = [
     'maths' => ['id' => 'maths', 'title' => 'Maths Lab', 'subject' => 'Mathematics', 'prefix' => 'MC', 'path' => '/study/lab', 'status' => 'live', 'icon' => 'ph-function',
@@ -39,7 +41,7 @@ const LABS = [
         'what' => 'From measuring and forces to motion, energy, waves, electricity and the atom — from JSS Basic Science through senior secondary Physics.',
         'content' => ['stages' => 'phy_stage_table', 'strands' => 'phy_strands', 'bands' => 'phy_bands', 'edges' => 'phy_edges',
                       'courses' => 'phy_courses', 'forms' => 'phy_forms', 'formulas' => 'phy_formulas', 'papers' => 'phy_papers'],
-        'features' => ['daily', 'exams', 'explore'], 'dailyName' => 'Daily Physics Puzzle'],
+        'features' => ['daily', 'exams', 'explore'], 'dailyName' => 'Daily Physics Puzzle', 'pitch' => 'with diagrams and simulations'],
     // The third Lab (owner, 6 Nov 2026: "build the engine. Make it modular"): content in a kit and five
     // modules (englishlab-kit.php and englishlab-{words,grammar,sounds,reading,writing}.php), on the
     // same engine. No explorers yet, so no 'explore'.
@@ -48,7 +50,7 @@ const LABS = [
         'what' => 'From nouns, tenses and punctuation to speech work, comprehension, summary and writing well — JSS English Studies through senior secondary English Language.',
         'content' => ['stages' => 'eng_stage_table', 'strands' => 'eng_strands', 'bands' => 'eng_bands', 'edges' => 'eng_edges',
                       'courses' => 'eng_courses', 'forms' => 'eng_forms', 'formulas' => 'eng_formulas', 'papers' => 'eng_papers'],
-        'features' => ['daily', 'exams'], 'dailyName' => 'Daily Word Challenge'],
+        'features' => ['daily', 'exams'], 'dailyName' => 'Daily Word Challenge', 'pitch' => 'in grammar, vocabulary, speech, reading and writing'],
 ];
 
 /** A topic id: two capital letters, a dash, three digits. */

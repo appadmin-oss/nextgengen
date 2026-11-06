@@ -7077,3 +7077,27 @@ Owner: *"Can you build the engine. Make it modular. Research first."*
   - `tests/labs-client.test.js`: 22/0. `tests/route-registry.test.js`: 60/0.
   - `tests/mathlab-e2e.test.js`: 92/0, with a new English journey at desktop and phone. The test also now finds this image's `chrome-linux64` Chromium as well as `chrome-linux`.
 - **Not built.** Judged essays (needs a teacher queue or a rubric-checked AI step) and listening questions (need audio).
+
+
+## 6 Nov 2026 — English Lab: more research, a better structure
+
+Owner: *"Research more and improve the structure."*
+
+- **Research.**
+  - The senior English paper has four parts: essay; comprehension and summary; lexis and structure; oral English. Comprehension asks for the grammatical name and function of words and clauses. Summary is marked one point per sentence. Oral English covers vowels, consonants, clusters, stress and intonation. Composition covers formal, semi-formal and informal letters and the four essay types.
+  - Learner-corpus grammar levels put mixed conditionals and modals of deduction last.
+  - Morphology instruction helps vocabulary and spelling most when it is meaning-focused.
+  - In the writing meta-analyses, summarising has one of the largest effects, and grammar taught in isolation does not improve writing.
+- **Curriculum.** Two stages were appended (EN-061 … EN-080), so no topic id moved:
+  - **Stage 7, Word Power:** roots, word families, collocations, confusables, one-word substitutes, four fields of vocabulary, and interpreting sentences.
+  - **Stage 8, The Senior Paper:** grammatical names and functions, own-words comprehension, one-point-per-sentence summary, counting sounds and syllables, consonant clusters, the semi-formal letter, the four essay types, and mixed conditionals with modals of deduction.
+  - The summit band, the Daily Word Challenge and the paper's range moved to Stage 8.
+- **Code structure.**
+  - `ENG_MODULES` is the one list of content modules, and a test checks it against the map.
+  - `eng_passage()` is a shared passage bank.
+  - Per-Lab copy (`find`, `pitch`) moved out of the shared screens into the registries. This also fixes the Physics map, whose search box suggested maths topics.
+- **Tests.**
+  - PHP suite: 6929/0. The sweep covers 80 topics, plus the module-registry check.
+  - `labs-client`: 28/0 (adds the `pitch` agreement and `find`).
+  - `route-registry`: 60/0.
+  - `mathlab-e2e`: 91/0 on two consecutive runs. An earlier run drew a typed English question and showed the test itself typed in capitals on a capitals-sensitive item; the test now respects `case`.

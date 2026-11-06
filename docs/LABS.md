@@ -100,9 +100,11 @@ English (6 Nov 2026; owner: *"Build the engine. Make it modular."*) adds no engi
 - **`text`, the shared typed-word kind** (`mlb_text_norm()` and `mlb_mark()` in `mathslab-gen.php`). Compares the learner's words to the key and an `accept` list. Curly/straight quotes, spacing and a space before punctuation never matter. Capitals and the final `.`/`?`/`!` matter only when the item sets `case`/`punct`. With right words but wrong capitals it says so (`form`). `mlb_public()` never sends `accept`.
 - **The kit** (`englishlab-kit.php`): `eng_choose`, `eng_type`, `eng_spot`, `eng_order` and `eng_derive`. Each turns a table of rows into a form the engine already runs. `eng_derive` is for rules (plurals, past tenses, comparatives) where the wrong options are the regular rule misapplied (`eng_regular_plural`, `eng_regular_past`).
 - **The map** (`englishlab-map.php`): stages, strands, bands, edges, courses, the paper, and the certificate's background lines.
-- **Five content modules**, one per strand: `englishlab-words` (Stage 1), `-grammar` (Stages 2 and 4), `-sounds` (3), `-reading` (5) and `-writing` (6). `eng_forms()` joins them.
+- **Seven content modules**, listed ONCE in `ENG_MODULES` (`englishlab-kit.php`): `englishlab-words` (Stage 1), `-grammar` (Stages 2 and 4), `-sounds` (3), `-reading` (5), `-writing` (6), `-wordpower` (7) and `-senior` (8). `eng_forms()` joins them in that list's order. A test holds that every map topic comes from exactly one module.
   - To add a topic: one entry in the map and one in a module.
-  - To add a module: one line in `eng_forms()` and one in `api/_lib/bootstrap.php`.
+  - To add a module: one line in `ENG_MODULES` and one in `api/_lib/bootstrap.php`.
+- **The passage bank** (`eng_passage()`, in the kit): every reading passage is written once and read by any module. The Reading stage and the Senior Paper's comprehension and summary topics share it.
+- **Per-Lab copy lives in the registries, never in the shared screens.** Two strings were Maths- or Physics-only and showed in every Lab: the map's search hint and the page title's "with diagrams and simulations". They are now `find` (in `NGG_LABS`) and `pitch` (in both `LABS` and `NGG_LABS`). `tests/labs-client.test.js` holds that the two `pitch` values agree.
 - **Append only, still.** A row's position in its table is part of a replayed question (the seed picks the row). New rows go at the END.
 - **Never a `$` in content.** The Lab's screen reads `$…$` as mathematics. The sweep fails on one.
 - **Tests:**

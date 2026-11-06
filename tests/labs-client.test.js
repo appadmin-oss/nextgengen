@@ -20,6 +20,9 @@ for (const s of server) {
   chk(s.id + ': the title is the same', c.title === s.title, c.title + ' vs ' + s.title);
   chk(s.id + ': exam papers are offered on both sides or neither', !!c.exams === s.features.includes('exams'));
   chk(s.id + ': the daily problem has the same name', !s.features.includes('daily') || c.daily === s.dailyName, c.daily + ' vs ' + s.dailyName);
+  // The page title's pitch is stated twice (server SEO head, browser title): the two must say the same.
+  chk(s.id + ': the page-title pitch is the same in both registries', (c.pitch || '') === (s.pitch || ''), (c.pitch || '') + ' vs ' + (s.pitch || ''));
+  chk(s.id + ': the map’s search hint names topics of this Lab', !!c.find, c.find);
   chk(s.id + ': the icon is the same', c.icon === s.icon);
 }
 // The API client names the Lab from the address: /study/<seg> → <seg>, except the first Lab's /study/lab → maths.

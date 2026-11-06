@@ -34,10 +34,47 @@ declare(strict_types=1);
  */
 
 /** The English Lab's forms: topic id → forms. The engine reads them only through lab_call('forms'). */
+/**
+ * The content modules, in the order of the road. ONE list: eng_forms() joins it, and the test checks
+ * that every module's topics are on the map and every map topic is in exactly one module. A new
+ * module is one line here and one in api/_lib/bootstrap.php.
+ */
+const ENG_MODULES = [
+    'eng_words_forms'     => 'Stage 1 · Words and Sentences',
+    'eng_grammar_forms'   => 'Stages 2 and 4 · Structure',
+    'eng_sounds_forms'    => 'Stage 3 · The Sounds of English',
+    'eng_reading_forms'   => 'Stage 5 · Reading and Meaning',
+    'eng_writing_forms'   => 'Stage 6 · Writing Well',
+    'eng_wordpower_forms' => 'Stage 7 · Word Power',
+    'eng_senior_forms'    => 'Stage 8 · The Senior Paper',
+];
+
 function eng_forms(): array {
     static $f = null;
     if ($f !== null) return $f;
-    return $f = eng_words_forms() + eng_grammar_forms() + eng_sounds_forms() + eng_reading_forms() + eng_writing_forms();
+    $f = [];
+    foreach (array_keys(ENG_MODULES) as $fn) $f += $fn();
+    ksort($f);
+    return $f;
+}
+
+/**
+ * The passage bank: every reading passage in the Lab, written once and read by any module (the
+ * Reading stage, the Senior Paper's comprehension and summary topics). Our own texts, short enough
+ * for a phone, set where a Nigerian learner will recognise them. Append-only, like everything here.
+ */
+function eng_passage(string $id): string {
+    static $P = [
+        'market' => 'By six in the morning, the market at Oja-Oba is already loud. Traders unload baskets of tomatoes, women balance trays of bread on their heads, and buyers argue cheerfully over prices. By noon the crowd thins, and by dusk only the sweepers remain.',
+        'water' => 'Our village once walked two hours each day to fetch water from the stream. Since the borehole was dug last year, girls who used to miss the first lesson now arrive before the bell, and the clinic reports fewer cases of typhoid.',
+        'phone' => 'Mobile phones have changed how farmers sell their crops. Instead of accepting whatever price a middleman offers, a farmer in Benue can now call three markets, compare prices, and send her yams to the best one.',
+        'reading' => 'Uche did not like books until his uncle gave him a novel about a boy who sailed down the Niger. He finished it in two nights. Now he spends his pocket money at the second-hand bookseller near the motor park.',
+        'harmattan' => 'When the harmattan arrives, the sky turns a dusty grey and the mornings are suddenly cold. Lips crack, skin dries, and dust settles on every table no matter how often it is wiped.',
+        'solar' => 'Many households now use small solar panels. They cost money at first, but they need no fuel, make no noise and keep a phone and two bulbs going through a power cut. Their weakness is the rainy season, when cloudy days leave the batteries half charged.',
+        'traffic' => 'Okada riders say the ban on motorcycles in parts of the city has cost them their living. Commuters, however, report fewer accidents and quieter roads, though many now walk long distances to reach a bus stop. The government says it will add more buses before extending the ban.',
+        'library' => 'When the community library opened, only a handful of pupils came. The librarian began a Saturday reading club, invited parents to the first meeting and let children borrow two books at a time. Within a term, the reading room was full every weekend.',
+    ];
+    return $P[$id] ?? '';
 }
 
 /** A row picked by the seed. Rows are data; their order is append-only (a session replays by seed). */

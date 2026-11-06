@@ -122,7 +122,7 @@ function lab_seo_build(array $lab, array $rest): array {
     $topics = count(mlb_competencies());
     $title = $lab['id'] === 'maths'
         ? 'Maths Lab — free maths practice from counting to calculus, with worked examples · NGG'
-        : $L . ' — free ' . mb_strtolower($subj) . ' practice with diagrams and simulations · NGG';
+        : $L . ' — free ' . mb_strtolower($subj) . ' practice ' . ($lab['pitch'] ?? 'with worked examples') . ' · NGG';
     $desc = mb_substr($lab['what'] . ' ' . $topics . ' topics in ' . count($stages) . ' stages, each with a worked example, hints and instant marking — free.', 0, 300);
     $html = '<main class="seo-page">' . $nav . '<h1>' . lab_seo_e($L) . '</h1><p>' . lab_seo_e($lab['what']) . '</p>';
     foreach ($bands as $b) {

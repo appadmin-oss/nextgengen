@@ -136,17 +136,17 @@ function sttFormat(v) {
  * tab of the study page at /study/<seg> with its own deep addresses (/study/physics/learn/PH-023).
  * `exams`: it offers timed papers; `daily`: the name of its daily problem; `summit`: its top band. */
 const NGG_LABS = [
-  { id: "maths",   seg: "lab",     title: "Maths Lab",   subject: "Maths",   icon: "ph-function", exams: true,  daily: "Daily Olympiad Problem", summit: "Gods of Maths",
+  { id: "maths",   seg: "lab",     title: "Maths Lab",   subject: "Maths",   icon: "ph-function", exams: true,  daily: "Daily Olympiad Problem", summit: "Gods of Maths", find: "logarithms, fractions, circles",
     sub: "Climb to your level, master every topic, keep it for good", level: "Olympiad level",
     road: "The 170-Point Mathematics Mastery Framework", roadP: "From why 1 + 1 = 2 to senior school, Further Mathematics and beyond — then the Gods of Maths summit, where olympiad problems are won by ideas. Learn why things are true, one foundation at a time.",
     dailyP: "One olympiad problem a day, the same for everyone in NGG. Tough — but the hint is free and you get three tries." },
-  { id: "physics", seg: "physics", title: "Physics Lab", subject: "Physics", icon: "ph-atom",     exams: true,  daily: "Daily Physics Puzzle",   summit: "Electricity and the atom",
+  { id: "physics", seg: "physics", title: "Physics Lab", subject: "Physics", icon: "ph-atom",     exams: true,  daily: "Daily Physics Puzzle",   summit: "Electricity and the atom", find: "density, momentum, lenses", pitch: "with diagrams and simulations",
     sub: "See it move, then work it out: forces, motion, energy, waves, light and electricity", level: "Top of the road",
     road: "The Physics road", roadP: "From measuring and forces in JSS Basic Science to senior secondary Physics: motion, energy, heat, waves, light, electricity and the atom. Every topic has something to play with before you calculate anything.",
     dailyP: "One puzzle a day from the top of the Physics road, the same for everyone in NGG. The hint is free and you get three tries." },
-  { id: "english", seg: "english", title: "English Lab", subject: "English", icon: "ph-book-open-text", exams: true, daily: "Daily Word Challenge", summit: "Writing well",
+  { id: "english", seg: "english", title: "English Lab", subject: "English", icon: "ph-book-open-text", exams: true, daily: "Daily Word Challenge", summit: "The senior paper", find: "tenses, idioms, summary", pitch: "in grammar, vocabulary, speech, reading and writing",
     sub: "Words, grammar, speech work, reading and writing — one short step at a time", level: "Top of the road",
-    road: "The English road", roadP: "From nouns, tenses and full stops in JSS English Studies to senior secondary English Language: the sounds of English, grammar in use, comprehension, summary and writing well. Every wrong option tells you which slip it is.",
+    road: "The English road", roadP: "From nouns, tenses and full stops in JSS English Studies to senior secondary English Language: the sounds of English, grammar in use, comprehension, summary, writing well and word power — then the senior paper itself. Every wrong option tells you which slip it is.",
     dailyP: "One challenge a day from the top of the English road, the same for everyone in NGG. The hint is free and you get three tries." },
 ];
 /* The study app's own navigation (owner, 6 Nov 2026: "the in-app navigation is a bit illogical").

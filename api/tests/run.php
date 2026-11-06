@@ -38148,7 +38148,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $ll = backend_dispatch('labs.list', []);
     chk('labs · the Physics Guidebook, map and labs.list read the Physics map (9 stages, its own bands), and labs.list reports every Lab with its size',
         ($g['title'] ?? '') === 'Motion' && count($g['topics'] ?? []) === 10 && !empty($g['topics'][0]['example']['steps']) && count($mp['stages'] ?? []) === 9 && ($mp['bands'][0]['id'] ?? '') === 'phy-basics'
-        && array_column($ll['labs'] ?? [], 'topics', 'id') === ['maths' => 200, 'physics' => 90, 'english' => 60]);
+        && array_column($ll['labs'] ?? [], 'topics', 'id') === ['maths' => 200, 'physics' => 90, 'english' => 80]);
     chk('labs · the schema ladder ends at 229 with one Lab track per member per Lab (Maths copied across)', NGG_SCHEMA_TARGET === 229
         && (int)db_row("SELECT COUNT(*) AS n FROM mlab_track WHERE memberId = 'NGG-PH-1'")['n'] === 2);
     /* No exam body is named anywhere a learner reads (owner, 6 Nov 2026: "Do NOT mention these exam
@@ -38195,7 +38195,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         str_contains($priv, 'content="noindex, follow"') && lab_seo_shell($shell, '/study/revise') === $shell && lab_seo_shell($shell, '/study') === $shell && lab_seo_shell($shell, '/club') === $shell);
     $urls = array_column(lab_seo_urls(), 0);
     chk('labs seo · the sitemap offers every Lab, its courses, every stage guide and every topic (' . count($urls) . ' addresses)',
-        in_array('/study/lab', $urls, true) && in_array('/study/physics/learn/PH-090', $urls, true) && in_array('/study/lab/guide/20', $urls, true) && count($urls) === 3 + 3 + 20 + 9 + 6 + 200 + 90 + 60);
+        in_array('/study/lab', $urls, true) && in_array('/study/physics/learn/PH-090', $urls, true) && in_array('/study/lab/guide/20', $urls, true) && count($urls) === 3 + 3 + 20 + 9 + 8 + 200 + 90 + 80);
     foreach (['mlab_state', 'mlab_profile', 'mlab_sessions', 'mlab_enrol', 'mlab_track'] as $t) db_exec("DELETE FROM $t WHERE memberId = 'NGG-PH-1'");
     db_exec("DELETE FROM documents WHERE memberId = 'NGG-PH-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PH-1'");
     lab_use('maths');
@@ -38230,7 +38230,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     }
     $bad = array_values(array_unique($bad));
     chk('english lab · every generated question (' . $n . ') marks its own answer and every accepted alternative right, offers at least three distinct options each with the slip it names, teaches (steps and a hint), carries no $ for the maths renderer, and never sends the key or the accepted answers' . ($bad ? ' (' . implode(', ', array_slice($bad, 0, 8)) . ')' : ''),
-        $bad === [] && count(eng_forms()) === 60);
+        $bad === [] && count(eng_forms()) === 80);
     chk('english lab · every topic has at least three kinds of question, and no typed or ordering form gives everybody the same answer' . ($thin || $fixed ? ' (' . implode(', ', array_merge($thin, $fixed)) . ')' : ''), $thin === [] && $fixed === []);
 
     // The shared `text` kind: generous about form, strict about the skill.
@@ -38248,15 +38248,20 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $ids = array_keys(mlb_competencies()); $backward = [];
     foreach (eng_edges() as $to => $froms) foreach ($froms as $fr) if ($fr >= $to) $backward[] = "$fr→$to";
     $cs = []; foreach (mlb_courses() as $co) foreach ($co['stages'] as $k) $cs[] = $k;
-    chk('english lab · the map is six stages of ten (EN-001 … EN-060), every id resolves to the English Lab, the bands cover Stages 1–6 exactly once with one summit, every prerequisite is an earlier English topic, and the courses cover every stage' . ($backward ? ' (' . implode(', ', $backward) . ')' : ''),
-        count(mlb_stages()) === 6 && $ids[0] === 'EN-001' && end($ids) === 'EN-060' && count($ids) === 60 && !array_filter($ids, static fn($i) => (lab_for_comp($i)['id'] ?? '') !== 'english')
-        && $cover === range(1, 6) && count(array_filter(mlb_bands(), static fn($b) => !empty($b['summit']))) === 1 && $backward === [] && array_values(array_unique($cs)) === range(1, 6));
+    chk('english lab · the map is eight stages of ten (EN-001 … EN-080), every id resolves to the English Lab, the bands cover Stages 1–8 exactly once with one summit, every prerequisite is an earlier English topic, and the courses cover every stage' . ($backward ? ' (' . implode(', ', $backward) . ')' : ''),
+        count(mlb_stages()) === 8 && $ids[0] === 'EN-001' && end($ids) === 'EN-080' && count($ids) === 80 && !array_filter($ids, static fn($i) => (lab_for_comp($i)['id'] ?? '') !== 'english')
+        && $cover === range(1, 8) && count(array_filter(mlb_bands(), static fn($b) => !empty($b['summit']))) === 1 && $backward === [] && array_values(array_unique($cs)) === range(1, 8));
+    // The module registry is the one list: every module's topics are on the map, every map topic is in exactly one module.
+    $seen = []; $dup = [];
+    foreach (array_keys(ENG_MODULES) as $fn) foreach (array_keys($fn()) as $id) { if (isset($seen[$id])) $dup[] = $id; $seen[$id] = $fn; }
+    chk('english lab · every topic on the map comes from exactly one content module in ENG_MODULES, and no module adds a topic the map does not have' . ($dup ? ' (' . implode(', ', $dup) . ')' : ''),
+        $dup === [] && ($mods = array_keys($seen)) && sort($mods) && $mods === $ids && count(ENG_MODULES) === 7);
     lab_use('maths');
 
     // One member, three Labs: English moves only English.
     db_insert('members', ['memberId' => 'NGG-EN-1', 'fullName' => 'Ada English', 'email' => 'en1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
     $he = backend_dispatch('mathslab.home', ['memberId' => 'NGG-EN-1', 'lab' => 'english']);
-    chk('english lab · Home counts its 60 topics and starts the climb at the Words and Sentences gate', ($he['counts']['total'] ?? 0) === 60 && ($he['climb']['stage'] ?? 0) === 1
+    chk('english lab · Home counts its 80 topics and starts the climb at the Words and Sentences gate', ($he['counts']['total'] ?? 0) === 80 && ($he['climb']['stage'] ?? 0) === 1
         && str_starts_with((string)($he['next']['title'] ?? ''), 'Stage 1 gate · Words and Sentences'));
     $st = backend_dispatch('mathslab.start', ['memberId' => 'NGG-EN-1', 'lab' => 'english', 'mode' => 'climb']);
     $row = db_row('SELECT items, lab FROM mlab_sessions WHERE sessionId = ?', [(string)($st['sessionId'] ?? '')]);
@@ -38281,7 +38286,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && (backend_dispatch('mathslab.start', ['memberId' => 'NGG-EN-1', 'lab' => 'english', 'mode' => 'exam', 'paper' => 'phy'])['error'] ?? '') === 'bad_paper');
     db_exec("DELETE FROM mlab_sessions WHERE memberId = 'NGG-EN-1' AND mode = 'exam'");
     $de = backend_dispatch('mathslab.daily', ['memberId' => 'NGG-EN-1', 'lab' => 'english']);
-    chk('english lab · the Daily Word Challenge comes from the summit band (Writing Well)', (mlb_comp((string)($de['item']['comp'] ?? ''))['stage'] ?? 0) === 6 && ($de['name'] ?? '') === 'Daily Word Challenge');
+    chk('english lab · the Daily Word Challenge comes from the summit band (The Senior Paper)', (mlb_comp((string)($de['item']['comp'] ?? ''))['stage'] ?? 0) === 8 && ($de['name'] ?? '') === 'Daily Word Challenge');
     lab_use('english');
     foreach (mlb_stages()[1]['comps'] as $c) mlb_set_state('NGG-EN-1', $c, ['state' => 'mastered']);
     mlb_track_set('NGG-EN-1', ['bosses' => json_encode(['1' => mlb_today()])]);

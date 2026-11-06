@@ -507,7 +507,7 @@ function mlbSeo(r, topicTitle) {
     const pick = r.v === "learn" ? [(topicTitle || "Topic") + " — " + lab.subject + " practice with worked examples · NGG " + lab.title, base + "/learn/" + r.comp]
       : r.v === "guide" ? ["Stage " + r.stage + " guide · NGG " + lab.title, base + "/guide/" + r.stage]
       : r.v === "courses" ? [lab.title + " courses · NGG", base + "/courses"]
-      : [lab.id === "maths" ? "Maths Lab — free maths practice from counting to calculus, with worked examples · NGG" : lab.title + " — free " + lab.subject.toLowerCase() + " practice with diagrams and simulations · NGG", base];
+      : [lab.id === "maths" ? "Maths Lab — free maths practice from counting to calculus, with worked examples · NGG" : lab.title + " — free " + lab.subject.toLowerCase() + " practice " + (lab.pitch || "with worked examples") + " · NGG", base];
     document.title = pick[0];
     const can = document.querySelector('link[rel="canonical"]'); if (can) can.setAttribute("href", pick[1]);
     const ogu = document.querySelector('meta[property="og:url"]'); if (ogu) ogu.setAttribute("content", pick[1]);
@@ -808,7 +808,7 @@ function MlbMap({ go, lite }) {
       <div className="mlb-mapsearch" role="search">
         <label htmlFor="mlb-mapq" className="mlb-sr">Find a topic</label>
         <i className="ph ph-magnifying-glass" aria-hidden="true"/>
-        <input id="mlb-mapq" type="search" className="mlb-in" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a topic — logarithms, fractions, circles…" autoComplete="off"/>
+        <input id="mlb-mapq" type="search" className="mlb-in" value={q} onChange={e => setQ(e.target.value)} placeholder={"Find a topic — " + (mlbLab().find || "type a word") + "…"} autoComplete="off"/>
       </div>
       {q.trim().length >= 2 ? (() => {
         const hits = mlbFindTopics(stages, q);

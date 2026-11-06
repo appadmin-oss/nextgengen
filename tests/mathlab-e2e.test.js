@@ -293,7 +293,7 @@ async function physics(who, W, H, tag) {
   await ctx.close();
 }
 /* The English Lab (owner, 6 Nov 2026): the third Lab, at /study/english, on the same engine. Home and
-   the map are English (six stages, no Maths or Physics stage), it offers its own timed paper, a lesson
+   the map are English (eight stages, no Maths or Physics stage), it offers its own timed paper, a lesson
    opens practice, and a practice question is ANSWERED in the browser — a typed word through the new
    `text` kind (a text keyboard, no autocorrect) or a choice — and the server marks it right. */
 async function english(who, W, H, tag) {
@@ -314,8 +314,8 @@ async function english(who, W, H, tag) {
   await p.goto(BASE + '/study/english/map', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-unit.is-open', { timeout: 60000 });
   const mapText = await p.locator('.mlb-main').innerText();
-  chk(tag + ': the English map draws the English road: six stages, its own bands, no other Lab’s stage',
-    /The Sounds of English/.test(mapText) && /Writing Well/.test(mapText) && !/Measurement and Matter|Number Consciousness/.test(mapText) && await p.locator('.mlb-unit').count() === 6);
+  chk(tag + ': the English map draws the English road: eight stages, its own bands, no other Lab’s stage',
+    /The Sounds of English/.test(mapText) && /Writing Well/.test(mapText) && !/Measurement and Matter|Number Consciousness/.test(mapText) && /The Senior Paper/.test(mapText) && await p.locator('.mlb-unit').count() === 8);
   await shot('map');
   await p.goto(BASE + '/study/english/exams', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-paper', { timeout: 60000 }).catch(() => {});
@@ -337,11 +337,12 @@ async function english(who, W, H, tag) {
   chk(tag + ': English practice starts', playing);
   // Answer the question on screen with the right answer, as a learner would, and let the server mark it.
   const q = JSON.parse(php(`$r = db_row("SELECT items FROM mlab_sessions WHERE memberId = '${who}' ORDER BY startedAt DESC LIMIT 1");
-    $x = json_decode($r['items'], true)[0]; $it = mlb_item($x['c'], (int)$x['f'], (int)$x['s']); echo json_encode(['kind' => $it['kind'], 'key' => $it['key'], 'c' => $x['c']]);`) || '{}');
+    $x = json_decode($r['items'], true)[0]; $it = mlb_item($x['c'], (int)$x['f'], (int)$x['s']); echo json_encode(['kind' => $it['kind'], 'key' => $it['key'], 'c' => $x['c'], 'case' => !empty($it['case'])]);`) || '{}');
   if (q.kind === 'text') {
     const box = p.locator('.mlb-q .mlb-in');
     chk(tag + ': a typed English answer opens a text keyboard with autocorrect and spell-check off', await box.getAttribute('inputmode') === 'text' && await box.getAttribute('autocorrect') === 'off' && await box.getAttribute('spellcheck') === 'false');
-    await box.fill(' ' + String(q.key).toUpperCase() + ' ');   // capitals and spaces are not the skill here
+    // Spaces are never the skill; capitals are only where the item says so (the capital-letters topics).
+    await box.fill(' ' + (q.case ? String(q.key) : String(q.key).toUpperCase()) + ' ');
   } else if (q.kind === 'mcq' || q.kind === 'error') await p.locator('.mlb-q .mlb-opt').nth(Number(q.key)).click();
   await p.locator('.mlb-q .mlb-go:has-text("Check"), .mlb-actions .mlb-go:has-text("Check")').first().click();
   const marked = await p.waitForSelector('.mlb-fb.is-ok', { timeout: 15000 }).then(() => true, () => false);
