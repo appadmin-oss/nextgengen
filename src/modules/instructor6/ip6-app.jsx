@@ -152,7 +152,7 @@ class Ip6Portal extends React.Component {
     const hByKid = {}; (hist.students || []).forEach(x => { hByKid[x.memberId] = x; });
     const roll = ((cls.session || {}).roll) || {};
     const L = (cls.roster || []).map((r, i) => { const b = bByKid[r.memberId] || {}; const mk = b.marks || {}, pv = b.prev || {}; const h = hByKid[r.memberId] || {};
-      return { id: r.memberId, i, name: r.fullName, first: ip6First(r.fullName), age: r.age, mentor: r.mentor || '', initials: ip6Ini(r.fullName), photo: r.photoUrl,
+      return { id: r.memberId, i, name: r.fullName, first: ip6First(r.fullName), age: r.age, mentor: r.mentor || '', initials: ip6Ini(r.fullName), photo: imgUrl(r.photoUrl, "avatar"),
         sk: skills.map(k => mk[k] ? mk[k] - 1 : null), prev: skills.map(k => pv[k] !== undefined && pv[k] !== null ? pv[k] - 1 : (mk[k] ? mk[k] - 1 : null)),
         rollMark: roll[r.memberId] || (r.scanned ? (r.scanLate ? 'late' : 'here') : ''), scanned: !!r.scanned, att: h.attendance, exitGot: h.exitGot }; });
     const isHere = m => S.here[m.id] !== undefined ? S.here[m.id] : (m.rollMark === 'here' || m.rollMark === 'late');

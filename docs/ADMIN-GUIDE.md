@@ -3004,6 +3004,44 @@ those photos keep showing from where they are.
   bucket* shows what is stored, what was saved, the largest files, and a
   **Clean up now** button.
 
+## Photos at fixed sizes
+
+A screen that shows a small picture is sent a small picture. Every photo kept
+on this site is made, once, at five fixed sizes, and each screen asks for the
+one it needs:
+
+| Size | Longest side | Used for |
+|---|---|---|
+| avatar | 128 px | faces in lists and tables, the ID Card Studio's record list |
+| thumb | 320 px | a profile picture, a person's details |
+| feed | 640 px | community photos, the photo review queue |
+| wide | 1280 px | a photo opened full screen |
+| print | 1200 px | kept for printing; the card printer still uses the original |
+
+- **The original is never changed.** Each size is a separate copy kept beside
+  it. Nothing is cropped (the screen crops) and nothing is made bigger: a photo
+  already smaller than a size is shown as it is.
+- **Where they are made.** On this server, with PHP's image library (GD). A
+  photo in the storage bucket is fetched from the bucket once and its sizes are
+  kept on this server. Photos still on Cloudinary are sized by Cloudinary, the
+  same way as before.
+- **When.** The first time a size is asked for, and in the background: a batch
+  of 40 photos every ten minutes until every photo has its sizes, then new
+  photos as they arrive.
+- **Control Room → Settings → Diagnostics → Photo sizes** shows how many photos
+  have their sizes, how many are waiting, any that could not be sized (they are
+  shown at full size, not hidden), the space the sizes take, and how much
+  smaller a view is than sending the original. **Make sizes now** runs one
+  batch at once. It needs the **settings** permission, like the rest of that
+  screen, and each press is one entry in the audit trail.
+- **"Held: N images"** under Photo storage counts photographs only, not their
+  sizes. **Download all photos** contains the originals only; the sizes are
+  made again on the new site.
+- **When a photo is deleted** (replaced, or swept because nothing uses it), its
+  sizes are deleted with it.
+- **If the server has no GD**, Diagnostics says so and every photo is shown at
+  full size. Ask the host to turn on the PHP **GD** extension.
+
 ## Image storage (Cloudinary)
 
 **More than one Cloudinary account.** One free plan holds about fifty people's

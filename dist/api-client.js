@@ -2241,6 +2241,9 @@
         edit:    (target, spec) => request('/admin/photos.php', { body: Object.assign({ action: 'edit', spec }, target) }),
         editBulk: (items, spec) => request('/admin/photos.php', { body: { action: 'edit_bulk', items, spec } }),
         secure:   () => request('/admin/photos.php', { body: { action: 'secure' } }),
+        // The named sizes (image-sizes.php): where they stand, and one batch made now.
+        sizes:     () => request('/admin/photos.php' + qs({ view: 'sizes' })),
+        makeSizes: () => request('/admin/photos.php', { body: { action: 'make_sizes' } }),
         // Edited photos still stored as a Cloudinary chain → plain images, a batch at a time (photo_materialise).
         materialise: (dryRun) => request('/admin/photos.php', { body: { action: 'materialise', dryRun: !!dryRun } }),
         // The photos of these people, copied off a spent Cloudinary account just before they are used (admin_photos_relocate).

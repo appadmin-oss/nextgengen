@@ -1157,7 +1157,7 @@ function DashboardSidebar({ m, first, account, ngv, fines, counts, mentorNamed, 
       <div className="ngg-side-inner">
         <button className="ngg-side-brand" onClick={onEditProfile} title="Edit your profile">
           {hasPhoto
-            ? <img src={m.photoUrl} alt="" className="ngg-side-avatar-img" onError={(e) => { e.target.style.display = "none"; }}/>
+            ? <img src={imgUrl(m.photoUrl, "avatar")} alt="" className="ngg-side-avatar-img" onError={(e) => { e.currentTarget.hidden = true; }}/>
             : <Avatar seed={m.memberId.charCodeAt(m.memberId.length - 1) % 20 + 1} size={40} ring/>}
           <span className="ngg-side-brand-text"><b>{first}</b><span className="mono">{m.memberId}</span></span>
         </button>

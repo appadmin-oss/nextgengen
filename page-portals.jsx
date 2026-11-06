@@ -4265,7 +4265,7 @@ function SummerKiosk({ onCheckin }) {
           {!result && <div className="summer-result idle"><i className="ph" aria-hidden="true">◎</i><div>Ready — scan a card.</div></div>}
           {result && result.student && !result.refused && !result.tooEarly && (
             <div className={"summer-result " + (result.already ? "dupe" : result.status === "late" ? "late" : "ok")}>
-              <div className="summer-result-av">{result.student.photoUrl ? <img src={result.student.photoUrl} alt=""/> : (result.student.fullName || "?").charAt(0)}</div>
+              <div className="summer-result-av">{result.student.photoUrl ? <img src={imgUrl(result.student.photoUrl, "avatar")} alt=""/> : (result.student.fullName || "?").charAt(0)}</div>
               <div className="summer-result-nm">{result.student.fullName}</div>
               <div className="summer-result-msg">{result.out ? (result.already ? "Already signed out today" : result.early ? "Signed out early — reason recorded" : "Signed out →") : result.already ? "Already checked in today" : "Checked in ✓"}</div>
               <div className="mono summer-result-id">{result.student.studentId}{result.student.track ? " · " + result.student.track : ""}</div>

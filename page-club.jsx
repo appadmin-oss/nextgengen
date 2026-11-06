@@ -786,19 +786,16 @@ function cmPhotoOf(post) {
    the URL (before it, a 96px avatar re-ran the whole edit and was then blown up);
    and a video is delivered as exactly the rendition made at upload
    (CM_VIDEO_TF = upload-sign.php's eager string), so it is transcoded once. */
-const CM_WIDTHS = [128, 320, 640, 1280];
-const CM_VIDEO_TF = "f_auto,q_auto:eco,w_1280,c_limit";
-function cmSnapW(w) { for (const x of CM_WIDTHS) if (w <= x) return x; return CM_WIDTHS[CM_WIDTHS.length - 1]; }
 function cmOpt(url, w) {
-  if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return url;
-  const tf = /\/video\/upload\//.test(url) ? CM_VIDEO_TF : "f_auto,q_auto" + (w ? ",w_" + cmSnapW(w) + ",c_limit" : "");
-  // …/upload/<edits>/v123/id → …/upload/<edits>/<tf>/v123/id. No version marker: the old place.
-  if (/\/upload\/(?:[^/]+\/)*?v\d+\//.test(url)) return url.replace(/(\/upload\/(?:[^/]+\/)*?)(v\d+\/)/, "$1" + tf + "/$2");
-  return url.replace("/upload/", "/upload/" + tf + "/");
+  // The one address function (imgUrl, components.jsx) at the named size that
+  // covers the box: the same Cloudinary strings as before for an image still
+  // there, and a size made once by the server for a stored or bucket photo.
+  // A video gets its one rendition (IMG_EDITS.video).
+  return imgUrl(url, imgSizeFor(w));
 }
 function cmPoster(url) {
   if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return "";
-  return url.replace("/upload/", "/upload/so_0,f_jpg,q_auto,w_900,c_limit/").replace(/\.(mp4|mov|webm|m4v|avi)(\?.*)?$/i, ".jpg");
+  return url.replace("/upload/", "/upload/" + IMG_EDITS.video_poster + "/").replace(/\.(mp4|mov|webm|m4v|avi)(\?.*)?$/i, ".jpg");
 }
 /* "8:12" — a wall clock, in the 24-hour form Nigeria writes. Built by hand
    rather than through toLocaleTimeString, which would render this differently

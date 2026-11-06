@@ -1293,7 +1293,7 @@ function mp9PhotoAsk(app, me, s, set) {
   const declined = !!r && r.status === "declined", draft = s.phDraft;
   const when = r ? mp9Date(String(r.requestedAt || "").slice(0, 10), { day: "numeric", month: "short" }) : "";
   return {
-    cur: me.photo ? nggPhotoSrc(me.photo) : "", hasCur: !!me.photo, noCur: !me.photo,
+    cur: me.photo ? imgUrl(nggPhotoSrc(me.photo), "thumb") : "", hasCur: !!me.photo, noCur: !me.photo,
     line: pending ? "You asked for a new photo on " + when + ". The desk checks it, then it goes on your profile and your next ID card."
       : declined ? "The desk kept your photo" + (r.note ? ": " + r.note : ".") + " You can ask again with another photo."
       : r && r.status === "approved" ? "Your new photo was approved." : "To change it, choose the photo you want. The desk checks it first.",

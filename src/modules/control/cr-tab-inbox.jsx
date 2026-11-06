@@ -663,11 +663,11 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
         {it.note && <p className="cr-ib-callout"><CrIcon n="info"/>{it.note}</p>}
         {it.photoUrl && it.cat === "photos" && (it.kind === "Photo change" ? (
           <div className="cr-ib-photos">
-            <figure><figcaption>Now</figcaption>{it.oldPhotoUrl ? <img className="cr-ib-photo" src={it.oldPhotoUrl} alt={"Current photo of " + it.who}/> : <span className="cr-ib-photo is-empty">No photo yet</span>}</figure>
+            <figure><figcaption>Now</figcaption>{it.oldPhotoUrl ? <img className="cr-ib-photo" src={imgUrl(it.oldPhotoUrl, "feed")} alt={"Current photo of " + it.who}/> : <span className="cr-ib-photo is-empty">No photo yet</span>}</figure>
             <CrIcon n="arrow-right"/>
-            <figure><figcaption>Asked for</figcaption><img className="cr-ib-photo" src={it.photoUrl} alt={"Photo " + it.who + " asked for"}/></figure>
+            <figure><figcaption>Asked for</figcaption><img className="cr-ib-photo" src={imgUrl(it.photoUrl, "feed")} alt={"Photo " + it.who + " asked for"}/></figure>
           </div>
-        ) : <img className="cr-ib-photo" src={it.photoUrl} alt={"Headshot uploaded for " + it.who}/>)}
+        ) : <img className="cr-ib-photo" src={imgUrl(it.photoUrl, "feed")} alt={"Headshot uploaded for " + it.who}/>)}
         {it.facts.length > 0 && <dl className="cr-ib-facts">{it.facts.map((f, i) => <div key={i}><dt>{f[0]}</dt><dd>{f[1] == null || f[1] === "" ? "—" : f[1]}</dd></div>)}</dl>}
         {it.thread ? (
           <ol className="cr-ib-thread" aria-label="Conversation">

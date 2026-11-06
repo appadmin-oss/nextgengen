@@ -244,7 +244,10 @@ function store_public_host(): string { return strtolower((string)parse_url(store
 function store_delete(string $key): bool {
     if ($key === '' || strpos($key, '..') !== false) return false;
     $r = store_http('DELETE', $key);
-    return in_array((int)$r['code'], [200, 204, 404], true);
+    $ok = in_array((int)$r['code'], [200, 204, 404], true);
+    // The sizes made from it on local disk (image-sizes.php) go with it.
+    if ($ok && function_exists('img_bucket_forget')) { try { img_bucket_forget($key); } catch (Throwable $e) {} }
+    return $ok;
 }
 
 /**

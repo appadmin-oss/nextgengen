@@ -37,6 +37,14 @@ json_ok([
         'maxBytes'  => (int)($bucket ? (($CONFIG['storage']['max_bytes'] ?? 0) ?: STORE_MAX_BYTES) : ($cld['max_bytes'] ?? (25 * 1024 * 1024))),
     ],
     'storageFull' => $storageFull,
+    /* Image sizes (image-sizes.php): the browser's imgUrl() needs to know which
+       URLs are our bucket's, to send them through photo.php at a named size.
+       The registry itself is duplicated in components.jsx (it is needed before
+       this arrives) and pinned equal by tests/image-sizes.test.js. */
+    'images' => [
+        'storeBase' => store_public_base(),
+        'sizes'     => array_map(fn($s) => (int)$s['px'], IMG_SIZES),
+    ],
     'publicUpload' => [
         'enabled'   => $publicUpload,
         'cloudName' => $publicUpload ? $cld['cloud_name'] : '',

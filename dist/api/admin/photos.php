@@ -22,9 +22,11 @@ if ($method === 'GET') {
     // question from the review queue, which only shows photos that exist.
     $res = (string)($_GET['view'] ?? '') === 'missing'
         ? gs_call('admin.photos.missing', ['requesterId' => $s['mid'], 'limit' => (int)($_GET['limit'] ?? 200)])
+        : ((string)($_GET['view'] ?? '') === 'sizes'
+            ? gs_call('admin.images.sizes', ['requesterId' => $s['mid']])
         : ((string)($_GET['view'] ?? '') === 'changes'
             ? gs_call('admin.photo.changes', ['requesterId' => $s['mid']])
-            : gs_call('admin.photo.queue', ['requesterId' => $s['mid']]));
+            : gs_call('admin.photo.queue', ['requesterId' => $s['mid']])));
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
@@ -35,6 +37,7 @@ if ($method === 'GET') {
     elseif ($action === 'retake')  $res = gs_call('admin.photo.retake', $base + ['reason' => $b['reason'] ?? '']);
     elseif ($action === 'reject')  $res = gs_call('admin.photo.reject', $base + ['reason' => $b['reason'] ?? '']);
     elseif ($action === 'edit')    $res = gs_call('admin.photo.edit', ['requesterId' => $s['mid'], 'ip' => $ip, 'assetId' => $b['assetId'] ?? '', 'subjectType' => $b['subjectType'] ?? '', 'subjectId' => $b['subjectId'] ?? '', 'spec' => $b['spec'] ?? []]);
+    elseif ($action === 'make_sizes') $res = gs_call('admin.images.make', ['requesterId' => $s['mid'], 'ip' => $ip]);
     elseif ($action === 'secure')  $res = gs_call('admin.photos.secure', ['requesterId' => $s['mid'], 'ip' => $ip]);
     elseif ($action === 'materialise') $res = gs_call('admin.photos.materialise', ['requesterId' => $s['mid'], 'ip' => $ip, 'dryRun' => !empty($b['dryRun'])]);
     elseif ($action === 'relocate') $res = gs_call('admin.photos.relocate', ['requesterId' => $s['mid'], 'ip' => $ip, 'subjects' => is_array($b['subjects'] ?? null) ? $b['subjects'] : []]);

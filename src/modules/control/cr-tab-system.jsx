@@ -145,6 +145,36 @@ function crSyObjectBlocks(o, ctx) {
       open: () => { try { window.open(f.url, "_blank", "noopener"); } catch (_) {} } })) });
   return out;
 }
+/* Photos at fixed sizes (image-sizes.php): every stored photo made once at the
+   named sizes by the server, a batch every few minutes, so a screen asks for
+   an avatar and is sent 128 pixels instead of the whole photograph. */
+function crSySizeBlocks(z, ctx) {
+  const names = Object.keys(z.sizes || {}).map(k => k + " " + z.sizes[k] + "px").join(" · ");
+  const tone = !z.gd ? "bad" : z.skipped ? "warn" : "ok";   // waiting is the job working, not a fault
+  const items = [
+    ["Made", crPlural(z.done || 0, "photo") + " of " + crNum(z.originals || 0), z.remaining ? "neutral" : "ok"],
+    ["Waiting", z.remaining ? crPlural(z.remaining, "photo") + " · about " + crNum(Math.ceil(z.remaining / (z.perTick || 40))) + " batches" : "None", "neutral"],
+    ["Couldn’t be sized", z.skipped ? crPlural(z.skipped, "photo") + " — shown as they are" : "None", z.skipped ? "warn" : "ok"],
+    ["Sizes on disk", crPlural(z.files || 0, "file") + (z.bytes ? " · " + crSyBytes(z.bytes) : ""), "neutral"],
+    ["Saved per view", z.bytesSaved ? crSyBytes(z.bytesSaved) + " less than sending every original once at each size" : "—", "neutral"],
+  ];
+  const out = [{ type: "status", span: 3, title: "Photo sizes", sub: names, summary: !z.gd ? "The image library" : crPlural(z.skipped || 0, "photo") + " that couldn’t be sized", tone, items }];
+  out.push({ type: "note", span: 3, icon: z.gd ? "images" : "warning", tone: z.gd ? undefined : "bad",
+    text: z.gd ? "Each photo is made once at these sizes and kept beside the original, which is never changed. A batch of " + crNum(z.perTick || 40) + " runs every ten minutes; press to run one now."
+      : "This server’s PHP has no GD image library, so photos are shown at full size. Ask the host to enable the GD extension.",
+    sub: z.skippedList && z.skippedList.length ? "Not sized: " + z.skippedList.slice(0, 6).map(s => s.name + " (" + s.why + ")").join(", ") + (z.skipped > 6 ? " and " + crNum(z.skipped - 6) + " more" : "") + "." : undefined,
+    act: z.gd ? { l: "Make sizes now", run: () => crSyMakeSizes(ctx) } : undefined });
+  return out;
+}
+async function crSyMakeSizes(ctx) {
+  try {
+    const r = await NGGApi.admin.photos.makeSizes();
+    const left = r.status ? r.status.remaining : 0;
+    ctx.toast(r.made ? "Made " + crPlural(r.made, "size") + " for " + crPlural(r.looked, "photo") + (left ? " — " + crNum(left) + " still waiting." : ".")
+      : left ? "Looked at " + crPlural(r.looked, "photo") + "; nothing new to make in this batch." : "Every photo already has its sizes.");
+    ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t make the sizes."), null, true); }
+}
 async function crSyObjectSweep(ctx) {
   try { const r = await NGGApi.admin.media.sweep(); const x = r.ran || {}; ctx.toast(x.deleted ? "Deleted " + crNum(x.deleted) + " unused " + (x.deleted === 1 ? "file" : "files") + " · " + crSyBytes(x.freed) + " freed." : "Nothing to clean up: every file older than a week is still in use."); ctx.reload(); }
   catch (e) { ctx.toast(crErr(e, "Couldn’t clean up the bucket."), null, true); }
@@ -389,9 +419,10 @@ Object.assign(CR_TAB_DEFS, {
   ops: {
     skeleton: ["kpis", "table"],
     load: async () => {
-      const [st, media, objects, accounts] = await Promise.all([NGGApi.admin.ops.status(), NGGApi.admin.media.usage().catch(() => null), NGGApi.admin.media.objects().catch(() => null),
-        NGGApi.admin.media.accounts().catch(() => null)]);
-      return Object.assign({}, st, { media: media && media.usage ? media : null, objects: objects && objects.configured ? objects : null, accounts: accounts && accounts.accounts ? accounts : null });
+      const [st, media, objects, accounts, sizes] = await Promise.all([NGGApi.admin.ops.status(), NGGApi.admin.media.usage().catch(() => null), NGGApi.admin.media.objects().catch(() => null),
+        NGGApi.admin.media.accounts().catch(() => null), NGGApi.admin.photos.sizes().catch(() => null)]);
+      return Object.assign({}, st, { media: media && media.usage ? media : null, objects: objects && objects.configured ? objects : null, accounts: accounts && accounts.accounts ? accounts : null,
+        sizes: sizes && typeof sizes.originals === "number" ? sizes : null });
     },
     actions: (d, ctx) => [
       { l: "Mark all dealt with", icon: "checks", primary: true, run: () => crSyOpsClear(ctx, 0, (d.events || []).length), disabled: !(d.events || []).length, why: (d.events || []).length ? undefined : "There are no open faults." },
@@ -439,6 +470,7 @@ Object.assign(CR_TAB_DEFS, {
               : "Nothing is missing. “Search this account” also copies every photo out of the website folder.",
             render: () => <CrSyPhotoRecover ctx={ctx}/> });
         }
+        if (d.sizes) out.push(...crSySizeBlocks(d.sizes, ctx));
         if (!p.ok) out.push({ type: "note", span: 6, icon: "warning", tone: "bad",
           text: "Make api/storage writable by the web user (chmod 775, or 755 if PHP runs as the owner), then refresh.",
           sub: "Photos already accepted are not lost by fixing this, but anything that arrived while it was broken has no image, and those families need a retake link." });
