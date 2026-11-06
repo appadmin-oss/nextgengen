@@ -8910,11 +8910,17 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .phy-predict-o { text-align: left; min-height: 44px; padding: 8px 14px; border-radius: 12px; border: 1.5px solid #c9d7f5; background: #fff; color: var(--mlb-ink); font: inherit; font-weight: 600; cursor: pointer; }
 .phy-predict-o:disabled { cursor: default; } .phy-predict-o.is-on { border-color: #1e4fae; box-shadow: 0 0 0 2px #1e4fae inset; }
 .phy-predict-h { margin: 8px 0 0; font-size: 13px; color: var(--mlb-ink-2); }
+.phy-predict.is-made { padding: 10px 14px; }
+.phy-predict.is-made .phy-predict-q { margin: 0; display: flex; gap: 8px; align-items: flex-start; }
+.phy-predict.is-made .phy-predict-q i { margin-top: 3px; }
+.phy-predict-qq { margin: 4px 0 0 26px; font-size: 13.5px; color: var(--mlb-ink-2); line-height: 1.45; }
+.phy-predict.is-ok { background: #eaf7ef; border-color: #a8d8b9; } .phy-predict.is-ok .phy-predict-q i { color: #17663a; }
+.phy-predict.is-no { background: #fff7e0; border-color: #f0d488; } .phy-predict.is-no .phy-predict-q i { color: #8a5a00; }
 .phy-predict-v { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: #fff7e0; border: 1.5px solid #f0d488; color: var(--mlb-ink); line-height: 1.5; }
 .phy-predict-v.is-ok { background: #eaf7ef; border-color: #a8d8b9; }
 .phy-level { stroke: #9aa3c4; stroke-width: 2; } .phy-level.is-on { stroke: #1e4fae; stroke-width: 3; }
 .phy-photon { fill: none; stroke-width: 2.5; } .phy-earth { fill: #2f80d6; stroke: #17663a; stroke-width: 3; }
-.phy-curve.is-faint { stroke-opacity: .35; }
+.phy-curve.is-faint { stroke-opacity: .35; } .phy-trace.is-ghost { stroke-opacity: .35; stroke-dasharray: 3 5; }
 .phy-fig { margin: 4px 0; }
 .phy-read { margin: 6px auto 0; max-width: 380px; font-size: 14px; color: var(--mlb-ink); }
 .phy-read summary { cursor: pointer; font-weight: 700; color: #1e4fae; min-height: 32px; display: flex; align-items: center; gap: 6px; }
@@ -8928,6 +8934,17 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-why .mlb-h3::before { background: var(--mlb-amber); }
 .mlb-ex { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .mlb-ex .mlb-dia { margin: 0 auto; }
+/* The readout sits directly under the figure, above the controls (visual order only; it is a live
+   region, so a screen reader hears it wherever it is). On a phone the sliders used to push the
+   numbers below the fold, so a learner moved a slider and could not see what it changed. */
+.mlb-ex > :is(.mlb-dia, .phy-fig) { order: -2; }
+.mlb-ex > .mlb-ex-out { order: -1; }
+.mlb-sl-in { border-radius: 999px; }
+.mlb-sl-in:focus-visible { outline: 3px solid #1e4fae; outline-offset: 3px; }
+.mlb-ex-head { display: flex; align-items: center; gap: 8px; }
+.mlb-ex-head .mlb-h3 { flex: 1; margin: 0; }
+.mlb-ex-reset { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border-radius: 999px; border: 1.5px solid var(--mlb-line); background: #fff; color: var(--mlb-ink); font: inherit; font-weight: 600; cursor: pointer; }
+.mlb-ex-reset:focus-visible { outline: 3px solid #1e4fae; outline-offset: 2px; }
 .mlb-sl { display: grid; grid-template-columns: minmax(110px, 30%) 1fr 64px; align-items: center; gap: 10px; }
 .mlb-sl-l { font-weight: 600; color: var(--mlb-ink); }
 .mlb-sl-in { width: 100%; min-height: 44px; accent-color: #1e4fae; }

@@ -7003,3 +7003,40 @@ Logs were there, in two Stage 7 topics, but:
   - the sitemap's count.
   - Result: 6919 passed, 0 failed.
 - **Competitive analysis** (owner request): published as an artifact, "Maths Lab vs the Field".
+
+
+## 6 Nov 2026 — member portal for children; explorer UX; Smartick in the comparison
+
+- **Member portal navigation** (owner: "hard to navigate… not intuitive… too patchy", then "the navigation is also pretty confusing").
+  - The full-view labels now use the plainer words: My week, Projects & ideas, Goals & scores, Badges, My requests, Ask NGG.
+  - `MP9_APPS` is built from `NGG_LABS` (the duplicate "Learn" is gone). The Learn tab reads "Labs & tools ↗".
+  - Area tabs wrap rather than scroll invisibly.
+  - The Mentor side links that duplicated its tabs are removed, along with their dead `.m9c-side-link` CSS.
+- **Today is consistent.**
+  - `startCardShown()` decides who carries the open getting-started step: the card while it is visible; the banner and To do once it is hidden.
+  - There is one streak source.
+  - The term tile shows the week of the term, not the session's code.
+  - The account section is wrapped in `todayAcc` (true only when money is owed). The design file was changed and `mp9-view.jsx` recompiled with `tools/dc-compile.js`.
+  - Each assignment has a single `meta` line.
+- **Explorers, shared layer** (`MlbExplore`, `PhyPredict`, `styles.css`).
+  - The readout is ordered under the figure with CSS `order`; the DOM is unchanged and it is still a live region.
+  - The spent prediction collapses to a guess line (`.is-made`, then `.is-ok` or `.is-no`).
+  - Reset remounts the explorer by `key`.
+  - The projectile is scaled per launch speed, with a metre scale and the previous throw shown faint.
+- **Tests.**
+  - `member-v9.test.js` gains checks for:
+    - no account card when nothing is owed;
+    - never "Nothing waiting" while steps are open;
+    - an open step listed once;
+    - the streak chip and tile agreeing;
+    - the Labs in Your apps.
+  - The `MP9_AUDIT` walk skips the app links and the ↗ tabs, because they leave the page.
+  - `physicslab-shot.js` gains checks for:
+    - the guess line;
+    - no spent buttons left on screen;
+    - the readout above the controls;
+    - Reset restoring the controls (compared by control values, because several explorers run a clock).
+- **Results.**
+  - PHP 6919/0; member v9 57/0; maths lab e2e 73/0; maths shots 23; physics shots 29.
+  - labs-client 16/0; no-important clean; contrast 21/0; build 31/0.
+- **Comparison artifact**: Smartick added as a ninth product, after a comment on the artifact.

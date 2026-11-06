@@ -217,6 +217,7 @@ function MlbExplore({ comp, onDone }) {
   /* Report the first real interaction once, AFTER the event: updating the lesson inside the
      slider's own input event swallowed that first move (the range snapped back). */
   const told = React.useRef(false); const [tried, setTried] = React.useState(false);
+  const [gen, setGen] = React.useState(0);   // bumped by Reset: remounts the explorer at its starting values
   const tell = () => { if (told.current) return; told.current = true; setTimeout(() => { setTried(true); if (onDone) onDone(); }, 0); };
   const k = mlbExplorerFor(comp); if (!k) return null;
   const E = { numline: MlbExNumline, array: MlbExArray, area: MlbExArea, fraction: MlbExFraction, triangle: MlbExTriangle, pythag: MlbExPythag, sector: MlbExSector,
@@ -224,10 +225,13 @@ function MlbExplore({ comp, onDone }) {
   return (
     <section className="mlb-card mlb-explore" aria-labelledby="mlb-ex-h"
       onInputCapture={e => { if (e.target.closest("input")) tell(); }} onClickCapture={e => { if (e.target.closest(".mlb-ex button")) tell(); }}>
-      <h3 id="mlb-ex-h" className="mlb-h3"><i className="ph ph-sliders-horizontal" aria-hidden="true"/> Explore it</h3>
+      <div className="mlb-ex-head">
+        <h3 id="mlb-ex-h" className="mlb-h3"><i className="ph ph-sliders-horizontal" aria-hidden="true"/> Explore it</h3>
+        {tried ? <button type="button" className="mlb-ex-reset" onClick={() => setGen(g => g + 1)}><i className="ph ph-arrow-counter-clockwise" aria-hidden="true"/> Reset</button> : null}
+      </div>
       <PhyPredict k={k} tried={tried}>
         <p className="mlb-ex-try"><b>Try this:</b> {MLB_TRY[k]}</p>
-        <E/>
+        <E key={gen}/>
       </PhyPredict>
     </section>
   );

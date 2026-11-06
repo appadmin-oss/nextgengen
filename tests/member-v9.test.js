@@ -130,10 +130,22 @@ async function as(memberId, admin, viewport) {
     await mb.waitForSelector('.m9-app main', { timeout: 60000 }).catch(async e => { console.error('DEBUG', mb.errs.join('\n'), (await mb.innerText('body')).slice(0, 800)); throw e; });
     await mb.waitForFunction(() => /Good (morning|afternoon|evening), Tolu/.test(document.body.innerText), null, { timeout: 30000 });
     const today = await main(mb);
-    chk('Today: the banner shows the level, the XP to the next one, and one next step', await mb.isVisible('.m9x-hero') && /Level \d/.test(today) && /XP to/.test(today) && /Your next step|All caught up/i.test(today));
+    chk('Today: the banner shows the level, the XP to the next one, and one next step (or defers to the Getting-started list)', await mb.isVisible('.m9x-hero') && /Level \d/.test(today) && /XP to/.test(today) && (/Your next step|All caught up/i.test(today) || await mb.isVisible('.m9x-start')));
     chk('Today: the banner sits inside the page column, under the greeting', await mb.evaluate(() => { const h = document.querySelector('.m9x-hero'); return !!h && !!h.closest('main > div'); }));
     chk('/dashboard opens the Member Portal for an NGG member, by name', /Tolu/.test(today));
-    chk('Today: account, To do, the mentor’s last message and the Leadership Index from the server', /Account/.test(today) && /To do/i.test(today) && /Well done leading the team/.test(today) && /62 \/ 100/.test(today) && /\+8/.test(today));
+    // A child's Today is not a statement: the account card is there only when something is owed. This
+    // member owes nothing, so Today carries no "To pay now" — the account lives under Money.
+    chk('Today: no account card when nothing is owed', !/To pay now/.test(today));
+    // The page must not contradict itself: open Getting-started steps mean there IS something to do.
+    const startOpen = await mb.evaluate(() => document.querySelectorAll('.m9x-start-i:not(.is-done)').length);
+    chk('Today: never "Nothing waiting" while Getting started still has open steps', !startOpen || (!/Nothing waiting for you/.test(today) && !/all caught up/i.test(today.split(/To do/i)[1] || '')));
+    const firstOpen = await mb.evaluate(() => { const i = document.querySelector('.m9x-start-i:not(.is-done) b'); return i ? i.innerText : ''; });
+    chk('Today: an open step is listed once, not repeated in the banner and To do', !firstOpen || today.split(firstOpen).length - 1 === 1);
+    // One streak: the banner chip and the Streak tile read the same number.
+    const streaks = await mb.evaluate(() => { const t = document.querySelector('main').innerText; const a = (t.match(/(\d+)-day streak/) || [])[1] || (/Start a streak/.test(t) ? '0' : null); const b = (t.match(/Streak\s*\n?\s*(\d+) days?/) || [])[1]; return [a, b]; });
+    chk('Today: the streak chip and the Streak tile agree (' + streaks.join(' / ') + ')', streaks[1] == null || streaks[0] === streaks[1]);
+    chk('Your apps: the Labs, not a second "Learn"', await mb.evaluate(() => { const t = document.querySelector('aside').innerText; return /Maths Lab/.test(t) && /Physics Lab/.test(t) && !/Your apps[\s\S]*\bLearn\b/.test(t); }));
+    chk('Today: To do, the mentor’s last message and the Leadership Index from the server', /To do/i.test(today) && /Well done leading the team/.test(today) && /62 \/ 100/.test(today) && /\+8/.test(today));
     await shot(mb, 'today');
     await mb.click('main [role="radiogroup"][aria-label="How are you doing"] button:has-text("Okay")');
     await mb.waitForTimeout(1200);
@@ -259,7 +271,7 @@ async function as(memberId, admin, viewport) {
     chk('Opportunities: Save is the member’s own bookmark', /OPP-FIT/.test(q(`db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-MV-K1' AND stateKey = 'mp9.opps'")['stateValue'] ?? ''`)));
 
     // ── Records: a request to the desk ──
-    await nav(mb, 'Account', 'Records');
+    await nav(mb, 'Account', 'My requests');
     await mb.click('main button[aria-pressed]:has-text("Correct my details")');
     await mb.fill('main label:has-text("What needs changing") input', 'My school is now Egbeda Grammar.');
     await mb.click('main button:has-text("Send")');
@@ -376,14 +388,14 @@ async function as(memberId, admin, viewport) {
         const au = await as('NGG-MV-K1', false, { width: vw, height: vh });
         await au.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' }); await waitForBoot(au);
         await au.waitForSelector('.m9-app main', { timeout: 60000 }); await settle(au);
-        const areas = await au.evaluate(t => Array.from(document.querySelectorAll(t === 'd' ? '.m9-app aside nav button' : '.m9-app nav[aria-label="My NGG"] button')).map(b => b.innerText.trim()).filter(Boolean), tag);
+        const areas = await au.evaluate(t => Array.from(document.querySelectorAll(t === 'd' ? '.m9-app aside nav button' : '.m9-app nav[aria-label="My NGG"] button')).map(b => b.innerText.trim()).filter(Boolean).filter(l => !/Journal$|Lab$|^Community$/.test(l)), tag);
         for (const area of areas) {
           const sel = (tag === 'd' ? '.m9-app aside nav button' : '.m9-app nav[aria-label="My NGG"] button') + ':has-text("' + area + '")';
           await au.click(sel).catch(() => {}); await settle(au); await au.waitForTimeout(600);
           const tabs = await au.evaluate(() => Array.from(document.querySelectorAll('main nav button')).map(b => b.innerText.trim()).filter(Boolean));
           await au.screenshot({ path: process.env.MP9_AUDIT + '/' + tag + '-' + area.replace(/\W+/g, '_') + '.png', timeout: 8000, animations: 'disabled' }).catch(() => {});
           fs.appendFileSync(process.env.MP9_AUDIT + '/areas.txt', tag + ' ' + area + ' :: tabs ' + JSON.stringify(tabs) + '\n');
-          for (const tb of tabs.slice(1)) {
+          for (const tb of tabs.slice(1).filter(t => !/↗/.test(t))) {
             await au.click('main nav button:has-text("' + tb + '")').catch(() => {}); await settle(au); await au.waitForTimeout(500);
             await au.screenshot({ path: process.env.MP9_AUDIT + '/' + tag + '-' + area.replace(/\W+/g, '_') + '-' + tb.replace(/\W+/g, '_') + '.png', timeout: 8000, animations: 'disabled' }).catch(e => fs.appendFileSync(process.env.MP9_AUDIT + '/areas.txt', 'shot failed ' + tag + ' ' + area + '/' + tb + '\n'));
           }

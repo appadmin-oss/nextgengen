@@ -439,6 +439,14 @@ class Mp9Portal extends React.Component {
       const scr = MP9_ROUTE[x.route] || (/results/.test(x.route) ? "results" : /money|account/.test(x.route) ? "money" : /learn/.test(x.route) ? "learn" : /mentor/.test(x.route) ? "mentor" : "today");
       return { icon: "ph ph-" + x.icon, t: x.title, s: x.subtitle, cta: x.cta, go: go(scr), fg: MP9_TONE[x.tone] || "#4a4a50", bt: i ? "1px solid #f0efea" : "0" };
     });
+    // To do and the Getting-started list must not disagree: "all caught up" under a list of open
+    // steps is the contradiction children reported. With nothing else to do, the open steps are it.
+    if (!todo.length && typeof this.startSteps === "function" && !this.startCardShown()) {
+      const open = this.startSteps().filter(x => !x.done && !x.wait);
+      if (open.length) { const nx = open[0];
+        todo.push({ icon: "ph ph-flag-banner", t: "Finish getting started", s: open.length === 1 ? nx.t : nx.t + " · " + (open.length - 1) + " more after that", cta: nx.cta,
+          go: nx.href ? () => { location.href = nx.href; } : nx.go, fg: "#1d6b30", bt: "0" }); }
+    }
     const ck = t.checkin || {};
     const stage = this.state.wbStage || (ck.done ? "done" : "ask");
     const moodsDef = [["good", "Good", "ph ph-smiley", "#1d6b30"], ["okay", "Okay", "ph ph-smiley-meh", "#4a4a50"], ["low", "Struggling", "ph ph-smiley-sad", "#7a5600"], ["help", "I need help", "ph ph-hand", "#b0361c"]];
@@ -462,6 +470,7 @@ class Mp9Portal extends React.Component {
     }) : [];
     return {
       todo, todoN: todo.length ? todo.length + (todo.length === 1 ? " thing" : " things") + " to do" : "", hasTodo: todo.length > 0, noTodo: todo.length === 0,
+      noTodoT: this.startCardShown && this.startCardShown() ? "Nothing else set for you this week. Finish getting started above." : "You’re all caught up for this week.",
       moods, wbAsk: stage === "ask", wbFollow: stage === "follow", wbDone: stage === "done", wbDoneText: doneText,
       wbYes: () => { this.setState({ wbStage: "done", wbHelp: true }); save("Need help"); }, wbNo: () => this.setState({ wbStage: "done", wbHelp: false }),
       wbReset: () => this.setState({ wbStage: "ask", mood: null }),
@@ -477,11 +486,14 @@ class Mp9Portal extends React.Component {
   }
   accVals() {
     const t = this.dd("today") || {}, a = t.account;
-    if (!a) return { balance: mp9Naira(0), owes: false, clear: true, acc: { balFg: "#1d6b30", pillBg: "#e9f6ec", pill: "Nothing to pay", pillIcon: "ph-fill ph-check-circle",
+    if (!a) return { balance: mp9Naira(0), owes: false, clear: true, todayAcc: false, acc: { balFg: "#1d6b30", pillBg: "#e9f6ec", pill: "Nothing to pay", pillIcon: "ph-fill ph-check-circle",
       stats: [{ k: "Account", v: "Nothing charged", s: "Your centre hasn’t set dues", fg: "#0b0b0c" }, { k: "Training fee", v: "Covered", s: "Covered while you serve", fg: "#0b0b0c" }],
       covered: "NGG covers your training place while you serve. You only pay monthly dues and any fines — unless you leave before your MOU is complete, when the rest of the training fee is yours to pay." } };
     const owes = a.payable > 0;
-    return { balance: mp9Naira(a.payable), owes, clear: !owes, acc: {
+    // A child's Today is not a statement. The account card appears there only when something is
+    // actually owed (dues, fines or a training fee); otherwise it lives under Money, one tap away.
+    const todayAcc = owes || a.trainingOwed > 0 || a.fines > 0;
+    return { balance: mp9Naira(a.payable), owes, clear: !owes, todayAcc, acc: {
       balFg: owes ? "#b0361c" : "#1d6b30", pillBg: owes ? "#fdeeea" : "#e9f6ec", pill: owes ? (a.next ? "Due " + mp9Date(a.next.on, { weekday: "short", day: "numeric", month: "short" }) : "To pay now") : "All paid up", pillIcon: owes ? "ph-fill ph-clock" : "ph-fill ph-check-circle",
       stats: [
         a.trainingOwed > 0
@@ -523,8 +535,6 @@ class Mp9Portal extends React.Component {
       support: ((this.dd("chat") || {}).supporting || []).map(x => ({ name: x.name, focus: x.focus, until: x.until ? " · until " + mp9Date(x.until, { day: "numeric", month: "short" }) : "" })),
       hasSupport: ((this.dd("chat") || {}).supporting || []).length > 0,
       notChat: tab !== "chat", openCls: quiet ? "is-closed" : "is-open",
-      sideLinks: [["sess", "Prepare for Saturday", "ph ph-calendar-check", tsent ? 0 : 1], ["steps", "Next steps", "ph ph-list-checks", left], ["fb", "How it’s going", "ph ph-heart", mine.relAsked && !mine.relDone ? 1 : 0]]
-        .map(([k, l, icon, n]) => ({ l, icon, n: String(n), hasN: n > 0, go: () => set({ mvTab: k }) })),
       tChat: tab === "chat", tSess: tab === "sess", tSteps: tab === "steps", tFb: tab === "fb",
       replyT: M.has ? mf + " usually replies within a day" : "Your centre will match you with a mentor", openT: quiet ? "Closed · opens 8am" : "Open until 8pm", openBg: quiet ? "#f4f4f2" : "#e9f6ec", openFg: quiet ? "#6b6b72" : "#1d6b30",
       cd: sat ? (ms <= 0 ? "today" : "in " + (dd > 0 ? dd + (dd === 1 ? " day " : " days ") : "") + hh + (hh === 1 ? " hour" : " hours")) : "", hasCd: !!sat, prepL: tsent ? "Prepared" : "Prepare", goPrep: () => set({ mvTab: "sess" }),

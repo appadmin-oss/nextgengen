@@ -513,12 +513,24 @@ function PhyExProjectile() {
   const [U, setU] = React.useState(20), [ang, setAng] = React.useState(45); const [run, setRun] = React.useState(false);
   const r = ang * Math.PI / 180, ux = U * Math.cos(r), uy = U * Math.sin(r), T = 2 * uy / 10, R = ux * T, H = uy * uy / 20;
   const [t, setT] = usePhyClock(run, U + ":" + ang); React.useEffect(() => { if (t > T) setRun(false); }, [t, T]);
-  const sc = 280 / 85, X = x => 20 + x * sc, Y = y => 165 - y * sc;
-  let p = ""; for (let k = 0; k <= 40; k++) { const tt = T * k / 40; p += (k ? "L" : "M") + X(ux * tt).toFixed(1) + " " + Y(uy * tt - 5 * tt * tt).toFixed(1); }
+  /* One scale per launch SPEED, fitted to the longest throw that speed can make (U²/g, at 45°): the
+     path fills the frame, yet 30° and 60° at one speed are drawn to the same scale, which is the
+     comparison the prediction asks for. A fixed scale for the fastest throw drew most paths tiny. */
+  const sc = 280 / Math.max(U * U / 10, 1), X = x => 20 + x * sc, Y = y => 165 - y * sc;
+  const path = (ux2, uy2) => { const T2 = 2 * uy2 / 10; let q = ""; for (let k = 0; k <= 40; k++) { const t2 = T2 * k / 40; q += (k ? "L" : "M") + X(ux2 * t2).toFixed(1) + " " + Y(uy2 * t2 - 5 * t2 * t2).toFixed(1); } return q; };
+  const p = path(ux, uy);
+  // The throw before this one stays on the screen, faint, while the speed is unchanged.
+  const prev = React.useRef(null), [ghost, setGhost] = React.useState(null);
+  React.useEffect(() => { const pv = prev.current; if (pv && pv.U === U && pv.ang !== ang) setGhost(pv); else if (pv && pv.U !== U) setGhost(null); prev.current = { U, ang }; }, [U, ang]);
+  const gr = ghost ? ghost.ang * Math.PI / 180 : 0;
+  const step = [1, 2, 5, 10, 20, 50].find(v => v * sc >= 40) || 50, ticks = []; for (let m = step; X(m) <= 305; m += step) ticks.push(m);
   const tt = Math.min(t, T);
   return <div className="mlb-ex">
-    <svg className="mlb-dia phy-dia" viewBox="0 0 320 180" role="img" aria-label={"A ball launched at " + U + " m/s and " + ang + "°: range " + phyR(R, 1) + " m"}>
-      <line x1="10" y1="165" x2="310" y2="165" className="phy-ground"/><path d={p} className="phy-trace"/>
+    <svg className="mlb-dia phy-dia" viewBox="0 0 320 184" role="img" aria-label={"A ball launched at " + U + " m/s and " + ang + "°: range " + phyR(R, 1) + " m"}>
+      <line x1="10" y1="165" x2="310" y2="165" className="phy-ground"/>
+      {ticks.map(m => <g key={m}><line x1={X(m)} y1="165" x2={X(m)} y2="171" className="phy-ground"/><text x={X(m)} y="179" textAnchor="middle" className="mlb-dia-tick">{m} m</text></g>)}
+      {ghost ? <g><path d={path(U * Math.cos(gr), U * Math.sin(gr))} className="phy-trace is-ghost"/><text x={X(U * U * Math.sin(2 * gr) / 10)} y="158" textAnchor="middle" className="mlb-dia-tick">last: {ghost.ang}°</text></g> : null}
+      <path d={p} className="phy-trace"/>
       <circle cx={X(ux * tt)} cy={Y(Math.max(0, uy * tt - 5 * tt * tt))} r="7" className="phy-bob"/>
       <PhyArrow x1={X(0)} y1={Y(0)} x2={X(0) + 40 * Math.cos(r)} y2={Y(0) - 40 * Math.sin(r)} cls="is-1"/>
     </svg>
@@ -932,12 +944,18 @@ function PhyPredict({ k, tried, children }) {
   const p = PHY_PREDICT[k]; const [pick, setPick] = React.useState(null);
   if (!p) return children;
   const [q, opts, right, why] = p, ok = pick === right;
+  /* Before a guess: the question and its options. After it: one line, "Your guess: …", so the
+     figure comes up to where the eye already is instead of sitting under three spent buttons;
+     once the learner has tried it, the line says whether the guess held and names the answer. */
   return <React.Fragment>
-    <div className="phy-predict" role="group" aria-labelledby={"phy-pq-" + k}>
+    {pick == null ? <div className="phy-predict" role="group" aria-labelledby={"phy-pq-" + k}>
       <p id={"phy-pq-" + k} className="phy-predict-q"><i className="ph-fill ph-question" aria-hidden="true"/> <b>Predict first:</b> {q}</p>
-      <div className="phy-predict-opts">{opts.map((_, j) => (j + k.length) % opts.length).map(i => <button key={i} type="button" className={"phy-predict-o" + (pick === i ? " is-on" : "")} aria-pressed={pick === i} disabled={pick != null} onClick={() => setPick(i)}>{opts[i]}</button>)}</div>
-      {pick == null ? <p className="phy-predict-h">Pick your guess — then try it and see.</p> : null}
-    </div>
+      <div className="phy-predict-opts">{opts.map((_, j) => (j + k.length) % opts.length).map(i => <button key={i} type="button" className="phy-predict-o" aria-pressed="false" onClick={() => setPick(i)}>{opts[i]}</button>)}</div>
+      <p className="phy-predict-h">Pick your guess — then try it and see.</p>
+    </div> : <div className={"phy-predict is-made" + (tried ? (ok ? " is-ok" : " is-no") : "")}>
+      <p className="phy-predict-q"><i className={tried ? (ok ? "ph-fill ph-check-circle" : "ph-fill ph-x-circle") : "ph-fill ph-lightbulb"} aria-hidden="true"/> <span><b>Your guess:</b> {opts[pick]}{tried && !ok ? <React.Fragment> · <b>It is:</b> {opts[right]}</React.Fragment> : null}</span></p>
+      <p className="phy-predict-qq">{q}</p>
+    </div>}
     {pick != null ? children : null}
     {pick != null && tried ? <div className={"phy-predict-v" + (ok ? " is-ok" : "")} role="status" aria-live="polite">
       <b>{ok ? "Your prediction held." : "Surprised? Most people guess that too."}</b> {why}</div> : null}

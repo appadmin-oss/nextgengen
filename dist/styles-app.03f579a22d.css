@@ -11169,7 +11169,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-ed24402{margin:0;font-size:28px;font-weight:700;letter-spacing:-0.02em}
 .m9-ea241db{position:relative;width:44px;height:44px;border-radius:12px;border:1px solid #e8e5dd;background:#fff;cursor:pointer;font-size:20px;display:grid;place-items:center}
 .m9-d823d50{position:absolute;top:6px;right:6px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#f5b026;font-size:10.5px;font-weight:700;display:grid;place-items:center}
-.m9-0ff9378{display:flex;gap:4px;border-bottom:1px solid #e3e1da;margin:-4px 0 0;overflow-x:auto;scrollbar-width:none}
+.m9-0af7f25{display:flex;flex-wrap:wrap;gap:0 4px;border-bottom:1px solid #e3e1da;margin:-4px 0 0}
 .m9-abcd739{flex-shrink:0;min-height:44px;padding:0 12px;border:0;border-bottom:var(--dc-border-bottom, unset);margin-bottom:-1px;background:none;color:var(--dc-color, unset);font-size:14.5px;font-weight:var(--dc-font-weight, unset);cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap}
 .m9-095f066{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#f5b026;color:#0b0b0c;font-size:11px;font-weight:700;display:grid;place-items:center}
 .m9-95ea2e9{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-radius:12px;background:var(--dc-background, unset);border:var(--dc-border, unset);color:var(--dc-color, unset);font-size:13.5px}
@@ -14491,7 +14491,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9c-input:focus { border-color: var(--m9c-ink); background: #fff; box-shadow: 0 0 0 3px rgba(11,11,12,.08); }
 .m9c-icon { width: 52px; height: 52px; flex-shrink: 0; border-radius: 16px; border: 1px solid #d6d4cc; background: #fff; color: var(--m9c-ink); font-size: 22px; cursor: pointer; display: grid; place-items: center; }
 .m9c-icon.is-send { border: 0; background: var(--m9c-ink); color: #fff; }
-.m9c-icon:focus-visible, .m9c-chip:focus-visible, .m9c-btn:focus-visible, .m9c-side-link:focus-visible, .m9c-link:focus-visible, .m9c-read:focus-visible { outline: 3px solid var(--m9c-accent); outline-offset: 2px; }
+.m9c-icon:focus-visible, .m9c-chip:focus-visible, .m9c-btn:focus-visible, .m9c-link:focus-visible, .m9c-read:focus-visible { outline: 3px solid var(--m9c-accent); outline-offset: 2px; }
 .m9c-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border-radius: 12px; border: 0; background: var(--m9c-ink); color: #fff; font: 600 14px 'Geist', system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
 .m9c-btn.is-danger { background: #7a2410; }
 .m9c-link { border: 0; background: none; padding: 0; min-height: 0; color: var(--m9c-ink); font: inherit; text-decoration: underline; cursor: pointer; }
@@ -14506,10 +14506,6 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9c-card-sub { font-size: 13.5px; color: var(--m9c-ink3); line-height: 1.45; }
 .m9c-card-h { font-size: 13px; font-weight: 700; color: var(--m9c-ink2); text-transform: uppercase; letter-spacing: .04em; }
 .m9c-help { display: flex; gap: 8px; align-items: center; font-size: 14.5px; color: var(--m9c-ink); }
-.m9c-side-link { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 10px; margin: 0 -10px; border: 0; border-radius: 12px; background: none; color: var(--m9c-ink);
-  font: 500 15px 'Geist', system-ui, sans-serif; text-align: left; cursor: pointer; }
-.m9c-side-link:hover { background: var(--m9c-soft); }
-.m9c-side-link > span:not(.m9c-badge) { flex: 1; } .m9c-side-link > i:first-child { font-size: 19px; }
 .m9c-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #f5b026; color: #2a1d00; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
 .m9c-agree { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.45; color: var(--m9c-ink2); }
 /* Its own width, not the window's: a narrow column loses the side panel and the conversation gets the screen. */

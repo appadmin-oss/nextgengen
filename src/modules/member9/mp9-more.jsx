@@ -5,7 +5,12 @@ const MP9_JOURNAL_URL = "/journal/";
    the curriculum stopped being a sheet over this tab and became its own app
    at /learn — a lesson has an address now, and the portal links into it
    rather than drawing a second copy of it. */
-const MP9_APPS = [["Learn", "ph ph-book-open-text", "/learn"], ["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Community", "ph ph-users-three", "/community"]];
+/* The apps a member opens outside the portal. "Learn" used to sit here as well, beside the Learn
+   area it duplicated, so a child saw the same word twice and two different pages behind it. The
+   Labs come from NGG_LABS (tools-core.jsx, loaded earlier) so a new Lab appears here by itself. */
+const MP9_APPS = [["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL]]
+  .concat((typeof NGG_LABS !== "undefined" ? NGG_LABS : []).map(l => [l.title, "ph " + l.icon, "/study/" + l.seg]))
+  .concat([["Community", "ph ph-users-three", "/community"]]);
 /* The idea sheet's chips, and the topic the server keeps for each (MEMBER_FEEDBACK_TOPICS). */
 const MP9_IDEA_TOPICS = { "How NGG is going for me": "experience", "An activity idea": "idea", "Something NGG should change": "change", "Something I love": "love", "Something in the portal isn’t working": "app" };
 /* The experience scale, 1 to 5, as MEMBER_FEEDBACK_RATINGS words it. Faces as well as words: the youngest members read the face first. */
@@ -19,13 +24,13 @@ const MP9_RATINGS = [[1, "Not good", "ph ph-smiley-sad"], [2, "Not great", "ph p
    the nav (its screen still opens from a link); Records is "My requests". */
 function mp9SimpleAreas(older) {
   return [["Today", "ph ph-sun-horizon", [["today", "Today"]]],
-    ["My mentor", "ph ph-handshake", [["mentor", "Talk to my mentor"], ["companion", "How my week went"], ["community", "My club"]]],
-    ["Learn", "ph ph-book-open-text", [["learn", "My lessons"], ["sat", "This Saturday"], ["timetable", "My week"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
+    ["My mentor", "ph ph-handshake", [["mentor", "Talk to my mentor"], ["companion", "How my week went"], ["community", "Projects & ideas"]]],
+    ["Learn", "ph ph-book-open-text", [["learn", "My lessons"], ["sat", "This Saturday"], ["timetable", "My week"], ["tools", "Labs & tools ↗"]].concat(older ? [["opps", "Opportunities"]] : [])],
     ["Me", "ph ph-star", [["growth", "My goals"], ["passport", "My badges"], ["journal", "My journal"], ["results", "My school report"]]],
     ["Help", "ph ph-lifebuoy", [["help", "Get help"], ["support", "Ask the NGG team"], ["me", "My profile"], ["records", "My requests"]].concat(older ? [["money", "Money"]] : [])]];
 }
 const MP9_SIMPLE_SUBS = { mentor: "Send a message or a voice note", companion: "Tell us about your week", community: "See what your club is sharing", learn: "Your lessons and homework", sat: "What happens this Saturday",
-  timetable: "When to come to the centre", tools: "Flashcards, quizzes and a focus timer", growth: "What you’re working towards", passport: "Badges you’ve earned", journal: "Write about your day",
+  timetable: "When to come to the centre", tools: "Maths Lab, Physics Lab, flashcards and a focus timer · opens in its own app", growth: "What you’re working towards", passport: "Badges you’ve earned", journal: "Write about your day",
   results: "Add your school report", help: "Ask a grown-up at NGG for help", support: "When something isn’t working", me: "Your name, photo and settings", records: "Things you’ve asked us for", opps: "Things you can apply for" };
 /* Today's big buttons in the simple view: the four things a child comes to do,
    one press each, before the full Today screen below. */
@@ -59,7 +64,9 @@ Object.assign(Mp9Portal.prototype, {
       return { t: a.title, div: (a.track || me.track || "Club") + (a.proofLabel ? " · " + a.proofLabel : ""), due: a.dueAt ? mp9Date(a.dueAt, { weekday: "short", day: "numeric", month: "short" }) : "no date", s: st,
         fg: ["marked", "submitted"].includes(a.state) ? "#1d6b30" : a.state === "todo" ? "#7a5600" : "#b0361c", open: () => this.setState({ handIn: a.assignmentId }) };
     });
-    if (!asg.length) asg.push({ t: "No assignments right now", div: "", due: "–", s: "All clear", fg: "#1d6b30", open: () => this.toast("Nothing is waiting for you.") });
+    // One line under each title, built here so an empty part never leaves a dangling "· due –".
+    asg.forEach(a => { a.meta = [a.div, a.due ? "due " + a.due : ""].filter(Boolean).join(" · "); });
+    if (!asg.length) asg.push({ t: "Nothing set right now", meta: "Your instructor sets these. They show up here.", div: "", due: "", s: "All clear", fg: "#1d6b30", open: () => this.toast("Nothing is waiting for you.") });
     const ev = (d.events || []).map(e => { const r = (s.rsvp || {})[e.eventId] !== undefined ? s.rsvp[e.eventId] : e.myRsvp; const going = r === "going";
       return { t: e.title, when: mp9Date(e.startAt, { weekday: "short", day: "numeric", month: "short" }) + (e.startAt && e.startAt.length > 10 ? " · " + new Date(e.startAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""), r, going: going ? "true" : "false",
         gBg: going ? "#0b0b0c" : "#fff", gFg: going ? "#fff" : "#0b0b0c", label: going ? "Going" : "I’ll go",
@@ -722,10 +729,10 @@ Object.assign(Mp9Portal.prototype, {
     const BADGE = { mentor: unreadChat ? String(unreadChat) : "", results: resDue, learn: learnN, money: owed };
     const bdg = id => BADGE[id] || "";
     const simple = this.simple();
-    const areas = (simple ? mp9SimpleAreas(older) : [["Today", "ph ph-sun-horizon", [["today", "Today"]]], ["Mentor", "ph ph-handshake", [["mentor", "My mentor"], ["companion", "Companion"], ["community", "Community"]]],
-      ["Grow", "ph ph-plant", [["growth", "Scorecard & goals"], ["results", "School results"], ["passport", "Passport"], ["journal", "Journal"]]],
-      ["Learn", "ph ph-book-open-text", [["learn", "Lessons"], ["sat", "Saturday"], ["timetable", "Timetable"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
-      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "Records"], ["support", "Support"], ["help", "Help"]]]])
+    const areas = (simple ? mp9SimpleAreas(older) : [["Today", "ph ph-sun-horizon", [["today", "Today"]]], ["Mentor", "ph ph-handshake", [["mentor", "My mentor"], ["companion", "My week"], ["community", "Projects & ideas"]]],
+      ["Grow", "ph ph-plant", [["growth", "Goals & scores"], ["results", "School results"], ["passport", "Badges"], ["journal", "Journal"]]],
+      ["Learn", "ph ph-book-open-text", [["learn", "Lessons"], ["sat", "Saturday"], ["timetable", "Timetable"], ["tools", "Labs & tools ↗"]].concat(older ? [["opps", "Opportunities"]] : [])],
+      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "My requests"], ["support", "Ask NGG"], ["help", "Help"]]]])
       .map(([label, icon, kids]) => { const bb = kids.map(([id]) => bdg(id)).filter(Boolean); return { label, icon, kids, ids: kids.map(k => k[0]), badge: bb.length === 1 ? bb[0] : bb.length ? String(bb.length) : "" }; });
     const area = areas.find(a => a.ids.includes(cur)) || areas[0];
     const acc = a => MP9_ACCENT[MP9_AREA_OF[a.ids[0]] || "today"] || "#0b0b0c", accOn = acc(area);
@@ -736,7 +743,7 @@ Object.assign(Mp9Portal.prototype, {
         go: () => { try { location.assign(url); } catch (_) {} } })) }];
     const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const bb = bdg(id); return { l, on: on ? "true" : "false", fg: on ? accOn : "#5a5a60", fw: on ? 600 : 500, bar: on ? accOn : "transparent", badge: bb, hasBadge: !!bb, go: () => this.go(id) }; });
     const tabbar = areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? acc(a) : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; });
-    const subs = { support: "Cases you’ve opened with the NGG team", sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Flashcards, focus timer, typing, maths · its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
+    const subs = { support: "Cases you’ve opened with the NGG team", sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Maths Lab, Physics Lab, flashcards, focus timer · opens in its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
     if (simple) Object.assign(subs, MP9_SIMPLE_SUBS);
     const flat = [].concat(...areas.map(a => a.kids.map(([id, l]) => ({ id, label: l, icon: a.icon }))));
     const moreGroups = areas.slice(1).map(a => ({ h: a.label, items: a.kids.map(([id, label]) => ({ label, icon: a.icon, badge: bdg(id), hasBadge: !!bdg(id), d: subs[id] || "", go: () => this.go(id) })) }));
@@ -836,6 +843,10 @@ Object.assign(Mp9Portal.prototype, {
       { k: "family", t: "Link a parent or guardian", s: "Give them your Anchor Circle code so they can follow your progress.", done: linked === true, unknown: linked === null, cta: "Get my code", go: () => this.go("me") },
     ].filter(x => !x.unknown || !x.done);
   },
+  startCardShown() {
+    if (this.st("mp9.startHidden", false)) return false;
+    const steps = this.startSteps(); return steps.length > 0 && steps.some(x => !x.done);
+  },
   startCard() {
     if (this.st("mp9.startHidden", false)) return null;
     const steps = this.startSteps(), done = steps.filter(x => x.done).length;
@@ -864,8 +875,12 @@ Object.assign(Mp9Portal.prototype, {
     const scrOf = x => MP9_ROUTE[x.route] || (/results/.test(x.route) ? "results" : /money|account/.test(x.route) ? "money" : /learn/.test(x.route) ? "learn" : /mentor/.test(x.route) ? "mentor" : "today");
     const nudge = mom && mom.nudges && mom.nudges[0] ? mom.nudges[0].text : "";
     const left = (t.todo || []).length;
+    // While the Getting-started card is on screen it IS the list of next steps; the banner repeating
+    // its first row made "Add your photo" appear three times on one page. Only once the member has
+    // hidden that card does the banner carry the open step.
+    const open = this.startCardShown() ? [] : this.startSteps().filter(x => !x.done && !x.wait), nx = open[0] || null, openSteps = open.length;
     const jm = this.dd("jm") || {}, wrote = !!(jm.todayEntry && ((jm.todayEntry.body || "").trim() || (jm.todayEntry.title || "").trim()));
-    return <section className="m9x-hero" aria-labelledby="m9x-hero-h">
+    return <section className="m9x-hero" aria-label="Your progress">
       <div className="m9x-hero-top">
         <span className="m9x-hero-lvl"><i className="ph-fill ph-plant" aria-hidden="true"/>Level {level} · {name}</span>
         <span className={"m9x-hero-streak" + (streak ? " is-on" : "")}><i className="ph-fill ph-fire" aria-hidden="true"/>{streak ? streak + "-day streak" : "Start a streak today"}</span>
@@ -879,13 +894,19 @@ Object.assign(Mp9Portal.prototype, {
         <b className="m9x-hero-t">{first.title}</b>
         {first.subtitle ? <span className="m9x-hero-s">{first.subtitle}</span> : null}
         <button type="button" className="m9x-hero-go" onClick={() => this.go(scrOf(first))}>{first.cta || "Start"}<i className="ph ph-arrow-right" aria-hidden="true"/></button>
-      </div> : <div className="m9x-hero-next is-done">
+      </div> : nx ? <div className="m9x-hero-next">
+        {/* Nothing set by the centre, but getting started is not finished: that IS the next step.
+            It used to read "All caught up · Nothing waiting" above a list of open steps. */}
+        <span className="m9x-hero-eyebrow" id="m9x-hero-h">Your next step{openSteps > 1 ? " · " + openSteps + " to finish getting started" : ""}</span>
+        <b className="m9x-hero-t">{nx.t}</b>
+        <span className="m9x-hero-s">{nx.s}</span>
+        {nx.href ? <a className="m9x-hero-go" href={nx.href}>{nx.cta}<i className="ph ph-arrow-right" aria-hidden="true"/></a>
+          : <button type="button" className="m9x-hero-go" onClick={nx.go}>{nx.cta}<i className="ph ph-arrow-right" aria-hidden="true"/></button>}
+      </div> : this.startCardShown() ? (nudge ? <p className="m9x-hero-s" id="m9x-hero-h">{nudge}</p> : null) : <div className="m9x-hero-next is-done">
         <span className="m9x-hero-eyebrow" id="m9x-hero-h">All caught up</span>
         <b className="m9x-hero-t">Nothing waiting for you. Nice work.</b>
         {nudge ? <span className="m9x-hero-s">{nudge}</span> : null}
-        {(() => { const nx = this.startSteps().find(x => !x.done && !x.wait);
-          return nx ? (nx.href ? <a className="m9x-hero-go" href={nx.href}>{nx.t}<i className="ph ph-arrow-right" aria-hidden="true"/></a> : <button type="button" className="m9x-hero-go" onClick={nx.go}>{nx.t}<i className="ph ph-arrow-right" aria-hidden="true"/></button>)
-            : <button type="button" className="m9x-hero-go" onClick={() => this.go("tools")}>Practise something<i className="ph ph-arrow-right" aria-hidden="true"/></button>; })()}
+        <a className="m9x-hero-go" href={"/study/" + ((typeof NGG_LABS !== "undefined" && NGG_LABS[0]) ? NGG_LABS[0].seg : "lab")}>Practise in a Lab<i className="ph ph-arrow-right" aria-hidden="true"/></a>
       </div>}
       {/* The journal, one tap from Today, in the same tab (a new tab on Android loses the portal). */}
       {wrote ? <a className="m9x-hero-j is-done" href={MP9_JOURNAL_URL}><i className="ph-fill ph-check-circle" aria-hidden="true"/>You wrote in your journal today · open it</a>
@@ -1005,7 +1026,10 @@ Object.assign(Mp9Portal.prototype, {
       me: { ...me, name: me.name || "…" }, mentor: { name: M.name, first: M.first, initials: M.initials, role: M.role, months: mine.mentor && mine.mentor.since ? Math.max(1, Math.round((Date.now() - new Date(mine.mentor.since + "T12:00:00Z")) / (30.4 * 864e5))) : 1, since: mine.mentor && mine.mentor.since ? mp9Date(mine.mentor.since, { month: "long", year: "numeric" }) : "this session", next: this.satDate() ? mp9Date(this.satDate(), { weekday: "short", day: "numeric", month: "short" }) + " · the mentor breakout at the centre" : "Saturday at the centre" },
       sessEnds: me.sessEnds,
       lastMsg: last ? "“" + last.body.slice(0, 140) + "”" : M.has ? "No message yet. Say hello." : "A mentor is matched to you by your centre.",
-      kpis: [["Session", sess ? sess.name + " · week " + sess.weekOf + " of " + sess.totalWeeks : "Between sessions"], ["Level", "Level " + (stats.level || 1) + (((this.dd("mom") || {}).momentum || {}).levelName ? " · " + this.dd("mom").momentum.levelName : "")], ["Streak", (stats.streak || 0) + (stats.streak === 1 ? " day" : " days")]].map(([k, v]) => ({ k, v, fg: "#0b0b0c" })),
+      // One streak, read where the hero reads it (it said "1-day streak" over a tile reading "0 days");
+      // no Level tile (the hero already shows it); and the term in words, not the session's code name.
+      kpis: (() => { const mstreak = ((this.dd("mom") || {}).momentum || {}).streak || stats.streak || 0;
+        return [["This term", sess && sess.totalWeeks ? "Week " + sess.weekOf + " of " + sess.totalWeeks : "Between terms"], ["Streak", mstreak + (mstreak === 1 ? " day" : " days")]]; })().map(([k, v]) => ({ k, v, fg: "#0b0b0c" })),
       takeTour: () => { if (typeof window.nggGuide === "function") window.nggGuide("member"); else this.toast("The tour isn’t available right now."); },
       showStart: () => { this.saveSt("mp9.startHidden", false); this.go("today"); },
       signOutMe: () => nggPortalSignOut(this.props.onSignOut), goMore: go("more"), onMoreCur: cur === "more" ? "page" : undefined,

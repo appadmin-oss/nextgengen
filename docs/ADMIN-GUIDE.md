@@ -1769,7 +1769,7 @@ has no question source — see **Settings → AI** and the `study_bank` block in
 
 ### Study tools (/study)
 
-Members open **Learn → Study tools** in their portal (or go to `/study`). It is
+Members open **Learn → Labs & tools ↗** in their portal (or go to `/study`). It is
 their own kit, and nothing in it is seen by staff. Five tabs, with similar
 tools together and handing work to each other:
 
@@ -4099,7 +4099,7 @@ under the name, and a lesson's state sits under its title in My course.
   screens for hosting one, adding players and entering results. A loading bar
   or an error with **Try again** now shows on the phone too.
  instead of wrapping onto a second
-line: the Mentor, Companion and area tabs (My mentor / Companion / Community)
+line: the Mentor, My week and area tabs (My mentor / My week / Projects & ideas)
 in all three portals, the mentor portal's Saturday tabs, the quick replies, and
 the Control Room's tab rows. A fade at the edge shows there is more to swipe
 to, and the chosen tab is scrolled into view.
@@ -4123,7 +4123,7 @@ read: the words "Voice note (0:42)" are what it carries, so a mentor should
 listen to one within the usual reply window.
 
 **The Anchor Journal and the portal are one journal.** The desktop sidebar
-has **Your apps → Anchor Journal / Community**; Today has **Write today's
+has **Your apps → Anchor Journal / Maths Lab / Physics Lab / Community**; Today has **Write today's
 reflection**; the simple view has a **My journal** tile. All open in the same
 tab, and the journal has a **My NGG** link back. In the journal, **Share
 with [mentor]** (off by default) shares that entry with the mentor, who is
@@ -4986,3 +4986,48 @@ The second Lab (owner, 6 Nov 2026: "make physics a breeze for everyone"). It run
 - **The timed Physics paper (Exams tab):** 40 four-option questions in 40 minutes, covering Stages 1–8, drawn fresh every time. Scored out of 100 and broken down by area. A Maths paper cannot be started from the Physics Lab, and the other way round.
 - **Daily Physics Puzzle:** one problem a day from the Physics Olympiad stage, the same for everyone. It is separate from the Daily Olympiad Problem in Maths.
 - **Separate from Maths.** A member's Physics climb, topics, sessions and certificates are their own and never change their Maths ones. XP and the study streak are shared: studying any Lab keeps the streak alive.
+
+
+### The member portal, made plainer for children (6 Nov 2026)
+
+The owner found the portal hard to navigate, unintuitive and patchy. What changed, and why:
+
+- **Plain words in the menu.** In the full view, **Companion** is now **My week**, **Community** under
+  Mentor is **Projects & ideas** (the club feed, team projects and ideas), **Scorecard & goals** is
+  **Goals & scores**, **Passport** is **Badges**, **Records** is **My requests** and **Support** is
+  **Ask NGG**. The screens are the same and so are their addresses (`/dashboard/records` and so on), so
+  bookmarks and links keep working.
+- **No word means two things.** "Learn" was both an area of the portal and an app under **Your apps**.
+  Your apps now lists **Anchor Journal**, **Maths Lab**, **Physics Lab** and **Community**. The Labs come
+  from the Lab registry, so a new Lab appears there on its own.
+- **A tab that leaves the portal says so.** **Learn → Labs & tools ↗** opens the Labs in their own app,
+  and its description says so.
+- **Tabs wrap on a phone.** An area's tabs wrap onto a second line rather than scrolling off the edge
+  with no sign that there is more.
+- **Today stops contradicting itself.**
+  - While **Getting started** is on screen, it is the list of next steps. The banner and **To do** no
+    longer repeat its first step, and neither says "All caught up" while steps are still open.
+  - Once a member hides that list, the banner and To do carry the open step.
+  - The streak is read from one place, so the chip and the **Streak** tile agree.
+  - The **This term** tile shows "Week 9 of 14" rather than the session's code name.
+- **The account card is on Today only when something is owed** (dues, fines, or a training fee). The
+  rest of the time it is under **Account → Money**.
+- **Assignments.** With none set, the card reads "Nothing set right now" without a dangling "· due –".
+- **The Mentor screen** drops the side links that repeated its own tabs; the tabs already carry the
+  counts.
+
+### The Labs' explorers, easier to use (6 Nov 2026)
+
+These changes apply to every explorer in both Labs: 16 in maths and 27 in physics.
+
+- **The readout sits under the picture**, above the sliders. On a phone the numbers used to be pushed
+  below the fold, so a learner moved a slider and could not see what it changed.
+- **After a guess, the prediction shrinks to one line**: "Your guess: …". Once the learner has tried
+  it, the line turns green with a tick, or amber with "It is: …" naming the answer. The explanation
+  stays at the bottom.
+- **Reset** appears once the learner has tried the explorer. It puts every control back to where it
+  started.
+- **The projectile** is drawn to the scale of its launch speed, with a metre scale along the ground.
+  The previous throw at the same speed stays on screen as a faint trace marked "last: 30°", so the
+  30°-versus-60° comparison the prediction asks about can be seen directly.
+- The sliders have a rounded focus ring for keyboard users.

@@ -70,6 +70,7 @@ function loadChromium() { for (const m of [process.env.PLAYWRIGHT_MODULE, 'playw
         await page.waitForSelector('.mlb-ex', { timeout: 4000 });
         const before = await page.locator('.mlb-ex-out').innerText();
         const sl = page.locator('.mlb-ex input[type=range]').first();
+        const ctl0 = await page.evaluate(() => Array.from(document.querySelectorAll('.mlb-ex input[type=range], .mlb-ex .phy-seg-b.is-on')).map(e => e.value || e.innerText).join('|'));
         if (await sl.count()) { await sl.focus(); for (let k = 0; k < 4; k++) await page.keyboard.press('ArrowRight'); }
         else await page.locator('.mlb-ex .phy-seg-b:not(.is-on)').first().click();
         await page.waitForTimeout(250);
@@ -78,6 +79,18 @@ function loadChromium() { for (const m of [process.env.PLAYWRIGHT_MODULE, 'playw
         if (hidden) problems.push(ex + ': the explorer showed before a prediction was made');
         if (before === after) problems.push(ex + ': moving the first control changed nothing in the readout');
         if (!verdict) problems.push(ex + ': no verdict on the prediction after trying it');
+        // Owner: "Improve the UX of all the visual models". The spent options collapse to one line that
+        // says whether the guess held; the readout sits under the figure, above the controls, so it is
+        // in view while a slider moves; and Reset puts the explorer back where it started.
+        if (!(await page.locator('.phy-predict.is-made.is-ok, .phy-predict.is-made.is-no').count())) problems.push(ex + ': the guess line does not say whether the prediction held');
+        if (await page.locator('.phy-predict-o').count()) problems.push(ex + ': the spent prediction buttons are still on screen');
+        const order = await page.evaluate(() => { const o = document.querySelector('.mlb-ex-out'), c = document.querySelector('.mlb-ex input[type=range], .mlb-ex .phy-seg-b, .mlb-ex button'); return !c || o.getBoundingClientRect().top < c.getBoundingClientRect().top; });
+        if (!order) problems.push(ex + ': the readout is below the controls');
+        if (await page.locator('.mlb-ex-reset').count()) { await page.locator('.mlb-ex-reset').click(); await page.waitForTimeout(250);
+          // Compare the controls, not the readout text: several explorers run a clock, so their words move on their own.
+          const ctl1 = await page.evaluate(() => Array.from(document.querySelectorAll('.mlb-ex input[type=range], .mlb-ex .phy-seg-b.is-on')).map(e => e.value || e.innerText).join('|'));
+          if (ctl1 !== ctl0) problems.push(ex + ': Reset did not put the controls back (' + ctl0 + ' → ' + ctl1 + ')'); }
+        else problems.push(ex + ': no Reset after trying it');
       } catch (e) { problems.push(ex + ': ' + e.message.split('\n')[0]); }
       if (errs.length) problems.push(ex + ': ' + errs[0]);
       await page.screenshot({ path: path.join(OUT, 'ex-' + ex + '.png'), fullPage: true }); shots++;
