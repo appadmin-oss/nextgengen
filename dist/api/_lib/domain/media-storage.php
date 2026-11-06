@@ -216,7 +216,7 @@ function media_alert(array $state, ?array $acc = null): void {
  */
 function media_incoming_transformation(string $kind): string {
     $max = ['headshot' => 1200, 'avatar' => 800, 'cover' => 2000][$kind] ?? 1600;
-    return img_edit('media_incoming', ['m' => $max]);
+    return 'c_limit,w_' . $max . ',h_' . $max . ',q_auto:good';
 }
 
 /** The refusal an upload signer returns when storage is full. */

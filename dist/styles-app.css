@@ -4546,7 +4546,6 @@ body[data-page="join"] .nav-apply { display: none; }
 .admin-roster-card { border: 1px solid var(--line, #e6e2d6); border-radius: 16px; background: #fff; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
 .admin-roster-head { display: flex; align-items: center; gap: 12px; }
 .admin-roster-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; flex: none; display: grid; place-items: center; }
-.admin-roster-avatar[hidden], .ngg-side-avatar-img[hidden] { display: none; }
 .admin-roster-name { font-weight: 700; font-size: 15px; display: flex; align-items: center; flex-wrap: wrap; }
 .admin-roster-cap { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-500); }
 .admin-roster-mentees { display: flex; flex-wrap: wrap; gap: 6px; }

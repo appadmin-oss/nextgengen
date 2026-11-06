@@ -159,7 +159,7 @@ if (!$mediaAware && $isImage) {
 if ($mediaAware) {
     $mk = upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     if ($mk === 'video') {
-        $eager = img_edit('video');   // the one rendition every screen delivers (image-sizes.php)
+        $eager = 'f_auto,q_auto:eco,w_1280,c_limit';
         $signParams['eager'] = $eager;
         $signParams['eager_async'] = 'true';
     } elseif ($mk === 'pdf' || $mk === 'raw') {
@@ -167,7 +167,7 @@ if ($mediaAware) {
         $signParams['use_filename'] = 'true';
         $signParams['unique_filename'] = 'true';
     } else {
-        $incoming = img_edit('upload_incoming');
+        $incoming = 'c_limit,w_1600,q_auto:good,f_auto';
         $signParams['transformation'] = $incoming;
     }
 }

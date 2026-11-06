@@ -664,7 +664,7 @@ function community_spam_check(string $memberId, string $body): ?string {
 /** A Cloudinary still frame from a video, for AI screening. */
 function community_video_frame(string $url): string {
     if (!preg_match('#res\.cloudinary\.com#', $url) || strpos($url, '/upload/') === false) return '';
-    $f = str_replace('/upload/', '/upload/' . img_edit('screen_frame') . '/', $url);
+    $f = str_replace('/upload/', '/upload/so_1,f_jpg,q_auto,w_640,c_limit/', $url);
     return preg_replace('/\.(mp4|mov|webm|m4v|avi)(\?.*)?$/i', '.jpg', $f);
 }
 

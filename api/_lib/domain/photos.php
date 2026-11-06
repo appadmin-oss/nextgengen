@@ -52,7 +52,7 @@ function cloudinary_apply(string $url, string $transform): string {
 function cloudinary_edit(string $sourceUrl, array $rec, bool $creditsOk): array {
     // General optimization + a tidy, face-framed crop — always applied and all
     // non-generative (they reframe/adjust the existing pixels only).
-    $base = img_edit('card_face', ['g' => 'face']);   // the registry's card-face edit (image-sizes.php)
+    $base = 'c_fill,g_face,w_600,h_750,f_auto,q_auto:good,e_improve:30';
     if (!empty($rec['brighten'])) $base .= ',e_brightness:18';
     // Perceived-detail recovery for soft/low-res captures — an unsharp mask,
     // NOT generative reconstruction. Enhances edges that are already there.
@@ -90,7 +90,7 @@ function cloudinary_base(string $url): string {
 function cloudinary_edit_manual(string $sourceUrl, array $spec): array {
     $g = (string)($spec['gravity'] ?? 'face');
     if (!in_array($g, ['face', 'faces', 'center', 'north', 'south', 'auto'], true)) $g = 'face';
-    $parts = explode(',', img_edit('card_face', ['g' => $g]));   // the registry's card-face edit (image-sizes.php)
+    $parts = ['c_fill', 'g_' . $g, 'w_600', 'h_750', 'f_auto', 'q_auto:good', 'e_improve:30'];
     if (!empty($spec['brighten'])) $parts[] = 'e_brightness:18';
     if (!empty($spec['sharpen']))  $parts[] = 'e_sharpen:80';
     $chain = [implode(',', $parts)];
@@ -325,14 +325,9 @@ function photo_store_selftest(): array {
     $dir = photo_store_dir();
     $out = ['dir' => $dir, 'where' => photo_store_where(),
             'exists' => is_dir($dir), 'writable' => is_dir($dir) && is_writable($dir),
-            'files' => 0, 'bytes' => 0, 'sizeFiles' => 0, 'sizeBytes' => 0];
+            'files' => 0, 'bytes' => 0];
     if (is_dir($dir)) {
         foreach ((array)@scandir($dir) as $f) {
-            // A made size (`<32hex>-<px>.jpg`, image-sizes.php) is counted apart:
-            // "Held: N images" is the photographs, not their copies.
-            if (function_exists('img_variant_parse') && img_variant_parse((string)$f)) {
-                $out['sizeFiles']++; $out['sizeBytes'] += (int)@filesize($dir . '/' . $f); continue;
-            }
             if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', (string)$f)) continue;
             $out['files']++;
             $out['bytes'] += (int)@filesize($dir . '/' . $f);
@@ -987,15 +982,12 @@ function photo_store_sweep(int $days = 7, int $limit = 200): int {
     $referenced = photo_store_referenced();
     if ($referenced === null) return 0;
 
-    $gone = 0; $sizes = 0;
+    $gone = 0;
     foreach ($files as $f) {
         if (isset($referenced[$f])) continue;
-        // Its made sizes (image-sizes.php) go with it: a size never outlives its photo.
-        if (@unlink($dir . '/' . $f)) { $gone++; if (function_exists('img_variants_forget')) $sizes += img_variants_forget($dir, $f); }
+        if (@unlink($dir . '/' . $f)) $gone++;
     }
-    // And any made size whose original is gone (deleted elsewhere, or a size no longer in the registry).
-    if (function_exists('img_variants_sweep_dir')) foreach (photo_store_dirs() as $d) $sizes += img_variants_sweep_dir($d);
-    if ($gone > 0 || $sizes > 0) audit('photo.store.swept', null, '', ['deleted' => $gone, 'sizes' => $sizes], '');
+    if ($gone > 0) audit('photo.store.swept', null, '', ['deleted' => $gone], '');
     return $gone;
 }
 
@@ -1820,11 +1812,7 @@ function photo_supersede(string $subjectType, string $subjectId, string $oldUrl,
         if ($refs === null) $kept = 'unknown';
         elseif ($refs) $kept = implode(',', array_keys($refs));
         else {
-            foreach (photo_store_dirs() as $dir) {
-                $f = $dir . '/' . $oldId;
-                if (is_file($f) && @unlink($f)) $deleted = true;
-                if (function_exists('img_variants_forget')) img_variants_forget($dir, $oldId);   // its made sizes go with it
-            }
+            foreach (photo_store_dirs() as $dir) { $f = $dir . '/' . $oldId; if (is_file($f) && @unlink($f)) $deleted = true; }
             try { db_exec('DELETE FROM photo_framing WHERE url LIKE ?', ['%' . $oldId . '%']); } catch (Throwable $e) {}
         }
     }

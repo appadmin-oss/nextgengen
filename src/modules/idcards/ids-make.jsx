@@ -101,7 +101,7 @@ function IdsRecords({ M }) {
                 <IdsIcon name={r.on ? "check" : r.blocked ? "minus" : "check"}/>
               </button>
               <span className="ids-thumb" style={{ "--ids-accent": M.accent(r.centre) }}>
-                {r.photoUrl && !r.blocked ? <img src={imgUrl(r.photoUrl, "avatar")} alt="" loading="lazy"/> : idsInitials(r.name)}
+                {r.photoUrl && !r.blocked ? <img src={r.photoUrl} alt="" loading="lazy"/> : idsInitials(r.name)}
               </span>
               <span className="ids-grow ids-rec-text" onClick={r.toggle}>
                 <span className="ids-rec-name">{r.name}</span>
@@ -133,7 +133,7 @@ function IdsCarded({ M, R }) {
         {R.carded.map(r => (
           <li key={r.key} className={"ids-rec ids-rec--carded" + (r.open ? " is-open" : "")}>
             <span className="ids-thumb" style={{ "--ids-accent": M.accent(r.centre) }}>
-              {r.photoUrl ? <img src={imgUrl(r.photoUrl, "avatar")} alt="" loading="lazy"/> : idsInitials(r.name)}
+              {r.photoUrl ? <img src={r.photoUrl} alt="" loading="lazy"/> : idsInitials(r.name)}
             </span>
             <span className="ids-grow ids-rec-text">
               <span className="ids-rec-name">{r.name}</span>

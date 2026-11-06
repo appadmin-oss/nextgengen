@@ -77,14 +77,10 @@ function CrPill({ tone, t }) {
   return <span className={"cr-pill cr-t-" + crTone(tone)}><span className="cr-pill-dot"/>{t}</span>;
 }
 
-/** Initials, or the photograph when there is one — at the avatar size the
- *  server made once (imgUrl), then the original if that fails, then initials. */
+/** Initials, or the photograph when there is one. */
 function CrAvatar({ name, photo, className }) {
-  const [bad, setBad] = React.useState(0);
-  const sized = photo ? imgUrl(photo, "avatar") : "";
-  return <span className={className || "cr-ini"}>{photo && bad < 2
-    ? <img src={bad === 0 ? sized : photo} alt="" loading="lazy" onError={() => setBad(b => b === 0 && sized !== photo ? 1 : 2)}/>
-    : crInitials(name)}</span>;
+  const [bad, setBad] = React.useState(false);
+  return <span className={className || "cr-ini"}>{photo && !bad ? <img src={photo} alt="" loading="lazy" onError={() => setBad(true)}/> : crInitials(name)}</span>;
 }
 
 /**

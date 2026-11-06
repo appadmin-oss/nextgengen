@@ -1906,74 +1906,11 @@ function Sparkline({ data, color = "var(--gold-500)", w = 120, h = 36, fill = fa
    face-centred crop tidies the framing — both are FREE (no add-on). The
    background swap (e_background_removal) is deliberately NOT here: it is a paid
    add-on and runs server-side behind the credit guard, never on a client URL. */
-/* ── Image sizes: ONE address function, NAMED sizes ─────────────────────────
-   The browser half of api/_lib/domain/image-sizes.php, and the same rules:
-   a photo is shown at a named size the server made ONCE with GD (photo-store
-   and bucket images), or, for an image still on Cloudinary, through that
-   size's Cloudinary transform. The names and strings are pinned equal to the
-   server's by tests/image-sizes.test.js — change both or neither.
-   `px` is the long edge; never an upscale, never a crop (CSS object-fit crops).
-   IMG_EDITS are the Cloudinary transforms that change the picture rather than
-   its size; the browser carries the ones it uses, the rest are server-only. */
-const IMG_SIZES = {
-  avatar: { px: 128,  cld: "f_auto,q_auto,w_128,c_limit" },
-  thumb:  { px: 320,  cld: "f_auto,q_auto,w_320,c_limit" },
-  feed:   { px: 640,  cld: "f_auto,q_auto,w_640,c_limit" },
-  wide:   { px: 1280, cld: "f_auto,q_auto,w_1280,c_limit" },
-  print:  { px: 1200, cld: "f_jpg,q_auto:good,w_1200,c_limit" },
-};
-const IMG_EDITS = {
-  card_face:       "c_fill,g_{g},w_600,h_750,f_auto,q_auto:good,e_improve:30",
-  capture_enhance: "c_thumb,g_face,w_600,h_750,e_improve,q_auto",
-  capture_plain:   "c_thumb,g_face,w_600,h_750,q_auto",
-  face_detect:     "c_thumb,g_face,w_200,h_200",
-  print_pad:       "c_pad,w_{w},h_{h},b_auto:predominant_gradient,f_jpg,q_auto:good",
-  video:           "f_auto,q_auto:eco,w_1280,c_limit",
-  video_poster:    "so_0,f_jpg,q_auto,w_900,c_limit",
-};
-/** An edit's transform with its values filled in ("" for an unknown name). */
-function imgEdit(name, vars) {
-  let t = IMG_EDITS[name] || "";
-  for (const k in (vars || {})) t = t.split("{" + k + "}").join(String(vars[k]));
-  return t;
-}
-/* Our bucket's public address, learned from the public config (images.storeBase).
-   Until it arrives a bucket URL is shown as it is — the original, never broken. */
-let IMG_STORE_BASE = "";
-try { if (window.NGGApi && NGGApi.config) NGGApi.config().then(c => { IMG_STORE_BASE = String((c && c.images && c.images.storeBase) || "").replace(/\/+$/, ""); }).catch(() => {}); } catch (e) {}
-/** Insert a transform AFTER any edits already in a Cloudinary URL (before the version marker). */
-function imgCldInsert(url, tf) {
-  if (!tf || url.indexOf("/upload/") < 0) return url;
-  if (/\/upload\/(?:[^/]+\/)*?v\d+\//.test(url)) return url.replace(/(\/upload\/(?:[^/]+\/)*?)(v\d+\/)/, "$1" + tf + "/$2");
-  return url.replace("/upload/", "/upload/" + tf + "/");
-}
-/** A bucket URL's key, when it is ours and names an image GD can size ("" otherwise). */
-function imgStoreKey(url, base) {
-  const b = base == null ? IMG_STORE_BASE : base;
-  if (!b || url.indexOf(b + "/") !== 0) return "";
-  let key = url.slice(b.length + 1).split(/[?#]/)[0];
-  try { key = decodeURIComponent(key); } catch (e) { return ""; }
-  return key && key.indexOf("..") < 0 && /^[A-Za-z0-9_./-]{3,300}$/.test(key) && /\.(jpe?g|png|webp)$/i.test(key) ? key : "";
-}
-/** THE address of an image at a named size (img_url in image-sizes.php, rule for rule). */
-function imgUrl(url, size, storeBase) {
-  if (!url || typeof url !== "string" || !IMG_SIZES[size]) return url;
-  if (/^https?:\/\/res\.cloudinary\.com\//.test(url) && url.indexOf("/upload/") >= 0)
-    return imgCldInsert(url, url.indexOf("/video/upload/") >= 0 ? IMG_EDITS.video : IMG_SIZES[size].cld);
-  const m = /^((?:https?:\/\/[^/]+)?\/api\/public\/photo\.php\?p=[0-9a-f]{32}\.(?:jpg|png|webp))(?:&s=[a-z]+)?$/.exec(url);
-  if (m) return m[1] + "&s=" + size;
-  if (imgStoreKey(url, storeBase)) return "/api/public/photo.php?u=" + encodeURIComponent(url) + "&s=" + size;
-  return url;
-}
-/** The named size for a box `w` pixels wide: the smallest of the four display
- *  sizes that covers it — never a new width, so nothing new is made per screen. */
-function imgSizeFor(w) {
-  if (!w) return "wide";
-  return w <= 128 ? "avatar" : w <= 320 ? "thumb" : w <= 640 ? "feed" : "wide";
-}
+const CLD_ENHANCE = "c_thumb,g_face,w_600,h_750,e_improve,q_auto";
+const CLD_PLAIN   = "c_thumb,g_face,w_600,h_750,q_auto"; // same framing, no e_improve → the "before"
 
 function cldEnhance(url) {
-  return url && url.indexOf("/upload/") !== -1 ? url.replace("/upload/", "/upload/" + IMG_EDITS.capture_enhance + "/") : url;
+  return url && url.indexOf("/upload/") !== -1 ? url.replace("/upload/", "/upload/" + CLD_ENHANCE + "/") : url;
 }
 
 /* What to say when the browser cannot turn a picked file into something the
@@ -2074,7 +2011,7 @@ function PhotoCompare({ url, radius = "0", onError }) {
   const [orig, setOrig] = React.useState(false);
   const canCompare = !!(url && url.indexOf("/upload/") !== -1);
   React.useEffect(() => { setOrig(false); }, [url]); // a fresh capture resets to "enhanced"
-  const shown = orig && canCompare ? cldWith(url, IMG_EDITS.capture_plain) : url;
+  const shown = orig && canCompare ? cldWith(url, CLD_PLAIN) : url;
   const pill = { position: "absolute", top: 8, left: 8, fontSize: 10.5, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", padding: "3px 8px", borderRadius: 999, background: orig ? "rgba(0,0,0,.6)" : "rgba(245,176,38,.92)", color: orig ? "#fff" : "#2b2100", pointerEvents: "none" };
   const btn = { position: "absolute", bottom: 8, right: 8, width: 34, height: 34, borderRadius: "50%", border: "none", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 17, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1, boxShadow: "0 2px 8px rgba(0,0,0,.35)" };
   return (
@@ -2367,7 +2304,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
    live preview instead of fetching a new derivative on every slider tick. */
 function buildEditTransform(spec, omitZoom) {
   const g = spec.gravity || "face";
-  const parts = imgEdit("card_face", { g }).split(",");   // the registry's card-face edit
+  const parts = ["c_fill", "g_" + g, "w_600", "h_750", "f_auto", "q_auto:good", "e_improve:30"];
   if (spec.brighten) parts.push("e_brightness:18");
   if (spec.sharpen) parts.push("e_sharpen:80");
   let chain = parts.join(",");

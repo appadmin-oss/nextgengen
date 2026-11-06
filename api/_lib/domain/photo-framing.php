@@ -211,7 +211,7 @@ function photo_frame_basis(string $url): ?array {
         }
         $base = 'https://res.cloudinary.com/' . $m[1] . '/image/upload/' . ($keep ? implode('/', $keep) . '/' : '');
         return ['key' => sha1($base . $rest), 'kind' => 'cloudinary',
-                'fetch' => $base . img_edit('frame_fetch', ['m' => PFRAME_IMG_MAX]) . '/' . $rest];
+                'fetch' => $base . 'c_limit,w_' . PFRAME_IMG_MAX . ',h_' . PFRAME_IMG_MAX . ',f_jpg,q_auto/' . $rest];
     }
     // Our own bucket (object-store.php): fetched as stored; the browser shrank it before upload.
     if (store_hosted($u)) return ['key' => sha1('store:' . store_key_of($u)), 'kind' => 'store', 'fetch' => $u];

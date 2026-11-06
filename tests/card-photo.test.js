@@ -19,11 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-/* The named edits card-photo.jsx builds its URLs from live in components.jsx's
-   image registry (IMG_EDITS, imgEdit) — loaded first, as index.html does. */
-const comp = fs.readFileSync(path.join(__dirname, '..', 'components.jsx'), 'utf8');
-const imgReg = comp.slice(comp.indexOf('const IMG_SIZES = {'), comp.indexOf('let IMG_STORE_BASE'));
-const src = imgReg + '\n' + fs.readFileSync(path.join(__dirname, '..', 'card-photo.jsx'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '..', 'card-photo.jsx'), 'utf8');
 const T = { React: {}, fetch: () => Promise.reject(new Error('offline')) };
 vm.createContext(T);
 vm.runInContext(src + '\n;Object.assign(this, { CPH_ABOVE, CPH_BELOW, CPH_WIDE });', T);

@@ -389,7 +389,7 @@ class Mp9Portal extends React.Component {
     const name = p.fullName || m.fullName || "";
     const sess = d.session || null, stats = d.stats || {};
     return { name, first: t.firstName || mp9First(name), ini: mp9Ini(name), id: p.displayId || m.displayId || p.memberId || m.memberId || "", memberId: p.memberId || m.memberId || "",
-      centre: p.centre || m.centre || "", track: p.track || m.track || "", photo: imgUrl(m.photoUrl || "", "thumb"), hasPhoto: !!m.photoUrl, noPhoto: !m.photoUrl,
+      centre: p.centre || m.centre || "", track: p.track || m.track || "", photo: m.photoUrl || "", hasPhoto: !!m.photoUrl, noPhoto: !m.photoUrl,
       age: t.age, older: !(t.age !== null && t.age !== undefined && t.age < 14),
       cohort: sess ? sess.name + " " + sess.year : "", stage: "Level " + (stats.level || (t.glance || {}).level || 1) + ((this.dd("mom") || {}).momentum ? " · " + this.dd("mom").momentum.levelName : ""),
       week: sess ? sess.weekOf : 0, weeks: sess ? sess.totalWeeks : 0, sessEnds: sess && sess.endDate ? sess.name + ", ends " + mp9Date(sess.endDate, { day: "numeric", month: "long" }) : "this session" };

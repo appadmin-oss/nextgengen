@@ -42,7 +42,7 @@ const CPH_BELOW = 3.6;     // eye line to the bottom of the frame (upper chest)
 const CPH_WIDE = 7;        // the frame's width
 const CPH_SLACK_H = 1.35;  // a photo up to 35% taller than the frame is still head and shoulders
 const CPH_SLACK_W = 1.6;   // …and up to 60% wider (a little background either side is normal)
-const CPH_DETECT = IMG_EDITS.face_detect;   // any face-gravity crop makes Cloudinary report the landmarks
+const CPH_DETECT = "c_thumb,g_face,w_200,h_200";   // any face-gravity crop makes Cloudinary report the landmarks
 
 /** A Cloudinary delivery URL split into its parts, or null for any other URL. */
 function cphCloudinary(url) {
@@ -132,7 +132,7 @@ function cphCardUrl(parts, wPx, hPx, crop) {
   const segs = cphKeepChain(parts.chain);
   if (crop) segs.push("c_crop,x_" + crop.x + ",y_" + crop.y + ",w_" + crop.w + ",h_" + crop.h);
   // f_jpg, not f_auto: one format per size (print wants JPEG anyway), so each box size is one derived copy, not two.
-  segs.push(imgEdit("print_pad", { w: Math.round(wPx), h: Math.round(hPx) }));
+  segs.push("c_pad,w_" + Math.round(wPx) + ",h_" + Math.round(hPx) + ",b_auto:predominant_gradient,f_jpg,q_auto:good");
   return parts.prefix + segs.join("/") + "/" + parts.rest;
 }
 /** The two lookups: the stored image's size and steps, and its landmarks. */

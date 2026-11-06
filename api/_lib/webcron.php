@@ -212,8 +212,6 @@ function web_cron_run(): void {
                 if (web_cron_due('club_ann', web_cron_cfg('club_ann', 600)) && function_exists('cp_ann_due_tick')) web_cron_guard('club_ann', fn() => cp_ann_due_tick());
                 // Bucket files nothing uses any more (a week old): deleted, daily (media-objects.php).
                 if (web_cron_due('media_sweep', web_cron_cfg('media_sweep', 86400)) && function_exists('media_obj_sweep')) web_cron_guard('media_sweep', fn() => media_obj_sweep());
-                // Every stored photo at the named sizes, made once with GD, a batch at a time (image-sizes.php).
-                if (web_cron_due('img_sizes', web_cron_cfg('img_sizes', 600)) && function_exists('img_sizes_tick')) web_cron_guard('img_sizes', fn() => img_sizes_tick());
                 if (web_cron_due('media_usage', web_cron_cfg('media_usage', MEDIA_REFRESH_SECONDS)) && function_exists('media_usage_refresh')) web_cron_guard('media_usage', fn() => media_usage_refresh());
                 /* Flag anybody whose clock ran out while nobody was watching.
                  * The board poll catches this the instant somebody looks; two

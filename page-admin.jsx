@@ -4683,7 +4683,7 @@ function AdminMentorship() {
         {roster.mentors.map(m => (
           <div key={m.mentorId} className="admin-roster-card">
             <div className="admin-roster-head">
-              {m.photoUrl ? <img src={imgUrl(m.photoUrl, "avatar")} alt="" className="admin-roster-avatar" onError={e => { e.currentTarget.hidden = true; }}/> : <div className="admin-roster-avatar admin-card-img-fallback">{(m.fullName || "?").charAt(0)}</div>}
+              {m.photoUrl ? <img src={m.photoUrl} alt="" className="admin-roster-avatar" onError={e => { e.target.style.display = "none"; }}/> : <div className="admin-roster-avatar admin-card-img-fallback">{(m.fullName || "?").charAt(0)}</div>}
               <CentreRing centre={m.centre} centres={roster.centres} url={m.photoUrl} name={m.fullName} size={38}/>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="admin-roster-name">
@@ -8907,7 +8907,7 @@ function ApplicantDetail({ a }) {
   const dobLine = a.dob ? (a.dob + (age != null ? " · age " + age : "")) : (age != null ? "age " + age : "");
   return (
     <div className="admin-detail">
-      {a.photoUrl ? <img className="admin-detail-photo" src={imgUrl(a.photoUrl, "thumb")} alt="" onError={e => { e.currentTarget.hidden = true; }}/> : null}
+      {a.photoUrl ? <img className="admin-detail-photo" src={a.photoUrl} alt="" onError={e => { e.currentTarget.hidden = true; }}/> : null}
       <DetailRow label="Reference">{a.ref ? <span className="mono">{a.ref}</span> : null}</DetailRow>
       <DetailRow label="Full name">{fullName}</DetailRow>
       {(a.firstName || a.lastName) ? <DetailRow label="Name parts">{"First: " + (a.firstName || "—") + "  ·  Other: " + (a.otherName || "—") + "  ·  Last: " + (a.lastName || "—")}</DetailRow> : null}
