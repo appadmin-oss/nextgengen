@@ -8167,6 +8167,19 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .stt-tab { display: inline-flex; align-items: center; gap: 6px; min-height: var(--c-tap); padding: 0 14px; border: 0; border-radius: var(--c-r-pill); background: transparent; color: var(--stt-ink-2); font: 500 14px/1 inherit; cursor: pointer; white-space: nowrap; }
 .stt-tab:hover { background: var(--stt-soft); }
 .stt-tab.is-on { background: var(--stt-ink); color: #fff; }
+/* Labs hub: one card per subject Lab, generated from NGG_LABS. */
+.stt-back { display: inline-flex; align-items: center; gap: 6px; min-height: var(--c-tap); margin: 0 0 6px; padding: 0 4px; border: 0; background: none; color: var(--stt-ink-2); font: inherit; font-weight: 600; cursor: pointer; }
+.stt-back:focus-visible { outline: 3px solid var(--stt-go); outline-offset: 2px; border-radius: 8px; }
+.stt-hub-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.stt-hub-card { width: 100%; display: flex; align-items: center; gap: 14px; min-height: 96px; padding: 16px; border: 1px solid var(--stt-line); border-radius: 16px; background: var(--stt-card); color: var(--stt-ink); font: inherit; text-align: left; cursor: pointer; }
+.stt-hub-card:hover { border-color: var(--stt-go); }
+.stt-hub-card:focus-visible { outline: 3px solid var(--stt-go); outline-offset: 2px; }
+.stt-hub-i { flex-shrink: 0; width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; background: var(--stt-soft); color: var(--stt-go); font-size: 26px; }
+.stt-hub-tx { flex: 1; display: flex; flex-direction: column; gap: 3px; line-height: 1.4; }
+.stt-hub-tx b { font-size: 17px; }
+.stt-hub-tx span { color: var(--stt-ink-2); font-size: 14px; }
+.stt-hub-tx .stt-hub-meta { color: var(--stt-ink-3); font-size: 13px; }
+.stt-hub-more { margin: 16px 0 0; color: var(--stt-ink-2); line-height: 1.5; }
 .stt-tab:focus-visible, .stt-btn:focus-visible, .stt-chip:focus-visible, .stt-key:focus-visible, .stt-grade:focus-visible, .stt-link:focus-visible, .stt-icon:focus-visible { outline: 3px solid var(--gold-500); outline-offset: 2px; }
 .stt-panel { container-type: inline-size; max-width: 1040px; margin: 0 auto; padding: 20px 16px 64px; }
 .stt-panel-h { margin-bottom: 16px; }

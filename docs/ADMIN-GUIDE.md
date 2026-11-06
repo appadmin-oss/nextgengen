@@ -1769,28 +1769,33 @@ has no question source — see **Settings → AI** and the `study_bank` block in
 
 ### Study tools (/study)
 
-Members open **Learn → Labs & tools ↗** in their portal (or go to `/study`). It is
-their own kit, and nothing in it is seen by staff. Five tabs, with similar
-tools together and handing work to each other:
+Members open **Labs** under **Your apps**, or **Learn → Labs & tools ↗**, in their portal (or go to
+`/study`). It is their own kit, and nothing in it is seen by staff. Four tabs, each named for what the
+member came to do (owner, 6 Nov 2026: the old seven-tab row put "Maths", a calculator, beside "Maths
+Lab", a course, and "Course labs" beside the Labs):
 
 - **Today** — the focus timer (25-minute blocks with breaks, or 15, 45, 50),
   beside the week: focus minutes by day, the study streak, cards due and the
   best typing speed.
+- **Labs** — one card per subject Lab (**Maths Lab**, **Physics Lab**, and each new Lab as it is added;
+  the list comes from the Lab registry). Inside a Lab the **Labs** tab stays lit and **All Labs** leads
+  back. A second tab, **Course tools**, holds one set per division, the member's own first:
+  Tech (a code playground for HTML, CSS and JavaScript, and a password-strength
+  checker), Creative (metronome with tap tempo; piano with scales and chords),
+  Media (colour contrast to the accessibility standard; palette maker),
+  Business (break-even and profit, budget planner, savings and interest).
 - **Revise** — **Flashcards** with spaced repetition (a card they know comes
   back after a day, then six, then weeks; one they miss comes back the same
   day; typed, pasted "front — back", or written by the study helper from a
   lesson); **Quiz me** (five multiple-choice questions on one of their lessons,
   and the ones they miss become flashcards with one press); **Summarise notes**
   (their own class notes summarised, with key terms that become flashcards).
-- **Maths** — a scientific **calculator** (a sum with x in it is one press from
-  its graph), a **graph plotter** with a table of values, and **number bases**.
-- **Words** — a **dictionary** (any word looked up can be added to a "My words"
-  deck) and **typing practice**.
-- **Course labs** — one per division, the member's own first:
-  Tech (a code playground for HTML, CSS and JavaScript, and a password-strength
-  checker), Creative (metronome with tap tempo; piano with scales and chords),
-  Media (colour contrast to the accessibility standard; palette maker),
-  Business (break-even and profit, budget planner, savings and interest).
+- **Tools** — a scientific **calculator** (a sum with x in it is one press from
+  its graph), a **graph plotter** with a table of values, **number bases**, a **dictionary** (any word
+  looked up can be added to a "My words" deck) and **typing practice**.
+
+Old addresses forward: `/study/maths…` and `/study/words…` open the same tool under **Tools**, and
+`/study/labs` (once Course labs) is the Labs hub, with Course tools one tab across.
 
 The study helper (flashcards from a lesson, quizzes, note summaries) uses the
 same daily allowance as the helper on a lesson page, and refuses to summarise
@@ -4123,7 +4128,7 @@ read: the words "Voice note (0:42)" are what it carries, so a mentor should
 listen to one within the usual reply window.
 
 **The Anchor Journal and the portal are one journal.** The desktop sidebar
-has **Your apps → Anchor Journal / Maths Lab / Physics Lab / Community**; Today has **Write today's
+has **Your apps → Anchor Journal / Labs / Community**; Today has **Write today's
 reflection**; the simple view has a **My journal** tile. All open in the same
 tab, and the journal has a **My NGG** link back. In the journal, **Share
 with [mentor]** (off by default) shares that entry with the mentor, who is
@@ -4998,8 +5003,8 @@ The owner found the portal hard to navigate, unintuitive and patchy. What change
   **Ask NGG**. The screens are the same and so are their addresses (`/dashboard/records` and so on), so
   bookmarks and links keep working.
 - **No word means two things.** "Learn" was both an area of the portal and an app under **Your apps**.
-  Your apps now lists **Anchor Journal**, **Maths Lab**, **Physics Lab** and **Community**. The Labs come
-  from the Lab registry, so a new Lab appears there on its own.
+  Your apps now lists **Anchor Journal**, **Labs** and **Community**. **Labs** opens the Labs hub, which
+  lists every subject Lab from the Lab registry, so a new Lab appears there on its own.
 - **A tab that leaves the portal says so.** **Learn → Labs & tools ↗** opens the Labs in their own app,
   and its description says so.
 - **Tabs wrap on a phone.** An area's tabs wrap onto a second line rather than scrolling off the edge

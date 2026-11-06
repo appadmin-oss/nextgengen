@@ -99,9 +99,9 @@ function cleanup() { try { if (server) process.kill(-server.pid); } catch (_) {}
     chk('Today shows the focus timer and the week together: a streak, 0 due, 3 reviewed', !!(await p.$('.stt-ring')) && /1\s*day/.test(ov) && /0\s*due now/.test(ov) && /3 reviewed this week/.test(ov), ov.slice(0, 300));
 
     // ── Tabs by arrow key ──
-    await p.focus('#stt-tab-home'); await p.keyboard.press('ArrowRight'); await p.keyboard.press('ArrowRight');
-    chk('the tabs move with the arrow keys, focus goes with them, and the address follows', /\/study\/maths$/.test(p.url()) && (await p.getAttribute('#stt-tab-maths', 'aria-selected')) === 'true'
-      && (await p.evaluate(() => document.activeElement && document.activeElement.id)) === 'stt-tab-maths');
+    await p.focus('#stt-tab-home'); await p.keyboard.press('ArrowRight');
+    chk('the tabs move with the arrow keys, focus goes with them, and the address follows', /\/study\/labs$/.test(p.url()) && (await p.getAttribute('#stt-tab-labs', 'aria-selected')) === 'true'
+      && (await p.evaluate(() => document.activeElement && document.activeElement.id)) === 'stt-tab-labs');
     await p.click('#stt-tab-home');
 
     // ── Focus timer ──
@@ -116,7 +116,7 @@ function cleanup() { try { if (server) process.kill(-server.pid); } catch (_) {}
     chk('a finished block is logged to the member\'s record', logged && php(`echo (int)db_row("SELECT SUM(minutes) n FROM study_sessions WHERE memberId = 'NGG-STT-1' AND tool = 'focus'")['n'];`) === '15');
 
     // ── Typing ──
-    await p.click('#stt-tab-words'); await p.click('#stt-sub-typing');
+    await p.click('#stt-tab-tools'); await p.click('#stt-sub-typing');
     const passage = await p.evaluate(() => document.querySelector('.stt-type-text').getAttribute('aria-label').replace(/^Type this: /, ''));
     await p.click('#stt-type-in');
     await p.keyboard.type(passage, { delay: 5 });
@@ -127,7 +127,7 @@ function cleanup() { try { if (server) process.kill(-server.pid); } catch (_) {}
     chk('…and the run is saved', Number(php(`echo (int)db_row("SELECT MAX(wpm) n FROM study_sessions WHERE memberId = 'NGG-STT-1' AND tool = 'typing'")['n'];`)) > 0);
 
     // ── Calculator ──
-    await p.click('#stt-tab-maths');
+    await p.click('#stt-tab-tools'); await p.click('#stt-sub-calc');
     await p.fill('#stt-calc-in', '2(3 + 4)^2');
     chk('the calculator works as you type, with implied multiplication and powers', (await p.innerText('#stt-calc-out')) === '= 98');
     await p.press('#stt-calc-in', 'Enter');
@@ -152,7 +152,7 @@ function cleanup() { try { if (server) process.kill(-server.pid); } catch (_) {}
     await p.fill('#stt-calc-in', 'x^2 - 9');
     await p.click('button:has-text("plot it as a graph")');
     await p.waitForSelector('.stt-graph');
-    chk('the calculator hands a sum with x in it to the graph plotter', (await p.inputValue('#stt-fn-0')) === 'x^2 - 9' && /\/study\/maths\/graph$/.test(p.url()));
+    chk('the calculator hands a sum with x in it to the graph plotter', (await p.inputValue('#stt-fn-0')) === 'x^2 - 9' && /\/study\/tools\/graph$/.test(p.url()));
     // ── Graphs ──
     await p.fill('#stt-fn-0', 'x^2 - 4'); await p.fill('#stt-fn-1', '');
     await p.waitForTimeout(200);
@@ -171,7 +171,7 @@ function cleanup() { try { if (server) process.kill(-server.pid); } catch (_) {}
     chk('number bases: 255 is 11111111, FF, and needs 8 bits', /11111111/.test(await p.innerText('.stt-dl')) && /\bFF\b/.test(await p.innerText('.stt-dl')) && /Bits needed\s*8/.test(await p.innerText('.stt-dl')));
 
     // ── Dictionary ──
-    await p.click('#stt-tab-words');
+    await p.click('#stt-tab-tools'); await p.click('#stt-sub-dict');
     await p.fill('#stt-dict-q', 'resilient'); await p.press('#stt-dict-q', 'Enter');
     await p.waitForSelector('.stt-dict', { timeout: 10000 });
     chk('the dictionary gives meaning, example and synonyms', /Able to recover quickly/.test(await p.innerText('.stt-dict')) && /resilient learner/.test(await p.innerText('.stt-dict')));
@@ -185,8 +185,24 @@ function cleanup() { try { if (server) process.kill(-server.pid); } catch (_) {}
     await p.fill('#stt-dict-q', 'zzzz'); await p.press('#stt-dict-q', 'Enter');
     await p.waitForSelector('text=/No entry for/', { timeout: 10000 });
     chk('…and a word it does not know says so', true);
-    // ── Course labs ──
+    // ── Labs: one tab, a hub generated from the Lab registry, every subject Lab behind it ──
     await p.click('#stt-tab-labs');
+    await p.waitForSelector('.stt-hub-card', { timeout: 15000 });
+    const hub = await p.locator('.stt-hub-card b').allInnerTexts();
+    chk('the tab row is Today, Labs, Revise, Tools — named for what you came to do', JSON.stringify(await p.locator('.stt-tab').allInnerTexts()) === JSON.stringify(['Today', 'Labs', 'Revise', 'Tools']));
+    if (process.env.STT_SHOT) await p.screenshot({ path: process.env.STT_SHOT, fullPage: true });
+    chk('the Labs hub lists every subject Lab (' + hub.join(', ') + ')', hub.includes('Maths Lab') && hub.includes('Physics Lab'));
+    await p.click('.stt-hub-card:has-text("Physics Lab")');
+    await p.waitForTimeout(400);
+    chk('inside a subject Lab the Labs tab stays lit, and "All Labs" leads back', /\/study\/physics/.test(p.url()) && (await p.getAttribute('#stt-tab-labs', 'aria-selected')) === 'true' && await p.locator('.stt-back:has-text("All Labs")').count() === 1);
+    await p.click('.stt-back');
+    chk('…and back on the hub', /\/study\/labs$/.test(p.url()) && await p.locator('.stt-hub-card').count() >= 2);
+    for (const [from, to] of [['/study/maths/graph', '/study/tools/graph'], ['/study/words', '/study/tools/dict'], ['/study/maths', '/study/tools']]) {
+      await p.goto(BASE + from, { waitUntil: 'domcontentloaded' }); await waitForBoot(p); await p.waitForSelector('.stt-tab.is-on', { timeout: 30000 }); await p.waitForTimeout(200);
+      chk('an old address forwards: ' + from + ' → ' + to, new URL(p.url()).pathname === to);
+    }
+    // ── Course tools ──
+    await p.click('#stt-tab-labs'); await p.click('#stt-sub-course');
     await p.click('button:has-text("Code playground")');
     await p.waitForSelector('.stt-preview');
     await p.click('.stt-chip:has-text("JavaScript")');
@@ -223,14 +239,14 @@ function cleanup() { try { if (server) process.kill(-server.pid); } catch (_) {}
     // ── Signed out ──
     const anon = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage(); const aerr = []; anon.on('pageerror', e => aerr.push(String(e).slice(0, 200)));
     await anon.goto(BASE + '/study/cards', { waitUntil: 'domcontentloaded' }); await waitForBoot(anon);
-    await anon.waitForSelector('.stt-state', { timeout: 30000 });
+    await anon.waitForSelector('.stt-state:not([aria-busy])', { timeout: 30000 }).catch(() => {});
     chk('signed out, Revise asks to sign in — and says what works without one', /Sign in to keep flashcards/.test(await anon.innerText('.stt-panel')) && !!(await anon.$('.stt-state button:has-text("Sign in")')));
     let wide = [];
-    for (const t of ['home', 'maths', 'words', 'labs']) {
+    for (const t of ['home', 'labs', 'tools']) {
       await anon.click('#stt-tab-' + t); await anon.waitForTimeout(150);
       if (!(await anon.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))) wide.push(t);
     }
-    chk('signed out, the other tools work, and none scrolls sideways on a phone', !wide.length && /= 9/.test(await (async () => { await anon.click('#stt-tab-maths'); await anon.fill('#stt-calc-in', '3^2'); return anon.innerText('#stt-calc-out'); })()), wide.join(','));
+    chk('signed out, the other tools work, and none scrolls sideways on a phone', !wide.length && /= 9/.test(await (async () => { await anon.click('#stt-tab-tools'); await anon.fill('#stt-calc-in', '3^2'); return anon.innerText('#stt-calc-out'); })()), wide.join(','));
     chk('no page errors (signed out)', !aerr.length, aerr.join(' | '));
   } catch (e) { failed++; console.error('  ✗ FAIL: ' + (e && e.stack || e)); }
   finally { try { browser && await browser.close(); } catch (_) {} cleanup(); }

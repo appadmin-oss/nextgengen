@@ -7040,3 +7040,18 @@ Logs were there, in two Stage 7 topics, but:
   - PHP 6919/0; member v9 57/0; maths lab e2e 73/0; maths shots 23; physics shots 29.
   - labs-client 16/0; no-important clean; contrast 21/0; build 31/0.
 - **Comparison artifact**: Smartick added as a ninth product, after a comment on the artifact.
+
+
+## 6 Nov 2026 (later) — "it should just say labs"; the study app's own navigation
+
+- **Portal.**
+  - Your apps carries one **Labs** entry (`/study/labs`), not one per Lab. Learn's "Labs & tools ↗" and the hero's "Practise in a Lab" go there too.
+- **Study app** (`tools-core.jsx`). The tab row goes from seven tabs (Today, Revise, Maths, Words, Maths Lab, Physics Lab, Course labs) to four: **Today · Labs · Revise · Tools**.
+  - **Labs** is a hub, `SttLabHub`, generated from `NGG_LABS`. Its second tab is **Course tools** (the old Course labs, `SttLabs`).
+  - **Tools** merges Maths and Words.
+  - Subject Labs are `hidden` entries with `parent: "labs"`: they keep their deep addresses, light the Labs tab, and show **All Labs**.
+  - `STT_ALIASES` forwards `/study/maths[/graph|bases]` and `/study/words[/typing]` to `/study/tools/...`. `/study/labs` is now the hub.
+- **Tests.**
+  - `study-tools.test.js` 46/0. It adds checks for the four-tab row, the hub listing every Lab, the lit Labs tab with All Labs inside a Lab, and the three old addresses forwarding. A signed-out wait now waits past the loading state.
+  - `mathlab-e2e` 73/0: the Physics Lab sits under the Labs tab.
+  - `member-v9`: one "Labs" entry in Your apps.

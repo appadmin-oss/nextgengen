@@ -6,11 +6,10 @@ const MP9_JOURNAL_URL = "/journal/";
    at /learn — a lesson has an address now, and the portal links into it
    rather than drawing a second copy of it. */
 /* The apps a member opens outside the portal. "Learn" used to sit here as well, beside the Learn
-   area it duplicated, so a child saw the same word twice and two different pages behind it. The
-   Labs come from NGG_LABS (tools-core.jsx, loaded earlier) so a new Lab appears here by itself. */
-const MP9_APPS = [["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL]]
-  .concat((typeof NGG_LABS !== "undefined" ? NGG_LABS : []).map(l => [l.title, "ph " + l.icon, "/study/" + l.seg]))
-  .concat([["Community", "ph ph-users-three", "/community"]]);
+   area it duplicated, so a child saw the same word twice and two different pages behind it. One
+   "Labs" entry (owner: "it should just say labs") opens the Labs hub, which lists every subject Lab
+   from NGG_LABS, so a new Lab needs no change here. */
+const MP9_APPS = [["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Labs", "ph ph-flask", "/study/labs"], ["Community", "ph ph-users-three", "/community"]];
 /* The idea sheet's chips, and the topic the server keeps for each (MEMBER_FEEDBACK_TOPICS). */
 const MP9_IDEA_TOPICS = { "How NGG is going for me": "experience", "An activity idea": "idea", "Something NGG should change": "change", "Something I love": "love", "Something in the portal isn’t working": "app" };
 /* The experience scale, 1 to 5, as MEMBER_FEEDBACK_RATINGS words it. Faces as well as words: the youngest members read the face first. */
@@ -30,7 +29,7 @@ function mp9SimpleAreas(older) {
     ["Help", "ph ph-lifebuoy", [["help", "Get help"], ["support", "Ask the NGG team"], ["me", "My profile"], ["records", "My requests"]].concat(older ? [["money", "Money"]] : [])]];
 }
 const MP9_SIMPLE_SUBS = { mentor: "Send a message or a voice note", companion: "Tell us about your week", community: "See what your club is sharing", learn: "Your lessons and homework", sat: "What happens this Saturday",
-  timetable: "When to come to the centre", tools: "Maths Lab, Physics Lab, flashcards and a focus timer · opens in its own app", growth: "What you’re working towards", passport: "Badges you’ve earned", journal: "Write about your day",
+  timetable: "When to come to the centre", tools: "The Labs, flashcards and a focus timer · opens in its own app", growth: "What you’re working towards", passport: "Badges you’ve earned", journal: "Write about your day",
   results: "Add your school report", help: "Ask a grown-up at NGG for help", support: "When something isn’t working", me: "Your name, photo and settings", records: "Things you’ve asked us for", opps: "Things you can apply for" };
 /* Today's big buttons in the simple view: the four things a child comes to do,
    one press each, before the full Today screen below. */
@@ -743,7 +742,7 @@ Object.assign(Mp9Portal.prototype, {
         go: () => { try { location.assign(url); } catch (_) {} } })) }];
     const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const bb = bdg(id); return { l, on: on ? "true" : "false", fg: on ? accOn : "#5a5a60", fw: on ? 600 : 500, bar: on ? accOn : "transparent", badge: bb, hasBadge: !!bb, go: () => this.go(id) }; });
     const tabbar = areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? acc(a) : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; });
-    const subs = { support: "Cases you’ve opened with the NGG team", sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Maths Lab, Physics Lab, flashcards, focus timer · opens in its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
+    const subs = { support: "Cases you’ve opened with the NGG team", sat: "This week's plan and mission", journal: "Opens in its own app", tools: "The Labs, flashcards, focus timer and tools · opens in its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
     if (simple) Object.assign(subs, MP9_SIMPLE_SUBS);
     const flat = [].concat(...areas.map(a => a.kids.map(([id, l]) => ({ id, label: l, icon: a.icon }))));
     const moreGroups = areas.slice(1).map(a => ({ h: a.label, items: a.kids.map(([id, label]) => ({ label, icon: a.icon, badge: bdg(id), hasBadge: !!bdg(id), d: subs[id] || "", go: () => this.go(id) })) }));
@@ -906,7 +905,7 @@ Object.assign(Mp9Portal.prototype, {
         <span className="m9x-hero-eyebrow" id="m9x-hero-h">All caught up</span>
         <b className="m9x-hero-t">Nothing waiting for you. Nice work.</b>
         {nudge ? <span className="m9x-hero-s">{nudge}</span> : null}
-        <a className="m9x-hero-go" href={"/study/" + ((typeof NGG_LABS !== "undefined" && NGG_LABS[0]) ? NGG_LABS[0].seg : "lab")}>Practise in a Lab<i className="ph ph-arrow-right" aria-hidden="true"/></a>
+        <a className="m9x-hero-go" href="/study/labs">Practise in a Lab<i className="ph ph-arrow-right" aria-hidden="true"/></a>
       </div>}
       {/* The journal, one tap from Today, in the same tab (a new tab on Android loses the portal). */}
       {wrote ? <a className="m9x-hero-j is-done" href={MP9_JOURNAL_URL}><i className="ph-fill ph-check-circle" aria-hidden="true"/>You wrote in your journal today · open it</a>

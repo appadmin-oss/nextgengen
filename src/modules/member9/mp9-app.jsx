@@ -287,7 +287,7 @@ class Mp9Portal extends React.Component {
   /* ── Navigation (the address is the screen) ───────────────────────────── */
   go(scr, extra) {
     // Study tools are their own app (/study), as the Anchor Journal is.
-    if (scr === "tools") { location.href = "/study"; return; }
+    if (scr === "tools") { location.href = "/study/labs"; return; }
     const st = this.state;
     const path = "/dashboard" + (scr === "today" ? "" : "/" + (MP9_PATHS[scr] || scr));
     try { if (location.pathname !== path) history.pushState({ page: "dashboard" }, "", path); } catch (_) {}

@@ -144,7 +144,7 @@ async function as(memberId, admin, viewport) {
     // One streak: the banner chip and the Streak tile read the same number.
     const streaks = await mb.evaluate(() => { const t = document.querySelector('main').innerText; const a = (t.match(/(\d+)-day streak/) || [])[1] || (/Start a streak/.test(t) ? '0' : null); const b = (t.match(/Streak\s*\n?\s*(\d+) days?/) || [])[1]; return [a, b]; });
     chk('Today: the streak chip and the Streak tile agree (' + streaks.join(' / ') + ')', streaks[1] == null || streaks[0] === streaks[1]);
-    chk('Your apps: the Labs, not a second "Learn"', await mb.evaluate(() => { const t = document.querySelector('aside').innerText; return /Maths Lab/.test(t) && /Physics Lab/.test(t) && !/Your apps[\s\S]*\bLearn\b/.test(t); }));
+    chk('Your apps: one "Labs", not a list of Labs or a second "Learn"', await mb.evaluate(() => { const t = document.querySelector('aside').innerText; return /\bLabs\b/.test(t) && !/Maths Lab|Physics Lab/.test(t) && !/Your apps[\s\S]*\bLearn\b/.test(t); }));
     chk('Today: To do, the mentor’s last message and the Leadership Index from the server', /To do/i.test(today) && /Well done leading the team/.test(today) && /62 \/ 100/.test(today) && /\+8/.test(today));
     await shot(mb, 'today');
     await mb.click('main [role="radiogroup"][aria-label="How are you doing"] button:has-text("Okay")');
@@ -388,7 +388,7 @@ async function as(memberId, admin, viewport) {
         const au = await as('NGG-MV-K1', false, { width: vw, height: vh });
         await au.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' }); await waitForBoot(au);
         await au.waitForSelector('.m9-app main', { timeout: 60000 }); await settle(au);
-        const areas = await au.evaluate(t => Array.from(document.querySelectorAll(t === 'd' ? '.m9-app aside nav button' : '.m9-app nav[aria-label="My NGG"] button')).map(b => b.innerText.trim()).filter(Boolean).filter(l => !/Journal$|Lab$|^Community$/.test(l)), tag);
+        const areas = await au.evaluate(t => Array.from(document.querySelectorAll(t === 'd' ? '.m9-app aside nav button' : '.m9-app nav[aria-label="My NGG"] button')).map(b => b.innerText.trim()).filter(Boolean).filter(l => !/Journal$|^Labs$|^Community$/.test(l)), tag);
         for (const area of areas) {
           const sel = (tag === 'd' ? '.m9-app aside nav button' : '.m9-app nav[aria-label="My NGG"] button') + ':has-text("' + area + '")';
           await au.click(sel).catch(() => {}); await settle(au); await au.waitForTimeout(600);

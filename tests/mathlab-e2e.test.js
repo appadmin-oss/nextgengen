@@ -255,8 +255,8 @@ async function physics(who, W, H, tag) {
   const shot = n => p.screenshot({ path: path.join(OUT, tag + '-physics-' + n + '.png') });
   await p.goto(BASE + '/study/physics', { waitUntil: 'domcontentloaded' });
   const ok = await p.waitForSelector('.mlb.is-physics .mlb-hero', { timeout: 60000 }).then(() => true, () => false);
-  chk(tag + ': /study/physics opens the Physics Lab, its tab is selected, and it has its own Exams tab',
-    ok && /Physics Lab/.test(await p.locator('.stt-tab.is-on').innerText()) && await p.locator('.mlb-navb:has-text("Exams")').count() === 1);
+  chk(tag + ': /study/physics opens the Physics Lab under the Labs tab, titled as itself, with its own Exams tab',
+    ok && (await p.locator('.stt-tab.is-on').innerText()).trim() === 'Labs' && /Physics Lab/.test(await p.locator('.stt-h2').innerText()) && await p.locator('.mlb-navb:has-text("Exams")').count() === 1);
   chk(tag + ': Physics Home starts the Physics climb (Stage 1 · Measurement and Matter)', /Measurement and Matter/.test(await p.locator('.mlb-main').innerText()));
   await shot('home');
   await p.goto(BASE + '/study/physics/map', { waitUntil: 'domcontentloaded' });

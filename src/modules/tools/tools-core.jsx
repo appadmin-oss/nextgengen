@@ -145,28 +145,40 @@ const NGG_LABS = [
     road: "The Physics road", roadP: "From measuring and forces in JSS Basic Science to senior secondary Physics: motion, energy, heat, waves, light, electricity and the atom. Every topic has something to play with before you calculate anything.",
     dailyP: "One puzzle a day from the top of the Physics road, the same for everyone in NGG. The hint is free and you get three tries." },
 ];
+/* The study app's own navigation (owner, 6 Nov 2026: "the in-app navigation is a bit illogical").
+   It used to be seven tabs in one row: Today, Revise, Maths, Words, Maths Lab, Physics Lab, Course
+   labs. "Maths" (a calculator) sat beside "Maths Lab" (a course), and "Course labs" beside the Labs.
+   Now there are four tabs, each named for what you came to do:
+     Today   the focus timer and your week
+     Labs    every subject Lab (Maths, Physics, the next one), plus the course tools
+     Revise  flashcards, quizzes, notes
+     Tools   calculator, graphs, number bases, dictionary, typing
+   A subject Lab keeps its own deep addresses (/study/lab/learn/MC-049) and is `hidden` from the row:
+   while you are in one, the Labs tab is lit (`parent`). */
 const STT_TOOLS = [
   { id: "home",   label: "Today",       icon: "ph-sun-horizon",  account: false, sub: "Focus timer, your week and what’s due",
     subs: [] },
+  { id: "labs",   label: "Labs",        icon: "ph-flask",        account: false, sub: "Climb a subject to your level, one topic at a time",
+    subs: [["subjects", "Subject Labs"], ["course", "Course tools"]] },
   { id: "revise", label: "Revise",      icon: "ph-cards",        account: true,  sub: "Flashcards, quizzes and notes — remember more",
     subs: [["cards", "Flashcards"], ["quiz", "Quiz me"], ["notes", "Summarise notes"]] },
-  { id: "maths",  label: "Maths",       icon: "ph-calculator",   account: false, sub: "Calculator, graphs and number bases",
-    subs: [["calc", "Calculator"], ["graph", "Graphs"], ["bases", "Number bases"]] },
-  { id: "words",  label: "Words",       icon: "ph-book-bookmark",account: false, sub: "Dictionary and typing practice",
-    subs: [["dict", "Dictionary"], ["typing", "Typing"]] },
+  { id: "tools",  label: "Tools",       icon: "ph-toolbox",      account: false, sub: "Calculator, graphs, number bases, dictionary and typing",
+    subs: [["calc", "Calculator"], ["graph", "Graphs"], ["bases", "Number bases"], ["dict", "Dictionary"], ["typing", "Typing"]] },
   /* The Labs (docs/LABS.md): each has its own screens, so it keeps its deeper addresses
      (/study/lab/learn/MC-049, /study/physics/map) — `deep` stops the shell rewriting them. */
-  ...NGG_LABS.map(l => ({ id: l.seg, label: l.title, icon: l.icon, account: false, deep: true, sub: l.sub, subs: [], lab: l.id })),
-  { id: "labs",   label: "Course labs", icon: "ph-flask",        account: false, sub: "Tools for Tech, Creative, Media and Business courses",
-    subs: [] },
+  ...NGG_LABS.map(l => ({ id: l.seg, label: l.title, icon: l.icon, account: false, deep: true, hidden: true, parent: "labs", sub: l.sub, subs: [], lab: l.id })),
 ];
 const STT_IDS = STT_TOOLS.map(t => t.id);
-/* Addresses the tools had before they were merged: still in bookmarks and links. */
-const STT_ALIASES = { cards: ["revise", "cards"], ai: ["revise", "quiz"], focus: ["home", ""], typing: ["words", "typing"], calc: ["maths", "calc"], graph: ["maths", "graph"], dict: ["words", "dict"] };
+const STT_TABS = STT_TOOLS.filter(t => !t.hidden);
+/* Addresses the tools had before they moved: still in bookmarks and links. [tool, sub] — a sub of
+   "" means "the second segment of the old address, if it names one, else the first sub". */
+const STT_ALIASES = { cards: ["revise", "cards"], ai: ["revise", "quiz"], focus: ["home", ""], typing: ["tools", "typing"], calc: ["tools", "calc"], graph: ["tools", "graph"], dict: ["tools", "dict"],
+  maths: ["tools", "calc", ["calc", "graph", "bases"]], words: ["tools", "dict", ["dict", "typing"]] };
 function sttRoute() {
   const seg = (typeof location !== "undefined" ? location.pathname : "").replace(/^\/+|\/+$/g, "").split("/");
   if (seg[0] !== "study") return { tool: "home", sub: "" };
-  if (STT_ALIASES[seg[1]]) return { tool: STT_ALIASES[seg[1]][0], sub: STT_ALIASES[seg[1]][1] };
+  const al = STT_ALIASES[seg[1]];
+  if (al) return { tool: al[0], sub: al[2] && al[2].includes(seg[2]) ? seg[2] : al[1] };
   const tool = STT_IDS.includes(seg[1]) ? seg[1] : "home";
   const def = STT_TOOLS.find(t => t.id === tool);
   const sub = def.subs.some(x => x[0] === seg[2]) ? seg[2] : (def.subs[0] ? def.subs[0][0] : "");
@@ -223,6 +235,7 @@ function ToolsApp({ setPage }) {
   }, [go]); // eslint-disable-line
   const def = STT_TOOLS.find(t => t.id === tool) || STT_TOOLS[0];
   const subDef = def.subs.find(x => x[0] === sub);
+  const tabOn = def.parent || def.id;   // a subject Lab lights the Labs tab
   React.useEffect(() => { try { document.title = (subDef ? subDef[1] : def.label) + " · Study tools · NGG"; } catch (_) {} }, [def, subDef]);
   const signedIn = me.phase === "ok" && !!me.member;
   // Arrow keys move along a tab row and focus goes with them (roving tabindex), Home and End to either end.
@@ -244,15 +257,16 @@ function ToolsApp({ setPage }) {
         <h1 className="stt-h1">Study tools</h1>
         <span className="stt-who">{signedIn ? (me.member.fullName || "").split(" ")[0] : ""}</span>
       </header>
-      <nav className="stt-tabs" role="tablist" aria-label="Study tools" onKeyDown={rowKey(STT_IDS, tool, id => go(id), "stt-tab-")}>
-        {STT_TOOLS.map(t => (
-          <button key={t.id} type="button" role="tab" id={"stt-tab-" + t.id} aria-selected={t.id === tool} aria-controls="stt-panel" tabIndex={t.id === tool ? 0 : -1}
-            className={"stt-tab" + (t.id === tool ? " is-on" : "")} onClick={() => go(t.id)}>
+      <nav className="stt-tabs" role="tablist" aria-label="Study tools" onKeyDown={rowKey(STT_TABS.map(t => t.id), tabOn, id => go(id), "stt-tab-")}>
+        {STT_TABS.map(t => (
+          <button key={t.id} type="button" role="tab" id={"stt-tab-" + t.id} aria-selected={t.id === tabOn} aria-controls="stt-panel" tabIndex={t.id === tabOn ? 0 : -1}
+            className={"stt-tab" + (t.id === tabOn ? " is-on" : "")} onClick={() => go(t.id)}>
             <i className={"ph " + t.icon} aria-hidden="true"/><span>{t.label}</span>
           </button>
         ))}
       </nav>
       <main id="stt-panel" className="stt-panel" role="tabpanel" aria-labelledby={"stt-tab-" + tool}>
+        {def.parent ? <button type="button" className="stt-back" onClick={() => go(def.parent)}><i className="ph ph-arrow-left" aria-hidden="true"/>All Labs</button> : null}
         <div className="stt-panel-h"><h2 className="stt-h2">{def.label}</h2><p className="stt-sub">{def.sub}</p></div>
         {def.subs.length > 1 && !needsAccount ? (
           <div className="stt-subtabs" role="tablist" aria-label={def.label} onKeyDown={rowKey(subIds, sub, s2 => go(tool, s2), "stt-sub-")}>
@@ -261,17 +275,32 @@ function ToolsApp({ setPage }) {
           </div>
         ) : null}
         {me.phase === "loading" && def.account ? <SttState kind="loading"/>
-          : needsAccount ? <SttState kind="empty" text="Sign in to keep flashcards, take quizzes and see your week. The focus timer, maths, words and course labs work without an account.">
+          : needsAccount ? <SttState kind="empty" text="Sign in to keep flashcards, take quizzes and see your week. The focus timer, the Labs and the tools work without an account.">
               <button type="button" className="stt-btn is-go" onClick={() => auth && auth.openSignIn && auth.openSignIn()}>Sign in</button></SttState>
           : tool === "home" ? <SttToday go={go} signedIn={signedIn}/>
           : tool === "revise" ? (sub === "quiz" ? <SttQuiz/> : sub === "notes" ? <SttNotes/> : <SttFlashcards/>)
-          : tool === "maths" ? (sub === "graph" ? <SttGraph/> : sub === "bases" ? <SttBases/> : <SttCalc/>)
-          : tool === "words" ? (sub === "typing" ? <SttTyping signedIn={signedIn}/> : <SttDict signedIn={signedIn}/>)
+          : tool === "tools" ? (sub === "graph" ? <SttGraph/> : sub === "bases" ? <SttBases/> : sub === "typing" ? <SttTyping signedIn={signedIn}/> : sub === "dict" ? <SttDict signedIn={signedIn}/> : <SttCalc/>)
           : def.lab ? <MathsLab key={def.lab} me={me}/>
-          : <SttLabs/>}
+          : tool === "labs" && sub === "course" ? <SttLabs/>
+          : <SttLabHub go={go}/>}
       </main>
     </div>
   );
+}
+
+/* ── Labs: one door to every subject Lab ─────────────────────────────────
+   Generated from NGG_LABS, so a new Lab (English is next) appears here, in the portal's
+   "Labs" link and in the Lab registry test at once — never typed into a second list. */
+function SttLabHub({ go }) {
+  return <div className="stt-hub">
+    <ul className="stt-hub-list">{NGG_LABS.map(l => <li key={l.id}>
+      <button type="button" className="stt-hub-card" onClick={() => go(l.seg)}>
+        <i className={"ph " + l.icon + " stt-hub-i"} aria-hidden="true"/>
+        <span className="stt-hub-tx"><b>{l.title}</b><span>{l.sub}</span><span className="stt-hub-meta">{l.daily}{l.exams ? " · timed exam practice" : ""}</span></span>
+        <i className="ph ph-arrow-right" aria-hidden="true"/>
+      </button></li>)}</ul>
+    <p className="stt-hub-more">Learning a course at NGG — Tech, Creative, Media or Business? Its practical tools are under <button type="button" className="stt-link" onClick={() => go("labs", "course")}>Course tools</button>.</p>
+  </div>;
 }
 
 /* ── Today: the focus timer, with the week beside it ─────────────────── */
@@ -321,7 +350,7 @@ function SttOverview({ go }) {
         <h3 id="stt-ty-h" className="stt-h3">Typing</h3>
         <p className="stt-big">{s.typing.best} <small>words a minute, best</small></p>
         <p className="stt-p">{s.typing.runs ? s.typing.runs + " runs" : "No runs yet"}</p>
-        <button type="button" className="stt-btn" onClick={() => go("words", "typing")}>Practise</button>
+        <button type="button" className="stt-btn" onClick={() => go("tools", "typing")}>Practise</button>
       </section>
     </div>
   );
