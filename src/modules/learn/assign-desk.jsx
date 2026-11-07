@@ -590,8 +590,8 @@ function CurStudyHelper({ units }) {
 
   return (
     <section className="sth" aria-labelledby="sth-h">
-      <div className="sth-head"><i className="ph ph-sparkle" aria-hidden="true"/><div><h3 id="sth-h">Study helper</h3>
-        <p>Stuck on a lesson? Ask, then keep asking until it makes sense — it remembers what you have already been told. It won’t do your assignment for you.</p></div></div>
+      <div className="sth-head"><i className="ph ph-sparkle" aria-hidden="true"/><div><h3 id="sth-h">Guide</h3>
+        <p>Stuck on a lesson? Guide gives you a hint, one step at a time, until you can work it out yourself. Tell it what you have tried. It won’t give you the answer or do your assignment — that is how it sticks.</p></div></div>
 
       <label className="sth-field"><span>Lesson</span>
         <select className="sth-input" value={unitId} onChange={e => pickLesson(e.target.value)}>

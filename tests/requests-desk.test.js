@@ -96,7 +96,10 @@ async function pageFor(memberId, viewport) {
       + mk('NGG-RQ-1', "['fullName'=>'Elizabeth Araoluwa Ajao','displayId'=>'026-143','dob'=>'2013-08-06','phone'=>'']")
       + `$pay = member_request_create(['memberId'=>'NGG-RQ-1','kind'=>'payment','amount'=>12000,'reference'=>'2MPTg39mv. 210882705917985177. I paid 10000 naira as transfer and 2000 naira cash to Mrs Basirat Awolaja Egbeda']);`
       + `$det = member_request_create(['memberId'=>'NGG-RQ-1','kind'=>'details','body'=>"Date of birth: 08/06/2013.      Phone number: 08098190961"]);`
-      + `echo json_encode(['pay'=>$pay['request']['requestId'] ?? '', 'det'=>$det['request']['requestId'] ?? '', 'perr'=>$pay['error'] ?? '', 'derr'=>$det['error'] ?? '']);`));
+      + `$sid = db_insert('sanctions', ['personId'=>'NGG-RQ-1','personType'=>'member','kind'=>'fine','status'=>'active','reason'=>'Absent on Sat 31 Oct with no absence request','startsAt'=>now_iso(),'issuedAt'=>now_iso(),'issuedBy'=>'NGG-RQ-OTHER']);`
+      + `$ap = member_request_create(['memberId'=>'NGG-RQ-1','kind'=>'appeal','refSanctionId'=>$sid,'subject'=>'Fine: Absent on Sat 31 Oct 2026 with no absence request','body'=>'The leave request has been pending since 30 Oct.']);`
+      + `db_insert('member_requests', ['requestId'=>'REQ-RQ-LEAVE','memberId'=>'NGG-RQ-1','kind'=>'leave','status'=>'open','fromDate'=>'2026-10-31','toDate'=>'2026-10-31','subject'=>'Leave on 31 Oct','body'=>'A family event','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`
+      + `echo json_encode(['ap'=>$ap['request']['requestId'] ?? '', 'aerr'=>$ap['error'] ?? '', 'pay'=>$pay['request']['requestId'] ?? '', 'det'=>$det['request']['requestId'] ?? '', 'perr'=>$pay['error'] ?? '', 'derr'=>$det['error'] ?? '']);`));
     chk('the two reported requests are seeded (' + ids.pay + ', ' + ids.det + ')', /^REQ-/.test(ids.pay) && /^REQ-/.test(ids.det));
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT, path.join(ROOT, '_router.php')], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
@@ -162,6 +165,29 @@ async function pageFor(memberId, viewport) {
     const rq = JSON.parse(php(`echo json_encode(db_row("SELECT status, decision FROM member_requests WHERE requestId = '${ids.det}'"));`));
     chk('the record is changed and the request approved, its reply saying what changed',
       m.dob === '2013-06-08' && m.phone === '08098190961' && rq.status === 'approved' && /Date of birth → 8 Jun 2013/.test(rq.decision) && /Phone → 08098190961/.test(rq.decision));
+
+    // ── A fine appeal says what its buttons do, and shows the leave it mentions ──
+    chk('the fine appeal is seeded (' + (ids.ap || ids.aerr) + ')', /^REQ-/.test(ids.ap));
+    await open(ids.ap);
+    await until(() => /Their other open requests/.test(document.body.innerText));
+    t = await sheet();
+    chk('an appeal offers “Uphold — lift the fine” and “Keep the fine”, not a bare Approve', /Uphold — lift the fine/.test(t) && /Keep the fine/.test(t) && !/\bApprove\b/.test(t));
+    chk('…lists the family’s pending leave beside it, with the warning that excusing it does not lift the fine', /REQ-RQ-LEAVE/.test(t) && /does not lift this fine on its own/.test(t));
+    await P.screenshot({ path: path.join(SHOTS, 'appeal.png') });
+    await P.click('.cr-list-row:has-text("REQ-RQ-LEAVE") button:has-text("Open")');
+    chk('“Open” goes to the leave request, which offers “Excuse the absence”', await until(() => /Excuse the absence/.test(document.body.innerText) && /Refuse the leave/.test(document.body.innerText)));
+    await open(ids.ap);
+    await P.click('button:has-text("Uphold — lift the fine")');
+    await P.waitForSelector(dlg);
+    await P.fill(dlg + ' textarea', '');
+    await P.click(dlg + ' button[type="submit"]');
+    chk('upholding asks for the reason before it sends', await until(() => !!document.querySelector('[role="dialog"] textarea[aria-invalid="true"]'), null, 5000)
+      && php(`echo db_row("SELECT status FROM member_requests WHERE requestId = '${ids.ap}'")['status'];`) === 'open');
+    await P.fill(dlg + ' textarea', 'The leave was asked for before the day; the fine was our mistake.');
+    await P.click(dlg + ' button[type="submit"]');
+    await until(() => !document.querySelector('[role="dialog"] textarea'));
+    const ar = JSON.parse(php(`echo json_encode(['r'=>db_row("SELECT status FROM member_requests WHERE requestId = '${ids.ap}'")['status'], 's'=>db_row("SELECT s.status FROM sanctions s JOIN member_requests r ON r.refSanctionId = s.id WHERE r.requestId = '${ids.ap}'")['status']]);`));
+    chk('with a reason, upholding approves the appeal and lifts the fine (' + ar.r + ', sanction ' + ar.s + ')', ar.r === 'approved' && ar.s !== 'active');
 
     // ── The phone ──
     const M = await pageFor('NGG-RQ-ADM', { width: 390, height: 844 });

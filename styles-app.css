@@ -18072,3 +18072,16 @@ button.m9x-ev-sum { cursor: pointer; }
   .lrn-rail-item.is-extra { display: grid; }
   .lrn-rail-more, .lrn-more { display: none; }
 }
+
+/* The member's welcome: one line under the greeting, and a celebration on a
+   birthday or a milestone of time with NGG (member_welcome, club-class.php). */
+.m9x-welcome { margin: 0 0 12px; font-size: 14px; color: #4a4a50; }
+.m9x-welcome-t { color: #6a6a70; }
+.m9x-celebrate { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 14px; padding: 14px 16px; border-radius: 18px;
+  background: #fef4dc; color: #3d2c00; border: 1px solid #f5d27a; }
+.m9x-celebrate-i { font-size: 28px; color: #7a5600; flex: none; }
+.m9x-celebrate-b { flex: 1; min-width: 0; }
+.m9x-celebrate-t { margin: 0 0 2px; font-size: 16px; font-weight: 700; }
+.m9x-celebrate-s { margin: 0; font-size: 14px; line-height: 1.45; }
+.m9x-celebrate-x { flex: none; width: 36px; height: 36px; border: 0; border-radius: 10px; background: transparent; color: #3d2c00; cursor: pointer; }
+.m9x-celebrate-x:hover, .m9x-celebrate-x:focus-visible { background: #fbe3a6; }

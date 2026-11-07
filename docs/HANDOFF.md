@@ -7215,3 +7215,27 @@ Owner: *"I need real effective learning. Grammar … Speaking … Articulation �
 - **Email:** `preport_email_body()` — the sentence and figures inline, plus the button; the handoff scoped the carrier email out, and mail clients cannot load the fonts or layout. Summer School parents (no account) get `api/public/report.php?id=&k=`, `k` an HMAC of the report number under `cookie_secret` (`preport_sig`) — stateless, nothing stored.
 - **Dues PDFs:** `domain/dues-print.php` — `admin.fees.register.doc` (reads `admin_fees_arrears()` itself, so the PDF cannot disagree with "Who owes"; scoped), `admin.fees.statement.doc` (fees, scoped), `member.fees.statement.doc`, `family.statement.doc`. Routes `api/admin/dues-print.php`, `api/member/statement.php`, `api/family/statement.php`. Buttons: Control Room money actions; the family Fees statement (via the design source `family-portal-v3.dc.html` + `tools/dc-compile.js`); the member Fees page. `admin_fees_arrears` rows now carry `displayId`.
 - **Open questions from the handoff, answered by default:** balance row shown at ₦0 ("Nothing to pay"); conduct statuses map active/pending → warn, waived/voided → neutral, anything settled → "Resolved"; excused absences count as absent days in the rate (the rate is days present over programme days).
+
+## 7 Nov 2026 — Request actions say what they do; Guide; welcome and tenure
+
+- **Requests desk, actions in context.** A fine appeal offered "Approve / Decline",
+  and "Approve" read as agreeing with the fine while it did the opposite (it
+  upholds the appeal and lifts the fine). Each request kind now names its two
+  outcomes (`CR_REQ_ACTS` in `cr-tab-members.jsx`): an appeal is "Uphold — lift
+  the fine" / "Keep the fine", leave is "Excuse the absence" / "Refuse the
+  leave", a question is "Answer and close". Upholding asks for the reason in the
+  form, as the server already required (`need_reason`). The drawer now lists the
+  member's **other open requests** with an Open button, because families
+  appealing a fine usually point at a leave request still waiting — and warns
+  that excusing the leave does not lift the fine on its own.
+- **Guide.** The Learn study helper is now Guide, a Socratic companion: it
+  climbs a ladder of hints (what did you try → a nudge question → the rule that
+  applies → a worked example of a *different* problem) and never hands over the
+  answer, never writes the assignment, and praises the strategy rather than the
+  child. Prompt in `member_curriculum_ask` (curriculum.php).
+- **Welcome and tenure.** `member_welcome()` (club-class.php) gives the member's
+  Today a second line read from the record (programme day, streak, first
+  fortnight, else an effort-praising line steady for the day) and how long they
+  have been with NGG, and celebrates a birthday, one week, one month, 100 days,
+  six months, 500/1,000 days and every anniversary for a week. A celebration is
+  put away once and stays away (`mp9.celebrated.<key>` in member state).

@@ -27307,6 +27307,27 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-MU-ADM'");
 })();
 
+/* ── The member's welcome: greeting line, tenure and celebrations ── */
+(function () {
+    $t = '2026-11-07';
+    $m = ['memberId' => 'NGG-WL-1', 'fullName' => 'Ada Okafor', 'dob' => '2013-05-02', 'joinDate' => '2025-11-03', 'createdAt' => '2025-11-03T09:00:00Z'];
+    $w = member_welcome($m, $t, 0, false);
+    chk('welcome: one year with NGG is celebrated in the week of the anniversary, with the day they joined', ($w['celebrate']['key'] ?? '') === 'tenure-y1'
+        && str_contains($w['celebrate']['title'] ?? '', 'One year with NGG') && str_contains($w['celebrate']['text'] ?? '', '3 November 2025') && $w['tenure'] === 'One year with NGG');
+    chk('welcome: and not a fortnight later — a celebration is an event, not a banner', member_welcome(array_merge($m, ['joinDate' => '2025-10-20']), $t, 0, false)['celebrate'] === null);
+    chk('welcome: the first month is a milestone of its own', (member_welcome(array_merge($m, ['joinDate' => '2026-10-05']), $t, 0, false)['celebrate']['key'] ?? '') === 'tenure-d30');
+    chk('welcome: 100 days is marked', (member_welcome(array_merge($m, ['joinDate' => '2026-07-30']), $t, 0, false)['celebrate']['key'] ?? '') === 'tenure-d100');
+    $b = member_welcome(array_merge($m, ['dob' => '2013-11-07']), $t, 0, false);
+    chk('welcome: a birthday wins the day, by first name', ($b['celebrate']['key'] ?? '') === 'bday-2026' && str_contains($b['celebrate']['title'], 'Ada'));
+    chk('welcome: on a programme day the line says so', member_welcome($m, $t, 5, true)['line'] === 'It is a programme day. See you at the centre.');
+    chk('welcome: a streak is named in numbers', str_starts_with(member_welcome($m, $t, 9, false)['line'], '9 days in a row'));
+    chk('welcome: a new member is told everyone started where they are', str_contains(member_welcome(array_merge($m, ['joinDate' => '2026-11-01']), $t, 0, false)['line'], 'Every member started'));
+    $line = member_welcome(array_merge($m, ['joinDate' => '2024-02-01']), $t, 0, false)['line'];
+    chk('welcome: the motivation praises doing, never being clever or gifted, and is steady for the day', $line !== '' && !preg_match('/\b(clever|smart|genius|gifted|talented|born)\b/i', $line)
+        && $line === member_welcome(array_merge($m, ['joinDate' => '2024-02-01']), $t, 0, false)['line']);
+    chk('welcome: no join date at all is no tenure, not a crash', member_welcome(['fullName' => 'X', 'joinDate' => '', 'createdAt' => ''], $t, 0, false)['tenure'] === '');
+})();
+
 /* ── The study helper and the lesson writer (AI, with a mock provider) ── */
 (function () {
     $now = now_iso();
@@ -27324,6 +27345,10 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $a = member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'What is a semitone?']);
     chk('study helper: a member asks about their own lesson and gets an answer, with what is left today', !empty($a['ok']) && str_contains($a['answer'] ?? '', 'semitone') && ($a['left'] ?? 0) === CURR_TUTOR_PER_DAY - 1);
     chk('study helper: the AI is given the lesson but not its assignment', str_contains($sys, 'Tone tone semitone') && !str_contains($sys, 'Play D major'));
+    chk('Guide: the helper is a Socratic guide that climbs a ladder of hints and never hands over the answer',
+        str_contains($sys, 'You are Guide') && str_contains($sys, 'never the answer') && str_contains($sys, 'Never go past rung 4')
+        && str_contains($sys, 'DIFFERENT, simpler problem') && str_contains($sys, 'just tell me') && !str_contains($sys, 'Explain the ONE thing'));
+    chk('Guide: praise names the strategy, not the child', str_contains($sys, 'the strategy, not that they are clever'));
     chk('study helper: not for a lesson outside their course', (member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-X', 'question' => 'What is a tag?'])['error'] ?? '') === 'not_found');
     $sg = member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'I want to hurt myself']);
     chk('study helper: distress is answered with people to talk to, not a lesson', !empty($sg['safeguarding']) && str_contains($sg['answer'], 'Report a concern'));

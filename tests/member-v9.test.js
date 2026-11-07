@@ -82,7 +82,7 @@ async function as(memberId, admin, viewport) {
         'type' => 'NGG', 'status' => 'active', 'role' => $role, 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]); };
       db_insert('centres', ['centreId' => 'C-EG', 'name' => 'Egbeda', 'code' => 'EGB', 'status' => 'active', 'programmes' => 'ngg', 'slug' => 'egbeda', 'createdAt' => $now]);
       $mk('NGG-MV-ADM', 'Ade Admin', 'super_admin');
-      $mk('NGG-MV-K1', 'Tolu Adebayo', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-14 years -2 months')), 'school' => 'Egbeda High', 'displayId' => '026-014', 'phone' => '08031234567']);
+      $mk('NGG-MV-K1', 'Tolu Adebayo', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-14 years -2 months')), 'school' => 'Egbeda High', 'displayId' => '026-014', 'phone' => '08031234567', 'joinDate' => gmdate('Y-m-d', strtotime('-365 days'))]);
       $mk('NGG-MV-K2', 'Ada Okafor', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-11 years -3 months')), 'school' => 'Egbeda Primary', 'displayId' => '026-015']);
       $mk('NGG-MV-K3', 'Bayo Lowercase', 'member', ['type' => 'ngg', 'track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-15 years'))]);
       $mk('NGG-MV-MEN', 'Ngozi Eke');
@@ -133,6 +133,10 @@ async function as(memberId, admin, viewport) {
     chk('Today: the banner shows the level, the XP to the next one, and one next step (or defers to the Getting-started list)', await mb.isVisible('.m9x-hero') && /Level \d/.test(today) && /XP to/.test(today) && (/Your next step|All caught up/i.test(today) || await mb.isVisible('.m9x-start')));
     chk('Today: the banner sits inside the page column, under the greeting', await mb.evaluate(() => { const h = document.querySelector('.m9x-hero'); return !!h && !!h.closest('main > div'); }));
     chk('/dashboard opens the Member Portal for an NGG member, by name', /Tolu/.test(today));
+    chk('Today: a year to the day with NGG is celebrated, and the welcome line names the tenure', await mb.isVisible('.m9x-celebrate:has-text("One year with NGG")') && /· One year with NGG/.test(await mb.innerText('.m9x-welcome')));
+    await mb.click('.m9x-celebrate-x');
+    chk('Today: putting the celebration away keeps it away', await mb.waitForSelector('.m9x-celebrate', { state: 'detached', timeout: 5000 }).then(() => true, () => false)
+      && /true/.test(q(`db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-MV-K1' AND stateKey = 'mp9.celebrated.tenure-y1'")['stateValue'] ?? ''`)));
     // A child's Today is not a statement: the account card is there only when something is owed. This
     // member owes nothing, so Today carries no "To pay now" — the account lives under Money.
     chk('Today: no account card when nothing is owed', !/To pay now/.test(today));

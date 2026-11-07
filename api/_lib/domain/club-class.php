@@ -605,7 +605,82 @@ function member_today(array $p): array {
             return $o ? ['name' => staff_title_name((string)($o['fullName'] ?? ''), (string)($o['honorific'] ?? '')), 'phone' => (string)($o['phone'] ?? ''), 'centre' => (string)$m['centre']] : null; })(),
         'glance' => ['index' => $sc ? (int)$sc[0]['total'] : null, 'indexChange' => count($sc) === 2 ? (int)$sc[0]['total'] - (int)$sc[1]['total'] : null,
             'indexMonth' => (string)($sc[0]['month'] ?? ''), 'level' => (int)($stats['level'] ?? 1), 'streak' => (int)($stats['streak'] ?? 0), 'week' => (int)($stats['currentWeek'] ?? 0)],
-        'badges' => (object)$badges];
+        'badges' => (object)$badges,
+        'welcome' => member_welcome($m, $today, (int)($stats['streak'] ?? 0), $sat === $today)];
+}
+
+/* MILESTONES of time WITH NGG, in days. The early ones are close together
+   because the first weeks are when a new member is most likely to drift off;
+   a marked first week and first month are a reason to come back. Then the
+   rare ones, so a celebration stays an event. */
+const MEMBER_TENURE_MILESTONES = [7 => 'one week', 30 => 'one month', 100 => '100 days', 182 => 'six months', 500 => '500 days', 1000 => '1,000 days'];
+const MEMBER_CELEBRATE_DAYS = 7;   // a milestone shows for a week, so a Saturday member still sees it
+
+/**
+ * The greeting's second line and, sometimes, a celebration — from the record.
+ *
+ * The motivation lines praise what a person DOES (turning up, trying a
+ * strategy, asking, coming back after a hard week), never what they ARE:
+ * praise for ability teaches a child to avoid what might make them look less
+ * able, and praise for effort and strategy does the opposite (Mueller & Dweck,
+ * 1998). And they are specific where the record allows — "9 days in a row"
+ * beats "keep it up". Picked by date, so the line is steady for a day and
+ * does not flicker on every visit.
+ *
+ * `celebrate` carries a key the client remembers once dismissed, so it is
+ * shown, enjoyed, and gone — not a banner that nags.
+ */
+function member_welcome(array $m, string $today, int $streak, bool $programmeDay): array {
+    $first = mp_first((string)$m['fullName']);
+    $since = substr(trim((string)($m['joinDate'] ?? '')) !== '' ? (string)$m['joinDate'] : (string)($m['createdAt'] ?? ''), 0, 10);
+    $t = strtotime($today . ' UTC');
+    $days = preg_match('/^\d{4}-\d{2}-\d{2}$/', $since) ? max(0, (int)floor(($t - strtotime($since . ' UTC')) / 86400)) : -1;
+    $celebrate = null;
+
+    // A birthday, on the day.
+    $dob = substr((string)($m['dob'] ?? ''), 5, 5);
+    if ($dob !== '' && $dob === substr($today, 5, 5)) {
+        $celebrate = ['key' => 'bday-' . substr($today, 0, 4), 'icon' => 'cake', 'title' => 'Happy birthday, ' . $first . '!',
+                      'text' => 'Everyone at NGG wishes you a wonderful day.'];
+    }
+    // Years with NGG: each anniversary, then the fixed milestones.
+    if (!$celebrate && $days >= 0) {
+        $years = intdiv($days, 365);
+        if ($years >= 1 && $days - $years * 365 < MEMBER_CELEBRATE_DAYS) {
+            $celebrate = ['key' => 'tenure-y' . $years, 'icon' => 'confetti',
+                'title' => ($years === 1 ? 'One year' : $years . ' years') . ' with NGG',
+                'text' => 'You joined on ' . gmdate('j F Y', strtotime($since . ' UTC')) . '. Thank you for every Saturday since. Look how far you have come.'];
+        } else {
+            foreach (MEMBER_TENURE_MILESTONES as $d => $words) {
+                if ($days >= $d && $days - $d < MEMBER_CELEBRATE_DAYS) {
+                    $celebrate = ['key' => 'tenure-d' . $d, 'icon' => 'confetti', 'title' => ucfirst($words) . ' with NGG',
+                        'text' => $d <= 30 ? 'You have made it through your first ' . $words . '. The start is the hardest part, and you did it.'
+                                           : 'That is ' . $words . ' of turning up and trying. It adds up, and it shows.'];
+                    break;
+                }
+            }
+        }
+    }
+
+    // The line under the greeting: the most specific true thing first.
+    if ($programmeDay) $line = 'It is a programme day. See you at the centre.';
+    elseif ($streak >= 3) $line = $streak . ' days in a row. One more today keeps it going.';
+    elseif ($days >= 0 && $days < 14) $line = 'Welcome to NGG. Every member started exactly where you are.';
+    else {
+        $pool = [
+            'Mistakes are how practice works. Try, check, try again.',
+            'Stuck? Try a different way in, then ask. Both count as working.',
+            'Little and often beats a lot at once. Ten minutes today is enough.',
+            'The things that feel hard now are the ones you are learning.',
+            'Look back at something you could not do a month ago.',
+            'Asking a good question is a skill. Practise it today.',
+            'Your effort this week is what next week is built on.',
+        ];
+        $line = $pool[(int)gmdate('z', $t) % count($pool)];
+    }
+    $tenure = $days < 0 ? '' : ($days < 30 ? 'Your first month with NGG'
+        : ($days < 365 ? intdiv($days, 30) . ' months with NGG' : (intdiv($days, 365) === 1 ? 'One year' : intdiv($days, 365) . ' years') . ' with NGG'));
+    return ['line' => $line, 'tenure' => $tenure, 'since' => $since, 'days' => $days, 'celebrate' => $celebrate];
 }
 
 /* ── Analytics and the student profile ───────────────────────────────────── */

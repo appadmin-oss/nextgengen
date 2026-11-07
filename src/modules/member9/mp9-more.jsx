@@ -820,9 +820,27 @@ Object.assign(Mp9Portal.prototype, {
     if (s.scr !== "today" || !this.dd("today")) return null;
     return <>
       {rec && rec.asked && typeof RecordDrive === "function" ? <div className="m9x-rec"><RecordDrive status={rec} onSaved={this.props.onRecSaved}/></div> : null}
+      {this.welcomeCard()}
       {this.startCard()}
       {this.hero()}
       {this.simple() ? this.simpleTiles() : null}
+    </>;
+  },
+  /* The welcome under the greeting: one line read from the record (a programme
+     day, a streak, a first fortnight, or an effort-praising nudge), how long
+     they have been with NGG, and — on a birthday or a tenure milestone — a
+     celebration they can put away once they have seen it. */
+  welcomeCard() {
+    const w = (this.dd("today") || {}).welcome;
+    if (!w) return null;
+    const c = w.celebrate, seen = c && this.st("mp9.celebrated." + c.key, false);
+    return <>
+      {c && !seen ? <section className="m9x-celebrate" aria-labelledby="m9x-cel-h">
+        <i className={"ph-fill ph-" + (c.icon || "confetti") + " m9x-celebrate-i"} aria-hidden="true"/>
+        <div className="m9x-celebrate-b"><h2 id="m9x-cel-h" className="m9x-celebrate-t">{c.title}</h2><p className="m9x-celebrate-s">{c.text}</p></div>
+        <button type="button" className="m9x-celebrate-x" aria-label="Put this away" onClick={() => { this.saveSt("mp9.celebrated." + c.key, true); this.forceUpdate(); }}><i className="ph ph-x" aria-hidden="true"/></button>
+      </section> : null}
+      <p className="m9x-welcome" aria-live="polite">{w.line}{w.tenure ? <span className="m9x-welcome-t"> · {w.tenure}</span> : null}</p>
     </>;
   },
   /* Getting started: the first things a new member does, each read from the

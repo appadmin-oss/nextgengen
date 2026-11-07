@@ -1331,7 +1331,7 @@ function crReqDraftApprove(x, parts) {
     case "leave": return "Approved. " + f + " is excused " + (x.toDate && x.toDate !== x.fromDate ? "from " + on(x.fromDate) + " to " + on(x.toDate) : "on " + on(x.fromDate)) + ", so " + (x.toDate && x.toDate !== x.fromDate ? "those days do" : "that day does") + " not count as an absence. We look forward to seeing " + f + " back.";
     case "academic": return "Approved, and good luck with the exams. The Saturdays from " + on(x.fromDate) + " to " + on(x.toDate) + " are not absences: nothing is fined and nothing counts against " + f + "’s allowance.";
     case "idcard": return "Approved. " + f + "’s replacement ID card will be printed and left at the " + (x.centre || "centre") + " desk. We will tell you when it is ready to collect.";
-    case "appeal": return "We have reviewed the charge and your appeal is accepted. Thank you for raising it with us.";
+    case "appeal": return "We have looked at this again and your appeal is upheld. " + (/^fine\b/i.test(x.subject || "") ? "The fine has been taken off " + f + "’s account." : "The decision has been lifted.") + " We are sorry for the trouble, and thank you for raising it with us.";
     case "mentor": return "Approved. We will arrange the change and introduce " + f + "’s new mentor shortly.";
     case "collect": return "Done. The list of people who may collect " + f + " has been updated, and the desk will check it at pick-up.";
     default: return "Thank you — this has been done.";
@@ -1352,7 +1352,8 @@ const CR_REQ_DECLINE_ANY = [["info", "Need more information", x => "We need a li
   ["rules", "Not possible under the rules", x => "We are sorry — this is not something the programme’s rules allow, so we cannot do it."]];
 function crReqDecline(ctx, x, done) {
   const opts = (CR_REQ_DECLINE[x.kind] || []).concat(CR_REQ_DECLINE_ANY);
-  ctx.form({ title: "Decline · " + (x.subject || x.kindLabel), submit: "Decline and send", busyLabel: "Sending…",
+  const lab = x.kind === "payment" ? "Decline" : crReqActs(x)[1];
+  ctx.form({ title: lab + " · " + (x.subject || x.kindLabel), submit: (lab === "Decline" ? "Decline" : lab) + " and send", busyLabel: "Sending…",
     intro: "Pick the reason; they are sent a message in full sentences saying what to do next. Add anything specific below.",
     values: { why: opts[0][0], note: "" },
     fields: [{ id: "why", l: "Why", type: "chips", req: true, opts: opts.map(o => [o[0], o[1]]).concat([["other", "Something else"]]) },
@@ -1404,9 +1405,40 @@ function crReqApplyDetails(ctx, x, done) {
     done: () => { setTimeout(() => done("Changed on the record and approved"), 0); return null; } }));
 }
 
-function crReqOpen(ctx, x) {
+/* WHAT EACH BUTTON DOES, in the words of what it does. "Approve" on a fine
+   appeal reads as agreeing with the fine, and it does the opposite: it
+   upholds the appeal and lifts the fine. So each kind names its two outcomes,
+   and a kind whose "approval" is really an answer (a question, a report) says
+   so. [approve label, decline label, reply required?] */
+const CR_REQ_ACTS = {
+  appeal: x => /^fine\b/i.test(x.subject || "") ? ["Uphold — lift the fine", "Keep the fine", true] : ["Uphold — lift the sanction", "Keep the sanction", true],
+  leave: () => ["Excuse the absence", "Refuse the leave", false],
+  academic: () => ["Approve the exam leave", "Refuse the exam leave", false],
+  idcard: () => ["Print a new card", "Not yet", false],
+  mentor: () => ["Change the mentor", "Keep the mentor", false],
+  collect: () => ["Update who can collect", "Keep the list as it is", false],
+  askmentor: () => ["Answer and close", "Close without answering", true],
+  help: () => ["Reply and close", "Close — nothing to do", true],
+};
+function crReqActs(x) { const f = CR_REQ_ACTS[x.kind]; return f ? f(x) : ["Approve", "Decline", false]; }
+/* The member's OTHER open requests, read before the drawer draws. A family
+   appealing a fine often says "my leave request has been pending since…" —
+   and the desk could not see it from here, so it decided the appeal blind.
+   Bounded: a slow list never holds the drawer for more than a moment. */
+async function crReqOpen(ctx, x) {
+  if (x._related === undefined && x.memberId) {
+    let rel = [];
+    try {
+      const r = await Promise.race([NGGApi.admin.requests.list({ memberId: x.memberId, status: "open" }), new Promise(res => setTimeout(() => res(null), 1500))]);
+      rel = r && r.requests ? r.requests.filter(y => y.requestId !== x.requestId) : [];
+    } catch (e) { rel = []; }
+    x = Object.assign({}, x, { _related: rel });
+  }
+  return crReqDraw(ctx, x);
+}
+function crReqDraw(ctx, x) {
   const st = crReqStatus(x), pay = x.kind === "payment", open = x.status === "open", det = x.kind === "details" || x.kind === "familydetails";
-  const again = y => crReqOpen(ctx, y || x);
+  const again = y => crReqDraw(ctx, Object.assign({ _related: x._related }, y || x));
   const fields = [["Request", x.requestId], ["Kind", x.kindLabel || x.kind], ["Member", (x.fullName || x.memberId) + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"],
     ["Raised", crDate(x.createdAt, true)]];
   const note = pay && !(x.parts && x.parts.length) && crPayIsNote(x.reference);
@@ -1437,11 +1469,15 @@ function crReqOpen(ctx, x) {
       },
       done: v => { const parts = crPayParts(v); setTimeout(() => done(fmtMoney(crPayTotal(parts)) + " posted in " + crPlural(parts.length, "entry", "entries") + " · they have been told"), 0); return null; } });
   };
-  const approvePlain = () => ctx.form({ title: "Approve · " + (x.subject || x.kindLabel), submit: "Approve and send", busyLabel: "Saving…",
-    intro: "A drafted reply — edit it, or send it as it is.",
+  const acts = crReqActs(x);
+  const approvePlain = () => ctx.form({ title: acts[0] + " · " + (x.subject || x.kindLabel), submit: acts[0].replace(/ —.*/, "") + " and send", busyLabel: "Saving…",
+    intro: x.kind === "appeal" ? "Upholding the appeal overturns the decision: " + (/^fine\b/i.test(x.subject || "") ? "the fine comes off the account" : "the sanction is lifted, with any fine or re-entry fee it carried")
+        + ". Say why — the family reads it. You cannot review an appeal against a decision you made yourself."
+      : acts[2] ? "Write the answer; it is sent and the request is closed." : "A drafted reply — edit it, or send it as it is.",
     values: { why: crReqDraftApprove(x) },
-    fields: [{ id: "why", l: "The reply", type: "textarea", rows: 5, max: 2000, help: x.byFamily ? "The family reads this." : "The member reads this." }],
-    onSubmit: v => NGGApi.admin.requests.decide(x.requestId, true, v.why || ""), done: () => { setTimeout(() => done("Approved — they have been told"), 0); return null; } });
+    fields: [{ id: "why", l: x.kind === "appeal" ? "Why it is upheld" : "The reply", type: "textarea", rows: 5, max: 2000, req: acts[2], help: x.byFamily ? "The family reads this." : "The member reads this." }],
+    onSubmit: v => { const t = String(v.why || "").trim(); if (acts[2] && t.length < 5) return { fieldErrors: { why: "Write a sentence or two — they read it." } }; return NGGApi.admin.requests.decide(x.requestId, true, t); },
+    done: () => { setTimeout(() => done(x.kind === "appeal" ? "Appeal upheld — they have been told" : "Done — they have been told"), 0); return null; } });
   const askMissing = rd && rd.asked && rd.asked.length ? () => ctx.form({ title: "Ask for the new " + rd.asked.map(a => a.label.toLowerCase()).join(" and "), submit: "Send", busyLabel: "Sending…",
     intro: "They named what to change but not what to change it to. This asks for it on the request, without deciding it.",
     values: { text: "Thank you. To change " + rd.asked.map(a => "the " + a.label.toLowerCase() + (a.current ? " (it is " + a.current + " on the record now)" : "")).join(" and ") + ", please reply with the new " + (rd.asked.length > 1 ? "details" : rd.asked[0].label.toLowerCase()) + " and we will update it straight away." },
@@ -1454,8 +1490,8 @@ function crReqOpen(ctx, x) {
     if (det) actions.push({ l: rd.changes.length ? "Change it (" + crPlural(rd.changes.length, "field") + ")" : "Change their details", primary: true, run: () => crReqApplyDetails(ctx, x, done) });
     if (askMissing) actions.push({ l: "Ask for the new value", primary: !rd.changes.length && !det, run: askMissing });
     if (pay) actions.push(ctx.can("fees") ? { l: "Approve and post", primary: true, run: approvePay } : { l: "Approving needs the Fees permission", disabled: true });
-    else if (!det) actions.push({ l: "Approve", primary: true, run: approvePlain });
-    actions.push({ l: "Decline", run: () => crReqDecline(ctx, x, done) });
+    else if (!det) actions.push({ l: acts[0], primary: true, run: approvePlain });
+    actions.push({ l: pay || det ? "Decline" : acts[1], run: () => crReqDecline(ctx, x, done) });
   }
   if (x.status !== "withdrawn" && x.memberId) actions.push({ l: "Send a message", run: () => crReqMessage(ctx, x, again) });
   if (x.proofUrl) actions.push({ l: "Open the receipt", run: () => window.open(x.proofUrl, "_blank", "noopener") });
@@ -1472,6 +1508,10 @@ function crReqOpen(ctx, x) {
         .concat(rd.asked.map(a => ({ icon: "question", t: a.label + " — no new value given", s: "On the record now: " + (a.current || "nothing") + ". Ask them for it." }))) } : null,
       note ? { h: "What they wrote about the payment", text: x.reference } : null,
       { h: "What they wrote", text: x.body || "", empty: "Nothing beyond the subject." },
+      (x._related || []).length ? { h: "Their other open requests", list: x._related.map(y => ({ icon: y.kind === "leave" || y.kind === "academic" ? "calendar-x" : "tray",
+          t: (y.subject || y.kindLabel || y.kind), s: (y.kindLabel || y.kind) + " · " + y.requestId + " · raised " + crDate(y.createdAt),
+          act: { l: "Open", run: () => crReqDraw(ctx, Object.assign({ _related: [x].concat(x._related.filter(z => z.requestId !== y.requestId)) }, y)) } })),
+        tip: x.kind === "appeal" && open && x._related.some(y => y.kind === "leave") ? "There is leave waiting. Excusing it does not lift this fine on its own — decide both." : "" } : null,
       (x.comments || []).length ? { h: "Messages", list: x.comments.map(m => ({ icon: "chat-circle-text", t: m.text, s: m.byName + " · " + crDate(m.at, true) })) } : null,
       { h: "The reply", text: x.decision || "", empty: open ? "Not decided yet." : x.status === "withdrawn" ? "Withdrawn before anyone decided it." : "Decided without a written reply." },
     ].filter(Boolean),

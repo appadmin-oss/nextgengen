@@ -4766,9 +4766,15 @@ A member (from Records) or a parent (from the family account) can appeal any
 decision on the record: a warning, the Dormant Track, a suspension, an
 eviction, a fine or a fee. It arrives in **Requests**.
 
-- **Overturn it** lifts the decision and everything it carried (its fine, a
-  suspension's re-entry fee). **Keep it** leaves it standing. Both need a
-  reason; the family reads it.
+- **Uphold — lift the fine** (or **lift the sanction**) overturns the
+  decision and everything it carried (its fine, a suspension's re-entry fee).
+  **Keep the fine** leaves it standing. Both need a reason; the family reads it.
+- The appeal shows the member's **other open requests**. A family often
+  appeals a fine because a leave request is still waiting: open it from there
+  and decide it too. Excusing the leave does not lift the fine on its own.
+- Every request kind names what its buttons do: leave is **Excuse the
+  absence** / **Refuse the leave**, a question for the mentor is **Answer and
+  close**, a replacement card is **Print a new card**.
 - Whoever issued or confirmed the decision can't decide its appeal
   ("somebody else reviews the appeal").
 - A proposed eviction can't be confirmed while its appeal is open.
