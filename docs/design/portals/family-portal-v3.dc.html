@@ -373,7 +373,7 @@ button{cursor:pointer}
 
           <section aria-labelledby="st-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
             <div style="padding:14px 18px 10px; display:flex; flex-direction:column; gap:10px;">
-              <div style="display:flex; align-items:baseline; gap:8px;"><h2 id="st-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Statement</h2><span style="font-size:12.5px; color:#6b6b72;">{{ mo.stCount }}</span></div>
+              <div style="display:flex; align-items:baseline; gap:8px;"><h2 id="st-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Statement</h2><span style="font-size:12.5px; color:#6b6b72;">{{ mo.stCount }}</span><a href="{{ mo.stPdf }}" target="_blank" rel="noopener" aria-label="Download the statement as a PDF" style="display:inline-flex; align-items:center; gap:4px; min-height:44px; padding:0 4px; font-size:13px; font-weight:600; color:#0b0b0c; text-decoration:underline; white-space:nowrap;"><i class="ph ph-file-pdf" aria-hidden="true"></i>PDF</a></div>
               <div role="tablist" aria-label="Show" style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px;">
                 <sc-for list="{{ mo.stTabs }}" as="t" hint-placeholder-count="5"><button role="tab" aria-selected="{{ t.sel }}" onClick="{{ t.onClick }}" style="height:34px; padding:0 12px; border-radius:999px; border:1px solid {{ t.bd }}; background:{{ t.bg }}; color:{{ t.fg }}; font-size:13px; font-weight:500; white-space:nowrap; flex-shrink:0;">{{ t.l }}</button></sc-for>
               </div>
@@ -773,7 +773,7 @@ class Component extends DCLogic {
         next: F.next.map(x => ({ label: x.label, when: x.when, amount: N(x.amount) })),
         termsL: 'Membership is ' + N(TM.membershipFee) + ' a year, renewed on the date ' + first + ' joined. The commitment fee is ' + N(TM.monthly) + ' a month, charged on the 1st; a first month is charged only for the Saturdays left. While something is owed, a reminder is emailed every ' + TM.remindEvery + ' days.',
         stTabs: TABS.map(t => { const on = S.stF === t[0]; return { l: t[1], sel: on ? 'true' : 'false', bg: on ? '#0b0b0c' : '#fff', fg: on ? '#fff' : '#0b0b0c', bd: on ? '#0b0b0c' : '#d9d6cd', onClick: () => this.setState({ stF: t[0], stN: 14 }) }; }),
-        rows, stCount: list.length + (list.length === 1 ? ' entry' : ' entries'), stEmpty: !list.length, stEmptyL: S.stF === 'fines' ? 'No fines. ' + first + ' has a clean record.' : 'Nothing here yet.',
+        rows, stPdf: '#', stCount: list.length + (list.length === 1 ? ' entry' : ' entries'), stEmpty: !list.length, stEmptyL: S.stF === 'fines' ? 'No fines. ' + first + ' has a clean record.' : 'Nothing here yet.',
         stMore: list.length > S.stN, stMoreL: 'Show ' + Math.min(20, list.length - S.stN) + ' more of ' + (list.length - S.stN), showMore: () => this.setState(s2 => ({ stN: s2.stN + 20 }))
       };
       const tm = P.trainingMonths, sm = P.serviceMonths, leave = ' If ' + first + ' leaves before the MOU is complete, the part not yet earned off becomes due.';

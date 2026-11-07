@@ -124,6 +124,12 @@ async function crMoRefresh(ctx) {
   ]);
   ctx.setData(x => Object.assign({}, x, { acct: acct || x.acct, arr: arr || x.arr, found: null, rev: (x.rev || 0) + 1 }));
 }
+/** Open a dues document (register or one member's statement) in a new tab, where it prints or saves as a PDF. */
+function crMoPrint(kind, q) {
+  const qs = new URLSearchParams(Object.assign({ kind }, q || {})).toString();
+  const w = window.open("/api/admin/dues-print.php?" + qs, "_blank", "noopener");
+  if (!w) window.location.assign("/api/admin/dues-print.php?" + qs);   // a blocked pop-up still gets the document
+}
 async function crMoOpen(ctx, memberId) {
   try {
     const acct = await crMoLoadAccount(memberId);
@@ -911,12 +917,16 @@ Object.assign(CR_TAB_DEFS, {
         out.push({ l: "Issue a fine", icon: "gavel", run: () => crMoEntry(ctx, "fine", a) });
         out.push({ l: "Waive", icon: "hand-heart", disabled: a.balance.payable <= 0, why: "Nothing payable to waive — the training place is not owed.", run: () => crMoEntry(ctx, "waiver", a) });
         out.push({ l: "Adjust", icon: "plus-minus", run: () => crMoEntry(ctx, "adjustment", a) });
+        /* The account as a printable page (domain/dues-print.php): "Print or save as PDF" there. */
+        out.push({ l: "Statement (PDF)", icon: "file-pdf", run: () => crMoPrint("statement", { memberId: a.memberId }) });
         /* The MOU and reminders are settings of the account, not money actions:
            they sit in the summary beside the facts they change. "Back to the
            list" is the account heading's own link. */
         return out;
       }
       out.push({ l: "Bring charges up to date", icon: "arrows-clockwise", disabled: !d.cfg.enabled, why: "Dues are switched off — nothing is charged.", run: () => crMoAccrue(ctx) });
+      /* Everyone owing, in your centres, grouped by centre — the same figures as Who owes, as an A4 document. */
+      out.push({ l: "Dues register (PDF)", icon: "file-pdf", disabled: !((d.arr || {}).arrears || []).length, why: "Nobody owes anything to put in a register.", run: () => crMoPrint("register", {}) });
       return out;
     },
     blocks: (d, ctx) => {

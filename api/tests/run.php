@@ -17633,7 +17633,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         /* Two ops, and neither posts to the ledger: the read, and `pay`, which
            makes a balance INVOICE whose payment only Paystack's own verify can
            settle (membership_paystack_verify). Anything else is a defect. */
-        $allowed = ['member.fees' => 'member_fees_account', 'member.fees.pay' => 'member_fees_pay'];
+        /* …and the statement as a printable page (domain/dues-print.php), which only READS the account (7 Nov 2026). */
+        $allowed = ['member.fees' => 'member_fees_account', 'member.fees.pay' => 'member_fees_pay', 'member.fees.statement.doc' => 'member_fees_statement_doc'];
         foreach ($m as $pair) {
             if (strpos($pair[1], 'fees') === false) continue;
             if (($allowed[$pair[1]] ?? '') !== $pair[2]) return false;
@@ -27224,6 +27225,51 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('reports · the attendance mail goes once a day per recipient', ($a2['sent'] ?? -1) === 0);
     $hd = attendance_day_html('NGG Club', $today, [['centre' => 'Egbeda', 'expected' => 3, 'present' => 2, 'late' => ['Bola (12 min)'], 'absent' => ['Ada Report'], 'noSignOut' => []]]);
     chk('reports · the attendance mail lists late, absent and no-sign-out by name', str_contains($hd, 'Ada Report') && str_contains($hd, 'Bola (12 min)') && str_contains($hd, '2 of 3'));
+    /* The redesigned document (handoff: ngg-progress-report-handoff/SPEC.md). */
+    chk('report design · one h1, section h2s, and the stylesheet and print script are files (no inline handler — the production policy allows none)',
+        substr_count($html, '<h1>') === 1 && str_contains($html, '<h2 id="rp-att">1. Attendance</h2>') && str_contains($html, '/assets/report/report.css') && str_contains($html, '/assets/report/report.js')
+        && !str_contains($html, 'onclick') && str_contains($html, '<button class="rp-print" type="button" data-print>'));
+    chk('report design · every money line is its own row, payments as “− ₦”, and the balance row closes Still owed',
+        str_contains($html, '− ₦1,000') && str_contains($html, 'class="rp-bal"') && str_contains($html, 'Charged: fine — Late three Saturdays running'));
+    $zero = $d; $zero['money']['payable'] = 0; $zero['money']['open'] = []; $zero['money']['credit'] = 0; $zero['conduct'] = []; $zero['attendance']['register'] = []; $zero['attendance']['days'] = 0; $zero['attendance']['rate'] = null;
+    $zh = preport_html($zero, false, 'RPT-Z');
+    chk('report design · empty states say so in place of a table, and ₦0 reads “Nothing to pay” with no payment instruction',
+        str_contains($zh, 'No programme days in this period.') && str_contains($zh, 'No conduct records this period.') && str_contains($zh, 'Nothing to pay')
+        && str_contains($zh, 'All paid') && !str_contains($zh, 'Pay in the family account') && str_contains(preport_headline($zero), 'There is nothing to pay.'));
+    $cr = $zero; $cr['money']['credit'] = 1500;
+    chk('report design · an overpaid account shows its credit', str_contains(preport_html($cr), 'Credit on account') && str_contains(preport_html($cr), 'is-credit'));
+    $v1 = $d; unset($v1['money']['lines'], $v1['subject']['first']); $v1['v'] = 1;
+    foreach ($v1['attendance']['register'] as $i => $x) unset($v1['attendance']['register'][$i]['tag']);
+    chk('report design · a report sealed before the redesign (v1) still renders, from its totals', str_contains(preport_html($v1, true), 'Fees, dues and fines') && str_contains(preport_html($v1), 'Charged: monthly dues'));
+    chk('report design · the email carries the summary and the figures, not the whole document', str_contains(preport_email_body($d), 'Balance due') && !str_contains(preport_email_body($d), 'rp-page'));
+    // Summer School: a signed link, because the parent has no account.
+    db_insert('parent_reports', ['reportId' => 'RPT-SUMTEST', 'subjectId' => 'SS-1', 'subjectType' => 'participant', 'kind' => 'edition', 'period' => 'C1', 'periodFrom' => '2026-07-01', 'periodTo' => '2026-08-15',
+        'data' => json_encode(['v' => 2, 'kind' => 'edition', 'label' => 'Summer 2026', 'from' => '2026-07-01', 'to' => '2026-08-15', 'asOf' => '2026-08-20',
+            'subject' => ['type' => 'participant', 'id' => 'SS-1', 'name' => 'Bisi Summer', 'displayId' => 'EG-26-001', 'centre' => 'Egbeda', 'courses' => ['Coding'], 'group' => 'Blue'],
+            'attendance' => ['days' => 2, 'present' => 2, 'late' => 0, 'absent' => 0, 'unexcused' => 0, 'noSignOut' => 0, 'rate' => 100, 'register' => []], 'learning' => null, 'conduct' => [], 'money' => null, 'people' => null]), 'issuedAt' => now_iso()]);
+    $pub = public_report_get(['reportId' => 'RPT-SUMTEST', 'key' => preport_sig('RPT-SUMTEST')]);
+    chk('report design · a Summer School report opens from its signed link; a wrong key and a member report do not',
+        !empty($pub['ok']) && str_contains($pub['html'], 'Summer School Report') && str_contains($pub['html'], 'Participant')
+        && empty(public_report_get(['reportId' => 'RPT-SUMTEST', 'key' => str_repeat('0', 32)])['ok']) && empty(public_report_get(['reportId' => $rep['reportId'], 'key' => preport_sig($rep['reportId'])])['ok']));
+    db_exec("DELETE FROM parent_reports WHERE reportId = 'RPT-SUMTEST'");
+
+    /* Dues as PDF documents (domain/dues-print.php). */
+    $sd = admin_fees_statement_doc(['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-PR-KID']);
+    chk('dues pdf · a member’s statement: every line, what is still owed, the balance, printable',
+        !empty($sd['ok']) && str_contains($sd['html'], 'Account Statement') && str_contains($sd['html'], 'Payment received') && str_contains($sd['html'], 'Still owed')
+        && str_contains($sd['html'], 'Balance to pay on') && str_contains($sd['html'], 'Print or save as PDF'));
+    chk('dues pdf · the statement is refused to someone without the fees trust', empty(admin_fees_statement_doc(['requesterId' => 'NGG-PR-KID', 'memberId' => 'NGG-PR-KID'])['ok']));
+    chk('dues pdf · a guardian who follows the child opens it; one who does not cannot',
+        !empty(family_statement_doc(['guardianId' => 'GRD-PR-1', 'linkId' => 'LNK-PR-0'])['ok']) && empty(family_statement_doc(['guardianId' => 'GRD-PR-X', 'linkId' => 'LNK-PR-0'])['ok']));
+    $rg = admin_fees_register_doc(['requesterId' => 'NGG-2025-0099', 'centre' => 'Egbeda']);
+    chk('dues pdf · the register lists who owes at the centre, grouped, with the centre total', !empty($rg['ok']) && str_contains($rg['html'], 'Dues Register') && str_contains($rg['html'], 'Ada Report') && str_contains($rg['html'], 'Egbeda: '));
+    $rgx = admin_fees_register_doc(['requesterId' => 'NGG-2025-0099', 'centre' => 'Nowhere']);
+    chk('dues pdf · a centre with nobody owing says so', !empty($rgx['ok']) && str_contains($rgx['html'], 'Nobody owes anything at Nowhere'));
+    db_insert('members', ['memberId' => 'NGG-PR-FEESC', 'fullName' => 'Scoped Fees', 'email' => 'feesc@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Ijaiye',
+        'capsExtra' => json_encode(['fees']), 'centreScope' => json_encode(['CTR-NONE-PR']), 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('dues pdf · a centre-scoped fees holder’s register never shows another centre’s families', !str_contains((string)(admin_fees_register_doc(['requesterId' => 'NGG-PR-FEESC'])['html'] ?? ''), 'Ada Report'));
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-PR-FEESC'");
+
     // Tidy.
     foreach (['NGG-PR-KID', 'NGG-PR-DESK'] as $id) { db_exec('DELETE FROM members WHERE memberId = ?', [$id]); db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]); db_exec('DELETE FROM parent_reports WHERE subjectId = ?', [$id]); }
     db_exec("DELETE FROM sanctions WHERE personId = 'NGG-PR-KID'"); db_exec("DELETE FROM guardian_wards WHERE memberId = 'NGG-PR-KID'"); db_exec("DELETE FROM guardian_notices WHERE memberId = 'NGG-PR-KID'");

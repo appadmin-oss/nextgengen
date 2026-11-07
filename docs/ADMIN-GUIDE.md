@@ -5149,3 +5149,25 @@ attendance permission gets one email: NGG Club to holders of *checkin*, Summer S
 Centre by centre within their scope: present of expected, and the names of who was late (with minutes), absent,
 and did not sign out. A coordinator scoped to two centres only sees those two. Set the setting
 `reports_attendance_daily` to `0` to stop it.
+
+
+### The report's design, and dues as PDFs (7 Nov 2026)
+
+- **The family report** is now the formal A4 document from the design handoff, in NGG's own colours and with the real
+  logo: letterhead, title and reporting period, the student's details, a summary sentence with four key figures
+  (attendance, lessons, latest exam, balance), then 1 Attendance (day-by-day register with Present / Late / Absent
+  tags), 2 Learning, 3 Conduct, 4 Fees, dues and fines (every charge and payment line, what is still owed, oldest
+  first, and the balance), 5 Mentor comments, 6 Acknowledgement and signatures. Empty sections say so ("No conduct
+  records this period.") rather than disappearing; a paid-up account reads "Nothing to pay". The email carries the
+  summary and figures and a button to the full report, which prints or saves as a PDF.
+- **Summer School reports** open from a signed link in the parent's email; nobody needs an account.
+- **Dues as PDFs:**
+  - **Money → Dues & arrears → Dues register (PDF)**: every family owing in your centres, grouped by centre, with
+    what each balance is made of, how old the oldest unpaid charge is, the last payment, and each centre's total.
+    The same figures as "Who owes".
+  - **A member's account → Statement (PDF)**: every charge and payment with the running balance, what is still owed
+    and the balance to pay.
+  - Families have the same statement in the family account (Fees → Statement → PDF), and a member has it on their
+    own Fees page.
+  - Each opens as a page with **Print or save as PDF**; choose "Save as PDF" in the print dialogue. Printing a
+    register or a statement is written to the audit log.

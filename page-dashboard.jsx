@@ -140,11 +140,10 @@ function DashAccount({ onRaise }) {
                   </tbody>
                 </table>
               </div>
-              {/* window.print() rather than a generated PDF: the browser's own
-                  print-to-PDF is on every device a family has, needs no library
-                  in the bundle, and produces something they can actually keep. */}
+              {/* The browser's own print-to-PDF (on every device a family has, no library in the bundle), but of the
+                  formal A4 account statement (domain/dues-print.php) rather than of this screen. */}
               <div style={{ marginTop: 12 }}>
-                <button className="btn btn-ghost btn-sm noprint" onClick={() => window.print()}>Print / save as PDF</button>
+                <a className="btn btn-ghost btn-sm noprint" href="/api/member/statement.php" target="_blank" rel="noopener">Statement (PDF)</a>
               </div>
             </div>
           )}

@@ -40,7 +40,23 @@ function preport_claim(string $kind, string $refKey, string $recipient): bool {
     }
 }
 
+/** ₦ with a thousands separator, no space, no kobo (SPEC: currency formatting). */
 function preport_money(int $n): string { return function_exists('fees_money_text') ? fees_money_text($n) : '₦' . number_format($n); }
+/** A ledger line in words a parent reads: "Charged: monthly dues", "Payment received". */
+function preport_ledger_label(string $kind, string $note, bool $charge): string {
+    $base = ['membership' => 'membership fee', 'dues' => 'monthly dues', 'fine' => 'fine', 'adjustment' => 'adjustment', 'payment' => 'Payment received', 'waiver' => 'Waived'][$kind] ?? $kind;
+    // A reason is what staff wrote: printed as written, never re-cased.
+    if (!$charge) return $base . ($note !== '' && $kind !== 'payment' ? ' — ' . $note : '');
+    return 'Charged: ' . $base . ($kind === 'fine' && $note !== '' ? ' — ' . $note : '');
+}
+/** "Fri 10 Oct 2026" (SPEC: day log format). */
+function preport_day(string $d): string { $t = strtotime(substr($d, 0, 10) . ' 12:00:00 UTC'); return $t ? gmdate('D j M Y', $t) : $d; }
+/** "1 October – 31 October 2026" (SPEC: reporting period). */
+function preport_span(string $a, string $b): string {
+    $x = strtotime($a . ' 12:00:00 UTC'); $y = strtotime($b . ' 12:00:00 UTC');
+    if (!$x || !$y) return $a . ' – ' . $b;
+    return gmdate('Y', $x) === gmdate('Y', $y) ? gmdate('j F', $x) . ' – ' . gmdate('j F Y', $y) : gmdate('j F Y', $x) . ' – ' . gmdate('j F Y', $y);
+}
 function preport_date(string $d): string { $t = strtotime(substr($d, 0, 10) . ' 12:00:00 UTC'); return $t ? gmdate('j M Y', $t) : $d; }
 function preport_pct(int $a, int $b): ?int { return $b > 0 ? (int)round(100 * $a / $b) : null; }
 
@@ -77,9 +93,15 @@ function preport_member_data(array $m, string $from, string $to, string $kind, s
             if ($isLate) $late++;
             $out = trim((string)($s['checkOutAt'] ?? '')) !== '';
             if (!$out) $noOut++;
-            $register[] = ['date' => $d, 'mark' => $isLate ? 'Late' : 'Present', 'detail' => $isLate && (int)$s['lateMinutes'] > 0 ? (int)$s['lateMinutes'] . ' min' : ($out ? '' : 'did not sign out')];
+            $note = $isLate && (int)$s['lateMinutes'] > 0 ? 'Arrived ' . (int)$s['lateMinutes'] . ' min late' : '';
+            if (!$out) $note = trim($note . ($note !== '' ? '; ' : '') . 'Did not sign out');
+            $register[] = ['date' => $d, 'mark' => $isLate ? 'Late' : 'Present', 'tag' => $isLate ? 'warn' : 'ok', 'detail' => $note];
         } else {
-            $register[] = ['date' => $d, 'mark' => in_array($d, $unexcused, true) ? 'Absent (unexcused)' : 'Absent', 'detail' => ''];
+            $cover = function_exists('member_absence_cover') ? (string)member_absence_cover($mid, $d) : '';
+            $excused = in_array($cover, ['approved', 'academic'], true);
+            $register[] = in_array($d, $unexcused, true) ? ['date' => $d, 'mark' => 'Absent (unexcused)', 'tag' => 'bad', 'detail' => '']
+                : ($excused ? ['date' => $d, 'mark' => 'Absent (excused)', 'tag' => 'neutral', 'detail' => $cover === 'academic' ? 'School commitment' : 'Absence approved']
+                            : ['date' => $d, 'mark' => 'Absent', 'tag' => 'bad', 'detail' => '']);
         }
     }
     $absent = count($days) - $present;
@@ -96,25 +118,32 @@ function preport_member_data(array $m, string $from, string $to, string $kind, s
     $sanctions = db_all("SELECT kind, reason, amount, status, issuedAt FROM sanctions WHERE personId = ? AND substr(issuedAt, 1, 10) BETWEEN ? AND ? ORDER BY issuedAt", [$mid, $from, $to]);
 
     // Money: what was charged, what was received, in the period; and the account as it stands today.
-    $charged = []; $received = []; $fines = [];
+    $charged = []; $received = []; $fines = []; $lines = [];
     foreach (db_all("SELECT kind, direction, amount, note, createdAt FROM member_ledger WHERE memberId = ? AND (voidedAt IS NULL OR voidedAt = '')
                      AND substr(createdAt, 1, 10) BETWEEN ? AND ? ORDER BY id", [$mid, $from, $to]) as $e) {
         $k = (string)$e['kind'];
         if ($k === 'training' || $k === 'writeoff') continue;   // the training place is its own account
+        $date = substr((string)$e['createdAt'], 0, 10); $amt = (int)$e['amount'];
         if ((string)$e['direction'] === 'charge') {
-            $charged[$k] = ($charged[$k] ?? 0) + (int)$e['amount'];
-            if ($k === 'fine') $fines[] = ['date' => substr((string)$e['createdAt'], 0, 10), 'reason' => (string)$e['note'], 'amount' => (int)$e['amount']];
+            $charged[$k] = ($charged[$k] ?? 0) + $amt;
+            if ($k === 'fine') $fines[] = ['date' => $date, 'reason' => (string)$e['note'], 'amount' => $amt];
+            $lines[] = ['what' => preport_ledger_label($k, (string)$e['note'], true), 'date' => $date, 'amount' => $amt, 'credit' => false];
         } else {
-            $received[$k] = ($received[$k] ?? 0) + (int)$e['amount'];
+            $received[$k] = ($received[$k] ?? 0) + $amt;
+            $lines[] = ['what' => preport_ledger_label($k, (string)$e['note'], false), 'date' => $date, 'amount' => $amt, 'credit' => true];
         }
     }
-    $payable = 0; $open = [];
+    usort($lines, static fn($a, $b) => strcmp($b['date'], $a['date']));   // newest first (SPEC: "newest first in This period")
+    $payable = 0; $credit = 0; $open = [];
     if (function_exists('fees_balance')) {
         try {
             $bal = fees_balance($m);
             $payable = max(0, (int)($bal['payable'] ?? 0));
-            if ($payable > 0 && function_exists('fees_account_statement')) {
-                foreach (array_slice(fees_account_statement($m, $bal)['open'], 0, 8) as $o) {
+            if (function_exists('fees_account_statement')) {
+                $stmt = fees_account_statement($m, $bal);
+                $credit = $payable > 0 ? 0 : (int)($stmt['summary']['credit'] ?? 0);
+                // Oldest due first — the order a payment settles them (SPEC: "oldest due first in Still owed").
+                foreach (array_slice($stmt['open'], 0, 20) as $o) {
                     $open[] = ['what' => function_exists('fees_made_label') ? fees_made_label((string)$o['kind'], (string)$o['note']) : (string)$o['kind'], 'due' => (string)$o['due'], 'left' => (int)$o['left']];
                 }
             }
@@ -128,9 +157,10 @@ function preport_member_data(array $m, string $from, string $to, string $kind, s
     $courses = function_exists('curriculum_member_courses') ? array_values(array_filter(curriculum_member_courses($m), static fn($c) => !function_exists('curriculum_is_everyones') || !curriculum_is_everyones((string)$c))) : [];
 
     return [
-        'v' => 1, 'kind' => $kind, 'label' => $label, 'from' => $from, 'to' => $to, 'asOf' => $asOf,
+        'v' => 2, 'kind' => $kind, 'label' => $label, 'from' => $from, 'to' => $to, 'asOf' => $asOf,
         'subject' => ['type' => 'member', 'id' => $mid, 'name' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
-                      'centre' => (string)($m['centre'] ?? ''), 'courses' => $courses, 'mentor' => (string)($mentor['fullName'] ?? '')],
+                      'centre' => (string)($m['centre'] ?? ''), 'courses' => $courses, 'mentor' => (string)($mentor['fullName'] ?? ''),
+                      'first' => mp_first((string)$m['fullName'])],
         'attendance' => ['days' => count($days), 'present' => $present, 'late' => $late, 'absent' => $absent, 'unexcused' => count(array_intersect($unexcused, $days)),
                          'noSignOut' => $noOut, 'rate' => preport_pct($present, count($days)), 'register' => $register],
         'learning' => ['lessons' => array_map(static fn($l) => ['title' => (string)$l['title'], 'course' => (string)$l['course'], 'pct' => (int)$l['bestPct'], 'date' => substr((string)$l['completedAt'], 0, 10)], $lessons),
@@ -138,8 +168,8 @@ function preport_member_data(array $m, string $from, string $to, string $kind, s
                        'certificates' => array_map(static function ($c) { $d = safe_json((string)$c['data']) ?: []; return ['no' => (string)$c['docNo'], 'title' => (string)($d['title'] ?? $d['course'] ?? 'Certificate'), 'date' => substr((string)$c['issuedAt'], 0, 10)]; }, $certs),
                        'completed' => (int)($overall['completed'] ?? 0), 'total' => (int)($overall['total'] ?? 0), 'overdue' => (int)($overall['overdue'] ?? 0)],
         'conduct' => array_map(static fn($s) => ['kind' => (string)$s['kind'], 'reason' => (string)$s['reason'], 'amount' => (int)$s['amount'], 'status' => (string)$s['status'], 'date' => substr((string)$s['issuedAt'], 0, 10)], $sanctions),
-        'money' => ['charged' => $charged, 'received' => $received, 'fines' => $fines, 'chargedTotal' => array_sum($charged), 'receivedTotal' => array_sum($received),
-                    'payable' => $payable, 'open' => $open],
+        'money' => ['charged' => $charged, 'received' => $received, 'fines' => $fines, 'lines' => $lines, 'chargedTotal' => array_sum($charged), 'receivedTotal' => array_sum($received),
+                    'payable' => $payable, 'credit' => $credit, 'open' => $open],
         'people' => ['leadership' => $sc ? (int)$sc['total'] : null, 'rating' => (string)($comp['rating'] ?? ''), 'note' => mb_substr((string)($comp['summary'] ?? ''), 0, 600)],
     ];
 }
@@ -175,128 +205,241 @@ function preport_participant_data(array $s, array $ed, ?string $asOf = null): ar
     ];
 }
 
-/** The plain-words opening paragraph — what a parent reads if they read nothing else. */
-function preport_headline(array $r): string {
-    $first = mp_first((string)$r['subject']['name']) ?: 'Your child';
+/**
+ * The summary sentence (SPEC "Summary sentence rules"), as plain text and as HTML with the balance in bold. Built
+ * here, server-side, so the email, the page and the PDF printed from it say the same thing. The child is named
+ * rather than given a pronoun.
+ */
+function preport_headline(array $r, bool $html = false): string {
+    $first = (string)($r['subject']['first'] ?? '') ?: (mp_first((string)$r['subject']['name']) ?: 'Your child');
+    $e = static fn($s) => $html ? esc_html((string)$s) : (string)$s;
     $a = $r['attendance']; $parts = [];
     if ($a['days'] > 0) {
-        $parts[] = $first . ' attended ' . $a['present'] . ' of ' . $a['days'] . ' programme day' . ($a['days'] === 1 ? '' : 's') . ' (' . (int)$a['rate'] . '%)'
-            . ($a['late'] ? ', arriving late ' . ([1 => 'once', 2 => 'twice'][$a['late']] ?? $a['late'] . ' times') : '') . '.';
+        $parts[] = $e($first . ' attended ' . $a['present'] . ' of ' . $a['days'] . ' programme day' . ($a['days'] === 1 ? '' : 's') . ' (' . (int)$a['rate'] . '%)'
+            . ($a['late'] ? ', arriving late ' . ([1 => 'once', 2 => 'twice'][$a['late']] ?? $a['late'] . ' times') : '') . '.');
     } else {
-        $parts[] = 'There were no programme days for ' . $first . ' in this period.';
+        $parts[] = $e('There were no programme days for ' . $first . ' in this period.');
     }
     if (!empty($r['learning'])) {
-        $L = $r['learning'];
-        $parts[] = count($L['lessons']) . ' lesson' . (count($L['lessons']) === 1 ? ' was' : 's were') . ' completed in the period'
-            . ($L['overdue'] ? ', and ' . $L['overdue'] . ' ' . ($L['overdue'] === 1 ? 'is' : 'are') . ' overdue' : '') . '.';
+        $L = $r['learning']; $n = count($L['lessons']);
+        $parts[] = $e($first . ' completed ' . $n . ' lesson' . ($n === 1 ? '' : 's') . ' in the period'
+            . ($L['overdue'] ? ', and ' . $L['overdue'] . ' lesson' . ($L['overdue'] === 1 ? ' is' : 's are') . ' overdue' : '') . '.');
     }
     if (!empty($r['money'])) {
         $M = $r['money'];
-        $parts[] = $M['payable'] > 0 ? 'The balance to pay on ' . preport_date($r['asOf']) . ' is ' . preport_money($M['payable']) . '.' : 'The account is fully paid.';
+        if ($M['payable'] > 0) {
+            $amt = preport_money((int)$M['payable']);
+            $parts[] = $e('The balance to pay on ' . preport_date($r['asOf']) . ' is ') . ($html ? '<strong>' . esc_html($amt) . '</strong>' : $amt) . '.';
+        } else {
+            $parts[] = $e('There is nothing to pay.');
+        }
     }
     return implode(' ', $parts);
 }
 
-/* ── The document ─────────────────────────────────────────────────────── */
+/* ── The document (handoff: ngg-progress-report-handoff/SPEC.md; styles in assets/report/report.css) ── */
+
+/** A status tag — one component, four variants (SPEC: "Status tag is one partial"). */
+function preport_tag(string $variant, string $label): string {
+    $v = in_array($variant, ['ok', 'warn', 'bad', 'neutral'], true) ? $variant : 'neutral';
+    return '<span class="rp-tag is-' . $v . '">' . esc_html($label) . '</span>';
+}
+/** A conduct record's status as a tag: Active = warn, Resolved = ok, Waived = neutral. */
+function preport_conduct_tag(string $status): string {
+    $s = mb_strtolower(trim($status));
+    if (in_array($s, ['active', 'pending', 'open', 'issued'], true)) return preport_tag('warn', ucfirst($s === 'issued' ? 'active' : $s));
+    if (in_array($s, ['waived', 'voided', 'void', 'cancelled'], true)) return preport_tag('neutral', 'Waived');
+    return preport_tag('ok', 'Resolved');
+}
+/**
+ * The shared table (SPEC: "one table partial — header row, rows, empty message, optional total row").
+ * $cols: [label, class, width%]; $rows: lists of cell HTML (already escaped); $tail: a final row's HTML.
+ */
+function preport_table(array $cols, array $rows, string $empty = '', string $tail = '', string $caption = '', bool $totals = false): string {
+    if (!$rows && $tail === '') return $empty !== '' ? '<p class="rp-empty">' . esc_html($empty) . '</p>' : '';
+    $h = '<table class="rp-t' . ($totals ? ' is-totals' : '') . '">' . ($caption !== '' ? '<caption class="rp-sr">' . esc_html($caption) . '</caption>' : '') . '<thead><tr>';
+    foreach ($cols as $c) $h .= '<th scope="col"' . (!empty($c[1]) ? ' class="' . $c[1] . '"' : '') . (!empty($c[2]) ? ' style="width:' . (int)$c[2] . '%"' : '') . '>' . esc_html($c[0]) . '</th>';
+    $h .= '</tr></thead><tbody>';
+    foreach ($rows as $row) {
+        $h .= '<tr>';
+        foreach (array_values($row) as $i => $cell) {
+            [$html, $cls] = is_array($cell) ? $cell : [$cell, ''];
+            $cls = trim(($cols[$i][1] ?? '') . ' ' . $cls);
+            $h .= '<td' . ($cls !== '' ? ' class="' . $cls . '"' : '') . '>' . $html . '</td>';
+        }
+        $h .= '</tr>';
+    }
+    return $h . $tail . '</tbody></table>';
+}
 
 /**
- * The report as HTML: inline styles only, so the same markup is the email body and the printable page. Tables,
- * not grids — mail clients still read tables best. Contrast: #16233f and #3d4560 on white (15:1, 9:1).
+ * The report. `$page` gives the whole printable document (with the "Print or save as PDF" button); without it,
+ * the inner sheet. Reads a sealed report of either data version: v2 carries the per-line ledger and the tag
+ * of every register day; a v1 report (issued before the redesign) is drawn from its totals.
  */
 function preport_html(array $r, bool $page = false, string $reportNo = ''): string {
     $e = static fn($s) => esc_html((string)$s);
-    $ink = '#16233f'; $soft = '#3d4560'; $line = '#d5dae6'; $band = '#f3f5fa'; $gold = '#f5b026';
-    $th = "style=\"text-align:left;padding:7px 10px;border-bottom:1px solid $line;background:$band;font-size:12.5px;color:$ink\"";
-    $td = "style=\"padding:7px 10px;border-bottom:1px solid $line;font-size:13.5px;color:$ink;vertical-align:top\"";
-    $tdr = "style=\"padding:7px 10px;border-bottom:1px solid $line;font-size:13.5px;color:$ink;text-align:right;white-space:nowrap\"";
-    $h2 = static fn($t) => "<h2 style=\"font:800 16px/1.3 Arial,Helvetica,sans-serif;color:$ink;margin:26px 0 8px;padding-bottom:6px;border-bottom:2px solid $gold\">" . esc_html($t) . '</h2>';
-    $table = static function (array $head, array $rows, array $right = []) use ($th, $td, $tdr, $e, $soft): string {
-        if (!$rows) return '';
-        $h = '<tr>';
-        foreach (array_values($head) as $i => $x) $h .= '<th scope="col" ' . (in_array($i, $right, true) ? str_replace('text-align:left', 'text-align:right', $th) : $th) . '>' . esc_html($x) . '</th>';
-        $h .= '</tr>';
-        $b = '';
-        foreach ($rows as $row) { $b .= '<tr>'; foreach (array_values($row) as $i => $c) $b .= '<td ' . (in_array($i, $right, true) ? $tdr : $td) . '>' . $e($c) . '</td>'; $b .= '</tr>'; }
-        return "<table role=\"table\" style=\"width:100%;border-collapse:collapse;margin:0 0 6px\">$h$b</table>";
-    };
-    $none = static fn($t) => "<p style=\"margin:4px 0 0;font-size:13.5px;color:$soft\">" . esc_html($t) . '</p>';
     $S = $r['subject']; $A = $r['attendance'];
-    $title = ['month' => 'Monthly Progress Report', 'session' => 'End of Session Report', 'edition' => 'Summer School Report'][$r['kind']] ?? 'Progress Report';
-    $kv = [['Name', $S['name']], ['ID number', $S['displayId'] ?: '—'], ['Centre', $S['centre'] ?: '—']];
-    if (!empty($S['group'])) $kv[] = ['Group', $S['group']];
-    if (!empty($S['courses'])) $kv[] = ['Courses', implode(', ', $S['courses'])];
-    if (!empty($S['mentor'])) $kv[] = ['Mentor', $S['mentor']];
-    $kv[] = ['Period', preport_date($r['from']) . ' – ' . preport_date($r['to'])];
-    if ($reportNo !== '') $kv[] = ['Report no.', $reportNo];
-    $idt = '';
-    foreach ($kv as [$k, $v]) $idt .= "<tr><th scope=\"row\" style=\"text-align:left;padding:4px 14px 4px 0;font-size:12.5px;color:$soft;font-weight:700;white-space:nowrap\">" . $e($k) . "</th><td style=\"padding:4px 0;font-size:13.5px;color:$ink\">" . $e($v) . '</td></tr>';
+    $kind = (string)($r['kind'] ?? 'month');
+    $title = ['month' => 'Monthly Progress Report', 'session' => 'End of Session Report', 'edition' => 'Summer School Report'][$kind] ?? 'Progress Report';
+    $who = ($S['type'] ?? 'member') === 'participant' ? 'Participant' : 'Student';
+    $badge = $kind === 'month' ? gmdate('F Y', strtotime(($r['from'] ?? '') . ' 12:00:00 UTC') ?: time()) : (string)$r['label'];
+    $dash = '<span class="is-dim">—</span>';
 
-    $html = "<div style=\"font-family:Arial,Helvetica,sans-serif;color:$ink;max-width:720px;margin:0 auto\">";
-    $html .= "<table style=\"width:100%;border-collapse:collapse\"><tr><td style=\"vertical-align:top\"><div style=\"font:800 12px Arial;letter-spacing:.06em;color:$soft\">NEXT GENERATION GENIUS · AFROVANGUARD</div>"
-           . "<div style=\"font:800 24px/1.2 Arial;color:$ink;margin:6px 0 2px\">" . $e($title) . "</div><div style=\"font-size:14px;color:$soft\">" . $e($r['label']) . '</div></td>'
-           . "<td style=\"vertical-align:top;text-align:right;font-size:12px;color:$soft;white-space:nowrap\">Issued " . $e(preport_date($r['asOf'])) . '</td></tr></table>';
-    $html .= "<table style=\"border-collapse:collapse;margin:16px 0 4px\">$idt</table>";
-    $html .= "<div style=\"background:$band;border-left:4px solid $gold;padding:12px 14px;margin:14px 0 4px;font-size:14.5px;line-height:1.5;color:$ink\">" . $e(preport_headline($r)) . '</div>';
+    // Letterhead and title
+    $o = '<header><div class="rp-head"><div class="rp-brand"><img class="rp-logo" src="/assets/report/logo.png" alt="" width="48" height="48"><div class="rp-brand-t">'
+       . '<span class="rp-brand-n">Next Generation Genius</span><span class="rp-over">An Afrovanguard programme</span></div></div>'
+       . '<table class="rp-meta"><tbody>' . ($reportNo !== '' ? '<tr><th scope="row">Report no.</th><td>' . $e($reportNo) . '</td></tr>' : '')
+       . '<tr><th scope="row">Issued</th><td>' . $e(preport_date((string)$r['asOf'])) . '</td></tr></tbody></table></div><div class="rp-bar"></div></header>';
+    $o .= '<div class="rp-title"><div class="rp-title-t"><h1>' . $e($title) . '</h1><p class="rp-sub">Reporting period: ' . $e(preport_span((string)$r['from'], (string)$r['to'])) . '</p></div>'
+        . '<span class="rp-badge">' . $e($badge) . '</span></div>';
 
-    // Attendance
-    $html .= $h2('Attendance');
-    $html .= $table(['Programme days', 'Present', 'Late', 'Absent', 'Unexcused', 'Rate'],
-        [[$A['days'], $A['present'], $A['late'], $A['absent'], $A['unexcused'], $A['rate'] === null ? '—' : $A['rate'] . '%']]);
-    if ($A['noSignOut']) $html .= $none('Did not sign out on ' . $A['noSignOut'] . ' day' . ($A['noSignOut'] === 1 ? '' : 's') . ' — please make sure your child signs out at the desk.');
-    if ($A['register'] && count($A['register']) <= 31) $html .= $table(['Date', 'Mark', 'Note'], array_map(static fn($x) => [preport_date($x['date']), $x['mark'], $x['detail']], $A['register']));
+    // Details (key/value; th scope="row" for labels)
+    $kv = [[$who, $S['name'], 'is-name'], ['ID number', ($S['displayId'] ?? '') ?: '—', ''], ['Centre', ($S['centre'] ?? '') ?: '—', '']];
+    if (!empty($S['group'])) $kv[] = ['Group', $S['group'], ''];
+    $kv[] = ['Courses', !empty($S['courses']) ? implode(', ', $S['courses']) : '—', ''];
+    if (($S['type'] ?? 'member') !== 'participant') $kv[] = ['Mentor', ($S['mentor'] ?? '') ?: '—', ''];
+    $kv[] = ['Period', preport_date((string)$r['from']) . ' – ' . preport_date((string)$r['to']), ''];
+    $o .= '<table class="rp-kv"><tbody>';
+    foreach (array_chunk($kv, 2) as $pair) {
+        $o .= '<tr>';
+        foreach ($pair as [$k, $v, $cls]) $o .= '<th scope="row">' . $e($k) . '</th><td' . ($cls ? ' class="' . $cls . '"' : '') . '>' . $e($v) . '</td>';
+        if (count($pair) === 1) $o .= '<th scope="row"></th><td></td>';
+        $o .= '</tr>';
+    }
+    $o .= '</tbody></table>';
 
-    // Learning
-    if (!empty($r['learning'])) {
-        $L = $r['learning'];
-        $html .= $h2('Learning');
-        $html .= $table(['Lessons completed this period', 'All lessons to date', 'Overdue'], [[count($L['lessons']), $L['completed'] . ' of ' . $L['total'], $L['overdue']]]);
-        if ($L['lessons']) $html .= $table(['Lesson', 'Course', 'Score'], array_map(static fn($x) => [$x['title'], $x['course'], $x['pct'] . '%'], array_slice($L['lessons'], 0, 20)), [2]);
-        if ($L['exams']) $html .= $table(['Exam', 'Date', 'Score', 'Band'], array_map(static fn($x) => [$x['what'], preport_date($x['date']), $x['pct'] . '%', $x['band'] ?: '—'], $L['exams']), [2]);
-        if ($L['certificates']) $html .= $table(['Certificate', 'Number', 'Issued'], array_map(static fn($x) => [$x['title'], $x['no'], preport_date($x['date'])], $L['certificates']));
-        if (!$L['lessons'] && !$L['exams']) $html .= $none('No lessons were completed in this period.');
+    // Summary: the sentence, then the four figures
+    $L = $r['learning'] ?? null; $M = $r['money'] ?? null;
+    $lastExam = $L && !empty($L['exams']) ? $L['exams'][count($L['exams']) - 1] : null;
+    $fig = static fn($label, $value, $cap, $cls = '') => '<div class="rp-fig' . ($cls ? ' ' . $cls : '') . '"><span class="rp-over">' . esc_html($label) . '</span><span class="rp-fig-v">' . esc_html($value) . '</span><span class="rp-fig-c">' . esc_html($cap) . '</span></div>';
+    $figs = $fig('Attendance', $A['rate'] === null ? '—' : $A['rate'] . '%', $A['present'] . ' of ' . $A['days'] . ' day' . ($A['days'] === 1 ? '' : 's'));
+    if ($L) {
+        $figs .= $fig('Lessons', $L['completed'] . ' / ' . $L['total'], $L['overdue'] ? $L['overdue'] . ' overdue' : 'None overdue');
+        $figs .= $fig('Exam score', $lastExam ? $lastExam['pct'] . '%' : '—', $lastExam ? (($lastExam['band'] ?? '') ?: 'Marked') : 'No exam this period');
+    } else {
+        $figs .= $fig('Late', (string)$A['late'], $A['late'] ? 'arrivals after the start' : 'Always on time');
+        $figs .= $fig('Absent', (string)$A['absent'], $A['absent'] === 1 ? 'day' : 'days');
+    }
+    if ($M) {
+        $credit = (int)($M['credit'] ?? 0);
+        $figs .= $M['payable'] > 0 ? $fig('Balance due', preport_money((int)$M['payable']), 'By ' . preport_date((string)$r['asOf']), 'is-money')
+               : $fig($credit > 0 ? 'Credit' : 'Balance due', preport_money($credit), $credit > 0 ? 'On account' : 'All paid', 'is-money');
+    } else {
+        $figs .= $fig('Conduct', (string)count($r['conduct'] ?? []), count($r['conduct'] ?? []) === 1 ? 'record' : 'records');
+    }
+    $o .= '<section class="rp-sec is-summary" aria-labelledby="rp-s0"><h2 id="rp-s0">Summary</h2><p class="rp-lead">' . preport_headline($r, true) . '</p><div class="rp-figs">' . $figs . '</div></section>';
+
+    // 1. Attendance
+    $n = 1;
+    $sec = static function (int $n, string $id, string $title, string $body): string {
+        return '<section class="rp-sec" aria-labelledby="rp-' . $id . '"><h2 id="rp-' . $id . '">' . $n . '. ' . esc_html($title) . '</h2>' . $body . '</section>';
+    };
+    $att = preport_table([['Programme days', ''], ['Present', 'is-num'], ['Late', 'is-num'], ['Absent', 'is-num'], ['Unexcused', 'is-num'], ['Rate', 'is-num is-strong']],
+        [[(string)$A['days'], (string)$A['present'], (string)$A['late'], (string)$A['absent'], (string)$A['unexcused'], $A['rate'] === null ? '—' : $A['rate'] . '%']], '', '', 'Attendance totals', true);
+    $log = [];
+    foreach ($A['register'] as $d) {
+        $tag = $d['tag'] ?? (str_starts_with((string)$d['mark'], 'Absent') ? 'bad' : ((string)$d['mark'] === 'Late' ? 'warn' : 'ok'));
+        $note = (string)($d['detail'] ?? '');
+        if ($note !== '' && preg_match('/^\d+ min$/', $note)) $note = 'Arrived ' . $note . ' late';   // a v1 report's note
+        $log[] = [$e(preport_day((string)$d['date'])), preport_tag($tag, (string)$d['mark']), $note !== '' ? $e(ucfirst($note)) : $dash];
+    }
+    $att .= preport_table([['Date', '', 30], ['Status', '', 40], ['Note', '']], $log, 'No programme days in this period.', '', 'Attendance by day');
+    $o .= $sec($n++, 'att', 'Attendance', $att);
+
+    // 2. Learning (members)
+    if ($L) {
+        $lb = preport_table([['Lessons completed this period', ''], ['All lessons to date', 'is-num'], ['Overdue', 'is-num']],
+            [[(string)count($L['lessons']), $L['completed'] . ' of ' . $L['total'], [(string)$L['overdue'], $L['overdue'] ? 'is-bad' : '']]], '', '', 'Learning totals', true);
+        $lb .= preport_table([['Lesson', ''], ['Course', '', 30], ['Score', 'is-num is-mid', 14]],
+            array_map(static fn($x) => [esc_html($x['title']), esc_html($x['course']), (int)$x['pct'] . '%'], $L['lessons']), 'No lessons completed this period.', '', 'Lessons completed');
+        $lb .= preport_table([['Exam', ''], ['Date', '', 22], ['Score', 'is-num is-mid', 12], ['Band', 'is-num is-band', 14]],
+            array_map(static fn($x) => [esc_html($x['what']), esc_html(preport_date($x['date'])), (int)$x['pct'] . '%', esc_html(($x['band'] ?? '') ?: '—')], $L['exams']), 'No exams this period.', '', 'Exams');
+        if (!empty($L['certificates'])) $lb .= preport_table([['Certificate', ''], ['Number', '', 26], ['Issued', '', 22]],
+            array_map(static fn($x) => [esc_html($x['title']), esc_html($x['no']), esc_html(preport_date($x['date']))], $L['certificates']), '', '', 'Certificates');
+        $o .= $sec($n++, 'learn', 'Learning', $lb);
     }
 
-    // Conduct
-    $html .= $h2('Conduct');
-    $html .= $r['conduct'] ? $table(['Date', 'Record', 'Reason', 'Status'], array_map(static fn($x) => [preport_date($x['date']), ucfirst(str_replace('_', ' ', $x['kind'])) . ($x['amount'] ? ' (' . preport_money($x['amount']) . ')' : ''), $x['reason'], ucfirst($x['status'])], $r['conduct']))
-                           : $none('No conduct records in this period. Thank you.');
+    // 3. Conduct
+    $cond = array_map(static fn($x) => [esc_html(preport_date($x['date'])), esc_html(ucfirst(str_replace('_', ' ', (string)$x['kind'])) . ($x['amount'] ? ' (' . preport_money((int)$x['amount']) . ')' : '')),
+        $x['reason'] !== '' ? esc_html($x['reason']) : '<span class="is-dim">—</span>', preport_conduct_tag((string)$x['status'])], $r['conduct'] ?? []);
+    $o .= $sec($n++, 'cond', 'Conduct', preport_table([['Date', '', 22], ['Record', '', 26], ['Reason', ''], ['Status', 'is-num', 14]], $cond, 'No conduct records this period.', '', 'Conduct records'));
 
-    // Fees, fines and dues
-    if (!empty($r['money'])) {
-        $M = $r['money'];
-        $lbl = ['membership' => 'Membership fee', 'dues' => 'Monthly dues', 'fine' => 'Fines', 'adjustment' => 'Adjustments', 'payment' => 'Payments received', 'waiver' => 'Waived'];
-        $html .= $h2('Fees, dues and fines');
-        $rows = [];
-        foreach ($M['charged'] as $k => $v) $rows[] = ['Charged: ' . ($lbl[$k] ?? ucfirst($k)), preport_money($v)];
-        foreach ($M['received'] as $k => $v) $rows[] = [($lbl[$k] ?? ucfirst($k)), '− ' . preport_money($v)];
-        $html .= $rows ? $table(['This period', 'Amount'], $rows, [1]) : $none('Nothing was charged or paid in this period.');
-        if ($M['fines']) $html .= $table(['Fine', 'Date', 'Amount'], array_map(static fn($x) => [$x['reason'] ?: 'Fine', preport_date($x['date']), preport_money($x['amount'])], $M['fines']), [2]);
-        $html .= "<table style=\"width:100%;border-collapse:collapse;margin:8px 0 0\"><tr><td style=\"padding:10px;background:" . ($M['payable'] > 0 ? '#fff4d6' : '#e6f4ea') . ";font:800 15px Arial;color:$ink\">Balance to pay on " . $e(preport_date($r['asOf'])) . "</td><td style=\"padding:10px;background:" . ($M['payable'] > 0 ? '#fff4d6' : '#e6f4ea') . ";font:800 15px Arial;color:$ink;text-align:right\">" . $e(preport_money($M['payable'])) . '</td></tr></table>';
-        if ($M['open']) $html .= $table(['Still owed', 'Due', 'Amount'], array_map(static fn($x) => [$x['what'], $x['due'] ? preport_date($x['due']) : '—', preport_money($x['left'])], $M['open']), [2]);
-        if ($M['payable'] > 0) $html .= $none('Pay in the family account (Fees), or at the centre desk. If you have already paid, send the receipt from Fees and it will be matched.');
+    // 4. Fees, dues and fines (members)
+    if ($M) {
+        $lines = $M['lines'] ?? null;
+        if ($lines === null) {   // a v1 report: totals by kind
+            $lbl = ['membership' => 'membership fee', 'dues' => 'monthly dues', 'fine' => 'fines', 'adjustment' => 'adjustments'];
+            $lines = [];
+            foreach ($M['charged'] as $k => $v) $lines[] = ['what' => 'Charged: ' . ($lbl[$k] ?? $k), 'date' => '', 'amount' => (int)$v, 'credit' => false];
+            foreach ($M['received'] as $k => $v) $lines[] = ['what' => $k === 'payment' ? 'Payments received' : ucfirst($k), 'date' => '', 'amount' => (int)$v, 'credit' => true];
+        }
+        $fb = preport_table([['This period', ''], ['Date', '', 22], ['Amount', 'is-num', 18]],
+            array_map(static fn($x) => [esc_html($x['what']), $x['date'] !== '' ? esc_html(preport_date($x['date'])) : '', ($x['credit'] ? '− ' : '') . esc_html(preport_money((int)$x['amount']))], $lines),
+            'Nothing was charged or paid in this period.', '', 'Charges and payments this period');
+        $credit = (int)($M['credit'] ?? 0);
+        $balLabel = $M['payable'] > 0 ? 'Balance to pay on ' . preport_date((string)$r['asOf']) : ($credit > 0 ? 'Credit on account' : 'Nothing to pay');
+        $tail = '<tr class="rp-bal"><td class="rp-bal-l">' . $e($balLabel) . '</td><td></td><td class="rp-bal-v' . ($credit > 0 && $M['payable'] <= 0 ? ' is-credit' : '') . '">'
+              . $e(preport_money($M['payable'] > 0 ? (int)$M['payable'] : $credit)) . '</td></tr>';
+        $fb .= preport_table([['Still owed', ''], ['Due', '', 22], ['Amount', 'is-num', 18]],
+            array_map(static fn($x) => [esc_html($x['what']), $x['due'] !== '' ? esc_html(preport_date($x['due'])) : '—', esc_html(preport_money((int)$x['left']))], $M['open'] ?? []),
+            '', $tail, 'What is still owed, and the balance');
+        if ($M['payable'] > 0) $fb .= '<p class="rp-note">Pay in the family account (Fees) or at the centre desk. If you have already paid, send the receipt from Fees and it will be matched.</p>';
+        $o .= $sec($n++, 'fees', 'Fees, dues and fines', $fb);
     }
 
-    // The people around them
-    if (!empty($r['people']) && ($r['people']['leadership'] !== null || $r['people']['note'] !== '')) {
-        $P = $r['people'];
-        $html .= $h2('Mentor and progress');
-        if ($P['leadership'] !== null) $html .= $table(['Leadership Index'], [[$P['leadership'] . ' of 100']]);
-        if ($P['note'] !== '') $html .= "<p style=\"margin:8px 0 0;font-size:13.5px;line-height:1.5;color:$ink\">" . $e($P['note']) . '</p>';
+    // 5. Mentor comments (members)
+    if (($S['type'] ?? 'member') !== 'participant') {
+        $P = $r['people'] ?? ['leadership' => null, 'note' => ''];
+        $comment = trim((string)($P['note'] ?? ''));
+        $mb = '<div class="rp-mentor"><div class="rp-mentor-l"><span class="rp-over">Leadership Index</span><span class="rp-mentor-v">' . ($P['leadership'] !== null ? (int)$P['leadership'] . ' / 100' : '—') . '</span></div>'
+            . '<div class="rp-mentor-r"><p class="rp-lead">' . $e($comment !== '' ? mb_substr($comment, 0, 400) : 'Mentor comments will appear in next month\'s report.') . '</p>'
+            . ($comment !== '' && ($S['mentor'] ?? '') !== '' ? '<span class="rp-mentor-by">— ' . $e($S['mentor']) . ', Mentor</span>' : '') . '</div></div>';
+        $o .= $sec($n++, 'mentor', 'Mentor comments', $mb);
     }
 
-    // Acknowledgement
-    $html .= $h2('Acknowledgement');
-    $html .= "<p style=\"margin:4px 0 14px;font-size:13.5px;color:$soft\">Please sign this report in the family account so " . $e(mp_first((string)$S['name']) ?: 'your child') . "’s mentor knows home has read it. Questions about anything in it: reply to this email or speak to the centre.</p>";
-    $html .= "<table style=\"width:100%;border-collapse:collapse\"><tr><td style=\"width:50%;padding:24px 16px 4px 0;border-bottom:1px solid $ink\"></td><td style=\"width:50%;padding:24px 0 4px 16px;border-bottom:1px solid $ink\"></td></tr>"
-           . "<tr><td style=\"font-size:12px;color:$soft;padding:4px 16px 0 0\">For NGG — Programme Coordinator</td><td style=\"font-size:12px;color:$soft;padding:4px 0 0 16px\">Parent / guardian</td></tr></table>";
-    $html .= "<p style=\"margin:18px 0 0;font-size:11.5px;color:$soft\">This report was produced from NGG's attendance, learning, conduct and accounts records as they stood on " . $e(preport_date($r['asOf'])) . '. It is kept on file as issued.</p>';
-    $html .= '</div>';
-    if (!$page) return $html;
-    return '<!doctype html><html lang="en-GB"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . $e($title . ' — ' . $S['name'] . ' — ' . $r['label']) . '</title>'
-         . '<style>body{margin:0;padding:16px;background:#e9ecf3}.sheet{background:#fff;max-width:760px;margin:0 auto;padding:clamp(16px,4vw,40px);border-radius:8px}'
-         . '.bar{max-width:760px;margin:0 auto 10px;text-align:right}.bar button{min-height:44px;padding:0 16px;border-radius:8px;border:1px solid #16233f;background:#16233f;color:#fff;font:700 15px Arial;cursor:pointer}'
-         . '@media print{body{background:#fff;padding:0}.bar{display:none}.sheet{padding:0;border-radius:0}}</style>'
-         . '<div class="bar"><button type="button" onclick="window.print()">Print or save as PDF</button></div><div class="sheet">' . $html . '</div></html>';
+    // 6. Acknowledgement
+    $first = (string)($S['first'] ?? '') ?: (mp_first((string)$S['name']) ?: 'your child');
+    $ack = '<p class="rp-note">' . (($S['type'] ?? 'member') === 'participant'
+            ? 'Questions about anything in this report: reply to the email it came with, or speak to the centre.'
+            : 'Please sign this report in the family account so ' . $e($first) . '’s mentor knows home has read it. Questions about anything in it: reply to the email it came with, or speak to the centre.') . '</p>'
+         . '<div class="rp-sign"><div><b>For NGG — Programme Coordinator</b><span>Signature and date</span></div><div><b>Parent / guardian</b><span>Signature and date</span></div></div>';
+    $o .= $sec($n, 'ack', 'Acknowledgement', $ack);
+
+    $o .= '<footer class="rp-foot"><span>Produced from NGG’s attendance, learning, conduct and accounts records as they stood on ' . $e(preport_date((string)$r['asOf'])) . '. Kept on file as issued.</span>'
+        . ($reportNo !== '' ? '<span>' . $e($reportNo) . '</span>' : '') . '</footer>';
+
+    $sheet = '<div class="rp-page rp">' . $o . '</div>';
+    if (!$page) return $sheet;
+    return preport_document($title . ' — ' . $S['name'] . ' — ' . $badge, $sheet);
+}
+
+/** The printable page around a sheet: the stylesheet, the print button (external script), A4. */
+function preport_document(string $title, string $sheet): string {
+    $v = '?v=3';
+    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . esc_html($title) . '</title>'
+         . '<link rel="stylesheet" href="/assets/report/report.css' . $v . '"><script src="/assets/report/report.js' . $v . '" defer></script></head>'
+         . '<body class="rp-body"><button class="rp-print" type="button" data-print>Print or save as PDF</button>' . $sheet . '</body></html>';
+}
+
+/**
+ * The email that carries the report. Mail clients cannot load the report's fonts or layout, so it carries the
+ * summary — the sentence and the four figures, in the report's colours, inline — and the button to the full
+ * printable report. Out of scope of the handoff ("the email template that carries the report"), kept in its look.
+ */
+function preport_email_body(array $r): string {
+    $A = $r['attendance']; $L = $r['learning'] ?? null; $M = $r['money'] ?? null;
+    $cell = static fn($label, $value, $cap, $money = false) => '<td style="padding:12px 14px;border:1px solid #D1D5DB;background:' . ($money ? '#FEF4DC' : '#FFFFFF') . ';vertical-align:top">'
+        . '<div style="font-size:11px;letter-spacing:.05em;text-transform:uppercase;font-weight:600;color:' . ($money ? '#7A5600' : '#4B5563') . '">' . esc_html($label) . '</div>'
+        . '<div style="font-size:22px;font-weight:700;color:' . ($money ? '#111827' : '#1C2A5E') . ';margin:2px 0">' . esc_html($value) . '</div>'
+        . '<div style="font-size:12px;color:' . ($money ? '#7A5600' : '#4B5563') . '">' . esc_html($cap) . '</div></td>';
+    $row = $cell('Attendance', $A['rate'] === null ? '—' : $A['rate'] . '%', $A['present'] . ' of ' . $A['days'] . ' days');
+    if ($L) $row .= $cell('Lessons', $L['completed'] . ' / ' . $L['total'], $L['overdue'] ? $L['overdue'] . ' overdue' : 'None overdue');
+    if ($M) $row .= $M['payable'] > 0 ? $cell('Balance due', preport_money((int)$M['payable']), 'By ' . preport_date((string)$r['asOf']), true)
+                                      : $cell('Balance due', preport_money(0), 'All paid', true);
+    return '<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#111827">' . preport_headline($r, true) . '</p>'
+         . '<table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 6px"><tr>' . $row . '</tr></table>'
+         . '<p style="margin:10px 0 0;font-size:13px;color:#374151">The full report — attendance day by day, lessons and exams, conduct, every charge and payment, and your mentor\'s comments — opens from the button below, ready to print or save as a PDF.</p>';
 }
 
 /* ── Issuing and sending ──────────────────────────────────────────────── */
@@ -309,6 +452,28 @@ function preport_issue(string $subjectId, string $type, string $kind, string $pe
             'periodFrom' => (string)$data['from'], 'periodTo' => (string)$data['to'], 'data' => json_encode($data, JSON_UNESCAPED_UNICODE), 'issuedAt' => now_iso()];
     try { db_insert('parent_reports', $row); } catch (Throwable $e) { /* a tick beside this one sealed it first */ }
     return db_row('SELECT * FROM parent_reports WHERE subjectId = ? AND kind = ? AND period = ? LIMIT 1', [$subjectId, $kind, $period]) ?: $row;
+}
+
+/**
+ * A Summer School parent has no family account to sign in with, so their report's link carries its own key: an
+ * HMAC of the report number under the deployment's secret — stateless like the session cookies, nothing stored,
+ * and unguessable for any other report.
+ */
+function preport_sig(string $reportId): string {
+    $secret = (string)($GLOBALS['CONFIG']['cookie_secret'] ?? '');
+    return $secret === '' ? '' : substr(hash_hmac('sha256', 'parent-report:' . $reportId, $secret), 0, 32);
+}
+function preport_public_url(string $reportId): string {
+    return (function_exists('family_origin') ? family_origin() : '') . '/api/public/report.php?id=' . rawurlencode($reportId) . '&k=' . preport_sig($reportId);
+}
+/** public.report — a sealed participant report, for whoever holds its signed link. */
+function public_report_get(array $p): array {
+    $id = (string)($p['reportId'] ?? ''); $k = (string)($p['key'] ?? '');
+    $sig = preport_sig($id);
+    if ($id === '' || $sig === '' || !hash_equals($sig, $k)) return ['ok' => false, 'error' => 'not_found'];
+    $rep = db_row("SELECT * FROM parent_reports WHERE reportId = ? AND subjectType = 'participant' LIMIT 1", [$id]);
+    if (!$rep) return ['ok' => false, 'error' => 'not_found'];
+    return ['ok' => true, 'html' => preport_html(safe_json((string)$rep['data']) ?: [], true, (string)$rep['reportId'])];
 }
 
 function preport_view_url(string $reportId): string {
@@ -334,7 +499,7 @@ function preport_send_member(array $rep, array $m): int {
         if (function_exists('family_mail') && trim((string)$g['email']) !== '') {
             family_mail((string)$g['email'], $first . '’s ' . $title . ' — ' . $data['label'], [
                 'title' => $title, 'intro' => (string)$m['fullName'] . ' · ' . $data['label'], 'preheader' => preport_headline($data),
-                'bodyHtml' => preport_html($data, false, (string)$rep['reportId']),
+                'bodyHtml' => preport_email_body($data),
                 'ctaLabel' => 'Open, print or sign the report →', 'ctaUrl' => preport_view_url((string)$rep['reportId']),
                 'footNote' => 'Family reports are part of membership. Reply to this email with any question about it.',
             ]);
@@ -402,7 +567,8 @@ function preport_edition_run(?string $today = null, int $limit = PREPORT_BATCH):
             if (preport_claim('report:edition', (string)$rep['reportId'], (string)$s['parentEmail']) && function_exists('send_mail') && function_exists('email_template')) {
                 @send_mail((string)$s['parentEmail'], (mp_first((string)$s['fullName']) ?: 'Your child') . '’s Summer School report — ' . $data['label'], email_template([
                     'eyebrow' => 'NGG · Summer School', 'title' => 'Summer School Report', 'intro' => (string)$s['fullName'] . ' · ' . $data['label'],
-                    'preheader' => preport_headline($data), 'bodyHtml' => preport_html($data, false, (string)$rep['reportId']),
+                    'preheader' => preport_headline($data), 'bodyHtml' => preport_email_body($data),
+                    'ctaLabel' => 'Open, print or save the report →', 'ctaUrl' => preport_public_url((string)$rep['reportId']),
                     'footNote' => 'Reply to this email with any question about this report.',
                 ]));
                 $sent++;

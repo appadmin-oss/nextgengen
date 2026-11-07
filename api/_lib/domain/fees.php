@@ -2854,7 +2854,7 @@ function admin_fees_arrears(array $p): array {
                 $days = $oldest !== '' ? max(0, (int)floor((strtotime($today . ' UTC') - strtotime($oldest . ' UTC')) / 86400)) : 0;
                 $last = null;
                 foreach (array_reverse($entries) as $e) if ((string)$e['kind'] === 'payment' && trim((string)($e['voidedAt'] ?? '')) === '') { $last = $e; break; }
-                $out[] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],
+                $out[] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
                           'centre' => (string)($m['centre'] ?? ''),
                           'payable' => (int)$b['payable'], 'outstanding' => (int)$b['outstanding'],
                           'trainingEarned' => (int)$b['trainingEarned'],

@@ -491,7 +491,8 @@ class Fp3Portal extends React.Component {
           : F.enabled ? [{ label: F.ahead && F.ahead.paidThrough ? "Paid ahead to " + F.ahead.paidThroughL : "Nothing falls due in the next two months", when: F.ahead && F.ahead.paidThrough ? N(F.ahead.credit) + " held on the account" : "", amount: "" }] : [],
         termsL: "Membership is " + N(TM.membershipFee) + " a year, renewed on the date " + first + " joined. The commitment fee is " + N(TM.monthly) + " a month, charged on the 1st; a first month is charged only for the Saturdays left." + fp3TellTerms(TM),
         stTabs: TABS.map(tb => { const on = S.stF === tb[0]; return { l: tb[1], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#d9d6cd", onClick: () => this.setState({ stF: tb[0], stN: 14 }, () => this.pushUrl(true)) }; }),
-        rows, stCount: list.length + (list.length === 1 ? " entry" : " entries"), stEmpty: !list.length, stEmptyL: S.stF === "fines" ? "No fines. " + first + " has a clean record." : "Nothing here yet.",
+        /* The whole account as an A4 statement, printable or saved as a PDF (domain/dues-print.php). */
+        rows, stPdf: "/api/family/statement.php?linkId=" + encodeURIComponent(w.linkId), stCount: list.length + (list.length === 1 ? " entry" : " entries"), stEmpty: !list.length, stEmptyL: S.stF === "fines" ? "No fines. " + first + " has a clean record." : "Nothing here yet.",
         stMore: list.length > S.stN, stMoreL: "Show " + Math.min(20, list.length - S.stN) + " more of " + (list.length - S.stN), showMore: () => this.setState(s2 => ({ stN: s2.stN + 20 })),
       };
       const tm = P.trainingMonths || 0, sm = P.serviceMonths || 0, leave = " If " + first + " leaves before the MOU is complete, the part not yet earned off becomes due.";
