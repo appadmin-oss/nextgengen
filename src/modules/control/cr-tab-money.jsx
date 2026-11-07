@@ -1110,7 +1110,7 @@ function CrMembershipPayments({ ctx }) {
       values: Object.assign({}, v, { dueDays: String(v.dueDays || 10) }),
       fields: [{ id: "legalName", l: "Legal name", req: true, max: 120 }, { id: "rcNo", l: "RC number", max: 20 }, { id: "tin", l: "TIN", max: 24 },
         { id: "address", l: "Registered address", max: 200 }, { id: "feesEmail", l: "Fees email", type: "email", max: 120 }, { id: "feesPhone", l: "Fees phone", max: 32 },
-        { id: "feesOfficer", l: "Fees Officer (signs invoices and receipts)", max: 80 }, { id: "mathlabCoach", l: "Math Lab Coach", max: 80 },
+        { id: "feesOfficer", l: "Fees Officer (signs invoices and receipts)", max: 80 }, { id: "mathlabCoach", l: "Math Lab Coach", max: 80 }, { id: "clubHead", l: "Head of the Club (signs course, promotion and mastery certificates)", max: 80 },
         { id: "programmeDirector", l: "Programme Director", max: 80 },
         { id: "vat", l: "VAT", type: "select", opts: [["exempt", "Exempt (education)"], ["standard", "7.5%, inside the amounts charged"]] },
         { id: "dueDays", l: "Days to pay an invoice", im: "numeric", pattern: /^\d{1,2}$/, patternMsg: "1 to 60 days." }],

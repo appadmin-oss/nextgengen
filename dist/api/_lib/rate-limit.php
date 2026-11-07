@@ -38,6 +38,11 @@ function rate_limit_default(string $op): ?array {
         // The English Lab's speaking step: each "Say it" is a PAID speech-to-text call; a voice clip is
         // paid only the first time (then cached), so it can be looser.
         'mathslab.listen'    => ['max' => 10, 'window' => 60],
+        // The exam: autosaves are frequent; submits and follow-ups spend AI marking, so they are not.
+        'member.exam.save'   => ['max' => 40, 'window' => 60],
+        'member.exam.submit' => ['max' => 6, 'window' => 60],
+        'member.exam.viva'   => ['max' => 10, 'window' => 60],
+        'member.exam.start'  => ['max' => 20, 'window' => 60],
         'mathslab.voice'     => ['max' => 60, 'window' => 60],
         'family.request'     => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code, like auth.request
         'timetable.save'     => ['max' => 5,  'window' => 60],    // EMAILS a timetable link — mail-amplification

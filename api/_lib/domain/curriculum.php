@@ -47,7 +47,12 @@ const CURR_MATERIAL_STATUSES = ['approved', 'pending', 'rejected'];
    configured and by the instructor otherwise. There is deliberately no
    keyword gate: a child who can guess which three words to type has not
    watched anything, and a child who writes it their own way would fail. */
-const CURR_CHECK_KINDS    = ['mcq', 'short', 'task', 'essay', 'reflection', 'project', 'code', 'watch'];
+/* `order`: put the steps of a process in sequence (stored in the right order, shown shuffled) — procedural
+   knowledge a list of four options cannot test. `evidence`: an exercise done ELSEWHERE (freeCodeCamp, a
+   Khan Academy set, a tutorial) — the link travels with the question, and the learner hands back their
+   proof and what they did, which is marked like any written answer and then followed up (learn-exam.php).
+   Owner, 7 Nov 2026: "Some exercises may be taken from external sources, but they still get assessed." */
+const CURR_CHECK_KINDS    = ['mcq', 'short', 'task', 'essay', 'reflection', 'project', 'code', 'watch', 'order', 'evidence'];
 /* How the AI marks each open kind. Only `short` has one right answer; the rest
  * are judged against the rubric, and a reflection is never marked for having
  * the "right" opinion. */
@@ -57,6 +62,7 @@ const CURR_MARKING_GUIDE = [
     'essay'      => 'Extended writing with no single right answer. Judge against the rubric: a clear point, reasons or evidence, organisation, and answering the question asked. Reward a well-argued view you disagree with.',
     'reflection' => 'A personal reflection. There is no right answer and no opinion is marked down. Judge honesty, specific detail from their own experience, and a link to the lesson. Never mark down anything personal they disclose.',
     'project'    => 'A description of a project they made (perhaps with a link you cannot open). Judge the description against the rubric criteria: what they built, how, what they learned. If they give only a link and no description, you cannot judge it.',
+    'evidence'   => 'An exercise done on another site (the link is in the question). You cannot open their proof link, so judge their account: what exactly they did, the result they got, a specific problem they hit and how they solved it, and what they would do differently. A bare link, or an account that could be written without doing the exercise, earns little.',
     'code'       => 'Code they wrote. Trace it mentally: does it do what the prompt asks, is the logic sound, is it readable. Small syntax slips cost less than wrong logic.',
     /* VERIFYING A VIDEO. You cannot check that somebody pressed play, and a
        keyword gate would only check that they guessed which three words to
@@ -190,7 +196,14 @@ function curriculum_unit_public(array $u, array $materials, array $checks, bool 
                to the editor: it is what they are being asked about, not an
                answer, so withholding it would withhold the question. */
             if ((string)$c['kind'] === 'watch' && trim((string)($c['videoUrl'] ?? '')) !== '') $o['videoUrl'] = (string)$c['videoUrl'];
-            if ($withAnswers) { $o['answer'] = (string)$c['answer']; $o['rubric'] = (string)$c['rubric']; }
+            // An outside exercise: where it is. The learner needs it to do the question at all.
+            if ((string)$c['kind'] === 'evidence') $o['linkUrl'] = (string)($c['videoUrl'] ?? '');
+            /* The steps of an ordering question are stored in the RIGHT order, so the learner gets them
+               shuffled — the same shuffle every time for the same question, so a reload does not reorder
+               what they were working on. The editor sees them as stored. */
+            if ((string)$c['kind'] === 'order' && !$withAnswers) $o['options'] = curriculum_order_shuffle($o['options'], (string)$c['checkId']);
+            if ($withAnswers) { $o['answer'] = (string)$c['answer']; $o['rubric'] = (string)$c['rubric']; $o['whys'] = json_decode((string)($c['whys'] ?? ''), true) ?: [];
+                if ((string)$c['kind'] === 'evidence') $o['url'] = (string)($c['videoUrl'] ?? ''); }
             return $o;
         }, $checks),
     ];
@@ -649,6 +662,22 @@ function curriculum_validate(array $d, bool $allowNewCourse = false): array {
             if ($idx === null || $idx >= count($opts)) return ['ok' => false, 'error' => 'mcq_answer_missing', 'detail' => 'check ' . ($i + 1) . ': the answer must be one of its options'];
             $answer = (string)$idx;
         }
+        /* NAMED SLIPS (the Labs' rule): why each wrong option is tempting, parallel to the options. A learner
+           who picks a wrong option is told that reason — it names the misconception without giving the
+           answer away. Optional per option; an author fills in what they know. */
+        $whys = [];
+        if ($kind === 'mcq') {
+            $rawW = is_array($c['whys'] ?? null) ? array_values($c['whys']) : [];
+            foreach ($opts as $k => $_) $whys[] = curriculum_clean_text($rawW[$k] ?? '', 300);
+            if (!array_filter($whys, static fn($w) => $w !== '')) $whys = [];
+        }
+        if ($kind === 'order') {
+            /* The options ARE the answer: the steps, in the right order. Unique, or "which one is first"
+               has two right answers; three at least, or it is a coin toss. */
+            if (count($opts) < 3) return ['ok' => false, 'error' => 'order_needs_steps', 'detail' => 'check ' . ($i + 1) . ': an ordering question needs at least three steps, in the right order'];
+            if (count(array_unique(array_map('mb_strtolower', $opts))) !== count($opts)) return ['ok' => false, 'error' => 'order_steps_repeat', 'detail' => 'check ' . ($i + 1) . ': every step must be different'];
+            $answer = '';
+        }
         /* Only a 'watch' question carries a video, and it must carry one —
            otherwise it is a question about a film nobody was shown. */
         $video = '';
@@ -659,10 +688,18 @@ function curriculum_validate(array $d, bool $allowNewCourse = false): array {
                         'detail' => 'check ' . ($i + 1) . ': a “watch and tell me” question needs a YouTube or Vimeo link'];
             }
         }
+        if ($kind === 'evidence') {
+            // The exercise lives elsewhere; its address travels in the same column a video's does.
+            $video = curriculum_material_url((string)($c['url'] ?? ($c['videoUrl'] ?? '')));
+            if ($video === '' || !preg_match('#^https://#i', $video)) {
+                return ['ok' => false, 'error' => 'evidence_needs_link', 'detail' => 'check ' . ($i + 1) . ': an outside exercise needs the https link to it'];
+            }
+        }
         $checks[] = ['checkId' => preg_match('/^CHK-[A-F0-9]{6,16}$/', (string)($c['checkId'] ?? '')) ? (string)$c['checkId'] : '',
             'kind' => $kind, 'prompt' => $prompt, 'options' => json_encode($opts, JSON_UNESCAPED_UNICODE), 'answer' => mb_substr($answer, 0, 2000),
             'rubric' => curriculum_clean_text($c['rubric'] ?? '', 2000), 'points' => max(1, min(20, (int)($c['points'] ?? 1))),
-            'videoUrl' => $video, 'source' => (string)($c['source'] ?? '') === 'ai' ? 'ai' : 'manual'];
+            'videoUrl' => $video, 'source' => (string)($c['source'] ?? '') === 'ai' ? 'ai' : 'manual',
+            'whys' => $whys ? json_encode($whys, JSON_UNESCAPED_UNICODE) : ''];
         if (count($checks) > CURR_MAX_CHECKS) return ['ok' => false, 'error' => 'too_many_checks', 'max' => CURR_MAX_CHECKS];
     }
     if ($status === 'published' && !$checks) {
@@ -678,7 +715,8 @@ function curriculum_validate(array $d, bool $allowNewCourse = false): array {
        guessed from four options.
        All 588 bundled lessons meet this; 45 of them did not until the
        practical question each one was missing was written. */
-    if ($status === 'published' && !array_filter($checks, static fn($c) => $c['kind'] !== 'mcq')) {
+    // An ordering question is still choosing from what is on the screen: it does not count as the written one.
+    if ($status === 'published' && !array_filter($checks, static fn($c) => !in_array($c['kind'], ['mcq', 'order'], true))) {
         return ['ok' => false, 'error' => 'review_too_shallow',
                 'detail' => 'a review cannot be multiple choice alone — add one question that asks them to do, explain or show something'];
     }
@@ -707,7 +745,7 @@ function curriculum_fingerprint_stored(array $bundle): string {
        learned about it. */
     $checks = array_map(static fn($c) => ['kind' => (string)$c['kind'], 'prompt' => (string)$c['prompt'], 'options' => (string)$c['options'],
         'answer' => (string)$c['answer'], 'rubric' => (string)$c['rubric'], 'points' => (int)$c['points'],
-        'videoUrl' => (string)($c['videoUrl'] ?? ''), 'source' => (string)$c['source']], $bundle['checks']);
+        'videoUrl' => (string)($c['videoUrl'] ?? ''), 'source' => (string)$c['source'], 'whys' => (string)($c['whys'] ?? '')], $bundle['checks']);
     return hash('sha256', json_encode([$unit, $mats, $checks], JSON_UNESCAPED_UNICODE));
 }
 
@@ -753,7 +791,7 @@ function curriculum_write(array $v, ?array $existing, string $by, string $source
         foreach ($v['checks'] as $i => $c) {
             $fields = ['kind' => $c['kind'], 'prompt' => $c['prompt'], 'options' => $c['options'], 'answer' => $c['answer'],
                        'rubric' => $c['rubric'], 'points' => $c['points'], 'position' => $i + 1, 'source' => $c['source'],
-                       'videoUrl' => (string)($c['videoUrl'] ?? '')];
+                       'videoUrl' => (string)($c['videoUrl'] ?? ''), 'whys' => (string)($c['whys'] ?? '')];
             if ($c['checkId'] !== '' && db_row('SELECT id FROM curriculum_checks WHERE checkId = ? AND unitId = ?', [$c['checkId'], $unitId])) {
                 db_update('curriculum_checks', $fields, ['checkId' => $c['checkId']]);
             } else {
@@ -938,7 +976,7 @@ function admin_curriculum_import(array $p): array {
         // Multiple choice alone is held back for the same reason nothing at
         // all is: it would publish a week that is never really revisited.
         if (!$noAsk && $rChecks) {
-            $noAsk = !array_filter($rChecks, static fn($c) => is_array($c) && strtolower((string)($c['kind'] ?? 'short')) !== 'mcq');
+            $noAsk = !array_filter($rChecks, static fn($c) => is_array($c) && !in_array(strtolower((string)($c['kind'] ?? 'short')), ['mcq', 'order'], true));
         }
         $heldBack = false;
         if ($publish && !isset($r['status'])) {
@@ -2135,7 +2173,9 @@ function staff_curriculum_year(array $p): array {
                    ['memberId', 'stateKey'], ['stateValue' => (string)$year, 'updatedAt' => now_iso()]);
     $now = curriculum_member_year($m);
     audit('curriculum.year', $by, (string)$m['memberId'], ['from' => $was['year'], 'to' => $now['year'], 'source' => $now['source']]);
-    return ['ok' => true, 'placement' => $now, 'unchanged' => $was['year'] === $now['year'] && $was['source'] === $now['source']];
+    // Moved UP a year: a promotion, and its certificate (learn-mastery.php). Placing somebody lower is not one.
+    $promo = function_exists('lx_promotion_award') ? lx_promotion_award($m, (int)$was['year'], (int)$now['year']) : null;
+    return ['ok' => true, 'placement' => $now, 'promotion' => $promo, 'unchanged' => $was['year'] === $now['year'] && $was['source'] === $now['source']];
 }
 
 /* ── Placing a whole class in the curriculum, quickly ──────────────────────
@@ -2616,6 +2656,7 @@ function curriculum_ask_gaps(array $b, string $memberId): string {
             $opts = json_decode((string)$c['options'], true) ?: [];
             $mine = is_numeric($mine) && isset($opts[(int)$mine]) ? (string)$opts[(int)$mine] : '(no answer)';
         }
+        if (is_array($mine)) $mine = implode(' → ', array_map('strval', $mine));   // an ordering, as they arranged it
         $mine = trim(mb_substr((string)$mine, 0, 300));
         $out[] = '- Question: ' . mb_substr((string)$c['prompt'], 0, 240)
                . "\n  They answered: " . ($mine === '' ? '(nothing)' : $mine)
@@ -2721,6 +2762,9 @@ function curriculum_attempt_review(array $checks, array $marks, bool $passed, in
         $cid = (string)$c['checkId'];
         $got = (float)($marks[$cid]['points'] ?? 0);
         $o = ['checkId' => $cid, 'kind' => (string)$c['kind'], 'right' => $got >= (float)$c['points'] && (float)$c['points'] > 0];
+        // The slip behind a wrong pick names the misconception without handing over the answer.
+        if (!$o['right'] && (string)($marks[$cid]['slip'] ?? '') !== '') $o['slip'] = (string)$marks[$cid]['slip'];
+        if ((string)$c['kind'] === 'order') $o['points'] = $got;
         if ($reveal) { $o['answer'] = (string)$c['answer']; $o['rubric'] = (string)$c['rubric']; }
         return $o;
     }, $checks);
@@ -2755,6 +2799,63 @@ function curriculum_ai_mark(array $check, string $answer): ?array {
             'by' => 'ai', 'confidence' => round($conf, 2)];
 }
 
+/** A stable shuffle of an ordering question's steps that is never the right order itself. */
+function curriculum_order_shuffle(array $steps, string $seed): array {
+    $n = count($steps); if ($n < 2) return $steps;
+    $keyed = []; foreach ($steps as $i => $t) $keyed[] = [crc32($seed . '|' . $i . '|' . $t), $i];
+    usort($keyed, static fn($a, $b) => $a[0] <=> $b[0]);
+    $perm = array_column($keyed, 1);
+    if ($perm === range(0, $n - 1)) $perm = array_merge(array_slice($perm, 1), [$perm[0]]);   // never hand back the answer
+    return array_map(static fn($i) => $steps[$i], $perm);
+}
+
+/**
+ * How much of an ordering is right: the longest run of steps already in the right relative order
+ * (a longest increasing subsequence), as a share of the steps. One step dragged to the wrong place
+ * costs one step, not the whole question — and only the exact order earns every point.
+ */
+function curriculum_order_points(array $correct, array $given, int $points): int {
+    $pos = []; foreach (array_values($correct) as $i => $t) $pos[mb_strtolower(trim((string)$t))] = $i;
+    $seq = [];
+    foreach ($given as $t) { $k = mb_strtolower(trim((string)$t)); if (isset($pos[$k])) $seq[] = $pos[$k]; }
+    if (count($seq) !== count($pos) || count(array_unique($seq)) !== count($seq)) return 0;   // not a full arrangement of these steps
+    if ($seq === range(0, count($pos) - 1)) return $points;
+    $tails = [];
+    foreach ($seq as $x) { $lo = 0; $hi = count($tails); while ($lo < $hi) { $mid = intdiv($lo + $hi, 2); if ($tails[$mid] < $x) $lo = $mid + 1; else $hi = $mid; } $tails[$lo] = $x; }
+    return min($points - 1, (int)floor($points * count($tails) / count($pos)));
+}
+
+/** Kinds marked by the machine on the spot; everything else is written and judged. */
+const CURR_AUTO_KINDS = ['mcq', 'order'];
+
+/**
+ * Mark ONE answer to one check: [the answer as stored, the mark]. The one marker, shared by the lesson's
+ * own questions and every exam sitting (learn-exam.php), so a question cannot be marked two ways.
+ * A mark is ['points' => n, 'by' => auto|ai, …], or ['flag' => …] when it is held for a person, or [] when
+ * nothing could mark it and an instructor will.
+ */
+function curriculum_mark_answer(array $c, $a): array {
+    $kind = (string)$c['kind'];
+    if ($kind === 'mcq') {
+        $pick = is_numeric($a) ? (int)$a : -1;
+        $ok = $pick === (int)$c['answer'];
+        $mk = ['points' => $ok ? (int)$c['points'] : 0, 'by' => 'auto'];
+        $whys = json_decode((string)($c['whys'] ?? ''), true) ?: [];
+        if (!$ok && $pick >= 0 && trim((string)($whys[$pick] ?? '')) !== '') $mk['slip'] = (string)$whys[$pick];
+        return [$pick, $mk];
+    }
+    if ($kind === 'order') {
+        $steps = json_decode((string)$c['options'], true) ?: [];
+        $given = is_array($a) ? array_values(array_map(static fn($x) => curriculum_clean_text($x, 300), $a)) : [];
+        return [$given, ['points' => curriculum_order_points($steps, $given, (int)$c['points']), 'by' => 'auto']];
+    }
+    $text = curriculum_clean_text(is_array($a) ? implode("\n", array_map('strval', $a)) : ($a ?? ''), 4000);
+    if ($text === '') return ['', ['points' => 0, 'by' => 'auto', 'feedback' => 'No answer given.']];
+    $ai = curriculum_ai_mark($c, $text);
+    if ($ai && !empty($ai['hold'])) return [$text, ['flag' => $ai['flag']]];
+    return [$text, $ai ?: []];
+}
+
 /** Recompute a progress row's totals from its per-check marks. */
 function curriculum_progress_total(array $checks, array $marks, int $passMark): array {
     $score = 0.0; $max = 0.0; $pending = 0;
@@ -2779,25 +2880,15 @@ function member_curriculum_submit(array $p): array {
     $marks = []; $clean = []; $feedback = [];
     foreach ($b['checks'] as $c) {
         $cid = (string)$c['checkId'];
-        $a = $answers[$cid] ?? null;
-        if ($c['kind'] === 'mcq') {
-            $pick = is_numeric($a) ? (int)$a : -1;
-            $clean[$cid] = $pick;
-            $marks[$cid] = ['points' => $pick === (int)$c['answer'] ? (int)$c['points'] : 0, 'by' => 'auto'];
-        } else {
-            $text = curriculum_clean_text($a ?? '', 4000);
-            $clean[$cid] = $text;
-            if ($text === '') { $marks[$cid] = ['points' => 0, 'by' => 'auto', 'feedback' => 'No answer given.']; continue; }
-            $ai = curriculum_ai_mark($c, $text);
-            if ($ai && !empty($ai['hold'])) {
-                // Held for a person, unmarked, with the reason the instructor sees.
-                $marks[$cid] = ['flag' => $ai['flag']];
-                audit('curriculum.safeguarding', (string)$m['memberId'], $id, ['checkId' => $cid]);
-                continue;
-            }
-            if ($ai) { $marks[$cid] = $ai; if ($ai['feedback'] !== '') $feedback[] = $ai['feedback']; }
-            // No capable AI, or it was unsure: left unmarked for an instructor.
+        [$clean[$cid], $mk] = curriculum_mark_answer($c, $answers[$cid] ?? null);
+        if (isset($mk['flag'])) {
+            // Held for a person, unmarked, with the reason the instructor sees.
+            $marks[$cid] = $mk;
+            audit('curriculum.safeguarding', (string)$m['memberId'], $id, ['checkId' => $cid]);
+            continue;
         }
+        // An empty mark: no capable AI, or it was unsure — left unmarked for an instructor.
+        if ($mk) { $marks[$cid] = $mk; if (($mk['by'] ?? '') === 'ai' && (string)($mk['feedback'] ?? '') !== '') $feedback[] = $mk['feedback']; }
     }
     $t = curriculum_progress_total($b['checks'], $marks, (int)$b['unit']['passMark']);
     $now = now_iso();
@@ -2818,9 +2909,12 @@ function member_curriculum_submit(array $p): array {
     if ($t['passed'] && !$completedBefore && function_exists('event_emit')) {
         event_emit('curriculum.completed', ['memberId' => (string)$m['memberId'], 'unitId' => $id, 'title' => (string)$b['unit']['title'], 'pct' => $t['pct']]);
     }
+    // The lesson that completes a course level earns its certificate now, not when somebody remembers.
+    $certs = $t['passed'] && !$completedBefore && function_exists('lx_award') ? lx_award($m, (string)$b['unit']['course']) : [];
     $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
     return ['ok' => true, 'progress' => curriculum_progress_public($pr, $b),
-            'review' => $t['pending'] === 0 ? curriculum_attempt_review($b['checks'], $marks, $t['passed'] || $completedBefore, (int)$pr['attempts']) : null];
+            'review' => $t['pending'] === 0 ? curriculum_attempt_review($b['checks'], $marks, $t['passed'] || $completedBefore, (int)$pr['attempts']) : null,
+            'certificates' => $certs];
 }
 
 /* ══ Instructors and mentors ═══════════════════════════════════════════════ */
@@ -2837,6 +2931,30 @@ function curriculum_staff_gate(array $p): array {
  * What an instructor or mentor sees: the lessons for their courses, how their
  * members are getting on with each, and the written answers waiting for them.
  */
+/**
+ * The members an instructor or mentor may see: their centres, their courses — the ONE scope, read by the
+ * lesson view (staff_curriculum) and the exam view (staff_exam_sittings) alike, so the two cannot disagree
+ * about whose answers somebody can read.
+ */
+function curriculum_staff_members(array $g): array {
+    $courses = $g['courses'];
+    $mWhere = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $mArgs = [];
+    /* No centre in reach (an instructor whose safeguarding check is pending,
+     * or a record with no centre): the lessons are still theirs to read and
+     * prepare; no member, no answer and no progress reaches them. */
+    $noChildren = $g['centres'] !== null && !$g['centres'];
+    if ($g['centres'] !== null && !$noChildren) {
+        $mWhere .= ' AND centre IN (' . implode(',', array_fill(0, count($g['centres']), '?')) . ')'; $mArgs = $g['centres'];
+    }
+    if ($courses !== null) {
+        // Members who take any of the instructor's courses, chosen or by their old track.
+        $or = [];
+        foreach ($courses as $c) { [$cs, $ca] = member_course_sql((string)$c); $or[] = $cs; $mArgs = array_merge($mArgs, $ca); }
+        $mWhere .= $or ? ' AND (' . implode(' OR ', $or) . ')' : ' AND 1 = 0';
+    }
+    return $noChildren ? [] : db_all("SELECT memberId, fullName, displayId, centre, track, courses, disciplines, division, joinDate, createdAt FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
+}
+
 function staff_curriculum(array $p): array {
     $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
     $courses = $g['courses'];   // null = every course
@@ -2852,21 +2970,7 @@ function staff_curriculum(array $p): array {
         $where .= " AND (course = '' OR lower(course) IN (" . implode(',', array_fill(0, count($fam), '?')) . '))'; $args = $fam;
     }
     $units = curriculum_load($where, $args, 'course, week, position');
-    $mWhere = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $mArgs = [];
-    /* No centre in reach (an instructor whose safeguarding check is pending,
-     * or a record with no centre): the lessons are still theirs to read and
-     * prepare; no member, no answer and no progress reaches them. */
-    $noChildren = $g['centres'] !== null && !$g['centres'];
-    if ($g['centres'] !== null && !$noChildren) {
-        $mWhere .= ' AND centre IN (' . implode(',', array_fill(0, count($g['centres']), '?')) . ')'; $mArgs = $g['centres'];
-    }
-    if ($courses !== null) {
-        // Members who take any of the instructor's courses, chosen or by their old track.
-        $or = [];
-        foreach ($courses as $c) { [$cs, $ca] = member_course_sql((string)$c); $or[] = $cs; $mArgs = array_merge($mArgs, $ca); }
-        $mWhere .= $or ? ' AND (' . implode(' OR ', $or) . ')' : ' AND 1 = 0';
-    }
-    $members = $noChildren ? [] : db_all("SELECT memberId, fullName, displayId, centre, track, courses, disciplines, division, joinDate, createdAt FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
+    $members = curriculum_staff_members($g);
     $byId = []; foreach ($members as $mm) $byId[(string)$mm['memberId']] = $mm;
     // Each member's courses, worked out once (the same matching their own page uses).
     $cCtx = null; $cCache = [];

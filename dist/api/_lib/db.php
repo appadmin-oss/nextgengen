@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 229;
+const NGG_SCHEMA_TARGET = 230;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6427,6 +6427,41 @@ function db_migrate(PDO $db): void {
             INSERT OR IGNORE INTO mlab_track (memberId, lab, climbStage, climbDone, momentum, bosses, createdAt, updatedAt)
               SELECT memberId, 'maths', climbStage, climbDone, momentum, COALESCE(bosses, '{}'), createdAt, updatedAt FROM mlab_profile;
             ALTER TABLE mlab_sessions ADD COLUMN lab TEXT NOT NULL DEFAULT 'maths';
+        ",
+        /* The Learn exam (owner, 7 Nov 2026: "turn on the per session exam by default. Upgrade the exam and
+           make it standard"). `whys`: a JSON list parallel to a multiple-choice question's options — why
+           each wrong option is tempting, shown to a learner who picked it (the Labs' named slips). And
+           one row per SITTING of an exam (domain/learn-exam.php): what was asked in what order, the
+           answers as they were autosaved, how sure the learner was, the marks, the follow-up questions
+           about their own written answers, and the process signals an instructor reads beside them. */
+        230 => "
+            ALTER TABLE curriculum_checks ADD COLUMN whys TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS curriculum_sittings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sittingId TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL,
+              kind TEXT NOT NULL DEFAULT 'session',
+              unitId TEXT NOT NULL DEFAULT '',
+              course TEXT NOT NULL DEFAULT '',
+              items TEXT NOT NULL DEFAULT '[]',
+              answers TEXT NOT NULL DEFAULT '{}',
+              confidence TEXT NOT NULL DEFAULT '{}',
+              marks TEXT NOT NULL DEFAULT '{}',
+              integrity TEXT NOT NULL DEFAULT '{}',
+              viva TEXT NOT NULL DEFAULT '[]',
+              score REAL NOT NULL DEFAULT 0,
+              maxScore REAL NOT NULL DEFAULT 0,
+              pct INTEGER NOT NULL DEFAULT 0,
+              band TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'open',
+              timeLimitSec INTEGER NOT NULL DEFAULT 0,
+              startedAt TEXT NOT NULL DEFAULT '',
+              deadline TEXT NOT NULL DEFAULT '',
+              submittedAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_csit_member ON curriculum_sittings(memberId, kind, unitId);
+            CREATE INDEX IF NOT EXISTS idx_csit_course ON curriculum_sittings(course, kind, status);
         ",
     ];
 

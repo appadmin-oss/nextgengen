@@ -1019,6 +1019,16 @@
       curriculum:        () => request('/member/curriculum.php'),
       curriculumUnit:    (unitId) => request('/member/curriculum.php' + qs({ unit: unitId })),
       curriculumSubmit:  (unitId, answers) => request('/member/curriculum.php', { body: { action: 'submit', unitId, answers }, timeout: 90000 }),
+      // The standardised exam and mastery (domain/learn-exam.php, learn-mastery.php).
+      exam: {
+        start:  (o) => request('/member/curriculum.php', { body: { action: 'exam_start', ...o } }),
+        save:   (sittingId, answers, confidence, signals) => request('/member/curriculum.php', { body: { action: 'exam_save', sittingId, answers, confidence, signals } }),
+        submit: (sittingId, answers, confidence, signals) => request('/member/curriculum.php', { body: { action: 'exam_submit', sittingId, answers, confidence, signals }, timeout: 120000 }),
+        viva:   (sittingId, checkId, answer) => request('/member/curriculum.php', { body: { action: 'exam_viva', sittingId, checkId, answer }, timeout: 60000 }),
+        mastery: () => request('/member/curriculum.php?view=mastery'),
+        staff:  (course) => request('/member/curriculum.php?view=staff_exams' + (course ? '&course=' + encodeURIComponent(course) : '')),
+        mark:   (sittingId, checkId, points, note) => request('/member/curriculum.php', { body: { action: 'exam_mark', sittingId, checkId, points, note } }),
+      },
       // The Learn app: a private note on a lesson (empty clears it), and saving one for later.
       learnNote:         (unitId, note) => request('/member/curriculum.php', { body: { action: 'note', unitId, note } }),
       learnSave:         (unitId, saved) => request('/member/curriculum.php', { body: { action: 'save', unitId, saved: !!saved } }),

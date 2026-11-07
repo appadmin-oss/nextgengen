@@ -36,6 +36,7 @@ const DOC_DEFAULTS = [
     'legalName' => 'Next Generation Genius Initiative', 'rcNo' => '', 'tin' => '', 'address' => '',
     'feesEmail' => '', 'feesPhone' => '',
     'feesOfficer' => '', 'mathlabCoach' => '', 'programmeDirector' => '',
+    'clubHead' => '',           // signs Club course, promotion and mastery certificates (learn-mastery.php)
     'vat' => 'exempt',          // 'exempt' | 'standard' (7.5%, inside the amounts charged)
     'dueDays' => 10,
 ];
@@ -66,7 +67,7 @@ function doc_settings(): array {
  * as a fact, so filling it in changes nothing anybody was told.
  */
 function doc_org_freeze(): array {
-    return array_intersect_key(doc_settings(), array_flip(['legalName', 'rcNo', 'tin', 'address', 'feesEmail', 'feesPhone', 'feesOfficer', 'mathlabCoach', 'programmeDirector']));
+    return array_intersect_key(doc_settings(), array_flip(['legalName', 'rcNo', 'tin', 'address', 'feesEmail', 'feesPhone', 'feesOfficer', 'mathlabCoach', 'programmeDirector', 'clubHead']));
 }
 function doc_org_for(array $d): array {
     $now = doc_settings(); $was = is_array($d['org'] ?? null) ? $d['org'] : [];
@@ -78,7 +79,7 @@ function doc_org_for(array $d): array {
 function doc_settings_gaps(array $s): array {
     $g = [];
     foreach (['rcNo' => 'RC number', 'tin' => 'TIN', 'address' => 'registered address', 'feesOfficer' => 'Fees Officer’s name',
-              'mathlabCoach' => 'Math Lab Coach’s name', 'programmeDirector' => 'Programme Director’s name'] as $k => $l) if ($s[$k] === '') $g[] = $l;
+              'mathlabCoach' => 'Math Lab Coach’s name', 'programmeDirector' => 'Programme Director’s name', 'clubHead' => 'Head of the Club’s name'] as $k => $l) if ($s[$k] === '') $g[] = $l;
     return $g;
 }
 
@@ -89,7 +90,7 @@ function admin_documents_settings(array $p): array {
     if (!$g['ok']) return $g;
     if ($save) {
         $in = $p['data']; $cur = doc_settings(); $o = [];
-        $max = ['legalName' => 120, 'rcNo' => 20, 'tin' => 24, 'address' => 200, 'feesEmail' => 120, 'feesPhone' => 32, 'feesOfficer' => 80, 'mathlabCoach' => 80, 'programmeDirector' => 80];
+        $max = ['legalName' => 120, 'rcNo' => 20, 'tin' => 24, 'address' => 200, 'feesEmail' => 120, 'feesPhone' => 32, 'feesOfficer' => 80, 'mathlabCoach' => 80, 'programmeDirector' => 80, 'clubHead' => 80];
         foreach ($max as $k => $n) $o[$k] = array_key_exists($k, $in) ? mb_substr(trim((string)$in[$k]), 0, $n) : $cur[$k];
         if ($o['legalName'] === '') return ['ok' => false, 'error' => 'legal_name_required', 'message' => 'The legal name is printed on every document.'];
         if ($o['feesEmail'] !== '' && !filter_var($o['feesEmail'], FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email', 'message' => 'The fees email is not an email address.'];
@@ -369,6 +370,7 @@ function doc_cert_title(array $doc): string {
     $lab = (string)($x['labTitle'] ?? 'Maths Lab');
     if (($x['program'] ?? '') === 'mathslab' && ($x['scope'] ?? '') === 'stage') return $lab . ' · Stage ' . (int)$x['stage'] . ': ' . (string)$x['stageTitle'];
     if (($x['program'] ?? '') === 'mathslab') return $lab . ' · ' . (string)($x['course'] ?? '');
+    if (($x['program'] ?? '') === 'club') return doc_club_title($x);
     return 'Math Lab · Level ' . (int)($x['level'] ?? 0) . ': ' . (string)($x['levelName'] ?? '');
 }
 
@@ -404,7 +406,9 @@ function public_document_verify(array $p): array {
     if (!$doc || !doc_code_ok($no, (string)($p['code'] ?? ''))) return ['ok' => false, 'error' => 'not_matched'];
     $d = doc_data($doc); $first = static fn($n) => trim(explode(' ', trim((string)$n))[0] . ' ' . mb_substr((string)(explode(' ', trim((string)$n))[1] ?? ''), 0, 1) . (str_contains(trim((string)$n), ' ') ? '.' : ''));
     $out = ['ok' => true, 'no' => $no, 'kind' => (string)$doc['kind'], 'issuedAt' => (string)$doc['issuedAt'], 'status' => (string)$doc['status'], 'supersededBy' => (string)($doc['supersededBy'] ?? '')];
-    if ($doc['kind'] === 'certificate') $out += ($d['program'] ?? '') === 'mathslab'
+    if ($doc['kind'] === 'certificate' && ($d['program'] ?? '') === 'club') $out += ['holder' => $first($d['name'] ?? ''), 'what' => doc_club_title($d),
+        'result' => ['level' => 'Completed', 'promotion' => 'Promoted to Year ' . (int)($d['toYear'] ?? 0), 'god' => 'Trial passed'][(string)($d['scope'] ?? '')] ?? 'Awarded'];
+    elseif ($doc['kind'] === 'certificate') $out += ($d['program'] ?? '') === 'mathslab'
         ? (($d['scope'] ?? '') === 'stage'
             ? ['holder' => $first($d['name'] ?? ''), 'what' => (string)($d['labTitle'] ?? 'Maths Lab') . ' stage ' . (int)$d['stage'] . ': ' . $d['stageTitle'], 'result' => 'Passed']
             : ['holder' => $first($d['name'] ?? ''), 'what' => (string)($d['labTitle'] ?? 'Maths Lab') . ' course: ' . $d['course'], 'result' => 'Completed'])
@@ -742,7 +746,126 @@ function doc_render_token(string $token): array {
         $inv = $off ? db_row('SELECT * FROM membership_invoices WHERE invoiceId = ? LIMIT 1', [(string)$off['invoiceId']]) : null;
         return $off && $inv ? [200, doc_render_ack($off, $inv, $doc)] : [404, ''];
     }
-    if ($doc['kind'] === 'certificate') return [200, doc_render_certificate($doc)];
+    if ($doc['kind'] === 'certificate') return [200, (doc_data($doc)['program'] ?? '') === 'club' ? doc_render_club_certificate($doc) : doc_render_certificate($doc)];
     $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ? LIMIT 1', [(string)$doc['docNo']]);
     return $inv ? [200, doc_render_invoice($inv, $doc)] : [404, ''];
+}
+
+/* ══ Club certificates (owner, 7 Nov 2026: "Use a similar but more per course-styled certificate for
+   courses and promotions as the labs") ═════════════════════════════════════════════════════════════
+   Three, each frozen at issue and verifiable like every NGG document:
+     · level      — every lesson of a course level completed (learn-mastery.php, lx_award);
+     · promotion  — moved up a programme year by an instructor (curriculum.php, staff_curriculum_year);
+     · god        — the God tier of a course: a Master who passed its Trial (learn-mastery.php).
+   The sheet is the Labs' sheet; what makes it the COURSE's is its style family (colours and glyphs of
+   coding, music, the arts, business or craft) and a background woven from the course's OWN lesson titles,
+   frozen with the certificate — a Piano certificate is visibly a Piano certificate. */
+function doc_club_no(string $scope): string {
+    $tag = ['level' => 'CLB', 'promotion' => 'CLP', 'god' => 'CLG'][$scope] ?? 'CLB'; $y = doc_year();
+    return 'NGG-' . $tag . '-' . $y . '-' . str_pad((string)doc_mint($tag . '-' . $y), 5, '0', STR_PAD_LEFT);
+}
+
+/**
+ * A course's style family. The COURSE decides first where it is unmistakable (an instrument is music; Adire,
+ * Catering and Crafts are craft, though they sit in the Creative Arts division), then its DIVISION decides —
+ * never a pattern over the division's long name, which put "Data Analysis" (a Business course) under
+ * technology. Colours a print shop can hold, and the family's glyphs.
+ */
+function club_cert_style(string $course): array {
+    $FAM = [
+        'music'    => ['#3b1f5c', '#e0a526', '#f6f0fb', ['♩', '♪', '♫', '♬', '𝄞'], 'Music'],
+        'tech'     => ['#0e2a4a', '#20b2c9', '#eef7fa', ['{ }', '</>', '=>', '0101', '//'], 'Technology'],
+        'arts'     => ['#4a1730', '#ef6b4d', '#fdf1ee', ['◐', '✦', '▲', '●', '◆'], 'Creative arts'],
+        'media'    => ['#14213d', '#ef6b4d', '#fdf3ee', ['▶', '◉', '▣', '✦', '◐'], 'Media'],
+        'business' => ['#123d2f', '#d9a21b', '#eef6f1', ['↗', '%', '₦', '◇', '§'], 'Business'],
+        'craft'    => ['#26215c', '#c8642b', '#f7f3ec', ['✿', '❖', '✳', '◈', '✺'], 'Craft'],
+        'club'     => ['#1f3263', '#fbb21f', '#f3f5fa', ['✦', '◆', '●', '▲', '◇'], 'The Club'],
+    ];
+    $c = mb_strtolower(trim($course));
+    $key = 'club';
+    if (preg_match('/piano|guitar|drum|violin|saxophone|vocal|music|instrument|choir/', $c)) $key = 'music';
+    elseif (preg_match('/catering|adire|craft|textile|fashion/', $c)) $key = 'craft';
+    else {
+        $div = function_exists('course_division') ? mb_strtolower(course_division($course)) : '';
+        if (str_contains($div, 'technology')) $key = 'tech';
+        elseif (str_contains($div, 'business')) $key = 'business';
+        elseif (str_contains($div, 'media')) $key = 'media';
+        elseif (str_contains($div, 'creative') || str_contains($div, 'performing')) $key = 'arts';
+    }
+    [$ink, $acc, $soft, $g, $label] = $FAM[$key];
+    return ['key' => $key, 'ink' => $ink, 'accent' => $acc, 'soft' => $soft, 'glyphs' => $g, 'family' => $label];
+}
+
+/**
+ * Issue a Club certificate once per member per (scope, course, level/year). Returns [document, issuedNow]
+ * or null. `$facts` are frozen onto it: lessons, average exam, band, tier, years, lesson titles.
+ */
+function doc_club_issue(string $memberId, string $scope, string $course, string $level, array $facts = []): ?array {
+    $m = db_row('SELECT memberId, fullName FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m || !in_array($scope, ['level', 'promotion', 'god'], true)) return null;
+    // A hash of course and level, not the names: sourceKey is VARCHAR(160) on MySQL and a course name alone may be 120.
+    $key = 'club:' . $scope . ':' . $memberId . ':' . substr(sha1(mb_strtolower($course) . '|' . mb_strtolower($level)), 0, 20);
+    if ($have = doc_by('sourceKey', $key)) return [$have, false];
+    $doc = db_tx(static function () use ($m, $scope, $course, $level, $facts, $memberId, $key) {
+        $no = doc_club_no($scope);
+        return doc_record('certificate', $no, $memberId, $key, ['program' => 'club', 'scope' => $scope, 'no' => $no, 'name' => (string)$m['fullName'],
+            'course' => $course, 'level' => $level, 'style' => club_cert_style($course)['key'], 'awarded' => now_iso(), 'org' => doc_org_freeze()]
+            + array_intersect_key($facts, array_flip(['lessons', 'avgExam', 'band', 'tier', 'fromYear', 'toYear', 'courses', 'pattern', 'trialPct'])));
+    });
+    return [$doc, true];
+}
+
+function doc_club_title(array $d): string {
+    $what = ['level' => 'Course certificate', 'promotion' => 'Promotion', 'god' => 'God of ' . (string)($d['course'] ?? '')][(string)($d['scope'] ?? '')] ?? 'Certificate';
+    return 'The Club · ' . $what . ((string)($d['scope'] ?? '') === 'god' ? '' : ' · ' . (string)($d['course'] ?? '') . ((string)($d['level'] ?? '') !== '' ? ' — ' . $d['level'] : ''));
+}
+
+function doc_render_club_certificate(array $doc): string {
+    $d = doc_data($doc); $s = doc_org_for($d); $st = club_cert_style((string)($d['course'] ?? ''));
+    $scope = (string)($d['scope'] ?? 'level');
+    $words = array_values(array_filter(array_map('strval', (array)($d['pattern'] ?? [])))) ?: [(string)($d['course'] ?? 'NGG')];
+    $pat = '';
+    for ($i = 0; $i < 70; $i++) $pat .= '<span' . ($i % 3 === 1 ? ' class="g"' : '') . '>' . doc_e($i % 2 ? $st['glyphs'][$i % count($st['glyphs'])] : $words[$i % count($words)]) . '</span>';
+    $sup = (string)$doc['status'] === 'superseded';
+    [$claim, $met, $lv, $blurb, $badgeTop, $badgeBig, $badgeSub, $res] = match ($scope) {
+        'promotion' => ['Certificate of promotion', 'has been promoted, by the decision of their instructors, to', 'Year ' . (int)($d['toYear'] ?? 0) . ((string)($d['course'] ?? '') !== '' ? ' · ' . $d['course'] : ''),
+                        'Moved up from Year ' . (int)($d['fromYear'] ?? 0) . ' after a year of lessons, session exams and practical work in the Club.', 'YEAR', str_pad((string)(int)($d['toYear'] ?? 0), 2, '0', STR_PAD_LEFT), 'promoted', 'Promoted'],
+        'god'       => ['The highest distinction of the course', 'is named', 'God of ' . (string)($d['course'] ?? ''),
+                        'Every lesson of the course completed, its session exams passed, and its Trial — questions drawn across the whole course, with follow-up questions on their own answers — passed at ' . (int)($d['trialPct'] ?? 85) . '%.', 'TIER', 'VI', 'God of the course', 'Trial passed · ' . (int)($d['trialPct'] ?? 0) . '%'],
+        default     => ['Certificate of completion', 'has completed every lesson of', (string)($d['course'] ?? '') . ((string)($d['level'] ?? '') !== '' ? ' — ' . $d['level'] : ''),
+                        'Every lesson completed and examined in the Club: taught, practised, and asked again from memory at the start of the next session.', 'LESSONS', (string)(int)($d['lessons'] ?? 0), 'completed', ($d['band'] ?? '') !== '' ? (string)$d['band'] . ' · session exams ' . (int)($d['avgExam'] ?? 0) . '%' : 'Completed'],
+    };
+    $css = '<style>.cert{height:794px;--ink:' . $st['ink'] . ';--acc:' . $st['accent'] . ';--soft:' . $st['soft'] . '}'
+        . '.pat{position:absolute;inset:0;display:grid;grid-template-columns:repeat(5,max-content);gap:18px 28px;padding:26px 0 0 26px;box-sizing:border-box;align-content:start;font:600 13px "Bricolage Grotesque",sans-serif;color:var(--ink);opacity:.11;pointer-events:none;-webkit-mask-image:radial-gradient(90% 100% at 100% 0%,#000 35%,transparent 80%);mask-image:radial-gradient(90% 100% at 100% 0%,#000 35%,transparent 80%)}.pat span{white-space:nowrap}.pat .g{color:var(--acc)}'
+        . '.glow{position:absolute;right:-160px;top:-160px;width:620px;height:620px;border-radius:50%;background:radial-gradient(closest-side,color-mix(in srgb,var(--acc) 22%,transparent),transparent);pointer-events:none}'
+        . '.cg{position:relative;flex:1;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:56px;padding:56px 64px 40px;min-height:0}.cl{display:flex;flex-direction:column;min-width:0}'
+        . '.brand{display:flex;align-items:center;gap:12px}.brand img{width:44px;height:44px}.brand b{display:block;font:700 17px "Bricolage Grotesque",sans-serif}.brand small{display:block;font-size:12.5px;color:#5d6380}'
+        . '.lab{margin-top:64px;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}.lab i{width:24px;height:3px;border-radius:2px;background:var(--acc)}'
+        . '.who{margin-top:14px;font:700 72px/.98 "Bricolage Grotesque",sans-serif;letter-spacing:-.045em;text-wrap:balance;color:#0e1630}.met{margin-top:24px;font-size:16px;color:#4a5272}'
+        . '.lv{margin-top:8px;font:600 30px/1.1 "Bricolage Grotesque",sans-serif;letter-spacing:-.02em;color:var(--ink);text-wrap:balance}.blurb{margin-top:12px;max-width:520px;font-size:14.5px;line-height:1.55;color:#4a5272}'
+        . '.sigs{margin-top:auto;display:grid;grid-template-columns:repeat(2,200px);gap:40px}.sigs .line{height:32px}.cr{display:flex;flex-direction:column;align-items:center;padding-top:60px}'
+        . '.badge{width:184px;height:204px;position:relative;display:flex;align-items:center;justify-content:center}.badge i{position:absolute;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}'
+        . '.badge .h1{inset:-14px;background:color-mix(in srgb,var(--ink) 9%,transparent)}.badge .h2{inset:0;background:var(--acc)}.badge .h3{inset:5px;background:var(--ink)}'
+        . '.badge .c{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;color:#fff}.badge .c small{font-size:10.5px;font-weight:600;letter-spacing:.2em;color:#e3e6f0}.badge .c b{font:800 60px/.85 "Bricolage Grotesque",sans-serif;color:var(--acc);font-variant-numeric:tabular-nums}.badge .c span{font-size:11px;font-weight:500;max-width:120px;text-align:center;line-height:1.3}'
+        . '.res{margin-top:18px;display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 14px;border-radius:999px;font-size:13px;font-weight:600;background:var(--soft);color:var(--ink)}.res i{width:7px;height:7px;border-radius:50%;background:var(--acc)}'
+        . '.det{margin-top:26px;width:100%;box-sizing:border-box;padding:16px 18px;border-radius:16px;background:rgba(246,247,251,.92);border:1px solid #eceef4}'
+        . '.cv{margin-top:auto;width:100%;display:flex;align-items:center;gap:12px;padding-top:14px;border-top:1px solid #eceef2}.cv .qr{width:52px;height:52px;flex:none}.cv div{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:#5d6380;min-width:0}.cv b{font-size:12.5px;font-weight:600;color:#0e1630}'
+        . '.bstrip{position:relative;height:8px;display:grid;grid-template-columns:1fr 160px;flex:none}.bstrip span:first-child{background:var(--ink)}.bstrip span:last-child{background:var(--acc)}'
+        . '.supd{position:absolute;left:64px;top:22px;font-size:12.5px;font-weight:600;color:#8a1c10;background:#ffd6d0;padding:4px 12px;border-radius:999px}</style>';
+    $kv = '<span>Course</span><span>' . doc_e((string)($d['course'] ?? '')) . '</span>'
+        . ((string)($d['level'] ?? '') !== '' && $scope !== 'promotion' ? '<span>Level</span><span>' . doc_e((string)$d['level']) . '</span>' : '')
+        . (isset($d['lessons']) ? '<span>Lessons</span><span>' . (int)$d['lessons'] . ' completed</span>' : '')
+        . (isset($d['avgExam']) ? '<span>Session exams</span><span>' . (int)$d['avgExam'] . '% average</span>' : '')
+        . '<span>Awarded</span><span>' . doc_e(doc_local((string)$d['awarded'], 'j F Y')) . '</span>';
+    $body = $css . '<article class="sheet cert" data-doc="certificate" data-style="' . doc_e($st['key']) . '"><div class="pat" aria-hidden="true">' . $pat . '</div><div class="glow" aria-hidden="true"></div>'
+        . ($sup ? '<span class="supd">Superseded by ' . doc_e((string)$doc['supersededBy']) . '</span>' : '')
+        . '<div class="cg"><div class="cl"><div class="brand"><img src="/assets/logo.png" alt="Next Generation Genius"><div><b>Next Generation Genius</b><small>The Club · ' . doc_e($st['family']) . '</small></div></div>'
+        . '<span class="lab"><i></i>' . doc_e($claim) . '</span><span class="who">' . doc_e((string)$d['name']) . '</span>'
+        . '<span class="met">' . doc_e($met) . '</span><span class="lv">' . doc_e($lv) . '</span><span class="blurb">' . doc_e($blurb) . '</span>'
+        . '<div class="sigs">' . doc_sign($s, (string)($s['clubHead'] ?? ''), 'Head of the Club') . doc_sign($s, (string)($s['programmeDirector'] ?? ''), 'Programme Director') . '</div></div>'
+        . '<div class="cr"><div class="badge"><i class="h1"></i><i class="h2"></i><i class="h3"></i><div class="c"><small>' . doc_e($badgeTop) . '</small><b>' . doc_e($badgeBig) . '</b><span>' . doc_e($badgeSub) . '</span></div></div>'
+        . '<span class="res"><i></i>' . doc_e($res) . '</span><div class="det kv">' . $kv . '</div>'
+        . '<div class="cv">' . doc_qr_svg(doc_verify_url((string)$doc['docNo']), 'Verification code') . '<div><b>Verify at ' . doc_e(preg_replace('#^https?://#', '', doc_origin())) . '/verify</b><span class="mono">' . doc_e((string)$doc['docNo']) . '</span><span class="mono">' . doc_e(doc_code_line($doc)) . '</span></div></div>'
+        . '</div></div><div class="bstrip"><span></span><span></span></div></article>';
+    return doc_page('Club certificate ' . $doc['docNo'], $body, true);
 }

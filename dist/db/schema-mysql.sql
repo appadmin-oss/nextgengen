@@ -5215,3 +5215,33 @@ INSERT IGNORE INTO mlab_track (memberId, lab, climbStage, climbDone, momentum, b
   SELECT memberId, 'maths', climbStage, climbDone, momentum, COALESCE(bosses, '{}'), createdAt, updatedAt FROM mlab_profile;
 ALTER TABLE mlab_sessions ADD COLUMN lab VARCHAR(16) NOT NULL DEFAULT 'maths';
 INSERT INTO schema_version (version) VALUES (229) ON DUPLICATE KEY UPDATE version = version;
+
+-- 230: the Learn exam — named slips on multiple-choice options, and one row per exam sitting.
+ALTER TABLE curriculum_checks ADD COLUMN whys TEXT;
+CREATE TABLE IF NOT EXISTS curriculum_sittings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sittingId VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL,
+  kind VARCHAR(16) NOT NULL DEFAULT 'session',
+  unitId VARCHAR(40) NOT NULL DEFAULT '',
+  course VARCHAR(191) NOT NULL DEFAULT '',
+  items MEDIUMTEXT,
+  answers MEDIUMTEXT,
+  confidence TEXT,
+  marks MEDIUMTEXT,
+  integrity TEXT,
+  viva MEDIUMTEXT,
+  score DOUBLE NOT NULL DEFAULT 0,
+  maxScore DOUBLE NOT NULL DEFAULT 0,
+  pct INT NOT NULL DEFAULT 0,
+  band VARCHAR(24) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  timeLimitSec INT NOT NULL DEFAULT 0,
+  startedAt VARCHAR(32) NOT NULL DEFAULT '',
+  deadline VARCHAR(32) NOT NULL DEFAULT '',
+  submittedAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_csit_member (memberId, kind, unitId),
+  KEY idx_csit_course (course, kind, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (230) ON DUPLICATE KEY UPDATE version = version;

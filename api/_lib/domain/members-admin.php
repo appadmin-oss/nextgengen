@@ -365,6 +365,7 @@ function member_merge_policy(): array {
         'study_cards'            => 'MOVE',
         'study_sessions'         => 'MOVE',           // and their record of study
         'curriculum_progress'    => 'MOVE_UNIQUE',    // one row per lesson; the survivor's stands
+        'curriculum_sittings'    => 'MOVE',           // every exam sitting is history: all of them follow the person
         'member_promotions'      => 'MOVE',
         'member_requests'        => 'MOVE',
         'dues_notices'           => 'MOVE_UNIQUE',    // one notice per due date; the survivor's stands

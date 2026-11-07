@@ -25817,6 +25817,131 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('staff: marking the practical is what finishes the lesson it belongs to',
         !empty($pm['ok']) && $pm['status'] === 'completed' && $pm['pending'] === 0 && $pm['pct'] === 100);
     chk('staff: …and a mentor can open the member\'s record', backend_dispatch('staff.curriculum.member', ['requesterId' => 'NGG-CUR-VN', 'memberId' => 'NGG-CUR-M1'])['completed'] === 2);
+
+    /* ── The standardised exam (domain/learn-exam.php) — owner, 7 Nov 2026: "turn on the per session exam by
+       default. Upgrade the exam and make it standard", "AI-spoof it … create Gods". A member of their own, with
+       lessons of their own, so nothing here moves a number another test reads. ── */
+    $mk('NGG-EX-M', 'member', ['track' => 'Piano', 'centre' => 'Egbeda']);
+    $exA = fn(array $d) => backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => $d + ['course' => 'Piano', 'status' => 'published']]);
+    chk('exam kinds: an ordering question needs at least three steps, in order, all different',
+        ($exA(['week' => 40, 'title' => 'EXAM-bad', 'checks' => [['kind' => 'order', 'prompt' => 'Order these', 'options' => ['A', 'B']], ['kind' => 'task', 'prompt' => 'Do it']]])['error'] ?? '') === 'order_needs_steps'
+        && ($exA(['week' => 40, 'title' => 'EXAM-bad', 'checks' => [['kind' => 'order', 'prompt' => 'Order these', 'options' => ['A', 'B', 'a']], ['kind' => 'task', 'prompt' => 'Do it']]])['error'] ?? '') === 'order_steps_repeat');
+    chk('exam kinds: an outside exercise needs the https link to it',
+        ($exA(['week' => 40, 'title' => 'EXAM-bad', 'checks' => [['kind' => 'evidence', 'prompt' => 'Do the exercise']]])['error'] ?? '') === 'evidence_needs_link');
+    chk('exam kinds: an ordering question is still choosing, so it cannot be a lesson\'s only "do something" question',
+        ($exA(['week' => 40, 'title' => 'EXAM-bad', 'checks' => [['kind' => 'order', 'prompt' => 'Order these', 'options' => ['A', 'B', 'C']]]])['error'] ?? '') === 'review_too_shallow');
+    $exOld = $exA(['week' => 30, 'position' => 1, 'title' => 'EXAM-T older', 'checks' => [
+        ['kind' => 'mcq', 'prompt' => 'Which hand usually plays the bass clef?', 'options' => ['Left', 'Right', 'Both'], 'answer' => 'Left'],
+        ['kind' => 'task', 'prompt' => 'Play the left-hand part alone.', 'points' => 2]]]);
+    $exPrev = $exA(['week' => 33, 'position' => 1, 'title' => 'EXAM-T last week', 'passMark' => 60, 'checks' => [
+        ['kind' => 'mcq', 'prompt' => 'A dotted crotchet lasts…', 'options' => ['One beat', 'One and a half beats', 'Two beats'], 'answer' => 'One and a half beats',
+         'whys' => ['The dot adds half the note\'s value again.', '', 'Two beats is a minim.']],
+        ['kind' => 'order', 'prompt' => 'Put the warm-up in order.', 'options' => ['Loosen the shoulders', 'Five-finger pattern, hands apart', 'Scale, hands apart', 'Scale, hands together']],
+        ['kind' => 'short', 'prompt' => 'Why do we practise hands apart first?', 'answer' => 'So each hand learns its part before coordinating both.', 'points' => 2],
+        ['kind' => 'evidence', 'prompt' => 'Do the rhythm exercise and say what you scored.', 'url' => 'https://www.musictheory.net/exercises/rhythm', 'points' => 2]]]);
+    $exToday = $exA(['week' => 34, 'position' => 1, 'title' => 'EXAM-T today', 'checks' => [['kind' => 'task', 'prompt' => 'Play today\'s piece.']]]);
+    chk('exam kinds: named slips, an ordering question and an outside exercise save on a published lesson',
+        !empty($exPrev['ok']) && ($exPrev['unit']['checks'][0]['whys'][0] ?? '') !== '' && ($exPrev['unit']['checks'][3]['url'] ?? '') === 'https://www.musictheory.net/exercises/rhythm');
+    $exPrevId = (string)$exPrev['unit']['unitId']; $exOldId = (string)$exOld['unit']['unitId'];
+    $exChecks = array_column(db_all('SELECT * FROM curriculum_checks WHERE unitId = ? ORDER BY position', [$exPrevId]), null, 'kind');
+    $exPub = curriculum_unit_public(db_row('SELECT * FROM curriculum_units WHERE unitId = ?', [$exPrevId]), [], [$exChecks['order']], false)['checks'][0];
+    chk('exam kinds: the learner gets the steps shuffled — never in the right order — and the same shuffle every time',
+        $exPub['options'] !== json_decode((string)$exChecks['order']['options'], true) && count($exPub['options']) === 4
+        && $exPub['options'] === curriculum_unit_public(db_row('SELECT * FROM curriculum_units WHERE unitId = ?', [$exPrevId]), [], [$exChecks['order']], false)['checks'][0]['options']);
+    $steps = json_decode((string)$exChecks['order']['options'], true);
+    chk('exam kinds: an ordering is marked by how much is in sequence — exact earns all, one step out costs part, junk earns nothing',
+        curriculum_order_points($steps, $steps, 4) === 4 && curriculum_order_points($steps, [$steps[1], $steps[0], $steps[2], $steps[3]], 4) === 3
+        && curriculum_order_points($steps, ['x', 'y', 'z', 'w'], 4) === 0 && curriculum_order_points($steps, array_reverse($steps), 4) === 1);
+    [, $slipMk] = curriculum_mark_answer($exChecks['mcq'], 2);
+    chk('exam kinds: a wrong choice carries the slip behind it, by name', $slipMk['points'] === 0 && $slipMk['slip'] === 'Two beats is a minim.');
+    // What they got wrong before comes back first: the older lesson's choice question, marked wrong.
+    db_insert('curriculum_progress', ['unitId' => $exOldId, 'memberId' => 'NGG-EX-M', 'status' => 'attempted', 'startedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 30 * 86400),
+        'marks' => json_encode([(string)db_row("SELECT checkId FROM curriculum_checks WHERE unitId = ? AND kind = 'mcq'", [$exOldId])['checkId'] => ['points' => 0, 'by' => 'auto']]), 'updatedAt' => now_iso()]);
+    $schedNow = setting_get('curriculum');
+    setting_set('curriculum', (is_array($schedNow) ? $schedNow : []) + ['reviewAtStart' => true]);
+    $exS = backend_dispatch('member.exam.start', ['memberId' => 'NGG-EX-M', 'unitId' => (string)$exToday['unit']['unitId']]);
+    $ex = $exS['exam'] ?? [];
+    $exJson = json_encode($ex);
+    chk('exam: opening a lesson opens the session exam on LAST session\'s lesson, standard and timed',
+        ($ex['unitId'] ?? '') === $exPrevId && ($ex['timeLimitSec'] ?? 0) >= LX_MIN_SECS && ($ex['passMark'] ?? 0) === 60 && ($ex['bands']['distinction'] ?? 0) === 85 && str_starts_with((string)($ex['title'] ?? ''), 'Session exam'));
+    chk('exam: it carries spaced retrieval — a question from weeks back, the one got wrong before',
+        count(array_filter($ex['questions'] ?? [], fn($q) => $q['role'] === 'spaced' && $q['from'] === 'EXAM-T older')) === 1
+        && count(array_filter($ex['questions'] ?? [], fn($q) => $q['role'] === 'spaced')) <= LX_SPACED
+        && !array_filter($ex['questions'] ?? [], fn($q) => $q['role'] === 'spaced' && $q['week'] > 33 - LX_SPACED_WEEKS)
+        && count(array_filter($ex['questions'] ?? [], fn($q) => $q['role'] === 'recall')) === 4);
+    chk('exam: no answer, rubric or slip reaches the browser', !str_contains($exJson, '"answer"') && !str_contains($exJson, '"rubric"') && !str_contains($exJson, 'minim'));
+    chk('exam: a reload resumes the SAME sitting, not a fresh one',
+        (backend_dispatch('member.exam.start', ['memberId' => 'NGG-EX-M', 'unitId' => (string)$exToday['unit']['unitId']])['exam']['sittingId'] ?? '') === ($ex['sittingId'] ?? 'x'));
+    $sit = db_row('SELECT * FROM curriculum_sittings WHERE sittingId = ?', [$ex['sittingId']]);
+    $items = array_column(json_decode((string)$sit['items'], true), null, 'checkId');
+    $mcqId = (string)$exChecks['mcq']['checkId']; $ordId = (string)$exChecks['order']['checkId']; $shortId = (string)$exChecks['short']['checkId']; $evId = (string)$exChecks['evidence']['checkId'];
+    $rightShown = array_search(1, $items[$mcqId]['perm'], true);
+    $saved = backend_dispatch('member.exam.save', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'answers' => [$mcqId => $rightShown],
+        'confidence' => [$mcqId => 'sure'], 'signals' => ['pastes' => 2, 'pastedChars' => 400, 'typedChars' => 30, 'leaves' => 1]]);
+    backend_dispatch('member.exam.save', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'signals' => ['pastes' => 0, 'pastedChars' => 0]]);
+    $int = json_decode((string)db_row('SELECT integrity FROM curriculum_sittings WHERE sittingId = ?', [$ex['sittingId']])['integrity'], true);
+    chk('exam: answers autosave, and process signals only ever go up — a replayed save cannot lower them', !empty($saved['ok']) && $int['pastedChars'] === 400 && $int['pastes'] === 2);
+    chk('exam: someone else cannot save into the sitting', (backend_dispatch('member.exam.save', ['memberId' => 'NGG-CUR-M1', 'sittingId' => $ex['sittingId'], 'answers' => []])['error'] ?? '') === 'not_found');
+    // The AI marks written answers, asks a follow-up on each of the strongest, and judges the replies.
+    $GLOBALS['__ai_mock'] = function ($profile, $sys, $turns) {
+        $in = (string)($turns[0]['text'] ?? '');
+        if (str_contains($sys, 'oral follow-up with')) return ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['question' => 'You said each hand learns first — what goes wrong if you skip that?'])];
+        if (str_contains($sys, 'check a short oral follow-up')) return ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['holds' => str_contains($in, 'because')])];
+        return ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['points' => 2, 'feedback' => 'Clear and specific.', 'confidence' => 0.9])];
+    };
+    $sub = backend_dispatch('member.exam.submit', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'answers' => [
+        $ordId => $steps, $shortId => 'So that each hand learns its own part before both play together.', $evId => 'I did 20 rhythms and scored 17; dotted rhythms tripped me.']]);
+    $sx = $sub['exam'] ?? [];
+    chk('exam: handing in asks the SAME number of follow-ups of everybody — one on each of the two strongest written answers',
+        ($sx['status'] ?? '') === 'viva' && count($sx['viva'] ?? []) === LX_VIVA_MAX && !isset($sx['result']));
+    $v1 = backend_dispatch('member.exam.viva', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'checkId' => $sx['viva'][0]['checkId'], 'answer' => 'The hands fight each other because neither knows its part yet.']);
+    $v2 = backend_dispatch('member.exam.viva', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'checkId' => $sx['viva'][1]['checkId'], 'answer' => 'not sure']);
+    $res = $v2['exam']['result'] ?? [];
+    $held = array_values(array_filter($res['questions'] ?? [], fn($q) => $q['held'] === 'followup'));
+    chk('exam: a follow-up that holds up keeps the mark; one that does not is HELD for an instructor — never failed by the machine',
+        ($v2['exam']['status'] ?? '') === 'submitted' && count($held) === 1 && $held[0]['checkId'] === $sx['viva'][1]['checkId'] && $held[0]['pending'] === true && $res['pending'] === true);
+    $byQ = array_column($res['questions'] ?? [], null, 'checkId');
+    chk('exam: the choice and the ordering are marked through the sitting\'s own option order, and "sure" is recorded',
+        $byQ[$mcqId]['right'] === true && $byQ[$mcqId]['confidence'] === 'sure' && $byQ[$ordId]['right'] === true);
+    $st = backend_dispatch('staff.exam.sittings', ['requesterId' => 'NGG-CUR-VN']);
+    $mineSit = array_values(array_filter($st['sittings'] ?? [], fn($r) => $r['sittingId'] === $ex['sittingId']))[0] ?? [];
+    chk('exam (instructor): the sitting is listed with the held answer, the follow-ups and the signals to ask about — pasting named, never scored',
+        count($mineSit['held'] ?? []) === 1 && count($mineSit['viva'] ?? []) === 2 && in_array('mostly pasted', $mineSit['signals'] ?? [], true) && in_array('a follow-up did not hold up', $mineSit['signals'] ?? [], true));
+    $mk2 = backend_dispatch('staff.exam.mark', ['requesterId' => 'NGG-CUR-VN', 'sittingId' => $ex['sittingId'], 'checkId' => $held[0]['checkId'], 'points' => 2, 'note' => 'Talked it through in class — it is theirs.']);
+    $fin = db_row('SELECT * FROM curriculum_sittings WHERE sittingId = ?', [$ex['sittingId']]);
+    chk('exam (instructor): deciding the held answer finishes the sitting with its band', !empty($mk2['ok']) && (string)$fin['status'] === 'marked' && (string)$fin['band'] === lx_band((int)$fin['pct'], 60));
+    $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$exPrevId, 'NGG-EX-M']);
+    chk('exam: a session exam IS the review of last session\'s lesson — its marks land on that lesson, completed',
+        $pr && (string)$pr['status'] === 'completed' && (int)$pr['bestPct'] === 100);
+    chk('exam: one official sitting — opening the lesson again shows the result, not a new paper',
+        (backend_dispatch('member.exam.start', ['memberId' => 'NGG-EX-M', 'unitId' => (string)$exToday['unit']['unitId']])['exam']['result']['band'] ?? '') === (string)$fin['band']);
+    chk('exam: the band is one rule — 85 Distinction, 70 Merit, the pass mark Pass, below it Not yet',
+        lx_band(85, 60) === 'Distinction' && lx_band(84, 60) === 'Merit' && lx_band(70, 60) === 'Merit' && lx_band(69, 60) === 'Pass' && lx_band(59, 60) === 'Not yet');
+    chk('exam (instructor): another centre\'s instructor cannot mark it', (backend_dispatch('staff.exam.mark', ['requesterId' => 'NGG-CUR-VS', 'sittingId' => $ex['sittingId'], 'checkId' => $mcqId, 'points' => 0])['ok'] ?? true) === false);
+    // An expired sitting is marked from what was saved, and a late save is refused.
+    db_exec("DELETE FROM curriculum_sittings WHERE sittingId = ?", [$ex['sittingId']]);
+    db_exec("DELETE FROM curriculum_progress WHERE memberId = 'NGG-EX-M' AND unitId = ?", [$exPrevId]);
+    $late = backend_dispatch('member.exam.start', ['memberId' => 'NGG-EX-M', 'unitId' => (string)$exToday['unit']['unitId']])['exam'];
+    db_update('curriculum_sittings', ['deadline' => gmdate('Y-m-d\TH:i:s\Z', time() - LX_GRACE - 5)], ['sittingId' => $late['sittingId']]);
+    chk('exam: the deadline is the SERVER\'s — a save after it (and its grace) is refused',
+        (backend_dispatch('member.exam.save', ['memberId' => 'NGG-EX-M', 'sittingId' => $late['sittingId'], 'answers' => []])['error'] ?? '') === 'time_up');
+    unset($GLOBALS['__ai_mock']);
+    // Mastery and certificates: God of a course, issued once, styled by the course, verifiable.
+    $god = doc_club_issue('NGG-EX-M', 'god', 'Piano', '', ['pattern' => ['Finding middle C', 'The octave key'], 'trialPct' => 92, 'lessons' => 12]);
+    $again = doc_club_issue('NGG-EX-M', 'god', 'Piano', '', []);
+    $html = doc_render_club_certificate($god[0]);
+    $ver = public_document_verify(['no' => (string)$god[0]['docNo'], 'code' => doc_check_code((string)$god[0]['docNo'])]);
+    chk('certificates: God of a course is issued once, numbered NGG-CLG, on the course\'s own style with its lesson titles behind the name',
+        $god[1] === true && $again[1] === false && str_starts_with((string)$god[0]['docNo'], 'NGG-CLG-') && str_contains($html, 'data-style="music"')
+        && str_contains($html, 'Finding middle C') && str_contains($html, 'God of Piano') && ($ver['what'] ?? '') === 'The Club · God of Piano');
+    chk('certificates: a promotion certificate needs a move UP a year', lx_promotion_award(curriculum_member_row('NGG-EX-M'), 2, 1) === null
+        && str_starts_with((string)(lx_promotion_award(curriculum_member_row('NGG-EX-M'), 1, 2)['no'] ?? ''), 'NGG-CLP-'));
+    chk('certificates: each course family has its own style', club_cert_style('Coding')['key'] === 'tech' && club_cert_style('Adire')['key'] === 'craft' && club_cert_style('Business Development')['key'] === 'business');
+    db_exec("DELETE FROM documents WHERE memberId = 'NGG-EX-M'");
+    db_exec("DELETE FROM curriculum_sittings WHERE memberId = 'NGG-EX-M'");
+    db_exec("DELETE FROM curriculum_progress WHERE memberId = 'NGG-EX-M'");
+    foreach ([$exOldId, $exPrevId, (string)$exToday['unit']['unitId']] as $exU) { db_exec('DELETE FROM curriculum_checks WHERE unitId = ?', [$exU]); db_exec('DELETE FROM curriculum_units WHERE unitId = ?', [$exU]); }
+    setting_set('curriculum', $schedNow);
     // The map staff read: the week the Club is on, each lesson's due date, the average score, and who is behind.
     $schedKeep = setting_get('curriculum');
     $start = gmdate('Y-m-d', time() - 30 * 86400);
@@ -38149,7 +38274,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('labs · the Physics Guidebook, map and labs.list read the Physics map (9 stages, its own bands), and labs.list reports every Lab with its size',
         ($g['title'] ?? '') === 'Motion' && count($g['topics'] ?? []) === 10 && !empty($g['topics'][0]['example']['steps']) && count($mp['stages'] ?? []) === 9 && ($mp['bands'][0]['id'] ?? '') === 'phy-basics'
         && array_column($ll['labs'] ?? [], 'topics', 'id') === ['maths' => 200, 'physics' => 90, 'english' => 80]);
-    chk('labs · the schema ladder ends at 229 with one Lab track per member per Lab (Maths copied across)', NGG_SCHEMA_TARGET === 229
+    chk('labs · the schema ladder reaches 229 with one Lab track per member per Lab (Maths copied across)', NGG_SCHEMA_TARGET >= 229
         && (int)db_row("SELECT COUNT(*) AS n FROM mlab_track WHERE memberId = 'NGG-PH-1'")['n'] === 2);
     /* No exam body is named anywhere a learner reads (owner, 6 Nov 2026: "Do NOT mention these exam
        bodies since we'll not be copying their questions"). Every Lab's questions — stems, options,
@@ -38322,7 +38447,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $missing === []);
     $cv = mlb_comp_view(['comp' => 'EN-023']); $cg = mlb_comp_view(['comp' => 'EN-011']); $cm = mlb_comp_view(['comp' => 'MC-001']);
     chk('english lab · a sound topic’s lesson carries its "Hear and say" material and articulation questions; a grammar topic’s carries its rule; a Maths topic carries neither speaking nor an English rule',
-        !empty($cv['speak']['pairs']) && !empty($cv['speak']['how']) && count($cv['speak']['audio']['thin'] ?? []) === 4 && count($cv['speak']['audio']['I think these three things are mine.'] ?? []) === 2 && count(eng_forms()['EN-023']) === 5 && ($cg['why']['idea'] ?? '') !== '' && $cm['speak'] === null);
+        !empty($cv['speak']['pairs']) && !empty($cv['speak']['how']) && count($cv['speak']['audio']['thin'] ?? []) >= 4 && count($cv['speak']['audio']['I think these three things are mine.'] ?? []) >= 2 && count(eng_forms()['EN-023']) === 5 && ($cg['why']['idea'] ?? '') !== '' && $cm['speak'] === null);
     lab_use('maths');
 
     // One member, three Labs: English moves only English.

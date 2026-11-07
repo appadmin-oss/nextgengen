@@ -35,6 +35,12 @@ if ($method === 'GET') {
     } elseif (($_GET['view'] ?? '') === 'sources') {
         // Go deeper: a fetched read on the lesson's topic and vetted free sources (domain/learn.php).
         $res = gs_call('member.learn.sources', ['memberId' => $mid, 'unitId' => (string)($_GET['unit'] ?? '')]);
+    } elseif (($_GET['view'] ?? '') === 'mastery') {
+        // Their tier in every course, the Trial, and their Club certificates (domain/learn-mastery.php).
+        $res = gs_call('member.learn.mastery', ['memberId' => $mid]);
+    } elseif (($_GET['view'] ?? '') === 'staff_exams') {
+        // The exams of the learners in their reach, with signals, held answers and item analysis (learn-exam.php).
+        $res = gs_call('staff.exam.sittings', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? '')]);
     } elseif (isset($_GET['unit'])) {
         $res = gs_call('member.curriculum.unit', ['memberId' => $mid, 'unitId' => (string)$_GET['unit']]);
     } else {
@@ -56,6 +62,17 @@ if ($method === 'GET') {
     } elseif ($action === 'submit') {
         $res = gs_call('member.curriculum.submit', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''),
             'answers' => is_array($b['answers'] ?? null) ? $b['answers'] : []]);
+    } elseif (in_array($action, ['exam_start', 'exam_save', 'exam_submit', 'exam_viva'], true)) {
+        /* The standardised exam (domain/learn-exam.php). The deadline is the SERVER's; answers, confidence
+           and process signals travel with every save, and the answers never leave the server. */
+        $res = gs_call('member.exam.' . substr($action, 5), ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''),
+            'kind' => (string)($b['kind'] ?? ''), 'course' => (string)($b['course'] ?? ''), 'view' => !empty($b['view']),
+            'sittingId' => (string)($b['sittingId'] ?? ''), 'checkId' => (string)($b['checkId'] ?? ''), 'answer' => (string)($b['answer'] ?? ''),
+            'answers' => is_array($b['answers'] ?? null) ? $b['answers'] : [], 'confidence' => is_array($b['confidence'] ?? null) ? $b['confidence'] : [],
+            'signals' => is_array($b['signals'] ?? null) ? $b['signals'] : []]);
+    } elseif ($action === 'exam_mark') {
+        $res = gs_call('staff.exam.mark', ['requesterId' => $mid, 'sittingId' => (string)($b['sittingId'] ?? ''), 'checkId' => (string)($b['checkId'] ?? ''),
+            'points' => (int)($b['points'] ?? 0), 'note' => (string)($b['note'] ?? ''), 'ip' => client_ip()]);
     } elseif ($action === 'mark') {
         $res = gs_call('staff.curriculum.mark', ['requesterId' => $mid, 'progressId' => (int)($b['progressId'] ?? 0),
             'marks' => is_array($b['marks'] ?? null) ? $b['marks'] : [], 'ip' => client_ip()]);
