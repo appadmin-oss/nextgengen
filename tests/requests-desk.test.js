@@ -42,7 +42,8 @@ function php(snippet, extra = ['bootstrap']) {
     + `db_conn();\n` + snippet;
   const f = path.join(TMP, `s${++_seq}.php`);
   fs.writeFileSync(f, code);
-  return execSync('php ' + JSON.stringify(f), { cwd: ROOT }).toString().trim();
+  try { return execSync('php ' + JSON.stringify(f), { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim(); }
+  catch (e) { throw new Error('php failed: ' + String(e.stdout || '').slice(-600) + String(e.stderr || '').slice(-600)); }
 }
 function loadChromium() {
   for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright', 'playwright-core'].filter(Boolean)) {
