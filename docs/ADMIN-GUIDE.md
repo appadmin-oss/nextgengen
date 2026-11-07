@@ -5121,3 +5121,27 @@ These changes apply to every explorer in both Labs: 16 in maths and 27 in physic
   The previous throw at the same speed stays on screen as a faint trace marked "last: 30°", so the
   30°-versus-60° comparison the prediction asks about can be seen directly.
 - The sliders have a rounded focus ring for keyboard users.
+
+
+## Family reports and the daily attendance email
+
+**Monthly report** (days 1–5 of each month, for the month before), **end-of-session report** (in the ten days after a
+session in Sessions ends), and **Summer School report** (in the ten days after an edition's season ends, to the
+parent's email). Each is a formal document: who the child is (name, ID number, centre, courses, mentor, report
+number), a one-paragraph summary, attendance with the day-by-day register (late minutes, unexcused absences, days
+with no sign-out), learning (lessons completed with scores, exams with their band, certificates, overdue lessons),
+conduct, **fees, dues and fines** (what was charged and paid in the period, each fine with its reason, the balance
+to pay on the day it was issued and what is still owed), the Leadership Index and mentor's note, and a signature
+block.
+
+- Every guardian who follows the child gets it by email and in the family inbox, where they sign it. The email's
+  button opens the printable copy ("Print or save as PDF").
+- A report is **sealed when issued**: reopening it later shows what it said that day, even after a payment.
+- Staff preview any member's report for a month from Families (`GET /api/admin/families.php?report=<memberId>&month=YYYY-MM`);
+  the preview lists the reports already issued.
+
+**Daily attendance email** — after 5pm on a programme day, each member of staff holding the programme's
+attendance permission gets one email: NGG Club to holders of *checkin*, Summer School to holders of *summer*.
+Centre by centre within their scope: present of expected, and the names of who was late (with minutes), absent,
+and did not sign out. A coordinator scoped to two centres only sees those two. Set the setting
+`reports_attendance_daily` to `0` to stop it.

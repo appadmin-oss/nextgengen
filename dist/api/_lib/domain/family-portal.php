@@ -531,6 +531,9 @@ function admin_member_collectors(array $p): array {
  * refId) index makes a second run a no-op, so the job is safe to re-run.
  */
 function family_reports_run(?string $today = null, int $limit = 200): array {
+    /* The formal report (domain/parent-reports.php) replaces this short note: the same inbox notice, signable, keyed
+       the same way, plus the full report by email and a printable copy sealed on file. */
+    if (function_exists('preport_monthly_run')) return preport_monthly_run($today, $limit);
     $today = $today ?: attendance_today();
     if ((int)substr($today, 8, 2) > 3) return ['ok' => true, 'made' => 0, 'skipped' => 'not_the_start_of_a_month'];
     $month = gmdate('Y-m', strtotime(substr($today, 0, 7) . '-01T12:00:00Z') - 86400);

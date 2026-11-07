@@ -27167,6 +27167,69 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     if ($saveCfg !== null) $GLOBALS['CONFIG']['seed_bundled_curriculum'] = $saveCfg;
 })();
 
+/* ── Formal family reports and the daily attendance mail (domain/parent-reports.php; owner, 7 Nov 2026:
+      "a formal professional report at the end of each session and every month", "with fines and dues",
+      "email reports on every programme … on the attendance for the day") ── */
+(function () {
+    $now = now_iso(); $today = attendance_today();
+    db_insert('members', ['memberId' => 'NGG-PR-KID', 'fullName' => 'Ada Report', 'email' => 'ada-pr@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'displayId' => '026-901', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['GRD-PR-1', 'mum-pr@example.com'], ['GRD-PR-2', 'dad-pr@example.com'], ['GRD-PR-X', 'stranger-pr@example.com']] as [$g, $e])
+        db_insert('guardians', ['guardianId' => $g, 'email' => $e, 'fullName' => 'Parent', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (['GRD-PR-1', 'GRD-PR-2'] as $i => $g) db_insert('guardian_wards', ['linkId' => 'LNK-PR-' . $i, 'guardianId' => $g, 'memberId' => 'NGG-PR-KID', 'status' => 'active', 'createdAt' => $now]);
+    $m = db_row("SELECT * FROM members WHERE memberId = 'NGG-PR-KID'");
+    fees_post('NGG-PR-KID', 'fine', 500, ['note' => 'Late three Saturdays running', 'by' => 'test']);
+    fees_post('NGG-PR-KID', 'dues', 2000, ['note' => 'Dues', 'periodKey' => 'dues:test-pr', 'by' => 'test']);
+    fees_post('NGG-PR-KID', 'payment', 1000, ['note' => 'Cash', 'by' => 'test']);
+    db_insert('sanctions', ['personId' => 'NGG-PR-KID', 'personType' => 'member', 'kind' => 'warning', 'tier' => 99, 'reason' => 'No uniform', 'status' => 'active', 'issuedAt' => $now]);
+    $from = substr($today, 0, 7) . '-01'; $to = gmdate('Y-m-t', strtotime($from . ' 12:00:00 UTC'));
+    $d = preport_member_data($m, $from, $to, 'month', 'This month', $today);
+    chk('reports · the month\'s money: charged by kind, received, and the fine named with its reason',
+        ($d['money']['charged']['fine'] ?? 0) === 500 && ($d['money']['charged']['dues'] ?? 0) === 2000 && ($d['money']['received']['payment'] ?? 0) === 1000
+        && ($d['money']['fines'][0]['reason'] ?? '') === 'Late three Saturdays running');
+    chk('reports · the balance is today\'s account, not a sum of the month', $d['money']['payable'] === (int)fees_balance($m)['payable'] && $d['money']['payable'] > 0);
+    chk('reports · conduct for the period is on it', ($d['conduct'][0]['reason'] ?? '') === 'No uniform');
+    $html = preport_html($d, true, 'RPT-TEST');
+    chk('reports · the document: identity, every section, the balance, and a place to sign',
+        str_contains($html, 'Monthly Progress Report') && str_contains($html, '026-901') && str_contains($html, 'Attendance') && str_contains($html, 'Fees, dues and fines')
+        && str_contains($html, 'Balance to pay') && str_contains($html, 'Late three Saturdays running') && str_contains($html, 'Parent / guardian') && str_contains($html, '<th scope="col"'));
+    $rep = preport_issue('NGG-PR-KID', 'member', 'month', 'TEST-01', $d);
+    $again = preport_issue('NGG-PR-KID', 'member', 'month', 'TEST-01', ['from' => 'x', 'to' => 'y'] + $d);
+    chk('reports · a report is sealed once: issuing again returns the original', $again['reportId'] === $rep['reportId'] && (string)$again['periodFrom'] === $from);
+    $sent = preport_send_member($rep, $m);
+    chk('reports · each following guardian gets it once: two sent, then none', $sent === 2 && preport_send_member($rep, $m) === 0);
+    chk('reports · …and it lands in their inbox to sign', (int)db_row("SELECT COUNT(*) c FROM guardian_notices WHERE memberId = 'NGG-PR-KID' AND kind = 'report' AND sign = 1")['c'] === 2);
+    $g1 = backend_dispatch('family.report', ['guardianId' => 'GRD-PR-1', 'reportId' => $rep['reportId']]);
+    chk('reports · a following guardian opens the sealed copy as a printable page', !empty($g1['ok']) && str_contains($g1['html'], 'Print or save as PDF'));
+    chk('reports · a guardian who does not follow the child cannot open it', (backend_dispatch('family.report', ['guardianId' => 'GRD-PR-X', 'reportId' => $rep['reportId']])['error'] ?? '') === 'not_found');
+    // The monthly job: only at the start of a month, once.
+    chk('reports · the monthly job waits for the start of a month', (preport_monthly_run(substr($today, 0, 7) . '-15')['skipped'] ?? '') === 'not_the_start_of_a_month');
+    $r1 = preport_monthly_run(substr($today, 0, 7) . '-02', 500);
+    chk('reports · the monthly job issues last month\'s report and mails it', (bool)db_row("SELECT 1 FROM parent_reports WHERE subjectId = 'NGG-PR-KID' AND kind = 'month' AND period = ?", [preport_last_month(substr($today, 0, 7) . '-02')[0]]));
+    chk('reports · …and running it again issues nothing new', !db_row("SELECT 1 FROM parent_reports WHERE subjectId = 'NGG-PR-KID' AND kind = 'month' AND period = ?", ['none']) && preport_monthly_run(substr($today, 0, 7) . '-02', 500)['made'] === 0);
+    // End of session.
+    $end = gmdate('Y-m-d', strtotime($today . ' 12:00:00 UTC') - 2 * 86400);
+    db_insert('sessions', ['sessionId' => 'SES-PR-1', 'code' => 'T1', 'name' => 'First Term 2026/27', 'startDate' => gmdate('Y-m-d', strtotime($end . ' 12:00:00 UTC') - 80 * 86400), 'endDate' => $end]);
+    preport_session_run($today, 500);
+    chk('reports · a session that just ended gets its own report, named for the session', ($s = db_row("SELECT * FROM parent_reports WHERE subjectId = 'NGG-PR-KID' AND kind = 'session' AND period = 'SES-PR-1'"))
+        && (safe_json($s['data'])['label'] ?? '') === 'First Term 2026/27');
+    // Staff preview, scoped.
+    $pv = backend_dispatch('admin.reports.member', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-PR-KID']);
+    chk('reports · staff can preview a member\'s report and see what was issued', !empty($pv['ok']) && str_contains($pv['html'], 'Monthly Progress Report') && count($pv['issued']) >= 2);
+    // The daily attendance mail.
+    db_insert('members', ['memberId' => 'NGG-PR-DESK', 'fullName' => 'Desk Lead', 'email' => 'desk-pr@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('reports · the day\'s attendance waits for the end of the day', (attendance_daily_run($today, 9)['skipped'] ?? '') === 'before_the_end_of_the_day');
+    $day = attendance_day_centre('club', 'Egbeda', $today);
+    chk('reports · a centre\'s day names who is absent', $day['expected'] === 0 || in_array('Ada Report', $day['absent'], true) || $day['present'] > 0);
+    $a1 = attendance_daily_run($today, 18); $a2 = attendance_daily_run($today, 18);
+    chk('reports · the attendance mail goes once a day per recipient', ($a2['sent'] ?? -1) === 0);
+    $hd = attendance_day_html('NGG Club', $today, [['centre' => 'Egbeda', 'expected' => 3, 'present' => 2, 'late' => ['Bola (12 min)'], 'absent' => ['Ada Report'], 'noSignOut' => []]]);
+    chk('reports · the attendance mail lists late, absent and no-sign-out by name', str_contains($hd, 'Ada Report') && str_contains($hd, 'Bola (12 min)') && str_contains($hd, '2 of 3'));
+    // Tidy.
+    foreach (['NGG-PR-KID', 'NGG-PR-DESK'] as $id) { db_exec('DELETE FROM members WHERE memberId = ?', [$id]); db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]); db_exec('DELETE FROM parent_reports WHERE subjectId = ?', [$id]); }
+    db_exec("DELETE FROM sanctions WHERE personId = 'NGG-PR-KID'"); db_exec("DELETE FROM guardian_wards WHERE memberId = 'NGG-PR-KID'"); db_exec("DELETE FROM guardian_notices WHERE memberId = 'NGG-PR-KID'");
+    db_exec("DELETE FROM guardians WHERE guardianId LIKE 'GRD-PR-%'"); db_exec("DELETE FROM sessions WHERE sessionId = 'SES-PR-1'");
+})();
+
 /* ── The bundled three-year Music programme: Piano and Guitar, Years 1–3, through the real import ── */
 (function () {
     $now = now_iso();

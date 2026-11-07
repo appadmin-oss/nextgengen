@@ -7182,3 +7182,11 @@ Owner: *"I need real effective learning. Grammar … Speaking … Articulation �
 - **Tests:** run.php — the core courses (catalogue, every member in both modes, kinds, media resolve, real importer, certificate style), retirement. Stale assertions updated where the rule changed on purpose: member course lists now end with the core courses; an `evidence` question carries its link in `videoUrl` (the "no video on a non-watch question" check now excludes it).
 
 **Same day, revised:** Data Appreciation rebuilt as "the very basics to intermediate of what every computer user should [know]" (owner) — `tools/learn-core/lessons_da.py`; ten more diagrams and eight drawn work-screens (`media_more.py`: file manager, SUM and fill, sort/filter, share dialog; DTP document setup, editor, paragraph styles, print-PDF export). Drawn, not captured: no product's logo or trade dress, so they ship and do not go stale.
+
+## 7 Nov 2026 — Formal family reports (month, session, Summer edition) with fines and dues; daily attendance email
+
+**Owner:** "the parents should get a formal professional report at the end of each session and every month. Super profesh", "monthly parent reports — with fines and dues and so on", "email reports on every programme … on the attendance for the day".
+- `domain/parent-reports.php` (in the bootstrap list). Migration 231: `parent_reports` (sealed per subject/kind/period) and `report_sends` (claimed per recipient before a mail goes).
+- `preport_member_data` reads attendance (programme days, scans, `policy_unexcused_absences`), lessons/exams/certificates, sanctions, ledger entries in the period (training and write-offs excluded — their own account) and `fees_balance` as of the day. `preport_html` is ONE document for the email body and the printable page (`api/family/report.php?id=`), inline styles, tables with `scope`.
+- `family_reports_run` now delegates to `preport_monthly_run` (same signable inbox notice and refId, so the old dedupe holds). Session and edition reports and `attendance_daily_run` ride `web_cron_reminders`.
+- Ops: `family.report`, `admin.reports.member`.

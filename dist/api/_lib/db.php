@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 230;
+const NGG_SCHEMA_TARGET = 231;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6462,6 +6462,27 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_csit_member ON curriculum_sittings(memberId, kind, unitId);
             CREATE INDEX IF NOT EXISTS idx_csit_course ON curriculum_sittings(course, kind, status);
+        ",
+        /* 231 — formal family reports and the daily attendance mail (domain/parent-reports.php).
+           parent_reports: one sealed report per subject per kind (month | session | edition) per period — what
+           was ISSUED, so the copy a parent reopens in March is the one they were sent in February.
+           report_sends: one row per (kind, refKey, recipient) claimed BEFORE a mail goes, so two cron ticks
+           cannot both send it. */
+        231 => "
+            CREATE TABLE IF NOT EXISTS parent_reports (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              reportId TEXT NOT NULL UNIQUE,
+              subjectId TEXT NOT NULL, subjectType TEXT NOT NULL DEFAULT 'member',
+              kind TEXT NOT NULL, period TEXT NOT NULL,
+              periodFrom TEXT NOT NULL DEFAULT '', periodTo TEXT NOT NULL DEFAULT '',
+              data TEXT NOT NULL DEFAULT '{}', issuedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_preport_key ON parent_reports(subjectId, kind, period);
+            CREATE TABLE IF NOT EXISTS report_sends (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              kind TEXT NOT NULL, refKey TEXT NOT NULL, recipient TEXT NOT NULL, sentAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_rsend_key ON report_sends(kind, refKey, recipient);
         ",
     ];
 

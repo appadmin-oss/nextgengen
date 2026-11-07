@@ -366,6 +366,14 @@ function web_cron_reminders(): void {
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'family.v3', $e->getMessage()); }
     }
 
+    /* Formal family reports at the end of a session (term) and a Summer School edition, and the day's attendance
+       to the staff who run each programme (domain/parent-reports.php). Each send is claimed per recipient, so a
+       15-minute tick sends each one once. The monthly report rides family_reports_run above. */
+    if (function_exists('preport_session_run')) {
+        try { preport_session_run(); preport_edition_run(); attendance_daily_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'reports', $e->getMessage()); }
+    }
+
     /* Support cases: solved ones nobody reopened close, and ones waiting on a
      * person who never wrote back are solved with a note (domain/support.php). */
     if (function_exists('support_housekeeping')) {

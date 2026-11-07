@@ -5245,3 +5245,27 @@ CREATE TABLE IF NOT EXISTS curriculum_sittings (
   KEY idx_csit_course (course, kind, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (230) ON DUPLICATE KEY UPDATE version = version;
+
+-- 231 — formal family reports and the daily attendance mail (domain/parent-reports.php)
+CREATE TABLE IF NOT EXISTS parent_reports (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  reportId VARCHAR(40) NOT NULL UNIQUE,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectType VARCHAR(16) NOT NULL DEFAULT 'member',
+  kind VARCHAR(16) NOT NULL,
+  period VARCHAR(32) NOT NULL,
+  periodFrom VARCHAR(10) NOT NULL DEFAULT '',
+  periodTo VARCHAR(10) NOT NULL DEFAULT '',
+  data MEDIUMTEXT,
+  issuedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_preport_key (subjectId, kind, period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS report_sends (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  kind VARCHAR(24) NOT NULL,
+  refKey VARCHAR(120) NOT NULL,
+  recipient VARCHAR(191) NOT NULL,
+  sentAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_rsend_key (kind, refKey, recipient)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (231) ON DUPLICATE KEY UPDATE version = version;
