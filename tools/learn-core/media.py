@@ -12,9 +12,12 @@ FONT = "font-family:'Inter','Segoe UI',Arial,sans-serif"
 
 
 def svg(w, h, title, desc, body):
+    h = h + 22   # a footer strip of its own for the course mark, so it never meets a caption
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" role="img" aria-labelledby="t d">'
             f'<title id="t">{escape(title)}</title><desc id="d">{escape(desc)}</desc>'
-            f'<rect width="{w}" height="{h}" fill="#ffffff"/><g style="{FONT}">{body}</g></svg>')
+            f'<defs><filter id="sh" x="-8%" y="-8%" width="116%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="#16233f" flood-opacity=".13"/></filter></defs>'
+            f'<rect width="{w}" height="{h}" fill="#ffffff"/><rect width="{w}" height="5" fill="{GOLD}"/>'
+            f'<g style="{FONT}">{body}<text x="{w - 14}" y="{h - 10}" font-size="11" font-weight="700" fill="#5a6488" text-anchor="end">NGG · Learn</text></g></svg>')
 
 
 def text(x, y, s, size=16, weight=500, fill=INK, anchor="start"):
@@ -22,11 +25,11 @@ def text(x, y, s, size=16, weight=500, fill=INK, anchor="start"):
 
 
 def box(x, y, w, h, fill=SOFT, stroke=LINE, r=12):
-    return f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>'
+    return f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="{fill}" stroke="{stroke}" stroke-width="1.25" filter="url(#sh)"/>'
 
 
 def arrow(x1, y1, x2, y2, c=INK2):
-    return (f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{c}" stroke-width="2.5" marker-end="url(#a)"/>')
+    return (f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{c}" stroke-width="2.5" stroke-linecap="round" marker-end="url(#a)"/>')
 
 
 DEFS = f'<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="{INK2}"/></marker></defs>'
@@ -45,9 +48,12 @@ def diagrams():
         a = -math.pi / 2 + i * 2 * math.pi / 5
         x, y = cx + R * math.cos(a), cy + R * math.sin(a)
         pts.append((x, y))
+    b += f'<circle cx="{cx}" cy="{cy}" r="{R}" fill="none" stroke="{SOFT}" stroke-width="22"/>'
     for i in range(5):
-        (x1, y1), (x2, y2) = pts[i], pts[(i + 1) % 5]
-        b += arrow(x1 + (x2 - x1) * .28, y1 + (y2 - y1) * .28, x1 + (x2 - x1) * .72, y1 + (y2 - y1) * .72)
+        a1 = -math.pi / 2 + i * 2 * math.pi / 5 + 0.36
+        a2 = -math.pi / 2 + (i + 1) * 2 * math.pi / 5 - 0.36
+        x1, y1, x2, y2 = cx + R * math.cos(a1), cy + R * math.sin(a1), cx + R * math.cos(a2), cy + R * math.sin(a2)
+        b += f'<path d="M{x1:.1f} {y1:.1f} A{R} {R} 0 0 1 {x2:.1f} {y2:.1f}" fill="none" stroke="{INK2}" stroke-width="2.5" stroke-linecap="round" marker-end="url(#a)"/>'
     for i, ((h, s), (x, y)) in enumerate(zip(steps, pts)):
         b += box(x - 92, y - 34, 184, 68, GOLD if i == 0 else SOFT, INK if i == 0 else LINE)
         b += text(x, y - 6, f"{i + 1}. {h}", 17, 700, INK, "middle") + text(x, y + 16, s, 12.5, 500, INK2, "middle")
@@ -105,9 +111,9 @@ def diagrams():
     b += arrow(300, 102, 170, 180) + arrow(420, 102, 550, 180)
     b += box(60, 182, 220, 60) + text(170, 217, "More cold drinks sold", 15, 700, INK, "middle")
     b += box(440, 182, 220, 60) + text(550, 217, "More people swimming", 15, 700, INK, "middle")
-    b += f'<line x1="282" y1="212" x2="438" y2="212" stroke="{CORAL}" stroke-width="2.5" stroke-dasharray="7 5"/>' + text(360, 202, "related…", 13, 700, "#a3361f", "middle") + text(360, 236, "…but neither causes the other", 13, 700, "#a3361f", "middle")
-    b += text(360, 290, "Correlation is not causation: look for a hidden third thing.", 15, 700, INK, "middle")
-    D["correlation.svg"] = svg(720, 310, "Correlation is not causation", "Hot weather raises both cold-drink sales and swimming, so the two rise together without one causing the other.", b)
+    b += f'<line x1="282" y1="212" x2="438" y2="212" stroke="{CORAL}" stroke-width="2.5" stroke-dasharray="7 5"/>' + text(360, 202, "related…", 13, 700, "#a3361f", "middle") + text(360, 268, "…but neither causes the other", 13, 700, "#a3361f", "middle")
+    b += text(360, 306, "Correlation is not causation: look for a hidden third thing.", 15, 700, INK, "middle")
+    D["correlation.svg"] = svg(720, 334, "Correlation is not causation", "Hot weather raises both cold-drink sales and swimming, so the two rise together without one causing the other.", b)
 
     import random
     random.seed(7)
@@ -142,9 +148,12 @@ def diagrams():
     b += text(40, 170, "Saturday 14 March · 11am · Egbeda Centre", 17, 700, "#0b6e80")
     b += text(40, 215, "Come and see what a term of practice sounds like. Free entry; bring", 15, 400) + text(40, 237, "your family. Refreshments from the catering class.", 15, 400)
     b += text(40, 280, "Photo: the 2026 junior band", 12, 400, INK2)
-    for y, lab in [(70, "1 Headline — biggest, boldest"), (112, "2 Subheading — supports it"), (170, "3 Key facts — colour or weight"), (226, "4 Body — 15–16 px, easy to read"), (280, "5 Caption — smallest")]:
-        b += text(700, y - 8, lab, 13, 700, "#a3361f", "end")
-    D["type-hierarchy.svg"] = svg(720, 300, "Typographic hierarchy", "A flyer's text at five levels, from a large bold headline down to a small caption, so the eye reads them in order.", b)
+    b = box(24, 24, 600, 280, "#ffffff", LINE) + b
+    for i, (y, lab) in enumerate([(58, "Headline — biggest, boldest"), (104, "Subheading — supports it"), (164, "Key facts — colour or weight"), (222, "Body — 15–16 px, easy to read"), (276, "Caption — smallest")]):
+        b += f'<line x1="630" y1="{y}" x2="664" y2="{y}" stroke="{CORAL}" stroke-width="1.5" stroke-dasharray="3 3"/>'
+        b += f'<circle cx="680" cy="{y}" r="12" fill="{GOLD}" stroke="{INK}"/>' + text(680, y + 5, str(i + 1), 13, 800, INK, "middle")
+        b += text(700, y + 5, lab, 14, 700, INK)
+    D["type-hierarchy.svg"] = svg(940, 330, "Typographic hierarchy", "A flyer's text at five levels, from a large bold headline down to a small caption, so the eye reads them in order.", b)
 
     b = text(30, 36, "A 3-column grid: everything lines up with something", 18, 800)
     b += f'<rect x="30" y="54" width="660" height="400" fill="#ffffff" stroke="{INK}" stroke-width="2"/>'

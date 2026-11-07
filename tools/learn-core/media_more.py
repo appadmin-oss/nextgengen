@@ -57,7 +57,7 @@ def diagrams():
     D["backup-321.svg"] = svg(720, 310, "The 3-2-1 backup rule", "Three copies, on two different kinds of storage, with one kept somewhere else.", b)
 
     b = text(30, 36, "The parts of a spreadsheet", 20, 800) + DEFS
-    b += box(30, 54, 660, 34, SOFT, LINE, 4) + text(42, 76, "fx   =SUM(B2:B5)", 14, 600, INK2)
+    b += box(30, 54, 490, 34, SOFT, LINE, 4) + text(42, 76, "fx   =SUM(B2:B5)", 14, 600, INK2)
     cols = ["", "A", "B", "C"]
     for c, name in enumerate(cols):
         x = 30 + (0 if c == 0 else 40 + (c - 1) * 150)
@@ -72,9 +72,10 @@ def diagrams():
             sel = (r == 5 and c == 1)
             b += f'<rect x="{x}" y="{y}" width="150" height="28" fill="{"#e8f0fe" if sel else "#fff"}" stroke="{"#1a56c5" if sel else LINE}" stroke-width="{2 if sel else 1}"/>'
             b += text(x + 8, y + 19, v, 13, 700 if r in (0, 5) else 500)
-    notes = [(520, 120, "Column = a letter, runs DOWN"), (520, 160, "Row = a number, runs ACROSS"), (520, 200, "Cell = where they meet: B6"), (520, 240, "Formula bar shows the cell's formula")]
-    for x, y, s in notes: b += text(x, y, s, 12.5, 700, INK2)
-    D["spreadsheet-anatomy.svg"] = svg(720, 310, "The parts of a spreadsheet", "Columns are letters, rows are numbers, a cell is where they meet (B6), and the formula bar shows what a cell calculates.", b)
+    notes = [(120, "Column = a letter, runs DOWN"), (160, "Row = a number, runs ACROSS"), (200, "Cell = where they meet: B6"), (240, "Formula bar = what the cell holds")]
+    for i, (y, s) in enumerate(notes):
+        b += f'<circle cx="552" cy="{y - 4}" r="10" fill="{GOLD}" stroke="{INK}"/>' + text(552, y + 1, str(i + 1), 11.5, 800, INK, "middle") + text(570, y, s, 13, 700, INK)
+    D["spreadsheet-anatomy.svg"] = svg(860, 310, "The parts of a spreadsheet", "Columns are letters, rows are numbers, a cell is where they meet (B6), and the formula bar shows what a cell calculates.", b)
 
     b = text(30, 40, "Reading a formula", 22, 800) + DEFS
     parts = [("=", "starts every formula", GOLD), ("SUM", "the function: what to do", TEAL), ("(B2:B5)", "the range: B2 down to B5", "#f6c9bd")]
@@ -82,8 +83,9 @@ def diagrams():
     for p, s, col in parts:
         w = 40 + len(p) * 26
         b += box(x, 70, w, 70, col, INK, 10) + text(x + w / 2, 117, p, 34, 800, INK, "middle")
-        b += text(x + w / 2, 168, s, 13, 600, INK2, "middle")
-        x += w + 26
+        first, _, rest = s.partition(": ")
+        b += text(x + w / 2, 166, first, 13, 700, INK, "middle") + (text(x + w / 2, 184, rest, 12.5, 500, INK2, "middle") if rest else "")
+        x += w + 70
     b += text(30, 220, "Useful functions:  SUM  AVERAGE  MIN  MAX  COUNT  COUNTIF  ROUND", 15, 700)
     b += text(30, 250, "Copy a formula down and its cell references move with it: B6's =SUM(B2:B5) becomes C6's =SUM(C2:C5).", 13.5, 500, INK2)
     b += text(30, 274, "Put a $ in front to fix one: =B2*$E$1 always uses E1 (an ABSOLUTE reference).", 13.5, 500, INK2)
