@@ -8679,8 +8679,8 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-ws { flex: 1; min-height: 0; display: flex; }
 .cr-ws > .cr-locked, .cr-ws > .cr-err, .cr-ws > .cr-skel { margin: 24px; flex: 1; }
 
-.cr-ib { flex: 1; min-height: 0; display: grid; grid-template-columns: 216px minmax(300px, 380px) minmax(0, 1fr); }
-@container (max-width: 1080px) { .cr-ib { grid-template-columns: 64px minmax(280px, 340px) minmax(0, 1fr); } .cr-ib-view .cr-grow, .cr-ib-rail-foot span { display: none; } .cr-ib-view { justify-content: center; position: relative; } .cr-ib-view .cr-ib-n { position: absolute; top: 2px; right: 4px; } }
+.cr-ib { flex: 1; min-height: 0; display: grid; grid-template-columns: 232px minmax(300px, 380px) minmax(0, 1fr); }
+@container (max-width: 1240px) { .cr-ib { grid-template-columns: 64px minmax(280px, 340px) minmax(0, 1fr); } .cr-ib-view .cr-grow, .cr-ib-rail-foot span { display: none; } .cr-ib-view { justify-content: center; position: relative; } .cr-ib-view .cr-ib-n { position: absolute; top: 2px; right: 4px; } }
 .cr-ws { container-type: inline-size; }
 
 /* Rail */
@@ -18085,3 +18085,38 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-celebrate-s { margin: 0; font-size: 14px; line-height: 1.45; }
 .m9x-celebrate-x { flex: none; width: 36px; height: 36px; border: 0; border-radius: 10px; background: transparent; color: #3d2c00; cursor: pointer; }
 .m9x-celebrate-x:hover, .m9x-celebrate-x:focus-visible { background: #fbe3a6; }
+
+/* Inbox, reading pane and rail (7 Nov 2026). The facts box was a flex child
+   of a scrolling column with overflow:hidden, so it shrank to a sliver the
+   moment the message was long; nothing in the pane body may shrink. */
+.cr-ib-pbody > * { flex-shrink: 0; }
+.cr-ib-view .cr-grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-ib-chiprow { flex-wrap: wrap; row-gap: 6px; }
+.cr-ib-chips { min-width: 0; flex: 1 1 220px; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); padding-right: 20px; }
+.cr-ib-sort { flex: none; margin-left: auto; }
+.cr-ib-msgsub { font-weight: 400; color: var(--cr-muted-3); }
+.cr-ib-facts { flex-shrink: 0; }
+.cr-ib-rel { display: flex; flex-direction: column; gap: 8px; max-width: 760px; }
+.cr-ib-rel-h { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--cr-muted); }
+.cr-ib-rel-h span { min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--cr-r-pill); background: var(--cr-s2); font-size: 11.5px; display: inline-flex; align-items: center; justify-content: center; }
+.cr-ib-rel-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--cr-line-4); border-radius: var(--cr-r); overflow: hidden; }
+.cr-ib-rel-list li + li { border-top: 1px solid var(--cr-line-4); }
+.cr-ib-rel-row { width: 100%; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 12px; border: 0; background: var(--cr-bg); text-align: left; cursor: pointer; }
+.cr-ib-rel-row:hover, .cr-ib-rel-row:focus-visible { background: var(--cr-s4); }
+.cr-ib-rel-row .ph { font-size: 16px; color: var(--cr-muted-3); flex: none; }
+.cr-ib-rel-row .cr-grow { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cr-ib-rel-row b { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-ib-rel-row .cr-grow > span { font-size: 12px; color: var(--cr-muted-3); }
+/* The pane's own width decides, not the window's: a narrow pane stacks its
+   header actions and gives the decision buttons the full row. */
+.cr-ib-pane { container-type: inline-size; }
+@container (max-width: 560px) {
+  .cr-ib-phead { flex-wrap: wrap; padding: 12px 16px; }
+  .cr-ib-quick { width: 100%; justify-content: flex-start; }
+  .cr-ib-pbody { padding: 16px; }
+  .cr-ib-act { padding: 10px 16px 12px; }
+  .cr-ib-decide .cr-btn { flex: 1 1 auto; justify-content: center; }
+  .cr-ib-keys { display: none; }
+  .cr-ib-subject { font-size: 17px; }
+  .cr-ib-facts { grid-template-columns: 1fr 1fr; }
+}

@@ -433,6 +433,12 @@ card("punctuation", ["EN-007", "EN-008", "EN-058", "EN-013"], "Full stops, comma
 
 
 def main():
+    # More cards live in sibling modules, each with `add(B)` taking this module.
+    import importlib, sys as _sys
+    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    for name in ("maths_more", "english_more", "physics"):
+        if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), name + ".py")):
+            importlib.import_module(name).add(_sys.modules[__name__])
     os.makedirs(OUT, exist_ok=True)
     for f in os.listdir(OUT):
         if f.endswith(".svg"): os.remove(os.path.join(OUT, f))
@@ -449,8 +455,8 @@ def main():
             data["map"].setdefault(comp, key)   # the first card listed for a topic is its card
     with open(os.path.join(OUT, "remember.json"), "w") as fh:
         json.dump(data, fh, ensure_ascii=False, separators=(",", ":"))
-    m = sum(1 for k in data["map"] if k.startswith("MC")); e = sum(1 for k in data["map"] if k.startswith("EN"))
-    print(f"{len(CARDS)} cards, {sum(len(c['frames']) for c in CARDS.values())} frames; topics covered: maths {m}, english {e}")
+    m = sum(1 for k in data["map"] if k.startswith("MC")); e = sum(1 for k in data["map"] if k.startswith("EN")); p = sum(1 for k in data["map"] if k.startswith("PH"))
+    print(f"{len(CARDS)} cards, {sum(len(c['frames']) for c in CARDS.values())} frames; topics covered: maths {m}, english {e}, physics {p}")
 
 
 if __name__ == "__main__":

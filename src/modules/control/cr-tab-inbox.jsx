@@ -126,6 +126,16 @@ function crAppDraft(a, what, me) {
   if (!a.phone) need.push("a phone number we can reach you on");
   return "Hello,\n\nThank you for " + first + "’s application to " + prog + ". Before we can go on, we need " + (need.length ? (need.length === 1 ? need[0] : need.slice(0, -1).join(", ") + " and " + need[need.length - 1]) : "one more detail: [what you need]") + ". Please reply to this email with " + (need.length > 1 ? "them" : "it") + "." + sign;
 }
+/* Who wrote it, as a person: a family account's name can be its email
+   address (nobody typed a name), and "olisko2003@gmail.com" heading a parent's
+   message reads as spam. The relationship leads; the address follows. */
+function crReqWho(x) {
+  if (!x.byFamily) return { who: x.fullName || "Member" };
+  const n = String(x.raisedByName || "").trim(), first = String(x.fullName || "").trim().split(/\s+/)[0];
+  const role = first ? first + "’s family" : "Their family";
+  if (!n) return { who: role };
+  return /@/.test(n) ? { who: role, sub: n } : { who: n, sub: role };
+}
 function crMask(phone) { const s = String(phone || "").replace(/\s+/g, ""); return s.length > 6 ? s.slice(0, 4) + " ••• " + s.slice(-3) : s; }
 
 /* ── Sources: one per view; each knows its permission and its server calls ── */
@@ -278,6 +288,10 @@ const CR_INBOX_SOURCES = {
     async load(ctx) {
       const r = await NGGApi.admin.requests.list({ status: "open" });
       const canMoney = ctx.can("fees");
+      /* A family appealing a fine usually points at a leave request still
+         waiting: the member's other open requests travel with each item. */
+      const byMember = {};
+      (r.requests || []).forEach(y => { if (y.memberId) (byMember[y.memberId] = byMember[y.memberId] || []).push(y); });
       return (r.requests || []).map(x => {
         /* Feedback is thanked or passed on, never approved: an "approved idea" means nothing to a child. */
         if (x.kind === "feedback") {
@@ -307,13 +321,15 @@ const CR_INBOX_SOURCES = {
         }
         const payNote = pay && !(x.parts && x.parts.length) && crPayIsNote(x.reference) ? x.reference : "";
         if (x.kind === "leave") f.push(["From", x.fromDate ? crDate(x.fromDate) : "—"], ["To", x.toDate ? crDate(x.toDate) : "Open-ended"]);
-        if (x.byFamily) f.push(["Raised by", (x.raisedByName || "Their family") + " · the parent is emailed your reply"]);
+        if (x.byFamily) { const w = crReqWho(x); f.push(["Raised by", w.who + (w.sub ? " · " + w.sub : "")]); }
         const det = x.kind === "details" || x.kind === "familydetails";
         const rd = det ? (x.reading || { changes: [], asked: [] }) : null;
         if (det) {
           rd.changes.forEach(c => f.push([c.label, (c.current || "nothing") + " → " + c.proposed + (c.warn ? " · " + c.warn : "")]));
           rd.asked.forEach(a => f.push([a.label, "Named, but no new value given — ask for it"]));
         }
+        const acts = typeof crReqActs === "function" ? crReqActs(x) : ["Approve", "Decline", false];
+        const fine = x.kind === "appeal" && /^fine\b/i.test(x.subject || "");
         const approve = det ? {
           l: rd.changes.length ? "Change it" : "Change details", tone: "primary", form: () => crReqDetailsForm(x),
           run: async (it, v) => { const r = await crReqDetailsSend(x, v); if (r.fieldErrors) throw Object.assign(new Error("bad_value"), { data: { message: Object.values(r.fieldErrors)[0] } }); return { text: "Changed and approved · " + x.fullName }; },
@@ -327,19 +343,23 @@ const CR_INBOX_SOURCES = {
         } : null) : x.kind === "appeal" && x.refSanctionId ? {
           /* An appeal against a decision: upheld, the decision is overturned (its fine comes off the account).
              The person who made the decision can't decide its appeal; the server says so. */
-          l: "Overturn it", tone: "primary", note: CR_REASON_NOTE("Why it is overturned", "The family reads this.", true),
-          run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Overturned · " + x.fullName }; },
+          l: acts[0], tone: "primary", note: Object.assign(CR_REASON_NOTE("Why it is upheld", (fine ? "The fine comes off the account. " : "The decision is lifted, with anything it carried. ") + "The family reads this.", true), { dflt: crReqDraftApprove(x) }),
+          run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: (fine ? "Fine lifted · " : "Appeal upheld · ") + x.fullName }; },
         } : {
-          l: "Approve", tone: "primary", note: Object.assign(CR_REASON_NOTE("Your reply", "The member reads this — a drafted reply; edit it or send it.", false), { dflt: crReqDraftApprove(x) }),
-          run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Approved · " + x.fullName }; },
+          l: acts[0], tone: "primary", note: Object.assign(CR_REASON_NOTE(acts[2] ? "Your answer" : "Your reply", "They read this — a drafted reply; edit it or send it.", acts[2]), { dflt: crReqDraftApprove(x) }),
+          run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Done · " + x.fullName }; },
         };
+        const others = (byMember[x.memberId] || []).filter(y => y.requestId !== x.requestId);
         return crItem({
           id: "req:" + x.requestId, cat: "requests", kind: (x.kindLabel || "Member request") + (x.byFamily ? " · From their family account" : ""), icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
           title: x.subject || x.kindLabel, body: x.body || payNote, search: [x.requestId, x.displayId, x.memberId, x.centre, x.reference].join(" "),
-          facts: f, thread: (x.body || payNote) ? [{ who: x.byFamily ? (x.raisedByName || "Their family") : (x.fullName || "Member"), at: x.createdAt, body: x.body || payNote, mine: false }] : null,
+          facts: f, thread: (x.body || payNote) ? [Object.assign(crReqWho(x), { at: x.createdAt, body: x.body || payNote, mine: false })] : null,
           note: pay && !canMoney ? "Approving a payment needs the Fees permission." : "",
-          actions: [approve, { l: x.kind === "appeal" && x.refSanctionId ? "Keep it" : "Decline", note: Object.assign(CR_REASON_NOTE("Why it is declined", "A drafted reason for this kind of request — edit it to fit."),
-            { dflt: ((CR_REQ_DECLINE[x.kind] || CR_REQ_DECLINE_ANY)[0] || [0, 0, () => ""])[2](x) }), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: "Declined, with your reason" }; } }].filter(Boolean),
+          related: others.map(y => ({ id: "req:" + y.requestId, icon: y.kind === "leave" || y.kind === "academic" ? "calendar-x" : "tray", t: y.subject || y.kindLabel || y.kind,
+            s: (y.kindLabel || y.kind) + " · waiting since " + crDate(y.createdAt), y })),
+          relatedTip: x.kind === "appeal" && others.some(y => y.kind === "leave") ? "Their leave request is still waiting. Excusing it does not lift " + (fine ? "this fine" : "this decision") + " on its own — decide both." : "",
+          actions: [approve, { l: pay || det ? "Decline" : acts[1], note: Object.assign(CR_REASON_NOTE(x.kind === "appeal" ? "Why it stands" : "Why it is declined", "A drafted reason for this kind of request — edit it to fit."),
+            { dflt: ((CR_REQ_DECLINE[x.kind] || CR_REQ_DECLINE_ANY)[0] || [0, 0, () => ""])[2](x) }), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: x.kind === "appeal" ? "Kept, with your reason" : "Declined, with your reason" }; } }].filter(Boolean),
         });
       });
     },
@@ -709,7 +729,8 @@ function CrInbox({ ctx, phone, data }) {
     </section>
   );
 
-  const pane = sel ? <CrInboxPane key={sel.id} it={sel} now={now} ctx={ctx} phone={phone} paneRef={paneRef} act={act} send={send} onBack={() => setOpen(false)}/> : (
+  const pane = sel ? <CrInboxPane key={sel.id} it={sel} now={now} ctx={ctx} phone={phone} paneRef={paneRef} act={act} send={send} onBack={() => setOpen(false)}
+    onJump={r => { if (items.some(z => z.id === r.id)) { setSelId(r.id); return; } if (r.y && typeof crReqOpen === "function") crReqOpen(ctx, r.y); }}/> : (
     <section className="cr-ib-pane is-empty"><CrIcon n="tray"/><span>{items.length ? "Choose an item to read it." : "Nothing is waiting."}</span></section>
   );
 
@@ -761,7 +782,7 @@ function CrInboxRow({ it, now, on, picked, showKind, onOpen, onPick }) {
 }
 
 /** The conversation pane: who and what, the thread, and the one place to act. */
-function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
+function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack, onJump }) {
   const sla = crInboxSla(it, now);
   const [mode, setMode] = React.useState(it.reply ? "reply" : null);     // "reply" | index of a note action
   /* The reply box starts from the reply this item suggests (it.reply.draft),
@@ -844,13 +865,26 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
           <ol className="cr-ib-thread" aria-label="Conversation">
             {it.thread.map((m, i) => (
               <li key={i} className={"cr-ib-msg" + (m.mine ? " is-mine" : "")}>
-                <span className="cr-ib-msgmeta"><b>{m.mine ? m.who : m.who}</b>{m.at ? " · " + crDate(m.at, true) : ""}{m.mine ? " · emailed" : ""}</span>
+                <span className="cr-ib-msgmeta"><b>{m.who}</b>{m.sub ? <span className="cr-ib-msgsub"> · {m.sub}</span> : null}{m.at ? " · " + crDate(m.at, true) : ""}{m.mine ? " · emailed" : ""}</span>
                 <p className="cr-ib-bubble">{m.body}</p>
               </li>
             ))}
             <li ref={endRef} aria-hidden="true"/>
           </ol>
         ) : it.body ? <blockquote className="cr-ib-quote">{it.body}</blockquote> : null}
+        {it.related && it.related.length > 0 && (
+          <section className="cr-ib-rel" aria-labelledby={"cr-ib-rel-" + it.id}>
+            <h4 id={"cr-ib-rel-" + it.id} className="cr-ib-rel-h">Also waiting from {it.who}<span>{it.related.length}</span></h4>
+            {it.relatedTip && <p className="cr-ib-callout"><CrIcon n="lightbulb"/>{it.relatedTip}</p>}
+            <ul className="cr-ib-rel-list">
+              {it.related.map(r => (
+                <li key={r.id}><button type="button" className="cr-ib-rel-row" onClick={() => onJump && onJump(r)}>
+                  <CrIcon n={r.icon}/><span className="cr-grow"><b>{r.t}</b><span>{r.s}</span></span><CrIcon n="caret-right"/>
+                </button></li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
 
       <footer className="cr-ib-act">

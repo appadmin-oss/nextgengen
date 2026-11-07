@@ -98,6 +98,8 @@ async function pageFor(memberId, viewport) {
       + `$det = member_request_create(['memberId'=>'NGG-RQ-1','kind'=>'details','body'=>"Date of birth: 08/06/2013.      Phone number: 08098190961"]);`
       + `$sid = db_insert('sanctions', ['personId'=>'NGG-RQ-1','personType'=>'member','kind'=>'fine','status'=>'active','reason'=>'Absent on Sat 31 Oct with no absence request','startsAt'=>now_iso(),'issuedAt'=>now_iso(),'issuedBy'=>'NGG-RQ-OTHER']);`
       + `$ap = member_request_create(['memberId'=>'NGG-RQ-1','kind'=>'appeal','refSanctionId'=>$sid,'subject'=>'Fine: Absent on Sat 31 Oct 2026 with no absence request','body'=>'The leave request has been pending since 30 Oct.']);`
+      + `db_insert('guardians', ['guardianId'=>'GRD-RQ-1','email'=>'olisko2003@example.org','fullName'=>'','status'=>'active','createdAt'=>now_iso()]);`
+      + `db_exec("UPDATE member_requests SET raisedBy = 'guardian:GRD-RQ-1' WHERE requestId = ?", [$ap['request']['requestId'] ?? '']);`
       + `db_insert('member_requests', ['requestId'=>'REQ-RQ-LEAVE','memberId'=>'NGG-RQ-1','kind'=>'leave','status'=>'open','fromDate'=>'2026-10-31','toDate'=>'2026-10-31','subject'=>'Leave on 31 Oct','body'=>'A family event','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`
       + `echo json_encode(['ap'=>$ap['request']['requestId'] ?? '', 'aerr'=>$ap['error'] ?? '', 'pay'=>$pay['request']['requestId'] ?? '', 'det'=>$det['request']['requestId'] ?? '', 'perr'=>$pay['error'] ?? '', 'derr'=>$det['error'] ?? '']);`));
     chk('the two reported requests are seeded (' + ids.pay + ', ' + ids.det + ')', /^REQ-/.test(ids.pay) && /^REQ-/.test(ids.det));
@@ -188,6 +190,35 @@ async function pageFor(memberId, viewport) {
     await until(() => !document.querySelector('[role="dialog"] textarea'));
     const ar = JSON.parse(php(`echo json_encode(['r'=>db_row("SELECT status FROM member_requests WHERE requestId = '${ids.ap}'")['status'], 's'=>db_row("SELECT s.status FROM sanctions s JOIN member_requests r ON r.refSanctionId = s.id WHERE r.requestId = '${ids.ap}'")['status']]);`));
     chk('with a reason, upholding approves the appeal and lifts the fine (' + ar.r + ', sanction ' + ar.s + ')', ar.r === 'approved' && ar.s !== 'active');
+
+    // ── The Inbox reading pane, at the widths a coordinator actually uses ──
+    /* Re-seed one open appeal from the family for the Inbox (the one above was decided). */
+    const ib = JSON.parse(php(`$sid = db_insert('sanctions', ['personId'=>'NGG-RQ-1','personType'=>'member','kind'=>'fine','status'=>'active','reason'=>'Absent','startsAt'=>now_iso(),'issuedAt'=>now_iso(),'issuedBy'=>'NGG-RQ-OTHER']);`
+      + `$a = member_request_create(['memberId'=>'NGG-RQ-1','kind'=>'appeal','refSanctionId'=>$sid,'subject'=>'Fine: Absent on Sat 31 Oct 2026 with no absence request · ₦1,000 · Sat 7 Nov','body'=>str_repeat('The leave request has been pending since 30 October and nobody has replied. ', 8)]);`
+      + `db_exec("UPDATE member_requests SET raisedBy = 'guardian:GRD-RQ-1' WHERE requestId = ?", [$a['request']['requestId']]); echo json_encode(['id'=>$a['request']['requestId']]);`));
+    for (const [w, h] of [[1117, 580], [1440, 900], [900, 760]]) {
+      await P.setViewportSize({ width: w, height: h });
+      await P.goto(BASE + '/control/inbox/requests', { waitUntil: 'domcontentloaded' });
+      await waitForBoot(P);
+      await until(() => /Member requests/.test(document.body.innerText), null, 60000);
+      await P.click('.cr-ib-row:has-text("Fine: Absent")');
+      await until(() => !!document.querySelector('.cr-ib-pane .cr-ib-subject'));
+      const g = await P.evaluate(() => {
+        const dl = document.querySelector('.cr-ib-pane .cr-ib-facts'), pane = document.querySelector('.cr-ib-pane');
+        const meta = document.querySelector('.cr-ib-pane .cr-ib-msgmeta b');
+        const labels = Array.from(document.querySelectorAll('.cr-ib-view .cr-grow')).filter(e => e.offsetParent).map(e => e.getBoundingClientRect().height);
+        return { facts: dl ? dl.getBoundingClientRect().height : 0, who: meta ? meta.textContent : '', text: pane.innerText,
+          over: document.documentElement.scrollWidth - document.documentElement.clientWidth, tallLabel: labels.some(x => x > 24) };
+      });
+      chk('Inbox at ' + w + 'px: the facts box keeps its height (' + Math.round(g.facts) + 'px), the page does not scroll sideways, and no rail label wraps',
+        g.facts > 40 && g.over <= 1 && !g.tallLabel);
+      chk('Inbox at ' + w + 'px: the parent is named as family, not by an email address (' + g.who + '), the buttons say what they do, and the waiting leave is listed',
+        /family/.test(g.who) && !/@/.test(g.who) && /Uphold — lift the fine/.test(g.text) && /Keep the fine/.test(g.text) && /REQ-RQ-LEAVE|Leave on 31 Oct/.test(g.text) && /does not lift this fine/.test(g.text));
+      await P.screenshot({ path: path.join(SHOTS, 'inbox-' + w + '.png') });
+    }
+    await P.click('.cr-ib-rel-row:has-text("Leave on 31 Oct")');
+    chk('Inbox: the waiting leave opens from the appeal', await until(() => /Excuse the absence/.test(document.body.innerText)));
+    await P.setViewportSize({ width: 1280, height: 800 });
 
     // ── The phone ──
     const M = await pageFor('NGG-RQ-ADM', { width: 390, height: 844 });
