@@ -193,6 +193,8 @@ async function journey(who, W, H, tag) {
   await shot('lesson');
   for (let k = 0; k < 10; k++) {
     if (await p.locator('.mlb-status').count()) break;
+    // Remember it (tools/lab-remember): step through the pictures to the cover-and-recall screen.
+    for (let g = 0; g < 6 && await p.locator('.mlb-rem .mlb-go:not(.is-done)').count(); g++) { await p.locator('.mlb-rem .mlb-go:not(.is-done)').click(); await p.waitForTimeout(150); }
     if (await p.locator('.mlb-ex .mlb-sl-in').count()) { await p.locator('.mlb-ex .mlb-sl-in').first().focus(); await p.keyboard.press('ArrowRight'); }
     while (await p.locator('.mlb-why .mlb-actions .stt-btn').count()) await p.locator('.mlb-why .mlb-actions .stt-btn').click();
     while (await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').count()) await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').click();
@@ -270,12 +272,23 @@ async function physics(who, W, H, tag) {
   chk(tag + ': the Physics Exams page offers the Physics paper only', await p.locator('.mlb-paper').count() === 1 && /Timed Physics paper/.test(await p.locator('.mlb-paper').innerText()));
   await p.goto(BASE + '/study/physics/learn/PH-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });
+  let remSeen = false, remImg = false, remCover = false;
   for (let k = 0; k < 12; k++) {
     if (await p.locator('.mlb-status').count()) break;
     if (await p.locator('.phy-predict-o:not([disabled])').count()) await p.locator('.phy-predict-o:not([disabled])').first().click();
     if (await p.locator('.mlb-ex .mlb-sl-in').count()) { await p.locator('.mlb-ex .mlb-sl-in').first().focus(); await p.keyboard.press('ArrowRight'); }
     else if (await p.locator('.mlb-ex .phy-seg-b:not(.is-on)').count()) await p.locator('.mlb-ex .phy-seg-b:not(.is-on)').first().click();
     while (await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').count()) await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').click();
+    /* Remember it (tools/lab-remember/physics.py): step through the pictures, cover them, say it. */
+    if (await p.locator('.mlb-rem').count()) {
+      remSeen = true;
+      await p.waitForFunction(() => { const i = document.querySelector('.mlb-rem-img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 15000 }).catch(() => {});
+      remImg = remImg || await p.evaluate(() => { const i = document.querySelector('.mlb-rem-img'); return !!(i && i.naturalWidth > 0 && i.alt); });
+      for (let g = 0; g < 6 && await p.locator('.mlb-rem .mlb-go:not(.is-done)').count(); g++) {
+        await p.locator('.mlb-rem .mlb-go:not(.is-done)').click();
+        if (await p.locator('.mlb-rem-cover').count()) remCover = true;
+      }
+    }
     await p.waitForTimeout(250);
     const c = p.locator('.mlb-lesson-foot .mlb-go'); if (await c.count() && await c.isEnabled()) await c.click();
     await p.waitForTimeout(300);
@@ -283,6 +296,8 @@ async function physics(who, W, H, tag) {
   await p.waitForFunction(() => { const b = document.querySelector('.mlb-status .mlb-go'); return b && !b.disabled; }, null, { timeout: 15000 }).catch(() => {});
   const practise = p.locator('.mlb-status .mlb-go');
   chk(tag + ': a Physics lesson is studied step by step and opens practice', await practise.count() > 0 && await practise.isEnabled());
+  chk(tag + ': a Physics lesson has a Remember-it picture sequence, its pictures load with alt text, and it ends by covering them to recall',
+    remSeen && remImg && remCover);
   if (await practise.count()) await practise.click();
   const playing = await p.waitForSelector('.mlb-q', { timeout: 15000 }).then(() => true, () => false);
   chk(tag + ': Physics practice starts', playing);
