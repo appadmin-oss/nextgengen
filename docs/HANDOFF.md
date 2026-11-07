@@ -7239,3 +7239,21 @@ Owner: *"I need real effective learning. Grammar … Speaking … Articulation �
   have been with NGG, and celebrates a birthday, one week, one month, 100 days,
   six months, 500/1,000 days and every anniversary for a week. A celebration is
   put away once and stays away (`mp9.celebrated.<key>` in member state).
+
+## 7 Nov 2026 (later) — Inbox reading pane; Remember-it cards for every Lab topic
+
+- **Inbox.**
+  - The facts box no longer collapses beside a long message: it was a flex child of the scrolling pane.
+  - A family account with no name is shown as "<child>'s family" followed by the address, not by the bare email.
+  - Request items use the drawer's outcome labels and list the member's other open requests.
+  - A request opens at its top, so the subject and facts are in view.
+  - The notification nudge is a strip in the list, not a large card.
+  - Rail labels never wrap: the rail becomes icons below a 1240px workspace.
+  - A narrow pane restacks by its own width (a container query).
+  - `tests/requests-desk.test.js` checks the pane at 1117, 1440 and 900px.
+- **Remember it.** `tools/lab-remember/` now has sibling modules, each loaded through `add(B)`:
+  - `maths_more.py`: 16 cards.
+  - `english_more.py`: 22 cards.
+  - `physics.py`: 32 cards.
+  - Every competency is covered: maths 99, English 80 (EN-001…EN-080), physics 90 (PH-001…PH-090). In total, 106 cards and 318 frames.
+  - The Lab shows the step for any mapped topic. `tests/mathlab-e2e.test.js` walks it in all three journeys.
