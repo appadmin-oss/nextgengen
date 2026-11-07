@@ -82,8 +82,8 @@ async function as(memberId, admin, viewport) {
         'type' => 'NGG', 'status' => 'active', 'role' => $role, 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]); };
       db_insert('centres', ['centreId' => 'C-EG', 'name' => 'Egbeda', 'code' => 'EGB', 'status' => 'active', 'programmes' => 'ngg', 'slug' => 'egbeda', 'createdAt' => $now]);
       $mk('NGG-MV-ADM', 'Ade Admin', 'super_admin');
-      $mk('NGG-MV-K1', 'Tolu Adebayo', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-14 years -2 months')), 'school' => 'Egbeda High', 'displayId' => '026-014', 'phone' => '08031234567', 'joinDate' => gmdate('Y-m-d', strtotime('-365 days'))]);
-      $mk('NGG-MV-K2', 'Ada Okafor', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-11 years -3 months')), 'school' => 'Egbeda Primary', 'displayId' => '026-015']);
+      $mk('NGG-MV-K1', 'Tolu Adebayo', 'member', ['track' => 'TECH', 'courses' => json_encode(['Coding']), 'dob' => gmdate('Y-m-d', strtotime('-14 years -2 months')), 'school' => 'Egbeda High', 'displayId' => '026-014', 'phone' => '08031234567', 'joinDate' => gmdate('Y-m-d', strtotime('-365 days'))]);
+      $mk('NGG-MV-K2', 'Ada Okafor', 'member', ['track' => 'TECH', 'courses' => json_encode(['Coding']), 'dob' => gmdate('Y-m-d', strtotime('-11 years -3 months')), 'school' => 'Egbeda Primary', 'displayId' => '026-015']);
       $mk('NGG-MV-K3', 'Bayo Lowercase', 'member', ['type' => 'ngg', 'track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-15 years'))]);
       $mk('NGG-MV-MEN', 'Ngozi Eke');
       db_insert('mentors', ['mentorId' => 'MEN-MV-1', 'fullName' => 'Ngozi Eke', 'email' => 'ngozi.eke@mv.example', 'status' => 'active', 'centre' => 'Egbeda', 'tracks' => 'Coding',
