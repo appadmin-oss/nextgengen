@@ -44,7 +44,7 @@ const LRN_NAV = [
   /* `phone`: on the phone's bottom bar. Seven did not fit 360px — labels wrapped and the first was clipped
      — so the four used most stay on the bar and the rest open from "More". The rail shows all seven. */
   { id: "week",    path: "/learn",         label: "This week", icon: "ph ph-calendar-check", phone: true },
-  { id: "courses", path: "/learn/courses", label: "My courses", icon: "ph ph-books", phone: true },
+  { id: "courses", path: "/learn/courses", label: "My courses", short: "Courses", icon: "ph ph-books", phone: true },
   { id: "timetable", path: "/learn/timetable", label: "Timetable", icon: "ph ph-clock" },
   { id: "plan",    path: "/learn/plan",    label: "School",     icon: "ph ph-exam" },
   { id: "review",  path: "/learn/review",  label: "Review",     icon: "ph ph-target", phone: true },
@@ -72,10 +72,11 @@ function LearnNav({ here }) {
   }, [more]);
   const item = (n, cls) => (
     <a key={n.id} href={n.path} aria-current={here === n.id ? "page" : undefined}
-       className={cls + (here === n.id ? " is-on" : "") + (n.phone ? "" : " is-extra")}
+       className={cls + (here === n.id ? " is-on" : "") + (n.phone ? "" : " is-extra") + (n.short ? " has-short" : "")}
        onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); setMore(false); lrnGo(n.path); }}>
       <i className={here === n.id ? n.icon.replace("ph ", "ph-fill ") : n.icon} aria-hidden="true"/>
-      <span>{n.label}</span>
+      <span className="lrn-rail-label">{n.label}</span>
+      {n.short && <span className="lrn-rail-short" aria-hidden="true">{n.short}</span>}
     </a>);
   return (
     <nav className="lrn-rail" aria-label="Learn">

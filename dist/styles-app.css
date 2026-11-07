@@ -17545,8 +17545,34 @@ button.m9x-ev-sum { cursor: pointer; }
   .lrn-term-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
 }
 @container (max-width: 420px) {
-  .lrn-prog, .lrn-chero { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+  .lrn-chero { grid-template-columns: minmax(0, 1fr); justify-items: start; }
   .lrn-upnext-t { font-size: 21px; }
+  /* Progress on a phone: a smaller ring BESIDE the headline, the four figures full width beneath — the
+     stacked layout spent the whole first screen on a 104px ring above two lines of text. */
+  .lrn-prog { grid-template-columns: auto minmax(0, 1fr); column-gap: 14px; row-gap: 2px; padding: 16px; }
+  .lrn-prog-body { display: contents; }
+  .lrn-prog .lrn-ring.is-lg { width: 72px; height: 72px; grid-row: span 2; }
+  .lrn-prog .lrn-ring.is-lg .lrn-ring-n b { font-size: 18px; }
+  .lrn-prog .lrn-figs { grid-column: 1 / -1; margin-top: 10px; }
+  /* The lesson pager: one link per row, full width, so a long title is not squeezed into half a phone. */
+  .lrn-pager { grid-template-columns: minmax(0, 1fr); }
+  .lrn-pager > span:empty { display: none; }
+}
+
+/* A question's text belongs INSIDE its card. A <legend> is drawn ON a fieldset's border by default, which
+   put the first line of every question over the card's top edge; floated, it is an ordinary first row. */
+.cur-check > legend { float: left; width: 100%; padding: 0; margin: 0 0 4px; }
+.cur-check > legend + * { clear: both; }
+
+/* The phone bar's labels: one line each, never clipped mid-word. A long label carries a short twin for the
+   bar ("Courses"); the long one stays the accessible name, and the rail shows it in full. */
+.lrn-rail-item > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.lrn-rail-short { display: none; }
+.lrn-rail-item.has-short > .lrn-rail-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.lrn-rail-item.has-short > .lrn-rail-short { display: block; }
+@container (min-width: 720px) {
+  .lrn-rail-item.has-short > .lrn-rail-label { position: static; width: auto; height: auto; clip: auto; }
+  .lrn-rail-item.has-short > .lrn-rail-short { display: none; }
 }
 
 /* ============================================================================

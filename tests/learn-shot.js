@@ -135,6 +135,9 @@ function cleanup() {
     await shoot('NGG-SHOT-M1', '/learn/lesson/SHOT-U1', 'lesson', { sel: '.lrn-lesson' });
     await shoot('NGG-SHOT-M1', '/learn', 'week-phone', { w: 390, h: 844, sel: '.lrn-card' });
     await shoot('NGG-SHOT-M1', '/learn/course/piano', 'course-awards-phone', { w: 390, h: 844, sel: '.lrn-award' });
+    await shoot('NGG-SHOT-M1', '/learn/lesson/SHOT-U1', 'lesson-phone', { w: 360, h: 780, sel: '.lrn-lesson' });
+    await shoot('NGG-SHOT-M1', '/learn/plan', 'school-phone', { w: 360, h: 780, sel: '.lrn-plan' });
+    await shoot('NGG-SHOT-M1', '/learn', 'week-tablet', { w: 768, h: 1024, sel: '.lrn-card' });
 
     console.log('Control Room (staff):');
     await shoot('NGG-SHOT-ADM', '/control/learning/providers', 'control-providers',
