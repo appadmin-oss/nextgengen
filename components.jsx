@@ -3685,7 +3685,8 @@ const CUR_FILE_ACCEPT = ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.odt,.odp,.ods,.r
    Links and images accept https only, or a file in the curriculum store. The
    server renders the same language for the downloadable document
    (curriculum_text_html), so the page and the printout agree. */
-const CUR_SAFE_URL = /^(https:\/\/[^\s<>"']+|\/api\/member\/curriculum-file\.php\?f=[a-f0-9]{16,64}\.[a-z0-9]{2,5})$/i;
+// The site's own shipped lesson media (assets/learn-media/) is safe too: it is code, not a stranger's URL.
+const CUR_SAFE_URL = /^(https:\/\/[^\s<>"']+|\/api\/member\/curriculum-file\.php\?f=[a-f0-9]{16,64}\.[a-z0-9]{2,5}|\/assets\/learn-media\/[a-z0-9][a-z0-9\/_-]{0,180}\.(?:png|svg|jpe?g|webp|gif|html|pdf))$/i;
 function curVideoEmbed(url) {
   const u = String(url || "").trim();
   let m = u.match(/^https:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{6,15})/);

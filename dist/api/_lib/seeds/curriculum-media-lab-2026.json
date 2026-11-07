@@ -2,7 +2,7 @@
   "key": "media-lab-2026",
   "title": "Media Lab — Digital Creative Learning (2026)",
   "allowNewCourse": false,
-  "description": "24 weeks, two sessions a week (learn & practise, then create & review): foundation and digital safety, graphic design, photography and writing, video, social media and marketing, then leadership and portfolio — with a team challenge every month and a check on every lesson. Every lesson now carries an 'AI, used well' strand (AI explains, suggests and checks; the learner does the work and verifies it) and support and stretch work for mixed abilities.",
+  "description": "24 weeks, two sessions a week (learn & practise, then create & review): foundation and digital safety, graphic design, photography and writing, video, social media and marketing, then leadership and portfolio — with a team challenge every month and a check on every lesson. Every lesson now carries an 'AI, used well' strand (AI explains, suggests and checks; the learner does the work and verifies it) and support and stretch work for mixed abilities. Its six Club-wide lessons (course left blank) are retired: Data Appreciation and Desktop Publishing are the courses every member takes now (curriculum-core-digital-2026.json).",
   "source": "NGG Media Lab Programme (programme team), turned into lessons",
   "lessons": [
     {
@@ -60,7 +60,8 @@
           "rubric": "Five clearly named sub-folders inside a named Media Lab folder.",
           "points": 2
         }
-      ]
+      ],
+      "status": "retired"
     },
     {
       "course": "",
@@ -123,7 +124,8 @@
           "rubric": "Does not share personal details; tells a trusted adult; blocks or reports.",
           "points": 2
         }
-      ]
+      ],
+      "status": "retired"
     },
     {
       "course": "",
@@ -186,7 +188,8 @@
           "rubric": "Up to 6 points: Search with precise keywords (2); Check who made a page and when (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
           "points": 6
         }
-      ]
+      ],
+      "status": "retired"
     },
     {
       "course": "",
@@ -243,7 +246,8 @@
           "rubric": "Names a real weakness (made-up facts, bias, wrong details) and a sensible check.",
           "points": 2
         }
-      ]
+      ],
+      "status": "retired"
     },
     {
       "course": "",
@@ -294,7 +298,8 @@
           "rubric": "Up to 6 points: Read a brief and list what it asks for (2); Sketch at least three ideas before choosing one (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
           "points": 6
         }
-      ]
+      ],
+      "status": "retired"
     },
     {
       "course": "",
@@ -333,7 +338,8 @@
           "rubric": "Lists members and roles; three clear, fair rules.",
           "points": 3
         }
-      ]
+      ],
+      "status": "retired"
     },
     {
       "course": "Graphic Design",

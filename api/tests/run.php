@@ -25239,7 +25239,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
               db_row('SELECT * FROM curriculum_units WHERE unitId = ?', [$w['unit']['unitId']]), [],
               db_all('SELECT * FROM curriculum_checks WHERE unitId = ?', [$w['unit']['unitId']]), false)['checks'][0]['answer']));
     chk('watch: a question of any other kind carries no video, whatever the request said',
-        (string)db_row("SELECT COUNT(*) c FROM curriculum_checks WHERE kind <> 'watch' AND videoUrl <> ''")['c'] === '0');
+        (string)db_row("SELECT COUNT(*) c FROM curriculum_checks WHERE kind NOT IN ('watch', 'evidence') AND videoUrl <> ''")['c'] === '0');
     chk('watch: a video question is not multiple choice, so it satisfies the review on its own',
         (string)db_row('SELECT status FROM curriculum_units WHERE unitId = ?', [$w['unit']['unitId']])['status'] === 'published');
     db_exec("DELETE FROM curriculum_units WHERE title = 'Watch and tell'");
@@ -25428,7 +25428,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             'status' => 'active', 'role' => 'member', 'track' => '', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
         $ctx = null;
         chk('division mode: a member with no division gets Chess and the Club-wide lessons, never a division that is not theirs',
-            curriculum_member_courses(curriculum_member_row('NGG-CUR-D2'), $ctx) === ['Chess']);
+            curriculum_member_courses(curriculum_member_row('NGG-CUR-D2'), $ctx) === array_merge(['Chess'], CURR_CORE_COURSES));
 
         /* THE COVERAGE BOARD. The spine that ships is Year 1 only, so turning
            the mode on strands every Year 2 and 3 member. That has to be a
@@ -27091,6 +27091,80 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     if ($ids) { $ph = implode(',', array_fill(0, count($ids), '?'));
         db_exec("DELETE FROM curriculum_checks WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_materials WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_units WHERE unitId IN ($ph)", $ids); }
     db_exec("DELETE FROM members WHERE memberId = 'NGG-ML-ADM'");
+})();
+
+/* ── The core courses every member takes: Data Appreciation and Desktop Publishing (owner, 7 Nov 2026:
+      "The medialab is for everyone right? Change it to Data Appreciation and Desktop publishing … with
+      screenshots, diagrams and presentations and appropriate learning guides and materials") ── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-CORE-ADM', 'fullName' => 'Core Admin', 'email' => 'core-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    $s = backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-CORE-ADM', 'key' => 'core-digital-2026']);
+    $rows = $s['rows'] ?? [];
+    $by = static fn($c) => array_values(array_filter($rows, fn($r) => $r['course'] === $c));
+    chk('core courses · twelve weeks each of Data Appreciation and Desktop Publishing', count($by('Data Appreciation')) === 12 && count($by('Desktop Publishing')) === 12
+        && count(array_unique(array_column($by('Data Appreciation'), 'week'))) === 12);
+    chk('core courses · they are catalogue courses, so the seed needs no uncatalogued-course flag', ($s['allowNewCourse'] ?? true) === false
+        && curriculum_course_canonical('data appreciation') === 'Data Appreciation' && curriculum_course_canonical('Desktop publishing') === 'Desktop Publishing');
+    // Every member takes them: a placed pianist, an unplaced member, and division mode alike.
+    $pianist = ['memberId' => 'X1', 'type' => 'NGG', 'courses' => json_encode(['Piano'])];
+    $nobody  = ['memberId' => 'X2', 'type' => 'NGG'];
+    $ctxDiv = ['courseSource' => 'division'];
+    chk('core courses · every member takes them — placed, unplaced, and when the division is the enrolment',
+        !array_diff(CURR_CORE_COURSES, curriculum_member_courses($pianist)) && !array_diff(CURR_CORE_COURSES, curriculum_member_courses($nobody))
+        && !array_diff(CURR_CORE_COURSES, curriculum_member_courses($nobody, $ctxDiv)));
+    // More than recognition: each lesson asks for work, and the choice questions name the slip.
+    $kinds = []; $whyless = 0;
+    foreach ($rows as $r) foreach ($r['checks'] as $c) { $kinds[$c['kind']] = ($kinds[$c['kind']] ?? 0) + 1; if ($c['kind'] === 'mcq' && empty($c['whys'])) $whyless++; }
+    chk('core courses · every lesson asks for something that cannot be guessed from four options',
+        !array_filter($rows, fn($r) => !array_filter($r['checks'], fn($c) => $c['kind'] !== 'mcq')));
+    chk('core courses · practicals, outside exercises, ordering and projects — and every choice question names its slips',
+        ($kinds['task'] ?? 0) >= 12 && ($kinds['evidence'] ?? 0) >= 5 && ($kinds['order'] ?? 0) >= 4 && ($kinds['project'] ?? 0) >= 3 && $whyless === 0);
+    // The media ship with the code and resolve on a deployment with no media host.
+    $missing = [];
+    foreach ($rows as $r) {
+        preg_match_all('/\]\((media:[^)]+)\)/', $r['body'], $mm);
+        $keys = array_merge($mm[1], array_column(array_filter($r['materials'], fn($m) => str_starts_with($m['url'], 'media:')), 'url'));
+        foreach ($keys as $k) if (curriculum_media_url($k) === '') $missing[] = $k;
+    }
+    chk('core courses · every diagram, screenshot, deck and guide ships and resolves' . ($missing ? ' (missing ' . implode(', ', array_slice($missing, 0, 3)) . ')' : ''), $missing === []);
+    chk('core courses · a slide deck for every lesson, and the learning guide in week 1',
+        !array_filter($rows, fn($r) => !array_filter($r['materials'], fn($m) => $m['kind'] === 'slides'))
+        && count(array_filter($rows, fn($r) => array_filter($r['materials'], fn($m) => str_contains($m['url'], 'core/guides/')))) === 2);
+    chk('core courses · a lesson body\'s inline picture is served as a real address',
+        str_contains(curriculum_unit_public(['unitId' => 'U', 'course' => 'Data Appreciation', 'level' => 'L', 'week' => 1, 'position' => 1, 'title' => 'T', 'summary' => '', 'objectives' => '[]',
+            'body' => '![x](media:core/ppdac.svg)', 'durationMins' => 0, 'passMark' => 60, 'status' => 'published', 'version' => 1, 'updatedAt' => ''] + array_fill_keys(['publishedAt', 'source', 'updatedBy', 'createdAt'], ''), [], [], false)['body'], '](/assets/learn-media/core/ppdac.svg)'));
+    $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CORE-ADM', 'rows' => $rows, 'dryRun' => true]);
+    chk('core courses · every lesson passes the real importer', ($dry['tally']['create'] ?? 0) === 24 && ($dry['tally']['failed'] ?? 1) === 0);
+    chk('core courses · a certificate is styled for each', club_cert_style('Data Appreciation') !== club_cert_style('Desktop Publishing'));
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-CORE-ADM'");
+})();
+
+/* The six Club-wide Media Lab lessons are retired by the shipped file, never deleted: a lesson that is still
+   as shipped stops being taught; one an instructor saved stays theirs; a retired row is never created. */
+(function () {
+    $saveCfg = $GLOBALS['CONFIG']['seed_bundled_curriculum'] ?? null;
+    unset($GLOBALS['CONFIG']['seed_bundled_curriculum']);
+    $row = static fn($w, $extra = []) => $extra + ['course' => '', 'level' => 'Retire 2026', 'week' => $w, 'position' => 1, 'title' => 'Club-wide ' . $w,
+        'summary' => 'S', 'objectives' => ['O'], 'body' => 'B', 'durationMins' => 30, 'passMark' => 50, 'materials' => [],
+        'checks' => [['kind' => 'task', 'prompt' => 'Show what you did', 'rubric' => 'Did it', 'points' => 2]]];
+    $GLOBALS['__curriculum_seed_files'] = ['retiretest' => ['key' => 'retiretest', 'lessons' => [$row(1), $row(2)]]];
+    db_exec("DELETE FROM settings WHERE settingKey = 'seed_curriculum_retiretest'");
+    curriculum_seed_bundled_once();
+    $u = static fn($w) => db_row("SELECT * FROM curriculum_units WHERE level = 'Retire 2026' AND week = ?", [$w]);
+    db_update('curriculum_units', ['body' => 'Mine.', 'updatedBy' => 'NGG-INSTR'], ['unitId' => $u(2)['unitId']]);
+    $GLOBALS['__curriculum_seed_files'] = ['retiretest' => ['key' => 'retiretest', 'lessons' => [$row(1, ['status' => 'retired']), $row(2, ['status' => 'retired']), $row(3, ['status' => 'retired'])]]];
+    curriculum_seed_bundled_once();
+    chk('retire · a shipped lesson still as shipped is retired, and kept', ($u(1)['status'] ?? '') === 'retired');
+    chk('retire · one an instructor saved stays theirs', ($u(2)['status'] ?? '') === 'published' && $u(2)['body'] === 'Mine.');
+    chk('retire · a retired row is never created', !$u(3));
+    $ml = (json_decode((string)file_get_contents(__DIR__ . '/../_lib/seeds/curriculum-media-lab-2026.json'), true)['lessons'] ?? []);
+    chk('retire · the Media Lab file retires exactly its six Club-wide lessons',
+        count(array_filter($ml, fn($r) => ($r['status'] ?? '') === 'retired')) === 6 && !array_filter($ml, fn($r) => ($r['status'] ?? '') === 'retired' && $r['course'] !== ''));
+    unset($GLOBALS['__curriculum_seed_files']);
+    foreach ([1, 2] as $w) { $x = $u($w); if ($x) { db_exec('DELETE FROM curriculum_checks WHERE unitId = ?', [$x['unitId']]); db_exec('DELETE FROM curriculum_units WHERE unitId = ?', [$x['unitId']]); } }
+    db_exec("DELETE FROM settings WHERE settingKey = 'seed_curriculum_retiretest'");
+    if ($saveCfg !== null) $GLOBALS['CONFIG']['seed_bundled_curriculum'] = $saveCfg;
 })();
 
 /* ── The bundled three-year Music programme: Piano and Guitar, Years 1–3, through the real import ── */
@@ -31744,7 +31818,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        skill. What they must NOT pick up is another division's courses, which
        the next two checks hold. */
     chk('courses · a strand carries its own course and its subject, and nothing from another division',
-        ($pc = curriculum_member_courses(['track' => 'Piano'], $ctxW)) === ['Piano', 'Music', 'Chess']);
+        ($pc = curriculum_member_courses(['track' => 'Piano'], $ctxW)) === array_merge(['Piano', 'Music', 'Chess'], CURR_CORE_COURSES));
     chk('courses · an instrument is never read as "the arts": Guitar does not bring the Music division\'s other courses, nor any other division',
         !array_intersect(curriculum_member_courses(['track' => 'Guitar'], $ctxW), ['Video Production', 'Finance', 'Coding', 'Practical Coding']));
     chk('courses · "Design" names no division: it gets no division\'s courses',
@@ -31755,7 +31829,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('courses · chosen courses are stored as the catalogue names them, the first kept as the track',
         !empty($up['ok']) && member_courses_of($cx) === ['Coding', 'Robotics'] && $cx['track'] === 'Coding');
     chk('courses · chosen courses ARE the member\'s courses (plus Chess), not the old track\'s whole division',
-        curriculum_member_courses($cx, $ctxW) === ['Coding', 'Robotics', 'Chess']);
+        curriculum_member_courses($cx, $ctxW) === array_merge(['Coding', 'Robotics', 'Chess'], CURR_CORE_COURSES));
     chk('courses · …so their lessons are exactly those courses', in_array('CMU-CODE', $ids('CMC-CH'), true) && in_array('CMU-ROBO', $ids('CMC-CH'), true) && !in_array('CMU-VID', $ids('CMC-CH'), true));
     $bad = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'CMC-CH', 'courses' => ['Coding', 'Underwater Basketry']]]);
     chk('courses · a course the catalogue does not have is refused by name, and nothing changes',

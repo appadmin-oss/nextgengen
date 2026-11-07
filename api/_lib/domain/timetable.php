@@ -259,7 +259,7 @@ function member_timetable(array $p): array {
     /* The division the member's courses are in (the first that is not Chess,
        which every division takes): a placement stored long ago must not name
        Media for a member whose courses are Technology's. */
-    $main = array_values(array_filter($courses, static fn($c) => strcasecmp((string)$c, 'Chess') !== 0));
+    $main = array_values(array_filter($courses, static fn($c) => !curriculum_is_everyones((string)$c)));
     $divId = $main && function_exists('nggc_division_for_track') ? nggc_division_for_track((string)$main[0]) : '';
     if ($divId === '' && $main && function_exists('nggc_divisions')) foreach (nggc_divisions() as $dv) if (array_intersect(array_map('mb_strtolower', $dv['courses']), array_map('mb_strtolower', $main))) { $divId = $dv['id']; break; }
     /* No course chosen yet: the division stored on the record, or the one

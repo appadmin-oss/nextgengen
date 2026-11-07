@@ -1490,6 +1490,41 @@ you. Once imported, *Media Lab* can be put on the timetable. Consent and the
 13+ age rules of Canva and CapCut are taught in week 1, before anybody
 photographs a person. A readable copy is `docs/curriculum/media-lab-2026.csv`.
 
+**Since 7 Nov 2026 the Media Lab's six Club-wide lessons are retired** (welcome
+and files, staying safe, researching, honest AI use, the creative process, team
+roles). Retired, not deleted: anything a member already did against them still
+resolves, and a copy an instructor edited stays theirs and stays live. The 42
+lessons filed under the media courses are unchanged.
+
+**Data Appreciation and Desktop Publishing** replace them, as courses **every
+member takes** — like Chess, they are added to everybody's courses, placed or
+not, whichever way the Club enrols. They never name a member's course: "My
+course", the card's division and course channels still come from what the
+member chose. Each is twelve Saturdays at *Year 1 · Foundation*, seeded
+automatically, with exams, mastery tiers and a certificate in its own style.
+
+- *Data Appreciation*: what data is, asking a question data can answer (the
+  Problem–Plan–Data–Analysis–Conclusion cycle), fair samples and questions, tidy
+  tables in Google Sheets, mean/median/mode, choosing charts, misleading charts,
+  correlation and causation (CODAP, Gapminder), privacy and Nigeria's Data
+  Protection Act 2023, bias in data and AI, telling a true story with data, and
+  an investigation the member defends to a panel.
+- *Desktop Publishing*: page set-up, type, hierarchy, the grid and the four
+  layout principles, colour and contrast (RGB/CMYK), images, resolution and
+  rights, an event flyer, a newsletter, bleed/trim/safe area, a print-ready PDF
+  and a print brief, and a four-page Club magazine. Free tools only — Canva,
+  Google Docs, LibreOffice, Scribus — because Microsoft Publisher's support ends
+  in October 2026.
+
+Every lesson has a diagram or worked-example screenshot inside it, a slide deck
+(materials → *Slides*; arrow keys move, it prints one slide a page), vetted
+outside reading with a line on what to do with it, two routes ("if this is new
+to you" / "if you already can"), and an assessment that is not only multiple
+choice: a practical, an outside exercise with proof, an ordering or a written
+answer. Week 1 of each carries the course's **learning guide** — all twelve
+weeks on one printable page. The pictures and decks ship with the site
+(`assets/learn-media/core/`), so they work with no media host configured.
+
 **Progress** shows, per lesson, how many members of that course have started
 and finished it, and the average score. A scoped admin sees their centres only.
 

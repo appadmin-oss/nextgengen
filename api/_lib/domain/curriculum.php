@@ -165,7 +165,11 @@ function curriculum_media_url(string $u): string {
     /* No base configured yet: resolve to nothing rather than to a broken host,
        so a lesson shows the material it has and silently omits what is not
        hosted yet. A half-built link is worse than no link. */
-    if ($base === '' || !preg_match('#^https://#i', $base)) return '';
+    if ($base === '' || !preg_match('#^https://#i', $base)) {
+        /* Media that SHIPS with the code (assets/learn-media/, e.g. the core courses' diagrams, worked-example
+           screenshots and slide decks) is served by this deployment itself when no host is configured. */
+        return is_file(dirname(__DIR__, 3) . '/assets/learn-media/' . $key) ? '/assets/learn-media/' . $key : '';
+    }
     return rtrim($base, '/') . '/' . $key;
 }
 
@@ -175,7 +179,9 @@ function curriculum_unit_public(array $u, array $materials, array $checks, bool 
         'week' => (int)$u['week'], 'position' => (int)$u['position'], 'title' => (string)$u['title'],
         'path' => curriculum_path((string)$u['level'], (int)$u['week']),
         'summary' => (string)$u['summary'], 'objectives' => json_decode((string)$u['objectives'], true) ?: [],
-        'body' => (string)$u['body'], 'durationMins' => (int)$u['durationMins'], 'passMark' => (int)$u['passMark'],
+        // A picture in the lesson text may be a `media:` key too; it resolves here, at read time, like a material.
+        'body' => (string)preg_replace_callback('/\]\((media:[a-z0-9\/_.-]+)\)/i', static fn($mm) => '](' . curriculum_media_url($mm[1]) . ')', (string)$u['body']),
+        'durationMins' => (int)$u['durationMins'], 'passMark' => (int)$u['passMark'],
         'status' => (string)$u['status'], 'version' => (int)$u['version'], 'source' => (string)$u['source'],
         'updatedAt' => (string)$u['updatedAt'], 'publishedAt' => (string)$u['publishedAt'],
         /* `media:` keys resolve here, at read time, so no stored row carries a
@@ -520,8 +526,26 @@ function admin_club_catalogue_set(array $p): array {
 /** The courses an editor may file a lesson under: the Club's course list, plus
  *  any course already holding lessons (a retired entry must not make its
  *  lessons unfindable). */
+/**
+ * Courses EVERY member takes, whatever their division (owner, 7 Nov 2026: Data Appreciation and Desktop
+ * Publishing replace the Media Lab's Club-wide lessons). Like Chess, each is a real, NAMED course — so it
+ * has its own tiers, session exams and certificates — not an unnamed "Whole Club" lesson.
+ */
+const CURR_CORE_COURSES = ['Data Appreciation', 'Desktop Publishing'];
+/**
+ * A course every member takes (Chess and the core courses) — reach, never identity. "My course", the card's
+ * division and a member's course channels are named by what they CHOSE; a course everybody takes says nothing
+ * about which one that is, and an unplaced member must not read as placed on Data Appreciation.
+ */
+function curriculum_is_everyones(string $c): bool {
+    $k = mb_strtolower(trim($c));
+    if ($k === 'chess') return true;
+    foreach (CURR_CORE_COURSES as $x) if (mb_strtolower($x) === $k) return true;
+    return false;
+}
+
 function curriculum_courses(): array {
-    $all = club_courses();
+    $all = array_merge(club_courses(), CURR_CORE_COURSES);
     foreach (db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> ''") as $r) $all[] = (string)$r['course'];
     $all = array_values(array_unique(array_filter(array_map('strval', $all))));
     sort($all, SORT_NATURAL | SORT_FLAG_CASE);
@@ -1089,6 +1113,9 @@ function curriculum_seed_bundled_once(): int {
         if ((string)setting_raw($flag) === $rev) continue;
         foreach (($j['lessons'] ?? []) as $row) {
             if (!is_array($row)) continue;
+            /* A shipped file may RETIRE a lesson it once shipped ("status": "retired"): it stays on record and
+               resolving, and stops being taught — but only where it is still exactly as shipped (below). */
+            $retire = (string)($row['status'] ?? '') === 'retired';
             $row['status'] = 'published';
             $v = curriculum_validate($row, !empty($j['allowNewCourse']));
             if (!$v['ok']) continue;                       // a bad row is skipped, never guessed at
@@ -1100,6 +1127,10 @@ function curriculum_seed_bundled_once(): int {
                    still exactly as shipped (seeded, never saved by a person)
                    takes the new text, and its status stays what staff set. */
                 if ((string)$existing['source'] !== 'seed' || (string)$existing['updatedBy'] !== 'system') continue;
+                if ($retire) {
+                    if ((string)$existing['status'] !== 'retired') { db_update('curriculum_units', ['status' => 'retired', 'updatedAt' => now_iso()], ['unitId' => (string)$existing['unitId']]); $written++; }
+                    continue;
+                }
                 $b = curriculum_load('unitId = ?', [(string)$existing['unitId']]);
                 $have = reset($b);
                 if (!$have || curriculum_fingerprint_stored($have) === curriculum_fingerprint($v)) continue;
@@ -1113,6 +1144,7 @@ function curriculum_seed_bundled_once(): int {
                 $written++;
                 continue;
             }
+            if ($retire) continue;                     // never CREATE a lesson only to retire it
             curriculum_write($v, null, 'system', 'seed');
             $written++;
         }
@@ -1905,7 +1937,7 @@ function curriculum_member_courses(array $m, ?array &$ctx = null): array {
         /* No division on the record is not a reason to hand them somebody
            else's curriculum: they get the Club-wide lessons and Chess, and
            the coverage board names them as unplaced. */
-        return $dv === '' ? ['Chess'] : [$dv, 'Chess'];
+        return array_merge($dv === '' ? ['Chess'] : [$dv, 'Chess'], CURR_CORE_COURSES);
     }
     // Placed courses, else the record's proposal: ONE inference, the same one
     // stored for SQL readers (course-placement.php), never a second guess here.
@@ -1921,6 +1953,8 @@ function curriculum_member_courses(array $m, ?array &$ctx = null): array {
     foreach ($out as $c) { $k = mb_strtolower(trim((string)$c)); if ($k !== '' && !isset($seen[$k])) { $seen[$k] = 1; $uniq[] = (string)$c; } }
     $out = $uniq;
     if ($out && !isset($seen['chess'])) $out[] = 'Chess';
+    // The core courses reach everybody — including a member nobody has placed yet.
+    foreach (CURR_CORE_COURSES as $c) if (!isset($seen[mb_strtolower($c)])) $out[] = $c;
     return $out;
 }
 

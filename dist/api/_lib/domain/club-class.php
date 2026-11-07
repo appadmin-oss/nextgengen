@@ -585,7 +585,7 @@ function member_today(array $p): array {
     $profile = ['fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''), 'memberId' => $mid,
         'centre' => (string)$m['centre'], 'track' => (string)$m['track'], 'school' => (string)($m['school'] ?? ''),
         // The courses as the curriculum reads them (chosen ones first), Chess aside: what "My course" shows.
-        'courses' => function_exists('curriculum_member_courses') ? array_values(array_filter(curriculum_member_courses($m), static fn($c) => strcasecmp((string)$c, 'Chess') !== 0)) : [],
+        'courses' => function_exists('curriculum_member_courses') ? array_values(array_filter(curriculum_member_courses($m), static fn($c) => !curriculum_is_everyones((string)$c))) : [],
         'dob' => (string)($m['dob'] ?? ''), 'joinDate' => (string)($m['joinDate'] ?? ''), 'email' => (string)($m['email'] ?? ''),
         'phone' => (string)($m['phone'] ?? ''), 'guardianName' => (string)($m['parentName'] ?? ''),
         'level' => (string)($m['level'] ?? ''), 'gender' => (string)($m['gender'] ?? ''), 'bio' => (string)($m['bio'] ?? ''),
@@ -668,7 +668,7 @@ function instructor_student(array $p): array {
     $course = '';
     if ($want !== '') foreach ($theirs as $c) if (strcasecmp($c, $want) === 0) { $course = $want; break; }
     if ($course === '' && ($g['courses'] ?? null)) foreach ($theirs as $c) foreach ((array)$g['courses'] as $gc) if (strcasecmp($c, (string)$gc) === 0) { $course = (string)$gc; break 2; }
-    if ($course === '') $course = (string)(array_values(array_filter($theirs, static fn($c) => strcasecmp((string)$c, 'Chess') !== 0))[0] ?? $m['track']);
+    if ($course === '') $course = (string)(array_values(array_filter($theirs, static fn($c) => !curriculum_is_everyones((string)$c)))[0] ?? $m['track']);
     $skills = course_skills($course);
     $marks = [];
     foreach (db_all('SELECT skill, level, prevLevel, evidence, markedByName, updatedAt FROM skill_marks WHERE subjectId = ? AND course = ?', [$id, $course]) as $r)

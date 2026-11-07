@@ -1,0 +1,1744 @@
+{
+ "key": "core-digital-2026",
+ "title": "Data Appreciation and Desktop Publishing — every member (2026)",
+ "allowNewCourse": false,
+ "description": "Two courses every member takes, replacing the Media Lab's six Club-wide lessons: Data Appreciation (ask, collect, summarise, chart, question and tell a true story with data) and Desktop Publishing (page set-up, type, grids, colour, images and print-ready files). Twelve Saturdays each, with diagrams, worked-example screenshots, a slide deck per lesson, a learning guide, and assessment that is not only multiple choice.",
+ "source": "NGG curriculum team, from the investigation cycle (PPDAC) and data-education frameworks, and common DTP syllabi",
+ "lessons": [
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 1,
+   "position": 1,
+   "title": "What is data? It is all around you",
+   "summary": "Data is recorded facts about the world — from a market price to a football score — and it comes in kinds.",
+   "objectives": [
+    "Say what data is, with three examples from your own week",
+    "Tell categorical data from numerical data",
+    "Tell discrete from continuous numbers"
+   ],
+   "body": "## What to do\n\n- List ten pieces of data you met this week (a price, a score, a temperature, a name)\n- Sort them: categorical or numerical?\n- Sort the numbers: counted or measured?\n\n## Understand it\n\n**Data** is information that has been recorded so it can be counted, compared or checked. Your class register is data. So is the price of tomatoes at Oja-Oba, the number of goals in a match, and the temperature on your phone.\n\nData comes in kinds, and the kind decides what you can do with it:\n\n- **Categorical** data names a group: favourite food, state of origin, yes or no. You can count how many are in each group, but you cannot average \"jollof\".\n- **Numerical** data is a number. **Discrete** numbers are counted (3 siblings — never 3.4). **Continuous** numbers are measured (1.62 m tall, 37.2 °C) and can take any value in a range.\n\nA number is not always numerical data: a phone number or a jersey number is a label. Ask: does it make sense to add two of them?\n\n![Kinds of data](media:core/data-types.svg)\n\n## Key words\n\n- **Data:** recorded facts that can be counted, compared or checked\n- **Categorical:** names a group\n- **Discrete:** counted, whole numbers\n- **Continuous:** measured, any value in a range\n\n## Read and watch\n\n- [Khan Academy — Statistics and probability](https://www.khanacademy.org/math/statistics-probability) — Short videos and practice that check themselves; do the set named in the lesson.\n- [National Bureau of Statistics (Nigeria)](https://nigerianstat.gov.ng/) — Nigeria's official statistics: find one table about your state.\n\n## Practise at home\n\n- Find five pieces of data at home and label each kind\n- Find one number that is really a label\n\n## Make it fit you\n\n- **If this is new to you:** Use a table with two columns, Groups and Numbers, and sort your ten examples into it.\n- **If you already can:** Find a piece of data that could be recorded either way (age as a number, or as an age group) and say what each choice lets you do.\n\n## Assessed this week\n\n- Show your instructor your list of ten pieces of data from your week, each labelled categorical, discrete or continuous.\n- Which of these is CONTINUOUS data?\n- Why can you not work out the average of everyone's favourite food?\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-01.html",
+     "title": "Slides: What is data? It is all around you",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/guides/da.html",
+     "title": "Data Appreciation — learning guide",
+     "kind": "doc",
+     "guide": "The whole course on one page: twelve weeks, what you will be able to do, and how each Saturday works."
+    },
+    {
+     "url": "media:core/data-types.svg",
+     "title": "Kinds of data",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://www.khanacademy.org/math/statistics-probability",
+     "title": "Khan Academy — Statistics and probability",
+     "kind": "link",
+     "guide": "Short videos and practice that check themselves; do the set named in the lesson."
+    },
+    {
+     "url": "https://nigerianstat.gov.ng/",
+     "title": "National Bureau of Statistics (Nigeria)",
+     "kind": "link",
+     "guide": "Nigeria's official statistics: find one table about your state."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "task",
+     "prompt": "Show your instructor your list of ten pieces of data from your week, each labelled categorical, discrete or continuous.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: ten real examples (1), categorical/numerical right (2), discrete/continuous right (1)."
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which of these is CONTINUOUS data?",
+     "points": 1,
+     "options": [
+      "Your height in metres",
+      "Your number of siblings",
+      "Your state of origin",
+      "Your jersey number"
+     ],
+     "answer": "Your height in metres",
+     "whys": [
+      "",
+      "Siblings are counted — discrete.",
+      "A state names a group — categorical.",
+      "A jersey number is a label; adding two means nothing."
+     ]
+    },
+    {
+     "kind": "short",
+     "prompt": "Why can you not work out the average of everyone's favourite food?",
+     "points": 2,
+     "answer": "Favourite food is categorical: it names groups, not numbers, so there is nothing to add and divide. You can count each group or find the most common one."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 2,
+   "position": 1,
+   "title": "Asking a good question: the investigation cycle",
+   "summary": "Every data investigation starts with a question you can answer with data, and follows five steps: Problem, Plan, Data, Analysis, Conclusion.",
+   "objectives": [
+    "Turn a vague question into one data can answer",
+    "Name the five steps of PPDAC in order",
+    "Plan what to measure and how"
+   ],
+   "body": "## What to do\n\n- Start from a vague question: \"Do people like our centre?\"\n- Rewrite it so data can answer it\n- Plan the measurement: who, what, how many, how\n\n## Understand it\n\n\"Do people like our centre?\" cannot be answered — like what? which people? But \"What share of members aged 12–15 rate Saturday sessions 4 or 5 out of 5?\" can.\n\nStatisticians use a cycle called **PPDAC**:\n\n1. **Problem** — what exactly do we want to know?\n2. **Plan** — what will we measure, from whom, and how?\n3. **Data** — collect it, then clean and organise it.\n4. **Analysis** — summarise it, draw charts, look for patterns.\n5. **Conclusion** — answer the question, say how sure you are, and notice the new questions it raises.\n\nThe conclusion usually starts the cycle again. A good question is **specific** (who, what, when), **measurable**, and **worth answering**.\n\n![The investigation cycle](media:core/ppdac.svg)\n\n## Key words\n\n- **Investigative question:** a question that data can answer\n- **PPDAC:** Problem, Plan, Data, Analysis, Conclusion\n- **Variable:** the thing you measure, which varies\n\n## Read and watch\n\n- [CODAP — Common Online Data Analysis Platform](https://codap.concord.org/) — A free data tool that runs in your browser: drag a column onto a graph and watch it draw.\n- [Khan Academy — Statistics and probability](https://www.khanacademy.org/math/statistics-probability) — Short videos and practice that check themselves; do the set named in the lesson.\n\n## Practise at home\n\n- Write three vague questions from your life and rewrite each one\n- Pick the best and plan step 2 for it\n\n## Make it fit you\n\n- **If this is new to you:** Use the frame: \"What [measure] do [who] have/give for [what], [when]?\"\n- **If you already can:** Write the question two ways that would give different answers, and say which is fairer.\n\n## Assessed this week\n\n- Put the investigation cycle in order.\n- Which question can data actually answer?\n- Turn one vague question into an investigative question and write a plan for it (who, what you will measure, how many, how).\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-02.html",
+     "title": "Slides: Asking a good question: the investigation cycle",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/ppdac.svg",
+     "title": "The investigation cycle",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://codap.concord.org/",
+     "title": "CODAP — Common Online Data Analysis Platform",
+     "kind": "link",
+     "guide": "A free data tool that runs in your browser: drag a column onto a graph and watch it draw."
+    },
+    {
+     "url": "https://www.khanacademy.org/math/statistics-probability",
+     "title": "Khan Academy — Statistics and probability",
+     "kind": "link",
+     "guide": "Short videos and practice that check themselves; do the set named in the lesson."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "order",
+     "prompt": "Put the investigation cycle in order.",
+     "points": 3,
+     "options": [
+      "Problem: decide exactly what you want to know",
+      "Plan: decide what to measure, from whom, and how",
+      "Data: collect it and tidy it",
+      "Analysis: summarise and chart it",
+      "Conclusion: answer the question and note new ones"
+     ]
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which question can data actually answer?",
+     "points": 1,
+     "options": [
+      "How many minutes do members aged 12–15 travel to the centre?",
+      "Is our centre good?",
+      "Why is everyone always late?",
+      "What is the best food?"
+     ],
+     "answer": "How many minutes do members aged 12–15 travel to the centre?",
+     "whys": [
+      "",
+      "\"Good\" is not measured — good at what, for whom?",
+      "\"Everyone\" and \"always\" assume the answer before measuring.",
+      "\"Best\" needs a measure: most popular? healthiest?"
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Turn one vague question into an investigative question and write a plan for it (who, what you will measure, how many, how).",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: specific question (1), measurable variable (1), a sample named (1), a method (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 3,
+   "position": 1,
+   "title": "Collecting data fairly: surveys and samples",
+   "summary": "Who you ask decides what you find. A fair sample gives everyone a chance to be chosen; a fair question does not push an answer.",
+   "objectives": [
+    "Explain why a sample is used",
+    "Spot a biased sample and a leading question",
+    "Write three fair survey questions"
+   ],
+   "body": "## What to do\n\n- Look at two ways of choosing people to ask\n- Rewrite three leading questions so they are fair\n- Draft a five-question survey for your plan\n\n## Understand it\n\nWe rarely ask everybody (the **population**), so we ask some (a **sample**). The sample must be like the population, or the answer will be wrong.\n\n- Asking only your friends, only the front row, or only people online is a **biased sample**.\n- A **random sample** gives everyone the same chance — draw names from a bag, or pick every 5th name on the register.\n\nQuestions can be biased too. \"Don't you agree the canteen is too expensive?\" is a **leading question**: it tells people what to say. \"How would you rate canteen prices? (1 very cheap – 5 very expensive)\" is fair.\n\nGood survey questions are short, ask one thing, and give clear answer options — including \"none\" or \"don't know\".\n\n![Biased and random samples](media:core/sampling.svg)\n\n## Key words\n\n- **Population:** everyone you want to know about\n- **Sample:** the people you actually ask\n- **Bias:** a pull that makes results wrong in one direction\n- **Leading question:** a question that suggests its own answer\n\n## Read and watch\n\n- [Khan Academy — Statistics and probability](https://www.khanacademy.org/math/statistics-probability) — Short videos and practice that check themselves; do the set named in the lesson.\n- [Google Forms](https://forms.google.com/) — Make your survey for free; responses arrive in a sheet.\n\n## Practise at home\n\n- Find one survey or poll online and judge its sample\n- Ask five people one of your fair questions\n\n## Make it fit you\n\n- **If this is new to you:** Check each question: does it ask ONE thing? Could someone answer it honestly either way?\n- **If you already can:** Your class is 40% girls. Design a sample of 20 that keeps that balance (a stratified sample).\n\n## Assessed this week\n\n- A survey about the centre's opening hours asks only the members who come on Saturday mornings. What is wrong?\n- Rewrite this question so it is fair: \"Don't you think homework is a waste of time?\"\n- Build your five-question survey in Google Forms and collect at least eight responses.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-03.html",
+     "title": "Slides: Collecting data fairly: surveys and samples",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/sampling.svg",
+     "title": "Biased and random samples",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://www.khanacademy.org/math/statistics-probability",
+     "title": "Khan Academy — Statistics and probability",
+     "kind": "link",
+     "guide": "Short videos and practice that check themselves; do the set named in the lesson."
+    },
+    {
+     "url": "https://forms.google.com/",
+     "title": "Google Forms",
+     "kind": "link",
+     "guide": "Make your survey for free; responses arrive in a sheet."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "A survey about the centre's opening hours asks only the members who come on Saturday mornings. What is wrong?",
+     "points": 1,
+     "options": [
+      "Members who cannot come on Saturday mornings are missed",
+      "The sample is too random",
+      "Saturday is a bad day for surveys",
+      "Nothing — it is fair"
+     ],
+     "answer": "Members who cannot come on Saturday mornings are missed",
+     "whys": [
+      "",
+      "It is the opposite: it is not random at all.",
+      "The day is not the problem; who is left out is.",
+      "The people most affected by the hours are the ones not asked."
+     ]
+    },
+    {
+     "kind": "short",
+     "prompt": "Rewrite this question so it is fair: \"Don't you think homework is a waste of time?\"",
+     "points": 2,
+     "answer": "For example: \"How useful do you find homework? (1 not useful – 5 very useful)\" — neutral wording, one thing asked, a scale of answers."
+    },
+    {
+     "kind": "evidence",
+     "prompt": "Build your five-question survey in Google Forms and collect at least eight responses.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: five clear, fair questions (2), at least eight responses (1), a sample that is not just friends — say how you chose (1).",
+     "url": "https://forms.google.com/"
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 4,
+   "position": 1,
+   "title": "Organising data: tidy tables in a spreadsheet",
+   "summary": "Tidy data has one row per thing observed and one column per thing measured — and then a spreadsheet can do the work.",
+   "objectives": [
+    "Lay out data as a tidy table",
+    "Enter and format it in Google Sheets",
+    "Sort and filter it"
+   ],
+   "body": "## What to do\n\n- Open your survey responses in Google Sheets\n- Check: one row per person, one column per question\n- Freeze the header, sort by one column, filter by another\n\n## Understand it\n\nA spreadsheet can only help if the data is **tidy**:\n\n- **one row per observation** (one person, one sale, one day);\n- **one column per variable**, with a clear header;\n- **one value per cell**, no units typed in (\"3\", not \"3 hrs\" — put the unit in the header);\n- **no merged cells** and no totals in the middle of the data.\n\nIn Google Sheets: **View → Freeze → 1 row** keeps headers visible; **Data → Sort range** orders rows; **Data → Create a filter** shows only the rows you choose without deleting anything. Never sort just one column — it breaks every row apart.\n\n![A tidy table](media:core/tidy-data.svg)\n\n## Key words\n\n- **Tidy data:** one row per observation, one column per variable\n- **Header:** the top row naming each column\n- **Filter:** show only some rows without deleting the others\n\n## Read and watch\n\n- [Google Sheets function list](https://support.google.com/docs/table/25273) — Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF.\n- [CODAP — Common Online Data Analysis Platform](https://codap.concord.org/) — A free data tool that runs in your browser: drag a column onto a graph and watch it draw.\n\n## Practise at home\n\n- Tidy a messy table your instructor gives you\n- Sort it two ways and say what each shows\n\n## Make it fit you\n\n- **If this is new to you:** Before you type, draw the table on paper: what is one row? what are the columns?\n- **If you already can:** Use COUNTIF to count how many answered each option of one question.\n\n## Assessed this week\n\n- Why should you never sort only ONE column of a table?\n- Put the steps for turning survey responses into a chart in order.\n- Show your survey data as a tidy table in Google Sheets, frozen header, with one sort and one filter applied.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-04.html",
+     "title": "Slides: Organising data: tidy tables in a spreadsheet",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/tidy-data.svg",
+     "title": "A tidy table",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://support.google.com/docs/table/25273",
+     "title": "Google Sheets function list",
+     "kind": "link",
+     "guide": "Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF."
+    },
+    {
+     "url": "https://codap.concord.org/",
+     "title": "CODAP — Common Online Data Analysis Platform",
+     "kind": "link",
+     "guide": "A free data tool that runs in your browser: drag a column onto a graph and watch it draw."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Why should you never sort only ONE column of a table?",
+     "points": 1,
+     "options": [
+      "It separates each row's values, so the data no longer belongs together",
+      "It is slower",
+      "Sheets will delete the column",
+      "Sorted data cannot be charted"
+     ],
+     "answer": "It separates each row's values, so the data no longer belongs together",
+     "whys": [
+      "",
+      "Speed is not the problem; scrambled rows are.",
+      "Nothing is deleted — it is silently scrambled, which is worse.",
+      "It can be charted; the chart will just be wrong."
+     ]
+    },
+    {
+     "kind": "order",
+     "prompt": "Put the steps for turning survey responses into a chart in order.",
+     "points": 3,
+     "options": [
+      "Open the responses in Google Sheets",
+      "Check the table is tidy: one row per person",
+      "Select the columns you want to chart",
+      "Insert → Chart and choose the type",
+      "Add a title, axis labels and the source"
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your survey data as a tidy table in Google Sheets, frozen header, with one sort and one filter applied.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: tidy layout (2), frozen header (1), sort and filter used correctly (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 5,
+   "position": 1,
+   "title": "Summarising: mean, median, mode and range",
+   "summary": "One number can describe a whole list — but which one depends on the data, and one outlier can mislead the mean.",
+   "objectives": [
+    "Work out mean, median, mode and range",
+    "Use AVERAGE, MEDIAN, MODE, MIN and MAX in Sheets",
+    "Choose the right average when there is an outlier"
+   ],
+   "body": "## What to do\n\n- Work out the four summaries for eight pocket-money values by hand\n- Check them with Sheets formulas\n- Decide which average describes a typical child\n\n## Understand it\n\n- **Mean**: add them up and divide by how many. Uses every value — so one huge value drags it.\n- **Median**: the middle value when sorted (with an even count, halfway between the two middle ones). Not moved by outliers.\n- **Mode**: the most common value. The only one that works for categories.\n- **Range**: largest minus smallest — how spread out the data is.\n\nIn Google Sheets: `=AVERAGE(B2:B9)`, `=MEDIAN(B2:B9)`, `=MODE(B2:B9)`, `=MAX(B2:B9)-MIN(B2:B9)`.\n\nIn the example, seven children get ₦200–₦600 a week and one gets ₦3,000. The mean is ₦700 — more than seven of the eight children get. The median, ₦350, describes a typical child. When you see \"average\" in the news, ask: which one?\n\n![Worked example in Google Sheets: the median is 350](media:core/shots/sheets-summary.png)\n\n![An outlier and three averages](media:core/averages.svg)\n\n## Key words\n\n- **Mean:** total divided by the number of values\n- **Median:** the middle value when sorted\n- **Mode:** the most common value\n- **Outlier:** a value far from the rest\n- **Range:** largest minus smallest\n\n## Read and watch\n\n- [Google Sheets function list](https://support.google.com/docs/table/25273) — Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF.\n- [Khan Academy — Statistics and probability](https://www.khanacademy.org/math/statistics-probability) — Short videos and practice that check themselves; do the set named in the lesson.\n\n## Practise at home\n\n- Record the minutes you spend on your phone each day for a week; find all four summaries\n- Say which average is fairest and why\n\n## Make it fit you\n\n- **If this is new to you:** Sort the numbers first; the median and mode become easy to see.\n- **If you already can:** Add one more value that makes the mean LOWER than the median. What kind of value must it be?\n\n## Assessed this week\n\n- Weekly pocket money (₦): 200, 300, 300, 300, 400, 500, 600, 3000. Which average best describes a typical child?\n- Work out the median of 4, 9, 2, 7, 5, 8. Show the step that makes it easy.\n- Do the Khan Academy practice on mean and median until you get a streak of five, then say what you scored and one question that caught you out.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-05.html",
+     "title": "Slides: Summarising: mean, median, mode and range",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/averages.svg",
+     "title": "An outlier and three averages",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/shots/sheets-summary.png",
+     "title": "Worked example in Google Sheets: the median is 350",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://support.google.com/docs/table/25273",
+     "title": "Google Sheets function list",
+     "kind": "link",
+     "guide": "Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF."
+    },
+    {
+     "url": "https://www.khanacademy.org/math/statistics-probability",
+     "title": "Khan Academy — Statistics and probability",
+     "kind": "link",
+     "guide": "Short videos and practice that check themselves; do the set named in the lesson."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Weekly pocket money (₦): 200, 300, 300, 300, 400, 500, 600, 3000. Which average best describes a typical child?",
+     "points": 1,
+     "options": [
+      "The median, ₦350",
+      "The mean, ₦700",
+      "The range, ₦2,800",
+      "The largest value, ₦3,000"
+     ],
+     "answer": "The median, ₦350",
+     "whys": [
+      "",
+      "The one ₦3,000 value drags the mean above what seven of the eight children get.",
+      "The range measures spread, not a typical value.",
+      "That is the outlier — the least typical value of all."
+     ]
+    },
+    {
+     "kind": "short",
+     "prompt": "Work out the median of 4, 9, 2, 7, 5, 8. Show the step that makes it easy.",
+     "points": 2,
+     "answer": "Sort first: 2, 4, 5, 7, 8, 9. Six values, so the median is halfway between 5 and 7: 6."
+    },
+    {
+     "kind": "evidence",
+     "prompt": "Do the Khan Academy practice on mean and median until you get a streak of five, then say what you scored and one question that caught you out.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: proof link or screenshot (1), score stated (1), a specific question that caught them out and why (1).",
+     "url": "https://www.khanacademy.org/math/statistics-probability"
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 6,
+   "position": 1,
+   "title": "Charts: choosing the right one",
+   "summary": "A chart answers a question. Pick the chart by the question: compare, change over time, part of a whole, spread, or relationship.",
+   "objectives": [
+    "Match five questions to five chart types",
+    "Make a bar chart from tidy data in Sheets",
+    "Title and label a chart so it can be read alone"
+   ],
+   "body": "## What to do\n\n- Match questions to chart types\n- Make a bar chart of your survey's main question\n- Give it a title, axis labels, a source and a date\n\n## Understand it\n\nAsk what the chart must SHOW:\n\n- **Compare** amounts between groups → **bar chart**.\n- **Change over time** → **line chart**.\n- **Parts of one whole**, with few parts → **pie chart** (a bar chart is usually clearer).\n- **How values are spread** → **histogram** or **dot plot**.\n- **Relationship** between two numbers → **scatter plot**.\n\nIn Google Sheets: select the table, **Insert → Chart**, then choose the type in the Chart editor. A good chart can be read by someone who never saw your survey: a **title that says what it shows**, **labelled axes** with units, the **source**, and the **date**.\n\n![Worked example: a bar chart of favourite lunches](media:core/shots/sheets-chart.png)\n\n![Choose the chart by the question](media:core/chart-chooser.svg)\n\n## Key words\n\n- **Bar chart:** bars compare amounts between groups\n- **Line chart:** shows change over time\n- **Scatter plot:** dots show whether two numbers are related\n- **Axis:** the scale along the side or bottom of a chart\n\n## Read and watch\n\n- [FT Visual Vocabulary](https://github.com/Financial-Times/chart-doctor/tree/main/visual-vocabulary) — A newspaper's chart-choosing poster: which chart for which question.\n- [Our World in Data](https://ourworldindata.org/) — Real charts about the whole world, each with its source — read them like a detective.\n\n## Practise at home\n\n- Find one chart in the news; say what question it answers\n- Redraw it as a different chart type and say which is clearer\n\n## Make it fit you\n\n- **If this is new to you:** Write the question your chart answers as its title, then pick the type from the table.\n- **If you already can:** Find a pie chart with more than six slices and redraw it as a sorted bar chart.\n\n## Assessed this week\n\n- You want to show how attendance changed week by week this term. Which chart?\n- Make a bar chart of your survey's main question in Google Sheets, with a title that says what it shows, labelled axes, the source and the date.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-06.html",
+     "title": "Slides: Charts: choosing the right one",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/chart-chooser.svg",
+     "title": "Choose the chart by the question",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/shots/sheets-chart.png",
+     "title": "Worked example: a bar chart of favourite lunches",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://github.com/Financial-Times/chart-doctor/tree/main/visual-vocabulary",
+     "title": "FT Visual Vocabulary",
+     "kind": "link",
+     "guide": "A newspaper's chart-choosing poster: which chart for which question."
+    },
+    {
+     "url": "https://ourworldindata.org/",
+     "title": "Our World in Data",
+     "kind": "link",
+     "guide": "Real charts about the whole world, each with its source — read them like a detective."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "You want to show how attendance changed week by week this term. Which chart?",
+     "points": 1,
+     "options": [
+      "Line chart",
+      "Pie chart",
+      "Scatter plot",
+      "Histogram"
+     ],
+     "answer": "Line chart",
+     "whys": [
+      "",
+      "A pie shows parts of one whole at one moment, not change over time.",
+      "A scatter shows whether two numbers are related.",
+      "A histogram shows how values are spread, not a sequence in time."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Make a bar chart of your survey's main question in Google Sheets, with a title that says what it shows, labelled axes, the source and the date.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: right chart type (1), title that states the finding (1), labelled axes (1), source and date (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 7,
+   "position": 1,
+   "title": "Reading charts critically: how charts mislead",
+   "summary": "A chart can be accurate and still mislead — through a cut axis, a cherry-picked range, 3-D effects or a missing source.",
+   "objectives": [
+    "Spot four common tricks in charts",
+    "Explain how a truncated axis exaggerates",
+    "Rewrite a misleading chart honestly"
+   ],
+   "body": "## What to do\n\n- Look at the same data drawn two ways\n- Hunt for the trick in five real charts\n- Redraw one honestly\n\n## Understand it\n\nFour tricks to look for:\n\n1. **Truncated axis** — the bar chart starts at 95, not 0, so 96 and 98 look wildly different. Bar charts must start at zero.\n2. **Cherry-picked range** — showing only the weeks that went up.\n3. **3-D and pictures** — slices or icons drawn bigger than their numbers.\n4. **No source, no date, no units** — you cannot check it.\n\nBefore you believe a chart, ask: *What is the axis? What is missing? Who made it, and why?* A line chart may start above zero if the change is the point — but it must say so.\n\n![The same data, two axes](media:core/misleading-axis.svg)\n\n## Key words\n\n- **Truncated axis:** an axis that does not start at zero\n- **Cherry-picking:** showing only the data that supports a claim\n- **Source:** where the data came from\n\n## Read and watch\n\n- [Our World in Data](https://ourworldindata.org/) — Real charts about the whole world, each with its source — read them like a detective.\n- [FT Visual Vocabulary](https://github.com/Financial-Times/chart-doctor/tree/main/visual-vocabulary) — A newspaper's chart-choosing poster: which chart for which question.\n\n## Practise at home\n\n- Find one misleading chart (an advert, a post) and name the trick\n- Write two sentences a parent would understand\n\n## Make it fit you\n\n- **If this is new to you:** Use the checklist: axis from zero? whole time range? source? units?\n- **If you already can:** Make a chart that is technically correct but misleading on purpose, then fix it — and explain the difference.\n\n## Assessed this week\n\n- A bar chart of attendance has its axis starting at 95%. Monday is 96%, Tuesday 98%. What does the chart wrongly suggest?\n- Name two questions to ask before you believe a chart in an advert.\n- Bring one misleading chart you found; show your instructor the trick and your honest redraw.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-07.html",
+     "title": "Slides: Reading charts critically: how charts mislead",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/misleading-axis.svg",
+     "title": "The same data, two axes",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://ourworldindata.org/",
+     "title": "Our World in Data",
+     "kind": "link",
+     "guide": "Real charts about the whole world, each with its source — read them like a detective."
+    },
+    {
+     "url": "https://github.com/Financial-Times/chart-doctor/tree/main/visual-vocabulary",
+     "title": "FT Visual Vocabulary",
+     "kind": "link",
+     "guide": "A newspaper's chart-choosing poster: which chart for which question."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "A bar chart of attendance has its axis starting at 95%. Monday is 96%, Tuesday 98%. What does the chart wrongly suggest?",
+     "points": 1,
+     "options": [
+      "That Tuesday's attendance was about three times Monday's",
+      "That attendance fell",
+      "That the data is false",
+      "Nothing — starting at 95 is normal for bar charts"
+     ],
+     "answer": "That Tuesday's attendance was about three times Monday's",
+     "whys": [
+      "",
+      "It rose slightly; the trick exaggerates the rise.",
+      "The numbers can be true while the picture misleads.",
+      "Bar charts must start at zero: bar length is the value."
+     ]
+    },
+    {
+     "kind": "short",
+     "prompt": "Name two questions to ask before you believe a chart in an advert.",
+     "points": 2,
+     "answer": "Any two of: does the axis start at zero? Is the whole time range shown? What is the source and date? What are the units? Who made it and why?"
+    },
+    {
+     "kind": "task",
+     "prompt": "Bring one misleading chart you found; show your instructor the trick and your honest redraw.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: a real chart (1), the trick named correctly (1), an honest redraw (2)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 8,
+   "position": 1,
+   "title": "Patterns, outliers and correlation",
+   "summary": "Scatter plots show whether two things go together — but going together is not the same as one causing the other.",
+   "objectives": [
+    "Read a scatter plot: positive, negative or no relationship",
+    "Spot an outlier and decide what to do with it",
+    "Explain why correlation is not causation"
+   ],
+   "body": "## What to do\n\n- Plot study hours against quiz scores in CODAP\n- Describe the pattern in one sentence\n- Find a hidden third thing in three \"causes\"\n\n## Understand it\n\nA **scatter plot** puts one variable on each axis and a dot for each person.\n\n- Dots rising to the right: **positive correlation** (more practice, higher score).\n- Falling: **negative correlation** (more absences, lower score).\n- A cloud: **no correlation**.\n\nAn **outlier** is far from the pattern. Check it before you remove it — it may be a typing error, or the most interesting person in the data.\n\n**Correlation is not causation.** Cold-drink sales and swimming both rise in hot weather; neither causes the other. Before saying \"A causes B\", look for a **third thing** that drives both, and ask whether B could cause A.\n\n![A hidden third thing](media:core/correlation.svg)\n\n## Key words\n\n- **Correlation:** two variables tend to change together\n- **Causation:** one thing makes the other happen\n- **Confounding variable:** a hidden third thing that drives both\n\n## Read and watch\n\n- [Gapminder Tools](https://www.gapminder.org/tools/) — Moving bubble charts of countries over time: press play and say what changes.\n- [CODAP — Common Online Data Analysis Platform](https://codap.concord.org/) — A free data tool that runs in your browser: drag a column onto a graph and watch it draw.\n\n## Practise at home\n\n- Press play on Gapminder's income vs life expectancy chart and describe what changes\n- Find a news headline that claims a cause and suggest a third thing\n\n## Make it fit you\n\n- **If this is new to you:** Say the pattern with \"as … goes up, … tends to …\".\n- **If you already can:** Design a fair test that could show whether more practice CAUSES better scores.\n\n## Assessed this week\n\n- Towns with more ice-cream sellers have more sunburn cases. What is the best explanation?\n- In CODAP, plot two variables from the sample data, describe the relationship in one sentence, and paste a link or screenshot of your graph.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-08.html",
+     "title": "Slides: Patterns, outliers and correlation",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/correlation.svg",
+     "title": "A hidden third thing",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://www.gapminder.org/tools/",
+     "title": "Gapminder Tools",
+     "kind": "link",
+     "guide": "Moving bubble charts of countries over time: press play and say what changes."
+    },
+    {
+     "url": "https://codap.concord.org/",
+     "title": "CODAP — Common Online Data Analysis Platform",
+     "kind": "link",
+     "guide": "A free data tool that runs in your browser: drag a column onto a graph and watch it draw."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Towns with more ice-cream sellers have more sunburn cases. What is the best explanation?",
+     "points": 1,
+     "options": [
+      "Sunny weather increases both",
+      "Ice cream causes sunburn",
+      "Sunburn makes people buy ice cream",
+      "It is a coincidence with no explanation"
+     ],
+     "answer": "Sunny weather increases both",
+     "whys": [
+      "",
+      "Correlation is not causation: nothing about ice cream burns skin.",
+      "Possible in theory, but a third thing explains both far better.",
+      "There is an explanation — the hidden third variable, sunshine."
+     ]
+    },
+    {
+     "kind": "evidence",
+     "prompt": "In CODAP, plot two variables from the sample data, describe the relationship in one sentence, and paste a link or screenshot of your graph.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: a scatter plot made (1), the relationship described correctly (2), a possible third variable named (1).",
+     "url": "https://codap.concord.org/"
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 9,
+   "position": 1,
+   "title": "Data about us: privacy, consent and the law",
+   "summary": "Personal data belongs to the person it describes. Collect only what you need, ask first, keep it safe — it is the law in Nigeria.",
+   "objectives": [
+    "Say what personal data is",
+    "Explain consent and collecting only what you need",
+    "Name Nigeria's data protection law and what it promises"
+   ],
+   "body": "## What to do\n\n- Sort a list into personal and not personal data\n- Find three apps' privacy settings and turn one off\n- Rewrite a survey to collect less\n\n## Understand it\n\n**Personal data** is anything that identifies a person: name, phone number, photo, address, location, and combinations (\"the only 13-year-old drummer at Egbeda\").\n\nThree rules for anybody collecting it:\n\n1. **Consent** — ask, and say what it is for. For a child, a parent consents.\n2. **Minimise** — collect only what you need. A survey about lunch does not need phone numbers.\n3. **Protect** — keep it safe, share it with nobody, delete it when you are done.\n\nIn Nigeria the **Nigeria Data Protection Act 2023 (NDPA)** sets these rules, and the **Nigeria Data Protection Commission** enforces them. You have rights too: to know what is held about you, and to ask for it to be corrected or deleted.\n\n## Key words\n\n- **Personal data:** information that identifies a living person\n- **Consent:** permission given knowingly and freely\n- **Data minimisation:** collecting only what you need\n\n## Read and watch\n\n- [Nigeria Data Protection Commission](https://ndpc.gov.ng/) — Who protects personal data in Nigeria, and what the law (NDPA 2023) promises you.\n\n## Practise at home\n\n- Check the privacy settings on one app you use\n- List what your favourite app knows about you\n\n## Make it fit you\n\n- **If this is new to you:** For each item ask: could this help someone find or recognise me?\n- **If you already can:** Design an anonymous version of your survey and explain how you would still spot duplicate answers.\n\n## Assessed this week\n\n- Your survey asks about favourite lunches. Which field should you REMOVE?\n- Give two things a person collecting your data should do to follow the law.\n- Which piece of data about you would you least want shared, and why? (Answer is private to your instructor.)\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-09.html",
+     "title": "Slides: Data about us: privacy, consent and the law",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "https://ndpc.gov.ng/",
+     "title": "Nigeria Data Protection Commission",
+     "kind": "link",
+     "guide": "Who protects personal data in Nigeria, and what the law (NDPA 2023) promises you."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Your survey asks about favourite lunches. Which field should you REMOVE?",
+     "points": 1,
+     "options": [
+      "Phone number",
+      "Age group",
+      "Favourite lunch",
+      "How often you eat at the centre"
+     ],
+     "answer": "Phone number",
+     "whys": [
+      "",
+      "An age group is useful and does not identify anyone by itself.",
+      "That is the question you are asking.",
+      "Useful to the question, and not identifying."
+     ]
+    },
+    {
+     "kind": "short",
+     "prompt": "Give two things a person collecting your data should do to follow the law.",
+     "points": 2,
+     "answer": "Any two of: ask for consent and say what it is for; collect only what is needed; keep it secure; not share it; delete it when done; let you see or correct it."
+    },
+    {
+     "kind": "reflection",
+     "prompt": "Which piece of data about you would you least want shared, and why? (Answer is private to your instructor.)",
+     "points": 2,
+     "answer": "An honest, specific answer with a reason linked to privacy.",
+     "rubric": "Up to 2: honest and specific (1), a reason linked to today's lesson (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 10,
+   "position": 1,
+   "title": "Bias in data and in AI",
+   "summary": "Data reflects who was counted. When people are missing from the data, decisions and AI trained on it fail them.",
+   "objectives": [
+    "Explain how missing people make data biased",
+    "Show how an AI model learns bias from its training data",
+    "Suggest how to make data fairer"
+   ],
+   "body": "## What to do\n\n- Train a Teachable Machine model on a lopsided set\n- Test it on examples it never saw\n- Fix the data and test again\n\n## Understand it\n\nData only describes the people who were **counted**. If a survey of \"young people\" is done only online, those without a phone are missing — and their needs vanish from the decision.\n\nAI is trained on data, so it learns the gaps. A face-recognition system trained mostly on light-skinned faces makes more mistakes on dark-skinned faces. Nothing in the program is \"racist\"; the **training data** was not fair.\n\nWhenever you see data, ask: **who is missing? who decided what to count? who benefits?** The fix is usually better data — more people, more kinds of people — not a cleverer program.\n\n## Key words\n\n- **Training data:** the examples an AI system learns from\n- **Representative:** the sample looks like the population\n- **Algorithmic bias:** unfair results from biased data or design\n\n## Read and watch\n\n- [Teachable Machine](https://teachablemachine.withgoogle.com/) — Train a tiny model in your browser — and see what happens when the training data leaves people out.\n- [Our World in Data](https://ourworldindata.org/) — Real charts about the whole world, each with its source — read them like a detective.\n\n## Practise at home\n\n- Find one dataset or app that might leave some people out\n- Say who and what could go wrong\n\n## Make it fit you\n\n- **If this is new to you:** Do the Teachable Machine activity with a partner and talk through each test.\n- **If you already can:** Research one real case of AI bias and present it in five sentences.\n\n## Assessed this week\n\n- Train a Teachable Machine model with lopsided examples, test it, then fix the data. Paste your result and say what changed.\n- An AI tool trained mostly on English voices often misunderstands Nigerian accents. What is the main cause?\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-10.html",
+     "title": "Slides: Bias in data and in AI",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "https://teachablemachine.withgoogle.com/",
+     "title": "Teachable Machine",
+     "kind": "link",
+     "guide": "Train a tiny model in your browser — and see what happens when the training data leaves people out."
+    },
+    {
+     "url": "https://ourworldindata.org/",
+     "title": "Our World in Data",
+     "kind": "link",
+     "guide": "Real charts about the whole world, each with its source — read them like a detective."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "evidence",
+     "prompt": "Train a Teachable Machine model with lopsided examples, test it, then fix the data. Paste your result and say what changed.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: proof of the model (1), the bias shown in a test (1), the data fixed (1), the change explained (1).",
+     "url": "https://teachablemachine.withgoogle.com/"
+    },
+    {
+     "kind": "mcq",
+     "prompt": "An AI tool trained mostly on English voices often misunderstands Nigerian accents. What is the main cause?",
+     "points": 1,
+     "options": [
+      "Its training data did not include enough Nigerian voices",
+      "Nigerian accents are harder to understand",
+      "The microphone is broken",
+      "AI cannot understand accents at all"
+     ],
+     "answer": "Its training data did not include enough Nigerian voices",
+     "whys": [
+      "",
+      "No accent is harder; the system just was not trained on it.",
+      "The problem repeats on every device, so it is the data, not one microphone.",
+      "Systems trained on many accents understand them well."
+     ]
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 11,
+   "position": 1,
+   "title": "Telling a story with data",
+   "summary": "One message, one clear chart, a headline that says it — and an honest note of what the data cannot tell you.",
+   "objectives": [
+    "Write a headline that states a finding",
+    "Choose and clean one chart for one message",
+    "Present a finding in sixty seconds"
+   ],
+   "body": "## What to do\n\n- Write three headlines for your survey data\n- Remove everything from your chart that does not help the message\n- Present it to a partner in one minute\n\n## Understand it\n\nA data story has four parts:\n\n1. **The headline** says the finding: \"Most members travel under 30 minutes\" — not \"Travel survey results\".\n2. **One chart** that shows it, with nothing extra: no 3-D, no unnecessary colours, the important bar highlighted.\n3. **The numbers** that matter, in plain words: \"31 of 40 members (78%)\".\n4. **The limits**: who was asked, how many, and what the data cannot say.\n\nPeople remember stories, not tables. But a story must be **true to the data** — the limits are part of the story, not small print.\n\n![Pick the chart for the message](media:core/chart-chooser.svg)\n\n## Key words\n\n- **Headline:** the finding, stated in one line\n- **Highlight:** colour used to point at the one thing that matters\n- **Limitation:** what the data cannot tell you\n\n## Read and watch\n\n- [Our World in Data](https://ourworldindata.org/) — Real charts about the whole world, each with its source — read them like a detective.\n- [FT Visual Vocabulary](https://github.com/Financial-Times/chart-doctor/tree/main/visual-vocabulary) — A newspaper's chart-choosing poster: which chart for which question.\n\n## Practise at home\n\n- Turn one of your charts into a one-slide story\n- Practise saying it in sixty seconds\n\n## Make it fit you\n\n- **If this is new to you:** Fill the frame: \"[Number] of [who] [finding]. This matters because …\"\n- **If you already can:** Find a data story in the news and judge it with the four parts.\n\n## Assessed this week\n\n- Which is the best headline for a chart of travel times?\n- Present one finding from your survey as a one-slide data story: headline, one chart, the key number, and one limitation.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-11.html",
+     "title": "Slides: Telling a story with data",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/chart-chooser.svg",
+     "title": "Pick the chart for the message",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://ourworldindata.org/",
+     "title": "Our World in Data",
+     "kind": "link",
+     "guide": "Real charts about the whole world, each with its source — read them like a detective."
+    },
+    {
+     "url": "https://github.com/Financial-Times/chart-doctor/tree/main/visual-vocabulary",
+     "title": "FT Visual Vocabulary",
+     "kind": "link",
+     "guide": "A newspaper's chart-choosing poster: which chart for which question."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which is the best headline for a chart of travel times?",
+     "points": 1,
+     "options": [
+      "Most members travel under 30 minutes",
+      "Travel survey results",
+      "Chart 1",
+      "Data about travel"
+     ],
+     "answer": "Most members travel under 30 minutes",
+     "whys": [
+      "",
+      "It names the topic but not the finding.",
+      "A label, not a message.",
+      "Names the topic; says nothing found."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Present one finding from your survey as a one-slide data story: headline, one chart, the key number, and one limitation.",
+     "points": 5,
+     "answer": "",
+     "rubric": "Up to 5: headline states a finding (1), one clear chart (1), the key number (1), a limitation (1), delivered in about a minute (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 12,
+   "position": 1,
+   "title": "Project: your own data investigation",
+   "summary": "Run the whole investigation cycle on a question you care about — and defend it to a panel.",
+   "objectives": [
+    "Carry out every step of PPDAC on your own question",
+    "Summarise and chart your data honestly",
+    "Defend your conclusion and its limits"
+   ],
+   "body": "## What to do\n\n- Choose your question and plan\n- Collect at least 15 responses\n- Analyse, chart and present to the panel\n\n## Understand it\n\nThis is everything from the term in one piece of work. Your investigation needs:\n\n- an **investigative question** and a **plan** (who, what, how many, how);\n- **at least 15** responses, collected fairly, with consent and no unnecessary personal data;\n- a **tidy table** in Google Sheets;\n- **summaries** (with the right average) and **one or two charts** chosen by the question;\n- a **conclusion** that answers the question, with its **limitations**;\n- a **two-minute presentation** to a panel who will ask you questions.\n\nGo back to your earlier weeks first: the sampling rules from week 3, the averages from week 5 and the chart checklist from week 7 are the tools this project uses again.\n\nThe panel will ask about YOUR choices: why that sample, why that chart, what would change your mind. That is what makes the work yours.\n\n![The investigation cycle, end to end](media:core/ppdac.svg)\n\n## Key words\n\n- **Panel:** the people who assess your presentation and ask questions\n- **Limitation:** what your data cannot show\n\n## Read and watch\n\n- [CODAP — Common Online Data Analysis Platform](https://codap.concord.org/) — A free data tool that runs in your browser: drag a column onto a graph and watch it draw.\n- [Google Sheets function list](https://support.google.com/docs/table/25273) — Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF.\n- [Our World in Data](https://ourworldindata.org/) — Real charts about the whole world, each with its source — read them like a detective.\n\n## Practise at home\n\n- Rehearse your two minutes with someone at home\n- Prepare answers to three questions the panel might ask\n\n## Make it fit you\n\n- **If this is new to you:** Use the PPDAC frame as your five slides, one step per slide.\n- **If you already can:** Collect a second round of data that tests your conclusion.\n\n## Assessed this week\n\n- Your data investigation: link to your sheet and slides, and describe your question, sample, findings and limitations.\n- Name one limitation of your investigation and how you would fix it next time.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-12.html",
+     "title": "Slides: Project: your own data investigation",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/ppdac.svg",
+     "title": "The investigation cycle, end to end",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://codap.concord.org/",
+     "title": "CODAP — Common Online Data Analysis Platform",
+     "kind": "link",
+     "guide": "A free data tool that runs in your browser: drag a column onto a graph and watch it draw."
+    },
+    {
+     "url": "https://support.google.com/docs/table/25273",
+     "title": "Google Sheets function list",
+     "kind": "link",
+     "guide": "Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF."
+    },
+    {
+     "url": "https://ourworldindata.org/",
+     "title": "Our World in Data",
+     "kind": "link",
+     "guide": "Real charts about the whole world, each with its source — read them like a detective."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Your data investigation: link to your sheet and slides, and describe your question, sample, findings and limitations.",
+     "points": 10,
+     "answer": "A clear question; a fair sample of 15+; tidy data; the right summaries; well-chosen charts; a conclusion with limits.",
+     "rubric": "Up to 10: question and plan (2), fair data collection (2), tidy data and correct summaries (2), charts chosen by question (2), conclusion with limitations (2)."
+    },
+    {
+     "kind": "short",
+     "prompt": "Name one limitation of your investigation and how you would fix it next time.",
+     "points": 2,
+     "answer": "A specific limitation of THEIR data (sample size, who was missed, a leading question) with a concrete fix."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 1,
+   "position": 1,
+   "title": "What desktop publishing is — and the tools for it",
+   "summary": "Desktop publishing is designing pages to be read — on paper or on screen. Free tools do it well.",
+   "objectives": [
+    "Say what desktop publishing is, with five examples",
+    "Tell print design from screen design",
+    "Choose a free tool for a job"
+   ],
+   "body": "## What to do\n\n- Collect five printed things (a flyer, a programme, a receipt, a certificate, a menu)\n- Say who each is for and what it must do\n- Open Canva and one other free tool\n\n## Understand it\n\n**Desktop publishing (DTP)** is arranging text and pictures on a page so people can read and use it: flyers, posters, newsletters, certificates, brochures, programmes, menus.\n\nGood design is not decoration. A flyer must be read in three seconds from across the road; a programme must be found in the dark; a certificate must look official.\n\nThe tools (all free):\n\n- **Canva** — browser and phone, templates, easy sharing.\n- **Google Docs / Slides** — quick documents and single pages.\n- **LibreOffice Draw/Writer** — offline, on any computer.\n- **Scribus** — professional page layout for print, free.\n\n(Microsoft Publisher's support ends in October 2026, so it is not taught here.)\n\n## Key words\n\n- **Desktop publishing:** designing pages of text and pictures\n- **Layout:** where things sit on the page\n- **Template:** a starting design you adapt\n\n## Read and watch\n\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n- [LibreOffice Help](https://help.libreoffice.org/) — Free office suite; Draw and Writer can lay out a flyer or newsletter.\n\n## Practise at home\n\n- Collect three printed things and rank them: easiest to read to hardest\n- Say one thing that makes the best one work\n\n## Make it fit you\n\n- **If this is new to you:** For each printed thing, answer: who is it for? what must they do after reading it?\n- **If you already can:** Find one design that works badly and say exactly what you would change.\n\n## Assessed this week\n\n- A shop wants 500 flyers printed and also a post for WhatsApp. What is the main difference to plan for?\n- Show your five collected printed things and explain, for one of them, who it is for and what it must make them do.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-01.html",
+     "title": "Slides: What desktop publishing is — and the tools for it",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/guides/dtp.html",
+     "title": "Desktop Publishing — learning guide",
+     "kind": "doc",
+     "guide": "The whole course on one page: twelve weeks, what you will be able to do, and how each Saturday works."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    },
+    {
+     "url": "https://help.libreoffice.org/",
+     "title": "LibreOffice Help",
+     "kind": "link",
+     "guide": "Free office suite; Draw and Writer can lay out a flyer or newsletter."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "A shop wants 500 flyers printed and also a post for WhatsApp. What is the main difference to plan for?",
+     "points": 1,
+     "options": [
+      "Print needs high resolution and print colours; the post needs a screen size",
+      "There is no difference",
+      "The post must have more text",
+      "Print can use any image from the internet"
+     ],
+     "answer": "Print needs high resolution and print colours; the post needs a screen size",
+     "whys": [
+      "",
+      "Print and screen need different sizes, resolution and colour.",
+      "Usually less: people scroll past.",
+      "Copyright applies to both, and web images are often too low-resolution to print."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your five collected printed things and explain, for one of them, who it is for and what it must make them do.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: five real examples (1), audience named (1), purpose named (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 2,
+   "position": 1,
+   "title": "Setting up the page: size, orientation, margins",
+   "summary": "Before any design, set up the page: the paper size, which way up, and the margins that keep things safe.",
+   "objectives": [
+    "Name common paper sizes (A4, A5, A3)",
+    "Choose portrait or landscape",
+    "Set margins and know why they matter"
+   ],
+   "body": "## What to do\n\n- Fold an A4 sheet to make A5 and A6\n- Set up an A5 portrait page in Canva or Docs\n- Set 12 mm margins\n\n## Understand it\n\n**A-sizes** halve each time: A3 folded in half is A4; A4 folded is A5. A4 (210 × 297 mm) is the standard Nigerian document page; A5 is a handy flyer; A3 a small poster.\n\n**Orientation**: portrait (tall) or landscape (wide). Choose by the content — a list is tall, a timeline is wide.\n\n**Margins** are the empty border. They make a page look calm, stop text being cut off, and leave room for fingers. Keep at least 10–15 mm on a printed page. In Google Docs: **File → Page setup**; in Canva: choose a custom size in mm.\n\nDecide the size FIRST: changing it later moves everything.\n\n## Key words\n\n- **A4:** 210 × 297 mm, the standard document page\n- **Portrait / landscape:** tall / wide orientation\n- **Margin:** the empty border around the page\n\n## Read and watch\n\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [LibreOffice Help](https://help.libreoffice.org/) — Free office suite; Draw and Writer can lay out a flyer or newsletter.\n\n## Practise at home\n\n- Measure three printed things at home and name their sizes\n- Find one where the text runs too close to the edge\n\n## Make it fit you\n\n- **If this is new to you:** Fold paper to feel the sizes before choosing one on screen.\n- **If you already can:** Work out how many A6 cards fit on one A3 sheet, and why printers use that.\n\n## Assessed this week\n\n- If you fold an A4 sheet in half, what size is each half?\n- Set up an A5 portrait page with 12 mm margins in Canva or Google Docs and show your instructor the settings.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-02.html",
+     "title": "Slides: Setting up the page: size, orientation, margins",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://help.libreoffice.org/",
+     "title": "LibreOffice Help",
+     "kind": "link",
+     "guide": "Free office suite; Draw and Writer can lay out a flyer or newsletter."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "If you fold an A4 sheet in half, what size is each half?",
+     "points": 1,
+     "options": [
+      "A5",
+      "A3",
+      "A6",
+      "Still A4"
+     ],
+     "answer": "A5",
+     "whys": [
+      "",
+      "A3 is twice A4, not half.",
+      "A6 is half of A5 — fold again.",
+      "Folding halves the size."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Set up an A5 portrait page with 12 mm margins in Canva or Google Docs and show your instructor the settings.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: A5 size (1), portrait (1), margins set (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 3,
+   "position": 1,
+   "title": "Type I: choosing and using fonts",
+   "summary": "Most of a page is words. The right font, size and spacing make them easy to read.",
+   "objectives": [
+    "Tell serif from sans-serif fonts",
+    "Set body text at a readable size and line length",
+    "Use at most two fonts on a page"
+   ],
+   "body": "## What to do\n\n- Compare three fonts on the same paragraph\n- Find the size where your partner reads it easily at arm's length\n- Set line spacing and line length\n\n## Understand it\n\n- **Serif** fonts have small strokes at the ends of letters (Georgia, Times); **sans-serif** fonts do not (Arial, Inter). Both are readable; pick one for body text and keep it.\n- **Size**: body text for print is usually 10–12 pt; for screens 16 px. Headings are bigger.\n- **Line length**: 45–75 characters per line is comfortable. Longer lines tire the eye.\n- **Line spacing**: about 1.2–1.5 times the font size.\n- **Two fonts at most**: one for headings, one for body. Never decorative fonts for body text.\n\nCAPITALS are hard to read in long stretches, and underline looks like a link. Use **bold** for emphasis.\n\n## Key words\n\n- **Font:** a style of lettering\n- **Serif:** small strokes at the ends of letters\n- **Sans-serif:** without those strokes\n- **Leading:** the space between lines\n\n## Read and watch\n\n- [Google Fonts Knowledge](https://fonts.google.com/knowledge) — Short, clear lessons on type: read the one named in the lesson.\n- [Practical Typography](https://practicaltypography.com/) — The rules of good type for documents people actually read.\n\n## Practise at home\n\n- Find a page with too many fonts and count them\n- Rewrite one paragraph at a comfortable size and spacing\n\n## Make it fit you\n\n- **If this is new to you:** Start with one sans-serif font only; change just size and weight.\n- **If you already can:** Pair a serif heading font with a sans-serif body font and explain why they work together.\n\n## Assessed this week\n\n- What is a comfortable line length for body text?\n- Read one Google Fonts Knowledge lesson on choosing type, then set a paragraph two ways and say which reads better and why.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-03.html",
+     "title": "Slides: Type I: choosing and using fonts",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "https://fonts.google.com/knowledge",
+     "title": "Google Fonts Knowledge",
+     "kind": "link",
+     "guide": "Short, clear lessons on type: read the one named in the lesson."
+    },
+    {
+     "url": "https://practicaltypography.com/",
+     "title": "Practical Typography",
+     "kind": "link",
+     "guide": "The rules of good type for documents people actually read."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What is a comfortable line length for body text?",
+     "points": 1,
+     "options": [
+      "About 45–75 characters",
+      "As wide as the page allows",
+      "10–20 characters",
+      "Over 120 characters"
+     ],
+     "answer": "About 45–75 characters",
+     "whys": [
+      "",
+      "Very long lines make the eye lose its place.",
+      "Too short: the eye jumps lines constantly.",
+      "Far too long to read comfortably."
+     ]
+    },
+    {
+     "kind": "evidence",
+     "prompt": "Read one Google Fonts Knowledge lesson on choosing type, then set a paragraph two ways and say which reads better and why.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: the lesson named (1), two settings shown (1), a reason using today's terms (1).",
+     "url": "https://fonts.google.com/knowledge"
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 4,
+   "position": 1,
+   "title": "Type II: hierarchy — what to read first",
+   "summary": "Size, weight and colour tell the reader what matters most. A clear hierarchy gets the message across in seconds.",
+   "objectives": [
+    "Build a five-level hierarchy",
+    "Use size, weight and colour — not many fonts",
+    "Test a design with the three-second glance"
+   ],
+   "body": "## What to do\n\n- Rank the information on a flyer by importance\n- Give each level its own size and weight\n- Test it: what does a partner remember after three seconds?\n\n## Understand it\n\n**Hierarchy** is the order the eye reads in. Most pages need about five levels:\n\n1. **Headline** — biggest, boldest: what it is.\n2. **Subheading** — supports the headline.\n3. **Key facts** — when, where, how much (often in a coloured block).\n4. **Body** — the details, at a comfortable size.\n5. **Caption / small print** — smallest.\n\nMake each level clearly different: **size** (headline 3× body), **weight** (bold vs regular), **colour** (one accent), and **space** around it. If everything is big and bold, nothing stands out.\n\nThe test: show it to someone for three seconds. They should remember the headline and the key facts.\n\n![Five levels of text](media:core/type-hierarchy.svg)\n\n## Key words\n\n- **Hierarchy:** the order of importance shown by size, weight and colour\n- **Weight:** how thick the letters are: regular, bold\n- **Accent colour:** one colour used to point at what matters\n\n## Read and watch\n\n- [Google Fonts Knowledge](https://fonts.google.com/knowledge) — Short, clear lessons on type: read the one named in the lesson.\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n\n## Practise at home\n\n- Take a cluttered notice and redesign its hierarchy on paper\n- Do the three-second test on a family member\n\n## Make it fit you\n\n- **If this is new to you:** Write the five levels as a list first, then design.\n- **If you already can:** Create the same hierarchy using only weight and space — no size changes.\n\n## Assessed this week\n\n- Put a flyer's text levels in order, from what should be read first.\n- A flyer has every line big, bold and in a different colour. What is the main problem?\n- Redesign a cluttered flyer your instructor gives you with a clear five-level hierarchy.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-04.html",
+     "title": "Slides: Type II: hierarchy — what to read first",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/type-hierarchy.svg",
+     "title": "Five levels of text",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://fonts.google.com/knowledge",
+     "title": "Google Fonts Knowledge",
+     "kind": "link",
+     "guide": "Short, clear lessons on type: read the one named in the lesson."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "order",
+     "prompt": "Put a flyer's text levels in order, from what should be read first.",
+     "points": 3,
+     "options": [
+      "Headline",
+      "Subheading",
+      "Key facts (date, place)",
+      "Body text",
+      "Caption"
+     ]
+    },
+    {
+     "kind": "mcq",
+     "prompt": "A flyer has every line big, bold and in a different colour. What is the main problem?",
+     "points": 1,
+     "options": [
+      "Nothing stands out, so there is no clear order to read",
+      "It uses too little ink",
+      "The font is too small",
+      "It needs more colours"
+     ],
+     "answer": "Nothing stands out, so there is no clear order to read",
+     "whys": [
+      "",
+      "Ink is not the issue; hierarchy is.",
+      "It is the opposite — everything is big.",
+      "More colour makes it worse."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Redesign a cluttered flyer your instructor gives you with a clear five-level hierarchy.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: five clear levels (2), one accent colour (1), passes the three-second test (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 5,
+   "position": 1,
+   "title": "Layout: the grid and four principles",
+   "summary": "Professional pages line up. A grid and four principles — contrast, repetition, alignment, proximity — make any page look designed.",
+   "objectives": [
+    "Use a column grid to place things",
+    "Apply contrast, repetition, alignment and proximity",
+    "Critique a layout with the four principles"
+   ],
+   "body": "## What to do\n\n- Draw a 3-column grid on an A4 page\n- Place a headline, photo and two stories on it\n- Critique a classmate's page with the four principles\n\n## Understand it\n\nA **grid** divides the page into columns with gaps (**gutters**). Everything snaps to the columns, so the page looks orderly even with many parts. A headline might span three columns, a photo two, a sidebar one.\n\nFour principles to check every page:\n\n- **Contrast** — make different things look very different (headline vs body).\n- **Repetition** — repeat fonts, colours and shapes so the page feels like one thing.\n- **Alignment** — every item lines up with something; nothing is placed \"by eye\".\n- **Proximity** — put related things close together and unrelated things apart.\n\nWhite space is not wasted space: it gives the eye somewhere to rest.\n\n![A three-column grid](media:core/grid.svg)\n\n![Four principles](media:core/crap.svg)\n\n## Key words\n\n- **Grid:** columns that guide where things go\n- **Gutter:** the gap between columns\n- **White space:** empty space that lets a design breathe\n\n## Read and watch\n\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n\n## Practise at home\n\n- Find a magazine or newspaper page and draw its grid on it\n- Name one principle it uses well\n\n## Make it fit you\n\n- **If this is new to you:** Turn on the grid or guides in your tool and snap every box to it.\n- **If you already can:** Lay out the same content on a 2-column and a 4-column grid; say which works better and why.\n\n## Assessed this week\n\n- Which principle groups a photo with its own caption, away from other stories?\n- Lay out an A4 page on a 3-column grid with a headline, a photo and two short stories, and label where each principle is used.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-05.html",
+     "title": "Slides: Layout: the grid and four principles",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/grid.svg",
+     "title": "A three-column grid",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/crap.svg",
+     "title": "Four principles",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which principle groups a photo with its own caption, away from other stories?",
+     "points": 1,
+     "options": [
+      "Proximity",
+      "Repetition",
+      "Contrast",
+      "Alignment"
+     ],
+     "answer": "Proximity",
+     "whys": [
+      "",
+      "Repetition is about reusing styles, not grouping.",
+      "Contrast makes things look different; it does not group them.",
+      "Alignment lines things up; grouping is proximity."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Lay out an A4 page on a 3-column grid with a headline, a photo and two short stories, and label where each principle is used.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: a visible grid used (1), all four principles shown and labelled (3)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 6,
+   "position": 1,
+   "title": "Colour: schemes, contrast, and screen vs print",
+   "summary": "Use few colours, make text readable, and remember that screens and printers make colour differently.",
+   "objectives": [
+    "Build a colour scheme from the colour wheel",
+    "Check text contrast (aim for 4.5:1)",
+    "Explain RGB versus CMYK"
+   ],
+   "body": "## What to do\n\n- Pick a scheme on the colour wheel\n- Test your text colours in a contrast checker\n- Compare a bright screen colour with its printed version\n\n## Understand it\n\n- **Schemes**: pick one main colour, one accent, and neutrals (black, grey, white). Complementary colours (opposite on the wheel) give energy; analogous colours (neighbours) feel calm.\n- **Contrast**: text must stand out from its background. The standard used on the web is at least **4.5:1** for body text. Light yellow text on white fails; dark navy on white passes easily. Check with a contrast checker.\n- **Screen vs print**: screens mix **light** in **RGB** (red, green, blue); printers mix **ink** in **CMYK** (cyan, magenta, yellow, black). Some bright screen colours cannot be printed — they come out duller. For print, design in CMYK or ask the printer for a proof.\n\nColour also carries meaning: never let colour be the ONLY way you show something (some people are colour-blind).\n\n![Light versus ink](media:core/rgb-cmyk.svg)\n\n## Key words\n\n- **RGB:** red, green, blue light — screens\n- **CMYK:** cyan, magenta, yellow, black ink — print\n- **Contrast ratio:** how much text stands out from its background\n\n## Read and watch\n\n- [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/) — Type two colours and see if text on them can be read (aim for 4.5:1).\n- [Adobe Color wheel](https://color.adobe.com/create/color-wheel) — Build a colour scheme from the colour wheel.\n\n## Practise at home\n\n- Check the contrast of three signs or flyers you see\n- Find one that fails and suggest a fix\n\n## Make it fit you\n\n- **If this is new to you:** Start with navy text on white and one bright accent; check it, then vary.\n- **If you already can:** Design the same flyer in a complementary and an analogous scheme and test both for contrast.\n\n## Assessed this week\n\n- Test two text-and-background pairs from your design in the WebAIM contrast checker. Paste a screenshot or the ratios, and say which passes 4.5:1.\n- Why might a bright green on your screen print dull?\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-06.html",
+     "title": "Slides: Colour: schemes, contrast, and screen vs print",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/rgb-cmyk.svg",
+     "title": "Light versus ink",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://webaim.org/resources/contrastchecker/",
+     "title": "WebAIM Contrast Checker",
+     "kind": "link",
+     "guide": "Type two colours and see if text on them can be read (aim for 4.5:1)."
+    },
+    {
+     "url": "https://color.adobe.com/create/color-wheel",
+     "title": "Adobe Color wheel",
+     "kind": "link",
+     "guide": "Build a colour scheme from the colour wheel."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "evidence",
+     "prompt": "Test two text-and-background pairs from your design in the WebAIM contrast checker. Paste a screenshot or the ratios, and say which passes 4.5:1.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: two pairs tested (1), ratios given (1), pass/fail judged correctly against 4.5:1 (1).",
+     "url": "https://webaim.org/resources/contrastchecker/"
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Why might a bright green on your screen print dull?",
+     "points": 1,
+     "options": [
+      "Screens mix light (RGB); printers mix ink (CMYK), which cannot make every screen colour",
+      "The printer is low on ink",
+      "Green cannot be printed",
+      "The file was too small"
+     ],
+     "answer": "Screens mix light (RGB); printers mix ink (CMYK), which cannot make every screen colour",
+     "whys": [
+      "",
+      "It happens on a full printer too — it is the colour model.",
+      "Green prints; only some very bright greens are out of range.",
+      "File size affects sharpness, not colour."
+     ]
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 7,
+   "position": 1,
+   "title": "Images: resolution, cropping and rights",
+   "summary": "A picture must be sharp enough to print, cropped with purpose, and yours to use.",
+   "objectives": [
+    "Explain 72 vs 300 ppi",
+    "Crop an image to strengthen it",
+    "Use images legally and credit them"
+   ],
+   "body": "## What to do\n\n- Print the same photo at two resolutions\n- Crop one photo three ways and pick the strongest\n- Find a free-to-use image and write its credit\n\n## Understand it\n\n- **Resolution**: an image is made of pixels. Screens need about 72–150 pixels per inch; **print needs about 300**. A small image from a website looks fine on screen and blurry on paper. Never stretch an image bigger than it is.\n- **Cropping** removes what does not help: cut to the subject, keep eyes on the upper third, leave room in the direction a person is looking.\n- **Rights**: an image online is NOT free to use. Use your own photos, images with a licence that allows it (Creative Commons, Unsplash), and **credit** them. Ask permission before using a photo of a person — especially a child.\n- **Alt text**: on screen, describe the image for people who cannot see it.\n- **AI-made images**: if you generate a picture with an AI tool, check the tool's terms allow your use, say it was AI-made in the credit, look closely for errors (hands, text, signs), and never make a fake photo of a real person.\n\n![72 versus 300 ppi](media:core/resolution.svg)\n\n## Key words\n\n- **Resolution:** how many pixels per inch\n- **Crop:** cut away part of an image\n- **Licence:** the rules for using someone else's work\n- **Alt text:** a description of an image for people who cannot see it\n\n## Read and watch\n\n- [Creative Commons licences](https://creativecommons.org/about/cclicenses/) — What you may and may not do with an image someone else made.\n- [Unsplash licence](https://unsplash.com/license) — Free photos, and the rules for using them.\n\n## Practise at home\n\n- Take three photos of one object and crop each differently\n- Find an image with a Creative Commons licence and write its credit\n\n## Make it fit you\n\n- **If this is new to you:** Use the crop tool's rule-of-thirds grid.\n- **If you already can:** Work out the largest size, in cm, a 1200 × 900 pixel photo can be printed at 300 ppi.\n\n## Assessed this week\n\n- A 600 × 400 pixel logo looks sharp on screen. Printed at A4 width, it looks blurry. Why?\n- You want to use a photo you found on Google Images in your newsletter. What should you check, and what must you add?\n- Show one photo cropped three ways and the version you chose, with a reason.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-07.html",
+     "title": "Slides: Images: resolution, cropping and rights",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/resolution.svg",
+     "title": "72 versus 300 ppi",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://creativecommons.org/about/cclicenses/",
+     "title": "Creative Commons licences",
+     "kind": "link",
+     "guide": "What you may and may not do with an image someone else made."
+    },
+    {
+     "url": "https://unsplash.com/license",
+     "title": "Unsplash licence",
+     "kind": "link",
+     "guide": "Free photos, and the rules for using them."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "A 600 × 400 pixel logo looks sharp on screen. Printed at A4 width, it looks blurry. Why?",
+     "points": 1,
+     "options": [
+      "It has too few pixels for print (print needs about 300 per inch)",
+      "The printer is broken",
+      "Logos cannot be printed",
+      "It was saved in colour"
+     ],
+     "answer": "It has too few pixels for print (print needs about 300 per inch)",
+     "whys": [
+      "",
+      "Every printer would blur it: the file has too few pixels.",
+      "Logos print well from high-resolution or vector files.",
+      "Colour is not the cause."
+     ]
+    },
+    {
+     "kind": "short",
+     "prompt": "You want to use a photo you found on Google Images in your newsletter. What should you check, and what must you add?",
+     "points": 2,
+     "answer": "Check its licence (whether you may use it, e.g. Creative Commons or ask the owner); if allowed, credit the creator. Get consent if it shows a person."
+    },
+    {
+     "kind": "task",
+     "prompt": "Show one photo cropped three ways and the version you chose, with a reason.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: three crops (1), a chosen crop (1), a reason using today's ideas (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 8,
+   "position": 1,
+   "title": "Project: an event flyer from brief to print",
+   "summary": "Put it together: a one-page flyer for a real Club event, designed from a brief and checked before printing.",
+   "objectives": [
+    "Work from a client brief",
+    "Apply hierarchy, grid, colour and images together",
+    "Check a design with a proof checklist"
+   ],
+   "body": "## What to do\n\n- Read the brief and list what must be on the flyer\n- Sketch three thumbnails, choose one\n- Design, check, and get feedback\n\n## Understand it\n\nA **brief** says who it is for, what it must say, the size, and the deadline. Designers start with **thumbnails** — tiny quick sketches — before the computer. If you ask an AI tool for headline ideas, treat them as a first draft: check each one against the brief, change what does not fit, and note what you changed.\n\nYour flyer needs: a headline, the key facts (what, when, where, cost), a short body, one strong image, and a call to action (\"Register at …\").\n\nBefore printing, run the **proof checklist**:\n\n1. Spelling, dates and times checked by someone else.\n2. Hierarchy: the three-second test.\n3. Everything aligned to a grid.\n4. Text contrast at least 4.5:1.\n5. Images sharp at print size, and allowed.\n6. Nothing important within 3 mm of the edge.\n\n![Before and after: the same flyer redesigned](media:core/shots/flyer-before-after.png)\n\n## Key words\n\n- **Brief:** what the client needs, written down\n- **Thumbnail:** a tiny quick sketch of a layout\n- **Proof:** a final check copy before printing\n- **Call to action:** what the reader should do next\n\n## Read and watch\n\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/) — Type two colours and see if text on them can be read (aim for 4.5:1).\n\n## Practise at home\n\n- Show your draft to someone who has not seen it; note what they read first\n- Fix one thing they found\n\n## Make it fit you\n\n- **If this is new to you:** Use one template as a starting point, then change it until it fits the brief.\n- **If you already can:** Design a matching square version for WhatsApp from the same content.\n\n## Assessed this week\n\n- Your event flyer: link or upload the final design and your three thumbnails, and say which proof checks you did.\n- Put the flyer process in order.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-08.html",
+     "title": "Slides: Project: an event flyer from brief to print",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/shots/flyer-before-after.png",
+     "title": "Before and after: the same flyer redesigned",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://webaim.org/resources/contrastchecker/",
+     "title": "WebAIM Contrast Checker",
+     "kind": "link",
+     "guide": "Type two colours and see if text on them can be read (aim for 4.5:1)."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Your event flyer: link or upload the final design and your three thumbnails, and say which proof checks you did.",
+     "points": 10,
+     "answer": "A flyer that meets the brief with clear hierarchy, grid alignment, readable contrast, legal sharp images and a call to action.",
+     "rubric": "Up to 10: meets the brief (2), hierarchy (2), alignment and grid (2), colour and contrast (2), images and proof checks (2)."
+    },
+    {
+     "kind": "order",
+     "prompt": "Put the flyer process in order.",
+     "points": 3,
+     "options": [
+      "Read the brief",
+      "Sketch thumbnails",
+      "Design the chosen layout",
+      "Run the proof checklist",
+      "Print or share"
+     ]
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 9,
+   "position": 1,
+   "title": "Multi-page documents: the newsletter",
+   "summary": "A newsletter repeats a structure on every page: masthead, columns, styles, page numbers.",
+   "objectives": [
+    "Use paragraph styles so every heading matches",
+    "Set up columns and a masthead",
+    "Keep a multi-page document consistent"
+   ],
+   "body": "## What to do\n\n- Design a masthead for a Club newsletter\n- Set up two-column pages with heading and body styles\n- Add headers, footers and page numbers\n\n## Understand it\n\nWhen a document has many pages, consistency matters more than any one page.\n\n- **Styles**: define Heading, Subheading, Body and Caption once (Google Docs: **Format → Paragraph styles**; Scribus: **Edit → Styles**). Change the style and every heading updates.\n- **Master pages** (Scribus, LibreOffice) or templates hold what repeats: margins, columns, page numbers, the footer.\n- **Masthead**: the newsletter's name and issue date across the top of page one.\n- **Columns**: two or three narrow columns read faster than one wide one.\n- **Continue lines**: \"continued on page 3\" when a story jumps.\n\n![A newsletter page: masthead, two columns, a photo with caption](media:core/shots/newsletter-page.png)\n\n## Key words\n\n- **Paragraph style:** a saved set of type settings applied to text\n- **Master page:** a background page holding what repeats\n- **Masthead:** the title block of a newsletter\n\n## Read and watch\n\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n- [LibreOffice Help](https://help.libreoffice.org/) — Free office suite; Draw and Writer can lay out a flyer or newsletter.\n\n## Practise at home\n\n- Collect two newsletters or magazines and compare their mastheads\n- Write one short story for your newsletter\n\n## Make it fit you\n\n- **If this is new to you:** Use Google Docs with a two-column section and three styles only.\n- **If you already can:** Set up a master page in Scribus with columns and automatic page numbers.\n\n## Assessed this week\n\n- You need to change the font of every heading in a 12-page newsletter. What is the fastest reliable way?\n- Show two pages of your newsletter with a masthead, two columns, consistent styles and page numbers.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-09.html",
+     "title": "Slides: Multi-page documents: the newsletter",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/shots/newsletter-page.png",
+     "title": "A newsletter page: masthead, two columns, a photo with caption",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    },
+    {
+     "url": "https://help.libreoffice.org/",
+     "title": "LibreOffice Help",
+     "kind": "link",
+     "guide": "Free office suite; Draw and Writer can lay out a flyer or newsletter."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "You need to change the font of every heading in a 12-page newsletter. What is the fastest reliable way?",
+     "points": 1,
+     "options": [
+      "Change the Heading paragraph style once",
+      "Select each heading and change it",
+      "Retype the headings",
+      "Change the body font"
+     ],
+     "answer": "Change the Heading paragraph style once",
+     "whys": [
+      "",
+      "Slow, and easy to miss one — then the document is inconsistent.",
+      "Retyping risks new errors and does not change the font.",
+      "That changes the body, not the headings."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show two pages of your newsletter with a masthead, two columns, consistent styles and page numbers.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: masthead (1), columns (1), styles used consistently (1), page numbers (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 10,
+   "position": 1,
+   "title": "Folded work and print preparation: bleed, trim and safe area",
+   "summary": "Printers cut paper, and the cut is never perfect. Bleed, trim and the safe area protect your design.",
+   "objectives": [
+    "Explain bleed, trim and safe area",
+    "Set up a document with 3 mm bleed",
+    "Plan the panel order of a tri-fold brochure"
+   ],
+   "body": "## What to do\n\n- Mark bleed, trim and safe area on a printed page\n- Set up a tri-fold with bleed in Canva or Scribus\n- Fold a paper mock-up to check the panel order\n\n## Understand it\n\nA print shop prints on bigger paper and **cuts** it down — and the blade can move a millimetre or two.\n\n- **Trim**: where the paper is meant to be cut (the finished size).\n- **Bleed**: extend background colours and photos **3 mm beyond the trim**, so a slightly-off cut never leaves a white edge.\n- **Safe area**: keep text and logos at least **3–5 mm inside the trim**, so nothing important is cut off.\n\nIn Canva: **File → Show print bleed**; in Scribus: set bleed in **Document setup**.\n\nA **tri-fold brochure** is one sheet folded into six panels. The front cover is on the outside right; the inside panels read left to right. Always make a **paper mock-up** before printing.\n\n![Bleed, trim and safe area](media:core/page-anatomy.svg)\n\n![Tri-fold panel order](media:core/trifold.svg)\n\n## Key words\n\n- **Bleed:** colour extended 3 mm past the trim\n- **Trim:** the finished size where paper is cut\n- **Safe area:** the zone that keeps text away from the cut\n\n## Read and watch\n\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n\n## Practise at home\n\n- Fold an A4 sheet into a tri-fold and number the panels\n- Find a printed item with a white edge where the cut went wrong\n\n## Make it fit you\n\n- **If this is new to you:** Fold the mock-up first; number every panel before designing.\n- **If you already can:** Find out what crop marks are and add them to your PDF in Scribus.\n\n## Assessed this week\n\n- Why do designers extend background colour 3 mm past the trim line?\n- Put a tri-fold brochure's panels in reading order for someone picking it up.\n- Show your folded paper mock-up with every panel numbered, and your tri-fold document set up with 3 mm bleed and a safe area.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-10.html",
+     "title": "Slides: Folded work and print preparation: bleed, trim and safe area",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/page-anatomy.svg",
+     "title": "Bleed, trim and safe area",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/trifold.svg",
+     "title": "Tri-fold panel order",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Why do designers extend background colour 3 mm past the trim line?",
+     "points": 1,
+     "options": [
+      "So a slightly inaccurate cut never leaves a white edge",
+      "To make the page bigger",
+      "Because printers charge less",
+      "So the text can go there"
+     ],
+     "answer": "So a slightly inaccurate cut never leaves a white edge",
+     "whys": [
+      "",
+      "The finished page is still the trim size — the bleed is cut off.",
+      "Cost is not the reason.",
+      "Text belongs in the safe area, away from the cut."
+     ]
+    },
+    {
+     "kind": "order",
+     "prompt": "Put a tri-fold brochure's panels in reading order for someone picking it up.",
+     "points": 3,
+     "options": [
+      "Front cover",
+      "Inside flap",
+      "Left inside panel",
+      "Middle inside panel",
+      "Right inside panel",
+      "Back cover"
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your folded paper mock-up with every panel numbered, and your tri-fold document set up with 3 mm bleed and a safe area.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: mock-up folded and numbered (1), panel order right (1), 3 mm bleed set (1), text inside the safe area (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 11,
+   "position": 1,
+   "title": "Exporting a print-ready PDF and briefing a printer",
+   "summary": "A design is only finished when a printer can print it right: a PDF with fonts, images and bleed — and a clear brief.",
+   "objectives": [
+    "Export a print-ready PDF with bleed",
+    "Run a final pre-flight check",
+    "Write a print brief for a print shop"
+   ],
+   "body": "## What to do\n\n- Export your flyer as PDF (print) with bleed\n- Pre-flight it: fonts, images, bleed, spelling\n- Write a print brief: size, quantity, paper, deadline, contact\n\n## Understand it\n\nSend printers a **PDF**, never a Word or Canva link: a PDF keeps your fonts, layout and images exactly.\n\n- Canva: **Share → Download → PDF Print**, tick **Crop marks and bleed**.\n- Scribus/LibreOffice: **Export as PDF**, with bleed and high-quality images.\n\n**Pre-flight** before sending: fonts embedded, images 300 ppi at print size, bleed present, colours checked, and the text proofread by someone else. Name the file clearly: `2026-03-14_Showcase-Flyer_A5_v3.pdf`.\n\nA **print brief** tells the print shop: size and orientation, quantity, paper (weight in gsm, matte or gloss), single- or double-sided, finishing (folding, cutting), deadline, budget, and your phone number. Ask for a **proof** before the full run.\n\n## Key words\n\n- **PDF:** a file format that keeps a layout exactly\n- **Pre-flight:** the final technical check before printing\n- **GSM:** paper weight in grams per square metre\n\n## Read and watch\n\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n\n## Practise at home\n\n- Visit or call a print shop and ask the price of 100 A5 flyers on 130 gsm paper\n- Note what they asked you\n\n## Make it fit you\n\n- **If this is new to you:** Use the pre-flight list as a tick box on paper.\n- **If you already can:** Compare the price of three paper weights and finishes, and recommend one for a budget.\n\n## Assessed this week\n\n- Write a print brief for 200 A5 flyers for the Club showcase.\n- Which file should you send a print shop?\n- Show your print-ready PDF (with bleed) and your completed pre-flight list.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-11.html",
+     "title": "Slides: Exporting a print-ready PDF and briefing a printer",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "short",
+     "prompt": "Write a print brief for 200 A5 flyers for the Club showcase.",
+     "points": 4,
+     "answer": "Includes size and orientation, quantity, paper weight/finish, sides, any finishing, deadline, budget and contact, and asks for a proof."
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which file should you send a print shop?",
+     "points": 1,
+     "options": [
+      "A PDF exported for print, with bleed",
+      "The Canva share link",
+      "A screenshot of the design",
+      "A Word document"
+     ],
+     "answer": "A PDF exported for print, with bleed",
+     "whys": [
+      "",
+      "A link can change and cannot be sent to the printing machine.",
+      "A screenshot is screen resolution and has no bleed.",
+      "Word moves layouts and fonts between computers."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your print-ready PDF (with bleed) and your completed pre-flight list.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: PDF with bleed (2), pre-flight complete (1), clear file name (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 12,
+   "position": 1,
+   "title": "Project: a four-page Club magazine",
+   "summary": "Design, produce and present a four-page magazine for your centre — everything from the term in one publication.",
+   "objectives": [
+    "Plan a multi-page publication as a team",
+    "Produce consistent pages with styles, grid and images",
+    "Deliver a print-ready file and present it"
+   ],
+   "body": "## What to do\n\n- Plan the four pages as a flat plan\n- Write, photograph and design your pages\n- Pre-flight, export and present to the panel\n\n## Understand it\n\nYour magazine is the term's work in one publication. You need:\n\n- a **flat plan**: a small drawing of all four pages showing what goes where;\n- a **cover** with masthead, a strong image and two cover lines;\n- **three inside pages** on one grid, with consistent styles, at least one story, one photo story and one data graphic (link to Data Appreciation!);\n- **legal images**, credited, with consent for people;\n- a **print-ready PDF** with bleed;\n- a **three-minute presentation**: your choices and why.\n\nGo back to your earlier work before you start: the week 4 hierarchy, the week 5 grid and the week 10 bleed set-up are what this magazine is built from, so use them again.\n\nThe panel will ask about YOUR decisions — the grid, the hierarchy, the colours. That is how they know the work is yours.\n\n![Plan every page on the grid](media:core/grid.svg)\n\n## Key words\n\n- **Flat plan:** a map of every page of a publication\n- **Cover line:** a short teaser for a story inside\n\n## Read and watch\n\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/) — Type two colours and see if text on them can be read (aim for 4.5:1).\n\n## Practise at home\n\n- Rehearse your three-minute presentation\n- Get one person to proofread every page\n\n## Make it fit you\n\n- **If this is new to you:** Use a Canva magazine template as the starting grid; replace every element.\n- **If you already can:** Produce a printed copy and a screen version with alt text for every image.\n\n## Assessed this week\n\n- Your four-page magazine: upload the print-ready PDF and your flat plan, and describe your design decisions.\n- Name one design decision you made and why it helps the reader.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-12.html",
+     "title": "Slides: Project: a four-page Club magazine",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/grid.svg",
+     "title": "Plan every page on the grid",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://webaim.org/resources/contrastchecker/",
+     "title": "WebAIM Contrast Checker",
+     "kind": "link",
+     "guide": "Type two colours and see if text on them can be read (aim for 4.5:1)."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Your four-page magazine: upload the print-ready PDF and your flat plan, and describe your design decisions.",
+     "points": 10,
+     "answer": "A consistent, well-structured publication with a cover, grid, styles, legal credited images, a data graphic and a print-ready PDF.",
+     "rubric": "Up to 10: flat plan (1), cover (2), consistency of grid and styles (2), images and credits (2), print-ready PDF (1), decisions explained (2)."
+    },
+    {
+     "kind": "short",
+     "prompt": "Name one design decision you made and why it helps the reader.",
+     "points": 2,
+     "answer": "A specific decision (grid, hierarchy, colour, image) with how it helps reading."
+    }
+   ]
+  }
+ ]
+}

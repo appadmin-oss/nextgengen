@@ -784,6 +784,8 @@ function club_cert_style(string $course): array {
     $c = mb_strtolower(trim($course));
     $key = 'club';
     if (preg_match('/piano|guitar|drum|violin|saxophone|vocal|music|instrument|choir/', $c)) $key = 'music';
+    elseif ($c === 'data appreciation') $key = 'tech';
+    elseif ($c === 'desktop publishing') $key = 'media';
     elseif (preg_match('/catering|adire|craft|textile|fashion/', $c)) $key = 'craft';
     else {
         $div = function_exists('course_division') ? mb_strtolower(course_division($course)) : '';
