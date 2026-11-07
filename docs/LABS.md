@@ -216,6 +216,8 @@ Implementation order:
 
 Before each deliverable commit: examiner review, a scratch sweep of each new form across 200 seeds (options, hints, marking, public-key exclusion, answer variation), and all three baseline suites. Commit deliverables separately and push only the new branch. Free essays remain teacher-assessed; instant marking will use bounded answers with explicit instructions and accepted alternatives.
 
+Implementation checkpoint: foundation rules now cover all 80 topics; **87 appended forms bring the total to 346**, with at least four per topic and production/reasoning everywhere. The optional fifth field of an `eng_spot` row supplies per-part explanations; omitted fields preserve historical output. The first 777 replay samples remain byte-for-byte equivalent as decoded question objects. The 200-seed sweep passed for all 87 new forms (17,400 instances). Final foundation validation: 6,963 backend, 28 client and 107 browser passes, zero failures.
+
 ## 6. Teaching before practice: The rule and Hear and say
 
 - **The rule** is the engine's existing teaching step (lab content `why`, read through `mlb_why_of`). English supplies `eng_rules()` (`englishlab-teach.php`): `[rule, reminder, [[example, why], …]]`.

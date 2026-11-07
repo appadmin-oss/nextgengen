@@ -112,13 +112,15 @@ function eng_type(array $rows, string $stem, string $hint, string $dim = 'proced
 
 /**
  * Spot the error in a sentence from rows of [[the sentence in parts], index of the wrong part,
- * the correction (empty when the part should simply go), why]. The parts are the options; the corrected sentence is in the steps.
+ * the correction (empty when the part should simply go), why, optional per-part reasons]. The parts are the options; the corrected sentence is in the steps.
  */
 function eng_spot(array $rows, string $hint, string $dim = 'reasoning', int $secs = 40): Closure {
     return static function (MlbRng $r) use ($rows, $hint, $dim, $secs): array {
-        [$parts, $bad, $fix, $why] = eng_row($r, $rows);
+        $row = eng_row($r, $rows);
+        [$parts, $bad, $fix, $why] = $row;
+        $partReasons = $row[4] ?? [];
         $wrong = [];
-        foreach ($parts as $i => $p) if ($i !== $bad) $wrong[] = [$p, 'That part is correct as it stands.'];
+        foreach ($parts as $i => $p) if ($i !== $bad) $wrong[] = [$p, $partReasons[$i] ?? 'That part is correct as it stands.'];
         $fixed = $parts; $fixed[$bad] = $fix;
         return mlb_mcq($r, 'One part of this sentence has a mistake. Which part? “' . implode(' ', $parts) . '”', $parts[$bad], $wrong,
             [$why, 'Corrected: “' . implode(' ', array_filter($fixed, static fn($x) => $x !== '')) . '”'], $hint, $dim, $secs);

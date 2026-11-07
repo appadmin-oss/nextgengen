@@ -38332,9 +38332,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 (function () {
     $now = now_iso();
     lab_use('english');
-    $bad = []; $n = 0; $thin = []; $fixed = [];
+    $bad = []; $n = 0; $thin = []; $fixed = []; $recognitionOnly = [];
     foreach (eng_forms() as $c => $forms) {
-        if (count($forms) < 3) $thin[] = $c;
+        if (count($forms) < 4) $thin[] = $c;
+        $produces = false;
         foreach ($forms as $fi => $f) {
             $keys = [];
             for ($s = 1; $s <= 30; $s++) {
@@ -38350,13 +38351,15 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
                 if ($it['kind'] === 'mcq') foreach ($it['whys'] as $wi => $w) if ($wi !== (int)$it['key'] && trim((string)$w) === '') $bad[] = "$c/$fi why";
             }
             $it0 = mlb_item($c, $fi, 7);
+            if (in_array($it0['kind'], ['text', 'order', 'error'], true)) $produces = true;
             if ($it0['kind'] !== 'mcq' && count($keys) < 2) $fixed[] = "$c/$fi";
         }
+        if (!$produces) $recognitionOnly[] = $c;
     }
     $bad = array_values(array_unique($bad));
     chk('english lab · every generated question (' . $n . ') marks its own answer and every accepted alternative right, offers at least three distinct options each with the slip it names, teaches (steps and a hint), carries no $ for the maths renderer, and never sends the key or the accepted answers' . ($bad ? ' (' . implode(', ', array_slice($bad, 0, 8)) . ')' : ''),
         $bad === [] && count(eng_forms()) === 80);
-    chk('english lab · every topic has at least three kinds of question, and no typed or ordering form gives everybody the same answer' . ($thin || $fixed ? ' (' . implode(', ', array_merge($thin, $fixed)) . ')' : ''), $thin === [] && $fixed === []);
+    chk('english lab · every topic has at least four forms including production or reasoning, and no typed or ordering form gives everybody the same answer' . ($thin || $fixed ? ' (' . implode(', ', array_merge($thin, $fixed)) . ')' : ''), $thin === [] && $fixed === [] && $recognitionOnly === []);
 
     // The shared `text` kind: generous about form, strict about the skill.
     $sp = ['kind' => 'text', 'key' => 'necessary', 'accept' => []];
@@ -38447,7 +38450,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $missing === []);
     $cv = mlb_comp_view(['comp' => 'EN-023']); $cg = mlb_comp_view(['comp' => 'EN-011']); $cm = mlb_comp_view(['comp' => 'MC-001']);
     chk('english lab · a sound topic’s lesson carries its "Hear and say" material and articulation questions; a grammar topic’s carries its rule; a Maths topic carries neither speaking nor an English rule',
-        !empty($cv['speak']['pairs']) && !empty($cv['speak']['how']) && count($cv['speak']['audio']['thin'] ?? []) >= 4 && count($cv['speak']['audio']['I think these three things are mine.'] ?? []) >= 2 && count(eng_forms()['EN-023']) === 5 && ($cg['why']['idea'] ?? '') !== '' && $cm['speak'] === null);
+        !empty($cv['speak']['pairs']) && !empty($cv['speak']['how']) && count($cv['speak']['audio']['thin'] ?? []) >= 4 && count($cv['speak']['audio']['I think these three things are mine.'] ?? []) >= 2 && count(eng_forms()['EN-023']) === 6 && ($cg['why']['idea'] ?? '') !== '' && $cm['speak'] === null);
     lab_use('maths');
 
     // One member, three Labs: English moves only English.
