@@ -3971,17 +3971,6 @@ function downloadCsv(name, rows) {
 // Tiny field components
 // ============================================================================
 
-function Field({ label, value, onChange, type, placeholder, required, disabled, hint }) {
-  return (
-    <label className="admin-field">
-      <span>{label}{required && <em>*</em>}</span>
-      <input type={type || "text"} className="admin-input" value={value == null ? "" : value} disabled={!!disabled}
-        onChange={(e) => onChange(e.target.value)} placeholder={placeholder} required={required}
-        style={disabled ? { opacity: .7, cursor: "not-allowed" } : undefined}/>
-      {hint && <span className="admin-hint" style={{ margin: 0 }}>{hint}</span>}
-    </label>
-  );
-}
 /* Age from an ISO date, matching dob_age() on the server so the number an admin
    sees while typing is the number that gets stored. Returns "" for a date that
    is not one yet, rather than a nonsense age for a half-typed year. */
@@ -4337,7 +4326,6 @@ const STATE_CHIP = {
   evicted:   { label: "Evicted",   cls: "status-archived" },
 };
 /* A shared global: page-admin.jsx's v1 fees screen formats naira with it too. */
-const naira = (n) => fmtMoney(n);
 
 function PolicyStateChip({ state }) {
   const s = STATE_CHIP[state] || STATE_CHIP.clear;

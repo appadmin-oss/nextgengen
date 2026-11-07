@@ -20,6 +20,41 @@ function mlb_forms_more(): array {
     static $f = null;
     if ($f !== null) return $f;
     return $f = [
+    /* Number bases at exam speed (owner, 7 Nov 2026: "What is the fastest way to solve number base
+       problems in less than 50s … they waste my time because of the back and forth conversions").
+       The fast methods ARE the steps: place values with the zeros skipped, shift-and-add for binary
+       multiplication, and plugging the options in for an unknown base — never algebra that may not
+       even have a whole-number answer. Every unknown is chosen first and the question built from it,
+       so each question has exactly one valid answer (the training pack's "31_x = 22_5" has none). */
+    'MC-110' => [
+        // An unknown BASE: try the options.
+        static function (MlbRng $r) { $x = $r->int(4, 9); $a = $r->int(1, $x - 2); $d = $r->int(0, $x - 2); $N = $a * $x + $d;
+            $wrong = array_map(static fn($c) => [(string)$c, 'In base ' . $c . ': $' . $a . ' \times ' . $c . ' + ' . $d . ' = ' . ($a * $c + $d) . '$, not ' . $N . '.'], [$x - 1, $x + 1, $x + 2]);
+            return mlb_mcq($r, 'If $' . $a . $d . '_{x} = ' . $N . '_{10}$, find the base $x$.', (string)$x, $wrong,
+                ['In base ten the left side is $' . $a . 'x + ' . $d . '$.', 'Plug in the options: $' . $a . ' \times ' . $x . ' + ' . $d . ' = ' . $N . '$. So $x = ' . $x . '$ (or solve $' . $a . 'x = ' . ($N - $d) . '$).'],
+                'Plug the options in — it is faster than algebra, and every digit must be smaller than the base.', 'procedure', 40); },
+        // A missing DIGIT, with the two sides in different bases.
+        static function (MlbRng $r) { $b1 = $r->int(5, 9); $p = $r->int(1, $b1 - 1); $xd = $r->int(0, $b1 - 1); $V = $p * $b1 + $xd;
+            $b2s = array_values(array_filter([3, 4, 6, 7, 8], static fn($b) => $b !== $b1 && $b < $V)); $b2 = $b2s[$r->int(0, count($b2s) - 1)];
+            $rep = base_convert((string)$V, 10, $b2); $len = strlen($rep);
+            $expand = implode(' + ', array_map(static fn($dg, $i) => $dg . ' \times ' . $b2 . '^{' . ($len - 1 - $i) . '}', str_split($rep), array_keys(str_split($rep))));
+            return mlb_typed('num', 'If $' . $p . 'x_{' . $b1 . '} = ' . $rep . '_{' . $b2 . '}$, find the digit $x$.', (string)$xd,
+                ['Right side in base ten: $' . $expand . ' = ' . $V . '$.', 'Left side: $' . $p . ' \times ' . $b1 . ' + x = ' . ($p * $b1) . ' + x$. So $x = ' . $V . ' - ' . ($p * $b1) . ' = ' . $xd . '$.'],
+                'Turn the known side into base ten first; then the unknown side is one short equation.', 'procedure', 45); },
+        // Binary multiplication: shift and add.
+        static function (MlbRng $r) { $a = $r->int(5, 15); $b = $r->int(3, 7); $ba = decbin($a); $bb = decbin($b); $rows = [];
+            foreach (array_reverse(str_split($bb)) as $i => $bit) $rows[] = $bit === '1' ? $ba . str_repeat('0', $i) : str_repeat('0', strlen($ba) + $i);
+            return mlb_typed('num', 'Evaluate $' . $ba . '_2 \times ' . $bb . '_2$. Give the answer in binary.', decbin($a * $b),
+                ['Shift and add: each digit of $' . $bb . '$ (from the right) gives one row — a 1 copies $' . $ba . '$, a 0 gives zeros — moved one place left each time.', 'Rows: $' . implode(',\ ', $rows) . '$. Add them: $' . decbin($a * $b) . '_2$.', 'Check in base ten: $' . $a . ' \times ' . $b . ' = ' . ($a * $b) . '$.'],
+                'Multiplying by 1 copies; by 0 writes zeros; shift left for each row, then add.', 'procedure', 50, ['show' => '$' . decbin($a * $b) . '_2$']); },
+        // Binary to base ten by the position method, the zeros skipped — against the three slips.
+        static function (MlbRng $r) { do { $n = $r->int(33, 62); $bits = decbin($n); } while (strrev($bits) === $bits);
+            $rev = bindec(strrev($bits)); $vals = []; foreach (str_split($bits) as $i => $d) if ($d === '1') $vals[] = 2 ** (strlen($bits) - 1 - $i);
+            return mlb_mcq($r, 'Convert $' . $bits . '_2$ to base 10.', (string)$n,
+                [[(string)(2 * $n), 'The place values were started at 2; the units column is $2^0 = 1$.'], [(string)$rev, 'The place values were counted from the LEFT; they start from the right.'], [(string)(2 ** strlen($bits) - 1), 'Every place value was added, including the ones under 0s.']],
+                ['Place values from the right: $' . implode(', ', array_map(static fn($k) => (string)(2 ** $k), range(strlen($bits) - 1, 0, -1))) . '$.', 'Add only those under a 1, skipping the zeros: $' . implode(' + ', $vals) . ' = ' . $n . '$.'],
+                'Write 32, 16, 8, 4, 2, 1 over the digits and add only where there is a 1.', 'procedure', 30); },
+    ],
     'MC-068' => [
         // Change of base: log_b N with a calculator that only has log (base 10) or ln.
         static function (MlbRng $r) { do { $b = $r->int(2, 9); $N = $r->int(3, 200); } while (abs(log($N) / log($b) - round(log($N) / log($b))) < 1e-9);

@@ -2642,7 +2642,20 @@ function Uploader({ kind = "proof", accept, onUploaded, compact }) {
    localStorage and are applied to <html> via data attributes (see styles.css).
    An inline bootstrap in index.html applies them before first paint. */
 const A11Y_KEY = "ngg.a11y";
-const A11Y_DEFAULTS = { contrast: false, motion: false, readable: false, underline: false };
+const A11Y_DEFAULTS = { contrast: false, motion: false, readable: false, underline: false, lite: null };
+
+/* LITE (owner, 7 Nov 2026: "the site cannot run on low end devices … create a lite version"). One
+   site, drawn more cheaply: no animations or transitions, no backdrop blur, no scroll effects — the
+   work a cheap phone's GPU and CPU stall on. `lite` is true/false when chosen, null for AUTOMATIC:
+   on when the phone reports ≤ 2 GB of memory or ≤ 2 cores, asks to save data, or is on 2G/3G. The
+   same test runs before first paint in index.html; keep the two in step. */
+function nggLiteAuto() {
+  try {
+    const n = navigator, c = n.connection || {};
+    return !!((n.deviceMemory && n.deviceMemory <= 2) || (n.hardwareConcurrency && n.hardwareConcurrency <= 2) || c.saveData || /(^|-)(2g|3g)$/.test(c.effectiveType || ""));
+  } catch (_) { return false; }
+}
+function nggLiteOn(s) { return s.lite === true || (s.lite == null && nggLiteAuto()); }
 
 function applyA11y(s) {
   const root = document.documentElement;
@@ -2650,6 +2663,7 @@ function applyA11y(s) {
   root.setAttribute("data-motion", s.motion ? "reduce" : "auto");
   root.setAttribute("data-font", s.readable ? "readable" : "default");
   root.setAttribute("data-links", s.underline ? "underline" : "default");
+  root.setAttribute("data-lite", nggLiteOn(s) ? "on" : "off");
 }
 
 // Read the visitor's OS accessibility preferences so we can honour them by
@@ -2705,6 +2719,8 @@ function A11ySettingsPanel({ heading }) {
       <A11yToggle label="Reduce motion" desc="Stop animations + transitions" on={s.motion} onChange={v => set("motion", v)}/>
       <A11yToggle label="Readable font" desc="High-legibility, spaced type" on={s.readable} onChange={v => set("readable", v)}/>
       <A11yToggle label="Underline links" desc="Underline every link" on={s.underline} onChange={v => set("underline", v)}/>
+      <A11yToggle label="Lite mode" desc={"Faster on low-end phones: no animations, blur or scroll effects" + (s.lite == null && nggLiteAuto() ? " — on automatically for this device" : "")}
+        on={nggLiteOn(s)} onChange={v => set("lite", v)}/>
       <button className="a11y-reset" onClick={reset} disabled={!anyOn}>Reset to defaults</button>
     </div>
   );
@@ -4729,3 +4745,93 @@ function NggPushNudge({ surface, text }) {
 }
 
 Object.assign(window, { NggPushCard, NggPushNudge, nggPushBoot, useNggPush, nggPushEnv, nggPushEnable, nggPushDisable });
+
+/* Shared with public pages (owner, 7 Nov 2026: "optimise speed … for low-end devices"): these lived in
+   page-portals.jsx / page-dashboard.jsx, which now ship only in the signed-in bundle, so a public page
+   (the Club, the Anchor application, Learn) must find them here. */
+const naira = (n) => fmtMoney(n);
+
+function Field({ label, value, onChange, type, placeholder, required, disabled, hint }) {
+  return (
+    <label className="admin-field">
+      <span>{label}{required && <em>*</em>}</span>
+      <input type={type || "text"} className="admin-input" value={value == null ? "" : value} disabled={!!disabled}
+        onChange={(e) => onChange(e.target.value)} placeholder={placeholder} required={required}
+        style={disabled ? { opacity: .7, cursor: "not-allowed" } : undefined}/>
+      {hint && <span className="admin-hint" style={{ margin: 0 }}>{hint}</span>}
+    </label>
+  );
+}
+
+function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
+  const rv = verdict;
+  return (
+    <fieldset className="cur-check">
+      <legend><span className="cur-check-n">{n}.</span> {c.prompt} <span className="cur-check-pts">{c.points} pt{c.points === 1 ? "" : "s"}</span></legend>
+      {/* THE VIDEO IS PART OF THE QUESTION, so it plays here. Sending a
+          learner away to find it is where this flow breaks: they lose the
+          exam, they lose the question, and on a phone they lose the tab. */}
+      {c.kind === "watch" && c.videoUrl && (() => {
+        const v = curVideoEmbed(c.videoUrl);
+        return v ? <div className="cur-watch">
+          <div className="cur-embed"><iframe src={v.src} title={v.title} loading="lazy"
+            allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"/></div>
+          <p className="cur-watch-note">Watch it, then write what you took from it — in your own words. A detail or a moment from the video counts for more than a tidy summary.</p>
+        </div> : null;
+      })()}
+      {c.kind === "mcq"
+        ? c.options.map((o, k) => (
+            /* `answer` is there once the right answers are revealed (a pass,
+               or enough tries); before that only `right` comes back, so the
+               learner is told which they got wrong and has to think again. */
+            <label key={k} className={"cur-opt" + (rv && (rv.answer !== undefined ? String(k) === rv.answer : rv.right && value === k) ? " is-right" : "")
+                                     + (rv && value === k && (rv.answer !== undefined ? String(k) !== rv.answer : !rv.right) ? " is-wrong" : "")}>
+              <input type="radio" name={c.checkId} checked={value === k} disabled={disabled} onChange={() => onChange(k)}/>
+              <span>{o}</span>
+            </label>))
+        : <React.Fragment>
+            <textarea className={"cur-answer" + (c.kind === "code" ? " is-code" : "")} rows={["essay", "reflection", "project", "code"].includes(c.kind) ? 8 : 3}
+              value={value || ""} aria-label={"Answer to question " + n} spellCheck={c.kind !== "code"} disabled={disabled}
+              onChange={e => onChange(e.target.value)}
+              placeholder={{ essay: "Make your case — a clear point, your reasons, an example", reflection: "Be honest and specific — there is no wrong answer",
+                project: "What you made, how you made it, and what you learned", task: "What you actually did, and one decision you made while doing it",
+                watch: "What you took from it — something specific you saw or heard, in your own words",
+                code: "Paste or type your code" }[c.kind] || "Your answer, in your own words"}/>
+            {CUR_SHOWS_WORK.includes(c.kind) && !disabled && <CurAttach n={n} onAdd={url => onChange(((value || "") + "\n" + url).trim())}/>}
+          </React.Fragment>}
+      {mark && mark.feedback && <p className="cur-feedback"><b>{mark.by === "ai" ? "Feedback (AI)" : mark.by === "auto" ? "Note" : "Your instructor"}:</b> {mark.feedback}</p>}
+      {rv && c.kind !== "mcq" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
+      {rv && rv.answer === undefined && !rv.right && <p className="cur-feedback"><b>Not yet.</b> Think it through again — the answer is shown once you pass, or after a few tries.</p>}
+    </fieldset>
+  );
+}
+
+const CUR_SHOWS_WORK = ["task", "project", "code"];
+
+function CurAttach({ n, onAdd }) {
+  const [busy, setBusy] = React.useState(false);
+  const pick = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.curriculumUpload(file);
+      onAdd(r.url);
+      toast.success("Added to your answer.", file.name);
+    } catch (e) {
+      toast.error(e.code === "too_large" ? "That file is over 25 MB — a shorter recording or a smaller photo."
+        : e.code === "bad_type" ? "That kind of file is not allowed here." : humanizeError(e.code, e.code));
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="cur-attach">
+      <label className={"cur-attach-btn" + (busy ? " is-busy" : "")}>
+        {busy ? "Adding…" : "Attach your work"}
+        <input type="file" className="sr-only" disabled={busy} accept={CUR_FILE_ACCEPT}
+               aria-label={"Attach your work for question " + n}
+               onChange={e => { pick(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
+      </label>
+      <span className="cur-attach-hint">A photo, a recording, a screenshot or a file — whatever shows you did it.</span>
+    </div>
+  );
+}

@@ -48,7 +48,8 @@ const ALLOWED = {
   CurriculumEditor: 'staff lesson form, staff routes only; NggChunkGate loads and redraws',
   Mp9Portal: 'typeof guard; dashboard is in NGG_MORE_ROUTES', mp9Speakable: 'typeof guard', mp9AsgState: 'typeof guard',
   Cm3App: 'typeof guard; community is in NGG_MORE_ROUTES', cm3DocUrl: 'inside the community app (community route)',
-  Ss3Portal: 'summer-admin route', Cp3Portal: 'club-admin route', adminJump: 'SummerPolicyMoved, inside the summer-admin route',
+  SummerAdminPortal: 'summer-admin route (NGG_MORE_ROUTES); the chunk gate loads it first', ClubAdminPortal: 'club-admin route (NGG_MORE_ROUTES); the chunk gate loads it first',
+
 };
 const found = {};
 for (const f of core) for (const n of moreNames) {

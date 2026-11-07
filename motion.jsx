@@ -8,7 +8,7 @@
    All respect `prefers-reduced-motion`.
    ================================================================ */
 
-const reducedMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const reducedMotion = () => document.documentElement.getAttribute("data-lite") === "on" || !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
 // ----------------------------------------------------------------------------
 // Reveal — fade + slide up on enter viewport. Re-armable on route change.

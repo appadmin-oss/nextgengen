@@ -35,6 +35,11 @@ function engDeviceVoice() {
 const engClipCache = {};
 let engNoServerVoice = false;
 const engAudio = {};   // text → [recorded clip URL per voice], filled from each topic's speak.audio
+/* Who is speaking: the recordings are named …-<voice>.mp3. British voices are on every text; a
+   Nigerian voice is on a text only where its clip passed the recogniser check (english-voices-ng.py). */
+const ENG_VOICE_NAMES = { bf_emma: "Emma · British", bm_george: "George · British", bf_isabella: "Isabella · British", bm_lewis: "Lewis · British", ng_idera: "Idera · Nigerian", ng_jude: "Jude · Nigerian" };
+const engVoiceOf = url => ((String(url).match(/-([a-z]+_[a-z]+)\.mp3$/) || [])[1] || "");
+const engVoicesFor = text => (engAudio[text] || []).map(engVoiceOf);
 function engPlayUrl(url, slow) {
   const a = new Audio(url);
   a.playbackRate = slow ? 0.75 : 1;
@@ -43,6 +48,8 @@ function engPlayUrl(url, slow) {
 }
 async function engPlay(text, vi, slow) {
   const rec = engAudio[text];
+  // vi is a voice NAME (play that voice, if this text has it) or an index (rotate through the voices).
+  if (rec && rec.length && typeof vi === "string") { const u = rec.find(x => engVoiceOf(x) === vi); if (u) return engPlayUrl(u, slow); vi = 0; }
   if (rec && rec.length) return engPlayUrl(rec[((vi || 0) % rec.length + rec.length) % rec.length], slow);
   if (!engNoServerVoice) {
     const key = vi + "|" + text;
@@ -100,7 +107,10 @@ function EngHow({ how }) {
 
 /* 2 · Hear the difference: eight rounds, rotating voices, a streak. */
 function EngHear({ pairs, onDone }) {
-  const pick = () => { const p = pairs[Math.floor(Math.random() * pairs.length)]; return { p, k: Math.random() < .5 ? 0 : 1, vi: Math.floor(Math.random() * 4) }; };
+  /* One voice for both words of a round, so "hear both" compares the sounds and not two speakers. */
+  const pick = () => { const p = pairs[Math.floor(Math.random() * pairs.length)];
+    const both = engVoicesFor(p[0]).filter(v => engVoicesFor(p[1]).includes(v));
+    return { p, k: Math.random() < .5 ? 0 : 1, vi: both.length ? both[Math.floor(Math.random() * both.length)] : Math.floor(Math.random() * 4) }; };
   const [r, setR] = React.useState(pick), [n, setN] = React.useState(0), [right, setRight] = React.useState(0), [streak, setStreak] = React.useState(0);
   const [said, setSaid] = React.useState(null), [heard, setHeard] = React.useState(false);
   const done = n >= ENG_SPEAK_ROUNDS;
@@ -111,7 +121,7 @@ function EngHear({ pairs, onDone }) {
     <h3 id="eng-hear-h" className="mlb-h3">Hear the difference</h3>
     <div className="eng-dots" aria-hidden="true">{Array.from({ length: ENG_SPEAK_ROUNDS }, (_, i) => <i key={i} className={i < n ? "is-done" : i === n ? "is-on" : ""}/>)}</div>
     {done ? <p className="mlb-fb is-ok" role="status"><b>{right} of {ENG_SPEAK_ROUNDS} right.</b> {right >= 6 ? "Your ear is tuning in." : "Listen again tomorrow — ears improve with practice."}</p> : <>
-      <p className="mlb-meta">Round {n + 1} of {ENG_SPEAK_ROUNDS} · a new voice each time. Press play, then choose the word you heard.</p>
+      <p className="mlb-meta">Round {n + 1} of {ENG_SPEAK_ROUNDS} · a new voice each time{ENG_VOICE_NAMES[r.vi] ? <> — <b className="eng-voice">{ENG_VOICE_NAMES[r.vi]}</b></> : null}. Press play, then choose the word you heard.</p>
       <div className="eng-hear-play">
         <EngPlayButton text={r.p[r.k]} vi={r.vi} className="mlb-go eng-big" label="Play the word" onPlay={() => setHeard(true)}/>
         <EngPlayButton text={r.p[r.k]} vi={r.vi} slow className="stt-btn" label="Play the word slowly" onPlay={() => setHeard(true)}/>
@@ -197,6 +207,36 @@ function EngSay({ comp, sentences, onDone }) {
   </section>;
 }
 
+/* 4 · Hear and write: dictation. A recorded sentence is played and typed; each word is marked, so the
+   ear, the spelling and the meaning are tested together (owner, 7 Nov 2026: "Add more interactive
+   features"). Optional — it never holds the lesson. Capitals and punctuation are not marked here. */
+function EngWrite({ sentences }) {
+  const [i, setI] = React.useState(0), [val, setVal] = React.useState(""), [res, setRes] = React.useState(null), [heard, setHeard] = React.useState(false);
+  const [score, setScore] = React.useState({ right: 0, tried: 0 });
+  const t = sentences[i % sentences.length], vi = i + 1;
+  const check = e => { if (e) e.preventDefault(); if (!heard || !val.trim() || res) return;
+    const words = engWordMatch(t, val), all = words.every(w => w.ok);
+    setRes({ words, all }); setScore(x => ({ right: x.right + (all ? 1 : 0), tried: x.tried + 1 })); };
+  const next = () => { setI(x => x + 1); setVal(""); setRes(null); setHeard(false); };
+  return <section className="mlb-card eng-write" aria-labelledby="eng-write-h">
+    <h3 id="eng-write-h" className="mlb-h3">Hear and write</h3>
+    <p className="mlb-meta">Listen, then type exactly what you hear. Every word is checked; capitals and punctuation are not.{score.tried ? <> <b>{score.right} of {score.tried} perfect.</b></> : null}</p>
+    <div className="eng-hear-play">
+      <EngPlayButton text={t} vi={vi} className="mlb-go eng-big" label="Play the sentence" onPlay={() => setHeard(true)}/>
+      <EngPlayButton text={t} vi={vi} slow className="stt-btn" label="Play the sentence slowly" onPlay={() => setHeard(true)}/>
+    </div>
+    <form className="eng-write-row" onSubmit={check}>
+      <input className="mlb-in eng-write-in" type="text" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+        aria-label="Type the sentence you heard" placeholder={heard ? "Type what you heard" : "Play the sentence first"} value={val} disabled={!heard || !!res} onChange={e => setVal(e.target.value)}/>
+      <button type="submit" className="mlb-go" disabled={!heard || !val.trim() || !!res}>Check</button>
+    </form>
+    <div aria-live="polite">{res ? <div className={"mlb-fb " + (res.all ? "is-ok" : "is-no")}>
+      <b className="mlb-fb-h"><i className={"ph-fill " + (res.all ? "ph-check-circle" : "ph-x-circle")} aria-hidden="true"/>{res.all ? "Every word right." : res.words.filter(w => w.ok).length + " of " + res.words.length + " words right."}</b>
+      <p className="eng-sentence">{res.words.map((w, k) => <React.Fragment key={k}><span className={"eng-w " + (w.ok ? "is-ok" : "is-no")}>{w.w}</span> </React.Fragment>)}</p>
+      <button type="button" className="mlb-go" onClick={next}>Next sentence</button></div> : null}</div>
+  </section>;
+}
+
 /* The lesson step: the parts this topic has, in order. Done once the ear has had its rounds and one
    sentence has been said (or, where a part is missing, the parts that exist). */
 function EngSpeak({ comp, speak, onDone }) {
@@ -208,5 +248,6 @@ function EngSpeak({ comp, speak, onDone }) {
     {speak.how && speak.how.length ? <EngHow how={speak.how}/> : null}
     {speak.pairs && speak.pairs.length ? <EngHear pairs={speak.pairs} onDone={() => setHearOk(true)}/> : null}
     {speak.say && speak.say.length ? <EngSay comp={comp} sentences={speak.say} onDone={() => setSayOk(true)}/> : null}
+    {speak.say && speak.say.length ? <EngWrite sentences={speak.say}/> : null}
   </div>;
 }

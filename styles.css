@@ -9661,3 +9661,33 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 @keyframes ngg-chunk-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ngg-chunk-spin { animation: none; } }
 
+
+/* English Lab — Right or wrong? in the rule lesson, and Hear and write (owner, 7 Nov 2026: "Add more interactive features"). */
+.mlb-why-judge { display: grid; gap: 10px; padding: 14px; border-radius: var(--mlb-r); background: var(--mlb-soft); }
+.mlb-why-q { margin: 0; font-weight: 800; color: var(--mlb-ink-2); }
+.mlb-why-test { margin: 0; font-size: 18px; font-weight: 600; color: var(--mlb-ink); line-height: 1.5; }
+.mlb-judge { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mlb-judge .stt-btn { min-height: 52px; justify-content: center; display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; }
+.mlb-judge-ok .ph { color: var(--mlb-ok); }
+.mlb-judge-no .ph { color: var(--mlb-no); }
+.mlb-why-fb { margin: 0; }
+.mlb-why-score { margin: 0; color: var(--mlb-ink); }
+.eng-voice { color: var(--mlb-blue-2); font-weight: 700; }
+.eng-write-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.eng-write-in { flex: 1 1 220px; min-height: 48px; font-size: 17px; }
+
+/* LITE MODE (owner, 7 Nov 2026: "create a lite version for improved speed"). Set on <html> before first
+   paint (index.html) — automatically on a low-end phone, or by the visitor (Accessibility → Lite mode).
+   It removes what a cheap phone stalls on and nothing anybody needs to read or press: animations and
+   transitions (the scroll reveals in motion.jsx stop too), backdrop blur (a full-screen GPU pass every
+   frame on a sticky header), fixed backgrounds (a repaint on every scroll), and smooth scrolling.
+   Focus rings, borders and colours are untouched. */
+:root[data-lite="on"] *:not(#_):not(#_), :root[data-lite="on"] :not(#_):not(#_)::before, :root[data-lite="on"] :not(#_):not(#_)::after {
+  /* Run animations INSTANTLY rather than not at all: an element that fades in from opacity 0 must
+     still arrive at its end state (the same trick as data-motion="reduce" above). */
+  animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important;
+  transition-duration: 0.01ms !important; transition-delay: 0s !important;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  background-attachment: scroll !important; scroll-behavior: auto !important;
+}
+:root[data-lite="on"] { --motion: 0; }

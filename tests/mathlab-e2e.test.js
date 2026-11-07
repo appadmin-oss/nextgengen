@@ -371,23 +371,44 @@ async function englishTeach(who) {
   await p.goto(BASE + '/study/english/learn/EN-031', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-why', { timeout: 60000 }).catch(() => {});
   chk('english: a grammar lesson opens with The rule', /The rule/.test(await p.locator('.mlb-why .mlb-h3').innerText().catch(() => '')) && await p.locator('.mlb-lesson-foot .mlb-go').isDisabled());
-  while (await p.locator('.mlb-why .mlb-actions .stt-btn').count()) await p.locator('.mlb-why .mlb-actions .stt-btn').click();
+  // Right or wrong? — each marked example is judged before its verdict and reason are shown.
+  const firstTest = await p.locator('.mlb-why-test').innerText().catch(() => '');
+  chk('english: the rule lesson asks "Right or wrong?" with the sentence shown WITHOUT its ✓/✗', await p.locator('.mlb-why-judge .mlb-judge-ok').count() === 1 && firstTest !== '' && !/^[✓✗]/.test(firstTest));
+  for (let g = 0; g < 20 && await p.locator('.mlb-why .mlb-actions .stt-btn').count(); g++) {
+    await p.locator('.mlb-why .mlb-actions .stt-btn').first().click();
+    if (g === 0) chk('english: a judgement gets an immediate verdict', /Yes —|Not quite —/.test(await p.locator('.mlb-why-fb').innerText().catch(() => '')));
+  }
+  chk('english: the rule lesson ends with how many examples were judged correctly', /You judged \d+ of \d+ correctly/.test(await p.locator('.mlb-why-score').innerText().catch(() => '')));
   await p.waitForFunction(() => { const b = document.querySelector('.mlb-lesson-foot .mlb-go'); return b && !b.disabled; }, null, { timeout: 10000 }).catch(() => {});
   chk('english: the rule is a contrast — right examples marked right, the slip struck through — and Continue opens once it is read',
     await p.locator('.mlb-why-steps.is-contrast li.is-ok').count() >= 2 && await p.locator('.mlb-why-steps.is-contrast li.is-no').count() >= 1 && await p.locator('.mlb-lesson-foot .mlb-go').isEnabled());
   await p.screenshot({ path: path.join(OUT, 'english-rule.png'), fullPage: true });
   await p.goto(BASE + '/study/english/learn/EN-021', { waitUntil: 'domcontentloaded' });
+  // Sound topics teach their rule first now (Right or wrong?), then Hear and say.
+  await p.waitForSelector('.mlb-why, .eng-speak', { timeout: 60000 }).catch(() => {});
+  if (await p.locator('.mlb-why').count()) {
+    for (let g = 0; g < 20 && await p.locator('.mlb-why .mlb-actions .stt-btn').count(); g++) await p.locator('.mlb-why .mlb-actions .stt-btn').first().click();
+    await p.waitForFunction(() => { const b = document.querySelector('.mlb-lesson-foot .mlb-go'); return b && !b.disabled; }, null, { timeout: 10000 }).catch(() => {});
+    await p.locator('.mlb-lesson-foot .mlb-go').click();
+  }
   await p.waitForSelector('.eng-speak', { timeout: 60000 }).catch(() => {});
   chk('english: a sound lesson has Hear and say, with how to make each sound', await p.locator('.eng-how-i').count() >= 2 && await p.locator('.eng-hear').count() === 1 && await p.locator('.eng-say .mlb-go:has-text("Speak")').count() === 1);
   chk('english: the answer buttons stay shut until the word has been played', await p.locator('.eng-choice').first().isDisabled());
   for (let k = 0; k < 8; k++) {
-    await p.locator('.eng-hear-play .mlb-go').click();
+    await p.locator('.eng-hear .eng-hear-play .mlb-go').click();
     await p.waitForFunction(() => { const b = document.querySelector('.eng-choice'); return b && !b.disabled; }, null, { timeout: 15000 });
     await p.locator('.eng-choice').first().click();
     await p.locator('.eng-hear .mlb-fb .mlb-go').click();
   }
   chk('english: eight listening rounds end with a score', /of 8 right/.test(await p.locator('.eng-hear').innerText()));
   chk('english: the voice is the RECORDED clip — the listening rounds fetched recorded MP3s and every one loaded', clips.length >= 8 && clips.every(c => c === 200 || c === 206 || c === 304), clips.slice(0, 8).join(','));
+  // Hear and write: dictation, marked word by word.
+  chk('english: Hear and write keeps the box shut until the sentence has been played', await p.locator('.eng-write-in').isDisabled());
+  await p.locator('.eng-write .eng-hear-play .mlb-go').click();
+  await p.waitForFunction(() => { const i = document.querySelector('.eng-write-in'); return i && !i.disabled; }, null, { timeout: 15000 });
+  await p.locator('.eng-write-in').fill('the');
+  await p.locator('.eng-write form .mlb-go').click();
+  chk('english: dictation marks every word of the sentence, right and wrong', /words right|Every word right/.test(await p.locator('.eng-write .mlb-fb').innerText().catch(() => '')) && await p.locator('.eng-write .eng-w').count() >= 3);
   await p.screenshot({ path: path.join(OUT, 'english-hear-say.png'), fullPage: true });
   chk('english: nothing in the teaching steps errors', log.length === 0, log.slice(0, 3).join(' | '));
   await ctx.close();

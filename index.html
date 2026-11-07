@@ -110,6 +110,9 @@
     r.setAttribute("data-motion", a.motion ? "reduce" : "auto");
     r.setAttribute("data-font", a.readable ? "readable" : "default");
     r.setAttribute("data-links", a.underline ? "underline" : "default");
+    /* Lite: chosen (true/false), or automatic on a low-end phone (components.jsx nggLiteAuto — keep in step). */
+    var n = navigator, c = n.connection || {}, auto = (n.deviceMemory && n.deviceMemory <= 2) || (n.hardwareConcurrency && n.hardwareConcurrency <= 2) || !!c.saveData || /(^|-)(2g|3g)$/.test(c.effectiveType || "");
+    r.setAttribute("data-lite", (a.lite === true || (a.lite == null && auto)) ? "on" : "off");
   } catch (e) {}
 </script>
 </head>

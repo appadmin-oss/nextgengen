@@ -103,6 +103,13 @@ function eng_speak(): array {
 const ENG_KOKORO_VOICES = ['bf_emma', 'bm_george', 'bf_isabella', 'bm_lewis'];
 
 /**
+ * The Nigerian voices (owner, 7 Nov 2026), recorded by tools/english-voices-ng.py. OPTIONAL per text:
+ * a clip exists only where a speech recogniser heard it back word for word, so the British voices
+ * remain the ones every text must have, and a missing Nigerian clip is never an error.
+ */
+const ENG_NG_VOICES = ['ng_idera', 'ng_jude'];
+
+/**
  * Where the voice's own reading would be wrong, the exact phonemes to read instead. Its automatic
  * transcription cannot tell the verb "record" from the noun, and a stress lesson must not model it
  * wrong; "photograph" is given the southern British /ɑː/.
@@ -128,6 +135,11 @@ function eng_audio_jobs(): array {
     return $out;
 }
 
+/** What to try in the Nigerian voices: every speaking text, both voices (kept only if it passes the check). */
+function eng_audio_jobs_ng(): array {
+    return array_map(static fn($t) => [$t, ENG_NG_VOICES, ENG_SAY_PHONEMES[$t] ?? ''], array_keys(eng_speak_texts()));
+}
+
 /** text => [url per recorded voice] for the texts of one topic's speaking material (only files that exist). */
 function eng_audio_urls(array $speak): array {
     $dir = dirname(__DIR__, 3) . '/assets/audio/english/';
@@ -135,7 +147,7 @@ function eng_audio_urls(array $speak): array {
     foreach ($speak['pairs'] ?? [] as $pr) foreach ($pr as $w) $texts[] = $w;
     $out = [];
     foreach (array_unique($texts) as $t) {
-        foreach (ENG_KOKORO_VOICES as $v) if (is_file($dir . eng_audio_name($t, $v))) $out[$t][] = '/assets/audio/english/' . eng_audio_name($t, $v);
+        foreach (array_merge(ENG_KOKORO_VOICES, ENG_NG_VOICES) as $v) if (is_file($dir . eng_audio_name($t, $v))) $out[$t][] = '/assets/audio/english/' . eng_audio_name($t, $v);
     }
     return $out;
 }

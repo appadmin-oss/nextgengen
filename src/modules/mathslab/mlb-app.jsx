@@ -1028,9 +1028,19 @@ function MlbLearn({ comp, go, startPlay, lite }) {
 /* ── Why it works: the argument one line at a time, each with its reason ── */
 function MlbWhy({ why, onDone }) {
   const T = mlbLab().teach || {};
-  const [shown, setShown] = React.useState(1);
+  /* In a contrast lesson (the English Lab's "The rule") every marked example is a small game before it
+     is an explanation: the sentence is shown WITHOUT its ✓/✗, the learner judges it, and only then
+     sees the verdict and the reason (owner, 7 Nov 2026: "Add more interactive features"). Judging
+     first is retrieval, not reading — the learner has to apply the rule they were just given. */
+  const mark = s => T.contrast ? (/^✓/.test(s) ? "ok" : /^✗/.test(s) ? "no" : "") : "";
+  const bare = s => String(s).replace(/^[✓✗]\s*/, "");
+  const [shown, setShown] = React.useState(() => (why.steps.length && mark(why.steps[0].s) ? 0 : 1));
+  const [marks, setMarks] = React.useState([]), [last, setLast] = React.useState(null);
   const all = shown >= why.steps.length;
+  const pending = !all ? why.steps[shown] : null, judge = pending ? mark(pending.s) : "";
   React.useEffect(() => { if (all && onDone) onDone(); }, [all]); // eslint-disable-line
+  const decide = said => { const ok = said === judge; setMarks(m => [...m, ok]); setLast({ ok, was: judge }); setShown(n => n + 1); };
+  const right = marks.filter(Boolean).length;
   return (
     <section className="mlb-card mlb-why" aria-labelledby="mlb-why-h">
       <h3 id="mlb-why-h" className="mlb-h3">{T.label || "Why it works"}</h3>
@@ -1038,9 +1048,18 @@ function MlbWhy({ why, onDone }) {
       <p className="mlb-why-claim">{T.claim || "What we will show:"} <MlbMath text={why.claim}/></p>
       <ol className={"mlb-why-steps" + (T.contrast ? " is-contrast" : "")} aria-live="polite">{why.steps.slice(0, shown).map((s, i) => (
         <li key={i} className={T.contrast ? (/^✗/.test(s.s) ? "is-no" : /^✓/.test(s.s) ? "is-ok" : "") : ""}><MlbMath className="mlb-why-s" text={s.s}/><span className="mlb-why-r"><b>{T.because || "Because"}</b><MlbMath text={s.r}/></span></li>))}</ol>
-      {!all ? <div className="mlb-actions"><button type="button" className="stt-btn" onClick={() => setShown(n => n + 1)}>{T.next || "Next line"}</button>
-</div>
-        : <p className="mlb-meta">{T.foot || "Each line only uses things we already know from the lines above it. In practice you will be asked why a line is true, and to put the lines in order."}</p>}
+      <div aria-live="polite">{last ? <p className={"mlb-fb mlb-why-fb " + (last.ok ? "is-ok" : "is-no")}><b className="mlb-fb-h">
+        <i className={"ph-fill " + (last.ok ? "ph-check-circle" : "ph-x-circle")} aria-hidden="true"/>{last.ok ? "Yes — " : "Not quite — "}{last.was === "ok" ? "that sentence is right." : "that is the slip people make."}</b></p> : null}</div>
+      {!all && judge ? <div className="mlb-why-judge">
+          <p className="mlb-why-q">Right or wrong?</p>
+          <MlbMath as="p" className="mlb-why-s mlb-why-test" text={bare(pending.s)}/>
+          <div className="mlb-actions mlb-judge" role="group" aria-label="Is this sentence right or wrong?">
+            <button type="button" className="stt-btn mlb-judge-ok" onClick={() => decide("ok")}><i className="ph ph-check" aria-hidden="true"/>Right</button>
+            <button type="button" className="stt-btn mlb-judge-no" onClick={() => decide("no")}><i className="ph ph-x" aria-hidden="true"/>Wrong</button>
+          </div></div>
+        : !all ? <div className="mlb-actions"><button type="button" className="stt-btn" onClick={() => { setLast(null); setShown(n => n + 1); }}>{T.next || "Next line"}</button></div>
+        : <>{marks.length ? <p className="mlb-why-score" role="status"><b>You judged {right} of {marks.length} correctly.</b> {right === marks.length ? "You have the rule." : "Read the reasons on the ones you missed — practice will ask about exactly those."}</p> : null}
+          <p className="mlb-meta">{T.foot || "Each line only uses things we already know from the lines above it. In practice you will be asked why a line is true, and to put the lines in order."}</p></>}
     </section>
   );
 }

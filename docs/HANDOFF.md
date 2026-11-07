@@ -7134,3 +7134,18 @@ Owner: *"I need real effective learning. Grammar … Speaking … Articulation �
 - **Number bases** (`mathslab-gen-more.php`, MC-110): unknown base by plugging the options, a missing digit across two bases, binary multiplication by shift-and-add, binary to base ten with the zeros skipped. Every unknown is chosen first, so each question has exactly one answer (the pack's "31_x = 22_5" has none).
 - **Voice:** the Nigerian YarnGPT voices were tried and dropped: a speech recogniser could not transcribe most clips correctly, and none spoke single words reliably. Recordings stay Kokoro British; bolder variants (natural pace, presence lift, compression, −14 LUFS) are prepared as samples, not yet applied.
 - Tests (`api/tests/run.php`): drills sit after each topic's own forms; the concord traps are keyed right; the sound topics teach a rule first.
+
+## 7 Nov 2026 — Bold voices, Nigerian voices, two interactive steps, and a faster site with Lite mode
+
+**Owner:** "Add them all. Add the Nigerian voices if you can make them bolder and better. Add more interactive features", then "Optimize assets. It seems the site cannot run on low end devices … create a lite version".
+
+**Voices.** Every British clip re-recorded bold (`tools/english-voices.py --redo`: natural pace, a 3 kHz presence lift, compression, −14 LUFS). Nigerian voices (YarnGPT2: Idera, Jude) come from `tools/english-voices-ng.py` and are OPTIONAL per text: a clip is kept only if Whisper transcribes it back exactly, with up to six tries; the British voices remain the ones every text must have. `ENG_NG_VOICES` in `englishlab-speech.php`. The README's WavTokenizer checkpoint is required — the newer "v2" one decodes this model's codes into garbled speech (measured).
+
+**Interactive.** The rule lesson is a game in contrast mode: each ✓/✗ example is shown bare, judged Right or Wrong, then revealed with its reason, and the lesson ends with a score (`MlbWhy`). Hear and write (`EngWrite`): dictation of a recorded sentence, marked word by word. The listening rounds say which voice is speaking and use ONE voice for both words of a pair.
+
+**Speed.**
+- `page-portals.jsx` (316 KB) moved to the signed-in bundle. `naira`, `Field`, `CurCheckField`, `CUR_SHOWS_WORK`, `CurAttach` moved to `components.jsx` because public pages use them; `page-dashboard.jsx` stays public because Learn uses its lesson components.
+- Stylesheets ship minified (esbuild): 378 → 264 KB gzipped.
+- **Lite mode** (`data-lite` on `<html>`, set before first paint in `index.html`; `nggLiteAuto` / `nggLiteOn` in `components.jsx` — keep the two tests in step). On automatically at ≤ 2 GB of memory, ≤ 2 cores, Data Saver or 2G/3G, and switchable in Accessibility. It finishes animations instantly (never `none`, which strands fade-ins at opacity 0), and drops backdrop blur, fixed backgrounds and smooth scroll; `motion.jsx` skips its scroll effects. `tests/lite-mode.test.js` (`test:lite`, in `test:all`).
+
+**Pre-existing failures seen, not caused here:** `ui-smoke.js` expects the Lab nav Home/Map/Courses/Progress but it has had Certificates since before this change; `a11y.test.js` flags `aria-label` on the footer's socials `div`.

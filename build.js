@@ -230,7 +230,7 @@ const MORE = [
   /^src\/modules\/mentor15\/(?!mp15-formation\.jsx$)/, /^src\/modules\/instructor6\//,
   /^src\/modules\/member9\//, /^src\/modules\/club3\//, /^src\/modules\/summer3\//,
   /^src\/modules\/community3\//, /^src\/modules\/family3\//, /^page-family\.jsx$/,
-  /^page-analytics\.jsx$/, /^page-designer\.jsx$/,
+  /^page-analytics\.jsx$/, /^page-designer\.jsx$/, /^page-portals\.jsx$/,
 ];
 const isMore = (f) => MORE.some((re) => re.test(f));
 
@@ -348,7 +348,12 @@ async function build() {
   for (const f of FINGERPRINTED) {
     const src = path.join(ROOT, f);
     if (!fs.existsSync(src)) continue;
-    const body = fs.readFileSync(src);
+    let body = fs.readFileSync(src);
+    /* Stylesheets ship MINIFIED (owner, 7 Nov 2026: "optimise speed … low-end devices"). 1.9 MB of
+       commented CSS was parsed on every first visit; a cheap phone pays for every byte twice, once on
+       the wire and once in the style engine. The source keeps its comments for whoever edits it. The
+       target matches the scripts', so no modern syntax is lowered or dropped. */
+    if (f.endsWith('.css')) body = Buffer.from((await esbuild.transform(body.toString('utf8'), { loader: 'css', minify: true, target: ['chrome90', 'firefox88', 'safari14', 'edge90'], legalComments: 'none' })).code);
     assets[f] = hashedName(f, fileTag(body));
     fs.writeFileSync(path.join(DIST, assets[f]), body);
   }
