@@ -25911,13 +25911,34 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mk2 = backend_dispatch('staff.exam.mark', ['requesterId' => 'NGG-CUR-VN', 'sittingId' => $ex['sittingId'], 'checkId' => $held[0]['checkId'], 'points' => 2, 'note' => 'Talked it through in class — it is theirs.']);
     $fin = db_row('SELECT * FROM curriculum_sittings WHERE sittingId = ?', [$ex['sittingId']]);
     chk('exam (instructor): deciding the held answer finishes the sitting with its band', !empty($mk2['ok']) && (string)$fin['status'] === 'marked' && (string)$fin['band'] === lx_band((int)$fin['pct'], 60));
+    // A standard exam's candidate rights and records: a re-mark asked for once, with a reason; who sat it; the signals.
+    chk('exam: a re-mark needs a reason', (backend_dispatch('member.exam.appeal', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'reason' => 'bad'])['error'] ?? '') === 'reason_required');
+    $ap = backend_dispatch('member.exam.appeal', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'reason' => 'I named the dotted crotchet correctly in class.', 'checkId' => $mcqId]);
+    chk('exam: …is asked for once per sitting, and reaches the instructor as a signal and its reason',
+        !empty($ap['ok']) && (backend_dispatch('member.exam.appeal', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'reason' => 'And again, please.'])['error'] ?? '') === 'already_requested'
+        && in_array('re-mark requested', (array_values(array_filter(backend_dispatch('staff.exam.sittings', ['requesterId' => 'NGG-CUR-VN'])['sittings'], fn($r) => $r['sittingId'] === $ex['sittingId']))[0]['signals'] ?? []), true));
+    backend_dispatch('staff.exam.mark', ['requesterId' => 'NGG-CUR-VN', 'sittingId' => $ex['sittingId'], 'checkId' => $mcqId, 'points' => (int)$exChecks['mcq']['points'], 'note' => 'Checked: the mark stands.']);
+    chk('exam: an instructor deciding a mark on the sitting answers the re-mark',
+        (string)(json_decode((string)db_row('SELECT integrity FROM curriculum_sittings WHERE sittingId = ?', [$ex['sittingId']])['integrity'], true)['appeal']['resolved'] ?? '') !== '');
+    $sigRow = db_row('SELECT * FROM curriculum_sittings WHERE sittingId = ?', [$ex['sittingId']]);
+    db_update('curriculum_sittings', ['status' => 'open'], ['id' => (int)$sigRow['id']]);
+    backend_dispatch('member.exam.save', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'ua' => 'Phone A', 'signals' => ['pasteBlocked' => 2, 'copyTries' => 1, 'fsExits' => 3]]);
+    backend_dispatch('member.exam.save', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'ua' => 'Laptop B']);
+    $sg = lx_signals(db_row('SELECT * FROM curriculum_sittings WHERE sittingId = ?', [$ex['sittingId']]));
+    $sigInt = db_row('SELECT integrity FROM curriculum_sittings WHERE sittingId = ?', [$ex['sittingId']])['integrity'];
+    chk('exam: the locked paper\'s signals — blocked pastes, copying a question, leaving full screen, a second device — reach the instructor, and the device is a hash, never its name',
+        in_array('tried to paste 2 times', $sg, true) && in_array('tried to copy a question', $sg, true) && in_array('left full screen 3 times', $sg, true)
+        && in_array('opened on 2 devices', $sg, true) && !str_contains($sigInt, 'Phone A'));
+    db_update('curriculum_sittings', ['status' => (string)$sigRow['status']], ['id' => (int)$sigRow['id']]);
+    $vw = backend_dispatch('member.exam.start', ['memberId' => 'NGG-EX-M', 'unitId' => (string)$exToday['unit']['unitId']])['exam'] ?? [];
+    chk('exam: the result carries the candidate slip and section scores', ($vw['candidate']['name'] ?? '') === 'Cur NGG-EX-M' && count($vw['result']['sections'] ?? []) >= 1);
     $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$exPrevId, 'NGG-EX-M']);
     chk('exam: a session exam IS the review of last session\'s lesson — its marks land on that lesson, completed',
         $pr && (string)$pr['status'] === 'completed' && (int)$pr['bestPct'] === 100);
     chk('exam: one official sitting — opening the lesson again shows the result, not a new paper',
         (backend_dispatch('member.exam.start', ['memberId' => 'NGG-EX-M', 'unitId' => (string)$exToday['unit']['unitId']])['exam']['result']['band'] ?? '') === (string)$fin['band']);
-    chk('exam: the band is one rule — 85 Distinction, 70 Merit, the pass mark Pass, below it Not yet',
-        lx_band(85, 60) === 'Distinction' && lx_band(84, 60) === 'Merit' && lx_band(70, 60) === 'Merit' && lx_band(69, 60) === 'Pass' && lx_band(59, 60) === 'Not yet');
+    chk('exam: the band is one rule — 95 Outstanding, 85 Distinction, 70 Merit, the pass mark Pass, below it Not yet',
+        lx_band(100, 60) === 'Outstanding' && lx_band(95, 60) === 'Outstanding' && lx_band(94, 60) === 'Distinction' && lx_band(85, 60) === 'Distinction' && lx_band(84, 60) === 'Merit' && lx_band(70, 60) === 'Merit' && lx_band(69, 60) === 'Pass' && lx_band(59, 60) === 'Not yet');
     chk('exam (instructor): another centre\'s instructor cannot mark it', (backend_dispatch('staff.exam.mark', ['requesterId' => 'NGG-CUR-VS', 'sittingId' => $ex['sittingId'], 'checkId' => $mcqId, 'points' => 0])['ok'] ?? true) === false);
     // An expired sitting is marked from what was saved, and a late save is refused.
     db_exec("DELETE FROM curriculum_sittings WHERE sittingId = ?", [$ex['sittingId']]);

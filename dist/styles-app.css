@@ -18002,3 +18002,26 @@ button.m9x-ev-sum { cursor: pointer; }
 .m15c-items li { line-height: 1.5; }
 .m15c-sit { padding: 12px; border-radius: 12px; border: 1px solid var(--cr-line, #e3e6ee); display: grid; gap: 6px; }
 .m15c-tag.is-warn { background: #fff4dc; color: #6b4700; }
+.lx-evi { display: grid; gap: 10px; }
+.lx-evi-f { display: grid; gap: 6px; font-weight: 600; font-size: 14.5px; color: var(--lrn-ink-2, #45474d); }
+.lx-input { min-height: 44px; padding: 0 12px; border: 1.5px solid var(--lrn-line, #e4e1d9); border-radius: 12px; font: inherit; font-size: 16px; }
+.lx-input:focus { outline: 3px solid var(--lrn-gold, #f5b026); outline-offset: 1px; }
+/* The exam paper is locked: the questions cannot be selected or copied out; answers can be typed. */
+.lx-locked { position: relative; overflow: hidden; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.lx-locked textarea, .lx-locked input { -webkit-user-select: text; user-select: text; }
+.lx-mark { position: absolute; inset: 0; display: grid; align-content: space-around; justify-items: center; pointer-events: none; transform: rotate(-18deg); opacity: .07; font-weight: 800; font-size: 20px; color: var(--x-ink); white-space: nowrap; z-index: 0; }
+.lx-sit > *:not(.lx-mark) { position: relative; z-index: 1; }
+.lx-warn { margin: 0; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 10px; background: #fdecea; color: #8a1c10; font-weight: 600; line-height: 1.45; }
+.lx-warn-x { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: inherit; }
+.lx-fsbtn { justify-self: start; }
+.lx-slipbox { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.lx-slipbox div { padding: 10px 12px; border-radius: 10px; background: var(--x-s2); }
+.lx-slipbox dt { font-size: 12.5px; color: var(--x-ink3); }
+.lx-slipbox dd { margin: 2px 0 0; font-weight: 700; overflow-wrap: anywhere; }
+.lx-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lx-sections { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.lx-sections li { display: grid; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--x-line); }
+.lx-sections b { font-size: 22px; }
+.lx-sections span { font-size: 13.5px; color: var(--x-ink2); }
+.lx-appeal { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: var(--x-s2); }
+.lx-appeal-btn { justify-self: start; }

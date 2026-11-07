@@ -292,7 +292,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.curriculum.submit' => 'member_curriculum_submit',
             // The standardised exam and mastery (domain/learn-exam.php, learn-mastery.php).
             'member.exam.start' => 'member_exam_start', 'member.exam.save' => 'member_exam_save',
-            'member.exam.submit' => 'member_exam_submit', 'member.exam.viva' => 'member_exam_viva',
+            'member.exam.submit' => 'member_exam_submit', 'member.exam.viva' => 'member_exam_viva', 'member.exam.appeal' => 'member_exam_appeal',
             'member.learn.mastery' => 'member_learn_mastery',
             'staff.exam.sittings' => 'staff_exam_sittings', 'staff.exam.mark' => 'staff_exam_mark',
             'member.curriculum.ask'    => 'member_curriculum_ask',

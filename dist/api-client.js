@@ -1024,6 +1024,7 @@
         start:  (o) => request('/member/curriculum.php', { body: { action: 'exam_start', ...o } }),
         save:   (sittingId, answers, confidence, signals) => request('/member/curriculum.php', { body: { action: 'exam_save', sittingId, answers, confidence, signals } }),
         submit: (sittingId, answers, confidence, signals) => request('/member/curriculum.php', { body: { action: 'exam_submit', sittingId, answers, confidence, signals }, timeout: 120000 }),
+        appeal: (sittingId, reason, checkId) => request('/member/curriculum.php', { body: { action: 'exam_appeal', sittingId, reason, checkId } }),
         viva:   (sittingId, checkId, answer) => request('/member/curriculum.php', { body: { action: 'exam_viva', sittingId, checkId, answer }, timeout: 60000 }),
         mastery: () => request('/member/curriculum.php?view=mastery'),
         staff:  (course) => request('/member/curriculum.php?view=staff_exams' + (course ? '&course=' + encodeURIComponent(course) : '')),

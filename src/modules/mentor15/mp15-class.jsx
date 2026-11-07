@@ -453,6 +453,7 @@ function Mp15CExams({ say }) {
             <p className="m15c-q-p"><b>{t.name}</b> · {t.kind === "trial" ? "Trial: " + t.course : t.course || "Club"} · {t.status === "marked" ? (t.band || "") + " " + t.pct + "%" : t.status === "submitted" ? "waiting for you" : t.status === "viva" ? "answering follow-ups" : "in progress"}
               {t.pledged ? <span className="m15c-tag">on their honour</span> : null}
               {(t.signals || []).map(sg => <span key={sg} className="m15c-tag is-warn">{sg}</span>)}</p>
+            {t.appeal && <p className="m15c-err">Re-mark requested{t.appeal.resolved ? " (answered)" : ""}: “{t.appeal.reason}”{t.appeal.checkId ? " — about one question" : ""}</p>}
             {(t.viva || []).filter(v => v.answer !== undefined && v.question).map((v, i) => (
               <p key={i} className="m15c-sub">Follow-up: “{v.question}” — {v.answer ? "“" + v.answer + "”" : "(no reply)"}{v.verdict ? " · " + ({ holds: "held up", unclear: "did not hold up", late: "answered late", skipped: "skipped" })[v.verdict] : ""}</p>))}
             {(t.held || []).map(h => (

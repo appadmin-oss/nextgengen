@@ -15,7 +15,7 @@ declare(strict_types=1);
  *
  * WHAT MAKES IT STANDARD — the same for every learner, stated before they start:
  *   · a blueprint (which questions, from where), a time limit computed from the question kinds, the
- *     pass mark and the grade bands (Distinction, Merit, Pass, Not yet);
+ *     pass mark and the grade bands (Outstanding 95+, Distinction 85+, Merit 70+, Pass, Not yet);
  *   · questions and options in an order of its own per sitting, so two learners cannot share
  *     "the third answer is B";
  *   · one official sitting, saved as it goes and resumed after a dropped connection, its deadline
@@ -52,11 +52,13 @@ const LX_TRIAL_AUTO = 10;         // a trial: this many machine-marked questions
 const LX_TRIAL_WRITTEN = 2;       // …and this many written ones, across the whole course
 const LX_TRIAL_PASS = 85;
 const LX_TRIAL_COOLDOWN_DAYS = 7;
+const LX_BAND_OUTSTANDING = 95;   // owner, 7 Nov 2026: "Add a category for 95+"
 const LX_BAND_DISTINCTION = 85;
 const LX_BAND_MERIT = 70;
 
 /** The grade band for a percentage: one rule, printed on the instructions and on the result. */
 function lx_band(int $pct, int $passMark): string {
+    if ($pct >= LX_BAND_OUTSTANDING) return 'Outstanding';
     if ($pct >= LX_BAND_DISTINCTION) return 'Distinction';
     if ($pct >= LX_BAND_MERIT) return 'Merit';
     return $pct >= $passMark ? 'Pass' : 'Not yet';
@@ -175,9 +177,14 @@ function lx_view(array $s, array $checks, array $units): array {
         'status' => (string)$s['status'], 'timeLimitSec' => (int)$s['timeLimitSec'], 'startedAt' => (string)$s['startedAt'],
         'deadline' => (string)$s['deadline'], 'serverNow' => now_iso(), 'graceSec' => LX_GRACE, 'questions' => $qs,
         'answers' => json_decode((string)$s['answers'], true) ?: (object)[], 'confidence' => json_decode((string)$s['confidence'], true) ?: (object)[],
-        'bands' => ['distinction' => LX_BAND_DISTINCTION, 'merit' => LX_BAND_MERIT], 'vivaSecs' => LX_VIVA_SECS];
+        'bands' => ['outstanding' => LX_BAND_OUTSTANDING, 'distinction' => LX_BAND_DISTINCTION, 'merit' => LX_BAND_MERIT], 'vivaSecs' => LX_VIVA_SECS];
     $u = $units[(string)$s['unitId']]['unit'] ?? null;
     $out['passMark'] = (string)$s['kind'] === 'trial' ? LX_TRIAL_PASS : (int)($u['passMark'] ?? 60);
+    /* The candidate slip (a standard exam's header): who sat it, the exam number, and the times. The name is
+       also what the player watermarks across the questions, so a photographed paper names its owner. */
+    $who = db_row('SELECT fullName, displayId FROM members WHERE memberId = ?', [(string)$s['memberId']]);
+    $out['candidate'] = ['name' => (string)($who['fullName'] ?? ''), 'memberNo' => (string)($who['displayId'] ?? '')];
+    $out['appeal'] = json_decode((string)$s['integrity'], true)['appeal'] ?? null;
     $out['title'] = (string)$s['kind'] === 'trial' ? 'The ' . (string)$s['course'] . ' Trial' : 'Session exam — week ' . (int)($u['week'] ?? 0) . ': ' . (string)($u['title'] ?? '');
     $viva = json_decode((string)$s['viva'], true) ?: [];
     $out['viva'] = array_map(static fn($v) => ['checkId' => $v['checkId'], 'question' => $v['question'], 'askedAt' => $v['askedAt'], 'answered' => ($v['answeredAt'] ?? '') !== ''], $viva);
@@ -214,7 +221,11 @@ function lx_result(array $s, array $checks): array {
         }
         $per[] = $o;
     }
-    return ['pledged' => (string)(json_decode((string)$s['integrity'], true)['pledgedAt'] ?? '') !== '',
+    /* Sections, as a standard paper reports them: this week's lesson, the earlier weeks, or the Trial. */
+    $sec = [];
+    foreach ($per as $q) { $k = $q['role'] === 'spaced' ? 'Earlier weeks' : ($q['role'] === 'trial' ? 'The whole course' : 'Last session'); $sec[$k]['got'] = ($sec[$k]['got'] ?? 0) + (float)($q['points'] ?? 0); $sec[$k]['max'] = ($sec[$k]['max'] ?? 0) + $q['max']; }
+    $sections = []; foreach ($sec as $k => $v) $sections[] = ['name' => $k, 'got' => $v['got'], 'max' => $v['max'], 'pct' => $v['max'] ? (int)round($v['got'] / $v['max'] * 100) : 0];
+    return ['sections' => $sections, 'pledged' => (string)(json_decode((string)$s['integrity'], true)['pledgedAt'] ?? '') !== '',
             'score' => (float)$s['score'], 'max' => (float)$s['maxScore'], 'pct' => (int)$s['pct'], 'band' => (string)$s['band'],
             'passMark' => $passMark, 'passed' => $passed, 'pending' => (string)$s['status'] === 'submitted', 'questions' => $per,
             'sureButWrong' => $sureWrong, 'submittedAt' => (string)$s['submittedAt'],
@@ -296,7 +307,10 @@ function lx_merge_input(array $s, array $p): array {
     /* Process signals: counters only ever go UP, so a replayed or edited save cannot lower them. */
     $int = json_decode((string)$s['integrity'], true) ?: [];
     $sig = is_array($p['signals'] ?? null) ? $p['signals'] : [];
-    foreach (['pastes', 'pastedChars', 'typedChars', 'leaves', 'awaySecs'] as $k) if (isset($sig[$k])) $int[$k] = max((int)($int[$k] ?? 0), min(1000000, (int)$sig[$k]));
+    foreach (['pastes', 'pastedChars', 'typedChars', 'leaves', 'awaySecs', 'pasteBlocked', 'copyTries', 'fsExits'] as $k) if (isset($sig[$k])) $int[$k] = max((int)($int[$k] ?? 0), min(1000000, (int)$sig[$k]));
+    /* The device: a HASH of the browser's identity, never the string itself, kept per sitting. A sitting
+       answered from two devices at once is the shape of somebody else answering — a thing to ask about. */
+    if (($ua = (string)($p['ua'] ?? '')) !== '') { $h = substr(sha1($ua), 0, 10); $dev = (array)($int['devices'] ?? []); if (!in_array($h, $dev, true) && count($dev) < 6) $dev[] = $h; $int['devices'] = $dev; }
     /* THE HONOUR PLEDGE (owner, 7 Nov 2026: "A standard honourable exam"): made once, before the clock,
        in the learner's own words of agreement — and never unmade by a later save. */
     if (!empty($sig['pledge']) && empty($int['pledgedAt'])) $int['pledgedAt'] = now_iso();
@@ -470,6 +484,27 @@ function lx_sync_progress(array $s, array $checks, array $units, array $m): void
     else db_insert('curriculum_progress', $row + ['unitId' => $uid, 'memberId' => (string)$m['memberId'], 'startedAt' => $now, 'attempts' => 1]);
 }
 
+/**
+ * member.exam.appeal — ask for a re-mark: once per sitting, within LX_APPEAL_DAYS of handing in, with a
+ * reason. It does not change a mark; it puts the sitting in front of an instructor with the reason, which
+ * is what a standard exam owes a candidate who thinks a mark is wrong.
+ */
+const LX_APPEAL_DAYS = 7;
+function member_exam_appeal(array $p): array {
+    $o = lx_own($p); if (!$o['ok']) return $o;
+    $s = $o['s'];
+    if (!in_array((string)$s['status'], ['marked', 'submitted'], true)) return ['ok' => false, 'error' => 'not_marked_yet'];
+    if (time() - strtotime((string)$s['submittedAt']) > LX_APPEAL_DAYS * 86400) return ['ok' => false, 'error' => 'appeal_closed', 'days' => LX_APPEAL_DAYS];
+    $int = json_decode((string)$s['integrity'], true) ?: [];
+    if (!empty($int['appeal'])) return ['ok' => false, 'error' => 'already_requested'];
+    $why = curriculum_clean_text($p['reason'] ?? '', 600);
+    if (mb_strlen($why) < 10) return ['ok' => false, 'error' => 'reason_required'];
+    $int['appeal'] = ['reason' => $why, 'checkId' => (string)($p['checkId'] ?? ''), 'at' => now_iso(), 'resolved' => ''];
+    db_update('curriculum_sittings', ['integrity' => json_encode($int, JSON_UNESCAPED_UNICODE), 'updatedAt' => now_iso()], ['id' => (int)$s['id']]);
+    audit('learn.exam.appeal', (string)$o['m']['memberId'], (string)$s['sittingId'], ['checkId' => (string)($p['checkId'] ?? '')]);
+    return ['ok' => true, 'appeal' => $int['appeal']];
+}
+
 /* ══ Instructors ═══════════════════════════════════════════════════════════ */
 
 /**
@@ -484,6 +519,11 @@ function lx_signals(array $s): array {
     if ((int)($int['pastedChars'] ?? 0) > 80 && (int)($int['pastedChars'] ?? 0) > (int)($int['typedChars'] ?? 0)) $out[] = 'mostly pasted';
     if ((int)($int['leaves'] ?? 0) >= 3) $out[] = 'left the page ' . (int)$int['leaves'] . ' times';
     if (!empty($int['late'])) $out[] = 'handed in after time';
+    if ((int)($int['pasteBlocked'] ?? 0) >= 1) $out[] = 'tried to paste ' . (int)$int['pasteBlocked'] . ' time' . ((int)$int['pasteBlocked'] === 1 ? '' : 's');
+    if ((int)($int['copyTries'] ?? 0) >= 1) $out[] = 'tried to copy a question';
+    if ((int)($int['fsExits'] ?? 0) >= 2) $out[] = 'left full screen ' . (int)$int['fsExits'] . ' times';
+    if (count((array)($int['devices'] ?? [])) > 1) $out[] = 'opened on ' . count((array)$int['devices']) . ' devices';
+    if (!empty($int['appeal'])) $out[] = 're-mark requested';
     foreach (json_decode((string)$s['viva'], true) ?: [] as $v) if (in_array($v['verdict'] ?? '', ['unclear', 'late', 'skipped'], true)) { $out[] = 'a follow-up ' . ($v['verdict'] === 'unclear' ? 'did not hold up' : 'was ' . $v['verdict']); break; }
     return $out;
 }
@@ -527,6 +567,7 @@ function staff_exam_sittings(array $p): array {
                 'course' => (string)$r['course'], 'unitId' => (string)$r['unitId'], 'status' => (string)$r['status'], 'pct' => (int)$r['pct'], 'band' => (string)$r['band'],
                 'startedAt' => (string)$r['startedAt'], 'submittedAt' => (string)$r['submittedAt'], 'signals' => lx_signals($r), 'held' => $held,
                 'pledged' => (string)(json_decode((string)$r['integrity'], true)['pledgedAt'] ?? '') !== '',
+                'appeal' => json_decode((string)$r['integrity'], true)['appeal'] ?? null,
                 'viva' => array_map(static fn($v) => ['question' => $v['question'], 'answer' => $v['answer'], 'verdict' => $v['verdict']], json_decode((string)$r['viva'], true) ?: [])];
     }, $rows);
     $items = array_values(array_map(static function ($a) {
@@ -557,7 +598,10 @@ function staff_exam_mark(array $p): array {
     $pts = max(0, min((int)$c['points'], (int)($p['points'] ?? 0)));
     $marks = json_decode((string)$s['marks'], true) ?: [];
     $marks[$cid] = ['points' => $pts, 'by' => 'staff:' . (string)$g['requester']['memberId'], 'feedback' => curriculum_clean_text($p['note'] ?? '', 600)];
-    db_update('curriculum_sittings', ['marks' => json_encode($marks, JSON_UNESCAPED_UNICODE), 'updatedAt' => now_iso()], ['id' => (int)$s['id']]);
+    $int = json_decode((string)$s['integrity'], true) ?: [];
+    // A re-mark asked for is answered by an instructor deciding a mark on that sitting.
+    if (!empty($int['appeal']) && (string)($int['appeal']['resolved'] ?? '') === '') $int['appeal']['resolved'] = now_iso();
+    db_update('curriculum_sittings', ['marks' => json_encode($marks, JSON_UNESCAPED_UNICODE), 'integrity' => json_encode($int, JSON_UNESCAPED_UNICODE), 'updatedAt' => now_iso()], ['id' => (int)$s['id']]);
     $s = db_row('SELECT * FROM curriculum_sittings WHERE id = ?', [(int)$s['id']]);
     if ((string)$s['status'] !== 'viva') $s = lx_finish($s, $checks, $units, $m);
     audit('learn.exam.mark', (string)$g['requester']['memberId'], (string)$s['sittingId'], ['checkId' => $cid, 'points' => $pts], (string)($p['ip'] ?? ''));

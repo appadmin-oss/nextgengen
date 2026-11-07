@@ -27,7 +27,30 @@ const lxMmss = s => { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) 
 
 /* One question's answer box. A choice is a radio group; an ordering moves with buttons; everything
    written is a box that counts typing and pasting for the process signals. */
-function LxField({ q, value, onChange, onPaste, onType, disabled }) {
+/* An outside exercise's answer (the `evidence` kind): the PROOF — a link to their result, or a screenshot
+   uploaded with the attach button — and, typed, what they did, what they scored and one thing that went
+   wrong. Saved as one answer ("Proof: …" then the account) so the marker and the instructor read both
+   together. Pasting is allowed in the proof box even in an exam: a result link is pasted, not typed. */
+function LxEvidence({ q, value, onChange, onType, onPasteBlocked, exam, disabled }) {
+  const m = /^Proof: ([^\n]*)\n\n?([\s\S]*)$/.exec(value || "");
+  const proof = m ? m[1] : "", account = m ? m[2] : (value || "");
+  const put = (p, a) => onChange(p.trim() || a ? "Proof: " + p.trim() + "\n\n" + a : "");
+  return (
+    <div className="lx-evi">
+      {q.linkUrl && <p className="lx-ext"><i className="ph ph-arrow-square-out" aria-hidden="true"/> Do the exercise: <a href={q.linkUrl} target="_blank" rel="noopener noreferrer">{q.linkUrl.replace(/^https?:\/\//, "")}</a></p>}
+      <label className="lx-evi-f"><span>Your proof — the link to your result, or a screenshot</span>
+        <input type="url" inputMode="url" className="lx-input" value={proof} disabled={disabled} placeholder="https://…"
+          aria-label={"Proof for question " + q.n} onChange={e => put(e.target.value, account)}/></label>
+      {!disabled && typeof CurAttach === "function" && <CurAttach n={q.n} onAdd={url => put(url, account)}/>}
+      <label className="lx-evi-f"><span>What you did, what you scored, and one thing that went wrong</span>
+        <textarea className="lx-text" rows={5} value={account} disabled={disabled} aria-label={"What you did, question " + q.n}
+          onPaste={e => { if (exam) { e.preventDefault(); onPasteBlocked && onPasteBlocked(); } }}
+          onChange={e => { onType && onType(Math.max(0, e.target.value.length - account.length)); put(proof, e.target.value); }}/></label>
+    </div>);
+}
+
+function LxField({ q, value, onChange, onPaste, onType, onPasteBlocked, exam, disabled }) {
+  if (q.kind === "evidence") return <LxEvidence q={q} value={value} onChange={onChange} onType={onType} onPasteBlocked={onPasteBlocked} exam={exam} disabled={disabled}/>;
   if (q.kind === "mcq") return (
     <div className="lx-opts" role="radiogroup" aria-label={"Options for question " + q.n}>
       {q.options.map((o, i) => (
@@ -56,14 +79,18 @@ function LxField({ q, value, onChange, onPaste, onType, disabled }) {
   }
   return (
     <>
-      {q.kind === "evidence" && q.linkUrl && <p className="lx-ext"><i className="ph ph-arrow-square-out" aria-hidden="true"/> Do the exercise: <a href={q.linkUrl} target="_blank" rel="noopener noreferrer">{q.linkUrl.replace(/^https?:\/\//, "")}</a>. Then paste the link to your result and say what you did, what you scored and one thing that went wrong.</p>}
       {q.kind === "watch" && q.videoUrl && <p className="lx-ext"><i className="ph ph-play-circle" aria-hidden="true"/> <a href={q.videoUrl} target="_blank" rel="noopener noreferrer">Watch the video</a>, then answer in your own words.</p>}
       <textarea className={"lx-text" + (q.kind === "code" ? " is-code" : "")} rows={q.kind === "short" ? 4 : 8} value={value || ""} disabled={disabled}
         spellCheck={q.kind !== "code"} aria-label={"Your answer to question " + q.n}
-        onPaste={e => onPaste((e.clipboardData && e.clipboardData.getData("text") || "").length)}
+        /* In the exam, pasting into an answer is switched off (it is said on the rules screen) and each try is
+           counted for the instructor; on the lesson page, practice, it is allowed and counted. */
+        onPaste={e => { if (exam) { e.preventDefault(); onPasteBlocked && onPasteBlocked(); } else onPaste((e.clipboardData && e.clipboardData.getData("text") || "").length); }}
         onChange={e => { const v = e.target.value; onType(Math.max(0, v.length - String(value || "").length)); onChange(v); }}/>
     </>);
 }
+
+/** Ask for full screen where the browser allows it (most phones' browsers do not; that is fine). */
+function lxFullscreen() { try { const el = document.documentElement; if (document.fullscreenEnabled && !document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(() => {}); } catch (_) {} }
 
 /* The report: band, score, time, and per question what they need. */
 function LxResult({ ex, onDone }) {
@@ -79,6 +106,14 @@ function LxResult({ ex, onDone }) {
         <h2 id="lx-res-h" className="lx-band-score">{r.pending ? "Marked so far: " + Math.round(r.score) + " of " + r.max : r.pct + "%"}</h2>
         <span className="lx-band-sub">{Math.round(r.score)} of {r.max} marks · {r.minutes} min · pass mark {r.passMark}%{r.pledged ? " · sat on your honour" : ""}</span>
       </div>
+      {/* The candidate slip: a standard paper's header. */}
+      <dl className="lx-slipbox">
+        {ex.candidate && ex.candidate.name && <div><dt>Candidate</dt><dd>{ex.candidate.name}{ex.candidate.memberNo ? " · " + ex.candidate.memberNo : ""}</dd></div>}
+        <div><dt>Exam no.</dt><dd className="lx-mono">{ex.sittingId}</dd></div>
+        <div><dt>{ex.kind === "trial" ? "Trial" : "Paper"}</dt><dd>{ex.title}</dd></div>
+        <div><dt>Handed in</dt><dd>{r.submittedAt ? new Date(r.submittedAt).toLocaleString() : "—"}</dd></div>
+      </dl>
+      {(r.sections || []).length > 1 && <ul className="lx-sections" aria-label="Score by section">{r.sections.map(x => <li key={x.name}><b>{x.pct}%</b><span>{x.name} · {Math.round(x.got)} of {x.max}</span></li>)}</ul>}
       {sureWrong.length > 0 && <p className="lx-callout"><i className="ph-fill ph-lightning" aria-hidden="true"/> You were <b>sure</b> of {sureWrong.length === 1 ? "one answer" : sureWrong.length + " answers"} that {sureWrong.length === 1 ? "was" : "were"} wrong. That is a misconception, not a slip — read the reason below; it is the most useful thing on this page.</p>}
       <ol className="lx-rlist">{qs.map(q => { const x = byId[q.checkId] || {};
         const st = x.held ? "held" : x.pending ? "wait" : x.right ? "ok" : (x.points > 0 ? "part" : "no");
@@ -95,9 +130,36 @@ function LxResult({ ex, onDone }) {
             </div>
           </li>); })}</ol>
       {!r.passed && !r.pending && <p className="lx-note">The answers appear once you pass. Go back over the lesson and try its questions again on the lesson page — the next session exam will ask what you got wrong first.</p>}
+      <LxAppeal ex={ex}/>
       {onDone && <button type="button" className="lrn-btn" onClick={onDone}>{ex.kind === "trial" ? "Back to the course" : "Start today's lesson"}</button>}
     </section>
   );
+}
+
+/* A re-mark, asked for once per sitting with a reason (member.exam.appeal). It changes no mark: it puts the
+   sitting in front of an instructor, which is what a standard exam owes a candidate who disagrees. */
+function LxAppeal({ ex }) {
+  const [open, setOpen] = React.useState(false), [why, setWhy] = React.useState(""), [cid, setCid] = React.useState(""), [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(ex.appeal || null);
+  if (done) return <p className="lx-note"><i className="ph ph-scales" aria-hidden="true"/> You asked for a re-mark{done.resolved ? " — your instructor has looked at it." : ". Your instructor will look at it."}</p>;
+  if (!open) return <button type="button" className="lrn-btn is-ghost lx-appeal-btn" onClick={() => setOpen(true)}><i className="ph ph-scales" aria-hidden="true"/>Request a re-mark</button>;
+  const send = async () => {
+    setBusy(true);
+    try { setDone((await NGGApi.member.exam.appeal(ex.sittingId, why, cid)).appeal); toast.success("Sent to your instructor."); }
+    catch (e) { toast.error(e.code === "appeal_closed" ? "Re-marks can be asked for within 7 days of the exam." : e.code === "reason_required" ? "Say in a sentence why you think the mark is wrong." : humanizeError(e.code, e.code)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="lx-appeal">
+      <label className="lx-evi-f"><span>Which question?</span>
+        <select className="lx-input" value={cid} onChange={e => setCid(e.target.value)}>
+          <option value="">The whole exam</option>{(ex.questions || []).map(q => <option key={q.checkId} value={q.checkId}>Question {q.n}</option>)}</select></label>
+      <label className="lx-evi-f"><span>Why do you think the mark is wrong?</span>
+        <textarea className="lx-text" rows={3} value={why} onChange={e => setWhy(e.target.value)}/></label>
+      <div className="lx-acts"><button type="button" className="lrn-btn" disabled={busy || why.trim().length < 10} onClick={send}>{busy ? "Sending…" : "Send to my instructor"}</button>
+        <button type="button" className="lrn-btn is-ghost" onClick={() => setOpen(false)}>Cancel</button></div>
+      <p className="lx-note">Once per exam, within 7 days. A re-mark can go up or down.</p>
+    </div>);
 }
 
 /* The follow-up questions about their own answers — one at a time, each with its own clock. */
@@ -144,7 +206,8 @@ function LrnExam({ start, onDone, onSkip }) {
   const [ans, setAns] = React.useState({}), [conf, setConf] = React.useState({}), [flag, setFlag] = React.useState({});
   const [busy, setBusy] = React.useState(false), [now, setNow] = React.useState(Date.now());
   const [pledge, setPledge] = React.useState(false);
-  const sig = React.useRef({ pastes: 0, pastedChars: 0, typedChars: 0, leaves: 0, awaySecs: 0, awayAt: 0 });
+  const sig = React.useRef({ pastes: 0, pastedChars: 0, typedChars: 0, leaves: 0, awaySecs: 0, awayAt: 0, pasteBlocked: 0, copyTries: 0, fsExits: 0 });
+  const [warn, setWarn] = React.useState("");
   const dirty = React.useRef(false), sent = React.useRef(false);
   const startKey = JSON.stringify(start);
 
@@ -160,7 +223,8 @@ function LrnExam({ start, onDone, onSkip }) {
 
   const shift = React.useMemo(() => ex ? Date.parse(ex.serverNow) - Date.now() : 0, [ex && ex.serverNow]); // eslint-disable-line
   const left = ex ? (Date.parse(ex.deadline) - (now + shift)) / 1000 : 0;
-  const signals = () => { const s = sig.current; return { pastes: s.pastes, pastedChars: s.pastedChars, typedChars: s.typedChars, leaves: s.leaves, awaySecs: Math.round(s.awaySecs) }; };
+  const signals = () => { const s = sig.current; return { pastes: s.pastes, pastedChars: s.pastedChars, typedChars: s.typedChars, leaves: s.leaves, awaySecs: Math.round(s.awaySecs),
+    pasteBlocked: s.pasteBlocked, copyTries: s.copyTries, fsExits: s.fsExits }; };
 
   const submit = React.useCallback(async () => {
     if (!ex || sent.current) return; sent.current = true; setBusy(true);
@@ -177,9 +241,17 @@ function LrnExam({ start, onDone, onSkip }) {
     if (phase !== "sit" && phase !== "review") return;
     const save = () => { if (!dirty.current || !ex) return; dirty.current = false; NGGApi.member.exam.save(ex.sittingId, ans, conf, signals()).catch(() => { dirty.current = true; }); };
     const t = setInterval(save, 10000);
-    const vis = () => { const s = sig.current; if (document.hidden) { s.leaves++; s.awayAt = Date.now(); dirty.current = true; save(); } else if (s.awayAt) { s.awaySecs += (Date.now() - s.awayAt) / 1000; s.awayAt = 0; } };
+    const vis = () => { const s = sig.current;
+      if (document.hidden) { s.leaves++; s.awayAt = Date.now(); dirty.current = true; save(); }
+      else if (s.awayAt) { s.awaySecs += (Date.now() - s.awayAt) / 1000; s.awayAt = 0;
+        setWarn("You left the exam " + (s.leaves === 1 ? "once" : s.leaves + " times") + ". Leaving is recorded for your instructor — stay on this page until you hand in."); } };
+    /* Full screen is ASKED for on start (not every phone allows it); leaving it is counted and said. */
+    const fs = () => { if (!document.fullscreenElement && sig.current.fsOn) { sig.current.fsExits++; dirty.current = true; setWarn("You left full screen. It is recorded — press “Full screen” to go back."); } if (document.fullscreenElement) sig.current.fsOn = true; };
+    const leaving = e => { e.preventDefault(); e.returnValue = ""; };
     document.addEventListener("visibilitychange", vis);
-    return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); };
+    document.addEventListener("fullscreenchange", fs);
+    window.addEventListener("beforeunload", leaving);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); document.removeEventListener("fullscreenchange", fs); window.removeEventListener("beforeunload", leaving); };
   }, [phase, ex, ans, conf]);
 
   if (err) return <ErrorState title="Couldn't open the session exam" code={err} onRetry={load}/>;
@@ -199,7 +271,7 @@ function LrnExam({ start, onDone, onSkip }) {
         <div><dt>Questions</dt><dd>{qs.length}</dd></div>
         <div><dt>Time</dt><dd>{mins} min</dd></div>
         <div><dt>Pass mark</dt><dd>{ex.passMark}%</dd></div>
-        <div><dt>Distinction</dt><dd>{ex.bands.distinction}%+</dd></div>
+        <div><dt>Outstanding</dt><dd>{ex.bands.outstanding}%+</dd></div>
       </dl>
       <ul className="lx-rules">
         <li>{isTrial ? "Questions from across everything you have completed in the course." : "Last session's questions from memory" + (qs.some(q => q.role === "spaced") ? ", plus a few from earlier weeks — the ones that slipped before come back first." : ".")}</li>
@@ -207,7 +279,8 @@ function LrnExam({ start, onDone, onSkip }) {
         <li>For choice questions, say how sure you are. It is not scored — it tells you where your misconceptions are.</li>
         <li>The clock keeps running if you leave. Your answers save as you go, and if the connection drops you carry on where you were.</li>
         <li>After you hand in, you may get {isTrial ? "" : "up to "}two short follow-up questions about your own written answers. Everybody gets the same number.</li>
-        <li>Bands: Distinction {ex.bands.distinction}%+, Merit {ex.bands.merit}%+, Pass {ex.passMark}%+.</li>
+        <li>The exam opens full screen. Pasting into answers and copying the questions are switched off, your name is shown across the paper, and leaving the page or full screen is recorded for your instructor.</li>
+        <li>Bands: Outstanding {ex.bands.outstanding}%+, Distinction {ex.bands.distinction}%+, Merit {ex.bands.merit}%+, Pass {ex.passMark}%+.</li>
       </ul>
       {/* THE HONOUR PLEDGE (owner: "A standard honourable exam"). Made before the clock, recorded on the
           sitting, and what an instructor reads first beside the result. */}
@@ -217,7 +290,7 @@ function LrnExam({ start, onDone, onSkip }) {
       </label>
       <div className="lx-acts">
         <button type="button" className="lrn-btn" disabled={!pledge}
-          onClick={() => { NGGApi.member.exam.save(ex.sittingId, {}, {}, { pledge: 1 }).catch(() => {}); setPhase("sit"); }}>Start — the clock begins</button>
+          onClick={() => { NGGApi.member.exam.save(ex.sittingId, {}, {}, { pledge: 1 }).catch(() => {}); lxFullscreen(); setPhase("sit"); }}>Start — the clock begins</button>
         {onSkip && !isTrial && <button type="button" className="lrn-btn is-ghost" onClick={onSkip}>Skip to today's lesson (it stays due)</button>}
       </div>
     </section>
@@ -243,15 +316,23 @@ function LrnExam({ start, onDone, onSkip }) {
     </section>
   );
 
+  /* No copying the questions out (to paste into an AI): selection, copy, cut and the context menu are
+     switched off on the paper, and a try is counted. Answers stay editable. */
+  const guard = e => { if (e.target && e.target.closest && e.target.closest("textarea, input")) return; e.preventDefault(); sig.current.copyTries++; dirty.current = true; };
+  const mark = ex.candidate && ex.candidate.name ? ex.candidate.name + " · " + ex.sittingId : ex.sittingId;
   return (
-    <section className="lx-card lx-sit" aria-labelledby="lx-q-h">
+    <section className="lx-card lx-sit lx-locked" aria-labelledby="lx-q-h" onCopy={guard} onCut={guard} onContextMenu={guard}>
+      <div className="lx-mark" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <span key={i}>{mark}</span>)}</div>
+      {warn && <p className="lx-warn" role="alert">{warn} <button type="button" className="lx-warn-x" onClick={() => setWarn("")} aria-label="Close the warning"><i className="ph ph-x" aria-hidden="true"/></button></p>}
+      {typeof document !== "undefined" && document.fullscreenEnabled && !document.fullscreenElement && <button type="button" className="lrn-btn is-ghost lx-fsbtn" onClick={lxFullscreen}><i className="ph ph-arrows-out" aria-hidden="true"/>Full screen</button>}
       <div className="lx-top">
         <p className="lx-eyebrow">Question {at + 1} of {qs.length} · {LX_KIND[q.kind] || "Question"} · {q.points} mark{q.points === 1 ? "" : "s"}{q.role === "spaced" ? " · from week " + q.week : ""}</p>
         {clock}
       </div>
       <div className="lx-dots" aria-hidden="true">{qs.map((x, i) => <i key={x.checkId} className={(i === at ? "is-on " : "") + (answered(x.checkId) ? "is-done " : "") + (flag[x.checkId] ? "is-flag" : "")}/>)}</div>
       <h2 id="lx-q-h" className="lx-q">{q.prompt}</h2>
-      <LxField key={q.checkId} q={q} value={ans[q.checkId]} onChange={v => set(q.checkId, v)}
+      <LxField key={q.checkId} q={q} exam value={ans[q.checkId]} onChange={v => set(q.checkId, v)}
+        onPasteBlocked={() => { sig.current.pasteBlocked++; dirty.current = true; setWarn("Pasting is switched off in the exam — type your answer. The try is recorded."); }}
         onPaste={n => { sig.current.pastes++; sig.current.pastedChars += n; dirty.current = true; }} onType={n => { sig.current.typedChars += Math.min(n, 3); }}/>
       {(q.kind === "mcq" || q.kind === "order") && (
         <div className="lx-conf" role="radiogroup" aria-label="How sure are you?">

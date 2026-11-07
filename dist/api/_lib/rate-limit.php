@@ -43,6 +43,7 @@ function rate_limit_default(string $op): ?array {
         'member.exam.submit' => ['max' => 6, 'window' => 60],
         'member.exam.viva'   => ['max' => 10, 'window' => 60],
         'member.exam.start'  => ['max' => 20, 'window' => 60],
+        'member.exam.appeal' => ['max' => 5, 'window' => 3600],
         'mathslab.voice'     => ['max' => 60, 'window' => 60],
         'family.request'     => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code, like auth.request
         'timetable.save'     => ['max' => 5,  'window' => 60],    // EMAILS a timetable link — mail-amplification

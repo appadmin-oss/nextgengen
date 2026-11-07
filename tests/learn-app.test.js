@@ -401,6 +401,8 @@ function cleanup() {
     await X.locator('.lx-pledge input').check();
     await X.locator('.lx-intro .lrn-btn:not(.is-ghost)').click();
     await X.waitForSelector('.lx-sit', { timeout: 15000 });
+    chk('exam: the paper is locked — the rules say so, and the candidate\'s name is watermarked across it',
+      /Pasting into answers and copying the questions are switched off/.test(intro) && /NGG-LRN-M1|Learn/.test(await X.innerText('.lx-mark').catch(() => '')) && await X.locator('.lx-locked').count() === 1);
     chk('exam: one question at a time, with the clock and "how sure are you?"',
       await X.locator('.lx-q').count() === 1 && /\d+:\d\d/.test(await X.innerText('.lx-clock')) && await X.locator('.lx-conf .lx-chip').count() === 3);
     await X.locator('.lx-opt', { hasText: /^\s*[A-H]?\s*7\s*$/ }).first().click();
@@ -411,10 +413,10 @@ function cleanup() {
     await X.locator('.lx-review .lrn-btn:not(.is-ghost)').click();
     await X.waitForSelector('.lx-result', { timeout: 60000 });
     const rep = await X.innerText('.lx-result');
-    chk('exam: the report gives the band, the score and that it was sat on their honour', /Distinction/.test(rep) && /100%/.test(rep) && /sat on your honour/.test(rep));
+    chk('exam: the report gives the band, the score and that it was sat on their honour', /Outstanding/.test(rep) && /100%/.test(rep) && /sat on your honour/.test(rep));
     chk('exam: …and the sitting is recorded, marked, with the pledge',
       php(`$s = db_row("SELECT status, integrity FROM curriculum_sittings WHERE memberId = 'NGG-LRN-M1' ORDER BY id DESC LIMIT 1"); echo $s['status'] . '|' . (json_decode($s['integrity'], true)['pledgedAt'] ?? '' ? 'pledged' : '');`, ['bootstrap']) === 'marked|pledged');
-    await X.locator('.lx-result .lrn-btn').click();
+    await X.locator('.lx-result .lrn-btn', { hasText: /Start today/ }).click();
     await X.waitForSelector('.lrn-sec-h:has-text("The lesson")', { timeout: 10000 }).catch(() => {});
     chk('exam: then today\'s lesson opens', await X.locator('.lrn-sec-h:has-text("The lesson")').count() === 1);
     await X.screenshot({ path: require('path').join(require('os').tmpdir(), 'learn-exam-done.png'), fullPage: true }).catch(() => {});

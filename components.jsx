@@ -4781,9 +4781,8 @@ function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
         </div> : null;
       })()}
       {/* An outside exercise: where it is, then their proof and account in the box below. */}
-      {c.kind === "evidence" && c.linkUrl && <p className="cur-watch-note"><a href={c.linkUrl} target="_blank" rel="noopener noreferrer">Open the exercise</a> — do it there, then paste the link to your result and say what you did, what you scored, and one thing that went wrong.</p>}
-      {c.kind === "order"
-        /* One ordering control in the app: the exam player's (lrn-exam.jsx), buttons not drag. */
+      {c.kind === "order" || c.kind === "evidence"
+        /* One ordering control and one outside-exercise answer in the app: the exam player's (lrn-exam.jsx). */
         ? <LxField q={{ ...c, n }} value={value} onChange={onChange} onPaste={() => {}} onType={() => {}} disabled={disabled}/>
         : c.kind === "mcq"
         ? c.options.map((o, k) => (

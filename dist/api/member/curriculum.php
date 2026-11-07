@@ -62,14 +62,16 @@ if ($method === 'GET') {
     } elseif ($action === 'submit') {
         $res = gs_call('member.curriculum.submit', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''),
             'answers' => is_array($b['answers'] ?? null) ? $b['answers'] : []]);
-    } elseif (in_array($action, ['exam_start', 'exam_save', 'exam_submit', 'exam_viva'], true)) {
+    } elseif (in_array($action, ['exam_start', 'exam_save', 'exam_submit', 'exam_viva', 'exam_appeal'], true)) {
         /* The standardised exam (domain/learn-exam.php). The deadline is the SERVER's; answers, confidence
            and process signals travel with every save, and the answers never leave the server. */
         $res = gs_call('member.exam.' . substr($action, 5), ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''),
             'kind' => (string)($b['kind'] ?? ''), 'course' => (string)($b['course'] ?? ''), 'view' => !empty($b['view']),
             'sittingId' => (string)($b['sittingId'] ?? ''), 'checkId' => (string)($b['checkId'] ?? ''), 'answer' => (string)($b['answer'] ?? ''),
             'answers' => is_array($b['answers'] ?? null) ? $b['answers'] : [], 'confidence' => is_array($b['confidence'] ?? null) ? $b['confidence'] : [],
-            'signals' => is_array($b['signals'] ?? null) ? $b['signals'] : []]);
+            'signals' => is_array($b['signals'] ?? null) ? $b['signals'] : [], 'reason' => (string)($b['reason'] ?? ''),
+            // Hashed at once in the domain (learn-exam.php), never stored as text.
+            'ua' => (string)($_SERVER['HTTP_USER_AGENT'] ?? '')]);
     } elseif ($action === 'exam_mark') {
         $res = gs_call('staff.exam.mark', ['requesterId' => $mid, 'sittingId' => (string)($b['sittingId'] ?? ''), 'checkId' => (string)($b['checkId'] ?? ''),
             'points' => (int)($b['points'] ?? 0), 'note' => (string)($b['note'] ?? ''), 'ip' => client_ip()]);
