@@ -108,7 +108,8 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    // The shared probe finds this image's Chromium (chrome-linux or chrome-linux64), as the other suites do.
+    browser = await chromium.launch(d ? { executablePath: require('./_responsive-probe').chromiumPath(fs) } : {});
 
     const shoot = async (who, at, name, { w = 1280, h = 900, sel, wait } = {}) => {
       const tok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${who}'"), ${who.endsWith('ADM') ? 'true' : 'false'});`, ['session']);

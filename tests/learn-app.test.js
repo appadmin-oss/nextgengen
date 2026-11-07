@@ -146,7 +146,9 @@ function cleanup() {
     chk('…and says how far through they are', /0 of 2 lessons done/.test(await P.innerText('.lrn-prog')));
     const wk = await P.innerText('.lrn-main');
     chk('the week greets them by name and says what to start with', /Ada/.test(wk) && /Start with Finding middle C/.test(wk));
-    chk('…with their next class beside it: their course, Saturday at 11, the room — never another course', /Your (next class|class is on now)/i.test(wk) && /Piano/.test(await P.innerText('.lrn-next')) && /11am/.test(await P.innerText('.lrn-next')) && /Music room/.test(await P.innerText('.lrn-next')) && !/Coding/.test(await P.innerText('.lrn-next')));
+    chk('…with their next class beside it: their course, Saturday at 11, the room — never another course', /Your (next class|class is on now)/i.test(wk) && /Piano/.test(await P.innerText('.lrn-next')) /* During the class itself (a Saturday between 11 and 12:30) the card says "on now, until 12:30pm" instead
+       of the start time — both are right; the suite must pass whatever hour it runs at. */
+      && /11am|On now, until 12:30pm/i.test(await P.innerText('.lrn-next')) && /Music room/.test(await P.innerText('.lrn-next')) && !/Coding/.test(await P.innerText('.lrn-next')));
     chk('…and each course\'s standing', /Piano/.test(await P.innerText('.lrn-bars')) && /0%/.test(await P.innerText('.lrn-bars')));
 
     await P.click('.lrn-rail-item:has-text("Timetable")');
@@ -297,9 +299,16 @@ function cleanup() {
     await M.waitForSelector('.lrn-week', { timeout: 60000 });
     const bar = await M.evaluate(() => { const r = document.querySelector('.lrn-rail').getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height), w: Math.round(r.width) }; });
     chk('the phone gets a bottom bar, not a rail squeezed sideways', bar.w > 300 && bar.top > 400);
-    const tap = await M.evaluate(() => Math.min.apply(null, [...document.querySelectorAll('.lrn-rail-item')].map(e => Math.round(e.getBoundingClientRect().height))));
+    // The targets SHOWN on the phone: the bar's four places and "More" (the rest open from More, LearnNav).
+    const tap = await M.evaluate(() => Math.min.apply(null, [...document.querySelectorAll('.lrn-rail-item')].filter(e => e.offsetParent !== null).map(e => Math.round(e.getBoundingClientRect().height))));
+    chk('the phone bar is four places and More — nothing squeezed or clipped', await M.evaluate(() => [...document.querySelectorAll('.lrn-rail-item')].filter(e => e.offsetParent !== null).length) === 5);
     chk('…and every target is a real one (' + tap + 'px)', tap >= 44);
     chk('nothing scrolls sideways', await M.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    await M.click('.lrn-rail-more');
+    const moreTxt = await M.innerText('#lrn-more').catch(() => '');
+    chk('…and "More" opens the rest: Timetable, School and Notes', /Timetable/.test(moreTxt) && /School/.test(moreTxt) && /Notes/.test(moreTxt));
+    await M.keyboard.press('Escape');
+    chk('…which Escape closes, with focus back on More', await M.locator('#lrn-more').count() === 0 && await M.evaluate(() => document.activeElement && document.activeElement.classList.contains('lrn-rail-more')));
     await M.context().close();
 
     /* ── Studying for school ───────────────────────────────────────────

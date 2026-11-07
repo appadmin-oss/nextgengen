@@ -18025,3 +18025,23 @@ button.m9x-ev-sum { cursor: pointer; }
 .lx-sections span { font-size: 13.5px; color: var(--x-ink2); }
 .lx-appeal { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: var(--x-s2); }
 .lx-appeal-btn { justify-self: start; }
+
+/* Learn's phone bar: four places and "More" (LearnNav). On a wide screen the rail shows every place. */
+.lrn-rail-item { white-space: nowrap; min-width: 0; }
+/* "More" is a button: the bar's own type, not the browser's button font (and never `font: inherit`, which
+   took the page's 16px and truncated every label to "This we…"). */
+.lrn-rail-more { border: 0; background: transparent; font-family: inherit; cursor: pointer; }
+.lrn-rail-item span { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.lrn-rail-item.is-extra { display: none; }
+.lrn-rail { position: sticky; }
+.lrn-more { position: absolute; right: 8px; bottom: calc(100% + 8px); min-width: 200px; display: grid; gap: 2px; padding: 8px;
+  border-radius: var(--lrn-r); background: var(--lrn-s1); border: 1px solid var(--lrn-line); box-shadow: 0 12px 32px rgba(22, 23, 26, .16); }
+.lrn-more-item { display: flex; align-items: center; gap: 12px; min-height: var(--lrn-tap); padding: 0 12px; border-radius: var(--lrn-r-sm);
+  text-decoration: none; color: var(--lrn-ink); font-size: 15px; font-weight: 600; }
+.lrn-more-item i { font-size: 20px; color: var(--lrn-ink-3); }
+.lrn-more-item.is-on { background: var(--lrn-s2); }
+.lrn-more-item:focus-visible, .lrn-rail-item:focus-visible { outline: 3px solid var(--lrn-gold); outline-offset: -3px; }
+@container (min-width: 720px) {
+  .lrn-rail-item.is-extra { display: grid; }
+  .lrn-rail-more, .lrn-more { display: none; }
+}

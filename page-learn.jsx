@@ -41,14 +41,57 @@
    ========================================================================== */
 
 const LRN_NAV = [
-  { id: "week",    path: "/learn",         label: "This week", icon: "ph ph-calendar-check" },
-  { id: "courses", path: "/learn/courses", label: "My courses", icon: "ph ph-books" },
+  /* `phone`: on the phone's bottom bar. Seven did not fit 360px — labels wrapped and the first was clipped
+     — so the four used most stay on the bar and the rest open from "More". The rail shows all seven. */
+  { id: "week",    path: "/learn",         label: "This week", icon: "ph ph-calendar-check", phone: true },
+  { id: "courses", path: "/learn/courses", label: "My courses", icon: "ph ph-books", phone: true },
   { id: "timetable", path: "/learn/timetable", label: "Timetable", icon: "ph ph-clock" },
   { id: "plan",    path: "/learn/plan",    label: "School",     icon: "ph ph-exam" },
-  { id: "review",  path: "/learn/review",  label: "Review",     icon: "ph ph-target" },
+  { id: "review",  path: "/learn/review",  label: "Review",     icon: "ph ph-target", phone: true },
   { id: "notes",   path: "/learn/notes",   label: "Notes",      icon: "ph ph-note-pencil" },
-  { id: "helper",  path: "/learn/helper",  label: "Helper",     icon: "ph ph-sparkle" },
+  { id: "helper",  path: "/learn/helper",  label: "Helper",     icon: "ph ph-sparkle", phone: true },
 ];
+
+/**
+ * The nav: a rail on a wide screen with every place, and on a phone a bottom bar of the four used most plus
+ * "More", which opens the rest in a small sheet (Escape or a tap outside closes it; focus returns to More).
+ */
+function LearnNav({ here }) {
+  const [more, setMore] = React.useState(false);
+  const btn = React.useRef(null), sheet = React.useRef(null);
+  const extra = LRN_NAV.filter(n => !n.phone);
+  const extraOn = extra.some(n => n.id === here);
+  React.useEffect(() => { setMore(false); }, [here]);
+  React.useEffect(() => {
+    if (!more) return;
+    const key = e => { if (e.key === "Escape") { setMore(false); btn.current && btn.current.focus(); } };
+    const away = e => { if (sheet.current && !sheet.current.contains(e.target) && btn.current && !btn.current.contains(e.target)) setMore(false); };
+    document.addEventListener("keydown", key); document.addEventListener("pointerdown", away);
+    const first = sheet.current && sheet.current.querySelector("a"); if (first) first.focus();
+    return () => { document.removeEventListener("keydown", key); document.removeEventListener("pointerdown", away); };
+  }, [more]);
+  const item = (n, cls) => (
+    <a key={n.id} href={n.path} aria-current={here === n.id ? "page" : undefined}
+       className={cls + (here === n.id ? " is-on" : "") + (n.phone ? "" : " is-extra")}
+       onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); setMore(false); lrnGo(n.path); }}>
+      <i className={here === n.id ? n.icon.replace("ph ", "ph-fill ") : n.icon} aria-hidden="true"/>
+      <span>{n.label}</span>
+    </a>);
+  return (
+    <nav className="lrn-rail" aria-label="Learn">
+      {LRN_NAV.map(n => item(n, "lrn-rail-item"))}
+      <button ref={btn} type="button" className={"lrn-rail-item lrn-rail-more" + (extraOn || more ? " is-on" : "")}
+        aria-expanded={more} aria-haspopup="true" aria-controls="lrn-more" onClick={() => setMore(v => !v)}>
+        <i className={extraOn || more ? "ph-fill ph-dots-three-circle" : "ph ph-dots-three-circle"} aria-hidden="true"/><span>More</span>
+      </button>
+      {more && <div ref={sheet} id="lrn-more" className="lrn-more" role="menu" aria-label="More in Learn">
+        {extra.map(n => <a key={n.id} role="menuitem" href={n.path} aria-current={here === n.id ? "page" : undefined}
+          className={"lrn-more-item" + (here === n.id ? " is-on" : "")}
+          onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); setMore(false); lrnGo(n.path); }}>
+          <i className={n.icon} aria-hidden="true"/><span>{n.label}</span></a>)}
+      </div>}
+    </nav>);
+}
 
 /** A course name → the slug its address uses, and back. */
 function lrnSlug(course) {
@@ -1472,16 +1515,7 @@ function LearnApp() {
         <a className="lrn-exit" href="/dashboard"><i className="ph ph-arrow-u-up-left" aria-hidden="true"/><span>My portal</span></a>
       </header>
 
-      <nav className="lrn-rail" aria-label="Learn">
-        {LRN_NAV.map(n => (
-          <a key={n.id} href={n.path} aria-current={here === n.id ? "page" : undefined}
-             className={"lrn-rail-item" + (here === n.id ? " is-on" : "")}
-             onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo(n.path); }}>
-            <i className={here === n.id ? n.icon.replace("ph ", "ph-fill ") : n.icon} aria-hidden="true"/>
-            <span>{n.label}</span>
-          </a>
-        ))}
-      </nav>
+      <LearnNav here={here}/>
 
       <main className={"lrn-main" + (view === "week" ? " is-wide" : "")}>
         {err && err !== "not_ngg_member" && view !== "lesson"
