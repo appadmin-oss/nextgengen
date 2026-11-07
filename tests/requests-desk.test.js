@@ -194,7 +194,7 @@ async function pageFor(memberId, viewport) {
 
     // ── The Inbox reading pane, at the widths a coordinator actually uses ──
     /* Re-seed one open appeal from the family for the Inbox (the one above was decided). */
-    const ib = JSON.parse(php(`ini_set('display_errors', '1'); error_reporting(E_ALL); $sid = db_insert('sanctions', ['personId'=>'NGG-RQ-1','personType'=>'member','kind'=>'fine','status'=>'active','reason'=>'Absent','startsAt'=>now_iso(),'issuedAt'=>now_iso(),'issuedBy'=>'NGG-RQ-OTHER']);`
+    const ib = JSON.parse(php(`ini_set('display_errors', '1'); error_reporting(E_ALL); $sid = db_insert('sanctions', ['personId'=>'NGG-RQ-1','personType'=>'member','kind'=>'fine','tier'=>2,'status'=>'active','reason'=>'Absent','startsAt'=>now_iso(),'issuedAt'=>now_iso(),'issuedBy'=>'NGG-RQ-OTHER']);`
       + `$a = member_request_create(['memberId'=>'NGG-RQ-1','kind'=>'appeal','refSanctionId'=>$sid,'subject'=>'Fine: Absent on Sat 31 Oct 2026 with no absence request · ₦1,000 · Sat 7 Nov','body'=>str_repeat('The leave request has been pending since 30 October and nobody has replied. ', 8)]);`
       + `db_exec("UPDATE member_requests SET raisedBy = 'guardian:GRD-RQ-1' WHERE requestId = ?", [$a['request']['requestId']]); echo json_encode(['id'=>$a['request']['requestId']]);`));
     for (const [w, h] of [[1117, 580], [1440, 900], [900, 760]]) {
