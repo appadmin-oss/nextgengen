@@ -418,6 +418,58 @@ function Mp15CPlan({ subjectId, term, onBack }) {
   );
 }
 
+/* ── Session exams: what the class finds hard, and each sitting (domain/learn-exam.php) ──────────────────
+   Owner, 7 Nov 2026: "The instructors sees their progress". The item analysis comes first because it is the
+   lesson plan for next week: a question most of the class got wrong, and the wrong answer they chose most, is
+   a misconception to teach to — by name. Then the sittings: band, the honour pledge, the follow-ups, and the
+   signals to ASK about (pasting, leaving the page), which never touch a mark. A held answer is marked here. */
+function Mp15CExams({ say }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(null), [mk, setMk] = React.useState({}), [busy, setBusy] = React.useState("");
+  const load = React.useCallback(() => { setErr(null); return NGGApi.member.exam.staff().then(setD).catch(setErr); }, []);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return <section className="m15c-card m15c-msg" role="alert"><span>{mp15cErr(err, "Couldn't load the exams.")}</span><button type="button" className="m15c-btn" onClick={load}>Retry</button></section>;
+  if (!d) return <section className="m15c-card m15c-msg" role="status"><span className="m15x-bar"/><span className="m15x-sr">Loading the exams</span></section>;
+  const save = async (sid, h) => {
+    const m = mk[sid + h.checkId] || {};
+    if (m.points === undefined || m.points === "") { say && say("Give it a mark first."); return; }
+    setBusy(sid + h.checkId);
+    try { const r = await NGGApi.member.exam.mark(sid, h.checkId, Number(m.points), m.note || ""); say && say("Marked — " + (r.band ? r.band + ", " : "") + r.pct + "%"); load(); }
+    catch (e) { say && say(mp15cErr(e)); } finally { setBusy(""); }
+  };
+  const hard = (d.items || []).filter(x => x.sat >= 2).slice(0, 8);
+  return (
+    <section className="m15c-card" aria-labelledby="m15c-ex-h">
+      <div className="m15c-head"><div><h2 id="m15c-ex-h" className="m15c-h">Session exams <span className="m15c-count">{(d.sittings || []).length}</span></h2>
+        <p className="m15c-sub">Sat on the learner's honour, from memory, at the start of each session. Signals are things to ask about, never marks.</p></div></div>
+      {hard.length > 0 && <>
+        <h3 className="m15c-h3">What the class finds hardest</h3>
+        <ul className="m15c-items">{hard.map(x => (
+          <li key={x.checkId}><b>{x.facility}%</b> got it right ({x.right} of {x.sat}) — {x.prompt}
+            {x.commonWrong && <span className="m15c-sub"> · most chose “{x.commonWrong}” ({x.commonWrongN})</span>}</li>))}</ul>
+      </>}
+      {!(d.sittings || []).length ? <p className="m15c-empty">No session exams sat yet.</p> : (
+        <ul className="m15c-sits">{d.sittings.slice(0, 40).map(t => (
+          <li key={t.sittingId} className="m15c-sit">
+            <p className="m15c-q-p"><b>{t.name}</b> · {t.kind === "trial" ? "Trial: " + t.course : t.course || "Club"} · {t.status === "marked" ? (t.band || "") + " " + t.pct + "%" : t.status === "submitted" ? "waiting for you" : t.status === "viva" ? "answering follow-ups" : "in progress"}
+              {t.pledged ? <span className="m15c-tag">on their honour</span> : null}
+              {(t.signals || []).map(sg => <span key={sg} className="m15c-tag is-warn">{sg}</span>)}</p>
+            {(t.viva || []).filter(v => v.answer !== undefined && v.question).map((v, i) => (
+              <p key={i} className="m15c-sub">Follow-up: “{v.question}” — {v.answer ? "“" + v.answer + "”" : "(no reply)"}{v.verdict ? " · " + ({ holds: "held up", unclear: "did not hold up", late: "answered late", skipped: "skipped" })[v.verdict] : ""}</p>))}
+            {(t.held || []).map(h => (
+              <div key={h.checkId} className="m15c-q">
+                <p className="m15c-q-p">{h.prompt} <span className="m15c-tag">{h.why === "followup" ? "follow-up did not hold up" : h.why}</span></p>
+                <blockquote>{h.answer || "(no answer)"}</blockquote>
+                <div className="m15c-q-row">
+                  <label className="m15c-pts">Mark <input type="number" min={0} className="m15c-input" value={(mk[t.sittingId + h.checkId] || {}).points ?? ""} onChange={e => setMk(x => ({ ...x, [t.sittingId + h.checkId]: { ...(x[t.sittingId + h.checkId] || {}), points: e.target.value } }))}/></label>
+                  <input className="m15c-input" placeholder="What you found when you talked it through" aria-label="Note" value={(mk[t.sittingId + h.checkId] || {}).note || ""} onChange={e => setMk(x => ({ ...x, [t.sittingId + h.checkId]: { ...(x[t.sittingId + h.checkId] || {}), note: e.target.value } }))}/>
+                  <button type="button" className="m15c-btn is-primary" disabled={busy === t.sittingId + h.checkId} onClick={() => save(t.sittingId, h)}>{busy === t.sittingId + h.checkId ? "Saving…" : "Save"}</button>
+                </div>
+              </div>))}
+          </li>))}</ul>)}
+    </section>
+  );
+}
+
 /* ── Curriculum: answers to mark, and the lessons for their courses ──────── */
 
 function Mp15CCurric({ say }) {
@@ -465,6 +517,7 @@ function Mp15CCurric({ say }) {
           </div>
         ))}
       </section>
+      <Mp15CExams say={say}/>
       <section className="m15c-card">
         <div className="m15c-head"><div><h2 className="m15c-h">Lessons</h2><p className="m15c-sub">For your courses · {d.members} member{d.members === 1 ? "" : "s"}{d.clearance === "pending" ? " · learners appear once your safeguarding check is cleared" : ""}</p></div></div>
         <StaffCurriculumMap data={d} reload={load}/>

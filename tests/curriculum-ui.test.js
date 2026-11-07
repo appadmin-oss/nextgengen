@@ -429,7 +429,7 @@ async function contextFor(memberId, admin, viewport) {
     await mp.click('.cur-item:has-text("Hand position")');
     await mp.waitForSelector('.cur-lesson');
     await mp.waitForTimeout(800);
-    chk('the next lesson in the SAME sitting does not open on a review — that would not be recall', !(await mp.$('.cur-review')));
+    chk('the next lesson in the SAME sitting does not open on a review — that would not be recall', !(await mp.$('.lx-intro')));
     await mp.click('button:has-text("← All lessons")');
     // A week passes.
     php(`db_exec("UPDATE curriculum_progress SET startedAt = ? WHERE unitId = (SELECT unitId FROM curriculum_units WHERE title = 'Finding middle C')", [gmdate('Y-m-d\\TH:i:s\\Z', time() - 7 * 86400)]);`);
@@ -440,12 +440,12 @@ async function contextFor(memberId, admin, viewport) {
        the hour measures the hour, with everything still on the whiteboard;
        a week later it measures what survived, and the remembering is what
        fixes it there. */
-    await mp.waitForSelector('.cur-review');
+    await mp.waitForSelector('.lx-intro');
     chk('a session opens with LAST week\'s questions, before today\'s teaching',
-        /Finding middle C/.test(await mp.$eval('.cur-review', el => el.innerText))
+        /Finding middle C/.test(await mp.$eval('.lx-intro', el => el.innerText))
         && !(await mp.$('.cur-text')) && !(await mp.$('.cur-checks')));
     chk('…and skipping to the lesson is always there, in plain words, for anyone who was away',
-        /Skip to today/.test(await mp.$eval('.cur-review-acts', el => el.innerText)));
+        /Skip to today/.test(await mp.$eval('.lx-intro .lx-acts', el => el.innerText)));
     /* Toasts from the previous lesson's submits are still on screen and sit
        over the first question; the shot is of the review, not of them.
        HIDDEN, not removed: these nodes belong to React, and deleting them
@@ -454,7 +454,7 @@ async function contextFor(memberId, admin, viewport) {
     // Won by specificity: no-important.test.js bans the override keyword across the whole tree.
     await mp.addStyleTag({ content: 'body .toast-host:not(#_):not(#_) { display: none; }' });
     await mp.screenshot({ path: path.join(SHOTS, 'opening-review.png'), fullPage: true });
-    await mp.click('.cur-review button:has-text("Skip to today")');
+    await mp.click('.lx-intro button:has-text("Skip to today")');
     await mp.waitForSelector('.cur-answer');
     /* This one was imported from a sheet with a summary and no body, so
        what appears past the review is its own questions, not prose. */
@@ -571,8 +571,8 @@ async function contextFor(memberId, admin, viewport) {
     await waitForBoot(mp);
     await mp.waitForSelector('.cur-item', { timeout: 40000 });
     await mp.click('.cur-item:has-text("Watch: how a hand crosses under")');
-    await mp.waitForSelector('.cur-review, .cur-checks', { timeout: 20000 });
-    if (await mp.$('.cur-review button:has-text("Skip to today")')) await mp.click('.cur-review button:has-text("Skip to today")');
+    await mp.waitForSelector('.lx-intro, .cur-checks', { timeout: 20000 });
+    if (await mp.$('.lx-intro button:has-text("Skip to today")')) await mp.click('.lx-intro button:has-text("Skip to today")');
     await mp.waitForSelector('.cur-watch', { timeout: 20000 });
     chk('the member watches it INSIDE the exam, and is told what a good answer has in it',
         !!(await mp.$('.cur-watch iframe')) && /in your own words/.test(await mp.$eval('.cur-watch-note', el => el.innerText)));

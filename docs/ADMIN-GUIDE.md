@@ -4318,6 +4318,26 @@ Someone who both teaches and mentors gets the **Instructor Portal** at `/instruc
 
 Feedback that an older version saved as an ordinary request is now shown as feedback, with **Thank and close** and **Pass to centre lead**, never Approve or Decline.
 
+## The session exam, mastery tiers and Club certificates
+
+**Every session opens with an exam on last session's lesson.** It is on by default (Control Room → Curriculum → Schedule → "Open each session with last week's review"). It is a standard exam, the same for every member:
+
+- **Before it starts** the member sees the number of questions, the time, the pass mark and the bands (Distinction 85%+, Merit 70%+, Pass at the lesson's pass mark), and makes an **honour pledge**: from memory, on their own, no notes, no other person, no AI. The clock does not start until they do.
+- **The questions** are last session's, plus up to three from two or more weeks earlier — the ones they got wrong before come back first. Every member gets them in a different order, with the options shuffled.
+- **The clock is the server's.** Answers save as they go; a dropped connection resumes the same sitting; what was saved is handed in at the deadline.
+- **Follow-ups.** After written answers are marked, everybody gets the same number (two) of short follow-up questions about their own strongest written answers. A follow-up that does not hold up never costs marks by itself: the answer is **held for an instructor**.
+- **One official sitting.** Reopening the lesson shows the result. A member who was away may skip to today's lesson; the exam stays due.
+
+**Instructors** see it in the Mentor/Instructor Portal → Class → Curriculum → **Session exams**: the questions the class finds hardest (how many got each right, and the wrong answer chosen most — the misconception to teach to next), and each sitting with its band, the honour pledge, the follow-ups and their replies, and **signals to ask about** ("mostly pasted", "left the page 4 times", "handed in after time", "a follow-up did not hold up"). Signals are never marks and never proof. A held answer is marked there.
+
+**There is no AI detector, on purpose.** They wrongly flag writers whose first language is not English (Liang et al., 2023), and the Club's members would be the ones wronged.
+
+**Question kinds for lesson writers** (Control Room → Curriculum → a lesson): multiple choice — give each wrong option a reason it is tempting, which the member sees if they pick it; **Put the steps in order** (type the steps in the right order; members get them shuffled); **Outside exercise** (a link to an exercise on another site; members hand back their proof and what they did, marked like a written answer and followed up in the exam); and the written kinds as before. A published lesson still needs one question that is not multiple choice or ordering.
+
+**Mastery tiers**, per course, on each course page in Learn: Starter, Apprentice (a quarter of the lessons), Practitioner (half, and two session exams passed), Expert (three quarters, exams averaging Merit), Master (every lesson, exams averaging a Pass), and **God of the course** — a Master who passes the course **Trial** (questions drawn from the whole course, with follow-ups) at 85%. The Trial can be retaken after seven days.
+
+**Club certificates** are issued automatically, once each, numbered and verifiable at /verify like every NGG document: a **course certificate** when every lesson of a course level is completed (NGG-CLB-…), a **promotion certificate** when an instructor moves a member up a programme year (NGG-CLP-…), and **God of the course** (NGG-CLG-…). Each is styled by its course's family — music, technology, the arts, media, business or craft — with the course's own lesson titles woven into the background. They are signed by the **Head of the Club** and the **Programme Director**: set both names in Control Room → Money → Documents.
+
 ## Placing children in the curriculum, and checking off what they have done (Instructor Portal)
 
 - **Students → Place the class:**

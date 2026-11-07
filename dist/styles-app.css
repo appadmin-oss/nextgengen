@@ -17993,3 +17993,12 @@ button.m9x-ev-sum { cursor: pointer; }
 @container (max-width: 560px) { .lx-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lx-ladder { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .lx-pledge { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 12px; border: 1.5px solid var(--x-acc); background: #f3f5fa; line-height: 1.5; cursor: pointer; }
 .lx-pledge input { width: 22px; height: 22px; margin-top: 2px; flex: none; accent-color: var(--x-acc); }
+/* Lesson editor: the reason a wrong option is tempting (a named slip), and an ordering question's steps. */
+.lq-opt-why { flex-basis: 100%; margin-left: 36px; min-height: 36px; padding: 6px 10px; border: 1px dashed var(--cr-line, #d8dce6); border-radius: 8px; font: inherit; font-size: 14px; background: transparent; }
+.lq-steps { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+.lq-opt { flex-wrap: wrap; }
+/* The session exams panel in the mentor/instructor portal (mp15-class.jsx, Mp15CExams). */
+.m15c-items, .m15c-sits { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.m15c-items li { line-height: 1.5; }
+.m15c-sit { padding: 12px; border-radius: 12px; border: 1px solid var(--cr-line, #e3e6ee); display: grid; gap: 6px; }
+.m15c-tag.is-warn { background: #fff4dc; color: #6b4700; }

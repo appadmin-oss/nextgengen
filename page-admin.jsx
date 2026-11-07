@@ -2016,7 +2016,7 @@ const CUR_EMPTY_CHECK = { kind: "task", prompt: "", options: ["", ""], answer: "
    — or whenever the AI is unsure, or the answer raises a safeguarding worry. */
 const CUR_CHECK_KIND_OPTS = [["mcq", "Multiple choice"], ["short", "Written answer"], ["essay", "Essay / extended writing"],
   ["reflection", "Reflection"], ["project", "Project write-up"], ["code", "Code"], ["task", "Practical task"],
-  ["watch", "Watch a video and tell me"]];
+  ["watch", "Watch a video and tell me"], ["order", "Put the steps in order"], ["evidence", "Outside exercise (a link)"]];
 const CUR_MARK_HINT = {
   short: "Marked against the model answer — any wording that has the ideas earns the points.",
   essay: "No single right answer: marked against the rubric (a clear point, reasons, evidence).",
@@ -2221,7 +2221,14 @@ function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnab
   const save = async () => {
     setBusy("save");
     try {
-      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => ({ ...c, options: c.kind === "mcq" ? c.options.filter(o => o.trim()) : [], videoUrl: c.kind === "watch" ? (c.videoUrl || "") : "" })) };
+      /* Each kind sends only what it uses: options for a choice or an ordering, the reasons a wrong option
+         is tempting (whys, kept aligned with the options), a video for "watch", a link for an outside exercise. */
+      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => {
+        const keep = (c.options || []).map((o, k) => [o, (c.whys || [])[k] || ""]).filter(([o]) => o.trim());
+        return { ...c, options: c.kind === "mcq" || c.kind === "order" ? keep.map(x => x[0]) : [],
+          whys: c.kind === "mcq" ? keep.map(x => x[1]) : [], videoUrl: c.kind === "watch" ? (c.videoUrl || "") : "",
+          url: c.kind === "evidence" ? (c.url || "") : "" };
+      }) };
       const saved = await api.save(data);
       toast.success(
         canPublish ? (isNew ? "Lesson created." : "Lesson saved.")
@@ -2432,15 +2439,42 @@ function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnab
                                      onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))}
                                      placeholder={"Option " + (k + 1)} aria-label={"Option " + (k + 1)}/>
                               {!ro && c.options.length > 2 && <button type="button" className="lq-del" aria-label={"Remove option " + (k + 1)}
-                                onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}><LedIcon name="x"/></button>}
+                                onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), whys: (cc.whys || []).filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}><LedIcon name="x"/></button>}
+                              {/* The Labs' named slip: why somebody picks this wrong option. Shown to a learner who does. */}
+                              {!right && <input className="lq-opt-why" value={(c.whys || [])[k] || ""} disabled={ro}
+                                onChange={e => setCheck(i, "whys", c.options.map((_, j) => j === k ? e.target.value : ((c.whys || [])[j] || "")))}
+                                placeholder="Why is this tempting? (shown to a learner who picks it)" aria-label={"Why option " + (k + 1) + " is tempting"}/>}
                             </li>
                           );
                         })}
                       </ul>
                       {!ro && c.options.length < 8 && <button type="button" className="lq-add" onClick={() => setCheck(i, "options", c.options.concat([""]))}>Add an option</button>}
                     </div>
+                  ) : c.kind === "order" ? (
+                    <div className="lq-opts">
+                      <span className="lq-label">The steps, IN THE RIGHT ORDER — learners get them shuffled</span>
+                      <ol className="lq-steps">
+                        {c.options.map((o, k) => (
+                          <li key={k} className="lq-opt">
+                            <input className="lq-opt-text" value={o} disabled={ro} placeholder={"Step " + (k + 1)} aria-label={"Step " + (k + 1)}
+                                   onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))}/>
+                            {!ro && c.options.length > 3 && <button type="button" className="lq-del" aria-label={"Remove step " + (k + 1)}
+                              onClick={() => setCheck(i, "options", c.options.filter((_, kk) => kk !== k))}><LedIcon name="x"/></button>}
+                          </li>))}
+                      </ol>
+                      {!ro && c.options.length < 8 && <button type="button" className="lq-add" onClick={() => setCheck(i, "options", c.options.concat([""]))}>Add a step</button>}
+                      <p className="lq-hint">Marked by how much of the sequence is right; only the exact order earns every mark. At least three steps.</p>
+                    </div>
                   ) : (
                     <div className="lq-mark">
+                      {c.kind === "evidence" && (
+                        <label className="lq-f lq-video">
+                          <span>The exercise, on another site</span>
+                          <input value={c.url || ""} inputMode="url" disabled={ro} placeholder="https://www.freecodecamp.org/learn/…"
+                                 aria-label={"Exercise link for question " + (i + 1)} onChange={e => setCheck(i, "url", e.target.value.trim())}/>
+                          <em className="lq-note">They do it there, then hand back their proof and what they did. It is marked like any written answer and followed up in the exam.</em>
+                        </label>
+                      )}
                       {/* Only a 'watch' question carries a video, and it must:
                           a question about a film nobody was shown is a question
                           nobody can answer, so it is refused on save. */}

@@ -4780,7 +4780,12 @@ function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
           <p className="cur-watch-note">Watch it, then write what you took from it — in your own words. A detail or a moment from the video counts for more than a tidy summary.</p>
         </div> : null;
       })()}
-      {c.kind === "mcq"
+      {/* An outside exercise: where it is, then their proof and account in the box below. */}
+      {c.kind === "evidence" && c.linkUrl && <p className="cur-watch-note"><a href={c.linkUrl} target="_blank" rel="noopener noreferrer">Open the exercise</a> — do it there, then paste the link to your result and say what you did, what you scored, and one thing that went wrong.</p>}
+      {c.kind === "order"
+        /* One ordering control in the app: the exam player's (lrn-exam.jsx), buttons not drag. */
+        ? <LxField q={{ ...c, n }} value={value} onChange={onChange} onPaste={() => {}} onType={() => {}} disabled={disabled}/>
+        : c.kind === "mcq"
         ? c.options.map((o, k) => (
             /* `answer` is there once the right answers are revealed (a pass,
                or enough tries); before that only `right` comes back, so the
@@ -4797,11 +4802,13 @@ function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
               placeholder={{ essay: "Make your case — a clear point, your reasons, an example", reflection: "Be honest and specific — there is no wrong answer",
                 project: "What you made, how you made it, and what you learned", task: "What you actually did, and one decision you made while doing it",
                 watch: "What you took from it — something specific you saw or heard, in your own words",
+                evidence: "The link to your result, then what you did, your score, and one thing that went wrong",
                 code: "Paste or type your code" }[c.kind] || "Your answer, in your own words"}/>
             {CUR_SHOWS_WORK.includes(c.kind) && !disabled && <CurAttach n={n} onAdd={url => onChange(((value || "") + "\n" + url).trim())}/>}
           </React.Fragment>}
       {mark && mark.feedback && <p className="cur-feedback"><b>{mark.by === "ai" ? "Feedback (AI)" : mark.by === "auto" ? "Note" : "Your instructor"}:</b> {mark.feedback}</p>}
-      {rv && c.kind !== "mcq" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
+      {rv && rv.slip && <p className="cur-feedback"><b>Why that one is tempting:</b> {rv.slip}</p>}
+      {rv && c.kind !== "mcq" && c.kind !== "order" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
       {rv && rv.answer === undefined && !rv.right && <p className="cur-feedback"><b>Not yet.</b> Think it through again — the answer is shown once you pass, or after a few tries.</p>}
     </fieldset>
   );

@@ -349,6 +349,11 @@ async function as(memberId, admin, viewport) {
       (await starRow.innerText()).replace(/\n/g, ' | ') + ' · verbal=' + q(`(int)(db_row("SELECT verbal FROM v3_scores WHERE subjectId = 'NGG-MS-K2' ORDER BY id DESC LIMIT 1")['verbal'] ?? 0)`));
     await mt.keyboard.press('Escape');
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/class-inside.png' : path.join(TMP, 'class-inside.png') });
+    // Class › Curriculum carries the session exams panel (Mp15CExams): the class's hardest questions and each sitting.
+    await mt.goto(BASE + '/mentor/class?tab=curriculum', { waitUntil: 'domcontentloaded' });
+    await mt.waitForSelector('#m15c-ex-h, .m15c-card[role="alert"]', { timeout: 60000 }).catch(() => {});
+    const exTxt = await mt.locator('#m15c-ex-h').innerText().catch(() => '');
+    chk('Class › Curriculum shows the session exams panel beside the answers to mark', /Session exams/.test(exTxt), exTxt || (await mt.locator('main').innerText().catch(() => '')).slice(0, 200));
     // The old email link (?tab=results) lands on Class › School results, inside the portal
     await mt.goto(BASE + '/mentor?tab=results', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mt);
