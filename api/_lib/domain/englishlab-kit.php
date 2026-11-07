@@ -57,6 +57,8 @@ function eng_forms(): array {
     // Forms one module adds to another's topic (articulation questions on the sound topics), APPENDED
     // after that topic's own forms, so no existing form changes its number.
     foreach (eng_articulation_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    // The exam-trap drills (englishlab-drill.php), appended after everything else for the same reason.
+    foreach (eng_drill_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     ksort($f);
     return $f;
 }

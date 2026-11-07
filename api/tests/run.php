@@ -38272,6 +38272,25 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('english lab · every grammar topic (' . count($grammar) . ') teaches its rule first, as a contrast: a right example and the slip people make, each with its reason' . ($badRule ? ' (' . implode(', ', $badRule) . ')' : ''),
         $badRule === [] && !array_diff(array_keys(eng_rules()), $ids));
 
+    /* The exam-trap drills (owner, 7 Nov 2026: "Becoming Gods"): appended AFTER every topic's own forms,
+       and the corrections to the training pack hold — "one of those who" is plural, "neither she nor I"
+       is "am", a jury divided in THEIR opinion is plural; and the sound topics teach a rule first too. */
+    $allF = eng_forms(); $drillBad = [];
+    foreach (eng_drill_forms() as $id => $extra) {
+        $own = count($allF[$id] ?? []) - count($extra);
+        foreach ($extra as $k => $fn) if ($own < 1 || ($allF[$id][$own + $k] ?? null) === null || $allF[$id][$own + $k](new MlbRng(7))['stem'] !== $fn(new MlbRng(7))['stem']) { $drillBad[] = $id; break; }
+    }
+    $keyOf = static function (string $id, string $needle): array {
+        $out = [];
+        $fn = eng_drill_forms()[$id][0]; for ($seed = 1; $seed <= 400; $seed++) { $q = $fn(new MlbRng($seed)); if (str_contains($q['stem'], $needle)) $out[] = $q['options'][$q['key']]; }
+        return array_unique($out);
+    };
+    chk('english lab · the exam-trap drills come after each topic\'s own forms, so no stored session changes question' . ($drillBad ? ' (' . implode(', ', $drillBad) . ')' : ''), $drillBad === []);
+    chk('english lab · concord traps are keyed right: one of those who ARE, neither she nor I AM, the jury ARE divided in their opinion',
+        $keyOf('EN-038', 'one of those teachers who') === ['are'] && $keyOf('EN-038', 'Neither she nor I') === ['am'] && $keyOf('EN-038', 'The jury') === ['are']);
+    $soundsNoRule = array_values(array_filter(['EN-021', 'EN-022', 'EN-024', 'EN-025', 'EN-026', 'EN-027', 'EN-028', 'EN-050'], static fn($t) => !mlb_why_of($t)));
+    chk('english lab · the sound topics and nearest/opposite teach their rule before practice' . ($soundsNoRule ? ' (' . implode(', ', $soundsNoRule) . ')' : ''), $soundsNoRule === []);
+
     // Speaking: the voice speaks only the Lab's own text; listening is matched word by word against the topic's sentence.
     $sp = eng_speak(); $badSp = [];
     foreach ($sp as $c => $x) {

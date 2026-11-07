@@ -7122,3 +7122,15 @@ Owner: *"I need real effective learning. Grammar … Speaking … Articulation �
   - PHP: 6934/0. Adds checks that rules are contrasts, the speaking content is well-formed, the voice refuses text that is not the Lab's, word matching, "Say it" against a fake Spitch, and that every text has its recording.
   - `mathlab-e2e`: 99/0. The rule renders as a contrast and must be read; Hear and say runs eight rounds; the recorded clips load.
   - `labs-client`: 28/0. `route-registry`: 60/0. `study-tools`: 46/0.
+
+## 7 Nov 2026 — English Lab: exam-trap drills and taught rules; Maths Lab: number bases at exam speed
+
+**Owner:** "Improve the grammar rules. Follow the concept of the lab. Becoming Gods", with a concord / lexis / oral English / number-base training pack to adapt, and "What is the fastest way to solve number base problems in less than 50s".
+
+- **The concept** is the Gods of Maths brief, "tough, but easy": the traps the senior paper really sets, every wrong option naming its slip, the rule taught first.
+- **Rules** (`englishlab-teach.php`): EN-011 and EN-038 rewritten around the five concord patterns; new taught rules for EN-021, 022, 024–028 (vowels, diphthongs, ch, silent letters, stress, noun/verb stress, rhyme) and EN-050 (nearest/opposite).
+- **Drills** (`englishlab-drill.php`, `eng_drill_forms()`): appended after every topic's own forms and the articulation forms, so no stored session changes question. Concord (EN-011, EN-038), lexis (EN-043 gap-fill, EN-050), oral English (EN-021, 022, 024–028).
+- **The pack was corrected, not copied.** Collective nouns are not "always singular" (the jury ARE divided in THEIR opinion); British English says the h in herb and the l in salt; NA-tion and u-ni-VER-si-ty; con-TENT (satisfied) vs CON-tent; politics is the -ics exception; an item whose sentence did not decide its answer was given the clause that does.
+- **Number bases** (`mathslab-gen-more.php`, MC-110): unknown base by plugging the options, a missing digit across two bases, binary multiplication by shift-and-add, binary to base ten with the zeros skipped. Every unknown is chosen first, so each question has exactly one answer (the pack's "31_x = 22_5" has none).
+- **Voice:** the Nigerian YarnGPT voices were tried and dropped: a speech recogniser could not transcribe most clips correctly, and none spoke single words reliably. Recordings stay Kokoro British; bolder variants (natural pace, presence lift, compression, −14 LUFS) are prepared as samples, not yet applied.
+- Tests (`api/tests/run.php`): drills sit after each topic's own forms; the concord traps are keyed right; the sound topics teach a rule first.
