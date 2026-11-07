@@ -322,8 +322,10 @@ async function english(who, W, H, tag) {
   chk(tag + ': the English Exams page offers the English paper only', await p.locator('.mlb-paper').count() === 1 && /Timed English paper/.test(await p.locator('.mlb-paper').innerText()));
   await p.goto(BASE + '/study/english/learn/EN-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });
+  chk(tag + ': the first English topic teaches a rule before practice', await p.locator('.mlb-why-judge').count() === 1 && await p.locator('.mlb-lesson-foot .mlb-go').isDisabled());
   for (let k = 0; k < 12; k++) {
     if (await p.locator('.mlb-status').count()) break;
+    for (let g = 0; g < 20 && await p.locator('.mlb-why .mlb-actions .stt-btn').count(); g++) await p.locator('.mlb-why .mlb-actions .stt-btn').first().click();
     while (await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').count()) await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').click();
     await p.waitForTimeout(250);
     const c = p.locator('.mlb-lesson-foot .mlb-go'); if (await c.count() && await c.isEnabled()) await c.click();

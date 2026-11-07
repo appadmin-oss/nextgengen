@@ -5039,7 +5039,7 @@ The third Lab, on the same engine as Maths and Physics: the same climb, practice
 - **Courses:** English Foundations, Speech Work, Grammar in Use, Reading and Meaning, Writing Well, Word Power, The Senior Paper. Stage certificates say "English Lab".
 - **Daily Word Challenge** comes from The Senior Paper. **The timed English paper** (Exams tab): 40 four-option questions in 40 minutes across all eight stages, new every time.
 - **How a lesson teaches (6 Nov 2026).**
-  - **The rule** (every grammar topic): the rule in one line, then right examples (✓, green) and the slip people make (✗, struck through in red), each with its reason. It is read before practice opens.
+  - **The rule** (all 80 topics): the rule in one line, then right examples (✓, green) and the slip people make (✗, struck through in red), each with its reason. It is read before practice opens.
   - **Hear and say** (the sounds topics, question tags, syllables and clusters):
     - *How to say it*: where the tongue and lips go, and whether the voice is on.
     - *Hear the difference*: eight rounds of a minimal pair (ship / sheep) in four different voices. The answer buttons stay shut until the word has been played.
@@ -5047,7 +5047,7 @@ The third Lab, on the same engine as Maths and Physics: the same climb, practice
   - **The voice is recorded, not live.** Every clip was made once with a free open-source British neural voice (Kokoro) and ships with the site. Nothing to configure, nothing to pay, the same voice on every phone.
   - **"Say it" listening.** The browser's own speech recogniser does the listening for free. If a Spitch key is set in Settings (the one Quote of the Week uses), Spitch's recogniser, trained on Nigerian speech, is used first.
   - **When you add speaking text**, a developer runs `tools/english-voices.py` to record it. The test suite fails until they do.
-- **What it does not do yet:** mark a whole essay or letter. Writing is practised in the parts that can be marked instantly. A judged essay needs a teacher queue or a rubric-checked AI step, and is a separate piece of work. Listening questions (hear the word, pick the sound) need audio and are not in yet.
+- **What it does not do yet:** mark a whole essay or letter. Writing is practised in the parts that can be marked instantly. A judged essay needs a teacher queue or a rubric-checked AI step, and is a separate piece of work. Recorded minimal-pair listening and dictation are available; recognising the words in a recording is not a score for accent quality.
 - No exam body is named anywhere a learner reads; the questions are NGG's own.
 
 ### The Labs' explorers, easier to use (6 Nov 2026)

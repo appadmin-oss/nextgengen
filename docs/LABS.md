@@ -113,15 +113,115 @@ English (6 Nov 2026; owner: *"Build the engine. Make it modular."*) adds no engi
   - the English journey in `tests/mathlab-e2e.test.js`, which answers a real practice question in the browser.
 - **Not yet built:**
   - judged free writing: an essay or a whole letter needs a teacher queue or a rubric-checked model call through the AI layer, never the instant marker;
-  - audio for speech work: the Sounds items are written so audio can be attached to the same items.
+  - assessment of unscripted speech quality: recorded models, minimal-pair listening and dictation are available (see §6), but transcription alone is not a pronunciation score.
 
+
+### English summit implementation plan — 7 November 2026
+
+Base: `4b8e9e08`, freshly fetched from `claude/finme-dues-training-fees-l54o5j`; work stays on `codex/english-lab-gods`. No migrations or shared Learn edits.
+
+Baseline before content: **6,963 backend checks passed / 0 failed; 28 client checks passed / 0 failed; 104 browser checks passed / 0 failed**. Browser tests use installed Chromium through an external Playwright adapter, with the repository test unchanged. Initial environment attempts failed on PHP subprocess permissions and the missing Playwright browser download; these were resolved before recording this baseline. The earlier source revision had 6,937 backend passes and is not the baseline for this work.
+
+Inventory below is the starting snapshot: **80 topics, 259 forms, 35 taught rules**. “No” identifies a missing taught rule, not missing practice.
+
+| Topic | Existing forms | Taught rule |
+| --- | ---: | --- |
+| EN-001 | 3 | No |
+| EN-002 | 3 | No |
+| EN-003 | 3 | Yes |
+| EN-004 | 3 | Yes |
+| EN-005 | 3 | Yes |
+| EN-006 | 3 | Yes |
+| EN-007 | 3 | No |
+| EN-008 | 3 | No |
+| EN-009 | 3 | No |
+| EN-010 | 3 | No |
+| EN-011 | 4 | Yes |
+| EN-012 | 3 | Yes |
+| EN-013 | 3 | Yes |
+| EN-014 | 3 | Yes |
+| EN-015 | 3 | Yes |
+| EN-016 | 3 | Yes |
+| EN-017 | 3 | Yes |
+| EN-018 | 3 | Yes |
+| EN-019 | 3 | Yes |
+| EN-020 | 3 | Yes |
+| EN-021 | 4 | Yes |
+| EN-022 | 4 | Yes |
+| EN-023 | 5 | No |
+| EN-024 | 6 | Yes |
+| EN-025 | 5 | Yes |
+| EN-026 | 4 | Yes |
+| EN-027 | 4 | Yes |
+| EN-028 | 5 | Yes |
+| EN-029 | 3 | No |
+| EN-030 | 3 | No |
+| EN-031 | 3 | Yes |
+| EN-032 | 3 | Yes |
+| EN-033 | 3 | Yes |
+| EN-034 | 3 | Yes |
+| EN-035 | 3 | Yes |
+| EN-036 | 3 | Yes |
+| EN-037 | 3 | Yes |
+| EN-038 | 5 | Yes |
+| EN-039 | 3 | Yes |
+| EN-040 | 3 | Yes |
+| EN-041 | 3 | No |
+| EN-042 | 3 | No |
+| EN-043 | 4 | No |
+| EN-044 | 3 | No |
+| EN-045 | 3 | No |
+| EN-046 | 3 | No |
+| EN-047 | 3 | No |
+| EN-048 | 3 | No |
+| EN-049 | 3 | No |
+| EN-050 | 5 | Yes |
+| EN-051 | 3 | Yes |
+| EN-052 | 3 | No |
+| EN-053 | 3 | No |
+| EN-054 | 3 | No |
+| EN-055 | 3 | No |
+| EN-056 | 3 | No |
+| EN-057 | 3 | Yes |
+| EN-058 | 3 | No |
+| EN-059 | 3 | No |
+| EN-060 | 3 | No |
+| EN-061 | 3 | No |
+| EN-062 | 3 | No |
+| EN-063 | 3 | No |
+| EN-064 | 3 | No |
+| EN-065 | 3 | No |
+| EN-066 | 3 | No |
+| EN-067 | 3 | No |
+| EN-068 | 3 | No |
+| EN-069 | 3 | No |
+| EN-070 | 3 | No |
+| EN-071 | 3 | No |
+| EN-072 | 3 | No |
+| EN-073 | 3 | No |
+| EN-074 | 3 | No |
+| EN-075 | 3 | No |
+| EN-076 | 3 | No |
+| EN-077 | 3 | No |
+| EN-078 | 3 | No |
+| EN-079 | 3 | No |
+| EN-080 | 3 | Yes |
+
+Implementation order:
+
+1. Complete and review taught rules, starting with concord and tenses; contextual synonyms/antonyms; oral English; inference; summary; then remaining topics. Each topic gets 3–6 clearly judged examples with reasons, including both right and wrong. Qualify existing overgeneralised rules and remove ambiguous judgement examples.
+2. Append targeted production/reasoning practice through `eng_drill_forms()` until every topic has at least four forms and a typed, error-spotting or ordering form. Existing form numbers, rows and seeded outputs remain unchanged; compare against captured replay fixtures.
+3. Append EN-081–EN-100 in stages 9–10: rhetoric, register, literary technique, critical reading and advanced oral interpretation. Add the Gods of English summit band, course, prerequisites and paper coverage. The shared engine already selects its daily question from the summit band; verify that behaviour rather than copying it.
+4. Deepen oral practice and minimal pairs. Verify new transcriptions/stress against Cambridge or Oxford UK before adding them; record any new speaking text with the existing British generator, preserving all existing clips. Dictionary access is currently blocked by the environment allowlist; a two-domain configuration draft has been saved. Do not label unverified pronunciations verified.
+
+Before each deliverable commit: examiner review, a scratch sweep of each new form across 200 seeds (options, hints, marking, public-key exclusion, answer variation), and all three baseline suites. Commit deliverables separately and push only the new branch. Free essays remain teacher-assessed; instant marking will use bounded answers with explicit instructions and accepted alternatives.
 
 ## 6. Teaching before practice: The rule and Hear and say
 
 - **The rule** is the engine's existing teaching step (lab content `why`, read through `mlb_why_of`). English supplies `eng_rules()` (`englishlab-teach.php`): `[rule, reminder, [[example, why], …]]`.
   - Lines starting `✓`/`✗` are drawn as a contrast, because `NGG_LABS.english.teach.contrast` is set.
   - The step's words ("The rule", "Next example", "Why") come from `teach`, never from the shared screen.
-  - A test requires every grammar topic to have a rule with at least one ✓ and one ✗.
+  - Every foundation topic EN-001–EN-080 now has 3–6 explicitly marked examples, including both ✓ and ✗, with a reason for each; regression checks enforce that contract.
 - **Hear and say** is lab content `speak` (`eng_speak()`, `englishlab-speech.php`): `how`, `pairs` and `say` per topic. `mathslab.comp` passes it as `speak`, with `speak.audio` (text → recorded clip URLs). The client is `src/modules/mathslab/eng-speak.jsx`, which is in `build.js` `ORDER` and `index.html`, before `mlb-app.jsx`.
 - **The voice is recorded** (`tools/english-voices.py`, Kokoro, Apache-2.0, British voices `bf_emma`, `bm_george`, `bf_isabella`, `bm_lewis`). The clips are committed under `assets/audio/english/`.
   - Each file is named by a hash of its text (`eng_audio_name()`), so changed text gets a new recording.
