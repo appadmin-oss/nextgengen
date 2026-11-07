@@ -261,6 +261,8 @@ function member_card_public(array $m, bool $secure): array {
     if (function_exists('club_division_of')) {
         $mc = function_exists('curriculum_member_courses') && array_key_exists('courses', $m) ? curriculum_member_courses($m) : [];
         foreach (array_merge([(string)($m['track'] ?? '')], $mc) as $c) if (!curriculum_is_everyones($c) && ($division = club_division_of($c)) !== '') break;
+        // Nobody has placed them yet: their division still names the card (a "Tech" track is Technology).
+        if ($division === '' && function_exists('curriculum_member_division')) $division = curriculum_member_division($m);
     }
     $meta = null;
     if ($division !== '' && function_exists('club_divisions')) foreach (club_divisions() as $d) if ($d['name'] === $division) $meta = $d;

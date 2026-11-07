@@ -1918,6 +1918,8 @@ const CR_CP_TONE = { placed: ["Placed", "ok"], unplaced: ["Proposed", "warn"], n
 function crCpWhy(r) {
   if (r.flag === "other_division") return "Their card also names " + (r.dropped || []).slice(0, 3).join(", ") + ((r.dropped || []).length > 3 ? "…" : "") + ", another division. Add it only if they really take both."
     + ((r.courses || []).length > 3 ? " The proposal is a whole division: keep only the courses they take." : "");
+  if (r.flag === "division_only") return "Only their division is known (“" + (r.track || "their record") + "”), so they take its shared foundation course. Choose the course they take.";
+  if (r.flag === "several") return "Their card names more than one course; they take " + ((r.courses || [])[0] || "the first") + " for now. Also named: " + (r.alternatives || []).slice(0, 3).join(", ") + ". Confirm the one they take.";
   if (r.flag === "whole_division") return "A whole division was proposed from “" + (r.track || "their record") + "”. Keep only the courses they take.";
   if (r.flag === "no_match") return "Nothing on their record names a course. Choose theirs.";
   if (r.status === "unplaced") return "From their " + (r.from === "interests" ? "interests" : r.from === "division" ? "division" : "track") + ".";

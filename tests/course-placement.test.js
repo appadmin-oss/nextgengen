@@ -94,6 +94,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
       + `db_insert('members', ['memberId'=>'${ADMIN}','fullName'=>'Ada Admin','email'=>'cp-admin@example.org','type'=>'NGG','status'=>'active','role'=>'super_admin','centre'=>'Ijaiye','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`
       + `db_insert('centres', ['centreId'=>'CTR-IJ','name'=>'Ijaiye','code'=>'IJ','color'=>'#76B043','status'=>'active','capacity'=>0,'createdAt'=>now_iso()]);`
       + `db_insert('members', ['memberId'=>'NGG-CP-TM','fullName'=>'Tobi Techmedia','email'=>'cp-tm@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Ijaiye','track'=>'Tech','disciplines'=>'Tech, Media','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`
+      + `db_insert('members', ['memberId'=>'NGG-CP-CI','fullName'=>'Chidi Coder','email'=>'cp-ci@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Ijaiye','track'=>'','disciplines'=>'Coding, Robotics','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`
       + `db_insert('members', ['memberId'=>'NGG-CP-PI','fullName'=>'Pelumi Piano','email'=>'cp-pi@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Ijaiye','track'=>'Piano','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`);
 
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -111,18 +112,21 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await page.waitForFunction(() => /Tobi Techmedia/.test(document.body.innerText), null, { timeout: 60000 }).catch(() => {});
     let txt = await page.evaluate(() => document.body.innerText);
     if (process.env.CPLACE_SHOTS) await page.screenshot({ path: process.env.CPLACE_SHOTS + '/placement.png' });
-    chk('Needs a look lists the Tech child whose card also names Media, with the reason in words', /Tobi Techmedia/.test(txt) && /another division/.test(txt) && /Coding/.test(txt));
+    /* One course, not a wall (7 Nov 2026): a child whose record only names a division ("Tech") is proposed NO
+       course — once it was every Technology course — and is put in front of a person, in words. */
+    chk('Needs a look lists the Tech child known only by division, with the reason in words', /Tobi Techmedia/.test(txt) && /Only their division is known/.test(txt));
     chk('…and their proposal holds no Media course', !/Graphic Design[\s\S]{0,40}Proposed, not confirmed/.test(txt));
+    chk('A child whose card names two courses is proposed the first, with the other named for staff', /Chidi Coder/.test(txt) && /more than one course/.test(txt) && /Robotics/.test(txt));
 
-    // Open the child and confirm from their drawer (the Control Room's own drawer and confirm).
-    await page.evaluate(() => { const r = Array.from(document.querySelectorAll('tbody tr')).find(x => /Tobi Techmedia/.test(x.innerText)); r.click(); });
+    // Open that child and confirm from their drawer (the Control Room's own drawer and confirm).
+    await page.evaluate(() => { const r = Array.from(document.querySelectorAll('tbody tr')).find(x => /Chidi Coder/.test(x.innerText)); r.click(); });
     await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(b => /^Confirm these courses$/.test(b.innerText.trim())), null, { timeout: 10000 }).catch(() => {});
     await page.evaluate(() => Array.from(document.querySelectorAll('button')).find(b => /^Confirm these courses$/.test(b.innerText.trim())).click());
     await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(b => /^Confirm 1 placement$/.test(b.innerText.trim())), null, { timeout: 10000 }).catch(() => {});
     await page.evaluate(() => { const b = Array.from(document.querySelectorAll('button')).find(x => /^Confirm 1 placement$/.test(x.innerText.trim())); if (b) b.click(); });
-    for (let i = 0; i < 30 && !/Coding/.test(php(`echo db_row("SELECT courses FROM members WHERE memberId = 'NGG-CP-TM'")['courses'];`)); i++) await page.waitForTimeout(500);
-    const placed = php(`echo db_row("SELECT courses FROM members WHERE memberId = 'NGG-CP-TM'")['courses'];`);
-    chk('Confirming places the child: their courses are stored, Technology only', /Coding/.test(placed) && !/Graphic Design|Media Lab/.test(placed));
+    for (let i = 0; i < 30 && !/Coding/.test(php(`echo db_row("SELECT courses FROM members WHERE memberId = 'NGG-CP-CI'")['courses'];`)); i++) await page.waitForTimeout(500);
+    const placed = php(`echo db_row("SELECT courses FROM members WHERE memberId = 'NGG-CP-CI'")['courses'];`);
+    chk('Confirming places the child on the ONE proposed course', /Coding/.test(placed) && !/Robotics|Graphic Design|Media Lab/.test(placed));
     await page.waitForFunction(() => /Placed\s*1/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
     chk('The counts move: one child is now placed', /Placed\s*1/.test(await page.evaluate(() => document.body.innerText)));
 

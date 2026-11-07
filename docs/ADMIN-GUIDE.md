@@ -4623,8 +4623,12 @@ says so with *Try again* rather than showing a PIN that no longer works.
 
 A child's courses decide their lessons, Community channels, timetable and which instructors' classes they are in. They are now set **once, here**, and every portal reads the same list.
 
-- **Proposed:** for a child nobody has placed, their record proposes courses, from the track and the interests on the card, within one division. The child sees them marked "not confirmed yet".
-- **Needs a look:** the proposal needs a person to decide. Examples: their card names another division (a Tech child whose card also says Media), a division word gave a whole division, or nothing names a course. Open the child to see why.
+- **Proposed:** for a child nobody has placed, their record proposes **one course** (since 7 Nov 2026). The child sees it marked "not confirmed yet".
+  - The track names a course ("Coding", "Piano") → that course. Interests on the card do not add more.
+  - Only interests name courses ("Coding, Robotics") → the first one, flagged, with the others listed so you can choose.
+  - The record only names a division ("Tech", "Media") → **no course**. Until you place them they see their division's shared lessons, never every course in it. (Before this fix such a child took all seven or eight courses at once, each with its own lessons, deadlines and fines.)
+  - "Music" on its own is the Music course, not every instrument. "Music" plus "Piano" on the card is Piano.
+- **Needs a look:** the proposal needs a person to decide. Examples: only their division is known, their card names more than one course, it names another division (a Tech child whose card also says Media), or nothing names a course. Open the child to see why.
 - **Confirm proposed:** select children, then Confirm. Their proposal becomes their courses.
 - **Add / Remove / Set courses:** choose from the course list. To place a child in two divisions on purpose, do it here.
 - **Course health** (Learning) lists every course: the children in it, its instructors, lessons, class times and channel. A course failing children comes first. Open one to see what is missing and go straight to where it is fixed.

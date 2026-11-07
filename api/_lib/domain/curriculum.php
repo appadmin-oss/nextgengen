@@ -1668,7 +1668,7 @@ function member_courses_of(array $m): array {
  * nothing in particular. One map, read by everything:
  *
  *   course_scope('Piano')  → ['Piano', 'Music']       a strand, plus its subject
- *   course_scope('Music')  → ['Music', …every strand]  the subject, taught across
+ *   course_scope('Music')  → ['Music']                its own shared lessons — not every strand (7 Nov 2026)
  *   course_scope('Acting') → ['Acting']                a course that is just itself
  *
  * To make another broad course behave this way, add a row. Nothing else changes.
@@ -1704,8 +1704,12 @@ function course_family(string $course): array {
 function course_scope(string $course): array {
     $parent = course_parent($course);
     if ($parent !== '') return [$course, $parent];
-    $kids = course_strands($course);
-    return $kids ? array_merge([$course], $kids) : [$course];
+    /* A broad course is ITS OWN lessons, not every strand under it (7 Nov 2026: "students getting multiple
+       courses"). It used to widen downwards too, so a child placed on "Music" took Piano, Guitar, Drums,
+       Violin, Saxophone, Vocal Training and Music Production at once — seven sets of lessons and deadlines.
+       A strand still reaches up to its subject (a pianist reads music); a staff screen that wants the
+       whole family asks course_family(). */
+    return [$course];
 }
 
 /**
@@ -1787,6 +1791,7 @@ const MEMBER_COURSE_WORDS = [
     'robots' => 'Robotics', 'robot' => 'Robotics', 'cyber' => 'Cybersecurity', 'cyber security' => 'Cybersecurity',
     'film' => 'Video Production', 'video' => 'Video Production', 'videography' => 'Video Production',
     'pm' => 'Project Management',
+    'graphics design' => 'Graphic Design', 'graphics' => 'Graphic Design', 'graphic' => 'Graphic Design',
 ];
 
 /**
@@ -1896,6 +1901,36 @@ function curriculum_division_courses(string $divId, array &$ctx): array {
  * the record, else what their track plainly means, else the division of a
  * course they already carry.
  */
+/**
+ * Every name the member's division goes by: the programme's own ("Technology & Applied Engineering") and the
+ * catalogue heading a deployment filed it under ("AI & Technology"). A lesson scoped to the division may be
+ * filed under either, and an unplaced member must reach it whichever one an admin used.
+ */
+function curriculum_member_division_names(array $m): array {
+    $own = curriculum_member_division($m);
+    if ($own === '') return [];
+    $out = [$own];
+    $id = '';
+    if (function_exists('nggc_divisions')) foreach (nggc_divisions() as $d) if (strcasecmp((string)$d['name'], $own) === 0) $id = (string)$d['id'];
+    if ($id !== '' && function_exists('club_catalogue') && function_exists('nggc_division_for_track')) {
+        foreach (club_catalogue() as $heading => $courses) {
+            if (in_array($heading, $out, true)) continue;
+            $hid = nggc_division_for_track((string)$heading);
+            if ($hid === '') foreach ((array)$courses as $c) { $hid = nggc_division_for_track((string)$c); if ($hid !== '') break; }
+            if ($hid === $id) $out[] = (string)$heading;
+        }
+    }
+    return $out;
+}
+
+/** The member's division id ("tech"), '' when none is known. */
+function curriculum_member_division_id(array $m): string {
+    $name = curriculum_member_division($m);
+    if ($name === '' || !function_exists('nggc_divisions')) return '';
+    foreach (nggc_divisions() as $d) if (strcasecmp((string)$d['name'], $name) === 0) return (string)$d['id'];
+    return '';
+}
+
 function curriculum_member_division(array $m): string {
     $d = trim((string)($m['division'] ?? ''));
     if ($d !== '' && function_exists('nggc_division') && ($x = nggc_division($d))) return (string)$x['name'];
@@ -1952,7 +1987,8 @@ function curriculum_member_courses(array $m, ?array &$ctx = null): array {
     $seen = []; $uniq = [];
     foreach ($out as $c) { $k = mb_strtolower(trim((string)$c)); if ($k !== '' && !isset($seen[$k])) { $seen[$k] = 1; $uniq[] = (string)$c; } }
     $out = $uniq;
-    if ($out && !isset($seen['chess'])) $out[] = 'Chess';
+    // Chess is every division's (§6): anyone placed, or known by their division alone, takes it.
+    if (($out || curriculum_member_division($m) !== '') && !isset($seen['chess'])) $out[] = 'Chess';
     // The core courses reach everybody — including a member nobody has placed yet.
     foreach (CURR_CORE_COURSES as $c) if (!isset($seen[mb_strtolower($c)])) $out[] = $c;
     return $out;
@@ -1975,23 +2011,21 @@ function curriculum_course_ctx_shared(): array {
 }
 
 function curriculum_member_courses_infer(array $m, ?array &$ctx = null): array {
+    /* ONE COURSE, NOT A WALL (fixed 7 Nov 2026: "students getting multiple courses").
+       This used to UNION everything a record mentioned: the track's courses, then every interest on the card,
+       then — for a track that only names a division ("Tech", "Media", "Music") — EVERY course in that division.
+       So a child nobody had placed yet took seven or eight courses at once: seven sets of lessons, seven
+       sets of deadlines (and the fines for missing them), seven class lists. The rule now:
+         · the track names a course  → that course (or the courses it names, "Coding, Robotics": written
+           out deliberately); interests on the card do not pile on top — they are alternatives for staff;
+         · only interests name one  → the FIRST, flagged `several` when there were more, the rest listed;
+         · only the division is known → no course; they reach the division's shared lessons (its spine)
+           and are flagged `division_only` until a person places them;
+         · nothing                  → nothing, flagged `no_match`.
+       A proposal is only ever a proposal: staff confirm or change it in People → Courses. */
     if ($ctx === null) $ctx = curriculum_course_ctx_shared();
     $track = (string)($m['track'] ?? ''); $dis = (string)($m['disciplines'] ?? ''); $div = trim((string)($m['division'] ?? ''));
-    $out = array_merge(member_courses_from_text($track, $ctx)[0], member_text_words($track));
-    $from = $out ? 'track' : '';
-    $trackDiv = function_exists('nggc_division_for_track') ? nggc_division_for_track($track) : '';
-    if ($trackDiv === '' && $div !== '' && function_exists('nggc_division') && nggc_division($div)) $trackDiv = (string)nggc_division($div)['id'];
-    $fromDis = array_merge(member_courses_from_text($dis, $ctx)[0], member_text_words($dis));
-    $dropped = [];
-    if ($trackDiv !== '' && trim($track) !== '') {
-        $mine = array_map('mb_strtolower', array_merge(curriculum_division_courses($trackDiv, $ctx), ['Chess']));
-        foreach ($fromDis as $c) if (!in_array(mb_strtolower((string)$c), $mine, true)) $dropped[] = (string)$c;
-        $fromDis = array_values(array_filter($fromDis, static fn($c) => in_array(mb_strtolower((string)$c), $mine, true)));
-    }
-    if ($fromDis) { $out = array_merge($out, $fromDis); $from = $from ?: 'interests'; }
-    if (!$out && $div !== '') { $out = curriculum_division_courses($div, $ctx); $from = $out ? 'division' : ''; }
-    // Only courses that exist are proposed: a division's word ("Tech") or a
-    // stray one ("Piano", once Musical Instruments is in) names no class.
+    // Only courses that exist are proposed: a division's word ("Tech") or a stray one names no class.
     // Read once per context, never per member: class lists call this for every child.
     if (!isset($ctx['known'])) {
         $known = ['chess' => 'Chess'];
@@ -2005,9 +2039,54 @@ function curriculum_member_courses_infer(array $m, ?array &$ctx = null): array {
     $real = static function (array $list) use ($known): array {
         $o = []; foreach ($list as $c) { $k = mb_strtolower(trim((string)$c)); if (isset($known[$k]) && !in_array($known[$k], $o, true)) $o[] = $known[$k]; } return $o;
     };
-    $clean = $real($out); $dropped = $real($dropped);
-    $flag = !$clean ? 'no_match' : ($dropped ? 'other_division' : ($from === 'division' || ($from === 'track' && count($clean) > 3) ? 'whole_division' : ''));
-    return ['courses' => $clean, 'from' => $from, 'dropped' => array_values(array_unique($dropped)), 'flag' => $flag];
+    $notChess = static fn(array $l) => array_values(array_filter($l, static fn($c) => strcasecmp((string)$c, 'Chess') !== 0));
+
+    $trackDiv = function_exists('nggc_division_for_track') ? nggc_division_for_track($track) : '';
+    if ($trackDiv === '' && $div !== '' && function_exists('nggc_division') && nggc_division($div)) $trackDiv = (string)nggc_division($div)['id'];
+    $divCourses = $trackDiv !== '' ? array_map('mb_strtolower', array_merge(curriculum_division_courses($trackDiv, $ctx), ['Chess'])) : [];
+
+    // The track: a course it names, unless all it named is a division (which expands to that division's whole list).
+    $fromTrack = $notChess($real(array_merge(member_courses_from_text($track, $ctx)[0], member_text_words($track))));
+    // A track that IS a course's name is that course, even where the same word also names a family ("Music").
+    $exact = $known[mb_strtolower(trim($track))] ?? null;
+    if ($exact !== null && strcasecmp($exact, 'Chess') !== 0) $fromTrack = [$exact];
+    $trackIsDivision = $exact === null && $fromTrack && $divCourses && count($fromTrack) > 3
+        && !array_diff(array_map('mb_strtolower', $fromTrack), $divCourses);
+    if ($trackIsDivision) $fromTrack = [];
+
+    // The card's interests: inside the track's division only; another division's are reported, never taken.
+    $fromDis = $notChess($real(array_merge(member_courses_from_text($dis, $ctx)[0], member_text_words($dis))));
+    $dropped = [];
+    if ($divCourses && trim($track) !== '') {
+        foreach ($fromDis as $c) if (!in_array(mb_strtolower($c), $divCourses, true)) $dropped[] = $c;
+        $fromDis = array_values(array_filter($fromDis, static fn($c) => in_array(mb_strtolower($c), $divCourses, true)));
+    }
+    if (count($fromDis) > 3 && $divCourses && !array_diff(array_map('mb_strtolower', $fromDis), $divCourses)) $fromDis = [];   // "the whole division" again
+
+    $alts = []; $flag = '';
+    // A broad subject on the track, sharpened by an interest that is one of its strands: "Music" + "Piano" is Piano.
+    if (count($fromTrack) === 1 && course_strands($fromTrack[0])) {
+        $kids = array_map('mb_strtolower', course_strands($fromTrack[0]));
+        $strand = array_values(array_filter($fromDis, static fn($c) => in_array(mb_strtolower($c), $kids, true)));
+        if ($strand) { $fromTrack = [$strand[0]]; $fromDis = array_values(array_diff($fromDis, [$strand[0]])); }
+    }
+    if ($fromTrack) {
+        $courses = $fromTrack; $from = 'track';
+        $alts = array_values(array_diff($fromDis, $fromTrack));
+    } elseif ($fromDis) {
+        $courses = [$fromDis[0]]; $from = 'interests';
+        $alts = array_slice($fromDis, 1);
+        if ($alts) $flag = 'several';
+    } else {
+        /* Only the division is known: no course is proposed. A division is not a course anybody takes (see
+           course_reach), so its name never enters the list; the child still reaches the division's shared
+           lessons through curriculum_member_units_all(), and the flag puts them in front of a person. */
+        $from = ''; $courses = [];
+        if ($trackDiv !== '' || ($div !== '' && function_exists('nggc_division') && nggc_division($div))) { $from = 'division'; $flag = 'division_only'; }
+    }
+    if (!$courses && $flag === '') $flag = 'no_match';
+    elseif ($flag === '' && $dropped) $flag = 'other_division';
+    return ['courses' => $courses, 'from' => $from, 'dropped' => array_values(array_unique($dropped)), 'alternatives' => $alts, 'flag' => $flag];
 }
 
 /* ── A three-year programme that adapts to the member ───────────────────────
@@ -2163,6 +2242,9 @@ function curriculum_member_units_all(array $m): array {
         $div = course_division((string)$c);
         if ($div !== '') $courses[mb_strtolower($div)] = true;
     }
+    /* …and the member's own division, even when no course is placed yet: a child nobody has placed reaches
+       the division's shared lessons (its spine) rather than nothing — or, as it once did, every course in it. */
+    foreach (curriculum_member_division_names($m) as $own) $courses[mb_strtolower($own)] = true;
     $courses = array_keys($courses);
     if (!$courses) return curriculum_load("status = 'published' AND course = ''", [], 'week, course, position');
     $ph = implode(',', array_fill(0, count($courses), '?'));
