@@ -9691,3 +9691,15 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
   background-attachment: scroll !important; scroll-behavior: auto !important;
 }
 :root[data-lite="on"] { --motion: 0; }
+
+/* ── Labs: Remember it (mlb-app.jsx MlbRemember) — a picture sequence, learner-paced, ending in recall ── */
+.mlb-rem { display: grid; gap: 12px; }
+.mlb-rem-fig { margin: 0; display: grid; gap: 10px; }
+.mlb-rem-img { width: 100%; height: auto; aspect-ratio: 640 / 330; border: 1px solid var(--mlb-line); border-radius: 12px; background: #fff; }
+.mlb-rem-cap { font-size: 16px; line-height: 1.5; color: var(--mlb-ink); }
+.mlb-rem-n { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; background: var(--mlb-line); font-size: 12.5px; font-weight: 700; }
+.mlb-rem-cover { display: grid; gap: 6px; place-content: center; min-height: 160px; padding: 18px; border: 2px dashed var(--mlb-line); border-radius: 12px; text-align: center; }
+.mlb-rem-q { margin: 0; font-size: 17px; font-weight: 650; line-height: 1.45; }
+.mlb-rem-hook { margin: 0; padding: 10px 12px; border-left: 4px solid #f5b026; background: #fff8e6; border-radius: 0 10px 10px 0; font-size: 15px; color: var(--mlb-ink); }
+.mlb-rem-nav { flex-wrap: wrap; }
+.mlb-rem-nav button { min-height: 44px; }

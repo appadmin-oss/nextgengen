@@ -322,9 +322,20 @@ async function english(who, W, H, tag) {
   chk(tag + ': the English Exams page offers the English paper only', await p.locator('.mlb-paper').count() === 1 && /Timed English paper/.test(await p.locator('.mlb-paper').innerText()));
   await p.goto(BASE + '/study/english/learn/EN-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });
+  let remSeen = false, remImg = false, remCover = false;
   for (let k = 0; k < 12; k++) {
     if (await p.locator('.mlb-status').count()) break;
     while (await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').count()) await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').click();
+    /* Remember it: a picture sequence the learner steps through, then covers and recalls (tools/lab-remember). */
+    if (await p.locator('.mlb-rem').count()) {
+      remSeen = true;
+      await p.waitForFunction(() => { const i = document.querySelector('.mlb-rem-img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 15000 }).catch(() => {});
+      remImg = remImg || await p.evaluate(() => { const i = document.querySelector('.mlb-rem-img'); return !!(i && i.naturalWidth > 0 && i.alt); });
+      for (let g = 0; g < 6 && await p.locator('.mlb-rem .mlb-go:not(.is-done)').count(); g++) {
+        await p.locator('.mlb-rem .mlb-go:not(.is-done)').click();
+        if (await p.locator('.mlb-rem-cover').count()) remCover = true;
+      }
+    }
     await p.waitForTimeout(250);
     const c = p.locator('.mlb-lesson-foot .mlb-go'); if (await c.count() && await c.isEnabled()) await c.click();
     await p.waitForTimeout(300);
@@ -332,6 +343,8 @@ async function english(who, W, H, tag) {
   await p.waitForFunction(() => { const b = document.querySelector('.mlb-status .mlb-go'); return b && !b.disabled; }, null, { timeout: 15000 }).catch(() => {});
   const practise = p.locator('.mlb-status .mlb-go');
   chk(tag + ': an English lesson is studied step by step and opens practice', await practise.count() > 0 && await practise.isEnabled());
+  chk(tag + ': an English lesson has a Remember-it picture sequence, its pictures load with alt text, and it ends by covering them to recall',
+    remSeen && remImg && remCover);
   if (await practise.count()) await practise.click();
   const playing = await p.waitForSelector('.mlb-q', { timeout: 15000 }).then(() => true, () => false);
   chk(tag + ': English practice starts', playing);

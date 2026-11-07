@@ -943,6 +943,8 @@ function MlbLearn({ comp, go, startPlay, lite }) {
      step still one press away — not back at step 1 as if nothing had happened. */
   React.useEffect(() => { if (st.phase === "ok" && st.d.studied) { setStep(99); setReached(99); } }, [st.phase]); // eslint-disable-line
   const ok = st.phase === "ok", d = ok ? st.d : null;
+  const remIdx = useMlbRemember();
+  const rem = ok ? mlbRememberFor(remIdx, d.comp.id) : null;
   const steps = [];
   if (ok) {
     const can = ["soon", "locked"].indexOf(d.state) < 0;
@@ -951,6 +953,7 @@ function MlbLearn({ comp, go, startPlay, lite }) {
     if (d.why) steps.push({ id: "why", label: T.label || "Why it works", need: T.need || "Read every line of the argument." });
     if (d.speak) steps.push({ id: "speak", label: "Hear and say", need: "Hear the difference in eight rounds and say a sentence." });
     if (d.example) steps.push({ id: "example", label: "Worked example", need: "Show every line of the worked example." });
+    if (rem) steps.push({ id: "remember", label: "Remember it", need: "Step through the pictures, then cover them and say it." });
     steps.push({ id: "practise", label: "Practise", need: "" });
   }
   const free = ok && (d.studied || MLB_GOOD_V.indexOf(d.state) >= 0);
@@ -991,6 +994,7 @@ function MlbLearn({ comp, go, startPlay, lite }) {
         <h3 className="mlb-sr" tabIndex={-1} ref={headRef}>Step {at + 1} of {steps.length}: {cur.label}</h3>
         {cur.id === "explore" ? <MlbExplore comp={c.id} onDone={() => mark("explore")}/> : null}
         {cur.id === "why" ? <MlbWhy key={c.id} why={d.why} onDone={() => mark("why")}/> : null}
+        {cur.id === "remember" ? <MlbRemember key={c.id} card={rem} onDone={() => mark("remember")}/> : null}
         {cur.id === "speak" ? <EngSpeak key={c.id} comp={c.id} speak={d.speak} onDone={() => mark("speak")}/> : null}
         {cur.id === "example" ? <section className="mlb-card" aria-labelledby="mlb-we"><h3 id="mlb-we" className="mlb-h3">Worked example</h3>
           <MlbMath as="p" className="mlb-stem" text={ex.stem}/><MlbDiagram d={ex.diagram}/>
@@ -1026,6 +1030,54 @@ function MlbLearn({ comp, go, startPlay, lite }) {
 }
 
 /* ── Why it works: the argument one line at a time, each with its reason ── */
+/* ── Remember it (tools/lab-remember/build.py; owner, 7 Nov 2026) ──────────────────────────────────────
+   A short picture sequence of the idea, stepped through by the learner — then covered and recalled.
+   Chosen on the evidence over looping GIFs: a picture of the idea itself (never decoration — the
+   seductive-details effect), learner-paced segments (nothing runs past them; nothing to pause), one
+   caption beside each frame, at most one memory hook, and retrieval at the end. The index is one small
+   file fetched once; each frame is an SVG fetched only when shown. */
+let mlbRememberIdx = null, mlbRememberP = null;
+function mlbRememberLoad() {
+  if (mlbRememberIdx) return Promise.resolve(mlbRememberIdx);
+  if (!mlbRememberP) mlbRememberP = fetch("/assets/lab-media/remember/remember.json", { credentials: "same-origin" })
+    .then(r => r.ok ? r.json() : { cards: {}, map: {} }).catch(() => ({ cards: {}, map: {} }))
+    .then(j => (mlbRememberIdx = j && j.cards ? j : { cards: {}, map: {} }));
+  return mlbRememberP;
+}
+function useMlbRemember() {
+  const [idx, setIdx] = React.useState(mlbRememberIdx);
+  React.useEffect(() => { if (!idx) { let on = true; mlbRememberLoad().then(j => { if (on) setIdx(j); }); return () => { on = false; }; } }, []); // eslint-disable-line
+  return idx;
+}
+function mlbRememberFor(idx, comp) { const k = idx && idx.map && idx.map[comp]; return k && idx.cards[k] ? idx.cards[k] : null; }
+function MlbRemember({ card, onDone }) {
+  const [i, setI] = React.useState(0), [cover, setCover] = React.useState(false), [said, setSaid] = React.useState(false);
+  const n = card.frames.length, f = card.frames[i], last = i === n - 1;
+  React.useEffect(() => { if (said && onDone) onDone(); }, [said]); // eslint-disable-line
+  return (
+    <section className="mlb-card mlb-rem" aria-labelledby="mlb-rem-h">
+      <h3 id="mlb-rem-h" className="mlb-h3"><i className="ph ph-lightbulb" aria-hidden="true"/> Remember it: {card.title}</h3>
+      {!cover ? <figure className="mlb-rem-fig">
+        <img className="mlb-rem-img" src={f.src} alt={f.alt} width="640" height="330" loading="lazy" decoding="async"/>
+        <figcaption className="mlb-rem-cap" aria-live="polite"><span className="mlb-rem-n">{i + 1} of {n}</span>{f.caption}</figcaption>
+      </figure> : <div className="mlb-rem-cover">
+        <p className="mlb-rem-q"><i className="ph ph-eye-slash" aria-hidden="true"/> {card.recall}</p>
+        <p className="mlb-meta">Say it out loud, or write it down — then look again and check.</p>
+      </div>}
+      {last && card.hook && !cover ? <p className="mlb-rem-hook"><b>Hook:</b> {card.hook}</p> : null}
+      <div className="mlb-actions mlb-rem-nav">
+        {!cover ? <>
+          <button type="button" className="stt-btn" disabled={i === 0} onClick={() => setI(v => v - 1)}><i className="ph ph-arrow-left" aria-hidden="true"/>Back</button>
+          {!last ? <button type="button" className="mlb-go" onClick={() => setI(v => v + 1)}>Next picture<i className="ph ph-arrow-right" aria-hidden="true"/></button>
+                 : <button type="button" className="mlb-go" onClick={() => setCover(true)}><i className="ph ph-eye-slash" aria-hidden="true"/>Cover it and say it</button>}
+        </> : <>
+          <button type="button" className="stt-btn" onClick={() => { setCover(false); setI(0); }}><i className="ph ph-eye" aria-hidden="true"/>Look again</button>
+          <button type="button" className={"mlb-go" + (said ? " is-done" : "")} aria-pressed={said} onClick={() => setSaid(true)}><i className="ph ph-check" aria-hidden="true"/>{said ? "Done — onwards" : "I said it"}</button>
+        </>}
+      </div>
+    </section>);
+}
+
 function MlbWhy({ why, onDone }) {
   const T = mlbLab().teach || {};
   /* In a contrast lesson (the English Lab's "The rule") every marked example is a small game before it

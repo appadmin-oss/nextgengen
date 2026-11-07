@@ -7190,3 +7190,11 @@ Owner: *"I need real effective learning. Grammar … Speaking … Articulation �
 - `preport_member_data` reads attendance (programme days, scans, `policy_unexcused_absences`), lessons/exams/certificates, sanctions, ledger entries in the period (training and write-offs excluded — their own account) and `fees_balance` as of the day. `preport_html` is ONE document for the email body and the printable page (`api/family/report.php?id=`), inline styles, tables with `scope`.
 - `family_reports_run` now delegates to `preport_monthly_run` (same signable inbox notice and refId, so the old dedupe holds). Session and edition reports and `attendance_daily_run` ride `web_cron_reminders`.
 - Ops: `family.report`, `admin.reports.member`.
+
+## 7 Nov 2026 — Labs: "Remember it" picture sequences (Maths and English), instead of looping GIFs
+
+**Owner:** "Start with the Math Lab and English Lab illustrations. Add fun to remember gifs", then "Ensure they are research-driven and -optimized, if not drop them".
+- **GIFs dropped, on the evidence.** Decorative or "fun" motion costs learning (seductive details — Rey 2012; Mayer's coherence principle); a looping, self-running animation is transient and learner-uncontrolled (Mayer's segmenting principle; the transient-information effect), must be pausable (WCAG 2.2.2), and is heavy on the low-end phones Lite mode serves.
+- **What replaced them:** a "Remember it" step before Practise. Three frames of the IDEA itself, stepped through by the learner, one caption each, at most one memory hook where the research supports one (ordered rules: BODMAS, SOH CAH TOA, PEEL; word roots by the keyword method), and it ends in retrieval — "cover it and say it" — which is what marks the step done.
+- `tools/lab-remember/build.py` generates 36 cards (20 maths, 16 English), 108 SVG frames and `assets/lab-media/remember/remember.json` (card → topics; 75 maths and 42 English topics covered). Edit the generator, never the outputs. The index is fetched once; a frame only when shown.
+- Client: `MlbRemember`, `useMlbRemember` in `mlb-app.jsx`; styles `.mlb-rem*` in styles.css. Tests: `mathlab-e2e.test.js` (pictures load with alt text; the step ends by covering them), `mathlab-shot.js` (the step reached on a phone by studying, no skipping; step list now includes "Remember it").

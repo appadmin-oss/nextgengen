@@ -173,12 +173,21 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
     await shoot('player','view=play',{width:1080,height:900},'.mlb-q',null);
     await shoot('player-phone','view=play',{width:390,height:844},'.mlb-q',null);
     /* Lite lessons are studied step by step before their questions appear; walk one through. */
-    const walk=async page=>{ for(let k=0;k<12;k++){
+    const walk=async (page,stopAt)=>{ for(let k=0;k<12;k++){
         if(await page.locator('.mlb-order-list, .mlb-q svg.mlb-dia').count()) return true;
         if(await page.locator('.mlb-ex .mlb-sl-in').count()){ const sl=page.locator('.mlb-ex .mlb-sl-in').first(); await sl.focus(); await page.keyboard.press('ArrowRight'); }
         while(await page.locator('.mlb-why .mlb-actions .stt-btn').count()) await page.click('.mlb-why .mlb-actions .stt-btn');
         while(await page.locator('.mlb-lesson-body .mlb-card .stt-btn:has-text("Show the next line")').count()) await page.click('.mlb-lesson-body .mlb-card .stt-btn:has-text("Show the next line")');
+        if(stopAt&&await page.locator(stopAt).count()) return true;
+        for(let g=0;g<6&&await page.locator('.mlb-rem .mlb-go:not(.is-done)').count();g++) await page.click('.mlb-rem .mlb-go:not(.is-done)');
         const go=page.locator('.mlb-lesson-foot .mlb-go'); if(await go.count()&&await go.isEnabled()) await go.click(); await page.waitForTimeout(150); } return false; };
+    /* Remember it — the picture sequence, on a phone, reached by studying the steps (no skipping ahead). */
+    { const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:2}); const errs=[]; page.on('pageerror',e=>errs.push(String(e&&e.message)));
+      await page.goto(BASE+'/tests/_ml_fixture.html?view=learn&comp=MC-077',{waitUntil:'networkidle'}); await page.waitForSelector('.mlb-stepbar',{timeout:15000});
+      if(!(await walk(page,'.mlb-rem'))) problems.push('remember: never reached the Remember-it step');
+      await page.waitForFunction(()=>{const i=document.querySelector('.mlb-rem-img');return i&&i.complete&&i.naturalWidth>0;},null,{timeout:8000}).catch(()=>problems.push('remember: the first picture did not load'));
+      if(errs.length) problems.push('remember: '+errs[0]);
+      await page.screenshot({path:path.join(OUT,'mathlab-learn-remember-phone.png'),fullPage:true}); shots++; console.log('  📸 mathlab-learn-remember-phone.png'); await page.close(); }
     for(const [name,q,sel] of [['lite-order','view=learn&comp=MC-002&lite=1','.mlb-order-list'],['lite-figure','view=learn&comp=MC-074&lite=1&q=fig','.mlb-q svg.mlb-dia']]){
       const page=await browser.newPage({viewport:{width:1080,height:1000},deviceScaleFactor:2}); const errs=[]; page.on('pageerror',e=>errs.push(String(e&&e.message)));
       await page.goto(BASE+'/tests/_ml_fixture.html?'+q,{waitUntil:'networkidle'}); await page.waitForSelector('.mlb-stepbar',{timeout:15000});
@@ -223,7 +232,7 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
       const before=await page.textContent('.mlb-ex-out'); const sl=page.locator('.mlb-sl-in').first(); await sl.focus(); await page.keyboard.press('ArrowRight'); await page.waitForTimeout(200);
       const after=await page.textContent('.mlb-ex-out'); const val=await sl.inputValue();
       if(before===after||!/16|5\^2|25/.test(before)) problems.push('pythagoras explorer: readout did not follow the slider (value '+val+'; '+after.slice(0,60)+')');
-      if(bar.join('|')!=='Explore|Why it works|Worked example|Practise') problems.push('lesson steps: '+JSON.stringify(bar));
+      if(bar.join('|')!=='Explore|Why it works|Worked example|Remember it|Practise') problems.push('lesson steps: '+JSON.stringify(bar));
       if(await page.locator('.mlb-lesson-foot .mlb-go').isDisabled()) problems.push('explore: Continue stayed shut after the slider moved');
       await page.click('.mlb-lesson-foot .mlb-go'); await page.waitForSelector('.mlb-why',{timeout:4000});
       if(await page.locator('.mlb-explore').count()) problems.push('lesson steps: Explore still shown on the Why step');
