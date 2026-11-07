@@ -108,6 +108,7 @@ const ORDER = [
   'src/modules/timetable/tt-app.jsx',
   'page-blog.jsx',
   'page-dashboard.jsx',
+  'src/modules/learn/lrn-exam.jsx',
   'page-learn.jsx',
   'src/modules/portal/member-results.jsx',
   'src/modules/dc/dc-runtime.jsx',

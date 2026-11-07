@@ -2932,7 +2932,8 @@ function DashCurriculumLesson({ unitId, onBack }) {
         <span className={"cur-chip " + st.tone}>{st.label}</span>
         {p && p.stale && <p className="cur-note">This lesson's checks have changed since you sat them — your earlier score was on the older questions.</p>}
       </header>
-      {!opened && <DashOpeningReview review={d.review} onDone={() => setStarted(true)} onSkip={() => setStarted(true)}/>}
+      {/* One exam player everywhere a lesson opens (src/modules/learn/lrn-exam.jsx). */}
+      {!opened && <LrnExam start={{ unitId }} onDone={() => setStarted(true)} onSkip={() => setStarted(true)}/>}
       {opened && u.objectives.length > 0 && (
         <section className="dash-card">
           <h3 className="cur-sec-h">What you'll learn</h3>

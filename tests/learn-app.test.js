@@ -247,6 +247,10 @@ function cleanup() {
     chk('the next lesson is one press away', /The C major scale/.test(await K.innerText('.lrn-pager-a.is-next')));
     await K.click('.lrn-pager-a.is-next');
     await K.waitForFunction(() => location.pathname === '/learn/lesson/LRN-U2');
+    /* The address changes before the next lesson's data arrives; wait for the lesson itself rather than
+       reading the old title in the gap (a fixed read raced the round trip once the lesson also asks for
+       its session exam). */
+    await K.waitForFunction(() => { const t = document.querySelector('.lrn-lesson-title'); return t && /The C major scale/.test(t.innerText); }, null, { timeout: 15000 }).catch(() => {});
     chk('…and moving on changes the address, so Back still works', /The C major scale/.test(await K.innerText('.lrn-lesson-title')));
 
     await K.click('.lrn-rail-item:has-text("Notes")');
@@ -314,6 +318,7 @@ function cleanup() {
       && /0 of 3 this week/i.test(await S.innerText('.lrn-plan')));
     await S.click('.lrn-plan');
     await S.waitForFunction(() => location.pathname === '/learn/plan/GI-LRN');
+    await S.waitForSelector('.lrn-plan-go', { timeout: 15000 }).catch(() => {});   // the subject's data, not the gap before it
     chk('a subject has its own address too — the drill is not an overlay either',
       !!(await S.$('.lrn-plan-go')) && /Past questions/.test(await S.innerText('.lrn-main')));
     /* No AI is configured in this suite, so starting one must REFUSE in
@@ -379,6 +384,41 @@ function cleanup() {
     await W.context().close();
     await S.context().close();
     await P.context().close();
+
+    /* The session exam (src/modules/learn/lrn-exam.jsx; owner, 7 Nov 2026: "turn on the per session exam
+       by default … a standard honourable exam"). Last week's lesson, opened a week ago and never recalled,
+       is examined before this week's: rules first, an honour pledge, one question at a time, a report. */
+    console.log('the session exam');
+    php(`db_exec("DELETE FROM curriculum_sittings WHERE memberId = 'NGG-LRN-M1'");`
+      + `db_exec("DELETE FROM curriculum_progress WHERE memberId = 'NGG-LRN-M1' AND unitId = 'LRN-U1'");`
+      + `db_insert('curriculum_progress', ['unitId'=>'LRN-U1','memberId'=>'NGG-LRN-M1','status'=>'attempted','startedAt'=>gmdate('Y-m-d\\TH:i:s\\Z', time() - 7 * 86400),'updatedAt'=>now_iso()]);`, ['bootstrap']);
+    const X = await open('/learn/lesson/LRN-U2');
+    await X.waitForSelector('.lx-intro', { timeout: 60000 }).catch(() => {});
+    const intro = await X.innerText('.lx-intro').catch(() => '');
+    chk('exam: the lesson opens on the session exam, stating the questions, the time, the pass mark and the bands first',
+      /Questions/.test(intro) && /Time/.test(intro) && /Pass mark/.test(intro) && /Distinction/.test(intro) && await X.locator('.lrn-sec-h:has-text("The lesson")').count() === 0);
+    chk('exam: it cannot start until the honour pledge is made', await X.locator('.lx-intro .lrn-btn:not(.is-ghost)').isDisabled());
+    await X.locator('.lx-pledge input').check();
+    await X.locator('.lx-intro .lrn-btn:not(.is-ghost)').click();
+    await X.waitForSelector('.lx-sit', { timeout: 15000 });
+    chk('exam: one question at a time, with the clock and "how sure are you?"',
+      await X.locator('.lx-q').count() === 1 && /\d+:\d\d/.test(await X.innerText('.lx-clock')) && await X.locator('.lx-conf .lx-chip').count() === 3);
+    await X.locator('.lx-opt', { hasText: /^\s*[A-H]?\s*7\s*$/ }).first().click();
+    await X.locator('.lx-chip', { hasText: 'Sure' }).click();
+    await X.locator('.lx-nav .lrn-btn:not(.is-ghost)').click();
+    await X.waitForSelector('.lx-review', { timeout: 10000 });
+    chk('exam: a review screen before handing in says what is answered', /1 of 1 answered/.test(await X.innerText('.lx-review')));
+    await X.locator('.lx-review .lrn-btn:not(.is-ghost)').click();
+    await X.waitForSelector('.lx-result', { timeout: 60000 });
+    const rep = await X.innerText('.lx-result');
+    chk('exam: the report gives the band, the score and that it was sat on their honour', /Distinction/.test(rep) && /100%/.test(rep) && /sat on your honour/.test(rep));
+    chk('exam: …and the sitting is recorded, marked, with the pledge',
+      php(`$s = db_row("SELECT status, integrity FROM curriculum_sittings WHERE memberId = 'NGG-LRN-M1' ORDER BY id DESC LIMIT 1"); echo $s['status'] . '|' . (json_decode($s['integrity'], true)['pledgedAt'] ?? '' ? 'pledged' : '');`, ['bootstrap']) === 'marked|pledged');
+    await X.locator('.lx-result .lrn-btn').click();
+    await X.waitForSelector('.lrn-sec-h:has-text("The lesson")', { timeout: 10000 }).catch(() => {});
+    chk('exam: then today\'s lesson opens', await X.locator('.lrn-sec-h:has-text("The lesson")').count() === 1);
+    await X.screenshot({ path: require('path').join(require('os').tmpdir(), 'learn-exam-done.png'), fullPage: true }).catch(() => {});
+    await X.context().close();
 
     chk('no page errors anywhere in the app', errs.length === 0);
     if (errs.length) console.error(errs.slice(0, 5).join('\n'));

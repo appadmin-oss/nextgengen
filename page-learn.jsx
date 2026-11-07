@@ -32,7 +32,7 @@
    It does not draw a second lesson. `LearnLesson` is the only renderer for a
    lesson in this app, and it reuses the pieces that already exist and are
    already tested — CurriculumText, CurriculumMaterials, CurCheckField,
-   DashOpeningReview, DashLessonFeedback — rather than forking them
+   DashLessonFeedback, and the exam player LrnExam — rather than forking them
    (CLAUDE.md §11). What is new here is the PLACE, not the parts.
 
    Mobile first, not scaled down: one column, 44px targets, a bottom bar on a
@@ -735,6 +735,8 @@ function LearnCourse({ d, slug, aw, onAim, tt }) {
           );
         })}
       </ol>
+      {/* Mastery, Starter to God, the Trial and the course's certificates (lrn-exam.jsx). */}
+      {name !== "Whole Club" && <LrnMastery course={name}/>}
       <LearnAwards aw={aw} course={name} onAim={onAim} onRetry={onAim}/>
     </div>
   );
@@ -987,7 +989,9 @@ function LearnLesson({ unitId, onDone, units }) {
         {p && p.stale && <p className="lrn-note">This lesson's questions have changed since you sat them — your earlier score was on the older ones.</p>}
       </header>
 
-      {!opened && <DashOpeningReview review={d.review} onDone={() => setStarted(true)} onSkip={() => setStarted(true)}/>}
+      {/* The session exam (lrn-exam.jsx) — standard, timed, on by default. It comes FIRST and today's
+          teaching waits behind it; a learner who was away may skip, and it stays due. */}
+      {!opened && <LrnExam start={{ unitId }} onDone={() => setStarted(true)} onSkip={() => setStarted(true)}/>}
 
       {opened && u.objectives.length > 0 && (
         <section className="lrn-sec">

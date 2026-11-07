@@ -25877,10 +25877,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mcqId = (string)$exChecks['mcq']['checkId']; $ordId = (string)$exChecks['order']['checkId']; $shortId = (string)$exChecks['short']['checkId']; $evId = (string)$exChecks['evidence']['checkId'];
     $rightShown = array_search(1, $items[$mcqId]['perm'], true);
     $saved = backend_dispatch('member.exam.save', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'answers' => [$mcqId => $rightShown],
-        'confidence' => [$mcqId => 'sure'], 'signals' => ['pastes' => 2, 'pastedChars' => 400, 'typedChars' => 30, 'leaves' => 1]]);
+        'confidence' => [$mcqId => 'sure'], 'signals' => ['pastes' => 2, 'pastedChars' => 400, 'typedChars' => 30, 'leaves' => 1, 'pledge' => 1]]);
     backend_dispatch('member.exam.save', ['memberId' => 'NGG-EX-M', 'sittingId' => $ex['sittingId'], 'signals' => ['pastes' => 0, 'pastedChars' => 0]]);
     $int = json_decode((string)db_row('SELECT integrity FROM curriculum_sittings WHERE sittingId = ?', [$ex['sittingId']])['integrity'], true);
     chk('exam: answers autosave, and process signals only ever go up — a replayed save cannot lower them', !empty($saved['ok']) && $int['pastedChars'] === 400 && $int['pastes'] === 2);
+    chk('exam: the honour pledge is recorded on the sitting, once', ($int['pledgedAt'] ?? '') !== '');
     chk('exam: someone else cannot save into the sitting', (backend_dispatch('member.exam.save', ['memberId' => 'NGG-CUR-M1', 'sittingId' => $ex['sittingId'], 'answers' => []])['error'] ?? '') === 'not_found');
     // The AI marks written answers, asks a follow-up on each of the strongest, and judges the replies.
     $GLOBALS['__ai_mock'] = function ($profile, $sys, $turns) {
@@ -25906,7 +25907,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $st = backend_dispatch('staff.exam.sittings', ['requesterId' => 'NGG-CUR-VN']);
     $mineSit = array_values(array_filter($st['sittings'] ?? [], fn($r) => $r['sittingId'] === $ex['sittingId']))[0] ?? [];
     chk('exam (instructor): the sitting is listed with the held answer, the follow-ups and the signals to ask about — pasting named, never scored',
-        count($mineSit['held'] ?? []) === 1 && count($mineSit['viva'] ?? []) === 2 && in_array('mostly pasted', $mineSit['signals'] ?? [], true) && in_array('a follow-up did not hold up', $mineSit['signals'] ?? [], true));
+        count($mineSit['held'] ?? []) === 1 && count($mineSit['viva'] ?? []) === 2 && ($mineSit['pledged'] ?? false) === true && in_array('mostly pasted', $mineSit['signals'] ?? [], true) && in_array('a follow-up did not hold up', $mineSit['signals'] ?? [], true));
     $mk2 = backend_dispatch('staff.exam.mark', ['requesterId' => 'NGG-CUR-VN', 'sittingId' => $ex['sittingId'], 'checkId' => $held[0]['checkId'], 'points' => 2, 'note' => 'Talked it through in class — it is theirs.']);
     $fin = db_row('SELECT * FROM curriculum_sittings WHERE sittingId = ?', [$ex['sittingId']]);
     chk('exam (instructor): deciding the held answer finishes the sitting with its band', !empty($mk2['ok']) && (string)$fin['status'] === 'marked' && (string)$fin['band'] === lx_band((int)$fin['pct'], 60));
@@ -33547,6 +33548,28 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         chk('seed · every lesson in ' . $key . ' passes the importer (' . count($j['lessons'] ?? []) . ' rows)'
             . ($bad ? ' — ' . implode('; ', array_slice($bad, 0, 3)) : ''), !$bad);
     }
+})();
+
+/* Every bundled question is a real question (owner, 7 Nov 2026: "Not just multi-choice that makes absolutely
+   no sense at all"). 66 business lessons asked "Week N: which of these best meets today's success criteria?"
+   against "Work copied from a classmate" and "A screenshot of the instructor's screen" — a question nobody
+   could get wrong and that measured nothing. Every one is now about the skill its lesson teaches, with the
+   reason each wrong option is tempting; this holds that shape for every shipped lesson. */
+(function () {
+    $filler = '/success criteria|copied from a classmate|screenshot of the instructor|plan to do it later|^Week \d+:/i';
+    $bad = []; $invalid = []; $mcq = 0; $withWhys = 0;
+    foreach (curriculum_seed_files() as $key => $j) foreach (($j['lessons'] ?? []) as $row) {
+        $v = curriculum_validate(['status' => 'published'] + $row, !empty($j['allowNewCourse']));
+        if (empty($v['ok'])) $invalid[] = $key . ': ' . ($row['title'] ?? '?') . ' (' . ($v['error'] ?? '') . ')';
+        foreach (($row['checks'] ?? []) as $c) {
+            if (strtolower((string)($c['kind'] ?? '')) !== 'mcq') continue;
+            $mcq++; if (!empty($c['whys'])) $withWhys++;
+            if (preg_match($filler, (string)($c['prompt'] ?? '') . ' ' . implode(' ', array_map('strval', (array)($c['options'] ?? []))))) $bad[] = ($row['course'] ?? '') . ' w' . ($row['week'] ?? '');
+        }
+    }
+    chk('bundled lessons · every one passes publication as it ships' . ($invalid ? ' (' . implode('; ', array_slice($invalid, 0, 3)) . ')' : ''), $invalid === []);
+    chk('bundled lessons · no multiple choice is filler ("success criteria", "copied from a classmate")' . ($bad ? ' (' . implode(', ', array_slice($bad, 0, 5)) . ')' : ''), $bad === [] && $mcq > 400);
+    chk('bundled lessons · the rewritten questions name the slip behind each wrong option', $withWhys >= 66);
 })();
 
 /* The shape every course must hold — retrieval, autonomy, a proportionate AI

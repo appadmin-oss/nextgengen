@@ -99,15 +99,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 2: which of these best meets today's success criteria?",
+          "prompt": "You are formatting a business introduction in Google Docs. What is the most reliable way to make every section heading look the same and appear in the document outline?",
           "options": [
-            "Uses Heading 1, Heading 2 and Normal text styles — no manual big fonts",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Underline each heading",
+            "Apply the built-in Heading 1 / Heading 2 styles",
+            "Make each heading bold and a bigger font by hand",
+            "Type headings in CAPITAL LETTERS"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Apply the built-in Heading 1 / Heading 2 styles",
+          "points": 1,
+          "whys": [
+            "Underlining looks like a link on screen and adds no structure.",
+            "",
+            "Manual bold and size look like headings but are not styled as headings, so the outline and table of contents ignore them and they drift apart.",
+            "Capitals do not create structure and are harder to read."
+          ]
         },
         {
           "kind": "task",
@@ -161,15 +167,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 3: which of these best meets today's success criteria?",
+          "prompt": "Which belongs in a formal business letter but NOT in a one-page report?",
           "options": [
-            "The letter has sender address, date, recipient, subject line, salutation, body and sign-off",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "The recipient's name and address, and a salutation such as 'Dear Mrs Okafor'",
+            "A clear title",
+            "Headings that organise the content",
+            "A short conclusion or recommendation"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "The recipient's name and address, and a salutation such as 'Dear Mrs Okafor'",
+          "points": 1,
+          "whys": [
+            "",
+            "A report needs a title too.",
+            "Reports use headings more than letters do.",
+            "Both usually end with a conclusion or request."
+          ]
         },
         {
           "kind": "task",
@@ -217,15 +229,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 4: which of these best meets today's success criteria?",
+          "prompt": "In an inventory register with columns Product, Quantity and Unit price, which formula gives the stock value in D2?",
           "options": [
-            "Header row frozen and bold",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "=SUM(B2:C2)",
+            "=C2/B2",
+            "=B2*C2",
+            "=B2+C2"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "=B2*C2",
+          "points": 1,
+          "whys": [
+            "SUM also adds them; value is quantity TIMES price.",
+            "Dividing price by quantity gives nothing useful here.",
+            "",
+            "Adding quantity and price mixes units: 5 bags plus ₦2,000 is not a value."
+          ]
         },
         {
           "kind": "task",
@@ -279,15 +297,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 5: which of these best meets today's success criteria?",
+          "prompt": "Sales for five days are in B2:B6. Which formula returns the LOWEST day's sales?",
           "options": [
-            "Uses SUM, AVERAGE, MIN and MAX on the right ranges",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "=MIN(B2:B6)",
+            "=MAX(B2:B6)",
+            "=AVERAGE(B2:B6)",
+            "=SUM(B2:B6)/5"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "=MIN(B2:B6)",
+          "points": 1,
+          "whys": [
+            "",
+            "MAX returns the highest value.",
+            "AVERAGE returns the mean, not the lowest.",
+            "That is also the mean, worked out by hand."
+          ]
         },
         {
           "kind": "task",
@@ -341,15 +365,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 6: which of these best meets today's success criteria?",
+          "prompt": "In a daily income and expenditure tracker, Income is in B and Expenditure in C. What should the running balance in D3 be?",
           "options": [
-            "Running balance calculated by formula",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "=D2+B3-C3",
+            "=B3-C3",
+            "=B3+C3",
+            "=SUM(B3:C3)"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "=D2+B3-C3",
+          "points": 1,
+          "whys": [
+            "",
+            "That is only today's difference; it forgets the balance carried from yesterday.",
+            "Spending is added instead of taken away.",
+            "SUM adds money out to money in."
+          ]
         },
         {
           "kind": "task",
@@ -397,15 +427,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 7: which of these best meets today's success criteria?",
+          "prompt": "You want respondents to rate a service from 1 to 5. Which Google Forms question type fits best?",
           "options": [
-            "A clear title and one-line purpose",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Linear scale",
+            "Paragraph",
+            "Checkboxes",
+            "File upload"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Linear scale",
+          "points": 1,
+          "whys": [
+            "",
+            "A paragraph gives free text that cannot be averaged.",
+            "Checkboxes allow several answers, so one person could tick 2 and 5.",
+            "An upload is for files, not ratings."
+          ]
         },
         {
           "kind": "task",
@@ -459,15 +495,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 8: which of these best meets today's success criteria?",
+          "prompt": "You need to see only the survey rows where City is 'Lagos' without deleting anything. What do you use?",
           "options": [
-            "Uses Sort and a Filter view",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "A filter (or filter view) on the City column",
+            "Sort the sheet by City",
+            "Delete every row that is not Lagos",
+            "Hide the City column"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "A filter (or filter view) on the City column",
+          "points": 1,
+          "whys": [
+            "",
+            "Sorting groups the rows but still shows every city.",
+            "Deleting destroys data you will need later.",
+            "Hiding the column hides the city, not the other rows."
+          ]
         },
         {
           "kind": "task",
@@ -521,15 +563,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 9: which of these best meets today's success criteria?",
+          "prompt": "For a five-slide business presentation, which is the strongest slide design habit?",
           "options": [
-            "One idea per slide, few words",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Fill every slide with as many bullet points as fit",
+            "One main idea per slide, few words, a clear visual",
+            "Paste the full script onto each slide",
+            "Use a different template on every slide"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "One main idea per slide, few words, a clear visual",
+          "points": 1,
+          "whys": [
+            "Crowded slides hide the one point that matters.",
+            "",
+            "The audience reads instead of listening.",
+            "Changing design every slide distracts from the message."
+          ]
         },
         {
           "kind": "task",
@@ -577,15 +625,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 10: which of these best meets today's success criteria?",
+          "prompt": "A project task is due Friday. How do you make sure the team is warned in time in Google Calendar?",
           "options": [
-            "At least six events with clear titles",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Create a private event only you can see",
+            "Email the date once at the start of the term",
+            "Create the event, invite the team and add a notification before it",
+            "Write the deadline in your own notebook"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Create the event, invite the team and add a notification before it",
+          "points": 1,
+          "whys": [
+            "A private event reminds only you.",
+            "One early email is easily forgotten; a reminder arrives when it matters.",
+            "",
+            "Nobody else can see your notebook."
+          ]
         },
         {
           "kind": "task",
@@ -639,15 +693,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 11: which of these best meets today's success criteria?",
+          "prompt": "Three people are editing one report in a shared Drive folder. What prevents version confusion?",
           "options": [
-            "Each team member has written a section",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Each person downloads a copy and emails it back",
+            "Rename files Final, Final2, FinalFINAL",
+            "Only one person may ever open the folder",
+            "Everyone edits the same shared Doc and uses comments; version history keeps the changes"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Everyone edits the same shared Doc and uses comments; version history keeps the changes",
+          "points": 1,
+          "whys": [
+            "Separate copies drift apart and have to be merged by hand.",
+            "Names like these are exactly how version confusion starts.",
+            "That removes collaboration instead of managing it.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -689,15 +749,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 12: which of these best meets today's success criteria?",
+          "prompt": "Your portfolio presentation has a document, a sheet and slides. What should the first slide make clear?",
           "options": [
-            "Folder system, a document, a sheet with formulas, a form with results, a deck and a calendar — all present and named",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Every formula you used",
+            "A list of every font in the files",
+            "Nothing — start straight with the spreadsheet",
+            "Who you are and what problem the portfolio solves"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Who you are and what problem the portfolio solves",
+          "points": 1,
+          "whys": [
+            "Detail comes later, if asked.",
+            "Nobody judges a portfolio by its fonts.",
+            "Without context the audience cannot follow why the sheet matters.",
+            ""
+          ]
         },
         {
           "kind": "project",
@@ -806,15 +872,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 14: which of these best meets today's success criteria?",
+          "prompt": "Sales ₦500,000; cost of goods sold ₦300,000; other expenses ₦120,000. What is the NET profit?",
           "options": [
-            "Gross profit = revenue − cost of goods",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "₦380,000",
+            "₦620,000",
+            "₦80,000",
+            "₦200,000"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "₦80,000",
+          "points": 1,
+          "whys": [
+            "That took away only the other expenses and forgot the cost of goods sold.",
+            "That added expenses to sales.",
+            "",
+            "That is gross profit: sales minus cost of goods only."
+          ]
         },
         {
           "kind": "task",
@@ -868,15 +940,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 15: which of these best meets today's success criteria?",
+          "prompt": "Column C holds 'Paid' or 'Unpaid'. Which formula counts the unpaid invoices?",
           "options": [
-            "An IF formula with a clear rule",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "=SUMIF(C2:C50,\"Unpaid\")",
+            "=IF(C2=\"Unpaid\",1,0)",
+            "=COUNT(C2:C50)",
+            "=COUNTIF(C2:C50,\"Unpaid\")"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "=COUNTIF(C2:C50,\"Unpaid\")",
+          "points": 1,
+          "whys": [
+            "SUMIF adds numbers; these cells hold words.",
+            "IF checks one cell, not the whole column.",
+            "COUNT counts numbers only, and ignores which status it is.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -924,15 +1002,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 16: which of these best meets today's success criteria?",
+          "prompt": "Budgeted ₦50,000 for transport; spent ₦62,000. What is the variance, and is it favourable?",
           "options": [
-            "Planned vs actual for at least eight categories",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "₦12,000 under budget — favourable",
+            "₦62,000 — favourable",
+            "₦112,000 — unfavourable",
+            "₦12,000 over budget — unfavourable"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "₦12,000 over budget — unfavourable",
+          "points": 1,
+          "whys": [
+            "Spending more than planned is OVER budget.",
+            "Variance is the difference, not the amount spent.",
+            "That added the two figures.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -986,15 +1070,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 17: which of these best meets today's success criteria?",
+          "prompt": "Each item has Stock and a Reorder level. Which formula flags items to reorder?",
           "options": [
-            "Reorder level column per product",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "=IF(B2>=C2,\"Reorder\",\"OK\")",
+            "=B2-C2",
+            "=SUM(B2:C2)",
+            "=IF(B2<=C2,\"Reorder\",\"OK\")"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "=IF(B2<=C2,\"Reorder\",\"OK\")",
+          "points": 1,
+          "whys": [
+            "That flags items that are still above the reorder level.",
+            "It gives a number, not a decision anyone can act on.",
+            "Adding stock and level means nothing.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -1042,15 +1132,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 18: which of these best meets today's success criteria?",
+          "prompt": "Your cashbook balance is ₦45,000 but the bank statement shows ₦40,000. What do you do first?",
           "options": [
-            "Opening balance, receipts, payments, closing balance",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Add ₦5,000 of 'miscellaneous' to balance it",
+            "Match each entry to the statement to find what is missing or wrong",
+            "Change the cashbook to ₦40,000",
+            "Ignore it — small differences are normal"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Match each entry to the statement to find what is missing or wrong",
+          "points": 1,
+          "whys": [
+            "Inventing an entry is falsifying the record.",
+            "",
+            "That hides the error instead of finding it.",
+            "A ₦5,000 gap is a real transaction somewhere."
+          ]
         },
         {
           "kind": "task",
@@ -1098,15 +1194,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 19: which of these best meets today's success criteria?",
+          "prompt": "You want to show how monthly sales changed over a year. Which chart is clearest?",
           "options": [
-            "Right chart type for each question",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "A line chart",
+            "A pie chart",
+            "A scatter chart of random points",
+            "A table of every receipt"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "A line chart",
+          "points": 1,
+          "whys": [
+            "",
+            "A pie shows parts of a whole at one moment, not change over time.",
+            "Scatter shows the relationship between two variables, not a trend through time.",
+            "A table hides the trend in the numbers."
+          ]
         },
         {
           "kind": "task",
@@ -1160,15 +1262,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 20: which of these best meets today's success criteria?",
+          "prompt": "Which belongs on a centre's KPI dashboard?",
           "options": [
-            "Five KPIs with targets",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "A few measures tied to goals, like attendance rate this month against the target",
+            "Every column of the raw data",
+            "Decorative charts with no target or comparison",
+            "The full list of members' phone numbers"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "A few measures tied to goals, like attendance rate this month against the target",
+          "points": 1,
+          "whys": [
+            "",
+            "Raw data is not a dashboard; nobody can see what matters.",
+            "A chart with nothing to compare against cannot tell you whether you are on track.",
+            "That is personal data, not a performance indicator."
+          ]
         },
         {
           "kind": "task",
@@ -1216,15 +1324,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 21: which of these best meets today's success criteria?",
+          "prompt": "What makes a Looker Studio report 'interactive' rather than a static chart?",
           "options": [
-            "Connected to a Google Sheet",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Controls such as date range and filters that change every chart on the page",
+            "It uses many colours",
+            "It can be printed",
+            "It has more pages"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Controls such as date range and filters that change every chart on the page",
+          "points": 1,
+          "whys": [
+            "",
+            "Colour does not let a viewer change what they see.",
+            "Printing makes it static.",
+            "More pages is more reading, not interaction."
+          ]
         },
         {
           "kind": "task",
@@ -1272,15 +1386,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 22: which of these best meets today's success criteria?",
+          "prompt": "In bookkeeping, a customer has received an invoice but not yet paid. Where does that amount sit?",
           "options": [
-            "Invoices with customer, items and due date",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Accounts receivable (money owed TO the business)",
+            "Accounts payable (money the business owes)",
+            "Cash in bank",
+            "Expenses"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Accounts receivable (money owed TO the business)",
+          "points": 1,
+          "whys": [
+            "",
+            "Payable is what WE owe suppliers.",
+            "No cash has arrived yet.",
+            "A sale is income, not an expense."
+          ]
         },
         {
           "kind": "task",
@@ -1328,15 +1448,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 23: which of these best meets today's success criteria?",
+          "prompt": "Fixed costs ₦60,000 a month; price ₦1,500; variable cost ₦1,000 per unit. How many units to break even?",
           "options": [
-            "Break-even units = fixed costs ÷ (price − variable cost)",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "60",
+            "24",
+            "120",
+            "40"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "120",
+          "points": 1,
+          "whys": [
+            "That treats each unit as earning ₦1,000.",
+            "That divided by ₦2,500, adding price and cost.",
+            "",
+            "That divided by the price instead of the contribution (price minus variable cost)."
+          ]
         },
         {
           "kind": "task",
@@ -1378,15 +1504,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 24: which of these best meets today's success criteria?",
+          "prompt": "You are presenting a business's performance. Which statement is evidence-based?",
           "options": [
-            "Uses the profit sheet, cashbook, inventory and dashboard",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "'Sales were very good'",
+            "'Everyone loved the product'",
+            "'We think it went well overall'",
+            "'Sales rose 18% from March to April, mainly from repeat customers (see chart 2)'"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "'Sales rose 18% from March to April, mainly from repeat customers (see chart 2)'",
+          "points": 1,
+          "whys": [
+            "No figure, period or comparison.",
+            "An unmeasured claim about everyone.",
+            "An opinion with no data behind it.",
+            ""
+          ]
         },
         {
           "kind": "project",
@@ -1495,15 +1627,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 26: which of these best meets today's success criteria?",
+          "prompt": "Survey answers show 'price' mentioned by 34 of 50 customers. What is the right way to report it?",
           "options": [
-            "COUNTIF or a pivot table used",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Price is the only thing customers care about",
+            "Everyone complained about price",
+            "34 people is a small number, so ignore it",
+            "68% of respondents mentioned price — the most common theme"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "68% of respondents mentioned price — the most common theme",
+          "points": 1,
+          "whys": [
+            "The data shows what was mentioned most, not that nothing else matters.",
+            "34 of 50 is not everyone.",
+            "68% of the sample is the clearest pattern you have.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -1551,15 +1689,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 27: which of these best meets today's success criteria?",
+          "prompt": "An AI tool suggests 'Students will pay ₦3,000 for weekly tutoring'. What do you do with it?",
           "options": [
-            "A prompt that gives role, task, context and format",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Discard all AI suggestions",
+            "Treat it as a hypothesis and test it with real students before relying on it",
+            "Put it straight into the business plan",
+            "Assume it is true because AI produced it"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Treat it as a hypothesis and test it with real students before relying on it",
+          "points": 1,
+          "whys": [
+            "Useful hypotheses can come from AI; the evidence decides.",
+            "",
+            "An untested guess becomes a risk in your plan.",
+            "AI can sound confident and be wrong."
+          ]
         },
         {
           "kind": "task",
@@ -1607,15 +1751,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 28: which of these best meets today's success criteria?",
+          "prompt": "Which comparison of competitors is most useful for setting your price?",
           "options": [
-            "Four or more competitors",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Their founders' ages",
+            "Their prices side by side with what each includes, for the same customer",
+            "Their logos",
+            "Which one has the most Instagram followers"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Their prices side by side with what each includes, for the same customer",
+          "points": 1,
+          "whys": [
+            "Irrelevant to pricing.",
+            "",
+            "A logo says nothing about value or price.",
+            "Followers are not proof of what customers pay."
+          ]
         },
         {
           "kind": "task",
@@ -1669,15 +1819,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 29: which of these best meets today's success criteria?",
+          "prompt": "What does a brand identity need to stay recognisable?",
           "options": [
-            "Logo readable at small size",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "The same logo, colours and fonts used consistently everywhere",
+            "A new colour scheme for every post",
+            "As many fonts as possible",
+            "No logo, so it can change easily"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "The same logo, colours and fonts used consistently everywhere",
+          "points": 1,
+          "whys": [
+            "",
+            "Changing colours constantly makes the brand unrecognisable.",
+            "Many fonts look messy and unprofessional.",
+            "Without a stable mark, customers cannot recognise you."
+          ]
         },
         {
           "kind": "task",
@@ -1719,15 +1875,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 30: which of these best meets today's success criteria?",
+          "prompt": "On the Business Model Canvas, 'a tutoring app that saves parents time' belongs in which box?",
           "options": [
-            "All nine boxes filled",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Cost structure",
+            "Revenue streams",
+            "Value proposition",
+            "Key resources"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Value proposition",
+          "points": 1,
+          "whys": [
+            "Costs are what you spend.",
+            "Revenue is how money comes in.",
+            "",
+            "Resources are what you need to deliver it (staff, platform)."
+          ]
         },
         {
           "kind": "task",
@@ -1781,15 +1943,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 31: which of these best meets today's success criteria?",
+          "prompt": "Which section of a business plan answers 'who will buy this, and how many of them are there?'",
           "options": [
-            "Uses headings and a table of contents",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Cover page",
+            "Market analysis",
+            "Executive summary",
+            "Appendix"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Market analysis",
+          "points": 1,
+          "whys": [
+            "Only the title and names.",
+            "",
+            "The summary only condenses what other sections prove.",
+            "Supporting documents, not the analysis."
+          ]
         },
         {
           "kind": "task",
@@ -1837,15 +2005,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 32: which of these best meets today's success criteria?",
+          "prompt": "A product costs ₦800 to make and sells for ₦1,000. What is the profit margin on price?",
           "options": [
-            "Monthly projections with assumptions listed",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "80%",
+            "200%",
+            "20%",
+            "25%"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "20%",
+          "points": 1,
+          "whys": [
+            "80% is the cost as a share of the price.",
+            "The profit is ₦200 — a sum of money, not 200%.",
+            "",
+            "25% is the markup on cost (200 ÷ 800); margin is on the price (200 ÷ 1,000)."
+          ]
         },
         {
           "kind": "task",
@@ -1893,15 +2067,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 33: which of these best meets today's success criteria?",
+          "prompt": "Your flyer must make people act. What must it have?",
           "options": [
-            "Consistent with your brand colours and fonts",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "As much text as possible",
+            "Only a large logo",
+            "Tiny print with every detail",
+            "A clear call to action: what to do next and how (e.g. 'WhatsApp 0803… to book')"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "A clear call to action: what to do next and how (e.g. 'WhatsApp 0803… to book')",
+          "points": 1,
+          "whys": [
+            "People skim flyers; long text loses them.",
+            "A logo alone does not say what to do.",
+            "Unreadable detail stops action.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -1949,15 +2129,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 34: which of these best meets today's success criteria?",
+          "prompt": "In a pitch deck, which slide usually comes FIRST after the title?",
           "options": [
-            "A clear ask (amount or support needed)",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "The problem you solve",
+            "Your financial projections",
+            "Thank you / questions",
+            "The team's hobbies"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "The problem you solve",
+          "points": 1,
+          "whys": [
+            "",
+            "Numbers mean nothing until people know the problem.",
+            "That ends the pitch.",
+            "Irrelevant to investors."
+          ]
         },
         {
           "kind": "task",
@@ -2005,15 +2191,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 35: which of these best meets today's success criteria?",
+          "prompt": "Concept-test feedback is mixed. What should you do with it?",
           "options": [
-            "Concept clearly described or shown",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Look for patterns, revise the concept, and test again",
+            "Keep only the positive comments",
+            "Ignore it and launch",
+            "Change everything every comment asks for"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Look for patterns, revise the concept, and test again",
+          "points": 1,
+          "whys": [
+            "",
+            "That is confirmation bias.",
+            "Feedback exists to change the product.",
+            "One comment is not a pattern."
+          ]
         },
         {
           "kind": "task",
@@ -2055,15 +2247,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 36: which of these best meets today's success criteria?",
+          "prompt": "Your concept test showed customers would not pay your price. What makes your final presentation strong?",
           "options": [
-            "Shows before-and-after from testing",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Claiming the test was wrong",
+            "Presenting the original plan unchanged",
+            "Showing the evidence and how you revised the concept because of it",
+            "Hiding the test results"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Showing the evidence and how you revised the concept because of it",
+          "points": 1,
+          "whys": [
+            "Dismissing evidence without reason is not analysis.",
+            "It ignores what you learned.",
+            "",
+            "Hiding evidence is the weakest move."
+          ]
         },
         {
           "kind": "project",
@@ -2172,15 +2370,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 38: which of these best meets today's success criteria?",
+          "prompt": "Which is a MILESTONE rather than a task?",
           "options": [
-            "Four milestones with dates",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "'Venue booked and confirmed'",
+            "'Call three venues'",
+            "'Compare venue prices'",
+            "'Visit a venue'"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "'Venue booked and confirmed'",
+          "points": 1,
+          "whys": [
+            "",
+            "A task: something you do.",
+            "A task, not a checkpoint.",
+            "A task that leads towards the milestone."
+          ]
         },
         {
           "kind": "task",
@@ -2228,15 +2432,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 39: which of these best meets today's success criteria?",
+          "prompt": "Two activities need the same hall at the same time. What does scheduling them in one shared calendar reveal?",
           "options": [
-            "Milestones on the calendar",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "The clash, before it happens",
+            "Nothing — calendars are only reminders",
+            "The budget",
+            "Who is the best worker"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "The clash, before it happens",
+          "points": 1,
+          "whys": [
+            "",
+            "A shared calendar shows overlaps.",
+            "Calendars do not hold costs.",
+            "Not what a calendar measures."
+          ]
         },
         {
           "kind": "task",
@@ -2284,15 +2494,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 40: which of these best meets today's success criteria?",
+          "prompt": "What makes an action point in meeting minutes useful?",
           "options": [
-            "Agenda sent before the meeting",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "That the meeting happened",
+            "What will be done, by whom, and by when",
+            "Who spoke the most",
+            "The exact words everyone said"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "What will be done, by whom, and by when",
+          "points": 1,
+          "whys": [
+            "A record of attendance, not an action.",
+            "",
+            "Nobody can act on that.",
+            "Minutes record decisions and actions, not transcripts."
+          ]
         },
         {
           "kind": "task",
@@ -2346,15 +2562,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 41: which of these best meets today's success criteria?",
+          "prompt": "Which file name follows a controlled naming convention?",
           "options": [
-            "Folder permissions set by role",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "2026-03-14_EventBudget_v2",
+            "budget final new",
+            "Copy of Copy of budget",
+            "asdf"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "2026-03-14_EventBudget_v2",
+          "points": 1,
+          "whys": [
+            "",
+            "No date or version; impossible to sort.",
+            "Duplicate copies with no version control.",
+            "Meaningless."
+          ]
         },
         {
           "kind": "task",
@@ -2408,15 +2630,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 42: which of these best meets today's success criteria?",
+          "prompt": "In a project tracker, a task is 'In progress' and past its due date. What should the dashboard show?",
           "options": [
-            "Status drop-down for every task",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "It as complete",
+            "Nothing until it is finished",
+            "It hidden",
+            "It as overdue, so the owner and lead can act"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "It as overdue, so the owner and lead can act",
+          "points": 1,
+          "whys": [
+            "It is not complete.",
+            "Problems hidden until the end cannot be fixed.",
+            "Hiding risk is the opposite of tracking.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -2458,15 +2686,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 43: which of these best meets today's success criteria?",
+          "prompt": "In a process flowchart, what does a diamond shape show?",
           "options": [
-            "Standard shapes (oval, rectangle, diamond)",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "A document",
+            "A decision with branches (e.g. 'Paid? Yes / No')",
+            "The start or end",
+            "A step or action"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "A decision with branches (e.g. 'Paid? Yes / No')",
+          "points": 1,
+          "whys": [
+            "A document has a wavy bottom edge.",
+            "",
+            "Start and end are rounded shapes.",
+            "Steps are rectangles."
+          ]
         },
         {
           "kind": "task",
@@ -2514,15 +2748,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 44: which of these best meets today's success criteria?",
+          "prompt": "What makes a standard operating procedure usable by someone new?",
           "options": [
-            "Numbered steps anyone could follow",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Numbered steps in order, each one action, with who does it",
+            "One long paragraph",
+            "Only the goal, no steps",
+            "Steps that say 'do it as usual'"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Numbered steps in order, each one action, with who does it",
+          "points": 1,
+          "whys": [
+            "",
+            "Hard to follow while doing the task.",
+            "Without steps, people guess.",
+            "A newcomer does not know 'usual'."
+          ]
         },
         {
           "kind": "task",
@@ -2570,15 +2810,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 45: which of these best meets today's success criteria?",
+          "prompt": "A procurement register records each purchase. Which column best prevents fraud?",
           "options": [
-            "Every purchase has an approval step",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "The day of the week",
+            "Who approved the purchase",
+            "The item's colour",
+            "The supplier's favourite food"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Who approved the purchase",
+          "points": 1,
+          "whys": [
+            "Useful for reporting, not for control.",
+            "",
+            "Irrelevant to control.",
+            "Irrelevant."
+          ]
         },
         {
           "kind": "task",
@@ -2626,15 +2872,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 46: which of these best meets today's success criteria?",
+          "prompt": "A risk has likelihood 4 and impact 5 on a 1–5 scale. Using likelihood × impact, its score is…",
           "options": [
-            "Risk score = likelihood × impact",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "1 — low",
+            "45",
+            "20 — a high risk to act on first",
+            "9 — medium"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "20 — a high risk to act on first",
+          "points": 1,
+          "whys": [
+            "That is the lowest possible score.",
+            "Not possible on a 1–5 scale: the highest score is 5 × 5 = 25.",
+            "",
+            "That added the two."
+          ]
         },
         {
           "kind": "task",
@@ -2682,15 +2934,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 47: which of these best meets today's success criteria?",
+          "prompt": "Which evaluation question gives data you can act on?",
           "options": [
-            "Questions tied to the project's goals",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "'Was the facilitator great?'",
+            "'How useful was the session? (1–5) What one thing would improve it?'",
+            "'Did you like it?' (yes/no)",
+            "'Any comments?' only"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "'How useful was the session? (1–5) What one thing would improve it?'",
+          "points": 1,
+          "whys": [
+            "A leading question pushes a positive answer.",
+            "",
+            "Yes/no hides how much and why.",
+            "Optional open text gives few, uneven answers."
+          ]
         },
         {
           "kind": "task",
@@ -2738,15 +2996,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 48: which of these best meets today's success criteria?",
+          "prompt": "Two days before your event, a speaker cancels. Which plan shows good project management?",
           "options": [
-            "Every tool from the module used",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Say nothing and hope",
+            "Ask the audience to leave early",
+            "Use the backup listed in your risk register and tell attendees of the change",
+            "Cancel the whole event"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Use the backup listed in your risk register and tell attendees of the change",
+          "points": 1,
+          "whys": [
+            "Silence damages trust when it is noticed.",
+            "That does not manage the risk.",
+            "",
+            "One risk should not end the project if it was planned for."
+          ]
         },
         {
           "kind": "project",
@@ -2855,15 +3119,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 50: which of these best meets today's success criteria?",
+          "prompt": "In a RACI matrix, who is 'Accountable' for a task?",
           "options": [
-            "Each role has purpose, duties and skills",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "People who give advice",
+            "The one person who answers for the result and signs it off",
+            "Everyone who does some of the work",
+            "People who are only kept informed"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "The one person who answers for the result and signs it off",
+          "points": 1,
+          "whys": [
+            "Those are Consulted.",
+            "",
+            "Those are Responsible.",
+            "Those are Informed."
+          ]
         },
         {
           "kind": "task",
@@ -2911,15 +3181,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 51: which of these best meets today's success criteria?",
+          "prompt": "Which performance question is fairest?",
           "options": [
-            "Questions linked to the role's duties",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "'Do you like working with them?'",
+            "'How often does the member submit work on time?' (Never … Always)",
+            "'Is this person lazy?'",
+            "'Rate their personality'"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "'How often does the member submit work on time?' (Never … Always)",
+          "points": 1,
+          "whys": [
+            "Measures liking, not work.",
+            "",
+            "A loaded label, not an observable behaviour.",
+            "Personality is not performance."
+          ]
         },
         {
           "kind": "task",
@@ -2967,15 +3243,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 52: which of these best meets today's success criteria?",
+          "prompt": "Team A completed 18 of 20 tasks; Team B 27 of 36. Which performed better on completion rate?",
           "options": [
-            "Averages per indicator",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Team B, because 27 is more than 18",
+            "They are equal",
+            "It cannot be compared",
+            "Team A (90% vs 75%)"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Team A (90% vs 75%)",
+          "points": 1,
+          "whys": [
+            "Raw counts ignore how many tasks each team had.",
+            "90% and 75% are not equal.",
+            "A rate makes them comparable.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -3023,15 +3305,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 53: which of these best meets today's success criteria?",
+          "prompt": "What is the double-entry rule in bookkeeping?",
           "options": [
-            "All transactions categorised",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Record income twice for safety",
+            "Write each entry in two notebooks",
+            "Every transaction is recorded twice: a debit and an equal credit",
+            "Every transaction is entered by two people"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Every transaction is recorded twice: a debit and an equal credit",
+          "points": 1,
+          "whys": [
+            "That would double-count income.",
+            "Copies are not double entry.",
+            "",
+            "It is about accounts, not people."
+          ]
         },
         {
           "kind": "task",
@@ -3079,15 +3367,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 54: which of these best meets today's success criteria?",
+          "prompt": "Cash in ₦300,000; cash out ₦340,000 this month. What does the cash-flow report show?",
           "options": [
-            "Variance in naira and %",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "A net inflow of ₦640,000",
+            "Nothing useful",
+            "A net outflow of ₦40,000 — the business is spending more cash than it receives",
+            "A profit of ₦40,000"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "A net outflow of ₦40,000 — the business is spending more cash than it receives",
+          "points": 1,
+          "whys": [
+            "That added in and out.",
+            "It is the most useful warning sign there is.",
+            "",
+            "Out exceeds in: that is an outflow, and cash flow is not profit."
+          ]
         },
         {
           "kind": "task",
@@ -3129,15 +3423,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 55: which of these best meets today's success criteria?",
+          "prompt": "Why use a linked record in Airtable instead of typing the customer's name in every order?",
           "options": [
-            "Fields with the right types",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "It hides the customer",
+            "It keeps one source of truth: change the customer once and every order updates",
+            "It looks more colourful",
+            "It uses more storage"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "It keeps one source of truth: change the customer once and every order updates",
+          "points": 1,
+          "whys": [
+            "It links the customer, it does not hide them.",
+            "",
+            "It is about data integrity, not colour.",
+            "Not a reason to choose it."
+          ]
         },
         {
           "kind": "task",
@@ -3179,15 +3479,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 56: which of these best meets today's success criteria?",
+          "prompt": "In an automation (Make, Zapier), what starts the workflow?",
           "options": [
-            "Trigger and action clearly defined",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "An action, such as 'send an email'",
+            "A filter",
+            "The scenario's name",
+            "A trigger, such as 'a new form response arrives'"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "A trigger, such as 'a new form response arrives'",
+          "points": 1,
+          "whys": [
+            "Actions happen after the trigger.",
+            "A filter decides whether to continue; it does not start anything.",
+            "A name triggers nothing.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -3241,15 +3547,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 57: which of these best meets today's success criteria?",
+          "prompt": "Form responses land in a Sheet. How do you track each request's progress?",
           "options": [
-            "Responses arrive in a tracking sheet",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Add a Status column (New / In progress / Done) beside the responses and update it",
+            "Edit the respondents' answers",
+            "Delete rows when done",
+            "Make a new form for every request"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Add a Status column (New / In progress / Done) beside the responses and update it",
+          "points": 1,
+          "whys": [
+            "",
+            "Editing answers changes the evidence.",
+            "Deleting destroys the record of what was done.",
+            "Unmanageable and unnecessary."
+          ]
         },
         {
           "kind": "task",
@@ -3291,15 +3603,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 58: which of these best meets today's success criteria?",
+          "prompt": "An AI tool proposes a faster workflow. How do you verify it?",
           "options": [
-            "The prompt and the AI's answer recorded",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Ask the AI if it is correct",
+            "Ask nobody",
+            "Run it on a small real case, compare time and errors with the old way, and check every step",
+            "Adopt it because it sounds efficient"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Run it on a small real case, compare time and errors with the old way, and check every step",
+          "points": 1,
+          "whys": [
+            "The tool checking itself is not verification.",
+            "Untested changes risk breaking the process.",
+            "",
+            "Sounding efficient is not evidence."
+          ]
         },
         {
           "kind": "task",
@@ -3359,15 +3677,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 59: which of these best meets today's success criteria?",
+          "prompt": "Weekly reports come from a Sheet; tasks live in Trello. What keeps them in step?",
           "options": [
-            "Weekly routine written step by step",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Updating whichever one you remember",
+            "Copying everything both ways daily by hand without a rule",
+            "Using only memory",
+            "A defined routine: who updates what, when, and which is the source of truth"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "A defined routine: who updates what, when, and which is the source of truth",
+          "points": 1,
+          "whys": [
+            "That is how the two drift apart.",
+            "Laborious and still unclear which is right.",
+            "Not a system.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -3409,15 +3733,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 60: which of these best meets today's success criteria?",
+          "prompt": "What makes a management system auditable?",
           "options": [
-            "System works end to end",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "It has many features",
+            "It is new",
+            "Records of who did what and when, with documented procedures",
+            "It is used by many people"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Records of who did what and when, with documented procedures",
+          "points": 1,
+          "whys": [
+            "Features do not create records.",
+            "Newness proves nothing.",
+            "",
+            "Usage is not evidence."
+          ]
         },
         {
           "kind": "project",
@@ -3526,15 +3856,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 62: which of these best meets today's success criteria?",
+          "prompt": "You ask 40 people 'Would you buy this?' and 35 say yes. What is the main weakness of this finding?",
           "options": [
-            "Consent explained to every respondent",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Nothing; it proves demand",
+            "Saying yes costs nothing — stated intention often overstates real buying",
+            "40 is too many people",
+            "Yes/no is too precise"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Saying yes costs nothing — stated intention often overstates real buying",
+          "points": 1,
+          "whys": [
+            "Intentions are not purchases.",
+            "",
+            "40 is a reasonable small sample.",
+            "Precision is not the problem."
+          ]
         },
         {
           "kind": "task",
@@ -3576,15 +3912,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 63: which of these best meets today's success criteria?",
+          "prompt": "For a service, which is a 'key activity' on the Business Model Canvas?",
           "options": [
-            "All nine boxes",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Delivering the tutoring sessions",
+            "The students who pay",
+            "The profit made",
+            "The logo"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Delivering the tutoring sessions",
+          "points": 1,
+          "whys": [
+            "",
+            "Customers are a customer segment.",
+            "Profit comes from revenue minus costs.",
+            "Part of branding, not an activity."
+          ]
         },
         {
           "kind": "task",
@@ -3632,15 +3974,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 64: which of these best meets today's success criteria?",
+          "prompt": "Your forecast assumes 100 customers in month 1. What should it show alongside?",
           "options": [
-            "Every cost line justified",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Exact figures to the naira, presented as certain",
+            "No numbers",
+            "Its assumptions, and a lower 'what if' case",
+            "Only the best case"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Its assumptions, and a lower 'what if' case",
+          "points": 1,
+          "whys": [
+            "A forecast is an estimate, not a certainty.",
+            "A forecast needs numbers.",
+            "",
+            "A best case alone hides the risk."
+          ]
         },
         {
           "kind": "task",
@@ -3694,15 +4042,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 65: which of these best meets today's success criteria?",
+          "prompt": "On a Trello board, what shows a team who is doing each card?",
           "options": [
-            "Every team member has cards",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "The board's background colour",
+            "Card length",
+            "The number of lists",
+            "Assigning members and a due date to the card"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Assigning members and a due date to the card",
+          "points": 1,
+          "whys": [
+            "Decoration.",
+            "Says nothing about ownership.",
+            "Structure, not ownership.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -3756,15 +4110,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 66: which of these best meets today's success criteria?",
+          "prompt": "Which documentation system lets a new team member find things?",
           "options": [
-            "Index document linking every item",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "One folder with everything",
+            "Files in each person's own Drive",
+            "Files attached to emails",
+            "A clear folder structure, naming rules and a 'start here' index"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "A clear folder structure, naming rules and a 'start here' index",
+          "points": 1,
+          "whys": [
+            "Unsearchable as it grows.",
+            "Lost when that person leaves.",
+            "Scattered and hard to version.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -3812,15 +4172,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 67: which of these best meets today's success criteria?",
+          "prompt": "What is a prototype for?",
           "options": [
-            "Shows how the solution works",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "To be the finished product",
+            "To impress investors only",
+            "To replace research",
+            "To test the idea with users cheaply, before building it fully"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "To test the idea with users cheaply, before building it fully",
+          "points": 1,
+          "whys": [
+            "A prototype is meant to change.",
+            "Its purpose is learning.",
+            "It is a research tool.",
+            ""
+          ]
         },
         {
           "kind": "task",
@@ -3874,15 +4240,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 68: which of these best meets today's success criteria?",
+          "prompt": "After structured feedback, how should revisions be documented?",
           "options": [
-            "Feedback questions tied to success measures",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Each change listed with the feedback that caused it",
+            "Overwrite the old version silently",
+            "Only list changes you agree with",
+            "No record needed"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Each change listed with the feedback that caused it",
+          "points": 1,
+          "whys": [
+            "",
+            "Loses the evidence of why it changed.",
+            "Hides feedback you rejected, and why.",
+            "You cannot defend decisions later."
+          ]
         },
         {
           "kind": "task",
@@ -3924,15 +4296,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 69: which of these best meets today's success criteria?",
+          "prompt": "Why run a supervised pilot before the full launch?",
           "options": [
-            "Pilot plan agreed with the instructor",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Because pilots always succeed",
+            "To avoid collecting data",
+            "To find problems at small scale while they are cheap to fix",
+            "To save time by skipping planning"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "To find problems at small scale while they are cheap to fix",
+          "points": 1,
+          "whys": [
+            "Pilots exist because things fail.",
+            "A pilot's value is its data.",
+            "",
+            "A pilot needs a plan."
+          ]
         },
         {
           "kind": "task",
@@ -3980,15 +4358,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 70: which of these best meets today's success criteria?",
+          "prompt": "A pilot reached 80% of its attendance target at 120% of budget. What is the honest evaluation?",
           "options": [
-            "KPIs against targets",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Report only the attendance",
+            "Partly successful: under target and over budget, with reasons and fixes",
+            "A complete success",
+            "A complete failure"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Partly successful: under target and over budget, with reasons and fixes",
+          "points": 1,
+          "whys": [
+            "Cherry-picking hides the cost overrun.",
+            "",
+            "It missed both measures.",
+            "80% attendance is real progress."
+          ]
         },
         {
           "kind": "task",
@@ -4036,15 +4420,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 71: which of these best meets today's success criteria?",
+          "prompt": "In a final presentation, what makes 'lessons learnt' credible?",
           "options": [
-            "Evidence for every claim",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "Skipping it",
+            "Specific: what went wrong, the evidence, and what you would do differently",
+            "'Everything went well'",
+            "Blaming team members"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "Specific: what went wrong, the evidence, and what you would do differently",
+          "points": 1,
+          "whys": [
+            "It is often the most valuable part.",
+            "",
+            "No project goes entirely well.",
+            "Blame is not learning."
+          ]
         },
         {
           "kind": "task",
@@ -4086,15 +4476,21 @@
       "checks": [
         {
           "kind": "mcq",
-          "prompt": "Week 72: which of these best meets today's success criteria?",
+          "prompt": "A panel asks why you chose your pricing. What is the strongest defence?",
           "options": [
-            "Portfolio covers all six modules",
-            "Work copied from a classmate",
-            "A plan to do it later",
-            "A screenshot of the instructor's screen"
+            "'Everyone does it'",
+            "'The AI suggested it'",
+            "The evidence: competitor prices, customer research and your break-even point",
+            "'It felt right'"
           ],
-          "answer": "0",
-          "points": 1
+          "answer": "The evidence: competitor prices, customer research and your break-even point",
+          "points": 1,
+          "whys": [
+            "Not true, and not a reason.",
+            "Only a defence if you verified it.",
+            "",
+            "Not a reason a panel can test."
+          ]
         },
         {
           "kind": "project",

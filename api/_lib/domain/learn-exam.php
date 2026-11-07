@@ -20,6 +20,8 @@ declare(strict_types=1);
  *     "the third answer is B";
  *   · one official sitting, saved as it goes and resumed after a dropped connection, its deadline
  *     kept by the SERVER (the browser's timer is a courtesy), with LX_GRACE seconds for the network;
+ *   · an HONOUR PLEDGE before the clock starts — from memory, on their own, no notes, people or AI —
+ *     recorded on the sitting and shown to instructors (owner: "A standard honourable exam");
  *   · results with the slip behind every wrong choice, and how sure they were — a learner who was
  *     SURE and wrong has a misconception to fix, which is worth more than the score.
  *
@@ -212,7 +214,8 @@ function lx_result(array $s, array $checks): array {
         }
         $per[] = $o;
     }
-    return ['score' => (float)$s['score'], 'max' => (float)$s['maxScore'], 'pct' => (int)$s['pct'], 'band' => (string)$s['band'],
+    return ['pledged' => (string)(json_decode((string)$s['integrity'], true)['pledgedAt'] ?? '') !== '',
+            'score' => (float)$s['score'], 'max' => (float)$s['maxScore'], 'pct' => (int)$s['pct'], 'band' => (string)$s['band'],
             'passMark' => $passMark, 'passed' => $passed, 'pending' => (string)$s['status'] === 'submitted', 'questions' => $per,
             'sureButWrong' => $sureWrong, 'submittedAt' => (string)$s['submittedAt'],
             'minutes' => max(1, (int)round((strtotime((string)$s['submittedAt']) - strtotime((string)$s['startedAt'])) / 60))];
@@ -294,6 +297,9 @@ function lx_merge_input(array $s, array $p): array {
     $int = json_decode((string)$s['integrity'], true) ?: [];
     $sig = is_array($p['signals'] ?? null) ? $p['signals'] : [];
     foreach (['pastes', 'pastedChars', 'typedChars', 'leaves', 'awaySecs'] as $k) if (isset($sig[$k])) $int[$k] = max((int)($int[$k] ?? 0), min(1000000, (int)$sig[$k]));
+    /* THE HONOUR PLEDGE (owner, 7 Nov 2026: "A standard honourable exam"): made once, before the clock,
+       in the learner's own words of agreement — and never unmade by a later save. */
+    if (!empty($sig['pledge']) && empty($int['pledgedAt'])) $int['pledgedAt'] = now_iso();
     return ['answers' => json_encode($ans, JSON_UNESCAPED_UNICODE), 'confidence' => json_encode($conf), 'integrity' => json_encode($int)];
 }
 
@@ -520,6 +526,7 @@ function staff_exam_sittings(array $p): array {
         return ['sittingId' => (string)$r['sittingId'], 'memberId' => (string)$r['memberId'], 'name' => (string)$r['fullName'], 'kind' => (string)$r['kind'],
                 'course' => (string)$r['course'], 'unitId' => (string)$r['unitId'], 'status' => (string)$r['status'], 'pct' => (int)$r['pct'], 'band' => (string)$r['band'],
                 'startedAt' => (string)$r['startedAt'], 'submittedAt' => (string)$r['submittedAt'], 'signals' => lx_signals($r), 'held' => $held,
+                'pledged' => (string)(json_decode((string)$r['integrity'], true)['pledgedAt'] ?? '') !== '',
                 'viva' => array_map(static fn($v) => ['question' => $v['question'], 'answer' => $v['answer'], 'verdict' => $v['verdict']], json_decode((string)$r['viva'], true) ?: [])];
     }, $rows);
     $items = array_values(array_map(static function ($a) {
