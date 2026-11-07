@@ -1503,12 +1503,13 @@ course", the card's division and course channels still come from what the
 member chose. Each is twelve Saturdays at *Year 1 · Foundation*, seeded
 automatically, with exams, mastery tiers and a certificate in its own style.
 
-- *Data Appreciation*: what data is, asking a question data can answer (the
-  Problem–Plan–Data–Analysis–Conclusion cycle), fair samples and questions, tidy
-  tables in Google Sheets, mean/median/mode, choosing charts, misleading charts,
-  correlation and causation (CODAP, Gapminder), privacy and Nigeria's Data
-  Protection Act 2023, bias in data and AI, telling a true story with data, and
-  an investigation the member defends to a panel.
+- *Data Appreciation* (rebuilt 7 Nov 2026 as what every computer user should
+  know, basics to intermediate): data and storage units, files, folders and
+  names, saving and the 3-2-1 backup, shortcuts and accurate data entry,
+  spreadsheets and formulas (SUM, AVERAGE, fill, absolute references), sort,
+  filter and tidy tables, averages and charts, searching and checking sources
+  (SIFT), passwords, 2-step verification, scams and Nigeria's data law, sharing
+  and file types, and a project that uses all of it.
 - *Desktop Publishing*: page set-up, type, hierarchy, the grid and the four
   layout principles, colour and contrast (RGB/CMYK), images, resolution and
   rights, an event flyer, a newsletter, bleed/trim/safe area, a print-ready PDF

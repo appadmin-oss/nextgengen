@@ -16,8 +16,17 @@ from html import escape
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
-from lessons import DA, DTP, LEVEL          # noqa: E402
-from media import diagrams, shots           # noqa: E402
+from lessons import DTP, LEVEL               # noqa: E402
+from lessons_da import DA                   # noqa: E402
+import media, media_more                    # noqa: E402
+
+
+def diagrams():
+    return {**media.diagrams(), **media_more.diagrams()}
+
+
+def shots():
+    return {**media.shots(), **media_more.shots()}
 
 OUT = os.path.join(ROOT, "assets", "learn-media", "core")
 COURSES = [("da", "Data Appreciation", DA), ("dtp", "Desktop Publishing", DTP)]
@@ -141,9 +150,10 @@ def guide(code, course, lessons, intro):
 
 
 INTRO = {
-    "da": "Data is how a modern world decides things — what to build, who to help, what to believe. In twelve Saturdays you "
-          "learn to ask a question data can answer, collect it fairly, summarise and chart it honestly, read other people's "
-          "charts with a detective's eye, and tell a true story with numbers. Free tools only: Google Sheets and CODAP.",
+    "da": "What every computer user should know about data, from the very basics to confident everyday use: how a computer "
+          "stores data and how big it is, files and folders, saving and backing up, typing and accurate data entry, "
+          "spreadsheets and formulas, sorting and charts, checking what you find online, keeping accounts and personal data "
+          "safe, and sharing and working together. Free tools only: your own file manager, Google Sheets or LibreOffice Calc.",
     "dtp": "Every flyer, programme, newsletter and certificate somebody reads was designed by somebody. In twelve Saturdays you "
            "learn page set-up, type and hierarchy, grids, colour, images and print preparation, and you finish with a "
            "four-page magazine printed for your centre. Free tools only: Canva, Google Docs, LibreOffice and Scribus.",
@@ -209,8 +219,9 @@ def main():
                          "objectives": L["objectives"], "body": body(L), "durationMins": 120, "passMark": 60,
                          "materials": mats, "checks": [check(c) for c in L["checks"]]})
     seed = {"key": "core-digital-2026", "title": "Data Appreciation and Desktop Publishing — every member (2026)", "allowNewCourse": False,
-            "description": "Two courses every member takes, replacing the Media Lab's six Club-wide lessons: Data Appreciation (ask, collect, "
-                           "summarise, chart, question and tell a true story with data) and Desktop Publishing (page set-up, type, grids, colour, "
+            "description": "Two courses every member takes, replacing the Media Lab's six Club-wide lessons: Data Appreciation (what every computer user "
+                           "should know about data, basics to intermediate: storage, files, backup, data entry, spreadsheets and formulas, charts, "
+                           "checking sources, safety and sharing) and Desktop Publishing (page set-up, type, grids, colour, "
                            "images and print-ready files). Twelve Saturdays each, with diagrams, worked-example screenshots, a slide deck per "
                            "lesson, a learning guide, and assessment that is not only multiple choice.",
             "source": "NGG curriculum team, from the investigation cycle (PPDAC) and data-education frameworks, and common DTP syllabi",
