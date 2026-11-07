@@ -18120,3 +18120,11 @@ button.m9x-ev-sum { cursor: pointer; }
   .cr-ib-subject { font-size: 17px; }
   .cr-ib-facts { grid-template-columns: 1fr 1fr; }
 }
+
+/* The notification nudge inside the Inbox list is a strip, not a card: the
+   list is the work, and a 200px card pushed it below the fold of a laptop. */
+.cr-ib-push .ngp-nudge { padding: 10px 12px; gap: 10px; border-radius: 12px; font-size: 13px; }
+.cr-ib-push .ngp-ic { display: none; }
+.cr-ib-push .ngp-nudge-t small { font-size: 12.5px; }
+.cr-ib-push .ngp-btn { height: 32px; padding: 0 12px; font-size: 13px; }
+@container (max-width: 1240px) { .cr-ib-rail-foot .cr-linkbtn { font-size: 0; justify-content: center; } .cr-ib-rail-foot .cr-linkbtn .ph { font-size: 16px; } }

@@ -677,7 +677,7 @@ function CrInbox({ ctx, phone, data }) {
       <div className="cr-ib-rail-foot">
         {handled > 0 && <span><CrIcon n="check-circle"/>{crPlural(handled, "item", "items")} handled</span>}
         {data.failed && data.failed.length > 0 && <span className="cr-ib-warn"><CrIcon n="warning"/>{data.failed.map(k => (views.find(v => v.id === k) || {}).label || k).join(", ")} didn’t load</span>}
-        <button type="button" className="cr-linkbtn" onClick={() => ctx.reload()}><CrIcon n="arrow-clockwise"/>Refresh</button>
+        <button type="button" className="cr-linkbtn" aria-label="Refresh" title="Refresh" onClick={() => ctx.reload()}><CrIcon n="arrow-clockwise"/>Refresh</button>
       </div>
     </nav>
   );
@@ -688,7 +688,7 @@ function CrInbox({ ctx, phone, data }) {
   const list = (
     <section className="cr-ib-list" aria-label={viewLabel}>
       {/* Asked where it makes sense: the inbox, which is what it would tell them about. */}
-      {typeof NggPushNudge === "function" ? <div className="cr-ib-push"><NggPushNudge surface="admin" text="Know when something new lands here — a request, a message, an application — on this device, with quiet hours at night. No email while you’re already in the Control Room."/></div> : null}
+      {typeof NggPushNudge === "function" ? <div className="cr-ib-push"><NggPushNudge surface="admin" text="New requests and messages, as they land. Quiet at night."/></div> : null}
       <div className="cr-ib-tools">
         <div className="cr-searchbox" role="search">
           <CrIcon n="magnifying-glass"/>
@@ -794,7 +794,11 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack, onJump }
   const [tpl, setTpl] = React.useState(false);
   const taRef = React.useRef(null);
   const endRef = React.useRef(null);
-  React.useEffect(() => { if (endRef.current && endRef.current.scrollIntoView) endRef.current.scrollIntoView({ block: "end" }); }, [it.thread && it.thread.length]);
+  /* Open at the TOP — the subject, the facts and the first message are what
+     a decision is read from; jumping to the end of a long message hid them.
+     Only a reply added while it is open scrolls down to show itself. */
+  const firstLen = React.useRef(it.thread ? it.thread.length : 0);
+  React.useEffect(() => { const n = it.thread ? it.thread.length : 0; if (n > firstLen.current && endRef.current && endRef.current.scrollIntoView) endRef.current.scrollIntoView({ block: "end" }); firstLen.current = n; }, [it.thread && it.thread.length]);
   React.useEffect(() => { if (mode === "reply") crDraftSet(it.id, text); }, [text]);
 
   const noteAction = typeof mode === "number" ? it.actions[mode] : null;
