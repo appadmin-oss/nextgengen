@@ -2693,13 +2693,19 @@ function member_curriculum_ask(array $p): array {
     $units = curriculum_member_units($m, $placement);
     $id = (string)($p['unitId'] ?? '');
     if (!isset($units[$id])) return ['ok' => false, 'error' => 'not_found'];
+    /* Not during an exam. A sitting still within its time (plus ten minutes' grace) closes Guide: an exam
+       question pasted into a hint companion is the one use it must never have. */
+    foreach (db_all("SELECT startedAt, timeLimitSec FROM curriculum_sittings WHERE memberId = ? AND status IN ('open', 'viva') ORDER BY id DESC LIMIT 3", [(string)$m['memberId']]) as $sit) {
+        $lim = (int)$sit['timeLimitSec']; $end = strtotime((string)$sit['startedAt']) + ($lim > 0 ? $lim : 3 * 3600) + 600;
+        if (time() < $end) return ['ok' => false, 'error' => 'exam_in_progress'];
+    }
     $key = 'ai.tutor.' . gmdate('Y-m-d');
     $used = (int)(db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', [(string)$m['memberId'], $key])['stateValue'] ?? 0);
     if ($used >= CURR_TUTOR_PER_DAY) return ['ok' => false, 'error' => 'daily_limit', 'limit' => CURR_TUTOR_PER_DAY, 'left' => 0];
     if (!function_exists('ai_enabled') || !ai_enabled('coach')) return ['ok' => false, 'error' => 'ai_disabled'];
     // Distress is not a study question: point to people, and count nothing.
-    if (preg_match('/\b(kill myself|suicide|hurt myself|self[- ]harm|abuse[ds]?|touch(ed|es) me|want to die)\b/i', $q))
-        return ['ok' => true, 'answer' => 'That sounds really important, and it is not something to work out alone. Please talk to your mentor, your instructor or a parent today — or use "Report a concern" in your portal, which goes straight to the safeguarding team.', 'safeguarding' => true, 'left' => CURR_TUTOR_PER_DAY - $used];
+    if ($sg = safeguard_check($q, $m, 'Guide in Learn'))
+        return ['ok' => true, 'answer' => $sg['reply'], 'safeguarding' => true, 'told' => $sg['told'], 'left' => CURR_TUTOR_PER_DAY - $used];
     // Spend the allowance BEFORE the model is called, so parallel requests cannot all slip under it.
     db_upsert('member_state', ['memberId' => (string)$m['memberId'], 'stateKey' => $key, 'stateValue' => (string)($used + 1), 'updatedAt' => now_iso()],
               ['memberId', 'stateKey'], ['stateValue' => (string)($used + 1), 'updatedAt' => now_iso()]);
@@ -2750,7 +2756,10 @@ function member_curriculum_ask(array $p): array {
         if (!is_array($t)) continue;
         $text = trim(mb_substr((string)($t['text'] ?? ''), 0, 1200));
         if ($text === '') continue;
-        $turns[] = ['role' => (string)($t['role'] ?? '') === 'ai' ? 'ai' : 'me', 'text' => $text];
+        /* The AI layer knows two speakers, 'me' and 'coach' (ai.php). Guide's own earlier hints used to be
+           sent as 'ai', which every adapter read as the CHILD speaking — so the hint ladder could never
+           climb: the model never saw its own previous rungs. */
+        $turns[] = ['role' => (string)($t['role'] ?? '') === 'ai' ? 'coach' : 'me', 'text' => $text];
     }
     $turns = array_slice($turns, -CURR_TUTOR_TURNS);
     $turns[] = ['role' => 'me', 'text' => $q];

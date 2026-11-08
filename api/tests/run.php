@@ -27351,7 +27351,26 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('Guide: praise names the strategy, not the child', str_contains($sys, 'the strategy, not that they are clever'));
     chk('study helper: not for a lesson outside their course', (member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-X', 'question' => 'What is a tag?'])['error'] ?? '') === 'not_found');
     $sg = member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'I want to hurt myself']);
-    chk('study helper: distress is answered with people to talk to, not a lesson', !empty($sg['safeguarding']) && str_contains($sg['answer'], 'Report a concern'));
+    chk('study helper: distress is answered with people to talk to, not a lesson', !empty($sg['safeguarding']) && str_contains($sg['answer'], 'trusted adult'));
+    /* AI audit fixes (8 Nov 2026). */
+    $turnsSeen = null; $prevMock = $GLOBALS['__ai_mock'];
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) use (&$turnsSeen) { $turnsSeen = $turns; return ['ok' => true, 'provider' => 'mock', 'text' => 'What did you try first?']; };
+    db_exec("DELETE FROM member_state WHERE memberId = 'NGG-TU-1' AND stateKey LIKE 'ai.tutor.%'");
+    member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'Still stuck on tones', 'history' => [['role' => 'me', 'text' => 'What is a tone?'], ['role' => 'ai', 'text' => 'What did you try first?']]]);
+    chk('Guide: its own earlier hints reach the model as ITS turns (coach), so the hint ladder can climb', ($turnsSeen[1]['role'] ?? '') === 'coach' && ($turnsSeen[0]['role'] ?? '') === 'me');
+    $GLOBALS['__ai_mock'] = $prevMock;
+    $cases = (int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'NGG-TU-1' AND category = 'ai-disclosure'")['c'];
+    member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'i feel suicidal']);
+    chk('safeguarding: a disclosure to an AI opens ONE real case for the centre (the first one already did), and the reply says who was told only if someone was',
+        $cases === 1 && (int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'NGG-TU-1' AND category = 'ai-disclosure'")['c'] === 1 && !empty($sg['told']));
+    chk('safeguarding: the shared detector catches what the weaker lists missed', coach_is_crisis('i feel suicidal') && coach_is_crisis('I want to end my life') && coach_is_crisis('i cut myself') && !coach_is_crisis('I am stuck on fractions'));
+    db_insert('curriculum_sittings', ['sittingId' => 'SIT-TU-1', 'memberId' => 'NGG-TU-1', 'kind' => 'session', 'unitId' => 'CU-TU-1', 'course' => 'Piano', 'items' => '[]', 'status' => 'open', 'timeLimitSec' => 1800, 'startedAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('Guide: closed while an exam sitting is running', (member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'What is the answer to question 3?'])['error'] ?? '') === 'exam_in_progress');
+    db_exec("DELETE FROM curriculum_sittings WHERE sittingId = 'SIT-TU-1'");
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) { return ['ok' => true, 'provider' => 'mock', 'text' => 'What made today feel heavy?']; };
+    $co = member_coach(['requesterId' => 'NGG-TU-1', 'messages' => [['role' => 'me', 'text' => 'I keep putting off studying.']]]);
+    chk('coach: the portal\'s message shape {role: me, text} is read (it used to arrive empty)', !empty($co['ok']) && ($co['reply'] ?? '') !== '');
+    $GLOBALS['__ai_mock'] = $prevMock;
     chk('study helper: a member cannot reset their own allowance', (member_state_set(['memberId' => 'NGG-TU-1', 'key' => 'ai.tutor.' . gmdate('Y-m-d'), 'value' => 0])['error'] ?? '') === 'bad_key');
     db_upsert('member_state', ['memberId' => 'NGG-TU-1', 'stateKey' => 'ai.tutor.' . gmdate('Y-m-d'), 'stateValue' => (string)CURR_TUTOR_PER_DAY, 'updatedAt' => $now], ['memberId', 'stateKey'], ['stateValue' => (string)CURR_TUTOR_PER_DAY]);
     chk('study helper: the daily allowance is a refusal once used', (member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'And a tone?'])['error'] ?? '') === 'daily_limit');

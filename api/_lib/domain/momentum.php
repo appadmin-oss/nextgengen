@@ -159,6 +159,35 @@ function coach_is_crisis(string $text): bool {
     return (bool)preg_match(COACH_CRISIS_RE, $text);
 }
 
+/**
+ * ONE crisis check for every place a child types to an AI (audit, 8 Nov 2026: Guide, the study tools
+ * and the coach each had their own word list, and the weaker two missed "suicidal", "end my life",
+ * "cut myself"; the coach's screen then told the child "your mentor and the safeguarding lead have been
+ * told" when nobody had been). A match is answered with people, never a model, and it now REALLY tells
+ * someone: a safeguarding case is opened for the centre's officer (emailed, no details in the email),
+ * carrying the words, once a day per child so a frightened child repeating themselves does not open ten.
+ * Returns the reply to show, or null when there is nothing to act on.
+ */
+function safeguard_check(string $text, ?array $member, string $where): ?array {
+    if (!coach_is_crisis($text)) return null;
+    $told = false;
+    if ($member && !empty($member['memberId']) && function_exists('sg_case_open')) {
+        $mid = (string)$member['memberId'];
+        $recent = db_row("SELECT caseNo FROM safeguarding_cases WHERE subjectId = ? AND category = 'ai-disclosure' AND createdAt >= ? LIMIT 1",
+            [$mid, gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
+        if ($recent) $told = true;
+        else {
+            try {
+                $r = sg_case_open($member, $member, (string)($member['fullName'] ?? ''), (string)($member['centre'] ?? ''), 'ai-disclosure',
+                    'Raised automatically. While using ' . $where . ', this member wrote something that may mean they are at risk. Please check in with them in person today.'
+                    . "\n\nWhat they wrote:\n" . mb_substr($text, 0, 1200));
+                $told = !empty($r['ok']);
+            } catch (\Throwable $e) { $told = false; }
+        }
+    }
+    return ['reply' => coach_crisis_reply(), 'safeguarding' => true, 'told' => $told];
+}
+
 function coach_crisis_reply(): string {
     return "This sounds bigger than anything a journal should hold on its own — and I'm really glad you said it. Please talk to a trusted adult right now: a parent, a teacher, or your NGG mentor. If you're in danger, call 112, or NGG safeguarding on +234 903 777 6318. You're not in trouble, and you're not alone.";
 }
@@ -177,7 +206,8 @@ function coach_fallback(array $turns): string {
 
 function member_coach(array $p): array {
     $mid = (string)($p['requesterId'] ?? '');
-    if (!db_row('SELECT id FROM members WHERE memberId = ?', [$mid])) return ['ok' => false, 'error' => 'member_gone'];
+    $m = db_row('SELECT * FROM members WHERE memberId = ?', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'member_gone'];
     $turns = is_array($p['messages'] ?? null) ? $p['messages'] : [];
     $clean = [];
     foreach (array_slice($turns, -10) as $t) {
@@ -195,8 +225,8 @@ function member_coach(array $p): array {
     // AI is unconfigured or the model drifts.
     $lastMe = '';
     for ($i = count($clean) - 1; $i >= 0; $i--) { if ($clean[$i]['role'] === 'me') { $lastMe = $clean[$i]['text']; break; } }
-    if ($lastMe !== '' && coach_is_crisis($lastMe)) {
-        return ['ok' => true, 'reply' => coach_crisis_reply(), 'source' => 'safeguarding', 'safeguarding' => true];
+    if ($lastMe !== '' && ($sg = safeguard_check($lastMe, $m ?? null, 'the reflection coach'))) {
+        return ['ok' => true, 'reply' => $sg['reply'], 'source' => 'safeguarding', 'safeguarding' => true, 'told' => $sg['told']];
     }
 
     if (ai_enabled('coach')) {

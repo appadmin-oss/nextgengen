@@ -194,7 +194,7 @@ Object.assign(Mp9Portal.prototype, {
         },
         doneT: (R.wins.length ? "Wins: " + R.wins.join(", ").toLowerCase() + ". " : "") + "Plan: " + (R.plan || "") + (R.share ? " Shared with " + mf + "." : ""),
         redo: () => set({ cr: { ...R, done: false, step: 2 } }),
-        starters: [["ph ph-question", "Quiz me on a subject", "Practice testing helps it stick", "Quiz me on one of my subjects, one question at a time."], ["ph ph-calendar-check", "Plan tomorrow’s study", "Turn it into an if-then plan", "Help me plan tomorrow’s study."], ["ph ph-lightbulb", "I’m stuck on homework", "Hints, never the answer", "I’m stuck on a homework question."], ["ph ph-heart", "I feel stressed about exams", "One small step for tonight", "I feel stressed about exams."]]
+        starters: [["ph ph-hourglass-medium", "I keep putting off studying", "Find the first small step", "I keep putting off studying."], ["ph ph-calendar-check", "Plan tomorrow’s study", "Turn it into an if-then plan", "Help me plan tomorrow’s study."], ["ph ph-brain", "How do I study smarter?", "Test yourself, space it out", "How can I study smarter, not longer?"], ["ph ph-heart", "I feel stressed about exams", "One small step for tonight", "I feel stressed about exams."]]
           .map(([icon, t, s2, prompt]) => ({ icon, t, s: s2, go: () => this.askComp(prompt) })),
         chatEmpty: !msgs.length, msgs: msgs.map(m => ({ text: m.text, al: m.role === "user" ? "flex-end" : "flex-start", bg: m.role === "user" ? "#0b0b0c" : "#f4f4f2", fg: m.role === "user" ? "#fff" : "#0b0b0c" })), busy: !!s.ccBusy,
         q: s.ccQ || "", onQ: e => set({ ccQ: e.target.value }), send: e => { e.preventDefault(); this.askComp(s.ccQ); },
@@ -205,9 +205,12 @@ Object.assign(Mp9Portal.prototype, {
     text = String(text || "").trim(); if (!text || this.state.ccBusy) return;
     const msgs = (this.state.cc || []).concat([{ role: "user", text }]);
     this.setState({ cc: msgs, ccQ: "", ccBusy: true });
-    NGGApi.member.coach(msgs.map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }))).then(r => {
+    /* The coach reads {role: 'me'|'coach', text} (momentum.php). This sent {role, content}, so every
+       message arrived empty and the chat answered nothing but an error. And it says someone has been
+       told only when someone has (safeguard_check opened a case). */
+    NGGApi.member.coach(msgs.map(m => ({ role: m.role === "user" ? "me" : "coach", text: m.text }))).then(r => {
       this.setState(s => ({ cc: (s.cc || []).concat([{ role: "ai", text: (r && r.reply) || "Tell me a bit more." }]), ccBusy: false }));
-      if (r && r.safeguarding) this.toast("Your mentor and the safeguarding lead have been told so they can help.");
+      if (r && r.safeguarding) this.toast(r.told ? "The safeguarding lead at your centre has been told, so someone can help today." : "Please talk to an adult you trust today — your mentor, a parent or a teacher.");
     }).catch(e => this.setState(s => ({ cc: (s.cc || []).concat([{ role: "ai", text: mp9Err(e) }]), ccBusy: false })));
   },
   moneyVals(go) {

@@ -578,6 +578,7 @@ function CurStudyHelper({ units }) {
     } catch (e) {
       const c = e && e.code;
       setErr(c === "daily_limit" ? "You\u2019ve used today\u2019s questions. Ask your instructor, or come back tomorrow."
+        : c === "exam_in_progress" ? "Guide is closed while your exam is running. Good luck \u2014 it opens again when you hand in."
         : c === "ai_disabled" ? "The study helper isn\u2019t switched on yet. Ask your instructor or mentor."
         : c === "question_too_short" ? "Ask a little more \u2014 a full question gets a better answer."
         : "The study helper couldn\u2019t answer just now. Try again in a minute.");
