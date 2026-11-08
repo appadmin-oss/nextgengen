@@ -9708,3 +9708,10 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-placebar { height: 6px; border-radius: 999px; background: #e7e8ee; overflow: hidden; }
 .mlb-placebar span { display: block; height: 100%; background: #1c2a5e; border-radius: inherit; transition: width .25s ease; }
 @media (prefers-reduced-motion: reduce) { .mlb-placebar span { transition: none; } }
+
+/* Stuck (wheel-spinning) and the quick check (Maths/English/Physics Lab). */
+.mlb-stuck { margin-top: 12px; padding: 14px 16px; border-radius: 14px; background: #fef4dc; border: 1px solid #f5d27a; color: #3d2c00; }
+.mlb-stuck .mlb-h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
+.mlb-stuck .mlb-meta { color: #4a3a10; }
+.mlb-stuck-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mlb-quick { margin: 6px 0 0; }

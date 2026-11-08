@@ -17,7 +17,7 @@ const MLB_STATE_L = { none: "Not started", open: "Ready to learn", locked: "Lock
   ready: "Ready to check", review: "Needs a refresh", known: "Known (fast-tracked)", mastered: "Mastered", secure: "Secure", longterm: "Long-term" };
 const MLB_GOOD_V = ["known", "mastered", "secure", "longterm"];
 const MLB_ERR = { members_only: "The full Lab is for NGG members.", locked: "Finish the topics this builds on first.", not_available: "This topic is still in preparation.",
-  not_studied: "Study the lesson first: work through every step, then practise.", practice_owed: "Get more practice questions right first — the check can't be retried straight away.", not_ready: "The mastery check opens when your practice shows you are ready.",
+  not_studied: "Study the lesson first: work through every step, then practise.", quick_today: "You’ve had today’s quick check on this topic — the lesson is the way in now.", already_open: "Practise is already open for this topic.", practice_owed: "Get more practice questions right first — the check can't be retried straight away.", not_ready: "The mastery check opens when your practice shows you are ready.",
   climb_done: "Your climb is finished.", nothing_due: "Nothing is due for review.", boss_locked: "Know every topic in the stage first.", finished: "That session is already finished.",
   network: "You’re offline. Check your connection and try again.", rate_limited: "Slow down a little and try again." };
 function mlbErr(e) { const c = e && (e.code || e.message); return MLB_ERR[c] || (e && e.detail) || "That didn’t work. Try again."; }
@@ -986,6 +986,8 @@ function MlbLearn({ comp, go, startPlay, lite }) {
       <header className="mlb-topichead">
         <p className="mlb-eyebrow">Stage {c.stage} · {c.stageTitle}{c.bandName ? " · " + c.bandName : ""}</p>
         <h2 className="mlb-h2">{c.title}</h2>
+        {/* Already know it? Prove it in three questions instead of walking every step (the expertise-reversal effect). */}
+        {!lite && !free && canLearn ? <p className="mlb-quick"><button type="button" className="mlb-link" onClick={() => startPlay({ mode: "quick", comp: c.id })}>Already know this? Show me — 3 questions, no hints</button></p> : null}
       </header>
       <ol className="mlb-stepbar" aria-label="Lesson steps">{steps.map((x, i) => (
         <li key={x.id} className={(i < at || (done[x.id] && i !== at) ? "is-done" : i === at ? "is-on" : "") + (canOpen(i) ? "" : " is-ahead")}>
@@ -1426,6 +1428,15 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini }) {
           <details open={!fb.correct}><summary>Worked solution</summary><ol className="mlb-steps">{fb.steps.map((s, k) => <li key={k}><MlbMath text={s}/></li>)}</ol></details>
           {fb.xp ? <p className="mlb-xp">+{fb.xp} XP</p> : null}
         </div> : null}
+        {fb && fb.stuck ? <section className="mlb-stuck" aria-labelledby="mlb-stuck-h">
+          <h3 id="mlb-stuck-h" className="mlb-h3"><i className="ph ph-arrows-clockwise" aria-hidden="true"/> {fb.stuck.message}</h3>
+          <p className="mlb-meta">{fb.stuck.right} of your last {fb.stuck.of} on this topic were right. That usually means something underneath it needs a look first — it isn’t about trying harder.</p>
+          <div className="mlb-stuck-acts">
+            {fb.stuck.prereq ? <button type="button" className="mlb-go" onClick={() => { onDone(); go({ v: "learn", comp: fb.stuck.prereq.comp }); }}>Go back to {fb.stuck.prereq.title}</button> : null}
+            <button type="button" className={fb.stuck.prereq ? "stt-btn" : "mlb-go"} onClick={() => { onDone(); go({ v: "learn", comp: it.comp }); }}>See the lesson again</button>
+            <button type="button" className="stt-btn" onClick={() => { onDone(); go({ v: "map" }); }}>Try another topic for now</button>
+          </div>
+        </section> : null}
         <div className="mlb-actions">{fb ? <button type="button" className="mlb-go" onClick={next}>{last ? "See how you did" : "Next question"}</button>
           : <button type="button" className="mlb-go" disabled={empty || busy} onClick={submit}>{busy ? "Checking…" : practice ? "Check" : last ? "Submit" : "Next"}</button>}
           {exam && !fb ? <button type="button" className="stt-btn" disabled={busy} onClick={skip}>{last ? "Leave it and hand in" : "Leave it, next question"}</button> : null}

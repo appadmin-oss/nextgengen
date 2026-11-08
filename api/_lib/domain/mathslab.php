@@ -365,6 +365,51 @@ function mlb_place_redo(array $p): array {
     return ['ok' => true];
 }
 
+/**
+ * STUCK (wheel-spinning; Beck & Gong 2013). A learner who cannot get three right in a row within ten
+ * tries is not learning from more of the same, and a system that keeps serving them items teaches them
+ * that they "can't do it". The commonest cause is a gap BELOW the topic — learners weakest in the
+ * prerequisites spin five times as often (Gong & Beck) — so the remedy is to change approach, not to
+ * insist: name the weakest prerequisite if there is one, offer the worked example again, or a different
+ * topic for now. Read from the learner's last ten answers on this topic across sessions, so the signal
+ * survives leaving and coming back.
+ */
+const MLB_STUCK_WINDOW = 10;
+function mlb_stuck(string $mid, string $comp): ?array {
+    $answers = [];
+    foreach (db_all("SELECT items, resp FROM mlab_sessions WHERE memberId = ? AND lab = ? AND mode = 'practice' ORDER BY startedAt DESC LIMIT 6", [$mid, lab_id()]) as $r) {
+        $its = json_decode((string)$r['items'], true) ?: []; $rs = json_decode((string)$r['resp'], true) ?: [];
+        $mine = [];
+        foreach ($its as $i => $x) if (($x['c'] ?? '') === $comp && isset($rs[$i])) $mine[] = !empty($rs[$i]['ok']);
+        $answers = array_merge($mine, $answers);   // oldest session first
+    }
+    $last = array_slice($answers, -MLB_STUCK_WINDOW);
+    if (count($last) < MLB_STUCK_WINDOW) return null;
+    $run = 0; $best = 0; foreach ($last as $ok) { $run = $ok ? $run + 1 : 0; $best = max($best, $run); }
+    if ($best >= 3) return null;
+    $states = mlb_states($mid); $weak = null;
+    foreach (mlb_comp($comp)['needs'] ?? [] as $n) {
+        if (!mlb_available($n)) continue;
+        $pn = (float)($states[$n]['p'] ?? 0); $good = in_array($states[$n]['state'] ?? 'none', MLB_GOOD, true);
+        $score = $good ? $pn + 1 : $pn;            // a known prerequisite is the last suspect
+        if ($weak === null || $score < $weak[1]) $weak = [$n, $score];
+    }
+    return ['right' => count(array_filter($last)), 'of' => count($last),
+            'prereq' => $weak ? ['comp' => $weak[0], 'title' => mlb_comp($weak[0])['title'] ?? $weak[0]] : null,
+            'message' => 'This one is not clicking yet, and more of the same won’t help. Let’s change tack.'];
+}
+
+/**
+ * "SHOW ME YOU KNOW IT" — mathslab.start {mode: 'quick', comp}. The expertise-reversal effect (Kalyuga
+ * 2007): step-by-step instruction that helps a beginner gets in the way of someone who already knows the
+ * topic, and the recommended remedy is a RAPID check of what they know. Three questions, typed answers
+ * where the topic has them, no hints; all three right opens Practise (the lesson counts as studied). It
+ * proves, it does not skip — the owner's "everyone must study" (4 Nov 2026) is about not getting past a
+ * topic without learning it, and this is proof of having learned it. Anything less and the lesson is the
+ * way in, with nothing lost and nothing marked against the learner. Once a day per topic.
+ */
+const MLB_QUICK_ITEMS = 3;
+
 /** mathslab.start — {mode: climb|practice|check|review|boss, comp?, stage?} */
 function mlb_start(array $p): array {
     $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
@@ -392,6 +437,13 @@ function mlb_start(array $p): array {
             $main = mlb_pick_items([$comp], MLB_PRACTICE_ITEMS - count($mixC));
             $items = $mixC ? mlb_interleave($main, mlb_pick_items($mixC, count($mixC), false, true)) : $main;
         }
+    } elseif ($mode === 'quick') {
+        if (!mlb_available($comp)) return ['ok' => false, 'error' => 'not_available'];
+        if (!mlb_unlocked($comp, $states)) return ['ok' => false, 'error' => 'locked'];
+        if ((string)($states[$comp]['studiedAt'] ?? '') !== '' || in_array($states[$comp]['state'] ?? 'none', MLB_GOOD, true)) return ['ok' => false, 'error' => 'already_open'];
+        if (db_row("SELECT 1 FROM mlab_sessions WHERE memberId = ? AND mode = 'quick' AND ref = ? AND startedAt >= ? LIMIT 1", [$mid, $comp, mlb_today()])) return ['ok' => false, 'error' => 'quick_today'];
+        $ref = $comp;
+        $items = mlb_pick_items([$comp], MLB_QUICK_ITEMS, true, true);
     } elseif ($mode === 'review') {
         $due = mlb_due($states); if (!$due) return ['ok' => false, 'error' => 'nothing_due'];
         $items = mlb_pick_items(array_slice($due, 0, 6), min(6, count($due)), true, true);
@@ -428,6 +480,7 @@ function mlb_session_title(string $mode, string $ref): string {
     if ($mode === 'climb') return str_starts_with($ref, 'place') ? 'Finding your level' : 'Stage ' . $ref . ' gate · ' . mlb_stages()[(int)$ref]['title'];
     if ($mode === 'boss') return 'Stage ' . $ref . ' boss · ' . mlb_stages()[(int)$ref]['title'];
     if ($mode === 'review') return 'Review: keep what you know';
+    if ($mode === 'quick') return 'Show me you know it · ' . (mlb_comp($ref)['title'] ?? '');
     $c = mlb_comp($ref); return ($mode === 'check' ? 'Mastery check · ' : 'Practice · ') . ($c['title'] ?? '');
 }
 function mlb_session(string $mid, string $sid): ?array {
@@ -479,6 +532,7 @@ function mlb_answer(array $p): array {
         mlb_set_state($mid, $x['c'], ['p' => $pk, 'attempts' => $att, 'correct' => $cor, 'state' => $new, 'owed' => $owed]);
         $out += ['correct' => $mk['ok'], 'why' => $mk['why'], 'formNote' => $mk['form'], 'answer' => mlb_answer_text($it), 'steps' => $it['steps'], 'state' => $new, 'p' => $pk,
             'xp' => $mk['ok'] ? mlb_award_xp($mid, $resp[$i]['hints'] ? 1 : 2, true) : 0];
+        if (!$mk['ok'] && $x['c'] === (string)$s['ref']) { $stuck = mlb_stuck($mid, $x['c']); if ($stuck) $out['stuck'] = $stuck; }
     }
     return $out;
 }
@@ -541,6 +595,13 @@ function mlb_finish(array $p): array {
         if ($pct >= MLB_CHECK_PASS) { $setGood($ref, 'mastered', 10); $xp = mlb_award_xp($mid, 100); $msg = 'Mastered! A quick review in about 10 days will make it stick.'; }
         else { mlb_set_state($mid, $ref, ['state' => 'practising', 'p' => min((float)($states[$ref]['p'] ?? 0.5), 0.7), 'owed' => MLB_RETAKE_OWED]);
                $msg = 'Not yet — ' . $pct . '%. The bar is ' . MLB_CHECK_PASS . '%. Go back over the worked solutions below, then get ' . MLB_RETAKE_OWED . ' practice questions right without hints before you try the check again.'; }
+    } elseif ($mode === 'quick') {
+        $clean = $n > 0 && $right === $n && !array_filter($resp, static fn($r) => (int)($r['hints'] ?? 0) > 0);
+        if ($clean) {
+            mlb_set_state($mid, $ref, ['studiedAt' => now_iso(), 'state' => 'practising', 'p' => max((float)($states[$ref]['p'] ?? 0.15), 0.7)]);
+            $changes[] = ['comp' => $ref, 'to' => 'practising']; $xp = mlb_award_xp($mid, 20);
+            $msg = 'You know it. Practise is open — a few questions, then the mastery check makes it yours.';
+        } else $msg = $right . ' of ' . $n . '. The lesson is the quickest way in — nothing is lost, and nothing counts against you.';
     } elseif ($mode === 'review') {
         foreach ($items as $i => $x) {
             $c = $x['c']; $cur = (string)($states[$c]['state'] ?? 'none'); $ok = !empty($resp[$i]['ok']);

@@ -38154,6 +38154,50 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('labs · the mixed-in questions are placed among the new ones, never first', $ok);
 })();
 
+/* ── Stuck detection and the quick check (8 Nov 2026) ── */
+(function () {
+    lab_use('maths'); $now = now_iso();
+    foreach (['NGG-WS-1', 'NGG-QK-1', 'NGG-QK-2'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => 'Lab ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $wrong = static function (array $it) { return in_array($it['kind'], ['mcq', 'error'], true) ? ((int)$it['key'] + 1) % count($it['options']) : ($it['kind'] === 'pair' ? ['999', '999'] : ($it['kind'] === 'order' ? array_reverse($it['key']) : '99999')); };
+    // A learner who misses MC-025 again and again: after ten tries with no three in a row, practice says change tack.
+    // Its prerequisites count as known (as placement would infer), one of them shakily — the likeliest gap.
+    $needs = array_values(array_filter(mlb_comp('MC-025')['needs'], 'mlb_available'));
+    foreach ($needs as $k => $n) mlb_set_state('NGG-WS-1', $n, ['state' => 'known', 'p' => $k === 0 ? 0.6 : 0.95]);
+    mlb_set_state('NGG-WS-1', 'MC-025', ['state' => 'learning', 'studiedAt' => $now]);
+    $stuck = null; $seen = 0;
+    for ($g = 0; $g < 3 && !$stuck; $g++) {
+        $st = mlb_start(['memberId' => 'NGG-WS-1', 'mode' => 'practice', 'comp' => 'MC-025']);
+        foreach (json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$st['sessionId']])['items'], true) as $i => $x) {
+            $it = mlb_item($x['c'], $x['f'], $x['s']);
+            $r = mlb_answer(['memberId' => 'NGG-WS-1', 'sessionId' => $st['sessionId'], 'index' => $i, 'answer' => $wrong($it), 'ms' => 5000]);
+            if ($x['c'] === 'MC-025') $seen++;
+            if (!empty($r['stuck'])) { $stuck = $r['stuck'] + ['at' => $seen]; break; }
+        }
+    }
+    chk('labs · stuck: ten misses with no three in a row says change tack (not before), names the weakest prerequisite, and counts across sessions',
+        $stuck && $stuck['at'] === MLB_STUCK_WINDOW && $stuck['right'] === 0 && ($stuck['prereq']['comp'] ?? '') === ($needs[0] ?? 'none'));
+    chk('labs · stuck: a learner with a run of three in their last ten is not stuck', (function () { db_exec("DELETE FROM mlab_sessions WHERE memberId = 'NGG-QK-2'"); return true; })() && mlb_stuck('NGG-QK-2', 'MC-025') === null);
+    // The quick check: three right, no hints, opens practice; anything less leaves the lesson as the way in.
+    $q = mlb_start(['memberId' => 'NGG-QK-1', 'mode' => 'quick', 'comp' => 'MC-001']);
+    foreach (json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$q['sessionId']])['items'], true) as $i => $x) {
+        $it = mlb_item($x['c'], $x['f'], $x['s']); mlb_answer(['memberId' => 'NGG-QK-1', 'sessionId' => $q['sessionId'], 'index' => $i, 'answer' => $it['key'], 'ms' => 4000]);
+    }
+    $qf = mlb_finish(['memberId' => 'NGG-QK-1', 'sessionId' => $q['sessionId']]);
+    $qs = mlb_states('NGG-QK-1')['MC-001'] ?? [];
+    chk('labs · quick check: ' . MLB_QUICK_ITEMS . ' right, no hints, opens practice (studied) without marking the topic mastered',
+        !empty($q['ok']) && count($q['items']) === MLB_QUICK_ITEMS && (string)($qs['studiedAt'] ?? '') !== '' && ($qs['state'] ?? '') === 'practising'
+        && !empty(mlb_start(['memberId' => 'NGG-QK-1', 'mode' => 'practice', 'comp' => 'MC-001'])['ok']));
+    chk('labs · quick check: not offered once the topic is open, and once a day per topic', (mlb_start(['memberId' => 'NGG-QK-1', 'mode' => 'quick', 'comp' => 'MC-001'])['error'] ?? '') === 'already_open');
+    $q2 = mlb_start(['memberId' => 'NGG-QK-2', 'mode' => 'quick', 'comp' => 'MC-001']);
+    foreach (json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$q2['sessionId']])['items'], true) as $i => $x) {
+        $it = mlb_item($x['c'], $x['f'], $x['s']); mlb_answer(['memberId' => 'NGG-QK-2', 'sessionId' => $q2['sessionId'], 'index' => $i, 'answer' => $i === 0 ? $wrong($it) : $it['key'], 'ms' => 4000]);
+    }
+    mlb_finish(['memberId' => 'NGG-QK-2', 'sessionId' => $q2['sessionId']]);
+    chk('labs · quick check: one wrong and the lesson stays the way in, with nothing marked against the learner',
+        (string)(mlb_states('NGG-QK-2')['MC-001']['studiedAt'] ?? '') === '' && (mlb_start(['memberId' => 'NGG-QK-2', 'mode' => 'practice', 'comp' => 'MC-001'])['error'] ?? '') === 'not_studied'
+        && (mlb_start(['memberId' => 'NGG-QK-2', 'mode' => 'quick', 'comp' => 'MC-001'])['error'] ?? '') === 'quick_today');
+})();
+
 /* ── Maths Lab (docs/MATH-LAB-PLAN.md): questions, the climb, mastery, review, Lite ── */
 (function () {
     $now = now_iso();
