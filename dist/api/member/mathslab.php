@@ -18,7 +18,7 @@ if ($method === 'GET') {
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $map = ['start' => 'mathslab.start', 'answer' => 'mathslab.answer', 'finish' => 'mathslab.finish', 'enrol' => 'mathslab.enrol', 'studied' => 'mathslab.studied', 'daily' => 'mathslab.dailyAnswer', 'chest' => 'mathslab.chest',
-            'voice' => 'mathslab.voice', 'listen' => 'mathslab.listen'];
+            'voice' => 'mathslab.voice', 'listen' => 'mathslab.listen', 'replace' => 'mathslab.replace'];
     $a = (string)($b['action'] ?? '');
     if (!isset($map[$a])) json_error('bad_action', 400);
     rate_limit_check('mathslab.' . $a);
