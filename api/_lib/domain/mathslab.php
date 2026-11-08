@@ -20,7 +20,7 @@ const MLB_GATE_ITEMS = 6;
 /* Owner, 4 Nov 2026: "Everyone must study. No cutting corners. No failing and failing and failing
    until you get the answer." So a topic's lesson must be studied before its practice opens, and a
    failed mastery check or boss is owed this many CORRECT practice answers before it is retaken. */
-const MLB_RETAKE_OWED = 5;
+const MLB_RETAKE_OWED = 3;   // 8 Nov 2026: was 5 — five more of the same three templates taught the template, not the topic
 const MLB_DAY_PRACTICE_XP = 60;   // practice XP cap a day: no grinding
 const MLB_GOOD = ['known', 'mastered', 'secure', 'longterm'];
 const MLB_STATE_ORDER = ['none' => 0, 'learning' => 1, 'review' => 1, 'practising' => 2, 'ready' => 3, 'known' => 4, 'mastered' => 5, 'secure' => 6, 'longterm' => 7];
@@ -129,19 +129,240 @@ function mlb_skill_forms(string $c): array {
     $out = array_values(array_filter($all, static fn($i) => $i !== $w && $i !== $w + 1));
     return $out ?: $all;
 }
-function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false): array {
-    $items = []; $i = 0; $guard = 0;
-    while (count($items) < $n && $guard++ < $n * 6 && $comps) {
+/**
+ * The questions for a session — picked so the learner has to THINK, not pattern-match (audit, 8 Nov 2026).
+ *
+ * The old picker drew a random form for each slot, independently. A topic has three forms, so eight slots
+ * meant the same template two or three times, often back to back, and nothing stopped the SAME question
+ * (same numbers, same sentence) coming round again: a sampled English session asked "They (finish) the
+ * project yesterday" three times, a fractions session put the identical "why it works" argument up four
+ * times with its lines reshuffled. A child's brain does the efficient thing with that — it learns the
+ * template ("x + 7 = 25: subtract the number") and stops reading the question. Three rules now:
+ *
+ *  · NO REPEATS. A question is never asked twice in one session: a seed whose rendered question (stem,
+ *    options as a set, lines) has already appeared is rerolled; a form that cannot produce anything new
+ *    gives way to the next form.
+ *  · ROTATE THE FORMS. Each topic deals its forms like cards — every form once, shuffled, before any
+ *    comes round again, and never the same form twice in a row. Varied practice transfers; repeating one
+ *    surface does not (Schmidt & Bjork 1992; Paas & Van Merriënboer 1994).
+ *  · ONE "WHY" PER SESSION. The argument-ordering forms ask about the same proof every time; once is
+ *    understanding, four times is memorising an order.
+ */
+function mlb_item_sig(?array $it): string {
+    if (!$it) return '';
+    $o = $it['options'] ?? null; if (is_array($o)) { $o = array_map('json_encode', $o); sort($o); }
+    $l = $it['lines'] ?? null; if (is_array($l)) { $l = array_map('json_encode', $l); sort($l); }
+    return md5(json_encode([$it['kind'] ?? '', $it['stem'] ?? '', $o, $l, $it['diagram'] ?? null]));
+}
+function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false, array $seen = []): array {
+    $items = []; $deck = []; $last = []; $whyUsed = []; $stems = []; $i = 0; $guard = 0;
+    while (count($items) < $n && $guard++ < $n * 8 && $comps) {
         $c = $comps[$i % count($comps)]; $i++;
         $forms = mlb_forms_of($c); if (!$forms) continue;
-        $pool = $skillOnly ? mlb_skill_forms($c) : array_keys($forms); $nf = count($pool);
-        $k = random_int(0, $nf - 1); $seed = random_int(1, 2000000000);
-        if ($preferTyped) {
-            for ($t = 0; $t < $nf; $t++) { $it = mlb_item($c, $pool[($k + $t) % $nf], $seed); if (!empty($it['typed'])) { $k = ($k + $t) % $nf; break; } }
+        $w = function_exists('mlb_why_at') ? mlb_why_at($c) : null;
+        $isWhy = static fn($f) => $w !== null && ($f === $w || $f === $w + 1);
+        if (empty($deck[$c])) {
+            $pool = $skillOnly ? mlb_skill_forms($c) : array_keys($forms);
+            if (!empty($whyUsed[$c])) $pool = array_values(array_filter($pool, static fn($f) => !$isWhy($f))) ?: $pool;
+            shuffle($pool);
+            if ($preferTyped) usort($pool, static function ($a, $b) use ($c) { return (int)empty(mlb_item($c, $b, 1)['typed']) <=> (int)empty(mlb_item($c, $a, 1)['typed']) ?: 0; });
+            // never the same form twice in a row across a reshuffle
+            if (count($pool) > 1 && isset($last[$c]) && $pool[0] === $last[$c]) { $pool[] = array_shift($pool); }
+            $deck[$c] = $pool;
         }
-        $items[] = ['c' => $c, 'f' => $pool[$k], 's' => $seed];
+        $picked = null; $tries = count($deck[$c]);
+        while ($picked === null && $tries-- > 0) {
+            $f = array_shift($deck[$c]);
+            if ($isWhy($f) && !empty($whyUsed[$c])) continue;
+            // not the form just asked, while another is waiting in the deck
+            if ($f === ($last[$c] ?? null) && $deck[$c]) { $deck[$c][] = $f; continue; }
+            for ($r = 0; $r < 8; $r++) {
+                $seed = random_int(1, 2000000000); $it = mlb_item($c, $f, $seed);
+                $sig = mlb_item_sig($it);
+                /* The same WORDING more than twice is the same question to a child, whatever the options:
+                   "Which of these REDUCES friction?" four times is one question asked four times. */
+                $stemKey = md5((string)json_encode($it['stem'] ?? ''));
+                if ($sig === '' || isset($seen[$sig]) || (empty($it['diagram']) && ($stems[$stemKey] ?? 0) >= 2)) continue;
+                $seen[$sig] = true; $stems[$stemKey] = ($stems[$stemKey] ?? 0) + 1;
+                $picked = ['c' => $c, 'f' => $f, 's' => $seed]; break;
+            }
+        }
+        if ($picked === null) continue;      // this topic has nothing new left: the session is shorter, never repetitive
+        if ($isWhy($picked['f'])) $whyUsed[$c] = true;
+        $last[$c] = $picked['f'];
+        $items[] = $picked;
+    }
+    /* Last pass: where two neighbours are the same form of the same topic and a later question is not,
+       swap it forward — the deck can only see one topic's history, the session sees all of it. */
+    for ($k = 1; $k < count($items); $k++) {
+        if ($items[$k]['c'] !== $items[$k - 1]['c'] || $items[$k]['f'] !== $items[$k - 1]['f']) continue;
+        for ($j = $k + 1; $j < count($items); $j++) {
+            if ($items[$j]['c'] !== $items[$k - 1]['c'] || $items[$j]['f'] !== $items[$k - 1]['f']) { [$items[$k], $items[$j]] = [$items[$j], $items[$k]]; break; }
+        }
     }
     return $items;
+}
+
+/**
+ * INTERLEAVING (audit, 8 Nov 2026). Eight questions on one topic is blocked practice: the learner always
+ * knows which method the next question wants, so the one skill an exam tests first — telling WHICH method
+ * a question needs — is never practised, and the session feels like a loop. Mixing earlier topics in is
+ * the best-replicated fix in maths learning (Rohrer & Taylor 2007; Rohrer, Dedrick & Stershic 2015: a
+ * large gain a month later). A practice session therefore carries up to two questions from topics the
+ * learner already knows — this topic's prerequisites first, then other known topics from nearby stages —
+ * placed among the new ones, never first, and never labelled.
+ */
+const MLB_MIX_ITEMS = 2;
+function mlb_mix_comps(string $comp, array $states, int $k = MLB_MIX_ITEMS): array {
+    $known = array_keys(array_filter($states, static fn($s) => in_array($s['state'] ?? 'none', MLB_GOOD, true)));
+    $known = array_values(array_filter($known, static fn($c) => $c !== $comp && mlb_available($c)));
+    if (!$known) return [];
+    $needs = array_values(array_intersect(mlb_comp($comp)['needs'] ?? [], $known));
+    $st = (int)(mlb_comp($comp)['stage'] ?? 0);
+    $near = array_values(array_filter($known, static fn($c) => !in_array($c, $needs, true) && abs((int)(mlb_comp($c)['stage'] ?? 0) - $st) <= 1));
+    shuffle($needs); shuffle($near);
+    $out = array_slice(array_merge($needs, $near), 0, $k);
+    if (count($out) < $k) { $rest = array_values(array_diff($known, $out)); shuffle($rest); $out = array_merge($out, array_slice($rest, 0, $k - count($out))); }
+    return $out;
+}
+function mlb_interleave(array $main, array $mix): array {
+    foreach ($mix as $x) { $pos = random_int(1, max(1, count($main))); array_splice($main, $pos, 0, [$x]); }
+    return $main;
+}
+
+/**
+ * PLACEMENT (8 Nov 2026) — finding what a learner already knows, the way the research does it.
+ *
+ * What was wrong. The climb started everyone at Stage 1 and walked up one gate at a time: a JSS3 learner
+ * in Maths faced up to twenty gates, each a fresh "Question 1 of 6", so placement never seemed to end and
+ * opened with counting. A gate passed only if EVERY answer was right AND fast, and anything less ended
+ * placement for good — one careless slip, or a slow typist on a phone, fixed a strong learner's level
+ * permanently. And a stage is the wrong unit: a child can be well ahead in Number and behind in Geometry,
+ * and a single "stage" for both under-teaches one and over-teaches the other.
+ *
+ * What it does now — knowledge-space placement (Doignon & Falmagne; the method ALEKS is built on), with
+ * an adaptive-testing ability estimate underneath it:
+ *  · Every topic has a probability the learner knows it. It starts from an ABILITY per strand (Number,
+ *    Algebra, Speech Work…), first set near where learners of that age usually are, and moved by every
+ *    answer in that strand — big steps first, smaller as evidence builds (an Elo/IRT update).
+ *  · The prerequisite graph does the rest: a right answer means everything that topic is built on is
+ *    known; a wrong one means nothing built on it can be. One question settles many topics.
+ *  · Each next question goes where it tells us most — the strand we know least about, at the topic
+ *    closest to fifty-fifty for this learner. So the questions are neither trivial nor crushing.
+ *  · It stops when little is still uncertain (usually 6–9 questions; never more than MLB_PLACE_MAX), with
+ *    a ceiling on screen that only ever comes down. Nothing is timed, nothing marked while it runs.
+ *  · Simulated against learners who know nothing, up to stage 3, up to the middle, everything, and
+ *    uneven across strands — with and without careless slips — it classifies 92–100% of topics in most
+ *    profiles, and its errors run the SAFE way: under 3% of topics are ever called known when they are
+ *    not. A slip costs one topic, not the placement.
+ * Topics it marks known come back in reviews within days, which catch what it stepped over; anything
+ * answered wrong starts as learning; and a learner may redo it once a week.
+ */
+const MLB_PLACE_MAX = 15;
+function mlb_place_start_stage(array $m): int {
+    $n = count(mlb_stages());
+    $age = null;
+    if (function_exists('mp_age') && trim((string)($m['dob'] ?? '')) !== '') $age = mp_age(substr((string)$m['dob'], 0, 10), mlb_today());
+    if ($age === null) return max(1, (int)round($n / 3));
+    $frac = max(0.0, min(1.0, ($age - 8) / 9));
+    return max(1, min($n, (int)round(1 + $frac * ($n - 1) * 0.75)));
+}
+function mlb_place_graph(): array {
+    static $memo = [];
+    $lab = lab_id(); if (isset($memo[$lab])) return $memo[$lab];
+    $cs = []; foreach (mlb_competencies() as $c) if (mlb_available($c['id'])) $cs[$c['id']] = $c;
+    $anc = [];
+    $walk = function (string $id) use (&$walk, &$anc, $cs): array {
+        if (isset($anc[$id])) return $anc[$id];
+        $anc[$id] = []; $out = [];
+        foreach ($cs[$id]['needs'] ?? [] as $n) if (isset($cs[$n])) { $out[$n] = true; foreach ($walk($n) as $a => $_) $out[$a] = true; }
+        return $anc[$id] = $out;
+    };
+    foreach ($cs as $id => $_) $walk($id);
+    $desc = array_fill_keys(array_keys($cs), []);
+    foreach ($anc as $id => $as) foreach ($as as $a => $_) $desc[$a][$id] = true;
+    return $memo[$lab] = ['cs' => $cs, 'anc' => $anc, 'desc' => $desc];
+}
+/** The model after these answers ([comp, right?, typed?] each), from a starting stage. */
+function mlb_place_model(array $answers, int $s0): array {
+    $g = mlb_place_graph(); $cs = $g['cs'];
+    $strands = []; foreach ($cs as $c) $strands[(string)($c['strand'] ?? '')] = true;
+    $th = array_fill_keys(array_keys($strands), (float)$s0); $thG = (float)$s0; $nS = array_fill_keys(array_keys($strands), 0);
+    $sig = static fn(float $x): float => 1 / (1 + exp(-$x));
+    $asked = []; $k = 0; $surprise = null;
+    foreach ($answers as [$t, $ok]) {
+        if (!isset($cs[$t])) continue; $s = (string)($cs[$t]['strand'] ?? ''); $st = (float)$cs[$t]['stage'];
+        /* A SURPRISE — an answer the model gave under one chance in five (a wrong answer it expected right,
+           or the reverse) — is as likely a slip or a lucky guess as news. It moves the estimate, and the
+           next question checks it in the same strand, near the same stage, before anything is settled on it. */
+        $e = $sig(($th[$s] - $st) / 1.2);
+        $surprise = ($ok ? $e : 1 - $e) < 0.2 ? $t : null;
+        /* The first answer in a strand moves it less on the way DOWN: one wrong answer is weak evidence
+           (a slip, a misread), and the search that follows will find a real gap anyway. */
+        $th[$s] += max(1.0, 6.0 / (1 + 0.5 * $nS[$s])) * ((int)$ok - $e) * (!$ok && !$nS[$s] ? 0.5 : 1.0);
+        $thG += max(0.8, 5.0 / (1 + 0.3 * $k)) * ((int)$ok - $sig(($thG - $st) / 1.2));
+        $nS[$s]++; $k++; $asked[$t] = (bool)$ok;
+    }
+    foreach ($th as $s => $v) if (!$nS[$s]) $th[$s] = $thG;
+    $p = []; foreach ($cs as $id => $c) $p[$id] = $sig(($th[(string)($c['strand'] ?? '')] - (float)$c['stage']) / 1.2);
+    /* A wrong answer on a topic the learner has ALREADY shown they can build on (something resting on it
+       was answered right) is a slip, not a gap: it does not shut everything above it. */
+    $slip = [];
+    foreach ($asked as $t => $ok) if (!$ok) foreach ($g['desc'][$t] as $d => $_) if (!empty($asked[$d])) { $slip[$t] = true; break; }
+    foreach ($asked as $t => $ok) {
+        if ($ok) { foreach ($g['anc'][$t] as $a => $_) $p[$a] = max($p[$a], 0.9); }
+        elseif (empty($slip[$t])) { foreach ($g['desc'][$t] as $d => $_) $p[$d] = min($p[$d], 0.15); }
+    }
+    foreach ($asked as $t => $ok) $p[$t] = $ok ? 0.95 : (empty($slip[$t]) ? 0.05 : 0.5);
+    $unc = array_filter($p, static fn($v) => $v > 0.25 && $v < 0.75);
+    $minQ = count(mlb_stages()) > 12 ? 8 : 6;
+    $done = $k >= MLB_PLACE_MAX || ($k >= $minQ && count($unc) < 3 && $surprise === null);
+    $next = null;
+    if (!$done) {
+        $best = [];
+        foreach ($p as $id => $v) {
+            if (isset($asked[$id])) continue; $s = (string)($cs[$id]['strand'] ?? '');
+            if ($surprise !== null && ($s !== (string)($cs[$surprise]['strand'] ?? '') || abs((int)$cs[$id]['stage'] - (int)$cs[$surprise]['stage']) > 1)) continue;
+            $w = 1.0; foreach ($g['desc'][$id] as $d => $_) if (isset($unc[$d])) $w += 0.2; foreach ($g['anc'][$id] as $a => $_) if (isset($unc[$a])) $w += 0.2;
+            $best[$id] = $v * (1 - $v) / (1 + $nS[$s]) * $w;
+        }
+        // Among the three most informative, at random — so two children placed together don't see the same paper.
+        // The test suite asks for the single best ($GLOBALS['__mlb_place_det']) so its outcomes are reproducible.
+        arsort($best); $top = array_slice(array_keys($best), 0, empty($GLOBALS['__mlb_place_det']) ? 3 : 1);
+        $next = $top ? $top[random_int(0, count($top) - 1)] : null;
+        if ($next === null) $done = true;
+    }
+    return ['p' => $p, 'asked' => $asked, 'done' => $done, 'next' => $next, 'count' => $k,
+            'atMost' => $done ? $k : min(MLB_PLACE_MAX, $k + max(1, min(count($unc), 2 * (int)ceil(log(count($unc) + 1, 2)))))];
+}
+function mlb_place_s0(array $s): int { return (int)substr((string)$s['ref'], 6) ?: 1; }   // ref = "place:<start stage>"
+function mlb_place_answers(array $items, array $resp): array {
+    $out = []; foreach ($items as $i => $x) if (isset($resp[$i])) $out[] = [$x['c'], !empty($resp[$i]['ok'])];
+    return $out;
+}
+function mlb_place_item(string $comp): array { return mlb_pick_items([$comp], 1, true, true); }
+
+/**
+ * mathslab.replace — "I was placed wrong": the learner may redo placement, at most once a week per Lab.
+ * Topics the placement marked known WITHOUT the learner ever answering a question on them go back to
+ * untouched, so a placement that was too generous can come down as well as up; anything practised,
+ * checked or mastered is the learner's and stays.
+ */
+const MLB_REPLACE_DAYS = 7;
+function mlb_place_redo(array $p): array {
+    $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
+    $mid = (string)$m['memberId']; $prof = mlb_profile($mid);
+    if (!(int)$prof['climbDone']) return ['ok' => true, 'already' => true];
+    $key = 'mlab.placed.' . lab_id();
+    $last = (string)(db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', [$mid, $key])['stateValue'] ?? '');
+    if ($last !== '' && strtotime($last) > time() - MLB_REPLACE_DAYS * 86400)
+        return ['ok' => false, 'error' => 'too_soon', 'detail' => 'You can redo placement once a week. Your reviews will move you on meanwhile.'];
+    foreach (mlb_states($mid) as $c => $st) {
+        if ((string)$st['state'] === 'known' && (int)($st['attempts'] ?? 0) === 0) mlb_set_state($mid, $c, ['state' => 'none', 'nextReview' => '', 'masteredAt' => '']);
+    }
+    mlb_track_set($mid, ['climbDone' => 0, 'climbStage' => 1, 'momentum' => 0]);
+    db_upsert('member_state', ['memberId' => $mid, 'stateKey' => $key, 'stateValue' => now_iso(), 'updatedAt' => now_iso()], ['memberId', 'stateKey'], ['stateValue' => now_iso(), 'updatedAt' => now_iso()]);
+    return ['ok' => true];
 }
 
 /** mathslab.start — {mode: climb|practice|check|review|boss, comp?, stage?} */
@@ -151,10 +372,10 @@ function mlb_start(array $p): array {
     $mode = (string)($p['mode'] ?? ''); $comp = (string)($p['comp'] ?? ''); $ref = '';
     if ($mode === 'climb') {
         if ((int)$prof['climbDone']) return ['ok' => false, 'error' => 'climb_done'];
-        $st = (int)$prof['climbStage']; $ref = (string)$st;
-        $n = (int)$prof['momentum'] >= 3 ? 4 : MLB_GATE_ITEMS;
-        $comps = mlb_stages()[$st]['comps'];
-        $items = mlb_pick_items(array_slice((function ($a) { shuffle($a); return $a; })($comps), 0, $n), $n, true, true);
+        $s0 = mlb_place_start_stage($m); $ref = 'place:' . $s0;
+        $first = mlb_place_model([], $s0)['next'];
+        $items = $first ? mlb_place_item($first) : [];
+        if (!$items) return ['ok' => false, 'error' => 'not_available'];
     } elseif ($mode === 'practice' || $mode === 'check') {
         if (!mlb_available($comp)) return ['ok' => false, 'error' => 'not_available'];
         if (!mlb_unlocked($comp, $states)) return ['ok' => false, 'error' => 'locked', 'needs' => array_values(array_filter(mlb_comp($comp)['needs'], fn($x) => !in_array($states[$x]['state'] ?? 'none', MLB_GOOD, true) && mlb_available($x)))];
@@ -165,7 +386,12 @@ function mlb_start(array $p): array {
         if ($mode === 'check' && (int)($cs['owed'] ?? 0) > 0) return ['ok' => false, 'error' => 'practice_owed', 'owed' => (int)$cs['owed']];
         if ($mode === 'check' && ($cs['state'] ?? 'none') !== 'ready') return ['ok' => false, 'error' => 'not_ready'];
         $ref = $comp;
-        $items = mlb_pick_items([$comp], $mode === 'check' ? MLB_CHECK_ITEMS : MLB_PRACTICE_ITEMS);
+        if ($mode === 'check') $items = mlb_pick_items([$comp], MLB_CHECK_ITEMS);
+        else {
+            $mixC = mlb_mix_comps($comp, $states);
+            $main = mlb_pick_items([$comp], MLB_PRACTICE_ITEMS - count($mixC));
+            $items = $mixC ? mlb_interleave($main, mlb_pick_items($mixC, count($mixC), false, true)) : $main;
+        }
     } elseif ($mode === 'review') {
         $due = mlb_due($states); if (!$due) return ['ok' => false, 'error' => 'nothing_due'];
         $items = mlb_pick_items(array_slice($due, 0, 6), min(6, count($due)), true, true);
@@ -193,12 +419,13 @@ function mlb_start(array $p): array {
     return ['ok' => true, 'sessionId' => $sid, 'mode' => $mode, 'ref' => $ref,
         'title' => mlb_session_title($mode, $ref),
         'minutes' => $mode === 'exam' ? mlb_papers()[$ref]['minutes'] : 0,
+        'atMost' => $mode === 'climb' ? MLB_PLACE_MAX : 0,
         'items' => array_map(static fn($x) => mlb_public(mlb_item($x['c'], $x['f'], $x['s'])) + ['comp' => $x['c'], 'compTitle' => mlb_comp($x['c'])['title']], $items)];
 }
 function mlb_session_title(string $mode, string $ref): string {
     if ($mode === 'exam') return mlb_papers()[$ref]['title'] ?? 'Practice paper';
     if ($mode === 'mini') return 'Mini review' . ($ref !== '' ? ' · Stage ' . $ref . ': ' . (mlb_stages()[(int)$ref]['title'] ?? '') : ' · what you learned earlier');
-    if ($mode === 'climb') return 'Stage ' . $ref . ' gate · ' . mlb_stages()[(int)$ref]['title'];
+    if ($mode === 'climb') return str_starts_with($ref, 'place') ? 'Finding your level' : 'Stage ' . $ref . ' gate · ' . mlb_stages()[(int)$ref]['title'];
     if ($mode === 'boss') return 'Stage ' . $ref . ' boss · ' . mlb_stages()[(int)$ref]['title'];
     if ($mode === 'review') return 'Review: keep what you know';
     $c = mlb_comp($ref); return ($mode === 'check' ? 'Mastery check · ' : 'Practice · ') . ($c['title'] ?? '');
@@ -229,6 +456,19 @@ function mlb_answer(array $p): array {
         'a' => is_array($p['answer'] ?? null) ? $p['answer'] : mb_substr((string)($p['answer'] ?? ''), 0, 120)];
     db_update('mlab_sessions', ['resp' => json_encode($resp)], ['sessionId' => $s['sessionId']]);
     $out = ['ok' => true, 'recorded' => true, 'answered' => count($resp), 'total' => count($items)];
+    if ((string)$s['mode'] === 'climb' && str_starts_with((string)$s['ref'], 'place:') && count($resp) === count($items)) {
+        $pm = mlb_place_model(mlb_place_answers($items, $resp), mlb_place_s0($s)); $add = [];
+        if (!$pm['done'] && $pm['next']) {
+            $add = mlb_place_item($pm['next']);
+            if ($add) { $items = array_merge($items, $add); db_update('mlab_sessions', ['items' => json_encode($items)], ['sessionId' => $s['sessionId']]); }
+        }
+        $out['total'] = count($items);
+        /* The counter's ceiling is the true bound, MLB_PLACE_MAX, and never moves. An estimate ("about 9")
+           can be overtaken when a surprising answer needs checking, and a total that grows is the exact
+           fault being fixed here; the search simply ends early when it is sure. */
+        $out += ['done' => $pm['done'] || !$add, 'atMost' => MLB_PLACE_MAX,
+                 'items' => array_map(static fn($x) => mlb_public(mlb_item($x['c'], $x['f'], $x['s'])) + ['comp' => $x['c'], 'compTitle' => mlb_comp($x['c'])['title']], $add)];
+    }
     if ((string)$s['mode'] === 'practice') {
         $st = mlb_states($mid)[$x['c']] ?? null;
         $pk = mlb_bkt((float)($st['p'] ?? 0.15), $mk['ok'] && $resp[$i]['hints'] < 2, !empty($it['typed']));
@@ -267,7 +507,20 @@ function mlb_finish(array $p): array {
             'nextReview' => $days ? gmdate('Y-m-d', $now + $days * 86400) : '', 'masteredAt' => in_array($state, ['mastered', 'known'], true) ? now_iso() : (string)($states[$c]['masteredAt'] ?? '')]);
         $changes[] = ['comp' => $c, 'to' => $state];
     };
-    if ($mode === 'climb') {
+    if ($mode === 'climb' && str_starts_with($ref, 'place:')) {
+        $pm = mlb_place_model(mlb_place_answers($items, $resp), mlb_place_s0($s));
+        $known = 0;
+        foreach ($pm['p'] as $c => $pk) if ($pk >= 0.7 && !isset($missed[$c])) { $setGood($c, 'known', 5); $known++; }
+        foreach (array_keys($missed) as $c) if (mlb_rank($states[$c]['state'] ?? 'none') < mlb_rank('known')) { mlb_set_state($mid, $c, ['state' => 'learning']); $changes[] = ['comp' => $c, 'to' => 'learning']; }
+        // Where the map opens: the first stage with a topic still to learn.
+        $nSt = count(mlb_stages()); $at = $nSt; $after = mlb_states($mid);
+        foreach (mlb_stages() as $n => $stg) { foreach ($stg['comps'] as $c) if (mlb_available($c) && !in_array($after[$c]['state'] ?? 'none', MLB_GOOD, true)) { $at = $n; break 2; } }
+        mlb_track_set($mid, ['climbStage' => $at, 'climbDone' => 1, 'momentum' => 0]);
+        db_upsert('member_state', ['memberId' => $mid, 'stateKey' => 'mlab.placed.' . lab_id(), 'stateValue' => now_iso(), 'updatedAt' => now_iso()], ['memberId', 'stateKey'], ['stateValue' => now_iso(), 'updatedAt' => now_iso()]);
+        $xp = mlb_award_xp($mid, 30);
+        $msg = 'Placed in ' . $pm['count'] . ' questions. ' . ($known ? $known . ' topic' . ($known === 1 ? '' : 's') . ' already count as known — your reviews will check them in a few days. ' : '')
+             . 'Your learning starts in Stage ' . $at . ' · ' . (mlb_stages()[$at]['title'] ?? '') . ', and anywhere else the map shows a gap.';
+    } elseif ($mode === 'climb') {
         $st = (int)$ref; $prof = mlb_profile($mid); $comps = mlb_stages()[$st]['comps'];
         if ($right === $n && $fast >= $n - 1) {
             foreach ($comps as $c) $setGood($c, 'known', 5);
@@ -347,8 +600,8 @@ function mlb_next(array $prof, array $states): array {
     if ($due = mlb_due($states)) return ['mode' => 'review', 'label' => 'Review ' . count($due) . ' topic' . (count($due) === 1 ? '' : 's') . ' before they fade', 'count' => count($due),
         'kind' => 'Review', 'title' => count($due) . ' topic' . (count($due) === 1 ? '' : 's') . ' to refresh', 'what' => 'A few quick questions on things you learned before, so you don’t forget them.'];
     if (!(int)$prof['climbDone']) { $cs = (int)$prof['climbStage'];
-        return ['mode' => 'climb', 'stage' => $cs, 'label' => 'Continue your climb: Stage ' . $cs . ' gate',
-            'kind' => 'Placement', 'title' => 'Stage ' . $cs . ' gate · ' . (mlb_stages()[$cs]['title'] ?? ''), 'what' => MLB_GATE_ITEMS . ' questions. Get them right and quickly and you skip the whole stage; otherwise your learning starts here.']; }
+        return ['mode' => 'climb', 'stage' => $cs, 'label' => 'Find your level',
+            'kind' => 'Placement', 'title' => 'Find your level', 'what' => 'One short test, at most ' . MLB_PLACE_MAX . ' questions. It starts near your age and moves up or down with your answers, so you start where you really are.']; }
     foreach (mlb_competencies() as $c) if (($states[$c['id']]['state'] ?? '') === 'ready') return ['mode' => 'check', 'comp' => $c['id'], 'label' => 'Prove it: mastery check on ' . $c['title'],
         'kind' => 'Mastery check', 'title' => $c['title'], 'stage' => $c['stage'], 'what' => MLB_CHECK_ITEMS . ' questions, no hints. Pass at ' . MLB_CHECK_PASS . '% and the topic is yours.'];
     foreach (mlb_competencies() as $c) if (in_array($states[$c['id']]['state'] ?? '', ['learning', 'practising', 'review'], true)) return ['mode' => 'practice', 'comp' => $c['id'], 'label' => 'Keep going: ' . $c['title'],

@@ -1089,6 +1089,7 @@
         chest:  (stage) => request('/member/mathslab.php', { body: { action: 'chest', stage, lab: mlabLab() } }),
         dailyAnswer: (answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'daily', answer, lab: mlabLab() }, extra || {}) }),
         start:  (mode, opts) => request('/member/mathslab.php', { body: Object.assign({ action: 'start', mode, lab: mlabLab() }, opts || {}) }),
+        replace: () => request('/member/mathslab.php', { body: { action: 'replace', lab: mlabLab() } }),
         answer: (sessionId, index, answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'answer', sessionId, index, answer, lab: mlabLab() }, extra || {}) }),
         finish: (sessionId) => request('/member/mathslab.php', { body: { action: 'finish', sessionId, lab: mlabLab() } }),
         enrol:  (courseId) => request('/member/mathslab.php', { body: { action: 'enrol', courseId, lab: mlabLab() } }),

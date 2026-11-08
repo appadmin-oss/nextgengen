@@ -652,9 +652,9 @@ function MlbHome({ go, startPlay, onNotMember }) {
           <button type="button" className="stt-btn is-go" onClick={() => go({ v: "learn", comp: x.comp })}>Start here</button></li>)}</ul></section> : null}
       <section className="mlb-card"><div className="mlb-row"><h3 className="mlb-h3">Your courses</h3><button type="button" className="mlb-link" onClick={() => go({ v: "courses" })}>All courses</button></div>
         <ul className="mlb-mini">{d.courses.filter(c => c.enrolled || c.available).slice(0, 3).map(c => <li key={c.id}><span>{c.title}</span><span className="mlb-meter"><span style={{ width: c.pct + "%" }}/></span><b>{c.pct}%</b></li>)}</ul></section>
-      {!d.climb.done ? <details className="mlb-card mlb-fold"><summary className="mlb-h3">How the climb works</summary>
-        <p className="mlb-p">Each stage opens with a short gate of questions. Get them all right, quickly, and the whole stage lights up and you jump to the next. Miss a few, and your learning starts exactly where the gaps are. Anything you skip is checked again in a few days, so rushing never counts.</p>
-        <p className="mlb-meta">Now at Stage {d.climb.stage}{d.climb.momentum >= 3 ? " · on a roll: shorter gates" : ""}.</p></details> : null}
+      <details className="mlb-card mlb-fold"><summary className="mlb-h3">How placement works</summary>
+        <p className="mlb-p">One short test, at most 15 questions. It starts near where learners your age usually are and moves up when you get questions right and down when you don’t, until it finds your level. Nothing is timed and nothing is marked while it runs. Everything below your level counts as known, and your reviews check it in a few days.</p>
+        {d.climb.done ? <p className="mlb-meta">Placed wrong? <button type="button" className="mlb-link" onClick={() => { if (!window.confirm("Redo placement? It takes at most 15 questions. Anything you have practised or mastered stays yours.")) return; NGGApi.member.mathslab.replace().then(() => load(), e => window.alert(mlbErr(e))); }}>Redo placement</button> (once a week).</p> : null}</details>
       </div><aside className="mlb-col is-side" aria-label="Badges">
       <section className="mlb-card"><div className="mlb-row"><h3 className="mlb-h3">Badges</h3><span className="mlb-meta">{earned} of {badges.length}</span></div>
         <ul className="mlb-badges">{badges.slice(0, 4).map(b => <li key={b.id} className={b.earned ? "is-on" : ""}><i className={"ph " + (b.earned ? "ph-seal-check" : "ph-seal")} aria-hidden="true"/><b>{b.name}</b><span>{b.what}</span></li>)}</ul>
@@ -966,7 +966,9 @@ function MlbLearn({ comp, go, startPlay, lite }) {
     if (["soon", "locked"].indexOf(d.state) >= 0) return;
     NGGApi.member.mathslab.studied(comp).then(() => setStudied(true), e => setStudyErr(mlbErr(e)));
   }, [ok, at]); // eslint-disable-line
-  if (st.phase === "loading") return <SttState kind="loading"/>;
+  /* The lesson's steps are known only once the Remember-it index has arrived: drawing them before it
+     showed "Step 1 of 5" and then, a moment later, "Step 1 of 6". One count, from the start. */
+  if (st.phase === "loading" || (ok && !remIdx)) return <SttState kind="loading"/>;
   if (st.phase === "error") return <SttState kind="error" text={"Couldn’t open this topic. " + mlbErr(st.e)} retry={load}/>;
   const c = d.comp, ex = d.example, state = d.state, pct = Math.round((d.p || 0) * 100);
   const canLearn = ["soon", "locked"].indexOf(state) < 0;
@@ -1355,7 +1357,8 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini }) {
   if (err) return <SttState kind="error" text={err}><button type="button" className="stt-btn" onClick={onDone}>Back</button></SttState>;
   if (!ses) return <SttState kind="loading" text="Preparing your questions…"/>;
   if (res) return <MlbResult res={res} onDone={onDone} go={go} onMini={onMini} onAgain={onAgain && ["practice", "review", "exam"].indexOf(res.mode) >= 0 ? onAgain : null}/>;
-  const it = ses.items[i], practice = ses.mode === "practice", last = i === ses.items.length - 1, exam = ses.mode === "exam";
+  const place = ses.mode === "climb" && !!ses.atMost;
+  const it = ses.items[i], practice = ses.mode === "practice", last = !place && i === ses.items.length - 1, exam = ses.mode === "exam";
   const left = exam ? Math.max(0, Math.round((tStart.current + ses.minutes * 60000 - tick) / 1000)) : 0;
   const lettered = exam || !!it.letters;
   const empty = it.kind === "pair" ? !(Array.isArray(val) && val[0] && val[1]) : it.kind === "mcq" || it.kind === "error" ? val === "" : !String(val || "").trim();
@@ -1367,6 +1370,13 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini }) {
     const ms = Date.now() - t0.current;
     NGGApi.member.mathslab.answer(ses.sessionId, i, val, { ms, hints, conf }).then(r => {
       setBusy(false);
+      if (ses.mode === "climb" && r.items) {
+        /* Placement grows as it searches: the next questions arrive with each answer, and the counter is a
+           ceiling that only comes down ("of at most 15"), never a total that keeps growing. */
+        if (r.done || !r.items.length) { finish(); return; }
+        setSes(s => Object.assign({}, s, { items: s.items.concat(r.items), atMost: Math.min(s.atMost || 15, r.atMost || 15) }));
+        setFb(null); setPraise(null); setVal(""); setConf(""); setHints(0); setI(i + 1); return;
+      }
       if (practice) {
         if (r.correct) {
           const n = run + 1;
@@ -1391,9 +1401,10 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini }) {
         {practice && run >= 2 ? <span className="mlb-run" aria-label={run + " right in a row"}><i className="ph-fill ph-fire" aria-hidden="true"/>{run}</span> : null}
         {exam ? <span className={"mlb-clock" + (left <= 300 ? " is-low" : "")} role="timer" aria-label={Math.floor(left / 60) + " minutes " + (left % 60) + " seconds left"}><i className="ph-fill ph-timer" aria-hidden="true"/>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</span> : null}
         <button type="button" className="mlb-back" onClick={onDone}><i className="ph ph-x" aria-hidden="true"/>Leave</button></div>
-      <ol className="mlb-pips" aria-label={"Question " + (i + 1) + " of " + ses.items.length}>{ses.items.map((_, k) => <li key={k} className={k < i ? "is-done" : k === i ? "is-on" : ""}/>)}</ol>
+      {place ? <div className="mlb-placebar" role="progressbar" aria-label="Placement" aria-valuemin="0" aria-valuemax={ses.atMost} aria-valuenow={i}><span style={{ width: Math.round(i / ses.atMost * 100) + "%" }}/></div>
+        : <ol className="mlb-pips" aria-label={"Question " + (i + 1) + " of " + ses.items.length}>{ses.items.map((_, k) => <li key={k} className={k < i ? "is-done" : k === i ? "is-on" : ""}/>)}</ol>}
       <section className="mlb-q" aria-live="polite">
-        <p className="mlb-qn">Question {i + 1} of {ses.items.length}{ses.mode === "climb" ? " · fast and right clears the stage" : ""}
+        <p className="mlb-qn">{place ? "Question " + (i + 1) + " · at most " + ses.atMost + ", usually fewer · no timer, answer as well as you can" : "Question " + (i + 1) + " of " + ses.items.length}
           {it.dim === "challenge" ? <span className="mlb-chall"><i className="ph-fill ph-lightning" aria-hidden="true"/>Challenge{practice ? " — take your time; the hint is there if you need it" : ""}</span> : null}</p>
         <MlbMath as="p" className="mlb-stem" text={it.stem}/>
         <MlbDiagram d={it.diagram}/>

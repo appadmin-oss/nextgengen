@@ -64,10 +64,11 @@ async function journey(who, W, H, tag) {
   // The placement gate: skill questions only, never a "why is line N true?" proof question.
   await p.click('.mlb-go');
   await p.waitForSelector('.mlb-q', { timeout: 30000 }).catch(() => {});
-  const stems = [];
-  for (let k = 0; k < 10; k++) {
+  const stems = [], counters = [];
+  for (let k = 0; k < 16; k++) {
     if (!(await p.locator('.mlb-q').count())) break;
     stems.push(await p.locator('.mlb-stem').first().innerText());
+    counters.push(((await p.locator('.mlb-qn').first().innerText()).match(/at most \d+/) || [''])[0]);
     if (k === 0) {
       const st = await p.evaluate(() => { const o = document.querySelector('.mlb-opt, .mlb-in'), b = document.querySelector('.mlb-q .mlb-go');
         const cs = o && getComputedStyle(o), cb = b && getComputedStyle(b);
@@ -85,7 +86,8 @@ async function journey(who, W, H, tag) {
     await p.waitForTimeout(400);
   }
   chk(tag + ': the placement gate asks skill questions, not proof questions (' + stems.length + ')', stems.length > 0 && !stems.some(s => /Why it works|Why is line/.test(s)), stems.filter(s => /Why/.test(s))[0]);
-  chk(tag + ': the gate ends on a result with the score once', await p.locator('.mlb-res-ring').count() === 1);
+  chk(tag + ': placement is one test of at most 15 questions whose ceiling never changes (' + stems.length + ' asked)', stems.length >= 1 && stems.length <= 15 && new Set(counters).size === 1 && /at most 15/.test(counters[0] || ''), counters.join(' | '));
+  chk(tag + ': placement ends on a result with the score once', await p.locator('.mlb-res-ring').count() === 1);
 
   // The map: one stage open, the next lesson marked.
   await p.goto(BASE + '/study/lab/map', { waitUntil: 'domcontentloaded' });
@@ -186,6 +188,9 @@ async function journey(who, W, H, tag) {
   await shot('exam');
 
   // A lesson: no skip, every step worked, then practice.
+  /* Placement may (rightly) infer counting is known from what came after it; the lesson walk needs a
+     topic this learner has NOT been given, so it is put back to untouched first. */
+  php(`db_exec("UPDATE mlab_state SET state = 'none', studiedAt = '', attempts = 0 WHERE memberId = '${who}' AND comp = 'MC-001'");`);
   await p.goto(BASE + '/study/lab/learn/MC-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });
   chk(tag + ': a lesson cannot be skipped (Continue shut, later steps shut, no skip link)',
@@ -259,7 +264,7 @@ async function physics(who, W, H, tag) {
   const ok = await p.waitForSelector('.mlb.is-physics .mlb-hero', { timeout: 60000 }).then(() => true, () => false);
   chk(tag + ': /study/physics opens the Physics Lab under the Labs tab, titled as itself, with its own Exams tab',
     ok && (await p.locator('.stt-tab.is-on').innerText()).trim() === 'Labs' && /Physics Lab/.test(await p.locator('.stt-h2').innerText()) && await p.locator('.mlb-navb:has-text("Exams")').count() === 1);
-  chk(tag + ': Physics Home starts the Physics climb (Stage 1 · Measurement and Matter)', /Measurement and Matter/.test(await p.locator('.mlb-main').innerText()));
+  chk(tag + ': Physics Home offers its own placement first ("Find your level")', /Find your level/.test(await p.locator('.mlb-main').innerText()));
   await shot('home');
   await p.goto(BASE + '/study/physics/map', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-unit.is-open', { timeout: 60000 });
@@ -324,7 +329,7 @@ async function english(who, W, H, tag) {
   const ok = await p.waitForSelector('.mlb.is-english .mlb-hero', { timeout: 60000 }).then(() => true, () => false);
   chk(tag + ': /study/english opens the English Lab under the Labs tab, titled as itself, with its own Exams tab',
     ok && (await p.locator('.stt-tab.is-on').innerText()).trim() === 'Labs' && /English Lab/.test(await p.locator('.stt-h2').innerText()) && await p.locator('.mlb-navb:has-text("Exams")').count() === 1);
-  chk(tag + ': English Home starts the English climb (Stage 1 · Words and Sentences)', /Words and Sentences/.test(await p.locator('.mlb-main').innerText()));
+  chk(tag + ': English Home offers its own placement first ("Find your level")', /Find your level/.test(await p.locator('.mlb-main').innerText()));
   await shot('home');
   await p.goto(BASE + '/study/english/map', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-unit.is-open', { timeout: 60000 });

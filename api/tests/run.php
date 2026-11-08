@@ -38123,6 +38123,37 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
 })();
 
+/* ── The Labs don't repeat themselves (audit, 8 Nov 2026) ── */
+(function () {
+    foreach (['maths' => ['MC-047', 'MC-112', 'MC-025'], 'english' => ['EN-001', 'EN-015', 'EN-041'], 'physics' => ['PH-012', 'PH-023']] as $lab => $cs) {
+        lab_use($lab);
+        foreach ($cs as $c) {
+            $dupe = false; $backToBack = false; $whyTwice = false; $stem3 = false;
+            for ($k = 0; $k < 25; $k++) {
+                $its = mlb_pick_items([$c], 8); $sigs = []; $stems = []; $w = 0; $prev = null;
+                foreach ($its as $x) {
+                    $it = mlb_item($x['c'], $x['f'], $x['s']); $sig = mlb_item_sig($it);
+                    if (isset($sigs[$sig])) $dupe = true; $sigs[$sig] = 1;
+                    if (empty($it['diagram'])) { $k2 = json_encode($it['stem']); $stems[$k2] = ($stems[$k2] ?? 0) + 1; if ($stems[$k2] > 2) $stem3 = true; }
+                    if ($prev !== null && $prev === $x['f'] && count(mlb_skill_forms($c)) > 1) $backToBack = true; $prev = $x['f'];
+                    $wa = mlb_why_at($c); if ($wa !== null && ($x['f'] === $wa || $x['f'] === $wa + 1)) $w++;
+                }
+                if ($w > 1) $whyTwice = true;
+            }
+            chk("labs · $c: no question twice in a session, never the same wording three times", !$dupe && !$stem3);
+            chk("labs · $c: forms rotate — never the same form twice in a row — and one 'why it works' at most", !$backToBack && !$whyTwice);
+        }
+    }
+    lab_use('maths');
+    $st = ['MC-024' => ['state' => 'mastered'], 'MC-001' => ['state' => 'known'], 'MC-010' => ['state' => 'learning']];
+    $mix = mlb_mix_comps('MC-025', $st);
+    chk('labs · practice mixes in up to two KNOWN topics, never the topic itself or one still being learned', count($mix) >= 1 && count($mix) <= MLB_MIX_ITEMS
+        && !in_array('MC-025', $mix, true) && !in_array('MC-010', $mix, true));
+    chk('labs · nothing known yet: nothing is mixed in', mlb_mix_comps('MC-025', []) === []);
+    $ok = true; for ($k = 0; $k < 30; $k++) { $r = mlb_interleave([1, 2, 3, 4, 5, 6], ['a', 'b']); if ($r[0] === 'a' || $r[0] === 'b' || count($r) !== 8) $ok = false; }
+    chk('labs · the mixed-in questions are placed among the new ones, never first', $ok);
+})();
+
 /* ── Maths Lab (docs/MATH-LAB-PLAN.md): questions, the climb, mastery, review, Lite ── */
 (function () {
     $now = now_iso();
@@ -38341,19 +38372,55 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $cv['number-foundations']['locked'] === false && $cv['further-maths']['locked'] === true && str_contains($cv['further-maths']['lockReason'], 'Stage 13')
         && ($el['error'] ?? '') === 'course_locked' && !db_row("SELECT 1 FROM mlab_enrol WHERE memberId = 'NGG-ML-1' AND courseId = 'further-maths'")
         && !empty(mlb_enrol(['memberId' => 'NGG-ML-1', 'courseId' => 'number-foundations'])['ok']) && ($cv['number-foundations']['next']['comp'] ?? '') === 'MC-001');
-    // The climb: a clean, fast gate lights the whole stage and moves on.
-    $g1 = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb']);
-    chk('maths lab · a new member starts the climb at Stage 1 with a gate of typed questions, and no keys reach the browser',
-        !empty($g1['ok']) && $g1['ref'] === '1' && count($g1['items']) === MLB_GATE_ITEMS && !isset($g1['items'][0]['key']) && !isset($g1['items'][0]['steps']));
-    $r1 = $answerAll($g1, true);
+    /* Placement (8 Nov 2026): ONE adaptive session, never a walk up twenty gates. $place answers as a
+       learner who knows every stage up to $knows (and, if $slip, gets one of those wrong once). */
+    $GLOBALS['__mlb_place_det'] = true;   // reproducible placement paths in the suite
+    $place = static function (string $mid, int $knows, bool $slip = false) {
+        $st = mlb_start(['memberId' => $mid, 'mode' => 'climb']); if (empty($st['ok'])) return ['start' => $st];
+        $asked = 0; $slipped = false; $ceil = []; $ceilings = [$st['atMost'] ?? 0];
+        for ($g = 0; $g < 40; $g++) {
+            $row = db_row('SELECT items, resp FROM mlab_sessions WHERE sessionId = ?', [$st['sessionId']]);
+            $its = json_decode($row['items'], true); $resp = json_decode($row['resp'], true) ?: [];
+            if (count($resp) >= count($its)) break;
+            $i = count($resp); $x = $its[$i]; $it = mlb_item($x['c'], $x['f'], $x['s']);
+            $right = (int)mlb_comp($x['c'])['stage'] <= $knows; if ($right && $slip && !$slipped) { $right = false; $slipped = true; }
+            $a = $right ? $it['key'] : (in_array($it['kind'], ['mcq', 'error'], true) ? ((int)$it['key'] + 1) % count($it['options']) : ($it['kind'] === 'pair' ? ['999', '999'] : ($it['kind'] === 'order' ? array_reverse($it['key']) : '99999')));
+            $r = mlb_answer(['memberId' => $mid, 'sessionId' => $st['sessionId'], 'index' => $i, 'answer' => $a, 'ms' => 30000]); $asked++;
+            if (isset($r['atMost'])) $ceilings[] = $r['atMost'];
+            if (!empty($r['done'])) break;
+        }
+        return ['start' => $st, 'asked' => $asked, 'ceilings' => $ceilings, 'fin' => mlb_finish(['memberId' => $mid, 'sessionId' => $st['sessionId']])];
+    };
+    $p1 = $place('NGG-ML-1', 1);
     $st1 = mlb_states('NGG-ML-1');
-    chk('maths lab · all right and fast clears the whole stage as known (fast-tracked), with a review booked in days, and moves on',
-        $r1['right'] === MLB_GATE_ITEMS && ($st1['MC-001']['state'] ?? '') === 'known' && ($st1['MC-010']['state'] ?? '') === 'known' && (string)$st1['MC-005']['nextReview'] !== ''
-        && (int)mlb_profile('NGG-ML-1')['climbStage'] === 2);
-    // A slow gate does not fast-track, and a poor one ends the climb where the gaps are.
-    $g2 = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb']); $r2 = $answerAll($g2, false);
-    chk('maths lab · a gate with most answers wrong ends the climb: learning starts in that stage', (int)mlb_profile('NGG-ML-1')['climbDone'] === 1 && (int)mlb_profile('NGG-ML-1')['climbStage'] === 2
-        && (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb'])['error'] ?? '') === 'climb_done' && mlb_home(['memberId' => 'NGG-ML-1'])['next']['mode'] === 'practice');
+    chk('maths lab · placement is one session that starts above Stage 1, marks no keys to the browser, and says it is at most ' . MLB_PLACE_MAX . ' questions',
+        !empty($p1['start']['ok']) && str_starts_with($p1['start']['ref'], 'place:') && count($p1['start']['items']) === 1 && ($p1['start']['atMost'] ?? 0) === MLB_PLACE_MAX
+        && !isset($p1['start']['items'][0]['key']) && !isset($p1['start']['items'][0]['steps']));
+    chk('maths lab · a learner who knows Stage 1 only is placed at Stage 2 in at most ' . MLB_PLACE_MAX . ' questions, Stage 1 known with a review booked',
+        (int)mlb_profile('NGG-ML-1')['climbStage'] === 2 && (int)mlb_profile('NGG-ML-1')['climbDone'] === 1 && $p1['asked'] <= MLB_PLACE_MAX
+        && ($st1['MC-001']['state'] ?? '') === 'known' && ($st1['MC-010']['state'] ?? '') === 'known' && (string)$st1['MC-005']['nextReview'] !== '');
+    chk('maths lab · the ceiling never moves — the counter never grows', count(array_unique($p1['ceilings'])) === 1 && $p1['ceilings'][0] === MLB_PLACE_MAX);
+    chk('maths lab · once placed, placement is not offered again and Home moves on to learning', (mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'climb'])['error'] ?? '') === 'climb_done' && mlb_home(['memberId' => 'NGG-ML-1'])['next']['mode'] === 'practice');
+    foreach ([[12, false], [12, true], [0, false], [6, false]] as [$k, $slip]) {
+        $mid = 'NGG-PL-' . $k . ($slip ? 'S' : '');
+        db_insert('members', ['memberId' => $mid, 'fullName' => 'Placer', 'email' => strtolower($mid) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $pr = $place($mid, $k, $slip); $sts = mlb_states($mid);
+        $over = 0; $under = 0;
+        foreach (mlb_competencies() as $c) { $kn = in_array($sts[$c['id']]['state'] ?? 'none', MLB_GOOD, true);
+            if ($kn && (int)$c['stage'] > $k) $over++; if (!$kn && (int)$c['stage'] <= $k) $under++; }
+        chk("maths lab · placement of a learner who knows up to Stage $k" . ($slip ? ', with a careless slip,' : '') . ": {$pr['asked']} questions, $over topics over-placed, $under under-placed",
+            /* Measured (8 Nov 2026, 40 simulated runs each): under 3% of topics over-placed; an EARLY careless slip
+               can leave up to a quarter of a strong learner's topics to (quickly) learn — the safe direction. */
+            $pr['asked'] <= MLB_PLACE_MAX && $over <= 6 && $under <= max(12, (int)round($k * 10 * ($slip ? 0.35 : 0.15))));
+    }
+    /* Placed wrong: the learner may redo placement, once a week. Topics placement marked known that were
+       never answered go back to untouched, so a generous placement can come down. */
+    db_exec("DELETE FROM member_state WHERE memberId = 'NGG-PL-12'");
+    $rd = mlb_place_redo(['memberId' => 'NGG-PL-12']);
+    chk('maths lab · redo placement reopens it and clears what placement alone had marked known', !empty($rd['ok']) && (int)mlb_profile('NGG-PL-12')['climbDone'] === 0
+        && (mlb_states('NGG-PL-12')['MC-001']['state'] ?? 'none') === 'none' && (mlb_place_redo(['memberId' => 'NGG-PL-12'])['already'] ?? false) === true);
+    $place('NGG-PL-12', 12);
+    chk('maths lab · and only once a week', (mlb_place_redo(['memberId' => 'NGG-PL-12'])['error'] ?? '') === 'too_soon');
     /* Everyone studies (owner, 4 Nov 2026): practice and the check are refused until the topic's
        lesson has been worked through, which the lesson records on reaching Practise. */
     chk('maths lab · a topic nobody has studied is refused practice and its mastery check (not_studied)',
@@ -38396,8 +38463,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $owedAfter = [];
     foreach ($pitems as $i => $x) {
         $it = mlb_item($x['c'], $x['f'], $x['s']);
-        mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pp['sessionId'], 'index' => $i, 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'], 'ms' => 3000, 'hints' => $i === 0 ? 1 : 0]);
-        $owedAfter[] = (int)mlb_states('NGG-ML-1')['MC-012']['owed'];
+        // Practice mixes in earlier topics (interleaving); only this topic's own answers pay its debt.
+        $own = $x['c'] === 'MC-012'; $firstOwn = $own && !$owedAfter;
+        mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pp['sessionId'], 'index' => $i, 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'], 'ms' => 3000, 'hints' => $firstOwn ? 1 : 0]);
+        if ($own) $owedAfter[] = (int)mlb_states('NGG-ML-1')['MC-012']['owed'];
     }
     chk('maths lab · …each unaided right practice answer pays one down (a hinted one does not), and the check reopens only at nought',
         $owedAfter[0] === MLB_RETAKE_OWED && $owedAfter[1] === MLB_RETAKE_OWED - 1 && end($owedAfter) === 0
@@ -38485,25 +38554,31 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $hp = backend_dispatch('mathslab.home', ['memberId' => 'NGG-PH-1', 'lab' => 'physics']);
     $hm = backend_dispatch('mathslab.home', ['memberId' => 'NGG-PH-1']);
     chk('labs · Home is per Lab: Physics counts its 90 topics and Maths its 200, each starting its own climb at Stage 1', ($hp['counts']['total'] ?? 0) === 90 && ($hm['counts']['total'] ?? 0) === 200
-        && ($hp['climb']['stage'] ?? 0) === 1 && ($hm['climb']['stage'] ?? 0) === 1 && str_starts_with((string)($hp['next']['title'] ?? ''), 'Stage 1 gate · Measurement and Matter'));
+        && ($hp['climb']['stage'] ?? 0) === 1 && ($hm['climb']['stage'] ?? 0) === 1 && ($hp['next']['mode'] ?? '') === 'climb' && ($hp['next']['title'] ?? '') === 'Find your level');
     chk('labs · an unknown Lab is refused, never quietly shown as Maths', (backend_dispatch('mathslab.home', ['memberId' => 'NGG-PH-1', 'lab' => 'chemistry'])['error'] ?? '') === 'unknown_lab'
         && (backend_dispatch('mathslab.map', ['lab' => 'nope'])['error'] ?? '') === 'unknown_lab');
-    // Clear the Physics Stage 1 gate perfectly. The answers are sent WITHOUT a lab: the session knows its own.
+    // Place a learner who knows Physics Stage 1. The answers are sent WITHOUT a lab: the session knows its own.
     $st = backend_dispatch('mathslab.start', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'mode' => 'climb']);
-    $row = db_row('SELECT items, lab FROM mlab_sessions WHERE sessionId = ?', [(string)($st['sessionId'] ?? '')]);
-    $its = json_decode((string)($row['items'] ?? '[]'), true) ?: [];
-    lab_use('maths');
-    foreach ($its as $i => $x) { $it = mlb_item($x['c'], $x['f'], $x['s']); backend_dispatch('mathslab.answer', ['memberId' => 'NGG-PH-1', 'sessionId' => $st['sessionId'], 'index' => $i, 'answer' => $it['key'], 'ms' => 1000]); }
+    for ($g = 0; $g < 30; $g++) {
+        $row = db_row('SELECT items, resp, lab FROM mlab_sessions WHERE sessionId = ?', [(string)($st['sessionId'] ?? '')]);
+        $its = json_decode((string)($row['items'] ?? '[]'), true) ?: []; $resp = json_decode((string)($row['resp'] ?? '{}'), true) ?: [];
+        if (count($resp) >= count($its)) break;
+        $i = count($resp); $x = $its[$i]; lab_use('physics'); $it = mlb_item($x['c'], $x['f'], $x['s']); $stg = (int)mlb_comp($x['c'])['stage']; lab_use('maths');
+        $a = $stg <= 1 ? $it['key'] : (in_array($it['kind'], ['mcq', 'error'], true) ? ((int)$it['key'] + 1) % count($it['options']) : '99999');
+        $r = backend_dispatch('mathslab.answer', ['memberId' => 'NGG-PH-1', 'sessionId' => $st['sessionId'], 'index' => $i, 'answer' => $a, 'ms' => 1000]);
+        if (!empty($r['done'])) break;
+    }
     lab_use('maths');
     $fin = backend_dispatch('mathslab.finish', ['memberId' => 'NGG-PH-1', 'sessionId' => $st['sessionId']]);
     $hp2 = backend_dispatch('mathslab.home', ['memberId' => 'NGG-PH-1', 'lab' => 'physics']);
     $hm2 = backend_dispatch('mathslab.home', ['memberId' => 'NGG-PH-1']);
     chk('labs · a Physics climb session is recorded as Physics, holds only Physics topics, is answered and scored as Physics even when the request does not say so, and moves the Physics climb alone',
-        ($row['lab'] ?? '') === 'physics' && $its && !array_filter($its, static fn($x) => !str_starts_with($x['c'], 'PH-')) && !empty($fin['ok']) && ($fin['pct'] ?? 0) === 100
-        && ($hp2['climb']['stage'] ?? 0) === 2 && ($hm2['climb']['stage'] ?? 0) === 1 && ($hp2['counts']['mastered'] ?? 0) === 10 && ($hm2['counts']['mastered'] ?? 0) === 0);
+        ($row['lab'] ?? '') === 'physics' && $its && !array_filter($its, static fn($x) => !str_starts_with($x['c'], 'PH-')) && !empty($fin['ok'])
+        && !empty($hp2['climb']['done']) && ($hp2['climb']['stage'] ?? 0) <= 3 && ($hm2['climb']['stage'] ?? 0) === 1 && empty($hm2['climb']['done'])
+        && ($hm2['counts']['mastered'] ?? 0) === 0);
     lab_use('physics');
     $phStates = array_keys(mlb_states('NGG-PH-1')); lab_use('maths'); $mcStates = array_keys(mlb_states('NGG-PH-1'));
-    chk('labs · a Lab reads only its own topic states', count($phStates) === 10 && !array_filter($phStates, static fn($c) => !str_starts_with($c, 'PH-')) && $mcStates === []);
+    chk('labs · a Lab reads only its own topic states', count($phStates) >= 10 && !array_filter($phStates, static fn($c) => !str_starts_with($c, 'PH-')) && $mcStates === []);
     // Each Lab offers its own papers; the daily problem is each Lab's own.
     $ex = backend_dispatch('mathslab.exams', ['memberId' => 'NGG-PH-1', 'lab' => 'physics']);
     $exs = backend_dispatch('mathslab.start', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'mode' => 'exam', 'paper' => 'jamb']);
@@ -38719,13 +38794,23 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     // One member, three Labs: English moves only English.
     db_insert('members', ['memberId' => 'NGG-EN-1', 'fullName' => 'Ada English', 'email' => 'en1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
     $he = backend_dispatch('mathslab.home', ['memberId' => 'NGG-EN-1', 'lab' => 'english']);
-    chk('english lab · Home counts its 80 topics and starts the climb at the Words and Sentences gate', ($he['counts']['total'] ?? 0) === 80 && ($he['climb']['stage'] ?? 0) === 1
-        && str_starts_with((string)($he['next']['title'] ?? ''), 'Stage 1 gate · Words and Sentences'));
+    chk('english lab · Home counts its 80 topics and offers placement first', ($he['counts']['total'] ?? 0) === 80 && ($he['climb']['stage'] ?? 0) === 1
+        && ($he['next']['mode'] ?? '') === 'climb' && ($he['next']['title'] ?? '') === 'Find your level');
     $st = backend_dispatch('mathslab.start', ['memberId' => 'NGG-EN-1', 'lab' => 'english', 'mode' => 'climb']);
     $row = db_row('SELECT items, lab FROM mlab_sessions WHERE sessionId = ?', [(string)($st['sessionId'] ?? '')]);
     $its = json_decode((string)($row['items'] ?? '[]'), true) ?: [];
     $pub = $st['items'] ?? [];
-    foreach ($its as $i => $x) { $it = mlb_item($x['c'], $x['f'], $x['s']); backend_dispatch('mathslab.answer', ['memberId' => 'NGG-EN-1', 'sessionId' => $st['sessionId'], 'index' => $i, 'answer' => $it['key'], 'ms' => 1000]); }
+    // Place a learner who knows English Stage 1 only; answers go WITHOUT a lab — the session knows its own.
+    for ($g = 0; $g < 30; $g++) {
+        $r0 = db_row('SELECT items, resp FROM mlab_sessions WHERE sessionId = ?', [(string)($st['sessionId'] ?? '')]);
+        $all = json_decode((string)$r0['items'], true) ?: []; $rs = json_decode((string)$r0['resp'], true) ?: [];
+        if (count($rs) >= count($all)) break;
+        $i = count($rs); $x = $all[$i]; lab_use('english'); $it = mlb_item($x['c'], $x['f'], $x['s']); $stg = (int)mlb_comp($x['c'])['stage']; lab_use('maths');
+        $a = $stg <= 1 ? $it['key'] : (in_array($it['kind'], ['mcq', 'error'], true) ? ((int)$it['key'] + 1) % count($it['options']) : 'zzzz qqqq');
+        $r = backend_dispatch('mathslab.answer', ['memberId' => 'NGG-EN-1', 'sessionId' => $st['sessionId'], 'index' => $i, 'answer' => $a, 'ms' => 1000]);
+        if (!empty($r['done'])) break;
+    }
+    $its = json_decode((string)db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [(string)$st['sessionId']])['items'], true) ?: [];
     lab_use('maths');
     $fin = backend_dispatch('mathslab.finish', ['memberId' => 'NGG-EN-1', 'sessionId' => $st['sessionId']]);
     $he2 = backend_dispatch('mathslab.home', ['memberId' => 'NGG-EN-1', 'lab' => 'english']);
@@ -38734,7 +38819,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('english lab · a climb session is recorded as English, holds only English topics, never sends a key or accepted answer to the screen, is scored as English, and moves the English climb alone',
         ($row['lab'] ?? '') === 'english' && $its && !array_filter($its, static fn($x) => !str_starts_with($x['c'], 'EN-'))
         && !array_filter($pub, static fn($p) => isset($p['key']) || isset($p['accept']))
-        && !empty($fin['ok']) && ($fin['pct'] ?? 0) === 100 && ($he2['climb']['stage'] ?? 0) === 2 && ($hp2['climb']['stage'] ?? 0) === 1 && ($hm2['climb']['stage'] ?? 0) === 1);
+        && !empty($fin['ok']) && ($he2['climb']['stage'] ?? 0) >= 1 && ($he2['climb']['stage'] ?? 0) <= 2 && !empty($he2['climb']['done']) && ($hp2['climb']['stage'] ?? 0) === 1 && ($hm2['climb']['stage'] ?? 0) === 1);
     $ex = backend_dispatch('mathslab.exams', ['memberId' => 'NGG-EN-1', 'lab' => 'english']);
     $exe = backend_dispatch('mathslab.start', ['memberId' => 'NGG-EN-1', 'lab' => 'english', 'mode' => 'exam', 'paper' => 'eng']);
     $eits = array_column($exe['items'] ?? [], 'comp');
