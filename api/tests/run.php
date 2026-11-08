@@ -38142,6 +38142,28 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
 })();
 
+/* ── The app shell carries each page's own head (SEO audit, 8 Nov 2026) ── */
+(function () {
+    require_once dirname(__DIR__) . '/public/spa.php';
+    $root = dirname(__DIR__, 2);
+    $html = (string)file_get_contents($root . '/index.html');
+    $routes = []; foreach (json_decode((string)file_get_contents($root . '/routes.json'), true) ?: [] as $x) $routes[$x['id']] = $x;
+    $about = spa_render($html, spa_route_for('/about', $routes));
+    chk('seo · /about is served with its own title, description and canonical — not the home page\'s',
+        str_contains($about, '<title>' . htmlspecialchars($routes['about']['title'], ENT_QUOTES) . '</title>') && str_contains($about, 'rel="canonical" href="https://next.afrovanguard.org.ng/about"')
+        && !str_contains($about, 'rel="canonical" href="https://next.afrovanguard.org.ng/"'));
+    $miss = spa_route_for('/no-such-page', $routes);
+    $missHtml = spa_render($html, $miss);
+    chk('seo · an address that matches no route is a real 404, noindex, with no canonical', $miss['status'] === 404 && str_contains($missHtml, 'noindex') && !str_contains($missHtml, 'rel="canonical"'));
+    $priv = array_values(array_filter($routes, static fn($r) => empty($r['index'])))[0] ?? null;
+    $privHtml = $priv ? spa_render($html, spa_route_for('/' . $priv['id'], $routes)) : '';
+    chk('seo · a page marked not-indexable in ROUTES is served noindex and claims no canonical', $priv && str_contains($privHtml, 'noindex') && !str_contains($privHtml, 'rel="canonical"'));
+    chk('seo · aliases and per-record addresses (/q/…, /control) are real pages, never 404', spa_route_for('/q/abc', $routes)['status'] === 200 && spa_route_for('/control/members', $routes)['status'] === 200);
+    chk('seo · a filtered view (?post=…) claims no canonical; a tracking parameter keeps it', !str_contains(spa_render($html, spa_route_for('/blog', $routes), 'post=hello'), 'rel="canonical"')
+        && str_contains(spa_render($html, spa_route_for('/about', $routes), 'utm_source=x'), 'href="https://next.afrovanguard.org.ng/about"'));
+    chk('seo · no static sitemap.xml ships to hide the live one', !in_array('sitemap.xml', (function () { preg_match('/const staticAssets = \[(.*?)\];/s', (string)file_get_contents(dirname(__DIR__, 2) . '/build.js'), $m); preg_match_all("/'([^']+)'/", $m[1] ?? '', $x); return $x[1]; })(), true));
+})();
+
 /* ── The Labs don't repeat themselves (audit, 8 Nov 2026) ── */
 (function () {
     foreach (['maths' => ['MC-047', 'MC-112', 'MC-025'], 'english' => ['EN-001', 'EN-015', 'EN-041'], 'physics' => ['PH-012', 'PH-023']] as $lab => $cs) {

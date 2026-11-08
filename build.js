@@ -242,6 +242,7 @@ async function build() {
   // index.html MUST list the same files in the same order, or the prod bundle
   // silently diverges from what dev runs. Fail the build if they don't match.
   validateOrderAgainstIndex();
+  exportRoutes();
   validateCssBraces();
 
   // The source treats classic-script top-level bindings (e.g.
@@ -423,7 +424,10 @@ async function build() {
   const staticAssets = [
     'styles.css', 'styles-app.css',
     'data.js', 'photos.js', 'api-client.js', 'outbox.js',
-    'manifest.webmanifest', 'sitemap.xml', 'robots.txt',
+    /* No static sitemap.xml: a real file is served before the .htaccess rewrite to
+       api/public/sitemap.php, so a copied file hid the live 400-URL sitemap behind a
+       stale 15-URL one (SEO audit, 8 Nov 2026). */
+    'manifest.webmanifest', 'robots.txt', 'routes.json',
     'service-worker.js',
     '.htaccess',
   ];
@@ -542,6 +546,19 @@ function validateCssBraces() {
     }
     if (depth !== 0) { console.error(`[build] ${f}: a block opened at line ${openedAt} is never closed, so every rule after it is nested inside it`); process.exit(1); }
   }
+}
+
+/* The ROUTES registry (app.jsx), exported for the server: api/public/spa.php gives
+   each public page its own title, description, canonical and robots in the raw HTML
+   and answers an unknown address with a real 404. One registry, read twice — never a
+   second list. The literal is evaluated as data; it may hold only plain values. */
+function exportRoutes() {
+  const src = fs.readFileSync(path.join(ROOT, 'app.jsx'), 'utf8');
+  const a = src.indexOf('const ROUTES = ['), b = src.indexOf('\n];', a);
+  if (a < 0 || b < 0) { console.error('[build] ROUTES registry not found in app.jsx'); process.exit(1); }
+  const routes = new Function('return ' + src.slice(a + 'const ROUTES = '.length, b + 2))();
+  const out = routes.map(r => ({ id: r.id, title: r.title || '', desc: r.desc || '', index: r.index !== false }));
+  fs.writeFileSync(path.join(ROOT, 'routes.json'), JSON.stringify(out, null, 1) + '\n');
 }
 
 function validateOrderAgainstIndex() {

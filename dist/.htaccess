@@ -300,9 +300,10 @@ object-src 'none'"
   RewriteRule ^verify/(NGG-[A-Za-z0-9-]+)/?$ api/public/doc-verify.php?no=$1 [QSA,L]
   RewriteRule ^(assets|uploads|api|vendor|apps-script|docs)/ - [L]
 
-  # Everything else → index.html (SPA fallback)
-  RewriteRule ^ index.html [L]
+  # Everything else → the app shell, with the page's own head and a real 404 for an
+  # unknown address (api/public/spa.php; SEO audit, 8 Nov 2026).
+  RewriteRule ^ api/public/spa.php [L]
 </IfModule>
 
 # ErrorDocument fallbacks point back at the SPA
-ErrorDocument 404 /index.html
+ErrorDocument 404 /api/public/spa.php
