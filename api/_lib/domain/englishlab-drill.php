@@ -23,7 +23,7 @@ declare(strict_types=1);
  * the articulation forms), so no form a stored session points at changes its number.
  */
 function eng_drill_forms(): array {
-    return [
+    $forms = [
     'EN-011' => [
         eng_choose([
             ['The quality of the mangoes ___ not good.', 'is', [['are', 'Matched to the nearest noun, “mangoes”. Cross out “of the mangoes”: the quality is.'], ['were', 'Plural, and the subject (the quality) is one.'], ['have been', 'Plural helper; the subject is singular.']], 'The subject is “the quality”; “of the mangoes” only describes it.'],
@@ -179,5 +179,386 @@ function eng_drill_forms(): array {
             ['Which pair does NOT rhyme?', 'cough / though', [['through / flew', 'They rhyme: /uː/.'], ['bear / there', 'They rhyme: /eə/.'], ['come / sum', 'They rhyme: /ʌm/.']], 'cough /kɒf/, though /ðəʊ/.'],
         ], '', 'Spelling is irrelevant to rhyme.'),
     ],
+    ];
+    foreach (eng_gods_practice_forms() as $id => $extra) {
+        $forms[$id] = array_merge($forms[$id] ?? [], $extra);
+    }
+    foreach (eng_gods_reasoning_forms() as $id => $extra) {
+        $forms[$id] = array_merge($forms[$id] ?? [], $extra);
+    }
+    return $forms;
+}
+
+/** Bounded production practice, appended after all historical drill forms. */
+function eng_gods_practice_forms(): array {
+    return [
+    'EN-001' => [eng_type([
+        ['Copy the proper noun: “The pupils travelled to Ibadan.”', 'Ibadan', [], 'Ibadan names a particular city; pupils is a common noun.'],
+        ['Copy the collective noun: “A flock of birds crossed the field.”', 'flock', [], 'Flock names a group; birds names its individual members.'],
+    ], '{q}', 'Ask whether the noun names a particular place or a group.', 'reasoning')],
+    'EN-002' => [eng_type([
+        ['One shelf, three ___. Use the plural of shelf.', 'shelves', [], 'Shelf changes f to v before -es: shelves.'],
+        ['One child, four ___. Use the plural of child.', 'children', [], 'Children is an irregular plural; adding -s does not form it.'],
+        ['One story, two ___. Use the plural of story.', 'stories', [], 'Consonant + y changes to -ies.'],
+    ], '{q}', 'Check whether this noun follows a regular pattern or changes form.')],
+    'EN-003' => [eng_type([
+        ['Use I or me: “The librarian handed the book to Sade and ___.”', 'me', [], 'After to, use the object form. Removing Sade and leaves to me.'],
+        ['Use he or him: “Musa and ___ organised the shelves.”', 'he', [], 'The coordinated phrase is the subject. Removing Musa and leaves he organised.'],
+    ], '{q}', 'Remove the other person and check the pronoun’s job.', 'reasoning')],
+    'EN-004' => [eng_type([
+        ['Use the simple past of carry: “Yesterday, Ada ___ the books home.”', 'carried', [], 'For carry, consonant + y changes to i before -ed.'],
+        ['Use the simple present of wash: “Every Saturday, Musa ___ his uniform.”', 'washes', [], 'The singular subject takes washes in a simple-present habit.'],
+        ['Use the base form of leave: “We will ___ at noon.”', 'leave', [], 'Will takes the base verb, not left or leaves.'],
+    ], '{q}', 'Use the requested tense and match the subject.')],
+    'EN-005' => [eng_type([
+        ['Use the comparative of careful: “Ada is ___ than she was yesterday.”', 'more careful', [], 'Careful uses more in its comparative, not carefuler.'],
+        ['Use the superlative of small: “This is the ___ box of the five.”', 'smallest', [], 'A superlative identifies the highest degree within the group.'],
+    ], '{q}', 'Comparative compares; superlative selects within a group.')],
+    'EN-006' => [eng_type([
+        ['Change careful into the adverb: “She checked the figures ___.”', 'carefully', [], 'The word modifies checked, so use the adverb carefully.'],
+        ['Change happy into the adverb: “The children waved ___.”', 'happily', [], 'Happy becomes happily: y changes to i before -ly.'],
+    ], '{q}', 'Describe how the action happens, using the adverb.')],
+    'EN-007' => [eng_type([
+        ['Rewrite with correct capitals and a final full stop: “sade lives in kano”', 'Sade lives in Kano.', [], 'Capitalise the sentence beginning and both proper names, then add a full stop.'],
+        ['Rewrite with correct capitals and a final full stop: “i read on mondays”', 'I read on Mondays.', [], 'I and the name of the day need capitals.'],
+    ], '{q}', 'Check the sentence start, names, I and the final mark.', 'procedure', 45, ['case'=>true, 'punct'=>true])],
+    'EN-008' => [eng_type([
+        ['Add just the missing direct-address comma: “Musa please wait.”', 'Musa, please wait.', [], 'Musa is the person addressed; separate the name from the request.'],
+        ['Replace just the incorrect final mark: “Where is the bus.”', 'Where is the bus?', [], 'A direct question ends with a question mark.'],
+    ], '{q}', 'Keep every word; correct only the requested punctuation.', 'procedure', 40, ['punct'=>true])],
+    'EN-009' => [eng_type([
+        ['Correct this spelling: “seperate”.', 'separate', [], 'Separate has a after the p.'],
+        ['Correct this spelling: “neccessary”.', 'necessary', [], 'Necessary has one c and two s letters.'],
+        ['Correct this spelling: “commitee”.', 'committee', [], 'Committee has double m, double t and double e.'],
+    ], '{q}', 'Check the vowel and doubled-letter pattern.')],
+    'EN-010' => [eng_type([
+        ['“The room was silent; not a sound could be heard.” Replace silent with its synonym beginning qu-.', 'quiet', [], 'The absence of sound fixes the meaning as quiet.'],
+        ['“The gate was shut; we could not enter.” Give the antonym of shut beginning o-.', 'open', [], 'Shut means closed here; open reverses that state.'],
+    ], '{q}', 'Use the sentence to decide the meaning, then follow the starting letters.')],
+    'EN-011' => [eng_type([
+        ['Use is or are: “The key to the two cupboards ___ missing.”', 'is', [], 'Key is the singular head; cupboards is inside a modifying phrase.'],
+        ['Use has or have: “The pupils near the window ___ their books.”', 'have', [], 'Pupils is plural; the singular window does not control the verb.'],
+        ['Use was or were: “Each of the ten players ___ ready.”', 'was', [], 'Each is singular even when followed by a plural of-phrase.'],
+    ], '{q}', 'Find the subject’s head before choosing the verb.', 'reasoning')],
+    'EN-012' => [eng_type([
+        ['Use since or for: “We have waited here ___ two hours.”', 'for', [], 'Two hours is a duration, so use for.'],
+        ['Use since or for: “We have waited here ___ noon.”', 'since', [], 'Noon is a starting point, so use since.'],
+    ], '{q}', 'Distinguish a length of time from a starting point.')],
+    'EN-013' => [eng_type([
+        ['Use because or although to show the stated cause: “We stayed indoors ___ the rain made the path unsafe.”', 'because', [], 'The unsafe path is given as the reason for staying indoors.'],
+        ['Use because or although to show the stated contrast: “___ the path was wet, we completed the walk.”', 'although', [], 'The walk was completed despite the wet path, so the link is concession.'],
+    ], '{q}', 'Identify cause or concession before choosing the joining word.', 'reasoning')],
+    'EN-014' => [eng_type([
+        ['Complete an opposite-polarity tag: “Sade has finished, ___?”', 'hasn’t she', ["hasn't she"], 'Repeat has and replace Sade with she; a positive statement takes a negative tag here.'],
+        ['Complete an opposite-polarity tag: “The pupils were not late, ___?”', 'were they', [], 'Repeat were and use they for pupils; the negative statement takes a positive tag.'],
+    ], '{q}', 'Repeat the auxiliary, use a pronoun and reverse the polarity.')],
+    'EN-015' => [eng_type([
+        ['Use the past perfect of leave: “By the time I arrived yesterday, Ada ___.”', 'had left', [], 'Had + past participle places leaving before the past arrival.'],
+        ['Use the present continuous of read: “Look! The children ___ together.”', 'are reading', [], 'The plural subject takes are; reading describes the activity in progress.'],
+        ['Use the present perfect of finish: “I ___ the task, so I can help you now.”', 'have finished', [], 'Have + past participle links the completed task with its present result.'],
+    ], '{q}', 'Follow the requested tense and form the auxiliary plus main verb.')],
+    'EN-016' => [eng_type([
+        ['Correct only the verb after has: “She has wrote three letters.”', 'written', [], 'Has requires the past participle written, not the simple past wrote.'],
+        ['Correct only the verb after had: “They had chose a captain.”', 'chosen', [], 'Had requires the past participle chosen.'],
+        ['Correct only the verb after have: “We have saw the notice.”', 'seen', [], 'Have requires the past participle seen.'],
+    ], '{q}', 'After have, has or had, use the past participle.', 'reasoning')],
+    'EN-017' => [eng_type([
+        ['Write the possessive form of girls for several owners: “The ___ bags were collected.”', 'girls’', ["girls'"], 'Girls is already plural and ends in s, so place the apostrophe after s.'],
+        ['Write the possessive form of child for one owner: “The ___ bag was collected.”', 'child’s', ["child's"], 'One child takes apostrophe + s.'],
+    ], '{q}', 'Count the owners before placing the apostrophe.', 'procedure', 35, ['punct'=>true])],
+    'EN-018' => [eng_type([
+        ['Use their, there or they’re: “___ bringing their own chairs.”', 'they’re', ["they're"], 'The sentence needs they are; the contraction is they’re.'],
+        ['Use their, there or they’re: “Please leave the chairs over ___.”', 'there', [], 'There refers to a place; no possession or contraction is intended.'],
+    ], '{q}', 'Expand a contraction and test whether ownership or place is meant.')],
+    'EN-019' => [eng_type([
+        ['Add a prefix to legal to mean not legal.', 'illegal', [], 'The negative form is illegal, using il-.'],
+        ['Add a suffix to kind to form the noun meaning the quality of being kind.', 'kindness', [], 'The suffix -ness makes the noun kindness.'],
+    ], '{q}', 'Decide whether the task needs a prefix or a suffix.')],
+    'EN-020' => [eng_type([
+        ['Use a or an: “She planted ___ herb in the pot.” Use the British pronunciation with the h spoken.', 'a', [], 'The stated pronunciation begins with a consonant sound, so use a.'],
+        ['Use a or an: “We waited for ___ hour.” The h in hour is silent.', 'an', [], 'The first spoken sound is a vowel, so use an.'],
+    ], '{q}', 'Choose by the first sound, not the first written letter.')],
+    'EN-021' => [eng_type([
+        ['Copy the word whose vowel is the same as the vowel in sheep: seat, sit.', 'seat', [], 'Seat and sheep share the vowel; sit belongs with ship.'],
+        ['Copy the word whose vowel is the same as the vowel in ship: seat, sit.', 'sit', [], 'Sit and ship share the vowel; seat belongs with sheep.'],
+    ], '{q}', 'Compare the vowel using the topic’s recorded words, not their spelling.', 'reasoning')],
+    'EN-022' => [eng_type([
+        ['Name the vowel category: a single vowel sound that glides from one quality to another within a syllable.', 'diphthong', [], 'A diphthong changes quality within one syllable; it is not two separate syllables.'],
+        ['Name the vowel category: a vowel with a relatively steady quality rather than a glide.', 'monophthong', ['pure vowel'], 'A monophthong has a relatively steady quality.'],
+    ], '{q}', 'Contrast a glide with a relatively steady vowel.')],
+    'EN-023' => [eng_type([
+        ['Type voiced or voiceless for the initial th sound in thin.', 'voiceless', [], 'The initial consonant in thin is made without vocal-fold vibration.'],
+        ['Type voiced or voiceless for the initial th sound in they.', 'voiced', [], 'The initial consonant in they includes vocal-fold vibration.'],
+    ], '{q}', 'Compare the topic’s recordings and feel for vibration in your throat.', 'reasoning')],
+    'EN-024' => [eng_type([
+        ['Type fricative or affricate: a consonant made with continuous friction through a narrow opening.', 'fricative', [], 'Continuous friction defines a fricative.'],
+        ['Type fricative or affricate: a consonant beginning with complete closure and releasing into friction as one sound.', 'affricate', [], 'Closure followed by friction as one consonant defines an affricate.'],
+    ], '{q}', 'Ask whether the airflow is first blocked completely.')],
+    'EN-025' => [eng_type([
+        ['In knife, which written letter is silent? Type the letter only.', 'k', [], 'The initial k is written but not pronounced.'],
+        ['In write, which written letter before r is silent? Type the letter only.', 'w', [], 'The initial w is not pronounced; the word begins with the r sound.'],
+    ], '{q}', 'Compare the written beginning with the spoken beginning.')],
+    'EN-026' => [eng_type([
+        ['In the teaching notation TA-ble, capitals mark the stressed syllable. Type first or second.', 'first', [], 'TA is the first syllable; the capitalised syllable is prominent.'],
+        ['In the teaching notation be-GIN, capitals mark the stressed syllable. Type first or second.', 'second', [], 'GIN is the second syllable; the capitalised syllable is prominent.'],
+    ], '{q}', 'Read the stress notation rather than counting letters.')],
+    'EN-027' => [eng_type([
+        ['In “They will present the prize”, type noun or verb for present.', 'verb', [], 'Present follows will and names the action. Its role guides the pronunciation.'],
+        ['In “The present was wrapped”, type noun or verb for present.', 'noun', [], 'Present is the head of the subject phrase the present and names the gift.'],
+    ], '{q}', 'Identify the word’s grammatical role before choosing its pronunciation.', 'reasoning')],
+    'EN-028' => [eng_type([
+        ['Type sound or spelling: the decisive basis for judging a rhyme.', 'sound', [], 'Rhyming words share the relevant spoken vowel and following sounds.'],
+        ['Type before or after: rhyme compares the stressed vowel and the sounds that come ___ it.', 'after', [], 'The comparison begins with the stressed vowel and continues to the end.'],
+    ], '{q}', 'Locate the stressed vowel and compare what follows it.')],
+    'EN-029' => [eng_type([
+        ['“Ada sent the letter, not Bola.” Copy the word to stress when correcting who sent it.', 'Ada', [], 'The contrast is Ada versus Bola, so prominence belongs on Ada.'],
+        ['“Ada sent the letter, not the parcel.” Copy the word to stress when correcting what was sent.', 'letter', [], 'The contrast is letter versus parcel, so prominence belongs on letter.'],
+        ['“Ada sent it yesterday, not today.” Copy the word to stress when correcting when it was sent.', 'yesterday', [], 'The contrast concerns time, so prominence belongs on yesterday.'],
+    ], '{q}', 'Find the piece of information that replaces the proposed alternative.', 'reasoning')],
+    'EN-030' => [eng_type([
+        ['A pitch line ends higher than it began. Type rising or falling for that final movement.', 'rising', [], 'The final pitch moves upwards; that movement is a rise.'],
+        ['A pitch line ends lower than it began. Type rising or falling for that final movement.', 'falling', [], 'The final pitch moves downwards; that movement is a fall.'],
+    ], '{q}', 'Describe pitch movement, not loudness or the punctuation mark.')],
+    'EN-031' => [eng_type([
+        ['Keep the simple past: “The pupils repaired the chairs.” → “The chairs ___ by the pupils.”', 'were repaired', [], 'The plural subject takes were, followed by the past participle repaired.'],
+        ['Keep the future with will: “Ada will open the gate.” → “The gate ___ by Ada.”', 'will be opened', [], 'The future passive is will + be + past participle.'],
+    ], '{q}', 'Preserve the tense while changing the object into the passive subject.')],
+    'EN-032' => [eng_type([
+        ['Complete a backshifted report: “I will return,” Ada said. → “Ada said that she ___ return.”', 'would', [], 'The task explicitly requests backshift, so will becomes would.'],
+        ['Report the instruction: “Close the gate,” Ada told us. → “Ada told us ___ the gate.”', 'to close', [], 'A reported positive instruction uses told + object + to + base verb.'],
+    ], '{q}', 'Use the requested reporting pattern, not a mechanical change to every word.')],
+    'EN-033' => [eng_type([
+        ['Use the third-conditional form of arrive: “If we had left earlier, we ___ on time.”', 'would have arrived', [], 'The unreal past result uses would have + past participle.'],
+        ['Use the second-conditional form of buy: “If I had enough money now, I ___ a bicycle.”', 'would buy', [], 'The imagined present result uses would + base verb.'],
+    ], '{q}', 'Identify whether the imagined result belongs to the present or the past.')],
+    'EN-034' => [eng_type([
+        ['Complete the stated phrasal verb: “They called ___ the match”; the match was cancelled.', 'off', [], 'Call off means cancel in this context.'],
+        ['Complete the stated phrasal verb: “Please look ___ the word”; use a dictionary to find it.', 'up', [], 'Look up means search for information in a reference source.'],
+    ], '{q}', 'Read the supplied meaning and complete the whole expression.')],
+    'EN-035' => [eng_type([
+        ['Complete the idiom: “The puzzle was a piece of ___”; it was very easy.', 'cake', [], 'A piece of cake is the idiom meaning something very easy.'],
+        ['Complete the idiom: “We are in the same ___”; we share the same difficulty.', 'boat', [], 'In the same boat means in the same situation, especially a difficulty.'],
+    ], '{q}', 'Use the conventional wording of the idiom.')],
+    'EN-036' => [eng_type([
+        ['Copy the complete main clause: “Although it was late, we continued reading.”', 'we continued reading', [], 'Although it was late is subordinate; we continued reading can stand alone.'],
+        ['Copy the complete subordinate clause: “We waited until the rain stopped.”', 'until the rain stopped', [], 'Until introduces the time clause, including its subordinator.'],
+    ], '{q}', 'Include the joining word when copying a subordinate clause.', 'reasoning')],
+    'EN-037' => [eng_type([
+        ['Complete the formal relative clause: “The person to ___ I spoke was helpful.”', 'whom', [], 'The human object immediately after the preposition to takes whom in this formal pattern.'],
+        ['Complete the relative clause: “The pupil ___ bag was missing asked for help.”', 'whose', [], 'The gap expresses possession: the pupil’s bag.'],
+    ], '{q}', 'Distinguish a formal prepositional object from possession.')],
+    'EN-038' => [eng_type([
+        ['Use is or are: “The number of late arrivals ___ falling.”', 'is', [], 'The subject is the number, singular, not the plural arrivals.'],
+        ['Use is or are: “A number of pupils ___ waiting outside.”', 'are', [], 'A number of means several here and takes a plural verb.'],
+        ['Use has or have: “The committee ___ published its unanimous decision.”', 'has', [], 'Its unanimous decision presents the committee as one body.'],
+    ], '{q}', 'Distinguish the number from a number of, and check a group’s intended reference.', 'reasoning')],
+    'EN-039' => [eng_type([
+        ['Use must not or need not: “Entry is forbidden. You ___ enter.”', 'must not', [], 'Must not expresses prohibition, matching forbidden.'],
+        ['Use must not or need not: “Bringing food is optional. You ___ bring any.”', 'need not', [], 'Need not removes obligation; it does not forbid bringing food.'],
+    ], '{q}', 'Not necessary and not permitted are different meanings.', 'reasoning')],
+    'EN-040' => [eng_type([
+        ['Use the correct form of read: “She enjoys ___.”', 'reading', [], 'Enjoy takes the -ing form.'],
+        ['Use the correct form of leave: “They decided ___ early.”', 'to leave', [], 'Decide takes to + base verb.'],
+    ], '{q}', 'Choose the pattern required by the preceding verb.')],
+    'EN-041' => [eng_type([
+        ['“Pupils planted trees, watered seedlings and protected young shoots.” Complete the main idea with one word from the text: The pupils cared for ___.', 'trees', [], 'All three actions concern growing trees; seedlings and shoots are supporting details.'],
+        ['“The library repaired shelves, bought books and extended opening hours.” Complete with one word from the text: The passage describes improvements to the ___.', 'library', [], 'Library covers all three improvements rather than selecting just one detail.'],
+    ], '{q}', 'Find the idea broad enough to include every detail.', 'reasoning')],
+    'EN-042' => [eng_type([
+        ['“Ada put on a raincoat when drops began striking the window.” Complete the supported inference using the verb rain: It had probably started ___.', 'raining', ['to rain'], 'The drops and raincoat support rain; they do not establish a storm or flood.'],
+        ['“Musa yawned repeatedly and struggled to keep his eyes open.” Complete the cautious inference with a word beginning sl-: Musa was probably ___.', 'sleepy', [], 'Yawning and closing eyes support sleepiness; a cause such as illness is not established.'],
+    ], '{q}', 'Combine the clues, but do not invent a cause.', 'reasoning')],
+    'EN-043' => [eng_type([
+        ['“The path was narrow: only one person could pass at a time.” Give the antonym of narrow beginning w-.', 'wide', [], 'The restricted space fixes the width sense; wide reverses it.'],
+        ['“Her reply was brief: it contained only three words.” Give a synonym of brief beginning sh-.', 'short', [], 'The word count establishes shortness, not delay or rudeness.'],
+    ], '{q}', 'Use the explanatory phrase to pin down the word’s meaning.', 'reasoning')],
+    'EN-044' => [eng_type([
+        ['Type fact or opinion for the claim type: “The library has twelve tables.” Do not decide whether the claim is true.', 'fact', ['factual', 'factual claim'], 'The number can be checked by counting; factual claims still require verification.'],
+        ['Type fact or opinion for the claim type: “This is the most beautiful library.”', 'opinion', [], 'Most beautiful expresses a judgement rather than a countable measurement.'],
+    ], '{q}', 'Ask whether evidence can check the claim or whether it expresses a preference.')],
+    'EN-045' => [eng_type([
+        ['Name the device: “The lamp shone like a small sun.”', 'simile', [], 'Like explicitly compares the lamp with a sun.'],
+        ['Name the device: “The exhausted gate groaned and begged for rest.”', 'personification', [], 'Begging and exhaustion give the gate human qualities.'],
+    ], '{q}', 'Check whether the comparison is explicit or gives something human qualities.')],
+    'EN-046' => [eng_type([
+        ['Name the device in this deliberate exaggeration: “My schoolbag weighs a thousand tonnes.”', 'hyperbole', [], 'The stated weight is deliberate exaggeration, not a literal measurement.'],
+        ['Name the device when “passed away” is used to soften “died”.', 'euphemism', [], 'The softer expression substitutes for a difficult direct term.'],
+    ], '{q}', 'Distinguish exaggerating a claim from softening an expression.')],
+    'EN-047' => [eng_type([
+        ['“I am deeply grateful for your generous help.” Give the tone using the adjective beginning gr- from the sentence.', 'grateful', [], 'The explicit thanks and generous help support gratitude.'],
+        ['“I am furious that our books were deliberately damaged.” Give the tone using the adjective beginning fu- from the sentence.', 'furious', [], 'The stated emotion and deliberate damage support anger.'],
+    ], '{q}', 'Anchor the tone label in the writer’s own words.', 'reasoning')],
+    'EN-048' => [eng_type([
+        ['“The school repaired leaking taps, so less water was wasted.” Complete the summary: Repairing taps reduced water ___. Use a noun beginning w-.', 'waste', ['wastage'], 'The summary retains the action and its result without inventing a new benefit.'],
+        ['“The school opened another gate, so the queue became shorter.” Complete the summary: An additional gate shortened the ___.', 'queue', [], 'The summary keeps the stated effect, not an imagined change to lesson times.'],
+    ], '{q}', 'Keep the main action and the stated result.', 'reasoning')],
+    'EN-049' => [eng_type([
+        ['Replace the informal verb in “Please chuck away the damaged sheet” with a formal verb beginning dis-. Type only the replacement for chuck away.', 'discard', [], 'Discard preserves the meaning of throwing away in a formal register.'],
+        ['Replace “get” with a more formal verb beginning ob-: “Please get permission before entering.”', 'obtain', [], 'Obtain permission keeps the meaning and fits the formal request.'],
+    ], '{q}', 'Keep the original meaning while changing register.')],
+    'EN-050' => [eng_type([
+        ['“The instructions were clear; everyone understood them immediately.” Give the antonym of clear beginning un-.', 'unclear', [], 'Immediate understanding fixes the understandable sense of clear, not transparent.'],
+        ['“The room was vacant; nobody occupied it.” Give a synonym of vacant beginning em-.', 'empty', [], 'Nobody occupied it fixes the empty sense.'],
+        ['“Bola was reluctant to sign; she said she did not want to agree.” Give a synonym of reluctant beginning un-.', 'unwilling', [], 'Her refusal fixes unwillingness, not slowness or inability.'],
+    ], '{q}', 'Check whether a synonym or an antonym is requested, then use the context.', 'reasoning')],
+    'EN-051' => [eng_type([
+        ['Join with because, keeping the result first and all other words unchanged: “We waited indoors. The rain was heavy.”', 'We waited indoors because the rain was heavy.', [], 'Because introduces the given reason after the result.'],
+        ['Join with although, putting the although-clause first and keeping all other words: “The road was wet. We continued walking.”', 'Although the road was wet, we continued walking.', ['Although the road was wet we continued walking.'], 'Although introduces the condition that makes the continued walk unexpected.'],
+    ], '{q}', 'Follow the specified clause order; choose the link that expresses the relationship.', 'procedure', 60)],
+    'EN-052' => [eng_type([
+        ['Complete the conventional British formal closing after “Dear Sir or Madam”: “Yours ___”.', 'faithfully', [], 'Faithfully conventionally accompanies a salutation without a named recipient.'],
+        ['Complete the conventional British formal closing after “Dear Ms Bello”: “Yours ___”.', 'sincerely', [], 'Sincerely conventionally accompanies a named recipient.'],
+    ], '{q}', 'Check whether the salutation names the recipient.')],
+    'EN-053' => [eng_type([
+        ['Change I am to its contraction in this friendly sentence: “___ glad you can visit.”', 'I’m', ["I'm"], 'I’m contracts I am and suits a friendly tone.'],
+        ['Change we will to its contraction in this friendly sentence: “___ meet you at the gate.”', 'we’ll', ["we'll"], 'We’ll contracts we will without changing the plan.'],
+    ], '{q}', 'Keep the meaning and mark the omitted letters with an apostrophe.')],
+    'EN-054' => [eng_type([
+        ['“We painted the shelves and repaired the chairs.” Complete a topic sentence using one word from the passage: We improved the ___ and the chairs.', 'shelves', [], 'Shelves is a relevant subject developed by the following detail.'],
+        ['“We borrowed novels and read poems.” Complete a topic sentence using one word from the passage: We enjoyed novels and ___.', 'poems', [], 'Both details belong under the paragraph’s reading focus.'],
+    ], '{q}', 'Keep the topic sentence aligned with the details that develop it.', 'reasoning')],
+    'EN-055' => [eng_type([
+        ['Use however or therefore for the stated result: “The bridge was closed. ___, we took another route.”', 'therefore', [], 'Taking another route is presented as a consequence of the closure.'],
+        ['Use however or therefore for the stated contrast: “The first route was closed. ___, the second was open.”', 'however', [], 'The two routes are contrasted; the second being open is not caused by the first being closed.'],
+    ], '{q}', 'Choose a linker for the relationship stated in the task.', 'reasoning')],
+    'EN-056' => [eng_type([
+        ['Replace “at this point in time” with one word beginning n-.', 'now', [], 'Now preserves the time reference with fewer words.'],
+        ['Remove only the redundant word: “Please repeat the instruction again.” Type the whole revised sentence.', 'Please repeat the instruction.', [], 'Repeat already means do or say again, so again is unnecessary here.'],
+    ], '{q}', 'Remove redundancy without deleting essential information.')],
+    'EN-058' => [eng_type([
+        ['Replace only the comma with a semicolon: “The hall was full, we waited outside.”', 'The hall was full; we waited outside.', [], 'The semicolon joins two closely related independent clauses.'],
+        ['Replace only the full stop after things with a colon: “We need two things. books and pens.”', 'We need two things: books and pens.', [], 'The complete introductory clause leads into its list.'],
+    ], '{q}', 'Keep every word; make only the requested punctuation change.', 'procedure', 45, ['punct'=>true])],
+    'EN-057' => [eng_type([
+        ['Correct only borrowed: “Ada borrowed me her ruler.” Ada gave me the ruler temporarily.', 'lent', [], 'The giver lends; the receiver borrows. The specified giver is Ada.'],
+        ['Correct only the verb phrase: “I am having two brothers.” This describes a family relationship.', 'have', [], 'Possessive have describing this relationship uses the simple form.'],
+    ], '{q}', 'Use the meaning of the sentence to choose the standard verb pattern.', 'reasoning')],
+    'EN-059' => [eng_type([
+        ['“Reading-club meeting: Saturday, 10 a.m.” Which missing practical detail answers where? Type time or venue.', 'venue', ['location', 'place'], 'The day and time are present; the meeting place is missing.'],
+        ['“Reading-club meeting: Saturday, library.” Which missing practical detail answers when on Saturday? Type time or venue.', 'time', [], 'Saturday gives the day and library the venue; the starting time is missing.'],
+    ], '{q}', 'Check whether the reader knows when and where to attend.', 'reasoning')],
+    'EN-060' => [eng_type([
+        ['Type claim or evidence: “The library should stay open later.”', 'claim', [], 'Should proposes a position; it does not supply support for that position.'],
+        ['Type claim or evidence: “The attendance log records twenty pupils waiting at closing time each day.” Treat the log as the stated source.', 'evidence', [], 'The recorded observations can support an argument about demand.'],
+    ], '{q}', 'Separate what is proposed from the information offered to support it.', 'reasoning')],
+    'EN-061' => [eng_type([
+        ['Complete the root meaning with one word: bio- in biology relates to ___.', 'life', [], 'Biology studies living things; the root bio- relates to life.'],
+        ['Complete the root meaning with one word: geo- in geology relates to the ___.', 'earth', [], 'Geology concerns the Earth and its materials.'],
+    ], '{q}', 'Use the root in the named word, not merely a similar sequence of letters.')],
+    'EN-062' => [eng_type([
+        ['Use the noun from explain: “Her ___ was clear.”', 'explanation', [], 'Her introduces a noun; explanation names what was explained.'],
+        ['Use the verb related to decision: “We must ___ today.”', 'decide', [], 'Must takes a base verb, so the family member needed is decide.'],
+    ], '{q}', 'Identify the grammatical job before choosing a word-family member.')],
+    'EN-063' => [eng_type([
+        ['Complete with make or do: “Please ___ your homework before supper.”', 'do', [], 'Do homework is the conventional combination.'],
+        ['Complete with make or do: “We must ___ a decision today.”', 'make', [], 'Make a decision is the conventional combination.'],
+    ], '{q}', 'Recall the complete collocation rather than translating word by word.')],
+    'EN-064' => [eng_type([
+        ['Use advice or advise: “Please ___ me about the course.”', 'advise', [], 'The request needs a verb after please: advise.'],
+        ['Use advice or advise: “Your ___ was helpful.”', 'advice', [], 'Your introduces a noun, and advice is the noun form.'],
+    ], '{q}', 'Distinguish the action word from the noun.')],
+    'EN-065' => [eng_type([
+        ['Give one word for a person who writes a book; it begins au-.', 'author', [], 'Author identifies the writer, not the company that publishes the book.'],
+        ['Give one word for a life story written by its own subject; it begins auto-.', 'autobiography', [], 'Auto- marks self-authorship, distinguishing it from a biography written by another person.'],
+    ], '{q}', 'Preserve the distinguishing detail in the description.')],
+    'EN-066' => [eng_type([
+        ['Name the term beginning diag- for identifying a condition from the available evidence.', 'diagnosis', [], 'Diagnosis identifies the condition; it is distinct from treatment.'],
+        ['Name the term beginning sym- for an experience reported by a patient, such as pain.', 'symptom', [], 'A symptom is experienced by the patient; it is not a prescribed medicine.'],
+    ], '{q}', 'Distinguish what is experienced from identifying the condition.')],
+    'EN-067' => [eng_type([
+        ['Name the person beginning wit- who gives testimony about what they observed.', 'witness', [], 'A witness supplies testimony; the role does not automatically decide guilt.'],
+        ['Name the term beginning ver- for a jury’s decision on the issues put to it.', 'verdict', [], 'A verdict is the decision, not the original accusation.'],
+    ], '{q}', 'Keep the source of evidence separate from the decision.')],
+    'EN-068' => [eng_type([
+        ['Name the farming process beginning irr- that supplies water to growing crops.', 'irrigation', [], 'Irrigation supplies water; harvesting gathers a mature crop.'],
+        ['Use revenue or profit: sales income before deducting costs.', 'revenue', [], 'Revenue is income from sales; profit accounts for relevant costs.'],
+    ], '{q}', 'Use the defining feature, not a merely related term.')],
+    'EN-069' => [eng_type([
+        ['Name the term beginning head- for the title of a news report.', 'headline', [], 'The headline is the report’s title, not its author’s name.'],
+        ['Use upload or download: send a file from your phone to the school’s server.', 'upload', [], 'The stated direction is from the local device to the server.'],
+    ], '{q}', 'Check the role or direction described by the sentence.')],
+    'EN-070' => [eng_type([
+        ['“The library opens only on Fridays.” Copy the day on which it may open.', 'Fridays', ['Friday'], 'Only restricts opening to Fridays; it does not permit other days.'],
+        ['Complete the equivalent condition with one word: “Unless it rains, we will walk” means “If it does ___ rain, we will walk”.', 'not', [], 'Unless introduces the negative condition: if not.'],
+    ], '{q}', 'Preserve restrictions and conditions instead of dropping small words.', 'reasoning')],
+    'EN-071' => [eng_type([
+        ['In “The tall girl smiled”, give the function of “the tall girl”: subject or object.', 'subject', [], 'The noun phrase identifies who smiled.'],
+        ['In “We greeted the tall girl”, give the function of “the tall girl”: subject or object.', 'object', [], 'We is the subject; the tall girl receives the greeting.'],
+    ], '{q}', 'The same phrase can have a different job in a different sentence.', 'reasoning')],
+    'EN-072' => [eng_type([
+        ['Copy the complete relative clause: “The book that Ada borrowed is missing.”', 'that Ada borrowed', [], 'The clause starts with that and modifies book.'],
+        ['Copy the complete clause of reason: “We waited because the gate was locked.”', 'because the gate was locked', [], 'The because-clause explains the waiting.'],
+    ], '{q}', 'Include the clause’s joining word and stop at its boundary.', 'reasoning')],
+    'EN-073' => [eng_type([
+        ['“Ada reluctantly agreed.” Restate reluctantly with an adjective beginning un-: Ada agreed although she was ___.', 'unwilling', [], 'Reluctantly preserves both agreement and lack of willingness.'],
+        ['“The path was impassable.” Complete an own-words restatement: Nobody could get ___ along the path. Use a word beginning thr-.', 'through', [], 'Impassable means that passage is not possible, rather than merely slow.'],
+    ], '{q}', 'Keep the strength of the original meaning, following the supplied wording.', 'reasoning')],
+    'EN-074' => [eng_type([
+        ['“The access road flooded. As a result, lessons began late.” Complete one summary sentence with a past-tense verb beginning del-: Flooding ___ lessons.', 'delayed', [], 'Delayed captures the stated result without changing it to cancellation.'],
+        ['“The school repaired leaking taps. Water use fell.” Complete one summary sentence with a past-tense verb beginning red-: Repairing taps ___ water use.', 'reduced', [], 'Reduced states the decrease without adding an unmentioned result.'],
+    ], '{q}', 'Write one relevant point and preserve cause and effect.', 'reasoning')],
+    'EN-075' => [eng_type([
+        ['For this counting exercise, ship is represented by three sound units: sh + i + p. How many sounds are represented? Type a number.', '3', ['three'], 'Count the supplied sound units, not the four written letters.'],
+        ['For this counting exercise, see is represented by two sound units: s + ee. How many sounds are represented? Type a number.', '2', ['two'], 'The doubled vowel letters represent one unit here; the total is two.'],
+    ], '{q}', 'Count the supplied spoken units, not the letters.')],
+    'EN-076' => [eng_type([
+        ['The opening of street has the consonant sequence s + t + r. How many consonant sounds are in that initial cluster?', '3', ['three'], 'There are three adjacent consonants before the vowel.'],
+        ['The opening of stop has the consonant sequence s + t. How many consonant sounds are in that initial cluster?', '2', ['two'], 'There are two adjacent consonants before the vowel.'],
+    ], '{q}', 'Count each consonant sound; do not insert an extra vowel.')],
+    'EN-077' => [eng_type([
+        ['Complete a polite request to a familiar club organiser with could or must: “___ you please confirm the meeting time?”', 'could', [], 'Could you please is a conventional polite request, not a statement of obligation.'],
+        ['Complete a courteous acknowledgement with would or am: “I ___ grateful for your help.”', 'am', [], 'Am links I with the adjective grateful; would would need be.'],
+    ], '{q}', 'Keep the tone respectful and the grammatical structure complete.')],
+    'EN-078' => [eng_type([
+        ['Type narrative or description for the dominant focus: “Ada reached the gate, found it locked, and returned for the key.”', 'narrative', [], 'The sequence of actions moves events forward.'],
+        ['Type narrative or description for the dominant focus: “The gate was tall, rusty and rough beneath her hand.”', 'description', [], 'The sentence selects appearance and texture rather than advancing events.'],
+    ], '{q}', 'Distinguish a sequence of events from a selected impression.')],
+    'EN-079' => [eng_type([
+        ['Type expository or argumentative for the stated purpose: explain how a water filter works.', 'expository', [], 'The purpose is to explain a process.'],
+        ['Type expository or argumentative for the stated purpose: persuade the council to install water filters, using evidence and reasons.', 'argumentative', [], 'The purpose is to justify a position and persuade the audience.'],
+    ], '{q}', 'Identify the central purpose, even when both kinds of writing use facts.')],
+    'EN-080' => [eng_type([
+        ['Use might have + the past participle of miss: “I am unsure, but she ___ the bus.”', 'might have missed', [], 'Might have + past participle expresses a possibility about the past.'],
+        ['Use would + be for a present result: “If I had saved the address yesterday, I ___ able to visit now.”', 'would be', [], 'The unreal condition is past, but now makes the result present.'],
+    ], '{q}', 'Check the time of the condition separately from the time of the result.')],
+    ];
+}
+
+/** Additional examiner-style reasoning; each wrong choice names its particular slip. */
+function eng_gods_reasoning_forms(): array {
+    return [
+    'EN-011' => [eng_choose([
+        ['Why does “The box of pencils is missing” use is?', 'The subject’s head is the singular noun box.', [['The verb must agree with the plural noun pencils.', 'Nearest-noun agreement: pencils belongs to the modifying of-phrase, not the subject’s head.'], ['Any sentence containing of must use a singular verb.', 'Overgeneralised trigger: of does not determine agreement; compare the boxes of chalk are missing.']], 'Remove of pencils: the box is missing. The head controls agreement.'],
+        ['Why does “The pupils near the window are ready” use are?', 'The subject’s head is the plural noun pupils.', [['The nearest noun window controls the verb.', 'Nearest-noun agreement: window is inside the modifying phrase.'], ['The word ready requires a plural subject.', 'Adjective-as-trigger: ready can describe one person or several.']], 'Remove near the window: the pupils are ready.'],
+    ], '{q}', 'Find the head of the subject and test it without the modifier.', 'reasoning', 50)],
+    'EN-015' => [eng_spot([
+        [['Ada', 'has wrote', 'three letters', 'this morning.'], 1, 'has written', 'Has takes a past participle: written, not the simple past wrote.', [0=>'Subject confusion: Ada is a valid singular subject for has.', 2=>'Object confusion: three letters is a valid object of write.', 3=>'Time-word overcorrection: this morning can accompany a present perfect while the morning is still current.']],
+        [['The pupils', 'did not saw', 'the notice', 'yesterday.'], 1, 'did not see', 'Did already marks past time, so its main verb is the base form see.', [0=>'Number confusion: did works with a plural subject.', 2=>'Object confusion: the notice is a valid object of see.', 3=>'Time-word confusion: yesterday fits the past auxiliary did.']],
+    ], 'Check which verb form the auxiliary requires.')],
+    'EN-043' => [eng_choose([
+        ['“The instructions were explicit: every step was stated clearly.” Which meaning of explicit fits?', 'clearly expressed', [['partly concealed', 'Opposite-meaning trap: clearly stated steps are not hidden.'], ['needlessly repeated', 'Associated-detail trap: stating each step does not mean repeating it.']], 'The explanation after the colon fixes explicit as clearly expressed.'],
+        ['“The plan was feasible: the team had the tools, time and funds to carry it out.” Which meaning of feasible fits?', 'possible to carry out', [['certain to succeed', 'Overstated certainty: having the means makes the plan possible, not guaranteed.'], ['expensive to attempt', 'Cost association: funds are mentioned as available, not as proof that the plan is expensive.']], 'Tools, time and funds support possibility; they do not guarantee success.'],
+    ], '{q}', 'Use the explanation in the sentence; reject a stronger or merely associated meaning.', 'reasoning', 50)],
+    'EN-042' => [eng_choose([
+        ['“The first bus was full. Ada remained at the stop and checked the next arrival time.” What is best supported?', 'Ada probably intends to catch a later bus.', [['Ada has decided never to use buses again.', 'Unsupported generalisation: checking the next arrival supports another journey, not a permanent refusal.'], ['Ada knows that the next bus will be empty.', 'Unsupported certainty: an arrival time reveals nothing about the next bus’s occupancy.']], 'Remaining at the stop and checking the next arrival together support waiting for a later bus.'],
+        ['“Musa reread the unclear sentence, then reached for a dictionary.” What is best supported?', 'Musa probably wants to check a word’s meaning.', [['Musa has finished understanding the entire passage.', 'Completion assumption: rereading and consulting a dictionary suggest an unresolved question.'], ['Musa is certain that the author made a mistake.', 'Invented motive: seeking a definition does not establish a judgement about the author.']], 'The unclear sentence and the dictionary support checking meaning, not certainty about an error.'],
+    ], '{q}', 'Choose a cautious conclusion supported by both clues.', 'reasoning', 60)],
+    'EN-048' => [eng_choose([
+        ['“The club replaced leaking taps and repaired broken pipes. Water waste fell.” Which summary preserves the main points?', 'Repairs reduced water waste.', [['New rules stopped all water use.', 'Invented action and overstatement: the text describes repairs and reduced waste, not rules or zero use.'], ['The club bought a new water supply.', 'Invented solution: repairing existing equipment does not establish a new supply.']], 'The repairs are the action; reduced waste is the stated result.'],
+        ['“The librarian opened a second desk. Queues shortened, but staff costs rose.” Which summary preserves both outcomes?', 'Another desk shortened queues but increased staff costs.', [['Another desk reduced both queues and staff costs.', 'Reversed outcome: costs rose rather than fell.'], ['Another desk increased both queues and staff costs.', 'Reversed outcome: queues shortened rather than grew.']], 'Keep both the benefit and the cost instead of silently dropping the contrast.'],
+    ], '{q}', 'Preserve the stated action, result and any important contrast.', 'reasoning', 55)],
+    'EN-054' => [eng_order([
+        [['The reading club improved access to books.', 'First, it added a shelf of novels.', 'Then it extended borrowing to weekends.'], 'The topic sentence states the general improvement; first and then fix the order of its supporting details.'],
+        [['The class prepared the room for visitors.', 'First, it moved the desks into rows.', 'Then it placed a name card on each desk.'], 'The topic sentence introduces the preparation; the sequencing words order the details.'],
+    ], 'Build the paragraph: start with its general topic sentence, then follow the explicit sequence words.', 'General idea first; follow first and then.', 'reasoning', 60)],
+    'EN-075' => [eng_derive([
+        ['ship', ['sh', 'i', 'p'], 4], ['see', ['s', 'ee'], 3],
+    ], static function (MlbRng $r, array $row): array {
+        [$word, $units, $letters] = $row; $n = count($units);
+        return mlb_mcq($r, 'For this exercise, “' . $word . '” has the sound units ' . implode(' + ', $units) . '. How many sounds are represented?', (string)$n,
+            [[(string)$letters, 'Letter-counting slip: you counted the written letters instead of the supplied sound units.'], [(string)($n - 1), 'Omitted-sound slip: the initial consonant counts too; include every supplied unit.']],
+            ['Count each supplied sound unit once: ' . implode(', ', $units) . '.', 'There are ' . $n . ' sounds, although the written word has ' . $letters . ' letters.'],
+            'Count spoken units rather than written letters.', 'reasoning', 35);
+    })],
     ];
 }

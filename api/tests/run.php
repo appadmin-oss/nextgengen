@@ -38758,9 +38758,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 (function () {
     $now = now_iso();
     lab_use('english');
-    $bad = []; $n = 0; $thin = []; $fixed = [];
+    $bad = []; $n = 0; $thin = []; $fixed = []; $recognitionOnly = [];
     foreach (eng_forms() as $c => $forms) {
-        if (count($forms) < 3) $thin[] = $c;
+        if (count($forms) < 4) $thin[] = $c;
+        $produces = false;
         foreach ($forms as $fi => $f) {
             $keys = [];
             for ($s = 1; $s <= 30; $s++) {
@@ -38776,13 +38777,15 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
                 if ($it['kind'] === 'mcq') foreach ($it['whys'] as $wi => $w) if ($wi !== (int)$it['key'] && trim((string)$w) === '') $bad[] = "$c/$fi why";
             }
             $it0 = mlb_item($c, $fi, 7);
+            if (in_array($it0['kind'], ['text', 'order', 'error'], true)) $produces = true;
             if ($it0['kind'] !== 'mcq' && count($keys) < 2) $fixed[] = "$c/$fi";
         }
+        if (!$produces) $recognitionOnly[] = $c;
     }
     $bad = array_values(array_unique($bad));
     chk('english lab · every generated question (' . $n . ') marks its own answer and every accepted alternative right, offers at least three distinct options each with the slip it names, teaches (steps and a hint), carries no $ for the maths renderer, and never sends the key or the accepted answers' . ($bad ? ' (' . implode(', ', array_slice($bad, 0, 8)) . ')' : ''),
         $bad === [] && count(eng_forms()) === 80);
-    chk('english lab · every topic has at least three kinds of question, and no typed or ordering form gives everybody the same answer' . ($thin || $fixed ? ' (' . implode(', ', array_merge($thin, $fixed)) . ')' : ''), $thin === [] && $fixed === []);
+    chk('english lab · every topic has at least four forms including production or reasoning, and no typed or ordering form gives everybody the same answer' . ($thin || $fixed ? ' (' . implode(', ', array_merge($thin, $fixed)) . ')' : ''), $thin === [] && $fixed === [] && $recognitionOnly === []);
 
     // The shared `text` kind: generous about form, strict about the skill.
     $sp = ['kind' => 'text', 'key' => 'necessary', 'accept' => []];
@@ -38811,16 +38814,16 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     /* Grammar is TAUGHT before it is practised (owner: "real effective learning. Grammar"): every grammar
        topic has an explicit rule shown as a contrast — at least one right example (✓) and the slip
        people make (✗), each with its reason — read through the engine's existing lesson step. */
-    $grammar = ['EN-003', 'EN-004', 'EN-005', 'EN-006', 'EN-011', 'EN-012', 'EN-013', 'EN-014', 'EN-015', 'EN-016', 'EN-017', 'EN-018', 'EN-019', 'EN-020',
-                'EN-031', 'EN-032', 'EN-033', 'EN-034', 'EN-035', 'EN-036', 'EN-037', 'EN-038', 'EN-039', 'EN-040', 'EN-051', 'EN-057', 'EN-080'];
+    $grammar = array_map(static fn($n) => sprintf('EN-%03d', $n), range(1, 80));
     $badRule = [];
     foreach ($grammar as $g) {
         $w = mlb_why_of($g);
         $lines = $w ? array_column($w['steps'], 's') : [];
-        if (!$w || trim($w['idea']) === '' || count($w['steps']) < 3 || !array_filter($lines, static fn($l) => str_starts_with($l, '✓')) || !array_filter($lines, static fn($l) => str_starts_with($l, '✗'))
+        if (!$w || trim($w['idea']) === '' || count($w['steps']) < 3 || count($w['steps']) > 6 || trim($w['claim']) === '' || !array_filter($lines, static fn($l) => str_starts_with($l, '✓')) || !array_filter($lines, static fn($l) => str_starts_with($l, '✗'))
+            || array_filter($lines, static fn($l) => !preg_match('/^[✓✗] /u', $l))
             || array_filter($w['steps'], static fn($x) => trim($x['r']) === '') || str_contains(json_encode($w, JSON_UNESCAPED_UNICODE), '$')) $badRule[] = $g;
     }
-    chk('english lab · every grammar topic (' . count($grammar) . ') teaches its rule first, as a contrast: a right example and the slip people make, each with its reason' . ($badRule ? ' (' . implode(', ', $badRule) . ')' : ''),
+    chk('english lab · every foundation topic (' . count($grammar) . ') teaches its rule first, as a contrast: a right example and the slip people make, each with its reason' . ($badRule ? ' (' . implode(', ', $badRule) . ')' : ''),
         $badRule === [] && !array_diff(array_keys(eng_rules()), $ids));
 
     /* The exam-trap drills (owner, 7 Nov 2026: "Becoming Gods"): appended AFTER every topic's own forms,
@@ -38873,7 +38876,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $missing === []);
     $cv = mlb_comp_view(['comp' => 'EN-023']); $cg = mlb_comp_view(['comp' => 'EN-011']); $cm = mlb_comp_view(['comp' => 'MC-001']);
     chk('english lab · a sound topic’s lesson carries its "Hear and say" material and articulation questions; a grammar topic’s carries its rule; a Maths topic carries neither speaking nor an English rule',
-        !empty($cv['speak']['pairs']) && !empty($cv['speak']['how']) && count($cv['speak']['audio']['thin'] ?? []) >= 4 && count($cv['speak']['audio']['I think these three things are mine.'] ?? []) >= 2 && count(eng_forms()['EN-023']) === 5 && ($cg['why']['idea'] ?? '') !== '' && $cm['speak'] === null);
+        !empty($cv['speak']['pairs']) && !empty($cv['speak']['how']) && count($cv['speak']['audio']['thin'] ?? []) >= 4 && count($cv['speak']['audio']['I think these three things are mine.'] ?? []) >= 2 && count(eng_forms()['EN-023']) === 6 && ($cg['why']['idea'] ?? '') !== '' && $cm['speak'] === null);
     lab_use('maths');
 
     // One member, three Labs: English moves only English.

@@ -343,8 +343,10 @@ async function english(who, W, H, tag) {
   await p.goto(BASE + '/study/english/learn/EN-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });
   let remSeen = false, remImg = false, remCover = false;
+  chk(tag + ': the first English topic teaches a rule before practice', await p.locator('.mlb-why-judge').count() === 1 && await p.locator('.mlb-lesson-foot .mlb-go').isDisabled());
   for (let k = 0; k < 12; k++) {
     if (await p.locator('.mlb-status').count()) break;
+    for (let g = 0; g < 20 && await p.locator('.mlb-why .mlb-actions .stt-btn').count(); g++) await p.locator('.mlb-why .mlb-actions .stt-btn').first().click();
     while (await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').count()) await p.locator('.mlb-lesson-body .stt-btn:has-text("Show the next line")').click();
     /* Remember it: a picture sequence the learner steps through, then covers and recalls (tools/lab-remember). */
     if (await p.locator('.mlb-rem').count()) {
