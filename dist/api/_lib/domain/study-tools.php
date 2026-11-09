@@ -324,7 +324,7 @@ function study_notes_ai(array $p): array {
     $m = study_member($p); if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $text = trim(mb_substr((string)($p['text'] ?? ''), 0, STUDY_NOTES_MAX));
     if (mb_strlen($text) < 80) return ['ok' => false, 'error' => 'notes_too_short', 'detail' => 'Paste a little more — at least a few sentences.'];
-    if (preg_match(STUDY_DISTRESS, $text)) return ['ok' => true, 'safeguarding' => true, 'summary' => 'Some of what you wrote sounds really important, and it is not something to work out alone. Please talk to your mentor, your instructor or a parent today — or use "Report a concern" in your portal, which goes straight to the safeguarding team.', 'terms' => []];
+    if ($sg = safeguard_check($text, $m, 'Summarise my notes')) return ['ok' => true, 'safeguarding' => true, 'told' => $sg['told'], 'summary' => 'Some of what you wrote sounds really important, and it is not something to work out alone. Please talk to your mentor, your instructor or a parent today — or use "Report a concern" in your portal, which goes straight to the safeguarding team.', 'terms' => []];
     $mid = (string)$m['memberId'];
     $t = study_ai_take($mid); if (empty($t['ok'])) return $t;
     $r = ai_classify('You help a 10–17 year old member of Next Generation Genius in Nigeria revise from their OWN study notes (below). '
