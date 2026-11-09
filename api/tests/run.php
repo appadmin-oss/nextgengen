@@ -38752,6 +38752,46 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     lab_use('maths');
 })();
 
+/* ── The Physics Lab's question bank is deep enough not to repeat (audit, 8 Nov 2026, docs/LABS-AUDIT.md §5.1) ──
+ * 65 of the 90 topics had three forms, so practice was three templates on rotation. Held here: every topic
+ * has at least five forms, two of them typed (the learner produces the answer); every form generates on
+ * 30 seeds with finite numbers; its own key is marked right and a wrong answer is marked wrong; and a
+ * practice session on a sample of topics never shows the same wording twice. */
+(function () {
+    lab_use('physics');
+    $thin = []; $bad = []; $n = 0;
+    foreach (phy_forms() as $c => $forms) {
+        $typed = 0;
+        foreach ($forms as $fi => $f) {
+            if (!empty(mlb_item($c, $fi, 1)['typed'])) $typed++;
+            for ($s = 1; $s <= 30; $s++) {
+                try { $it = mlb_item($c, $fi, $s * 7919 + 11); } catch (Throwable $e) { $bad[] = "$c/$fi throws"; break; }
+                $n++;
+                if (preg_match('/\b(?:NAN|INF)\b/', (string)json_encode($it)) || ($it['kind'] === 'num' && (!is_numeric((string)$it['key']) || !is_finite((float)$it['key'])))) $bad[] = "$c/$fi not finite";
+                $right = in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'];
+                if (!mlb_mark($it, $right)['ok']) $bad[] = "$c/$fi key marked wrong";
+                if ($it['kind'] === 'num') { $k = (float)$it['key']; $wrong = mlb_dec($k + max(1.0, abs($k))); }
+                elseif (in_array($it['kind'], ['mcq', 'error'], true)) $wrong = ((int)$it['key'] + 1) % count($it['options']);
+                else continue;
+                if (mlb_mark($it, $wrong)['ok']) $bad[] = "$c/$fi wrong answer marked right";
+            }
+        }
+        if (count($forms) < 5 || $typed < 2) $thin[] = "$c (" . count($forms) . " forms, $typed typed)";
+    }
+    $bad = array_values(array_unique($bad));
+    chk('physics bank · every topic has at least five question forms, at least two of them typed' . ($thin ? ' (' . implode(', ', array_slice($thin, 0, 8)) . ')' : ''), $thin === [] && count(phy_forms()) === 90);
+    chk('physics bank · every form generates on 30 seeds (' . $n . ' questions) with finite numbers, its key is marked right and a wrong answer is marked wrong' . ($bad ? ' (' . implode(', ', array_slice($bad, 0, 8)) . ')' : ''), $bad === []);
+    $rep = [];
+    foreach (['PH-007', 'PH-021', 'PH-028', 'PH-036', 'PH-047', 'PH-061', 'PH-071', 'PH-089'] as $c) for ($k = 0; $k < 10; $k++) {
+        $its = mlb_pick_items([$c], 8); $seen = [];
+        if (count($its) < 8) $rep[] = "$c short (" . count($its) . ")";
+        foreach ($its as $x) { $st = (string)mlb_item($x['c'], $x['f'], $x['s'])['stem']; if (isset($seen[$st])) $rep[] = "$c: " . mb_substr($st, 0, 40); $seen[$st] = 1; }
+    }
+    $rep = array_values(array_unique($rep));
+    chk('physics bank · an eight-question practice session on a sampled topic is a full session and never shows the same wording twice' . ($rep ? ' (' . implode('; ', array_slice($rep, 0, 4)) . ')' : ''), $rep === []);
+    lab_use('maths');
+})();
+
 /* ── The English Lab: the third, on the same engine (owner, 6 Nov 2026: "build the engine. Make it
  * modular") ── Every English question obeys every Lab's rules; the shared marker's `text` kind is
  * generous about form and strict about the skill; the map is whole; and the Lab is its own. */

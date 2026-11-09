@@ -33,7 +33,11 @@ function phy_p($x): string { return mlb_p(is_float($x) && floor($x) == $x ? (int
 function phy_forms(): array {
     static $f = null;
     if ($f !== null) return $f;
-    return $f = phy_forms_1() + phy_forms_2() + phy_forms_3() + phy_forms_4() + phy_forms_5() + phy_forms_6() + phy_forms_7() + phy_forms_8() + phy_forms_9();
+    $f = phy_forms_1() + phy_forms_2() + phy_forms_3() + phy_forms_4() + phy_forms_5() + phy_forms_6() + phy_forms_7() + phy_forms_8() + phy_forms_9();
+    /* The second layer of forms (physicslab-gen-more.php, audit of 8 Nov 2026), APPENDED after each
+       topic's own list so no form already in use changes its number (a session stores form numbers). */
+    if (function_exists('phy_forms_more')) foreach (phy_forms_more() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    return $f;
 }
 
 /* ═══ Stage 1 — Measurement and Matter ═══ */

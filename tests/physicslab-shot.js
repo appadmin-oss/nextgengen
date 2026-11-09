@@ -16,7 +16,7 @@ function loadChromium() { for (const m of [process.env.PLAYWRIGHT_MODULE, 'playw
   fs.mkdirSync(OUT, { recursive: true });
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'dist', 'build-manifest.json'), 'utf8'));
   const SRC = JSON.parse(execFileSync('php', ['-r',
-    'function db_row(){return null;} foreach (["labs","mathslab-map","mathslab-gen","mathslab-gen-upper","physicslab-map","physicslab-gen"] as $f) require "api/_lib/domain/$f.php"; lab_use("physics");'
+    'function db_row(){return null;} foreach (["labs","mathslab-map","mathslab-gen","mathslab-gen-upper","physicslab-map","physicslab-gen","physicslab-gen-more"] as $f) require "api/_lib/domain/$f.php"; lab_use("physics");'
     + '$by=[]; foreach (phy_forms() as $c => $fs) foreach ($fs as $i => $f) { $it = mlb_item($c, $i, 5); if (!empty($it["diagram"])) { $t=$it["diagram"]["type"]; $by[$t][] = ["comp"=>$c,"form"=>$i,"item"=>mlb_public($it)]; } }'
     + 'echo json_encode($by, JSON_UNESCAPED_UNICODE);'], { cwd: ROOT, encoding: 'utf8' }));
   const EXPL = execFileSync('node', ['-e', 'const s=require("fs").readFileSync("src/modules/mathslab/phy-visuals.jsx","utf8");const m=s.match(/const PHY_EXPLORERS = \\{([\\s\\S]*?)\\};/);console.log(JSON.stringify(m[1].match(/phy[A-Za-z]+(?=:)/g)));'], { cwd: ROOT, encoding: 'utf8' });
