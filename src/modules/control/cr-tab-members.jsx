@@ -1749,7 +1749,7 @@ Object.assign(CR_TAB_DEFS, {
     skeleton: ["table"],
     load: async () => {
       const r = await NGGApi.admin.registration.centres();
-      return { centres: r.centres || [], leadOptions: r.leadOptions || [], canWrite: r.canWrite !== false, cacentre: !!r.cacentre };
+      return { centres: r.centres || [], leadOptions: r.leadOptions || [], canWrite: r.canWrite !== false, cacentre: !!r.cacentre, cac: r.cacentre || null };
     },
     /* Once CACENTRE's locations list has arrived, centres are added there, not
        here (domain/cac-locations.php): no button the server would refuse. */
@@ -1760,6 +1760,12 @@ Object.assign(CR_TAB_DEFS, {
       if (c && (sub === "map" || sub === "summer") && d.canWrite) return [{ type: "custom", span: 6, render: c2 => <CrCeSubEditor ctx={c2 || ctx} c={c} which={sub}/> }];
       const out = [];
       if (!d.canWrite) out.push({ type: "note", span: 6, icon: "lock-simple", text: "You can see the directory but not change it.", sub: "A centre’s code and colour are printed on member ID cards, so changing one needs the member-desk (people) permission." });
+      /* The old directory said where centres are added once CACENTRE runs the list; moving to this screen
+         dropped the sentence and kept only the missing button, so an admin was left looking for "Add a
+         centre" with nothing to say it lives in CACENTRE now. */
+      if (d.cacentre) out.push({ type: "note", span: 6, icon: "info", cls: "centres-cac-note", text: "Centres come from CACENTRE.",
+        sub: "Its locations list is the only list of places: a location added, renamed or taken off in CACENTRE → Attendance → Desks and settings → Locations is added, renamed (with every record that names it) or retired here within minutes. The code, colour, address, lead and page are still set here."
+          + (d.cac && d.cac.at ? " Last update from CACENTRE: " + fmtDateTime(d.cac.at) + "." : "") });
       const unmappedList = d.centres.filter(x => x.lat == null && x.status !== "retired"), unmapped = unmappedList.length;
       if (unmapped && d.canWrite) out.push({ type: "note", span: 6, icon: "map-pin", tone: "warn", text: crPlural(unmapped, "centre") + " not mapped yet.",
         act: { l: "Map " + unmappedList[0].name, run: () => ctx.setSub(unmappedList[0].centreId + "/map") }, sub: "Without a map the check-in desk cannot confirm someone is at the centre. Open one and choose Map and geo-fence." });
@@ -1773,7 +1779,7 @@ Object.assign(CR_TAB_DEFS, {
         rows: d.centres.map(c2 => ({
           key: c2.centreId,
           cells: [
-            { k: "strong", t: c2.name, s: c2.code },
+            { k: "strong", t: c2.name, s: c2.code + (d.cacentre ? (c2.cacLocationId ? " · From CACENTRE" : " · Not a CACENTRE location") : "") },
             { k: "text", t: c2.area || "—", s: c2.address || "" },
             { k: "text", t: crCeProgLabel(c2) },
             { k: "text", t: [crCeProgs(c2).indexOf("ngg") !== -1 ? (c2.leadName || "No NGG lead") : null, crCeProgs(c2).indexOf("summer") !== -1 ? (c2.summerLeadName ? "Summer · " + c2.summerLeadName : "No Summer lead") : null].filter(Boolean).join(" · ") },

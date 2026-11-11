@@ -140,7 +140,7 @@ function cleanup() {
     await pg.waitForSelector('.centres-cac-note', { timeout: 60000 });
     const dir = await pg.innerText('main, body');
     chk('Centres: once CACENTRE’s list has arrived, the directory says the places come from CACENTRE, and which centre is one',
-      /Centres come from CACENTRE/.test(dir) && (await pg.$$('.chip-cac')).length >= 1 && /Not a CACENTRE location/i.test(dir));
+      /Centres come from CACENTRE/.test(dir) && /From CACENTRE/.test(dir) && /Not a CACENTRE location/i.test(dir));   // per row, under the name (the Control Room's table, not the old chips)
     chk('…and offers no Add a centre, which the server would refuse', (await pg.$$('button:has-text("Add a centre"), form[aria-label="Add a centre"]')).length === 0);
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
