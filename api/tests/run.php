@@ -38161,6 +38161,16 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('seo · aliases and per-record addresses (/q/…, /control) are real pages, never 404', spa_route_for('/q/abc', $routes)['status'] === 200 && spa_route_for('/control/members', $routes)['status'] === 200);
     chk('seo · a filtered view (?post=…) claims no canonical; a tracking parameter keeps it', !str_contains(spa_render($html, spa_route_for('/blog', $routes), 'post=hello'), 'rel="canonical"')
         && str_contains(spa_render($html, spa_route_for('/about', $routes), 'utm_source=x'), 'href="https://next.afrovanguard.org.ng/about"'));
+    /* SPA_ALIASES is a second list beside pageFromPath() in app.jsx, so it is held to it: every address the
+       router accepts by name must be a real page here too. One missing entry and a working link (a scanned
+       card, a notice in an email) answers 404 to the browser and to every crawler that follows it. */
+    $app = (string)file_get_contents($root . '/app.jsx');
+    $pf = substr($app, (int)strpos($app, 'function pageFromPath('), 6000);
+    $pf = substr($pf, 0, (int)strpos($pf, "\nfunction pathForPage(") ?: strlen($pf));
+    preg_match_all('/seg === "([a-z0-9-]+)"/', $pf, $mm);
+    $missingAlias = array_values(array_filter(array_unique($mm[1]), static fn($a) => spa_route_for('/' . $a . '/x', $routes)['status'] !== 200));
+    chk('seo · every address pageFromPath() accepts by name is a page to the 404 front too (' . count(array_unique($mm[1])) . ' read' . ($missingAlias ? '; missing: ' . implode(', ', $missingAlias) : '') . ')',
+        count($mm[1]) >= 10 && !$missingAlias);
     chk('seo · no static sitemap.xml ships to hide the live one', !in_array('sitemap.xml', (function () { preg_match('/const staticAssets = \[(.*?)\];/s', (string)file_get_contents(dirname(__DIR__, 2) . '/build.js'), $m); preg_match_all("/'([^']+)'/", $m[1] ?? '', $x); return $x[1]; })(), true));
 })();
 

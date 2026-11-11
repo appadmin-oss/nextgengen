@@ -8680,7 +8680,10 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-ws > .cr-locked, .cr-ws > .cr-err, .cr-ws > .cr-skel { margin: 24px; flex: 1; }
 
 .cr-ib { flex: 1; min-height: 0; display: grid; grid-template-columns: 232px minmax(300px, 380px) minmax(0, 1fr); }
-@container (max-width: 1240px) { .cr-ib { grid-template-columns: 64px minmax(280px, 340px) minmax(0, 1fr); } .cr-ib-view .cr-grow, .cr-ib-rail-foot span { display: none; } .cr-ib-view { justify-content: center; position: relative; } .cr-ib-view .cr-ib-n { position: absolute; top: 2px; right: 4px; } }
+/* 1100, not 1240: the rail folds to icons only when the reading pane would drop below ~490px (the room the
+   old 1080/216px rule gave it, with the rail now 232px). At 1240 it folded on a 1440px laptop, the commonest
+   desk, where the panel is ~1190px wide and has room for the labels. */
+@container (max-width: 1100px) { .cr-ib { grid-template-columns: 64px minmax(280px, 340px) minmax(0, 1fr); } .cr-ib-view .cr-grow, .cr-ib-rail-foot span { display: none; } .cr-ib-view { justify-content: center; position: relative; } .cr-ib-view .cr-ib-n { position: absolute; top: 2px; right: 4px; } }
 .cr-ws { container-type: inline-size; }
 
 /* Rail */
@@ -18127,4 +18130,4 @@ button.m9x-ev-sum { cursor: pointer; }
 .cr-ib-push .ngp-ic { display: none; }
 .cr-ib-push .ngp-nudge-t small { font-size: 12.5px; }
 .cr-ib-push .ngp-btn { height: 32px; padding: 0 12px; font-size: 13px; }
-@container (max-width: 1240px) { .cr-ib-rail-foot .cr-linkbtn { font-size: 0; justify-content: center; } .cr-ib-rail-foot .cr-linkbtn .ph { font-size: 16px; } }
+@container (max-width: 1100px) { .cr-ib-rail-foot .cr-linkbtn { font-size: 0; justify-content: center; } .cr-ib-rail-foot .cr-linkbtn .ph { font-size: 16px; } }

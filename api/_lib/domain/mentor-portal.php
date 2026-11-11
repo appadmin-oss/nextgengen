@@ -510,7 +510,7 @@ function member_mp_mentee(array $p): array {
     usort($timeline, static fn($a, $b) => strcmp($b['at'], $a['at']));
     return ['ok' => true, 'me' => mp_me($g, $o), 'today' => $today, 'mentee' => $row,
         'goals' => $child['goals'] ?? [], 'sessions' => $sessions, 'family' => $family, 'timeline' => array_slice($timeline, 0, 40),
-        'scorecard' => mp_scorecard_read($id, substr($today, 0, 7)), 'rel' => mp_rel_read($id, $g),
+        'scorecard' => mp_scorecard_read($id, substr($today, 0, 7), $today), 'rel' => mp_rel_read($id, $g),
         'progress' => mp_progress($id, $today), 'familyAllowed' => $g['mpRole'] !== 'peer',
         'familyDraft' => $g['mpRole'] === 'peer' ? null : db_row("SELECT id, body, createdAt FROM mentor_messages WHERE kind = 'Family draft' AND status = 'draft' AND subjectId = ? ORDER BY id DESC LIMIT 1", [$id]),
         'goalsLocked' => function_exists('ms_goals_locked') ? ms_goals_locked($id, $today) : false,
@@ -550,22 +550,26 @@ function member_mp_goals(array $p): array {
 /* ── The NGG Leadership Index ───────────────────────────────────────────── */
 
 function mp_prev_month(string $month): string { return gmdate('Y-m', strtotime($month . '-01T00:00:00Z') - 86400); }
-function mp_scorecard_read(string $id, string $month): array {
+function mp_scorecard_read(string $id, string $month, string $today = ''): array {
     $cur = db_row("SELECT * FROM mentor_scorecards WHERE subjectId = ? AND month = ? AND byKind = 'mentor'", [$id, $month]);
     $prev = db_row("SELECT * FROM mentor_scorecards WHERE subjectId = ? AND month < ? AND byKind = 'mentor' ORDER BY month DESC LIMIT 1", [$id, $month]);
     $self = db_row("SELECT * FROM mentor_scorecards WHERE subjectId = ? AND byKind = 'member' ORDER BY month DESC LIMIT 1", [$id]);
     $dec = static fn($r) => $r ? array_map('intval', explode(',', (string)$r['scores'])) : null;
     return ['month' => $month, 'cur' => $dec($cur), 'prev' => $dec($prev), 'prevMonth' => $prev['month'] ?? null, 'self' => $dec($self), 'selfMonth' => $self['month'] ?? null,
-            'savedAt' => $cur['updatedAt'] ?? null, 'locked' => mp_scorecard_locked($month, (int)($cur['locked'] ?? 0)), 'lockOn' => mp_scorecard_lock_date($month)];
+            'savedAt' => $cur['updatedAt'] ?? null, 'locked' => mp_scorecard_locked($month, (int)($cur['locked'] ?? 0), $today), 'lockOn' => mp_scorecard_lock_date($month)];
 }
 function mp_scorecard_lock_date(string $month): string {
     $o = mp_opts();
     return gmdate('Y-m-d', strtotime($month . '-01T00:00:00Z') + 40 * 86400 - ((int)gmdate('j', strtotime($month . '-01T00:00:00Z') + 40 * 86400) - $o['scorecardLockDay']) * 86400);
 }
-function mp_scorecard_locked(string $month, int $flag): bool {
+/* `$today` is mp_today($p): the same day every other scorecard rule reads ("month_ahead" above all).
+   Reading the wall clock here while the rest read mp_today() made one rule run on two calendars — the
+   suite saved October's card on 10 October and was refused, because the real date had passed the lock.
+   The routes allow-list their fields, so a request cannot set `today` and talk its way past a lock. */
+function mp_scorecard_locked(string $month, int $flag, string $today = ''): bool {
     if ($flag === 2) return false;            // unlocked by an NGG admin
     if ($flag === 1) return true;
-    return gmdate('Y-m-d', mp_lagos_now()) >= mp_scorecard_lock_date($month);
+    return ($today !== '' ? $today : gmdate('Y-m-d', mp_lagos_now())) >= mp_scorecard_lock_date($month);
 }
 
 /** view=scorecard — one mentee's month: cur, prev, the member's self-score, savedAt, locked. */
@@ -574,7 +578,7 @@ function member_mp_scorecard(array $p): array {
     $id = trim((string)($p['subjectId'] ?? ''));
     if (!in_array($id, mp_caseload_ids($g), true)) return ['ok' => false, 'error' => 'not_in_caseload'];
     $month = preg_match('/^\d{4}-\d{2}$/', (string)($p['month'] ?? '')) ? (string)$p['month'] : substr(mp_today($p), 0, 7);
-    return ['ok' => true, 'skills' => MP_SKILLS] + mp_scorecard_read($id, $month);
+    return ['ok' => true, 'skills' => MP_SKILLS] + mp_scorecard_read($id, $month, mp_today($p));
 }
 /** scorecard — ten integers 0–10 in SKILLS order, one set per child per calendar month. */
 function member_mp_scorecard_save(array $p): array {
@@ -589,7 +593,7 @@ function member_mp_scorecard_save(array $p): array {
     foreach ($sc as $v) if (!is_numeric($v) || (int)$v != $v || (int)$v < 0 || (int)$v > 10) return ['ok' => false, 'error' => 'bad_score'];
     $sc = array_map('intval', $sc);
     $have = db_row("SELECT * FROM mentor_scorecards WHERE subjectId = ? AND month = ? AND byKind = 'mentor'", [$id, $month]);
-    if (mp_scorecard_locked($month, (int)($have['locked'] ?? 0))) return ['ok' => false, 'error' => 'locked', 'lockOn' => mp_scorecard_lock_date($month)];
+    if (mp_scorecard_locked($month, (int)($have['locked'] ?? 0), mp_today($p))) return ['ok' => false, 'error' => 'locked', 'lockOn' => mp_scorecard_lock_date($month)];
     $now = now_iso();
     $centre = (string)(db_row('SELECT centre FROM members WHERE memberId = ?', [$id])['centre'] ?? '');
     db_upsert('mentor_scorecards', ['subjectId' => $id, 'month' => $month, 'scores' => implode(',', $sc), 'total' => array_sum($sc), 'byKind' => 'mentor',

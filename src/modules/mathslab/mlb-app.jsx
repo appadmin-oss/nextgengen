@@ -654,7 +654,13 @@ function MlbHome({ go, startPlay, onNotMember }) {
         <ul className="mlb-mini">{d.courses.filter(c => c.enrolled || c.available).slice(0, 3).map(c => <li key={c.id}><span>{c.title}</span><span className="mlb-meter"><span style={{ width: c.pct + "%" }}/></span><b>{c.pct}%</b></li>)}</ul></section>
       <details className="mlb-card mlb-fold"><summary className="mlb-h3">How placement works</summary>
         <p className="mlb-p">One short test, at most 15 questions. It starts near where learners your age usually are and moves up when you get questions right and down when you don’t, until it finds your level. Nothing is timed and nothing is marked while it runs. Everything below your level counts as known, and your reviews check it in a few days.</p>
-        {d.climb.done ? <p className="mlb-meta">Placed wrong? <button type="button" className="mlb-link" onClick={() => { if (!window.confirm("Redo placement? It takes at most 15 questions. Anything you have practised or mastered stays yours.")) return; NGGApi.member.mathslab.replace().then(() => load(), e => window.alert(mlbErr(e))); }}>Redo placement</button> (once a week).</p> : null}</details>
+        {d.climb.done ? <p className="mlb-meta">Placed wrong? <button type="button" className="mlb-link" onClick={async () => {
+          /* The site's own dialog (safety.jsx), not the browser's: the native pop-up can be silenced by the
+             browser, looks like a scam pop-up on a phone, and cannot say plainly what is kept. */
+          if (!(await dialog.confirm({ title: "Redo placement?", body: "It takes at most 15 questions. Anything you have practised or mastered stays yours.", cta: "Redo placement" }))) return;
+          const redo = () => NGGApi.member.mathslab.replace().then(() => load(), async e => {
+            if (await dialog.confirm({ title: "Placement did not restart", body: mlbErr(e), cta: "Try again", cancel: "Close" })) redo(); });
+          redo(); }}>Redo placement</button> (once a week).</p> : null}</details>
       </div><aside className="mlb-col is-side" aria-label="Badges">
       <section className="mlb-card"><div className="mlb-row"><h3 className="mlb-h3">Badges</h3><span className="mlb-meta">{earned} of {badges.length}</span></div>
         <ul className="mlb-badges">{badges.slice(0, 4).map(b => <li key={b.id} className={b.earned ? "is-on" : ""}><i className={"ph " + (b.earned ? "ph-seal-check" : "ph-seal")} aria-hidden="true"/><b>{b.name}</b><span>{b.what}</span></li>)}</ul>

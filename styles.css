@@ -9682,13 +9682,14 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
    transitions (the scroll reveals in motion.jsx stop too), backdrop blur (a full-screen GPU pass every
    frame on a sticky header), fixed backgrounds (a repaint on every scroll), and smooth scrolling.
    Focus rings, borders and colours are untouched. */
-:root[data-lite="on"] *:not(#_):not(#_), :root[data-lite="on"] :not(#_):not(#_)::before, :root[data-lite="on"] :not(#_):not(#_)::after {
-  /* Run animations INSTANTLY rather than not at all: an element that fades in from opacity 0 must
+:root[data-lite="on"] *:not(#_):not(#_):not(#_), :root[data-lite="on"] :not(#_):not(#_):not(#_)::before, :root[data-lite="on"] :not(#_):not(#_):not(#_)::after {
+  /* No important-flags (owner’s rule): like the reduce-motion block above, three :not(#_) give this rule
+     an id-level specificity no stylesheet rule reaches. Run animations INSTANTLY rather than not at all: an element that fades in from opacity 0 must
      still arrive at its end state (the same trick as data-motion="reduce" above). */
-  animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important;
-  transition-duration: 0.01ms !important; transition-delay: 0s !important;
-  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
-  background-attachment: scroll !important; scroll-behavior: auto !important;
+  animation-duration: 0.01ms; animation-iteration-count: 1; animation-delay: 0s;
+  transition-duration: 0.01ms; transition-delay: 0s;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  background-attachment: scroll; scroll-behavior: auto;
 }
 :root[data-lite="on"] { --motion: 0; }
 

@@ -111,7 +111,7 @@ function LxResult({ ex, onDone }) {
         {ex.candidate && ex.candidate.name && <div><dt>Candidate</dt><dd>{ex.candidate.name}{ex.candidate.memberNo ? " · " + ex.candidate.memberNo : ""}</dd></div>}
         <div><dt>Exam no.</dt><dd className="lx-mono">{ex.sittingId}</dd></div>
         <div><dt>{ex.kind === "trial" ? "Trial" : "Paper"}</dt><dd>{ex.title}</dd></div>
-        <div><dt>Handed in</dt><dd>{r.submittedAt ? new Date(r.submittedAt).toLocaleString() : "—"}</dd></div>
+        <div><dt>Handed in</dt><dd>{r.submittedAt ? fmtDateTime(r.submittedAt) : "—"}</dd></div>
       </dl>
       {(r.sections || []).length > 1 && <ul className="lx-sections" aria-label="Score by section">{r.sections.map(x => <li key={x.name}><b>{x.pct}%</b><span>{x.name} · {Math.round(x.got)} of {x.max}</span></li>)}</ul>}
       {sureWrong.length > 0 && <p className="lx-callout"><i className="ph-fill ph-lightning" aria-hidden="true"/> You were <b>sure</b> of {sureWrong.length === 1 ? "one answer" : sureWrong.length + " answers"} that {sureWrong.length === 1 ? "was" : "were"} wrong. That is a misconception, not a slip — read the reason below; it is the most useful thing on this page.</p>}
