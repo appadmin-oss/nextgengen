@@ -79,7 +79,8 @@ function spa_render(string $html, array $hit, string $query = ''): string {
     return $html;
 }
 
-if (PHP_SAPI !== 'cli' || getenv('SPA_SERVE')) {
+/* lab-page.php includes this file for its renderer and serves the page itself (SPA_LIBRARY). */
+if ((PHP_SAPI !== 'cli' || getenv('SPA_SERVE')) && !defined('SPA_LIBRARY')) {
     $root = dirname(__DIR__, 2);
     $html = @file_get_contents($root . '/index.html');
     $routes = [];

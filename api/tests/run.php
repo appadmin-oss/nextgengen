@@ -38171,6 +38171,18 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $missingAlias = array_values(array_filter(array_unique($mm[1]), static fn($a) => spa_route_for('/' . $a . '/x', $routes)['status'] !== 200));
     chk('seo · every address pageFromPath() accepts by name is a page to the 404 front too (' . count(array_unique($mm[1])) . ' read' . ($missingAlias ? '; missing: ' . implode(', ', $missingAlias) : '') . ')',
         count($mm[1]) >= 10 && !$missingAlias);
+    /* /study/labs, /study/tools … reach lab-page.php (the .htaccess rule takes every /study/<word>), which
+       has no Lab page for them. It hands them to spa_render() with the study route; the raw shell would
+       have carried the HOME page's title and canonical. */
+    $studyHits = [];
+    foreach (['/study/labs', '/study/tools', '/study/revise', '/study/maths'] as $sp) {
+        $same = function_exists('lab_seo_shell') && lab_seo_shell($html, $sp) === $html;
+        $out = spa_render($html, ['route' => $routes['study'], 'status' => 200, 'path' => '/study']);
+        $studyHits[] = $same && str_contains($out, 'href="https://next.afrovanguard.org.ng/study"') && !str_contains($out, 'rel="canonical" href="https://next.afrovanguard.org.ng/"');
+    }
+    $lp = (string)file_get_contents(dirname(__DIR__) . '/public/lab-page.php');
+    chk('seo · a /study tab that is not a Lab gets the study page\'s head, not the home page\'s', !in_array(false, $studyHits, true)
+        && str_contains($lp, "spa_render(\$shell, ['route' => \$routes['study']") && str_contains((string)file_get_contents(dirname(__DIR__) . '/public/spa.php'), "!defined('SPA_LIBRARY')"));
     chk('seo · no static sitemap.xml ships to hide the live one', !in_array('sitemap.xml', (function () { preg_match('/const staticAssets = \[(.*?)\];/s', (string)file_get_contents(dirname(__DIR__, 2) . '/build.js'), $m); preg_match_all("/'([^']+)'/", $m[1] ?? '', $x); return $x[1]; })(), true));
 })();
 
