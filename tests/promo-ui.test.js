@@ -222,7 +222,7 @@ const ADMIN_LIST = {
     wide.on('pageerror', e => werrors.push(String(e)));
     await wide.goto(BASE + '/tests/_promo_fixture.html', { waitUntil: 'networkidle' });
     await wide.evaluate(() => window.__render('AdminPromos', {}));
-    await wide.waitForSelector('.admin-table tbody tr', { timeout: 8000 }).catch(async e => { console.error('DEBUG admin promos:', (await wide.innerText('body')).slice(0, 700), werrors); throw e; });
+    await wide.waitForSelector('.admin-table tbody tr', { timeout: 8000 });
 
     chk('the admin screen renders without a page error', werrors.length === 0);
     chk('every promotion is a row', await wide.locator('.admin-table tbody tr').count() === 2);

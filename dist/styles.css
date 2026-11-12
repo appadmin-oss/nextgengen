@@ -9691,7 +9691,10 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
   backdrop-filter: none; -webkit-backdrop-filter: none;
   background-attachment: scroll; scroll-behavior: auto;
 }
-:root[data-lite="on"] { --motion: 0; }
+:root[data-lite="on"] { --motion: 0; --lite-blur: none; }
+/* The two switches an INLINE style reads, because no stylesheet rule outranks an inline declaration
+   (and important-flags are not used here): motion as calc(Ns * var(--motion, 1)), blur as
+   var(--lite-blur, blur(Npx)). tests/lite-mode.test.js holds every inline style in the source to them. */
 
 /* ── Labs: Remember it (mlb-app.jsx MlbRemember) — a picture sequence, learner-paced, ending in recall ── */
 .mlb-rem { display: grid; gap: 12px; }

@@ -115,6 +115,7 @@ function fixture(manifest) {
   };
 </script>
 <script src="/dist/${manifest.bundle.file}"></script>
+<script src="/dist/${manifest.more.file}"></script>
 <script>
   ReactDOM.createRoot = window.__realCreateRoot;
   /* Replace the auth hook AFTER the bundle has defined it. A top-level

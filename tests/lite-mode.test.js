@@ -17,6 +17,27 @@ let passed = 0, failed = 0;
 const ok = (label, cond, extra) => { if (cond) { passed++; console.log('  ✓ ' + label); } else { failed++; console.log('  ✗ FAIL: ' + label + (extra ? '\n      ' + extra : '')); } };
 
 (async () => {
+  /* Every INLINE animation, transition and backdrop blur in the source goes through Lite's switches;
+     a bare one would keep animating on the cheap phone Lite exists for. (Stylesheet strings inside a
+     template literal are covered by Lite's own rule and are not inline styles.) */
+  {
+    const bad = [];
+    const walk = d => fs.readdirSync(d, { withFileTypes: true }).forEach(e => {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) { if (!/^(node_modules|dist|docs|vendor|\.git)$/.test(e.name)) walk(f); return; }
+      if (!/\.jsx$/.test(e.name)) return;
+      fs.readFileSync(f, 'utf8').split('\n').forEach((l, i) => {
+        const re = /\b(animation|transition|backdropFilter|WebkitBackdropFilter)\s*:\s*"([^"]*)"/g; let m;
+        while ((m = re.exec(l))) {
+          const v = m[2], blur = /ackdropFilter$/.test(m[1]);
+          if (blur ? !/^var\(--lite-blur\b/.test(v) && v !== 'none' : !/var\(--motion\b/.test(v) && !/^none$/.test(v))
+            bad.push(path.relative(ROOT, f) + ':' + (i + 1) + ' ' + m[1] + ': ' + v);
+        }
+      });
+    });
+    walk(ROOT);
+    ok('every inline animation, transition and blur in the source reads Lite\'s switches', bad.length === 0, bad.slice(0, 8).join('\n      '));
+  }
   const dist = path.join(ROOT, 'dist');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ngg-lite-'));
   const router = path.join(tmp, 'router.php');
@@ -57,13 +78,21 @@ readfile(${JSON.stringify(dist)} . '/index.html');`);
     t = await open(1);
     ok('a low-end device (1 GB) is in Lite before first paint', await t.page.evaluate(() => window.__liteAtPaint) === 'on' && await t.page.evaluate(() => document.documentElement.getAttribute('data-lite')) === 'on');
     ok('…and the home page still draws, with no error', t.errs.length === 0, t.errs.join(' | '));
+    /* Two ways the product animates. A stylesheet rule, which Lite's own rule outranks; and an inline
+       style, which NO stylesheet rule outranks without an important-flag (not used here), so every
+       inline one reads Lite's switches instead: calc(Ns * var(--motion, 1)) and var(--lite-blur, …).
+       The source scan below holds every inline style to that. */
     const css = await t.page.evaluate(() => {
-      const el = document.createElement('div'); el.style.cssText = 'animation: spin 2s infinite; transition: opacity 1s; backdrop-filter: blur(8px)';
-      document.body.appendChild(el); const c = getComputedStyle(el);
-      const r = { a: c.animationDuration, n: c.animationIterationCount, t: c.transitionDuration, b: c.backdropFilter }; el.remove(); return r;
+      const st = document.createElement('style'); st.textContent = '.lite-probe{animation:spin 2s infinite;transition:opacity 1s;backdrop-filter:blur(8px)}'; document.head.appendChild(st);
+      const read = el => { document.body.appendChild(el); const c = getComputedStyle(el); const r = { a: c.animationDuration, n: c.animationIterationCount, t: c.transitionDuration, b: c.backdropFilter }; el.remove(); return r; };
+      const sheet = document.createElement('div'); sheet.className = 'lite-probe';
+      const inline = document.createElement('div');
+      inline.style.cssText = 'animation: spin calc(2s * var(--motion, 1)) infinite; transition: opacity calc(1s * var(--motion, 1)); backdrop-filter: var(--lite-blur, blur(8px))';
+      const r = { sheet: read(sheet), inline: read(inline) }; st.remove(); return r;
     });
+    const instant = c => parseFloat(c.a) < 0.001 && parseFloat(c.t) < 0.001 && (c.b === 'none' || c.b === '');
     ok('in Lite, animations and transitions finish instantly (an element that fades in still arrives) and blur is off',
-      parseFloat(css.a) < 0.001 && css.n === '1' && parseFloat(css.t) < 0.001 && (css.b === 'none' || css.b === ''), JSON.stringify(css));
+      instant(css.sheet) && css.sheet.n === '1' && instant(css.inline), JSON.stringify(css));
     await t.page.locator('.a11y-nav-btn').first().click().catch(() => {});
     const panel = await t.page.locator('.a11y-settings').first().innerText().catch(() => '');
     ok('the Accessibility panel offers Lite mode and says it is on automatically for this device', /Lite mode/.test(panel) && /on automatically for this device/.test(panel), panel.slice(0, 200));

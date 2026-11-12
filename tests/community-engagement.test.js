@@ -86,17 +86,18 @@ const DATA = {
 
   fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">
-</head><body><div id="root"></div>
+</head><body><div id="root" hidden></div><div id="fx"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
 <script src="/dist/vendor/tanstack-table.min.js"></script>
 <script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
 <script src="/dist/api-client.js"></script>
 <script src="/dist/${manifest.bundle.file}"></script>
+<script src="/dist/${manifest.more.file}"></script>
 <script>
   window.__asked = [];
   NGGApi.admin.communityEngagement = (o) => { window.__asked.push(o); return Promise.resolve(${JSON.stringify(DATA)}); };
-  ReactDOM.createRoot(document.getElementById('root')).render(
+  ReactDOM.createRoot(document.getElementById('fx')).render(
     React.createElement('div', { className: 'admin-section' },
       React.createElement(window.CommunityEngagementPanel)));
 </script></body></html>`);

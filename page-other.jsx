@@ -7353,7 +7353,7 @@ function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
     </div>
     {picked.length > 0 && (
       <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 90, padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))",
-                    background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "blur(8px)" }}>
+                    background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "var(--lite-blur, blur(8px))" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", gap: 10, alignItems: "center" }}>
           <span style={{ fontWeight: 800, fontSize: 15 }}>{picked.length} selected</span>
           <button type="button" onClick={() => setPicked([])}
@@ -7503,7 +7503,7 @@ function SessionPanel({ courses, centre, onRemarks }) {
     </div>
 
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 90, padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))",
-                  background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "blur(8px)" }}>
+                  background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "var(--lite-blur, blur(8px))" }}>
       <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", gap: 10, alignItems: "center" }}>
         <span style={{ fontSize: 13, color: err ? "#ff9a9a" : "rgba(230,238,255,.7)", flex: 1, minWidth: 0 }}>{err || saved || (d && d.log ? "Filed — saving again updates it" : "Not filed yet")}</span>
         <button onClick={submit} disabled={busy}
