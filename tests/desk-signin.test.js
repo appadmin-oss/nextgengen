@@ -90,7 +90,8 @@ async function memberDoor(p, ident, how) {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', WEB], { cwd: WEB, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    { const exe = require('./_responsive-probe').chromiumPath(require('fs'));   // either layout: chrome-linux/ or chrome-linux64/
+      browser = await chromium.launch(exe ? { executablePath: exe } : {}); }
     console.log('Let in at the desk, from the user’s side (production build):');
 
     // 0. Google's way: staff press Let in, the person types their email or ID, Continue — and is in.

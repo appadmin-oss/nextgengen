@@ -83,13 +83,14 @@ const ADMIN_LIST = {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">
 <style>body{margin:0;background:#fbf7ed;padding:16px}</style>
-</head><body class="cm-app"><div id="root"></div>
+</head><body class="cm-app"><div id="root" hidden></div><div id="fx"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
 <script src="/dist/vendor/tanstack-table.min.js"></script>
 <script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
 <script src="/dist/api-client.js"></script>
 <script src="/dist/${manifest.bundle.file}"></script>
+<script src="/dist/${manifest.more.file}"></script>
 <script>
   window.__tracked = [];      // every promoTrack call, in order
   window.__went = [];         // every in-app navigation the card asked for
@@ -112,7 +113,9 @@ const ADMIN_LIST = {
 
   let root = null;
   window.__render = (what, props) => {
-    if (!root) root = ReactDOM.createRoot(document.getElementById('root'));
+    // Its own mount: the bundle always mounts the whole app into #root, and two React roots on one
+    // element race; whichever renders last wins (the app's 404 page, for this address).
+    if (!root) root = ReactDOM.createRoot(document.getElementById('fx'));
     root.render(React.createElement(window[what], props));
   };
   window.__unmount = () => { if (root) { root.unmount(); root = null; } };
@@ -219,7 +222,7 @@ const ADMIN_LIST = {
     wide.on('pageerror', e => werrors.push(String(e)));
     await wide.goto(BASE + '/tests/_promo_fixture.html', { waitUntil: 'networkidle' });
     await wide.evaluate(() => window.__render('AdminPromos', {}));
-    await wide.waitForSelector('.admin-table tbody tr', { timeout: 8000 });
+    await wide.waitForSelector('.admin-table tbody tr', { timeout: 8000 }).catch(async e => { console.error('DEBUG admin promos:', (await wide.innerText('body')).slice(0, 700), werrors); throw e; });
 
     chk('the admin screen renders without a page error', werrors.length === 0);
     chk('every promotion is a row', await wide.locator('.admin-table tbody tr').count() === 2);
