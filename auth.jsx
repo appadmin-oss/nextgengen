@@ -570,7 +570,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     : stage === "id" ? "Use your email, Member ID or the ID on your card."
     : stage === "password" ? (uniform && methods.includes("code") ? "Use your password, or we’ll email you a sign-in code." : null)
     : stage === "reset-request" ? "We’ll email you a code to set a new password."
-    : stage === "reset-new" ? (resetToken ? "Choose a password. You’ll be signed in straight after." : sent ? <>{ifAccount} Enter it, then choose a password.{identifier.includes("@") ? <> If brothers or sisters share this email, it has a button for each of you instead: open the one with your name.</> : null}</> : "Enter the code from your email, then choose a password.")
+    : stage === "reset-new" ? (resetToken ? "Choose a password. You’ll be signed in straight after." : sent ? <>{ifAccount} Enter it, then choose a password.</> : "Enter the code from your email, then choose a password.")
     : (sent && knownId) ? ifAccount : "Enter your Member ID and the 6-digit code from your email.";
 
   return (
@@ -688,6 +688,7 @@ function SignInModal({ seed, onClose, onVerified }) {
                 <span className="signin-label" id="signin-rotp-l">6-digit code</span>
                 <SignInCode id="signin-rotp" labelledBy="signin-rotp-l" value={otp} bad={false} autoFocus inputRef={null}
                   onChange={(v) => { setErr(""); setOtp(v); }} onComplete={() => { const el = document.getElementById("signin-newpw"); if (el) el.focus(); }}/>
+                {identifier.includes("@") && <p className="signin-help">Shared with a brother, sister or parent? The email has a button for each person instead of a code. Open yours.</p>}
               </>
             )}
             <label className="signin-label" htmlFor="signin-newpw">New password</label>

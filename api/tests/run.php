@@ -34040,6 +34040,19 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $v = auth_verify(['memberId' => 'staff.home@example.com', 'otp' => $ch['otp'], 'ip' => '10.9.8.1']);
     chk('sign-in: a child sharing an email with a staff parent signs in with the emailed code (it went to the child, it is checked on the child)',
         $ch['memberId'] === 'NGG-RV-K1' && !empty($v['ok']) && ($v['member']['memberId'] ?? '') === 'NGG-RV-K1');
+    // …and the staff parent can reset THEIR password from that address (it used to email the child's link only).
+    $GLOBALS['__mail_sink'] = [];
+    $rr = auth_reset_request(['identifier' => 'staff.home@example.com', 'ip' => '10.9.8.3']);
+    $mail = $GLOBALS['__mail_sink'][0] ?? [];
+    $tok = fn($id) => (string)(db_row("SELECT token FROM auth_sessions WHERE memberId = ? AND purpose = 'reset' ORDER BY id DESC LIMIT 1", [$id])['token'] ?? '');
+    chk('reset: a staff parent and child on one address get ONE email with a "Set …\'s password" for each, the staff one marked',
+        !empty($rr['ok']) && count($GLOBALS['__mail_sink']) === 1 && str_contains($mail['html'] ?? '', 'Set Funmi') && str_contains($mail['html'] ?? '', 'Set Dayo')
+        && str_contains($mail['html'] ?? '', 'staff account') && $tok('NGG-RV-ST') !== '' && $tok('NGG-RV-K1') !== '');
+    $rc = auth_reset_confirm(['token' => $tok('NGG-RV-ST'), 'password' => 'new-staff-pass-55', 'ip' => '10.9.8.3']);
+    $li = auth_login(['identifier' => 'staff.home@example.com', 'password' => 'new-staff-pass-55', 'ip' => '10.9.8.3']);
+    chk('reset: the staff link sets the staff password — and signs them in with it — not the child\'s',
+        !empty($rc['ok']) && ($rc['member']['memberId'] ?? '') === 'NGG-RV-ST' && ($li['member']['memberId'] ?? '') === 'NGG-RV-ST'
+        && (string)(db_row("SELECT passwordHash FROM members WHERE memberId = 'NGG-RV-K1'")['passwordHash'] ?? '') === '');
     $mk('NGG-RV-S1', 'Gbenga Suspended', 'ojo.home@example.com', ['status' => 'suspended']);
     $mk('NGG-RV-S2', 'Halima Active', 'ojo.home@example.com');
     $ch = $code('ojo.home@example.com', '10.9.8.2');

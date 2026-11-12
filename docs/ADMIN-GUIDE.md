@@ -3954,6 +3954,10 @@ its email with N other members" on the row).
 - **Forgot your password?** sends one email with a **Set {name}'s password**
   link for each account, not a code: the screen says so, so nobody waits for a
   code that is not coming.
+  A member of staff whose address is also their child's gets their own link in
+  that email, marked **staff account**, and it sets the staff password only.
+  (Before 12 November 2026 they were emailed the child's link and no way to
+  reset their own.)
 - A suspended account is never offered, and neither is a staff account that
   signs in by password only (staff keep using their password). Until 12
   November 2026, a child whose address was shared with a staff parent, or with

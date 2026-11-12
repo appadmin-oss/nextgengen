@@ -807,6 +807,12 @@ function auth_reset_request(array $p): array {
     if (empty($found['ok'])) return $found;
     $member = $found['member'];
     $masked = auth_masked_for($identifier);
+    /* Every live account on the address, staff included. Sign-in leaves password-only staff out
+       (they are never sent a code), and reset used the same list: a staff parent on their child's
+       address asked to reset THEIR password and was emailed the child's. A password is exactly
+       what staff do sign in with, so each account gets its own "Set {name}'s password". */
+    $every = strpos($identifier, '@') !== false ? auth_reset_accounts($identifier) : [];
+    if (count($every) > 1) return auth_reset_shared($every, $identifier, $masked, $ip, (string)($p['userAgent'] ?? ''));
     if (!$member && !empty($found['shared'])) return auth_reset_shared($found['shared'], $identifier, $masked, $ip, (string)($p['userAgent'] ?? ''));
     if (!$member) {
         if (!empty($found['honest'])) return ['ok' => false, 'error' => 'no_account'];
@@ -852,6 +858,15 @@ function auth_reset_request(array $p): array {
     return ['ok' => true, 'masked' => $masked, 'delivery' => $delivered];
 }
 
+/** The accounts a password reset on an address can set: every one not suspended, merged or deleted,
+ *  password-only staff included (unlike auth_email_accounts, which is who may be sent a sign-in code). */
+function auth_reset_accounts(string $email): array {
+    $email = strtolower(trim($email));
+    if ($email === '' || strpos($email, '@') === false) return [];
+    return array_values(array_filter(db_all('SELECT * FROM members WHERE lower(trim(email)) = ? ORDER BY id', [$email]),
+        static fn($m) => !in_array(strtolower(trim((string)($m['status'] ?? ''))), ['suspended', 'merged', 'deleted'], true)));
+}
+
 /** A password reset to an address several accounts share: one email, one link per person (token-only, each its own account). */
 function auth_reset_shared(array $acc, string $email, string $masked, string $ip, string $ua): array {
     $key = auth_shared_key($email);
@@ -870,7 +885,8 @@ function auth_reset_shared(array $acc, string $email, string $masked, string $ip
             'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now), 'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + 30 * 60), 'verifiedAt' => '', 'ip' => $ip, 'userAgent' => $ua]);
         $link = ($CONFIG['app_origin'] ?? '') . '/?reset=' . rawurlencode($token);
         $rows[] = '<p style="margin:0 0 10px"><a href="' . htmlspecialchars($link, ENT_QUOTES) . '" style="display:inline-block;padding:10px 16px;border-radius:10px;background:#0b0b0c;color:#ffffff;text-decoration:none;font-weight:600">Set ' . htmlspecialchars(explode(' ', trim((string)$m['fullName']))[0] ?: 'this', ENT_QUOTES) . '\'s password</a>'
-            . ($m['displayId'] ? ' <span style="color:#4a4a50;font-size:13px">' . htmlspecialchars((string)$m['displayId'], ENT_QUOTES) . '</span>' : '') . '</p>';
+            . ($m['displayId'] ? ' <span style="color:#4a4a50;font-size:13px">' . htmlspecialchars((string)$m['displayId'], ENT_QUOTES) . '</span>' : '')
+            . (is_admin_role((string)($m['role'] ?? '')) ? ' <span style="color:#4a4a50;font-size:13px">staff account</span>' : '') . '</p>';
     }
     $html = email_template([
         'eyebrow'  => 'Password reset',

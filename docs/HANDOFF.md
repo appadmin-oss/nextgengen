@@ -7358,3 +7358,11 @@ Results:
   - ids-print 16/0
   - card-export 42/0
 - `vendor/VERSIONS.json` records card-export.js's new checksum (build.test 31/0).
+
+### 12 November 2026 — A staff parent can reset their own password from a shared address
+
+Owner: "Please work on it." The background: password sign-in on a shared address already chose the right account, because the password says whose. Reset did not. It chose accounts by the sign-in list (`auth_email_accounts`), which leaves out password-only staff because they are never sent a code. So a staff parent and one child counted as "just the child": the staff member asked to reset their password and was emailed the child's.
+
+`auth_reset_request` now counts every live account on the address, staff included (`auth_reset_accounts`). With more than one, the email has a **Set {name}'s password** link for each, and the staff one is marked "staff account". `auth_reset_confirm` is unchanged: it sets that account's password, revokes its sessions and still asks for the second step. A staff member alone on an address resets exactly as before. The sign-in screen's copy names this case.
+
+Two `run.php` tests (7086 / 0) fail without the change. They check the email, then that the staff link sets the staff password, signs them in with it, and leaves the child's untouched.
