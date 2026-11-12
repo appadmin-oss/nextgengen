@@ -938,6 +938,9 @@ function MlbLearn({ comp, go, startPlay, lite }) {
   const [st, load] = useMlb(() => lite ? NGGApi.public.mathslabComp(comp) : NGGApi.member.mathslab.comp(comp), [comp, lite]);
   React.useEffect(() => { const t = st.phase === "ok" && st.d && st.d.comp ? st.d.comp.title : ""; if (t && seoTitle.current !== comp + t) { seoTitle.current = comp + t; mlbSeo({ v: "learn", comp }, t); } }, [st, comp]);
   const [shown, setShown] = React.useState(1);
+  /* The worked example's last "Show the next line" is replaced by the answer: focus goes to it, not to the page. */
+  const ansRef = React.useRef(null), weActed = React.useRef(false);
+  React.useEffect(() => { if (weActed.current && ansRef.current) { weActed.current = false; ansRef.current.focus({ preventScroll: true }); } }, [shown]);
   const [step, setStep] = React.useState(0);
   const [reached, setReached] = React.useState(0);
   const [done, setDone] = React.useState({});
@@ -1010,7 +1013,7 @@ function MlbLearn({ comp, go, startPlay, lite }) {
           <MlbMath as="p" className="mlb-stem" text={ex.stem}/><MlbDiagram d={ex.diagram}/>
           {ex.lines ? <ol className="mlb-lines">{ex.lines.map((l, i) => <li key={i}><MlbMath text={l}/></li>)}</ol> : null}
           <ol className="mlb-steps">{ex.steps.slice(0, shown).map((x, i) => <li key={i}><MlbMath text={x}/></li>)}</ol>
-          {shown < ex.steps.length ? <button type="button" className="stt-btn" onClick={() => setShown(n => n + 1)}>Show the next line</button> : <p className="mlb-ans">Answer: <MlbMath text={ex.answer}/></p>}
+          {shown < ex.steps.length ? <button type="button" className="stt-btn" onClick={() => { if (shown + 1 >= ex.steps.length) weActed.current = true; setShown(n => n + 1); }}>Show the next line</button> : <p className="mlb-ans" ref={ansRef} tabIndex={-1}>Answer: <MlbMath text={ex.answer}/></p>}
         </section> : null}
         {cur.id === "practise" ? <section className="mlb-card mlb-status" aria-label="Practise">
           <h3 className="mlb-h3">{lite ? "Try some questions" : "Now you try"}</h3>
@@ -1101,7 +1104,12 @@ function MlbWhy({ why, onDone }) {
   const all = shown >= why.steps.length;
   const pending = !all ? why.steps[shown] : null, judge = pending ? mark(pending.s) : "";
   React.useEffect(() => { if (all && onDone) onDone(); }, [all]); // eslint-disable-line
-  const decide = said => { const ok = said === judge; setMarks(m => [...m, ok]); setLast({ ok, was: judge }); setShown(n => n + 1); };
+  /* The last Right / Wrong / Next line press removes the very button that had focus, and focus fell
+     to the page: a keyboard or screen-reader learner was thrown back to "Skip to content". It goes
+     to what replaced the buttons instead — the score, or the closing note — and reading continues. */
+  const endRef = React.useRef(null), acted = React.useRef(false);
+  React.useEffect(() => { if (all && acted.current && endRef.current) endRef.current.focus({ preventScroll: true }); }, [all]);
+  const decide = said => { acted.current = true; const ok = said === judge; setMarks(m => [...m, ok]); setLast({ ok, was: judge }); setShown(n => n + 1); };
   const right = marks.filter(Boolean).length;
   return (
     <section className="mlb-card mlb-why" aria-labelledby="mlb-why-h">
@@ -1119,9 +1127,9 @@ function MlbWhy({ why, onDone }) {
             <button type="button" className="stt-btn mlb-judge-ok" onClick={() => decide("ok")}><i className="ph ph-check" aria-hidden="true"/>Right</button>
             <button type="button" className="stt-btn mlb-judge-no" onClick={() => decide("no")}><i className="ph ph-x" aria-hidden="true"/>Wrong</button>
           </div></div>
-        : !all ? <div className="mlb-actions"><button type="button" className="stt-btn" onClick={() => { setLast(null); setShown(n => n + 1); }}>{T.next || "Next line"}</button></div>
-        : <>{marks.length ? <p className="mlb-why-score" role="status"><b>You judged {right} of {marks.length} correctly.</b> {right === marks.length ? "You have the rule." : "Read the reasons on the ones you missed — practice will ask about exactly those."}</p> : null}
-          <p className="mlb-meta">{T.foot || "Each line only uses things we already know from the lines above it. In practice you will be asked why a line is true, and to put the lines in order."}</p></>}
+        : !all ? <div className="mlb-actions"><button type="button" className="stt-btn" onClick={() => { acted.current = true; setLast(null); setShown(n => n + 1); }}>{T.next || "Next line"}</button></div>
+        : <div className="mlb-why-end" ref={endRef} tabIndex={-1}>{marks.length ? <p className="mlb-why-score" role="status"><b>You judged {right} of {marks.length} correctly.</b> {right === marks.length ? "You have the rule." : "Read the reasons on the ones you missed — practice will ask about exactly those."}</p> : null}
+          <p className="mlb-meta">{T.foot || "Each line only uses things we already know from the lines above it. In practice you will be asked why a line is true, and to put the lines in order."}</p></div>}
     </section>
   );
 }
@@ -1233,7 +1241,7 @@ function MlbDaily({ go }) {
         {choice ? <div className="mlb-opts" role="radiogroup" aria-label="Choose an answer">{it.options.map((o, k) => (
           <button key={k} type="button" role="radio" aria-checked={val === k} disabled={done || busy} className={"mlb-opt" + (val === k ? " is-on" : "") + (done && answer === o ? " is-right" : "")} onClick={() => setVal(k)}>
             <span className="mlb-opt-l" aria-hidden="true">{k + 1}</span><MlbMath text={o}/></button>))}</div>
-          : <MlbInput item={it} value={val} onChange={setVal} onEnter={submit} disabled={done || busy}/>}
+          : <MlbInput item={it} value={val} onChange={setVal} onEnter={submit} disabled={done}/>}
         {!done ? (hint ? <p className="mlb-hint"><i className="ph ph-lightbulb" aria-hidden="true"/><MlbMath text={it.hint}/></p>
           : <button type="button" className="mlb-link" onClick={() => setHint(true)}><i className="ph ph-lightbulb" aria-hidden="true"/> Show the hint (it’s free)</button>) : null}
         {fb && !fb.correct && !fb.done ? <div className="mlb-fb is-no" role="status"><b className="mlb-fb-h"><i className="ph-fill ph-lightbulb" aria-hidden="true"/>Not yet — {left} {left === 1 ? "try" : "tries"} left.</b>
@@ -1273,7 +1281,8 @@ function MlbInput({ item, value, onChange, onEnter, disabled }) {
           onChange={e => onChange(e.target.value)} onKeyDown={e => e.key === "Enter" && onEnter()}/>{item.unit && item.unit !== "₦" ? <span className="mlb-unit">{item.unit}</span> : null}</div>
       {item.kind === "expr" && value ? <p className="mlb-preview" aria-live="polite">Reads as: <MlbMath text={"$" + String(value).replace(/sqrt\(/g, "\\sqrt(").replace(/log\(/g, "\\log(").replace(/ln\(/g, "\\ln(").replace(/\*/g, "\\times ") + "$"}/></p> : null}
       {item.dp != null ? <p className="mlb-meta mlb-rule">Give your answer correct to {item.dp === 0 ? "the nearest whole number" : item.dp + " decimal place" + (item.dp > 1 ? "s" : "")}.</p> : null}
-      <div className="mlb-keys">{(MLB_KEYS[item.kind] || []).map(k => <button key={k} type="button" className="mlb-key" disabled={disabled} onClick={() => ins(k)} aria-label={"Type " + k}>{k}</button>)}</div>
+      {/* The symbol keys type into the box; once it is marked they cannot act, so they are not drawn. */}
+      {disabled ? null : <div className="mlb-keys">{(MLB_KEYS[item.kind] || []).map(k => <button key={k} type="button" className="mlb-key" disabled={disabled} onClick={() => ins(k)} aria-label={"Type " + k}>{k}</button>)}</div>}
     </div>
   );
 }
@@ -1348,6 +1357,13 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini }) {
   React.useEffect(() => { if (!ses || ses.mode !== "exam") return undefined; tStart.current = Date.now(); const h = setInterval(() => setTick(Date.now()), 1000); return () => clearInterval(h); }, [ses]);
   React.useEffect(() => { NGGApi.member.mathslab.start(start.mode, { comp: start.comp, stage: start.stage, paper: start.paper }).then(setSes, e => setErr(mlbErr(e))); }, []); // eslint-disable-line
   React.useEffect(() => { t0.current = Date.now(); }, [i]);
+  /* Where focus goes. Check turns into "Checking…" (disabled) while the answer is marked, and a
+     disabled button cannot hold focus, so every Check and every Next question dropped a keyboard or
+     screen-reader learner back to the top of the page. Feedback in: the next action ("Next
+     question"). A new question: its heading, so it is read from the start. */
+  const qRef = React.useRef(null), goRef = React.useRef(null);
+  React.useEffect(() => { if (ses && qRef.current) qRef.current.focus({ preventScroll: i === 0 }); }, [i, !!ses]); // eslint-disable-line
+  React.useEffect(() => { if (fb && goRef.current) goRef.current.focus({ preventScroll: true }); }, [fb]);
   /* Keyboard, Duolingo's way: 1–9 pick an answer, Enter checks it or moves on. Never while typing
      in a field (digits there are the answer) or when Enter is pressed on a button (it clicks it). */
   const keys = React.useRef(null);
@@ -1412,7 +1428,7 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini }) {
       {place ? <div className="mlb-placebar" role="progressbar" aria-label="Placement" aria-valuemin="0" aria-valuemax={ses.atMost} aria-valuenow={i}><span style={{ width: Math.round(i / ses.atMost * 100) + "%" }}/></div>
         : <ol className="mlb-pips" aria-label={"Question " + (i + 1) + " of " + ses.items.length}>{ses.items.map((_, k) => <li key={k} className={k < i ? "is-done" : k === i ? "is-on" : ""}/>)}</ol>}
       <section className="mlb-q" aria-live="polite">
-        <p className="mlb-qn">{place ? "Question " + (i + 1) + " · at most " + ses.atMost + ", usually fewer · no timer, answer as well as you can" : "Question " + (i + 1) + " of " + ses.items.length}
+        <p className="mlb-qn" ref={qRef} tabIndex={-1}>{place ? "Question " + (i + 1) + " · at most " + ses.atMost + ", usually fewer · no timer, answer as well as you can" : "Question " + (i + 1) + " of " + ses.items.length}
           {it.dim === "challenge" ? <span className="mlb-chall"><i className="ph-fill ph-lightning" aria-hidden="true"/>Challenge{practice ? " — take your time; the hint is there if you need it" : ""}</span> : null}</p>
         <MlbMath as="p" className="mlb-stem" text={it.stem}/>
         <MlbDiagram d={it.diagram}/>
@@ -1443,7 +1459,7 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini }) {
             <button type="button" className="stt-btn" onClick={() => { onDone(); go({ v: "map" }); }}>Try another topic for now</button>
           </div>
         </section> : null}
-        <div className="mlb-actions">{fb ? <button type="button" className="mlb-go" onClick={next}>{last ? "See how you did" : "Next question"}</button>
+        <div className="mlb-actions">{fb ? <button type="button" className="mlb-go" ref={goRef} onClick={next}>{last ? "See how you did" : "Next question"}</button>
           : <button type="button" className="mlb-go" disabled={empty || busy} onClick={submit}>{busy ? "Checking…" : practice ? "Check" : last ? "Submit" : "Next"}</button>}
           {exam && !fb ? <button type="button" className="stt-btn" disabled={busy} onClick={skip}>{last ? "Leave it and hand in" : "Leave it, next question"}</button> : null}
           {exam && !last ? <button type="button" className="stt-btn mlb-handin" disabled={busy} onClick={finish}>Hand in now</button> : null}</div>
@@ -1517,6 +1533,9 @@ function MlbResult({ res, onDone, go, onAgain, onMini }) {
   // A stage or a course completed in this session: celebrate it first, over everything.
   const wins = (res.certificates || []).filter(c => c.scope === "stage").concat((res.certificates || []).filter(c => c.scope === "course"));
   const [winOpen, setWinOpen] = React.useState(wins.length > 0);
+  // The result's heading takes focus (the button that led here is gone); a stage win's dialog takes it first.
+  const resRef = React.useRef(null);
+  React.useEffect(() => { if (!winOpen && resRef.current) resRef.current.focus({ preventScroll: true }); }, []); // eslint-disable-line
   // Tell the tab bar a certificate arrived, so its "new" dot shows at once.
   React.useEffect(() => { if (wins.length) try { window.dispatchEvent(new CustomEvent("mlb:certs-new")); } catch (_) {} }, []);
   const lit = res.changes.filter(c => MLB_GOOD_V.indexOf(c.to) >= 0).length;
@@ -1529,9 +1548,13 @@ function MlbResult({ res, onDone, go, onAgain, onMini }) {
      question", "you came back after a miss"); a low score is "keep going",
      never a verdict. */
   const win = res.pct >= 85, perfect = res.pct === 100 && res.total > 0;
-  const head = perfect ? "Perfect!" : win ? (kind === "Practice" || kind === "Review" ? "Session complete!" : kind + " passed!") : res.pct >= 60 ? "Good effort!" : "You finished it. Keep going!";
+  /* A paper handed in with questions untouched was told "You finished it" — after 1 of 40. It says
+     what happened instead; the time running out is not "early", the child did not choose it. */
+  const early = !!(res.exam && res.exam.answered < res.total && !res.exam.overTime);
+  const head = perfect ? "Perfect!" : win ? (kind === "Practice" || kind === "Review" ? "Session complete!" : kind + " passed!") : early ? "Handed in after " + res.exam.answered + " of " + res.total : res.pct >= 60 ? "Good effort!" : "You finished it. Keep going!";
   const accWord = perfect ? "Flawless" : res.pct >= 85 ? "Amazing" : res.pct >= 70 ? "Great" : res.pct >= 50 ? "Getting there" : "Building up";
-  const mins = res.secs ? Math.max(1, Math.round(res.secs / 60)) : 0;
+  // Under a minute is said in seconds: two seconds read as "1 min".
+  const mins = res.secs ? Math.max(1, Math.round(res.secs / 60)) : 0, timeTxt = res.secs && res.secs < 60 ? res.secs + " s" : mins + " min";
   return (
     <div className="mlb-stack">
       {winOpen ? <MlbStageWin certs={wins} xp={res.xp} go={go} onClose={() => setWinOpen(false)}/> : null}
@@ -1541,7 +1564,7 @@ function MlbResult({ res, onDone, go, onAgain, onMini }) {
           <div className="mlb-res-ring" style={{ "--pct": res.pct + "%" }} role="img" aria-label={res.pct + "% right"}><b>{res.pct}%</b></div>
           <div className="mlb-res-txt">
             <p className="mlb-eyebrow">{kind}</p>
-            <h2 id="mlb-res-h" className="mlb-h2">{head}</h2>
+            <h2 id="mlb-res-h" className="mlb-h2" ref={resRef} tabIndex={-1}>{head}</h2>
             <p className="mlb-p">{res.right} of {res.total} right. {res.message}</p>
           </div>
         </div>
@@ -1549,7 +1572,7 @@ function MlbResult({ res, onDone, go, onAgain, onMini }) {
           <li className="is-xp"><span>Total XP</span><b><i className="ph-fill ph-lightning" aria-hidden="true"/>{res.xp || 0}</b></li>
           <li className="is-acc"><span>{accWord}</span><b><i className="ph-fill ph-target" aria-hidden="true"/>{res.pct}%</b></li>
           {res.bestRun >= 2 ? <li className="is-run"><span>Best run</span><b><i className="ph-fill ph-fire" aria-hidden="true"/>{res.bestRun} in a row</b></li>
-            : mins ? <li className="is-time"><span>Time on task</span><b><i className="ph-fill ph-timer" aria-hidden="true"/>{mins} min</b></li> : null}
+            : mins ? <li className="is-time"><span>Time on task</span><b><i className="ph-fill ph-timer" aria-hidden="true"/>{timeTxt}</b></li> : null}
         </ul>
         {lit ? <p className="mlb-res-chips"><span className="mlb-chip is-ok"><i className="ph-fill ph-star" aria-hidden="true"/>{lit} star{lit === 1 ? "" : "s"} lit on your map</span></p> : null}
         {res.exam ? <section className="mlb-exrep" aria-label="Your paper">

@@ -87,9 +87,11 @@ function engWordMatch(target, heard) {
 
 function EngPlayButton({ text, vi, slow, label, className, onPlay }) {
   const [busy, setBusy] = React.useState(false), [err, setErr] = React.useState("");
-  const go = async () => { if (onPlay) onPlay(); setBusy(true); setErr(""); try { await engPlay(text, vi || 0, slow); } catch (_) { setErr("The voice could not play. Check your connection and try again."); } setBusy(false); };
+  /* Busy while the word plays, but never `disabled`: a disabled button drops the focus the learner pressed
+     it with. aria-disabled says it is busy, and a second press while it plays is ignored. */
+  const go = async () => { if (busy) return; if (onPlay) onPlay(); setBusy(true); setErr(""); try { await engPlay(text, vi || 0, slow); } catch (_) { setErr("The voice could not play. Check your connection and try again."); } setBusy(false); };
   return <>
-    <button type="button" className={className || "stt-btn eng-play"} onClick={go} disabled={busy} aria-label={label || ("Hear “" + text + "”" + (slow ? " slowly" : ""))}>
+    <button type="button" className={className || "stt-btn eng-play"} onClick={go} aria-disabled={busy || undefined} aria-busy={busy || undefined} aria-label={label || ("Hear “" + text + "”" + (slow ? " slowly" : ""))}>
       <i className={"ph " + (busy ? "ph-waveform" : "ph-speaker-high")} aria-hidden="true"/>{slow ? "Slow" : null}</button>
     {err ? <span className="mlb-meta" role="alert">{err}</span> : null}
   </>;
@@ -116,13 +118,19 @@ function EngHear({ pairs, onDone }) {
   const done = n >= ENG_SPEAK_ROUNDS;
   React.useEffect(() => { if (done && onDone) onDone(); }, [done]); // eslint-disable-line
   const choose = k => { if (said !== null) return; setSaid(k); const ok = k === r.k; setRight(x => x + (ok ? 1 : 0)); setStreak(s => ok ? s + 1 : 0); };
-  const next = () => { setN(x => x + 1); setR(pick()); setSaid(null); setHeard(false); };
+  const next = () => { moved.current = true; setN(x => x + 1); setR(pick()); setSaid(null); setHeard(false); };
+  /* The pressed button is disabled (a choice) or gone (Next, Finish) a moment later, and focus fell to the
+     page. A choice hands focus to Next; a new round to its Play button; the last to the score. */
+  const nextRef = React.useRef(null), playRef = React.useRef(null), endRef = React.useRef(null), moved = React.useRef(false);
+  React.useEffect(() => { if (said !== null && nextRef.current) nextRef.current.focus({ preventScroll: true }); }, [said]);
+  React.useEffect(() => { if (!moved.current) return; moved.current = false;
+    const t = done ? endRef.current : playRef.current && playRef.current.querySelector("button"); if (t) t.focus({ preventScroll: true }); }, [n]); // eslint-disable-line
   return <section className="mlb-card eng-hear" aria-labelledby="eng-hear-h">
     <h3 id="eng-hear-h" className="mlb-h3">Hear the difference</h3>
     <div className="eng-dots" aria-hidden="true">{Array.from({ length: ENG_SPEAK_ROUNDS }, (_, i) => <i key={i} className={i < n ? "is-done" : i === n ? "is-on" : ""}/>)}</div>
-    {done ? <p className="mlb-fb is-ok" role="status"><b>{right} of {ENG_SPEAK_ROUNDS} right.</b> {right >= 6 ? "Your ear is tuning in." : "Listen again tomorrow — ears improve with practice."}</p> : <>
+    {done ? <p className={"mlb-fb " + (right >= 6 ? "is-ok" : "is-no")} role="status" ref={endRef} tabIndex={-1}><b>{right} of {ENG_SPEAK_ROUNDS} right.</b> {right >= 6 ? "Your ear is tuning in." : "Listen again tomorrow — ears improve with practice."}</p> : <>
       <p className="mlb-meta">Round {n + 1} of {ENG_SPEAK_ROUNDS} · a new voice each time{ENG_VOICE_NAMES[r.vi] ? <> — <b className="eng-voice">{ENG_VOICE_NAMES[r.vi]}</b></> : null}. Press play, then choose the word you heard.</p>
-      <div className="eng-hear-play">
+      <div className="eng-hear-play" ref={playRef}>
         <EngPlayButton text={r.p[r.k]} vi={r.vi} className="mlb-go eng-big" label="Play the word" onPlay={() => setHeard(true)}/>
         <EngPlayButton text={r.p[r.k]} vi={r.vi} slow className="stt-btn" label="Play the word slowly" onPlay={() => setHeard(true)}/>
       </div>
@@ -133,7 +141,7 @@ function EngHear({ pairs, onDone }) {
         <b className="mlb-fb-h"><i className={"ph-fill " + (said === r.k ? (streak >= 3 ? "ph-fire" : "ph-check-circle") : "ph-x-circle")} aria-hidden="true"/>
           {said === r.k ? (streak >= 3 ? streak + " in a row!" : "Yes — “" + r.p[r.k] + "”.") : "It was “" + r.p[r.k] + "”."}</b>
         {said !== r.k ? <p>Hear both: <EngPlayButton text={r.p[0]} vi={r.vi} label={"Hear “" + r.p[0] + "”"}/> {r.p[0]} · <EngPlayButton text={r.p[1]} vi={r.vi} label={"Hear “" + r.p[1] + "”"}/> {r.p[1]}</p> : null}
-        <button type="button" className="mlb-go" onClick={next}>{n + 1 >= ENG_SPEAK_ROUNDS ? "Finish" : "Next"}</button></div> : null}</div>
+        <button type="button" className="mlb-go" ref={nextRef} onClick={next}>{n + 1 >= ENG_SPEAK_ROUNDS ? "Finish" : "Next"}</button></div> : null}</div>
     </>}
   </section>;
 }
@@ -217,11 +225,15 @@ function EngWrite({ sentences }) {
   const check = e => { if (e) e.preventDefault(); if (!heard || !val.trim() || res) return;
     const words = engWordMatch(t, val), all = words.every(w => w.ok);
     setRes({ words, all }); setScore(x => ({ right: x.right + (all ? 1 : 0), tried: x.tried + 1 })); };
-  const next = () => { setI(x => x + 1); setVal(""); setRes(null); setHeard(false); };
+  const next = () => { wMoved.current = true; setI(x => x + 1); setVal(""); setRes(null); setHeard(false); };
+  // Check disables itself, Next sentence goes: focus moves on to the next action each time, not to the page.
+  const wNextRef = React.useRef(null), wPlayRef = React.useRef(null), wMoved = React.useRef(false);
+  React.useEffect(() => { if (res && wNextRef.current) wNextRef.current.focus({ preventScroll: true }); }, [res]);
+  React.useEffect(() => { if (!wMoved.current) return; wMoved.current = false; const b = wPlayRef.current && wPlayRef.current.querySelector("button"); if (b) b.focus({ preventScroll: true }); }, [i]);
   return <section className="mlb-card eng-write" aria-labelledby="eng-write-h">
     <h3 id="eng-write-h" className="mlb-h3">Hear and write</h3>
     <p className="mlb-meta">Listen, then type exactly what you hear. Every word is checked; capitals and punctuation are not.{score.tried ? <> <b>{score.right} of {score.tried} perfect.</b></> : null}</p>
-    <div className="eng-hear-play">
+    <div className="eng-hear-play" ref={wPlayRef}>
       <EngPlayButton text={t} vi={vi} className="mlb-go eng-big" label="Play the sentence" onPlay={() => setHeard(true)}/>
       <EngPlayButton text={t} vi={vi} slow className="stt-btn" label="Play the sentence slowly" onPlay={() => setHeard(true)}/>
     </div>
@@ -233,7 +245,7 @@ function EngWrite({ sentences }) {
     <div aria-live="polite">{res ? <div className={"mlb-fb " + (res.all ? "is-ok" : "is-no")}>
       <b className="mlb-fb-h"><i className={"ph-fill " + (res.all ? "ph-check-circle" : "ph-x-circle")} aria-hidden="true"/>{res.all ? "Every word right." : res.words.filter(w => w.ok).length + " of " + res.words.length + " words right."}</b>
       <p className="eng-sentence">{res.words.map((w, k) => <React.Fragment key={k}><span className={"eng-w " + (w.ok ? "is-ok" : "is-no")}>{w.w}</span> </React.Fragment>)}</p>
-      <button type="button" className="mlb-go" onClick={next}>Next sentence</button></div> : null}</div>
+      <button type="button" className="mlb-go" ref={wNextRef} onClick={next}>Next sentence</button></div> : null}</div>
   </section>;
 }
 

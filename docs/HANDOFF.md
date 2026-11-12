@@ -7366,3 +7366,41 @@ Owner: "Please work on it." The background: password sign-in on a shared address
 `auth_reset_request` now counts every live account on the address, staff included (`auth_reset_accounts`). With more than one, the email has a **Set {name}'s password** link for each, and the staff one is marked "staff account". `auth_reset_confirm` is unchanged: it sets that account's password, revokes its sessions and still asks for the second step. A staff member alone on an address resets exactly as before. The sign-in screen's copy names this case.
 
 Two `run.php` tests (7086 / 0) fail without the change. They check the email, then that the staff link sets the staff password, signs them in with it, and leaves the child's untouched.
+
+### 12 November 2026 — The Labs: focus stays with the learner, and five screen faults
+
+Owner: "Fix the issues with the lab." Every Labs suite was already green: labs-client, study-tools, mathlab-e2e, and the Maths and Physics shots. So the Labs were walked in a browser on the production build at phone width, and every press was checked for where keyboard focus went.
+
+**Focus fell to the page on almost every press.** In each case, the button that was pressed was disabled or removed a moment later:
+
+- Check (disabled while marking);
+- Next question (the same button, disabled on an empty question);
+- See how you did;
+- Practise;
+- the last "Show the next line" in a worked example;
+- the last "Right or wrong?" or "Next line" in Why it works;
+- Hear the difference: its choices, Next and Finish, and the Play button, which disabled itself while playing;
+- Check in Hear and write.
+
+A keyboard or screen-reader learner was sent back to "Skip to content" after every question. Focus now moves to what comes next:
+
+- after Check: Next question;
+- on a new question: its heading;
+- at the end: the result's heading;
+- after the last line or judgement: the answer or the score;
+- in the English rounds: Next, then the new round's Play button, then the score.
+
+The Play button stays focusable while it plays (`aria-disabled`, and a second press is ignored).
+
+`tests/labs-focus.test.js` (new; in `test:all`, and `npm run test:labsfocus`) walks a lesson and its practice in each Lab, an English rule lesson and a sound lesson, pressing what a child presses. It fails on any press that leaves focus on nothing, and pins where focus goes. Against the previous code it fails 11 of 12 checks; it now passes 14 / 0.
+
+**Also fixed:**
+
+- **A practice paper handed in early** said "You finished it. Keep going!" after 1 of 40 questions. It now says "Handed in after 1 of 40". Time running out is not counted as handing in early.
+- **"Time on task"** reads seconds under a minute: two seconds no longer reads "1 min".
+- **On a phone, the Lab's tabs were six bare icons.** Each now has its word under it (Home, Map, Courses, Certificates, Progress, Exams).
+- **The map's stats strip cut the level to "Appre…".** On narrow screens the level gets the room the three numbers do not use.
+- **"Hear the difference" showed 1 of 8 in the green "well done" box.** Under 6 it is the "keep going" box.
+- **A marked answer box looked live.** It now looks settled, its text kept at full contrast, and the − and . keys are not drawn once they cannot act (the daily problem's "Over for today").
+
+Checked and NOT faults: the start-up splash in the e2e screenshots is its 0.5 s fade caught mid-way, and the Explore step's Continue drawn over the sliders is an artefact of a full-page screenshot of a sticky bar. The daily problem shown (AAABBC, no two identical letters together) was brute-forced: 10, as the Lab says.
