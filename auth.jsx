@@ -542,6 +542,12 @@ function SignInModal({ seed, onClose, onVerified }) {
       {cooldown > 0 ? "Resend code in " + cooldown + "s" : "Resend code"}
     </button>
   );
+  /* The card's structure, so no step ends in a row of loose links: ONE primary action, then
+     "or" and the other real way in as a full-width button, then anything rarer on a line of its
+     own. Two links side by side wrapped into each other on a phone and read as one sentence. */
+  const toDesk = () => { setErr(""); setDeskCode(""); setStage("desk"); };
+  const orLine = <div className="signin-or" role="separator" aria-label="or"><span aria-hidden="true">or</span></div>;
+  const staffLine = <p className="signin-staff">Got a code from staff? <button type="button" className="signin-link signin-link--inline" onClick={toDesk}>Enter it</button></p>;
   const knownId = identifier.trim().length >= 3 && (sent || masked || stage === "password");
   // Honest without being an oracle: true for a real account and an unknown one.
   // An unknown EMAIL is told by email that it has no account; a browser that
@@ -558,13 +564,13 @@ function SignInModal({ seed, onClose, onVerified }) {
   );
 
   const title = stage === "desk" ? "Code from staff" : stage === "enter-otp" ? "Check your email"
-    : stage === "password" ? "Welcome back"
+    : stage === "password" ? (uniform ? "Sign in" : "Welcome back")
     : (stage === "reset-request" || stage === "reset-new") ? "Set a new password" : "Sign in";
   const sub = stage === "desk" ? "Staff at your centre gave you a one-time code. Type your ID and the code. No password needed."
     : stage === "id" ? "Use your email, Member ID or the ID on your card."
-    : stage === "password" ? null
+    : stage === "password" ? (uniform && methods.includes("code") ? "Use your password, or we’ll email you a sign-in code." : null)
     : stage === "reset-request" ? "We’ll email you a code to set a new password."
-    : stage === "reset-new" ? (resetToken ? "Choose a password. You’ll be signed in straight after." : sent ? <>{ifAccount} Enter it, then choose a password.</> : "Enter the code from your email, then choose a password.")
+    : stage === "reset-new" ? (resetToken ? "Choose a password. You’ll be signed in straight after." : sent ? <>{ifAccount} Enter it, then choose a password.{identifier.includes("@") ? <> If brothers or sisters share this email, it has a button for each of you instead: open the one with your name.</> : null}</> : "Enter the code from your email, then choose a password.")
     : (sent && knownId) ? ifAccount : "Enter your Member ID and the 6-digit code from your email.";
 
   return (
@@ -594,9 +600,12 @@ function SignInModal({ seed, onClose, onVerified }) {
             <AuthIdHint value={identifier} onUse={(v) => { setErr(""); setIdentifier(v); }}/>
             {fieldErr}
             {submit("Continue", identifier.trim().length < 3)}
-            <div className="signin-alts">
-              <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-otp"); }}>I have a code</button>
-              <button type="button" className="signin-link" onClick={() => { setErr(""); setDeskCode(""); setStage("desk"); }}>I have a code from staff</button>
+            <div className="signin-more">
+              <span className="signin-more-h" id="signin-more-h">Already have a code?</span>
+              <div className="signin-pair" role="group" aria-labelledby="signin-more-h">
+                <button type="button" className="signin-alt" onClick={() => { setErr(""); setStage("enter-otp"); }}><i className="ph ph-envelope-simple" aria-hidden="true"/>From my email</button>
+                <button type="button" className="signin-alt" onClick={toDesk}><i className="ph ph-identification-badge" aria-hidden="true"/>From staff</button>
+              </div>
             </div>
           </form>
         )}
@@ -631,11 +640,10 @@ function SignInModal({ seed, onClose, onVerified }) {
               <span>Keep me signed in on this device</span>
             </label>
             {submit("Sign in", !password)}
-            <div className="signin-alts">
-              {methods.includes("code") && <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>{uniform ? "No password? Email me a sign-in code" : "Email me a code instead"}</button>}
-              {/* Stuck here (no password, no email) is exactly who staff let in. */}
-              <button type="button" className="signin-link" onClick={() => { setErr(""); setDeskCode(""); setStage("desk"); }}>I have a code from staff</button>
-            </div>
+            {methods.includes("code") && <>{orLine}
+              <button type="button" className="signin-alt signin-alt--wide" onClick={requestLink} disabled={busy}><i className="ph ph-envelope-simple" aria-hidden="true"/>{uniform ? "No password? Email me a sign-in code" : "Email me a code instead"}</button></>}
+            {/* Stuck here (no password, no email) is exactly who staff let in. */}
+            {staffLine}
           </form>
         )}
 
@@ -654,7 +662,8 @@ function SignInModal({ seed, onClose, onVerified }) {
               onChange={(v) => { setErr(""); setOtp(v); }} onComplete={(v) => { if (identifier.trim().length >= 3 || seed) verifyOtp(null, v); }}/>
             {fieldErr || (sent && knownId && !seed ? nothingYet : null)}
             {submit("Sign in", otp.replace(/\s/g, "").length !== 6)}
-            <div className="signin-alts">{resend(sendCode)}<button type="button" className="signin-link" onClick={() => { setErr(""); setDeskCode(""); setStage("desk"); }}>I have a code from staff</button></div>
+            <div className="signin-alts">{resend(sendCode)}</div>
+            {staffLine}
           </form>
         )}
 

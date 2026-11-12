@@ -12,8 +12,8 @@
     "card-export.js": {
       "package": null,
       "version": null,
-      "bytes": 72111,
-      "sha256": "c5e94bd78097a541405eb4ac4a6350b102620c2bf480f26a145bb9ba7691362b",
+      "bytes": 72842,
+      "sha256": "c56e569107cd91d1ab3403143cb296e294ec5bcbd11727f72329ddb94015b279",
       "note": "first-party (this repo)"
     },
     "cropper.min.css": {

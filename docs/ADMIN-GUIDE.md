@@ -572,8 +572,10 @@ the page.
 CACENTRE owns the buildings, so **CACENTRE's locations list is the one list of
 places** (CACENTRE → *Attendance → Desks and settings → Locations*). The
 CACENTRE gate sends that list to NGG whenever it changes, and NGG's centres
-follow it. You will see a note at the top of this page once the list has
-arrived, and a **From CACENTRE** chip on each centre that comes from it.
+follow it. Once the list has arrived, *Members → Centres* opens with a note,
+**Centres come from CACENTRE.**, that says where to add, rename or retire a
+place and when the last update came in. Under each centre's name and code, the
+row says **From CACENTRE** or **Not a CACENTRE location**.
 
 | In CACENTRE you… | In NGG this happens |
 |---|---|
@@ -815,6 +817,7 @@ and history stay in the Control Room (below).
 
 - **Intake form** — build the form families fill in.
 - **Sign-up links** — Summer School's shareable links: a **Public sign-up** for families, a **Review desk** for approving those sign-ups, and a **Registration desk** where staff enrol a walk-in child (details, photo, consent) with a desk password.
+  The public Summer School page's **Apply here** (on a centre) and **Apply for this** (on a course) open the live **Public sign-up** for that centre, or one for every centre if it has none of its own. The form opens with the centre and course they pressed already chosen (the course's faculty too), as long as the form offers them. A draft the family already started on that device is never overwritten. With no public sign-up open, the page says registration isn't open online and points to the centres.
 
 The door's **Check-in desks** are no longer here: they check in members and volunteers all year, so they have their own section (Control Room → Check-in → Check-in desks), with the **Duty rota** beside them.
 - **Pending sign-ups** — applications waiting on you.
@@ -3094,7 +3097,9 @@ nightly jobs) still run.
 
 **School results.** A member uploads their term report on their dashboard
 (**School results** tab), checks the scores and writes a plan for at most three
-subjects, each with a "when and where". It goes to their mentor, who approves it
+subjects, each with a "when and where". No target is under 85% (or under the
+score they already have): the plan starts there, and neither the member's nor
+the mentor's screen lowers it further. It goes to their mentor, who approves it
 or sends it back with a note in the Mentor Portal's **School results** tab
 (`/mentor/class?tab=results`; the email's `/mentor?tab=results` lands there). Approved, it is live; the family
 hears only if the member chose that. Plans whose study sessions are mostly
@@ -3915,8 +3920,11 @@ they all behave the same way. Worth knowing once:
 ### The first screen is the same for everyone
 
 On a phone or computer that has not signed in here before, every email or ID
-gets the same next screen: a password box, and **No password? Email me a
-sign-in code** under it. That is deliberate. The screen used to skip straight
+gets the same next screen: a password box with **Sign in**, then "or" and a
+full-width **No password? Email me a sign-in code** button. (Below that, on its
+own line: **Got a code from staff? Enter it**. On the very first screen the same
+two ways in sit under **Already have a code?** as **From my email** and **From
+staff**.) That is deliberate. The screen used to skip straight
 to "code sent" for people without a password and go to the password box for
 staff, which told anyone who typed an address whether it belonged to a member
 of staff. Most members simply press the code button. A device somebody has
@@ -3944,9 +3952,13 @@ its email with N other members" on the row).
   straight away. If the same password was set on several of the accounts, the
   same question lists those.
 - **Forgot your password?** sends one email with a **Set {name}'s password**
-  link for each account.
+  link for each account, not a code: the screen says so, so nobody waits for a
+  code that is not coming.
 - A suspended account is never offered, and neither is a staff account that
-  signs in by password only (staff keep using their password).
+  signs in by password only (staff keep using their password). Until 12
+  November 2026, a child whose address was shared with a staff parent, or with
+  a suspended brother or sister entered first, was told their emailed code was
+  wrong every time; that is fixed.
 - Each child can always sign in with their own Member ID or card number.
 
 ### Who signs in where

@@ -52,6 +52,10 @@ let server, browser;
       for (let i = 0; i < 70; i++) {
         await pg.keyboard.press('Tab');
         await pg.waitForTimeout(60);
+        /* The site scrolls smoothly, so a Tab that moves focus up the page measured the stop
+           mid-scroll, still under the sticky bar it was on its way out from. Measure where it
+           comes to rest, which is what a person sees (and what scroll-padding-top governs). */
+        for (let k = 0, last = -1; k < 30; k++) { const y = await pg.evaluate(() => window.scrollY); if (y === last) break; last = y; await pg.waitForTimeout(50); }
         const r = await pg.evaluate(() => {
           const el = document.activeElement; if (!el || el === document.body) return null;
           const c = getComputedStyle(el);

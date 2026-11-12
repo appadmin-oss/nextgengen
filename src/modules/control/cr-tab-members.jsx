@@ -1240,8 +1240,9 @@ function crMbCentreAdd() {
         if (e.code === "name_taken" || e.code === "bad_name") return { fieldErrors: { name: crErr(e, "That name is already used.") } };
         throw e;
       }
-      if (typeof invalidateCentreOptCache === "function") invalidateCentreOptCache();
-      window.dispatchEvent(new Event("ngg:centres-changed"));
+      /* Like Edit, Remove and Retire: the directory reloads, so the centre is on it at once. Add alone
+         announced the change to everyone else and left this list saying "0 centres" until a refresh. */
+      crCeDone(); ctx.reload();
     },
     done: v => v.name.trim() + " added. Open Edit on its row to add the address, lead and meeting times.",
   });

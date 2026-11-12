@@ -90,6 +90,11 @@ function rsStep(rec) {
   return "sent";
 }
 
+/* The lowest target a subject may have: 85%, or where the child already is (results_target_floor).
+   The minus button stopped at their current score, so a child on 48 could lower to 50 and the
+   server then refused the plan with target_too_low; the mentor's screen already held 85. */
+function mbrTargetFloor(d, current) { return Math.min(100, Math.max((d && d.targetMin) || 85, current || 0)); }
+
 function MbrResults({ onChanged }) {
   const [d, setD] = React.useState(null);
   const [state, setState] = React.useState("loading");
@@ -319,7 +324,7 @@ function RsPlan({ d, rec, onDone }) {
             action={<button type="button" className="pt-icon-btn" aria-label={"Take " + x.subject + " out of the plan"} onClick={() => setItems(xs => xs.filter((_, j) => j !== i))}><PIcon name="trash"/></button>}>
             <div className="rs-target">
               <span>Target</span>
-              <button type="button" className="pt-step" aria-label="Lower the target" disabled={x.target <= (x.current || 0)} onClick={() => setItem(i, "target", Math.max(x.current || 0, x.target - 1))}><PIcon name="minus"/></button>
+              <button type="button" className="pt-step" aria-label="Lower the target" disabled={x.target <= mbrTargetFloor(d, x.current)} onClick={() => setItem(i, "target", Math.max(mbrTargetFloor(d, x.current), x.target - 1))}><PIcon name="minus"/></button>
               <b aria-live="polite">{x.target}</b>
               <button type="button" className="pt-step" aria-label="Raise the target" disabled={x.target >= 100} onClick={() => setItem(i, "target", Math.min(100, x.target + 1))}><PIcon name="plus"/></button>
               <small>A specific target, a little above where you are, works better than “do my best”.</small>

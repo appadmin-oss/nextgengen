@@ -121,8 +121,8 @@ async function memberDoor(p, ident, how) {
     p = await fresh();
     await memberDoor(p, 'mum.ade@example.org', 'stuck');
     const stuckTxt = await p.innerText('.signin-card');
-    chk('stuck one screen in, the way out is right there: “I have a code from staff”', await p.locator('.signin-card button:has-text("I have a code from staff")').count() === 1, stuckTxt.slice(0, 200));
-    await p.click('.signin-card button:has-text("I have a code from staff")');
+    chk('stuck one screen in, the way out is right there: “Got a code from staff? Enter it”', await p.locator('.signin-card .signin-staff button:has-text("Enter it")').count() === 1, stuckTxt.slice(0, 200));
+    await p.click('.signin-card .signin-staff button:has-text("Enter it")');
     chk('…which keeps what they typed', (await p.inputValue('#signin-desk-id')) === 'mum.ade@example.org');
     await p.fill('#signin-desk-code', 'WXYZ-2345');
     await p.click('.signin-card button[type="submit"]');
@@ -147,7 +147,7 @@ async function memberDoor(p, ident, how) {
     // The start-up splash fades over the first screen; a person cannot press through it either.
     await p.waitForFunction(() => { const b = document.getElementById('ngg-boot'); return !b || b.classList.contains('gone'); }, null, { timeout: 30000 });
     await p.screenshot({ path: path.join(OUT, 'phone-first.png') });
-    await p.click('.signin-card button:has-text("I have a code from staff")');
+    await p.click('.signin-card .signin-pair button:has-text("From staff")');   // first screen: "Already have a code?"
     // Type until the form holds it (as a person would retype a field the page cleared while it finished loading).
     for (let t = 0; t < 3; t++) {
       await p.fill('#signin-desk-id', '026 611');

@@ -150,7 +150,7 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
       await page.evaluate(s => window.__adminSection(s), section);
       await page.waitForTimeout(900);
     };
-    const bodyText = () => page.evaluate(() => (document.querySelector('.admin-main') || document.body).innerText);
+    const bodyText = () => page.evaluate(() => (document.querySelector('#cr-main') || document.body).innerText);
 
     // ── One Summer School door ───────────────────────────────────────────
     console.log('\n── One door, and the retired ids still find it ──────────────');
@@ -164,12 +164,22 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
     chk('…and the ones only the coordinator portal used to have',
       /Roster/.test(t) && /Check-in kiosk/.test(t) && /Enrol at the desk/.test(t));
 
+    /* The retired ids forward to the Summer School portal's panels (CR_ALIASES in cr-pages.jsx:
+       registration → summer-admin ▸ gates, qr → summer-admin ▸ qr) — a bookmark lands, it does not 404. */
+    const back = async () => {
+      await page.goto(BASE + '/nextadmin', { waitUntil: 'domcontentloaded' });
+      await waitForBoot(page);
+      await page.waitForFunction(() => !!window.__adminSection, null, { timeout: 60000 });
+    };
+    const here = () => page.evaluate(() => location.pathname + location.search);
     await go('registration');
-    chk('the retired "registration" section id lands in Summer School, not the Overview',
-      /Summer School/.test(await page.evaluate(() => document.querySelector('.admin-nav-item.is-active').innerText)));
+    let at = await here();
+    chk('the retired "registration" section id lands in Summer School, on its sign-up links (' + at + ')', /^\/summer-admin\b/.test(at) && /panel=gates/.test(at));
+    await back();
     await go('qr');
-    chk('…and so does "qr"',
-      /Summer School/.test(await page.evaluate(() => document.querySelector('.admin-nav-item.is-active').innerText)));
+    at = await here();
+    chk('…and "qr" lands on its QR panel (' + at + ')', /^\/summer-admin\b/.test(at) && /panel=qr/.test(at));
+    await back();
 
     // ── The centre directory moved out of Summer School ──────────────────
     console.log('\n── A centre is an NGG place, not a Summer School record ─────');
@@ -183,12 +193,12 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
     console.log('\n── Creating an edition ──────────────────────────────────────');
     await go('summer');
     try {
-      await page.waitForSelector('.admin-main button:has-text("+ New edition")', { timeout: 30000 });
+      await page.waitForSelector('#cr-main button:has-text("+ New edition")', { timeout: 30000 });
     } catch (_) {
       console.error('      panel was: ' + (await bodyText()).slice(0, 2500).replace(/\n+/g, ' | '));
       throw new Error('the Editions panel never offered "+ New edition"');
     }
-    await page.click('.admin-main button:has-text("+ New edition")');
+    await page.click('#cr-main button:has-text("+ New edition")');
     await page.waitForSelector('.admin-drawer-panel', { timeout: 10000 });
     const setField = async (label, value) => {
       await page.evaluate(({ label, value }) => {
@@ -229,7 +239,7 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
       php(`echo (string) db_row("SELECT status FROM summer_cohorts WHERE cohortId='SUM-2027'")['status'];`) === 'planning');
     // The drawer closes and the table refetches; wait for the row rather than
     // for a fixed number of milliseconds.
-    await page.waitForFunction(() => /Summer School 2027/.test(document.querySelector('.admin-main').innerText),
+    await page.waitForFunction(() => /Summer School 2027/.test(document.querySelector('#cr-main').innerText),
       null, { timeout: 15000 }).catch(() => {});
     t = await bodyText();
     chk('…and appears in the table with its state', /Summer School 2027/.test(t) && /planning/i.test(t));
@@ -237,7 +247,7 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
     console.log('\n── Exactly one edition is live ──────────────────────────────');
     // "Make live" on the 2027 row.
     await page.evaluate(() => {
-      const rows = Array.from(document.querySelectorAll('.admin-main tbody tr'));
+      const rows = Array.from(document.querySelectorAll('#cr-main tbody tr'));
       for (const r of rows) {
         if (!/Summer School 2027/.test(r.innerText)) continue;
         const b = Array.from(r.querySelectorAll('button')).filter(x => /Make live/.test(x.textContent))[0];
@@ -267,7 +277,7 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
     await page.waitForTimeout(600);
     // Open the 2026 edition's groups.
     await page.evaluate(() => {
-      const rows = Array.from(document.querySelectorAll('.admin-main tbody tr'));
+      const rows = Array.from(document.querySelectorAll('#cr-main tbody tr'));
       for (const r of rows) {
         if (!/Summer School 2026/.test(r.innerText)) continue;
         const b = Array.from(r.querySelectorAll('button')).filter(x => /^Groups$/.test(x.textContent.trim()))[0];
@@ -281,7 +291,7 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
     chk('…and counts the participants waiting to be placed', /4 participants are waiting/.test(t));
 
     await page.evaluate(() => {
-      const b = Array.from(document.querySelectorAll('.admin-main button')).filter(x => /\+ New group/.test(x.textContent))[0];
+      const b = Array.from(document.querySelectorAll('#cr-main button')).filter(x => /\+ New group/.test(x.textContent))[0];
       if (b) b.click();
     });
     await page.waitForSelector('.admin-drawer-panel', { timeout: 10000 });
@@ -313,7 +323,7 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
     // ── Assignment: partial by design ────────────────────────────────────
     console.log('\n── Filling it: two seats, four children ─────────────────────');
     await page.evaluate(() => {
-      const b = Array.from(document.querySelectorAll('.admin-main button')).filter(x => /^Participants$/.test(x.textContent.trim()))[0];
+      const b = Array.from(document.querySelectorAll('#cr-main button')).filter(x => /^Participants$/.test(x.textContent.trim()))[0];
       if (b) b.click();
     });
     await page.waitForSelector('.admin-drawer-panel', { timeout: 10000 });
@@ -373,7 +383,7 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
     chk('…and says out loud that a class that has not started is not failing',
       /not met yet shows a dash rather than 0%/i.test(t));
     const rate = await page.evaluate(() => {
-      const rows = Array.from(document.querySelectorAll('.admin-main tbody tr'));
+      const rows = Array.from(document.querySelectorAll('#cr-main tbody tr'));
       for (const r of rows) if (/Ijaiye · Piano/.test(r.innerText)) return r.cells[5].innerText.trim();
       return '';
     });

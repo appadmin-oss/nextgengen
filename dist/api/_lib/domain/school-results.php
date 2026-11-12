@@ -449,7 +449,7 @@ function member_results_state(array $p): array {
         'past' => $past,
         'methods' => array_map(static fn($k, $v) => ['key' => $k] + $v, array_keys(RESULTS_METHODS), RESULTS_METHODS),
         'helpers' => array_map(static fn($k, $v) => ['key' => $k, 'label' => $v], array_keys(RESULTS_HELPERS), RESULTS_HELPERS),
-        'maxFocus' => RESULTS_MAX_FOCUS, 'targetStep' => RESULTS_TARGET_STEP, 'maxBytes' => RESULTS_MAX_BYTES];
+        'maxFocus' => RESULTS_MAX_FOCUS, 'targetStep' => RESULTS_TARGET_STEP, 'targetMin' => RESULTS_TARGET_MIN, 'maxBytes' => RESULTS_MAX_BYTES];
 }
 
 /** The term this member owes and has not sent, or null. */

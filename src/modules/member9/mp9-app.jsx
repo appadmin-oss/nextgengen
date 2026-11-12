@@ -250,7 +250,7 @@ class Mp9Portal extends React.Component {
         const row = b.parentElement; if (row && row.scrollWidth > row.clientWidth) row.scrollLeft = Math.max(0, b.offsetLeft - (row.clientWidth - b.offsetWidth) / 2); });
     }
     this.markArea();
-    if (this.state.pal && !ps.pal) setTimeout(() => this.palRef.current && this.palRef.current.focus(), 30);
+    if (this.state.pal && !ps.pal && this.palRef.current) this.palRef.current.focus();   // now, not on a timer: keys typed straight after opening were lost
     if (ps.sheet && !this.state.sheet && this._sheetFrom) { const el = this._sheetFrom; this._sheetFrom = null; setTimeout(() => { try { el.focus(); } catch (_) {} }, 0); }
   }
   componentWillUnmount() {

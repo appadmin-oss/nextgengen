@@ -664,7 +664,13 @@ function auth_resolve_member_id(string $idOrEmail): string {
         $st = auth_find_volunteer($v);
         return $st && $st['id'] !== '' ? (string)$st['id'] : $v;
     }
-    if (count(auth_email_accounts($lv)) > 1) return auth_shared_key($lv);
+    /* The same choice auth_find_member made when the code was sent, or the code is looked for on a
+       different account and is "invalid" every time: the oldest row on an email was often a staff
+       parent (password-only, so never sent a code) or a suspended brother, and the child the code
+       went to could never sign in with it. */
+    $acc = auth_email_accounts($lv);
+    if (count($acc) > 1) return auth_shared_key($lv);
+    if (count($acc) === 1) return (string)$acc[0]['memberId'];
     $m = db_row('SELECT memberId FROM members WHERE lower(trim(email)) = ? ORDER BY id LIMIT 1', [$lv]);
     if ($m) return (string)$m['memberId'];
     $st = auth_find_volunteer($v);

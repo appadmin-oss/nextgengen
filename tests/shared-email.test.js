@@ -112,7 +112,7 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     await pg.fill('#signin-idp', EM);
     await pg.click('.signin-card button[type="submit"]');
     await pg.waitForSelector('#signin-pw', { timeout: 20000 });
-    await pg.click('.signin-alts button');
+    await pg.click('.signin-alt--wide');
     await pg.waitForSelector('#signin-otp', { timeout: 20000 });
     chk('one code is issued for the address, not for either child', q(`(int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email = '${EM}' AND purpose = 'login'")['c']`) === 1
       && q(`(string)db_row("SELECT memberId FROM auth_sessions WHERE email = '${EM}' ORDER BY id DESC LIMIT 1")['memberId']`).startsWith('@shared:'));
@@ -140,7 +140,7 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     await p2.fill('#signin-idp', EM);
     await p2.click('.signin-card button[type="submit"]');
     await p2.waitForSelector('#signin-pw', { timeout: 20000 });
-    await p2.click('.signin-alts button');
+    await p2.click('.signin-alt--wide');
     await p2.waitForSelector('#signin-otp', { timeout: 20000 });
     await typeCode(p2, '#signin-otp', otpForEmail(EM));
     await p2.waitForSelector('.ngg-pick', { timeout: 20000 });

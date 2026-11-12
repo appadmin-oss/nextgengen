@@ -83,7 +83,7 @@ async function crSecLetIn(ctx, row) {
       { h: "Not with you? Read them the code", list: [
         x.door === "family"
           ? { icon: "sign-in", t: "Open the NGG Family app (/family)", s: "Choose “I have a code from staff”." }
-          : { icon: "sign-in", t: "Open the sign-in screen", s: "Choose “I have a code from staff”, on any sign-in screen: the first, the password or the emailed-code one." },
+          : { icon: "sign-in", t: "Open the sign-in screen", s: "On the first screen, “Already have a code?” → “From staff”. Further in (the password or the emailed-code screen), “Got a code from staff? Enter it”." },
         { icon: "identification-card", t: "Type " + (x.signInAs || "their ID") + " and the code", s: x.code },
         { icon: "shield-check", t: "Set a new second step", s: "They are asked straight away. The old one is not needed." },
       ] },

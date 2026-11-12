@@ -71,7 +71,9 @@ const SHOTS = path.join(ROOT, 'tests', 'screens', 'dashboard-results');
       + `db_insert('members', ['memberId'=>'NGG-MPT-1','fullName'=>'Amaka Obi','email'=>'amaka@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','track'=>'tech','displayId'=>'025-101','dob'=>'2011-04-02','school'=>'Egbeda High','parentName'=>'Mrs Obi','parentPhone'=>'+2348031234567','joinDate'=>'2025-01-10','createdAt'=>${now},'updatedAt'=>${now}]);`
       + `db_insert('members', ['memberId'=>'NGG-MPT-M','fullName'=>'Remi Mentor','email'=>'remi@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','dob'=>'1990-01-01','createdAt'=>${now},'updatedAt'=>${now}]);`
       + `db_insert('mentors', ['mentorId'=>'MEN-MPT','fullName'=>'Remi Mentor','email'=>'remi@example.org','status'=>'active','centre'=>'Egbeda','programme'=>'ngg','memberId'=>'NGG-MPT-M','checkedAt'=>${now},'maxMentees'=>8,'joinedAt'=>'2025-01-01','rank'=>'mentor','createdAt'=>${now}]);`
-      + `db_insert('mentor_assignments', ['memberId'=>'NGG-MPT-1','mentorId'=>'MEN-MPT','status'=>'active','startedAt'=>'2025-02-01']);`);
+      + `db_insert('mentor_assignments', ['memberId'=>'NGG-MPT-1','mentorId'=>'MEN-MPT','status'=>'active','startedAt'=>'2025-02-01']);`
+      // A cleared mentor who has done their Academy: until then the portal saves nothing (orientation_required).
+      + `foreach (array_merge(ms_required_modules(), academy_orientation_ids('mentor')) as $mod) db_insert('mentor_academy', ['mentorId' => 'MEN-MPT', 'moduleId' => $mod, 'score' => 100, 'passedAt' => ${now}]);`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
@@ -90,7 +92,9 @@ const SHOTS = path.join(ROOT, 'tests', 'screens', 'dashboard-results');
     fs.mkdirSync(SHOTS, { recursive: true });
 
     console.log('Addresses');
-    const P = await as('NGG-MPT-1', '/member/grow/results');
+    /* ?classic=1: an NGG member's /dashboard is the v9 portal now (member-v9.test.js holds its Results
+       screen); this suite holds the classic dashboard's School results, which a Summer account still gets. */
+    const P = await as('NGG-MPT-1', '/member/grow/results?classic=1');
     await P.waitForSelector('.dash-results .rs-steps', { timeout: 60000 });
     chk('an old /member/grow/results link opens the dashboard’s School results', new URL(P.url()).pathname === '/dashboard/results');
     chk('the section is a dashboard tab, and it is the selected one', (await P.innerText('.dash-tabs [aria-current="page"]')).trim() === 'School results');
@@ -112,7 +116,9 @@ const SHOTS = path.join(ROOT, 'tests', 'screens', 'dashboard-results');
     await P.waitForSelector('.rs-item', { timeout: 30000 });
     const items = await P.$$eval('.rs-item .pt-card-h h2', h => h.map(x => x.innerText));
     chk('the plan picks the weakest subjects, at most three', items[0] === 'Mathematics' && items.length === 3);
-    chk('the target starts at current + 8', (await P.innerText('.rs-item >> nth=0 >> .rs-target b')) === '56');
+    // results_target_for(): no target under 85%; above that, the next grade band at least 5 points up. 48% → 85.
+    chk('the target starts at 85%, not a pass mark (48 → 85)', (await P.innerText('.rs-item >> nth=0 >> .rs-target b')) === '85');
+    chk('…and cannot be lowered under 85 on screen, which the server would refuse', await P.$eval('.rs-item >> nth=0 >> button[aria-label="Lower the target"]', b => b.disabled));
     await P.click('.rs-commit input');
     await P.click('button:has-text("Send to my mentor")');
     await P.waitForSelector('.rs-item .pt-field.is-bad', { timeout: 5000 });
@@ -125,7 +131,7 @@ const SHOTS = path.join(ROOT, 'tests', 'screens', 'dashboard-results');
     await P.click('button:has-text("Send to my mentor")');
     await P.waitForSelector('.rs-where', { timeout: 20000 });
     chk('sent: "Where it is" shows it is with the mentor', /With your mentor/.test(await P.innerText('.rs-where')));
-    chk('the raised target was what the server stored', php(`echo db_row("SELECT target FROM growth_plan_items WHERE subject = 'Mathematics'")['target'];`) === '57');
+    chk('the raised target was what the server stored', php(`echo db_row("SELECT target FROM growth_plan_items WHERE subject = 'Mathematics'")['target'];`) === '86');
     chk('the mentor was told, and the email opens the Mentor Portal’s School results', php(`echo db_row("SELECT COUNT(*) n FROM notifications WHERE memberId = 'NGG-MPT-M' AND title LIKE '%sent their results and plan'")['n'];`) === '1');
     await P.click('.rs-ticks li >> nth=0 >> button:has-text("I did one")');
     await P.waitForFunction(() => document.querySelectorAll('.rs-ticks li:first-child .rs-dots .is-on').length === 1, null, { timeout: 10000 });
@@ -134,21 +140,23 @@ const SHOTS = path.join(ROOT, 'tests', 'screens', 'dashboard-results');
     await P.screenshot({ path: path.join(SHOTS, 'member-sent.png'), fullPage: true });
 
     console.log('The mentor: send back, then approve');
+    /* An NGG mentor's /mentor is the v15 portal; ?tab=results opens its School results screen
+       (mp15-class.jsx Mp15CResults / Mp15CPlan), which replaced the old dark portal's. */
     const M = await as('NGG-MPT-M', '/mentor?tab=results');
-    await M.waitForSelector('.mtr-plans', { timeout: 60000 });
-    chk('/mentor?tab=results opens School results in the Mentor Portal', (await M.getAttribute('[role="tab"][aria-selected="true"]', 'role')) === 'tab'
-      && /School results/.test(await M.innerText('[role="tab"][aria-selected="true"]')));
-    await M.waitForSelector('.mtr-plan-row', { timeout: 20000 });
-    chk('the plan is waiting, under the mentee’s name', /Amaka Obi/.test(await M.innerText('.mtr-plan-row')));
+    await M.waitForSelector('.m15c .m15c-row, .m15c .m15c-empty', { timeout: 60000 });
+    chk('/mentor?tab=results opens School results in the Mentor Portal', /Waiting for you/.test(await M.innerText('.m15c')) && /\/mentor\/class/.test(new URL(M.url()).pathname));
+    chk('the plan is waiting, under the mentee’s name', /Amaka Obi/.test(await M.innerText('.m15c-row')));
     await M.screenshot({ path: path.join(SHOTS, 'mentor-waiting.png'), fullPage: true });
-    await M.click('.mtr-plan-row');
-    await M.waitForSelector('.mtr-items', { timeout: 20000 });
-    chk('the mentor reads the scores and the plan', /Mathematics/.test(await M.innerText('.mtr-scores')) && /dining table/.test(await M.innerText('.mtr-items')));
-    await M.click('button:has-text("Send it back")');
-    chk('sending back without a note is stopped on screen', /short note/.test(await M.innerText('.mtr-msg')));
-    await M.fill('#mtr-note', 'Make the Biology slot earlier in the week.');
-    await M.click('button:has-text("Send it back")');
-    await M.waitForFunction(() => /Sent back/.test((document.querySelector('.mtr-msg') || {}).innerText || ''), null, { timeout: 15000 });
+    await M.click('.m15c-row');
+    await M.waitForSelector('.m15c-items', { timeout: 20000 });
+    chk('the mentor reads the scores and the plan', /Mathematics/.test(await M.innerText('.m15c-table')) && /dining table/.test(await M.innerText('.m15c-items')));
+    await M.click('.m15c-decide button:has-text("Send it back")');
+    await M.waitForSelector('.m15c-ok', { timeout: 5000 }).catch(() => {});
+    chk('sending back without a note is stopped on screen', /short note/.test(await M.innerText('.m15c-ok').catch(() => ''))
+      && php(`echo db_row("SELECT status FROM growth_plans WHERE memberId = 'NGG-MPT-1'")['status'];`) === 'sent');
+    await M.fill('.m15c-decide textarea', 'Make the Biology slot earlier in the week.');
+    await M.click('.m15c-decide button:has-text("Send it back")');
+    await M.waitForFunction(() => /Sent back/.test((document.querySelector('.m15c-ok') || {}).innerText || ''), null, { timeout: 15000 });
     chk('sent back: the plan returns to the member as a draft with the note', php(`echo db_row("SELECT status FROM growth_plans WHERE memberId = 'NGG-MPT-1'")['status'];`) === 'draft');
     await P.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(P);
     await P.waitForSelector('.rs-returned', { timeout: 60000 });
@@ -157,19 +165,19 @@ const SHOTS = path.join(ROOT, 'tests', 'screens', 'dashboard-results');
     if (!(await P.isChecked('.rs-commit input'))) await P.click('.rs-commit input');
     await P.click('button:has-text("Send to my mentor")');
     await P.waitForSelector('.rs-where', { timeout: 20000 });
-    await M.click('.mtr-back');
-    await M.waitForSelector('.mtr-plan-row', { timeout: 20000 });
-    await M.click('.mtr-plan-row');
+    await M.click('.m15c-back');
+    await M.waitForSelector('.m15c-row', { timeout: 20000 });
+    await M.click('.m15c-row');
     await M.waitForSelector('button:has-text("Approve the plan")', { timeout: 20000 });
     await M.click('button:has-text("Approve the plan")');
-    await M.waitForFunction(() => /Approved/.test((document.querySelector('.mtr-msg') || {}).innerText || ''), null, { timeout: 15000 });
+    await M.waitForFunction(() => /Approved/.test((document.querySelector('.m15c-ok') || {}).innerText || ''), null, { timeout: 15000 });
     chk('approved: the plan is live', php(`echo db_row("SELECT status FROM growth_plans WHERE memberId = 'NGG-MPT-1'")['status'];`) === 'live');
     chk('…and the member is told', php(`echo db_row("SELECT COUNT(*) n FROM notifications WHERE memberId = 'NGG-MPT-1' AND title = 'Your plan is approved'")['n'];`) === '1');
     await M.screenshot({ path: path.join(SHOTS, 'mentor-approved.png'), fullPage: true });
     await M.context().close();
 
     console.log('Edit profile');
-    await P.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' }); await waitForBoot(P);
+    await P.goto(BASE + '/dashboard?classic=1', { waitUntil: 'domcontentloaded' }); await waitForBoot(P);
     await P.waitForSelector('button:has-text("Edit profile")', { timeout: 60000 });
     await P.click('button:has-text("Edit profile") >> nth=0');
     await P.waitForSelector('.dash-managed', { timeout: 10000 });
@@ -185,7 +193,7 @@ const SHOTS = path.join(ROOT, 'tests', 'screens', 'dashboard-results');
     await P.context().close();
 
     console.log('Phone');
-    const F = await as('NGG-MPT-1', '/dashboard/results', 390);
+    const F = await as('NGG-MPT-1', '/dashboard/results?classic=1', 390);
     await F.waitForSelector('.dash-results .rs-where, .dash-results .rs-steps', { timeout: 60000 });
     chk('School results on a phone: nothing scrolls sideways', await F.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await F.screenshot({ path: path.join(SHOTS, 'member-phone.png'), fullPage: true });

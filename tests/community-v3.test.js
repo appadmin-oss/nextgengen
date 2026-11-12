@@ -231,7 +231,9 @@ function cleanup() {
 
     console.log('\n── Code and files ──────────────────────────────────────────');
     await s.page.evaluate(() => { const a = Array.from(document.querySelectorAll('article')).find(x => /My first page/.test(x.innerText)); const b = a && Array.from(a.querySelectorAll('button')).find(x => /Open & run/.test(x.innerText)); if (b) b.click(); });
-    chk('a code post opens in the editor with its source', await waitText(s.page, /your edits stay on your device/, 8000) && await s.page.evaluate(() => /<h1 id="hi">Hi<\/h1>/.test((document.querySelector('textarea[aria-label="Code"]') || {}).value || '')));
+    // The source arrives after the viewer's heading: wait for it, not for the heading.
+    const codeIn = await s.page.waitForFunction(() => /<h1 id="hi">Hi<\/h1>/.test((document.querySelector('textarea[aria-label="Code"]') || {}).value || ''), null, { timeout: 10000 }).then(() => true, () => false);
+    chk('a code post opens in the editor with its source', await waitText(s.page, /your edits stay on your device/, 8000) && codeIn);
     chk('…and runs in a sandboxed preview', await s.page.evaluate(() => { const f = document.querySelector('iframe[title="Preview"]'); return !!f && f.getAttribute('sandbox') === 'allow-scripts'; }));
     await s.page.keyboard.press('Escape');
     await s.page.waitForTimeout(400);

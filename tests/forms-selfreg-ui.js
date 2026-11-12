@@ -398,7 +398,7 @@ function makeBigPhoto() {
       await desk2.waitForTimeout(2200);
     }
     // Straight to the record if the desk showed the list.
-    const openBtn = desk2.getByRole('button', { name: /^Open/ }).first();
+    const openBtn = desk2.getByRole('button', { name: /^(Open|Check .*sign-up)/ }).first();   // the row's button: "Check <name>’s sign-up"
     if (await openBtn.count()) { await openBtn.click(); await desk2.waitForTimeout(1200); }
     const brokenText = await desk2.evaluate(async () => {
       const imgs = Array.from(document.querySelectorAll('img')).filter(i => /photo\.php/.test(i.src || ''));

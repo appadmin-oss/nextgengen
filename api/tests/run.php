@@ -34022,6 +34022,33 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 })();
 
 
+/* ── The code is looked for on the account it was sent to ──────────────────────────
+   auth_request picks an email's account from auth_email_accounts (no suspended row, no
+   password-only staff); auth_verify used to pick the OLDEST row instead. When those differed
+   the child's code was "invalid" every time: a staff parent on the same address, or a
+   suspended brother entered first. Both fail without the fix in auth_resolve_member_id. */
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $n, $e, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => $n, 'email' => $e, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $code = function ($e, $ip) {
+        auth_request(['identifier' => $e, 'ip' => $ip]);
+        return db_row("SELECT * FROM auth_sessions WHERE purpose = 'login' AND otp <> '' ORDER BY id DESC LIMIT 1");
+    };
+    $mk('NGG-RV-ST', 'Funmi Staffparent', 'staff.home@example.com', ['role' => 'admin', 'passwordHash' => password_hash_best('staff-pass-444')]);
+    $mk('NGG-RV-K1', 'Dayo Staffchild', 'staff.home@example.com');
+    $ch = $code('staff.home@example.com', '10.9.8.1');
+    $v = auth_verify(['memberId' => 'staff.home@example.com', 'otp' => $ch['otp'], 'ip' => '10.9.8.1']);
+    chk('sign-in: a child sharing an email with a staff parent signs in with the emailed code (it went to the child, it is checked on the child)',
+        $ch['memberId'] === 'NGG-RV-K1' && !empty($v['ok']) && ($v['member']['memberId'] ?? '') === 'NGG-RV-K1');
+    $mk('NGG-RV-S1', 'Gbenga Suspended', 'ojo.home@example.com', ['status' => 'suspended']);
+    $mk('NGG-RV-S2', 'Halima Active', 'ojo.home@example.com');
+    $ch = $code('ojo.home@example.com', '10.9.8.2');
+    $v = auth_verify(['memberId' => 'OJO.home@example.com', 'otp' => $ch['otp'], 'ip' => '10.9.8.2']);
+    chk('sign-in: with a suspended brother entered first, the sister\'s emailed code still signs HER in',
+        $ch['memberId'] === 'NGG-RV-S2' && !empty($v['ok']) && ($v['member']['memberId'] ?? '') === 'NGG-RV-S2');
+})();
+
+
 /* ── One email, several member accounts: "Who's signing in?" (auth.php auth_pick) ── */
 (function () {
     $now = now_iso(); $E = 'family.inbox@example.com';

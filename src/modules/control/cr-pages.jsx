@@ -52,7 +52,7 @@ const CR_PAGES = {
     { id: "courses", label: "Courses", desc: "Every child’s courses: confirm what their record proposes, or choose. Every portal reads what is placed here.", cap: "people" },
     { id: "quality", label: "Data quality", desc: "Gaps and duplicates that break ID cards, reminders and reports.", cap: "people" },
     { id: "families", label: "Families", desc: "Parent and guardian accounts connected to members.", cap: "people" },
-    { id: "centres", label: "Centres", desc: "Where NGG meets.", cap: "people" },
+    { id: "centres", label: "Centres", desc: "Where NGG meets. A centre’s code is the printed ID prefix on Summer School cards (EG-26-001), so it stays once cards are printed.", cap: "people" },
     { id: "idcards", label: "ID cards", desc: "Print queue for member and staff cards.", cap: "people" },
     { id: "reg-checklist", label: "Registration", desc: "Every new member’s registration checklist: what is left, who is helping them at their centre, and the items staff add.", cap: "people" },
     { id: "request-log", label: "Request history", desc: "Every request members and parents have raised — open, approved, declined and withdrawn — and who decided it.", cap: "people" },
