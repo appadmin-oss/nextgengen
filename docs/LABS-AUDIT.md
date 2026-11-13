@@ -139,3 +139,56 @@ Measured in simulation, 20 runs per profile:
 - Pelánek (2016), *Applications of the Elo rating system in adaptive educational systems*, Computers & Education.
 - *Keeping Elo alive* (2025), measurement properties of Elo-based learning systems.
 - Kalyuga (2003), the expertise reversal effect.
+
+---
+
+# Round 2 — 13 Nov 2026: "it still feels repetitive"
+
+Round 1 stopped identical questions. Round 2 measured what a learner's brain actually recognises:
+the question's **skeleton**, meaning its wording with the numbers, names and quoted text blanked.
+
+## Findings
+
+| Measure | Maths | English | Physics |
+|---|---|---|---|
+| Distinct skeletons in an 8-question session (median) | 5 | 7 | 6 |
+| Sessions with ≤3 skeletons | **21%** | 0% | 0% |
+| Topics with <5 distinct skeletons | **61** | 1 | 0 |
+| Multiple-choice share | 32% | **62%** | 37% |
+
+1. **The first Maths topics are the thinnest, and every new learner starts there.**
+   - MC-001 to MC-040 have **one or two practice forms each**. The other two forms are "why it
+     works" arguments, allowed once a session.
+   - So MC-012 practice was "Ebo has ₦389 and Ife has ₦163. How much more does Ebo have?" seven
+     times, with names and amounts swapped.
+   - Round 1's "forms per topic" figure counted the why forms, and hid this.
+2. **The wording cap compared exact sentences,** and a new name and new numbers make every
+   sentence technically different.
+3. **The feedback after a right answer was chosen by the question's position.** Question 1 always
+   said "Nice work!" and question 2 always "Correct!", so every session opened with the same words.
+   Several lines ("You've got this!") praised the child, not the work.
+   Feedback on the task and the process helps; praise of the self does not (Hattie & Timperley 2007;
+   Kluger & DeNisi 1996).
+4. **Over-practice (fixed 9 Nov).** A learner who never erred answered 16 questions per topic.
+   Three in a row now opens a six-question check, about 9 questions in all
+   (Cen, Koedinger & Junker 2007; Kelly et al. 2015).
+5. **The lesson routine was the same for every topic.** Line-by-line worked examples and a
+   mandatory picture walk suit a first topic and become tedious by the twentieth. Worked examples
+   should fade as competence grows (Renkl & Atkinson 2003; Kalyuga's expertise reversal).
+6. **English is still 62% multiple choice.** Recognition is easier than recall, and a quarter of
+   guesses are right. The Codex English work added production forms; more are still needed.
+
+## Changes
+
+- **Skeleton cap.** A skeleton is capped at two per session (three for picture questions). Recent
+  sessions are avoided by skeleton too. A thin topic now gives a short session, never copies.
+- **Reviews cover every topic due.** A review always asks one question per due topic; freshness
+  can no longer drop a topic.
+- **Feedback names the result.**
+  - A right answer is confirmed plainly.
+  - Streaks and recoveries are named as what the learner did.
+  - "Not quite" lines are picked at random and point the learner to the working.
+- **Fading.** After five topics studied in a Lab, the worked example offers "Show the whole
+  working" in one press, and the Remember-it step no longer blocks moving on.
+- **Content.** New practice forms for the 61 thin Maths topics, Stages 1–4 first, appended only so
+  no stored session changes.

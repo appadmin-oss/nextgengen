@@ -871,6 +871,9 @@ function mlb_comp_view(array $p): array {
         'state' => $m ? mlb_view_state($id, $states) : (mlb_available($id) ? 'open' : 'soon'), 'p' => $s ? (float)$s['p'] : 0, 'attempts' => $s ? (int)$s['attempts'] : 0,
         'nextReview' => $s ? (string)$s['nextReview'] : '',
         'studied' => $s ? (string)($s['studiedAt'] ?? '') !== '' : false, 'owed' => $s ? (int)($s['owed'] ?? 0) : 0,
+        /* Worked-example FADING (Renkl & Atkinson 2003): the line-by-line walk suits a learner's first topics;
+           after five studied in this Lab, the lesson trusts them with the whole worked example at once. */
+        'experienced' => count(array_filter($states, static fn($x) => (string)($x['studiedAt'] ?? '') !== '' || in_array($x['state'] ?? 'none', MLB_GOOD, true))) >= 5,
         'why' => function_exists('mlb_why_of') ? mlb_why_of($id) : null,
         // A Lab's speaking material for this topic (lab content 'speak'): the lesson's "Hear and say" step.
         'speak' => (($l = lab_for_comp($id)) && ($sp = lab_call('speak', $l['id'])[$id] ?? null)) ? $sp + (function_exists('eng_audio_urls') ? ['audio' => eng_audio_urls($sp)] : []) : null,

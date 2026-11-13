@@ -9734,3 +9734,5 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-readynow { margin-top: 12px; padding: 14px 16px; border-radius: 14px; background: #e9f6ee; border: 1px solid #9fd3b2; color: #11331f; }
 .mlb-readynow .mlb-h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
 .mlb-readynow .mlb-meta { color: #1d4a2e; }
+
+.mlb-acts-row { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 12px; }

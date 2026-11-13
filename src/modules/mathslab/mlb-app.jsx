@@ -1008,13 +1008,15 @@ function MlbLearn({ comp, go, startPlay, lite }) {
         <h3 className="mlb-sr" tabIndex={-1} ref={headRef}>Step {at + 1} of {steps.length}: {cur.label}</h3>
         {cur.id === "explore" ? <MlbExplore comp={c.id} onDone={() => mark("explore")}/> : null}
         {cur.id === "why" ? <MlbWhy key={c.id} why={d.why} onDone={() => mark("why")}/> : null}
-        {cur.id === "remember" ? <MlbRemember key={c.id} card={rem} onDone={() => mark("remember")}/> : null}
+        {cur.id === "remember" ? <MlbRemember key={c.id} card={rem} onDone={() => mark("remember")} light={d.experienced} onSeen={() => d.experienced && mark("remember")}/> : null}
         {cur.id === "speak" ? <EngSpeak key={c.id} comp={c.id} speak={d.speak} onDone={() => mark("speak")}/> : null}
         {cur.id === "example" ? <section className="mlb-card" aria-labelledby="mlb-we"><h3 id="mlb-we" className="mlb-h3">Worked example</h3>
           <MlbMath as="p" className="mlb-stem" text={ex.stem}/><MlbDiagram d={ex.diagram}/>
           {ex.lines ? <ol className="mlb-lines">{ex.lines.map((l, i) => <li key={i}><MlbMath text={l}/></li>)}</ol> : null}
           <ol className="mlb-steps">{ex.steps.slice(0, shown).map((x, i) => <li key={i}><MlbMath text={x}/></li>)}</ol>
-          {shown < ex.steps.length ? <button type="button" className="stt-btn" onClick={() => { if (shown + 1 >= ex.steps.length) weActed.current = true; setShown(n => n + 1); }}>Show the next line</button> : <p className="mlb-ans" ref={ansRef} tabIndex={-1}>Answer: <MlbMath text={ex.answer}/></p>}
+          {shown < ex.steps.length ? <span className="mlb-acts-row"><button type="button" className="stt-btn" onClick={() => { if (shown + 1 >= ex.steps.length) weActed.current = true; setShown(n => n + 1); }}>Show the next line</button>
+            {d.experienced ? <button type="button" className="mlb-link" onClick={() => { weActed.current = true; setShown(ex.steps.length); }}>Show the whole working</button> : null}</span>
+            : <p className="mlb-ans" ref={ansRef} tabIndex={-1}>Answer: <MlbMath text={ex.answer}/></p>}
         </section> : null}
         {cur.id === "practise" ? <section className="mlb-card mlb-status" aria-label="Practise">
           <h3 className="mlb-h3">{lite ? "Try some questions" : "Now you try"}</h3>
@@ -1064,8 +1066,10 @@ function useMlbRemember() {
   return idx;
 }
 function mlbRememberFor(idx, comp) { const k = idx && idx.map && idx.map[comp]; return k && idx.cards[k] ? idx.cards[k] : null; }
-function MlbRemember({ card, onDone }) {
+function MlbRemember({ card, onDone, onSeen }) {
   const [i, setI] = React.useState(0), [cover, setCover] = React.useState(false), [said, setSaid] = React.useState(false);
+  // An experienced learner may move on once they've seen it; the pictures and the recall stay there to use.
+  React.useEffect(() => { if (onSeen) onSeen(); }, []); // eslint-disable-line
   const n = card.frames.length, f = card.frames[i], last = i === n - 1;
   React.useEffect(() => { if (said && onDone) onDone(); }, [said]); // eslint-disable-line
   return (
@@ -1317,21 +1321,27 @@ function MlbOrder({ item, value, onChange, disabled }) {
    praise that names WHAT went well: careful working, coming back, answering
    without the hint. Praise for effort and method keeps a child trying when
    it gets hard; praise for being "smart" makes them avoid the hard ones. */
-const MLB_PRAISE = ["Nice work!", "Correct!", "That’s it!", "Well worked out!", "Spot on!", "Great thinking!", "Exactly right!", "You’ve got this!"];
-const MLB_NUDGE = ["Not quite. This is where the learning happens.", "Close. The working below shows the way.", "Not this time. Read the steps, then you’ll have it.", "Almost. Mistakes like this one are how it sticks."];
-function mlbPraise({ i, run, afterMiss, hinted, conf, ms }) {
-  if (run === 8) return { t: "Eight in a row. Unstoppable!", big: true };
-  if (run === 5) return { t: "Five in a row. You’re on a roll!", big: true };
-  if (run === 3) return { t: "Three in a row!", big: true };
-  if (afterMiss) return { t: "Back on track. That’s how it’s done." };
-  if (conf === "guess") return { t: "Right, and you weren’t sure. Worth remembering why." };
-  if (hinted) return { t: "Got it. Next time, try it before the hint." };
-  if (conf === "sure" && ms && ms < 12000) return { t: "Quick and sure. Nice!" };
-  return { t: MLB_PRAISE[i % MLB_PRAISE.length] };
+/* Feedback after an answer (audit, 13 Nov 2026). It used to be praise picked by the question's POSITION —
+   question 1 always "Nice work!", question 2 always "Correct!" — so every session opened with the same
+   words, and lines like "You've got this!" praised the child, not the work. Feedback that names what was
+   right (the task and the process) helps; praise of the self does not (Hattie & Timperley 2007; Kluger &
+   DeNisi 1996). So a right answer is mostly just confirmed — with the answer, quietly — and streaks and
+   recoveries, which are about what the learner DID, are named. */
+const MLB_NUDGE = ["Not quite. The working below shows where it turns.", "Close. Compare your answer with the first line of the working.", "Not this time. Read the steps, then try the next one the same way.", "Almost. Find the step where yours went a different way."];
+function mlbPick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function mlbPraise({ run, afterMiss, hinted, conf, ms }) {
+  if (run === 8) return { t: "Eight right in a row.", big: true };
+  if (run === 5) return { t: "Five in a row — the method is holding.", big: true };
+  if (run === 3) return { t: "Three in a row.", big: true };
+  if (afterMiss) return { t: "Right — and straight after a miss. You used the working." };
+  if (conf === "guess") return { t: "Right, though you weren’t sure. Read why below — then it won’t be a guess." };
+  if (hinted) return { t: "Right, with the hint. Try the next one before you open it." };
+  if (conf === "sure" && ms && ms < 12000) return { t: "Right, and quick." };
+  return { t: "Right." };
 }
-function mlbNudge({ i, conf }) {
+function mlbNudge({ conf }) {
   if (conf === "sure") return "Not quite, and you were sure. That’s the most useful mistake to look at.";
-  return MLB_NUDGE[i % MLB_NUDGE.length];
+  return mlbPick(MLB_NUDGE);
 }
 
 function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
