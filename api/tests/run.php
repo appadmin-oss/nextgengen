@@ -38380,7 +38380,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $GLOBALS['__ai_mock'] = function ($p, $sys, $t) use (&$seenPrompt, $keyText) { $seenPrompt = $sys . json_encode($t); return ['ok' => true, 'provider' => 'mock', 'text' => 'The answer is ' . $keyText . '.']; };
     $a1 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'help']);
     $stemText = is_string($wit['stem']) ? $wit['stem'] : json_encode($wit['stem']);
-    chk('walk · the AI is never sent the answer', $seenPrompt !== '' && (str_contains($stemText, $keyText) || !str_contains($seenPrompt, $keyText)));
+    // Matched as a whole token: a key of "7" is not "sent" by a prompt that mentions 17.
+    $tok = '/(?<![\\w.])' . preg_quote($keyText, '/') . '(?![\\w.])/u';
+    chk('walk · the AI is never sent the answer', $seenPrompt !== '' && (preg_match($tok, $stemText) || !preg_match($tok, $seenPrompt)));
     chk('walk · an AI reply that gives the answer away is replaced by the rung', ($a1['source'] ?? '') === 'guide' && !str_contains((string)$a1['say'], 'The answer is'));
     $GLOBALS['__ai_mock'] = fn($p, $sys, $t) => ['ok' => true, 'provider' => 'mock', 'text' => 'Fair enough. Look at the words in the question first — what is it asking you to do?'];
     $a2 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'what now']);
@@ -38462,6 +38464,24 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('why · a Stage 1–4 topic is practised as a skill, with no proof questions (' . $early . ')', $earlyWhy === 0);
     chk('why · from Stage 5, at most one "why is this line true?" a session (' . $late . ')', $lateMax <= 1);
     chk('why · a mastery check tests the skill, never the proof', $checkWhy === 0);
+})();
+
+/* ── English guessability (owner, 13 Nov 2026: "English still feels guessable, mostly multiple choice") ── */
+(function () {
+    lab_use('english'); $worst = 0; $cue = []; $coin = 0;
+    foreach (['EN-001', 'EN-031', 'EN-038', 'EN-040'] as $c) for ($k = 0; $k < 10; $k++) {
+        $its = mlb_pick_items([$c], 8); $ch = count(array_filter($its, static fn($x) => mlb_is_choice(mlb_item($x['c'], $x['f'], $x['s']))));
+        $worst = max($worst, $ch);
+    }
+    chk('english · a practice session is at most half multiple choice where the topic can be typed (' . $worst . ' of 8 at worst)', $worst <= 4);
+    foreach (mlb_stages() as $st) foreach ($st['comps'] as $c) foreach (array_keys(mlb_forms_of($c)) as $f) for ($sd = 1; $sd <= 12; $sd++) {
+        $it = mlb_item($c, $f, $sd * 31); $q = is_string($it['stem'] ?? null) ? $it['stem'] : '';
+        if (preg_match('/\b(beginning|starting|begins) (with )?[a-z]{1,4}-/i', $q)) { $cue[] = "$c f$f"; break; }
+        if (!empty($it['binary'])) { $coin++; if (!empty($it['typed'])) $cue[] = "$c f$f counted as typed"; }
+    }
+    chk('english · no question points at its answer by its first letters, and no two-word “type A or B” counts as typed' . ($cue ? ' (' . implode(', ', array_slice(array_unique($cue), 0, 5)) . ')' : ''), $cue === [] && $coin > 0);
+    $fo = null; foreach (array_keys(mlb_forms_of('EN-044')) as $f) { $it = mlb_item('EN-044', $f, 5); if (str_contains((string)$it['stem'], 'fact or opinion')) $fo = $it; }
+    chk('english · “Type fact or opinion” is treated as the choice it is', $fo !== null && empty($fo['typed']) && mlb_is_choice($fo));
 })();
 
 /* ── No over-practice (9 Nov 2026) ── */
@@ -39252,7 +39272,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $allF = eng_forms(); $drillBad = [];
     foreach (eng_drill_forms() as $id => $extra) {
         // englishlab-more.php appends after the drills (13 Nov 2026), so the drills sit just before those.
-        $own = count($allF[$id] ?? []) - count($extra) - count(eng_more_forms()[$id] ?? []);
+        $own = count($allF[$id] ?? []) - count($extra) - count(eng_more_forms()[$id] ?? []) - count(eng_produce_forms()[$id] ?? []);
         foreach ($extra as $k => $fn) if ($own < 1 || ($allF[$id][$own + $k] ?? null) === null || $allF[$id][$own + $k](new MlbRng(7))['stem'] !== $fn(new MlbRng(7))['stem']) { $drillBad[] = $id; break; }
     }
     $keyOf = static function (string $id, string $needle): array {
@@ -39263,9 +39283,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('english lab · the exam-trap drills come after each topic\'s own forms, so no stored session changes question' . ($drillBad ? ' (' . implode(', ', $drillBad) . ')' : ''), $drillBad === []);
     $moreBad = [];
     foreach (eng_more_forms() as $id => $extra) {
-        $n = count($allF[$id] ?? []); $at = $n - count($extra);
+        $n = count($allF[$id] ?? []) - count(eng_produce_forms()[$id] ?? []); $at = $n - count($extra);   // englishlab-produce.php follows
         foreach ($extra as $k => $fn) if (($allF[$id][$at + $k] ?? null) === null || $allF[$id][$at + $k](new MlbRng(11))['stem'] !== $fn(new MlbRng(11))['stem']) { $moreBad[] = $id; break; }
     }
+    $prodBad = [];
+    foreach (eng_produce_forms() as $id => $extra) { $n = count($allF[$id] ?? []); $at = $n - count($extra);
+        foreach ($extra as $k => $fn) if (($allF[$id][$at + $k] ?? null) === null || $allF[$id][$at + $k](new MlbRng(13))['stem'] !== $fn(new MlbRng(13))['stem'] || empty($fn(new MlbRng(13))['typed'])) { $prodBad[] = $id; break; } }
+    chk('english lab · the produce-it questions (englishlab-produce) come last and are all typed, so every stored session still replays' . ($prodBad ? ' (' . implode(', ', $prodBad) . ')' : ''), $prodBad === [] && count(eng_produce_forms()) === 17);
     chk('english lab · the added questions (englishlab-more) come last, after the drills, so every stored session still replays' . ($moreBad ? ' (' . implode(', ', $moreBad) . ')' : ''), $moreBad === [] && count(eng_more_forms()) === 21);
     chk('english lab · concord traps are keyed right: one of those who ARE, neither she nor I AM, the jury ARE divided in their opinion',
         $keyOf('EN-038', 'one of those teachers who') === ['are'] && $keyOf('EN-038', 'Neither she nor I') === ['am'] && $keyOf('EN-038', 'The jury') === ['are']);

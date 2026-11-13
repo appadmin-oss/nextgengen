@@ -61,6 +61,8 @@ function eng_forms(): array {
     foreach (eng_drill_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     // More questions for the thinnest topics (englishlab-more.php), appended last for the same reason.
     if (function_exists('eng_more_forms')) foreach (eng_more_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    // Typed questions the learner must produce (englishlab-produce.php, 13 Nov 2026), appended after that.
+    if (function_exists('eng_produce_forms')) foreach (eng_produce_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     ksort($f);
     return $f;
 }
@@ -104,11 +106,25 @@ function eng_choose(array $rows, string $stem, string $hint, string $dim = 'conc
  * 'punct' make capitals or the final punctuation part of the skill; 'unit' is not used here.
  */
 function eng_type(array $rows, string $stem, string $hint, string $dim = 'procedure', int $secs = 40, array $opt = []): Closure {
-    return static function (MlbRng $r) use ($rows, $stem, $hint, $dim, $secs, $opt): array {
+    /* A typed form whose every row answers one of TWO words ("Type fact or opinion", "could or must") is a
+       coin toss with a keyboard (13 Nov 2026). It is still asked, but it is not counted as typed: it
+       neither fills the "produce it" half of a session nor satisfies the typed answer that "three right in
+       a row" requires, and the session's choice cap counts it with the multiple choice. */
+    $keys = array_unique(array_map(static fn($row) => mb_strtolower(trim((string)$row[1])), $rows));
+    // …and only when the question itself offers both words: a two-row form also has two answers, and
+    // "Musa was probably ___" is real production however few rows it has.
+    $binary = count($keys) === 2 && count(array_filter($rows, static function ($row) use ($keys) {
+        $q = mb_strtolower((string)$row[0]);
+        foreach ($keys as $k) if (!preg_match('/\b' . preg_quote($k, '/') . '\b/u', $q)) return false;
+        return true;
+    })) === count($rows);
+    return static function (MlbRng $r) use ($rows, $stem, $hint, $dim, $secs, $opt, $binary): array {
         [$q, $key, $accept, $why] = eng_row($r, $rows);
         $st = $stem === '' ? $q : str_replace('{q}', $q, $stem);
-        return mlb_typed('text', $st, $key, [$why, 'Answer: ' . $key], $hint, $dim, $secs,
+        $it = mlb_typed('text', $st, $key, [$why, 'Answer: ' . $key], $hint, $dim, $secs,
             ['accept' => $accept] + array_intersect_key($opt, ['case' => 1, 'punct' => 1]));
+        if ($binary) { $it['typed'] = false; $it['binary'] = true; }
+        return $it;
     };
 }
 

@@ -232,8 +232,8 @@ function eng_gods_practice_forms(): array {
         ['Correct this spelling: “commitee”.', 'committee', [], 'Committee has double m, double t and double e.'],
     ], '{q}', 'Check the vowel and doubled-letter pattern.')],
     'EN-010' => [eng_type([
-        ['“The room was silent; not a sound could be heard.” Replace silent with its synonym beginning qu-.', 'quiet', [], 'The absence of sound fixes the meaning as quiet.'],
-        ['“The gate was shut; we could not enter.” Give the antonym of shut beginning o-.', 'open', [], 'Shut means closed here; open reverses that state.'],
+        ['“The room was silent; not a sound could be heard.” Give one word that means the same as silent here.', 'quiet', ['still', 'hushed', 'soundless', 'noiseless'], 'The absence of sound fixes the meaning as quiet.'],
+        ['“The gate was shut; we could not enter.” Give the word that means the opposite of shut here.', 'open', ['opened', 'unlocked'], 'Shut means closed here; open reverses that state.'],
     ], '{q}', 'Use the sentence to decide the meaning, then follow the starting letters.')],
     'EN-011' => [eng_type([
         ['Use is or are: “The key to the two cupboards ___ missing.”', 'is', [], 'Key is the singular head; cupboards is inside a modifying phrase.'],
@@ -366,11 +366,11 @@ function eng_gods_practice_forms(): array {
     ], '{q}', 'Find the idea broad enough to include every detail.', 'reasoning')],
     'EN-042' => [eng_type([
         ['“Ada put on a raincoat when drops began striking the window.” Complete the supported inference using the verb rain: It had probably started ___.', 'raining', ['to rain'], 'The drops and raincoat support rain; they do not establish a storm or flood.'],
-        ['“Musa yawned repeatedly and struggled to keep his eyes open.” Complete the cautious inference with a word beginning sl-: Musa was probably ___.', 'sleepy', [], 'Yawning and closing eyes support sleepiness; a cause such as illness is not established.'],
+        ['“Musa yawned repeatedly and struggled to keep his eyes open.” Complete the cautious inference with one word: Musa was probably ___.', 'sleepy', ['tired', 'drowsy', 'exhausted', 'weary'], 'Yawning and closing eyes support sleepiness; a cause such as illness is not established.'],
     ], '{q}', 'Combine the clues, but do not invent a cause.', 'reasoning')],
     'EN-043' => [eng_type([
-        ['“The path was narrow: only one person could pass at a time.” Give the antonym of narrow beginning w-.', 'wide', [], 'The restricted space fixes the width sense; wide reverses it.'],
-        ['“Her reply was brief: it contained only three words.” Give a synonym of brief beginning sh-.', 'short', [], 'The word count establishes shortness, not delay or rudeness.'],
+        ['“The path was narrow: only one person could pass at a time.” Give the word that means the opposite of narrow here.', 'wide', ['broad'], 'The restricted space fixes the width sense; wide reverses it.'],
+        ['“Her reply was brief: it contained only three words.” Give one word that means the same as brief here.', 'short', ['concise', 'terse'], 'The word count establishes shortness, not delay or rudeness.'],
     ], '{q}', 'Use the explanatory phrase to pin down the word’s meaning.', 'reasoning')],
     'EN-044' => [eng_type([
         ['Type fact or opinion for the claim type: “The library has twelve tables.” Do not decide whether the claim is true.', 'fact', ['factual', 'factual claim'], 'The number can be checked by counting; factual claims still require verification.'],
@@ -385,21 +385,21 @@ function eng_gods_practice_forms(): array {
         ['Name the device when “passed away” is used to soften “died”.', 'euphemism', [], 'The softer expression substitutes for a difficult direct term.'],
     ], '{q}', 'Distinguish exaggerating a claim from softening an expression.')],
     'EN-047' => [eng_type([
-        ['“I am deeply grateful for your generous help.” Give the tone using the adjective beginning gr- from the sentence.', 'grateful', [], 'The explicit thanks and generous help support gratitude.'],
-        ['“I am furious that our books were deliberately damaged.” Give the tone using the adjective beginning fu- from the sentence.', 'furious', [], 'The stated emotion and deliberate damage support anger.'],
+        ['“I am deeply grateful for your generous help.” Which word in the sentence names the writer’s feeling? That is the tone.', 'grateful', ['deeply grateful'], 'The explicit thanks and generous help support gratitude.'],
+        ['“I am furious that our books were deliberately damaged.” Which word in the sentence names the writer’s feeling? That is the tone.', 'furious', [], 'The stated emotion and deliberate damage support anger.'],
     ], '{q}', 'Anchor the tone label in the writer’s own words.', 'reasoning')],
     'EN-048' => [eng_type([
-        ['“The school repaired leaking taps, so less water was wasted.” Complete the summary: Repairing taps reduced water ___. Use a noun beginning w-.', 'waste', ['wastage'], 'The summary retains the action and its result without inventing a new benefit.'],
+        ['“The school repaired leaking taps, so less water was wasted.” Complete the summary: Repairing taps reduced water ___. Use one noun.', 'waste', ['wastage', 'loss', 'use'], 'The summary retains the action and its result without inventing a new benefit.'],
         ['“The school opened another gate, so the queue became shorter.” Complete the summary: An additional gate shortened the ___.', 'queue', [], 'The summary keeps the stated effect, not an imagined change to lesson times.'],
     ], '{q}', 'Keep the main action and the stated result.', 'reasoning')],
     'EN-049' => [eng_type([
-        ['Replace the informal verb in “Please chuck away the damaged sheet” with a formal verb beginning dis-. Type only the replacement for chuck away.', 'discard', [], 'Discard preserves the meaning of throwing away in a formal register.'],
-        ['Replace “get” with a more formal verb beginning ob-: “Please get permission before entering.”', 'obtain', [], 'Obtain permission keeps the meaning and fits the formal request.'],
+        ['Replace the informal verb in “Please chuck away the damaged sheet” with a formal verb. Type only the replacement for chuck away.', 'discard', ['dispose of', 'remove'], 'Discard preserves the meaning of throwing away in a formal register.'],
+        ['Replace “get” with a more formal verb: “Please get permission before entering.”', 'obtain', ['seek', 'secure', 'request', 'acquire'], 'Obtain permission keeps the meaning and fits the formal request.'],
     ], '{q}', 'Keep the original meaning while changing register.')],
     'EN-050' => [eng_type([
-        ['“The instructions were clear; everyone understood them immediately.” Give the antonym of clear beginning un-.', 'unclear', [], 'Immediate understanding fixes the understandable sense of clear, not transparent.'],
-        ['“The room was vacant; nobody occupied it.” Give a synonym of vacant beginning em-.', 'empty', [], 'Nobody occupied it fixes the empty sense.'],
-        ['“Bola was reluctant to sign; she said she did not want to agree.” Give a synonym of reluctant beginning un-.', 'unwilling', [], 'Her refusal fixes unwillingness, not slowness or inability.'],
+        ['“The instructions were clear; everyone understood them immediately.” Give the word that means the opposite of clear here.', 'unclear', ['confusing', 'vague', 'ambiguous', 'obscure'], 'Immediate understanding fixes the understandable sense of clear, not transparent.'],
+        ['“The room was vacant; nobody occupied it.” Give one word that means the same as vacant here.', 'empty', ['unoccupied', 'free'], 'Nobody occupied it fixes the empty sense.'],
+        ['“Bola was reluctant to sign; she said she did not want to agree.” Give one word that means the same as reluctant here.', 'unwilling', ['hesitant', 'unenthusiastic', 'disinclined', 'loath'], 'Her refusal fixes unwillingness, not slowness or inability.'],
     ], '{q}', 'Check whether a synonym or an antonym is requested, then use the context.', 'reasoning')],
     'EN-051' => [eng_type([
         ['Join with because, keeping the result first and all other words unchanged: “We waited indoors. The rain was heavy.”', 'We waited indoors because the rain was heavy.', [], 'Because introduces the given reason after the result.'],
@@ -422,7 +422,7 @@ function eng_gods_practice_forms(): array {
         ['Use however or therefore for the stated contrast: “The first route was closed. ___, the second was open.”', 'however', [], 'The two routes are contrasted; the second being open is not caused by the first being closed.'],
     ], '{q}', 'Choose a linker for the relationship stated in the task.', 'reasoning')],
     'EN-056' => [eng_type([
-        ['Replace “at this point in time” with one word beginning n-.', 'now', [], 'Now preserves the time reference with fewer words.'],
+        ['Replace “at this point in time” with one word.', 'now', ['currently', 'presently'], 'Now preserves the time reference with fewer words.'],
         ['Remove only the redundant word: “Please repeat the instruction again.” Type the whole revised sentence.', 'Please repeat the instruction.', [], 'Repeat already means do or say again, so again is unnecessary here.'],
     ], '{q}', 'Remove redundancy without deleting essential information.')],
     'EN-058' => [eng_type([
@@ -458,23 +458,23 @@ function eng_gods_practice_forms(): array {
         ['Use advice or advise: “Your ___ was helpful.”', 'advice', [], 'Your introduces a noun, and advice is the noun form.'],
     ], '{q}', 'Distinguish the action word from the noun.')],
     'EN-065' => [eng_type([
-        ['Give one word for a person who writes a book; it begins au-.', 'author', [], 'Author identifies the writer, not the company that publishes the book.'],
-        ['Give one word for a life story written by its own subject; it begins auto-.', 'autobiography', [], 'Auto- marks self-authorship, distinguishing it from a biography written by another person.'],
+        ['Give one word for a person who writes a book.', 'author', ['writer', 'novelist'], 'Author identifies the writer, not the company that publishes the book.'],
+        ['Give one word for the story of a person’s life written by that person.', 'autobiography', [], 'Auto- marks self-authorship, distinguishing it from a biography written by another person.'],
     ], '{q}', 'Preserve the distinguishing detail in the description.')],
     'EN-066' => [eng_type([
-        ['Name the term beginning diag- for identifying a condition from the available evidence.', 'diagnosis', [], 'Diagnosis identifies the condition; it is distinct from treatment.'],
-        ['Name the term beginning sym- for an experience reported by a patient, such as pain.', 'symptom', [], 'A symptom is experienced by the patient; it is not a prescribed medicine.'],
+        ['Name the medical term for identifying an illness from its symptoms and tests.', 'diagnosis', [], 'Diagnosis identifies the condition; it is distinct from treatment.'],
+        ['Name the medical term for something a patient feels and reports, such as pain.', 'symptom', ['symptoms'], 'A symptom is experienced by the patient; it is not a prescribed medicine.'],
     ], '{q}', 'Distinguish what is experienced from identifying the condition.')],
     'EN-067' => [eng_type([
-        ['Name the person beginning wit- who gives testimony about what they observed.', 'witness', [], 'A witness supplies testimony; the role does not automatically decide guilt.'],
-        ['Name the term beginning ver- for a jury’s decision on the issues put to it.', 'verdict', [], 'A verdict is the decision, not the original accusation.'],
+        ['Name the person in a court case who gives testimony about what they saw.', 'witness', ['eyewitness', 'a witness'], 'A witness supplies testimony; the role does not automatically decide guilt.'],
+        ['Name the legal term for a jury’s decision on the issues put to it.', 'verdict', [], 'A verdict is the decision, not the original accusation.'],
     ], '{q}', 'Keep the source of evidence separate from the decision.')],
     'EN-068' => [eng_type([
-        ['Name the farming process beginning irr- that supplies water to growing crops.', 'irrigation', [], 'Irrigation supplies water; harvesting gathers a mature crop.'],
+        ['Name the farming term for supplying water to crops through channels, pipes or sprinklers.', 'irrigation', ['irrigating'], 'Irrigation supplies water; harvesting gathers a mature crop.'],
         ['Use revenue or profit: sales income before deducting costs.', 'revenue', [], 'Revenue is income from sales; profit accounts for relevant costs.'],
     ], '{q}', 'Use the defining feature, not a merely related term.')],
     'EN-069' => [eng_type([
-        ['Name the term beginning head- for the title of a news report.', 'headline', [], 'The headline is the report’s title, not its author’s name.'],
+        ['Name the term for the title of a news report, printed in large letters above it.', 'headline', ['headlines'], 'The headline is the report’s title, not its author’s name.'],
         ['Use upload or download: send a file from your phone to the school’s server.', 'upload', [], 'The stated direction is from the local device to the server.'],
     ], '{q}', 'Check the role or direction described by the sentence.')],
     'EN-070' => [eng_type([
@@ -490,12 +490,12 @@ function eng_gods_practice_forms(): array {
         ['Copy the complete clause of reason: “We waited because the gate was locked.”', 'because the gate was locked', [], 'The because-clause explains the waiting.'],
     ], '{q}', 'Include the clause’s joining word and stop at its boundary.', 'reasoning')],
     'EN-073' => [eng_type([
-        ['“Ada reluctantly agreed.” Restate reluctantly with an adjective beginning un-: Ada agreed although she was ___.', 'unwilling', [], 'Reluctantly preserves both agreement and lack of willingness.'],
-        ['“The path was impassable.” Complete an own-words restatement: Nobody could get ___ along the path. Use a word beginning thr-.', 'through', [], 'Impassable means that passage is not possible, rather than merely slow.'],
+        ['“Ada reluctantly agreed.” Restate reluctantly with an adjective: Ada agreed although she was ___.', 'unwilling', ['hesitant', 'reluctant', 'unsure', 'doubtful'], 'Reluctantly preserves both agreement and lack of willingness.'],
+        ['“The path was impassable.” Complete an own-words restatement: Nobody could get ___ along the path. Use one word.', 'through', ['past', 'by'], 'Impassable means that passage is not possible, rather than merely slow.'],
     ], '{q}', 'Keep the strength of the original meaning, following the supplied wording.', 'reasoning')],
     'EN-074' => [eng_type([
-        ['“The access road flooded. As a result, lessons began late.” Complete one summary sentence with a past-tense verb beginning del-: Flooding ___ lessons.', 'delayed', [], 'Delayed captures the stated result without changing it to cancellation.'],
-        ['“The school repaired leaking taps. Water use fell.” Complete one summary sentence with a past-tense verb beginning red-: Repairing taps ___ water use.', 'reduced', [], 'Reduced states the decrease without adding an unmentioned result.'],
+        ['“The access road flooded. As a result, lessons began late.” Complete one summary sentence with a past-tense verb: Flooding ___ lessons.', 'delayed', ['postponed', 'held up'], 'Delayed captures the stated result without changing it to cancellation.'],
+        ['“The school repaired leaking taps. Water use fell.” Complete one summary sentence with a past-tense verb: Repairing taps ___ water use.', 'reduced', ['cut', 'lowered', 'decreased'], 'Reduced states the decrease without adding an unmentioned result.'],
     ], '{q}', 'Write one relevant point and preserve cause and effect.', 'reasoning')],
     'EN-075' => [eng_type([
         ['For this counting exercise, ship is represented by three sound units: sh + i + p. How many sounds are represented? Type a number.', '3', ['three'], 'Count the supplied sound units, not the four written letters.'],

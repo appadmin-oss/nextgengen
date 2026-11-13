@@ -299,3 +299,44 @@ patterns. Also, I think you may have taken the understanding how it works a litt
 The proofs themselves are unchanged. The owner's rule for them was "only necessary", and showing
 why mathematics works stays the Clinic's founding idea. What changed is that the proofs are no
 longer *tested* as if they were the skill.
+
+## Round 6 — 13 Nov 2026: "English still feels guessable, mostly multiple choice"
+
+**Measured first.**
+- **Mostly recognition.** English was about three quarters recognition once two-word "type A or B"
+  questions are counted as the choices they are. Maths and Physics are about two-thirds typed.
+- **Length gives answers away.** A guesser that never reads the question and picks the longest
+  option scored 37% against 25% chance. In 77 of 247 English choice forms the answer is the longest
+  option at least 60% of the time ("Cooking." beside a full topic sentence).
+- **Some "typed" questions were guessable too.**
+  - 26 rows pointed at their answer by its first letters ("the adjective beginning fu-").
+  - 20 forms were coin tosses typed into a box ("Type fact or opinion").
+- **Too few typed questions.** 57 of 80 topics had fewer than eight distinct typed questions, so a
+  session ran out of typed questions and fell back to choices.
+
+**Changed.**
+- **At most half a session is multiple choice** where the topic has typed forms. When the typed
+  questions run out, the cap lifts and the same deck carries on, so a session is never short and
+  never repeats.
+- **Mastery checks deal typed questions first.**
+- **Typed questions may come three times a session,** as picture questions already could. A
+  different sentence to rewrite is different work every time.
+- **A coin toss is not counted as typed** (`eng_type`: two answers, and every question offers both).
+  It counts with the choices, and it no longer satisfies the typed answer that "three right in a
+  row" requires.
+- **The 26 first-letter cues were removed,** and the reasonable synonyms are accepted instead. A
+  sweep test now fails on any new cue.
+- **`englishlab-produce.php`: 136 new typed questions across 17 grammar and vocabulary topics.**
+  Each has one defensible answer: a base word in brackets, a gap only one word fits, or a sentence
+  to rewrite. Every accepted alternative was checked to mark right, across 6,783 generated items.
+  They are appended last, so stored sessions replay unchanged.
+
+**Result:** English practice moved from 77% to 62% choice, with typed from 21% to 36%. The median
+typed bank went from 5 to 8.
+
+**Still open.**
+- The length tell in the 77 choice forms is content work: each needs distractors of the same
+  length and kind as the answer.
+- The sounds, reading, writing and senior-paper topics (40 topics) still lean on choice, because a
+  typed answer there needs judgement. Those are where AI marking, checked by code, could earn its
+  place (see AI-LEARNING-AUDIT item 3).

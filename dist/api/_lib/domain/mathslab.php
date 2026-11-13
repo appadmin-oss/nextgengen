@@ -175,8 +175,19 @@ function mlb_item_skeleton(array $it): string {
     return md5(($it['kind'] ?? '') . '|' . trim((string)preg_replace('/\s+/', ' ', (string)$s)));
 }
 const MLB_WHY_FROM_STAGE = 5;   // proof questions in practice from here up (Stages 1–4 are primary-age foundations)
-function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false, array $seen = [], array $avoidStems = []): array {
+/* AT MOST HALF A SESSION IS MULTIPLE CHOICE where the topic has typed forms (owner, 13 Nov 2026:
+   "English still feels guessable, mostly multiple choice"). Measured: English practice and checks were
+   62% choice questions, and a guesser that never read the question — "pick the longest option" — was
+   right 37% of the time against 25% chance. Recognising is not recalling; the cap fills the other half
+   with questions the learner has to produce. A topic with no typed form is not cut short for it. */
+function mlb_is_choice(?array $it): bool { return $it !== null && (in_array($it['kind'] ?? '', ['mcq', 'error'], true) || !empty($it['binary'])); }
+function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false, array $seen = [], array $avoidStems = [], bool $capChoice = true): array {
     $items = []; $deck = []; $last = []; $whyUsed = []; $stems = []; $i = 0; $guard = 0;
+    $choiceCap = $capChoice && $n >= 4 ? intdiv($n, 2) : PHP_INT_MAX; $choiceN = 0; $hasTyped = [];
+    for ($pass = 0; $pass < 2; $pass++) {
+    // Pass 2 only when the typed questions ran out under the choice cap: the cap is lifted and the SAME
+    // deck, rotation and repetition caps carry on, so a short bank gives a full session, never a repeat.
+    if ($pass === 1) { if (count($items) >= $n || $choiceCap === PHP_INT_MAX) break; $choiceCap = PHP_INT_MAX; $guard = 0; }
     while (count($items) < $n && $guard++ < $n * 8 && $comps) {
         $c = $comps[$i % count($comps)]; $i++;
         $forms = mlb_forms_of($c); if (!$forms) continue;
@@ -208,23 +219,31 @@ function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $s
             if ($isWhy($f) && !empty($whyUsed[$c])) continue;
             // not the form just asked, while another is waiting in the deck
             if ($f === ($last[$c] ?? null) && $deck[$c]) { $deck[$c][] = $f; continue; }
+            if ($choiceN >= $choiceCap && mlb_is_choice(mlb_item($c, $f, 1))) {
+                $hasTyped[$c] ??= (bool)array_filter(array_keys($forms), static fn($g) => !empty(mlb_item($c, $g, 1)['typed']));
+                if ($hasTyped[$c]) { $deck[$c][] = $f; continue; }
+            }
             for ($r = 0; $r < 8; $r++) {
                 $seed = random_int(1, 2000000000); $it = mlb_item($c, $f, $seed);
                 $sig = mlb_item_sig($it);
                 /* The same WORDING more than twice is the same question to a child, whatever the options:
                    "Which of these REDUCES friction?" four times is one question asked four times. */
                 $stemKey = mlb_item_skeleton($it);
-                // Twice per skeleton; a picture question three times (the picture differs, the task does not).
-                if ($sig === '' || isset($seen[$sig]) || ($stems[$stemKey] ?? 0) >= (empty($it['diagram']) ? 2 : 3)) continue;
+                /* Twice per skeleton; three times for a picture question (the picture differs) and for a TYPED
+                   one: a different sentence to rewrite is different work every time, and producing an
+                   answer cannot be pattern-matched the way recognising one can (13 Nov 2026). */
+                if ($sig === '' || isset($seen[$sig]) || ($stems[$stemKey] ?? 0) >= (empty($it['diagram']) && empty($it['typed']) ? 2 : 3)) continue;
                 if (empty($it['diagram']) && isset($avoidStems[$stemKey])) continue;   // the same wording as a recent session
                 $seen[$sig] = true; $stems[$stemKey] = ($stems[$stemKey] ?? 0) + 1;   // counted for picture questions too
                 $picked = ['c' => $c, 'f' => $f, 's' => $seed]; break;
             }
         }
         if ($picked === null) continue;      // this topic has nothing new left: the session is shorter, never repetitive
+        if (mlb_is_choice(mlb_item($picked['c'], $picked['f'], $picked['s']))) $choiceN++;
         if ($isWhy($picked['f'])) $whyUsed[$c] = true;
         $last[$c] = $picked['f'];
         $items[] = $picked;
+    }
     }
     /* Last pass: where two neighbours are the same form of the same topic and a later question is not,
        swap it forward — the deck can only see one topic's history, the session sees all of it. */
@@ -519,7 +538,7 @@ function mlb_start(array $p): array {
         if ($mode === 'check' && (int)($cs['owed'] ?? 0) > 0) return ['ok' => false, 'error' => 'practice_owed', 'owed' => (int)$cs['owed']];
         if ($mode === 'check' && ($cs['state'] ?? 'none') !== 'ready') return ['ok' => false, 'error' => 'not_ready'];
         $ref = $comp;
-        if ($mode === 'check') $items = mlb_pick_fresh($recent, [$comp], MLB_CHECK_ITEMS, false, true);   // the skill, never the proof
+        if ($mode === 'check') $items = mlb_pick_fresh($recent, [$comp], MLB_CHECK_ITEMS, true, true);   // the skill, never the proof; typed first
         else {
             $mixC = mlb_mix_comps($comp, $states);
             $main = mlb_pick_fresh($recent, [$comp], MLB_PRACTICE_ITEMS - count($mixC));
