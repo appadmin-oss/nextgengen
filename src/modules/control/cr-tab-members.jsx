@@ -916,6 +916,13 @@ function crMbRecBlocks(d, ctx) {
     if (acct.length) out.push({ type: "list", span: 3, title: "Account", rows: acct });
     if ((det.submissions || []).length) out.push({ type: "list", span: 3, title: "Assignment submissions", rows: det.submissions.map(s => ({ icon: "clipboard-text", t: s.title, m: s.status === "graded" ? s.grade + "/" + s.points : s.status })) });
     out.push({ type: "list", span: 3, title: "Recent journal", empty: "No journal entries yet.", rows: (det.journal || []).slice(0, 8).map(j => ({ icon: "notebook", t: (j.body || "").split("\n")[0] || "—", s: "Week " + j.week + " · " + crDate(j.createdAt) })) });
+    const ap = r && r.application;
+    if (ap) out.push({ type: "list", span: 3, title: "In their own words", sub: "From their application, " + crDate(ap.appliedAt), rows: [
+      { icon: "star", t: ap.vision || "—", s: "Their vision" },
+      kv("heart", "What they enjoy", (ap.hobbies || []).join(", ")),
+      kv("flag", "Where they want to lead", (ap.influenceAreas || []).join(", ")),
+      kv("megaphone", "Heard about NGG from", ap.heardFrom),
+    ] });
     if (m.notes) out.push({ type: "note", span: 6, icon: "note", text: m.notes, sub: "Staff notes. The member does not see these." });
     return out;
   }
@@ -999,9 +1006,10 @@ function crMbRecBlocks(d, ctx) {
     ]);
   }
   if (tab === "family") {
-    const g = r.guardian || {}, mt = r.mentorship || {};
+    const g = r.guardian || {}, mt = r.mentorship || {}, ap = r.application || null, g2 = ap && ap.guardian2;
     return out.concat([
-      { type: "list", span: 3, title: "Guardian on the record", empty: "No guardian on the record.", rows: (g.name || g.email || g.phone) ? [{ icon: "user", t: g.name || "—", s: "Name" }, { icon: "phone", t: g.phone || "—", s: "Phone" }, { icon: "envelope-simple", t: g.email || "—", s: "Email" }] : [] },
+      { type: "list", span: 3, title: "Guardian on the record", empty: "No guardian on the record.", rows: (g.name || g.email || g.phone) ? [{ icon: "user", t: g.name || "—", s: ap && ap.guardian1Rel ? "Name · " + ap.guardian1Rel : "Name" }, { icon: "phone", t: g.phone || "—", s: "Phone" }, { icon: "envelope-simple", t: g.email || "—", s: "Email" }] : [] },
+      g2 ? { type: "list", span: 3, title: "Second parent or guardian", sub: "From their application, " + crDate(ap.appliedAt), rows: [{ icon: "user", t: g2.name, s: "Name" + (g2.rel ? " · " + g2.rel : "") }, { icon: "phone", t: g2.phone || "Same number as above", s: "Phone" }] } : null,
       { type: "list", span: 3, title: "Family accounts linked", action: "Open Families", onAction: () => ctx.go("members", "families"), empty: "No family account is linked. A guardian can request a link from the family page.",
         rows: (r.family || []).map(f => ({ icon: "users", t: f.fullName + (f.relationship ? " · " + f.relationship : ""), s: f.email, m: f.status })) },
       mt.mentor ? { type: "kpis", span: 6, items: [{ l: "Mentor", v: mt.mentor }, { l: "Since", v: mt.since ? crDate(mt.since) : "—" }, { l: "Meetings in 90 days", v: crNum(mt.meetings90), tone: mt.meetings90 ? "flat" : "down" }, { l: "Last met", v: mt.lastMet ? crDate(mt.lastMet) : "—" }] }

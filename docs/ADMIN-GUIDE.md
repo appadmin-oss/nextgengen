@@ -1032,6 +1032,25 @@ says what joining costs before anybody applies.
 | Decline | **Reject**, with an optional line the family reads in the email and text. |
 | See only your centres | A centre-limited admin sees, exports, accepts and declines their own centres' applicants only. |
 
+**What the family receives when you accept (13 Nov 2026).** Two emails, in this order:
+
+1. **Welcome to Next Generation Genius.** It gives the child's **member number**
+   (the one on the ID card, e.g. 026-014), then what happens next: set a password
+   with the button (the link works for seven days), pay the joining invoice, and,
+   for the parents, the NGG Family app at /family.
+2. **Complete <child>'s NGG membership.** The joining invoice: the membership fee
+   and the first month, with the link to pay. It no longer opens with a second
+   "Welcome".
+
+When the child sets their password from the welcome link, they land on their
+dashboard, not the public home page.
+
+**What they wrote stays with them.** The member record shows the application's
+answers that the member row has no field for. **Overview → In their own words**
+has their vision, what they enjoy, where they want to lead and how they heard of
+NGG. **Family & mentor → Second parent or guardian** has the second guardian.
+Read these before a first mentor meeting instead of asking the family again.
+
 A family who sends the form again for the same child (same email and date of
 birth) is emailed a 6-digit code and must enter it before the application
 changes. Without it, anyone who knew the email and the birthday could replace
@@ -5131,6 +5150,27 @@ The third Lab, on the same engine as Maths and Physics: the same climb, practice
   - **When you add speaking text**, a developer runs `tools/english-voices.py` to record it. The test suite fails until they do.
 - **What it does not do yet:** mark a whole essay or letter. Writing is practised in the parts that can be marked instantly. A judged essay needs a teacher queue or a rubric-checked AI step, and is a separate piece of work. Recorded minimal-pair listening and dictation are available; recognising the words in a recording is not a score for accent quality.
 - No exam body is named anywhere a learner reads; the questions are NGG's own.
+
+### The Labs remember what a member has seen (13 Nov 2026)
+
+A Lab session used to draw its questions without regard to the last one. In
+English, a member starting a topic again met mostly the same questions: 61% of
+them on average, and six to eight of eight on 35 topics.
+
+- **Each Lab remembers the member's last eight sessions** and draws questions
+  they have not seen in them first. When a topic runs short, it falls back to
+  "not in the last two sessions", and only then to "not already in this one".
+  A session is never shortened to avoid a repeat, and no question appears twice
+  in one session.
+- The memory is per member and per Lab. Another member's sessions, or the same
+  member's Maths, do not count against an English session.
+- The timed paper avoids the papers a member has just sat.
+- **Twenty-one English topics got more questions**, the thinnest ones first:
+  every English topic now has at least 24 different questions.
+- Measured on the real banks, the next session repeats 0% of the last one in
+  Maths and Physics, and 4% in English. A third session soon after may still
+  meet some questions in English: the banks are 24 to 27 deep.
+- The climb is unchanged. It walks the topic in order on purpose.
 
 ### The Labs' explorers, easier to use (6 Nov 2026)
 

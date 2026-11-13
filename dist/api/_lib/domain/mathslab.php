@@ -154,7 +154,7 @@ function mlb_item_sig(?array $it): string {
     $l = $it['lines'] ?? null; if (is_array($l)) { $l = array_map('json_encode', $l); sort($l); }
     return md5(json_encode([$it['kind'] ?? '', $it['stem'] ?? '', $o, $l, $it['diagram'] ?? null]));
 }
-function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false, array $seen = []): array {
+function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false, array $seen = [], array $avoidStems = []): array {
     $items = []; $deck = []; $last = []; $whyUsed = []; $stems = []; $i = 0; $guard = 0;
     while (count($items) < $n && $guard++ < $n * 8 && $comps) {
         $c = $comps[$i % count($comps)]; $i++;
@@ -183,6 +183,7 @@ function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $s
                    "Which of these REDUCES friction?" four times is one question asked four times. */
                 $stemKey = md5((string)json_encode($it['stem'] ?? ''));
                 if ($sig === '' || isset($seen[$sig]) || (empty($it['diagram']) && ($stems[$stemKey] ?? 0) >= 2)) continue;
+                if (empty($it['diagram']) && isset($avoidStems[$stemKey])) continue;   // the same wording as a recent session
                 $seen[$sig] = true; $stems[$stemKey] = ($stems[$stemKey] ?? 0) + 1;
                 $picked = ['c' => $c, 'f' => $f, 's' => $seed]; break;
             }
@@ -199,6 +200,43 @@ function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $s
         for ($j = $k + 1; $j < count($items); $j++) {
             if ($items[$j]['c'] !== $items[$k - 1]['c'] || $items[$j]['f'] !== $items[$k - 1]['f']) { [$items[$k], $items[$j]] = [$items[$j], $items[$k]]; break; }
         }
+    }
+    return $items;
+}
+
+/**
+ * NO REPEATS ACROSS SESSIONS (owner, 13 Nov 2026: "Fix the repetition issue"). Inside a session nothing
+ * repeated, but nothing remembered the session before: "Practise again" on a topic dealt back 61% of the
+ * same English questions (63% the same wording), 21% in Physics and 11% in Maths, and on 35 English
+ * topics 6 to 8 of the 8. The member's recent sessions in this Lab are read (no new table: the items are
+ * on mlab_sessions) and the next session avoids what they asked, wording included. A thin topic is
+ * never cut short to keep the rule: the avoided set narrows to the last two sessions, then to this
+ * session alone, so what comes back is what was seen longest ago.
+ */
+const MLB_RECENT_SESSIONS = 8;
+const MLB_RECENT_NEAR = 2;
+function mlb_recent_seen(string $mid): array {
+    $rows = db_all("SELECT items FROM mlab_sessions WHERE memberId = ? AND lab = ? AND mode NOT IN ('daily', 'chest') ORDER BY startedAt DESC LIMIT " . MLB_RECENT_SESSIONS, [$mid, lab_id()]);
+    $out = ['sigs' => [], 'stems' => [], 'nearSigs' => [], 'nearStems' => []]; $age = 0;
+    foreach ($rows as $r) {
+        $age++;
+        foreach ((array)json_decode((string)$r['items'], true) as $x) {
+            if (!is_array($x) || !isset($x['c'], $x['f'], $x['s'])) continue;
+            $it = mlb_available((string)$x['c']) ? mlb_item((string)$x['c'], (int)$x['f'], (int)$x['s']) : null;
+            if (!$it) continue;
+            $sg = mlb_item_sig($it); $out['sigs'][$sg] = true; if ($age <= MLB_RECENT_NEAR) $out['nearSigs'][$sg] = true;
+            if (empty($it['diagram'])) { $k = md5((string)json_encode($it['stem'] ?? '')); $out['stems'][$k] = true; if ($age <= MLB_RECENT_NEAR) $out['nearStems'][$k] = true; }
+        }
+    }
+    return $out;
+}
+/** mlb_pick_items, avoiding what this member was asked lately; tiers widen only when the bank runs short. */
+function mlb_pick_fresh(array $recent, array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false): array {
+    $items = mlb_pick_items($comps, $n, $preferTyped, $skillOnly, $recent['sigs'] ?? [], $recent['stems'] ?? []);
+    foreach ([[$recent['nearSigs'] ?? [], $recent['nearStems'] ?? []], [[], []]] as [$sigs, $stems]) {
+        if (count($items) >= $n) break;
+        $own = $sigs; foreach ($items as $x) { $it = mlb_item($x['c'], $x['f'], $x['s']); if ($it) $own[mlb_item_sig($it)] = true; }
+        $items = array_merge($items, mlb_pick_items($comps, $n - count($items), $preferTyped, $skillOnly, $own, $stems));
     }
     return $items;
 }
@@ -415,6 +453,7 @@ function mlb_start(array $p): array {
     $m = mlb_member($p); if (!$m) return ['ok' => false, 'error' => 'members_only'];
     $mid = (string)$m['memberId']; $prof = mlb_profile($mid); $states = mlb_states($mid);
     $mode = (string)($p['mode'] ?? ''); $comp = (string)($p['comp'] ?? ''); $ref = '';
+    $recent = in_array($mode, ['climb', 'exam'], true) ? null : mlb_recent_seen($mid);
     if ($mode === 'climb') {
         if ((int)$prof['climbDone']) return ['ok' => false, 'error' => 'climb_done'];
         $s0 = mlb_place_start_stage($m); $ref = 'place:' . $s0;
@@ -431,11 +470,11 @@ function mlb_start(array $p): array {
         if ($mode === 'check' && (int)($cs['owed'] ?? 0) > 0) return ['ok' => false, 'error' => 'practice_owed', 'owed' => (int)$cs['owed']];
         if ($mode === 'check' && ($cs['state'] ?? 'none') !== 'ready') return ['ok' => false, 'error' => 'not_ready'];
         $ref = $comp;
-        if ($mode === 'check') $items = mlb_pick_items([$comp], MLB_CHECK_ITEMS);
+        if ($mode === 'check') $items = mlb_pick_fresh($recent, [$comp], MLB_CHECK_ITEMS);
         else {
             $mixC = mlb_mix_comps($comp, $states);
-            $main = mlb_pick_items([$comp], MLB_PRACTICE_ITEMS - count($mixC));
-            $items = $mixC ? mlb_interleave($main, mlb_pick_items($mixC, count($mixC), false, true)) : $main;
+            $main = mlb_pick_fresh($recent, [$comp], MLB_PRACTICE_ITEMS - count($mixC));
+            $items = $mixC ? mlb_interleave($main, mlb_pick_fresh($recent, $mixC, count($mixC), false, true)) : $main;
         }
     } elseif ($mode === 'quick') {
         if (!mlb_available($comp)) return ['ok' => false, 'error' => 'not_available'];
@@ -443,27 +482,27 @@ function mlb_start(array $p): array {
         if ((string)($states[$comp]['studiedAt'] ?? '') !== '' || in_array($states[$comp]['state'] ?? 'none', MLB_GOOD, true)) return ['ok' => false, 'error' => 'already_open'];
         if (db_row("SELECT 1 FROM mlab_sessions WHERE memberId = ? AND mode = 'quick' AND ref = ? AND startedAt >= ? LIMIT 1", [$mid, $comp, mlb_today()])) return ['ok' => false, 'error' => 'quick_today'];
         $ref = $comp;
-        $items = mlb_pick_items([$comp], MLB_QUICK_ITEMS, true, true);
+        $items = mlb_pick_fresh($recent, [$comp], MLB_QUICK_ITEMS, true, true);
     } elseif ($mode === 'review') {
         $due = mlb_due($states); if (!$due) return ['ok' => false, 'error' => 'nothing_due'];
-        $items = mlb_pick_items(array_slice($due, 0, 6), min(6, count($due)), true, true);
+        $items = mlb_pick_fresh($recent, array_slice($due, 0, 6), min(6, count($due)), true, true);
     } elseif ($mode === 'boss') {
         $st = (int)($p['stage'] ?? 0); $ref = (string)$st;
         $comps = mlb_stages()[$st]['comps'] ?? [];
         if (!$comps || !mlb_stage_available($st)) return ['ok' => false, 'error' => 'not_available'];
         foreach ($comps as $c) if (!in_array($states[$c]['state'] ?? 'none', MLB_GOOD, true)) return ['ok' => false, 'error' => 'boss_locked'];
-        $items = mlb_pick_items($comps, 12, false, true);
+        $items = mlb_pick_fresh($recent, $comps, 12, false, true);
     } elseif ($mode === 'mini') {
         // A short look back (owner, 5 Nov 2026: "a mini review feature after a long time of practice").
         $st = (int)($p['stage'] ?? 0); $ref = $st ? (string)$st : '';
         $comps = mlb_mini_pick($mid, $states, $st);
         if (count($comps) < 2) return ['ok' => false, 'error' => 'not_enough'];
-        $items = mlb_pick_items($comps, min(MLB_MINI_ITEMS, max(count($comps), 3)), false, true);
+        $items = mlb_pick_fresh($recent, $comps, min(MLB_MINI_ITEMS, max(count($comps), 3)), false, true);
     } elseif ($mode === 'exam') {
         // A practice paper is open to every member whatever their place on the map: it is exam practice, not a step on the path.
         if (!lab_has('exams')) return ['ok' => false, 'error' => 'not_offered'];
         $paper = (string)($p['paper'] ?? ''); if (!isset(mlb_papers()[$paper])) return ['ok' => false, 'error' => 'bad_paper'];
-        $ref = $paper; $items = mlb_exam_pick($paper);
+        $ref = $paper; $items = mlb_exam_pick($paper, mlb_recent_seen($mid)['sigs']);
         if (count($items) < mlb_papers()[$paper]['n']) return ['ok' => false, 'error' => 'not_available'];
     } else return ['ok' => false, 'error' => 'bad_mode'];
     $sid = 'MLS-' . strtoupper(rand_hex(8));
@@ -1160,11 +1199,11 @@ function mlb_exam_pool(string $paper): array {
     return $cache[$ck] = $out;
 }
 /** Draw a paper: its own exam-style forms first (about two thirds), each topic at most once, in syllabus order. */
-function mlb_exam_pick(string $paper): array {
+function mlb_exam_pick(string $paper, array $recentSigs = []): array {
     $P = mlb_papers()[$paper]; $pool = mlb_exam_pool($paper); shuffle($pool);
     $n = $P['n']; $wantTyped = $P['typed']; $own = (int)round($n * 2 / 3);
     $picked = []; $used = []; $typed = 0;
-    $take = static function (array $cand, int $limit) use (&$picked, &$used, &$typed, $n, $wantTyped, $P) {
+    $take = static function (array $cand, int $limit) use (&$picked, &$used, &$typed, $n, $wantTyped, $P, $recentSigs) {
         foreach ($cand as [$c, $f, $tag, $isTyped]) {
             if (count($picked) >= $limit || count($picked) >= $n) return;
             if (isset($used[$c])) continue;
@@ -1175,6 +1214,8 @@ function mlb_exam_pick(string $paper): array {
                 $seed = random_int(1, 2000000000); $it = mlb_item($c, $f, $seed);
                 $okShape = $it['kind'] === 'mcq' ? (!$isTyped) : ($isTyped && in_array($it['kind'], ['num', 'frac'], true));
                 if (!$okShape) continue;
+                // "New every time": a question from a recent paper is rerolled, except on the last try.
+                if ($t < 3 && isset($recentSigs[mlb_item_sig($it)])) continue;
                 $picked[] = ['c' => $c, 'f' => $f, 's' => $seed]; $used[$c] = true; if ($isTyped) $typed++;
                 break;
             }

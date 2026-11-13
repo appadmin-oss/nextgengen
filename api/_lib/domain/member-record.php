@@ -93,6 +93,25 @@ function admin_member_record(array $p): array {
                              WHERE w.memberId = ? AND w.status IN ('active','pending') ORDER BY w.id", [$id]);
     $out['guardian'] = ['name' => (string)($m['parentName'] ?? ''), 'email' => (string)($m['parentEmail'] ?? ''), 'phone' => (string)($m['parentPhone'] ?? '')];
 
+    /* What the family told us when they applied, and that the member row has no column for: the
+       child's vision, what they enjoy, where they want to lead, the second guardian. The answers
+       stayed on the accepted application and no screen reached them from the member, so a mentor
+       setting a first goal asked the family again (audit, 13 Nov 2026). Read-only: the application
+       is the record of what was said then. */
+    $app = db_row("SELECT id, why, details, createdAt FROM applications WHERE convertedMemberId = ? ORDER BY id DESC LIMIT 1", [$id]);
+    if ($app) {
+        $dt = safe_json((string)($app['details'] ?? '')) ?: [];
+        $areas = array_values(array_filter(array_map('strval', is_array($dt['influenceAreas'] ?? null) ? $dt['influenceAreas'] : []), static fn($x) => $x !== 'Something else'));
+        if (trim((string)($dt['influenceOther'] ?? '')) !== '') $areas[] = (string)$dt['influenceOther'];
+        $out['application'] = ['id' => (int)$app['id'], 'appliedAt' => substr((string)$app['createdAt'], 0, 10), 'vision' => (string)($app['why'] ?? ''),
+            'hobbies' => array_values(array_map('strval', is_array($dt['hobbies'] ?? null) ? $dt['hobbies'] : [])), 'influenceAreas' => $areas,
+            'guardian1Rel' => (string)($dt['parent1Rel'] ?? ''),
+            'guardian2' => empty($dt['parent2None']) && trim((string)($dt['parent2Name'] ?? '')) !== ''
+                ? ['rel' => (string)($dt['parent2Rel'] ?? ''), 'name' => (string)$dt['parent2Name'], 'phone' => (string)($dt['parent2Phone'] ?? '')] : null,
+            'originLga' => (string)($dt['originLga'] ?? ''),
+            'heardFrom' => (string)($dt['heardFrom'] ?? '') === 'Something else' ? (string)($dt['heardOther'] ?? '') : (string)($dt['heardFrom'] ?? '')];
+    }
+
     // Mentorship: the current mentor and how often they have met.
     $mentor = db_row("SELECT a.mentorId, a.startedAt, mt.fullName FROM mentor_assignments a LEFT JOIN mentors mt ON mt.mentorId = a.mentorId
                       WHERE a.memberId = ? AND a.status = 'active' ORDER BY a.id DESC LIMIT 1", [$id]);

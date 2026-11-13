@@ -7404,3 +7404,27 @@ The Play button stays focusable while it plays (`aria-disabled`, and a second pr
 - **A marked answer box looked live.** It now looks settled, its text kept at full contrast, and the − and . keys are not drawn once they cannot act (the daily problem's "Over for today").
 
 Checked and NOT faults: the start-up splash in the e2e screenshots is its 0.5 s fade caught mid-way, and the Explore step's Continue drawn over the sliders is an artefact of a full-page screenshot of a sticky bar. The daily problem shown (AAABBC, no two identical letters together) was brute-forced: 10, as the Lab says.
+
+### 13 November 2026 — Labs stop repeating themselves; registration and onboarding audit
+
+**Repetition (owner: "Fix the repetition issue").** The Labs prevented a repeat inside one session but not across sessions. A member starting an English topic again met, on average, 61% of the questions they had just seen (63% with identical wording). 35 English topics repeated six to eight of eight. Physics repeated 21% and Maths 11%.
+
+- **Memory.** `mlb_recent_seen($mid)` in `domain/mathslab.php` reads the member's last `MLB_RECENT_SESSIONS` (8) sessions in this Lab from `mlab_sessions.items`. `mlb_pick_fresh()` tries three tiers in order: avoid those eight sessions, then the last `MLB_RECENT_NEAR` (2), then only this session. A session is never shortened to avoid a repeat. The check, practice, mix, quick, review, boss and mini modes use it. The climb walks a topic in order, so it does not. The timed paper (`mlb_exam_pick`) rerolls a recent paper signature, except on its last try.
+- **Content.** `domain/englishlab-more.php` (new, in the bootstrap list after `englishlab-drill`) adds two forms to each of 21 English topics, merged last in `eng_forms()` so earlier form order is unchanged. Every English topic now has at least 24 distinct questions, and the validator reports 0 problems.
+- **Measured after:** Maths 0%, Physics 0%, English 4%. No topic repeats six or more of eight, no session is short, and no session repeats inside itself. `run.php` holds the promise for three topics in three Labs, for a thin topic, and for per-member and per-Lab isolation. A mutation check confirmed these tests fail without the memory.
+
+**Registration and onboarding audit (owner: "Audit the registration and onboarding process").** Driven end to end in a browser: Club application, staff acceptance, both emails read from the mail sink, the welcome link opened on a phone, a password set, and the dashboard reached.
+
+- **The welcome link left the new member on the public home page** after they set a password. `confirmReset` in `auth.jsx` now goes to the dashboard when a reset token signs somebody in from `/`.
+- **The welcome email** (`admin_application_convert`):
+  - It gave the internal record id (`NGG-2026-…`), where the card and every later screen show the printed number (`026-…`). It now gives the printed number.
+  - It promised "start details shortly", which never came as such. It now names the centre and start date, and lists what happens next: set a password, pay the joining invoice, and the NGG Family app at /family for parents.
+  - It now goes first. The invoice follows it, because the welcome is what introduces the invoice.
+- **The invoice email called itself "Welcome to NGG — one step left"** and said again that the place was confirmed, so the family got two welcomes. It is "Joining invoice for <child>" now.
+- **Application answers were lost to staff.** The vision, interests, areas of influence, where they heard of NGG, and the second guardian have no column on `members`. They stayed on the accepted application, and nothing linked the member to it. `admin.members.record` now returns `application` from `applications.convertedMemberId` (read-only). The record shows it under Overview → *In their own words* and Family & mentor → *Second parent or guardian*.
+- **Summer School ID email** said "Student ID". It now says "Participant number" (§5 vocabulary).
+- **Checked and fine:**
+  - The profile drive asks nothing a Club application already answered: `profile_missing` is empty.
+  - The start card shows the photo as done.
+  - "Link a parent" stays, by design: a parent's email alone never links a child.
+- **Not changed, and why:** applying sends three emails (the inbox notice to staff, the programme address, the family's acknowledgement), each to a different reader. Acceptance sends two, and they are now distinct.

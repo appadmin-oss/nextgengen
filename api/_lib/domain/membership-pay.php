@@ -439,15 +439,16 @@ function membership_invoice_send(array $inv, ?array $m = null): array {
     $first = explode(' ', trim((string)$m['fullName']))[0] ?: 'your child';
     $terms = membership_fee_terms();
     $bank = $terms['bank'];
-    $body = '<p style="margin:0 0 14px">' . esc_html($first) . '’s place in Next Generation Genius is confirmed. To complete membership, please pay the joining invoice below.</p>'
+    $body = '<p style="margin:0 0 14px">' . esc_html($first) . '’s joining invoice: the membership fee and the first month. Membership is complete once it is paid.</p>'
         . membership_items_html($inv)
         . '<p style="margin:16px 0 0;color:#5a6488;font-size:13.5px">The commitment fee for the first month is charged only for the meeting days left from the start date, ' . esc_html(gmdate('j F Y', (int)strtotime($inv['startDate'] . ' UTC'))) . '. From the next month it is charged in full.</p>'
         . ($bank ? '<p style="margin:14px 0 0;font-size:14px"><b>Prefer to pay by transfer?</b> ' . esc_html($bank['bankName']) . ' · ' . esc_html($bank['accountNumber']) . ' · ' . esc_html($bank['accountName'])
             . '. Use <b>' . esc_html($inv['invoiceId']) . '</b> as the narration and keep the slip — our team checks it and sends the receipt. Please do not pay twice.</p>' : '')
         . '<p style="margin:14px 0 0;font-size:13px;color:#5a6488">Invoice ' . esc_html($inv['invoiceId']) . ' · member ' . esc_html((string)($m['displayId'] ?: $m['memberId'])) . '</p>';
     $ok = @send_mail($to, 'Complete ' . $first . '’s NGG membership — ' . fees_money_text((int)$inv['total']), email_template([
-        'title' => 'Welcome to NGG — one step left',
-        'intro' => 'Thank you for choosing Next Generation Genius.',
+        // Its own name, not a second "Welcome": the welcome email (admin_application_convert) points here.
+        'title' => 'Joining invoice for ' . $first,
+        'intro' => 'One step to complete membership.',
         'bodyHtml' => $body,
         'ctaLabel' => $terms['paystack'] ? 'Pay ' . fees_money_text((int)$inv['total']) . ' securely' : 'View the invoice',
         'ctaUrl' => membership_pay_url($inv),

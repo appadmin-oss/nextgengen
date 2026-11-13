@@ -466,6 +466,10 @@ function SignInModal({ seed, onClose, onVerified }) {
         : { memberId: authTidyId(identifier), otp: otp.replace(/\s+/g, ""), password: newPw };
       const r = await NGGApi.auth.resetConfirm(creds);
       onVerified(r.member, r.mfa);
+      /* Arrived from the welcome (or reset) email: the link lands on the home page, and a new member who
+         had just set their password was left on the public home page with no idea where to go. A member
+         goes on to their own page; the second step, if owed, opens over it as on any sign-in. */
+      if (resetToken && r.member && (window.location.pathname || "/") === "/" && typeof window.__navigate === "function") window.__navigate("dashboard");
     } catch (e) { setErr(humanizeAuthError(e.code || e.message)); }
     finally { setBusy(false); }
   };

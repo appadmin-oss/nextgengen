@@ -1931,7 +1931,7 @@ function student_send_id(string $studentId): array {
         $html = email_template([
             'title' => $first . "'s Genius ID",
             'intro' => 'Hello' . (!empty($s['guardianName']) ? ' ' . esc_html((string)$s['guardianName']) : '') . " — here is {$first}'s Next Generation Genius ID.",
-            'bodyHtml' => '<p style="margin:0 0 10px"><b>Student ID:</b> ' . esc_html($displayId) . '</p>'
+            'bodyHtml' => '<p style="margin:0 0 10px"><b>Participant number:</b> ' . esc_html($displayId) . '</p>'
                 . $qrHtml
                 . '<p style="margin:0 0 10px">The QR above (and the button below) open ' . $first . "'s digital ID and attendance profile — the same code printed on the card. Show either at any centre to check in.</p>",
             'ctaLabel' => "Open {$first}'s ID →", 'ctaUrl' => $url,
