@@ -115,6 +115,8 @@ async function as(memberId, admin, viewport) {
     await ip.waitForSelector('.i6-app', { timeout: 60000 }).catch(async e => { console.error('DEBUG', ip.errs.join('\n'), await ip.evaluate(() => { document.querySelectorAll('details').forEach(x => x.open = true); return document.body.innerText.slice(0, 1500); })); throw e; });
     await ip.waitForFunction(() => !document.querySelector('.m15x-load'), null, { timeout: 60000 });
     chk('/instructor sends an NGG instructor to /instructor/ngg', new URL(ip.url()).pathname === '/instructor/ngg');
+    // The formation day is its own read (public.formation), after the page's main load: wait for it.
+    await ip.waitForFunction(() => /Musing/.test(document.querySelector('.i6-app')?.innerText || ''), null, { timeout: 20000 }).catch(() => {});
     const t = await ip.innerText('.i6-app');
     chk('Today: the course, its room and time from the timetable, and the Saturday formation day', /Coding/.test(t) && /Lab 1/.test(t) && /11:00/.test(t) && /Musing/.test(t));
     if (!(/Coding/.test(t) && /Lab 1/.test(t) && /11:00/.test(t) && /Musing/.test(t))) console.error('  Today read: ' + JSON.stringify({ coding: /Coding/.test(t), lab: /Lab 1/.test(t), time: /11:00/.test(t), musing: /Musing/.test(t) }) + ' ' + t.slice(0, 700).replace(/\s+/g, ' '));

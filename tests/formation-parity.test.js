@@ -51,6 +51,9 @@ function loadJs() {
    that will say so, loudly, rather than the doctrine drifting unnoticed. */
 function loadPhp() {
   const script = `<?php
+    /* formation.php reads the Club's division table (CLUB_DIVISIONS_DEFAULT), which lives with
+       the rest of what the Club teaches in curriculum.php. Both are pure: constants and functions. */
+    require_once ${JSON.stringify(path.join(ROOT, 'api/_lib/domain/curriculum.php'))};
     require_once ${JSON.stringify(path.join(ROOT, 'api/_lib/domain/formation.php'))};
     echo json_encode([
       'divisions'   => nggc_divisions(),

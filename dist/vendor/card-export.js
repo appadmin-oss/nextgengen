@@ -101,21 +101,30 @@
   var LOCAL_TIMEOUT = 5000;     // ms — our own assets: near-instant or not coming
   var IMAGE_TIMEOUT = 8000;     // ms — html2canvas; images are inlined by then
 
+  /* One promise per script, shared by every caller. A tag already on the page is not proof the
+     script has RUN: it may still be downloading (two cards drawn at once both ask for jsPDF, or
+     a stale copy of this file asked a moment ago). Resolving on the tag alone handed the second
+     caller an undefined window.jspdf, and the card failed with "reading 'jsPDF'". */
+  var _scripts = {};
   function loadScript(src) {
     // The page's build-versioned URL (components.jsx nggVendorUrl), so a deploy is never served last week's copy.
     if (root.nggVendorUrl && src.charAt(0) === '/') src = root.nggVendorUrl(src);
-    return new Promise(function (res, rej) {
-      var have = Array.prototype.some.call(document.scripts, function (s) { return s.src && s.src.indexOf(src) !== -1; });
-      if (have) return res();
+    if (_scripts[src]) return _scripts[src];
+    var p = new Promise(function (res, rej) {
       var done = false;
+      var timer = null;
       var finish = function (err) { if (done) return; done = true; clearTimeout(timer); err ? rej(err) : res(); };
-      var el = document.createElement('script');
-      var timer = setTimeout(function () { finish(new Error('timeout ' + src)); }, SCRIPT_TIMEOUT);
-      el.src = src;
-      el.onload = function () { finish(); };
-      el.onerror = function () { finish(new Error('load ' + src)); };
-      document.head.appendChild(el);
+      var tag = Array.prototype.filter.call(document.scripts, function (s) { return s.src && s.src.indexOf(src) !== -1; })[0];
+      if (tag && tag.getAttribute('data-ngg-loaded') === '1') return res();
+      var el = tag || document.createElement('script');
+      timer = setTimeout(function () { finish(new Error('timeout ' + src)); }, SCRIPT_TIMEOUT);
+      el.addEventListener('load', function () { el.setAttribute('data-ngg-loaded', '1'); finish(); });
+      el.addEventListener('error', function () { finish(new Error('load ' + src)); });
+      if (!tag) { el.src = src; document.head.appendChild(el); }
     });
+    _scripts[src] = p;
+    p.then(null, function () { delete _scripts[src]; });   // a failed load may be retried
+    return p;
   }
 
   var _deps = null;

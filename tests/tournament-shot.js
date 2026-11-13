@@ -17,12 +17,13 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">
 <style>body{margin:0;background:#f6f7fb;padding:20px;}</style>
-</head><body><div id="root"></div>
+</head><body><div id="root" hidden></div><div id="fx"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
 <script src="/dist/vendor/tanstack-table.min.js"></script>
 <script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
 <script src="/dist/${manifest.bundle.file}"></script>
+<script src="/dist/${manifest.more.file}"></script>
 <script>
  var Q=new URLSearchParams(location.search);
  var LIST={ tournaments:[
@@ -95,7 +96,7 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
    {memberId:'E10',fullName:'Ibrahim Ten',centre:'Ayobo'}]});} } } };
  var C = Q.get('view')==='bracket' ? React.createElement(AdminTournamentBracket,{tournamentId:'TRN-A1B2C3',onBack:function(){}})
        : React.createElement(AdminTournaments,null);
- ReactDOM.createRoot(document.getElementById('root')).render(C);
+ ReactDOM.createRoot(document.getElementById('fx')).render(C);
 </script></body></html>`);
   const srv=spawn('php',['-S','127.0.0.1:'+PORT,'-t',ROOT],{cwd:ROOT,stdio:'ignore'});
   const browser=await chromium.launch({executablePath:exe});

@@ -55,6 +55,7 @@ const ok = (l, c) => { c ? (pass++, console.log('  ✓ ' + l)) : (fail++, consol
 <script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
 <script src="/dist/api-client.js"></script>
 <script src="/dist/${manifest.bundle.file}"></script>
+<script src="/dist/${manifest.more.file}"></script>
 <script>
   window.__sorts = [];
   function Demo() {

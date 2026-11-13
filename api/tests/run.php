@@ -1326,8 +1326,25 @@ chk('summer signup: Apply finds the live public sign-up link — the centre\'s o
     return $none['url'] === '' && $eg['url'] === '/apply?g=SELF-EG' && $eg['centre'] === 'Egbeda' && $ay['url'] === '/apply?g=SELF-ALL' && $any['url'] === '/apply?g=SELF-ALL';
 })());
 db_update('applications', ['centre' => 'Egbeda'], ['id' => (int)$crow['id']]);   // the family's choice, as the form files it
+$GLOBALS['__mail_sink'] = [];
 $cconv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$crow['id']]);
 $cmem = db_row('SELECT * FROM members WHERE memberId = ?', [$cconv['memberId'] ?? '']);
+/* Onboarding audit (13 Nov 2026): one welcome, with the number on the card and what happens next. */
+$__wel = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains((string)$m['subject'], 'Welcome')));
+$__ord = array_map(fn($m) => str_contains((string)$m['subject'], 'Welcome') ? 'W' : (str_contains((string)$m['subject'], 'membership —') ? 'I' : ''), $GLOBALS['__mail_sink']);
+$__ord = implode('', $__ord);
+unset($GLOBALS['__mail_sink']);
+chk('onboarding · ONE email says welcome, and it gives the printed member number, not the internal record id', $cmem && count($__wel) === 1
+    && (string)$cmem['displayId'] !== '' && str_contains($__wel[0]['html'], (string)$cmem['displayId']) && !str_contains($__wel[0]['html'], (string)$cmem['memberId'] . '</b>'));
+chk('onboarding · the welcome says what happens next: set a password, and the family app for the parent', $__wel
+    && str_contains($__wel[0]['html'], 'Set a password') && str_contains($__wel[0]['html'], '/family') && !str_contains($__wel[0]['html'], 'in touch shortly'));
+chk('onboarding · the welcome arrives before the invoice it introduces (got "' . $__ord . '")', str_contains($__ord, 'W') && (!str_contains($__ord, 'I') || strpos($__ord, 'W') < strpos($__ord, 'I')));
+chk('onboarding · the invoice email no longer calls itself a welcome', !str_contains((string)file_get_contents(__DIR__ . '/../_lib/domain/membership-pay.php'), 'Welcome to NGG — one step left'));
+$__rec = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-2025-0099', 'memberId' => (string)($cmem['memberId'] ?? '')]);
+chk('onboarding · the member record carries what the family wrote on the application (vision, interests, who the guardian is to the child)',
+    !empty($__rec['ok']) && ($__rec['application']['vision'] ?? '') === (string)db_row('SELECT why FROM applications WHERE id = ?', [(int)$crow['id']])['why'] && mb_strlen($__rec['application']['vision']) >= 40 && in_array('Reading', $__rec['application']['hobbies'] ?? [], true)
+    && in_array('Education', $__rec['application']['influenceAreas'] ?? [], true) && ($__rec['application']['guardian1Rel'] ?? '') === 'Mother'
+    && array_key_exists('guardian2', $__rec['application']) && $__rec['application']['guardian2'] === null && ($__rec['application']['heardFrom'] ?? '') === 'WhatsApp');
 chk('club apply → member: the parent by name and number, the school and class, the agreements inherited', $cmem
     && $cmem['parentName'] === 'Adunni Adebayo' && $cmem['parentPhone'] === '08031234567' && $cmem['school'] === 'Egbeda Senior High School' && (json_decode((string)$cmem['profileJson'], true)['class'] ?? '') === 'JSS 2'
     && (int)db_row("SELECT COUNT(DISTINCT type) c FROM consents WHERE studentId = ? AND policyVersion = '2026.10'", [$cmem['memberId']])['c'] === 7
@@ -34022,6 +34039,46 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 })();
 
 
+/* ── The code is looked for on the account it was sent to ──────────────────────────
+   auth_request picks an email's account from auth_email_accounts (no suspended row, no
+   password-only staff); auth_verify used to pick the OLDEST row instead. When those differed
+   the child's code was "invalid" every time: a staff parent on the same address, or a
+   suspended brother entered first. Both fail without the fix in auth_resolve_member_id. */
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $n, $e, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => $n, 'email' => $e, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $code = function ($e, $ip) {
+        auth_request(['identifier' => $e, 'ip' => $ip]);
+        return db_row("SELECT * FROM auth_sessions WHERE purpose = 'login' AND otp <> '' ORDER BY id DESC LIMIT 1");
+    };
+    $mk('NGG-RV-ST', 'Funmi Staffparent', 'staff.home@example.com', ['role' => 'admin', 'passwordHash' => password_hash_best('staff-pass-444')]);
+    $mk('NGG-RV-K1', 'Dayo Staffchild', 'staff.home@example.com');
+    $ch = $code('staff.home@example.com', '10.9.8.1');
+    $v = auth_verify(['memberId' => 'staff.home@example.com', 'otp' => $ch['otp'], 'ip' => '10.9.8.1']);
+    chk('sign-in: a child sharing an email with a staff parent signs in with the emailed code (it went to the child, it is checked on the child)',
+        $ch['memberId'] === 'NGG-RV-K1' && !empty($v['ok']) && ($v['member']['memberId'] ?? '') === 'NGG-RV-K1');
+    // …and the staff parent can reset THEIR password from that address (it used to email the child's link only).
+    $GLOBALS['__mail_sink'] = [];
+    $rr = auth_reset_request(['identifier' => 'staff.home@example.com', 'ip' => '10.9.8.3']);
+    $mail = $GLOBALS['__mail_sink'][0] ?? [];
+    $tok = fn($id) => (string)(db_row("SELECT token FROM auth_sessions WHERE memberId = ? AND purpose = 'reset' ORDER BY id DESC LIMIT 1", [$id])['token'] ?? '');
+    chk('reset: a staff parent and child on one address get ONE email with a "Set …\'s password" for each, the staff one marked',
+        !empty($rr['ok']) && count($GLOBALS['__mail_sink']) === 1 && str_contains($mail['html'] ?? '', 'Set Funmi') && str_contains($mail['html'] ?? '', 'Set Dayo')
+        && str_contains($mail['html'] ?? '', 'staff account') && $tok('NGG-RV-ST') !== '' && $tok('NGG-RV-K1') !== '');
+    $rc = auth_reset_confirm(['token' => $tok('NGG-RV-ST'), 'password' => 'new-staff-pass-55', 'ip' => '10.9.8.3']);
+    $li = auth_login(['identifier' => 'staff.home@example.com', 'password' => 'new-staff-pass-55', 'ip' => '10.9.8.3']);
+    chk('reset: the staff link sets the staff password — and signs them in with it — not the child\'s',
+        !empty($rc['ok']) && ($rc['member']['memberId'] ?? '') === 'NGG-RV-ST' && ($li['member']['memberId'] ?? '') === 'NGG-RV-ST'
+        && (string)(db_row("SELECT passwordHash FROM members WHERE memberId = 'NGG-RV-K1'")['passwordHash'] ?? '') === '');
+    $mk('NGG-RV-S1', 'Gbenga Suspended', 'ojo.home@example.com', ['status' => 'suspended']);
+    $mk('NGG-RV-S2', 'Halima Active', 'ojo.home@example.com');
+    $ch = $code('ojo.home@example.com', '10.9.8.2');
+    $v = auth_verify(['memberId' => 'OJO.home@example.com', 'otp' => $ch['otp'], 'ip' => '10.9.8.2']);
+    chk('sign-in: with a suspended brother entered first, the sister\'s emailed code still signs HER in',
+        $ch['memberId'] === 'NGG-RV-S2' && !empty($v['ok']) && ($v['member']['memberId'] ?? '') === 'NGG-RV-S2');
+})();
+
+
 /* ── One email, several member accounts: "Who's signing in?" (auth.php auth_pick) ── */
 (function () {
     $now = now_iso(); $E = 'family.inbox@example.com';
@@ -38161,7 +38218,56 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('seo · aliases and per-record addresses (/q/…, /control) are real pages, never 404', spa_route_for('/q/abc', $routes)['status'] === 200 && spa_route_for('/control/members', $routes)['status'] === 200);
     chk('seo · a filtered view (?post=…) claims no canonical; a tracking parameter keeps it', !str_contains(spa_render($html, spa_route_for('/blog', $routes), 'post=hello'), 'rel="canonical"')
         && str_contains(spa_render($html, spa_route_for('/about', $routes), 'utm_source=x'), 'href="https://next.afrovanguard.org.ng/about"'));
+    /* SPA_ALIASES is a second list beside pageFromPath() in app.jsx, so it is held to it: every address the
+       router accepts by name must be a real page here too. One missing entry and a working link (a scanned
+       card, a notice in an email) answers 404 to the browser and to every crawler that follows it. */
+    $app = (string)file_get_contents($root . '/app.jsx');
+    $pf = substr($app, (int)strpos($app, 'function pageFromPath('), 6000);
+    $pf = substr($pf, 0, (int)strpos($pf, "\nfunction pathForPage(") ?: strlen($pf));
+    preg_match_all('/seg === "([a-z0-9-]+)"/', $pf, $mm);
+    $missingAlias = array_values(array_filter(array_unique($mm[1]), static fn($a) => spa_route_for('/' . $a . '/x', $routes)['status'] !== 200));
+    chk('seo · every address pageFromPath() accepts by name is a page to the 404 front too (' . count(array_unique($mm[1])) . ' read' . ($missingAlias ? '; missing: ' . implode(', ', $missingAlias) : '') . ')',
+        count($mm[1]) >= 10 && !$missingAlias);
+    /* /study/labs, /study/tools … reach lab-page.php (the .htaccess rule takes every /study/<word>), which
+       has no Lab page for them. It hands them to spa_render() with the study route; the raw shell would
+       have carried the HOME page's title and canonical. */
+    $studyHits = [];
+    foreach (['/study/labs', '/study/tools', '/study/revise', '/study/maths'] as $sp) {
+        $same = function_exists('lab_seo_shell') && lab_seo_shell($html, $sp) === $html;
+        $out = spa_render($html, ['route' => $routes['study'], 'status' => 200, 'path' => '/study']);
+        $studyHits[] = $same && str_contains($out, 'href="https://next.afrovanguard.org.ng/study"') && !str_contains($out, 'rel="canonical" href="https://next.afrovanguard.org.ng/"');
+    }
+    $lp = (string)file_get_contents(dirname(__DIR__) . '/public/lab-page.php');
+    chk('seo · a /study tab that is not a Lab gets the study page\'s head, not the home page\'s', !in_array(false, $studyHits, true)
+        && str_contains($lp, "spa_render(\$shell, ['route' => \$routes['study']") && str_contains((string)file_get_contents(dirname(__DIR__) . '/public/spa.php'), "!defined('SPA_LIBRARY')"));
     chk('seo · no static sitemap.xml ships to hide the live one', !in_array('sitemap.xml', (function () { preg_match('/const staticAssets = \[(.*?)\];/s', (string)file_get_contents(dirname(__DIR__, 2) . '/build.js'), $m); preg_match_all("/'([^']+)'/", $m[1] ?? '', $x); return $x[1]; })(), true));
+})();
+
+/* ── …nor from one session to the next (owner, 13 Nov 2026: "Fix the repetition issue") ──
+   "Practise again" dealt back 61% of the same English questions and 21% in Physics: nothing
+   remembered the session before. mlb_recent_seen reads the member's recent sessions; mlb_pick_fresh
+   avoids them, and only a topic with nothing new left falls back — never a shorter session. */
+(function () {
+    $now = now_iso(); $n = 0;
+    $session = function (string $mid, array $items) use (&$n) { db_insert('mlab_sessions', ['sessionId' => 'MLS-RPT-' . (++$n), 'memberId' => $mid, 'lab' => lab_id(), 'mode' => 'practice', 'ref' => '', 'items' => json_encode($items), 'resp' => '{}', 'startedAt' => gmdate('Y-m-d\TH:i:s\Z', time() + $n), 'finishedAt' => '']); };
+    $sigs = fn(array $its) => array_map(fn($x) => mlb_item_sig(mlb_item($x['c'], $x['f'], $x['s'])), $its);
+    foreach (['maths' => 'MC-047', 'physics' => 'PH-012', 'english' => 'EN-016'] as $lab => $c) {
+        lab_use($lab);
+        $mid = 'NGG-RPT-' . strtoupper($lab);
+        $a = mlb_pick_fresh(mlb_recent_seen($mid), [$c], 8); $session($mid, $a);
+        $b = mlb_pick_fresh(mlb_recent_seen($mid), [$c], 8);
+        chk("labs · $c: the next session asks none of the last session's questions, and is still full length",
+            count($b) === 8 && !array_intersect($sigs($b), $sigs($a)));
+    }
+    // A topic with too few questions for a fresh session still gets a FULL one, and nothing twice inside it.
+    lab_use('english'); $c = 'EN-074'; $mid = 'NGG-RPT-THIN';
+    for ($k = 0; $k < 3; $k++) $session($mid, mlb_pick_fresh(mlb_recent_seen($mid), [$c], 8));
+    $d = mlb_pick_fresh(mlb_recent_seen($mid), [$c], 8); $sd = $sigs($d);
+    chk('labs · a thin topic falls back to what was seen longest ago — never a shorter session, never a repeat inside it',
+        count($d) === min(8, count(array_unique($sd))) && count($sd) === count(array_unique($sd)) && count($d) >= 6);
+    // Another member's sessions, and another Lab's, are not this member's memory.
+    lab_use('maths');
+    chk('labs · the memory is per member and per Lab', mlb_recent_seen('NGG-RPT-NOBODY')['sigs'] === [] && mlb_recent_seen('NGG-RPT-ENGLISH')['sigs'] === []);
 })();
 
 /* ── The Labs don't repeat themselves (audit, 8 Nov 2026) ── */
@@ -38889,7 +38995,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        is "am", a jury divided in THEIR opinion is plural; and the sound topics teach a rule first too. */
     $allF = eng_forms(); $drillBad = [];
     foreach (eng_drill_forms() as $id => $extra) {
-        $own = count($allF[$id] ?? []) - count($extra);
+        // englishlab-more.php appends after the drills (13 Nov 2026), so the drills sit just before those.
+        $own = count($allF[$id] ?? []) - count($extra) - count(eng_more_forms()[$id] ?? []);
         foreach ($extra as $k => $fn) if ($own < 1 || ($allF[$id][$own + $k] ?? null) === null || $allF[$id][$own + $k](new MlbRng(7))['stem'] !== $fn(new MlbRng(7))['stem']) { $drillBad[] = $id; break; }
     }
     $keyOf = static function (string $id, string $needle): array {
@@ -38898,6 +39005,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         return array_unique($out);
     };
     chk('english lab · the exam-trap drills come after each topic\'s own forms, so no stored session changes question' . ($drillBad ? ' (' . implode(', ', $drillBad) . ')' : ''), $drillBad === []);
+    $moreBad = [];
+    foreach (eng_more_forms() as $id => $extra) {
+        $n = count($allF[$id] ?? []); $at = $n - count($extra);
+        foreach ($extra as $k => $fn) if (($allF[$id][$at + $k] ?? null) === null || $allF[$id][$at + $k](new MlbRng(11))['stem'] !== $fn(new MlbRng(11))['stem']) { $moreBad[] = $id; break; }
+    }
+    chk('english lab · the added questions (englishlab-more) come last, after the drills, so every stored session still replays' . ($moreBad ? ' (' . implode(', ', $moreBad) . ')' : ''), $moreBad === [] && count(eng_more_forms()) === 21);
     chk('english lab · concord traps are keyed right: one of those who ARE, neither she nor I AM, the jury ARE divided in their opinion',
         $keyOf('EN-038', 'one of those teachers who') === ['are'] && $keyOf('EN-038', 'Neither she nor I') === ['am'] && $keyOf('EN-038', 'The jury') === ['are']);
     $soundsNoRule = array_values(array_filter(['EN-021', 'EN-022', 'EN-024', 'EN-025', 'EN-026', 'EN-027', 'EN-028', 'EN-050'], static fn($t) => !mlb_why_of($t)));

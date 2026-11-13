@@ -1019,6 +1019,10 @@ class Cm3App extends React.Component {
       onFiles, fileChips, files, filesEmpty: !files.length,
       onPeople: s.view === "channel" && s.chTab === "people", people,
       onJournal: s.view === "journal", journalEl: s.view === "journal" && typeof CmJournalMine === "function" ? React.createElement(Cm3Journal, { auth: this.props.auth, onWrite: seed => this.setState({ writing: seed }) }) : null,
+      /* The quote of the week leads the home feed, as it did on the first Community (page-club.jsx):
+         the same saying the home page shows, as a card inside the feed. Not on a filter, a search, a
+         person's posts or a channel, where it would push what was asked for down the page. */
+      qowEl: s.view === "home" && s.filter === "all" && !s.q.trim() && !s.byAuthor && typeof QuoteOfWeek === "function" ? React.createElement(QuoteOfWeek, { variant: "community" }) : null,
       offlineEl: s.offline ? React.createElement("p", { className: "cm3x-offline", role: "status" }, "You’re offline. What you’re writing is kept as a draft on this device — press Post again once you’re back online.") : null,
       /* The design's one full-width panel slot: the Arcade, and the support
          desk (support-desk.jsx) — the same cases as My NGG, opened from here. */

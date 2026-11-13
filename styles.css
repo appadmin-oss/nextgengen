@@ -8979,6 +8979,8 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-inrow { display: flex; align-items: center; gap: 8px; }
 .mlb-in { flex: 1 1 auto; min-width: 0; min-height: 50px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #c9cfe2; font: inherit; font-size: 1.15rem; color: var(--mlb-ink); background: #fff; }
 .mlb-unit { font-weight: 700; color: var(--mlb-ink-2); }
+/* Marked: settled, not active. The answer stays readable (ink on a quiet ground), the frame stops inviting a tap. */
+.mlb-in:disabled { background: #f3f4f8; border-color: #e1e4ee; color: var(--mlb-ink); -webkit-text-fill-color: var(--mlb-ink); opacity: 1; cursor: default; }
 .mlb-keys { display: flex; flex-wrap: wrap; gap: 6px; }
 .mlb-key { min-width: 44px; min-height: 44px; border-radius: 10px; border: 1px solid #c9cfe2; background: #f6f7fb; font: inherit; font-weight: 700; color: var(--mlb-ink); cursor: pointer; }
 .mlb-rule { font-weight: 600; color: var(--mlb-ink); }
@@ -9109,7 +9111,14 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
    Lab's sections are a segmented control above the content at every width — never a second sidebar. */
 @container (max-width: 420px) { .mlb-nav { display: flex; width: 100%; } .mlb-navb { flex: 1 1 0; justify-content: center; padding: 0 6px; } }
 /* Five tabs on a phone: icons, with each name kept for screen readers. */
-@container (max-width: 420px) { .mlb-navb:has(.mlb-navdot) { padding-right: 6px; } .mlb-navdot { top: 2px; right: 2px; transform: none; } .mlb-navb > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } .mlb-navb i { font-size: 20px; } }
+@container (max-width: 420px) { .mlb-navb:has(.mlb-navdot) { padding-right: 6px; } .mlb-navdot { top: 2px; right: 2px; transform: none; } }
+/* A phone shows each tab's word under its icon. Six bare icons (a road, a cap, a scroll, a chart)
+   asked a child to guess which was Map and which was Progress. */
+@container (max-width: 420px) {
+  .mlb-navb { flex-direction: column; gap: 2px; min-height: 52px; padding: 6px 2px; }
+  .mlb-navb i { font-size: 19px; }
+  .mlb-navb > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 10.5px; line-height: 1.15; font-weight: 600; letter-spacing: -0.01em; }
+}
 .mlb-navb { position: relative; }
 .mlb-navb:has(.mlb-navdot) { padding-right: 32px; }
 .mlb-navdot { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: grid; place-items: center;
@@ -9435,7 +9444,8 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
   .mlb-stat i { display: none; }
   .mlb-stat b { font-size: 18px; }
   .mlb-stat span { font-size: 12px; }
-  .mlb-statsbar { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* Three short numbers and one word: the level ("Apprentice") gets the room the numbers do not use; equal quarters cut it to "Appre…". */
+  .mlb-statsbar { grid-template-columns: repeat(3, minmax(0, .8fr)) minmax(0, 1.6fr); }
   .mlb-sb { padding: 10px 8px; font-size: 15px; gap: 5px; justify-content: center; }
   .mlb-sb i { font-size: 16px; }
   .mlb-sb.is-lvl b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -9682,15 +9692,19 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
    transitions (the scroll reveals in motion.jsx stop too), backdrop blur (a full-screen GPU pass every
    frame on a sticky header), fixed backgrounds (a repaint on every scroll), and smooth scrolling.
    Focus rings, borders and colours are untouched. */
-:root[data-lite="on"] *:not(#_):not(#_), :root[data-lite="on"] :not(#_):not(#_)::before, :root[data-lite="on"] :not(#_):not(#_)::after {
-  /* Run animations INSTANTLY rather than not at all: an element that fades in from opacity 0 must
+:root[data-lite="on"] *:not(#_):not(#_):not(#_), :root[data-lite="on"] :not(#_):not(#_):not(#_)::before, :root[data-lite="on"] :not(#_):not(#_):not(#_)::after {
+  /* No important-flags (owner’s rule): like the reduce-motion block above, three :not(#_) give this rule
+     an id-level specificity no stylesheet rule reaches. Run animations INSTANTLY rather than not at all: an element that fades in from opacity 0 must
      still arrive at its end state (the same trick as data-motion="reduce" above). */
-  animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important;
-  transition-duration: 0.01ms !important; transition-delay: 0s !important;
-  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
-  background-attachment: scroll !important; scroll-behavior: auto !important;
+  animation-duration: 0.01ms; animation-iteration-count: 1; animation-delay: 0s;
+  transition-duration: 0.01ms; transition-delay: 0s;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  background-attachment: scroll; scroll-behavior: auto;
 }
-:root[data-lite="on"] { --motion: 0; }
+:root[data-lite="on"] { --motion: 0; --lite-blur: none; }
+/* The two switches an INLINE style reads, because no stylesheet rule outranks an inline declaration
+   (and important-flags are not used here): motion as calc(Ns * var(--motion, 1)), blur as
+   var(--lite-blur, blur(Npx)). tests/lite-mode.test.js holds every inline style in the source to them. */
 
 /* ── Labs: Remember it (mlb-app.jsx MlbRemember) — a picture sequence, learner-paced, ending in recall ── */
 .mlb-rem { display: grid; gap: 12px; }

@@ -162,8 +162,8 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     /* A browser that has not signed in before gets the same screen for every
        address (password, or a code) — so the member asks for the code. */
     await kid.waitForSelector('#signin-pw', { timeout: 20000 });
-    chk('a new browser is shown the same first screen for every account: password, or a code', /No password\? Email me a sign-in code/.test(await kid.innerText('.signin-alts')));
-    await kid.click('.signin-alts button');
+    chk('a new browser is shown the same first screen for every account: password, or a code', /No password\? Email me a sign-in code/.test(await kid.innerText('.signin-alt--wide')));
+    await kid.click('.signin-alt--wide');
     await kid.waitForSelector('#signin-otp', { timeout: 20000 });
     await typeCode(kid, '#signin-otp', otpFor('NGG-MF-K1'));
     await kid.waitForSelector('.mfa-q', { timeout: 20000 });
@@ -217,7 +217,7 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     await kd.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
     await waitForBoot(kd);
     await kd.waitForSelector('#signin-idp', { timeout: 60000 });
-    await kd.click('button:has-text("I have a code from staff")');
+    await kd.click(".signin-pair button:has-text(\"From staff\")");
     await kd.fill('#signin-desk-id', lr.signInAs);
     await kd.fill('#signin-desk-code', 'WXYZ-2345');
     await kd.click('.signin-card button[type="submit"]');
@@ -333,7 +333,7 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     await desk.waitForFunction(() => /Code for Kemi Okoro/.test(document.body.innerText), null, { timeout: 15000 });
     const codeTxt = await desk.innerText('body');
     const shown = (codeTxt.match(/[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}/) || [])[0] || '';
-    chk('letting in from the drawer shows the code and the ID to read out, once', !!shown && /I have a code from staff/.test(codeTxt));
+    chk('letting in from the drawer shows the code and the ID to read out, once', !!shown && /From staff|Got a code from staff/.test(codeTxt));
     r = await post(await fresh(), '/auth/desk.php', { identifier: 'kemi.okoro@mfa.example', code: shown });
     chk('…and that code signs Kemi in with no password', r.ok());
     await desk.click('button:has-text("Done")');

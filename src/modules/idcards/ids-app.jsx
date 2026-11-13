@@ -505,6 +505,9 @@ function IdCardStudioPage({ setPage }) {
     setUploads(us => us.map(u => upCut[u.uid] && !gone.has(u.uid) ? Object.assign({}, u, { copies: u.copies - upCut[u.uid] }) : u));
     setQueue(qq => qq.filter(x => x.t === "r" ? !recKeys.has(x.key) : !gone.has(x.uid)));
     setSel(null);
+    /* In the same render as the removal: left to the clamp effect, the pager drew one frame of
+       "Sheet 3 of 2" after the last sheet went. */
+    setSheetIdx(i => Math.max(0, Math.min(i, nSheets - 2)));
     say("Sheet " + (idx + 1) + " removed · " + idsN(on.length, "card") + " off the run", () => { setQueue(prevQ); setUploads(prevU); });
   };
 

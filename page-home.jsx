@@ -113,7 +113,7 @@ function Hero({ setPage }) {
           </div>
 
           {/* Right: a glass card framing the cohort photo + Genius of the Week. */}
-          <div className="reveal" data-reveal style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: 24, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+          <div className="reveal" data-reveal style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: 24, backdropFilter: "var(--lite-blur, blur(8px))", WebkitBackdropFilter: "var(--lite-blur, blur(8px))" }}>
             <div style={{ aspectRatio: "4 / 3", borderRadius: 16, overflow: "hidden", position: "relative", background: "var(--navy-hero-end)" }}>
               <img src={scene("heroMain", 1400)} alt="Current cohort" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
             </div>
@@ -942,7 +942,7 @@ function StatusPage({ setPage, previewConfig }) {
 
   // Centre table (sorted)
   const sorted = [...centresRaw].sort((a, b) => sortKey === "name" ? a.name.localeCompare(b.name) : sortKey === "present" ? (b.present - a.present) : (b.rate - a.rate));
-  const segBase = { fontFamily: "'Inter',sans-serif", fontSize: 13, fontWeight: 600, padding: "7px 15px", border: "none", cursor: "pointer", borderRadius: 999, transition: "all .15s ease" };
+  const segBase = { fontFamily: "'Inter',sans-serif", fontSize: 13, fontWeight: 600, padding: "7px 15px", border: "none", cursor: "pointer", borderRadius: 999, transition: "all calc(.15s * var(--motion, 1)) ease" };
   const segStyle = (on) => ({ ...segBase, background: on ? "#0c1432" : "transparent", color: on ? "#fff" : "#2a335c" });
 
   // Trend
@@ -1031,7 +1031,7 @@ function StatusPage({ setPage, previewConfig }) {
     const allMem = members.filter(m => m.centre === dc.name);
     const facSet = [...new Set(allMem.map(m => m.faculty))];
     const avgStars = allMem.length ? Math.round(allMem.reduce((s, m) => s + m.stars, 0) / allMem.length) : 0;
-    const chipBase = { display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'Inter',sans-serif", fontSize: 13.5, fontWeight: 600, padding: "8px 15px", borderRadius: 999, cursor: "pointer", border: "1.5px solid", transition: "all .15s ease" };
+    const chipBase = { display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'Inter',sans-serif", fontSize: 13.5, fontWeight: 600, padding: "8px 15px", borderRadius: 999, cursor: "pointer", border: "1.5px solid", transition: "all calc(.15s * var(--motion, 1)) ease" };
     const mkChip = (label, count) => {
       const sel = facFilter === label;
       return { label, count, style: { ...chipBase, background: sel ? "rgba(28,42,94,0.10)" : "#fff", borderColor: sel ? "#0c1432" : "#e5e8ee", color: sel ? "#0c1432" : "#2a335c" },
@@ -1085,7 +1085,7 @@ function StatusPage({ setPage, previewConfig }) {
               </div>
             </div>
 
-            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "var(--rs-p-40, 26px 28px)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "var(--rs-p-40, 26px 28px)", backdropFilter: "var(--lite-blur, blur(8px))", WebkitBackdropFilter: "var(--lite-blur, blur(8px))" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Attendance today</span>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: accent }}>{k.centres || 0} centres</span>
@@ -1884,7 +1884,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
               </div>
             </div>
 
-            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "var(--rs-p-40, 26px 28px)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "var(--rs-p-40, 26px 28px)", backdropFilter: "var(--lite-blur, blur(8px))", WebkitBackdropFilter: "var(--lite-blur, blur(8px))" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Needs filled</span>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: accent }}>{k.centres || 0} centres</span>

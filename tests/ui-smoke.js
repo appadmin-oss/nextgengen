@@ -4044,7 +4044,7 @@ function unzipDocumentXml(buf) {
       if (mlbErrs.length || h.errs.length) console.error('       ', mlbErrs.concat(h.errs).slice(0, 3).join(' | '));
       ok('…greets the member and offers the SAME next step the Arcade band named',
          /Hello, Amaka/.test(h.text) && /Stage 4 gate/.test(h.go) && /Start the gate/.test(h.go));
-      ok('…with its own Home / Map / Courses / Progress', h.nav.join(',') === 'Home,Map,Courses,Progress');
+      ok('…with its own Home / Map / Courses / Certificates / Progress (and Exams where the Lab has them)', /^Home,Map,Courses,Certificates,Progress(,Exams)?$/.test(h.nav.join(',')), h.nav.join(','));
     } else {
       // Say WHY it did not render, not only that it did not.
       console.error('        ', JSON.stringify(await mlb.evaluate(() => ({ errs: window.__errors, text: document.body.innerText.slice(0, 200) }))), mlbErrs.slice(0, 2));

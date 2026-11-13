@@ -647,7 +647,24 @@ body.cm-app .fab-top { display: none; }
 .signin-spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: signin-spin .7s linear infinite; }
 @keyframes signin-spin { to { transform: rotate(360deg); } }
 
-.signin-alts { display: flex; justify-content: center; margin-top: 12px; }
+.signin-alts { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 12px; }   /* one per line: side by side they wrapped into each other */
+/* The other real way in: full width, under an "or", second only to the one solid button. */
+.signin-or { display: flex; align-items: center; gap: 12px; margin-top: 16px; font-size: 12.5px; color: var(--cr-muted-3); }
+.signin-or::before, .signin-or::after { content: ""; flex: 1; height: 1px; background: var(--cr-line); }
+.signin-alt {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; height: 44px; padding: 0 12px;
+  border: 1px solid var(--cr-line-strong); border-radius: var(--cr-r); background: var(--cr-bg); color: var(--cr-ink);
+  font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; transition: border-color .15s var(--cr-ease), background .15s var(--cr-ease);
+}
+.signin-alt .ph { font-size: 17px; flex: none; }
+.signin-alt:hover:not(:disabled) { border-color: var(--cr-ink); background: var(--cr-s1); }
+.signin-alt:disabled { opacity: .35; cursor: not-allowed; }
+.signin-alt--wide { width: 100%; margin-top: 16px; }
+.signin-more { margin-top: 20px; text-align: center; }
+.signin-more-h { font-size: 12.5px; color: var(--cr-muted-3); }
+.signin-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.signin-staff { margin: 14px 0 0; text-align: center; font-size: 13px; color: var(--cr-muted-3); }
+.signin-link--inline { min-height: 0; padding: 0; color: var(--cr-ink); text-decoration: underline; text-underline-offset: 3px; }
 .signin-link {
   min-height: 32px; padding: 0 4px; border: 0; background: transparent;
   font: inherit; font-size: 13.5px; font-weight: 500; color: var(--cr-muted-2); cursor: pointer;
@@ -8680,7 +8697,10 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-ws > .cr-locked, .cr-ws > .cr-err, .cr-ws > .cr-skel { margin: 24px; flex: 1; }
 
 .cr-ib { flex: 1; min-height: 0; display: grid; grid-template-columns: 232px minmax(300px, 380px) minmax(0, 1fr); }
-@container (max-width: 1240px) { .cr-ib { grid-template-columns: 64px minmax(280px, 340px) minmax(0, 1fr); } .cr-ib-view .cr-grow, .cr-ib-rail-foot span { display: none; } .cr-ib-view { justify-content: center; position: relative; } .cr-ib-view .cr-ib-n { position: absolute; top: 2px; right: 4px; } }
+/* 1100, not 1240: the rail folds to icons only when the reading pane would drop below ~490px (the room the
+   old 1080/216px rule gave it, with the rail now 232px). At 1240 it folded on a 1440px laptop, the commonest
+   desk, where the panel is ~1190px wide and has room for the labels. */
+@container (max-width: 1100px) { .cr-ib { grid-template-columns: 64px minmax(280px, 340px) minmax(0, 1fr); } .cr-ib-view .cr-grow, .cr-ib-rail-foot span { display: none; } .cr-ib-view { justify-content: center; position: relative; } .cr-ib-view .cr-ib-n { position: absolute; top: 2px; right: 4px; } }
 .cr-ws { container-type: inline-size; }
 
 /* Rail */
@@ -9257,13 +9277,16 @@ button.cr-list-row:hover { background: var(--cr-s1); }
    person using it, so the WHOLE box shows focus: its edge darkens and a soft
    halo surrounds it, never a ring on the bare text area inside. Matched by
    shape, so a new search box gets it without being listed here. Zero
-   specificity (:where), so a field that styles its own :focus-within keeps it. */
-:where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s, .signin-form, .signin-pw, .portal-login-card form)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color])), :has(> input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color]) ~ :is(i, svg, .ph, button, [class*="-ic"]))):focus-within {
+   specificity (:where), so a field that styles its own :focus-within keeps it.
+   Not a ROW of separate controls that only looks like the shape: the timetable's quick add
+   (.tt-qa-row) is a bordered input beside its own send button, and the row has no edge to
+   darken, so matching it took the input's ring away and drew a halo round nothing. */
+:where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s, .signin-form, .signin-pw, .portal-login-card form, .tt-qa-row)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color])), :has(> input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color]) ~ :is(i, svg, .ph, button, [class*="-ic"]))):focus-within {
   outline: none;
   border-color: currentColor;
   box-shadow: 0 0 0 1px currentColor, 0 0 0 5px color-mix(in srgb, currentColor 14%, transparent);
 }
-html:root :where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s, .signin-form, .signin-pw, .portal-login-card form)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input), :has(> input ~ :is(i, svg, .ph, button, [class*="-ic"]))) > input:focus-visible {
+html:root :where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s, .signin-form, .signin-pw, .portal-login-card form, .tt-qa-row)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input), :has(> input ~ :is(i, svg, .ph, button, [class*="-ic"]))) > input:focus-visible {
   /* Beats the site-wide input:focus-visible safety ring (styles.css), which
      otherwise draws a second ring on the bare input inside the box — and the
      portals' scoped rings too (`.cr-app :focus-visible` is 0,2,0, which beat
@@ -15508,8 +15531,9 @@ button.m9x-ev-sum { cursor: pointer; }
 .fp3-67b0966{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:500}
 .fp3-48f85aa{height:50px;padding:0 14px;border:1px solid #d9d6cd;border-radius:14px;font-size:16px;outline:none;background:#fff}
 .fp3-74814cc{height:52px;border:0;border-radius:14px;background:#0b0b0c;color:#fff;font-size:16px;font-weight:600}
-.fp3-d957212{height:56px;padding:0 14px;border:1px solid #d9d6cd;border-radius:14px;font-size:24px;letter-spacing:.3em;font-family:'Geist Mono', monospace;outline:none;text-align:center}
 .fp3-b83912d{height:40px;border:0;background:transparent;font-size:14px;color:#4a4a50;text-decoration:underline}
+.fp3-1d6cd4c{height:56px;padding:0 14px;border:1px solid #d9d6cd;border-radius:14px;font-size:22px;letter-spacing:.2em;font-family:'Geist Mono', monospace;outline:none;text-align:center}
+.fp3-d957212{height:56px;padding:0 14px;border:1px solid #d9d6cd;border-radius:14px;font-size:24px;letter-spacing:.3em;font-family:'Geist Mono', monospace;outline:none;text-align:center}
 .fp3-8a57329{font-size:13.5px;color:#a12a2a}
 .fp3-684fe9a{margin:0;font-size:13px;color:#6b6b72;text-wrap:pretty}
 .fp3-c608b70{width:288px;flex-shrink:0;background:#fbfaf7;border-right:1px solid #e8e5dd;display:flex;flex-direction:column;padding:18px 14px 14px;gap:18px;overflow-y:auto;overscroll-behavior:contain}
@@ -18127,4 +18151,4 @@ button.m9x-ev-sum { cursor: pointer; }
 .cr-ib-push .ngp-ic { display: none; }
 .cr-ib-push .ngp-nudge-t small { font-size: 12.5px; }
 .cr-ib-push .ngp-btn { height: 32px; padding: 0 12px; font-size: 13px; }
-@container (max-width: 1240px) { .cr-ib-rail-foot .cr-linkbtn { font-size: 0; justify-content: center; } .cr-ib-rail-foot .cr-linkbtn .ph { font-size: 16px; } }
+@container (max-width: 1100px) { .cr-ib-rail-foot .cr-linkbtn { font-size: 0; justify-content: center; } .cr-ib-rail-foot .cr-linkbtn .ph { font-size: 16px; } }

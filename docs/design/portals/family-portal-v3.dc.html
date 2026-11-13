@@ -39,6 +39,13 @@ button{cursor:pointer}
         <sc-if value="{{ siEmailStep }}" hint-placeholder-val="{{ true }}">
           <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Your email<input type="email" value="{{ siEmail }}" onChange="{{ onSiEmail }}" onKeyDown="{{ onSiKey }}" placeholder="the one you gave NGG" autoComplete="email" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:16px; outline:none; background:#fff;"></label>
           <button onClick="{{ siSend }}" style="height:52px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:16px; font-weight:600;">Email me a sign-in code</button>
+          <button onClick="{{ siToDesk }}" style="height:40px; border:0; background:transparent; font-size:14px; color:#4a4a50; text-decoration:underline;">I have a code from staff</button>
+        </sc-if>
+        <sc-if value="{{ siDeskStep }}">
+          <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Your email<input type="email" value="{{ siEmail }}" onChange="{{ onSiEmail }}" onKeyDown="{{ onSiKey }}" placeholder="the one you gave NGG" autoComplete="email" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:16px; outline:none; background:#fff;"></label>
+          <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Code from staff<input value="{{ siDesk }}" onChange="{{ onSiDesk }}" onKeyDown="{{ onSiKey }}" placeholder="XXXX-XXXX" autoComplete="off" autoCapitalize="characters" spellCheck="false" style="height:56px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:22px; letter-spacing:.2em; font-family:'Geist Mono', monospace; outline:none; text-align:center;"></label>
+          <button onClick="{{ siDeskGo }}" style="height:52px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:16px; font-weight:600;">Sign in</button>
+          <button onClick="{{ siBack }}" style="height:40px; border:0; background:transparent; font-size:14px; color:#4a4a50; text-decoration:underline;">Email me a code instead</button>
         </sc-if>
         <sc-if value="{{ siCodeStep }}">
           <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">6-digit code<input inputMode="numeric" value="{{ siCode }}" onChange="{{ onSiCode }}" onKeyDown="{{ onSiKey }}" placeholder="••• •••" autoComplete="one-time-code" style="height:56px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:24px; letter-spacing:.3em; font-family:'Geist Mono', monospace; outline:none; text-align:center;"></label>
@@ -629,7 +636,7 @@ class Component extends DCLogic {
 
     if (!signedIn) {
       const step = S.siStep;
-      Object.assign(out, { siEmailStep: step === 'email', siCodeStep: step === 'code', siEmail: S.siEmail, siCode: S.siCode, siHasErr: !!S.siErr, siErr: S.siErr,
+      Object.assign(out, { siEmailStep: step === 'email', siCodeStep: step === 'code', siDeskStep: step === 'desk', siDesk: S.siDesk || '', siToDesk: () => this.setState({ siStep: 'desk', siErr: '' }), onSiDesk: e => this.setState({ siDesk: e.target.value.toUpperCase().slice(0, 9) }), siDeskGo: () => { this.setState({ out: false, siStep: 'email' }); this.toast('Signed in'); }, siEmail: S.siEmail, siCode: S.siCode, siHasErr: !!S.siErr, siErr: S.siErr,
         siH: step === 'email' ? 'See how your child is doing at NGG.' : 'Check your email', siP: step === 'email' ? 'Attendance, lessons, fees and what their mentor says, all in one place. We’ll email you a code, so there’s no password to remember.' : 'We sent a 6-digit code to ' + S.siEmail + '. It works for 15 minutes.',
         onSiEmail: e => this.setState({ siEmail: e.target.value, siErr: '' }), onSiCode: e => this.setState({ siCode: e.target.value.replace(/\D/g, '').slice(0, 6), siErr: '' }),
         siSend: () => { if (!/^\S+@\S+\.\S+$/.test(S.siEmail.trim())) return this.setState({ siErr: 'That doesn’t look like an email address.' }); this.setState({ siStep: 'code', siErr: '' }); },

@@ -7272,3 +7272,160 @@ Appended **87 forms** through `eng_drill_forms()`: 80 bounded production forms p
 Validation: **6,963 backend / 28 client / 107 browser passes, zero failures**, against the 6,963 / 28 / 104 baseline. The scratch sweep generated **17,400 new-form instances** (200 seeds for each of 87 forms): no duplicate options, missing keys, empty hints, self-marking failures, answer leaks or fixed typed answers. All 777 captured historical samples remained identical. Examiner review checked bounded-answer instructions and context, including distinguishing missing evidence from a false claim. An intermediate browser run had one intermittent failure in the unchanged Maths phone gate; the complete rerun passed. No change to that Maths journey was made. A legacy English assertion was updated from five to six forms for EN-023.
 
 The summit and additional recordings are still to follow. No existing recording was changed. No new IPA transcriptions were added; dictionary verification remains blocked pending the saved domain-access draft.
+
+### 12 November 2026 — Audit: every node suite run, product defects fixed, stale suites brought up to the screens they test
+
+The whole node suite list (140 entries) was run one suite at a time, because the e2e suites each write a throwaway `api/config.php` and cannot overlap. Each failure was traced to a product defect or to a suite that had fallen behind a screen.
+
+**Product defects found by the run, and fixed:**
+
+- **ID Card Studio print could make no PDF.** In `vendor/card-export.js`, `loadScript` resolved as soon as a `<script>` tag for the URL existed, even while it was still downloading. When two cards were drawn at once, or a stale copy of the file asked a moment earlier, the second caller read an undefined `window.jspdf`. The card failed with "reading 'jsPDF'", and "Nothing was printed". The fix keeps one shared promise per script and waits on a tag that is already there.
+- **ID Card Studio: a one-frame "Sheet 3 of 2".** This showed after the last sheet was removed. The sheet index is now clamped in the same update.
+- **Lite mode left inline motion running.** No stylesheet rule outranks an inline declaration without an important-flag, and those flags are not used. Five inline backdrop blurs and two bare inline transitions read Lite's switches now: `var(--lite-blur, blur(Npx))` and `calc(Ns * var(--motion, 1))`. `tests/lite-mode.test.js` scans the source so that a bare one cannot come back.
+- **The lesson editor rewrote eight bundled lessons on open.** An indented sub-point (`  - `) went back out as a top-level `- `. Each list item now keeps its own indent and marker. 612 bodies round-trip unchanged.
+- **Summer School "Apply for this" lost the course.** `/join?program=summer` forwards to the centre's live public sign-up link and now carries `centre` and `track` with it. `selfRegSeed()` takes each value only where the form asks for it and offers it, choosing the course's faculty too. It never overwrites the family's draft.
+- **School results: the member's "Lower the target" went below 85%.** It went down to the child's current score, and the server then refused the plan with `target_too_low`. It now stops at `results_target_floor()`; the server sends `targetMin`. The mentor screen and v9 already held 85.
+- **Palettes lost the first keys typed after opening.** The Summer School portal and the member portal v9 focused the search input on a 30 ms timer. It is now focused in the commit that opens the palette.
+- **Control Room → Centres** says again that a centre's code is the printed ID prefix (on Summer School cards). Before, only the add and edit forms said it.
+- **Mentor v15 class screens said "That didn't work. Try again." for a refusal that retrying cannot fix.** The worked example is `orientation_required` before the Academy is done. `mp15cErr` now falls back to the portal's own messages (`MP15_ERR`), then to the server's `detail`.
+- **The family app had no way to use a code from staff.** The Control Room's instructions ("Open the NGG Family app (/family). Choose 'I have a code from staff'") point at a step the family v3 controller fully implements (`siDeskStep`, `siDeskGo`). The design never drew it, so no guardian could reach it. `family-portal-v3.dc.html` now has the link and the step (email, code, Sign in, "Email me a code instead"), recompiled.
+- **Community v3 dropped the quote of the week.** It led the home feed on the first Community. A `qowEl` slot in `community-v3.dc.html` puts it back under the post box: on the home feed only, never on a filter, a search, a person's posts or a channel.
+- **Timetable quick add had no keyboard focus ring.** The "one field, one box" rule in `styles-app.css` matched `.tt-qa-row`, a bordered input beside its own send button, by shape. It removed the input's ring and drew a halo on a row with no edge. The row is excluded now. focus-ring passes: 551 stops on 11 pages.
+
+**Sign-in (owner, 12 Nov: "the sign in UX is quite terrible… no protections for cases where siblings share one mail… It does not work").** Driven in a browser with real fixtures: siblings on one address with and without passwords, the same password on two, a staff parent on a child's address, a suspended sibling, forgot-password, and the journal gate.
+
+- **The emailed code was "invalid" every time for a child sharing an address with a staff parent, or with a suspended sibling entered first.** `auth_request` keys the code by `auth_email_accounts` (no suspended, no password-only staff), but `auth_resolve_member_id` looked it up on the OLDEST row on the address. Both now resolve the same way. Two `run.php` tests fail without the fix.
+- **Forgot password on a shared address:** the email holds a button per child, not a code, and the screen now says so.
+- **The card was restructured.**
+  - Each step now has ONE primary button, then "or" and the other real way in as a full-width button ("No password? Email me a sign-in code"), then "Got a code from staff? Enter it" on its own line.
+  - The first screen's two loose links are an "Already have a code?" pair: **From my email** and **From staff**.
+  - Secondary links stack one per line; side by side they wrapped into each other.
+  - On an unrecognised device the title is "Sign in", not "Welcome back".
+- The Control Room's let-in instructions name the new labels.
+- **Worked as built, and now confirmed in a browser:** the picker on a shared address by code and by link, a password opening its own account, the same password offering a choice, and the journal gate.
+
+**Suites brought up to the screens they test (no product change):**
+
+- **Bundle split.** Seven fixtures never loaded `app-more`, where the admin screens live: admin-table, community-engagement, members-dash/manage shots, responsive-staff, tournament-shot and promo-ui. Four of them also mounted into `#root`, alongside the app.
+- **Control Room v6 markup.**
+  - status-board was rewritten for Analytics → Status board: the "Status by area" radiogroup, the member record page's "Part of the record", and the centre lead's scoping and hidden money.
+  - summer-editions: the retired `registration`/`qr` ids land in the Summer School portal; `#cr-main`.
+  - programme-separation: the Centres "Runs" column.
+- **v9 and v15 portals.** dashboard-results pins the classic dashboard (`?classic=1`), and its mentor half now drives the v15 School results screen, which had no browser test.
+- **Copy and rules that moved on purpose.**
+  - The journal writer's "My journal".
+  - The Lab nav has Certificates.
+  - The volunteer row button is "Photo & portal access".
+  - The review desk's "Check <name>'s sign-up".
+  - Announcements also default to Community.
+  - Results targets start at 85.
+  - The journal gate offers a password first.
+- **Test races.** These now wait for the thing they read:
+  - kiosk: the previous refusal was still on screen;
+  - community code viewer: the source arrives after the heading;
+  - club announcements: the list reloads after the toast;
+  - club applications: Review must wait for the row reloaded after "Photo added";
+  - focus-ring: measures a stop once the smooth scroll has come to rest, not mid-scroll under the sticky bar;
+  - dashboard-results: the mentor fixture has a completed Academy;
+  - instructor and portal-account: done earlier in this run.
+- **Isolation.**
+  - make-hook has its own cache dir, because the rate-limit buckets of earlier suites counted against it.
+  - roster-import-transport's stand-in window takes the session heartbeat's listeners and timer.
+  - formation-parity loads curriculum.php, where the division table it reads lives.
+  - programme-separation reads the Club seed marker from source.
+  - ids-print needs history back to `79bf2bf`; a shallow clone must deepen first.
+
+Results:
+
+- PHP suite: **7084 / 0**. That includes two new sign-in tests, each shown to fail without the fix.
+- Every node suite that failed in the full pass has since passed on its own (each one starts its own server, so they run one at a time). Where a fix touched a shared screen, the neighbouring suites were re-run too:
+  - ui-smoke 627/0
+  - focus-ring 551 stops
+  - status-board 17/0
+  - summer-editions 36/0
+  - dashboard-results 27/0
+  - mentor-v15 81/0
+  - control-room 59/0
+  - club-portal-v3 53/0
+  - community-v3 62/0
+  - family-ui 52/0
+  - desk-signin 19/0
+  - mfa 51/0
+  - shared-email 10/0
+  - settings-keys 19/0
+  - wisdom-ui 48/0
+  - lite-mode 8/0
+  - ids-print 16/0
+  - card-export 42/0
+- `vendor/VERSIONS.json` records card-export.js's new checksum (build.test 31/0).
+
+### 12 November 2026 — A staff parent can reset their own password from a shared address
+
+Owner: "Please work on it." The background: password sign-in on a shared address already chose the right account, because the password says whose. Reset did not. It chose accounts by the sign-in list (`auth_email_accounts`), which leaves out password-only staff because they are never sent a code. So a staff parent and one child counted as "just the child": the staff member asked to reset their password and was emailed the child's.
+
+`auth_reset_request` now counts every live account on the address, staff included (`auth_reset_accounts`). With more than one, the email has a **Set {name}'s password** link for each, and the staff one is marked "staff account". `auth_reset_confirm` is unchanged: it sets that account's password, revokes its sessions and still asks for the second step. A staff member alone on an address resets exactly as before. The sign-in screen's copy names this case.
+
+Two `run.php` tests (7086 / 0) fail without the change. They check the email, then that the staff link sets the staff password, signs them in with it, and leaves the child's untouched.
+
+### 12 November 2026 — The Labs: focus stays with the learner, and five screen faults
+
+Owner: "Fix the issues with the lab." Every Labs suite was already green: labs-client, study-tools, mathlab-e2e, and the Maths and Physics shots. So the Labs were walked in a browser on the production build at phone width, and every press was checked for where keyboard focus went.
+
+**Focus fell to the page on almost every press.** In each case, the button that was pressed was disabled or removed a moment later:
+
+- Check (disabled while marking);
+- Next question (the same button, disabled on an empty question);
+- See how you did;
+- Practise;
+- the last "Show the next line" in a worked example;
+- the last "Right or wrong?" or "Next line" in Why it works;
+- Hear the difference: its choices, Next and Finish, and the Play button, which disabled itself while playing;
+- Check in Hear and write.
+
+A keyboard or screen-reader learner was sent back to "Skip to content" after every question. Focus now moves to what comes next:
+
+- after Check: Next question;
+- on a new question: its heading;
+- at the end: the result's heading;
+- after the last line or judgement: the answer or the score;
+- in the English rounds: Next, then the new round's Play button, then the score.
+
+The Play button stays focusable while it plays (`aria-disabled`, and a second press is ignored).
+
+`tests/labs-focus.test.js` (new; in `test:all`, and `npm run test:labsfocus`) walks a lesson and its practice in each Lab, an English rule lesson and a sound lesson, pressing what a child presses. It fails on any press that leaves focus on nothing, and pins where focus goes. Against the previous code it fails 11 of 12 checks; it now passes 14 / 0.
+
+**Also fixed:**
+
+- **A practice paper handed in early** said "You finished it. Keep going!" after 1 of 40 questions. It now says "Handed in after 1 of 40". Time running out is not counted as handing in early.
+- **"Time on task"** reads seconds under a minute: two seconds no longer reads "1 min".
+- **On a phone, the Lab's tabs were six bare icons.** Each now has its word under it (Home, Map, Courses, Certificates, Progress, Exams).
+- **The map's stats strip cut the level to "Appre…".** On narrow screens the level gets the room the three numbers do not use.
+- **"Hear the difference" showed 1 of 8 in the green "well done" box.** Under 6 it is the "keep going" box.
+- **A marked answer box looked live.** It now looks settled, its text kept at full contrast, and the − and . keys are not drawn once they cannot act (the daily problem's "Over for today").
+
+Checked and NOT faults: the start-up splash in the e2e screenshots is its 0.5 s fade caught mid-way, and the Explore step's Continue drawn over the sliders is an artefact of a full-page screenshot of a sticky bar. The daily problem shown (AAABBC, no two identical letters together) was brute-forced: 10, as the Lab says.
+
+### 13 November 2026 — Labs stop repeating themselves; registration and onboarding audit
+
+**Repetition (owner: "Fix the repetition issue").** The Labs prevented a repeat inside one session but not across sessions. A member starting an English topic again met, on average, 61% of the questions they had just seen (63% with identical wording). 35 English topics repeated six to eight of eight. Physics repeated 21% and Maths 11%.
+
+- **Memory.** `mlb_recent_seen($mid)` in `domain/mathslab.php` reads the member's last `MLB_RECENT_SESSIONS` (8) sessions in this Lab from `mlab_sessions.items`. `mlb_pick_fresh()` tries three tiers in order: avoid those eight sessions, then the last `MLB_RECENT_NEAR` (2), then only this session. A session is never shortened to avoid a repeat. The check, practice, mix, quick, review, boss and mini modes use it. The climb walks a topic in order, so it does not. The timed paper (`mlb_exam_pick`) rerolls a recent paper signature, except on its last try.
+- **Content.** `domain/englishlab-more.php` (new, in the bootstrap list after `englishlab-drill`) adds two forms to each of 21 English topics, merged last in `eng_forms()` so earlier form order is unchanged. Every English topic now has at least 24 distinct questions, and the validator reports 0 problems.
+- **Measured after:** Maths 0%, Physics 0%, English 4%. No topic repeats six or more of eight, no session is short, and no session repeats inside itself. `run.php` holds the promise for three topics in three Labs, for a thin topic, and for per-member and per-Lab isolation. A mutation check confirmed these tests fail without the memory.
+
+**Registration and onboarding audit (owner: "Audit the registration and onboarding process").** Driven end to end in a browser: Club application, staff acceptance, both emails read from the mail sink, the welcome link opened on a phone, a password set, and the dashboard reached.
+
+- **The welcome link left the new member on the public home page** after they set a password. `confirmReset` in `auth.jsx` now goes to the dashboard when a reset token signs somebody in from `/`.
+- **The welcome email** (`admin_application_convert`):
+  - It gave the internal record id (`NGG-2026-…`), where the card and every later screen show the printed number (`026-…`). It now gives the printed number.
+  - It promised "start details shortly", which never came as such. It now names the centre and start date, and lists what happens next: set a password, pay the joining invoice, and the NGG Family app at /family for parents.
+  - It now goes first. The invoice follows it, because the welcome is what introduces the invoice.
+- **The invoice email called itself "Welcome to NGG — one step left"** and said again that the place was confirmed, so the family got two welcomes. It is "Joining invoice for <child>" now.
+- **Application answers were lost to staff.** The vision, interests, areas of influence, where they heard of NGG, and the second guardian have no column on `members`. They stayed on the accepted application, and nothing linked the member to it. `admin.members.record` now returns `application` from `applications.convertedMemberId` (read-only). The record shows it under Overview → *In their own words* and Family & mentor → *Second parent or guardian*.
+- **Summer School ID email** said "Student ID". It now says "Participant number" (§5 vocabulary).
+- **Checked and fine:**
+  - The profile drive asks nothing a Club application already answered: `profile_missing` is empty.
+  - The start card shows the photo as done.
+  - "Link a parent" stays, by design: a parent's email alone never links a child.
+- **Not changed, and why:** applying sends three emails (the inbox notice to staff, the programme address, the family's acknowledgement), each to a different reader. Acceptance sends two, and they are now distinct.
+- **Results:** `php api/tests/run.php` 7097 passed, 0 failed. Node suites, run one at a time, all pass: club-apply, membership-pay (36), mfa, shared-email, desk-signin, status-board, labs-client, labs-focus, mathlab-e2e (113), study-tools, ui-smoke (627) and forms-selfreg-ui.

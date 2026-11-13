@@ -23,6 +23,10 @@ const os = require('os');
 const http = require('http');
 
 const ROOT = path.resolve(__dirname, '..');
+/* The Club seed's marker, read from where it is defined: a literal copy went stale when the seed
+   was bumped, the real seed then ran over this fixture's own Club list, and the test read that. */
+const CLUB_SEED = (require('fs').readFileSync(require('path').join(ROOT, 'api/_lib/domain/curriculum.php'), 'utf8').match(/const CLUB_DIVISIONS_SEED = '([^']+)'/) || [])[1];
+if (!CLUB_SEED) { console.error('CLUB_DIVISIONS_SEED not found in curriculum.php'); process.exit(1); }
 const PORT = process.env.SEP_PORT || '8291';
 const BASE = 'http://127.0.0.1:' + PORT;
 const CFG = path.join(ROOT, 'api', 'config.php');
@@ -84,7 +88,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
       + `db_insert('members', ['memberId'=>'NGG-SEP-ADM','fullName'=>'Sep Admin','email'=>'sep-adm@example.org','type'=>'NGG','status'=>'active','role'=>'super_admin','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`
       + `setting_set('academy_catalogue', ['Music' => ['Piano', 'Talking Drums']], 't');`
       // The NGG divisions seed is marked done so this fixture's own Club list stands.
-      + `setting_set('club_catalogue_seed', 'ngg-divisions-2026-10', 't');`
+      + `setting_set('club_catalogue_seed', '${CLUB_SEED}', 't');`
       + `setting_set('club_catalogue', ['Media' => ['Media Lab'], 'AI & Technology' => ['Practical Coding']], 't');`
       + `foreach ([['CEN-1','Ayobo Club House','AY','ngg'],['CEN-2','Ijaiye Summer Venue','IJ','summer'],['CEN-3','Egbeda','EG','ngg,summer']] as $c) db_insert('centres', ['centreId'=>$c[0],'name'=>$c[1],'code'=>$c[2],'status'=>'active','programmes'=>$c[3],'slug'=>strtolower($c[2]),'createdAt'=>now_iso()]);`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -152,9 +156,11 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await ap.screenshot({ path: path.join(SHOTS, 'club-courses.png'), fullPage: false });
 
     await ap.evaluate(() => window.__adminSection('centres'));
-    await ap.waitForFunction(() => /Ayobo Club House/.test(document.querySelector('.admin-main')?.innerText || ''), null, { timeout: 30000 });
-    const cm = (await ap.$eval('.admin-main', el => el.innerText)).toLowerCase();
-    chk('People → Centres marks a centre that runs only one programme', cm.includes('ngg club only') && cm.includes('summer only'));
+    await ap.waitForFunction(() => /Ayobo Club House/.test(document.querySelector('#cr-main')?.innerText || ''), null, { timeout: 30000 });
+    // The Control Room's Centres table: each row's "Runs" says which programmes meet there.
+    const runs = await ap.evaluate(() => Object.fromEntries(Array.from(document.querySelectorAll('#cr-main tbody tr')).map(r => [r.cells[0] ? r.cells[0].innerText.split('\n')[0].trim() : '', r.cells[2] ? r.cells[2].innerText.trim() : ''])));
+    chk('People → Centres says which programme each centre runs (' + JSON.stringify(runs) + ')',
+      runs['Ayobo Club House'] === 'NGG Club' && runs['Ijaiye Summer Venue'] === 'Summer School' && runs['Egbeda'] === 'NGG + Summer');
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

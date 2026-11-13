@@ -668,7 +668,15 @@ function SummerSignupForward({ setPage }) {
     setState({ s: "loading" });
     NGGApi.public.summerSignup(centre).then(r => {
       if (r && r.url) {
-        try { history.replaceState({ page: "apply" }, "", r.url); } catch (_) {}
+        /* What the family pressed rides along: "Apply for this" on Piano at Ijaiye opened a form
+           that asked for the course again. The form takes each only where it offers it. */
+        let to = r.url;
+        try {
+          const q = new URLSearchParams(window.location.search), u = new URL(r.url, window.location.origin);
+          ["centre", "track"].forEach(k => { if (q.get(k)) u.searchParams.set(k, q.get(k)); });
+          to = u.pathname + u.search;
+        } catch (_) {}
+        try { history.replaceState({ page: "apply" }, "", to); } catch (_) {}
         setPage("apply");
       } else setState({ s: "none" });
     }, () => setState({ s: "error" }));
@@ -2715,6 +2723,31 @@ function SelfRegisterPage() {
   return shell(<SelfRegisterForm g={g} ctx={ctx} draftKey={draftKey} gold={gold} goldInk={goldInk}/>);
 }
 
+/* The centre and course a family chose before they reached the form (?centre=, ?track= from
+   "Apply here" / "Apply for this" on the Summer School page, carried through /join?program=summer).
+   Each is taken only where this form asks for it AND offers it, and never over the family's own
+   draft. A course hangs off its faculty (optionsFrom), so the faculty that offers it is chosen too. */
+function selfRegSeed(fields, saved) {
+  const out = Object.assign({}, saved);
+  let q = null;
+  try { q = new URLSearchParams(window.location.search); } catch (_) { return out; }
+  const want = { centre: q.get("centre") || "", course: q.get("track") || q.get("course") || "" };
+  const same = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+  fields.forEach(d => {
+    const v = want[d.key];
+    if (!v || out[d.key]) return;
+    if (d.optionsFrom && !out[d.optionsFrom]) {
+      const parent = fields.find(x => x.key === d.optionsFrom);
+      const by = d.optionsBy || {};
+      const home = parent && (parent.options || []).find(o => (by[o] || []).some(c => same(c, v)));
+      if (home) out[d.optionsFrom] = home;
+    }
+    const hit = formFieldOptions(d, out).find(o => same(o, v));
+    if (hit) out[d.key] = hit;
+  });
+  return out;
+}
+
 function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
   const fields = (ctx.form && ctx.form.fields) || [];
   /* Grouped consent, with the document link, from selfreg_context. The
@@ -2727,7 +2760,7 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
   const bundled = cself ? cself.bundled : flat.filter(c => PUBLICATION_KEYS.indexOf(c.key) === -1);
   const consentUrl = (cself && cself.url) || "/legal?doc=consent";
   const [step, setStep] = React.useState(0);   // 0 details · 1 photo · 2 consent · 3 done
-  const [form, setForm] = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) { return {}; } });
+  const [form, setForm] = React.useState(() => selfRegSeed(fields, (() => { try { return JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) { return {}; } })()));
   const [errors, setErrors] = React.useState({});
   const [photo, setPhoto] = React.useState("");        // inline image (no cloud)
   const [photoHosted, setPhotoHosted] = React.useState("");  // uploaded URL (cloud)
@@ -7353,7 +7386,7 @@ function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
     </div>
     {picked.length > 0 && (
       <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 90, padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))",
-                    background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "blur(8px)" }}>
+                    background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "var(--lite-blur, blur(8px))" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", gap: 10, alignItems: "center" }}>
           <span style={{ fontWeight: 800, fontSize: 15 }}>{picked.length} selected</span>
           <button type="button" onClick={() => setPicked([])}
@@ -7503,7 +7536,7 @@ function SessionPanel({ courses, centre, onRemarks }) {
     </div>
 
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 90, padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))",
-                  background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "blur(8px)" }}>
+                  background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "var(--lite-blur, blur(8px))" }}>
       <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", gap: 10, alignItems: "center" }}>
         <span style={{ fontSize: 13, color: err ? "#ff9a9a" : "rgba(230,238,255,.7)", flex: 1, minWidth: 0 }}>{err || saved || (d && d.log ? "Filed — saving again updates it" : "Not filed yet")}</span>
         <button onClick={submit} disabled={busy}

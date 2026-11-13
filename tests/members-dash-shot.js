@@ -45,13 +45,14 @@ function loadChromium() {
 <link rel="stylesheet" href="/dist/styles.css">
 <link rel="stylesheet" href="/dist/styles-app.css">
 <style>body{margin:0;background:var(--cream-50,#fdf9f0);padding:22px;}</style>
-</head><body><div id="root"></div>
+</head><body><div id="root" hidden></div><div id="fx"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
 <script src="/dist/vendor/tanstack-table.min.js"></script>
 <script src="/dist/data.js"></script>
 <script src="/dist/photos.js"></script>
 <script src="/dist/${manifest.bundle.file}"></script>
+<script src="/dist/${manifest.more.file}"></script>
 <script>
   var Q = new URLSearchParams(location.search);
   var clean = Q.get('state') === 'clean';
@@ -97,7 +98,7 @@ function loadChromium() {
     membersOverview: function () { return Promise.resolve({ overview: OVERVIEW }); }
   });
 
-  ReactDOM.createRoot(document.getElementById('root'))
+  ReactDOM.createRoot(document.getElementById('fx'))
     .render(React.createElement(MembersDashboard, { onFilter: function (f) { window.__lastFilter = f; } }));
 </script>
 </body></html>`);

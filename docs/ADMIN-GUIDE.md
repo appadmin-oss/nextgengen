@@ -572,8 +572,10 @@ the page.
 CACENTRE owns the buildings, so **CACENTRE's locations list is the one list of
 places** (CACENTRE → *Attendance → Desks and settings → Locations*). The
 CACENTRE gate sends that list to NGG whenever it changes, and NGG's centres
-follow it. You will see a note at the top of this page once the list has
-arrived, and a **From CACENTRE** chip on each centre that comes from it.
+follow it. Once the list has arrived, *Members → Centres* opens with a note,
+**Centres come from CACENTRE.**, that says where to add, rename or retire a
+place and when the last update came in. Under each centre's name and code, the
+row says **From CACENTRE** or **Not a CACENTRE location**.
 
 | In CACENTRE you… | In NGG this happens |
 |---|---|
@@ -815,6 +817,7 @@ and history stay in the Control Room (below).
 
 - **Intake form** — build the form families fill in.
 - **Sign-up links** — Summer School's shareable links: a **Public sign-up** for families, a **Review desk** for approving those sign-ups, and a **Registration desk** where staff enrol a walk-in child (details, photo, consent) with a desk password.
+  The public Summer School page's **Apply here** (on a centre) and **Apply for this** (on a course) open the live **Public sign-up** for that centre, or one for every centre if it has none of its own. The form opens with the centre and course they pressed already chosen (the course's faculty too), as long as the form offers them. A draft the family already started on that device is never overwritten. With no public sign-up open, the page says registration isn't open online and points to the centres.
 
 The door's **Check-in desks** are no longer here: they check in members and volunteers all year, so they have their own section (Control Room → Check-in → Check-in desks), with the **Duty rota** beside them.
 - **Pending sign-ups** — applications waiting on you.
@@ -1028,6 +1031,25 @@ says what joining costs before anybody applies.
 | Put a child on the waiting list | **Waitlist**. The family is emailed and the main parent is texted. The application stays in the inbox, marked *Waitlisted*, and you accept it from there when a place opens. |
 | Decline | **Reject**, with an optional line the family reads in the email and text. |
 | See only your centres | A centre-limited admin sees, exports, accepts and declines their own centres' applicants only. |
+
+**What the family receives when you accept (13 Nov 2026).** Two emails, in this order:
+
+1. **Welcome to Next Generation Genius.** It gives the child's **member number**
+   (the one on the ID card, e.g. 026-014), then what happens next: set a password
+   with the button (the link works for seven days), pay the joining invoice, and,
+   for the parents, the NGG Family app at /family.
+2. **Complete <child>'s NGG membership.** The joining invoice: the membership fee
+   and the first month, with the link to pay. It no longer opens with a second
+   "Welcome".
+
+When the child sets their password from the welcome link, they land on their
+dashboard, not the public home page.
+
+**What they wrote stays with them.** The member record shows the application's
+answers that the member row has no field for. **Overview → In their own words**
+has their vision, what they enjoy, where they want to lead and how they heard of
+NGG. **Family & mentor → Second parent or guardian** has the second guardian.
+Read these before a first mentor meeting instead of asking the family again.
 
 A family who sends the form again for the same child (same email and date of
 birth) is emailed a 6-digit code and must enter it before the application
@@ -3094,7 +3116,9 @@ nightly jobs) still run.
 
 **School results.** A member uploads their term report on their dashboard
 (**School results** tab), checks the scores and writes a plan for at most three
-subjects, each with a "when and where". It goes to their mentor, who approves it
+subjects, each with a "when and where". No target is under 85% (or under the
+score they already have): the plan starts there, and neither the member's nor
+the mentor's screen lowers it further. It goes to their mentor, who approves it
 or sends it back with a note in the Mentor Portal's **School results** tab
 (`/mentor/class?tab=results`; the email's `/mentor?tab=results` lands there). Approved, it is live; the family
 hears only if the member chose that. Plans whose study sessions are mostly
@@ -3915,8 +3939,11 @@ they all behave the same way. Worth knowing once:
 ### The first screen is the same for everyone
 
 On a phone or computer that has not signed in here before, every email or ID
-gets the same next screen: a password box, and **No password? Email me a
-sign-in code** under it. That is deliberate. The screen used to skip straight
+gets the same next screen: a password box with **Sign in**, then "or" and a
+full-width **No password? Email me a sign-in code** button. (Below that, on its
+own line: **Got a code from staff? Enter it**. On the very first screen the same
+two ways in sit under **Already have a code?** as **From my email** and **From
+staff**.) That is deliberate. The screen used to skip straight
 to "code sent" for people without a password and go to the password box for
 staff, which told anyone who typed an address whether it belonged to a member
 of staff. Most members simply press the code button. A device somebody has
@@ -3944,9 +3971,17 @@ its email with N other members" on the row).
   straight away. If the same password was set on several of the accounts, the
   same question lists those.
 - **Forgot your password?** sends one email with a **Set {name}'s password**
-  link for each account.
+  link for each account, not a code: the screen says so, so nobody waits for a
+  code that is not coming.
+  A member of staff whose address is also their child's gets their own link in
+  that email, marked **staff account**, and it sets the staff password only.
+  (Before 12 November 2026 they were emailed the child's link and no way to
+  reset their own.)
 - A suspended account is never offered, and neither is a staff account that
-  signs in by password only (staff keep using their password).
+  signs in by password only (staff keep using their password). Until 12
+  November 2026, a child whose address was shared with a staff parent, or with
+  a suspended brother or sister entered first, was told their emailed code was
+  wrong every time; that is fixed.
 - Each child can always sign in with their own Member ID or card number.
 
 ### Who signs in where
@@ -5115,6 +5150,27 @@ The third Lab, on the same engine as Maths and Physics: the same climb, practice
   - **When you add speaking text**, a developer runs `tools/english-voices.py` to record it. The test suite fails until they do.
 - **What it does not do yet:** mark a whole essay or letter. Writing is practised in the parts that can be marked instantly. A judged essay needs a teacher queue or a rubric-checked AI step, and is a separate piece of work. Recorded minimal-pair listening and dictation are available; recognising the words in a recording is not a score for accent quality.
 - No exam body is named anywhere a learner reads; the questions are NGG's own.
+
+### The Labs remember what a member has seen (13 Nov 2026)
+
+A Lab session used to draw its questions without regard to the last one. In
+English, a member starting a topic again met mostly the same questions: 61% of
+them on average, and six to eight of eight on 35 topics.
+
+- **Each Lab remembers the member's last eight sessions** and draws questions
+  they have not seen in them first. When a topic runs short, it falls back to
+  "not in the last two sessions", and only then to "not already in this one".
+  A session is never shortened to avoid a repeat, and no question appears twice
+  in one session.
+- The memory is per member and per Lab. Another member's sessions, or the same
+  member's Maths, do not count against an English session.
+- The timed paper avoids the papers a member has just sat.
+- **Twenty-one English topics got more questions**, the thinnest ones first:
+  every English topic now has at least 24 different questions.
+- Measured on the real banks, the next session repeats 0% of the last one in
+  Maths and Physics, and 4% in English. A third session soon after may still
+  meet some questions in English: the banks are 24 to 27 deep.
+- The climb is unchanged. It walks the topic in order on purpose.
 
 ### The Labs' explorers, easier to use (6 Nov 2026)
 

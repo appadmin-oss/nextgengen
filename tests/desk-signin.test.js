@@ -90,7 +90,8 @@ async function memberDoor(p, ident, how) {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', WEB], { cwd: WEB, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    { const exe = require('./_responsive-probe').chromiumPath(require('fs'));   // either layout: chrome-linux/ or chrome-linux64/
+      browser = await chromium.launch(exe ? { executablePath: exe } : {}); }
     console.log('Let in at the desk, from the user’s side (production build):');
 
     // 0. Google's way: staff press Let in, the person types their email or ID, Continue — and is in.
@@ -120,8 +121,8 @@ async function memberDoor(p, ident, how) {
     p = await fresh();
     await memberDoor(p, 'mum.ade@example.org', 'stuck');
     const stuckTxt = await p.innerText('.signin-card');
-    chk('stuck one screen in, the way out is right there: “I have a code from staff”', await p.locator('.signin-card button:has-text("I have a code from staff")').count() === 1, stuckTxt.slice(0, 200));
-    await p.click('.signin-card button:has-text("I have a code from staff")');
+    chk('stuck one screen in, the way out is right there: “Got a code from staff? Enter it”', await p.locator('.signin-card .signin-staff button:has-text("Enter it")').count() === 1, stuckTxt.slice(0, 200));
+    await p.click('.signin-card .signin-staff button:has-text("Enter it")');
     chk('…which keeps what they typed', (await p.inputValue('#signin-desk-id')) === 'mum.ade@example.org');
     await p.fill('#signin-desk-code', 'WXYZ-2345');
     await p.click('.signin-card button[type="submit"]');
@@ -146,7 +147,7 @@ async function memberDoor(p, ident, how) {
     // The start-up splash fades over the first screen; a person cannot press through it either.
     await p.waitForFunction(() => { const b = document.getElementById('ngg-boot'); return !b || b.classList.contains('gone'); }, null, { timeout: 30000 });
     await p.screenshot({ path: path.join(OUT, 'phone-first.png') });
-    await p.click('.signin-card button:has-text("I have a code from staff")');
+    await p.click('.signin-card .signin-pair button:has-text("From staff")');   // first screen: "Already have a code?"
     // Type until the form holds it (as a person would retype a field the page cleared while it finished loading).
     for (let t = 0; t < 3; t++) {
       await p.fill('#signin-desk-id', '026 611');

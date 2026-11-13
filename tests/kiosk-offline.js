@@ -168,7 +168,9 @@ function cleanup() {
     (await page.getAttribute('.gate-mode button:has-text("Sign out")', 'aria-pressed')) === 'true' ? ok('the desk switches to sign-out mode') : bad('sign-out mode not pressed');
     await page.fill('input[placeholder*="Code from the ID card"]', TOKEN);
     await page.click('.gate-manual button[type=submit]');
-    await page.waitForSelector('.gate-result.is-no', { timeout: 8000 });
+    // Not just ".gate-result.is-no": the bad-code refusal above is still showing one, so that
+    // wait returned at once and read the previous answer. Wait for THIS answer.
+    await page.waitForFunction(() => /Too early to sign out/i.test(document.body.innerText), null, { timeout: 8000 }).catch(() => {});
     /Too early to sign out/i.test(await text()) && /23:59/.test(await text()) ? ok('a sign-out before closing time is refused, saying when it opens') : bad('early sign-out not refused on screen');
     php(`echo db_row("SELECT checkOutAt FROM attendance WHERE studentId='${STUDENT}'")['checkOutAt'];`) === '' ? ok('…and nothing is stamped') : bad('early sign-out was stamped');
     setClose('00:00');

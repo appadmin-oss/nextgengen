@@ -1106,25 +1106,6 @@ function admin_application_convert(array $p): array {
     member_cards_ensure($__m, 'intake', 'created');
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
 
-    /* A way in that the member owns.
-     *
-     * The welcome email pointed at the portal and gave no means of opening it:
-     * the new member has no password, so signing in means a code emailed to
-     * the address on file — their guardian's — every time. A set-password link
-     * turns that into one handoff instead of a standing dependency. */
-    $welcome = function_exists('auth_welcome_link') ? auth_welcome_link($newId) : '';
-    @send_mail($intakeEmail, 'Welcome to Next Generation Genius',
-        email_template([
-            'title' => 'You\'re in, ' . explode(' ', (string)$a['name'])[0] . '.',
-            'intro' => $type === 'Summer' ? 'Your place at Summer School is confirmed.' : 'Your place at Next Generation Genius is confirmed.',
-            'bodyHtml' => 'We\'ll be in touch shortly with your start details. The member ID is <b>' . esc_html($newId) . '</b>.'
-                . ($welcome !== ''
-                    ? '<p>Set a password using the button below — after that they can sign in with the member ID alone, without waiting on this inbox. The link is good for seven days.</p>'
-                    : ''),
-            'ctaLabel' => $welcome !== '' ? 'Set a password' : 'Open the member portal',
-            'ctaUrl' => $welcome !== '' ? $welcome : (($GLOBALS['CONFIG']['app_origin'] ?? '') . '/#dashboard'),
-            'footNote' => 'Welcome to the movement.',
-        ]));
     /* Payment is asked for only now, after acceptance: one invoice — the
        membership fee and the pro-rated first month — and a private link to it.
        With fees switched off the member is accepted all the same, and the
@@ -1133,11 +1114,40 @@ function admin_application_convert(array $p): array {
     if ($type === 'NGG' && function_exists('membership_invoice_create')) {
         $ir = membership_invoice_create($__m, (string)$g['requester']['memberId'], $id, $start);
         if (!empty($ir['ok'])) {
-            $sent = membership_invoice_send($ir['invoice'], $__m);
-            $invoice = ['invoiceId' => (string)$ir['invoice']['invoiceId'], 'total' => (int)$ir['invoice']['total'], 'sent' => !empty($sent['ok']), 'to' => $sent['to'] ?? ''];
+            // Sent after the welcome (below), which introduces it: the family reads them in that order.
+            $invoice = ['invoiceId' => (string)$ir['invoice']['invoiceId'], 'total' => (int)$ir['invoice']['total'], 'sent' => false, 'to' => ''];
         } else {
             $invoice = ['error' => (string)($ir['error'] ?? 'failed')];
         }
+    }
+    /* One welcome that says what happens next (audit, 13 Nov 2026). It used to give the internal record
+       number (NGG-2026-…) where the card and every later screen show the printed one (026-…), promise
+       "start details shortly" that never came as such, and say nothing of the invoice or the family app —
+       which then arrived as a second "Welcome to NGG". It goes after the invoice now, so it can name it.
+       The set-password link stays: without it the member has no password, and every sign-in is a code
+       emailed to the guardian's inbox. */
+    $welcome = function_exists('auth_welcome_link') ? auth_welcome_link($newId) : '';
+    $first = explode(' ', trim((string)$a['name']))[0] ?: 'your child';
+    $num = (string)($__m['displayId'] ?? '') !== '' ? (string)$__m['displayId'] : $newId;
+    $origin = (string)($GLOBALS['CONFIG']['app_origin'] ?? '');
+    $steps = [];
+    if ($welcome !== '') $steps[] = '<b>Set a password</b> with the button below (the link works for seven days). After that, ' . esc_html($first) . ' signs in with the member number <b>' . esc_html($num) . '</b> and the password, without waiting on this inbox.';
+    if ($invoice && empty($invoice['error'])) $steps[] = '<b>Pay the joining invoice</b> (' . esc_html(fees_money_text((int)$invoice['total'])) . '). It follows this email, with a private link to pay.';
+    if ($type === 'NGG') $steps[] = '<b>Parents and guardians:</b> follow ' . esc_html($first) . '’s attendance and progress on the NGG Family app at ' . esc_html($origin) . '/family. Sign in with this email address; ' . esc_html($first) . ' appears for our team to confirm, or ask ' . esc_html($first) . ' for their Anchor Circle code to link at once.';
+    $startTxt = esc_html((string)$a['centre']) . ($start !== '' ? ', from ' . esc_html(gmdate('l j F', (int)strtotime($start . ' UTC'))) : '');
+    @send_mail($intakeEmail, 'Welcome to Next Generation Genius',
+        email_template([
+            'title' => 'You\'re in, ' . $first . '.',
+            'intro' => $type === 'Summer' ? 'Your place at Summer School is confirmed.' : $first . '’s place at Next Generation Genius is confirmed: ' . $startTxt . '.',
+            'bodyHtml' => '<p style="margin:0 0 12px">' . esc_html($first) . '’s member number is <b>' . esc_html($num) . '</b>. It is printed on the NGG ID card, and it is how ' . esc_html($first) . ' signs in.</p>'
+                . ($steps ? '<p style="margin:0 0 6px"><b>What happens next</b></p><ol style="margin:0;padding-left:20px">' . implode('', array_map(static fn($x) => '<li style="margin:0 0 8px">' . $x . '</li>', $steps)) . '</ol>' : ''),
+            'ctaLabel' => $welcome !== '' ? 'Set a password' : 'Open the member portal',
+            'ctaUrl' => $welcome !== '' ? $welcome : ($origin . '/dashboard'),
+            'footNote' => 'Welcome to the movement.',
+        ]));
+    if ($invoice && empty($invoice['error'])) {
+        $sent = membership_invoice_send($ir['invoice'], $__m);
+        $invoice['sent'] = !empty($sent['ok']); $invoice['to'] = $sent['to'] ?? '';
     }
     audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id, 'type' => $type, 'start' => $start], (string)($p['ip'] ?? ''));
     if (function_exists('rcl_start_for_new_member')) rcl_start_for_new_member($newId, (string)$g['requester']['memberId']);   // registration checklist (domain/registration-checklist.php)

@@ -30,7 +30,13 @@ const MP15C_ERR = {
   not_ngg_staff: "The Club curriculum is for NGG mentors and instructors.",
   network: "You're offline. Try again when you're connected.",
 };
-const mp15cErr = (e, fb) => MP15C_ERR[(e && (e.code || e.message)) || ""] || fb || "That didn't work. Try again.";
+/* This screen's words first, then the portal's (MP15_ERR: the Academy lock, rate limits, offline),
+   then the server's own explanation. "That didn't work. Try again." for orientation_required told a
+   mentor to retry something that could not work until their Academy was done. */
+const mp15cErr = (e, fb) => {
+  const c = (e && (e.code || e.message)) || "";
+  return MP15C_ERR[c] || (typeof MP15_ERR === "object" && MP15_ERR[c]) || (e && typeof e.detail === "string" && e.detail) || fb || "That didn't work. Try again.";
+};
 
 /* The drawer: one for every per-child action on these screens. */
 function Mp15CDrawer({ title, sub, onClose, children, foot }) {

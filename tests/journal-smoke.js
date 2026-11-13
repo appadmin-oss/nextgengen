@@ -127,8 +127,16 @@ function otpFromDb() {
     step('sign-in gate rendered');
     await page.fill('input.aj-input', MEMBER);
     await page.click('button.btn-a');
-    await page.waitForSelector('.aj-gate-err:has-text("mail_failed"), input.aj-otp', { timeout: 15000 });
+    /* The gateway may offer a password first (auth.gateway → "pw"); the code is one press away. */
+    await page.waitForSelector('.aj-gate-err:has-text("mail_failed"), input.aj-otp, input[type=password]', { timeout: 15000 });
+    if (await page.$('input[type=password]')) {
+      step('the gate offers a password, with "Email me a code instead"');
+      await page.click('button.aj-linkbtn:has-text("Email me a code instead")');
+      await page.waitForSelector('.aj-gate-err:has-text("mail_failed"), input.aj-otp', { timeout: 15000 });
+    }
     if (await page.$('.aj-gate-err:has-text("mail_failed")')) {
+      // From the password step the way to "I already have a code" is back through Change.
+      if (!(await page.$('button.aj-linkbtn:has-text("I already have a code")'))) await page.click('button.aj-linkbtn:has-text("Change")');
       await page.click('button.aj-linkbtn:has-text("I already have a code")');
       await page.waitForSelector('input.aj-otp', { timeout: 15000 });
       await page.fill('input[placeholder="Member ID"]', MEMBER);

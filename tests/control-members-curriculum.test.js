@@ -165,10 +165,15 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
 
     await page.click('table tbody tr');
     await page.click('.cr-sheet button:has-text("Edit")');
-    await page.fill('#crf-email', 'crmc8@example.org');
+    /* A refusal that still exists. This used to type Member 08's EMAIL and expect a refusal, but one
+       address on several member accounts is a feature now (brothers on their mother's email — "Who's
+       signing in?", tests/shared-email.test.js), so that save went through. A printed member ID is
+       still one person's: typing Member 08's ID into Member 07 must be refused, naming the holder. */
+    php(`db_exec("UPDATE members SET displayId = '021-908' WHERE memberId = 'CRMC-8'"); echo 1;`);
+    await page.fill('#crf-displayId', '021-908');
     await page.click('button:has-text("Save changes")');
-    chk('a refused save gives the server’s reason', await until(/already on Member 08/));
-    chk('…and keeps the form open with what was typed', !!(await page.$('#crf-email')));
+    chk('a refused save gives the server’s reason', await until(/already belongs to Member 08/));
+    chk('…and keeps the form open with what was typed', (await page.inputValue('#crf-displayId').catch(() => '')) === '021-908');
     await page.keyboard.press('Escape');
 
     await page.click('button:has-text("Add member")');

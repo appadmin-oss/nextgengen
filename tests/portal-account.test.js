@@ -209,6 +209,8 @@ async function as(memberId, admin, viewport) {
     await mb.goto(BASE + '/journal/?write=1', { waitUntil: 'domcontentloaded' });
     await mb.waitForSelector('textarea.aj-musing', { timeout: 60000 }).catch(async e => { console.error('DEBUG journal:', (await mb.innerText('body')).slice(0, 600), mb.errs); throw e; });
     await mb.fill('textarea.aj-musing', 'I led the warm-up and nobody laughed.');
+    // The mentor arrives with the dashboard read, after the writer opens: wait for it, not a fixed moment.
+    await mb.waitForSelector('button.aj-share', { timeout: 20000 }).catch(() => {});
     const shareBtn = await mb.$('button.aj-share');
     chk('Journal: the writer offers “Share with my mentor”, off until the member turns it on', !!shareBtn && (await shareBtn.getAttribute('aria-pressed')) === 'false');
     await mb.click('button.aj-share');

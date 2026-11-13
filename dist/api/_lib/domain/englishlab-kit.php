@@ -59,6 +59,8 @@ function eng_forms(): array {
     foreach (eng_articulation_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     // The exam-trap drills (englishlab-drill.php), appended after everything else for the same reason.
     foreach (eng_drill_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    // More questions for the thinnest topics (englishlab-more.php), appended last for the same reason.
+    if (function_exists('eng_more_forms')) foreach (eng_more_forms() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     ksort($f);
     return $f;
 }
