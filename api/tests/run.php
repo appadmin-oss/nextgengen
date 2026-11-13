@@ -38382,7 +38382,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        skeletons across its skill forms, with at least two typed forms; and every new form must generate,
        mark its own key right, and mark a wrong answer wrong. */
     $thin = ['MC-044', 'MC-046', 'MC-047', 'MC-048', 'MC-049', 'MC-051', 'MC-056', 'MC-057', 'MC-062', 'MC-081', 'MC-095', 'MC-097', 'MC-099', 'MC-107', 'MC-116',
-             'MC-130', 'MC-133', 'MC-137', 'MC-138', 'MC-155', 'MC-160', 'MC-175', 'MC-176', 'MC-179', 'MC-180', 'MC-190', 'MC-192', 'MC-195', 'MC-197'];
+             'MC-130', 'MC-133', 'MC-137', 'MC-138', 'MC-155', 'MC-160', 'MC-175', 'MC-176', 'MC-179', 'MC-180', 'MC-190', 'MC-192', 'MC-195', 'MC-197',
+             /* second pass: every other topic in MC-041..200 that was under five skeletons */
+             'MC-045', 'MC-059', 'MC-065', 'MC-066', 'MC-067', 'MC-101', 'MC-103', 'MC-115', 'MC-143', 'MC-144', 'MC-146', 'MC-151', 'MC-159', 'MC-171', 'MC-172',
+             'MC-173', 'MC-174', 'MC-177', 'MC-178', 'MC-183', 'MC-184', 'MC-185', 'MC-186', 'MC-189', 'MC-191', 'MC-193', 'MC-194', 'MC-198', 'MC-200'];
     $short = [];
     foreach ($thin as $c) {
         $sk = []; $typed = 0;
@@ -38413,7 +38416,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         }
     }
     chk('maths lab · every new thin-topic form (' . $vn . ' questions over ' . count($mine) . ' topics) generates, marks its key right and a wrong answer wrong' . ($vbad ? ': ' . implode(', ', array_slice($vbad, 0, 8)) : ''),
-        $vbad === [] && count($mine) === count($thin) && array_keys($mine) === $thin);
+        $vbad === [] && count($mine) === count($thin) && array_diff(array_keys($mine), $thin) === [] && array_diff($thin, array_keys($mine)) === []);
     /* The first forty topics (audit, 13 Nov 2026; mathslab-gen-variety.php). The topics every new learner
        meets first had one or two PRACTICE forms each — MC-012's practice was "Ebo has ₦389 and Ife has ₦163.
        How much more does Ebo have?" with the names and numbers swapped — so the per-session skeleton cap cut
@@ -38547,7 +38550,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     }
     $j45 = mlb_item('MC-045', 3, 5);
     chk('maths lab · every Stage 5–7 and Gods of Maths topic has at least four kinds of question of its own and at least one challenge, and the proof pair kept its numbers (MC-045: forms 0–2 its own, 3–4 the proof, then the new ones)' . ($thin || $noCh ? ' (thin: ' . implode(',', $thin) . '; no challenge: ' . implode(',', $noCh) . ')' : ''),
-        $thin === [] && $noCh === [] && mlb_why_at('MC-045') === 3 && $j45['dim'] === 'reasoning' && isset($j45['lines']) && count(mlb_forms()['MC-045']) === 6 && mlb_item('MC-045', 5, 5)['dim'] === 'challenge');
+        $thin === [] && $noCh === [] && mlb_why_at('MC-045') === 3 && $j45['dim'] === 'reasoning' && isset($j45['lines']) && count(mlb_forms()['MC-045']) >= 6 /* forms are only ever appended (mathslab-gen-variety2.php adds more) */ && mlb_item('MC-045', 5, 5)['dim'] === 'challenge');
     $deepHit = false; for ($k = 0; $k < 60 && !$deepHit; $k++) foreach (mlb_pick_items(['MC-045'], 6, false, true) as $x) if ($x['f'] === 5) $deepHit = true;
     chk('maths lab · a placement gate or boss can draw a new deeper form even though it sits after the proof pair', $deepHit);
     $gb = mlb_band(19); $gc = mlb_courses()['gods-of-maths'] ?? null; $gm = array_column(mlb_map([])['bands'], null, 'id');

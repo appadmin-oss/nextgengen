@@ -1329,7 +1329,14 @@ function MlbOrder({ item, value, onChange, disabled }) {
    recoveries, which are about what the learner DID, are named. */
 const MLB_NUDGE = ["Not quite. The working below shows where it turns.", "Close. Compare your answer with the first line of the working.", "Not this time. Read the steps, then try the next one the same way.", "Almost. Find the step where yours went a different way."];
 function mlbPick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-function mlbPraise({ run, afterMiss, hinted, conf, ms }) {
+/* A plain right answer is confirmed WITH the answer, in words — never a bare verdict. The answer string
+   may hold maths markup; only a short plain one is quoted, otherwise the line names what was done. */
+function mlbRightLine(answer) {
+  const a = String(answer || "").trim();
+  if (a && a.length <= 24 && !/[$\\{}]/.test(a)) return "Right — " + a + ".";
+  return mlbPick(["Right — the working holds.", "Right — that method works here.", "Right — checked and correct."]);
+}
+function mlbPraise({ run, afterMiss, hinted, conf, ms, answer }) {
   if (run === 8) return { t: "Eight right in a row.", big: true };
   if (run === 5) return { t: "Five in a row — the method is holding.", big: true };
   if (run === 3) return { t: "Three in a row.", big: true };
@@ -1337,7 +1344,7 @@ function mlbPraise({ run, afterMiss, hinted, conf, ms }) {
   if (conf === "guess") return { t: "Right, though you weren’t sure. Read why below — then it won’t be a guess." };
   if (hinted) return { t: "Right, with the hint. Try the next one before you open it." };
   if (conf === "sure" && ms && ms < 12000) return { t: "Right, and quick." };
-  return { t: "Right." };
+  return { t: mlbRightLine(answer) };
 }
 function mlbNudge({ conf }) {
   if (conf === "sure") return "Not quite, and you were sure. That’s the most useful mistake to look at.";
@@ -1416,7 +1423,7 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
         if (r.correct) {
           const n = run + 1;
           setRun(n); setBest(b => Math.max(b, n));
-          setPraise(mlbPraise({ i, run: n, afterMiss: missed, hinted: hints > 0, conf, ms }));
+          setPraise(mlbPraise({ i, run: n, afterMiss: missed, hinted: hints > 0, conf, ms, answer: r.answer }));
           setMissed(false);
         } else { setRun(0); setMissed(true); setPraise({ t: r.formNote || mlbNudge({ i, conf }) }); }
         setFb(r);

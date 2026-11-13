@@ -26,6 +26,8 @@ declare(strict_types=1);
  * APPEND ONLY. mlb_maths_forms() appends these after every other file's forms, and a session
  * stores form NUMBERS: never reorder, remove or insert between forms here — add at the end of a
  * topic's list. MC-001..040 are mathslab-gen-variety.php's; this file owns MC-041..200.
+ * Two passes, both 13 Nov 2026: the first 29 topics, then the other 29 that measured under five
+ * skeletons — after which every Maths topic, 1 to 200, has at least five and at least two typed.
  */
 
 const MLBV2_TOWNS = ['Ibadan', 'Kano', 'Enugu', 'Jos', 'Abeokuta', 'Kaduna', 'Owerri', 'Calabar', 'Ilorin', 'Makurdi', 'Akure', 'Sokoto', 'Warri', 'Lokoja', 'Yola', 'Osogbo'];
@@ -624,6 +626,465 @@ function mlb_forms_variety2(): array {
                 ['Plot $z$: the real part is ' . ($sx > 0 ? 'positive' : 'negative') . ' and the imaginary part ' . ($sy > 0 ? 'positive' : 'negative') . ', so it is in the ' . ($sx > 0 ? ($sy > 0 ? 'first' : 'fourth') : ($sy > 0 ? 'second' : 'third')) . ' quadrant.',
                  'The angle it makes with the real axis is $' . $base . '^\\circ$ (from $\\tan^{-1}$ of the sizes).', 'Measured from the positive real axis, that gives $' . $ang . '^\\circ$.'],
                 'Sketch the point on the Argand diagram before using $\\tan^{-1}$.', 'concept', 50); },
+    ],
+
+    /* ═══ Second pass (13 Nov 2026): the other thin topics in MC-041..200 ═══ */
+
+    /* ── MC-045 Expansion: area in context; the sign of a negative multiplier; mental maths by the distributive law ── */
+    'MC-045' => [
+        static function (MlbRng $r) { $a = $r->int(2, 9); $b = $r->int(2, 15); $town = $r->pick(MLBV2_TOWNS);
+            return mlb_typed('expr', 'A school garden in ' . $town . ' is ' . $a . ' m wide and $(x + ' . $b . ')$ m long. Write its area, in m², without brackets.', $a . 'x+' . ($a * $b),
+                ['Area = width × length $= ' . $a . '(x + ' . $b . ')$.', 'Multiply each term in the bracket by ' . $a . ': $' . $a . 'x + ' . ($a * $b) . '$.'],
+                'Area of a rectangle is width times length; then remove the bracket.', 'application', 40, ['form' => 'expanded']); },
+        static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $a = $r->int(2, 9); $b = $r->int(2, 9);
+            return mlb_mcq($r, $who . ' expands $-' . $a . '(x - ' . $b . ')$ and gets $-' . $a . 'x - ' . ($a * $b) . '$. What is the correct expansion?', '$-' . $a . 'x + ' . ($a * $b) . '$',
+                [['$-' . $a . 'x - ' . ($a * $b) . '$', 'That is ' . $who . '\'s answer: $-' . $a . ' \\times (-' . $b . ')$ is positive, not negative.'],
+                 ['$-' . $a . 'x - ' . $b . '$', 'Multiply BOTH terms in the bracket by $-' . $a . '$, not just the first.'],
+                 ['$' . $a . 'x + ' . ($a * $b) . '$', 'The first term is $-' . $a . ' \\times x = -' . $a . 'x$: the sign stays negative.']],
+                ['$-' . $a . ' \\times x = -' . $a . 'x$.', '$-' . $a . ' \\times (-' . $b . ') = +' . ($a * $b) . '$: a negative times a negative is positive.', 'So $-' . $a . 'x + ' . ($a * $b) . '$.'],
+                'Multiply each term in the bracket by $-' . $a . '$, sign included.', 'reasoning', 40); },
+        static function (MlbRng $r) { $a = $r->int(12, 49); $b = $r->pick([1, 2, 3, 4, 5]); $up = $r->int(0, 1) === 1; $n = $up ? 100 + $b : 100 - $b;
+            return mlb_typed('num', 'Use the distributive law, $a(100 ' . ($up ? '+' : '-') . ' b) = 100a ' . ($up ? '+' : '-') . ' ab$, to work out $' . $a . ' \\times ' . $n . '$ without a calculator.', (string)($a * $n),
+                ['$' . $a . ' \\times ' . $n . ' = ' . $a . '(100 ' . ($up ? '+' : '-') . ' ' . $b . ')$.', '$= ' . (100 * $a) . ' ' . ($up ? '+' : '-') . ' ' . ($a * $b) . ' = ' . ($a * $n) . '$.'],
+                'Split ' . $n . ' into 100 and a small number.', 'application', 40); },
+    ],
+
+    /* ── MC-059 Algebraic fractions: where it is undefined; the illegal cancel ── */
+    'MC-059' => [
+        static function (MlbRng $r) { $a = $r->int(-9, 9); $b = $r->nz(-9, 9); if ($a === -$b) $a++;
+            return mlb_typed('num', 'For what value of $x$ is $\\frac{x' . mlb_sterm($a) . '}{x' . mlb_sterm(-$b) . '}$ undefined?', (string)$b,
+                ['A fraction is undefined when its denominator is 0.', '$x' . mlb_sterm(-$b) . ' = 0$ when $x = ' . $b . '$.'],
+                'Which part of a fraction must never be zero?', 'concept', 30); },
+        static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $k = $r->int(2, 9);
+            return mlb_mcq($r, $who . ' simplifies $\\frac{x + ' . $k . '}{' . $k . '}$ to $x$ by cancelling the ' . $k . 's. What is the correct simplification?', '$\\frac{x}{' . $k . '} + 1$',
+                [['$x$', 'Only a FACTOR of the whole top can cancel; ' . $k . ' is a term added to $x$, not a factor.'],
+                 ['$x + 1$', 'Dividing by ' . $k . ' divides EVERY term on top: $x$ becomes $\\frac{x}{' . $k . '}$ too.'],
+                 ['It cannot be simplified at all', 'It can be split: $\\frac{x}{' . $k . '} + \\frac{' . $k . '}{' . $k . '}$.']],
+                ['Split the fraction: $\\frac{x + ' . $k . '}{' . $k . '} = \\frac{x}{' . $k . '} + \\frac{' . $k . '}{' . $k . '}$.', '$= \\frac{x}{' . $k . '} + 1$. Check with $x = ' . $k . '$: $\\frac{' . (2 * $k) . '}{' . $k . '} = 2$, and $1 + 1 = 2$. ✓'],
+                'Test it: put a number in for $x$ and compare.', 'reasoning', 40); },
+    ],
+
+    /* ── MC-065 Standard form: how many times bigger; a number that is not yet in standard form ── */
+    'MC-065' => [
+        static function (MlbRng $r) { $b = $r->int(1, 4); $k = $r->int(2, 9); $a = $b * $k; if ($a >= 10) { $b = 1; $a = $k; } $n = $r->int(-3, 5); $d = $r->int(1, 3); $m = $n + $d;
+            return mlb_typed('num', 'How many times bigger is $' . $a . ' \\times 10^{' . $m . '}$ than $' . $b . ' \\times 10^{' . $n . '}$?', (string)(intdiv($a, $b) * 10 ** $d),
+                ['Divide: $\\frac{' . $a . '}{' . $b . '} \\times \\frac{10^{' . $m . '}}{10^{' . $n . '}}$.', '$= ' . intdiv($a, $b) . ' \\times 10^{' . $d . '} = ' . (intdiv($a, $b) * 10 ** $d) . '$.'],
+                '"How many times bigger" means divide. Subtract the powers of 10.', 'application', 40); },
+        static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $a = $r->int(11, 99); if ($a % 10 === 0) $a++; $p = $r->int(2, 7); $t = intdiv($a, 10) . '.' . ($a % 10);
+            return mlb_mcq($r, $who . ' writes a number as $' . $a . ' \\times 10^{' . $p . '}$. Written properly in standard form, what is it?', '$' . $t . ' \\times 10^{' . ($p + 1) . '}$',
+                [['$' . $t . ' \\times 10^{' . ($p - 1) . '}$', 'Making the front number 10 times SMALLER means the power of 10 must go UP by one to keep the value.'],
+                 ['$' . $a . ' \\times 10^{' . $p . '}$', 'Standard form needs a front number from 1 up to (not including) 10; ' . $a . ' is too big.'],
+                 ['$0.' . $a . ' \\times 10^{' . ($p + 2) . '}$', 'The value is right, but the front number must be at least 1.']],
+                ['$' . $a . ' = ' . $t . ' \\times 10$.', 'So $' . $a . ' \\times 10^{' . $p . '} = ' . $t . ' \\times 10^{' . ($p + 1) . '}$.'],
+                'The front number must be at least 1 and less than 10. Keep the value the same.', 'concept', 40); },
+    ],
+
+    /* ── MC-066 Surds: into one root; out of one root ── */
+    'MC-066' => [
+        static function (MlbRng $r) { $a = $r->int(2, 9); $b = $r->pick([2, 3, 5, 6, 7, 10, 11]);
+            return mlb_typed('num', 'Write $' . $a . '\\sqrt{' . $b . '}$ as $\\sqrt{n}$. What is $n$?', (string)($a * $a * $b),
+                ['$' . $a . ' = \\sqrt{' . ($a * $a) . '}$.', 'So $' . $a . '\\sqrt{' . $b . '} = \\sqrt{' . ($a * $a) . '} \\times \\sqrt{' . $b . '} = \\sqrt{' . ($a * $a * $b) . '}$.'],
+                'Write the whole number in front as a square root first.', 'procedure', 35); },
+        static function (MlbRng $r) { $k = $r->int(2, 9); $m = $r->pick([2, 3, 5, 6, 7, 10, 11, 13]); $n = $k * $k * $m;
+            return mlb_typed('num', '$\\sqrt{' . $n . '}$ simplifies to $k\\sqrt{' . $m . '}$. Find $k$.', (string)$k,
+                ['Look for the largest square factor of ' . $n . ': $' . $n . ' = ' . ($k * $k) . ' \\times ' . $m . '$.', '$\\sqrt{' . $n . '} = \\sqrt{' . ($k * $k) . '}\\sqrt{' . $m . '} = ' . $k . '\\sqrt{' . $m . '}$.'],
+                'Divide ' . $n . ' by ' . $m . ' first.', 'procedure', 35); },
+    ],
+
+    /* ── MC-067 Surd operations: the conjugate; a rational denominator; a worked error ── */
+    'MC-067' => [
+        static function (MlbRng $r) { do { $a = $r->pick([2, 3, 5, 6, 7, 10, 11, 13]); $b = $r->pick([2, 3, 5, 6, 7, 10, 11, 13]); } while ($a === $b);
+            return mlb_typed('num', 'Multiply $\\sqrt{' . $a . '} + \\sqrt{' . $b . '}$ by its conjugate, $\\sqrt{' . $a . '} - \\sqrt{' . $b . '}$. What whole number do you get?', (string)($a - $b),
+                ['It is a difference of two squares: $(p + q)(p - q) = p^2 - q^2$.', '$(\\sqrt{' . $a . '})^2 - (\\sqrt{' . $b . '})^2 = ' . $a . ' - ' . $b . ' = ' . ($a - $b) . '$.'],
+                'The middle terms cancel. What is left?', 'procedure', 35); },
+        static function (MlbRng $r) { $n = $r->pick([2, 3, 5, 6, 7, 10, 11]); $c = $r->int(2, 9); $k = $c * $n;
+            return mlb_typed('num', 'With its denominator made rational, $\\frac{' . $k . '}{\\sqrt{' . $n . '}}$ becomes $c\\sqrt{' . $n . '}$. Find $c$.', (string)$c,
+                ['Multiply top and bottom by $\\sqrt{' . $n . '}$: $\\frac{' . $k . '\\sqrt{' . $n . '}}{' . $n . '}$.', '$\\frac{' . $k . '}{' . $n . '} = ' . $c . '$, so it is $' . $c . '\\sqrt{' . $n . '}$.'],
+                'Multiply by $\\frac{\\sqrt{' . $n . '}}{\\sqrt{' . $n . '}}$, which is 1.', 'procedure', 40); },
+        static function (MlbRng $r) { $b = $r->pick([2, 3, 5, 6, 7]); do { $a = $r->int(2, 5); $c = $r->int(2, 5); } while ($a === $c);
+            $right = ['$\\sqrt{' . ($a * $a * $b) . '} = ' . $a . '\\sqrt{' . $b . '}$', '$\\sqrt{' . ($c * $c * $b) . '} = ' . $c . '\\sqrt{' . $b . '}$', '$' . $a . '\\sqrt{' . $b . '} + ' . $c . '\\sqrt{' . $b . '} = ' . ($a + $c) . '\\sqrt{' . $b . '}$'];
+            return mlb_error_of($r, 'Find the first mistake: simplify $\\sqrt{' . ($a * $a * $b) . '} + \\sqrt{' . ($c * $c * $b) . '}$.', $right, [
+                [2, [$right[0], $right[1], '$' . $a . '\\sqrt{' . $b . '} + ' . $c . '\\sqrt{' . $b . '} = ' . ($a + $c) . '\\sqrt{' . (2 * $b) . '}$'], 'Like surds add like like terms: $' . $a . '\\sqrt{' . $b . '} + ' . $c . '\\sqrt{' . $b . '} = ' . ($a + $c) . '\\sqrt{' . $b . '}$; the number under the root does not change.'],
+                [0, ['$\\sqrt{' . ($a * $a * $b) . '} = ' . ($a * $a) . '\\sqrt{' . $b . '}$', $right[1], '$' . ($a * $a) . '\\sqrt{' . $b . '} + ' . $c . '\\sqrt{' . $b . '} = ' . ($a * $a + $c) . '\\sqrt{' . $b . '}$'], '$\\sqrt{' . ($a * $a) . '} = ' . $a . '$, not ' . ($a * $a) . ': take the square ROOT of the square factor.'],
+                [1, [$right[0], '$\\sqrt{' . ($c * $c * $b) . '} = ' . $c . '\\sqrt{' . ($c * $b) . '}$', '$' . $a . '\\sqrt{' . $b . '} + ' . $c . '\\sqrt{' . ($c * $b) . '}$ cannot be combined'], 'Take out the whole square, ' . ($c * $c) . ': $\\sqrt{' . ($c * $c * $b) . '} = \\sqrt{' . ($c * $c) . '}\\sqrt{' . $b . '} = ' . $c . '\\sqrt{' . $b . '}$.'],
+            ]); },
+    ],
+
+    /* ── MC-101 Quadratics: the lost root; consecutive numbers ── */
+    'MC-101' => [
+        static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $k = $r->int(2, 12);
+            return mlb_mcq($r, $who . ' solves $x^2 = ' . mlb_lterm($k, 'x') . '$ by dividing both sides by $x$, and gets $x = ' . $k . '$. What is wrong?', 'A solution is lost: $x = 0$ also works',
+                [['Nothing — $x = ' . $k . '$ is the only solution', 'Try $x = 0$: $0^2 = ' . $k . ' \\times 0$. It works too.'],
+                 ['The answer should be $x = \\sqrt{' . $k . '}$', 'Check: $x = ' . $k . '$ does satisfy the equation; the trouble is a missing solution, not a wrong one.'],
+                 ['Both sides should have been square-rooted first', 'Rooting gives $x = \\pm\\sqrt{' . mlb_lterm($k, 'x') . '}$, which still has $x$ on both sides.']],
+                ['Dividing by $x$ is only allowed when $x \\ne 0$, so it throws away the case $x = 0$.', 'Instead: $x^2' . mlb_sterm(-$k, 'x') . ' = 0$, so $x(x' . mlb_sterm(-$k) . ') = 0$.', 'Zero product: $x = 0$ or $x = ' . $k . '$.'],
+                'What if $x$ were 0?', 'reasoning', 45); },
+        static function (MlbRng $r) { $n = $r->int(6, 40); $P = $n * ($n + 1);
+            return mlb_typed('num', 'The product of two consecutive positive whole numbers is ' . $P . '. What is the smaller number?', (string)$n,
+                ['Call them $n$ and $n + 1$: $n(n + 1) = ' . $P . '$, so $n^2 + n - ' . $P . ' = 0$.', 'Factorise: $(n - ' . $n . ')(n + ' . ($n + 1) . ') = 0$.', '$n$ is positive, so $n = ' . $n . '$.'],
+                'Write the equation, collect everything on one side, and factorise.', 'application', 55); },
+    ],
+
+    /* ── MC-103 Discriminant and formula: equal roots; the sign of −b ── */
+    'MC-103' => [
+        static function (MlbRng $r) { $m = $r->int(1, 9); $c = $m * $m;
+            return mlb_typed('num', 'For what positive value of $k$ does $x^2 + kx + ' . $c . ' = 0$ have two EQUAL roots?', (string)(2 * $m),
+                ['Equal roots means the discriminant is 0: $k^2 - 4 \\times ' . $c . ' = 0$.', '$k^2 = ' . (4 * $c) . '$, so $k = \\pm ' . (2 * $m) . '$.', 'The positive value is $' . (2 * $m) . '$.'],
+                'What must $b^2 - 4ac$ be for one repeated root?', 'procedure', 45); },
+        static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $b = $r->int(3, 9); $c = $r->int(1, min(9, intdiv($b * $b - 1, 4))); $D = $b * $b - 4 * $c;
+            return mlb_mcq($r, 'Solving $x^2 - ' . $b . 'x + ' . $c . ' = 0$, ' . $who . ' writes $x = \\frac{-' . $b . ' \\pm \\sqrt{' . $D . '}}{2}$. What is wrong?', 'Here $b = -' . $b . '$, so $-b = +' . $b . '$: it should be $\\frac{' . $b . ' \\pm \\sqrt{' . $D . '}}{2}$',
+                [['Nothing — it is right', 'Substitute $b = -' . $b . '$ carefully: $-b = -(-' . $b . ') = ' . $b . '$.'],
+                 ['The discriminant should be $' . ($b * $b + 4 * $c) . '$', '$b^2 - 4ac = (-' . $b . ')^2 - 4(1)(' . $c . ') = ' . $D . '$; that part was right.'],
+                 ['The bottom should be 1, not 2', 'The bottom is $2a = 2 \\times 1 = 2$; that part was right.']],
+                ['Here $a = 1$, $b = -' . $b . '$, $c = ' . $c . '$.', '$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a} = \\frac{' . $b . ' \\pm \\sqrt{' . $D . '}}{2}$.'],
+                'Write down $a$, $b$ and $c$ with their signs before substituting.', 'reasoning', 45); },
+    ],
+
+    /* ── MC-115 Area by ½ab sin C: a missing side; an angle and its supplement ── */
+    'MC-115' => [
+        static function (MlbRng $r) { $C = $r->pick([30, 150, 90]); $a = 2 * $r->int(2, 12); $b = $r->int(3, 20); $A = $C === 90 ? $a * $b / 2 : $a * $b / 4;
+            return mlb_typed('num', 'A triangle has area ' . mlb_p($A) . ' cm². Two of its sides meet at an angle of $' . $C . '^\\circ$, and one of them is ' . $a . ' cm. How long is the other, in cm?', (string)$b,
+                ['Area $= \\frac{1}{2}ab\\sin C$, and $\\sin ' . $C . '^\\circ = ' . ($C === 90 ? '1' : '\\frac{1}{2}') . '$.', '$' . mlb_n($A) . ' = \\frac{1}{2} \\times ' . $a . ' \\times b \\times ' . ($C === 90 ? '1' : '\\frac{1}{2}') . '$.', 'So $b = ' . $b . '$ cm.'],
+                'Put what you know into the area formula, then solve for the side.', 'procedure', 50, ['unit' => 'cm']); },
+        static function (MlbRng $r) { $t = $r->pick([20, 30, 35, 40, 50, 55, 65, 70]); $a = $r->int(4, 15); $b = $r->int(4, 15);
+            return mlb_mcq($r, 'Triangle P has sides ' . $a . ' cm and ' . $b . ' cm with $' . $t . '^\\circ$ between them. Triangle Q has the same two sides with $' . (180 - $t) . '^\\circ$ between them. Which has the larger area?', 'Neither — their areas are equal',
+                [['Q, because its angle is bigger', 'Area uses $\\sin C$, and $\\sin ' . (180 - $t) . '^\\circ = \\sin ' . $t . '^\\circ$.'],
+                 ['P, because an obtuse angle makes a flatter triangle', 'Flatter in shape, yes, but $\\sin ' . (180 - $t) . '^\\circ = \\sin ' . $t . '^\\circ$, so the area is the same.'],
+                 ['It cannot be told without the third side', 'Two sides and the angle between them fix the area: $\\frac{1}{2}ab\\sin C$.']],
+                ['Area $= \\frac{1}{2} \\times ' . $a . ' \\times ' . $b . ' \\times \\sin C$ for both.', '$\\sin(180^\\circ - ' . $t . '^\\circ) = \\sin ' . $t . '^\\circ$, so the areas are equal.'],
+                'Compare $\\sin ' . $t . '^\\circ$ with $\\sin ' . (180 - $t) . '^\\circ$.', 'concept', 45); },
+    ],
+
+    /* ── MC-143 Ratios and identities: an obtuse angle; reciprocal ratio names ── */
+    'MC-143' => [
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick([[3, 4, 5], [5, 12, 13], [8, 15, 17], [7, 24, 25], [20, 21, 29]]); if ($r->int(0, 1)) [$a, $b] = [$b, $a];
+            return mlb_typed('frac', '$\\theta$ is obtuse ($90^\\circ < \\theta < 180^\\circ$) and $\\sin\\theta = \\frac{' . $a . '}{' . $c . '}$. Find $\\cos\\theta$.', mlb_frac(-$b, $c),
+                ['$\\cos^2\\theta = 1 - \\sin^2\\theta = 1 - \\frac{' . ($a * $a) . '}{' . ($c * $c) . '} = \\frac{' . ($b * $b) . '}{' . ($c * $c) . '}$.', 'So $\\cos\\theta = \\pm\\frac{' . $b . '}{' . $c . '}$.', 'In the second quadrant cosine is negative: $\\cos\\theta = -\\frac{' . $b . '}{' . $c . '}$.'],
+                'Use $\\sin^2 + \\cos^2 = 1$, then decide the sign from the quadrant.', 'procedure', 50); },
+        static function (MlbRng $r) { $which = $r->pick(['sec', 'cosec', 'cot']);
+            $map = ['sec' => '$\\frac{1}{\\cos\\theta}$', 'cosec' => '$\\frac{1}{\\sin\\theta}$', 'cot' => '$\\frac{1}{\\tan\\theta}$'];
+            $wrong = []; foreach ($map as $k => $v) if ($k !== $which) $wrong[] = [$v, 'That is $\\' . ($k === 'cosec' ? 'operatorname{cosec}' : $k) . '\\theta$.'];
+            $inv = ['sec' => '\\cos^{-1}\\theta', 'cosec' => '\\sin^{-1}\\theta', 'cot' => '\\tan^{-1}\\theta'][$which];
+            $wrong[] = ['$' . $inv . '$', '$' . $inv . '$ is the INVERSE function (an angle), not the reciprocal.'];
+            $nm = $which === 'cosec' ? '\\operatorname{cosec}' : '\\' . $which;
+            return mlb_mcq($r, 'Which of these is equal to $' . $nm . '\\theta$?', $map[$which], $wrong,
+                ['$\\sec$, $\\operatorname{cosec}$ and $\\cot$ are the reciprocals of $\\cos$, $\\sin$ and $\\tan$: sec ↔ cos, cosec ↔ sin, cot ↔ tan.', 'So $' . $nm . '\\theta = ' . str_replace('$', '', $map[$which]) . '$.'],
+                'Reciprocal means "1 over".', 'concept', 30); },
+    ],
+
+    /* ── MC-144 Compound angles: cos 2A; which expansion ── */
+    'MC-144' => [
+        static function (MlbRng $r) { [$a, $b, $c] = $r->pick([[3, 4, 5], [5, 12, 13], [8, 15, 17], [7, 24, 25]]); if ($r->int(0, 1)) [$a, $b] = [$b, $a];
+            return mlb_typed('frac', '$A$ is acute and $\\cos A = \\frac{' . $b . '}{' . $c . '}$. Find $\\cos 2A$ exactly.', mlb_frac(2 * $b * $b - $c * $c, $c * $c),
+                ['$\\cos 2A = 2\\cos^2 A - 1$.', '$= 2 \\times \\frac{' . ($b * $b) . '}{' . ($c * $c) . '} - 1 = \\frac{' . (2 * $b * $b) . ' - ' . ($c * $c) . '}{' . ($c * $c) . '}$.', '$= ' . mlb_ftex(2 * $b * $b - $c * $c, $c * $c) . '$.'],
+                'One form of $\\cos 2A$ needs only $\\cos A$.', 'procedure', 50); },
+        static function (MlbRng $r) { $f = $r->pick(['cos(A + B)', 'cos(A - B)', 'sin(A - B)']);
+            $all = ['cos(A + B)' => '$\\cos A\\cos B - \\sin A\\sin B$', 'cos(A - B)' => '$\\cos A\\cos B + \\sin A\\sin B$', 'sin(A - B)' => '$\\sin A\\cos B - \\cos A\\sin B$', 'sin(A + B)' => '$\\sin A\\cos B + \\cos A\\sin B$'];
+            $wrong = []; foreach ($all as $k => $v) if ($k !== $f) $wrong[] = [$v, 'That is the expansion of $\\' . $k . '$. Check with $A = B$ or $B = 0$.'];
+            $wrong = array_slice($wrong, 0, 2); $wrong[] = ['$\\' . substr($f, 0, 3) . ' A ' . (strpos($f, '+') !== false ? '+' : '-') . ' \\' . substr($f, 0, 3) . ' B$', 'The functions do not split over $+$ or $-$: try $A = B = 60^\\circ$.'];
+            return mlb_mcq($r, 'Which is the expansion of $\\' . $f . '$?', $all[$f], $wrong,
+                ['$\\' . $f . ' = ' . str_replace('$', '', $all[$f]) . '$.', 'Check with $B = 0$: it must give $\\' . substr($f, 0, 3) . ' A$.'],
+                'Test each option with $B = 0$.', 'concept', 40); },
+    ],
+
+    /* ── MC-146 Harmonic form: least value with a shift; the a + b misconception ── */
+    'MC-146' => [
+        static function (MlbRng $r) { [$a, $b, $R] = $r->pick([[3, 4, 5], [5, 12, 13], [8, 15, 17], [6, 8, 10], [7, 24, 25]]); $k = $r->int($R + 1, $R + 20);
+            return mlb_typed('num', 'What is the least value of $' . $a . '\\sin x + ' . $b . '\\cos x + ' . $k . '$?', (string)($k - $R),
+                ['$' . $a . '\\sin x + ' . $b . '\\cos x = R\\sin(x + \\alpha)$ with $R = \\sqrt{' . ($a * $a) . ' + ' . ($b * $b) . '} = ' . $R . '$.', '$R\\sin(x + \\alpha)$ goes down to $-' . $R . '$.', 'So the least value is $' . $k . ' - ' . $R . ' = ' . ($k - $R) . '$.'],
+                'Write the trig part as one sine wave first.', 'procedure', 50); },
+        static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); [$a, $b, $R] = $r->pick([[3, 4, 5], [5, 12, 13], [8, 15, 17], [9, 12, 15], [20, 21, 29]]);
+            return mlb_mcq($r, $who . ' says the greatest value of $' . $a . '\\sin x + ' . $b . '\\cos x$ is $' . $a . ' + ' . $b . ' = ' . ($a + $b) . '$. What is it really?', (string)$R,
+                [[(string)($a + $b), 'That needs $\\sin x$ and $\\cos x$ both equal to 1 at the same $x$, which never happens.'],
+                 [(string)max($a, $b), 'The two waves add up partly: the peak is more than either alone.'],
+                 [(string)($a * $a + $b * $b), 'That is $R^2$; take the square root.']],
+                ['Write it as $R\\sin(x + \\alpha)$ with $R = \\sqrt{' . $a . '^2 + ' . $b . '^2} = ' . $R . '$.', 'The greatest value of $R\\sin(\\ldots)$ is $R = ' . $R . '$.'],
+                'Can $\\sin x$ and $\\cos x$ both be 1 at once?', 'reasoning', 45); },
+    ],
+
+    /* ── MC-151 Limits: making a function continuous; 0/0 is a signal, not an answer ── */
+    'MC-151' => [
+        static function (MlbRng $r) { $a = $r->int(-4, 5); $m = $r->nz(-5, 6); $k = $m * $a - $a * $a;
+            return mlb_typed('num', '$f(x) = x^2 + k$ for $x < ' . $a . '$, and $f(x) = ' . mlb_lterm($m, 'x') . '$ for $x \\ge ' . $a . '$. What value of $k$ makes $f$ continuous at $x = ' . $a . '$?', (string)$k,
+                ['For no jump, the two pieces must meet at $x = ' . $a . '$.', 'Left: $' . $a . '^2 + k = ' . ($a * $a) . ' + k$. Right: $' . $m . ' \\times ' . ($a < 0 ? '(' . $a . ')' : $a) . ' = ' . ($m * $a) . '$.', '$' . ($a * $a) . ' + k = ' . ($m * $a) . '$, so $k = ' . $k . '$.'],
+                'The two formulas must give the same value where they join.', 'procedure', 50); },
+        static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $a = $r->nz(-6, 6);
+            return mlb_mcq($r, $who . ' says $\\displaystyle\\lim_{x \\to ' . $a . '} \\frac{x^2 - ' . ($a * $a) . '}{x' . mlb_sterm(-$a) . '}$ does not exist, because putting $x = ' . $a . '$ gives $\\frac{0}{0}$. Is ' . $who . ' right?', 'No — $\\frac{0}{0}$ means simplify first; the limit is ' . (2 * $a),
+                [['Yes — $\\frac{0}{0}$ has no value', 'The FUNCTION has no value at $x = ' . $a . '$, but the limit asks what it approaches nearby.'],
+                 ['No — the limit is 0', '$0$ on top and $0$ on the bottom do not make 0: cancel the common factor first.'],
+                 ['No — the limit is 1', 'Two things both approaching 0 need not have a ratio approaching 1: cancel and see.']],
+                ['$x^2 - ' . ($a * $a) . ' = (x' . mlb_sterm(-$a) . ')(x' . mlb_sterm($a) . ')$.', 'For $x \\ne ' . $a . '$ the fraction is $x' . mlb_sterm($a) . '$, which approaches $' . (2 * $a) . '$.'],
+                'Factorise the top.', 'reasoning', 45); },
+    ],
+
+    /* ── MC-159 Definite integrals: find the upper limit; signed area versus area ── */
+    'MC-159' => [
+        static function (MlbRng $r) { $k = $r->int(2, 12);
+            return mlb_typed('num', 'Find the positive number $k$ for which $\\displaystyle\\int_0^{k} 2x\\,dx = ' . ($k * $k) . '$.', (string)$k,
+                ['$\\int_0^{k} 2x\\,dx = \\left[x^2\\right]_0^{k} = k^2$.', '$k^2 = ' . ($k * $k) . '$ and $k > 0$, so $k = ' . $k . '$.'],
+                'Integrate with $k$ as the top limit, then solve.', 'procedure', 40); },
+        static function (MlbRng $r) { $a = $r->int(1, 6);
+            return mlb_mcq($r, '$\\displaystyle\\int_{0}^{' . (2 * $a) . '} (x - ' . $a . ')\\,dx = 0$. What is the total area between the line $y = x - ' . $a . '$ and the $x$-axis from $x = 0$ to $x = ' . (2 * $a) . '$?', (string)($a * $a),
+                [['0', 'The integral is 0 because the part below the axis counts as negative and cancels the part above. Area is never negative.'],
+                 [(string)(2 * $a * $a), 'Each of the two triangles has area $\\frac{1}{2} \\times ' . $a . ' \\times ' . $a . '$.'],
+                 [mlb_dec($a * $a / 2), 'That is one triangle. There are TWO, one below the axis and one above.']],
+                ['The line crosses the axis at $x = ' . $a . '$: one triangle below, one above.', 'Each has area $\\frac{1}{2} \\times ' . $a . ' \\times ' . $a . ' = ' . mlb_dec($a * $a / 2) . '$.', 'Total area $= ' . ($a * $a) . '$; the integral is 0 only because the lower part counts as negative.'],
+                'Sketch the line. Where does it cross the axis?', 'concept', 45); },
+    ],
+
+    /* ── MC-171 Divisors and primes: square divisors; where trial division can stop ── */
+    'MC-171' => [
+        static function (MlbRng $r) { $e = [$r->int(1, 6), $r->int(0, 4), $r->int(0, 3)]; $N = 2 ** $e[0] * 3 ** $e[1] * 5 ** $e[2]; $cnt = (intdiv($e[0], 2) + 1) * (intdiv($e[1], 2) + 1) * (intdiv($e[2], 2) + 1);
+            $f = implode(' \\times ', array_filter([$e[0] ? '2^{' . $e[0] . '}' : '', $e[1] ? '3^{' . $e[1] . '}' : '', $e[2] ? '5^{' . $e[2] . '}' : '']));
+            return mlb_typed('num', 'How many of the divisors of $' . $f . ' = ' . mlb_n($N) . '$ are perfect squares?', (string)$cnt,
+                ['A square divisor uses each prime to an EVEN power, no higher than in ' . mlb_p($N) . '.', 'Choices: power of 2 from $\\{0, 2, \\ldots\\}$ up to ' . $e[0] . ': ' . (intdiv($e[0], 2) + 1) . '; of 3 up to ' . $e[1] . ': ' . (intdiv($e[1], 2) + 1) . '; of 5 up to ' . $e[2] . ': ' . (intdiv($e[2], 2) + 1) . '.', 'Multiply: ' . $cnt . '.'],
+                'What must be true of the powers in a perfect square?', 'challenge', 60); },
+        static function (MlbRng $r) { $N = $r->int(120, 900); $s = (int)floor(sqrt($N)); $p = $s; while (!mlb_g_isprime($p)) $p--; $q = $s + 1; while (!mlb_g_isprime($q)) $q++; $h = intdiv($N, 2); while (!mlb_g_isprime($h)) $h--;
+            return mlb_mcq($r, 'To decide whether ' . $N . ' is prime by trying prime divisors, what is the LARGEST prime you need to try?', (string)$p,
+                [[(string)$q, $q . '² = ' . ($q * $q) . ' is bigger than ' . $N . ', so if ' . $q . ' were a factor its partner would be smaller — and already tried.'],
+                 [(string)$h, 'Trying up to half of ' . $N . ' works, but far more than needed: one factor of any pair is at most $\\sqrt{' . $N . '}$.'],
+                 [(string)($N - 1), 'Only primes up to $\\sqrt{' . $N . '}$ are needed.']],
+                ['If $' . $N . ' = ab$ with $a \\le b$, then $a^2 \\le ' . $N . '$, so $a \\le \\sqrt{' . $N . '} \\approx ' . mlb_rd(sqrt($N), 1) . '$.', 'So only primes up to ' . $s . ' need trying; the largest is ' . $p . '.'],
+                'Factors come in pairs. How big can the smaller one be?', 'reasoning', 45); },
+    ],
+
+    /* ── MC-172 GCD and LCM in context: buses that leave together; the largest square tile ── */
+    'MC-172' => [
+        static function (MlbRng $r) { do { $a = $r->int(4, 30); $b = $r->int(4, 30); } while ($a === $b || mlb_gcd($a, $b) === min($a, $b)); $town = $r->pick(MLBV2_TOWNS);
+            return mlb_typed('num', 'At the motor park in ' . $town . ', one bus leaves every ' . $a . ' minutes and another every ' . $b . ' minutes. They leave together at 7:00. After how many minutes do they next leave together?', (string)mlb_lcm($a, $b),
+                ['They leave together at common multiples of ' . $a . ' and ' . $b . '.', 'The first is the LCM: $\\frac{' . $a . ' \\times ' . $b . '}{\\gcd(' . $a . ', ' . $b . ')} = \\frac{' . ($a * $b) . '}{' . mlb_gcd($a, $b) . '} = ' . mlb_lcm($a, $b) . '$.'],
+                'Is this a "common multiple" or a "common factor" question?', 'application', 45, ['unit' => 'min']); },
+        static function (MlbRng $r) { do { $g = $r->int(5, 40); $p = $r->int(2, 9); $q = $r->int(2, 9); } while (mlb_gcd($p, $q) !== 1 || $p === $q);
+            return mlb_typed('num', 'A floor ' . ($g * $p) . ' cm by ' . ($g * $q) . ' cm is to be covered with equal square tiles, with no cutting. What is the largest possible side of a tile, in cm?', (string)$g,
+                ['The side must divide both ' . ($g * $p) . ' and ' . ($g * $q) . ': a common factor.', 'The largest is the HCF: $\\gcd(' . ($g * $p) . ', ' . ($g * $q) . ') = ' . $g . '$ (e.g. by Euclid\'s algorithm).'],
+                'Common factor or common multiple?', 'application', 45, ['unit' => 'cm']); },
+    ],
+
+    /* ── MC-173 Congruences: days of the week; the last digit ── */
+    'MC-173' => [
+        static function (MlbRng $r) { $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']; $d = $r->int(0, 6); $N = $r->int(30, 400); $ans = $days[($d + $N) % 7];
+            $wrong = []; foreach ([$d + $N + 1, $d + $N - 1, $d + $N % 10] as $w) { $t = $days[(($w % 7) + 7) % 7]; if ($t !== $ans) $wrong[] = [$t, 'Count again: only the remainder of ' . $N . ' on division by 7 matters, added to ' . $days[$d] . '.']; }
+            return mlb_mcq($r, 'Today is ' . $days[$d] . '. What day of the week will it be ' . $N . ' days from today?', $ans, $wrong,
+                ['The days repeat every 7, so work mod 7: $' . $N . ' = ' . intdiv($N, 7) . ' \\times 7 + ' . ($N % 7) . '$.', 'So it is ' . ($N % 7) . ' days on from ' . $days[$d] . ': ' . $ans . '.'],
+                'Whole weeks change nothing. What is left over?', 'application', 40); },
+        static function (MlbRng $r) { do { $a = $r->int(2, 19); } while ($a % 10 === 0 || $a % 10 === 1 || $a % 10 === 5 || $a % 10 === 6); $N = $r->int(20, 500); $k = mlbv2_powmod($a, $N, 10);
+            return mlb_typed('num', 'What is the last digit of $' . $a . '^{' . $N . '}$?', (string)$k,
+                ['The last digit is the remainder mod 10, and it depends only on the last digit of ' . $a . '.', 'The last digits of powers of ' . ($a % 10) . ' repeat in a cycle of at most 4: ' . implode(', ', array_map(static fn($e) => mlbv2_powmod($a, $e, 10), [1, 2, 3, 4])) . '.', '$' . $N . ' = 4 \\times ' . intdiv($N, 4) . ' + ' . ($N % 4) . '$, which gives last digit ' . $k . '.'],
+                'Write out the last digits of the first few powers and look for a cycle.', 'procedure', 50); },
+    ],
+
+    /* ── MC-174 Fermat and Euler: reduce the power; when Fermat applies; the inverse ── */
+    'MC-174' => [
+        static function (MlbRng $r) { $p = $r->pick([5, 7, 11, 13, 17]); do { $a = $r->int(2, 30); } while ($a % $p === 0); $N = $r->int(100, 999); $x = mlbv2_powmod($a, $N, $p);
+            return mlb_typed('num', 'Since ' . $p . ' is prime, $' . $a . '^{' . ($p - 1) . '} \\equiv 1 \\pmod{' . $p . '}$. Find $x$, from 0 to ' . ($p - 1) . ', with $' . $a . '^{' . $N . '} \\equiv x \\pmod{' . $p . '}$.', (string)$x,
+                ['$' . $N . ' = ' . intdiv($N, $p - 1) . ' \\times ' . ($p - 1) . ' + ' . ($N % ($p - 1)) . '$.', 'So $' . $a . '^{' . $N . '} \\equiv (' . $a . '^{' . ($p - 1) . '})^{' . intdiv($N, $p - 1) . '} \\times ' . $a . '^{' . ($N % ($p - 1)) . '} \\equiv ' . $a . '^{' . ($N % ($p - 1)) . '} \\pmod{' . $p . '}$.', 'Which is $' . $x . '$.'],
+                'Divide the power by ' . ($p - 1) . '; only the remainder matters.', 'procedure', 55); },
+        static function (MlbRng $r) { $case = $r->pick(['ok', 'notprime', 'divides']);
+            if ($case === 'ok') { $m = $r->pick([7, 11, 13, 17]); do { $a = $r->int(2, 20); } while ($a % $m === 0); }
+            elseif ($case === 'notprime') { $m = $r->pick([9, 15, 21, 25]); do { $a = $r->int(2, 20); } while (mlb_gcd($a, $m) !== 1); }
+            else { $m = $r->pick([5, 7, 11]); $a = $m * $r->int(2, 4); }
+            $N = $r->int(50, 300);
+            $opt = ['ok' => 'Yes: ' . $m . ' is prime and does not divide ' . $a, 'notprime' => 'No: ' . $m . ' is not prime', 'divides' => 'No: ' . $m . ' divides ' . $a];
+            $why = ['ok' => 'One of the conditions fails here: check that ' . $m . ' is prime AND does not divide ' . $a . '.', 'notprime' => $m . ' is prime here.', 'divides' => $m . ' does not divide ' . $a . ' here.'];
+            $wrong = []; foreach ($opt as $k => $v) if ($k !== $case) $wrong[] = [$v, $why[$k]];
+            $wrong[] = ['No: the power ' . $N . ' is too large', 'Fermat works for any power — reducing large powers is exactly what it is for.'];
+            return mlb_mcq($r, 'Can Fermat\'s little theorem be used directly to find $' . $a . '^{' . $N . '} \\bmod ' . $m . '$?', $opt[$case], $wrong,
+                ['Fermat\'s little theorem: if $p$ is prime and $p \\nmid a$, then $a^{p-1} \\equiv 1 \\pmod p$.', $case === 'ok' ? $m . ' is prime and does not divide ' . $a . ', so yes.' : ($case === 'notprime' ? $m . ' is not prime (use Euler\'s theorem with $\\varphi(' . $m . ')$ instead).' : $m . ' divides ' . $a . ', so every power is $\\equiv 0$.')],
+                'Check the two conditions of the theorem.', 'concept', 40); },
+        static function (MlbRng $r) { $p = $r->pick([5, 7, 11, 13]); $a = $r->int(2, $p - 1); $x = mlbv2_powmod($a, $p - 2, $p);
+            return mlb_typed('num', 'By Fermat\'s little theorem, $' . $a . '^{' . ($p - 2) . '}$ is the inverse of ' . $a . ' modulo ' . $p . '. Find the remainder when $' . $a . '^{' . ($p - 2) . '}$ is divided by ' . $p . '.', (string)$x,
+                ['$' . $a . ' \\times ' . $a . '^{' . ($p - 2) . '} = ' . $a . '^{' . ($p - 1) . '} \\equiv 1$, which is why it is the inverse.', 'Work it out: $' . $a . '^{' . ($p - 2) . '} \\equiv ' . $x . ' \\pmod{' . $p . '}$.', 'Check: $' . $a . ' \\times ' . $x . ' = ' . ($a * $x) . ' \\equiv 1 \\pmod{' . $p . '}$. ✓'],
+                'Square and reduce as you go, so the numbers stay small.', 'procedure', 55); },
+    ],
+
+    /* ── MC-177 Legendre: the smallest factorial with k zeros; floor(n/5) is not enough ── */
+    'MC-177' => [
+        static function (MlbRng $r) { $n = 5 * $r->int(3, 60); $z = 0; for ($q = 5; $q <= $n; $q *= 5) $z += intdiv($n, $q);
+            return mlb_typed('num', 'What is the smallest whole number $n$ for which $n!$ ends in exactly ' . $z . ' zeros?', (string)$n,
+                ['Zeros at the end of $n!$ $= \\lfloor n/5 \\rfloor + \\lfloor n/25 \\rfloor + \\lfloor n/125 \\rfloor + \\cdots$.', 'The count only goes up at multiples of 5, so the answer is a multiple of 5.', 'At $n = ' . $n . '$ the count is ' . $z . ', and at $n = ' . ($n - 1) . '$ it is less. So $n = ' . $n . '$.'],
+                'Estimate with $n/5$, then adjust for the multiples of 25.', 'challenge', 70); },
+        static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $n = $r->int(30, 199); $z = 0; for ($q = 5; $q <= $n; $q *= 5) $z += intdiv($n, $q); $f5 = intdiv($n, 5);
+            return mlb_mcq($r, $who . ' says $' . $n . '!$ ends in $\\lfloor ' . $n . '/5 \\rfloor = ' . $f5 . '$ zeros. How many does it really end in?', (string)$z,
+                [[(string)$f5, 'Multiples of 25 give a SECOND factor 5 each, and ' . $who . ' counted them only once.'],
+                 [(string)intdiv($n, 10), 'A zero needs a 2 and a 5, not a multiple of 10: 5 × 2 makes a zero too.'],
+                 [(string)($z + intdiv($n, 2)), 'Factors of 2 are plentiful; the 5s decide the zeros.']],
+                ['Count the 5s: $\\lfloor ' . $n . '/5 \\rfloor + \\lfloor ' . $n . '/25 \\rfloor' . ($n >= 125 ? ' + \\lfloor ' . $n . '/125 \\rfloor' : '') . '$.', '$= ' . $f5 . ' + ' . intdiv($n, 25) . ($n >= 125 ? ' + ' . intdiv($n, 125) : '') . ' = ' . $z . '$.'],
+                'How many factors of 5 does 25 have?', 'reasoning', 45); },
+    ],
+
+    /* ── MC-178 Bases and divisibility: base conversion both ways; the 11 test ── */
+    'MC-178' => [
+        static function (MlbRng $r) { $b = $r->pick([2, 3, 4, 5, 6, 7, 8]); $N = $r->int($b * $b, $b ** 4 - 1); $rep = base_convert((string)$N, 10, $b);
+            return mlb_typed('num', 'Write the base-ten number ' . $N . ' in base ' . $b . '.', $rep,
+                ['Divide by ' . $b . ' repeatedly and keep the remainders.', 'Reading the remainders from last to first gives $' . $rep . '_{' . $b . '}$.', 'Check: ' . implode(' + ', array_map(static fn($d, $i) => $d . ' × ' . $b . '^' . (strlen($rep) - 1 - $i), str_split($rep), array_keys(str_split($rep)))) . ' = ' . $N . '.'],
+                'Repeated division by the base; the remainders are the digits.', 'procedure', 55, ['show' => '$' . $rep . '_{' . $b . '}$']); },
+        static function (MlbRng $r) { $b = $r->pick([3, 4, 5, 6, 7, 8, 9]); $len = $r->int(3, 4); $d = [$r->int(1, $b - 1)]; for ($i = 1; $i < $len; $i++) $d[] = $r->int(0, $b - 1); $rep = implode('', $d); $N = (int)base_convert($rep, $b, 10);
+            return mlb_typed('num', 'What is $' . $rep . '_{' . $b . '}$ in base ten?', (string)$N,
+                ['Each digit is worth a power of ' . $b . '.', implode(' + ', array_map(static fn($x, $i) => $x . ' \\times ' . $b . '^{' . ($len - 1 - $i) . '}', $d, array_keys($d))) . ' = ' . $N . '.'],
+                'Place values in base ' . $b . ' are 1, ' . $b . ', ' . ($b * $b) . ', …', 'procedure', 45); },
+        static function (MlbRng $r) { $alt = static function (int $n): int { $s = 0; $sg = 1; foreach (array_reverse(str_split((string)$n)) as $c) { $s += $sg * (int)$c; $sg = -$sg; } return $s; };
+            do { $right = 11 * $r->int(1000, 9000); } while ($alt($right) === 0);
+            $wrong = []; while (count($wrong) < 3) { $w = $right + $r->pick([1, 2, 3, 9, 10, 100, -1, -2]) * $r->pick([1, 1, 10]); if ($w % 11 === 0 || in_array((string)$w, array_column($wrong, 0), true)) continue;
+                $wrong[] = [(string)$w, 'Its alternating digit sum is ' . $alt($w) . ', which is not a multiple of 11.']; }
+            return mlb_mcq($r, 'Which of these numbers is divisible by 11?', (string)$right, array_map(static fn($x) => [(string)$x[0], $x[1]], $wrong),
+                ['Test: add and subtract the digits alternately, from the units digit.', 'For ' . $right . ' that gives ' . $alt($right) . ', a multiple of 11, so ' . $right . ' is divisible by 11.'],
+                'Use the alternating digit sum.', 'procedure', 50); },
+    ],
+
+    /* ── MC-183 Stars and bars: choosing the formula; drinks from flavours ── */
+    'MC-183' => [
+        static function (MlbRng $r) { $n = $r->int(5, 12); $k = $r->int(3, 5); $mk = $r->pick(['mangoes', 'oranges', 'sweets', 'biscuits']);
+            return mlb_mcq($r, $n . ' identical ' . $mk . ' are shared among ' . $k . ' children (some may get none). In how many ways?', (string)mlb_ncr($n + $k - 1, $k - 1),
+                [[(string)mlb_ncr($n, $k), '$\\binom{' . $n . '}{' . $k . '}$ chooses ' . $k . ' different things from ' . $n . '; here the ' . $mk . ' are identical and children may get several.'],
+                 [(string)($k ** $n), $k . '^' . $n . ' treats the ' . $mk . ' as DIFFERENT, each choosing a child.'],
+                 [(string)mlb_ncr($n - 1, $k - 1), 'That is the count when every child must get at least one.']],
+                ['Line up ' . $n . ' stars and ' . ($k - 1) . ' bars; the bars cut the stars into ' . $k . ' shares.', 'Choose where the bars go: $\\binom{' . ($n + $k - 1) . '}{' . ($k - 1) . '} = ' . mlb_ncr($n + $k - 1, $k - 1) . '$.'],
+                'Are the ' . $mk . ' identical? May a child get none?', 'concept', 50); },
+        static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $n = $r->int(4, 10); $k = $r->int(3, 5); $fl = $r->pick(['Fanta, Sprite, Coke, Pepsi, Malta', 'zobo, kunu, Chapman, malt, juice']); $names = array_slice(array_map('trim', explode(',', $fl)), 0, $k);
+            return mlb_typed('num', $who . ' buys ' . $n . ' bottles of drink for a party, choosing from ' . $k . ' kinds (' . implode(', ', $names) . '). Any mix is allowed. How many different selections are possible?', (string)mlb_ncr($n + $k - 1, $k - 1),
+                ['A selection is how many of each kind: $x_1 + \\cdots + x_{' . $k . '} = ' . $n . '$ with each $x \\ge 0$.', 'Stars and bars: $\\binom{' . $n . ' + ' . $k . ' - 1}{' . ($k - 1) . '} = \\binom{' . ($n + $k - 1) . '}{' . ($k - 1) . '} = ' . mlb_ncr($n + $k - 1, $k - 1) . '$.'],
+                'Only the numbers of each kind matter, not the order.', 'application', 55); },
+    ],
+
+    /* ── MC-184 Inclusion–exclusion: the double count; a language survey ── */
+    'MC-184' => [
+        static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $c = $r->int(3, 15); $a = $c + $r->int(5, 30); $b = $c + $r->int(5, 30);
+            return mlb_mcq($r, '$|A| = ' . $a . '$, $|B| = ' . $b . '$ and $|A \\cap B| = ' . $c . '$. ' . $who . ' says $|A \\cup B| = ' . ($a + $b) . '$. What is it really?', (string)($a + $b - $c),
+                [[(string)($a + $b), 'The ' . $c . ' things in BOTH sets were counted twice; subtract them once.'],
+                 [(string)($a + $b - 2 * $c), 'Subtract the overlap ONCE, not twice — those things are still in the union.'],
+                 [(string)($a + $b + $c), 'The overlap is already counted; adding it again overcounts more.']],
+                ['Adding $|A| + |B|$ counts the overlap twice.', '$|A \\cup B| = ' . $a . ' + ' . $b . ' - ' . $c . ' = ' . ($a + $b - $c) . '$.'],
+                'Draw two overlapping circles.', 'concept', 40); },
+        static function (MlbRng $r) { $z = $r->int(3, 12); $x = $z + $r->int(5, 20); $y = $z + $r->int(5, 20); $none = $r->int(1, 10); $n = $x + $y - $z + $none;
+            [$L1, $L2] = $r->pick([['Yoruba', 'Igbo'], ['Hausa', 'Yoruba'], ['French', 'Igbo'], ['Hausa', 'French']]);
+            return mlb_typed('num', 'In a club of ' . $n . ' members, ' . $x . ' speak ' . $L1 . ', ' . $y . ' speak ' . $L2 . ', and ' . $z . ' speak both. How many speak neither?', (string)$none,
+                ['Speak at least one: $' . $x . ' + ' . $y . ' - ' . $z . ' = ' . ($x + $y - $z) . '$.', 'Neither: $' . $n . ' - ' . ($x + $y - $z) . ' = ' . $none . '$.'],
+                'First count those who speak at least one, without counting anyone twice.', 'application', 45); },
+    ],
+
+    /* ── MC-185 Pigeonhole: shared birth months; 51 numbers from 1 to 100 ── */
+    'MC-185' => [
+        static function (MlbRng $r) { [$what, $k] = $r->pick([['birth month', 12], ['day of the week of birth', 7], ['last digit of their phone number', 10], ['blood group (A, B, AB or O)', 4]]); $m = $r->int(2, 5);
+            return mlb_typed('num', 'What is the smallest number of pupils a class must have to be SURE that at least ' . $m . ' of them share the same ' . $what . '?', (string)($k * ($m - 1) + 1),
+                ['There are ' . $k . ' boxes. With ' . ($m - 1) . ' pupils in every box, ' . ($k * ($m - 1)) . ' pupils need not have ' . $m . ' together.', 'One more pupil forces a box to hold ' . $m . ': $' . $k . ' \\times ' . ($m - 1) . ' + 1 = ' . ($k * ($m - 1) + 1) . '$.'],
+                'Imagine the worst case: everyone spread out as evenly as possible.', 'application', 45); },
+        static function (MlbRng $r) { $m = $r->pick([10, 20, 30, 50]); $N = 2 * $m;
+            return mlb_mcq($r, 'Any ' . ($m + 1) . ' different whole numbers are chosen from 1 to ' . $N . '. Which of these MUST be true?', 'Two of them are consecutive',
+                [['Two of them add up to ' . $N, 'Pairs adding to ' . $N . ' are $(1, ' . ($N - 1) . '), \\ldots$, plus ' . $m . ' and ' . $N . ' alone — ' . ($m + 1) . ' boxes, so ' . ($m + 1) . ' numbers can avoid it.'],
+                 ['Two of them are equal', 'The numbers are chosen different.'],
+                 ['One of them is ' . $N, 'Choose ' . implode(', ', [1, 2, 3]) . ', … — ' . $N . ' can be left out.']],
+                ['Make ' . $m . ' boxes: $\\{1, 2\\}, \\{3, 4\\}, \\ldots, \\{' . ($N - 1) . ', ' . $N . '\\}$.', $m + 1 . ' numbers in ' . $m . ' boxes: some box holds two, and they are consecutive.'],
+                'Find ' . $m . ' boxes so that two numbers in one box have the property.', 'reasoning', 55); },
+    ],
+
+    /* ── MC-186 Binomial coefficients: Pascal's rule; a committee; symmetry ── */
+    'MC-186' => [
+        static function (MlbRng $r) { $n = $r->int(5, 15); $k = $r->int(1, $n - 2);
+            return mlb_mcq($r, 'Which of these equals $\\binom{' . $n . '}{' . $k . '} + \\binom{' . $n . '}{' . ($k + 1) . '}$?', '$\\binom{' . ($n + 1) . '}{' . ($k + 1) . '}$',
+                [['$\\binom{' . $n . '}{' . (2 * $k + 1) . '}$', 'Binomial coefficients do not add along the bottom numbers.'],
+                 ['$\\binom{' . (2 * $n) . '}{' . (2 * $k + 1) . '}$', 'They do not add top-to-top and bottom-to-bottom either.'],
+                 ['$\\binom{' . ($n + 1) . '}{' . $k . '}$', 'Close: Pascal\'s rule gives the LARGER of the two bottom numbers, ' . ($k + 1) . '.']],
+                ['Pascal\'s rule: $\\binom{n}{k} + \\binom{n}{k + 1} = \\binom{n + 1}{k + 1}$ — two neighbours add to the number below them.', 'So it is $\\binom{' . ($n + 1) . '}{' . ($k + 1) . '}$.'],
+                'Picture Pascal\'s triangle.', 'concept', 40); },
+        static function (MlbRng $r) { $n = $r->int(6, 14); $k = $r->int(2, 4); $town = $r->pick(MLBV2_TOWNS);
+            return mlb_typed('num', 'A committee of ' . $k . ' is to be chosen from ' . $n . ' volunteers at a centre in ' . $town . '. How many different committees are possible?', (string)mlb_ncr($n, $k),
+                ['Order does not matter, so it is $\\binom{' . $n . '}{' . $k . '}$.', '$= \\frac{' . implode(' \\times ', range($n, $n - $k + 1)) . '}{' . implode(' \\times ', range($k, 1)) . '} = ' . mlb_ncr($n, $k) . '$.'],
+                'Does the order in which members are picked matter?', 'application', 45); },
+        static function (MlbRng $r) { $n = $r->int(9, 30); do { $k = $r->int(2, $n - 2); } while (2 * $k === $n);
+            return mlb_typed('num', '$\\binom{' . $n . '}{' . $k . '} = \\binom{' . $n . '}{m}$, where $m \\ne ' . $k . '$. Find $m$.', (string)($n - $k),
+                ['Choosing ' . $k . ' to take is the same as choosing ' . ($n - $k) . ' to leave.', 'So $\\binom{' . $n . '}{' . $k . '} = \\binom{' . $n . '}{' . ($n - $k) . '}$, and $m = ' . ($n - $k) . '$.'],
+                'Choosing the ones you take also chooses the ones you leave.', 'concept', 35); },
+    ],
+
+    /* ── MC-189 Expected value: is a game fair; linearity with a transformation ── */
+    'MC-189' => [
+        static function (MlbRng $r) { $k = $r->int(2, 10); $W = 100 * $k * $r->int(1, 8); $c = 50 * $r->int(1, 20);
+            return mlb_typed('num', 'A stall at a fair charges ₦' . mlb_p($c) . ' a go. You win ₦' . mlb_p($W) . ' with probability $\\frac{1}{' . $k . '}$, and nothing otherwise. What is your expected profit per go, in naira? (A loss is negative.)', (string)($W / $k - $c),
+                ['Expected winnings $= \\frac{1}{' . $k . '} \\times ' . $W . ' = ' . ($W / $k) . '$.', 'Expected profit $= ' . ($W / $k) . ' - ' . $c . ' = ' . ($W / $k - $c) . '$.'],
+                'Average win per go, minus the cost of the go.', 'application', 50); },
+        static function (MlbRng $r) { $a = $r->int(2, 9); $b = $r->int(1, 9); $m = $r->int(2, 4); $c = $r->int(1, 9);
+            return mlb_mcq($r, '$E[X] = ' . $a . '$ and $E[Y] = ' . $b . '$. What is $E[' . $m . 'X - Y + ' . $c . ']$?', (string)($m * $a - $b + $c),
+                [[(string)($m * $a + $b + $c), 'The $Y$ is subtracted, so subtract its expectation.'],
+                 [(string)($m * $a - $b), 'A constant added to a quantity adds to its average too.'],
+                 [(string)($a - $b + $c), 'Multiplying $X$ by ' . $m . ' multiplies its average by ' . $m . '.']],
+                ['Expectation is linear: $E[' . $m . 'X - Y + ' . $c . '] = ' . $m . 'E[X] - E[Y] + ' . $c . '$.', '$= ' . ($m * $a) . ' - ' . $b . ' + ' . $c . ' = ' . ($m * $a - $b + $c) . '$.'],
+                'Treat $E$ like a bracket you can expand.', 'concept', 40); },
+    ],
+
+    /* ── MC-191 Vieta: the equation with doubled roots; sum of roots when a ≠ 1 ── */
+    'MC-191' => [
+        static function (MlbRng $r) { $b = $r->nz(-9, 9); $c = $r->nz(-9, 9);
+            return mlb_typed('expr', '$\\alpha$ and $\\beta$ are the roots of $x^2' . mlb_sterm($b, 'x') . mlb_sterm($c) . ' = 0$. Find the quadratic $x^2 + px + q$ whose roots are $2\\alpha$ and $2\\beta$.', 'x^2' . (2 * $b < 0 ? '' : '+') . (2 * $b) . 'x' . (4 * $c < 0 ? '' : '+') . (4 * $c),
+                ['$\\alpha + \\beta = ' . (-$b) . '$ and $\\alpha\\beta = ' . $c . '$.', 'New roots: sum $2(\\alpha + \\beta) = ' . (-2 * $b) . '$, product $4\\alpha\\beta = ' . (4 * $c) . '$.', 'So $x^2' . mlb_sterm(2 * $b, 'x') . mlb_sterm(4 * $c) . '$.'],
+                'Find the new sum and product of roots, then build the equation from them.', 'challenge', 60); },
+        static function (MlbRng $r) { do { $a = $r->int(2, 7); $b = $r->nz(-12, 12); $c = $r->nz(-9, 9); } while (abs($b) === $a || $b === $c || $c === -$b || mlb_gcd($b, $a) === $a);
+            return mlb_mcq($r, 'What is the sum of the roots of $' . $a . 'x^2' . mlb_sterm($b, 'x') . mlb_sterm($c) . ' = 0$?', '$' . mlb_ftex(-$b, $a) . '$',
+                [['$' . (-$b) . '$', 'Divide by the leading coefficient ' . $a . ' first: the sum is $-\\frac{b}{a}$.'],
+                 ['$' . mlb_ftex($b, $a) . '$', 'The sum is MINUS $\\frac{b}{a}$.'],
+                 ['$' . mlb_ftex($c, $a) . '$', 'That is the PRODUCT of the roots.']],
+                ['Divide by ' . $a . ': $x^2' . ($b < 0 ? ' - ' : ' + ') . mlb_ftex(abs($b), $a) . 'x' . ($c < 0 ? ' - ' : ' + ') . mlb_ftex(abs($c), $a) . ' = 0$.', 'Sum of roots $= -\\frac{b}{a} = ' . mlb_ftex(-$b, $a) . '$.'],
+                'Make the $x^2$ coefficient 1 first.', 'concept', 40); },
+    ],
+
+    /* ── MC-193 AM–GM: the minimum of ax + b/x; the least perimeter ── */
+    'MC-193' => [
+        static function (MlbRng $r) { do { $a = $r->int(1, 9); $b = $r->int(1, 16); $ab = $a * $b; $s = (int)round(sqrt($ab)); } while ($s * $s !== $ab || $a === $b);
+            return mlb_mcq($r, 'For $x > 0$, what is the smallest value of $' . mlb_lterm($a, 'x') . ' + \\frac{' . $b . '}{x}$?', (string)(2 * $s),
+                [[(string)($a + $b), 'That is the value at $x = 1$, which is not where the minimum is.'],
+                 [(string)$s, 'AM–GM gives $\\frac{p + q}{2} \\ge \\sqrt{pq}$, so the SUM is at least $2\\sqrt{pq}$.'],
+                 [(string)(2 * $ab), 'Apply AM–GM to the two terms: their product is ' . $ab . ', not their sum.']],
+                ['AM–GM: $' . mlb_lterm($a, 'x') . ' + \\frac{' . $b . '}{x} \\ge 2\\sqrt{' . mlb_lterm($a, 'x') . ' \\cdot \\frac{' . $b . '}{x}} = 2\\sqrt{' . $ab . '} = ' . (2 * $s) . '$.', 'Equality when $' . mlb_lterm($a, 'x') . ' = \\frac{' . $b . '}{x}$, which happens for a positive $x$, so the minimum is ' . (2 * $s) . '.'],
+                'The product of the two terms is constant.', 'concept', 45); },
+        static function (MlbRng $r) { $s = $r->int(4, 40); $town = $r->pick(MLBV2_TOWNS);
+            return mlb_typed('num', 'A rectangular plot in ' . $town . ' must have an area of ' . ($s * $s) . ' m². What is the least possible perimeter, in m?', (string)(4 * $s),
+                ['Sides $x$ and $y$ with $xy = ' . ($s * $s) . '$; perimeter $2(x + y)$.', 'AM–GM: $x + y \\ge 2\\sqrt{xy} = 2 \\times ' . $s . '$.', 'Least perimeter $= 4 \\times ' . $s . ' = ' . (4 * $s) . '$ m, when the plot is a square.'],
+                'For a fixed product, when is a sum smallest?', 'application', 50, ['unit' => 'm']); },
+    ],
+
+    /* ── MC-194 Square-mean: least sum of squares with a fixed sum; when Cauchy–Schwarz is tight ── */
+    'MC-194' => [
+        static function (MlbRng $r) { $k = $r->int(2, 4); $m = $r->int(1, 9); $s = $k * $m;
+            $vars = array_slice(['x', 'y', 'z', 'w'], 0, $k);
+            return mlb_typed('num', 'Real numbers ' . implode(', ', array_map(static fn($v) => '$' . $v . '$', $vars)) . ' add up to ' . $s . '. What is the smallest possible value of $' . implode(' + ', array_map(static fn($v) => $v . '^2', $vars)) . '$?', (string)($k * $m * $m),
+                ['By the square-mean inequality, $\\frac{' . implode(' + ', array_map(static fn($v) => $v . '^2', $vars)) . '}{' . $k . '} \\ge \\left(\\frac{' . $s . '}{' . $k . '}\\right)^2 = ' . ($m * $m) . '$.', 'So the sum of squares is at least $' . $k . ' \\times ' . ($m * $m) . ' = ' . ($k * $m * $m) . '$, with equality when all equal ' . $m . '.'],
+                'When the total is fixed, how should it be shared to make the squares smallest?', 'challenge', 55); },
+        static function (MlbRng $r) { [$a, $b] = $r->pick([[3, 4], [5, 12], [1, 2], [2, 3], [8, 15]]); $t = $r->int(2, 4);
+            return mlb_mcq($r, 'For which $(x, y)$ is $(' . mlb_lterm($a, 'x') . ' + ' . $b . 'y)^2 = ' . ($a * $a + $b * $b) . '(x^2 + y^2)$?', '$(' . ($t * $a) . ', ' . ($t * $b) . ')$',
+                [['$(' . ($t * $b) . ', ' . ($t * $a) . ')$', 'Swapped: equality needs $(x, y)$ in the SAME ratio as $(' . $a . ', ' . $b . ')$.'],
+                 ['$(1, 1)$', 'Check: $' . (($a + $b) ** 2) . ' \\ne ' . (2 * ($a * $a + $b * $b)) . '$.'],
+                 ['$(' . $b . ', -' . $a . ')$', 'That makes $' . mlb_lterm($a, 'x') . ' + ' . $b . 'y = 0$ — the opposite extreme.']],
+                ['Cauchy–Schwarz: $(ax + by)^2 \\le (a^2 + b^2)(x^2 + y^2)$, with equality exactly when $(x, y)$ is a multiple of $(a, b)$.', '$(' . ($t * $a) . ', ' . ($t * $b) . ') = ' . $t . '(' . $a . ', ' . $b . ')$.'],
+                'When does Cauchy–Schwarz become an equality?', 'concept', 45); },
+    ],
+
+    /* ── MC-198 Power of a point: the secant misread; a chord with an unknown part ── */
+    'MC-198' => [
+        static function (MlbRng $r) { [$a, $b] = $r->pick([[4, 5], [1, 8], [2, 6], [3, 9], [4, 12], [8, 10], [9, 7], [2, 16]]); $t = (int)round(sqrt($a * ($a + $b)));
+            return mlb_mcq($r, 'From $P$ outside a circle, a tangent touches it at $T$. A line from $P$ meets the circle at $A$ and then $B$, with $PA = ' . $a . '$ and the chord $AB = ' . $b . '$. Find $PT$.', (string)$t,
+                [['$\\sqrt{' . ($a * $b) . '}$', 'Use the whole distance $PB = ' . ($a + $b) . '$, not the chord $AB$.'],
+                 [(string)($a + $b), 'That is $PB$; the tangent satisfies $PT^2 = PA \\times PB$.'],
+                 ['$\\sqrt{' . ($a * $a + $b * $b) . '}$', 'This is not Pythagoras: use $PT^2 = PA \\times PB$.']],
+                ['$PB = PA + AB = ' . ($a + $b) . '$.', '$PT^2 = PA \\times PB = ' . $a . ' \\times ' . ($a + $b) . ' = ' . ($a * ($a + $b)) . '$, so $PT = ' . $t . '$.'],
+                'Both lengths in the product are measured from $P$.', 'reasoning', 50); },
+        static function (MlbRng $r) { do { $x = $r->int(2, 10); $d = $r->int(1, 8); $P = $x * ($x + $d); $divs = []; for ($c = 2; $c < $P; $c++) if ($P % $c === 0 && $c !== $x && $c !== $x + $d) $divs[] = $c; } while (!$divs);
+            $c = $r->pick($divs); $e = intdiv($P, $c);
+            return mlb_typed('num', 'Chords $AB$ and $CD$ of a circle cross at $P$. $AP = x$, $PB = x + ' . $d . '$, $CP = ' . $c . '$ and $PD = ' . $e . '$. Find $x$.', (string)$x,
+                ['Intersecting chords: $AP \\times PB = CP \\times PD$.', '$x(x + ' . $d . ') = ' . $P . '$, so $x^2' . mlb_sterm($d, 'x') . ' - ' . $P . ' = 0$.', 'Factorise: $(x - ' . $x . ')(x + ' . ($x + $d) . ') = 0$, and $x > 0$, so $x = ' . $x . '$.'],
+                'Write the chord rule, then solve the quadratic.', 'challenge', 60); },
+    ],
+
+    /* ── MC-200 Proof: a counterexample; counting by pairs ── */
+    'MC-200' => [
+        static function (MlbRng $r) { $k = $r->pick([4, 8, 9, 12, 18, 25]); $ok = $r->shuffle([2, 3, 5, 6, 7, 10, 15]);
+            $n = ['4' => 2, '8' => 4, '9' => 3, '12' => 6, '18' => 6, '25' => 5][(string)$k];
+            return mlb_mcq($r, 'Claim: "if $n^2$ is divisible by $k$, then $n$ is divisible by $k$." For which value of $k$ is the claim FALSE?', '$k = ' . $k . '$',
+                array_map(static fn($w) => ['$k = ' . $w . '$', $w . ' has no repeated prime factor, so every prime of ' . $w . ' that divides $n^2$ divides $n$: the claim is true for ' . $w . '.'], array_slice($ok, 0, 3)),
+                ['One counterexample is enough to show a claim false.', 'For $k = ' . $k . '$: $n = ' . $n . '$ gives $n^2 = ' . ($n * $n) . '$, divisible by ' . $k . ', but ' . $n . ' is not.'],
+                'Look for a $k$ with a repeated prime factor, and test a small $n$.', 'reasoning', 50); },
+        static function (MlbRng $r) { $n = $r->int(5, 30);
+            return mlb_typed('num', 'How many diagonals does a polygon with ' . $n . ' sides have?', (string)intdiv($n * ($n - 3), 2),
+                ['Each vertex joins to every other vertex except itself and its two neighbours: $' . $n . ' - 3 = ' . ($n - 3) . '$ diagonals.', 'Counting from every vertex gives $' . $n . ' \\times ' . ($n - 3) . '$, but each diagonal is counted from both ends.', 'So $\\frac{' . $n . ' \\times ' . ($n - 3) . '}{2} = ' . intdiv($n * ($n - 3), 2) . '$.'],
+                'Count from one corner, then think about double counting.', 'challenge', 50); },
     ],
     ];
 }
