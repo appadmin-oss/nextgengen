@@ -869,6 +869,10 @@ function mlb_maths_forms(): array {
     if (function_exists('mlb_forms_exam')) foreach (mlb_forms_exam() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     /* Later additions (mathslab-gen-more.php, e.g. the logarithm forms of 5 Nov 2026), last again. */
     if (function_exists('mlb_forms_more')) foreach (mlb_forms_more() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    /* More task shapes for the thin topics beyond Stage 4 (mathslab-gen-variety2.php, MC-041..200), appended for the same reason. */
+    if (function_exists('mlb_forms_variety2')) foreach (mlb_forms_variety2() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
+    /* More practice forms for the first forty topics (mathslab-gen-variety.php, MC-001..040, 13 Nov 2026), appended for the same reason. */
+    if (function_exists('mlb_forms_variety')) foreach (mlb_forms_variety() as $id => $extra) if (isset($f[$id])) $f[$id] = array_merge($f[$id], $extra);
     return $f;
 }
 

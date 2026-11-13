@@ -254,7 +254,9 @@ function mlb_recent_seen(string $mid): array {
 /** mlb_pick_items, avoiding what this member was asked lately; tiers widen only when the bank runs short. */
 function mlb_pick_fresh(array $recent, array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false): array {
     $items = mlb_pick_items($comps, $n, $preferTyped, $skillOnly, $recent['sigs'] ?? [], $recent['stems'] ?? []);
-    foreach ([[$recent['nearSigs'] ?? [], $recent['nearStems'] ?? []], [[], []]] as [$sigs, $stems]) {
+    /* Widen in steps, and never as far as asking an identical question again: the last step may reuse a
+       recent SHAPE (a thin topic has no other), never a recent question. */
+    foreach ([[$recent['nearSigs'] ?? [], $recent['nearStems'] ?? []], [$recent['sigs'] ?? [], []], [$recent['nearSigs'] ?? [], []]] as [$sigs, $stems]) {
         if (count($items) >= $n) break;
         $own = $sigs; foreach ($items as $x) { $it = mlb_item($x['c'], $x['f'], $x['s']); if ($it) $own[mlb_item_sig($it)] = true; }
         $items = array_merge($items, mlb_pick_items($comps, $n - count($items), $preferTyped, $skillOnly, $own, $stems));

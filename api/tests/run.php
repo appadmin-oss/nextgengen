@@ -38376,6 +38376,87 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         if (mlb_public($it) !== array_diff_key(mlb_public($it), ['key' => 1, 'steps' => 1, 'whys' => 1])) $bad++;
     }
     chk('maths lab · every generated question (' . $n . ') marks its own answer right, never repeats an option, and never sends the key to the browser', $bad === 0 && count(mlb_forms()) === 200);
+    /* Thin topics beyond Stage 4 (audit, 13 Nov 2026; mathslab-gen-variety2.php). Each of these produced
+       fewer than five distinct question SKELETONS (mlb_item_skeleton), so practice was one question with the
+       numbers swapped and the per-session skeleton cap cut the session short. Every one must now reach five
+       skeletons across its skill forms, with at least two typed forms; and every new form must generate,
+       mark its own key right, and mark a wrong answer wrong. */
+    $thin = ['MC-044', 'MC-046', 'MC-047', 'MC-048', 'MC-049', 'MC-051', 'MC-056', 'MC-057', 'MC-062', 'MC-081', 'MC-095', 'MC-097', 'MC-099', 'MC-107', 'MC-116',
+             'MC-130', 'MC-133', 'MC-137', 'MC-138', 'MC-155', 'MC-160', 'MC-175', 'MC-176', 'MC-179', 'MC-180', 'MC-190', 'MC-192', 'MC-195', 'MC-197'];
+    $short = [];
+    foreach ($thin as $c) {
+        $sk = []; $typed = 0;
+        foreach (mlb_skill_forms($c) as $fi) { $t = false; for ($s = 1; $s <= 30; $s++) { $it = mlb_item($c, $fi, $s * 7919); $sk[mlb_item_skeleton($it)] = 1; if (!empty($it['typed'])) $t = true; } if ($t) $typed++; }
+        if (count($sk) < 5 || $typed < 2) $short[] = $c . ' (' . count($sk) . ' skeletons, ' . $typed . ' typed)';
+    }
+    chk('maths lab · every thin topic beyond Stage 4 now has at least 5 question skeletons and 2 typed forms' . ($short ? ': short — ' . implode(', ', $short) : ''), $short === []);
+    $vbad = []; $vn = 0;
+    $mine = function_exists('mlb_forms_variety2') ? mlb_forms_variety2() : [];
+    foreach ($mine as $c => $fns) {
+        $all = mlb_forms_of($c);
+        foreach ($fns as $j => $fn) {
+            $fi = array_search($fn, $all, true);
+            if ($fi === false) { $vbad[] = "$c/new$j not wired"; continue; }
+            for ($s = 1; $s <= 30; $s++) {
+                try { $it = mlb_item($c, $fi, $s * 104729 + 11); } catch (\Throwable $e) { $vbad[] = "$c/$fi threw"; break; }
+                $vn++; $k = $it['kind'];
+                $right = in_array($k, ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'];
+                if ($k === 'mcq' || $k === 'error') $wrong = ((int)$it['key'] + 1) % count($it['options']);
+                elseif ($k === 'pair') $wrong = [$it['key'][0] + 1, $it['key'][1]];
+                elseif ($k === 'frac') { $fr = mlb_parse_frac((string)$it['key']); $wrong = ($fr[0] + $fr[1]) . '/' . $fr[1]; }
+                elseif ($k === 'expr') $wrong = $it['key'] . '+1';
+                else $wrong = (string)((float)$it['key'] + 1);
+                if (!mlb_mark($it, $right)['ok']) { $vbad[] = "$c/$fi key"; break; }
+                if (mlb_mark($it, $wrong)['ok']) { $vbad[] = "$c/$fi wrong-accepted"; break; }
+                if (trim((string)$it['hint']) === '' || count($it['steps']) < 2) { $vbad[] = "$c/$fi no hint/steps"; break; }
+            }
+        }
+    }
+    chk('maths lab · every new thin-topic form (' . $vn . ' questions over ' . count($mine) . ' topics) generates, marks its key right and a wrong answer wrong' . ($vbad ? ': ' . implode(', ', array_slice($vbad, 0, 8)) : ''),
+        $vbad === [] && count($mine) === count($thin) && array_keys($mine) === $thin);
+    /* The first forty topics (audit, 13 Nov 2026; mathslab-gen-variety.php). The topics every new learner
+       meets first had one or two PRACTICE forms each — MC-012's practice was "Ebo has ₦389 and Ife has ₦163.
+       How much more does Ebo have?" with the names and numbers swapped — so the per-session skeleton cap cut
+       their sessions short. Every topic from MC-001 to MC-040 must now have at least five skill forms, five
+       distinct question skeletons across them and two typed forms; every new form must generate, mark its
+       key right and a wrong answer wrong; and an eight-question practice of any of them is eight questions. */
+    $eShort = []; $eIds = array_map(static fn($n) => sprintf('MC-%03d', $n), range(1, 40));
+    foreach ($eIds as $c) {
+        $sf = mlb_skill_forms($c); $sk = []; $typed = 0;
+        foreach ($sf as $fi) { $t = false; for ($s = 1; $s <= 30; $s++) { $it = mlb_item($c, $fi, $s * 7919 + 3); $sk[mlb_item_skeleton($it)] = 1; if (!empty($it['typed'])) $t = true; } if ($t) $typed++; }
+        if (count($sf) < 5 || count($sk) < 5 || $typed < 2) $eShort[] = $c . ' (' . count($sf) . ' skill forms, ' . count($sk) . ' skeletons, ' . $typed . ' typed)';
+    }
+    chk('maths lab · every topic MC-001 to MC-040 has at least 5 skill forms, 5 question skeletons and 2 typed forms' . ($eShort ? ': short — ' . implode(', ', array_slice($eShort, 0, 8)) : ''), $eShort === []);
+    $ebad = []; $en = 0;
+    $early = function_exists('mlb_forms_variety') ? mlb_forms_variety() : [];
+    foreach ($early as $c => $fns) {
+        $all = mlb_forms_of($c);
+        foreach ($fns as $j => $fn) {
+            $fi = array_search($fn, $all, true);
+            if ($fi === false) { $ebad[] = "$c/new$j not wired"; continue; }
+            for ($s = 1; $s <= 30; $s++) {
+                try { $it = mlb_item($c, $fi, $s * 104729 + 17); } catch (\Throwable $e) { $ebad[] = "$c/$fi threw"; break; }
+                $en++; $k = $it['kind'];
+                $right = in_array($k, ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'];
+                if ($k === 'mcq' || $k === 'error') $wrong = ((int)$it['key'] + 1) % count($it['options']);
+                elseif ($k === 'frac') { $fr = mlb_parse_frac((string)$it['key']); $wrong = ($fr[0] + $fr[1]) . '/' . $fr[1]; }
+                else $wrong = (string)((float)$it['key'] + 1);
+                if (!mlb_mark($it, $right)['ok']) { $ebad[] = "$c/$fi key"; break; }
+                if (mlb_mark($it, $wrong)['ok']) { $ebad[] = "$c/$fi wrong-accepted"; break; }
+                if (isset($it['options']) && count($it['options']) < 3) { $ebad[] = "$c/$fi too few options"; break; }
+                if (trim((string)$it['hint']) === '' || count($it['steps']) < 2) { $ebad[] = "$c/$fi no hint/steps"; break; }
+            }
+        }
+    }
+    chk('maths lab · every new early-topic form (' . $en . ' questions over ' . count($early) . ' topics) generates, marks its key right and a wrong answer wrong, with a hint and worked steps' . ($ebad ? ': ' . implode(', ', array_slice($ebad, 0, 8)) : ''),
+        $ebad === [] && array_keys($early) === $eIds);
+    $eShortSess = [];
+    foreach ($eIds as $c) {
+        $pk = mlb_pick_items([$c], 8); $seenSk = [];
+        foreach ($pk as $x) { $it = mlb_item($x['c'], $x['f'], $x['s']); $kk = mlb_item_skeleton($it); $seenSk[$kk] = ($seenSk[$kk] ?? 0) + 1; if ($seenSk[$kk] > (empty($it['diagram']) ? 2 : 3)) $eShortSess[] = $c . ' (skeleton repeated)'; }
+        if (count($pk) !== 8) $eShortSess[] = $c . ' (' . count($pk) . ')';
+    }
+    chk('maths lab · an eight-question practice of every topic MC-001 to MC-040 is eight questions, with no skeleton more than twice' . ($eShortSess ? ': short — ' . implode(', ', $eShortSess) : ''), $eShortSess === []);
     /* "Why it works": the founding idea is understanding, so the proofs are held to it. Each is a
        chain of DISTINCT statements with DISTINCT reasons (the justify form uses the other reasons as
        wrong options, so a repeat would make two options right), and both proof forms mark right. */
@@ -38495,7 +38576,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        test). Original JAMB-style (A–E) and SAT-style forms in the topics they belong to; papers drawn
        fresh, timed by the server, marked by area, and never moving the map. */
     $jf = 0; $sf = 0; $short = []; $jfew = 0; $jn = 0;
-    foreach (mlb_forms_exam() as $c => $fs) { $base = count(mlb_forms()[$c]) - count($fs) - count(mlb_forms_more()[$c] ?? []);   // forms added later sit after the exam ones
+    foreach (mlb_forms_exam() as $c => $fs) { $base = array_search($fs[0], mlb_forms()[$c], true);   // found by identity: forms appended by later files (more, variety…) sit after the exam ones
         foreach ($fs as $k => $f) { $tag = mlb_item($c, $base + $k, 3)['exam'] ?? ''; if ($tag === 'jamb') $jf++; elseif ($tag === 'sat') $sf++;
             for ($sd = 1; $sd <= 40; $sd++) { $it = mlb_item($c, $base + $k, $sd * 211); if (!isset($it['options'])) continue;
                 $want = ($it['exam'] ?? '') === 'jamb' ? 5 : 4; if (count($it['options']) < 4) $short[] = "$c/" . ($base + $k);
