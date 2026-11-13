@@ -192,3 +192,27 @@ the question's **skeleton**, meaning its wording with the numbers, names and quo
   working" in one press, and the Remember-it step no longer blocks moving on.
 - **Content.** New practice forms for the 61 thin Maths topics, Stages 1–4 first, appended only so
   no stored session changes.
+
+## Round 3 — 13 Nov 2026: "Why was mine wrong?"
+
+A wrong TYPED answer used to get only the key and the generic working. The learner who typed 226 for
+236 was told the same thing as the one who typed 9. That gap is now closed by
+`api/_lib/domain/mathslab-explain.php`, in three layers:
+
+1. **Code names the slip where it can:**
+   - the sign;
+   - a power of ten (place value or units);
+   - one off (counting the starting number);
+   - the digits swapped;
+   - stopping at an earlier line of the working;
+   - the wrong operation on the question's own numbers, named: "your answer is 389 + 163".
+2. **Otherwise the AI gives one or two sentences.** It is given the question, the key, the steps
+   and the answer, and nothing about the child.
+3. **Code checks the AI.** A reply carrying a number found nowhere in the question, the working or
+   the learner's answer is discarded. That is the hallucination Reddig et al. (IJAIED 2025)
+   measured in about a third of GPT-4's error hints. The learner gets a pointer to the working
+   instead.
+
+The learner opens it themselves. The evidence is that LLM feedback helps when learners choose to
+use it (arXiv 2506.17006). It runs in practice only; a check, quick check, boss or exam refuses it.
+AI calls spend the shared daily allowance, and a failed call is given back.

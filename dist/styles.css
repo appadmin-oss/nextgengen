@@ -9736,3 +9736,7 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-readynow .mlb-meta { color: #1d4a2e; }
 
 .mlb-acts-row { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+
+/* "Why was mine wrong?" (mathslab-explain.php) */
+.mlb-explain { margin: 6px 0; padding: 10px 12px; border-radius: 10px; background: #f3f5fa; color: #16233f; font-size: 15px; line-height: 1.5; }
+.mlb-explain.is-err { background: #fdecea; color: #7a1d10; }

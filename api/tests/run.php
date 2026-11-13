@@ -38301,6 +38301,39 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('labs · the mixed-in questions are placed among the new ones, never first', $ok);
 })();
 
+/* ── "Why was mine wrong?" (13 Nov 2026): code first, AI checked by code ── */
+(function () {
+    $it = ['kind' => 'num', 'key' => 226, 'stem' => 'Ebo has ₦389 and Ife has ₦163. How much more does Ebo have?', 'steps' => ['$389 - 163$', '$= 226$']];
+    chk('explain · sign, power of ten, one off and swapped digits are named by code',
+        str_contains((string)mlb_explain_rule(-226, 226, $it), 'wrong sign') && str_contains((string)mlb_explain_rule(2260, 226, $it), '10 times too big')
+        && str_contains((string)mlb_explain_rule(227, 226, $it), 'one too many') && str_contains((string)mlb_explain_rule(262, 226, $it), 'wrong order'));
+    chk('explain · the wrong operation on the question\'s own numbers is named, with the operation it was', str_contains((string)mlb_explain_rule(552, 226, $it), '389 + 163'));
+    chk('explain · stopping at an earlier line of the working is named', str_contains((string)mlb_explain_rule(7, 9, ['kind' => 'num', 'key' => 9, 'stem' => 'x', 'steps' => ['$3 + 4 = 7$', '$7 + 2 = 9$']]), 'line 1'));
+    chk('explain · an answer no rule recognises is not guessed at by code', mlb_explain_rule(500, 226, $it) === null);
+    lab_use('maths'); $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-EX-1', 'fullName' => 'Explain Me', 'email' => 'ex1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (mlb_comp('MC-012')['needs'] as $n) mlb_set_state('NGG-EX-1', $n, ['state' => 'known', 'p' => 0.95]);
+    mlb_set_state('NGG-EX-1', 'MC-012', ['state' => 'learning', 'studiedAt' => $now]);
+    $s = mlb_start(['memberId' => 'NGG-EX-1', 'mode' => 'practice', 'comp' => 'MC-012']);
+    $its = json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$s['sessionId']])['items'], true); $ix = null;
+    foreach ($its as $i => $x) { $it2 = mlb_item($x['c'], $x['f'], $x['s']); if ($it2['kind'] === 'num') { $ix = $i; break; } }
+    if ($ix !== null) mlb_answer(['memberId' => 'NGG-EX-1', 'sessionId' => $s['sessionId'], 'index' => $ix, 'answer' => '123456789', 'ms' => 5000]);
+    // The AI's reply invents a number: it must be thrown away for the always-true pointer.
+    $prev = $GLOBALS['__ai_mock'] ?? null; $prevAi = $GLOBALS['CONFIG']['ai'] ?? null;
+    $GLOBALS['CONFIG']['ai'] = ['gemini_api_key' => 'g-test', 'anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    $GLOBALS['__ai_mock'] = fn($p, $sys, $t) => ['ok' => true, 'provider' => 'mock', 'text' => 'You probably wrote 987654 by accident.'];
+    $e = $ix !== null ? mlb_explain(['memberId' => 'NGG-EX-1', 'sessionId' => $s['sessionId'], 'index' => $ix]) : [];
+    chk('explain · an AI reply with a number from nowhere is discarded for the pointer to the working', ($e['source'] ?? '') === 'guide' && !str_contains((string)($e['text'] ?? ''), '987654'));
+    $GLOBALS['__ai_mock'] = fn($p, $sys, $t) => ['ok' => true, 'provider' => 'mock', 'text' => 'It looks like you typed the digits of both amounts together instead of subtracting.'];
+    $e2 = $ix !== null ? mlb_explain(['memberId' => 'NGG-EX-1', 'sessionId' => $s['sessionId'], 'index' => $ix]) : [];
+    chk('explain · a grounded AI reply is passed on', ($e2['source'] ?? '') === 'ai');
+    $GLOBALS['__ai_mock'] = $prev; $GLOBALS['CONFIG']['ai'] = $prevAi;
+    $ck = mlb_start(['memberId' => 'NGG-EX-1', 'mode' => 'quick', 'comp' => 'MC-001']);
+    if (!empty($ck['sessionId'])) mlb_answer(['memberId' => 'NGG-EX-1', 'sessionId' => $ck['sessionId'], 'index' => 0, 'answer' => '123456789', 'ms' => 4000]);
+    chk('explain · practice only — never in a quick check, a mastery check or an exam', !empty($ck['sessionId'])
+        && (mlb_explain(['memberId' => 'NGG-EX-1', 'sessionId' => (string)$ck['sessionId'], 'index' => 0])['error'] ?? '') === 'practice_only');
+})();
+
 /* ── No over-practice (9 Nov 2026) ── */
 (function () {
     lab_use('maths'); $now = now_iso();

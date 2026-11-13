@@ -1351,6 +1351,16 @@ function mlbNudge({ conf }) {
   return mlbPick(MLB_NUDGE);
 }
 
+/* "Why was mine wrong?" — opened by the learner, never shown unasked (feedback helps when learners choose
+   to use it). The server names the slip in code where it can, asks the AI only otherwise, and checks
+   whatever the AI says (mathslab-explain.php). */
+function MlbExplain({ sessionId, index }) {
+  const [st, setSt] = React.useState({ phase: "idle" });
+  const ask = () => { setSt({ phase: "busy" }); NGGApi.member.mathslab.explain(sessionId, index).then(r => setSt({ phase: "ok", text: r.text }), e => setSt({ phase: "err", text: mlbErr(e) })); };
+  if (st.phase === "idle") return <button type="button" className="mlb-link" onClick={ask}>Why was mine wrong?</button>;
+  if (st.phase === "busy") return <p className="mlb-meta" role="status">Looking at your answer…</p>;
+  return <p className={"mlb-explain" + (st.phase === "err" ? " is-err" : "")} role="status"><i className="ph ph-magnifying-glass" aria-hidden="true"/> {st.text}</p>;
+}
 function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
   const [ses, setSes] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -1464,6 +1474,7 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
         {fb ? <div className={"mlb-fb " + (fb.correct ? "is-ok" : "is-no") + (praise && praise.big ? " is-big" : "")} role="status">
           <b className="mlb-fb-h"><i className={"ph-fill " + (fb.correct ? (praise && praise.big ? "ph-fire" : "ph-check-circle") : "ph-lightbulb")} aria-hidden="true"/>{praise ? praise.t : fb.correct ? "Correct!" : "Not quite."}</b>
           {!fb.correct && fb.why ? <MlbMath as="p" text={fb.why}/> : null}
+          {!fb.correct && !fb.why && practice && ["mcq", "error", "order"].indexOf(it.kind) < 0 ? <MlbExplain sessionId={ses.sessionId} index={i}/> : null}
           <p>Answer: <MlbMath text={fb.answer}/></p>
           <details open={!fb.correct}><summary>Worked solution</summary><ol className="mlb-steps">{fb.steps.map((s, k) => <li key={k}><MlbMath text={s}/></li>)}</ol></details>
           {fb.xp ? <p className="mlb-xp">+{fb.xp} XP</p> : null}
