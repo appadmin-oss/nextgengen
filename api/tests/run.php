@@ -38195,6 +38195,24 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('labs · the mixed-in questions are placed among the new ones, never first', $ok);
 })();
 
+/* ── No over-practice (9 Nov 2026) ── */
+(function () {
+    lab_use('maths'); $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-OP-1', 'fullName' => 'Over Practice', 'email' => 'op1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    mlb_set_state('NGG-OP-1', 'MC-001', ['state' => 'learning', 'studiedAt' => $now]);
+    $s = mlb_start(['memberId' => 'NGG-OP-1', 'mode' => 'practice', 'comp' => 'MC-001']); $asked = 0; $readyAt = 0;
+    foreach (json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$s['sessionId']])['items'], true) as $i => $x) {
+        $it = mlb_item($x['c'], $x['f'], $x['s']); $r = mlb_answer(['memberId' => 'NGG-OP-1', 'sessionId' => $s['sessionId'], 'index' => $i, 'answer' => $it['key'], 'ms' => 3000]);
+        if ($x['c'] === 'MC-001') $asked++;
+        if (!empty($r['readyNow'])) { $readyAt = $asked; break; }
+    }
+    chk('labs · three unaided right in a row opens the check, and practice says so at that moment (asked ' . $asked . ')', $readyAt >= MLB_READY_RUN && $readyAt <= 5 && mlb_states('NGG-OP-1')['MC-001']['state'] === 'ready');
+    $ck = mlb_start(['memberId' => 'NGG-OP-1', 'mode' => 'check', 'comp' => 'MC-001']);
+    $practised = []; foreach (json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$s['sessionId']])['items'], true) as $x) $practised[mlb_item_sig(mlb_item($x['c'], $x['f'], $x['s']))] = 1;
+    $repeat = 0; foreach (json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$ck['sessionId']])['items'], true) as $x) if (isset($practised[mlb_item_sig(mlb_item($x['c'], $x['f'], $x['s']))])) $repeat++;
+    chk('labs · the check is ' . MLB_CHECK_ITEMS . ' questions, none of them one just practised', count($ck['items'] ?? []) === MLB_CHECK_ITEMS && $repeat === 0);
+})();
+
 /* ── Stuck detection and the quick check (8 Nov 2026) ── */
 (function () {
     lab_use('maths'); $now = now_iso();

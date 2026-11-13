@@ -529,6 +529,7 @@ function MathsLab({ me }) {
   if (!me.member || lite) return <MlbLite signedIn={!!me.member} route={route} go={go}/>;
   // Inside .mlb: every colour, border and button in the player reads the Lab's tokens (outside it, none resolved).
   if (play) return <div className={"mlb is-" + lab.id}><MlbPlayer key={(play.mode || "") + (play.n || 0)} start={play} onDone={() => { setPlay(null); }} go={go} onAgain={() => setPlay(p => Object.assign({}, p, { n: (p.n || 0) + 1 }))}
+    onCheck={comp => setPlay(p => ({ mode: "check", comp, n: (p && p.n || 0) + 1 }))}
     onMini={() => setPlay(p => ({ mode: "mini", n: (p.n || 0) + 1 }))}/></div>;
   const nav = [["home", "Home", "ph-house"], ["map", "Map", "ph-path"], ["courses", "Courses", "ph-graduation-cap"], ["certificates", "Certificates", "ph-certificate"], ["progress", "Progress", "ph-chart-bar"]]
     .concat(lab.exams ? [["exams", "Exams", "ph-exam"]] : []);
@@ -1318,7 +1319,7 @@ function mlbNudge({ i, conf }) {
   return MLB_NUDGE[i % MLB_NUDGE.length];
 }
 
-function MlbPlayer({ start, onDone, go, onAgain, onMini }) {
+function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
   const [ses, setSes] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [i, setI] = React.useState(0);
@@ -1428,6 +1429,14 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini }) {
           <details open={!fb.correct}><summary>Worked solution</summary><ol className="mlb-steps">{fb.steps.map((s, k) => <li key={k}><MlbMath text={s}/></li>)}</ol></details>
           {fb.xp ? <p className="mlb-xp">+{fb.xp} XP</p> : null}
         </div> : null}
+        {fb && fb.readyNow ? <section className="mlb-readynow" aria-labelledby="mlb-ready-h">
+          <h3 id="mlb-ready-h" className="mlb-h3"><i className="ph-fill ph-seal-check" aria-hidden="true"/> Three in a row — you’ve shown it.</h3>
+          <p className="mlb-meta">No need to keep going on this one. The mastery check is six fresh questions; pass it and the topic is yours.</p>
+          <div className="mlb-stuck-acts">
+            {onCheck ? <button type="button" className="mlb-go" onClick={() => onCheck(it.comp)}>Take the check now</button> : null}
+            <button type="button" className="stt-btn" onClick={next}>Keep practising</button>
+          </div>
+        </section> : null}
         {fb && fb.stuck ? <section className="mlb-stuck" aria-labelledby="mlb-stuck-h">
           <h3 id="mlb-stuck-h" className="mlb-h3"><i className="ph ph-arrows-clockwise" aria-hidden="true"/> {fb.stuck.message}</h3>
           <p className="mlb-meta">{fb.stuck.right} of your last {fb.stuck.of} on this topic were right. That usually means something underneath it needs a look first — it isn’t about trying harder.</p>

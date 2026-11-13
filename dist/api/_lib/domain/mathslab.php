@@ -12,8 +12,14 @@ declare(strict_types=1);
  * no record.
  */
 
-const MLB_CHECK_ITEMS = 10;       // a mastery check
-const MLB_CHECK_PASS = 85;        // % (the curriculum's proposed bar)
+/* The mastery check (9 Nov 2026): six questions, not ten, drawn from forms the learner did not just
+   practise. It used to re-test, at length, exactly what practice had just shown — a learner who never
+   erred answered 16 questions per topic, 3,200 for the Maths Lab. Practice past mastery adds almost
+   nothing and is not retained (Cen, Koedinger & Junker 2007); 2–5 right in a row decide mastery equally
+   well (Kelly et al. 2015). Five of six (83%) passes. */
+const MLB_CHECK_ITEMS = 6;
+const MLB_CHECK_PASS = 80;        // %: five of six
+const MLB_READY_RUN = 3;          // unaided right answers in a row that open the check
 const MLB_BOSS_PASS = 80;
 const MLB_PRACTICE_ITEMS = 8;
 const MLB_GATE_ITEMS = 6;
@@ -365,6 +371,20 @@ function mlb_place_redo(array $p): array {
     return ['ok' => true];
 }
 
+/** The learner's current run of unaided right answers on a topic, across recent practice sessions (newest last). */
+function mlb_run(string $mid, string $comp): array {
+    $seq = [];
+    foreach (db_all("SELECT items, resp FROM mlab_sessions WHERE memberId = ? AND lab = ? AND mode = 'practice' ORDER BY startedAt DESC LIMIT 4", [$mid, lab_id()]) as $r) {
+        $its = json_decode((string)$r['items'], true) ?: []; $rs = json_decode((string)$r['resp'], true) ?: []; $mine = [];
+        foreach ($its as $i => $x) if (($x['c'] ?? '') === $comp && isset($rs[$i])) $mine[] = [!empty($rs[$i]['ok']) && (int)($rs[$i]['hints'] ?? 0) === 0, $x];
+        $seq = array_merge($mine, $seq);
+    }
+    $run = []; for ($k = count($seq) - 1; $k >= 0 && $seq[$k][0]; $k--) $run[] = $seq[$k][1];
+    $typedForms = array_filter(array_keys(mlb_forms_of($comp)), static fn($f) => !empty(mlb_item($comp, $f, 7)['typed']));
+    $typedInRun = (bool)array_filter($run, static fn($x) => !empty(mlb_item($x['c'], $x['f'], $x['s'])['typed']));
+    return ['n' => count($run), 'ok' => count($run) >= MLB_READY_RUN && (!$typedForms || $typedInRun)];
+}
+
 /**
  * STUCK (wheel-spinning; Beck & Gong 2013). A learner who cannot get three right in a row within ten
  * tries is not learning from more of the same, and a system that keeps serving them items teaches them
@@ -431,7 +451,15 @@ function mlb_start(array $p): array {
         if ($mode === 'check' && (int)($cs['owed'] ?? 0) > 0) return ['ok' => false, 'error' => 'practice_owed', 'owed' => (int)$cs['owed']];
         if ($mode === 'check' && ($cs['state'] ?? 'none') !== 'ready') return ['ok' => false, 'error' => 'not_ready'];
         $ref = $comp;
-        if ($mode === 'check') $items = mlb_pick_items([$comp], MLB_CHECK_ITEMS);
+        if ($mode === 'check') {
+            /* Fresh forms first: the check asks what practice did not just ask, so it measures the topic, not
+               the memory of the last eight questions. The question signatures from recent practice are
+               passed as already seen, so not one of them comes back. */
+            $seenSig = [];
+            foreach (db_all("SELECT items FROM mlab_sessions WHERE memberId = ? AND lab = ? AND mode = 'practice' AND ref = ? ORDER BY startedAt DESC LIMIT 3", [$mid, lab_id(), $comp]) as $r)
+                foreach (json_decode((string)$r['items'], true) ?: [] as $x) if (($x['c'] ?? '') === $comp) $seenSig[mlb_item_sig(mlb_item($x['c'], $x['f'], $x['s']))] = true;
+            $items = mlb_pick_items([$comp], MLB_CHECK_ITEMS, false, false, $seenSig);
+        }
         else {
             $mixC = mlb_mix_comps($comp, $states);
             $main = mlb_pick_items([$comp], MLB_PRACTICE_ITEMS - count($mixC));
@@ -528,11 +556,18 @@ function mlb_answer(array $p): array {
         $att = (int)($st['attempts'] ?? 0) + 1; $cor = (int)($st['correct'] ?? 0) + ($mk['ok'] ? 1 : 0);
         $cur = (string)($st['state'] ?? 'none'); $new = $cur;
         $owed = max(0, (int)($st['owed'] ?? 0) - ($mk['ok'] && $resp[$i]['hints'] < 1 ? 1 : 0));   // only an unaided right answer pays it down
-        if (mlb_rank($cur) < mlb_rank('known')) $new = $owed === 0 && $pk >= 0.85 && $att >= 6 && $cor >= 5 ? 'ready' : ($pk >= 0.6 ? 'practising' : 'learning');
+        /* Ready when the learner has SHOWN it: three unaided right answers in a row on this topic (one of
+           them typed, when the topic has typed forms, so recognition alone cannot pass), or the model is
+           very sure. Not "six attempts and five right" — that rule kept a learner who never erred on the
+           same topic after it had stopped teaching them anything. */
+        $run = mlb_run($mid, $x['c']);
+        if (mlb_rank($cur) < mlb_rank('known')) $new = $owed === 0 && ($run['ok'] || ($pk >= 0.95 && $att >= MLB_READY_RUN)) ? 'ready' : ($pk >= 0.6 ? 'practising' : 'learning');
         mlb_set_state($mid, $x['c'], ['p' => $pk, 'attempts' => $att, 'correct' => $cor, 'state' => $new, 'owed' => $owed]);
         $out += ['correct' => $mk['ok'], 'why' => $mk['why'], 'formNote' => $mk['form'], 'answer' => mlb_answer_text($it), 'steps' => $it['steps'], 'state' => $new, 'p' => $pk,
             'xp' => $mk['ok'] ? mlb_award_xp($mid, $resp[$i]['hints'] ? 1 : 2, true) : 0];
         if (!$mk['ok'] && $x['c'] === (string)$s['ref']) { $stuck = mlb_stuck($mid, $x['c']); if ($stuck) $out['stuck'] = $stuck; }
+        // Shown it: say so now, with the check one press away, rather than finishing eight questions first.
+        if ($new === 'ready' && $cur !== 'ready' && $x['c'] === (string)$s['ref']) $out['readyNow'] = true;
     }
     return $out;
 }

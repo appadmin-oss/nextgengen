@@ -9715,3 +9715,8 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-stuck .mlb-meta { color: #4a3a10; }
 .mlb-stuck-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .mlb-quick { margin: 6px 0 0; }
+
+/* Practice says "you've shown it" the moment three in a row opens the check (mathslab.php mlb_run). */
+.mlb-readynow { margin-top: 12px; padding: 14px 16px; border-radius: 14px; background: #e9f6ee; border: 1px solid #9fd3b2; color: #11331f; }
+.mlb-readynow .mlb-h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
+.mlb-readynow .mlb-meta { color: #1d4a2e; }
