@@ -7428,3 +7428,4 @@ Checked and NOT faults: the start-up splash in the e2e screenshots is its 0.5 s 
   - The start card shows the photo as done.
   - "Link a parent" stays, by design: a parent's email alone never links a child.
 - **Not changed, and why:** applying sends three emails (the inbox notice to staff, the programme address, the family's acknowledgement), each to a different reader. Acceptance sends two, and they are now distinct.
+- **Results:** `php api/tests/run.php` 7097 passed, 0 failed. Node suites, run one at a time, all pass: club-apply, membership-pay (36), mfa, shared-email, desk-signin, status-board, labs-client, labs-focus, mathlab-e2e (113), study-tools, ui-smoke (627) and forms-selfreg-ui.
