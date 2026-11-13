@@ -160,6 +160,20 @@ function mlb_item_sig(?array $it): string {
     $l = $it['lines'] ?? null; if (is_array($l)) { $l = array_map('json_encode', $l); sort($l); }
     return md5(json_encode([$it['kind'] ?? '', $it['stem'] ?? '', $o, $l, $it['diagram'] ?? null]));
 }
+/**
+ * A question's SKELETON (audit, 13 Nov 2026): its wording with the numbers, maths, quoted text and names
+ * blanked. "Ebo has ₦389 and Ife has ₦163. How much more does Ebo have?" and "Ada has ₦696 and Funmi has
+ * ₦310…" are different strings and the SAME question to a child — the old wording cap compared exact
+ * stems, so a one-form topic served that skeleton seven times in a session. The caps now count skeletons.
+ */
+function mlb_item_skeleton(array $it): string {
+    $s = is_string($it['stem'] ?? null) ? (string)$it['stem'] : (string)json_encode($it['stem'] ?? '');
+    $s = preg_replace('/\$[^$]*\$/', '#', $s);                  // inline maths
+    $s = preg_replace('/“[^”]*”|"[^"]*"|‘[^’]*’/u', 'Q', $s);       // quoted sentences
+    $s = preg_replace('/[₦$]?\d[\d,]*(\.\d+)?/u', '#', $s);       // numbers and amounts
+    $s = preg_replace('/\b[A-Z][a-z]+\b/', 'N', $s);             // names (and sentence starts, harmlessly)
+    return md5(($it['kind'] ?? '') . '|' . trim((string)preg_replace('/\s+/', ' ', (string)$s)));
+}
 function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false, array $seen = [], array $avoidStems = []): array {
     $items = []; $deck = []; $last = []; $whyUsed = []; $stems = []; $i = 0; $guard = 0;
     while (count($items) < $n && $guard++ < $n * 8 && $comps) {
@@ -187,10 +201,11 @@ function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $s
                 $sig = mlb_item_sig($it);
                 /* The same WORDING more than twice is the same question to a child, whatever the options:
                    "Which of these REDUCES friction?" four times is one question asked four times. */
-                $stemKey = md5((string)json_encode($it['stem'] ?? ''));
-                if ($sig === '' || isset($seen[$sig]) || (empty($it['diagram']) && ($stems[$stemKey] ?? 0) >= 2)) continue;
+                $stemKey = mlb_item_skeleton($it);
+                // Twice per skeleton; a picture question three times (the picture differs, the task does not).
+                if ($sig === '' || isset($seen[$sig]) || ($stems[$stemKey] ?? 0) >= (empty($it['diagram']) ? 2 : 3)) continue;
                 if (empty($it['diagram']) && isset($avoidStems[$stemKey])) continue;   // the same wording as a recent session
-                $seen[$sig] = true; $stems[$stemKey] = ($stems[$stemKey] ?? 0) + 1;
+                $seen[$sig] = true; $stems[$stemKey] = ($stems[$stemKey] ?? 0) + 1;   // counted for picture questions too
                 $picked = ['c' => $c, 'f' => $f, 's' => $seed]; break;
             }
         }
@@ -231,7 +246,7 @@ function mlb_recent_seen(string $mid): array {
             $it = mlb_available((string)$x['c']) ? mlb_item((string)$x['c'], (int)$x['f'], (int)$x['s']) : null;
             if (!$it) continue;
             $sg = mlb_item_sig($it); $out['sigs'][$sg] = true; if ($age <= MLB_RECENT_NEAR) $out['nearSigs'][$sg] = true;
-            if (empty($it['diagram'])) { $k = md5((string)json_encode($it['stem'] ?? '')); $out['stems'][$k] = true; if ($age <= MLB_RECENT_NEAR) $out['nearStems'][$k] = true; }
+            if (empty($it['diagram'])) { $k = mlb_item_skeleton($it); $out['stems'][$k] = true; if ($age <= MLB_RECENT_NEAR) $out['nearStems'][$k] = true; }
         }
     }
     return $out;
@@ -505,7 +520,10 @@ function mlb_start(array $p): array {
         $items = mlb_pick_fresh($recent, [$comp], MLB_QUICK_ITEMS, true, true);
     } elseif ($mode === 'review') {
         $due = mlb_due($states); if (!$due) return ['ok' => false, 'error' => 'nothing_due'];
-        $items = mlb_pick_fresh($recent, array_slice($due, 0, 6), min(6, count($due)), true, true);
+        /* One question per due topic, always: a review exists to check THAT topic, so freshness is a
+           preference here, never a reason to drop a topic and ask another twice. */
+        $items = [];
+        foreach (array_slice($due, 0, 6) as $c) { $one = mlb_pick_fresh($recent, [$c], 1, true, true) ?: mlb_pick_items([$c], 1, true, true); if ($one) $items[] = $one[0]; }
     } elseif ($mode === 'boss') {
         $st = (int)($p['stage'] ?? 0); $ref = (string)$st;
         $comps = mlb_stages()[$st]['comps'] ?? [];

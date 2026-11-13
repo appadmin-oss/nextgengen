@@ -38677,6 +38677,15 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pp['sessionId'], 'index' => $i, 'answer' => in_array($it['kind'], ['mcq', 'error', 'pair', 'order'], true) ? $it['key'] : (string)$it['key'], 'ms' => 3000, 'hints' => $firstOwn ? 1 : 0]);
         if ($own) $owedAfter[] = (int)mlb_states('NGG-ML-1')['MC-012']['owed'];
     }
+    // A thin topic's session can be shorter than the debt (no question is repeated to fill it): practise again.
+    for ($g = 0; $g < 3 && (int)mlb_states('NGG-ML-1')['MC-012']['owed'] > 0; $g++) {
+        $pp2 = mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'practice', 'comp' => 'MC-012']);
+        foreach (json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$pp2['sessionId']])['items'], true) as $i => $x) {
+            $it = mlb_item($x['c'], $x['f'], $x['s']);
+            mlb_answer(['memberId' => 'NGG-ML-1', 'sessionId' => $pp2['sessionId'], 'index' => $i, 'answer' => $it['key'], 'ms' => 3000]);
+            if ($x['c'] === 'MC-012') $owedAfter[] = (int)mlb_states('NGG-ML-1')['MC-012']['owed'];
+        }
+    }
     chk('maths lab · …each unaided right practice answer pays one down (a hinted one does not), and the check reopens only at nought',
         $owedAfter[0] === MLB_RETAKE_OWED && $owedAfter[1] === MLB_RETAKE_OWED - 1 && end($owedAfter) === 0
         && mlb_states('NGG-ML-1')['MC-012']['state'] === 'ready' && !empty(mlb_start(['memberId' => 'NGG-ML-1', 'mode' => 'check', 'comp' => 'MC-012'])['ok']));
