@@ -273,3 +273,29 @@ Wang, Ribeiro, Robinson, Loeb & Demszky (2024), *Tutor CoPilot*, arXiv 2410.0301
 - **A wrong try in Guide is told its slip,** named in code: ten times too big, the wrong
   operation on the question's numbers, or the authored misconception for a choice.
 
+
+## Round 5 — 13 Nov 2026: proofs, recalibrated
+
+The owner tried the Lab and reported: *"I did not try learning again. I just wanted to spot
+patterns. Also, I think you may have taken the understanding how it works a little too far."*
+
+**Measured before the change:**
+- **Lessons:** 116 of 200 Maths topics made the learner read a formal argument, line by line,
+  before practising. That included primary subtraction (MC-012), whose argument is algebra.
+- **Practice:** every practice session on those topics included a proof question.
+- **Mastery checks:** 112 of them did too, so mastering "a − b" meant putting an argument's lines
+  in order. That form is the most pattern-matchable question in the Lab: the "So…" line goes last.
+
+**Changed:**
+- **Mastery checks test the skill, never the proof:** 0 of 1,200 sampled questions.
+- **The "put the argument in order" form is no longer asked.**
+- **"Why is line N true?" is asked only from Stage 5** (`MLB_WHY_FROM_STAGE`), at most once a
+  session. Stages 1–4 are primary-age foundations: their lessons keep the idea, and their practice
+  is the skill.
+- **The lesson's argument no longer gates the lesson.** The idea is shown; the line-by-line argument
+  is there to read. The worked example still has to be worked, so a lesson still cannot be skipped.
+  The English Lab's "The rule" stays a required step, because there the learner judges every line.
+
+The proofs themselves are unchanged. The owner's rule for them was "only necessary", and showing
+why mathematics works stays the Clinic's founding idea. What changed is that the proofs are no
+longer *tested* as if they were the skill.

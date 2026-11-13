@@ -193,7 +193,14 @@ async function journey(who, W, H, tag) {
   php(`db_exec("UPDATE mlab_state SET state = 'none', studiedAt = '', attempts = 0 WHERE memberId = '${who}' AND comp = 'MC-001'");`);
   await p.goto(BASE + '/study/lab/learn/MC-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });
-  chk(tag + ': a lesson cannot be skipped (Continue shut, later steps shut, no skip link)',
+  /* The argument is there to read, not a gate (owner, 13 Nov 2026): Continue is open on "Why it works".
+     The lesson still cannot be skipped — the worked example is a step that has to be worked. */
+  if (await p.locator('.mlb-why').count()) {
+    await p.waitForTimeout(300);
+    chk(tag + ': "Why it works" can be read or passed — it no longer holds the lesson shut', await p.locator('.mlb-lesson-foot .mlb-go').isEnabled());
+    await p.locator('.mlb-lesson-foot .mlb-go').click(); await p.waitForTimeout(300);
+  }
+  chk(tag + ': a lesson cannot be skipped (Continue shut on a step that must be worked, no skip link)',
     await p.locator('.mlb-lesson-foot .mlb-go').isDisabled() && !/skip/i.test(await p.locator('.mlb-learn').innerText()));
   await shot('lesson');
   for (let k = 0; k < 10; k++) {

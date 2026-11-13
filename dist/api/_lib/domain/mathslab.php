@@ -174,6 +174,7 @@ function mlb_item_skeleton(array $it): string {
     $s = preg_replace('/\b[A-Z][a-z]+\b/', 'N', $s);             // names (and sentence starts, harmlessly)
     return md5(($it['kind'] ?? '') . '|' . trim((string)preg_replace('/\s+/', ' ', (string)$s)));
 }
+const MLB_WHY_FROM_STAGE = 5;   // proof questions in practice from here up (Stages 1–4 are primary-age foundations)
 function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $skillOnly = false, array $seen = [], array $avoidStems = []): array {
     $items = []; $deck = []; $last = []; $whyUsed = []; $stems = []; $i = 0; $guard = 0;
     while (count($items) < $n && $guard++ < $n * 8 && $comps) {
@@ -183,6 +184,14 @@ function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $s
         $isWhy = static fn($f) => $w !== null && ($f === $w || $f === $w + 1);
         if (empty($deck[$c])) {
             $pool = $skillOnly ? mlb_skill_forms($c) : array_keys($forms);
+            /* Proof questions, recalibrated (owner, 13 Nov 2026: "you may have taken the understanding how it
+               works a little too far"). Measured: 116 of 200 Maths topics put a proof question in EVERY
+               practice session and 112 in the mastery check, from primary subtraction up — so mastering
+               "a - b" meant ordering an algebraic argument, and the ordering form is the most
+               pattern-matchable question in the Lab (the "So…" line goes last). Now: the ordering form is
+               never asked; "why is line N true?" only from Stage 5, at most once a session; checks never
+               (they pass skillOnly). The argument itself stays in the lesson, where it teaches. */
+            if ($w !== null) $pool = array_values(array_filter($pool, static fn($f) => $f !== $w + 1 && ($f !== $w || (int)(mlb_comp($c)['stage'] ?? 0) >= MLB_WHY_FROM_STAGE))) ?: $pool;
             if (!empty($whyUsed[$c])) $pool = array_values(array_filter($pool, static fn($f) => !$isWhy($f))) ?: $pool;
             shuffle($pool);
             /* Typed forms FIRST. This comparator was reversed until 13 Nov 2026 (b before a), so "prefer
@@ -510,7 +519,7 @@ function mlb_start(array $p): array {
         if ($mode === 'check' && (int)($cs['owed'] ?? 0) > 0) return ['ok' => false, 'error' => 'practice_owed', 'owed' => (int)$cs['owed']];
         if ($mode === 'check' && ($cs['state'] ?? 'none') !== 'ready') return ['ok' => false, 'error' => 'not_ready'];
         $ref = $comp;
-        if ($mode === 'check') $items = mlb_pick_fresh($recent, [$comp], MLB_CHECK_ITEMS);
+        if ($mode === 'check') $items = mlb_pick_fresh($recent, [$comp], MLB_CHECK_ITEMS, false, true);   // the skill, never the proof
         else {
             $mixC = mlb_mix_comps($comp, $states);
             $main = mlb_pick_fresh($recent, [$comp], MLB_PRACTICE_ITEMS - count($mixC));

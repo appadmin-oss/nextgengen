@@ -960,7 +960,7 @@ function MlbLearn({ comp, go, startPlay, lite }) {
     const can = ["soon", "locked"].indexOf(d.state) < 0;
     if (can && mlbExplorerFor(d.comp.id)) steps.push({ id: "explore", label: "Explore", need: "Move a slider (or press a button) and watch what changes." });
     const T = mlbLab().teach || {};   // a Lab's own words for its teaching step (NGG_LABS): Maths proves, English states a rule
-    if (d.why) steps.push({ id: "why", label: T.label || "Why it works", need: T.need || "Read every line of the argument." });
+    if (d.why) steps.push({ id: "why", label: T.label || "Why it works", need: T.need || "" });
     if (d.speak) steps.push({ id: "speak", label: "Hear and say", need: "Hear the difference in eight rounds and say a sentence." });
     if (d.example) steps.push({ id: "example", label: "Worked example", need: "Show every line of the worked example." });
     if (rem) steps.push({ id: "remember", label: "Remember it", need: "Step through the pictures, then cover them and say it." });
@@ -1108,7 +1108,10 @@ function MlbWhy({ why, onDone }) {
   const [marks, setMarks] = React.useState([]), [last, setLast] = React.useState(null);
   const all = shown >= why.steps.length;
   const pending = !all ? why.steps[shown] : null, judge = pending ? mark(pending.s) : "";
-  React.useEffect(() => { if (all && onDone) onDone(); }, [all]); // eslint-disable-line
+  /* A proof (Maths) no longer gates the lesson: the idea is the lesson, the argument is there for whoever
+     wants it (owner, 13 Nov 2026 — "took the understanding how it works a little too far"). The English
+     rule stays a step, because there every line is a judgement the learner makes. */
+  React.useEffect(() => { if ((all || !T.contrast) && onDone) onDone(); }, [all]); // eslint-disable-line
   /* The last Right / Wrong / Next line press removes the very button that had focus, and focus fell
      to the page: a keyboard or screen-reader learner was thrown back to "Skip to content". It goes
      to what replaced the buttons instead — the score, or the closing note — and reading continues. */

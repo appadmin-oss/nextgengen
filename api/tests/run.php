@@ -38446,6 +38446,24 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('labs · the quick check that can mark a topic known asks for typed answers, not recognition (' . $typed . ' of ' . count($its) . ')', count($its) >= 1 && $typed === count($its));
 })();
 
+/* ── Proof questions recalibrated (owner, 13 Nov 2026: "took the understanding how it works a little too far") ── */
+(function () {
+    lab_use('maths');
+    $whyOf = static fn($x) => ($w = mlb_why_at($x['c'])) === null ? '' : ($x['f'] === $w ? 'justify' : ($x['f'] === $w + 1 ? 'order' : ''));
+    $early = null; $late = null;
+    foreach (mlb_stages() as $n => $st) foreach ($st['comps'] as $c) if (mlb_why_at($c) !== null) { if ($n < MLB_WHY_FROM_STAGE && !$early) $early = $c; if ($n >= MLB_WHY_FROM_STAGE && !$late) $late = $c; }
+    $order = 0; $earlyWhy = 0; $lateMax = 0; $checkWhy = 0;
+    for ($k = 0; $k < 15; $k++) {
+        foreach ([$early, $late] as $c) { $kinds = array_map($whyOf, mlb_pick_items([$c], 8)); $order += count(array_keys($kinds, 'order'));
+            if ($c === $early) $earlyWhy += count(array_filter($kinds)); else $lateMax = max($lateMax, count(array_keys($kinds, 'justify'))); }
+        foreach ([$early, $late] as $c) $checkWhy += count(array_filter(array_map($whyOf, mlb_pick_items([$c], MLB_CHECK_ITEMS, false, true))));
+    }
+    chk('why · the "put the argument in order" form is never asked in practice', $early && $late && $order === 0);
+    chk('why · a Stage 1–4 topic is practised as a skill, with no proof questions (' . $early . ')', $earlyWhy === 0);
+    chk('why · from Stage 5, at most one "why is this line true?" a session (' . $late . ')', $lateMax <= 1);
+    chk('why · a mastery check tests the skill, never the proof', $checkWhy === 0);
+})();
+
 /* ── No over-practice (9 Nov 2026) ── */
 (function () {
     lab_use('maths'); $now = now_iso();
