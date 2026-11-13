@@ -38361,7 +38361,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('walk · starts a FRESH question of the same topic, with no key, answer or working sent', !empty($w['ok']) && $g['c'] === 'MC-012'
         && !isset($sessionSigs[mlb_item_sig($wit)]) && !isset($w['item']['key']) && !isset($w['item']['steps']) && str_starts_with((string)$w['say'], 'Start here'));
     $t1 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'answer' => '123456789']);
-    chk('walk · a wrong try climbs one rung and gives no answer (AI off: the rung\'s own words)', !empty($t1['ok']) && $t1['rung'] === 1 && empty($t1['done']) && !isset($t1['answer']) && $t1['source'] === 'guide');
+    chk('walk · a wrong try climbs one rung and gives no answer (AI off: the rung\'s own words)', !empty($t1['ok']) && $t1['rung'] === 1 && (empty($t1['done']) ? !isset($t1['answer']) : $t1['rungs'] === 2) && $t1['source'] === 'guide');
     $t2 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'I still don\'t get it']);
     chk('walk · asking for more climbs another rung', ($t2['rung'] ?? 0) === 2 || !empty($t2['done']));
     $before = mlb_states('NGG-WK-1')['MC-012'] ?? [];
@@ -38392,6 +38392,58 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('walk · a disclosure is answered with people, never a hint', !empty($sg['safeguarding']) && str_contains((string)$sg['say'], 'trusted adult'));
     $ck = mlb_start(['memberId' => 'NGG-WK-1', 'mode' => 'quick', 'comp' => 'MC-001']);
     chk('walk · practice only', !empty($ck['sessionId']) && (mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => (string)$ck['sessionId'], 'step' => 'start'])['error'] ?? '') === 'practice_only');
+})();
+
+/* ── What leaves the server (AI audit F6, 13 Nov 2026): one scrub, at ai_run ── */
+(function () {
+    $t = ai_scrub_text('Mail me at ada.obi@gmail.com or call 0803 123 4567 / +234 809 765 4321 — my ID is NGG-023-014.', []);
+    chk('scrub · emails, Nigerian phone numbers and record ids never reach a provider', !str_contains($t, '@gmail') && !str_contains($t, '4567') && !str_contains($t, '4321') && !str_contains($t, 'NGG-023')
+        && substr_count($t, '[phone]') === 2 && str_contains($t, '[email]') && str_contains($t, '[id]'));
+    chk('scrub · ordinary numbers in a maths question are left alone', ai_scrub_text('389 - 163 = 226, and 12345 is not a phone', []) === '389 - 163 = 226, and 12345 is not a phone');
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-SCR-1', 'fullName' => 'Ada Sunday Okonkwo', 'email' => 'scr1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $prevMid = $GLOBALS['__ai_subject_mid'] ?? null; $prev = $GLOBALS['__ai_mock'] ?? null; $got = [];
+    $GLOBALS['__ai_subject_mid'] = 'NGG-SCR-1';
+    $GLOBALS['__ai_mock'] = function ($p, $sys, $t) use (&$got) { $got[$p] = [$sys, json_encode($t)]; return ['ok' => true, 'provider' => 'mock', 'text' => 'ok']; };
+    ai_chat('Lesson: on Sunday we rest. Contact next@example.org.', [['role' => 'me', 'text' => 'I am Ada Okonkwo, ada@x.com']], 50, 'coach');
+    chk('scrub · the learner\'s own surname and middle name leave their words; the first name stays', isset($got['coach']) && !str_contains($got['coach'][1], 'Okonkwo') && str_contains($got['coach'][1], 'Ada') && !str_contains($got['coach'][1], 'ada@x.com'));
+    chk('scrub · our own lesson text keeps a word that is also a surname ("Sunday"), but loses contact details', str_contains($got['coach'][0], 'on Sunday we rest') && !str_contains($got['coach'][0], 'next@example.org'));
+    ai_classify('Block posts that share contact details.', 'call me 08031234567', 50, 'moderation');
+    chk('scrub · moderation is exempt — its job is to SEE a shared phone number', isset($got['moderation']) && str_contains($got['moderation'][1], '08031234567'));
+    $GLOBALS['__ai_mock'] = $prev; $GLOBALS['__ai_subject_mid'] = $prevMid;
+})();
+
+/* ── Guide names the slip of a wrong try, in code ── */
+(function () {
+    lab_use('maths'); $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-WK-2', 'fullName' => 'Walk Two', 'email' => 'wk2@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (mlb_comp('MC-012')['needs'] as $n) mlb_set_state('NGG-WK-2', $n, ['state' => 'known', 'p' => 0.95]);
+    mlb_set_state('NGG-WK-2', 'MC-012', ['state' => 'learning', 'studiedAt' => $now]);
+    $s = mlb_start(['memberId' => 'NGG-WK-2', 'mode' => 'practice', 'comp' => 'MC-012']); $prevAi = $GLOBALS['CONFIG']['ai'] ?? null; $GLOBALS['CONFIG']['ai'] = null;
+    $wit = null;
+    for ($k = 0; $k < 12 && !$wit; $k++) {
+        mlb_walk(['memberId' => 'NGG-WK-2', 'sessionId' => $s['sessionId'], 'step' => 'start']);
+        $g = json_decode((string)db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', ['NGG-WK-2', 'mlb.walk.' . $s['sessionId']])['stateValue'], true);
+        $c = mlb_item($g['c'], $g['f'], $g['s']); if ($c['kind'] === 'num' && is_numeric($c['key']) && (float)$c['key'] != 0.0) $wit = $c;
+    }
+    $r = $wit ? mlb_walk(['memberId' => 'NGG-WK-2', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'answer' => (string)((float)$wit['key'] * 10)]) : [];
+    chk('walk · Guide gives a typed skill question when the topic has one, never a "why it works" ordering', $wit !== null);
+    chk('walk · a wrong typed try is told its slip (ten times too big), not just "not yet", and still no answer', $wit && str_contains((string)($r['say'] ?? ''), 'too big') && !isset($r['answer']));
+    $GLOBALS['CONFIG']['ai'] = $prevAi;
+})();
+
+/* ── "Prefer typed" means typed first (the comparator was reversed until 13 Nov 2026) ── */
+(function () {
+    lab_use('maths'); $ok = true;
+    for ($k = 0; $k < 20; $k++) { $x = mlb_pick_items(['MC-012'], 1, true, true)[0] ?? null; if (!$x || empty(mlb_item($x['c'], $x['f'], $x['s'])['typed'])) $ok = false; }
+    chk('labs · preferTyped deals a typed form first whenever the topic has one (MC-012, 20 draws)', $ok);
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-QT-1', 'fullName' => 'Quick Typed', 'email' => 'qt1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (mlb_comp('MC-012')['needs'] as $n) mlb_set_state('NGG-QT-1', $n, ['state' => 'known', 'p' => 0.95]);
+    $q = mlb_start(['memberId' => 'NGG-QT-1', 'mode' => 'quick', 'comp' => 'MC-012']);
+    $its = !empty($q['sessionId']) ? json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$q['sessionId']])['items'], true) : [];
+    $typed = count(array_filter($its, static fn($x) => !empty(mlb_item($x['c'], $x['f'], $x['s'])['typed'])));
+    chk('labs · the quick check that can mark a topic known asks for typed answers, not recognition (' . $typed . ' of ' . count($its) . ')', count($its) >= 1 && $typed === count($its));
 })();
 
 /* ── No over-practice (9 Nov 2026) ── */

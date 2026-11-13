@@ -195,6 +195,9 @@ function EngSay({ comp, sentences, onDone }) {
   return <section className="mlb-card eng-say" aria-labelledby="eng-say-h">
     <h3 id="eng-say-h" className="mlb-h3">Say it</h3>
     <p className="mlb-meta">Sentence {i + 1} of {sentences.length}. Listen, then press Speak and say it clearly.</p>
+    {/* Privacy notice at the point of use (AI audit F6): what Speak sends, and a way to practise that sends nothing. */}
+    <p className="mlb-meta eng-privacy">{mode === "self" ? "Your recording stays on this device: play it back and compare it with the model."
+      : <>Speak sends your recording to Spitch to check which words came through; it isn’t kept. Rather not? <button type="button" className="mlb-link" onClick={() => { setMode("self"); setMsg(""); }}>Record and compare on this device</button></>}</p>
     <p className="eng-sentence">{res && res.words ? res.words.map((w, k) => <span key={k} className={w.ok ? "eng-w is-ok" : "eng-w is-no"}>{w.w} </span>) : text}</p>
     <div className="eng-say-row">
       <EngPlayButton text={text} vi={i} label="Hear the sentence"/>

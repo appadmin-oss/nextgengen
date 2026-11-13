@@ -455,3 +455,21 @@ This is not a feature; it is what makes items 1 to 7 measurable and governable.
 - Gerlich (2025), *AI tools in society: cognitive offloading* — [SSRN](https://papers.ssrn.com/abstract=5082524)
 - UNICEF (2025), *Guidance on AI and children* v3 — [UNICEF Innocenti](https://www.unicef.org/innocenti/reports/policy-guidance-ai-children)
 - Already cited in docs/LABS-AUDIT.md: Beck & Gong (2013) on wheel-spinning; Kalyuga (2003); Rohrer et al. (2019).
+
+## F6 fixed — 13 Nov 2026
+
+- **One scrub, at `ai_run()`.** Every AI call passes through it, so a future feature is covered
+  without knowing it exists. Emails, Nigerian phone numbers and programme record ids become
+  placeholders in the system prompt and in every turn.
+  - The signed-in member's surname and middle names are removed from what they typed; the first
+    name stays. `require_session()` records whose request it is.
+  - Names are not scrubbed from the system prompt, because that is our lesson text, where
+    "Sunday" or "Grace" is also an ordinary word.
+- **Two exemptions, by name** (`AI_SCRUB_EXEMPT`):
+  - `moderation`, whose job is to *see* a child sharing a phone number;
+  - `studio`, the staff ID Studio planner.
+  The Analyst already refuses personal data outright (`insight_scrub`).
+- **Spitch.** The Privacy Notice now lists the AI providers and Spitch, and says what each one
+  receives. The Speak control says so where the microphone is, and offers "Record and compare on
+  this device", which sends nothing.
+

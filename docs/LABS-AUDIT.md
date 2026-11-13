@@ -257,3 +257,19 @@ question, with mastery unchanged.
 
 Sources: Bastani et al. (2025), *Generative AI without guardrails can harm learning*, PNAS 122;
 Wang, Ribeiro, Robinson, Loeb & Demszky (2024), *Tutor CoPilot*, arXiv 2410.03017.
+
+### Round 4, follow-up (same day)
+
+- **"Prefer typed" was reversed.** The sort in `mlb_pick_items` put typed forms *last*. So the
+  quick check that can mark a topic known, and every review, asked the recognisable forms instead:
+  recognition passing for recall. Building Guide exposed it: twelve Guide picks on MC-012, which
+  has three typed forms, gave no typed question. The comparator is fixed, and two tests pin the
+  promise:
+  - typed first, 20 draws out of 20;
+  - a quick check is all typed when the topic has typed forms.
+- **Guide picks a parallel problem.** It now avoids only the exact questions asked, not their
+  shapes (the same kind of question with new numbers is what a walk-through wants), and uses skill
+  forms only. It had been serving the "why it works" ordering forms, which have no working to climb.
+- **A wrong try in Guide is told its slip,** named in code: ten times too big, the wrong
+  operation on the question's numbers, or the authored misconception for a choice.
+

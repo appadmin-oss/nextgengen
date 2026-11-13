@@ -428,6 +428,11 @@ async function englishTeach(who) {
   }
   await p.waitForSelector('.eng-speak', { timeout: 60000 }).catch(() => {});
   chk('english: a sound lesson has Hear and say, with how to make each sound', await p.locator('.eng-how-i').count() >= 2 && await p.locator('.eng-hear').count() === 1 && await p.locator('.eng-say .mlb-go:has-text("Speak")').count() === 1);
+  // The privacy notice is where the microphone is (AI audit F6): it names Spitch, and offers a way that sends nothing.
+  const pn = await p.locator('.eng-say .eng-privacy').innerText().catch(() => '');
+  if (await p.locator('.eng-privacy .mlb-link').count()) await p.locator('.eng-privacy .mlb-link').click();
+  chk('english: Speak says it sends the recording to Spitch, and "Record and compare on this device" keeps it local',
+    /Spitch/.test(pn) && /stays on this device/.test(await p.locator('.eng-say .eng-privacy').innerText().catch(() => '')), pn);
   chk('english: the answer buttons stay shut until the word has been played', await p.locator('.eng-choice').first().isDisabled());
   for (let k = 0; k < 8; k++) {
     await p.locator('.eng-hear .eng-hear-play .mlb-go').click();

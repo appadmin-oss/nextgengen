@@ -66,8 +66,8 @@ function mlb_walk_rung(array $it, int $rung): array {
     $safe = mlb_walk_safe_steps($it);
     if ($rung === 0) return ['say' => 'Start here: ' . (string)$it['hint'] . ' Have a go, then check it.', 'reveal' => false];
     if ($rung <= count($safe)) {
-        $lead = $rung === 1 ? 'The first line of the working is' : 'The next line is';
-        return ['say' => $lead . ': ' . $safe[$rung - 1] . ' What comes after that?', 'reveal' => false];
+        $lead = $rung === 1 ? 'Here is the first step' : 'And the next step';
+        return ['say' => $lead . ' — ' . $safe[$rung - 1] . ' Can you do the step after it?', 'reveal' => false];
     }
     return ['say' => 'Here is the whole working. Read it line by line — then try one like it on your own; that is the one that counts.', 'reveal' => true];
 }
@@ -108,7 +108,14 @@ function mlb_walk(array $p): array {
     $action = (string)($p['step'] ?? 'turn');   // 'action' is the route's own key
 
     if ($action === 'start') {
-        $picked = mlb_pick_fresh(mlb_recent_seen($mid), [$comp], 1, true);
+        /* A PARALLEL problem: the same kind of question with new numbers is exactly what a worked
+           walk-through wants, so only the exact questions already asked are avoided — not their
+           shapes, as a practice session's freshness rule does (that rule left Guide serving the
+           "why it works" ordering forms, which have no working to climb). Skill forms only, typed
+           first, so the learner produces the answer rather than recognising it. */
+        $seen = mlb_recent_seen($mid)['sigs'] ?? [];
+        $picked = mlb_pick_items([$comp], 1, true, true, $seen, []);
+        if (!$picked) $picked = mlb_pick_items([$comp], 1, true, true, [], []);
         if (!$picked) return ['ok' => false, 'error' => 'nothing_fresh'];
         $x = $picked[0]; $it = mlb_item($x['c'], $x['f'], $x['s']);
         $g = ['c' => $x['c'], 'f' => $x['f'], 's' => $x['s'], 'rung' => 0, 'ai' => 0, 'done' => false];
@@ -130,6 +137,7 @@ function mlb_walk(array $p): array {
         $sg = safeguard_check($said, $m, 'the Labs Guide');
         if ($sg) { $g['done'] = true; $save($g); return ['ok' => true, 'done' => true, 'say' => $sg['reply'], 'safeguarding' => true, 'rung' => (int)$g['rung'], 'rungs' => $rungs, 'source' => 'safeguarding']; }
     }
+    $slip = null;
     $hasAnswer = array_key_exists('answer', $p) && !(is_string($p['answer']) && trim($p['answer']) === '');
     if ($hasAnswer) {
         $mk = mlb_mark($it, $p['answer']);
@@ -138,7 +146,16 @@ function mlb_walk(array $p): array {
             $say = (int)$g['rung'] <= 1 ? 'That’s it — and you needed only the first nudge. Now one on your own.' : 'That’s it — you worked it through. Now try one like it on your own: that is the one that counts.';
             return $finish(['say' => $say, 'right' => true, 'rung' => (int)$g['rung'], 'source' => 'guide']);
         }
-        if (!empty($mk['why'])) $said = trim($said . ' (I chose an answer that was wrong.)');
+        /* Name the slip first, in code and for free, as "Why was mine wrong?" does: the authored
+           misconception for a choice, or the recognisable typed slip (sign, ×10, one off, the wrong
+           operation on the question's numbers). A generic "not yet" on every try is the vague
+           feedback the evidence says helps least. */
+        $slip = !empty($mk['why']) ? (string)$mk['why'] : null;
+        if ($slip === null && $it['kind'] === 'num' && is_numeric($it['key'])) {
+            $a = function_exists('mlb_parse_num') ? mlb_parse_num(is_array($p['answer']) ? '' : (string)$p['answer']) : null;
+            if ($a !== null) $slip = mlb_explain_rule((float)$a, (float)$it['key'], ['steps' => [], 'stem' => $it['stem']]);
+        }
+        if ($slip !== null && $slip !== '') $said = trim($said . ' ' . $slip);
     }
 
     // Up one rung.
@@ -165,6 +182,6 @@ function mlb_walk(array $p): array {
         } else mlb_tutor_refund($mid, $used);
     }
     $save($g);
-    $lead = $hasAnswer ? 'Not yet. ' : '';
+    $lead = $hasAnswer ? 'Not yet. ' . ($slip !== null && $slip !== '' ? $slip . ' ' : '') : '';
     return ['ok' => true, 'done' => false, 'say' => $text ?? ($lead . $rung['say']), 'rung' => $g['rung'], 'rungs' => $rungs, 'right' => $hasAnswer ? false : null, 'source' => $source];
 }

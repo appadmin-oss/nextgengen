@@ -628,7 +628,51 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
 /** `$prefer` puts one provider first when it is configured for the profile; the rest stay as fallbacks.
  *  `$budget` (seconds, 0 = none) stops trying further fallbacks once spent, so a caller with a deadline
  *  of its own — a browser waiting on a request — hears "the AI was slow" instead of timing out. */
+/**
+ * WHAT LEAVES THE SERVER (AI audit F6, 13 Nov 2026). The rule "only first names and numbers leave the
+ * server" held for the companion alone: Guide history, pasted notes, written answers, viva replies and
+ * drill topics are a child's own free text, and reached the provider as typed — an email address, a
+ * phone number, a full name. Every call passes through ai_run(), so the scrub lives there and a feature
+ * written next year is covered without knowing this function exists.
+ *
+ *   · Emails, Nigerian phone numbers and the platform's record ids become placeholders.
+ *   · The signed-in member's surname and middle names are removed from the TURNS (what the child
+ *     typed); the first name stays, as in the companion. Not from the system prompt, which is our
+ *     lesson text and where a surname such as "Sunday" or "Grace" is also an ordinary word.
+ *
+ * Two profiles are EXEMPT, by name and for a reason: community moderation exists to SEE a child sharing
+ * a phone number or an address (scrubbing its input would blind the one check whose job is to block it),
+ * and the ID Studio planner reads a staff member's own instruction. The Analyst already refuses
+ * personal data outright (insight_scrub). Anything not on this list is scrubbed.
+ */
+const AI_SCRUB_EXEMPT = ['moderation', 'studio'];
+function ai_scrub_names(): array {
+    static $memo = [];
+    $mid = (string)($GLOBALS['__ai_subject_mid'] ?? '');
+    if ($mid === '') return [];
+    if (!isset($memo[$mid])) {
+        $full = '';
+        try { $full = (string)(db_row('SELECT fullName FROM members WHERE memberId = ?', [$mid])['fullName'] ?? ''); } catch (\Throwable $e) { $full = ''; }
+        $parts = preg_split('/[\s\-]+/u', trim($full)) ?: [];
+        $memo[$mid] = array_values(array_filter(array_slice($parts, 1), static fn($w) => mb_strlen($w) >= 3));
+    }
+    return $memo[$mid];
+}
+function ai_scrub_text(string $s, ?array $names = null): string {
+    if ($s === '') return $s;
+    $s = (string)preg_replace('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', '[email]', $s);
+    $s = (string)preg_replace('/(?<![\d])(?:\+?234[\s-]?|0)[789][01]\d(?:[\s-]?\d){7}(?!\d)/', '[phone]', $s);
+    $s = (string)preg_replace('/\b(?:SUM|NGG|VOL|SUMQR)-[A-Za-z0-9-]{3,}/', '[id]', $s);
+    foreach ($names ?? ai_scrub_names() as $w) $s = (string)preg_replace('/\b' . preg_quote($w, '/') . '\b/iu', '', $s);
+    return $s;
+}
+
 function ai_run(string $profile, string $system, array $turns, int $maxTokens, float $temp, string $prefer = '', int $budget = 0): array {
+    if (!in_array($profile, AI_SCRUB_EXEMPT, true)) {
+        $names = ai_scrub_names();
+        $system = ai_scrub_text($system, []);   // the system prompt is ours (lesson text): contacts and ids only — a surname like "Sunday" is also a word
+        foreach ($turns as $k => $t) if (isset($t['text'])) $turns[$k]['text'] = ai_scrub_text((string)$t['text'], $names);
+    }
     if (isset($GLOBALS['__ai_mock']) && is_callable($GLOBALS['__ai_mock'])) {
         $r = ($GLOBALS['__ai_mock'])($profile, $system, $turns);
         if ($prefer !== '' && !empty($r['ok'])) $r['provider'] = $prefer;

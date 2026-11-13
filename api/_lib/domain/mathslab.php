@@ -185,7 +185,10 @@ function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $s
             $pool = $skillOnly ? mlb_skill_forms($c) : array_keys($forms);
             if (!empty($whyUsed[$c])) $pool = array_values(array_filter($pool, static fn($f) => !$isWhy($f))) ?: $pool;
             shuffle($pool);
-            if ($preferTyped) usort($pool, static function ($a, $b) use ($c) { return (int)empty(mlb_item($c, $b, 1)['typed']) <=> (int)empty(mlb_item($c, $a, 1)['typed']) ?: 0; });
+            /* Typed forms FIRST. This comparator was reversed until 13 Nov 2026 (b before a), so "prefer
+               typed" put typed forms last: the quick check that can mark a topic known, and every review,
+               asked the recognisable forms instead — recognition passing for recall. */
+            if ($preferTyped) usort($pool, static function ($a, $b) use ($c) { return (int)empty(mlb_item($c, $a, 1)['typed']) <=> (int)empty(mlb_item($c, $b, 1)['typed']); });
             // never the same form twice in a row across a reshuffle
             if (count($pool) > 1 && isset($last[$c]) && $pool[0] === $last[$c]) { $pool[] = array_shift($pool); }
             $deck[$c] = $pool;
