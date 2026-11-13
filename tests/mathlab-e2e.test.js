@@ -468,6 +468,64 @@ async function physicsPredict(who) {
   await ctx.close();
 }
 
+/* Stuck → "Work through one with Guide": nine misses on MC-012 already, the tenth opens the stuck card;
+   Guide gives a FRESH question with no answer on screen, climbs a rung per press, and ends on one to try
+   alone. AI is off in this config, so every Guide line is the rung's own words. */
+async function mathsWalk(who) {
+  php(`foreach (mlb_comp('MC-012')['needs'] as $n) mlb_set_state('${who}', $n, ['state' => 'known', 'p' => 0.95]);
+    mlb_set_state('${who}', 'MC-012', ['state' => 'learning', 'studiedAt' => now_iso(), 'p' => 0.2]);
+    lab_use('maths'); $its = []; $rs = [];
+    for ($k = 0; $k < 9; $k++) { $its[] = ['c' => 'MC-012', 'f' => $k % 2, 's' => 1000 + $k]; $rs[$k] = ['a' => '1', 'ok' => false, 'ms' => 4000, 'hints' => 0]; }
+    db_insert('mlab_sessions', ['sessionId' => 'e2e-stuck-1', 'memberId' => '${who}', 'lab' => 'maths', 'mode' => 'practice', 'ref' => 'MC-012', 'items' => json_encode($its), 'resp' => json_encode($rs),
+      'startedAt' => gmdate('Y-m-d\\TH:i:s\\Z', time() - 3600), 'finishedAt' => gmdate('Y-m-d\\TH:i:s\\Z', time() - 3000)]);`);
+  const tok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${who}'"), false);`);
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.addCookies([{ name: 'ngg_sess', value: tok, domain: '127.0.0.1', path: '/', httpOnly: true }, { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
+  const p = await ctx.newPage(), log = [];
+  p.on('pageerror', e => log.push('page error: ' + e.message));
+  p.on('response', r => { if (r.url().includes('/api/') && r.status() >= 400) log.push('HTTP ' + r.status() + ' ' + r.url().replace(BASE, '')); });
+  await p.goto(BASE + '/study/lab/learn/MC-012', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('button.mlb-go:has-text("Practise")', { timeout: 60000 });
+  await p.locator('button.mlb-go:has-text("Practise")').first().click();
+  await p.waitForSelector('.mlb-q', { timeout: 30000 });
+  /* A picked option can happen to be right, and a right answer does not open the card; answer until a
+     miss does (two right still leave no three in a row in the last ten). */
+  let missed = '', stuck = false;
+  for (let k = 0; k < 3 && !stuck; k++) {
+    missed = await p.locator('.mlb-stem').first().innerText();
+    if (await p.locator('.mlb-opt').count()) await p.locator('.mlb-opt').nth(k % await p.locator('.mlb-opt').count()).click();
+    else { const ins = p.locator('.mlb-in:not([disabled])'); for (let j = 0; j < await ins.count(); j++) await ins.nth(j).fill('123456789'); }
+    await p.locator('.mlb-q .mlb-actions .mlb-go').click();
+    await p.waitForSelector('.mlb-fb', { timeout: 15000 });
+    stuck = await p.locator('.mlb-stuck').count() > 0;
+    if (!stuck) { await p.locator('.mlb-q .mlb-actions .mlb-go').click(); await p.waitForSelector('.mlb-q .mlb-actions .mlb-go:has-text("Check")', { timeout: 15000 }); }
+  }
+  chk('walk: the tenth miss with no three-in-a-row opens the stuck card, with Guide as one way on', stuck && await p.locator('.mlb-stuck button:has-text("Work through one with Guide")').count() === 1);
+  if (stuck) {
+    await p.locator('.mlb-stuck button:has-text("Work through one with Guide")').click();
+    await p.waitForSelector('.mlb-walk .mlb-walk-guide', { timeout: 15000 });
+    const focused = await p.evaluate(() => !!(document.activeElement && document.activeElement.closest('.mlb-walk')));
+    const fresh = await p.locator('.mlb-walk .mlb-stem').innerText(), first = await p.locator('.mlb-walk-guide').first().innerText();
+    chk('walk: Guide brings a fresh question, opens with the hint, and shows no answer or working', fresh !== missed && /Start here/.test(first) && !(await p.locator('.mlb-walk details').count()), fresh + ' | ' + first);
+    for (let k = 0; k < 8 && !(await p.locator('.mlb-walk details').count()); k++) {
+      const n = await p.locator('.mlb-walk-guide').count();
+      await p.locator('.mlb-walk-ask button[type=submit]').click();
+      await p.waitForFunction(m => document.querySelectorAll('.mlb-walk-guide').length > m, n, { timeout: 15000 });
+    }
+    const end = { worked: await p.locator('.mlb-walk details').count(), alone: await p.locator('.mlb-walk button:has-text("Now try one on your own")').count(), turns: await p.locator('.mlb-walk-guide').count() };
+    chk('walk: each press climbs one rung, ending on the whole working and one to try alone', end.worked === 1 && end.alone === 1 && end.turns >= 2, JSON.stringify(end));
+    await p.screenshot({ path: path.join(OUT, 'walk-phone.png'), fullPage: true });
+    const st = php(`echo json_encode(mlb_states('${who}')['MC-012'] ?? []);`);
+    const eb = await p.locator('.mlb-walk .mlb-eyebrow').innerText(), m = eb.match(/step (\d+) of (\d+)/);
+    chk('walk: focus moves to the fresh question, the counter counts every rung, and the guided question did not move the topic\'s mastery',
+      focused && m && m[1] === m[2] && Number(m[2]) === end.turns && JSON.parse(st).attempts <= 3, eb + ' ' + st);
+    await p.locator('.mlb-walk button:has-text("Now try one on your own")').click();
+    chk('walk: "Now try one on your own" starts a fresh practice question', await p.waitForSelector('.mlb-q .mlb-actions .mlb-go:has-text("Check")', { timeout: 30000 }).then(() => true, () => false) && !(await p.locator('.mlb-walk').count()));
+  }
+  chk('walk: no page errors and no failed API calls', !log.length, log.join(' | '));
+  await ctx.close();
+}
+
 (async () => {
   const chromium = loadChromium();
   if (!chromium) { console.log('⏭  maths lab e2e: skipped (playwright not installed)'); process.exit(0); }
@@ -483,7 +541,7 @@ async function physicsPredict(who) {
     'webcron' => ['enabled' => false], 'ai' => ['enabled' => false], 'debug' => false, 'seed_bundled_curriculum' => false];\n`);
   try {
     php(`db_migrate(db_conn());
-      foreach (['NGG-E2E-1' => 'Tobi Adewale', 'NGG-E2E-2' => 'Kemi Bello'] as $id => $n)
+      foreach (['NGG-E2E-1' => 'Tobi Adewale', 'NGG-E2E-2' => 'Kemi Bello', 'NGG-E2E-3' => 'Sade Okoro'] as $id => $n)
         db_insert('members', ['memberId'=>$id,'fullName'=>$n,'email'=>strtolower(explode(' ', $n)[0]).'@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', WEB], { cwd: WEB, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
@@ -498,6 +556,7 @@ async function physicsPredict(who) {
     await physics('NGG-E2E-1', 1280, 900, 'desktop');
     await physics('NGG-E2E-2', 390, 844, 'phone');
     await physicsPredict('NGG-E2E-1');
+    await mathsWalk('NGG-E2E-3');
     console.log('English Lab, end to end:');
     await english('NGG-E2E-1', 1280, 900, 'desktop');
     await english('NGG-E2E-2', 390, 844, 'phone');

@@ -1091,6 +1091,8 @@
         start:  (mode, opts) => request('/member/mathslab.php', { body: Object.assign({ action: 'start', mode, lab: mlabLab() }, opts || {}) }),
         replace: () => request('/member/mathslab.php', { body: { action: 'replace', lab: mlabLab() } }),
         explain: (sessionId, index) => request('/member/mathslab.php', { body: { action: 'explain', sessionId, index, lab: mlabLab() } }),
+        // "Work through one with Guide": op 'start', then 'turn' with an answer or a message (mathslab-walk.php).
+        walk: (sessionId, step, body) => request('/member/mathslab.php', { body: Object.assign({ action: 'walk', sessionId, step, lab: mlabLab() }, body || {}) }),
         answer: (sessionId, index, answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'answer', sessionId, index, answer, lab: mlabLab() }, extra || {}) }),
         finish: (sessionId) => request('/member/mathslab.php', { body: { action: 'finish', sessionId, lab: mlabLab() } }),
         enrol:  (courseId) => request('/member/mathslab.php', { body: { action: 'enrol', courseId, lab: mlabLab() } }),

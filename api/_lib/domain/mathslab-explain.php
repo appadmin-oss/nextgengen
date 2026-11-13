@@ -98,11 +98,7 @@ function mlb_explain(array $p): array {
     }
     // 2. The AI, if it is switched on and today's allowance has room.
     $text = null;
-    if (function_exists('ai_enabled') && ai_enabled('coach')) {
-        $key = 'ai.tutor.' . gmdate('Y-m-d');
-        $used = (int)(db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', [$mid, $key])['stateValue'] ?? 0);
-        if ($used < (defined('CURR_TUTOR_PER_DAY') ? CURR_TUTOR_PER_DAY : 20)) {
-            db_upsert('member_state', ['memberId' => $mid, 'stateKey' => $key, 'stateValue' => (string)($used + 1), 'updatedAt' => now_iso()], ['memberId', 'stateKey'], ['stateValue' => (string)($used + 1), 'updatedAt' => now_iso()]);
+    if (($used = mlb_tutor_take($mid)) !== null) {   // the shared allowance (mathslab-walk.php)
             $stem = is_string($it['stem'] ?? null) ? (string)$it['stem'] : (string)json_encode($it['stem']);
             $steps = implode("\n", array_map('strval', (array)($it['steps'] ?? [])));
             $sys = 'You explain ONE wrong answer to a 10–17 year old learner in Nigeria. Name the single most likely slip that '
@@ -111,8 +107,7 @@ function mlb_explain(array $p): array {
                  . 'tell how their answer arose, say which line of the working to compare with theirs.';
             $r = ai_chat($sys, [['role' => 'me', 'text' => "Question: $stem\nRight answer: " . mlb_answer_text($it) . "\nWorked steps:\n$steps\nTheir answer: $mine"]], 160, 'coach');
             if (!empty($r['ok'])) $text = trim((string)$r['text']);
-            else db_exec('UPDATE member_state SET stateValue = ? WHERE memberId = ? AND stateKey = ?', [(string)$used, $mid, $key]);   // a failed call is given back
-        }
+            else mlb_tutor_refund($mid, $used);   // a failed call is given back
     }
     // 3. Code checks the AI: no number from nowhere, no length to hide one in.
     if ($text !== null) {

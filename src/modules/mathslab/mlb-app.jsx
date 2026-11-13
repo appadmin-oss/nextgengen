@@ -1361,6 +1361,59 @@ function MlbExplain({ sessionId, index }) {
   if (st.phase === "busy") return <p className="mlb-meta" role="status">Looking at your answer…</p>;
   return <p className={"mlb-explain" + (st.phase === "err" ? " is-err" : "")} role="status"><i className="ph ph-magnifying-glass" aria-hidden="true"/> {st.text}</p>;
 }
+/* "Work through one with Guide" — offered only on the stuck card. A FRESH question of the same topic with
+   the key held back by the server; each press climbs one rung of a ladder the server holds (the hint, then
+   the working one line at a time, then the whole working). Guide never gives the answer, and the guided
+   question is not marked: the one that counts is the next, unaided one (mathslab-walk.php). */
+function MlbWalk({ sessionId, onAlone }) {
+  const [st, setSt] = React.useState({ phase: "busy", say: [] });
+  const [val, setVal] = React.useState("");
+  const [msg, setMsg] = React.useState("");
+  const endRef = React.useRef(null), stemRef = React.useRef(null);
+  const take = (r, mine) => setSt(s => ({ phase: r.done ? "done" : "on", item: r.item || s.item, rung: r.rung, rungs: r.rungs || s.rungs, right: r.right, answer: r.answer, steps: r.steps, safeguarding: r.safeguarding,
+    say: s.say.concat(mine ? [{ who: "me", text: mine }] : [], [{ who: "guide", text: r.say }]) }));
+  const fail = e => setSt(s => Object.assign({}, s, { phase: s.item ? "on" : "err", err: mlbErr(e) }));
+  React.useEffect(() => { NGGApi.member.mathslab.walk(sessionId, "start").then(r => take(r), fail); }, []); // eslint-disable-line
+  // The button that opened Guide is gone, so focus goes to the new question rather than falling to the page.
+  React.useEffect(() => { if (st.item && stemRef.current) stemRef.current.focus({ preventScroll: false }); }, [!!st.item]); // eslint-disable-line
+  React.useEffect(() => { if (endRef.current && st.say.length > 1) endRef.current.scrollIntoView({ block: "nearest" }); }, [st.say.length]);
+  const it = st.item;
+  if (st.phase === "err") return <p className="mlb-explain is-err" role="status">{st.err}</p>;
+  if (!it) return <p className="mlb-meta" role="status">Finding a fresh one…</p>;
+  const choice = it.kind === "mcq" || it.kind === "error";
+  const shown = v => choice ? it.options[v] : Array.isArray(v) ? v.join(", ") : String(v);
+  const empty = it.kind === "pair" ? !(Array.isArray(val) && val[0] && val[1]) : choice ? val === "" : !String(val || "").trim();
+  const send = body => { setSt(s => Object.assign({}, s, { phase: "busy", err: "" })); NGGApi.member.mathslab.walk(sessionId, "turn", body).then(r => { take(r, body.answer !== undefined ? "I tried " + shown(body.answer) : body.message || "Next step, please"); setVal(""); setMsg(""); }, fail); };
+  const busy = st.phase === "busy", done = st.phase === "done";
+  return (
+    <div className="mlb-walk">
+      <p className="mlb-eyebrow">With Guide{st.rungs ? " · step " + Math.min((st.rung || 0) + 1, st.rungs) + " of " + st.rungs : ""}</p>
+      <div ref={stemRef} tabIndex={-1} className="mlb-walk-q"><MlbMath as="p" className="mlb-stem" text={it.stem}/></div>
+      <MlbDiagram d={it.diagram}/>
+      {it.lines ? <ol className="mlb-lines">{it.lines.map((l, k) => <li key={k}><MlbMath text={l}/></li>)}</ol> : null}
+      <ol className="mlb-walk-log" aria-live="polite">{st.say.map((m, k) => <li key={k} className={"mlb-walk-" + m.who}>
+        {m.who === "guide" ? <i className="ph ph-compass" aria-hidden="true"/> : null}<MlbMath text={m.text}/></li>)}<li ref={endRef} aria-hidden="true"/></ol>
+      {st.err ? <p className="mlb-explain is-err" role="status">{st.err}</p> : null}
+      {done ? <div>
+        {st.steps && !st.safeguarding ? <details open={!st.right}><summary>Worked solution</summary><p>Answer: <MlbMath text={st.answer}/></p><ol className="mlb-steps">{st.steps.map((x, k) => <li key={k}><MlbMath text={x}/></li>)}</ol></details> : null}
+        {!st.safeguarding && onAlone ? <div className="mlb-stuck-acts"><button type="button" className="mlb-go" onClick={onAlone}>Now try one on your own</button></div> : null}
+      </div> : <>
+        {choice ? <div className="mlb-opts" role="radiogroup" aria-label="Choose an answer">{it.options.map((o, k) => (
+          <button key={k} type="button" role="radio" aria-checked={val === k} className={"mlb-opt" + (val === k ? " is-on" : "")} onClick={() => setVal(k)}>
+            <span className="mlb-opt-l" aria-hidden="true">{k + 1}</span><MlbMath text={o}/></button>))}</div>
+          : <MlbInput item={it} value={val} onChange={setVal} onEnter={() => { if (!empty && !busy) send({ answer: val }); }} disabled={busy}/>}
+        <div className="mlb-actions">
+          <button type="button" className="mlb-go" disabled={empty || busy} onClick={() => send({ answer: val })}>{busy ? "Guide is thinking…" : "Check my try"}</button>
+        </div>
+        <form className="mlb-walk-ask" onSubmit={e => { e.preventDefault(); if (!busy) send({ message: msg.trim() }); }}>
+          <label htmlFor="mlb-walk-msg">What’s confusing? (optional)</label>
+          <div className="mlb-walk-row"><input id="mlb-walk-msg" className="mlb-in" value={msg} maxLength={400} onChange={e => setMsg(e.target.value)} placeholder="e.g. I don’t know where to start" disabled={busy}/>
+            <button type="submit" className="stt-btn" disabled={busy}>Next step</button></div>
+        </form>
+      </>}
+    </div>
+  );
+}
 function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
   const [ses, setSes] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -1376,6 +1429,7 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
   const [best, setBest] = React.useState(0);
   const [missed, setMissed] = React.useState(false);
   const [praise, setPraise] = React.useState(null);
+  const [walk, setWalk] = React.useState(false);   // "Work through one with Guide", opened from the stuck card
   const tStart = React.useRef(Date.now());
   const t0 = React.useRef(Date.now());
   /* A practice paper runs against the clock, as the exam does: the time left is shown, and at
@@ -1415,7 +1469,7 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
   const lettered = exam || !!it.letters;
   const empty = it.kind === "pair" ? !(Array.isArray(val) && val[0] && val[1]) : it.kind === "mcq" || it.kind === "error" ? val === "" : !String(val || "").trim();
   const finish = () => { handedIn.current = true; setBusy(true); NGGApi.member.mathslab.finish(ses.sessionId).then(r => { setBusy(false); setRes(Object.assign({}, r, { bestRun: best, secs: Math.round((Date.now() - tStart.current) / 1000) })); }, e => { setBusy(false); setErr(mlbErr(e)); }); };
-  const next = () => { setFb(null); setPraise(null); setVal(""); setConf(""); setHints(0); if (last) finish(); else setI(i + 1); };
+  const next = () => { setWalk(false); setFb(null); setPraise(null); setVal(""); setConf(""); setHints(0); if (last) finish(); else setI(i + 1); };
   const submit = () => {
     if (empty || busy) return;
     setBusy(true);
@@ -1490,11 +1544,12 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
         {fb && fb.stuck ? <section className="mlb-stuck" aria-labelledby="mlb-stuck-h">
           <h3 id="mlb-stuck-h" className="mlb-h3"><i className="ph ph-arrows-clockwise" aria-hidden="true"/> {fb.stuck.message}</h3>
           <p className="mlb-meta">{fb.stuck.right} of your last {fb.stuck.of} on this topic were right. That usually means something underneath it needs a look first — it isn’t about trying harder.</p>
-          <div className="mlb-stuck-acts">
+          {walk ? <MlbWalk sessionId={ses.sessionId} onAlone={onAgain || null}/> : <div className="mlb-stuck-acts">
+            <button type="button" className="stt-btn" onClick={() => setWalk(true)}><i className="ph ph-compass" aria-hidden="true"/> Work through one with Guide</button>
             {fb.stuck.prereq ? <button type="button" className="mlb-go" onClick={() => { onDone(); go({ v: "learn", comp: fb.stuck.prereq.comp }); }}>Go back to {fb.stuck.prereq.title}</button> : null}
             <button type="button" className={fb.stuck.prereq ? "stt-btn" : "mlb-go"} onClick={() => { onDone(); go({ v: "learn", comp: it.comp }); }}>See the lesson again</button>
             <button type="button" className="stt-btn" onClick={() => { onDone(); go({ v: "map" }); }}>Try another topic for now</button>
-          </div>
+          </div>}
         </section> : null}
         <div className="mlb-actions">{fb ? <button type="button" className="mlb-go" ref={goRef} onClick={next}>{last ? "See how you did" : "Next question"}</button>
           : <button type="button" className="mlb-go" disabled={empty || busy} onClick={submit}>{busy ? "Checking…" : practice ? "Check" : last ? "Submit" : "Next"}</button>}

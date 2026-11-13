@@ -216,3 +216,44 @@ A wrong TYPED answer used to get only the key and the generic working. The learn
 The learner opens it themselves. The evidence is that LLM feedback helps when learners choose to
 use it (arXiv 2506.17006). It runs in practice only; a check, quick check, boss or exam refuses it.
 AI calls spend the shared daily allowance, and a failed call is given back.
+
+## Round 4 — 13 Nov 2026: "Work through one with Guide"
+
+When the stuck card appears (no three right in a row in the last ten), it now offers a fourth way
+on: a guided question with Guide (`api/_lib/domain/mathslab-walk.php`, op `mathslab.walk`).
+
+The research is a warning as much as a promise:
+- **An unguarded chatbot can harm learning.** In a field experiment with nearly a thousand
+  high-school maths students, GPT-4 raised practice grades. Students who then lost it scored about
+  17% lower on the unassisted exam than students who never had it. Most had used it to get answers
+  (Bastani et al., PNAS 2025). The same model, prompted to give hints and not answers, did no such
+  harm.
+- **AI coaching helps when it gives fewer answers away.** In a randomised trial, an AI that
+  suggested what human tutors should say raised mastery by 4 points, and by 9 for students of the
+  weakest tutors. It did this by giving fewer answers away and asking more probing questions
+  (Tutor CoPilot, Wang et al. 2024).
+
+So the design keeps the answer away from the AI entirely:
+
+- **A fresh question.** The question just missed already shows its answer and working, so Guide
+  starts a new one of the same topic, with the key held on the server.
+- **Code holds the ladder.**
+  1. The authored hint.
+  2. The working, one line per press, stopping before any line that contains the answer.
+  3. The whole working, then "Now try one on your own".
+- **The AI only rewords the rung,** in reply to what the learner said or tried. It is never sent the
+  key. Code rejects a reply that states the answer, or that uses a number from a line not yet
+  revealed. Small numbers count here too: "9 take away 3 gives 6" is that line leaking. A rejected
+  reply is replaced by the rung's own words.
+- **Not marked.** The guided question does not move mastery or count towards three in a row. The
+  next, unaided question is the one that counts.
+- **Limits and safeguarding.** At most four AI turns per question, from the shared daily allowance;
+  a failed call is refunded. What the learner types is checked for a disclosure first, and a
+  disclosure is answered with people, never a hint.
+
+Tests: 14 PHP checks (`walk ·` in `api/tests/run.php`) and a phone journey in
+`tests/mathlab-e2e.test.js`: stuck card → Guide → each rung → whole working → a fresh unaided
+question, with mastery unchanged.
+
+Sources: Bastani et al. (2025), *Generative AI without guardrails can harm learning*, PNAS 122;
+Wang, Ribeiro, Robinson, Loeb & Demszky (2024), *Tutor CoPilot*, arXiv 2410.03017.

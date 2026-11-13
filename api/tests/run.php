@@ -38334,6 +38334,66 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && (mlb_explain(['memberId' => 'NGG-EX-1', 'sessionId' => (string)$ck['sessionId'], 'index' => 0])['error'] ?? '') === 'practice_only');
 })();
 
+/* ── "Work through one with Guide" (13 Nov 2026): code holds the ladder, the AI never has the key ── */
+(function () {
+    lab_use('maths'); $now = now_iso();
+    $it = ['kind' => 'num', 'key' => 226, 'hint' => 'Take the smaller amount from the larger.', 'stem' => 'Ebo has ₦389 and Ife has ₦163. How much more does Ebo have?',
+           'steps' => ['How much more means subtract.', 'Units: $9 - 3 = 6$', '$389 - 163 = 226$']];
+    $safe = mlb_walk_safe_steps($it);
+    chk('walk · the working is revealed only up to the line that carries the answer', $safe === ['How much more means subtract.', 'Units: $9 - 3 = 6$']);
+    chk('walk · the ladder: the hint, then the working one line at a time, then the whole working',
+        str_contains(mlb_walk_rung($it, 0)['say'], 'smaller amount') && str_contains(mlb_walk_rung($it, 1)['say'], 'subtract')
+        && str_contains(mlb_walk_rung($it, 2)['say'], '9 - 3') && mlb_walk_rung($it, 3)['reveal'] === true && mlb_walk_rung($it, 2)['reveal'] === false);
+    chk('walk · an AI reply stating the answer is refused', !mlb_walk_reply_ok('So the answer is 226 — well done.', $it, 1, ''));
+    chk('walk · an AI reply reaching a line not yet revealed is refused', !mlb_walk_reply_ok('Now the units: 9 take away 3 gives 6.', $it, 1, ''));
+    chk('walk · a grounded AI reply is allowed', mlb_walk_reply_ok('You added them. “How much more” means take 163 from 389 — which column do you start with?', $it, 1, 'I added'));
+
+    db_insert('members', ['memberId' => 'NGG-WK-1', 'fullName' => 'Walk Me', 'email' => 'wk1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (mlb_comp('MC-012')['needs'] as $n) mlb_set_state('NGG-WK-1', $n, ['state' => 'known', 'p' => 0.95]);
+    mlb_set_state('NGG-WK-1', 'MC-012', ['state' => 'learning', 'studiedAt' => $now, 'p' => 0.3, 'attempts' => 4, 'correct' => 1]);
+    $s = mlb_start(['memberId' => 'NGG-WK-1', 'mode' => 'practice', 'comp' => 'MC-012']);
+    $sessionSigs = []; foreach (json_decode(db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$s['sessionId']])['items'], true) as $x) $sessionSigs[mlb_item_sig(mlb_item($x['c'], $x['f'], $x['s']))] = true;
+    $prev = $GLOBALS['__ai_mock'] ?? null; $prevAi = $GLOBALS['CONFIG']['ai'] ?? null;
+    $GLOBALS['CONFIG']['ai'] = null; unset($GLOBALS['__ai_mock']);
+    $w = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'start']);
+    $g = json_decode((string)db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', ['NGG-WK-1', 'mlb.walk.' . $s['sessionId']])['stateValue'], true);
+    $wit = mlb_item($g['c'], $g['f'], $g['s']);
+    chk('walk · starts a FRESH question of the same topic, with no key, answer or working sent', !empty($w['ok']) && $g['c'] === 'MC-012'
+        && !isset($sessionSigs[mlb_item_sig($wit)]) && !isset($w['item']['key']) && !isset($w['item']['steps']) && str_starts_with((string)$w['say'], 'Start here'));
+    $t1 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'answer' => '123456789']);
+    chk('walk · a wrong try climbs one rung and gives no answer (AI off: the rung\'s own words)', !empty($t1['ok']) && $t1['rung'] === 1 && empty($t1['done']) && !isset($t1['answer']) && $t1['source'] === 'guide');
+    $t2 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'I still don\'t get it']);
+    chk('walk · asking for more climbs another rung', ($t2['rung'] ?? 0) === 2 || !empty($t2['done']));
+    $before = mlb_states('NGG-WK-1')['MC-012'] ?? [];
+    $t3 = !empty($t2['done']) ? $t2 : mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'answer' => $wit['key']]);
+    $after = mlb_states('NGG-WK-1')['MC-012'] ?? [];
+    chk('walk · the right answer ends it, shows the working, and does NOT count towards mastery', !empty($t3['done']) && isset($t3['steps'])
+        && (float)($before['p'] ?? 0) === (float)($after['p'] ?? 0) && (int)($before['attempts'] ?? 0) === (int)($after['attempts'] ?? 0) && mlb_run('NGG-WK-1', 'MC-012')['n'] === mlb_run('NGG-WK-1', 'MC-012')['n']);
+    chk('walk · a finished walk takes no more turns', (mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'x'])['error'] ?? '') === 'guide_done');
+
+    // The AI: never given the key, and its reply checked.
+    $GLOBALS['CONFIG']['ai'] = ['gemini_api_key' => 'g-test', 'anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    $seenPrompt = '';
+    mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'start']);
+    $g = json_decode((string)db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', ['NGG-WK-1', 'mlb.walk.' . $s['sessionId']])['stateValue'], true);
+    $wit = mlb_item($g['c'], $g['f'], $g['s']); $keyText = mlb_answer_text($wit);
+    $GLOBALS['__ai_mock'] = function ($p, $sys, $t) use (&$seenPrompt, $keyText) { $seenPrompt = $sys . json_encode($t); return ['ok' => true, 'provider' => 'mock', 'text' => 'The answer is ' . $keyText . '.']; };
+    $a1 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'help']);
+    $stemText = is_string($wit['stem']) ? $wit['stem'] : json_encode($wit['stem']);
+    chk('walk · the AI is never sent the answer', $seenPrompt !== '' && (str_contains($stemText, $keyText) || !str_contains($seenPrompt, $keyText)));
+    chk('walk · an AI reply that gives the answer away is replaced by the rung', ($a1['source'] ?? '') === 'guide' && !str_contains((string)$a1['say'], 'The answer is'));
+    $GLOBALS['__ai_mock'] = fn($p, $sys, $t) => ['ok' => true, 'provider' => 'mock', 'text' => 'Fair enough. Look at the words in the question first — what is it asking you to do?'];
+    $a2 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'what now']);
+    chk('walk · a grounded AI phrasing of the rung is passed on', ($a2['source'] ?? '') === 'ai' || !empty($a2['done']));
+    $GLOBALS['__ai_mock'] = $prev; $GLOBALS['CONFIG']['ai'] = $prevAi;
+
+    mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'start']);
+    $sg = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'I want to end my life']);
+    chk('walk · a disclosure is answered with people, never a hint', !empty($sg['safeguarding']) && str_contains((string)$sg['say'], 'trusted adult'));
+    $ck = mlb_start(['memberId' => 'NGG-WK-1', 'mode' => 'quick', 'comp' => 'MC-001']);
+    chk('walk · practice only', !empty($ck['sessionId']) && (mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => (string)$ck['sessionId'], 'step' => 'start'])['error'] ?? '') === 'practice_only');
+})();
+
 /* ── No over-practice (9 Nov 2026) ── */
 (function () {
     lab_use('maths'); $now = now_iso();

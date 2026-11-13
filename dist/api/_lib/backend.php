@@ -1199,6 +1199,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'mathslab.start'          => 'mlb_start',
             'mathslab.replace'        => 'mlb_place_redo',
             'mathslab.explain'        => 'mlb_explain',
+            'mathslab.walk'           => 'mlb_walk',      // "Work through one with Guide" (mathslab-walk.php)
             'mathslab.answer'         => 'mlb_answer',
             'mathslab.finish'         => 'mlb_finish',
             'mathslab.enrol'          => 'mlb_enrol',

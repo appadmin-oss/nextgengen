@@ -9740,3 +9740,18 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 /* "Why was mine wrong?" (mathslab-explain.php) */
 .mlb-explain { margin: 6px 0; padding: 10px 12px; border-radius: 10px; background: #f3f5fa; color: #16233f; font-size: 15px; line-height: 1.5; }
 .mlb-explain.is-err { background: #fdecea; color: #7a1d10; }
+
+/* "Work through one with Guide" (mathslab-walk.php): a white card inside the amber stuck card, so the
+   question reads as the one bright thing; Guide's turns are left, the learner's right. */
+.mlb-walk { margin-top: 12px; padding: 14px; border-radius: 12px; background: #fff; color: var(--mlb-ink, #16233f); border: 1px solid #f0dca4; }
+.mlb-walk .mlb-stem { margin: 4px 0 10px; }
+.mlb-walk-log { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 8px; }
+.mlb-walk-log > li:empty { display: none; }
+.mlb-walk-guide { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: #f3f5fa; color: #16233f; line-height: 1.5; max-width: 92%; }
+.mlb-walk-guide > i { margin-top: 3px; flex: none; }
+.mlb-walk-me { justify-self: end; padding: 8px 12px; border-radius: 10px; background: #e7eefc; color: #12305f; max-width: 80%; }
+.mlb-walk-ask { margin-top: 12px; display: grid; gap: 6px; }
+.mlb-walk-ask label { font-size: 14px; color: #3a4560; }
+.mlb-walk-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.mlb-walk-row .mlb-in { flex: 1 1 200px; font-size: 16px; }
+.mlb-walk-q:focus { outline: none; } .mlb-walk-q:focus-visible { outline: 2px solid #16233f; outline-offset: 2px; border-radius: 6px; }
