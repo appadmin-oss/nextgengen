@@ -150,7 +150,7 @@ function eng_sounds_forms(): array {
         eng_choose([
             ['In which sentence is “object” a VERB (stressed obJECT)?', 'I object to that remark.', [['That object is heavy.', 'Here it is a noun: OB-ject.'], ['The object of the game is to win.', 'Noun: OB-ject.'], ['He held a strange object.', 'Noun: OB-ject.']], 'Verb: ob-JECT.'],
             ['In which sentence is “permit” a NOUN (stressed PERmit)?', 'You need a permit to park here.', [['They will not permit noise.', 'Verb: per-MIT.'], ['Please permit me to speak.', 'Verb: per-MIT.'], ['We permit visitors on Sundays.', 'Verb: per-MIT.']], 'Noun: PER-mit.'],
-            ['In which sentence is “contest” a VERB (stressed conTEST)?', 'She will contest the election.', [['The contest was fair.', 'Noun: CON-test.'], ['He won the contest.', 'Noun: CON-test.'], ['It was a close contest.', 'Noun: CON-test.']], 'Verb: con-TEST.'],
+            ['In which sentence is “contest” a VERB (stressed conTEST)?', 'She will contest the election.', [['The contest was fair to all.', 'Noun: CON-test.'], ['He won the contest.', 'Noun: CON-test.'], ['It was a very close contest.', 'Noun: CON-test.']], 'Verb: con-TEST.'],
         ], '', 'Work out whether the word is naming something or doing something.'),
         eng_type([
             ['the noun “record” (a written account)', 'RE', ['re'], 'Noun: RE-cord.'], ['the verb “increase”', 'CREASE', ['crease'], 'Verb: in-CREASE.'],
@@ -207,7 +207,7 @@ function eng_sounds_forms(): array {
         eng_choose([
             ['It’s a lovely day, isn’t it? (you are sure and expect agreement)', 'falling on the tag', [['rising on the tag', 'A rising tag asks a real question.'], ['level', 'Not usual.'], ['rising on “lovely”', 'The tune of a tag is on the tag.']], 'A falling tag expects agreement.'],
             ['You’re the new teacher, aren’t you? (you are not sure)', 'rising on the tag', [['falling on the tag', 'A falling tag expects agreement.'], ['level', 'Not usual.'], ['falling on “teacher”', 'The tune of a tag is on the tag.']], 'A rising tag asks a genuine question.'],
-            ['Would you like tea or coffee? (a choice between two)', 'rising on “tea”, falling on “coffee”', [['rising on both', 'That asks “do you want a drink?”.'], ['falling on both', 'Not usual for a choice.'], ['level', 'Not usual.']], 'A closed choice rises on the first and falls on the last.'],
+            ['Would you like tea or coffee? (a choice between two)', 'rising on “tea”, falling on “coffee”', [['rising on both “tea” and “coffee”', 'That asks “do you want a drink?”.'], ['falling on “tea”, rising on “coffee”', 'Back to front: a closed choice falls on the last item.'], ['level', 'Not usual.']], 'A closed choice rises on the first and falls on the last.'],
         ], 'Which intonation fits? {q}', 'A falling tag expects agreement; a rising tag is a real question.', 'concept', 35),
         eng_choose([
             ['Which sentence usually ends with a RISING tune?', 'Have you eaten?', [['What have you eaten?', 'A wh- question falls.'], ['I have eaten.', 'A statement falls.'], ['Eat your food.', 'A command falls.']], 'Yes/no question → rise.'],

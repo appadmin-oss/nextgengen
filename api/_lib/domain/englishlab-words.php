@@ -13,8 +13,8 @@ function eng_words_forms(): array {
         eng_choose([
             ['Lagos is the busiest city in Nigeria.', 'Lagos', [['city', 'A city is any city: it is a common noun.'], ['busiest', 'That describes the city: it is an adjective.'], ['is', 'That is the verb.']], 'A proper noun names one particular person, place or thing, and it starts with a capital letter.'],
             ['Our teacher, Mrs Okafor, marked the tests.', 'Mrs Okafor', [['teacher', 'Any teacher: a common noun.'], ['tests', 'Any test: a common noun.'], ['marked', 'That is the verb.']], 'A proper noun is the name of one particular person.'],
-            ['We sailed down the River Niger in December.', 'River Niger', [['river', 'Lower case and any river: a common noun.'], ['sailed', 'That is the verb.'], ['We', 'That is a pronoun.']], 'A named river is a proper noun, and so is the name of a month.'],
-            ['The Super Eagles won their match on Saturday.', 'Super Eagles', [['match', 'Any match: a common noun.'], ['won', 'That is the verb.'], ['their', 'That is a possessive word.']], 'The name of a particular team is a proper noun.'],
+            ['We sailed down the River Niger in December.', 'River Niger', [['river', 'Lower case and any river: a common noun.'], ['sailed down', 'That is the verb and the word telling where.'], ['We', 'That is a pronoun.']], 'A named river is a proper noun, and so is the name of a month.'],
+            ['The Super Eagles won their match on Saturday.', 'Super Eagles', [['their match', 'A possessive word and a common noun: any match.'], ['won', 'That is the verb.'], ['The', 'That is an article; the name comes after it.']], 'The name of a particular team is a proper noun.'],
         ], 'Which word or phrase is a proper noun? “{q}”', 'A proper noun names one particular one and starts with a capital.'),
         eng_choose([
             ['a ___ of cattle', 'herd', [['flock', 'A flock is of sheep or birds.'], ['swarm', 'A swarm is of bees or insects.'], ['pack', 'A pack is of wolves or dogs.']], 'A group of cattle is a herd.'],
@@ -50,8 +50,8 @@ function eng_words_forms(): array {
         eng_choose([
             ['Which noun has the same form in the singular and the plural?', 'sheep', [['goat', 'One goat, two goats.'], ['cow', 'One cow, two cows.'], ['horse', 'One horse, two horses.']], 'One sheep, two sheep: the word does not change.'],
             ['Which of these is always plural and has no singular?', 'scissors', [['pen', 'One pen, two pens.'], ['table', 'One table, two tables.'], ['shoe', 'One shoe, a pair of shoes.']], 'Scissors, trousers and pliers are always plural: we say “a pair of scissors”.'],
-            ['Which noun is uncountable (it has no plural in standard English)?', 'furniture', [['chair', 'One chair, two chairs.'], ['bed', 'One bed, two beds.'], ['table', 'One table, two tables.']], 'Furniture, equipment, luggage and information are uncountable: “pieces of furniture”, never “furnitures”.'],
-            ['Which noun is uncountable?', 'information', [['fact', 'One fact, two facts.'], ['report', 'One report, two reports.'], ['idea', 'One idea, two ideas.']], '“Information” is uncountable: say “pieces of information”, never “informations”.'],
+            ['Which noun is uncountable (it has no plural in standard English)?', 'furniture', [['cupboard', 'One cupboard, two cupboards.'], ['mattress', 'One mattress, two mattresses.'], ['wardrobe', 'One wardrobe, two wardrobes.']], 'Furniture, equipment, luggage and information are uncountable: “pieces of furniture”, never “furnitures”.'],
+            ['Which noun is uncountable?', 'information', [['newspaper', 'One newspaper, two newspapers.'], ['statement', 'One statement, two statements.'], ['suggestion', 'One suggestion, two suggestions.']], '“Information” is uncountable: say “pieces of information”, never “informations”.'],
         ], '', 'Not every noun takes -s.', 'concept', 30),
     ],
     'EN-003' => [
@@ -71,8 +71,8 @@ function eng_words_forms(): array {
         ], 'Type the reflexive pronoun: {q}', 'It ends in -self or -selves and points back to the subject.', 'procedure', 25),
         eng_spot([
             [['Me and my friend', 'walked', 'to school', 'this morning.'], 0, 'My friend and I', 'This is the subject, so the pronoun is “I”, and polite English puts yourself last.'],
-            [['Him and his sister', 'sing', 'in the', 'school choir.'], 0, 'He and his sister', 'This is the subject of “sing”, so it takes the subject form: He.'],
-            [['The prize', 'was given', 'to my brother and I', 'yesterday.'], 2, 'to my brother and me', 'After “to”, use the object form: to my brother and me.'],
+            [['Him and', 'his sister sing', 'in the', 'school choir.'], 0, 'He and', 'This is the subject of “sing”, so it takes the subject form: He.'],
+            [['The prize was', 'given to', 'my brother and I', 'yesterday.'], 2, 'my brother and me', 'After “to”, use the object form: to my brother and me.'],
             [['These books', 'are not', 'your’s;', 'they are mine.'], 2, 'yours;', 'Possessive pronouns never take an apostrophe: yours, hers, ours, theirs.'],
         ], 'Find the pronoun in the wrong form or place.'),
     ],
