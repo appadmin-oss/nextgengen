@@ -38552,6 +38552,90 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $longest <= $chance + 0.05 * $n && $shortest <= $chance + 0.05 * $n);
 })();
 
+/* ── WhatsApp through Kapso (owner, 14 Nov 2026: every text WhatsApp first, SMS as the fallback; replies into the inbox) ── */
+(function () {
+    $keepCfg = $GLOBALS['CONFIG']['whatsapp'] ?? null; $keepSms = $GLOBALS['CONFIG']['sms'] ?? null; $keepMock = $GLOBALS['__sms_http_mock'] ?? null;
+    $GLOBALS['CONFIG']['whatsapp'] = ['kapso' => ['api_key' => 'kp_test_key', 'phone_number_id' => '123456789012345', 'template' => 'ngg_message', 'template_lang' => 'en', 'webhook_secret' => 'whsec_test']];
+    $GLOBALS['CONFIG']['sms'] = ['default_country' => 'NG', 'termii' => ['api_key' => 'tm_test', 'sender' => 'NGG']];
+    $calls = []; $kapsoOk = true; $n = 0;
+    $GLOBALS['__sms_http_mock'] = function (string $url, array $opts) use (&$calls, &$kapsoOk, &$n) {
+        $calls[] = ['url' => $url, 'body' => json_decode((string)($opts[CURLOPT_POSTFIELDS] ?? 'null'), true), 'headers' => $opts[CURLOPT_HTTPHEADER] ?? []];
+        if (str_contains($url, 'api.kapso.ai')) return $kapsoOk ? ['ok' => true, 'body' => json_encode(['messages' => [['id' => 'wamid.TEST' . (++$n)]]])] : ['ok' => false, 'error' => 'http_400'];
+        if (str_contains($url, 'termii')) return ['ok' => true, 'body' => json_encode(['message_id' => 'tm-' . (++$n)])];
+        return ['ok' => false, 'error' => 'unexpected'];
+    };
+
+    // Outgoing: WhatsApp first, as the approved template, one line, with the project key.
+    $r = sms_send('08031234567', "NGG: Tobi's dues are due.\nPay by Friday.");
+    $k = $calls[0] ?? [];
+    chk('kapso · a text goes on WhatsApp first, as the approved template, to the number without its plus', ($r['provider'] ?? '') === 'whatsapp'
+        && str_contains($k['url'] ?? '', '/123456789012345/messages') && ($k['body']['type'] ?? '') === 'template' && ($k['body']['template']['name'] ?? '') === 'ngg_message'
+        && ($k['body']['to'] ?? '') === '2348031234567' && in_array('X-API-Key: kp_test_key', $k['headers'] ?? [], true));
+    $param = (string)($k['body']['template']['components'][0]['parameters'][0]['text'] ?? '');
+    chk('kapso · the message travels as the template\'s one parameter, made one line (Meta refuses newlines in a parameter)', $param !== '' && !str_contains($param, "\n") && str_contains($param, 'Pay by Friday'));
+
+    // Kapso refuses: SMS carries it.
+    $calls = []; $kapsoOk = false;
+    $r = sms_send('08031234567', 'NGG: your class moved to 10am.');
+    chk('kapso · when WhatsApp refuses, the same text goes by SMS', ($r['provider'] ?? '') === 'termii' && count($calls) === 2 && str_contains($calls[1]['url'], 'termii'));
+    $kapsoOk = true;
+
+    // Sign-in codes stay on SMS.
+    $calls = [];
+    sms_send('08031234567', 'NGG: your sign-in code is 123456.', ['noWhatsApp' => true]);
+    chk('kapso · a sign-in code never goes on WhatsApp', count($calls) === 1 && str_contains($calls[0]['url'], 'termii'));
+
+    // The webhook signature.
+    $raw = '{"message":{"id":"x"}}';
+    chk('kapso · a webhook is accepted only with the right HMAC-SHA256 of its raw body',
+        kapso_signature_ok($raw, hash_hmac('sha256', $raw, 'whsec_test')) && !kapso_signature_ok($raw, hash_hmac('sha256', $raw, 'other')) && !kapso_signature_ok($raw . ' ', hash_hmac('sha256', $raw, 'whsec_test')) && !kapso_signature_ok($raw, ''));
+
+    // A parent writes on WhatsApp: it lands in the inbox, named, once.
+    $now = now_iso();
+    db_insert('guardians', ['guardianId' => 'GDN-KAPSO00001', 'email' => 'kapso.parent@example.com', 'fullName' => 'Bisi Adeyemi', 'phone' => '0803 765 4321', 'createdAt' => $now, 'updatedAt' => $now]);
+    $ev = ['message' => ['id' => 'wamid.IN1', 'from' => '2348037654321', 'type' => 'text', 'text' => ['body' => 'Good morning, Tobi is ill today.']], 'conversation' => ['contact_name' => 'Mama T'], 'phone_number_id' => '123456789012345'];
+    kapso_handle_webhook(['event' => 'whatsapp.message.received', 'body' => $ev]);
+    kapso_handle_webhook(['event' => 'whatsapp.message.received', 'body' => $ev]);   // delivered twice
+    $msgs = db_all("SELECT * FROM contact_messages WHERE purpose = 'whatsapp' AND phone = '+2348037654321'");
+    chk('kapso · a parent\'s WhatsApp message lands in the inbox, named from their family record, and a repeated delivery is ignored',
+        count($msgs) === 1 && $msgs[0]['name'] === 'Bisi Adeyemi' && $msgs[0]['message'] === 'Good morning, Tobi is ill today.' && $msgs[0]['status'] === 'new');
+    $mid = (int)($msgs[0]['id'] ?? 0);
+    // A follow-up joins the thread (in a batch envelope).
+    kapso_handle_webhook(['event' => 'whatsapp.message.received', 'body' => ['type' => 'whatsapp.message.received', 'batch' => true,
+        'data' => [['message' => ['id' => 'wamid.IN2', 'from' => '2348037654321', 'type' => 'text', 'text' => ['body' => 'She will be back next week.']]]], 'batch_info' => []]]);
+    $rep = db_all('SELECT * FROM contact_replies WHERE messageId = ?', [$mid]);
+    chk('kapso · a follow-up (even in a batch) joins the open thread as theirs, and reopens it', count($rep) === 1 && $rep[0]['channel'] === 'whatsapp-in' && $rep[0]['body'] === 'She will be back next week.');
+
+    // Staff reply inside the 24-hour window: plain text on WhatsApp, recorded.
+    $calls = [];
+    $rr = backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $mid, 'body' => 'Thank you. Get well soon, Tobi.']);
+    chk('kapso · a staff reply goes back on WhatsApp as text inside the 24-hour window, signed, and is recorded',
+        !empty($rr['ok']) && ($calls[0]['body']['type'] ?? '') === 'text' && str_contains((string)($calls[0]['body']['text']['body'] ?? ''), 'Get well soon')
+        && str_contains((string)($calls[0]['body']['text']['body'] ?? ''), 'Next Generation Genius')
+        && (string)(db_row("SELECT channel FROM contact_replies WHERE messageId = ? AND sentBy = 'NGG-2025-0099'", [$mid])['channel'] ?? '') === 'whatsapp');
+    // Outside the window: the template.
+    db_exec("UPDATE whatsapp_messages SET createdAt = ? WHERE direction = 'in' AND phone = '+2348037654321'", [gmdate('Y-m-d\TH:i:s\Z', time() - 30 * 3600)]);
+    $calls = [];
+    backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $mid, 'body' => 'Checking in on Tobi.']);
+    chk('kapso · after 24 hours the reply goes as the template, which WhatsApp always allows', ($calls[0]['body']['type'] ?? '') === 'template');
+
+    // Delivered later as failed (e.g. not on WhatsApp): the same words go by SMS, once.
+    $calls = [];
+    $s = kapso_send_template('+2348031112222', 'NGG: Saturday starts at 9.');
+    $calls = [];
+    $fail = ['message' => ['id' => $s['id'] ?? '', 'to' => '2348031112222', 'kapso' => ['status' => 'failed', 'statuses' => [['status' => 'failed', 'errors' => [['code' => 131026, 'title' => 'Message undeliverable']]]]]]];
+    kapso_handle_webhook(['event' => 'whatsapp.message.failed', 'body' => $fail]);
+    kapso_handle_webhook(['event' => 'whatsapp.message.failed', 'body' => $fail]);   // repeated
+    $row = db_row('SELECT status, error FROM whatsapp_messages WHERE wamid = ?', [$s['id'] ?? '']);
+    chk('kapso · a WhatsApp message that fails later is sent by SMS with the same words, once, and the failure is recorded',
+        !empty($s['ok']) && count($calls) === 1 && str_contains($calls[0]['url'], 'termii') && ($calls[0]['body']['sms'] ?? '') === 'NGG: Saturday starts at 9.'
+        && ($row['status'] ?? '') === 'failed' && str_contains((string)($row['error'] ?? ''), '131026'));
+
+    $GLOBALS['__sms_http_mock'] = $keepMock;
+    if ($keepCfg === null) unset($GLOBALS['CONFIG']['whatsapp']); else $GLOBALS['CONFIG']['whatsapp'] = $keepCfg;
+    if ($keepSms === null) unset($GLOBALS['CONFIG']['sms']); else $GLOBALS['CONFIG']['sms'] = $keepSms;
+})();
+
 /* ── No over-practice (9 Nov 2026) ── */
 (function () {
     lab_use('maths'); $now = now_iso();

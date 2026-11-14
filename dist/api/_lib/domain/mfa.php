@@ -314,7 +314,7 @@ function mfa_send_code(array $pr, string $purpose, string $channel = 'email', st
     mfa_put($pr['id'], 'mfa.code', ['h' => password_hash($code, PASSWORD_DEFAULT), 'exp' => time() + MFA_CODE_TTL, 'at' => time(), 'p' => $purpose, 'to' => $isSms ? $to : '']);
     if ($isSms) {
         // No link in the text: a code someone reads out is the only thing in it.
-        $r = sms_send($to, 'NGG: your sign-in code is ' . $code . '. It is good for 10 minutes. Never share it — NGG staff will not ask for it.');
+        $r = sms_send($to, 'NGG: your sign-in code is ' . $code . '. It is good for 10 minutes. Never share it — NGG staff will not ask for it.', ['noWhatsApp' => true]);
         if (empty($r['ok'])) { mfa_del($pr['id'], 'mfa.code'); return ['ok' => false, 'error' => 'sms_failed', 'detail' => (string)($r['error'] ?? '')]; }
         return ['ok' => true, 'masked' => $masked, 'delivery' => true, 'via' => (string)($r['provider'] ?? '')];
     }

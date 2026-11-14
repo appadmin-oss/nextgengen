@@ -882,6 +882,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'gate.context'                => 'gate_context',
             'gate.face.log'   => 'gate_face_log',
             'hooks.telegram'  => 'telegram_handle_update',
+            'hooks.kapso'     => 'kapso_handle_webhook',   // WhatsApp through Kapso (domain/kapso.php)
             'public.telegram' => 'public_telegram',
             'gate.register'               => 'gate_register',
             'parent.verify.context'       => 'parent_verify_context',

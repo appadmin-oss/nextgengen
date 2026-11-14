@@ -20,7 +20,7 @@
    there is no Undo, and the irreversible ones ask first.
    ========================================================================== */
 
-const CR_PURPOSE = { general: "General", apply: "Admissions", mentor: "Mentoring", partner: "Partnership", media: "Media", support: "Support" };
+const CR_PURPOSE = { general: "General", apply: "Admissions", mentor: "Mentoring", partner: "Partnership", media: "Media", support: "Support", whatsapp: "WhatsApp" };
 const CR_REASON_NOTE = (l, help, req) => ({ l: l || "Reason", req: req !== false, help: help || "They read this.", ph: "" });
 
 /* Saved replies, by topic. {first} {ref} {me} are filled in for the person. */
@@ -147,7 +147,9 @@ const CR_INBOX_SOURCES = {
       return (r.messages || []).filter(m => m.status === "new" || m.status === "read").map(m => {
         const first = String(m.name || "").trim().split(/\s+/)[0] || "there";
         const thread = [{ who: m.name || m.email, at: m.createdAt, body: m.message || "", mine: false }]
-          .concat((m.replies || []).map(x => ({ who: x.sentByName || "Staff", at: x.sentAt, body: x.body, mine: true })));
+          // A WhatsApp follow-up from them (domain/kapso.php) is theirs, not a staff reply.
+          .concat((m.replies || []).map(x => x.channel === "whatsapp-in" ? { who: m.name || x.sentByName || "Them", at: x.sentAt, body: x.body, mine: false }
+            : { who: (x.sentByName || "Staff") + (x.channel === "whatsapp" ? " · on WhatsApp" : ""), at: x.sentAt, body: x.body, mine: true }));
         const set = (to, text) => async () => { await NGGApi.admin.contact.status(m.id, to); return { text, undo: () => NGGApi.admin.contact.status(m.id, m.status) }; };
         const sig = crSignals((m.subject || "") + " " + (m.message || ""));
         const topic = crMsgTopic(m);
@@ -157,13 +159,14 @@ const CR_INBOX_SOURCES = {
           unread: m.status === "new", urgent: m.purpose === "support" || sig.urgent,
           title: m.subject || (m.message || "").slice(0, 90), body: m.message || "",
           search: [m.email, m.ref, CR_PURPOSE[m.purpose], m.known && m.known.name].join(" "),
-          facts: [["Email", m.email || "—"], ["Phone", crMask(m.phone) || "—"], ["About", TOPIC_L[topic] + (CR_PURPOSE[m.purpose] && CR_PURPOSE[m.purpose] !== TOPIC_L[topic] && m.purpose !== "general" ? " · they chose " + CR_PURPOSE[m.purpose] : "")],
+          facts: [m.purpose === "whatsapp" ? ["WhatsApp", m.phone || "—"] : ["Email", m.email || "—"], ["Phone", crMask(m.phone) || "—"], ["About", TOPIC_L[topic] + (CR_PURPOSE[m.purpose] && CR_PURPOSE[m.purpose] !== TOPIC_L[topic] && m.purpose !== "general" ? " · they chose " + CR_PURPOSE[m.purpose] : "")],
             ["Already with us", m.known ? crKnownLine(m.known) : "Not that we can see"], ["Reference", m.ref || "—"]],
           note: [sig.urgent ? CR_URGENT_NOTE(sig.word) : "", m.earlier > 0 ? "This address has written " + crPlural(m.earlier, "other time", "other times") + "." : ""].filter(Boolean).join(" "),
           thread,
           markRead: m.status === "new" ? () => NGGApi.admin.contact.status(m.id, "read") : null,
-          reply: m.email ? {
-            to: m.email, purpose: m.purpose, draft: crMsgDraft(m, ctx.me),
+          // A WhatsApp message is answered on WhatsApp (the server signs it and picks text or the template).
+          reply: m.email || m.purpose === "whatsapp" ? {
+            to: m.purpose === "whatsapp" ? "WhatsApp · " + (m.phone || "") : m.email, purpose: m.purpose, draft: crMsgDraft(m, ctx.me),
             vars: { first, name: m.name || "", ref: m.ref || "", me: ctx.me && ctx.me.name ? ctx.me.name + "\nNext Generation Genius" : "Next Generation Genius" },
             send: async (body, close) => {
               const x = await NGGApi.admin.contact.reply(m.id, body, close);

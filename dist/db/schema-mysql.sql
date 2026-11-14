@@ -5273,3 +5273,18 @@ INSERT INTO schema_version (version) VALUES (231) ON DUPLICATE KEY UPDATE versio
 -- 232: a leave request sent less than 24 hours before the day it excuses (domain/member-self.php).
 ALTER TABLE member_requests ADD COLUMN shortNotice INT NOT NULL DEFAULT 0;
 INSERT INTO schema_version (version) VALUES (232) ON DUPLICATE KEY UPDATE version = version;
+
+-- 233: WhatsApp through Kapso (domain/kapso.php).
+CREATE TABLE IF NOT EXISTS whatsapp_messages (
+  wamid VARCHAR(191) NOT NULL PRIMARY KEY,
+  direction VARCHAR(8) NOT NULL DEFAULT 'out',
+  phone VARCHAR(32) NOT NULL DEFAULT '',
+  body TEXT NULL,
+  kind VARCHAR(32) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT '',
+  error VARCHAR(255) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_wa_phone (phone, direction, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (233) ON DUPLICATE KEY UPDATE version = version;

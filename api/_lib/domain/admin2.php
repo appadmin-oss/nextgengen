@@ -1340,10 +1340,25 @@ function admin_contact_reply(array $p): array {
     if (mb_strlen($body) > CONTACT_REPLY_MAX) return ['ok' => false, 'error' => 'reply_too_long', 'message' => 'A reply is at most ' . CONTACT_REPLY_MAX . ' characters.'];
     $m = db_row('SELECT * FROM contact_messages WHERE id = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $me = $g['requester'];
+    /* A message that came in on WhatsApp (domain/kapso.php) is answered on WhatsApp: as plain text inside the
+       24 hours after they last wrote, otherwise as the approved template. Nothing is recorded unless it went. */
+    if ((string)$m['purpose'] === 'whatsapp') {
+        if (!function_exists('kapso_on') || !kapso_on()) return ['ok' => false, 'error' => 'whatsapp_off', 'message' => 'WhatsApp (Kapso) is not set up, so this cannot be answered from here.'];
+        $phone = (string)$m['phone'];
+        $sign = "\n\n— " . (string)($me['fullName'] ?? 'The NGG team') . ', Next Generation Genius';
+        $r = kapso_window_open($phone) ? kapso_send_text($phone, $body . $sign) : kapso_send_template($phone, $body . $sign);
+        if (empty($r['ok'])) return ['ok' => false, 'error' => 'send_failed', 'message' => 'WhatsApp did not accept the reply, so nothing was recorded. Try again in a moment.'];
+        $at = now_iso();
+        db_insert('contact_replies', ['messageId' => $id, 'body' => $body, 'sentBy' => (string)$me['memberId'], 'sentByName' => (string)($me['fullName'] ?? ''), 'sentAt' => $at, 'channel' => 'whatsapp']);
+        $status = !empty($p['close']) ? 'archived' : 'replied';
+        db_update('contact_messages', ['status' => $status], ['id' => $id]);
+        audit('admin.contact.reply', $me['memberId'], (string)$id, ['ref' => (string)$m['ref'], 'chars' => mb_strlen($body), 'status' => $status, 'channel' => 'whatsapp'], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'status' => $status, 'reply' => ['body' => $body, 'sentBy' => (string)$me['memberId'], 'sentByName' => (string)($me['fullName'] ?? ''), 'sentAt' => $at, 'channel' => 'whatsapp']];
+    }
     $to = trim((string)$m['email']);
     if (!filter_var($to, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'no_email', 'message' => 'This message has no email address to reply to.'];
 
-    $me = $g['requester'];
     $first = explode(' ', trim((string)$m['name']))[0] ?: 'there';
     $subject = 'Re: ' . ((string)$m['subject'] !== '' ? (string)$m['subject'] : 'Your message to Next Generation Genius') . ' (' . (string)$m['ref'] . ')';
     $html = email_template([

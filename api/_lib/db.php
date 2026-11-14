@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 232;
+const NGG_SCHEMA_TARGET = 233;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6488,6 +6488,23 @@ function db_migrate(PDO $db): void {
            still sent — it may be a verifiable emergency — but the desk sees how much notice was given,
            fixed at the moment it was sent (member_leave_notice in domain/member-self.php). */
         232 => "ALTER TABLE member_requests ADD COLUMN shortNotice INTEGER NOT NULL DEFAULT 0;",
+        /* WhatsApp through Kapso (owner, 14 Nov 2026; domain/kapso.php). One row per message either way: an outgoing
+           one keeps its number and words so a "failed" webhook can send them by SMS; an incoming one is the
+           de-duplication key (a webhook may be delivered twice) and starts the 24-hour reply window. */
+        233 => "
+            CREATE TABLE IF NOT EXISTS whatsapp_messages (
+              wamid TEXT PRIMARY KEY,
+              direction TEXT NOT NULL DEFAULT 'out',
+              phone TEXT NOT NULL DEFAULT '',
+              body TEXT NOT NULL DEFAULT '',
+              kind TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT '',
+              error TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wa_phone ON whatsapp_messages(phone, direction, createdAt);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

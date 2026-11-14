@@ -430,6 +430,33 @@ Setting `cloudinary` is still worth doing for a real deployment — it brings th
 CDN, the face-aware crop and the identity-safe enhancement pass, and it keeps
 image bytes out of your database backups.
 
+### WhatsApp through Kapso (optional)
+
+With Kapso set, every text the site sends goes on WhatsApp first and by SMS when WhatsApp cannot deliver it,
+and parents' WhatsApp replies arrive in the Control Room inbox (`api/_lib/domain/kapso.php`). Sign-in codes
+always stay on SMS. Set it in the Control Room (Settings → API keys → WhatsApp (Kapso)), no file editing:
+
+1. **Connect the number in Kapso** (app.kapso.ai) and copy its **Phone number ID** and a project **API key**.
+2. **Create one template** in Kapso: category *Utility*, name `ngg_message` (or your own, typed into
+   "Template name"), language `en`, body `Next Generation Genius: {{1}}`. Wait for Meta to approve it.
+   WhatsApp only lets a business start a conversation with an approved template, so until it is approved
+   every message falls back to SMS.
+3. **Add a webhook** in Kapso pointing at `https://<your site>/api/hooks/kapso.php`, for the message
+   received, sent, delivered and failed events. Copy its **secret key** into "Webhook secret". Deliveries
+   are checked against it (HMAC-SHA256 of the raw body); without it the endpoint refuses everything.
+4. Press **Test** on the Kapso card: it reads the number's details from Kapso and sends nothing.
+
+How it behaves:
+
+- A message is the template with the text as its one parameter, made one line (WhatsApp refuses
+  newlines in a parameter). If Kapso refuses it, the same text goes by SMS straight away.
+- If WhatsApp accepts it but later reports it **failed** (for example the number is not on WhatsApp),
+  the webhook sends the same words by SMS, once.
+- A parent's WhatsApp message becomes an inbox **Message** (purpose WhatsApp), named from the family
+  record when the number matches a guardian or member. Further messages within a week join the same
+  thread. Replying from the inbox answers on WhatsApp: plain text within 24 hours of their last message,
+  the template after that.
+
 ### AI providers and the analyst panel
 
 Eleven providers are supported and every one is optional. Keys can be entered
