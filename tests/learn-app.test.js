@@ -91,10 +91,6 @@ function cleanup() {
       + `db_insert('curriculum_checks', ['checkId'=>'LRN-C1','unitId'=>'LRN-U1','kind'=>'mcq','prompt'=>'How many white keys in an octave?','options'=>json_encode(['5','7','8']),'answer'=>'1','rubric'=>'','points'=>2,'position'=>1,'source'=>'manual']);`
       + `db_insert('curriculum_units', ['unitId'=>'LRN-U2','course'=>'Piano','level'=>'Year 1 · Foundation','week'=>2,'position'=>1,'title'=>'The C major scale','summary'=>'Thumb under.','status'=>'published','passMark'=>50,'version'=>1,'objectives'=>json_encode(['Play C major']),'body'=>'Play it slowly.','durationMins'=>30,'createdAt'=>${now},'updatedAt'=>${now},'publishedAt'=>${now}]);`
       + `db_insert('curriculum_checks', ['checkId'=>'LRN-C2','unitId'=>'LRN-U2','kind'=>'mcq','prompt'=>'Which finger starts?','options'=>json_encode(['Thumb','Little finger']),'answer'=>'0','rubric'=>'','points'=>2,'position'=>1,'source'=>'manual']);`
-      /* A real lesson from the shipped Foundation course, for the lesson in steps (14 Nov 2026): taken from the
-         seed file, not written to suit the test. No course, so the Piano course keeps its two lessons. */
-      + `$L = array_values(array_filter(curriculum_seed_files()['tech-foundations-2026']['lessons'], fn($x) => $x['course'] === 'Artificial Intelligence'))[1];`
-      + `db_insert('curriculum_units', ['unitId'=>'LRN-U9','course'=>'','level'=>'Year 1 · Foundation','week'=>1,'position'=>9,'title'=>$L['title'],'summary'=>$L['summary'],'status'=>'published','passMark'=>50,'version'=>1,'objectives'=>json_encode($L['objectives']),'body'=>$L['body'],'durationMins'=>45,'createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`
     , ['bootstrap']);
 
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -437,6 +433,10 @@ function cleanup() {
 
     console.log('the lesson in steps');
     {
+      /* A real lesson from the shipped Foundation course (the seed file, not text written to suit the test).
+         Added HERE, after the home screen's counts were checked, so "0 of 2 lessons" still means the Piano pair. */
+      php(`$L = array_values(array_filter(curriculum_seed_files()['curriculum-tech-foundations-2026']['lessons'], fn($x) => $x['course'] === 'Artificial Intelligence'))[1];`
+        + `db_insert('curriculum_units', ['unitId'=>'LRN-U9','course'=>'','level'=>'Year 1 · Foundation','week'=>1,'position'=>9,'title'=>$L['title'],'summary'=>$L['summary'],'status'=>'published','passMark'=>50,'version'=>1,'objectives'=>json_encode($L['objectives']),'body'=>$L['body'],'durationMins'=>45,'createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`, ['bootstrap']);
       const S = await open('/learn/lesson/LRN-U9', 390);
       await S.waitForSelector('.lrn-lesson', { timeout: 60000 });
       const skip9 = await S.$('.lrn-lesson button:has-text("Skip")'); if (skip9) await skip9.click();
