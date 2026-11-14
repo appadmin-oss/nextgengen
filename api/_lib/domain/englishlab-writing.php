@@ -34,8 +34,8 @@ function eng_writing_forms(): array {
             ['How should a formal letter to “Dear Sir” end?', 'Yours faithfully,', [['Yours sincerely,', 'Used when you name the person (Dear Mrs Adeyemi).'], ['Your loving son,', 'Informal.'], ['Bye for now,', 'Informal.']], '“Dear Sir/Madam” → “Yours faithfully”.'],
             ['How should a formal letter to “Dear Mr Okeke” end?', 'Yours sincerely,', [['Yours faithfully,', 'Used when you do NOT name the person.'], ['Yours truly loving,', 'Not a standard ending.'], ['Cheers,', 'Informal.']], 'A named addressee → “Yours sincerely”.'],
             ['In a formal letter, whose address goes at the top right?', 'the writer’s', [['the receiver’s', 'The receiver’s address goes on the left, below.'], ['nobody’s', 'Formal letters carry both addresses.'], ['the post office’s', 'Not used.']], 'The writer’s address is at the top right.'],
-            ['Where does the receiver’s address go in a formal letter?', 'on the left, below the writer’s address and date', [['at the top right', 'That is the writer’s address.'], ['at the bottom', 'Not standard.'], ['it is left out', 'A formal letter includes it.']], 'Receiver’s address: left side, below.'],
-            ['What comes right after the salutation in a formal letter?', 'a heading (title) stating the subject', [['the date', 'The date is near the top.'], ['the signature', 'The signature is at the end.'], ['a greeting to the family', 'That belongs in an informal letter.']], 'A formal letter has a heading after “Dear Sir,”.'],
+            ['Where does the receiver’s address go in a formal letter?', 'on the left, below the writer’s address and date', [['at the top right, above the writer’s address', 'That corner holds the writer’s own address.'], ['at the bottom, below the writer’s signature', 'Not standard: it comes before the salutation.'], ['it is left out', 'A formal letter includes it.']], 'Receiver’s address: left side, below.'],
+            ['What comes right after the salutation in a formal letter?', 'a heading (title) stating the subject', [['the date, under the receiver’s address', 'The date is near the top, with the writer’s address.'], ['the signature', 'The signature is at the end.'], ['a greeting to the reader’s family', 'That belongs in an informal letter.']], 'A formal letter has a heading after “Dear Sir,”.'],
         ], '', 'Formal letters have two addresses, a date, a salutation, a heading and a matching ending.'),
         eng_order([
             [['writer’s address', 'date', 'receiver’s address', 'salutation', 'heading', 'body', 'complimentary close', 'signature and name'], 'This is the standard order of a formal letter.'],
@@ -49,25 +49,25 @@ function eng_writing_forms(): array {
     ],
     'EN-053' => [
         eng_choose([
-            ['How many addresses does an informal letter to a friend usually carry?', 'one — the writer’s', [['two', 'Only formal letters carry the receiver’s address.'], ['none', 'The writer’s address is included.'], ['three', 'Not standard.']], 'An informal letter carries only the writer’s address and the date.'],
+            ['How many addresses does an informal letter to a friend usually carry?', 'one — the writer’s', [['two — both addresses', 'Only formal letters carry the receiver’s address.'], ['none at all', 'The writer’s address is included, so your friend can reply.'], ['one — the friend’s', 'The friend’s address goes on the envelope; the letter carries the writer’s.']], 'An informal letter carries only the writer’s address and the date.'],
             ['Which salutation suits a letter to your cousin?', 'Dear Ifeoma,', [['Dear Sir,', 'Formal.'], ['To whom it may concern,', 'Formal.'], ['Dear Madam,', 'Formal.']], 'A friendly letter uses the person’s name.'],
             ['Which ending suits a letter to your best friend?', 'Your friend,', [['Yours faithfully,', 'Formal.'], ['Yours sincerely, Principal', 'Formal.'], ['Respectfully submitted,', 'Formal.']], 'Informal endings: Your friend, Yours affectionately, With love.'],
             ['Does an informal letter need a heading (title)?', 'no', [['yes, in capitals', 'Headings are for formal letters.'], ['yes, underlined', 'Headings are for formal letters.'], ['only at the end', 'Not standard.']], 'No heading in an informal letter.'],
         ], '', 'Friendly letters are warmer and simpler in layout.'),
         eng_choose([
-            ['Which opening suits a letter to a friend?', 'It has been a while! I hope you and your family are well.', [['I write to inform you of my decision.', 'Formal.'], ['With reference to your letter dated 3rd June…', 'Formal.'], ['Sir, I humbly request…', 'Formal.']], 'Informal letters open warmly.'],
+            ['Which opening suits a letter to a friend?', 'It has been a while! I hope you and your family are well.', [['I write to inform you of my decision on the matter.', 'Formal.'], ['With reference to your letter dated 3rd June…', 'Formal.'], ['Sir, I humbly request a moment of your time.', 'Formal.']], 'Informal letters open warmly.'],
             ['Which closing paragraph suits a letter to a friend?', 'Greet everyone at home for me. Write back soon!', [['I look forward to your favourable reply.', 'Formal.'], ['Thank you for your anticipated cooperation.', 'Formal.'], ['Kindly treat as urgent.', 'Formal.']], 'Informal letters close warmly.'],
         ], '', 'Warm, personal, but still correct English.', 'concept', 35),
         eng_spot([
-            [['Dear Tunde,', 'APPLICATION FOR FRIENDSHIP', 'how is school?', 'Your friend, Bayo'], 1, '', 'An informal letter has no heading.'],
+            [['Dear Tunde,', 'APPLICATION FOR FRIENDSHIP', 'how is school? Your friend,', 'Bayo'], 1, '', 'An informal letter has no heading.'],
             [['Dear Amaka,', 'I miss you so much!', 'Write back soon.', 'Yours faithfully,'], 3, 'Your friend,', 'A friendly letter ends warmly, not formally.'],
         ], 'Informal letters drop the formal parts.'),
     ],
     'EN-054' => [
         eng_choose([
-            ['Which is the best topic sentence for a paragraph about why students should learn to cook?', 'Learning to cook gives students skills they will use for life.', [['I made rice yesterday.', 'An anecdote, not a topic sentence.'], ['Cooking.', 'Not a sentence.'], ['Some people cook and some people do not.', 'Says nothing arguable.']], 'A topic sentence states the paragraph’s point.'],
-            ['Which is the best topic sentence for a paragraph about the dangers of social media?', 'Social media can harm young people’s sleep, focus and self-esteem.', [['I have three social media accounts.', 'An anecdote.'], ['Social media is a thing on phones.', 'Vague.'], ['Many people use phones.', 'Off the point.']], 'It names the topic and the claim.'],
-            ['Which is the best topic sentence for a paragraph about keeping the school clean?', 'A clean school is healthier and pleasanter for everyone.', [['There was paper on the floor today.', 'A detail.'], ['Schools have floors.', 'Off the point.'], ['Cleaning.', 'Not a sentence.']], 'States the paragraph’s main claim.'],
+            ['Which is the best topic sentence for a paragraph about why students should learn to cook?', 'Learning to cook gives students skills they will use for life.', [['I made jollof rice for the whole family yesterday.', 'An anecdote, not a topic sentence.'], ['Cooking.', 'Not a sentence.'], ['Some people cook and some people do not.', 'Says nothing arguable.']], 'A topic sentence states the paragraph’s point.'],
+            ['Which is the best topic sentence for a paragraph about the dangers of social media?', 'Social media can harm young people’s sleep, focus and self-esteem.', [['I have three social media accounts and use them every day.', 'An anecdote.'], ['Social media is something people use on their phones.', 'Vague: it makes no claim to prove.'], ['Many people use phones.', 'Off the point.']], 'It names the topic and the claim.'],
+            ['Which is the best topic sentence for a paragraph about keeping the school clean?', 'A clean school is healthier and pleasanter for everyone.', [['There was paper on the floor of our classroom today.', 'A detail.'], ['Every school has classrooms, offices and a field.', 'Off the point.'], ['Cleaning.', 'Not a sentence.']], 'States the paragraph’s main claim.'],
         ], '', 'A topic sentence says what the paragraph will prove.', 'concept', 40),
         eng_choose([
             ['Topic: “Trees help our environment.” Which sentence does NOT belong in this paragraph?', 'My favourite fruit is the mango.', [['Trees give shade on hot days.', 'Supports the topic.'], ['Their roots stop soil erosion.', 'Supports the topic.'], ['They take in carbon dioxide.', 'Supports the topic.']], 'Every sentence must support the topic sentence.'],
@@ -91,7 +91,7 @@ function eng_writing_forms(): array {
         eng_choose([
             ['Which linking word shows CONTRAST?', 'nevertheless', [['furthermore', 'Adds.'], ['consequently', 'Result.'], ['firstly', 'Sequence.']], 'Nevertheless = however.'],
             ['Which linking word shows RESULT?', 'consequently', [['nevertheless', 'Contrast.'], ['in addition', 'Adds.'], ['for instance', 'Example.']], 'Consequently = as a result.'],
-            ['Which linking word ADDS a point?', 'furthermore', [['however', 'Contrast.'], ['thus', 'Result.'], ['finally', 'Sequence/ending.']], 'Furthermore = in addition.'],
+            ['Which linking word ADDS a point?', 'furthermore', [['nevertheless', 'Contrast.'], ['therefore', 'Result.'], ['finally', 'Sequence/ending.']], 'Furthermore = in addition.'],
         ], '', 'Learn the linking words by job.', 'concept', 25),
         eng_type([
             ['We wanted to go out; ___, it was raining. (contrast)', 'however', ['but', 'nevertheless'], 'Contrast: however.'],
@@ -129,7 +129,7 @@ function eng_writing_forms(): array {
         eng_spot([
             [['He', 'borrowed me', 'his bicycle', 'yesterday.'], 1, 'lent me', 'You borrow FROM someone; he LENT you his bicycle.'],
             [['Please', 'on', 'the fan;', 'it is hot.'], 1, 'switch on', '“On” is not a verb.'],
-            [['The', 'two', 'of us', 'are same age.'], 3, 'are the same age.', '“Same” needs “the”: the same age.'],
+            [['The two', 'of us', 'are same', 'age.'], 2, 'are the same', '“Same” needs “the”: the same age.'],
             [['I', 'am', 'having', 'three brothers.'], 2, 'have', '“Have” for possession is not used in the continuous: I have three brothers.'],
         ], 'Watch borrow/lend, on/off as verbs, and “having” for possession.'),
         eng_type([
@@ -156,10 +156,10 @@ function eng_writing_forms(): array {
     ],
     'EN-059' => [
         eng_choose([
-            ['A report to your principal on a school trip should be written in:', 'a formal, factual style with a title and clear sections', [['a chatty style with jokes', 'Too informal.'], ['the style of a poem', 'Not suitable.'], ['text-message abbreviations', 'Not suitable.']], 'Reports are formal and factual.'],
-            ['A speech to your classmates should:', 'address the audience directly and stay engaging', [['have two addresses at the top', 'That is a letter.'], ['end with “Yours faithfully”', 'That is a letter.'], ['be written in note form', 'A speech is delivered in full sentences.']], 'Speeches address the audience (“Fellow students…”).'],
-            ['An article for a school magazine should have:', 'a catchy title and the writer’s name', [['two addresses', 'That is a letter.'], ['a salutation like “Dear Sir”', 'That is a letter.'], ['a date at the top right', 'That is a letter.']], 'Articles have a title and a byline.'],
-            ['Which opening suits a speech at a prize-giving day?', 'The Principal, distinguished guests, fellow students: good morning.', [['Dear Sir,', 'A letter opening.'], ['TITLE: A REPORT ON THE PRIZE-GIVING', 'A report heading.'], ['Hi guys, what’s up?', 'Too informal for the occasion.']], 'A speech opens by recognising the audience.'],
+            ['A report to your principal on a school trip should be written in:', 'a formal, factual style with a title and clear sections', [['a chatty, friendly style with jokes and stories', 'Too informal for a principal.'], ['the style of a poem, with rhymes and verses', 'Not suitable.'], ['text-message abbreviations', 'Not suitable.']], 'Reports are formal and factual.'],
+            ['A speech to your classmates should:', 'address the audience directly and stay engaging', [['have two addresses and a date at the top', 'That is a letter.'], ['end with “Yours faithfully” and a signature', 'That is a letter.'], ['be written in note form', 'A speech is delivered in full sentences.']], 'Speeches address the audience (“Fellow students…”).'],
+            ['An article for a school magazine should have:', 'a catchy title and the writer’s name', [['two addresses, one on each side', 'That is a letter.'], ['a salutation like “Dear Sir”', 'That is a letter.'], ['a date at the top right', 'That is a letter.']], 'Articles have a title and a byline.'],
+            ['Which opening suits a speech at a prize-giving day?', 'The Principal, distinguished guests, fellow students: good morning.', [['Dear Sir, I write to tell you about the prize-giving.', 'A letter opening.'], ['A REPORT ON THE PRIZE-GIVING DAY HELD IN THE SCHOOL HALL', 'A report heading.'], ['Hi guys, what’s up?', 'Too informal for the occasion.']], 'A speech opens by recognising the audience.'],
         ], '', 'Match the format to the occasion and the reader.'),
         eng_choose([
             ['You are writing to a newspaper editor about bad roads. Which form?', 'a formal letter', [['an informal letter', 'The editor is not a friend.'], ['a diary entry', 'Not sent to anyone.'], ['a poem', 'Not suitable.']], 'Letters to editors are formal.'],
@@ -174,13 +174,13 @@ function eng_writing_forms(): array {
     'EN-060' => [
         eng_choose([
             ['Which is a CLAIM (the writer’s main point)?', 'Schools should provide free lunch.', [['Many pupils skip breakfast.', 'Evidence.'], ['A study found hungry pupils score lower.', 'Evidence.'], ['For example, in our class, five pupils skipped breakfast today.', 'An example.']], 'A claim is what the writer wants you to accept.'],
-            ['Which is EVIDENCE for the claim “Reading daily improves vocabulary”?', 'Students who read for 20 minutes a day learned more new words in a term than those who did not.', [['Reading is fun.', 'An opinion, not evidence.'], ['Everyone should read.', 'Another claim.'], ['Books are sold in shops.', 'Irrelevant.']], 'Evidence is information that supports the claim.'],
-            ['Which is a COUNTER-ARGUMENT to “Phones should be banned in school”?', 'Phones can be used for research and emergencies.', [['Phones distract students.', 'Supports the claim.'], ['Phones are expensive.', 'Off the point.'], ['Phones should be banned.', 'The claim itself.']], 'A counter-argument is a reason on the other side.'],
+            ['Which is EVIDENCE for the claim “Reading daily improves vocabulary”?', 'Students who read for 20 minutes a day learned more new words in a term than those who did not.', [['Reading is fun, and every student I know enjoys a good storybook.', 'An opinion, not evidence.'], ['Everyone should read every day, because a wide vocabulary helps in every subject.', 'Another claim with a reason, but no evidence.'], ['Books are sold in shops and markets in every town.', 'Irrelevant.']], 'Evidence is information that supports the claim.'],
+            ['Which is a COUNTER-ARGUMENT to “Phones should be banned in school”?', 'Phones can be used for research and emergencies.', [['Phones distract students during lessons.', 'Supports the claim.'], ['Phones are expensive for many families.', 'Off the point.'], ['Phones should be banned.', 'The claim itself.']], 'A counter-argument is a reason on the other side.'],
         ], '', 'Claim → reasons → evidence → answer the other side.', 'reasoning', 45),
         eng_choose([
             ['“Everyone I know likes Afrobeats, so it must be the best music.” What is wrong with this argument?', 'It generalises from too few people.', [['It uses evidence from a study.', 'It does not.'], ['It considers the other side.', 'It does not.'], ['Nothing; it is a strong argument.', 'Liking something is not proof it is best.']], 'A hasty generalisation from a small group.'],
-            ['“You can’t trust his idea about the school farm — he failed mathematics.” What is wrong?', 'It attacks the person instead of the idea.', [['It uses statistics.', 'It does not.'], ['It gives an example.', 'Not the flaw.'], ['Nothing; it is fair.', 'His maths grade says nothing about the farm idea.']], 'An attack on the person (ad hominem), not the argument.'],
-            ['“Either we ban phones completely or students will fail.” What is wrong?', 'It offers only two options when there are others.', [['It is too short.', 'Not the flaw.'], ['It uses a linking word.', 'Not the flaw.'], ['Nothing; it is logical.', 'There are middle options (rules for phone use).']], 'A false choice (false dilemma).'],
+            ['“You can’t trust his idea about the school farm — he failed mathematics.” What is wrong?', 'It attacks the person instead of the idea.', [['It uses statistics.', 'It does not.'], ['It gives an example to support its point.', 'It gives no example; that is not the flaw.'], ['Nothing; it is fair.', 'His maths grade says nothing about the farm idea.']], 'An attack on the person (ad hominem), not the argument.'],
+            ['“Either we ban phones completely or students will fail.” What is wrong?', 'It offers only two options when there are others.', [['It is too short to be a real argument.', 'Length is not the flaw.'], ['It uses a linking word to join two ideas.', 'Using “or” is not a flaw in itself.'], ['Nothing; it is logical.', 'There are middle options (rules for phone use).']], 'A false choice (false dilemma).'],
         ], '', 'Look for weak reasoning, not just disagreement.', 'reasoning', 50),
         eng_order([
             [['Schools should start later in the morning.', 'Teenagers naturally fall asleep later at night.', 'Studies show that tired students learn less.', 'Some say this will shorten the school day, but the timetable can be adjusted.', 'Therefore, a later start would improve learning.'], 'Claim, reason, evidence, counter-argument answered, conclusion.'],

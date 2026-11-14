@@ -38484,6 +38484,33 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('english · “Type fact or opinion” is treated as the choice it is', $fo !== null && empty($fo['typed']) && mlb_is_choice($fo));
 })();
 
+/* ── The length tell (owner, 13–14 Nov 2026): a guesser who never reads the question must not win by picking the longest option ── */
+/* One row is allowed on purpose: EN-006 asks which word of “She sings beautifully in the choir” is an
+   adverb, so every wrong option must be a word of that sentence, and none is as long as “beautifully”.
+   A longer phrase (“in the choir”) would be a second right answer. */
+(function () {
+    lab_use('english');
+    $seen = []; $n = 0; $longest = 0; $shortest = 0; $clear = []; $chance = 0.0;
+    foreach (mlb_stages() as $sg) foreach ($sg['comps'] as $c) foreach (mlb_forms_of($c) as $f => $fn) {
+        $rf = new ReflectionFunction($fn); if (basename($rf->getFileName()) !== 'englishlab-kit.php') continue;
+        $sv = $rf->getStaticVariables(); if (!isset($sv['rows'])) continue; $rows = $sv['rows']; $first = $rows[0] ?? null;
+        $isChoose = is_array($first[2] ?? null) && is_array($first[2][0] ?? null) && is_string($first[1] ?? null);
+        $isSpot = !$isChoose && is_array($first[0] ?? null); if (!$isChoose && !$isSpot) continue;
+        foreach ($rows as $row) {
+            $h = md5(json_encode($row)); if (isset($seen[$h])) continue; $seen[$h] = 1;
+            $o = $isChoose ? array_merge([(string)$row[1]], array_map(static fn($w) => (string)$w[0], $row[2])) : array_map('strval', $row[0]);
+            $k = $isChoose ? 0 : (int)$row[1];
+            $l = array_map('mb_strlen', $o); $kl = $l[$k]; unset($l[$k]); $mo = max($l); $mn = min($l);
+            $n++; $chance += 1 / count($o); if ($kl > $mo) $longest++; if ($kl < $mn) $shortest++;
+            if ($kl > $mo && $kl >= 1.25 * $mo && $kl - $mo >= 4) $clear[] = "$c f$f";
+        }
+    }
+    $pc = static fn($x) => round(100 * $x / max(1, $n));
+    chk('english · no choice question gives its answer away by being clearly the longest option (' . count($clear) . ' of ' . $n . ($clear ? ': ' . implode(', ', array_slice(array_unique($clear), 0, 6)) : '') . ')', count(array_diff($clear, ['EN-006 f0'])) === 0);
+    chk('english · “pick the longest” is no better than chance (' . $pc($longest) . '% vs ' . $pc($chance) . '%), and “pick the shortest” is not a new tell (' . $pc($shortest) . '%)',
+        $longest <= $chance + 0.05 * $n && $shortest <= $chance + 0.05 * $n);
+})();
+
 /* ── No over-practice (9 Nov 2026) ── */
 (function () {
     lab_use('maths'); $now = now_iso();

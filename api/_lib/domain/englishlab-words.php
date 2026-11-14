@@ -208,7 +208,7 @@ function eng_words_forms(): array {
     ],
     'EN-010' => [
         eng_choose([
-            ['brave', 'courageous', [['coward', 'That is the opposite.'], ['brief', 'Sounds similar, means “short”.'], ['angry', 'A different feeling.']], 'Brave and courageous mean the same.'],
+            ['brave', 'courageous', [['cowardly', 'That is the opposite.'], ['boastful', 'Brave people may boast, but boastful means proud talk, not courage.'], ['furious', 'A different feeling.']], 'Brave and courageous mean the same.'],
             ['big', 'large', [['little', 'That is the opposite.'], ['heavy', 'Related, but it is about weight.'], ['tall', 'That is about height.']], 'Big and large mean the same.'],
             ['begin', 'start', [['finish', 'That is the opposite.'], ['continue', 'That is going on, not starting.'], ['wait', 'A different action.']], 'Begin and start mean the same.'],
             ['rich', 'wealthy', [['poor', 'That is the opposite.'], ['proud', 'A different quality.'], ['busy', 'A different quality.']], 'Rich and wealthy mean the same.'],
