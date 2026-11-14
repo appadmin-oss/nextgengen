@@ -36338,8 +36338,31 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 })();
 
 (function () {
+    // 6 · The daily job reminds who has not handed in: once when it is due tomorrow, once when it is overdue.
+    $ins = $GLOBALS['__asgx_ins'];
+    $rem = fn($m) => (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = ? AND title = 'Reminder: Due soon'", [$m])['c'];
+    $id = staff_assignments_save($ins + ['data' => ['title' => 'Due soon', 'track' => 'Coding', 'instructions' => 'Do it.', 'status' => 'published', 'proof' => 'text',
+        'dueAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 20 * 3600)]])['assignmentId'] ?? '';
+    assignment_submit(['memberId' => 'ASGX-B', 'assignmentId' => $id, 'text' => 'Done early.']);
+    $run = fn() => function_exists('assignment_due_reminders') ? assignment_due_reminders() : null;
+    $r1 = $run();
+    chk('assign audit 6 · due tomorrow: those who have not handed in are reminded', is_array($r1) && $rem('ASGX-A') === 1 && $rem('ASGX-C') === 1);
+    chk('assign audit 6 · …not the member who handed in', $rem('ASGX-B') === 0);
+    $run();
+    chk('assign audit 6 · …and only once, however often the job runs', $rem('ASGX-A') === 1);
+    db_exec('UPDATE assignments SET dueAt = ? WHERE assignmentId = ?', [gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 3600), $id]);
+    $run(); $run();
+    chk('assign audit 6 · overdue: one more reminder, once', $rem('ASGX-A') === 2 && $rem('ASGX-B') === 0);
+    $id2 = staff_assignments_save($ins + ['data' => ['title' => 'Draft due', 'track' => 'Coding', 'instructions' => 'x', 'status' => 'draft', 'dueAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3600)]])['assignmentId'] ?? '';
+    $run();
+    chk('assign audit 6 · a draft is never reminded about', !db_row("SELECT 1 FROM notifications WHERE memberId = 'ASGX-A' AND title = 'Reminder: Draft due'"));
+    chk('assign audit 6 · the scheduler runs it', array_key_exists('assign_due', web_cron_jobs()));
+    db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$id]); db_exec("DELETE FROM assignments WHERE assignmentId IN (?, ?)", [$id, $id2]);
+})();
+
+(function () {
     $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__asgx_aid'];
-    foreach (['assignment_submissions' => 'memberId', 'notifications' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
+    foreach (['assignment_submissions' => 'memberId', 'assignment_notices' => 'memberId', 'notifications' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
     db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);
     db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-ASGX'");
 })();

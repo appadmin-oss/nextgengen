@@ -87,6 +87,7 @@ function web_cron_jobs(): array {
     $add('mentorship',   21600,  $has('ms_rules_run'), false);
     $add('mentor_jobs',  600,    $has('mpa_tick'), true);
     $add('assign_auto',  21600,  $has('assignment_auto_issue'), false);
+    $add('assign_due',   86400,  $has('assignment_due_reminders'), false);                    // due tomorrow / overdue: once per member per kind
     $add('wifi_silent',  900,    $has('wifi_silent_digest'), true);
     $add('club_ann',     600,    $has('cp_ann_due_tick'), true);
     $add('media_sweep',  86400,  $has('media_obj_sweep'), true);

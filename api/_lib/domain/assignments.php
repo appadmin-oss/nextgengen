@@ -805,9 +805,7 @@ function staff_assignments_remind(array $p): array {
     $sub = sub_ids_for($a['assignmentId']);
     $targets = array_values(array_filter(assignment_audience($a), fn($m) => !isset($sub[$m['memberId']])
         && assignment_centre_in_scope($g, (string)$m['centre'])));
-    $due = assignment_due_ts($a);
-    foreach ($targets as $m) push_notification((string)$m['memberId'], ['kind' => 'announcement', 'title' => 'Reminder: ' . $a['title'],
-        'body' => ($due ? ($due < time() ? 'This was due ' . gmdate('D j M', $due) . '. ' : 'Due ' . gmdate('D j M', $due) . '. ') : '') . 'Open your dashboard to hand it in.', 'linkPage' => 'dashboard']);
+    foreach ($targets as $m) assignment_remind_push($a, (string)$m['memberId']);
     db_update('assignments', ['remindedAt' => now_iso()], ['id' => $a['id']]);
     audit('assignment.remind', $g['me'], (string)$a['assignmentId'], ['count' => count($targets)], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'reminded' => count($targets)];
@@ -826,6 +824,45 @@ const ASG_DRAFT_REFUSED = 'Work has been handed in for this one, so it cannot go
 function assignment_notice_claim(string $assignmentId, string $memberId, string $kind): bool {
     $verb = db_driver() === 'mysql' ? 'INSERT IGNORE' : 'INSERT OR IGNORE';
     return db_exec($verb . ' INTO assignment_notices (assignmentId, memberId, kind, sentAt) VALUES (?, ?, ?, ?)', [$assignmentId, $memberId, $kind, now_iso()]) === 1;
+}
+
+/** The reminder itself — one wording for the desk's button and the daily job. */
+function assignment_remind_push(array $a, string $memberId): void {
+    $due = assignment_due_ts($a);
+    push_notification($memberId, ['kind' => 'announcement', 'title' => 'Reminder: ' . $a['title'],
+        'body' => ($due ? ($due < time() ? 'This was due ' . gmdate('D j M', $due) . '. ' : 'Due ' . gmdate('D j M', $due) . '. ') : '') . 'Open your dashboard to hand it in.', 'linkPage' => 'dashboard']);
+}
+
+const ASG_DUE_SOON_WINDOW = 129600;   // 36 h: a daily run always meets a deadline inside it at least once
+const ASG_OVERDUE_WINDOW  = 604800;   // a week after the deadline it is staff's call, not the job's
+
+/**
+ * The daily job (web-cron 'assign_due'): members who have not handed in a
+ * published assignment are reminded once when it is due within the next day
+ * and a half ('due_soon') and once when it is overdue, for up to a week
+ * ('overdue'). Once per member, assignment and kind — assignment_notices is
+ * the claim — so the job may run as often as it likes. An assignment staff
+ * reminded by hand in the last day waits for the next run.
+ */
+function assignment_due_reminders(?int $now = null): array {
+    $now = $now ?? time();
+    $sent = 0; $touched = [];
+    foreach (db_all("SELECT * FROM assignments WHERE status = 'published' AND COALESCE(dueAt, '') <> ''") as $a) {
+        $due = assignment_due_ts($a);
+        if (!$due) continue;
+        $kind = ($due > $now && $due - $now <= ASG_DUE_SOON_WINDOW) ? 'due_soon' : (($due <= $now && $now - $due <= ASG_OVERDUE_WINDOW) ? 'overdue' : '');
+        if ($kind === '') continue;
+        if ((strtotime((string)($a['remindedAt'] ?? '')) ?: 0) > $now - ASG_REMIND_QUIET) continue;
+        $handed = sub_ids_for((string)$a['assignmentId']);
+        foreach (assignment_audience($a) as $m) {
+            $mid = (string)$m['memberId'];
+            if (isset($handed[$mid]) || !assignment_notice_claim((string)$a['assignmentId'], $mid, $kind)) continue;
+            assignment_remind_push($a, $mid);
+            $sent++; $touched[(string)$a['assignmentId']] = $kind;
+        }
+    }
+    if ($sent) audit('assignment.remind_auto', 'webcron', '', ['count' => $sent, 'assignments' => $touched], '');
+    return ['ok' => true, 'reminded' => $sent, 'assignments' => count($touched)];
 }
 
 function sub_ids_for(string $assignmentId): array {
