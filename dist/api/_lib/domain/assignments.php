@@ -45,6 +45,11 @@ const ASG_POINTS_MAX = 1000;
 const ASG_TEXT_MAX   = 20000;
 const ASG_REMIND_QUIET = 86400;
 const ASG_BULK_MAX   = 500;
+/* The longest centre and course name save keeps — and the widths of
+ * assignments.centre / .track in db/schema-mysql.sql, which must hold them:
+ * strict MySQL refuses a longer value outright (they were 32 and 64). */
+const ASG_CENTRE_MAX = 80;
+const ASG_TRACK_MAX  = 80;
 
 /* ── Who gets it ─────────────────────────────────────────────────────────── */
 
@@ -453,8 +458,8 @@ function staff_assignments_save(array $p): array {
     $row = [
         'title' => mb_substr(trim((string)($d['title'] ?? ($existing['title'] ?? ''))), 0, 160),
         'instructions' => mb_substr(trim((string)($d['instructions'] ?? ($existing['instructions'] ?? ''))), 0, 8000),
-        'track' => mb_substr(trim((string)($d['track'] ?? ($existing['track'] ?? ''))), 0, 80),
-        'centre' => mb_substr(trim((string)($d['centre'] ?? ($existing['centre'] ?? ''))), 0, 80),
+        'track' => mb_substr(trim((string)($d['track'] ?? ($existing['track'] ?? ''))), 0, ASG_TRACK_MAX),
+        'centre' => mb_substr(trim((string)($d['centre'] ?? ($existing['centre'] ?? ''))), 0, ASG_CENTRE_MAX),
         'sessionId' => mb_substr(trim((string)($d['sessionId'] ?? ($existing['sessionId'] ?? ''))), 0, 40),
         'dueAt' => trim((string)($d['dueAt'] ?? ($existing['dueAt'] ?? ''))),
         'points' => (int)($d['points'] ?? ($existing['points'] ?? 10)),

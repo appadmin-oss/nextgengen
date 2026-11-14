@@ -36318,6 +36318,26 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 })();
 
 (function () {
+    // 5 · The longest centre and course name save accepts fits the MySQL columns it lands in.
+    $sql = (string)file_get_contents(dirname(__DIR__, 2) . '/db/schema-mysql.sql');
+    $width = function (string $col) use ($sql): int {
+        $w = preg_match('/CREATE TABLE IF NOT EXISTS assignments \((.*?)\) ENGINE/s', $sql, $m) && preg_match('/\b' . $col . ' VARCHAR\((\d+)\)/', $m[1], $c) ? (int)$c[1] : 0;
+        if (preg_match_all('/ALTER TABLE assignments MODIFY COLUMN ' . $col . ' VARCHAR\((\d+)\)/', $sql, $mm)) $w = (int)end($mm[1]);
+        return $w;
+    };
+    chk('assign audit 5 · on MySQL, assignments.centre holds the longest centre name save accepts', defined('ASG_CENTRE_MAX') && $width('centre') >= ASG_CENTRE_MAX);
+    chk('assign audit 5 · …and assignments.track the longest course name', defined('ASG_TRACK_MAX') && $width('track') >= ASG_TRACK_MAX);
+    if (db_driver() === 'mysql') {
+        $now = now_iso();
+        db_insert('members', ['memberId' => 'ASGX-ADM', 'fullName' => 'Asgx Admin', 'email' => 'asgx-adm@asgx.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centre' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+        $long = str_repeat('C', ASG_CENTRE_MAX); $course = str_repeat('T', ASG_TRACK_MAX);
+        $r = null; try { $r = staff_assignments_save(['requesterId' => 'ASGX-ADM', 'viaAdmin' => true, 'data' => ['title' => 'Long names', 'centre' => $long, 'track' => $course, 'status' => 'draft']]); } catch (Throwable $e) { $r = ['ok' => false, 'error' => $e->getMessage()]; }
+        chk('assign audit 5 · strict MySQL stores a full-length centre and course name', !empty($r['ok']) && db_row('SELECT centre, track FROM assignments WHERE assignmentId = ?', [$r['assignmentId'] ?? ''])['centre'] === $long);
+        if (!empty($r['assignmentId'])) db_exec('DELETE FROM assignments WHERE assignmentId = ?', [$r['assignmentId']]);
+    }
+})();
+
+(function () {
     $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__asgx_aid'];
     foreach (['assignment_submissions' => 'memberId', 'notifications' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
     db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);
