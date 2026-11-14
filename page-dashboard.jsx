@@ -1022,7 +1022,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                 {/* LEFT MAIN COLUMN */}
                 <div className="dash-main">
                   <section id="sec-today" className="ngg-anchor"><DashboardToday today={today} member={m} onMutate={onMutate} session={session}/></section>
-                  <section id="sec-assignments" className="ngg-anchor"><DashboardAssignments assignments={data.assignments || []} onMutate={onMutate}/></section>
+                  <section id="sec-assignments" className="ngg-anchor"><DashboardAssignments assignments={data.assignments || []} filesMax={data.assignmentFilesMax || 5} onMutate={onMutate}/></section>
                   {/* The Saturday Formation Schedule, the member's part of each block (an NGG member's Saturday; Summer School keeps its own). */}
                   {(m.type || "NGG") === "NGG" && typeof FormationDay === "function" && <section id="sec-saturday" className="ngg-anchor"><FormationDay audience="member" compact={true}/></section>}
                   {mentor && <section id="sec-checkin" className="ngg-anchor"><DashboardCheckin/></section>}
@@ -1608,7 +1608,7 @@ function DashboardMissionRow({ m, onSubmit, busy, done, disabled }) {
 
 // ----------------------------------------------------------------------------
 
-function DashboardAssignments({ assignments, onMutate }) {
+function DashboardAssignments({ assignments, filesMax, onMutate }) {
   if (!assignments || assignments.length === 0) return null;
   const open = assignments.filter(a => !a.submission || a.submission.status === "submitted");
   /* Handed in over set, not graded over set. A member with one new, untouched
@@ -1626,67 +1626,56 @@ function DashboardAssignments({ assignments, onMutate }) {
         </div>
         <div className="dash-today-tally"><span className="dash-today-tally-n">{handedIn.length}</span><span className="dash-today-tally-d">/ {assignments.length} handed in</span></div>
       </div>
-      {open.map(a => <AssignmentCard key={a.assignmentId} a={a} onMutate={onMutate}/>)}
+      {open.map(a => <AssignmentCard key={a.assignmentId} a={a} filesMax={filesMax} onMutate={onMutate}/>)}
       {graded.length > 0 && (
         <div className="dash-mission-group">
           <div className="mono dash-mission-group-h" style={{color:"var(--lime-ink)", opacity:0.7}}>GRADED · {graded.length}</div>
-          {graded.map(a => <AssignmentCard key={a.assignmentId} a={a} onMutate={onMutate}/>)}
+          {graded.map(a => <AssignmentCard key={a.assignmentId} a={a} filesMax={filesMax} onMutate={onMutate}/>)}
         </div>
       )}
     </div>
   );
 }
 
-function AssignmentCard({ a, onMutate }) {
+/* One assignment on the classic dashboard (non-NGG accounts, and ?classic=1).
+   Handing in goes through the same panel the NGG portal uses (assign-desk.jsx
+   AsdHandIn): links, several files, photos, recordings and the success-criteria
+   steps. The old inline form sent only writing and one file, so the server
+   refused every assignment that asked for steps or a link, photo or recording
+   (steps_incomplete, link_required, …) with no way to give it what it wanted. */
+function AssignmentCard({ a, filesMax, onMutate }) {
   const sub = a.submission;
   const graded = sub && sub.status === "graded";
-  const [open, setOpen] = React.useState(false);
-  const [text, setText] = React.useState(sub ? sub.text : "");
-  const [fileUrl, setFileUrl] = React.useState(sub ? sub.fileUrl : "");
-  const [busy, setBusy] = React.useState(false);
+  const [handIn, setHandIn] = React.useState(false);
   const overdue = a.dueAt && !graded && new Date(a.dueAt) < new Date();
-
-  const submit = async () => {
-    if (!text.trim() && !fileUrl) { toast.error("Add a response or upload a file first"); return; }
-    setBusy(true);
-    try {
-      await NGGApi.member.submitAssignment({ assignmentId: a.assignmentId, text: text.trim(), fileUrl });
-      toast.success(sub ? "Submission updated" : "Submitted", a.title);
-      setOpen(false); onMutate && onMutate();
-    } catch (e) { toast.error("Couldn't submit: " + humanError(e)); }
-    finally { setBusy(false); }
-  };
+  const canHand = a.canSubmit !== false && !graded && typeof AsdHandIn === "function";
+  const chip = graded ? null : sub ? (sub.status === "returned" ? "returned" : "submitted") : "to do";
 
   return (
     <div className={"dash-assign-card" + (graded ? " is-graded" : "")}>
-      <div className="dash-assign-top" onClick={() => !graded && setOpen(o => !o)}>
+      <div className="dash-assign-top">
         <div>
           <div className="dash-assign-title">{a.title}</div>
           <div className="dash-assign-meta">
             {a.points} pts
             {a.dueAt && <> · <span className={overdue ? "is-overdue" : ""}>due {fmtShortDate(a.dueAt)}</span></>}
             {a.track && <> · {a.track}</>}
+            {a.proofLabel && <> · hand in: {a.proofLabel.toLowerCase()}</>}
           </div>
         </div>
         {graded
           ? <div className="dash-assign-grade">{sub.grade}<span>/{a.points}</span></div>
-          : <span className={"chip status-" + (sub ? "published" : "draft")}>{sub ? "submitted" : "to do"}</span>}
+          : <span className={"chip status-" + (sub ? "published" : "draft")}>{chip}</span>}
       </div>
       {a.instructions && <div className="dash-assign-instructions">{a.instructions}</div>}
-      {graded && sub.feedback && <div className="dash-assign-feedback"><span className="mono">MENTOR FEEDBACK</span>{sub.feedback}</div>}
-      {!graded && (open || sub) && (
-        <div className="dash-assign-form">
-          <textarea className="dash-assign-input" rows={3} placeholder="Your response…" value={text} onChange={e => setText(e.target.value)}/>
-          <div className="dash-assign-actions">
-            <Uploader kind="submission" accept="*/*" onUploaded={(url) => setFileUrl(url)} compact/>
-            {fileUrl && <a className="dash-assign-filelink" href={fileUrl} target="_blank" rel="noopener noreferrer">✓ file attached</a>}
-            <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy}>{busy ? "…" : (sub ? "Update my answer" : "Hand it in")}</button>
-          </div>
-        </div>
+      {sub && sub.feedback && (graded || sub.status === "returned") && <div className="dash-assign-feedback"><span className="mono">{graded ? "MENTOR FEEDBACK" : "CHANGE THIS, THEN HAND IT IN AGAIN"}</span>{sub.feedback}</div>}
+      {canHand && (
+        <button type="button" className="dash-assign-start btn btn-ghost btn-sm" onClick={() => setHandIn(true)}>
+          {sub ? (sub.status === "returned" ? "Revise and hand in →" : "Update what I handed in →") : "Hand it in →"}
+        </button>
       )}
-      {!graded && !open && !sub && (
-        <button className="dash-assign-start btn btn-ghost btn-sm" onClick={() => setOpen(true)}>Start →</button>
-      )}
+      {handIn && <AsdHandIn a={a} filesMax={filesMax || 5} onClose={() => setHandIn(false)}
+        onDone={(msg) => { setHandIn(false); toast.success(msg, a.title); onMutate && onMutate(); }}/>}
     </div>
   );
 }

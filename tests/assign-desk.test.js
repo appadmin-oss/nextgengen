@@ -219,6 +219,32 @@ const confirm = async (pg, cta) => { await pg.waitForSelector('[role=dialog] but
     await confirm(ap, 'Delete');
     await ap.waitForTimeout(1200);
     chk('delete is refused for work that was handed in — the row says why', q(`(int)db_row("SELECT COUNT(*) c FROM assignments")['c']`) === 1);
+    /* ── The classic dashboard (non-NGG accounts, ?classic=1) hands in through the same panel ──
+       Its old inline form sent only writing and one file, so an assignment
+       asking for a link and success-criteria steps was refused every time. */
+    const B = php(`$r = staff_assignments_save(['requesterId' => 'NGG-AD-ADM', 'viaAdmin' => true, 'data' => ['title' => 'Share your scale sheet', 'track' => 'Piano', 'centre' => 'Egbeda',
+      'instructions' => 'Share the Google Sheet of your scales.', 'proof' => 'link', 'steps' => "Shared as Viewer\nNamed properly", 'status' => 'published']]); echo $r['assignmentId'] ?? '';`);
+    const cp = await as('NGG-AD-M1', false);
+    await cp.goto(BASE + '/dashboard?classic=1', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(cp);
+    await cp.waitForSelector('.dash-assign-card:has-text("Share your scale sheet")', { timeout: 60000 }).catch(async e => { console.error('DEBUG', cp.errs.join('\n'), (await cp.innerText('body')).slice(0, 1200)); throw e; });
+    const card = cp.locator('.dash-assign-card:has-text("Share your scale sheet")');
+    chk('the classic dashboard says how a link assignment is handed in', /hand in: a link/i.test(await card.innerText()));
+    await card.locator('button:has-text("Hand it in")').click().catch(() => {});
+    const opened = await cp.waitForSelector('.ahi[role="dialog"]', { timeout: 10000 }).then(() => true, () => false);
+    chk('…and opens the same hand-in panel as the NGG portal', opened);
+    if (opened) {
+      await cp.fill('.ahi input[type=url]', 'https://docs.google.com/spreadsheets/d/scales/edit');
+      await cp.click('.ahi-step >> nth=0'); await cp.click('.ahi-step >> nth=1');
+      await cp.click('.ahi-foot .is-go');
+      await cp.waitForSelector('.ahi', { state: 'detached', timeout: 15000 }).catch(() => {});
+    }
+    const SB = q(`db_row("SELECT linkUrl, stepsJson, status FROM assignment_submissions WHERE assignmentId = '${B}' AND memberId = 'NGG-AD-M1'")`);
+    chk('…which hands in the link with both steps ticked (not refused as link_required / steps_incomplete)', !!SB && SB.status === 'submitted' && /docs\.google\.com/.test(SB.linkUrl) && SB.stepsJson === '[0,1]');
+    chk('no page errors on the classic dashboard', !cp.errs.length);
+    if (cp.errs.length) console.error(cp.errs);
+    php(`db_exec("DELETE FROM assignment_submissions WHERE assignmentId = '${B}'"); db_exec("DELETE FROM assignments WHERE assignmentId = '${B}'"); echo 'ok';`);
+
     /* ── Lessons set their own homework ── */
     php(`setting_set('curriculum', ['startDate' => gmdate('Y-m-d', strtotime(attendance_today() . ' UTC') - 8 * 86400)]);
       db_insert('curriculum_units', ['unitId' => 'CU-AD-2', 'course' => 'Piano', 'level' => 'Year 1 · Foundation', 'week' => 2, 'position' => 2, 'title' => 'Minor scales', 'status' => 'published', 'version' => 1,
