@@ -693,16 +693,27 @@ function assignment_auto_issue(?string $today = null): array {
         $d = assignment_draft_from_unit($u);
         $id = 'ASG-' . gmdate('Y') . '-' . rand_hex(4);
         $now = now_iso();
-        db_insert('assignments', ['assignmentId' => $id, 'title' => $d['title'], 'instructions' => $d['instructions'], 'track' => (string)$u['course'], 'centre' => '',
+        /* Keyed by the lesson (autoKey, UNIQUE): a second run that read $have
+         * before this one inserted loses here, inserts nothing and tells nobody. */
+        $won = assignment_auto_insert(['assignmentId' => $id, 'autoKey' => (string)$u['unitId'], 'title' => $d['title'], 'instructions' => $d['instructions'], 'track' => (string)$u['course'], 'centre' => '',
             'sessionId' => assignment_session_id(), 'dueAt' => $due ?: assignment_default_due(), 'points' => 10, 'proof' => in_array($d['proof'], ASG_PROOFS, true) ? $d['proof'] : 'any',
             'attachmentUrl' => '', 'unitId' => (string)$u['unitId'], 'week' => (int)$u['week'], 'steps' => $d['steps'] ? json_encode($d['steps'], JSON_UNESCAPED_UNICODE) : '',
             'status' => 'published', 'createdBy' => 'curriculum', 'createdAt' => $now, 'updatedAt' => $now]);
         $have[(string)$u['unitId']] = true;
+        if (!$won) continue;
         $issued[] = $id;
         notify_assignment_published($id, false);
     }
     if ($issued) audit('assignment.auto_issue', 'curriculum', '', ['issued' => count($issued), 'week' => $week, 'ids' => $issued], '');
     return ['ok' => true, 'issued' => count($issued), 'week' => $week, 'ids' => $issued];
+}
+
+/** Insert an auto-issued assignment unless its lesson is already issued. True only when the row landed. */
+function assignment_auto_insert(array $row): bool {
+    $row = db_centre_mirror('assignments', $row);
+    $verb = db_driver() === 'mysql' ? 'INSERT IGNORE' : 'INSERT OR IGNORE';
+    $cols = array_map('db_ident', array_keys($row));
+    return db_exec($verb . ' INTO assignments (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($row)) === 1;
 }
 
 /** staff.assignments.auto — an admin turns "lessons set their own homework" on or off; on issues this week's now. */
@@ -716,16 +727,37 @@ function staff_assignments_auto(array $p): array {
     return ['ok' => true, 'on' => $on, 'issued' => (int)($r['issued'] ?? 0), 'week' => (int)($r['week'] ?? 0), 'skipped' => (string)($r['skipped'] ?? '')];
 }
 
+const ASG_AUTO_AT_KEY = 'assignments_auto_at';
+
+/**
+ * Claim this hour's issue for one caller. Compare-and-swap on the stored
+ * stamp: the write lands only where the row still holds the value this caller
+ * read ($seen; read now when not given), so two page views that both saw a
+ * stale stamp cannot both go on to issue. Settings are JSON objects
+ * (setting_get reads a bare number as nothing), so the stamp is one too.
+ */
+function assignment_auto_tick_claim(int $now, ?string $seen = null): bool {
+    $seen = func_num_args() >= 2 ? $seen : setting_raw(ASG_AUTO_AT_KEY);
+    $last = (int)((safe_json($seen ?? '') ?: [])['at'] ?? 0);
+    if ($last > $now - 3600) return false;
+    $next = json_encode(['at' => $now]);
+    if ($seen === null) {
+        $verb = db_driver() === 'mysql' ? 'INSERT IGNORE' : 'INSERT OR IGNORE';
+        return db_exec($verb . ' INTO settings (settingKey, settingValue, updatedAt, updatedBy) VALUES (?, ?, ?, ?)', [ASG_AUTO_AT_KEY, $next, now_iso(), 'tick']) === 1;
+    }
+    return db_exec('UPDATE settings SET settingValue = ?, updatedAt = ? WHERE settingKey = ? AND settingValue = ?', [$next, now_iso(), ASG_AUTO_AT_KEY, $seen]) === 1;
+}
+
 /** Run the issue at most once an hour from a page view, so nobody waits for the nightly job. */
 function assignment_auto_tick(): void {
     try {
         if (!assignment_auto_on()) return;
-        // Settings are JSON objects (setting_get reads a bare number as nothing), so the stamp is one too.
-        $last = (int)((setting_get('assignments_auto_at') ?: [])['at'] ?? 0);
-        if ($last > time() - 3600) return;
-        setting_set('assignments_auto_at', ['at' => time()]);
+        if (!assignment_auto_tick_claim(time())) return;
         assignment_auto_issue();
-    } catch (\Throwable $e) {}
+    } catch (\Throwable $e) {
+        // A list view must not fail because homework could not be issued — but nor may the failure vanish.
+        error_log('[assignments] auto-issue tick failed: ' . $e->getMessage());
+    }
 }
 
 function staff_assignments_draft(array $p): array {

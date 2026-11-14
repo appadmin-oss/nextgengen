@@ -36272,6 +36272,52 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 })();
 
 (function () {
+    // 3 · A lesson's homework is issued once, whoever gets there first, and the hourly tick claims its slot atomically.
+    $now = now_iso(); $today = attendance_today();
+    $prevCur = setting_get('curriculum'); $prevAuto = setting_get(ASG_AUTO_KEY); $prevAt = setting_raw('assignments_auto_at');
+    setting_set('curriculum', ['startDate' => gmdate('Y-m-d', strtotime($today . ' UTC') - 8 * 86400)]);   // week 2
+    setting_set(ASG_AUTO_KEY, ['on' => true]);
+    db_insert('curriculum_units', ['unitId' => 'CU-ASGX-R', 'course' => 'Coding', 'level' => '', 'week' => 2, 'position' => 990, 'title' => 'Race lesson',
+        'body' => "## This week's assignment\n\nWrite a race-free page.", 'status' => 'published', 'version' => 1, 'createdAt' => $now]);
+    // Another run's insert lands between this run's read of what exists and its own insert:
+    // modelled by a row this run's read cannot see (no unitId) holding the lesson's issue key.
+    $planted = true;
+    try { db_insert('assignments', ['assignmentId' => 'ASG-X-RACE', 'title' => 'Week 2: Write a race-free page', 'instructions' => 'x', 'track' => 'Coding', 'centre' => '', 'status' => 'published',
+        'points' => 10, 'proof' => 'any', 'unitId' => '', 'autoKey' => 'CU-ASGX-R', 'createdBy' => 'curriculum', 'createdAt' => $now, 'updatedAt' => $now]); }
+    catch (Throwable $e) { $planted = false; }
+    $n0 = (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'ASGX-A' AND title LIKE '%race-free%'")['c'];
+    $iss = null; try { $iss = assignment_auto_issue($today); } catch (Throwable $e) { $iss = null; }
+    chk('assign audit 3 · the losing run issues nothing: one lesson, one assignment', $planted && is_array($iss) && !in_array('CU-ASGX-R', array_column(db_all("SELECT unitId FROM assignments WHERE createdBy = 'curriculum' AND unitId = 'CU-ASGX-R'"), 'unitId'), true)
+        && (int)db_row("SELECT COUNT(*) c FROM assignments WHERE autoKey = 'CU-ASGX-R'")['c'] === 1);
+    chk('assign audit 3 · …and does not report an issue that never landed', is_array($iss) && count(array_filter($iss['ids'] ?? [], fn($i) => !db_row('SELECT 1 FROM assignments WHERE assignmentId = ?', [$i]))) === 0);
+    chk('assign audit 3 · …and tells nobody a second time', (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'ASGX-A' AND title LIKE '%race-free%'")['c'] === $n0);
+    $dupRefused = false;
+    try { db_insert('assignments', ['assignmentId' => 'ASG-X-RACE2', 'title' => 't', 'status' => 'published', 'autoKey' => 'CU-ASGX-R', 'createdBy' => 'curriculum', 'createdAt' => $now]); } catch (Throwable $e) { $dupRefused = true; }
+    chk('assign audit 3 · the database itself refuses a second issue of one lesson', $dupRefused);
+    db_exec("DELETE FROM assignments WHERE assignmentId IN ('ASG-X-RACE', 'ASG-X-RACE2')");
+    $iss = assignment_auto_issue($today);
+    chk('assign audit 3 · with no rival, the lesson is issued, keyed by its lesson', in_array('CU-ASGX-R', array_column(db_all("SELECT autoKey FROM assignments WHERE createdBy = 'curriculum'"), 'autoKey'), true));
+    // The tick: two page views that both read the same stale stamp — only one may run the issue.
+    db_exec("DELETE FROM settings WHERE settingKey = 'assignments_auto_at'");
+    setting_set('assignments_auto_at', ['at' => time() - 7200]);
+    $seen = setting_raw('assignments_auto_at');
+    $c1 = function_exists('assignment_auto_tick_claim') ? assignment_auto_tick_claim(time(), $seen) : null;
+    $c2 = function_exists('assignment_auto_tick_claim') ? assignment_auto_tick_claim(time(), $seen) : null;
+    chk('assign audit 3 · of two ticks that read the same stamp, exactly one claims the hour', $c1 === true && $c2 === false);
+    // A failure inside the tick is logged, not swallowed.
+    $log = sys_get_temp_dir() . '/ngg-asgx-' . getmypid() . '.log'; @unlink($log);
+    $prevLog = ini_set('error_log', $log);
+    setting_set('assignments_auto_at', ['at' => time() - 7200]);
+    db_exec('ALTER TABLE curriculum_units RENAME TO curriculum_units_asgx');
+    try { assignment_auto_tick(); } finally { db_exec('ALTER TABLE curriculum_units_asgx RENAME TO curriculum_units'); ini_set('error_log', (string)$prevLog); }
+    chk('assign audit 3 · a failed tick leaves a line in the error log', str_contains((string)@file_get_contents($log), '[assignments]'));
+    @unlink($log);
+    db_exec("DELETE FROM assignments WHERE unitId = 'CU-ASGX-R' OR autoKey = 'CU-ASGX-R'"); db_exec("DELETE FROM curriculum_units WHERE unitId = 'CU-ASGX-R'");
+    setting_set('curriculum', $prevCur); setting_set(ASG_AUTO_KEY, $prevAuto);
+    if ($prevAt === null) db_exec("DELETE FROM settings WHERE settingKey = 'assignments_auto_at'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'assignments_auto_at'", [$prevAt]);
+})();
+
+(function () {
     $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__asgx_aid'];
     foreach (['assignment_submissions' => 'memberId', 'notifications' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
     db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);

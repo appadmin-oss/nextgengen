@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 216;
+const NGG_SCHEMA_TARGET = 217;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -113,6 +113,15 @@ const NGG_BACKFILL_VOLUNTEER_PROGRAMME = "
  * rather than doing it silently.
  */
 const NGG_MYSQL_ROW_FIXUPS = [
+    /* 217 — key the oldest auto-issued assignment per lesson, so the UNIQUE
+     * autoKey stops the lesson being issued again. Matches only rows still
+     * unkeyed; IGNORE leaves a row alone if its lesson is already keyed. */
+    'assignments.autoKey' => "
+        UPDATE IGNORE assignments a
+          JOIN (SELECT unitId, MIN(id) keepId FROM assignments WHERE createdBy = 'curriculum' AND unitId <> '' GROUP BY unitId) k ON k.keepId = a.id
+           SET a.autoKey = a.unitId
+         WHERE a.autoKey IS NULL
+    ",
     /* 213 — the Saturday Formation Schedule an hour later. A shift is not
      * idempotent by itself (run twice, it is two hours), so it is guarded by a
      * marker row written by the LAST statement of the three: a deploy that
@@ -6202,6 +6211,22 @@ function db_migrate(PDO $db): void {
               sentAt TEXT NOT NULL DEFAULT ''
             );
             CREATE UNIQUE INDEX IF NOT EXISTS uq_asg_notice ON assignment_notices(assignmentId, memberId, kind);
+        ",
+        /* 217 — a lesson's homework is issued ONCE. assignment_auto_issue read
+           what existed and then inserted, with nothing unique behind it, so
+           the hourly page-view tick and the web-cron job running together set
+           the same lesson twice and told everyone twice. autoKey is the
+           lesson's unitId on an auto-issued row and NULL on every row set by
+           hand (several of those may share a lesson — one per centre), so the
+           UNIQUE index binds only what the curriculum issues. The backfill
+           keys the oldest auto row per lesson; a duplicate already issued
+           stays as it is, unkeyed, for staff to close or delete. */
+        217 => "
+            ALTER TABLE assignments ADD COLUMN autoKey TEXT DEFAULT NULL;
+            UPDATE OR IGNORE assignments SET autoKey = unitId
+             WHERE autoKey IS NULL AND createdBy = 'curriculum' AND COALESCE(unitId, '') <> ''
+               AND id = (SELECT MIN(b.id) FROM assignments b WHERE b.createdBy = 'curriculum' AND b.unitId = assignments.unitId);
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_assign_autokey ON assignments(autoKey);
         ",
     ];
 

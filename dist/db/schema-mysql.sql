@@ -5038,3 +5038,12 @@ CREATE TABLE IF NOT EXISTS assignment_notices (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (216) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 217 · A lesson's homework is issued once ──
+-- autoKey = the lesson's unitId on an auto-issued row, NULL on a hand-set one,
+-- so the UNIQUE key binds only what the curriculum issues. The backfill of
+-- existing rows is NGG_MYSQL_ROW_FIXUPS 'assignments.autoKey' (api/_lib/db.php).
+ALTER TABLE assignments ADD COLUMN autoKey VARCHAR(64) DEFAULT NULL;
+CREATE UNIQUE INDEX uq_assign_autokey ON assignments(autoKey);
+
+INSERT INTO schema_version (version) VALUES (217) ON DUPLICATE KEY UPDATE version = version;
