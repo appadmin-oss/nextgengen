@@ -36217,5 +36217,45 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM photo_change_requests WHERE requestId = 'PCR-PC-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PC-1'");
 })();
 
+
+// ── AUDIT-ASG-2026-11-02 START — the assignment audit's fixes (docs/ASSIGNMENTS-AUDIT-2026-11-02.md) ──
+(function () {
+    $now = now_iso();
+    $mk = function ($id, $centre, $track = 'TECH') use ($now) { db_insert('members', ['memberId' => $id, 'fullName' => $id . ' Name', 'email' => strtolower($id) . '@asgx.example', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'member', 'centre' => $centre, 'track' => $track, 'createdAt' => $now, 'updatedAt' => $now]); };
+    $mk('ASGX-A', 'Egbeda'); $mk('ASGX-B', 'egbeda '); $mk('ASGX-C', 'EGBEDA'); $mk('ASGX-FAR', 'Ayobo');
+    db_insert('volunteers', ['volunteerId' => 'VOL-INS-26-ASGX', 'fullName' => 'Ola Instructor', 'email' => 'ola.ins@asgx.example', 'role' => 'instructor', 'centre' => 'Egbeda', 'status' => 'active',
+        'safeguarding' => 'cleared', 'courses' => json_encode(['Coding']), 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now]);
+    $ins = ['requesterId' => 'VOL-INS-26-ASGX', 'ip' => ''];
+    $GLOBALS['__asgx_ins'] = $ins;
+
+    // 1 · A centre typed "egbeda " is the instructor's "Egbeda" on every scope check, not only on the member's side.
+    $aid = staff_assignments_save($ins + ['data' => ['title' => 'Centre case', 'track' => 'Coding', 'instructions' => 'Make a page.', 'status' => 'published', 'proof' => 'text']])['assignmentId'] ?? '';
+    chk('assign audit 1 · a member at "egbeda " can hand it in', !empty(assignment_submit(['memberId' => 'ASGX-B', 'assignmentId' => $aid, 'text' => 'My page.'])['ok']));
+    $subs = staff_assignment_submissions($ins + ['assignmentId' => $aid]);
+    chk('assign audit 1 · …and the instructor scoped to "Egbeda" sees the hand-in', in_array('ASGX-B', array_column($subs['submissions'] ?? [], 'memberId'), true));
+    chk('assign audit 1 · …and lists "EGBEDA" as not yet handed in, not the other centre', in_array('ASGX-C', array_column($subs['missing'] ?? [], 'memberId'), true) && !in_array('ASGX-FAR', array_column($subs['missing'] ?? [], 'memberId'), true));
+    $sid = (string)(db_row("SELECT submissionId FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASGX-B'", [$aid])['submissionId'] ?? '');
+    chk('assign audit 1 · …and can mark it (not out_of_scope)', !empty(staff_assignment_grade($ins + ['submissionId' => $sid, 'grade' => 8, 'feedback' => 'Good.'])['ok']));
+    $aud = staff_assignments_audience($ins + ['track' => 'Coding']);
+    $own = array_filter(assignment_audience(['track' => 'Coding', 'centre' => 'Egbeda']), fn($m) => str_starts_with((string)$m['memberId'], 'ASGX-'));
+    chk('assign audit 1 · the audience preview counts every spelling of the centre', count($own) === 3 && ($aud['count'] ?? 0) === count(assignment_audience(['track' => 'Coding', 'centre' => 'Egbeda'])));
+    $rm = staff_assignments_remind($ins + ['assignmentId' => $aid]);
+    chk('assign audit 1 · a reminder reaches the "EGBEDA" member who has not handed in', ($rm['reminded'] ?? 0) === count($subs['missing'] ?? []) && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'ASGX-C' AND title LIKE 'Reminder:%'"));
+    db_insert('assignments', ['assignmentId' => 'ASG-X-WHOLE', 'title' => 'Club-wide at one centre', 'instructions' => 'x', 'track' => '', 'centre' => 'EGBEDA ', 'status' => 'published', 'points' => 10,
+        'proof' => 'text', 'createdBy' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('assign audit 1 · a whole-Club assignment set for "EGBEDA " is on the Egbeda instructor\'s list', in_array('ASG-X-WHOLE', array_column(staff_assignments_list($ins)['assignments'] ?? [], 'assignmentId'), true));
+    db_exec("DELETE FROM assignments WHERE assignmentId = 'ASG-X-WHOLE'");
+    $GLOBALS['__asgx_aid'] = $aid;
+})();
+
+(function () {
+    $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__asgx_aid'];
+    foreach (['assignment_submissions' => 'memberId', 'notifications' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
+    db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-ASGX'");
+})();
+// ── AUDIT-ASG-2026-11-02 END ──
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

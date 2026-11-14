@@ -152,6 +152,27 @@ function assignment_staff_gate(array $p): array {
             'centres' => $g['centres'] ?? null, 'courses' => $g['courses'] ?? null, 'canWhole' => $role === 'admin'];
 }
 
+/**
+ * A centre name compared the way a member's own centre is matched to an
+ * assignment (assignment_matches_member): trimmed and case-folded. A member
+ * whose record says "egbeda " can hand in; the instructor scoped to "Egbeda"
+ * must then see, mark and remind them too. Compared exactly, their hand-in
+ * was invisible on the desk, grading answered out_of_scope and the reminder
+ * skipped them. One key, used by every scope check below.
+ */
+function assignment_centre_key($name): string {
+    return mb_strtolower(trim((string)$name));
+}
+
+/** Is this centre inside the staff member's centre scope? (null scope: every centre.) */
+function assignment_centre_in_scope(array $g, $centre): bool {
+    if ($g['centres'] === null) return true;
+    $k = assignment_centre_key($centre);
+    if ($k === '') return false;
+    foreach ($g['centres'] as $c) if (assignment_centre_key($c) === $k) return true;
+    return false;
+}
+
 function assignment_in_reach(array $g, array $a): bool {
     $course = trim((string)($a['track'] ?? ''));
     $centre = trim((string)($a['centre'] ?? ''));
@@ -159,7 +180,7 @@ function assignment_in_reach(array $g, array $a): bool {
     elseif ($g['courses'] !== null && !in_array(mb_strtolower($course), array_map('mb_strtolower', $g['courses']), true)) return false;
     if ($g['centres'] !== null) {
         if ($centre === '' || $centre === 'All' || $centre === 'Both') return false;   // "every centre" is wider than a scoped reach
-        if (!in_array($centre, $g['centres'], true)) return false;
+        if (!assignment_centre_in_scope($g, $centre)) return false;
     }
     return true;
 }
@@ -177,7 +198,7 @@ function assignment_can_mark(array $g, array $a): bool {
 function assignment_member_in_reach(array $g, string $memberId): bool {
     if ($g['centres'] === null) return true;
     $m = db_row('SELECT centre FROM members WHERE memberId = ?', [$memberId]);
-    return $m && in_array((string)$m['centre'], $g['centres'], true);
+    return $m && assignment_centre_in_scope($g, (string)$m['centre']);
 }
 
 
@@ -386,7 +407,7 @@ function staff_assignments_list(array $p): array {
         if ($status !== '' && in_array($status, ASG_STATUSES, true) && $a['status'] !== $status) continue;
         $reach = assignment_in_reach($g, $a);
         // An instructor also sees the whole-Club ones that land on their learners, read-only.
-        if (!$reach && !assignment_can_mark($g, $a) && !($g['who'] !== 'admin' && trim((string)$a['track']) === '' && (trim((string)$a['centre']) === '' || $g['centres'] === null || in_array($a['centre'], $g['centres'] ?? [], true)))) continue;
+        if (!$reach && !assignment_can_mark($g, $a) && !($g['who'] !== 'admin' && trim((string)$a['track']) === '' && (trim((string)$a['centre']) === '' || assignment_centre_in_scope($g, (string)$a['centre'])))) continue;
         $out[] = assignment_row_public($a, $counts, $reach);
     }
     $courses = $g['courses'] ?? (function_exists('club_courses') ? club_courses() : []);
@@ -466,7 +487,7 @@ function staff_assignments_save(array $p): array {
             if ($row['week'] === 0) $row['week'] = (int)$u['week'];
         }
     }
-    if (!assignment_in_reach($g, $row)) $errors[$row['track'] === '' ? 'track' : ($g['centres'] !== null && !in_array($row['centre'], $g['centres'] ?? [], true) ? 'centre' : 'track')] =
+    if (!assignment_in_reach($g, $row)) $errors[$row['track'] === '' ? 'track' : (!assignment_centre_in_scope($g, $row['centre']) ? 'centre' : 'track')] =
         $row['track'] === '' ? 'Only an admin sets work for the whole Club. Choose your course.' : 'That is outside the courses and centre you teach.';
     if ($row['status'] === 'published' && $row['instructions'] === '') $errors['instructions'] = 'Say what to do before you publish it.';
     if ($errors) return ['ok' => false, 'error' => 'invalid', 'fieldErrors' => $errors];
@@ -493,7 +514,7 @@ function staff_assignments_audience(array $p): array {
     $a = ['track' => trim((string)($p['track'] ?? '')), 'centre' => trim((string)($p['centre'] ?? '')), 'sessionId' => trim((string)($p['sessionId'] ?? ''))];
     if ($a['centre'] === '' && $g['centres'] !== null && count($g['centres']) === 1) $a['centre'] = $g['centres'][0];
     $aud = assignment_audience($a);
-    if ($g['centres'] !== null) $aud = array_values(array_filter($aud, fn($m) => in_array((string)$m['centre'], $g['centres'], true)));
+    if ($g['centres'] !== null) $aud = array_values(array_filter($aud, fn($m) => assignment_centre_in_scope($g, (string)$m['centre'])));
     return ['ok' => true, 'count' => count($aud), 'sample' => array_map(fn($m) => (string)$m['fullName'], array_slice($aud, 0, 6)),
             'centres' => array_count_values(array_map(fn($m) => (string)$m['centre'], $aud))];
 }
@@ -509,7 +530,7 @@ function staff_assignment_submissions(array $p): array {
     $due = assignment_due_ts($a);
     $names = [];
     foreach (db_all('SELECT s.*, m.fullName, m.centre FROM assignment_submissions s LEFT JOIN members m ON m.memberId = s.memberId WHERE s.assignmentId = ? ORDER BY s.submittedAt DESC', [$a['assignmentId']]) as $r) {
-        if ($g['centres'] !== null && !in_array((string)$r['centre'], $g['centres'], true)) continue;
+        if (!assignment_centre_in_scope($g, (string)$r['centre'])) continue;
         $names[] = ['memberId' => $r['memberId'], 'memberName' => $r['fullName'] ?: $r['memberId'], 'centre' => (string)($r['centre'] ?? '')]
             + assignment_public_sub($r) + ['late' => $due && strtotime((string)$r['submittedAt']) > $due];
     }
@@ -518,7 +539,7 @@ function staff_assignment_submissions(array $p): array {
     if ($a['status'] !== 'draft') {
         foreach (assignment_audience($a) as $m) {
             if (isset($handed[$m['memberId']])) continue;
-            if ($g['centres'] !== null && !in_array((string)$m['centre'], $g['centres'], true)) continue;
+            if (!assignment_centre_in_scope($g, (string)$m['centre'])) continue;
             $missing[] = ['memberId' => $m['memberId'], 'memberName' => $m['fullName'], 'centre' => $m['centre']];
         }
     }
@@ -743,7 +764,7 @@ function staff_assignments_remind(array $p): array {
     if ($last > time() - ASG_REMIND_QUIET && empty($p['force'])) return ['ok' => false, 'error' => 'quiet_period', 'detail' => 'They were reminded in the last 24 hours.'];
     $sub = sub_ids_for($a['assignmentId']);
     $targets = array_values(array_filter(assignment_audience($a), fn($m) => !isset($sub[$m['memberId']])
-        && ($g['centres'] === null || in_array((string)$m['centre'], $g['centres'], true))));
+        && assignment_centre_in_scope($g, (string)$m['centre'])));
     $due = assignment_due_ts($a);
     foreach ($targets as $m) push_notification((string)$m['memberId'], ['kind' => 'announcement', 'title' => 'Reminder: ' . $a['title'],
         'body' => ($due ? ($due < time() ? 'This was due ' . gmdate('D j M', $due) . '. ' : 'Due ' . gmdate('D j M', $due) . '. ') : '') . 'Open your dashboard to hand it in.', 'linkPage' => 'dashboard']);
