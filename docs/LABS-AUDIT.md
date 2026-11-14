@@ -368,3 +368,25 @@ years"), so spotting "since" was marked wrong. It now has one.
 
 **Held by a test.** `run.php` fails on any new clearly-longest row, and when "pick the longest" or
 "pick the shortest" beats chance by more than 5 points.
+
+## Round 8 — 14 Nov 2026: the Physics length tell
+
+**Measured.** Physics forms are code, so every form was sampled. Of 13,097 distinct choice questions,
+18% had a right answer that was clearly the longest option: the full explanation beside short
+half-thoughts. "Pick the longest" was right 30% of the time, against 27% chance. 63 forms were
+flagged.
+
+**Rewritten.** The wrong options of all 63 forms, plus one borderline form the new test found
+(PH-003 f3: "Top-pan electronic balance" replaces "Beam balance"). Each wrong option is a classic
+misconception carrying the reason a learner would give for it, for example "It makes the stopping
+time shorter, so the body comes to rest before the force builds up".
+
+**Saved sessions.** Only wrong-option text and its why changed. 21,000 seeded questions were
+regenerated before and after, and every stem, answer, option count and key position is identical.
+
+**Result.**
+- Clearly-longest questions: 18% → about 1%.
+- "Pick the longest": 30% → 24%.
+- "Pick the shortest": 11%, still below chance.
+
+**Held by a test.** `run.php` samples every Physics form.

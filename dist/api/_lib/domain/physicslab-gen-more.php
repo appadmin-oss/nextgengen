@@ -185,7 +185,7 @@ function phy_more_1(): array {
         // Particles do not swell.
         static function (MlbRng $r) { $ctx = $r->pick(['A metal lid stuck on a glass jar comes loose when hot water is run over it.', 'Electric cables between PHCN poles sag lower on a hot afternoon.', 'A metal ball that passed through a ring no longer fits after it is heated.', 'Iron roofing sheets creak as the sun heats them in the morning.']);
             return mlb_mcq($r, $ctx . ' Which is the best particle explanation?', 'The particles vibrate more and push slightly further apart',
-                [['The particles themselves get bigger', 'Particles do not swell; the spaces between them grow.'], ['Heat makes more particles', 'Heating cannot create matter: the number of particles stays the same.'], ['The particles stop moving and spread out', 'Hotter particles move MORE, not less.']],
+                [['The particles themselves get bigger, so the solid takes up more room', 'Particles do not swell; the spaces between them grow.'], ['The heat makes more particles, which then need more space', 'Heating cannot create matter: the number of particles stays the same.'], ['The particles slow down and settle further apart', 'Hotter particles move MORE, not less.']],
                 ['Heating gives the particles more energy, so they vibrate more strongly.', 'They push one another slightly further apart, so the solid expands — the particles stay the same size.'], 'What does heating change: the particles, or the way they move?', 'concept', 30); },
     ],
     'PH-008' => [
@@ -200,7 +200,7 @@ function phy_more_1(): array {
         // Boiling: more heat, same temperature.
         static function (MlbRng $r) { $ctx = $r->pick(['a pot of yam', 'a kettle', 'a pot of rice', 'a pot of beans']);
             return mlb_mcq($r, 'Water is boiling in ' . $ctx . ' on a gas cooker, at sea level. The flame is turned up higher. What happens to the temperature of the boiling water?', 'It stays at 100 °C; the water just boils away faster',
-                [['It rises above 100 °C', 'The extra heat goes into turning water into steam (latent heat), not into raising the temperature.'], ['It falls, because more steam leaves', 'While heat is still supplied, the boiling water stays at its boiling point.'], ['It keeps rising a little every minute', 'At the boiling point the temperature is fixed, for a given air pressure.']],
+                [['It rises above 100 °C, because more heat is going in', 'The extra heat goes into turning water into steam (latent heat), not into raising the temperature.'], ['It falls a little, because more steam carries heat away', 'While heat is still supplied, the boiling water stays at its boiling point.'], ['It keeps rising slowly until the pot boils dry', 'At the boiling point the temperature is fixed, for a given air pressure.']],
                 ['During a change of state the temperature stays constant.', 'More heat per second means more water turns to steam per second — the food does not cook any hotter.'], 'Is the temperature still rising when water boils?', 'reasoning', 30); },
     ],
     'PH-009' => [
@@ -299,7 +299,7 @@ function phy_more_2(): array {
         // Reading a force–extension graph.
         static function (MlbRng $r) { $X = $r->int(2, 12) * 5; $what = $r->pick(['spring', 'steel wire', 'copper wire']);
             return mlb_mcq($r, 'A force–extension graph for a ' . $what . ' is a straight line through the origin up to ' . $X . ' N, and then begins to curve. What does the point at ' . $X . ' N mark?', 'The limit of proportionality: beyond it, extension is no longer proportional to force',
-                [['The breaking point', 'The graph carries on after it; breaking is where the graph ENDS.'], ['The point where it starts to stretch', 'It stretches from the first newton: the line starts at the origin.'], ['The point where the spring constant becomes zero', 'A curving line means the gradient CHANGES, not that the ' . $what . ' stops resisting.']],
+                [['The breaking point: beyond it, the ' . $what . ' snaps and can hold no force at all', 'The graph carries on after it; breaking is where the graph ENDS.'], ['The point where it starts to stretch: below it, the extension is zero', 'It stretches from the first newton: the line starts at the origin.'], ['The point where the spring constant becomes zero, so it no longer resists', 'A curving line means the gradient CHANGES, not that the ' . $what . ' stops resisting.']],
                 ['Hooke’s law (F = ke) holds only while the graph is a straight line through the origin.', 'Where it starts to curve is the limit of proportionality.'], 'What does a straight line through the origin tell you?', 'concept', 35); },
         // Spot the error: extension is not the new length.
         static function (MlbRng $r) { $L0 = $r->int(10, 30); $e = $r->pick([2, 4, 5, 8, 10]); $F = $r->int(2, 20); $k = $F / ($e / 100);
@@ -367,7 +367,7 @@ function phy_more_2(): array {
         // A high load topples a vehicle.
         static function (MlbRng $r) { $ctx = $r->pick(['a danfo with bags of rice tied on its roof rack', 'a lorry piled high with yams', 'a keke with plastic chairs stacked on top']);
             return mlb_mcq($r, 'Why is ' . $ctx . ' more likely to topple on a sharp bend than when it is unloaded?', 'The load raises its centre of gravity, so a smaller tilt takes its weight line outside its base',
-                [['The load lowers its centre of gravity', 'Weight added HIGH UP raises the centre of gravity.'], ['Heavier vehicles always topple more easily', 'It is where the mass sits that matters: the same load on the floor would make it steadier.'], ['The load makes the base narrower', 'The wheels — the base — have not moved.']],
+                [['The load lowers its centre of gravity, so the vehicle leans further out on the bend', 'Weight added HIGH UP raises the centre of gravity.'], ['Heavier vehicles always topple more easily, wherever the extra mass is placed', 'It is where the mass sits that matters: the same load on the floor would make it steadier.'], ['The load makes the base narrower, so the wheels lift off the road more easily', 'The wheels — the base — have not moved.']],
                 ['A body topples when the vertical line through its centre of gravity falls outside its base.', 'A load on the roof raises the centre of gravity, so that line leaves the base at a smaller tilt.'], 'Where is the extra weight: high or low?', 'reasoning', 35); },
     ],
     'PH-018' => [
@@ -387,7 +387,7 @@ function phy_more_2(): array {
         // Carrying a load along level ground: no work by the holding force.
         static function (MlbRng $r) { $ctx = $r->pick(['A girl carries a bucket of water on her head along a flat road at a steady speed.', 'A hawker carries a tray of oranges on her head along a level street at a steady speed.', 'A waiter carries a tray of drinks across a flat hall at a steady speed.']);
             return mlb_mcq($r, $ctx . ' How much work does the UPWARD force holding up the load do on the load?', 'None: the force is upwards and the load moves sideways',
-                [['Its weight × the distance walked', 'Work counts only movement IN the direction of the force, and the movement is at right angles to it.'], ['A lot, because carrying is tiring', 'Muscles use energy holding a load still, but no work is done ON the load.'], ['Its weight × the height of the load', 'The load is not lifted during the walk: its height stays the same.']],
+                [['Its weight × the whole distance walked along the road', 'Work counts only movement IN the direction of the force, and the movement is at right angles to it.'], ['A lot, because carrying a load all the way is tiring', 'Muscles use energy holding a load still, but no work is done ON the load.'], ['Its weight × the height of the load above the ground', 'The load is not lifted during the walk: its height stays the same.']],
                 ['Work = force × distance moved in the direction of the force.', 'The holding force is vertical; the load moves horizontally, so it moves no distance in the direction of the force: W = 0.'], 'Which way does the force point, and which way does the load move?', 'reasoning', 35); },
         // Typed, rearranged: the distance from the work.
         static function (MlbRng $r) { $F = $r->int(4, 40) * 10; $d = $r->int(3, 40); $what = $r->pick(['pushes a stalled car', 'pushes a loaded wheelbarrow', 'drags a bag of maize']);
@@ -644,7 +644,7 @@ function phy_more_4(): array {
         // No machine is more than 100% efficient.
         static function (MlbRng $r) { $c = $r->int(21, 30) * 5; $what = $r->pick(['a grinding machine', 'a water pump', 'a generator', 'an electric fan']);
             return mlb_mcq($r, 'A trader at the market claims that ' . $what . ' he sells is ' . $c . '% efficient. What is wrong with the claim?', 'Nothing can give out more useful energy than it takes in, so no efficiency can be above 100%',
-                [['Nothing — a new machine can be more than 100% efficient', 'That would mean creating energy from nothing, which never happens.'], ['Efficiency must be given in joules, not as a percentage', 'Efficiency is a ratio of two energies, so it has no unit: a percentage is right.'], ['Only electrical machines can be 100% efficient', 'Every real machine wastes some energy, usually as heat.']],
+                [['Nothing is wrong: a new, well-made machine can give out more than it takes in', 'That would mean creating energy from nothing, which never happens.'], ['Efficiency must be given in joules, not as a percentage, so the figure means nothing', 'Efficiency is a ratio of two energies, so it has no unit: a percentage is right.'], ['It should be exactly 100%, because energy is always conserved in a machine', 'Energy is conserved, but some of it is always wasted as heat and sound, so the USEFUL output is below 100%.']],
                 ['Efficiency = useful energy out ÷ energy in × 100%.', 'Energy is conserved, so the useful output can never exceed the input: real machines are always below 100%.'], 'Where would the extra energy come from?', 'reasoning', 35); },
         // Spot the error: the useful output of a lamp.
         static function (MlbRng $r) { $E = $r->pick([20, 40, 60, 100]); $p = $r->pick([5, 10, 15, 20, 25, 40]); $L = $E * $p / 100; $lamp = $p >= 25 ? 'an LED lamp' : 'a filament bulb';
@@ -662,7 +662,7 @@ function phy_more_4(): array {
         // A longer stopping time, a smaller force.
         static function (MlbRng $r) { $ctx = $r->pick(['You catch a raw egg by letting your hands move back with it.', 'A long jumper lands in a sand pit, not on the hard track.', 'A goalkeeper pulls his hands back as he catches a hard shot.', 'You bend your knees as you jump down from a wall.']);
             return mlb_mcq($r, $ctx . ' Why does this reduce the force?', 'It makes the stopping time longer, so the same change in momentum needs a smaller force',
-                [['It reduces the change in momentum', 'The body still goes from moving to stopped: the change in momentum is the same.'], ['It makes the stopping time shorter', 'A shorter time would need a LARGER force.'], ['It reduces the mass', 'Nothing about catching or landing changes the mass.']],
+                [['It reduces the change in momentum, so less force is needed to stop', 'The body still goes from moving to stopped: the change in momentum is the same.'], ['It makes the stopping time shorter, so the body comes to rest before the force builds up', 'A shorter time would need a LARGER force.'], ['It spreads the mass out, so less of it has to be stopped at once', 'Nothing about catching or landing changes the mass being stopped.']],
                 ['Force × time = change in momentum (impulse).', 'The change in momentum is fixed, so a longer time means a smaller force.'], 'F = change in momentum ÷ time: which part is being changed?', 'reasoning', 35); },
         // Typed, rearranged: the speed after an impulse.
         static function (MlbRng $r) { $m = $r->pick([0.5, 1, 2, 4, 5]); $v = $r->int(2, 20); $what = $r->pick(['trolley', 'football', 'hockey puck']);
@@ -695,7 +695,7 @@ function phy_more_4(): array {
         // The string breaks: straight on along the tangent.
         static function (MlbRng $r) { $d = $r->pick(['north', 'east', 'south', 'west']); $opp = ['north' => 'south', 'east' => 'west', 'south' => 'north', 'west' => 'east'][$d];
             return mlb_mcq($r, 'A stone is whirled in a horizontal circle on a string. At the instant the string snaps, the stone is moving due ' . $d . '. Seen from above, how does it move just afterwards?', 'In a straight line, due ' . $d . ' (along the tangent)',
-                [['Straight outwards, away from the centre', 'There is no outward force: the string only ever pulled INWARDS, and now nothing pulls at all.'], ['On round the same circle', 'Without the string’s pull there is nothing to bend its path.'], ['Due ' . $opp . ', back the way it came', 'Nothing reverses its velocity.']],
+                [['Straight outwards, away from the centre of the circle', 'There is no outward force: the string only ever pulled INWARDS, and now nothing pulls at all.'], ['On round the same circle, slowly widening', 'Without the string’s pull there is nothing to bend its path.'], ['Due ' . $opp . ', back the way it came', 'Nothing reverses its velocity.']],
                 ['The string’s pull towards the centre is what kept bending the path into a circle.', 'With that force gone, the stone carries on in a straight line in the direction it was moving (Newton’s first law).'], 'What force acts sideways on it once the string has gone?', 'reasoning', 40); },
         // Typed: the fastest safe speed round a bend.
         static function (MlbRng $r) { $m = $r->int(8, 20) * 100; $v = $r->int(8, 18); $rad = $r->pick([20, 25, 40, 50, 100]); $F = $m * $v * $v / $rad; $veh = $r->pick(['A car', 'A danfo', 'A pick-up van']);
@@ -740,7 +740,7 @@ function phy_more_4(): array {
         // A ship floats higher in denser water.
         static function (MlbRng $r) { $ctx = $r->pick(['A cargo ship sails down the River Niger and out into the Atlantic Ocean.', 'A fishing canoe is paddled from the creek out into the salt-water sea.', 'A barge moves from a freshwater river into the sea at the Niger Delta.']);
             return mlb_mcq($r, $ctx . ' Sea water is denser than river water. What happens to how it floats?', 'It floats a little higher, because it displaces less of the denser water',
-                [['It sinks lower, because salt water is heavier', 'Denser water gives the same upthrust with LESS volume pushed aside, so it rises.'], ['It floats exactly as before', 'The upthrust is the same, but the volume that gives it changes with the density.'], ['The upthrust on it increases', 'A floating body’s upthrust always equals its weight, which has not changed.']],
+                [['It sinks lower, because salt water is heavier and pulls it down', 'Denser water gives the same upthrust with LESS volume pushed aside, so it rises.'], ['It floats exactly as before, because its weight has not changed', 'The upthrust is the same, but the volume that gives it changes with the density.'], ['The upthrust on it increases, because sea water pushes harder on everything', 'A floating body’s upthrust always equals its weight, which has not changed.']],
                 ['Floating: upthrust = weight, and upthrust = V × ρ × g.', 'Same weight, bigger ρ: a smaller V is under water, so it floats higher.'], 'The upthrust must still equal the weight. What can change?', 'reasoning', 40); },
         // Spot the error: relative density from weighings.
         static function (MlbRng $r) { $rd = $r->pick([2, 2.5, 4, 5, 8]); $U = $r->int(2, 12) * 2; $Wa = $rd * $U; $Ww = $Wa - $U;
@@ -799,7 +799,7 @@ function phy_more_5(): array {
         // Steam scalds worse.
         static function (MlbRng $r) { $src = $r->pick(['the spout of a boiling kettle', 'the lid of a pot of boiling rice', 'the valve of a pressure cooker']);
             return mlb_mcq($r, 'Steam from ' . $src . ' at 100 °C gives a much worse scald than the same mass of boiling water at 100 °C. Why?', 'The steam gives out its latent heat as it condenses on the skin, and then more heat as the water cools',
-                [['Steam is much hotter than 100 °C', 'Both are at 100 °C here: the difference is the hidden (latent) heat.'], ['Steam moves faster, so it hits harder', 'It is the energy given out, not the speed of the steam.'], ['Water at 100 °C cannot burn skin', 'It can and does; steam just carries much more energy per kilogram.']],
+                [['Steam is much hotter than 100 °C, even though a thermometer in it reads 100 °C', 'Both are at 100 °C here: the difference is the hidden (latent) heat.'], ['Steam moves much faster than water, so it strikes the skin harder and gets deeper in', 'It is the energy given out, not the speed of the steam.'], ['Water at 100 °C cannot burn skin, because it cools the moment it touches you', 'It can and does; steam just carries much more energy per kilogram.']],
                 ['Each kilogram of steam that condenses gives out about 2 260 000 J of latent heat — far more than the water gives in cooling.', 'So steam at 100 °C delivers far more energy to the skin than water at 100 °C.'], 'What happens to steam when it touches cooler skin?', 'reasoning', 40); },
         // Typed, rearranged: latent heat of fusion from a heater experiment.
         static function (MlbRng $r) { $L = $r->pick([330000, 332000, 334000, 336000, 340000]); $m = $r->pick([0.05, 0.1, 0.2]); $P = $r->pick([50, 100, 200]); $t = $L * $m / $P;
@@ -875,7 +875,7 @@ function phy_more_5(): array {
         // Lateral inversion.
         static function (MlbRng $r) { if ($r->int(0, 1) === 0)
                 return mlb_mcq($r, 'Why is the word AMBULANCE written back-to-front on the front of an ambulance?', 'So drivers ahead read it the right way round in their mirrors',
-                    [['So that it is harder to copy', 'It is about reading, not copying.'], ['Because a mirror turns writing upside down', 'A plane mirror reverses left and right (lateral inversion), not up and down.'], ['So that people on the pavement can read it', 'They would see it reversed; only a mirror turns it back.']],
+                    [['So that it is harder for other vehicles to copy the sign', 'It is about reading, not copying.'], ['Because a driver’s mirror turns all writing upside down', 'A plane mirror reverses left and right (lateral inversion), not up and down.'], ['So that people on the pavement can read it as it passes', 'They would see it reversed; only a mirror turns it back.']],
                     ['A plane mirror reverses left and right (lateral inversion).', 'Written reversed, the word is turned back the right way in a driver’s mirror.'], 'Who looks at the front of an ambulance through a mirror?', 'concept', 30);
             $hand = $r->pick(['RIGHT', 'LEFT']); $other = $hand === 'RIGHT' ? 'left' : 'right';
             return mlb_mcq($r, 'A boy facing a plane mirror raises his ' . $hand . ' hand. To him, which hand does his image seem to raise?', 'Its ' . $other . ' hand',
@@ -995,7 +995,7 @@ function phy_more_6(): array {
         // Series capacitance is less than the smallest.
         static function (MlbRng $r) { [$a, $b] = $r->pick([[2, 3], [4, 6], [5, 10], [10, 20], [3, 6]]);
             return mlb_mcq($r, 'A ' . $a . ' µF and a ' . $b . ' µF capacitor are joined in SERIES. What can you say about their combined capacitance?', 'It is less than ' . $a . ' µF, the smaller one',
-                [['It is ' . ($a + $b) . ' µF', 'Adding capacitances is the rule for PARALLEL.'], ['It is between ' . $a . ' µF and ' . $b . ' µF', 'In series it is less than either one.'], ['It is more than ' . $b . ' µF', 'That would be true in parallel, not in series.']],
+                [['It is ' . ($a + $b) . ' µF, the two added together', 'Adding capacitances is the rule for PARALLEL.'], ['It is between ' . $a . ' µF and ' . $b . ' µF, the average of the two', 'In series it is less than either one.'], ['It is more than ' . $b . ' µF, the bigger one', 'That would be true in parallel, not in series.']],
                 ['In series, 1/C = 1/C₁ + 1/C₂ — the same shape as resistors in parallel.', '1/C is bigger than 1/' . $a . ', so C is smaller than ' . $a . ' µF: here C = ' . mlb_rd($a * $b / ($a + $b), 2) . ' µF.'], 'Capacitors combine the opposite way to resistors.', 'reasoning', 40); },
         // Typed: two capacitors in series.
         static function (MlbRng $r) { [$a, $b, $C] = $r->pick([[3, 6, 2], [4, 12, 3], [6, 12, 4], [10, 15, 6], [2, 2, 1], [20, 30, 12]]);
@@ -1018,7 +1018,7 @@ function phy_more_6(): array {
         // What changes a motor's speed, and what reverses it.
         static function (MlbRng $r) { if ($r->int(0, 1) === 0)
                 return mlb_mcq($r, 'Which change makes a simple d.c. motor turn FASTER?', 'A bigger current through the coil',
-                    [['Reversing the battery', 'That reverses the DIRECTION of rotation, not the speed.'], ['Fewer turns on the coil', 'Fewer turns means a smaller total force.'], ['A weaker magnet', 'A weaker field means a smaller force (F = BIL).']],
+                    [['Reversing the battery connections', 'That reverses the DIRECTION of rotation, not the speed.'], ['Fewer turns on the coil, so it is lighter', 'Fewer turns means a smaller total force, and that matters far more than the lighter coil.'], ['A weaker magnet', 'A weaker field means a smaller force (F = BIL).']],
                     ['The turning force on each side of the coil is F = BIL, for every turn.', 'More current, more turns or a stronger magnet: a bigger force, a faster motor.'], 'Use F = BIL.', 'concept', 35);
             return mlb_mcq($r, 'How can the DIRECTION of rotation of a simple d.c. motor be reversed?', 'Reverse the current (swap the battery connections)',
                 [['Use a bigger current', 'That changes the speed, not the direction.'], ['Add more turns to the coil', 'That changes the force’s size, not its direction.'], ['Reverse the current AND swap the magnet’s poles', 'Reversing both puts the force back the way it was.']],
@@ -1154,7 +1154,7 @@ function phy_more_7(): array {
         // Doppler shifts pitch, not just loudness.
         static function (MlbRng $r) { $what = $r->pick(['an ambulance', 'a police car', 'a fire engine']);
             return mlb_mcq($r, 'As ' . $what . ' with its siren on comes towards you at a steady speed, then passes and drives away, what happens to the PITCH you hear?', 'Steady and higher than the siren’s own note, then a sudden drop to a steady lower note as it passes',
-                [['It rises steadily as it comes closer', 'At a steady speed the shift is steady. What grows as it comes closer is the LOUDNESS.'], ['It is lower while it approaches and higher as it leaves', 'It is the other way round: approaching squeezes the waves (higher).'], ['It does not change; only the loudness changes', 'The frequency you hear really is shifted by the motion (the Doppler effect).']],
+                [['It rises steadily the whole time it comes closer, then falls steadily as it leaves', 'At a steady speed the shift is steady. What grows as it comes closer is the LOUDNESS.'], ['It is lower while it approaches and then higher as it drives away from you', 'It is the other way round: approaching squeezes the waves (higher).'], ['It does not change at all; only the loudness rises and then falls as it passes', 'The frequency you hear really is shifted by the motion (the Doppler effect).']],
                 ['Approaching, the waves are squeezed together: a higher frequency. Receding, they are stretched: lower.', 'At a steady speed each shift is steady, so the pitch jumps down as it passes; the loudness is what rises and falls smoothly.'], 'Separate what the pitch does from what the loudness does.', 'reasoning', 45); },
     ],
     'PH-066' => [
@@ -1185,7 +1185,7 @@ function phy_more_7(): array {
         // Weightless is not gravity-free.
         static function (MlbRng $r) { $where = $r->pick(['the International Space Station, about 400 km up', 'a satellite in low orbit', 'a space capsule orbiting the Earth']);
             return mlb_mcq($r, 'Astronauts in ' . $where . ' float about as if weightless. Why?', 'They and their craft are falling freely around the Earth together',
-                [['There is no gravity in space', 'At 400 km up, g is still about 90% of its value on the ground.'], ['They are beyond the pull of the Earth', 'The Earth’s pull is what keeps them in orbit at all.'], ['The craft’s engines cancel gravity', 'The engines are off in orbit; nothing cancels gravity.']],
+                [['There is no gravity in space, so nothing pulls them down', 'At 400 km up, g is still about 90% of its value on the ground.'], ['They are beyond the pull of the Earth, so nothing pulls on them', 'The Earth’s pull is what keeps them in orbit at all.'], ['The craft’s engines cancel gravity, so the astronauts float', 'The engines are off in orbit; nothing cancels gravity.']],
                 ['Gravity is what bends their path into an orbit: they are in free fall.', 'The astronauts and the craft fall at the same rate, so nothing presses on them — they feel weightless.'], 'What keeps a satellite going round instead of flying off?', 'reasoning', 40); },
     ],
     'PH-068' => [
@@ -1231,7 +1231,7 @@ function phy_more_7(): array {
                     [['It dissolves, losing copper', 'That happens at the ANODE.'], ['Oxygen bubbles off it', 'With copper electrodes, no gas is given off here; copper ions take electrons and are deposited.'], ['Nothing: the ions only move about in the solution', 'Ions reaching the electrode gain electrons and come out of solution.']],
                     ['Positive copper ions move to the negative electrode (the cathode).', 'There each gains two electrons and is deposited as copper metal; the anode dissolves to replace them.'], 'Which ions are attracted to the negative electrode?', 'concept', 35);
             return mlb_mcq($r, 'A spoon is to be silver-plated by electrolysis in silver nitrate solution. How must it be connected?', 'As the cathode (to the negative terminal), with a silver anode',
-                [['As the anode (to the positive terminal)', 'At the anode metal dissolves; the spoon would be eaten away, not plated.'], ['As the cathode, with a copper anode', 'The anode must be silver, to replace the silver ions deposited.'], ['It does not matter which terminal', 'Positive silver ions go to the NEGATIVE electrode only.']],
+                [['As the anode (to the positive terminal), so silver can reach it', 'At the anode metal dissolves; the spoon would be eaten away, not plated.'], ['As the cathode, with a copper anode to carry the current', 'The anode must be silver, to replace the silver ions deposited.'], ['It does not matter which terminal, as long as current flows', 'Positive silver ions go to the NEGATIVE electrode only.']],
                 ['Silver ions are positive and are deposited on the negative electrode.', 'So the spoon is the cathode; a silver anode dissolves to keep the solution topped up.'], 'Where do positive metal ions go?', 'application', 40); },
         // Typed: the electrochemical equivalent from an experiment.
         static function (MlbRng $r) { [$metal, $Z] = $r->pick([['copper', 0.33], ['silver', 1.12], ['zinc', 0.34], ['nickel', 0.3]]); $I = $r->pick([0.5, 1, 2]); $t = $r->pick([600, 1000, 1200, 1500]); $m = $Z * $I * $t;
@@ -1267,7 +1267,7 @@ function phy_more_8(): array {
         // Absorption lines.
         static function (MlbRng $r) { $gas = $r->pick(['hydrogen', 'sodium vapour', 'helium']);
             return mlb_mcq($r, 'White light from a hot source passes through cool ' . $gas . ' and then through a prism. What does the spectrum show?', 'A full rainbow with dark lines at exactly the colours ' . $gas . ' emits',
-                [['Bright lines on a dark background', 'That is the EMISSION spectrum of the hot gas on its own.'], ['A full rainbow with no lines', 'The cool gas absorbs photons whose energy matches its level gaps.'], ['Only the colours of ' . $gas, 'Most of the white light passes through untouched; only certain colours are removed.']],
+                [['Bright lines at the colours ' . $gas . ' emits, on a dark background', 'That is the EMISSION spectrum of the hot gas on its own.'], ['A full rainbow with no lines, since the light passes straight through', 'The cool gas absorbs photons whose energy matches its level gaps.'], ['Only the colours of ' . $gas . ', since the rest are absorbed', 'Most of the white light passes through untouched; only certain colours are removed.']],
                 ['The atoms absorb only photons whose energy equals a gap between their levels — the same gaps they emit from.', 'So those exact colours are missing: dark absorption lines on a continuous spectrum.'], 'Which photons can the cool atoms absorb?', 'reasoning', 45); },
     ],
     'PH-073' => [
@@ -1282,7 +1282,7 @@ function phy_more_8(): array {
         // Compare: same speed, different mass.
         static function (MlbRng $r) { [$a, $b] = $r->pick([['an electron', 'a proton'], ['an electron', 'a neutron'], ['a proton', 'an alpha particle']]);
             return mlb_mcq($r, ucfirst($a) . ' and ' . $b . ' move at the SAME speed. Which has the shorter de Broglie wavelength?', ucfirst($b) . ', because it is heavier and so has more momentum',
-                [[ucfirst($a) . ', because it is smaller', 'Wavelength depends on momentum, not size: λ = h ÷ mv.'], ['They are the same, because their speeds are equal', 'Equal speeds but different masses give different momenta.'], [ucfirst($a) . ', because it is lighter', 'Lighter means LESS momentum and so a LONGER wavelength.']],
+                [[ucfirst($a) . ', because it is smaller, so its wave is squeezed shorter', 'Wavelength depends on momentum, not size: λ = h ÷ mv.'], ['They are the same, because equal speeds give equal wavelengths', 'Equal speeds but different masses give different momenta.'], [ucfirst($a) . ', because it is lighter', 'Lighter means LESS momentum and so a LONGER wavelength.']],
                 ['λ = h ÷ (mv).', 'Same v, bigger m: bigger momentum, shorter wavelength — so ' . $b . '.'], 'λ = h ÷ mv: what is different between them?', 'reasoning', 40); },
     ],
     'PH-074' => [
@@ -1293,7 +1293,7 @@ function phy_more_8(): array {
         // Why never zero energy.
         static function (MlbRng $r) { $what = $r->pick(['an electron trapped in a tiny box', 'a particle confined in a narrow quantum well', 'an electron held inside a nanocrystal']);
             return mlb_mcq($r, 'Why can ' . $what . ' never have zero energy, even at absolute zero?', 'At least half a wavelength must fit in the box, so it always has some momentum and kinetic energy',
-                [['It is always being heated by the walls', 'This holds even at absolute zero: it is a property of a confined wave, not of heat.'], ['Its mass turns into energy', 'Nothing is being converted; the minimum energy comes from confinement.'], ['It can — the ground state is E = 0', 'The ground state is E₁ = h² ÷ (8mL²), which is not zero.']],
+                [['It is always being heated by the walls of the box, so it keeps a little thermal energy', 'This holds even at absolute zero: it is a property of a confined wave, not of heat.'], ['Its mass keeps turning into energy, so some energy is always present', 'Nothing is being converted; the minimum energy comes from confinement.'], ['It can — at absolute zero it sits still in the ground state, with E = 0', 'The ground state is E₁ = h² ÷ (8mL²), which is not zero.']],
                 ['A trapped particle is a standing wave: the box must hold at least half a wavelength, λ ≤ 2L.', 'So p = h ÷ λ cannot be zero, and neither can the kinetic energy: E₁ = h² ÷ (8mL²).'], 'What is the longest wave that fits in the box?', 'reasoning', 45); },
     ],
     'PH-075' => [
@@ -1314,7 +1314,7 @@ function phy_more_8(): array {
         // Why fusing light nuclei releases energy.
         static function (MlbRng $r) { $what = $r->pick(['two hydrogen nuclei fuse into helium in the Sun', 'deuterium and tritium fuse in a fusion reactor']);
             return mlb_mcq($r, 'Energy is released when ' . $what . '. Why?', 'The product has a larger binding energy per nucleon, so it has less mass, and the lost mass is released as energy',
-                [['The binding energy per nucleon goes DOWN', 'If it went down, energy would have to be SUPPLIED.'], ['Mass is created in the reaction', 'The products have LESS mass; that is where the energy comes from.'], ['The nuclei repel each other, and the repulsion is released', 'The repulsion has to be OVERCOME (that is why fusion needs huge temperatures).']],
+                [['The binding energy per nucleon goes DOWN, so the nucleons are held less tightly and the spare energy escapes', 'If it went down, energy would have to be SUPPLIED.'], ['Mass is created in the reaction, and the extra mass is turned into energy by E = mc²', 'The products have LESS mass; that is where the energy comes from.'], ['The nuclei repel each other, and the energy of that repulsion is released when they fuse', 'The repulsion has to be OVERCOME (that is why fusion needs huge temperatures).']],
                 ['For light nuclei, binding energy per nucleon rises as they combine (up towards iron-56).', 'More tightly bound means less total mass; the mass difference appears as energy, E = mc².'], 'Look at the binding-energy-per-nucleon curve for light nuclei.', 'reasoning', 45); },
     ],
     'PH-077' => [
@@ -1325,7 +1325,7 @@ function phy_more_8(): array {
         // Half-wave rectification.
         static function (MlbRng $r) { $what = $r->pick(['a resistor', 'a small lamp', 'a phone battery being charged']);
             return mlb_mcq($r, 'A single diode is connected in series with ' . $what . ' across an a.c. supply. What current flows through it?', 'Current in one direction only, in pulses during half of each cycle',
-                [['A steady, smooth direct current', 'One diode only blocks the reverse half; smoothing needs a capacitor.'], ['The same alternating current as before', 'The diode blocks current in the reverse direction.'], ['No current at all', 'In the forward half of each cycle, the diode conducts.']],
+                [['A steady, smooth direct current, as from a battery', 'One diode only blocks the reverse half; smoothing needs a capacitor.'], ['The same alternating current as before, only a little smaller', 'The diode blocks current in the reverse direction.'], ['No current at all, because the diode blocks a.c. completely', 'In the forward half of each cycle, the diode conducts.']],
                 ['A diode conducts in one direction only.', 'So current flows only in the forward half of each a.c. cycle: half-wave rectified, pulsing d.c.'], 'What does the diode do in the reverse half of the cycle?', 'concept', 40); },
     ],
     'PH-078' => [
@@ -1438,7 +1438,7 @@ function phy_more_9(): array {
         // Why eddy brakes fade at low speed.
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Magnetic (eddy-current) brakes slow a train well at high speed but hardly at all near a stop, so ordinary brakes are needed at the end. Why?', 'The induced current, and so the braking force, is proportional to the speed',
-                [['The magnets weaken as they warm up', 'Even with perfectly cool magnets, the force still fades as the train slows.'], ['Eddy currents only flow in one direction', 'Their direction is not the issue; their size is.'], ['The braking force grows as the train slows', 'It is the other way round: no motion, no changing flux, no current.']],
+                [['The magnets weaken as they warm up, so they grip the train less', 'Even with perfectly cool magnets, the force still fades as the train slows.'], ['Eddy currents only flow in one direction, so they cannot stop it fully', 'Their direction is not the issue; their size is.'], ['The braking force grows as the train slows, so it would jerk to a stop', 'It is the other way round: no motion, no changing flux, no current.']],
                 ['The e.m.f. comes from the metal moving through the field: ε = BLv.', 'Slower motion gives a smaller e.m.f., a smaller current and a smaller force — zero when stopped.'], 'What makes the eddy currents flow in the first place?', 'reasoning', 45); },
     ],
     'PH-086' => [
@@ -1449,14 +1449,14 @@ function phy_more_9(): array {
         // Heat does not flow uphill by itself.
         static function (MlbRng $r) { $what = $r->pick(['a fridge', 'an air conditioner', 'a deep freezer']);
             return mlb_mcq($r, 'Why must ' . $what . ' be plugged in to keep moving heat from its cold inside out to a warmer room?', 'Heat flows by itself only from hot to cold; moving it the other way needs work to be done',
-                [['To power the light inside it', 'The light is a tiny load; the work goes into pumping heat.'], ['Because cold has to be made by electricity', 'There is no “cold” to make: heat is moved out.'], ['It does not need to: heat flows out of the cold inside by itself', 'Heat never flows from cold to hot unaided (the second law of thermodynamics).']],
+                [['To power the light and the fan inside it, which run all the time', 'The light is a tiny load; the work goes into pumping heat.'], ['Because cold has to be made by electricity and then pumped into the inside', 'There is no “cold” to make: heat is moved out.'], ['It does not need to: heat flows out of the cold inside by itself', 'Heat never flows from cold to hot unaided (the second law of thermodynamics).']],
                 ['The second law: heat flows spontaneously only from a hotter body to a colder one.', 'A refrigerator moves heat from cold to hot, so a compressor must do work — which is why the back of it gets warm.'], 'Which way does heat flow when left alone?', 'reasoning', 40); },
     ],
     'PH-087' => [
         // How greenhouse gases warm the ground.
         static function (MlbRng $r) { $gas = $r->pick(['carbon dioxide', 'water vapour', 'methane']);
             return mlb_mcq($r, 'How does ' . $gas . ' in the atmosphere make the ground warmer?', 'It lets most sunlight through but absorbs the infrared the warm ground gives off, sending part of it back down',
-                [['It makes a hole in the sky that lets in more sunlight', 'That confuses the greenhouse effect with the ozone hole; it is about outgoing infrared.'], ['It reflects incoming sunlight back down to the ground', 'It is the OUTGOING infrared it absorbs.'], ['It produces heat by itself', 'It only re-emits energy the ground has radiated.']],
+                [['It makes a hole in the sky that lets in more of the Sun’s light, so more heat reaches the ground', 'That confuses the greenhouse effect with the ozone hole; it is about outgoing infrared.'], ['It traps the incoming sunlight and reflects it back down, so the ground gets it twice', 'It is the OUTGOING infrared it absorbs; most sunlight passes straight through.'], ['It produces heat by itself, like a gas fire burning slowly in the air', 'It only re-emits energy the ground has radiated.']],
                 ['The Sun’s light (mostly visible) passes through; the ground warms and radiates infrared.', 'Greenhouse gases absorb that infrared and re-radiate part of it downwards, so the ground must be warmer to balance its energy.'], 'Which radiation does the gas absorb: incoming sunlight or outgoing infrared?', 'concept', 40); },
         // Typed: sunlight absorbed by a roof.
         static function (MlbRng $r) { $A = $r->pick([20, 30, 40, 50]); $a = $r->pick([0.1, 0.2, 0.3, 0.6, 0.7]); $roof = $a >= 0.6 ? 'white-painted' : 'dark';
@@ -1465,9 +1465,9 @@ function phy_more_9(): array {
     ],
     'PH-088' => [
         // A bigger resistor, a slower discharge.
-        static function (MlbRng $r) { [$what, $right, $wr] = $r->pick([['The resistor is replaced by one of TWICE the resistance', 'It discharges more slowly: the time constant RC doubles', 'It discharges more quickly'], ['The capacitor is replaced by one of HALF the capacitance', 'It discharges more quickly: the time constant RC halves', 'It discharges more slowly']]);
+        static function (MlbRng $r) { [$what, $right, $wr] = $r->pick([['The resistor is replaced by one of TWICE the resistance', 'It discharges more slowly: the time constant RC doubles', 'It discharges more quickly: the time constant RC halves'], ['The capacitor is replaced by one of HALF the capacitance', 'It discharges more quickly: the time constant RC halves', 'It discharges more slowly: the time constant RC doubles']]);
             return mlb_mcq($r, 'A capacitor discharges through a resistor. ' . $what . ', and it is charged to the same voltage again. How does the discharge change?', $right,
-                [[$wr, 'Look at what happens to RC, the time constant.'], ['No change: the starting voltage is the same', 'The starting voltage is the same, but the RATE depends on RC.'], ['It never fully discharges now', 'It never fully discharges in any case (the decay is exponential); what changes is the rate.']],
+                [[$wr, 'Look at what happens to RC, the time constant.'], ['No change: the starting voltage is the same', 'The starting voltage is the same, but the RATE depends on RC.'], ['It never fully discharges now; some charge stays on the plates', 'It never fully discharges in any case (the decay is exponential); what changes is the rate.']],
                 ['The time constant is τ = RC: the time for the voltage to fall to about 37% of its value.', 'A bigger RC means a slower discharge; a smaller RC a faster one.'], 'What is the time constant made of?', 'reasoning', 40); },
         // Typed: charging after whole time constants.
         static function (MlbRng $r) { $V0 = $r->pick([5, 6, 9, 12]); [$n, $e] = $r->pick([[1, 0.368], [2, 0.135], [3, 0.05]]);

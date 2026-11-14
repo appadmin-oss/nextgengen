@@ -59,7 +59,7 @@ function phy_forms_1(): array {
         static function (MlbRng $r) {
             $base = $r->pick(['length', 'mass', 'time', 'electric current', 'temperature']);
             return mlb_mcq($r, 'Which of these is a fundamental (base) quantity?', ucfirst($base),
-                [['Speed', 'Speed is derived: distance ÷ time.'], ['Force', 'Force is derived: mass × acceleration.'], ['Density', 'Density is derived: mass ÷ volume.'], ['Area', 'Area is derived: length × length.']],
+                [['Electric charge', 'Charge is derived: current × time.'], ['Acceleration', 'Acceleration is derived: change of velocity ÷ time.'], ['Density', 'Density is derived: mass ÷ volume.'], ['Area', 'Area is derived: length × length.']],
                 ['A fundamental quantity is not defined from other quantities.', ucfirst($base) . ' is one of the seven base quantities; the others listed are built from them.'],
                 'Can it be written as a formula of other quantities?', 'concept', 25);
         },
@@ -118,7 +118,7 @@ function phy_forms_1(): array {
             $k = $r->int(0, 2); [$what, $right] = $rows[$k];
             $wrong = [];
             foreach ($rows as $i => $x) if ($i !== $k) $wrong[] = [$x[1], 'That suits ' . $x[0] . '.'];
-            $wrong[] = ['Beam balance', 'A beam balance measures mass, not length.'];
+            $wrong[] = ['Top-pan electronic balance', 'A top-pan balance measures mass, not length — however precise its display.'];
             return mlb_mcq($r, 'Which instrument is best for measuring ' . $what . '?', $right, $wrong,
                 ['Choose the instrument whose range and precision fit the length.', $right . ': ' . $rows[$k][2]], 'How small is it, and how precisely must it be measured?', 'concept', 30);
         },
@@ -175,12 +175,12 @@ function phy_forms_1(): array {
             $d = ['solid' => 'Packed close together in a fixed pattern, vibrating about fixed positions', 'liquid' => 'Close together but able to slide past one another', 'gas' => 'Far apart, moving fast and freely in all directions'];
             $s = $r->pick(array_keys($d)); $wrong = [];
             foreach ($d as $k => $v) if ($k !== $s) $wrong[] = [$v, 'That describes the particles of a ' . $k . '.'];
-            $wrong[] = ['Not moving at all', 'Particles are always moving — in a solid they vibrate.'];
+            $wrong[] = ['Packed tightly in a fixed pattern, held still and not moving at all', 'Particles are always moving — in a solid they vibrate about fixed positions.'];
             return mlb_mcq($r, 'Which describes the particles in a ' . $s . '?', $d[$s], $wrong,
                 ['Solids keep their shape, liquids flow but keep their volume, gases fill their container.', 'In a ' . $s . ' the particles are: ' . mb_strtolower($d[$s]) . '.'], 'What can a ' . $s . ' do that the others cannot?', 'concept', 30); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why does a gas spread out to fill any container it is put in?', 'Its particles move quickly in all directions and have little force between them',
-                [['Its particles get bigger', 'Particles do not grow; the spaces between them do.'], ['It is lighter than air', 'Even a heavy gas fills its whole container.'], ['Its particles are pushed by the container walls', 'The walls stop the particles; they do not drive them outwards.']],
+                [['Its particles grow bigger as they warm, so they take up all the space', 'Particles do not grow; the spaces between them do.'], ['It is lighter than air, so it rises and spreads to every corner', 'Even a heavy gas fills its whole container, top and bottom.'], ['Its particles are pushed outwards by the walls of the container', 'The walls stop the particles; they do not drive them outwards.']],
                 ['Gas particles move fast and randomly, with large spaces and weak attractions between them.', 'So they spread into every part of the space available.'], 'Think about how the particles move.', 'concept', 30); },
         static function (MlbRng $r) { $x = $r->pick(['a drop of ink in water', 'the smell of perfume across a room', 'smoke particles seen jiggling under a microscope']);
             $right = $x === 'smoke particles seen jiggling under a microscope' ? 'Brownian motion' : 'Diffusion';
@@ -199,11 +199,11 @@ function phy_forms_1(): array {
                 ['Each change of state has its own name.', $a . ' → ' . $b . ' is ' . mb_strtolower($name) . '.'], 'Name the change.', 'concept', 25); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Ice is heated steadily. While it is melting, its temperature stays at 0 °C. Where is the heat going?', 'Into breaking the bonds between particles (latent heat)',
-                [['Into the thermometer', 'The thermometer takes very little; the ice takes the rest.'], ['Nowhere: the heat stops flowing', 'Heat keeps flowing in; it is just not raising the temperature.'], ['Into making the particles move faster', 'Faster particles WOULD mean a higher temperature, and it is not rising.']],
+                [['Into the thermometer and the air around the ice', 'The thermometer and the air take very little; the ice takes the rest.'], ['Nowhere: the heat stops flowing in while the ice melts', 'Heat keeps flowing in; it is just not raising the temperature.'], ['Into making the particles move faster (kinetic energy)', 'Faster particles WOULD mean a higher temperature, and it is not rising.']],
                 ['During a change of state, heat goes into separating the particles, not into speeding them up.', 'That hidden heat is called latent heat, so the temperature stays constant until all the ice has melted.'], 'What is changing, if not the temperature?', 'reasoning', 40); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Which is TRUE of evaporation but not of boiling?', 'It happens at any temperature, from the surface only',
-                [['It happens at one fixed temperature', 'That is boiling: a liquid boils at its boiling point.'], ['Bubbles form all through the liquid', 'That is boiling.'], ['It needs a flame', 'Wet clothes dry in the sun with no flame at all.']],
+                [['It happens at one fixed temperature, the boiling point', 'That is boiling: a liquid boils at its boiling point.'], ['Bubbles of vapour form all through the liquid', 'That is boiling.'], ['It needs a flame or some other heater to happen', 'Wet clothes dry in the sun with no flame at all.']],
                 ['Evaporation: at any temperature, only at the surface, and it cools what is left.', 'Boiling: at a fixed temperature, throughout the liquid, with bubbles.'], 'How do wet clothes dry?', 'concept', 35); },
     ],
     'PH-009' => [
@@ -239,7 +239,7 @@ function phy_forms_1(): array {
                 ['Percentage error = (error ÷ true value) × 100.', '(' . mlb_dec($e) . ' ÷ ' . $t . ') × 100 = ' . mlb_dec($e / $t * 100) . '%.'], 'Error compared with the true value.', 'procedure', 45); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'A student times one swing of a pendulum with a stopwatch, and gets a slightly different time each try. What is the best way to reduce this error?', 'Time many swings and divide, and repeat and average',
-                [['Use a heavier pendulum bob', 'The bob’s mass does not change the period, nor the timing error.'], ['Time just one swing very carefully', 'Reaction time is a large part of one short swing.'], ['Round every time to the nearest second', 'That throws precision away.']],
+                [['Use a heavier bob, so the swings are steadier', 'The bob’s mass does not change the period, nor the timing error.'], ['Time just one swing, but very carefully each time', 'Reaction time is a large part of one short swing, however careful you are.'], ['Round every reading to the nearest whole second', 'That throws precision away.']],
                 ['Random errors such as reaction time are reduced by measuring a larger quantity and by averaging repeats.', 'Timing 20 swings makes a 0.2 s reaction error only 0.01 s per swing.'], 'Make the error a small part of what you measure.', 'reasoning', 40); },
     ],
     ];
@@ -256,7 +256,7 @@ function phy_forms_2(): array {
                 ['type' => 'phy-forces', 'ground' => true, 'f' => [['dir' => 'right', 'label' => $a . ' N', 'n' => $a, 'off' => -14], ['dir' => 'right', 'label' => $b . ' N', 'n' => $b, 'off' => 14, 'tone' => 1], ['dir' => 'left', 'label' => $c . ' N', 'n' => $c, 'tone' => 3]]]); },
         static function (MlbRng $r) { $moving = $r->int(0, 1) === 1;
             return mlb_mcq($r, 'A ' . ($moving ? 'car moving along a straight road' : 'book resting on a table') . ' has balanced forces acting on it. What happens to it?', $moving ? 'It keeps moving at the same speed in a straight line' : 'It stays at rest',
-                [[$moving ? 'It slows down and stops' : 'It starts to move slowly', 'Balanced forces cause NO change in motion.'], ['It speeds up', 'Speeding up needs an unbalanced (resultant) force.'], ['It moves in a circle', 'Turning needs a resultant force towards the centre.']],
+                [[$moving ? 'It slows down gradually until it comes to a stop' : 'It starts to move slowly', 'Balanced forces cause NO change in motion.'], [$moving ? 'It keeps speeding up along the straight road' : 'It speeds up', 'Speeding up needs an unbalanced (resultant) force.'], [$moving ? 'It moves round in a circle at a steady speed' : 'It moves in a circle', 'Turning needs a resultant force towards the centre.']],
                 ['When the forces are balanced the resultant is zero.', 'Zero resultant: no change in motion — at rest stays at rest, moving keeps moving steadily.'], 'What does a zero resultant change?', 'concept', 30); },
         static function (MlbRng $r) { $nc = $r->pick(['Gravitational force', 'Magnetic force', 'Electrostatic force']);
             return mlb_mcq($r, 'Which of these forces can act WITHOUT the objects touching?', $nc,
@@ -300,7 +300,7 @@ function phy_forms_2(): array {
                 ['Force = weight = ' . $m . ' × 10 = ' . $W . ' N; area = ' . mlb_dec($a) . ' × ' . mlb_dec($b) . ' = ' . mlb_dec($a * $b) . ' m².', '$P = ' . $W . ' \\div ' . mlb_dec($a * $b) . ' = ' . mlb_rd($W / ($a * $b), 1) . '$ Pa.'], 'The force is its weight.', 'application', 55, 1); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why does a sharp knife cut better than a blunt one, pushed with the same force?', 'The force acts on a smaller area, so the pressure is greater',
-                [['A sharp knife is heavier', 'Sharpening removes metal, if anything.'], ['The force is bigger', 'The force is the same in both cases.'], ['The area is bigger, so the pressure is greater', 'A bigger area gives a SMALLER pressure.']],
+                [['A sharp knife is heavier, so it presses down harder', 'Sharpening removes metal, if anything.'], ['The sharp edge makes the force itself bigger', 'The force is the same in both cases; only the area differs.'], ['The area is bigger, so the pressure is greater', 'A bigger area gives a SMALLER pressure.']],
                 ['P = F ÷ A.', 'Same force on a much smaller area means a much larger pressure.'], 'P = F ÷ A.', 'reasoning', 30); },
     ],
     'PH-015' => [
@@ -331,7 +331,7 @@ function phy_forms_2(): array {
                 ['type' => 'phy-lever', 'pivot' => 50, 'loads' => [['d' => -$d1, 'label' => $F1 . ' N'], ['d' => $d2, 'label' => 'F = ?']]]); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why is a door handle placed far from the hinges?', 'A larger distance gives a larger turning moment for the same force',
-                [['It is easier to reach', 'Reach is not why: the hinge side is just as reachable.'], ['It makes the door lighter', 'The door’s weight does not change.'], ['A smaller distance gives a larger moment', 'Moment = force × distance: more distance, more moment.']],
+                [['It is easier to reach there than near the hinges', 'Reach is not why: the hinge side is just as reachable.'], ['The push itself becomes a bigger force further from the hinges', 'The force is the same; it is the moment (force × distance) that grows.'], ['Near the hinges the moment would be too large to control', 'Moment = force × distance: less distance gives LESS moment, not more.']],
                 ['Moment = force × perpendicular distance from the pivot (the hinge).', 'Far from the hinge, a small push gives a large turning effect.'], 'Moment = F × d.', 'reasoning', 30); },
         static function (MlbRng $r) { $F1 = $r->int(2, 9) * 10; $d1 = $r->int(2, 6) * 10; $F2 = $r->int(1, 4) * 10; $d2 = $F1 * $d1 / $F2;
             if ($d2 > 200) { $F2 = $F1; $d2 = $d1; }
@@ -520,7 +520,7 @@ function phy_forms_3(): array {
     'PH-028' => [
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Passengers in a bus jerk forwards when it suddenly brakes. Why?', 'Their bodies tend to keep moving forward (inertia)',
-                [['The brakes push them forwards', 'The brakes act on the wheels, not on the passengers.'], ['Gravity pulls them forwards', 'Gravity pulls downwards.'], ['The seat throws them forwards', 'The seat slows with the bus; the body keeps going.']],
+                [['The brakes push them forwards through the floor', 'The brakes act on the wheels, not on the passengers.'], ['Gravity pulls them forwards as the bus tips', 'Gravity pulls downwards, whatever the bus does.'], ['The seat behind throws them forwards', 'The seat slows with the bus; the body keeps going.']],
                 ['Newton’s first law: a body keeps its state of rest or uniform motion unless a resultant force acts on it.', 'The bus stops; the passengers keep moving until a force (a seat belt, the seat in front) stops them.'], 'What does a body do when no force acts on it?', 'reasoning', 30); },
         static function (MlbRng $r) { $a = $r->int(2, 40); $b = $r->int(50, 900);
             return mlb_mcq($r, 'Which has the greater inertia: a ' . $a . ' kg bicycle moving at 10 m/s or a ' . $b . ' kg car at rest?', 'The car, because it has more mass',
@@ -622,7 +622,7 @@ function phy_forms_4(): array {
                 ['Force = change in momentum ÷ time.', '(' . mlb_dec($m) . ' × ' . $v . ' − 0) ÷ ' . mlb_dec($t) . ' = ' . mlb_rd($m * $v / $t, 1) . ' N.'], 'Ft = mv − mu.', 'application', 55, 1); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why do cars have crumple zones and airbags?', 'They make a collision last longer, so the force is smaller',
-                [['They make the car lighter', 'They add weight if anything.'], ['They reduce the change in momentum', 'The car still stops: the change in momentum is the same.'], ['They make the collision shorter', 'A shorter collision would mean a LARGER force.']],
+                [['They make the car lighter, so it has less momentum', 'They add weight if anything.'], ['They reduce the change in momentum, so the force is smaller', 'The car still stops: the change in momentum is the same.'], ['They make the collision shorter, so it is over sooner', 'A shorter collision would mean a LARGER force.']],
                 ['Force = change in momentum ÷ time.', 'Stretching out the time of the stop, for the same change in momentum, makes the force on the people smaller.'], 'F = Δp ÷ t.', 'reasoning', 35); },
     ],
     'PH-036' => [
@@ -716,7 +716,7 @@ function phy_forms_5(): array {
                 ['ΔL = αLΔθ.', 'ΔL = ' . $a . ' × 10⁻⁶ × ' . $L . ' × ' . $dT . ' = ' . mlb_rd($dL / 1000, 6) . ' m = ' . mlb_rd($dL, 2) . ' mm.'], 'ΔL = αLΔθ, then metres to millimetres.', 'procedure', 60, 2); },
         static function (MlbRng $r) { $why = $r->pick(['Gaps are left between lengths of railway line', 'Telephone wires are hung slack in hot weather']);
             return mlb_mcq($r, $why . '. Why?', 'To allow room for expansion when it gets hot',
-                [['To save metal', 'Gaps and slack exist because of temperature, not cost.'], ['To make them easier to repair', 'The reason is the effect of temperature.'], ['Because metals shrink when heated', 'Metals EXPAND when heated.']],
+                [['To save metal, since a full length costs more', 'Gaps and slack exist because of temperature, not cost.'], ['To make them easier to repair', 'The reason is the effect of temperature.'], ['Because metals shrink when they are heated', 'Metals EXPAND when heated.']],
                 ['Solids expand when heated and contract when cooled.', 'Without the gaps (or slack), the expansion (or contraction) would buckle rails or snap wires.'], 'What happens to metal on a hot day?', 'reasoning', 30); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'A bimetallic strip of brass and iron is heated and bends. Which metal is on the OUTSIDE of the curve?', 'Brass, because it expands more',
@@ -764,7 +764,7 @@ function phy_forms_5(): array {
                 ['Charles’s law: $\\frac{V_1}{T_1} = \\frac{V_2}{T_2}$ with T in KELVIN.', '$T_1 = ' . $T1 . '$ K, $T_2 = ' . mlb_dec($T2) . '$ K: $V_2 = ' . $V1 . ' \\times \\frac{' . mlb_dec($T2) . '}{' . $T1 . '} = ' . mlb_dec($V1 * $k) . '$ cm³.'], 'Change °C to K first.', 'challenge', 60); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why does a car tyre’s pressure rise after a long drive on a hot day?', 'The air inside gets hotter, so its particles hit the walls harder and more often',
-                [['More air leaks in', 'No air enters a sealed tyre.'], ['The tyre gets smaller', 'The tyre’s volume stays roughly the same.'], ['The air particles get bigger', 'Particles do not grow; they move faster.']],
+                [['More air leaks in through the valve while the car is moving', 'No air enters a sealed tyre.'], ['The tyre gets smaller as the rubber heats up, squeezing the air', 'The tyre’s volume stays roughly the same.'], ['The air particles get bigger as they warm, so they push on the walls', 'Particles do not grow; they move faster.']],
                 ['Pressure law: at constant volume, pressure rises with (kelvin) temperature.', 'Hotter particles move faster, hitting the walls harder and more often.'], 'Think about the particles.', 'reasoning', 35); },
     ],
     'PH-046' => [
@@ -789,7 +789,7 @@ function phy_forms_5(): array {
                 ['The sound travels 2 × ' . $d . ' = ' . (2 * $d) . ' m.', 'v = ' . (2 * $d) . ' ÷ ' . mlb_rd($t, 3) . ' ≈ ' . $v . ' m/s.'], 'v = 2d ÷ t.', 'application', 50, 0); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'An astronaut on the Moon cannot hear a rock falling nearby. Why?', 'Sound needs a medium, and there is no air on the Moon',
-                [['Sound is too slow on the Moon', 'Sound cannot travel at all without a medium.'], ['The Moon’s gravity stops sound', 'Gravity has nothing to do with it.'], ['The rock makes no vibrations', 'The rock vibrates; nothing carries those vibrations to her.']],
+                [['Sound travels too slowly on the Moon to reach her', 'Sound cannot travel at all without a medium.'], ['The Moon’s weak gravity stops sound from spreading', 'Gravity has nothing to do with it.'], ['The rock makes no vibrations when it lands', 'The rock vibrates; nothing carries those vibrations to her.']],
                 ['Sound is a longitudinal wave made by particles vibrating.', 'In a vacuum there are no particles to pass the vibrations on.'], 'What does sound travel through?', 'concept', 30); },
     ],
     'PH-048' => [
@@ -804,7 +804,7 @@ function phy_forms_5(): array {
                 ['n = (360 ÷ θ) − 1.', '360 ÷ ' . $th . ' − 1 = ' . (360 / $th - 1) . ' images.'], 'n = 360/θ − 1.', 'procedure', 40); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Which describes the image of you in a plane mirror?', 'Virtual, upright, the same size and laterally inverted',
-                [['Real, upside down and smaller', 'That describes an image made by a converging lens far away.'], ['Virtual, upright and larger', 'A plane mirror image is the same size.'], ['Real, upright and the same size', 'A plane mirror image cannot be caught on a screen: it is virtual.']],
+                [['Real, upside down, smaller and laterally inverted', 'A real, inverted, smaller image comes from a converging lens with the object far away.'], ['Virtual, upright, larger and laterally inverted', 'A plane mirror image is the same size.'], ['Real, upright, the same size and not inverted', 'A plane mirror image cannot be caught on a screen: it is virtual, and left and right are swapped.']],
                 ['A plane mirror image is as far behind the mirror as the object is in front.', 'It is virtual, upright, the same size and laterally inverted (left and right swapped).'], 'Can you catch it on a screen?', 'concept', 30); },
     ],
     'PH-049' => [
@@ -884,7 +884,7 @@ function phy_forms_6(): array {
                 ['Total resistance = ' . $a . ' + ' . $b . ' = ' . ($a + $b) . ' Ω.', 'I = V ÷ R = ' . mlb_dec($V) . ' ÷ ' . ($a + $b) . ' = ' . mlb_dec($I) . ' A.'], 'Find the total resistance first.', 'application', 45), ['type' => 'phy-circuit', 'cell' => mlb_dec($V) . ' V', 'r' => [$a . ' Ω', $b . ' Ω'], 'ammeter' => true]); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Two identical resistors are joined in parallel instead of in series. What happens to the total resistance?', 'It becomes a quarter of what it was',
-                [['It doubles', 'Parallel paths make it EASIER for current to flow, lowering the resistance.'], ['It halves', 'Each pair: series gives 2R, parallel gives R/2 — a quarter.'], ['It stays the same', 'How resistors are joined changes the total.']],
+                [['It doubles, because there are two paths', 'Parallel paths make it EASIER for current to flow, lowering the resistance.'], ['It becomes half of what it was', 'Each pair: series gives 2R, parallel gives R/2 — a quarter.'], ['It stays the same as before', 'How resistors are joined changes the total.']],
                 ['In series: R + R = 2R. In parallel: R × R ÷ 2R = R/2.', 'R/2 is a quarter of 2R.'], 'Work out both.', 'reasoning', 45); },
     ],
     'PH-054' => [
@@ -908,7 +908,7 @@ function phy_forms_6(): array {
                 ['Lost volts = Ir = ' . mlb_dec($I) . ' × ' . mlb_dec($rr) . ' = ' . mlb_dec($I * $rr) . ' V.', 'Terminal p.d. = E − Ir = ' . mlb_dec($E) . ' − ' . mlb_dec($I * $rr) . ' = ' . mlb_dec($E - $I * $rr) . ' V.'], 'E − Ir.', 'application', 50); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why is the voltage across a battery’s terminals less than its e.m.f. when it is driving a current?', 'Some voltage is used up driving current through the battery’s own internal resistance',
-                [['The battery loses charge instantly', 'The e.m.f. stays the same; the loss is inside the battery.'], ['The wires store some of the voltage', 'Wires do not store voltage.'], ['The e.m.f. becomes bigger', 'The terminal p.d. is SMALLER, not larger.']],
+                [['The battery loses some of its charge the instant the current starts to flow', 'The e.m.f. stays the same; the loss is inside the battery.'], ['The connecting wires store some of the voltage and keep it back', 'Wires do not store voltage.'], ['The e.m.f. falls as soon as any current is drawn from the battery', 'The e.m.f. stays the same; the drop is the lost volts Ir inside the battery.']],
                 ['Terminal p.d. = E − Ir.', 'The "lost volts" Ir are used inside the battery, so less is available outside.'], 'Lost volts.', 'reasoning', 35); },
     ],
     'PH-056' => [
@@ -928,7 +928,7 @@ function phy_forms_6(): array {
                 ['F = BIL (field at right angles to the wire).', 'F = ' . mlb_dec($B) . ' × ' . $I . ' × ' . mlb_dec($L) . ' = ' . mlb_dec($B * $I * $L) . ' N.'], 'F = BIL.', 'procedure', 40); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'In Fleming’s LEFT-hand rule, what does the FIRST finger point along?', 'The magnetic field (north to south)',
-                [['The current', 'The seCond finger is the Current.'], ['The force (motion)', 'The thuMb is the Motion (force).'], ['The voltage', 'Voltage is not part of the rule.']],
+                [['The current (positive to negative)', 'The seCond finger is the Current.'], ['The force on the wire (the motion)', 'The thuMb is the Motion (force).'], ['The voltage across the wire', 'Voltage is not part of the rule.']],
                 ['Thumb: motion (force). First finger: field. Second finger: current.', 'So the first finger points along the field, from north to south.'], 'First finger = field.', 'concept', 30); },
         static function (MlbRng $r) { $k = $r->pick(['current is doubled', 'field strength is halved', 'wire is made three times as long']);
             $m = ['current is doubled' => 'It doubles', 'field strength is halved' => 'It halves', 'wire is made three times as long' => 'It triples'][$k];
@@ -947,7 +947,7 @@ function phy_forms_6(): array {
                 ['An ideal transformer wastes nothing: power in = power out, $V_pI_p = V_sI_s$.', '$I_p = \\frac{' . $Vs . ' \\times ' . $Is . '}{240} = ' . mlb_dec($Vs * $Is / $Vp) . '$ A.'], 'Power in = power out.', 'challenge', 55); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why does a transformer not work on a steady d.c. supply?', 'A steady current makes a steady magnetic field, which induces no voltage',
-                [['D.c. is too weak', 'The size of the supply is not the problem.'], ['D.c. flows the wrong way round the core', 'Direction is not the issue: CHANGE is.'], ['The coils would melt', 'They might overheat, but that is not why no voltage is induced.']],
+                [['D.c. is too weak to push current through the coils', 'The size of the supply is not the problem.'], ['D.c. flows the wrong way round the iron core to be passed on', 'Direction is not the issue: CHANGE is.'], ['The coils would melt, so no voltage could be induced', 'They might overheat, but that is not why no voltage is induced.']],
                 ['A voltage is induced only when the magnetic field through a coil CHANGES (Faraday’s law).', 'Alternating current makes a constantly changing field; steady d.c. does not.'], 'Induction needs a changing field.', 'reasoning', 40); },
     ],
     'PH-059' => [
@@ -1000,7 +1000,7 @@ function phy_forms_7(): array {
             return mlb_mcq($r, 'How is heat mainly transferred here: ' . mb_strtolower(mb_substr($x, 0, 1)) . mb_substr($x, 1) . '?', $right, $wrong, [$why, 'So this is ' . mb_strtolower($right) . '.'], 'Solid, fluid moving, or no material at all?', 'concept', 30); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why are the inner walls of a vacuum flask silvered?', 'To reduce heat lost or gained by radiation',
-                [['To reduce heat lost by conduction', 'The VACUUM between the walls stops conduction.'], ['To reduce heat lost by convection', 'The vacuum stops convection too; there is no air to move.'], ['To make the flask stronger', 'Silvering is a thin coat; it is about radiation.']],
+                [['To reduce heat lost or gained by conduction', 'The VACUUM between the walls stops conduction.'], ['To reduce heat lost by convection', 'The vacuum stops convection too; there is no air to move.'], ['To make the flask stronger', 'Silvering is a thin coat; it is about radiation.']],
                 ['A shiny surface is a poor emitter and a poor absorber of radiation, and reflects it back.', 'The vacuum stops conduction and convection; the silvering cuts radiation; the stopper stops convection out of the top.'], 'Which of the three can cross a vacuum?', 'reasoning', 35); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Which surface is the best ABSORBER (and the best emitter) of heat radiation?', 'Dull black',
@@ -1013,11 +1013,11 @@ function phy_forms_7(): array {
                 ['$\\theta = \\frac{L_\\theta - L_0}{L_{100} - L_0} \\times 100$.', '$\\theta = \\frac{' . mlb_dec($Lt) . ' - ' . $L0 . '}{' . ($L0 + $span) . ' - ' . $L0 . '} \\times 100 = ' . $th . '$ °C.'], 'How far along the 0–100 range is it?', 'procedure', 55); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why does a clinical thermometer have a narrow kink (constriction) just above the bulb?', 'It stops the mercury falling back, so the reading can be taken after it leaves the mouth',
-                [['To make the mercury expand faster', 'The bulb’s size and the bore decide that, not the kink.'], ['To measure lower temperatures', 'A clinical thermometer only reads about 35–42 °C.'], ['To protect the glass from breaking', 'It is about keeping the reading, not strength.']],
+                [['It makes the mercury rise further for each degree, so it is easier to read', 'The narrow bore of the tube decides that, not the kink.'], ['It lets the thermometer measure lower temperatures than an ordinary one', 'A clinical thermometer only reads about 35–42 °C.'], ['It strengthens the glass so the bulb does not break', 'It is about keeping the reading, not strength.']],
                 ['When the thermometer is taken out, the mercury in the bulb contracts.', 'The thread breaks at the constriction and the column above stays put, holding the reading until it is shaken down.'], 'What must not happen after you take it out?', 'reasoning', 35); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why is alcohol, not mercury, used in thermometers for very cold places?', 'Alcohol freezes at a much lower temperature (about −115 °C)',
-                [['Alcohol is cheaper', 'Price is not the physics reason.'], ['Alcohol boils at a higher temperature', 'Alcohol boils at about 78 °C, LOWER than mercury.'], ['Mercury is not a liquid below 0 °C', 'Mercury stays liquid down to about −39 °C, but no lower.']],
+                [['Alcohol is cheaper and easier to see in the cold', 'Price and looks are not the physics reason.'], ['Alcohol boils at a much higher temperature (about 350 °C)', 'Alcohol boils at about 78 °C, far LOWER than mercury; boiling is not the problem in the cold.'], ['Mercury stops being a liquid below 0 °C, as water does', 'Mercury stays liquid down to about −39 °C, but no lower.']],
                 ['Mercury freezes at −39 °C, so it fails in polar cold.', 'Alcohol stays liquid down to about −115 °C.'], 'What happens to mercury below −39 °C?', 'concept', 30); },
     ],
     'PH-063' => [
@@ -1069,7 +1069,7 @@ function phy_forms_7(): array {
                 ['Strain = extension ÷ original length (no unit).', mlb_dec($e) . ' mm ÷ ' . mlb_dec($L * 1000) . ' mm = ' . mlb_dec($e / ($L * 1000)) . ' = ' . mlb_dec($e / $L) . ' × 10⁻³.'], 'Same units top and bottom.', 'procedure', 45); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Two wires of the same steel and length are pulled with the same force. Wire B is twice as thick (twice the diameter) as wire A. How does B’s extension compare?', 'It is a quarter of A’s',
-                [['It is half of A’s', 'Twice the DIAMETER means four times the AREA.'], ['It is the same', 'A thicker wire spreads the force over more area: less stress, less stretch.'], ['It is twice A’s', 'A thicker wire stretches LESS.']],
+                [['It is half as much as A’s', 'Twice the DIAMETER means four times the AREA.'], ['It is the same as A’s', 'A thicker wire spreads the force over more area: less stress, less stretch.'], ['It is twice A’s', 'A thicker wire stretches LESS.']],
                 ['$e = \\frac{FL}{AE}$: the extension is inversely proportional to the area.', 'Area ∝ diameter², so twice the diameter is 4 × the area and ¼ of the extension.'], 'Area goes as diameter squared.', 'reasoning', 45); },
     ],
     'PH-067' => [
@@ -1114,7 +1114,7 @@ function phy_forms_7(): array {
                 ['Faraday’s first law: m = ZIt (Z in mg/C, t in seconds).', 'm = 0.33 × ' . mlb_dec($I) . ' × ' . $t . ' = ' . mlb_rd($Z * $I * $t, 1) . ' mg = ' . mlb_rd($Z * $I * $t / 1000, 3) . ' g.'], 'Charge first: Q = It.', 'procedure', 60, 3); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Copper is plated onto a key by electrolysis. Where must the key be placed?', 'As the cathode (connected to the negative terminal)',
-                [['As the anode (positive)', 'The anode is where copper DISSOLVES; positive copper ions are attracted to the negative electrode.'], ['Anywhere in the solution, not connected', 'It must be an electrode to receive the ions.'], ['Either electrode works', 'Only the negative electrode attracts the positive copper ions.']],
+                [['As the anode (connected to the positive terminal)', 'The anode is where copper DISSOLVES; positive copper ions are attracted to the negative electrode.'], ['Anywhere in the solution, not connected', 'It must be an electrode to receive the ions.'], ['At either electrode, as both carry copper ions', 'Only the negative electrode attracts the positive copper ions.']],
                 ['Copper ions are positive (Cu²⁺), so they move to the negative electrode, the cathode, and are deposited there.', 'So the object to be plated is made the cathode.'], 'Opposite charges attract.', 'concept', 35); },
         static function (MlbRng $r) { $I = $r->pick([1, 2, 4, 5]); $m = $r->pick([0.66, 1.32, 1.98]); $t = $m * 1000 / (0.33 * $I);
             return phy_num('How long must a current of ' . $I . ' A flow to deposit ' . mlb_dec($m) . ' g of copper (Z = 0.33 mg/C)? Give your answer in seconds.', mlb_rd($t, 0), 's',
@@ -1135,7 +1135,7 @@ function phy_forms_8(): array {
                 ['Einstein: photon energy = work function + maximum kinetic energy.', 'KE(max) = ' . mlb_dec($E) . ' − ' . mlb_dec($W) . ' = ' . mlb_dec($E - $W) . ' eV.'], 'hf = W + KE.', 'procedure', 45); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Light is shining on a metal and electrons are being emitted. The light is made BRIGHTER, with its colour unchanged. What happens?', 'More electrons come out each second, with the same maximum energy',
-                [['The electrons come out with more energy', 'Each electron gets ONE photon’s energy; brighter means more photons, not bigger ones.'], ['No change at all', 'More photons per second free more electrons per second.'], ['Fewer electrons come out', 'More light frees more, never fewer.']],
+                [['The same number come out, but each one has more energy', 'Each electron gets ONE photon’s energy; brighter means more photons, not bigger ones.'], ['Nothing changes, as only the colour of the light matters', 'Colour fixes each electron’s energy, but more photons per second free more electrons per second.'], ['Fewer electrons come out, but each moves faster', 'More light frees more, never fewer, and their maximum energy is unchanged.']],
                 ['Light arrives as photons, each of energy hf.', 'Brighter light = more photons of the same energy: more electrons, same maximum KE. Only a higher frequency raises the KE.'], 'One photon, one electron.', 'reasoning', 40); },
         static function (MlbRng $r) { $W = $r->pick([2.0, 2.48, 3.1, 4.13]);
             return phy_num('A metal has a work function of ' . mlb_dec($W) . ' eV. What is the longest wavelength of light that can free electrons from it? (hc = 1240 eV nm)', mlb_rd(1240 / $W, 0), 'nm',
@@ -1150,7 +1150,7 @@ function phy_forms_8(): array {
                 ['λ = hc ÷ ΔE.', '1240 ÷ ' . mlb_dec($dE) . ' = ' . mlb_rd(1240 / $dE, 0) . ' nm.'], 'λ = 1240 / E.', 'procedure', 45, 0); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why does each element give out light of only certain exact colours (a line spectrum)?', 'Its electrons can only have certain energies, so only certain energy jumps are possible',
-                [['Its atoms are different sizes', 'Size does not pick out exact colours.'], ['It only reflects those colours', 'An emission spectrum is light given OUT, not reflected.'], ['Hot gases always glow white', 'A hot gas glows in sharp lines; a hot solid glows in a continuous spread.']],
+                [['Its atoms come in different sizes, and each size gives one colour', 'Size does not pick out exact colours.'], ['It only reflects those colours and absorbs all of the others', 'An emission spectrum is light given OUT, not reflected.'], ['Its atoms vibrate at one speed, and each speed gives its own colour of light', 'Whole atoms jiggling give heat radiation over a continuous spread, not sharp lines.']],
                 ['Electron energies in an atom are quantised: only certain levels exist.', 'A photon’s energy equals one jump between levels, and E = hf fixes its colour.'], 'Only certain jumps.', 'reasoning', 40); },
     ],
     'PH-073' => [
@@ -1163,7 +1163,7 @@ function phy_forms_8(): array {
                 ['λ = h/(mv).', 'Multiplying v by ' . $k . ' divides λ by ' . $k . '. (That is why fast electrons in a microscope see finer detail.)'], 'λ ∝ 1/v.', 'reasoning', 40); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Which experiment showed that electrons behave as waves?', 'Electrons passing through a crystal make a diffraction pattern',
-                [['Electrons are deflected by a magnet', 'That shows they are charged particles, not waves.'], ['Light frees electrons from a metal', 'That (the photoelectric effect) shows LIGHT behaving as particles.'], ['Electrons have a fixed charge', 'Charge says nothing about waves.']],
+                [['Electrons are deflected by a magnet, curving like a wave', 'That shows they are charged particles, not waves.'], ['Light shining on a metal frees electrons from its surface', 'That (the photoelectric effect) shows LIGHT behaving as particles.'], ['Electrons are found to have a fixed charge and mass', 'Charge and mass say nothing about waves.']],
                 ['Diffraction and interference are what waves do.', 'Electron diffraction by crystals (Davisson and Germer, G. P. Thomson) showed electrons do it too.'], 'What only waves do.', 'concept', 35); },
     ],
     'PH-074' => [
@@ -1187,7 +1187,7 @@ function phy_forms_8(): array {
                 ['The missing mass becomes energy: E = Δm c².', mlb_dec($dm) . ' × 931.5 = ' . mlb_rd($dm * 931.5, 2) . ' MeV.'], 'Mass defect × 931.5.', 'procedure', 45, 2); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why does the Sun lose about 4 million tonnes of mass every second?', 'It turns mass into the energy it radiates (E = mc²)',
-                [['Its gas escapes into space as wind', 'There is a solar wind, but it carries far less; the main loss is mass turned into energy.'], ['It is burning like a fire', 'Burning (chemical) would have used it up in thousands of years; fusion turns mass to energy.'], ['Its gravity is weakening', 'Gravity does not destroy mass.']],
+                [['Its gas escapes into space as the solar wind', 'There is a solar wind, but it carries far less; the main loss is mass turned into energy.'], ['It is burning its fuel like a huge fire', 'Burning (chemical) would have used it up in thousands of years; fusion turns mass to energy.'], ['Its gravity is weakening, so it holds less mass', 'Gravity does not destroy mass.']],
                 ['In fusion, four hydrogen nuclei become one helium nucleus with a little less mass.', 'That missing mass is released as energy: E = mc², which is why the Sun shines.'], 'E = mc².', 'reasoning', 40); },
     ],
     'PH-076' => [
@@ -1208,11 +1208,11 @@ function phy_forms_8(): array {
                 ['The diode takes about 0.7 V when it conducts; the rest is across the resistor.', 'I = (' . $V . ' − 0.7) ÷ ' . $R . ' = ' . mlb_rd(($V - 0.7) / $R * 1000, 2) . ' mA.'], 'Take the diode’s 0.7 V off first.', 'application', 55, 2); },
         static function (MlbRng $r) { $n = $r->int(0, 1) === 1;
             return mlb_mcq($r, 'Silicon is doped with ' . ($n ? 'phosphorus (5 outer electrons)' : 'boron (3 outer electrons)') . '. What kind of semiconductor results?', $n ? 'n-type: extra free electrons carry the current' : 'p-type: holes carry the current',
-                [[$n ? 'p-type: holes carry the current' : 'n-type: extra free electrons carry the current', 'That comes from the other kind of impurity (' . ($n ? '3' : '5') . ' outer electrons).'], ['An insulator', 'Doping makes silicon conduct BETTER.'], ['A metal', 'It is still a semiconductor, just doped.']],
+                [[$n ? 'p-type: holes carry the current' : 'n-type: extra free electrons carry the current', 'That comes from the other kind of impurity (' . ($n ? '3' : '5') . ' outer electrons).'], ['An insulator, with no free charges', 'Doping makes silicon conduct BETTER.'], [$n ? 'A metal: every atom gives free electrons' : 'A metal', 'It is still a semiconductor, just doped.']],
                 ['Silicon has 4 outer electrons. A 5-electron atom leaves one spare (n-type); a 3-electron atom leaves a gap, a hole (p-type).', $n ? 'So phosphorus gives n-type.' : 'So boron gives p-type.'], 'One spare, or one missing?', 'concept', 40); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'What is a diode used for in a phone charger?', 'Rectification: letting current through one way only, turning a.c. into d.c.',
-                [['Stepping the voltage down', 'That is the transformer’s job.'], ['Storing charge', 'That is a capacitor.'], ['Increasing the current', 'A diode cannot make more current.']],
+                [['Transformation: stepping the voltage down from the mains to 5 V', 'That is the transformer’s job.'], ['Storing charge for when the mains goes off', 'That is a capacitor.'], ['Amplification: increasing the current so the phone charges faster', 'A diode cannot make more current.']],
                 ['A diode conducts when forward-biased and blocks when reverse-biased.', 'So it lets only one direction of the a.c. through: rectification.'], 'One-way valve.', 'concept', 30); },
     ],
     'PH-078' => [
@@ -1224,7 +1224,7 @@ function phy_forms_8(): array {
                 ['P ∝ T⁴.', mlb_dec($k) . '⁴ = ' . mlb_rd($k ** 4, 2) . '.'], 'Fourth power.', 'reasoning', 40, 2); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'A piece of iron is heated: it glows dull red, then orange, then yellow-white. Why does the colour change?', 'Hotter bodies radiate most strongly at shorter wavelengths (Wien’s law)',
-                [['The iron is melting', 'The colour changes well before it melts.'], ['It is reflecting the flame', 'It glows on its own, in the dark too.'], ['Hotter bodies give out longer wavelengths', 'The peak moves to SHORTER wavelengths as T rises.']],
+                [['The iron is starting to melt, and molten iron glows brighter', 'The colour changes well before it melts.'], ['It is reflecting more of the flame’s light as it heats up', 'It glows on its own, in the dark too.'], ['Hotter bodies radiate most strongly at longer wavelengths', 'The peak moves to SHORTER wavelengths as T rises.']],
                 ['λmax ∝ 1/T: as T rises, the peak moves from infrared through red towards blue.', 'So the glow goes red → orange → yellow → white.'], 'Where is the peak?', 'concept', 35); },
     ],
     'PH-079' => [
@@ -1233,11 +1233,11 @@ function phy_forms_8(): array {
                 ['An electron accelerated through V gains eV of energy; the most energetic X-ray photon takes all of it.', 'λmin = 1240 ÷ ' . ($kV * 1000) . ' = ' . mlb_rd(1240 / ($kV * 1000), 4) . ' nm.'], 'All the electron’s energy into one photon.', 'challenge', 55, 4); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why do bones show up clearly on an X-ray photograph?', 'Bone absorbs X-rays much more than soft tissue does',
-                [['Bone gives out X-rays', 'Bone does not emit X-rays; it blocks them.'], ['X-rays bounce off bone into the camera', 'X-ray images are shadows, not reflections.'], ['Soft tissue absorbs more than bone', 'It is the reverse: that is why bone looks white.']],
+                [['Bone gives out X-rays of its own when they strike it', 'Bone does not emit X-rays; it blocks them.'], ['X-rays bounce off bone into the camera', 'X-ray images are shadows, not reflections.'], ['Soft tissue absorbs more X-rays than bone does', 'It is the reverse: that is why bone looks white.']],
                 ['X-rays pass easily through flesh but are absorbed by dense bone.', 'So bone casts a shadow on the film.'], 'A shadow picture.', 'concept', 30); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'How are X-rays produced in an X-ray tube?', 'Fast electrons hit a metal target and suddenly stop',
-                [['A hot filament glows very brightly', 'The filament only supplies the electrons.'], ['Radioactive atoms decay', 'That gives gamma rays, not tube X-rays.'], ['A magnet bends light', 'Magnets do not turn light into X-rays.']],
+                [['A hot filament glows so brightly that it gives out X-rays', 'The filament only supplies the electrons.'], ['Radioactive atoms inside the tube decay', 'That gives gamma rays, not tube X-rays.'], ['A strong magnet bends light into X-rays', 'Magnets do not turn light into X-rays.']],
                 ['Electrons boiled off a hot filament are accelerated by a high voltage.', 'When they crash into the target (often tungsten), some of their energy comes out as X-ray photons.'], 'Electrons stopping suddenly.', 'concept', 30); },
     ],
     'PH-080' => [
@@ -1281,7 +1281,7 @@ function phy_forms_9(): array {
                 ['Volume = ' . $L . ' × ' . $W . ' × ' . $H . ' = ' . ($L * $W * $H) . ' m³.', 'Mass = 1.2 × ' . ($L * $W * $H) . ' ≈ ' . mlb_rd(1.2 * $L * $W * $H, 0) . ' kg — more than the people in it.'], 'Mass = density × volume.', 'application', 50, 0); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Roughly how many times does a human heart beat in a 70-year life?', 'About 3 × 10⁹ (three billion)',
-                [['About 3 × 10⁶', 'That is only about one month of beats.'], ['About 3 × 10¹²', 'That would need tens of thousands of beats a second.'], ['About 3 × 10⁴', 'That is less than a day.']],
+                [['About 3 × 10⁶ (three million)', 'That is only about one month of beats.'], ['About 3 × 10¹² (three trillion)', 'That would need over a thousand beats a second.'], ['About 3 × 10⁴ (thirty thousand)', 'That is less than a day.']],
                 ['About 70 beats a minute × 60 × 24 × 365 ≈ 3.7 × 10⁷ beats a year.', '× 70 years ≈ 2.6 × 10⁹: about three billion.'], 'Per minute → per year → per life.', 'reasoning', 60); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'About how many seconds are there in a year, to the nearest power of ten?', '10⁷',
@@ -1322,11 +1322,11 @@ function phy_forms_9(): array {
                 ['Current I = ε/R = BLv/R; the field pushes on it with F = BIL.', '$F = \\frac{B^2L^2v}{R} = ' . mlb_rd($F, 3) . '$ N — and it grows with speed, so it is a drag, opposing the motion (Lenz’s law).'], 'ε → I → F = BIL.', 'challenge', 90, 3); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'A copper plate swings like a pendulum between the poles of a strong magnet and stops after a few swings, though copper is not magnetic. Why?', 'Currents induced in the plate (eddy currents) make a force that opposes its motion',
-                [['The magnet attracts the copper', 'Copper is not attracted by a magnet at rest.'], ['Air resistance is bigger near a magnet', 'Air does not care about magnets.'], ['The copper becomes magnetised permanently', 'It is not magnetised; currents flow only while it moves.']],
+                [['The magnet attracts the copper and holds it still at the bottom of the swing', 'Copper is not attracted by a magnet at rest.'], ['Air resistance is bigger near a magnet, so the plate slows', 'Air does not care about magnets.'], ['The copper becomes magnetised permanently and sticks to the poles', 'It is not magnetised; currents flow only while it moves.']],
                 ['Moving through the field, the plate has e.m.f.s induced in it, driving swirling eddy currents.', 'By Lenz’s law those currents push back against the motion: magnetic braking, used in trains and roller coasters. A plate with slots cut in it barely slows, because the currents cannot circulate.'], 'Moving metal + field → current → force.', 'reasoning', 50); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'A metal ball spins about an axis parallel to a uniform magnetic field. Which is true?', 'Eddy currents flow in it and their magnetic effect slowly brakes the spin',
-                [['Nothing happens, as the field is uniform', 'The metal moves through the field, so charges in it feel forces and currents can flow.'], ['The ball speeds up', 'Induced effects always oppose the motion that causes them (Lenz).'], ['The ball becomes a permanent magnet', 'The effect lasts only while it spins.']],
+                [['Nothing happens, because the field is the same strength everywhere', 'The metal moves through the field, so charges in it feel forces and currents can flow.'], ['Induced currents flow in it and push it round faster', 'Induced effects always oppose the motion that causes them (Lenz).'], ['The ball becomes a permanent magnet, which locks the spin', 'The effect lasts only while it spins.']],
                 ['Charges moving with the spinning metal feel a magnetic force qv × B; this drives circulating currents.', 'Those currents dissipate energy as heat, so the spin slows — and they make the ball a small magnet while it turns, which is what a second ball nearby would feel.'], 'Moving conductor + field.', 'challenge', 70); },
     ],
     'PH-086' => [
@@ -1338,7 +1338,7 @@ function phy_forms_9(): array {
                 ['$COP = \\frac{T_c}{T_h - T_c}$.', $Tc . ' ÷ (' . $Th . ' − ' . $Tc . ') = ' . mlb_rd($Tc / ($Th - $Tc), 2) . '. The colder you go, the harder it gets.'], 'Cold temperature over the difference.', 'challenge', 60, 2); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why can no refrigerator ever cool something all the way to absolute zero?', 'The work needed per joule of heat removed grows without limit as the cold side nears 0 K',
-                [['Fridges are not well enough insulated', 'Even a perfect, ideal refrigerator cannot.'], ['Absolute zero is below the freezing point of every gas', 'That is true, but it is not the reason.'], ['Heat flows from cold to hot by itself', 'It does not: that is why a fridge needs work.']],
+                [['No fridge can be insulated well enough to stop heat leaking back in', 'Even a perfect, ideal refrigerator cannot.'], ['Absolute zero is below the freezing point of every gas, so the coolant stops', 'Coolants can freeze, but even an ideal fridge with no coolant problem could not; the work needed is the reason.'], ['Heat flows from cold to hot by itself, so the inside warms back up', 'It does not: heat flows from hot to cold, which is why a fridge needs work.']],
                 ['COP = Tc/(Th − Tc) → 0 as Tc → 0.', 'So each step colder needs ever more work: absolute zero can be approached but never reached (the third law of thermodynamics).'], 'Look at COP as Tc → 0.', 'reasoning', 60); },
     ],
     'PH-087' => [
@@ -1373,7 +1373,7 @@ function phy_forms_9(): array {
                 ['Moving clocks run slow: Δt = γΔt₀.', 'γ = ' . mlb_rd($g, 3) . ', so ' . $t0 . ' × ' . mlb_rd($g, 3) . ' = ' . mlb_rd($t0 * $g, 2) . ' minutes.'], 'Earth sees MORE time.', 'challenge', 60, 2); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Muons made high in the atmosphere live only about 2 µs, yet many reach the ground 10 km below. How?', 'Moving near light speed, their clocks run slow as seen from Earth, so they live much longer for us',
-                [['They travel faster than light', 'Nothing with mass reaches the speed of light.'], ['They are made right next to the ground', 'They are made 10–15 km up.'], ['The air pushes them down faster', 'Air only slows them.']],
+                [['They travel faster than light, so they cover 10 km in under 2 µs', 'Nothing with mass reaches the speed of light.'], ['Moving near light speed, their clocks run fast as seen from Earth, so they arrive sooner', 'Moving clocks run SLOW, not fast, as seen from Earth; that is what stretches their life.'], ['The air pushes them down faster and faster, so they arrive in time', 'Air only slows them.']],
                 ['At 0.998c, γ ≈ 16: a 2 µs life becomes about 32 µs as Earth measures it.', 'In 32 µs at nearly 3 × 10⁸ m/s they cover about 10 km — direct evidence for time dilation.'], 'Time dilation.', 'reasoning', 50); },
     ],
     'PH-090' => [

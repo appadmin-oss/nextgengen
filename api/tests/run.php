@@ -38513,6 +38513,30 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $longest <= $chance + 0.05 * $n && $shortest <= $chance + 0.05 * $n);
 })();
 
+/* ── The Physics length tell (owner, 14 Nov 2026: "Physics still has the length tell too"). Physics forms are
+   code, so each is SAMPLED: a form fails when 30%+ of its distinct questions have a right answer that is clearly
+   the longest option (longer than every wrong one by 25% and 4+ characters). ── */
+(function () {
+    lab_use('physics'); $n = 0; $longest = 0; $shortest = 0; $chance = 0.0; $flag = [];
+    foreach (mlb_stages() as $sg) foreach ($sg['comps'] as $c) foreach (array_keys(mlb_forms_of($c)) as $f) {
+        $seen = []; $fq = 0; $fc = 0;
+        for ($sd = 1; $sd <= 30; $sd++) {
+            $it = mlb_item($c, $f, $sd * 7919 + 13);
+            if (!$it || !in_array($it['kind'], ['mcq', 'error'], true) || !is_array($it['options'] ?? null)) continue;
+            $o = array_map(static fn($x) => is_string($x) ? $x : json_encode($x, JSON_UNESCAPED_UNICODE), $it['options']); $k = (int)$it['key'];
+            $h = md5(json_encode([$it['stem'], $o])); if (isset($seen[$h])) continue; $seen[$h] = 1;
+            $l = array_map('mb_strlen', $o); $kl = $l[$k]; unset($l[$k]); $mo = max($l); $mn = min($l);
+            $n++; $fq++; $chance += 1 / count($o); if ($kl > $mo) $longest++; if ($kl < $mn) $shortest++;
+            if ($kl > $mo && $kl >= 1.25 * $mo && $kl - $mo >= 4) $fc++;
+        }
+        if ($fq && $fc / $fq >= 0.3) $flag[] = "$c f$f";
+    }
+    $pc = static fn($x) => round(100 * $x / max(1, $n));
+    chk('physics · no form gives its answer away by making it clearly the longest option' . ($flag ? ' (' . implode(', ', array_slice($flag, 0, 6)) . ')' : ''), $flag === []);
+    chk('physics · “pick the longest” is no better than chance (' . $pc($longest) . '% vs ' . $pc($chance) . '%), and “pick the shortest” is not a new tell (' . $pc($shortest) . '%)',
+        $longest <= $chance + 0.05 * $n && $shortest <= $chance + 0.05 * $n);
+})();
+
 /* ── No over-practice (9 Nov 2026) ── */
 (function () {
     lab_use('maths'); $now = now_iso();
