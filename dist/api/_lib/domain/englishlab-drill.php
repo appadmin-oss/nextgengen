@@ -175,7 +175,7 @@ function eng_drill_forms(): array {
         ], 'Which word rhymes with “{q}”?', 'Say it aloud: rhyme is the sound of the stressed vowel and what follows.'),
         eng_choose([
             ['Which pair does NOT rhyme?', 'pint / mint', [['blood / mud', 'They rhyme: /ʌd/.'], ['said / bed', 'They rhyme: /ed/.'], ['shoe / blue', 'They rhyme: /uː/.']], 'pint /paɪnt/, mint /mɪnt/.'],
-            ['Which pair does NOT rhyme?', 'wind (moving air) / mind', [['heart / cart', 'They rhyme: /ɑːt/.'], ['eight / late', 'They rhyme: /eɪt/.'], ['word / bird', 'They rhyme: /ɜːd/.']], 'The noun wind is /wɪnd/; only the verb (to wind a clock) rhymes with mind.'],
+            ['Which pair does NOT rhyme?', 'wind (moving air) / mind', [['bow (to bend low) / cow', 'They rhyme: /aʊ/. Only the bow on a gift is /bəʊ/.'], ['tear (to rip) / bear', 'They rhyme: /eə/. Only a tear from the eye is /tɪə/.'], ['word / bird', 'They rhyme: /ɜːd/.']], 'The noun wind is /wɪnd/; only the verb (to wind a clock) rhymes with mind.'],
             ['Which pair does NOT rhyme?', 'cough / though', [['through / flew', 'They rhyme: /uː/.'], ['bear / there', 'They rhyme: /eə/.'], ['come / sum', 'They rhyme: /ʌm/.']], 'cough /kɒf/, though /ðəʊ/.'],
         ], '', 'Spelling is irrelevant to rhyme.'),
     ],

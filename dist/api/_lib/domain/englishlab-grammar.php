@@ -111,7 +111,7 @@ function eng_grammar_forms(): array {
             [['I', 'am knowing', 'the answer', 'to that question.'], 1, 'know', '“Know” is a state, not an action: it is not used in the continuous.'],
             [['She', 'has went', 'to the market', 'already.'], 1, 'has gone', 'Has + past participle: gone, not went.'],
             [['We', 'did not saw', 'him', 'yesterday.'], 1, 'did not see', 'After “did”, use the base form: see.'],
-            [['They', 'are living here', 'since', 'five years.'], 1, 'have been living here', 'A period up to now takes the perfect: have been living … for five years.'],
+            [['They', 'are living', 'here for', 'five years.'], 1, 'have been living', 'A period that started in the past and goes on now takes the perfect continuous: they have been living here for five years.'],
         ], 'Check each verb’s helper and form.'),
     ],
     'EN-016' => [
@@ -144,7 +144,7 @@ function eng_grammar_forms(): array {
         eng_spot([
             [['The', 'teacher’s', 'collected all the', 'notebooks.'], 1, 'teachers', 'A plain plural takes no apostrophe.'],
             [['The company', 'lost', 'it’s', 'licence.'], 2, 'its', 'Possessive “its” has no apostrophe.'],
-            [['We', 'sell', 'fresh tomatoe’s', 'every day.'], 2, 'fresh tomatoes', 'Plurals never take an apostrophe.'],
+            [['We', 'sell fresh', 'tomatoe’s', 'every day.'], 2, 'tomatoes', 'Plurals never take an apostrophe.'],
         ], 'Plurals do not take apostrophes; owners do.'),
     ],
     'EN-018' => [
@@ -244,7 +244,7 @@ function eng_grammar_forms(): array {
             ['now', 'then', [], 'now → then.'], ['yesterday', 'the day before', ['the previous day'], 'yesterday → the day before.'],
         ], 'In reported speech after “said”, what does “{q}” usually become?', 'Things move one step back in time and away from the speaker.', 'concept', 25),
         eng_spot([
-            [['She', 'asked me', 'where was I going', 'that evening.'], 2, 'where I was going', 'A reported question uses statement order: subject before verb.'],
+            [['She', 'asked me where', 'was I going', 'that evening.'], 2, 'I was going', 'A reported question uses statement order: subject before verb.'],
             [['He', 'told that', 'he would', 'be late.'], 1, 'said that', '“Told” needs a person after it: told me that… Otherwise use “said”.'],
             [['The man', 'said', 'that he will', 'call back.'], 2, 'that he would', 'After “said”, will → would.'],
         ], 'Reported questions are not questions; “tell” needs a person.'),
@@ -266,18 +266,18 @@ function eng_grammar_forms(): array {
         ], 'Type the verb in the right form: {q}', 'Match the pattern of the conditional.', 'procedure', 35),
         eng_spot([
             [['If I', 'will see', 'him,', 'I will tell him.'], 1, 'see', '“Will” does not follow “if” in the if-clause: If I see him…'],
-            [['If she', 'would have known,', 'she would', 'have come.'], 1, 'had known,', 'The if-clause of the third conditional takes “had” + participle.'],
+            [['If she', 'would have', 'known, she would', 'have come.'], 1, 'had', 'The if-clause of the third conditional takes “had” + participle.'],
             [['If I', 'was', 'the president,', 'I would build more schools.'], 1, 'were', 'In an imagined condition, standard English uses “were” for all persons.'],
         ], 'The if-clause never takes “will” or “would”.'),
     ],
     'EN-034' => [
         eng_choose([
             ['The meeting was called off because of the rain.', 'cancelled', [['started', 'Not the meaning of “call off”.'], ['announced', '“Call off” is not to announce.'], ['moved indoors', 'It did not happen at all.']], 'Call off = cancel.'],
-            ['Please look after my bag while I am away.', 'take care of', [['look for', 'That means search.'], ['follow', 'Not the meaning.'], ['open', 'Not the meaning.']], 'Look after = take care of.'],
+            ['Please look after my bag while I am away.', 'take care of', [['look for', 'That means search.'], ['run after', '“After” here is not chasing: look after means care for.'], ['bring back', 'That means return.']], 'Look after = take care of.'],
             ['She takes after her mother.', 'resembles', [['follows behind', 'Not the meaning here.'], ['looks after', 'That means cares for.'], ['dislikes', 'Not the meaning.']], 'Take after = resemble (an older relative).'],
             ['We ran out of fuel near Ore.', 'used all of', [['ran away from', 'Not the meaning.'], ['bought more', 'The opposite.'], ['spilled', 'Not the meaning.']], 'Run out of = have none left.'],
             ['He gave up smoking last year.', 'stopped', [['started', 'The opposite.'], ['shared', 'Not the meaning.'], ['hid', 'Not the meaning.']], 'Give up = stop doing.'],
-            ['I came across an old photograph.', 'found by chance', [['walked over', 'Not the meaning here.'], ['tore', 'Not the meaning.'], ['posted', 'Not the meaning.']], 'Come across = find by chance.'],
+            ['I came across an old photograph.', 'found by chance', [['walked across', 'Not the meaning here: nobody walked on the photograph.'], ['tore', 'Not the meaning.'], ['searched for', 'Coming across is not searching; it happens by chance.']], 'Come across = find by chance.'],
         ], 'What does the phrasal verb mean? “{q}”', 'Read the whole sentence; the particle changes the verb’s meaning.'),
         eng_type([
             ['Please ___ the form before you leave. (complete it)', 'fill in', ['fill out'], 'Fill in (or fill out) a form.'],
@@ -297,12 +297,12 @@ function eng_grammar_forms(): array {
             ['It is raining cats and dogs.', 'raining very heavily', [['animals are falling', 'An idiom is not literal.'], ['raining lightly', 'It means the opposite.'], ['pets are getting wet', 'Not literal.']], 'Raining cats and dogs = raining heavily.'],
             ['The exam was a piece of cake.', 'very easy', [['very hard', 'The opposite.'], ['about food', 'Not literal.'], ['very long', 'Not the meaning.']], 'A piece of cake = very easy.'],
             ['He let the cat out of the bag.', 'told a secret', [['freed an animal', 'Not literal.'], ['made a mistake', 'Close, but the meaning is revealing a secret.'], ['ran away', 'Not the meaning.']], 'Let the cat out of the bag = reveal a secret.'],
-            ['She burnt the midnight oil before the exam.', 'studied late into the night', [['caused a fire', 'Not literal.'], ['wasted fuel', 'Not literal.'], ['slept early', 'The opposite.']], 'Burn the midnight oil = work late at night.'],
+            ['She burnt the midnight oil before the exam.', 'studied late into the night', [['caused a fire at night', 'Not literal: nothing was set alight.'], ['used up the lamp’s oil', 'Not literal: no oil was burnt.'], ['went to bed early', 'The opposite.']], 'Burn the midnight oil = work late at night.'],
             ['Don’t beat about the bush; tell me what happened.', 'avoid the main point', [['hit the plants', 'Not literal.'], ['walk in the forest', 'Not literal.'], ['shout', 'Not the meaning.']], 'Beat about the bush = avoid saying something directly.'],
-            ['The news of his promotion was music to his ears.', 'pleasing to hear', [['loud', 'Not the meaning.'], ['a song', 'Not literal.'], ['confusing', 'The opposite feeling.']], 'Music to one’s ears = very welcome news.'],
+            ['The news of his promotion was music to his ears.', 'pleasing to hear', [['too loud to bear', 'Not the meaning: music here stands for pleasure.'], ['a song he heard', 'Not literal.'], ['confusing', 'The opposite feeling.']], 'Music to one’s ears = very welcome news.'],
         ], 'What does the idiom mean? “{q}”', 'An idiom’s meaning is not the meaning of its words.'),
         eng_choose([
-            ['Which idiom means “to be very nervous”?', 'to have butterflies in one’s stomach', [['to be over the moon', 'That means very happy.'], ['to break the ice', 'That means to start a conversation.'], ['to hit the nail on the head', 'That means to be exactly right.']], 'Butterflies in one’s stomach = nervous.'],
+            ['Which idiom means “to be very nervous”?', 'to have butterflies in one’s stomach', [['to have a frog in one’s throat', 'That means to be hoarse.'], ['to break the ice', 'That means to start a conversation.'], ['to hit the nail on the head', 'That means to be exactly right.']], 'Butterflies in one’s stomach = nervous.'],
             ['Which idiom means “to be very happy”?', 'to be over the moon', [['to be under the weather', 'That means unwell.'], ['to be in hot water', 'That means in trouble.'], ['to be at sea', 'That means confused.']], 'Over the moon = delighted.'],
             ['Which idiom means “to be unwell”?', 'to be under the weather', [['to be on cloud nine', 'That means very happy.'], ['to be in the same boat', 'That means sharing a problem.'], ['to be all ears', 'That means listening eagerly.']], 'Under the weather = slightly ill.'],
             ['Which idiom means “to be in trouble”?', 'to be in hot water', [['to be in the pink', 'That means healthy.'], ['to be on cloud nine', 'That means very happy.'], ['to be all ears', 'That means listening eagerly.']], 'In hot water = in trouble.'],

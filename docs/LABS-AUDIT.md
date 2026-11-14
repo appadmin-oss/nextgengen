@@ -340,3 +340,31 @@ typed bank went from 5 to 8.
 - The sounds, reading, writing and senior-paper topics (40 topics) still lean on choice, because a
   typed answer there needs judgement. Those are where AI marking, checked by code, could earn its
   place (see AI-LEARNING-AUDIT item 3).
+
+## Round 7 — 14 Nov 2026: the length tell
+
+**What was measured.** Of 1,132 English choice rows, the right answer was the single longest option
+in 39%, against 25% chance. In 263 it was *clearly* longest: 25% longer and at least 4 characters
+longer than every wrong option.
+
+**What was rewritten.** The wrong options of all 263 rows, as real misreadings of comparable length.
+For example:
+- **Main idea:** a true detail stretched into a fake main idea.
+- **Comprehension:** a phrase from the passage that answers the wrong question.
+- **Grammar:** a learner's real error ("wouldn't had lost").
+
+Questions, answers, row order and counts are unchanged, so stored sessions replay.
+
+**Result.**
+- Clearly-longest rows: 263 → 1.
+- "Pick the longest": 39% → 30%.
+- "Pick the shortest": 11%, unchanged, so no opposite tell was created.
+
+The one remaining row is EN-006. Its wrong options must be words from "She sings beautifully in
+the choir", and a longer phrase would be a second right answer.
+
+**Found on the way.** EN-015's spot-the-error sentence had two errors ("are living here since five
+years"), so spotting "since" was marked wrong. It now has one.
+
+**Held by a test.** `run.php` fails on any new clearly-longest row, and when "pick the longest" or
+"pick the shortest" beats chance by more than 5 points.
