@@ -5024,3 +5024,17 @@ CREATE TABLE IF NOT EXISTS learning_log (
 ALTER TABLE awards ADD COLUMN category VARCHAR(32) NOT NULL DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (215) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 216 · Who was told about an assignment, and of what ──
+-- One row per assignment, member and kind; the UNIQUE key is the claim, so a
+-- re-publish tells only those not yet told and a due reminder goes once.
+CREATE TABLE IF NOT EXISTS assignment_notices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  assignmentId VARCHAR(64) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  kind VARCHAR(16) NOT NULL,
+  sentAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_asg_notice (assignmentId, memberId, kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (216) ON DUPLICATE KEY UPDATE version = version;

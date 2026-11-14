@@ -487,6 +487,9 @@ function staff_assignments_save(array $p): array {
             if ($row['week'] === 0) $row['week'] = (int)$u['week'];
         }
     }
+    // Work handed in pins it open: as a draft it would vanish from the members who did it, marks and all.
+    if ($existing && $row['status'] === 'draft' && (string)$existing['status'] !== 'draft' && assignment_has_submissions($id))
+        $errors['status'] = ASG_DRAFT_REFUSED;
     if (!assignment_in_reach($g, $row)) $errors[$row['track'] === '' ? 'track' : (!assignment_centre_in_scope($g, $row['centre']) ? 'centre' : 'track')] =
         $row['track'] === '' ? 'Only an admin sets work for the whole Club. Choose your course.' : 'That is outside the courses and centre you teach.';
     if ($row['status'] === 'published' && $row['instructions'] === '') $errors['instructions'] = 'Say what to do before you publish it.';
@@ -772,6 +775,22 @@ function staff_assignments_remind(array $p): array {
     audit('assignment.remind', $g['me'], (string)$a['assignmentId'], ['count' => count($targets)], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'reminded' => count($targets)];
 }
+function assignment_has_submissions(string $assignmentId): bool {
+    return (bool)db_row('SELECT 1 FROM assignment_submissions WHERE assignmentId = ? LIMIT 1', [$assignmentId]);
+}
+const ASG_DRAFT_REFUSED = 'Work has been handed in for this one, so it cannot go back to draft — members would lose sight of what they handed in and its mark. Close it instead.';
+
+/**
+ * Claim the right to tell one member one thing about one assignment. True
+ * only for the writer whose row landed (UNIQUE assignmentId, memberId, kind),
+ * so two runs — or a publish, a draft and a publish again — never tell the
+ * same person the same thing twice.
+ */
+function assignment_notice_claim(string $assignmentId, string $memberId, string $kind): bool {
+    $verb = db_driver() === 'mysql' ? 'INSERT IGNORE' : 'INSERT OR IGNORE';
+    return db_exec($verb . ' INTO assignment_notices (assignmentId, memberId, kind, sentAt) VALUES (?, ?, ?, ?)', [$assignmentId, $memberId, $kind, now_iso()]) === 1;
+}
+
 function sub_ids_for(string $assignmentId): array {
     return array_flip(array_column(db_all('SELECT memberId FROM assignment_submissions WHERE assignmentId = ?', [$assignmentId]), 'memberId'));
 }
@@ -790,11 +809,12 @@ function staff_assignments_status(array $p): array {
         if (!$a) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'not_found']; continue; }
         if (!assignment_in_reach($g, $a)) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'out_of_scope']; continue; }
         if ($action === 'delete') {
-            if (db_row('SELECT 1 FROM assignment_submissions WHERE assignmentId = ? LIMIT 1', [$id])) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'has_submissions']; continue; }
+            if (assignment_has_submissions($id)) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'has_submissions']; continue; }
             db_exec('DELETE FROM assignments WHERE id = ?', [$a['id']]); $results[] = ['id' => $id, 'ok' => true]; $done++; continue;
         }
         $to = ['publish' => 'published', 'draft' => 'draft', 'close' => 'closed'][$action];
         if ($a['status'] === $to) { $results[] = ['id' => $id, 'ok' => true, 'unchanged' => true]; continue; }
+        if ($to === 'draft' && assignment_has_submissions($id)) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'has_submissions', 'detail' => ASG_DRAFT_REFUSED]; continue; }
         if ($to === 'published' && trim((string)$a['instructions']) === '') { $results[] = ['id' => $id, 'ok' => false, 'error' => 'no_instructions']; continue; }
         $patch = ['status' => $to, 'updatedAt' => now_iso()];
         if ($to === 'published' && trim((string)$a['dueAt']) === '') $patch['dueAt'] = assignment_default_due();
@@ -810,7 +830,11 @@ function notify_assignment_published(string $assignmentId, bool $alsoEmail): int
     global $CONFIG;
     $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [$assignmentId]);
     if (!$a) return 0;
-    $targets = assignment_audience($a);
+    /* Told once: a member who has handed in, or who was told when it was
+     * first published, is not told again when it is re-published. */
+    $handed = sub_ids_for($assignmentId);
+    $targets = array_values(array_filter(assignment_audience($a), fn($m) => !isset($handed[$m['memberId']])
+        && assignment_notice_claim($assignmentId, (string)$m['memberId'], 'published')));
     $due = ($t = assignment_due_ts($a)) ? (' Due ' . gmdate('D j M', $t) . '.') : '';
     foreach ($targets as $m) {
         push_notification($m['memberId'], ['kind' => 'announcement', 'title' => 'New assignment: ' . $a['title'], 'body' => 'Open your dashboard to start.' . $due, 'linkPage' => 'dashboard']);

@@ -36250,6 +36250,28 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 })();
 
 (function () {
+    // 2 · Work handed in pins an assignment open; a re-publish tells only those not yet told.
+    $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__asgx_aid'];
+    $dr = staff_assignments_status($ins + ['action' => 'draft', 'ids' => [$aid]]);
+    chk('assign audit 2 · back to draft is refused once work is handed in, with a reason', ($dr['results'][0]['error'] ?? '') === 'has_submissions' && ($dr['results'][0]['detail'] ?? '') !== ''
+        && db_row('SELECT status FROM assignments WHERE assignmentId = ?', [$aid])['status'] === 'published');
+    chk('assign audit 2 · …and the same refusal through save', (staff_assignments_save($ins + ['data' => ['assignmentId' => $aid, 'status' => 'draft']])['fieldErrors']['status'] ?? '') !== ''
+        && db_row('SELECT status FROM assignments WHERE assignmentId = ?', [$aid])['status'] === 'published');
+    chk('assign audit 2 · the member still sees their marked work', in_array($aid, array_column(assignment_list_for_member(['memberId' => 'ASGX-B'])['assignments'], 'assignmentId'), true));
+    $cnt = fn($m) => (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = ? AND title LIKE 'New assignment:%'", [$m])['c'];
+    $id2 = staff_assignments_save($ins + ['data' => ['title' => 'Republish', 'track' => 'Coding', 'instructions' => 'Do it.', 'status' => 'published', 'proof' => 'text']])['assignmentId'] ?? '';
+    $before = ['A' => $cnt('ASGX-A'), 'C' => $cnt('ASGX-C')];
+    chk('assign audit 2 · with nothing handed in it can go back to draft', !empty(staff_assignments_status($ins + ['action' => 'draft', 'ids' => [$id2]])['results'][0]['ok'])
+        && db_row('SELECT status FROM assignments WHERE assignmentId = ?', [$id2])['status'] === 'draft');
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'ASGX-NEW', 'fullName' => 'New Joiner', 'email' => 'asgx-new@asgx.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'TECH', 'createdAt' => $now, 'updatedAt' => $now]);
+    staff_assignments_status($ins + ['action' => 'publish', 'ids' => [$id2]]);
+    chk('assign audit 2 · re-published, the members already told are not told again', $cnt('ASGX-A') === $before['A'] && $cnt('ASGX-C') === $before['C']);
+    chk('assign audit 2 · …and a member who joined since is', $cnt('ASGX-NEW') === 1);
+    db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$id2]);
+})();
+
+(function () {
     $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__asgx_aid'];
     foreach (['assignment_submissions' => 'memberId', 'notifications' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
     db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);

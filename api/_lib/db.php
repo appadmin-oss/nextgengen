@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 215;
+const NGG_SCHEMA_TARGET = 216;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6187,6 +6187,21 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_llog_member ON learning_log(memberId, doneOn);
             CREATE INDEX IF NOT EXISTS idx_llog_status ON learning_log(status, centre);
             ALTER TABLE awards ADD COLUMN category TEXT NOT NULL DEFAULT '';
+        ",
+        /* 216 — who was told about an assignment, and of what: one row per
+           assignment, member and kind ('published', 'due_soon', 'overdue').
+           The UNIQUE key is the claim: a notice is sent only by the writer
+           whose insert landed, so a re-publish tells only the members not
+           yet told, and the daily due/overdue reminder goes once. */
+        216 => "
+            CREATE TABLE IF NOT EXISTS assignment_notices (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              assignmentId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              sentAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_asg_notice ON assignment_notices(assignmentId, memberId, kind);
         ",
     ];
 
