@@ -197,9 +197,15 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await fp.locator('[role=dialog] button', { hasText: 'Tell the centre' }).click();
     await waitText(fp, /Say why Tobi will be away/);
     chk('…and refuses an absence with no reason, saying so', true);
+    /* 7 Nov is already past, so this is under 24 hours' notice (owner, 14 Nov 2026): the sheet warns as the
+       date is chosen, still lets it send (it may be a verifiable emergency), and says what the server decided. */
+    chk('a date under 24 hours ahead shows the notice in the sheet, without blocking the send',
+      /not approved, unless it is an emergency the centre can check/.test(await fp.innerText('[role=dialog]')));
     await fp.fill('[role=dialog] textarea', 'Family wedding');
     await fp.locator('[role=dialog] button', { hasText: 'Tell the centre' }).click();
-    await waitText(fp, /The centre has been told/);
+    await waitText(fp, /Sent, with less than 24 hours’ notice/);
+    chk('…and it is sent, with a confirmation that says it was short notice',
+      php(`echo (string)db_row("SELECT shortNotice FROM member_requests WHERE memberId = 'NGG-FU-KID' AND kind = 'leave'")['shortNotice'];`) === '1');
     chk('a parent\'s absence notice lands in the desk\'s request queue, marked as theirs, with its reason',
       php(`echo json_encode(db_row("SELECT kind, raisedBy <> '' fam FROM member_requests WHERE memberId = 'NGG-FU-KID'"));`) === '{"kind":"leave","fam":1}');
     await fp.keyboard.press('Escape');
