@@ -1561,6 +1561,7 @@ function MembershipPayPage({ setPage }) {
               </div>
             )}
             {inv.purpose === "advance" && <p className="mpay-fine">Nothing is charged early. The payment waits on the account and meets each month’s commitment fee, and any renewal, on the day it falls due.</p>}
+            {inv.purpose === "advance" && inv.notice && <p className="mpay-fine mpay-notice" role="note">{inv.notice}</p>}
             {inv.purpose === "joining" && <p className="mpay-fine">The first month’s commitment fee covers only the meeting days left from the start date, {inv.startDate ? new Date(inv.startDate + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "the day your child starts"}. From next month it is charged in full.</p>}
           </>
         )}

@@ -7535,6 +7535,7 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 .mpay-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
 .mpay-pay { width: 100%; justify-content: center; }
 .mpay-fine { font-size: 13px; color: var(--ink-500); line-height: 1.5; margin: 12px 0 0; }
+.mpay-notice { padding: 10px 12px; border-radius: 10px; background: #fff7e6; border: 1px solid #f2d59b; color: var(--ink-700, #3a3a3f); }
 .mpay-bank { margin-top: 10px; padding: 16px; border-radius: 14px; background: var(--cream-50); border: 1px solid var(--cream-200); font-size: 14px; }
 .mpay-bank dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 16px; margin: 12px 0 0; }
 .mpay-bank dt { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-500); }

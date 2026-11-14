@@ -31544,6 +31544,35 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && gmdate('Y-m', strtotime($renewDue)) <= $q3['through']);
     chk('ahead · a choice outside the four is refused', (membership_advance_invoice($m, 2, 'test')['error'] ?? '') === 'bad_months');
 
+    // ── By the term, capped at a year, with the price-change notice ──
+    chk('ahead · default terms end in April, August and December, starting with the term holding today',
+        membership_term_ends([], '2026-11-14', 3, []) === ['2026-12', '2027-04', '2027-08']
+        && membership_term_ends([], '2026-12-31', 3, []) === ['2026-12', '2027-04', '2027-08']
+        && membership_term_ends([], '2027-05-01', 3, []) === ['2027-08', '2027-12', '2028-04']);
+    $calT = ['enabled' => true, 'startDate' => '', 'sessionWindows' => [['2027-01-11', '2027-03-26'], ['2026-09-07', '2026-12-11'], ['2027-04-26', '2027-07-16']]];
+    chk('ahead · a centre calendar\'s session windows are the terms, in date order, finished ones skipped',
+        membership_term_ends([], '2026-11-14', 3, $calT) === ['2026-12', '2027-03', '2027-07']
+        && membership_term_ends([], '2027-02-01', 3, $calT) === ['2027-03', '2027-07']);
+    $tq = $plan['termQuotes'] ?? [];
+    $mByCount = [];
+    foreach ($plan['quotes'] as $x) $mByCount[$x['months']] = $x['total'];
+    $termEnds = membership_term_ends($m, gmdate('Y-m-d'), 3);
+    chk('ahead · the plan prices paying by the term: up to three terms, each to its last month',
+        count($tq) >= 1 && count($tq) <= 3 && $tq[0]['terms'] === 1 && $tq[0]['termsL'] === 'Through this term'
+        && (bool)array_filter($tq, fn($x) => in_array($x['through'], $termEnds, true)) && count(array_filter($tq, fn($x) => !in_array($x['through'], $termEnds, true))) === 0);
+    $consistent = true;
+    foreach ($tq as $x) {
+        $alt = membership_advance_quote(array_values(array_filter(membership_upcoming_charges($m, fees_settings(), MPAY_ADVANCE_HORIZON), fn($c) => true)), 0, $owed, $x['months']);
+        if (!$alt || $alt['total'] !== $x['total']) $consistent = false;
+    }
+    chk('ahead · a term costs exactly the months it spans: the same pricing as paying by the month', $consistent);
+    chk('ahead · nothing is ever quoted past twelve months from this month',
+        ($plan['maxMonths'] ?? 0) === 12 && count(array_filter(array_merge($plan['quotes'], $tq), fn($x) => $x['through'] > $plan['capThrough'])) === 0
+        && $plan['capThrough'] === gmdate('Y-m', strtotime(gmdate('Y-m-01') . ' +12 months')));
+    chk('ahead · the plan carries the notice that a dues change can mean paying the difference',
+        str_contains((string)($plan['notice'] ?? ''), 'pay the difference') && str_contains((string)$plan['notice'], 'Dues can change'));
+    chk('ahead · a number of terms outside the three is refused', (membership_advance_invoice($m, 0, 'test', 4)['error'] ?? '') === 'bad_terms');
+
     // A guardian pays ahead through their own link only.
     db_insert('guardians', ['guardianId' => 'GDN-ADA0000001', 'email' => 'mum.adv@example.com', 'fullName' => 'Mum Ahead', 'status' => 'active', 'createdAt' => $now]);
     db_insert('guardians', ['guardianId' => 'GDN-ADA0000002', 'email' => 'other.adv@example.com', 'fullName' => 'Other', 'status' => 'active', 'createdAt' => $now]);
@@ -31571,6 +31600,21 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('ahead · …and the receipt says paid ahead', (bool)array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains($x['html'], 'is paid ahead')));
     $plan2 = membership_advance_plan($m);
     chk('ahead · the plan now says the month it is paid to, renewal included', $plan2['paidThrough'] === $q3['through'] && $plan2['credit'] === $q3['total'] - $owed);
+    chk('ahead · the year cap counts what is already paid ahead: no choice now reaches past it',
+        count(array_filter(array_merge($plan2['quotes'], $plan2['termQuotes']), fn($x) => $x['through'] > $plan2['capThrough'])) === 0
+        && !array_filter($plan2['quotes'], fn($x) => $x['months'] === 12));
+    if (!empty($plan2['termQuotes'])) {
+        $t1 = $plan2['termQuotes'][0];
+        $ta = backend_dispatch('family.fees.advance', ['guardianId' => 'GDN-ADA0000001', 'linkId' => 'ADV-LINK', 'terms' => $t1['terms']]);
+        $tinv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($ta['invoiceId'] ?? '')]);
+        $tpub = $tinv ? backend_dispatch('public.membership.invoice', ['token' => $tinv['payToken']]) : [];
+        chk('ahead · a guardian pays ahead by the term: one advance invoice at the term\'s price, and the /pay page shows the notice',
+            !empty($ta['ok']) && $tinv && $tinv['purpose'] === 'advance' && (int)$tinv['total'] === $t1['total'] && $ta['through'] === $t1['through']
+            && str_contains((string)($tpub['invoice']['notice'] ?? ''), 'pay the difference'));
+        db_update('membership_invoices', ['status' => 'void', 'voidReason' => 'test'], ['invoiceId' => (string)($ta['invoiceId'] ?? '')]);
+    } else {
+        chk('ahead · paid ahead to ' . $plan2['paidThrough'] . ' leaves no term to pay for, and none is offered', true);
+    }
     $fv = family_fees_view($m);
     chk('ahead · the family view carries the plan', ($fv['ahead']['paidThrough'] ?? '') === $q3['through'] && count($fv['ahead']['quotes'] ?? []) >= 1);
     // The months arrive: the accrual charges them, and the credit meets each one.

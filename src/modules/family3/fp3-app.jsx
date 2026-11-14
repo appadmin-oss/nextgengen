@@ -767,15 +767,21 @@ function fp3Asks(x) {
 
 /** Fees → Pay ahead: months of the commitment fee (and any renewal among them), priced by the server. */
 function Fp3Ahead({ c, w }) {
-  const A = w.fees.ahead, qs = (A && A.quotes) || [], first = w.member.first, N = n => c.naira(n);
-  const [pick, setPick] = React.useState(() => (qs.find(q => q.months === 3) || qs[0] || {}).months || 0);
+  const A = w.fees.ahead, first = w.member.first, N = n => c.naira(n);
+  const mq = (A && A.quotes) || [], tq = (A && A.termQuotes) || [];
+  /* By the month or by the term. Both are priced by the server and capped at a
+     year ahead (A.maxMonths); a term is counted to its last month. */
+  const [mode, setMode] = React.useState("months");
+  const byTerm = mode === "terms" && tq.length > 0;
+  const qs = byTerm ? tq : mq, keyOf = x => byTerm ? x.terms : x.months;
+  const [pick, setPick] = React.useState({ months: (mq.find(q => q.months === 3) || mq[0] || {}).months || 0, terms: (tq[0] || {}).terms || 0 });
   const [busy, setBusy] = React.useState(false), [err, setErr] = React.useState("");
   if (!A) return null;
-  const q = qs.find(x => x.months === pick) || qs[0];
+  const q = qs.find(x => keyOf(x) === pick[byTerm ? "terms" : "months"]) || qs[0];
   const go = () => {
     if (!q || busy || !c.can()) return;
     setBusy(true); setErr("");
-    NGGApi.family.act("fees.advance", { linkId: w.linkId, months: q.months })
+    NGGApi.family.act("fees.advance", byTerm ? { linkId: w.linkId, terms: q.terms } : { linkId: w.linkId, months: q.months })
       .then(r => { if (r && r.payUrl) window.location.assign(r.payUrl); else { setBusy(false); setErr("The payment page couldn’t be opened. Try again."); } })
       .catch(e => { setBusy(false); setErr(fp3Err(e)); });
   };
@@ -788,10 +794,15 @@ function Fp3Ahead({ c, w }) {
           <p>{A.paidThrough ? first + " is paid to the end of " + A.paidThroughL + ". " + N(A.credit) + " is held on the account." : "Pay several months of " + first + "’s commitment fee in one go, with any membership renewal that falls in them."}</p>
         </div>
       </div>
+      {tq.length > 0 && mq.length > 0 && (
+        <div className="fp3x-modes" role="group" aria-label="Pay ahead by">
+          {[["months", "By month"], ["terms", "By term"]].map(([k, l]) => <button key={k} type="button" aria-pressed={mode === k ? "true" : "false"} className={"fp3x-mode" + (mode === k ? " is-on" : "")} onClick={() => setMode(k)}>{l}</button>)}
+        </div>
+      )}
       {q ? <React.Fragment>
-        <div className="fp3x-opts" role="group" aria-label="How many months ahead">
-          {qs.map(x => <button key={x.months} type="button" aria-pressed={x.months === q.months ? "true" : "false"} className={"fp3x-opt" + (x.months === q.months ? " is-on" : "")} onClick={() => setPick(x.months)}>
-            <b>{x.months} month{x.months === 1 ? "" : "s"}</b><span>to {x.throughL}</span><em>{N(x.total)}</em>
+        <div className="fp3x-opts" role="group" aria-label={byTerm ? "How many terms ahead" : "How many months ahead"}>
+          {qs.map(x => <button key={keyOf(x)} type="button" aria-pressed={keyOf(x) === keyOf(q) ? "true" : "false"} className={"fp3x-opt" + (keyOf(x) === keyOf(q) ? " is-on" : "")} onClick={() => setPick(p => Object.assign({}, p, { [byTerm ? "terms" : "months"]: keyOf(x) }))}>
+            <b>{byTerm ? x.termsL : x.months + " month" + (x.months === 1 ? "" : "s")}</b><span>to {x.throughL}</span><em>{N(x.total)}</em>
           </button>)}
         </div>
         <ul className="fp3x-lines" aria-label="What this pays">
@@ -801,7 +812,8 @@ function Fp3Ahead({ c, w }) {
         {err && <p className="fp3x-err" role="alert">{err}</p>}
         <button type="button" className="fp3x-go" onClick={go} disabled={busy}>{busy ? "Opening the invoice…" : "Pay " + N(q.total) + " ahead"}</button>
         <p className="fp3x-fine">Nothing is charged early. The payment waits on {first}’s account and meets each month’s fee on the 1st, so no reminder comes while it lasts. Card, bank or USSD through Paystack, or by transfer.</p>
-      </React.Fragment> : <p className="fp3x-fine">Nothing to pay ahead right now.</p>}
+      </React.Fragment> : <p className="fp3x-fine">{A.paidThrough ? "Nothing more to pay ahead: " + first + " can be paid up to " + (A.maxMonths || 12) + " months ahead." : "Nothing to pay ahead right now."}</p>}
+      {A.notice && <p className="fp3x-notice" role="note"><i className="ph ph-info" aria-hidden="true"/> <span>{A.notice}</span></p>}
     </section>
   );
 }
