@@ -33480,6 +33480,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && $prop('PL-MEDIA')['courses'] === ['Video Production'] && $prop('PL-BIZ')['courses'] === ['Project Management']
         && $prop('PL-DIVONLY')['courses'] === ['Music'] && $prop('PL-DIVONLY')['from'] === 'division_major');
     chk('placement: a course the record does name still wins over the major', member_courses_state($row('PL-PIANO'))['courses'] === ['Piano']);
+    // Audit, 14 Nov 2026: the same wall through two other doors.
+    chk('placement: a division word inside a list is that division\'s major, never its whole list ("Coding, Media" is two courses, not eight)',
+        curriculum_member_courses_infer(['track' => 'Coding, Media'])['courses'] === ['Coding', 'Video Production']);
+    chk('placement: an umbrella that is one division\'s courses ("Musical Instruments") is that division\'s major, not every instrument',
+        curriculum_member_courses_infer(['track' => 'Musical Instruments'])['courses'] === ['Music']
+        && curriculum_member_courses_infer(['track' => 'Instruments'])['courses'] === ['Music']);
+    chk('placement: two named courses from two divisions stay as written', curriculum_member_courses_infer(['track' => 'Piano, Coding'])['courses'] === ['Piano', 'Coding']);
     // The major is the catalogue's, editable: change it and the default follows; a course outside the division is never one.
     $divs = club_divisions();
     $TECH = 'Technology & Applied Engineering'; $MEDIA = 'Media & Content Strategy';

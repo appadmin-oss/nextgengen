@@ -2069,10 +2069,33 @@ function curriculum_member_courses_infer(array $m, ?array &$ctx = null): array {
 
     $trackDiv = function_exists('nggc_division_for_track') ? nggc_division_for_track($track) : '';
     if ($trackDiv === '' && $div !== '' && function_exists('nggc_division') && nggc_division($div)) $trackDiv = (string)nggc_division($div)['id'];
-    $divCourses = $trackDiv !== '' ? array_map('mb_strtolower', array_merge(curriculum_division_courses($trackDiv, $ctx), ['Chess'])) : [];
+
+    $majorOf = static function (string $id) use (&$ctx): string {
+        if (!isset($ctx['majors'][$id])) $ctx['majors'][$id] = function_exists('nggc_division_major') ? nggc_division_major($id) : '';
+        return $ctx['majors'][$id];
+    };
+    /* A division word INSIDE a list ("Coding, Media") is that division's major, never its whole list: expanded, it
+       gave Coding plus all seven Media courses — the wall the one-course rule removed, back through a mixed track
+       (audit, 14 Nov 2026). A track that is only a division word is left alone and handled below. */
+    $trackText = $track;
+    $parts = member_text_words($track);
+    if (count($parts) > 1) {
+        $trackText = implode(', ', array_map(static function ($w) use ($majorOf) {
+            $id = MEMBER_DIVISION_WORDS[mb_strtolower($w)] ?? '';
+            $mj = $id !== '' ? $majorOf($id) : '';
+            return $mj !== '' ? $mj : $w;
+        }, $parts));
+    }
 
     // The track: a course it names, unless all it named is a division (which expands to that division's whole list).
-    $fromTrack = $notChess($real(array_merge(member_courses_from_text($track, $ctx)[0], member_text_words($track))));
+    $fromTrack = $notChess($real(array_merge(member_courses_from_text($trackText, $ctx)[0], member_text_words($trackText))));
+    /* The track named no division but its courses are all one division's ("Musical Instruments" is eight arts
+       courses): that division is the track's, so the whole-division check below can see the wall (audit, 14 Nov). */
+    if ($trackDiv === '' && count($fromTrack) > 3 && function_exists('nggc_division_for_track')) {
+        $ids = array_values(array_unique(array_map(static fn($c) => nggc_division_for_track((string)$c), $fromTrack)));
+        if (count($ids) === 1 && $ids[0] !== '') $trackDiv = $ids[0];
+    }
+    $divCourses = $trackDiv !== '' ? array_map('mb_strtolower', array_merge(curriculum_division_courses($trackDiv, $ctx), ['Chess'])) : [];
     // A track that IS a course's name is that course, even where the same word also names a family ("Music").
     $exact = $known[mb_strtolower(trim($track))] ?? null;
     if ($exact !== null && strcasecmp($exact, 'Chess') !== 0) $fromTrack = [$exact];
@@ -2111,8 +2134,7 @@ function curriculum_member_courses_infer(array $m, ?array &$ctx = null): array {
         if ($trackDiv !== '' || ($div !== '' && function_exists('nggc_division') && nggc_division($div))) {
             $divId = $trackDiv !== '' ? $trackDiv : (string)nggc_division($div)['id'];
             // Once per context, never per member: the backfill and every class list run this in a loop.
-            if (!isset($ctx['majors'][$divId])) $ctx['majors'][$divId] = function_exists('nggc_division_major') ? nggc_division_major($divId) : '';
-            $major = $ctx['majors'][$divId];
+            $major = $majorOf($divId);
             if ($major !== '' && isset($known[mb_strtolower($major)])) { $courses = [$known[mb_strtolower($major)]]; $from = 'division_major'; }
             else { $from = 'division'; $flag = 'division_only'; }
         }
