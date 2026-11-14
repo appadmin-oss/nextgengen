@@ -38377,7 +38377,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'start']);
     $g = json_decode((string)db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', ['NGG-WK-1', 'mlb.walk.' . $s['sessionId']])['stateValue'], true);
     $wit = mlb_item($g['c'], $g['f'], $g['s']); $keyText = mlb_answer_text($wit);
-    $GLOBALS['__ai_mock'] = function ($p, $sys, $t) use (&$seenPrompt, $keyText) { $seenPrompt = $sys . json_encode($t); return ['ok' => true, 'provider' => 'mock', 'text' => 'The answer is ' . $keyText . '.']; };
+    /* What is sent ABOUT the question (the turns), not Guide's fixed instructions: those say "a 10–17 year
+       old learner", so an answer of 17 was "found" in them by a check that had nothing to do with the item. */
+    $GLOBALS['__ai_mock'] = function ($p, $sys, $t) use (&$seenPrompt, $keyText) { $seenPrompt = json_encode($t, JSON_UNESCAPED_UNICODE); return ['ok' => true, 'provider' => 'mock', 'text' => 'The answer is ' . $keyText . '.']; };
     $a1 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'help']);
     $stemText = is_string($wit['stem']) ? $wit['stem'] : json_encode($wit['stem']);
     // Matched as a whole token: a key of "7" is not "sent" by a prompt that mentions 17.

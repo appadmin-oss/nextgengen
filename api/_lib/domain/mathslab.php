@@ -229,10 +229,11 @@ function mlb_pick_items(array $comps, int $n, bool $preferTyped = false, bool $s
                 /* The same WORDING more than twice is the same question to a child, whatever the options:
                    "Which of these REDUCES friction?" four times is one question asked four times. */
                 $stemKey = mlb_item_skeleton($it);
-                /* Twice per skeleton; three times for a picture question (the picture differs) and for a TYPED
-                   one: a different sentence to rewrite is different work every time, and producing an
-                   answer cannot be pattern-matched the way recognising one can (13 Nov 2026). */
-                if ($sig === '' || isset($seen[$sig]) || ($stems[$stemKey] ?? 0) >= (empty($it['diagram']) && empty($it['typed']) ? 2 : 3)) continue;
+                /* Twice per skeleton; three times for a picture question (the picture differs) and for a typed
+                   SENTENCE (kind text: a different sentence to rewrite is different work every time). Not for a
+                   typed NUMBER: "Ebo has ₦389 and Ife has ₦163 — how much more?" with new numbers is the very
+                   repetition the owner reported, and it is held to two like any other shape (14 Nov 2026). */
+                if ($sig === '' || isset($seen[$sig]) || ($stems[$stemKey] ?? 0) >= (empty($it['diagram']) && !(($it['kind'] ?? '') === 'text' && !empty($it['typed'])) ? 2 : 3)) continue;
                 if (empty($it['diagram']) && isset($avoidStems[$stemKey])) continue;   // the same wording as a recent session
                 $seen[$sig] = true; $stems[$stemKey] = ($stems[$stemKey] ?? 0) + 1;   // counted for picture questions too
                 $picked = ['c' => $c, 'f' => $f, 's' => $seed]; break;
