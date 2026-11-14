@@ -24185,6 +24185,21 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('self-service: a leave request needs a start date', ($mk(['kind' => 'leave', 'body' => 'ill'])['error'] ?? '') === 'bad_dates');
     chk('self-service: …and a reason, so the desk can answer without asking',
         ($mk(['kind' => 'leave', 'fromDate' => '2026-02-02'])['error'] ?? '') === 'need_reason');
+    /* Leave with less than 24 hours' notice (owner, 14 Nov 2026): warned and marked, never refused. */
+    $sat = '2026-11-21';   // a Saturday
+    $nAt = static fn(string $t) => (int)strtotime($t);
+    chk('leave notice · 25 hours before the Saturday arrival time is enough notice',
+        member_leave_notice($sat, $nAt('2026-11-20T07:00:00+01:00'))['short'] === false);
+    chk('leave notice · 23 hours before it is short notice, measured to the arrival time in Lagos',
+        member_leave_notice($sat, $nAt('2026-11-20T10:00:00+01:00'))['short'] === true
+        && member_leave_notice($sat, $nAt('2026-11-20T10:00:00+01:00'))['hoursAhead'] === 23);
+    $lateLeave = $mk(['kind' => 'leave', 'fromDate' => '2026-01-03', 'body' => 'Taken ill on the morning']);   // a Saturday already past
+    chk('leave notice · a late request is still SENT (it may be a verifiable emergency), and marked for the desk',
+        !empty($lateLeave['ok']) && ($lateLeave['request']['shortNotice'] ?? null) === true
+        && (int)(db_row('SELECT shortNotice FROM member_requests WHERE requestId = ?', [$lateLeave['request']['requestId'] ?? ''])['shortNotice'] ?? 0) === 1);
+    $earlyLeave = $mk(['kind' => 'leave', 'fromDate' => gmdate('Y-m-d', strtotime('saturday +3 weeks')), 'body' => 'Family wedding in Enugu']);
+    chk('leave notice · a request weeks ahead is not marked', !empty($earlyLeave['ok']) && ($earlyLeave['request']['shortNotice'] ?? null) === false);
+    foreach ([$lateLeave, $earlyLeave] as $lr) if (!empty($lr['request']['requestId'])) db_exec("DELETE FROM member_requests WHERE requestId = ?", [$lr['request']['requestId']]);
     chk('self-service: an appeal needs the reason it is being appealed',
         ($mk(['kind' => 'appeal'])['error'] ?? '') === 'need_reason');
     chk('self-service: a kind nobody defined is refused', ($mk(['kind' => 'refund'])['error'] ?? '') === 'unknown_kind');

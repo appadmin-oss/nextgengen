@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 231;
+const NGG_SCHEMA_TARGET = 232;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6484,6 +6484,10 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_rsend_key ON report_sends(kind, refKey, recipient);
         ",
+        /* A leave request sent less than 24 hours before the day it excuses (owner, 14 Nov 2026). It is
+           still sent — it may be a verifiable emergency — but the desk sees how much notice was given,
+           fixed at the moment it was sent (member_leave_notice in domain/member-self.php). */
+        232 => "ALTER TABLE member_requests ADD COLUMN shortNotice INTEGER NOT NULL DEFAULT 0;",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

@@ -401,6 +401,8 @@ function family_ward(array $p): array {
         'requests' => array_map('member_request_public', $reqs),
         // Excused absences this session, of the two allowed (member_excuses, POLICY §1.1).
         'excuses' => function_exists('member_excuses') ? array_diff_key(member_excuses($m), ['days' => 1]) : null,
+        // The time a Saturday starts for the leave-notice warning (member_leave_notice): the same policy value the server uses.
+        'leaveRedline' => function_exists('policy_for') ? (string)(policy_for('member')['lateRedline'] ?? '09:00') : '09:00',
         'kinds' => array_combine(FAMILY_REQUEST_KINDS, array_map(static fn($k) => MEMBER_REQUEST_KINDS[$k], FAMILY_REQUEST_KINDS)),  // leave first: the commonest thing a parent tells the desk
         'charges' => array_map(static fn($e) => ['entryId' => (string)$e['entryId'], 'note' => (string)$e['note'], 'amount' => (int)$e['amount'], 'createdAt' => (string)$e['createdAt']],
             /* 'charge', which is what the ledger writes. This read said 'debit' and so

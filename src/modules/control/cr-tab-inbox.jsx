@@ -321,6 +321,8 @@ const CR_INBOX_SOURCES = {
         }
         const payNote = pay && !(x.parts && x.parts.length) && crPayIsNote(x.reference) ? x.reference : "";
         if (x.kind === "leave") f.push(["From", x.fromDate ? crDate(x.fromDate) : "—"], ["To", x.toDate ? crDate(x.toDate) : "Open-ended"]);
+        // Sent less than 24 hours before the day it excuses (recorded when sent: member_leave_notice).
+        if (x.kind === "leave" && x.shortNotice) f.push(["Notice", "Less than 24 hours — approve only for an emergency you can check"]);
         if (x.byFamily) { const w = crReqWho(x); f.push(["Raised by", w.who + (w.sub ? " · " + w.sub : "")]); }
         const det = x.kind === "details" || x.kind === "familydetails";
         const rd = det ? (x.reading || { changes: [], asked: [] }) : null;
@@ -354,7 +356,8 @@ const CR_INBOX_SOURCES = {
           id: "req:" + x.requestId, cat: "requests", kind: (x.kindLabel || "Member request") + (x.byFamily ? " · From their family account" : ""), icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
           title: x.subject || x.kindLabel, body: x.body || payNote, search: [x.requestId, x.displayId, x.memberId, x.centre, x.reference].join(" "),
           facts: f, thread: (x.body || payNote) ? [Object.assign(crReqWho(x), { at: x.createdAt, body: x.body || payNote, mine: false })] : null,
-          note: pay && !canMoney ? "Approving a payment needs the Fees permission." : "",
+          note: pay && !canMoney ? "Approving a payment needs the Fees permission."
+            : x.kind === "leave" && x.shortNotice ? "Sent with less than 24 hours’ notice. Leave asked for this late is not approved unless it is an emergency you can check: ask for the proof (a hospital note, for example) before approving." : "",
           related: others.map(y => ({ id: "req:" + y.requestId, icon: y.kind === "leave" || y.kind === "academic" ? "calendar-x" : "tray", t: y.subject || y.kindLabel || y.kind,
             s: (y.kindLabel || y.kind) + " · waiting since " + crDate(y.createdAt), y })),
           relatedTip: x.kind === "appeal" && others.some(y => y.kind === "leave") ? "Their leave request is still waiting. Excusing it does not lift " + (fine ? "this fine" : "this decision") + " on its own — decide both." : "",

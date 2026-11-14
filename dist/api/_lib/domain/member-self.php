@@ -424,6 +424,7 @@ function member_request_public(array $r): array
         'requestId' => (string)$r['requestId'],
         'kind'      => (string)$r['kind'],
         'kindLabel' => MEMBER_REQUEST_KINDS[(string)$r['kind']] ?? (string)$r['kind'],
+        'shortNotice' => (int)($r['shortNotice'] ?? 0) === 1,   // a leave request sent under 24 hours ahead
         'status'    => (string)$r['status'],
         'subject'   => (string)($r['subject'] ?? ''),
         'body'      => (string)($r['body'] ?? ''),
@@ -639,6 +640,27 @@ function member_requests_list(array $p): array
  * not a request. Saying which field is missing — rather than a flat "invalid" —
  * is the difference between a member fixing it and a member giving up.
  */
+/**
+ * NOTICE FOR A LEAVE REQUEST (owner, 14 Nov 2026: "a notice for leave requests less than 24 hrs ahead, as they
+ * will not be approved — but still allow it to send, because it could be a verifiable emergency").
+ *
+ * Measured from the first programme day the request excuses, at the time members must arrive by
+ * (policy_for('member')['lateRedline'], 09:00 by default), Lagos time. Never a refusal: the request is saved
+ * and the desk decides. The answer is recorded on the request when it is sent (member_requests.shortNotice),
+ * so the desk sees the notice the family actually gave, not a figure recomputed later.
+ */
+const MEMBER_LEAVE_NOTICE_HOURS = 24;
+function member_leave_notice(string $firstDay, ?int $now = null): array
+{
+    $redline = function_exists('policy_for') ? (string)(policy_for('member')['lateRedline'] ?? '09:00') : '09:00';
+    if (!preg_match('/^\d{2}:\d{2}$/', $redline)) $redline = '09:00';
+    $starts = (int)strtotime($firstDay . 'T' . $redline . ':00+01:00');
+    $deadline = $starts - MEMBER_LEAVE_NOTICE_HOURS * 3600;
+    $now ??= time();
+    return ['short' => $now > $deadline, 'starts' => gmdate('c', $starts), 'deadline' => gmdate('c', $deadline),
+            'hoursAhead' => (int)floor(($starts - $now) / 3600), 'redline' => $redline];
+}
+
 function member_request_create(array $p): array
 {
     $id = (string)($p['memberId'] ?? '');
@@ -736,6 +758,8 @@ function member_request_create(array $p): array
                 'detail' => 'Only ' . $ex['max'] . ' absences ' . (($ex['rulebook'] ?? '') === 'session' ? 'with permission are accepted in a session' : 'are allowed in the programme') . ', and ' . $ex['used'] . ' ' . ($ex['used'] === 1 ? 'is' : 'are') . ' already counted. '
                     . ($ex['left'] ? 'These dates cover ' . count($new) . '.' : 'There are none left.') . ' Speak to the centre if this is an emergency.'];
         }
+        // Fewer than 24 hours before the first day it excuses: sent, flagged, not refused.
+        $row['shortNotice'] = member_leave_notice($new ? $new[0] : $asked[0])['short'] ? 1 : 0;
         if ($row['subject'] === '') $row['subject'] = 'Leave from ' . $row['fromDate'];
     } elseif (in_array($kind, ['details', 'mentor', 'help', 'askmentor', 'familydetails', 'collect'], true)) {
         if (mb_strlen($body) < (in_array($kind, ['askmentor', 'familydetails', 'collect'], true) ? 5 : 6)) return ['ok' => false, 'error' => 'need_reason', 'detail' => [

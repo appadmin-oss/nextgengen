@@ -511,7 +511,7 @@ class Fp3Portal extends React.Component {
     }
 
     if (active && loaded && sec === "requests") {
-      out.reqKinds = [["leave", "ph ph-calendar-blank", "Tell the centre about an absence", "Before or after. They’re marked excused."], ["appeal", "ph ph-scales", "Appeal", "A decision, fine or fee you think is wrong"], ["idcard", "ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name"], ["academic", "ph ph-graduation-cap", "Academic leave", "Weeks away for exams or a school programme"], ["mentor", "ph ph-chat-teardrop-text", "Ask the mentor", "About growth, results or the plan"]]
+      out.reqKinds = [["leave", "ph ph-calendar-blank", "Tell the centre about an absence", "At least 24 hours before. Later only for an emergency."], ["appeal", "ph ph-scales", "Appeal", "A decision, fine or fee you think is wrong"], ["idcard", "ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name"], ["academic", "ph ph-graduation-cap", "Academic leave", "Weeks away for exams or a school programme"], ["mentor", "ph ph-chat-teardrop-text", "Ask the mentor", "About growth, results or the plan"]]
         .filter(k => k[0] !== "mentor" || w.member.hasMentor)
         .map(k => ({ icon: k[1], l: k[2], s: k[3], onClick: () => openSheet(k[0], { fRef: (w.charges[0] || {}).id || "" }) }));
       const SM = { open: ["With the desk", T.warn], approved: ["Approved", T.ok], declined: ["Not approved", T.bad], withdrawn: ["Withdrawn", T.neutral] };
@@ -648,7 +648,7 @@ class Fp3Portal extends React.Component {
     if (out.hasSheet) {
       const first = w.member.first;
       const busyL = l => S.busy ? "Sending…" : l;
-      const req = (kind, fields, done) => this.write(() => NGGApi.family.act("request", Object.assign({ linkId: w.linkId, kind }, fields)), () => this.setState({ shDone: done }), () => this.loadWard(w.linkId));
+      const req = (kind, fields, done) => this.write(() => NGGApi.family.act("request", Object.assign({ linkId: w.linkId, kind }, fields)), rr => this.setState({ shDone: typeof done === "function" ? done(rr) : done }), () => this.loadWard(w.linkId));
       if (sh === "upload") {
         const r0 = (w.results || []).find(x => x.status === "missing") || this.curRes(w) || {};
         Object.assign(out, { shTitle: "Upload " + first + "’s results", shLead: "The " + r0.name + " report. " + first + " is told you uploaded it.", upL: S.upName || "Take a photo or choose a picture", upIcon: S.upName ? "ph ph-file-check" : "ph ph-camera", upBd: S.upName ? "#22a05a" : "#c9c7bf", shGoL: S.busy ? (S.upPct ? "Uploading… " + S.upPct + "%" : "Uploading…") : "Upload" });
@@ -713,7 +713,11 @@ class Fp3Portal extends React.Component {
         Object.assign(out, { shTitle: first + " will be away", shLead: "The centre marks those days as excused, so they don’t count against " + first + "’s attendance." + (ex ? (ex.left ? " " + first + " has " + ex.left + " of " + ex.max + " absences left in the programme. Nothing is fined while the centre considers it." : " " + first + " has used all " + ex.max + " absences the programme allows, so the centre can’t take another. Speak to them if it’s an emergency.") : ""), shBodyL: "Why " + first + " will be away", shBodyPh: "e.g. family wedding, hospital appointment", shGoL: ex && !ex.left ? "Close" : busyL("Tell the centre") });
         // None left: no form to fill in and be refused — the sheet says why and closes.
         if (ex && !ex.left) { out.shIsLeave = false; out.shHasBody = false; }
-        out.shGo = () => { if (ex && !ex.left) return this.closeSheet(); if (!S.fFrom) return this.setState({ shErr: "Pick the first day " + first + " will be away." }); if (S.fTo && S.fTo < S.fFrom) return this.setState({ shErr: "The last day can’t be before the first." }); if (S.fBody.trim().length < 5) return this.setState({ shErr: "Say why " + first + " will be away, so the desk can answer without asking." }); req("leave", { subject: S.fBody.trim().slice(0, 60), body: S.fBody.trim(), fromDate: S.fFrom, toDate: S.fTo || S.fFrom }, ["The centre has been told", "The " + w.member.centre + " desk will reply in Messages → Requests. " + first + " won’t be marked absent for those days."]); };
+        // Under 24 hours before the day it excuses: warned, never blocked (nggLeaveNotice, components.jsx).
+        const nt = nggLeaveNotice(S.fFrom, w.leaveRedline); out.shNoticeOn = !!(nt.short && out.shIsLeave !== false); out.shNotice = nt.short ? nggLeaveNoticeText(nt, "you") : "";
+        out.shGo = () => { if (ex && !ex.left) return this.closeSheet(); if (!S.fFrom) return this.setState({ shErr: "Pick the first day " + first + " will be away." }); if (S.fTo && S.fTo < S.fFrom) return this.setState({ shErr: "The last day can’t be before the first." }); if (S.fBody.trim().length < 5) return this.setState({ shErr: "Say why " + first + " will be away, so the desk can answer without asking." }); req("leave", { subject: S.fBody.trim().slice(0, 60), body: S.fBody.trim(), fromDate: S.fFrom, toDate: S.fTo || S.fFrom }, rr => rr && rr.request && rr.request.shortNotice
+          ? ["Sent, with less than 24 hours’ notice", "Leave asked for this late is only approved for an emergency the centre can check. The " + w.member.centre + " desk will reply in Messages → Requests; keep any proof ready to show them."]
+          : ["The centre has been told", "The " + w.member.centre + " desk will reply in Messages → Requests. " + first + " won’t be marked absent for those days."]); };
       }
       if (sh === "academic") {
         Object.assign(out, { shTitle: "Academic leave for " + first, shLead: "For school exams or a school programme that clashes with Saturdays, up to ten weeks at a time. Once the centre approves it, those Saturdays aren’t absences: nothing is fined and nothing counts against " + first + "’s " + (w.excuses ? w.excuses.max : 2) + " absences.", shBodyL: "What it’s for, and the school", shBodyPh: "e.g. WAEC mock exams at Grace High School, 2–20 Nov", shGoL: busyL("Ask for academic leave") });
@@ -931,7 +935,7 @@ function Fp3Docs({ c, w }) {
 function Fp3TodayMore({ c, w }) {
   const S = c.state, first = w.member.first, F = w.fees, L = w.learning || {};
   const acts = [
-    ["ph ph-calendar-blank", "Tell the centre about an absence", "Before or after; marked excused", () => c.openSheet("leave")],
+    ["ph ph-calendar-blank", "Tell the centre about an absence", "At least 24 hours before; later only for an emergency", () => c.openSheet("leave")],
     w.member.hasMentor ? ["ph ph-chat-teardrop-text", "Ask " + w.member.mentor, "About growth, results or the plan", () => c.openSheet("mentor")] : null,
     F.enabled && F.ahead && (F.ahead.quotes || []).length ? ["ph ph-calendar-plus", "Pay ahead", F.ahead.paidThrough ? "Paid to " + F.ahead.paidThroughL : "Months of fees in one go", () => c.go("money")] : null,
     ["ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name", () => c.openSheet("idcard")],

@@ -5269,3 +5269,7 @@ CREATE TABLE IF NOT EXISTS report_sends (
   UNIQUE KEY idx_rsend_key (kind, refKey, recipient)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (231) ON DUPLICATE KEY UPDATE version = version;
+
+-- 232: a leave request sent less than 24 hours before the day it excuses (domain/member-self.php).
+ALTER TABLE member_requests ADD COLUMN shortNotice INT NOT NULL DEFAULT 0;
+INSERT INTO schema_version (version) VALUES (232) ON DUPLICATE KEY UPDATE version = version;

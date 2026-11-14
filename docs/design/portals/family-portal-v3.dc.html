@@ -544,6 +544,7 @@ button{cursor:pointer}
           </sc-if>
           <sc-if value="{{ shIsLeave }}">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">From<input type="date" value="{{ fFrom }}" onChange="{{ onFFrom }}" style="height:48px; padding:0 12px; border:1px solid #d9d6cd; border-radius:12px; font-size:15px;"></label><label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">To<input type="date" value="{{ fTo }}" onChange="{{ onFTo }}" style="height:48px; padding:0 12px; border:1px solid #d9d6cd; border-radius:12px; font-size:15px;"></label></div>
+            <sc-if value="{{ shNoticeOn }}"><p role="status" style="margin:0; padding:12px 14px; border-radius:12px; background:#fdf6e3; border:1px solid #f1e3b8; color:#5c4100; font-size:14px; line-height:1.5; display:flex; gap:10px; align-items:flex-start;"><i class="ph ph-warning" aria-hidden="true" style="margin-top:2px;"></i><span>{{ shNotice }}</span></p></sc-if>
           </sc-if>
           <sc-if value="{{ shIsAppeal }}">
             <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Which charge<select value="{{ fRef }}" onChange="{{ onFRef }}" style="height:48px; padding:0 12px; border:1px solid #d9d6cd; border-radius:12px; font-size:15px; background:#fff;"><sc-for list="{{ chargeOpts }}" as="o" hint-placeholder-count="2"><option value="{{ o.v }}">{{ o.l }}</option></sc-for></select></label>

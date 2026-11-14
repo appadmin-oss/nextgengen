@@ -28,6 +28,15 @@ member band's `absenceLimit` (two by default) and the count is the engine's own:
 absences logged, plus days still ahead on open or approved leave. A request
 that would go past the limit is refused with how many are left.
 
+**At least 24 hours' notice** (owner, 14 Nov 2026). A leave request must reach the
+desk at least 24 hours before the first meeting day it excuses, measured from the
+member band's `lateRedline` (09:00 by default), Lagos time. A later request is
+still accepted, because it may be a real emergency, but it is not approved unless
+the emergency can be checked (a hospital note, for example). The member and family
+apps warn as the date is chosen, the request is marked when it is sent
+(`member_requests.shortNotice`), and the requests desk shows that mark with the
+request.
+
 - **Nobody asked:** the absence is fined at the member band's `absenceFine`
   (₦1,000 by default; 0 switches it off), one fine per absent day.
 - **Asked, not yet decided:** the absence is held — no fine until the desk

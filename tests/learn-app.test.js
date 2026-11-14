@@ -91,6 +91,10 @@ function cleanup() {
       + `db_insert('curriculum_checks', ['checkId'=>'LRN-C1','unitId'=>'LRN-U1','kind'=>'mcq','prompt'=>'How many white keys in an octave?','options'=>json_encode(['5','7','8']),'answer'=>'1','rubric'=>'','points'=>2,'position'=>1,'source'=>'manual']);`
       + `db_insert('curriculum_units', ['unitId'=>'LRN-U2','course'=>'Piano','level'=>'Year 1 · Foundation','week'=>2,'position'=>1,'title'=>'The C major scale','summary'=>'Thumb under.','status'=>'published','passMark'=>50,'version'=>1,'objectives'=>json_encode(['Play C major']),'body'=>'Play it slowly.','durationMins'=>30,'createdAt'=>${now},'updatedAt'=>${now},'publishedAt'=>${now}]);`
       + `db_insert('curriculum_checks', ['checkId'=>'LRN-C2','unitId'=>'LRN-U2','kind'=>'mcq','prompt'=>'Which finger starts?','options'=>json_encode(['Thumb','Little finger']),'answer'=>'0','rubric'=>'','points'=>2,'position'=>1,'source'=>'manual']);`
+      /* A real lesson from the shipped Foundation course, for the lesson in steps (14 Nov 2026): taken from the
+         seed file, not written to suit the test. No course, so the Piano course keeps its two lessons. */
+      + `$L = array_values(array_filter(curriculum_seed_files()['tech-foundations-2026']['lessons'], fn($x) => $x['course'] === 'Artificial Intelligence'))[1];`
+      + `db_insert('curriculum_units', ['unitId'=>'LRN-U9','course'=>'','level'=>'Year 1 · Foundation','week'=>1,'position'=>9,'title'=>$L['title'],'summary'=>$L['summary'],'status'=>'published','passMark'=>50,'version'=>1,'objectives'=>json_encode($L['objectives']),'body'=>$L['body'],'durationMins'=>45,'createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`
     , ['bootstrap']);
 
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -430,6 +434,35 @@ function cleanup() {
     chk('exam: then today\'s lesson opens', await X.locator('.lrn-sec-h:has-text("The lesson")').count() === 1);
     await X.screenshot({ path: require('path').join(require('os').tmpdir(), 'learn-exam-done.png'), fullPage: true }).catch(() => {});
     await X.context().close();
+
+    console.log('the lesson in steps');
+    {
+      const S = await open('/learn/lesson/LRN-U9', 390);
+      await S.waitForSelector('.lrn-lesson', { timeout: 60000 });
+      const skip9 = await S.$('.lrn-lesson button:has-text("Skip")'); if (skip9) await skip9.click();
+      await S.waitForSelector('.lrn-step-h', { timeout: 30000 });
+      const total = Number(await S.getAttribute('.lrn-step-progress', 'aria-valuemax'));
+      const heads = [];
+      for (let k = 0; k < total; k++) {
+        heads.push(await S.innerText('.lrn-step-h'));
+        if (k < total - 1) { await S.click('.lrn-step-nav .lrn-btn:not(.is-ghost)'); await S.waitForFunction(n => document.querySelector('.lrn-step-progress').getAttribute('aria-valuenow') === String(n), k + 2); }
+      }
+      const wordsAt = heads.findIndex(h => /Words you’ll meet/.test(h)), understandAt = heads.findIndex(h => /^Understand it/.test(h));
+      chk('lesson in steps: a long Foundation lesson is shown one step at a time, with progress (' + total + ' steps)', total >= 5 && /Step \d+ of \d+/.test(await S.innerText('.lrn-step-count')));
+      chk('lesson in steps: the key words come BEFORE the explanation that uses them', wordsAt >= 0 && understandAt > wordsAt, heads.join(' | '));
+      chk('lesson in steps: the long explanation is cut into pieces, and further reading is last and optional',
+        heads.filter(h => /^Understand it \(\d of \d\)/.test(h)).length >= 2 && /Going further \(optional\)/.test(heads[heads.length - 1]));
+      chk('lesson in steps: Next moves focus to the new step\'s heading (keyboard and screen readers)', await S.evaluate(() => !!document.activeElement && document.activeElement.classList.contains('lrn-step-h')));
+      chk('lesson in steps: the last step says the lesson is read and the questions are below', /read the whole lesson/i.test(await S.innerText('.lrn-step-done')));
+      await S.click('.lrn-step-whole');
+      chk('lesson in steps: "Whole lesson on one page" shows it all at once', (await S.$$('.lrn-step-h')).length === 0 && /Key words/.test(await S.innerText('.lrn-lesson')) && /Understand it/.test(await S.innerText('.lrn-lesson')));
+      await S.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(S);
+      const skip9b = await S.$('.lrn-lesson button:has-text("Skip")'); if (skip9b) await skip9b.click();
+      await S.waitForSelector('.lrn-step-whole', { timeout: 30000 });
+      chk('lesson in steps: …and that choice is remembered', await S.getAttribute('.lrn-step-whole', 'aria-pressed') === 'true');
+      await S.screenshot({ path: require('path').join(require('os').tmpdir(), 'learn-steps.png'), fullPage: true }).catch(() => {});
+      await S.context().close();
+    }
 
     chk('no page errors anywhere in the app', errs.length === 0);
     if (errs.length) console.error(errs.slice(0, 5).join('\n'));

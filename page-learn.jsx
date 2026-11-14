@@ -950,6 +950,84 @@ function LearnNote({ unitId, mine, onSaved }) {
   );
 }
 
+/* ── The lesson in steps (owner, 14 Nov 2026: "the learn lessons for the younger is kinda not easy for
+   them to comprehend") ─────────────────────────────────────────────────────────────────────────────────
+   Measured: the Foundation lessons read at about grade 5 by formula, with ten-word sentences, so the words
+   were never the problem. A lesson was about 450 words in ONE scroll, with its key words AFTER the
+   explanation that uses them and research papers beside the teaching. Two of the best-replicated findings
+   in multimedia learning answer exactly that: SEGMENTING (learner-paced chunks beat one continuous text,
+   most for novices) and PRE-TRAINING (meeting the names of the key ideas before the explanation that uses
+   them) (Mayer & Pilegard; Mayer 2009). Children's UX says the same: chunk content, short steps, progress
+   you can see (UXmatters, "UX design for kids", 2020).
+   So the lesson is shown one step at a time, the key words first, a long explanation cut into pieces of
+   about LRN_STEP_WORDS words (a picture stays with the text it shows), the further reading last and marked
+   optional. Every other section keeps the author's order. A lesson with no sections, or a short one, is
+   shown whole, as before; and anybody may switch to the whole lesson on one page (remembered), because the
+   same scaffolding that helps a beginner gets in an experienced reader's way (expertise reversal). */
+const LRN_STEP_WORDS = 110;
+function lrnLessonSteps(body) {
+  const src = String(body || "").replace(/\r\n?/g, "\n").trim();
+  const words = t => (String(t).replace(/```[\s\S]*?```/g, " ").match(/[A-Za-z0-9’']+/g) || []).length;
+  if (!src || words(src) < 160) return null;
+  const parts = src.split(/^##[ \t]+(.+)$/m);   // [intro, h1, body1, h2, body2, …]
+  if (parts.length < 5) return null;           // fewer than two sections: not a lesson in parts
+  const secs = [];
+  if (parts[0].trim()) secs.push({ h: "Before we start", md: parts[0].trim() });
+  for (let i = 1; i < parts.length; i += 2) secs.push({ h: parts[i].trim(), md: (parts[i + 1] || "").trim() });
+  const isKey = x => /^key (words|terms)|^words you/i.test(x.h), isMore = x => /^(read and watch|going further|further reading)/i.test(x.h);
+  // Key words before the first explanation; further reading last.
+  const keys = secs.filter(isKey), more = secs.filter(isMore), rest = secs.filter(x => !isKey(x) && !isMore(x));
+  const firstExplain = rest.findIndex(x => /^understand|^how it works|^the idea/i.test(x.h));
+  const ordered = firstExplain >= 0 ? rest.slice(0, firstExplain).concat(keys, rest.slice(firstExplain)) : keys.concat(rest);
+  const out = [];
+  ordered.concat(more).forEach(x => {
+    if (!x.md) return;
+    const h = isKey(x) ? "Words you’ll meet" : isMore(x) ? "Going further (optional)" : x.h;
+    // Cut a long section at paragraph breaks, never inside a code block; a picture or list joins the text before it.
+    const blocks = /```/.test(x.md) ? [x.md] : x.md.split(/\n{2,}/);
+    const chunks = []; let cur = [], n = 0;
+    blocks.forEach(b => {
+      const lead = /^!\[|^\s*[-*]\s|^\s*\d+[.)]\s/.test(b);
+      // A picture or a list stays with a SHORT lead-in ("Bias gets in several ways:"), never with a full step.
+      if (cur.length && n + words(b) > LRN_STEP_WORDS && !(lead && n < LRN_STEP_WORDS * 0.5)) { chunks.push(cur.join("\n\n")); cur = []; n = 0; }
+      cur.push(b); n += words(b);
+    });
+    if (cur.length) chunks.push(cur.join("\n\n"));
+    chunks.forEach((md, k) => out.push({ h: chunks.length > 1 ? h + " (" + (k + 1) + " of " + chunks.length + ")" : h, md, optional: isMore(x) }));
+  });
+  return out.length >= 2 ? out : null;
+}
+function lrnWholePref() { try { return localStorage.getItem("lrn.wholeLesson") === "1"; } catch (_) { return false; } }
+function LearnSteps({ steps, body, unitId }) {
+  const [i, setI] = React.useState(0);
+  const [whole, setWhole] = React.useState(lrnWholePref);
+  const hRef = React.useRef(null), moved = React.useRef(false);
+  React.useEffect(() => { setI(0); moved.current = false; }, [unitId]);
+  React.useEffect(() => { if (moved.current && hRef.current) { hRef.current.focus({ preventScroll: true }); hRef.current.scrollIntoView({ block: "start", behavior: "smooth" }); } }, [i]);
+  const setWholePref = on => { setWhole(on); try { localStorage.setItem("lrn.wholeLesson", on ? "1" : "0"); } catch (_) {} };
+  const go = k => { moved.current = true; setI(Math.max(0, Math.min(steps.length - 1, k))); };
+  const toggle = <button type="button" className="lrn-step-whole" aria-pressed={whole} onClick={() => setWholePref(!whole)}>
+    <i className={whole ? "ph ph-list-numbers" : "ph ph-article"} aria-hidden="true"/>{whole ? "Show it step by step" : "Whole lesson on one page"}</button>;
+  if (whole) return <>
+    <div className="lrn-sec-bar"><h2 className="lrn-sec-h">The lesson</h2><span className="lrn-step-tools"><LearnReadAloud text={body} label="the lesson"/>{toggle}</span></div>
+    <CurriculumText text={body}/>
+  </>;
+  const st = steps[i], last = i === steps.length - 1;
+  return <>
+    <div className="lrn-sec-bar"><h2 className="lrn-sec-h">The lesson</h2><span className="lrn-step-tools"><LearnReadAloud text={st.md} label="this step"/>{toggle}</span></div>
+    <div className="lrn-step-progress" role="progressbar" aria-label="How far through the lesson" aria-valuemin="1" aria-valuemax={steps.length} aria-valuenow={i + 1} aria-valuetext={"Step " + (i + 1) + " of " + steps.length}>
+      <span style={{ width: Math.round((i + 1) / steps.length * 100) + "%" }}/></div>
+    <p className="lrn-note lrn-step-count" aria-hidden="true">Step {i + 1} of {steps.length}</p>
+    <h3 className="lrn-step-h" ref={hRef} tabIndex={-1}>{st.h}</h3>
+    <CurriculumText text={st.md}/>
+    <div className="lrn-step-nav">
+      <button type="button" className="lrn-btn is-ghost" onClick={() => go(i - 1)} disabled={i === 0}><i className="ph ph-arrow-left" aria-hidden="true"/> Back</button>
+      {last ? <p className="lrn-step-done" role="status"><i className="ph-fill ph-check-circle" aria-hidden="true"/> You’ve read the whole lesson. The questions are below.</p>
+        : <button type="button" className="lrn-btn" onClick={() => go(i + 1)}>{steps[i + 1].optional ? "Going further (optional)" : "Next"} <i className="ph ph-arrow-right" aria-hidden="true"/></button>}
+    </div>
+  </>;
+}
+
 function LearnLesson({ unitId, onDone, units }) {
   const [saved, setSaved] = React.useState(false);
   const [marking, setMarking] = React.useState(false);
@@ -1046,11 +1124,13 @@ function LearnLesson({ unitId, onDone, units }) {
 
       {opened && (u.body || u.materials.length > 0) && (
         <section className="lrn-sec">
-          <div className="lrn-sec-bar">
-            <h2 className="lrn-sec-h">The lesson</h2>
-            <LearnReadAloud text={u.body} label="the lesson"/>
-          </div>
-          <CurriculumText text={u.body}/>
+          {lrnLessonSteps(u.body) ? <LearnSteps steps={lrnLessonSteps(u.body)} body={u.body} unitId={unitId}/> : <>
+            <div className="lrn-sec-bar">
+              <h2 className="lrn-sec-h">The lesson</h2>
+              <LearnReadAloud text={u.body} label="the lesson"/>
+            </div>
+            <CurriculumText text={u.body}/>
+          </>}
           <CurriculumMaterials materials={u.materials} fileUrl={curMemberFile}/>
         </section>
       )}

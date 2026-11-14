@@ -1400,6 +1400,25 @@ function humanizeError(message, code) {
  * clears whenever the identity of the list changes, so a filter or a page turn
  * can never leave rows selected that the operator can no longer see.
  */
+/* ── Leave notice (owner, 14 Nov 2026) ─────────────────────────────────────────────────────────────
+   A leave request sent less than 24 hours before the day it excuses is not approved, unless it is an
+   emergency the centre can check, and it is still allowed to send. This is the server's rule
+   (member_leave_notice in domain/member-self.php) worked out in the browser so the warning appears while
+   the date is being chosen; the server decides and records it when the request is sent. Measured from the
+   first meeting day on or after `fromIso` (Saturday unless told otherwise), at the arrival time, Lagos time. */
+const NGG_LEAVE_NOTICE_HOURS = 24;
+function nggLeaveNotice(fromIso, redline, weekdays) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromIso || "")) return { short: false };
+  const wd = (weekdays && weekdays.length ? weekdays : [6]).map(Number), rl = /^\d{2}:\d{2}$/.test(redline || "") ? redline : "09:00";
+  let d = new Date(fromIso + "T12:00:00Z");
+  for (let i = 0; i < 7 && wd.indexOf(d.getUTCDay() === 0 ? 7 : d.getUTCDay()) < 0; i++) d = new Date(d.getTime() + 864e5);
+  const first = d.toISOString().slice(0, 10), starts = new Date(first + "T" + rl + ":00+01:00").getTime();
+  return { short: Date.now() > starts - NGG_LEAVE_NOTICE_HOURS * 36e5, first, day: new Date(starts).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Africa/Lagos" }) };
+}
+function nggLeaveNoticeText(n, who) {
+  return "This is less than 24 hours before " + n.day + ". Leave asked for this late is not approved, unless it is an emergency the centre can check, such as illness or a family emergency. You can still send it: say what happened, and keep any proof" + (who ? " " + who : "") + " can show, such as a hospital note.";
+}
+
 function useAdminSelection(rows, key) {
   const list = rows || [];
   const getKey = key || ((r) => r && (r.id || r.memberId || r.studentId));

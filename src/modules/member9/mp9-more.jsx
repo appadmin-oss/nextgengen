@@ -261,10 +261,14 @@ Object.assign(Mp9Portal.prototype, {
       reqKinds: KINDS.map(k => ({ k: k[3] || k[0], on: s.rKind === k[0] ? "true" : "false", ring: s.rKind === k[0] ? "#0b0b0c" : "#d6d4cc", bw: s.rKind === k[0] ? "2px" : "1px", pick: () => this.setState({ rKind: k[0], rF: {} }) })),
       rHas: !!K, rFields: K ? K[2].map(fl => ({ f: fl, v: f[fl] || "", on: e => this.setState({ rF: { ...this.state.rF, [fl]: e.target.value } }) })) : [],
       rCant: !rOk, rOp: rOk ? 1 : 0.4, rCancel: () => this.setState({ rKind: null, rF: {} }),
+      // Under 24 hours before the day it excuses: warned, never blocked (nggLeaveNotice, components.jsx).
+      ...(() => { const n = K && K[1] === "leave" ? nggLeaveNotice(f[K[2][0]], ((this.dd("today") || {}).standing || {}).lateRedline) : { short: false };
+        return { rNoticeOn: !!n.short, rNotice: n.short ? nggLeaveNoticeText(n, "you") : "" }; })(),
       rSend: () => { if (!rOk) return; const v = i => (f[K[2][i]] || "").trim();
         const body = (K[1] === "leave" || K[1] === "academic") ? { kind: K[1], fromDate: v(0), toDate: v(1), body: v(2) }
           : Object.assign({ kind: K[1], subject: f.subject || "", body: v(0) }, K[4] || {});
-        NGGApi.member.raiseRequest(body).then(() => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs", "comp9"]); this.toast("Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
+        NGGApi.member.raiseRequest(body).then(r => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs", "comp9"]);
+          this.toast(r && r.request && r.request.shortNotice ? "Sent, with less than 24 hours’ notice: the desk will only approve it for an emergency it can check." : "Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
       reqList: list.length ? list : [{ t: "You haven’t asked the desk anything yet", key: "none", gone: false, hasReply: false, reply: "", canWithdraw: false, sFg: "#6b6b72", sText: "", when: "–", withdraw: () => {} }],
       ...this.achVals(),
     };
