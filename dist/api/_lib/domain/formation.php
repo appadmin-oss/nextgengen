@@ -64,6 +64,40 @@ function nggc_divisions(): array {
 }
 
 /**
+ * The major of one of the four NGG divisions (by id: arts, media, tech, business), from the LIVE catalogue: the
+ * course a child whose record names only that division is placed on (curriculum_member_courses_infer). Matched
+ * to the catalogue the same way as nggc_division_course_list; the seeded default when no division matches.
+ */
+function nggc_division_major(string $id): string {
+    if (function_exists('club_divisions')) {
+        foreach (club_divisions() as $d) {
+            if (nggc_division_id_for_name((string)$d['name']) === $id && (string)($d['major'] ?? '') !== '') return (string)$d['major'];
+        }
+    }
+    return nggc_division_default_major($id);
+}
+
+/** The seeded major of an NGG division (CLUB_DIVISIONS_DEFAULT), by id. */
+function nggc_division_default_major(string $id): string {
+    foreach (nggc_divisions() as $d) if ($d['id'] === $id) {
+        foreach (CLUB_DIVISIONS_DEFAULT as $c) if ($c['name'] === $d['name']) return (string)$c['major'];
+    }
+    return '';
+}
+
+/**
+ * The ONE NGG division a catalogue division's name stands for: the whole name first ("Technology & Applied
+ * Engineering", "AI & Technology"), else its FIRST word that names one. "Media & Content Strategy" is Media,
+ * never Business because "Strategy" is also a business word: matching any word filed it under both.
+ */
+function nggc_division_id_for_name(string $name): string {
+    $id = nggc_division_for_track($name);
+    if ($id !== '') return $id;
+    foreach (preg_split('/[^\p{L}]+/u', $name) ?: [] as $w) if ($w !== '' && ($id = nggc_division_for_track($w)) !== '') return $id;
+    return '';
+}
+
+/**
  * The courses a member of this division can be put on, from the LIVE
  * catalogue (the one admins edit under Divisions & courses), plus Chess.
  * A catalogue division is this one when its name, or a word of it, maps here;
@@ -73,10 +107,9 @@ function nggc_division_course_list(string $id): array {
     $out = [];
     if (function_exists('club_divisions')) {
         foreach (club_divisions() as $d) {
-            $name = (string)$d['name'];
-            $hit = nggc_division_for_track($name) === $id;
-            if (!$hit) foreach (preg_split('/[^\p{L}]+/u', $name) ?: [] as $w) if ($w !== '' && nggc_division_for_track($w) === $id) { $hit = true; break; }
-            if ($hit) foreach ($d['courses'] as $c) if (!in_array($c, $out, true)) $out[] = (string)$c;
+            // One NGG division per catalogue division (nggc_division_id_for_name): Business's list never takes
+            // Media's courses because "Media & Content Strategy" has a business word in it.
+            if (nggc_division_id_for_name((string)$d['name']) === $id) foreach ($d['courses'] as $c) if (!in_array($c, $out, true)) $out[] = (string)$c;
         }
     }
     if (!$out) { $d = nggc_division($id); $out = $d ? array_values(array_diff($d['courses'], ['Chess'])) : []; }

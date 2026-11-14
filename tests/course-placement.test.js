@@ -112,9 +112,11 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await page.waitForFunction(() => /Tobi Techmedia/.test(document.body.innerText), null, { timeout: 60000 }).catch(() => {});
     let txt = await page.evaluate(() => document.body.innerText);
     if (process.env.CPLACE_SHOTS) await page.screenshot({ path: process.env.CPLACE_SHOTS + '/placement.png' });
-    /* One course, not a wall (7 Nov 2026): a child whose record only names a division ("Tech") is proposed NO
-       course — once it was every Technology course — and is put in front of a person, in words. */
-    chk('Needs a look lists the Tech child known only by division, with the reason in words', /Tobi Techmedia/.test(txt) && /Only their division is known/.test(txt));
+    /* One course, not a wall (7 Nov 2026), and a division alone starts on its major (14 Nov 2026): a child whose
+       record only names "Tech" is proposed Coding — never every Technology course — and, because their card
+       also says Media, is put in front of a person, in words. */
+    chk('Needs a look lists the Tech child, proposed Coding (the Tech major), with the other division on their card named in words',
+        /Tobi Techmedia/.test(txt) && /also names/.test(txt) && /Coding/.test(txt));
     chk('…and their proposal holds no Media course', !/Graphic Design[\s\S]{0,40}Proposed, not confirmed/.test(txt));
     chk('A child whose card names two courses is proposed the first, with the other named for staff', /Chidi Coder/.test(txt) && /more than one course/.test(txt) && /Robotics/.test(txt));
 

@@ -387,17 +387,25 @@ const CLUB_DIVISIONS_DEFAULT = [
         144 written piano and guitar lessons had nowhere to live that a member
         could reach. The umbrella name still resolves (member_courses_from_text
         expands it to every instrument) so nobody on the old track is orphaned. */
-     'courses' => ['Music', 'Piano', 'Guitar', 'Drums', 'Violin', 'Saxophone', 'Vocal Training', 'Music Production', 'Acting', 'Stagecraft', 'Catering', 'Adire', 'Crafts']],
+     'courses' => ['Music', 'Piano', 'Guitar', 'Drums', 'Violin', 'Saxophone', 'Vocal Training', 'Music Production', 'Acting', 'Stagecraft', 'Catering', 'Adire', 'Crafts'],
+     'major' => 'Music'],
     ['name' => 'Media & Content Strategy', 'icon' => '🎥', 'short' => 'MEDIA',
      'blurb' => 'For children interested in video production, cinematography, graphic design, branding, digital content creation, social media and visual storytelling.',
-     'courses' => ['Video Production', 'Cinematography', 'Graphic Design', 'Branding', 'Digital Content Creation', 'Social Media', 'Visual Storytelling']],
+     'courses' => ['Video Production', 'Cinematography', 'Graphic Design', 'Branding', 'Digital Content Creation', 'Social Media', 'Visual Storytelling'],
+     'major' => 'Video Production'],
     ['name' => 'Technology & Applied Engineering', 'icon' => '💻', 'short' => 'TECH',
      'blurb' => 'For children interested in artificial intelligence, coding, software development, robotics, automation, tech product design and cybersecurity.',
-     'courses' => ['Artificial Intelligence', 'Coding', 'Software Development', 'Robotics', 'Automation', 'Tech Product Design', 'Cybersecurity']],
+     'courses' => ['Artificial Intelligence', 'Coding', 'Software Development', 'Robotics', 'Automation', 'Tech Product Design', 'Cybersecurity'],
+     'major' => 'Coding'],
     ['name' => 'Business Strategy, Operations & Administration', 'icon' => '📊', 'short' => 'BUSINESS',
      'blurb' => 'For children interested in project management, product management, data analysis, business development, finance, HR, operations, administration and strategic thinking.',
-     'courses' => ['Project Management', 'Product Management', 'Data Analysis', 'Business Development', 'Finance', 'Human Resources', 'Operations', 'Administration', 'Strategic Thinking']],
+     'courses' => ['Project Management', 'Product Management', 'Data Analysis', 'Business Development', 'Finance', 'Human Resources', 'Operations', 'Administration', 'Strategic Thinking'],
+     'major' => 'Project Management'],
 ];
+/* Each division's MAJOR: the course a child is placed on by default when their record names the division and
+   no course ("Tech" → Coding). Owner, 14 Nov 2026: "any tech defaults to coding, and every other division to its
+   major." It is one of the division's own courses, editable under Divisions & courses; a proposal is still only
+   a proposal, which staff confirm or change in People → Courses. */
 /** Bounds on what the divisions editor may save. */
 const CLUB_DIVISIONS_MAX = 12;
 const CLUB_DIVISION_SHORT_MAX = 14;
@@ -410,7 +418,7 @@ function club_catalogue_default(): array {
 }
 function club_division_meta_default(): array {
     $out = [];
-    foreach (CLUB_DIVISIONS_DEFAULT as $d) $out[$d['name']] = ['icon' => $d['icon'], 'short' => $d['short'], 'blurb' => $d['blurb']];
+    foreach (CLUB_DIVISIONS_DEFAULT as $d) $out[$d['name']] = ['icon' => $d['icon'], 'short' => $d['short'], 'blurb' => $d['blurb'], 'major' => $d['major']];
     return $out;
 }
 /** Seed the NGG divisions, once per seed version. */
@@ -430,22 +438,39 @@ function club_catalogue(): array {
 }
 function club_courses(): array { $out = []; foreach (club_catalogue() as $courses) foreach ($courses as $c) if (!in_array($c, $out, true)) $out[] = $c; return $out; }
 
-/** Clean a division's icon, short label and blurb. */
-function club_division_meta_clean(string $name, $m): array {
+/**
+ * A division's major: the one asked for when it is one of its courses, else the NGG default for a division of
+ * that name, else its first course. Never a course outside the division, never one that is not offered.
+ */
+function club_division_major(string $name, $asked, array $courses): string {
+    $pick = static function (string $want) use ($courses): string {
+        foreach ($courses as $c) if ($want !== '' && strcasecmp((string)$c, $want) === 0) return (string)$c;
+        return '';
+    };
+    if (($c = $pick(trim((string)$asked))) !== '') return $c;
+    foreach (CLUB_DIVISIONS_DEFAULT as $d) if (strcasecmp($d['name'], $name) === 0 && ($c = $pick((string)$d['major'])) !== '') return $c;
+    // A renamed division keeps its default by meaning: "AI & Technology" is Tech, so Coding when it offers Coding.
+    if (function_exists('nggc_division_id_for_name') && ($id = nggc_division_id_for_name($name)) !== ''
+        && ($c = $pick(nggc_division_default_major($id))) !== '') return $c;
+    return $courses ? (string)$courses[0] : '';
+}
+/** Clean a division's icon, short label, blurb and major. */
+function club_division_meta_clean(string $name, $m, array $courses = []): array {
     $m = is_array($m) ? $m : [];
     $icon = trim((string)($m['icon'] ?? ''));
     if (mb_strlen($icon) > 4) $icon = mb_substr($icon, 0, 4);
     $short = strtoupper(trim(preg_replace('/[^\p{L}\p{N} &\/-]+/u', '', (string)($m['short'] ?? ''))));
     if ($short === '') $short = strtoupper(mb_substr(preg_replace('/\s*[&,].*$/u', '', $name), 0, CLUB_DIVISION_SHORT_MAX));
-    return ['icon' => $icon, 'short' => mb_substr($short, 0, CLUB_DIVISION_SHORT_MAX), 'blurb' => mb_substr(trim((string)($m['blurb'] ?? '')), 0, CLUB_DIVISION_BLURB_MAX)];
+    return ['icon' => $icon, 'short' => mb_substr($short, 0, CLUB_DIVISION_SHORT_MAX), 'blurb' => mb_substr(trim((string)($m['blurb'] ?? '')), 0, CLUB_DIVISION_BLURB_MAX),
+            'major' => club_division_major($name, $m['major'] ?? '', $courses)];
 }
-/** Every division, in order: name, icon, short, blurb, courses. */
+/** Every division, in order: name, icon, short, blurb, major, courses. */
 function club_divisions(): array {
     $meta = setting_get('club_division_meta');
     $meta = is_array($meta) ? $meta : [];
     $out = [];
     foreach (club_catalogue() as $name => $courses) {
-        $out[] = array_merge(['name' => (string)$name], club_division_meta_clean((string)$name, $meta[$name] ?? null), ['courses' => array_values($courses)]);
+        $out[] = array_merge(['name' => (string)$name], club_division_meta_clean((string)$name, $meta[$name] ?? null, array_values($courses)), ['courses' => array_values($courses)]);
     }
     return $out;
 }
@@ -515,7 +540,7 @@ function admin_club_catalogue_set(array $p): array {
     $old = setting_get('club_division_meta');
     $old = is_array($old) ? $old : [];
     $meta = [];
-    foreach (array_keys($clean) as $name) $meta[$name] = club_division_meta_clean($name, $metaIn[$name] ?? ($old[$name] ?? null));
+    foreach ($clean as $name => $courses) $meta[$name] = club_division_meta_clean($name, $metaIn[$name] ?? ($old[$name] ?? null), array_values($courses));
     setting_set('club_catalogue', $clean, $by);
     setting_set('club_division_meta', $meta, $by);
     audit('club.catalogue.set', $by, '', ['divisions' => count($clean)], (string)($p['ip'] ?? ''));
@@ -2019,8 +2044,9 @@ function curriculum_member_courses_infer(array $m, ?array &$ctx = null): array {
          · the track names a course  → that course (or the courses it names, "Coding, Robotics": written
            out deliberately); interests on the card do not pile on top — they are alternatives for staff;
          · only interests name one  → the FIRST, flagged `several` when there were more, the rest listed;
-         · only the division is known → no course; they reach the division's shared lessons (its spine)
-           and are flagged `division_only` until a person places them;
+         · only the division is known → the division's MAJOR ("Tech" → Coding; owner, 14 Nov 2026), from
+           `division_major`, unflagged; a division with no major left in the catalogue proposes nothing and is
+           flagged `division_only` as before;
          · nothing                  → nothing, flagged `no_match`.
        A proposal is only ever a proposal: staff confirm or change it in People → Courses. */
     if ($ctx === null) $ctx = curriculum_course_ctx_shared();
@@ -2078,11 +2104,18 @@ function curriculum_member_courses_infer(array $m, ?array &$ctx = null): array {
         $alts = array_slice($fromDis, 1);
         if ($alts) $flag = 'several';
     } else {
-        /* Only the division is known: no course is proposed. A division is not a course anybody takes (see
-           course_reach), so its name never enters the list; the child still reaches the division's shared
-           lessons through curriculum_member_units_all(), and the flag puts them in front of a person. */
+        /* Only the division is known: they take its MAJOR, the course the division defaults to ("Tech" →
+           Coding). A division is not itself a course (see course_reach), so its name never enters the list. If
+           the catalogue offers no major for it, nothing is proposed and the flag puts them in front of a person. */
         $from = ''; $courses = [];
-        if ($trackDiv !== '' || ($div !== '' && function_exists('nggc_division') && nggc_division($div))) { $from = 'division'; $flag = 'division_only'; }
+        if ($trackDiv !== '' || ($div !== '' && function_exists('nggc_division') && nggc_division($div))) {
+            $divId = $trackDiv !== '' ? $trackDiv : (string)nggc_division($div)['id'];
+            // Once per context, never per member: the backfill and every class list run this in a loop.
+            if (!isset($ctx['majors'][$divId])) $ctx['majors'][$divId] = function_exists('nggc_division_major') ? nggc_division_major($divId) : '';
+            $major = $ctx['majors'][$divId];
+            if ($major !== '' && isset($known[mb_strtolower($major)])) { $courses = [$known[mb_strtolower($major)]]; $from = 'division_major'; }
+            else { $from = 'division'; $flag = 'division_only'; }
+        }
     }
     if (!$courses && $flag === '') $flag = 'no_match';
     elseif ($flag === '' && $dropped) $flag = 'other_division';

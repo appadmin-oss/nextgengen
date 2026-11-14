@@ -1013,7 +1013,15 @@ one of them:
 
 Edit them in **Learning → Divisions & courses** (needs `curriculum`): the
 icon, the name, the label the member card prints, the sentence families read
-on the join form, and the courses. **Summer School keeps its own catalogue**
+on the join form, the courses, and the division's **major**.
+
+The **major** is the course a child starts on when their record names only
+the division ("Tech", "Media") and no course. The NGG defaults are
+Technology → **Coding**, Creative & Performing Arts → **Music**, Media &
+Content Strategy → **Video Production**, and Business → **Project
+Management**. The major must be one of the division's own courses; changing it
+re-proposes every child who was on the old major by default (never one you
+placed). **Summer School keeps its own catalogue**
 (Summer School → Structure) and nothing here changes it. A course already
 holding members, lessons or classes asks before it is taken off; its members
 keep it on their record. *Reset to the NGG divisions* puts the table above
@@ -4661,9 +4669,9 @@ A child's courses decide their lessons, Community channels, timetable and which 
 - **Proposed:** for a child nobody has placed, their record proposes **one course** (since 7 Nov 2026). The child sees it marked "not confirmed yet".
   - The track names a course ("Coding", "Piano") → that course. Interests on the card do not add more.
   - Only interests name courses ("Coding, Robotics") → the first one, flagged, with the others listed so you can choose.
-  - The record only names a division ("Tech", "Media") → **no course**. Until you place them they see their division's shared lessons, never every course in it. (Before this fix such a child took all seven or eight courses at once, each with its own lessons, deadlines and fines.)
+  - The record only names a division ("Tech", "Media") → **the division's major**: "Tech" is Coding (since 14 Nov 2026; set per division in Learning → Divisions & courses). One course, never every course in the division. (Before 7 Nov such a child took all seven or eight courses at once; from 7 to 14 Nov they took none until placed.)
   - "Music" on its own is the Music course, not every instrument. "Music" plus "Piano" on the card is Piano.
-- **Needs a look:** the proposal needs a person to decide. Examples: only their division is known, their card names more than one course, it names another division (a Tech child whose card also says Media), or nothing names a course. Open the child to see why.
+- **Needs a look:** the proposal needs a person to decide. Examples: their card names more than one course, it names another division (a Tech child whose card also says Media), or nothing names a course. Open the child to see why.
 - **Confirm proposed:** select children, then Confirm. Their proposal becomes their courses.
 - **Add / Remove / Set courses:** choose from the course list. To place a child in two divisions on purpose, do it here.
 - **Course health** (Learning) lists every course: the children in it, its instructors, lessons, class times and channel. A course failing children comes first. Open one to see what is missing and go straight to where it is fixed.

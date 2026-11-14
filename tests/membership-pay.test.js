@@ -134,6 +134,8 @@ function cleanup() {
     await P.waitForSelector('.cr-dv-card', { timeout: 20000 });
     chk('Learning → Divisions & courses shows the four NGG divisions, with icon and card label', (await P.$$('.cr-dv-card')).length === 4
       && (await P.$eval('.cr-dv-card >> nth=2', el => el.querySelector('.cr-dv-short input').value)) === 'TECH' && /Summer School keeps its own catalogue/.test(await P.innerText('.cr-dv-intro')));
+    chk('each division shows its major: Technology starts children on Coding', (await P.$eval('.cr-dv-card >> nth=2', el => el.querySelector('.cr-dv-major select').value)) === 'Coding');
+    await P.selectOption('.cr-dv-card >> nth=2 >> .cr-dv-major select', 'Robotics');
     await P.fill('.cr-dv-card >> nth=2 >> input[placeholder="Add a course…"]', 'Drone Engineering');
     await P.keyboard.press('Enter');
     await P.fill('.cr-dv-card >> nth=1 >> input[placeholder="Add a course…"]', 'robotics');
@@ -142,6 +144,7 @@ function cleanup() {
     await P.click('button:has-text("Save divisions")');
     chk('saving says so', await crToast(P, /Saved\. The join form/));
     chk('…and the server has the new course in its division', JSON.parse(php(`echo json_encode(club_catalogue()['Technology & Applied Engineering']);`, ['bootstrap'])).includes('Drone Engineering'));
+    chk('…and the major chosen on screen', JSON.parse(php(`echo json_encode(array_column(club_divisions(), 'major', 'name')['Technology & Applied Engineering']);`, ['bootstrap'])) === 'Robotics');
 
     await P.evaluate(() => window.__adminSection('inbox', 'applications'));
     await P.waitForSelector('.cr-ib-row', { timeout: 20000 });

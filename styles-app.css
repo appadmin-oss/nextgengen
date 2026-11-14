@@ -8354,6 +8354,7 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-dv-short .cr-input { width: 150px; font-family: var(--cr-mono); font-size: 13px; letter-spacing: .06em; }
 .cr-dv-move { display: inline-flex; gap: 2px; }
 .cr-dv-blurb { width: 100%; }
+.cr-dv-major { display: grid; gap: 4px; margin: 8px 0; max-width: 360px; }
 .cr-dv-courses { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cr-dv-x { border: 0; background: transparent; padding: 0 0 0 4px; color: var(--cr-muted-3); display: inline-flex; align-items: center; min-width: 24px; min-height: 24px; justify-content: center; }
 .cr-dv-x:hover { color: var(--cr-danger); }

@@ -27,13 +27,16 @@ const COURSES_STATUSES = ['all', 'unplaced', 'flagged', 'none', 'placed'];
 
 /** What a proposal depends on: the record's words and the course list. */
 function members_courses_inputs(array $m, string $catalogueSig): string {
-    /* 'p2': the inference rule itself (one course, not a division's worth — 7 Nov 2026). A changed RULE must
+    /* 'p3': the inference rule itself (one course, not a division's worth — 7 Nov 2026; a division alone
+       proposes its major — 14 Nov 2026). A changed RULE must
        recompute every stored proposal just as changed inputs do, or the old wall of courses stays stored. */
-    return sha1(json_encode(['p2', (string)($m['track'] ?? ''), (string)($m['disciplines'] ?? ''), (string)($m['division'] ?? ''), $catalogueSig]));
+    return sha1(json_encode(['p3', (string)($m['track'] ?? ''), (string)($m['disciplines'] ?? ''), (string)($m['division'] ?? ''), $catalogueSig]));
 }
 
 function members_courses_catalogue_sig(): string {
-    return sha1(json_encode([curriculum_courses(), function_exists('club_catalogue') ? club_catalogue() : []]));
+    // The majors too: changing a division's major re-proposes everyone who was placed on it by default.
+    return sha1(json_encode([curriculum_courses(), function_exists('club_catalogue') ? club_catalogue() : [],
+        function_exists('club_divisions') ? array_column(club_divisions(), 'major', 'name') : []]));
 }
 
 /**

@@ -32016,12 +32016,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        reach the division's own shared lessons — filed under either name the division goes by. */
     $u('CMU-DIV', 'AI & Technology'); $u('CMU-BIZ', 'Business');
     $t = $ids('CMC-T');
-    chk('curriculum · an unplaced TECH member is not put on every Technology course', !in_array('CMU-CODE', $t, true) && !in_array('CMU-ROBO', $t, true) && !in_array('CMU-PC', $t, true));
+    chk('curriculum · an unplaced TECH member defaults to Coding, the division\'s major — not every Technology course (14 Nov 2026)', in_array('CMU-CODE', $t, true) && !in_array('CMU-ROBO', $t, true) && !in_array('CMU-PC', $t, true));
     chk('curriculum · …but reaches the division’s shared lessons, under the catalogue’s own division name, and the Club-wide ones', in_array('CMU-DIV', $t, true) && in_array('CMU-ALL', $t, true));
     chk('curriculum · and not another division’s, nor a draft', !in_array('CMU-MUS', $t, true) && !in_array('CMU-VID', $t, true) && !in_array('CMU-DRAFT', $t, true));
     chk('curriculum · a MUSIC member sees Music, not every arts course’s', in_array('CMU-MUS', $ids('CMC-M'), true) && !in_array('CMU-CODE', $ids('CMC-M'), true));
     chk('curriculum · a second faculty on the card does not bring its division: the track decides', in_array('CMU-DIV', $ids('CMC-2'), true) && !in_array('CMU-VID', $ids('CMC-2'), true));
-    chk('curriculum · a member with only a division reaches that division’s shared lessons, not its courses’', in_array('CMU-BIZ', $ids('CMC-D'), true) && !in_array('CMU-FIN', $ids('CMC-D'), true) && !in_array('CMU-CODE', $ids('CMC-D'), true));
+    chk('curriculum · a member with only a division reaches its shared lessons and its major’s, nothing from another division', in_array('CMU-BIZ', $ids('CMC-D'), true) && in_array('CMU-FIN', $ids('CMC-D'), true) && !in_array('CMU-CODE', $ids('CMC-D'), true));
     chk('curriculum · a placed member takes exactly their course', in_array('CMU-CODE', $ids('CMC-X'), true) && !in_array('CMU-ROBO', $ids('CMC-X'), true));
     $u('CMU-PIANO', 'Piano'); $u('CMU-GUIT', 'Guitar'); $mk('CMC-P', 'MUSIC', 'PIANO');
     chk('curriculum · a MUSIC member takes Music’s own lessons, not every instrument’s', in_array('CMU-MUS', $ids('CMC-M'), true) && !in_array('CMU-PIANO', $ids('CMC-M'), true) && !in_array('CMU-GUIT', $ids('CMC-M'), true));
@@ -32040,8 +32040,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         ($pc = curriculum_member_courses(['track' => 'Piano'], $ctxW)) === array_merge(['Piano', 'Music', 'Chess'], CURR_CORE_COURSES));
     chk('courses · an instrument is never read as "the arts": Guitar does not bring the Music division\'s other courses, nor any other division',
         !array_intersect(curriculum_member_courses(['track' => 'Guitar'], $ctxW), ['Video Production', 'Finance', 'Coding', 'Practical Coding']));
-    chk('courses · "Design" names no division: it gets no division\'s courses',
-        !array_intersect(curriculum_member_courses(['track' => 'Design'], $ctxW), ['Video Production', 'Coding', 'Finance', 'Piano']));
+    chk('courses · "Design" is a Media word: it takes Media\'s major and no other division\'s courses',
+        !array_intersect(curriculum_member_courses(['track' => 'Design'], $ctxW), ['Coding', 'Finance', 'Piano']));
     db_insert('members', ['memberId' => 'CMC-CH', 'fullName' => 'Chooser', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'TECH', 'createdAt' => $now, 'updatedAt' => $now]);
     $up = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'CMC-CH', 'courses' => ['coding', 'Robotics']]]);
     $cx = db_row("SELECT * FROM members WHERE memberId = 'CMC-CH'");
@@ -33448,7 +33448,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $mine = $courseNames(cm3_my_channels($id));
         chk("tech member ($id): none of Media's course channels are theirs", !array_intersect($mine, $media));
     }
-    chk('tech member: an unplaced "Tech" member is put in no course\'s channel until placed (one course, not a wall)', $courseNames(cm3_my_channels('NGG-TM-1')) === []);
+    $tm1 = $courseNames(cm3_my_channels('NGG-TM-1'));
+    chk('tech member: an unplaced "Tech" member defaults to Coding, the division\'s major: at most its channel, never a wall of courses', !array_diff($tm1, ['coding']));
     chk('tech member: a member with no course is in the shared channels only, not every course', $courseNames(cm3_my_channels('NGG-TM-3')) === []);
     $tt = member_timetable(['memberId' => 'NGG-TM-2']);
     chk('tech member: "My course" is the chosen one, and the division is its division, not a stale placement', ($tt['courses'] ?? null) === ['Coding'] && stripos((string)($tt['division'] ?? ''), 'Technology') !== false);
@@ -33466,8 +33467,43 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     members_courses_backfill();
     $row = fn($id) => db_row("SELECT * FROM members WHERE memberId = ?", [$id]);
     $st = member_courses_state($row('PL-TECH'));
-    chk('placement: an unplaced Tech child is proposed NO course — not every Technology course — and flagged for a person; the Media on their card is reported, not taken',
-        $st['status'] === 'none' && $st['courses'] === [] && $st['flag'] === 'division_only' && in_array('Graphic Design', $st['dropped'], true) && !in_array('Media', $st['dropped'], true));
+    chk('placement: an unplaced Tech child is proposed Coding, the division\'s major — one course, not every Technology course; the Media on their card is reported and flagged, not taken',
+        $st['status'] === 'unplaced' && $st['courses'] === ['Coding'] && $st['from'] === 'division_major' && $st['flag'] === 'other_division'
+        && in_array('Graphic Design', $st['dropped'], true) && !in_array('Media', $st['dropped'], true));
+    // Every division defaults to its major when the record names the division and no course.
+    $mk('PL-MEDIA', 'Media'); $mk('PL-BIZ', 'Business'); $mk('PL-TECH2', 'Tech'); $mk('PL-DIVONLY', '', '');
+    db_update('members', ['division' => 'Creative & Performing Arts'], ['memberId' => 'PL-DIVONLY']);
+    members_courses_backfill();
+    $prop = fn($id) => member_courses_state($row($id));
+    chk('placement: each division alone proposes its major — Tech → Coding, Media → Video Production, Business → Project Management, Arts → Music — unflagged',
+        $prop('PL-TECH2')['courses'] === ['Coding'] && $prop('PL-TECH2')['flag'] === ''
+        && $prop('PL-MEDIA')['courses'] === ['Video Production'] && $prop('PL-BIZ')['courses'] === ['Project Management']
+        && $prop('PL-DIVONLY')['courses'] === ['Music'] && $prop('PL-DIVONLY')['from'] === 'division_major');
+    chk('placement: a course the record does name still wins over the major', member_courses_state($row('PL-PIANO'))['courses'] === ['Piano']);
+    // The major is the catalogue's, editable: change it and the default follows; a course outside the division is never one.
+    $divs = club_divisions();
+    $TECH = 'Technology & Applied Engineering'; $MEDIA = 'Media & Content Strategy';
+    chk('divisions: "Media & Content Strategy" is the Media division only, never Business for its word "Strategy"', nggc_division_id_for_name($MEDIA) === 'media'
+        && nggc_division_major('business') === 'Project Management');
+    chk('divisions: Business\'s course list holds Business\'s courses, not Media\'s', in_array('Project Management', nggc_division_course_list('business'), true)
+        && !in_array('Video Production', nggc_division_course_list('business'), true));
+    chk('divisions: a division renamed in the catalogue keeps its default major by meaning ("AI & Technology" → Coding)',
+        club_division_major('AI & Technology', '', ['Practical Coding', 'Coding', 'Robotics']) === 'Coding');
+    chk('divisions: every division carries a major that is one of its own courses', count($divs) === 4 && !array_filter($divs, fn($d) => !in_array($d['major'], $d['courses'], true))
+        && array_column($divs, 'major', 'name')[$TECH] === 'Coding');
+    $edit = array_map(fn($d) => ['faculty' => $d['name'], 'icon' => $d['icon'], 'short' => $d['short'], 'blurb' => $d['blurb'], 'courses' => $d['courses'],
+        'major' => $d['name'] === $TECH ? 'robotics' : ($d['name'] === $MEDIA ? 'Piano' : $d['major'])], $divs);
+    $set = admin_club_catalogue_set(['requesterId' => $A, 'catalogue' => $edit]);
+    $after = array_column(club_divisions(), 'major', 'name');
+    chk('divisions: staff change a major (catalogue spelling kept); one from another division falls back to the default',
+        !empty($set['ok']) && $after[$TECH] === 'Robotics' && $after[$MEDIA] === 'Video Production');
+    members_courses_backfill();
+    chk('placement: changing a major re-proposes the children placed on it by default, and only them',
+        $prop('PL-TECH2')['courses'] === ['Robotics'] && $prop('PL-BIZ')['courses'] === ['Project Management']);
+    admin_club_catalogue_set(['requesterId' => $A, 'reset' => true]);
+    members_courses_backfill();
+    chk('divisions: resetting restores Coding as Tech\'s major', array_column(club_divisions(), 'major', 'name')[$TECH] === 'Coding' && $prop('PL-TECH2')['courses'] === ['Coding']);
+    db_exec("DELETE FROM members WHERE memberId IN ('PL-MEDIA', 'PL-BIZ', 'PL-TECH2', 'PL-DIVONLY')");
     $mk('PL-INT', '', 'Coding, Robotics');
     members_courses_backfill();
     $si = member_courses_state($row('PL-INT'));
@@ -33480,7 +33516,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $sqlIds = array_column(db_all("SELECT memberId FROM members WHERE centre = 'Placeville' AND $cs", $ca), 'memberId');
     $phpIds = array_values(array_filter(['PL-TECH', 'PL-PIANO', 'PL-NONE', 'PL-CODE'], fn($id) => in_array('coding', array_map('mb_strtolower', curriculum_member_courses($row($id))), true)));
     sort($sqlIds); sort($phpIds);
-    chk('placement: lessons and class lists agree on who takes Coding (one rule, not two)', $sqlIds === $phpIds && in_array('PL-CODE', $sqlIds, true) && !in_array('PL-TECH', $sqlIds, true));
+    chk('placement: lessons and class lists agree on who takes Coding (one rule, not two), the Tech child by default included', $sqlIds === $phpIds && in_array('PL-CODE', $sqlIds, true) && in_array('PL-TECH', $sqlIds, true));
     // A changed record is re-proposed.
     db_update('members', ['track' => 'Coding', 'disciplines' => ''], ['memberId' => 'PL-NONE']); members_courses_backfill();
     chk('placement: when the record changes, the proposal follows', member_courses_state($row('PL-NONE'))['courses'] === ['Coding']);
@@ -33511,7 +33547,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 (function () {
     db_insert('members', ['memberId' => 'NGG-TECHMED', 'fullName' => 'Tech Media', 'type' => 'NGG', 'status' => 'active', 'track' => 'Tech', 'disciplines' => 'Media, Photography', 'createdAt' => now_iso()]);
     $c = array_map('mb_strtolower', curriculum_member_courses(db_row("SELECT * FROM members WHERE memberId = 'NGG-TECHMED'")));
-    chk('courses: a Tech member who also ticked Media gets no Media course — and, until placed, no course at all', !in_array('coding', $c, true) && !in_array('media lab', $c, true) && !in_array('graphic design', $c, true) && !in_array('photography', $c, true));
+    chk('courses: a Tech member who also ticked Media gets no Media course — until placed, Coding, the Tech major', in_array('coding', $c, true) && !in_array('media lab', $c, true) && !in_array('graphic design', $c, true) && !in_array('photography', $c, true));
 })();
 
 /* ── One person, instructor AND mentor; the Academy waived by hand ── */
