@@ -156,18 +156,22 @@ function nggc_division(?string $id): ?array {
 function nggc_division_for_track(?string $track): string {
     $t = mb_strtolower(trim((string)$track));
     if ($t === '') return '';
+    /* Owner, 15 Nov 2026: no keyword that also belongs to another division's courses or names. "design" (Graphic
+       Design is Media, Tech Product Design is Tech), "engineering" (Sound / Audio Engineering are Arts) and
+       "strategy" ("Media & Content Strategy", Branding) filed children and lessons under the wrong division. A
+       phrase with one of these words now names a division only through a course or the division's own name. */
     static $map = [
         'music' => 'arts', 'arts' => 'arts', 'art' => 'arts', 'creative' => 'arts',
         // Instruments are music, and music is the arts.
         'piano' => 'arts', 'keyboard' => 'arts', 'guitar' => 'arts', 'drums' => 'arts', 'violin' => 'arts',
         'saxophone' => 'arts', 'vocals' => 'arts', 'singing' => 'arts', 'voice' => 'arts',
         'drama' => 'arts', 'dance' => 'arts', 'fashion' => 'arts', 'craft' => 'arts',
-        'media' => 'media', 'film' => 'media', 'photography' => 'media', 'design' => 'media',
+        'media' => 'media', 'film' => 'media', 'photography' => 'media',
         'graphics' => 'media', 'content' => 'media',
         'tech' => 'tech', 'technology' => 'tech', 'coding' => 'tech', 'code' => 'tech',
-        'robotics' => 'tech', 'ai' => 'tech', 'engineering' => 'tech', 'builder' => 'tech',
+        'robotics' => 'tech', 'ai' => 'tech', 'builder' => 'tech',
         'business' => 'business', 'admin' => 'business', 'operations' => 'business',
-        'finance' => 'business', 'strategy' => 'business',
+        'finance' => 'business',
     ];
     if (isset($map[$t])) return $map[$t];
     // A direct hit on an id or a full division name, for rosters already using them.

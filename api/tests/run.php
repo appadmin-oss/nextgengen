@@ -32040,8 +32040,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         ($pc = curriculum_member_courses(['track' => 'Piano'], $ctxW)) === array_merge(['Piano', 'Music', 'Chess'], CURR_CORE_COURSES));
     chk('courses · an instrument is never read as "the arts": Guitar does not bring the Music division\'s other courses, nor any other division',
         !array_intersect(curriculum_member_courses(['track' => 'Guitar'], $ctxW), ['Video Production', 'Finance', 'Coding', 'Practical Coding']));
-    chk('courses · "Design" is a Media word: it takes Media\'s major and no other division\'s courses',
-        !array_intersect(curriculum_member_courses(['track' => 'Design'], $ctxW), ['Coding', 'Finance', 'Piano']));
+    chk('courses · "Design" names no division (owner, 15 Nov 2026): it gets no division\'s courses',
+        !array_intersect(curriculum_member_courses(['track' => 'Design'], $ctxW), ['Video Production', 'Coding', 'Finance', 'Piano']));
     db_insert('members', ['memberId' => 'CMC-CH', 'fullName' => 'Chooser', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'TECH', 'createdAt' => $now, 'updatedAt' => $now]);
     $up = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'CMC-CH', 'courses' => ['coding', 'Robotics']]]);
     $cx = db_row("SELECT * FROM members WHERE memberId = 'CMC-CH'");
@@ -33486,6 +33486,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('placement: an umbrella that is one division\'s courses ("Musical Instruments") is that division\'s major, not every instrument',
         curriculum_member_courses_infer(['track' => 'Musical Instruments'])['courses'] === ['Music']
         && curriculum_member_courses_infer(['track' => 'Instruments'])['courses'] === ['Music']);
+    chk('divisions: ambiguous words name no division — "Design", "Engineering", "Strategy" (owner, 15 Nov 2026)',
+        nggc_division_for_track('Design') === '' && nggc_division_for_track('Engineering') === '' && nggc_division_for_track('Strategy') === ''
+        && nggc_division_id_for_name('Sound Engineering') === '' && nggc_division_id_for_name('Brand Strategy') === ''
+        && nggc_division_id_for_name('Media & Content Strategy') === 'media' && nggc_division_id_for_name('Technology & Applied Engineering') === 'tech'
+        && nggc_division_for_track('Tech Product Design') === 'tech' && nggc_division_for_track('Graphic Design') === 'media'
+        && nggc_division_for_track('Strategic Thinking') === 'business');
     chk('placement: two named courses from two divisions stay as written', curriculum_member_courses_infer(['track' => 'Piano, Coding'])['courses'] === ['Piano', 'Coding']);
     // The major is the catalogue's, editable: change it and the default follows; a course outside the division is never one.
     $divs = club_divisions();
