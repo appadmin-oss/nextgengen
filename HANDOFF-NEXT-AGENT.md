@@ -1,3 +1,55 @@
+# HANDOFF — for the next agent (Labs: the standard exam — IN PROGRESS, 16 Nov 2026)
+
+Branch for this work: `claude/magical-fermi-d97fqw` (built on `claude/finme-dues-training-fees-l54o5j`).
+
+## Owner's request (voice note, 15 Nov 2026, transcribed)
+"For the Math Lab, let it create the real WAEC [exam] to end with … in half the minutes of WAEC: if WAEC
+takes two hours, it should do the same in one hour. Anybody who scores 70% is already a genius, 85% a super
+genius, 100% a grandmaster." Then: "Research and find questions. For the exam, use a standard engine to make
+the exam feel real and tough — and effective." Applies to all Labs.
+
+## Owner's decisions (16 Nov 2026)
+- **Questions:** original, written to the real paper's blueprint, NOW; plus a **licence-gated slot** for real
+  past questions that stays OFF until the owner records a licence. Never load WAEC/NECO/JAMB text without it.
+- **Do not name WAEC** (or any exam body) anywhere a learner reads — the 6 Nov rule stands; a test sweeps for it.
+  Internal ids may say `waec`.
+
+## DONE (committed)
+- `paper 'waec'` ("Standard exam") in every Lab, via the shared engine (`mathslab.php` MLB_PAPERS,
+  `phy_papers()`, `eng_papers()`): Maths 50 Q / 45 min (real 90), Physics 50 / 38 (real 75), English 80 / 30
+  (real 60); four options A–D only (`'options' => 4` filters the pool and the draw); server-enforced clock.
+- Titles `MLB_WAEC_TIERS`: Genius ≥70, Super Genius ≥85, Grandmaster =100; grade bands `MLB_WAEC_GRADES`
+  (A1 75+ … F9 <40). In the report, the score line, history and the paper card (best title, three titles).
+- UI in `src/modules/mathslab/mlb-app.jsx` (MlbExams card, MlbResult headline/tier); CSS in `styles.css`.
+- Tests in `api/tests/run.php` (search "standard exam"). PHP suite 7192/0 at commit.
+- Research (WASSCE schemes): Maths P1 50 MCQ 1½h (P2 essay 2½h, 13 Q, answer 10); Physics P1 50 MCQ 1¼h
+  (P2 structured/essay 1½h, P3 practical); English P1 80 MCQ 1h. More in docs/MATH-LAB-PLAN.md §8.3.
+
+## TODO (in this order)
+1. **Blueprint + difficulty ("tough")**: `mlb_exam_pick` draws randomly with one question per topic. Give
+   `waec` papers a blueprint — share of questions per strand as the real paper weights its syllabus — and a
+   difficulty mix leaning hard (e.g. ~20% easy / 45% medium / 35% hard by stage within range). Research the
+   real topic weights first (owner said "research").
+2. **Exam-hall engine ("real")**: in MlbPlay for `mode === 'exam'`: a question navigator (jump to any
+   question), flag for review, change answers until hand-in, no right/wrong shown until the end, confirm
+   hand-in naming unanswered/flagged counts. Check what the current exam flow already does first (it is linear).
+3. **"Effective" report**: predicted grade, per-area weakness → the Lab topics to study (links), time per
+   question, comparison with previous standard exams.
+4. **Licence-gated real questions**: table (SQLite ladder in `api/_lib/db.php` + `db/schema-mysql.sql` +
+   bump NGG_SCHEMA_TARGET — see CLAUDE.md §3) for licensed items with provenance (board, year, paper, number,
+   licence ref); a setting that stays off until a licence reference is recorded by staff; the engine mixes
+   them in only when on. Staff import + toggle in the Control Room (Learning). Tests that it stays off.
+5. Docs: `docs/ADMIN-GUIDE.md` (labs section), `docs/LABS.md`; append `docs/HANDOFF.md`.
+6. Run: `php api/tests/run.php`, `node tests/labs-client.test.js`, `node tests/mathlab-e2e.test.js`,
+   `node tests/mathlab-shot.js`, `node tests/physicslab-shot.js`, build test. Not yet run for this change:
+   the browser suites above.
+
+## Also done on this branch earlier (all pushed)
+Pay ahead by month or term (12-month cap, dues-change notice); division majors (Tech → Coding);
+division/course matching fixes with an exhaustive test ("matching ·" in run.php). See commit messages.
+
+---
+
 # HANDOFF — for the next agent
 
 **Delete this file when you have finished the work in it** (and append what you

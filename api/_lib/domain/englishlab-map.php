@@ -199,7 +199,10 @@ function eng_courses(): array {
  * drawn fresh each time from this Lab's own questions. The score is out of 100, by strand.
  */
 function eng_papers(): array {
-    return ['eng' => ['id' => 'eng', 'title' => 'Timed English paper', 'exam' => 'eng', 'n' => 40, 'minutes' => 40, 'stages' => [1, 8], 'typed' => 0,
+    return ['waec' => ['id' => 'waec', 'title' => 'Standard exam', 'exam' => 'waec', 'board' => 'waec', 'n' => 80, 'minutes' => 30, 'boardMinutes' => 60, 'options' => 4,
+                'stages' => [1, 8], 'typed' => 0,
+                'what' => 'The senior school certificate English objective paper: 80 questions, A–D, lexis, structure and usage, in half the real time — 30 minutes instead of 1 hour.'],
+            'eng' => ['id' => 'eng', 'title' => 'Timed English paper', 'exam' => 'eng', 'n' => 40, 'minutes' => 40, 'stages' => [1, 8], 'typed' => 0,
         'what' => '40 questions in 40 minutes: lexis and structure, speech work, comprehension and usage. Every paper is new.']];
 }
 

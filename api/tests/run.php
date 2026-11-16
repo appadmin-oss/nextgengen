@@ -39054,8 +39054,32 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('maths lab · a paper refuses an answer after its time, scores out of 100 (JAMB) with every question counted in an area, names the weak areas, leaves the map exactly as it was, and is listed with its score',
         ($late['error'] ?? '') === 'time_up' && $fin['right'] === 20 && $fin['exam']['scaled'] === 50 && $areaTot === 40 && $areaRight === 20 && $fin['exam']['answered'] === 30 && $fin['xp'] === 40
         && json_encode(array_column($am['stages'], 'comps')) === json_encode(array_column($bm['stages'], 'comps')) && $fin['changes'] === []
-        && ($ex['history'][0]['paper'] ?? '') === 'jamb' && $ex['history'][0]['scaled'] === 50 && count($ex['papers']) === 2 && $ex['papers'][0]['best'] === 50
+        && ($ex['history'][0]['paper'] ?? '') === 'jamb' && $ex['history'][0]['scaled'] === 50 && count($ex['papers']) === 3 && $ex['papers'][0]['best'] === 50
         && mlb_exam_report('sat', array_fill(0, 27, ['c' => 'MC-050']), array_fill(0, 27, ['ok' => true, 'a' => '1']), now_iso())['scaled'] === 800);
+    /* The standard exam (owner, 15 Nov 2026): the WAEC objective paper's shape at half the time, with three titles. */
+    $ew = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'waec']);
+    $wits = $ew['items'] ?? [];
+    chk('maths lab · the standard exam is the WAEC Paper 1 shape: 50 four-option questions on 50 topics, on a 45-minute clock (half of WAEC\'s 1½ h)',
+        count($wits) === 50 && ($ew['minutes'] ?? 0) === 45 && !array_filter($wits, static fn($it) => $it['kind'] !== 'mcq' || count($it['options']) !== 4)
+        && count(array_unique(array_column($wits, 'comp'))) === 50 && ($ew['title'] ?? '') === 'Standard exam' && !isset($wits[0]['key']));
+    $wrow = json_decode((string)db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$ew['sessionId']])['items'], true);
+    foreach ($wrow as $i => $x) { $it = mlb_item($x['c'], $x['f'], $x['s']); mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $ew['sessionId'], 'index' => $i, 'answer' => $i < 43 ? $it['key'] : (($it['key'] + 1) % 4), 'ms' => 20000]); }
+    $wf = mlb_finish(['memberId' => 'NGG-ML-D', 'sessionId' => $ew['sessionId']]);
+    chk('maths lab · 43 of 50 (86%) is a Super Genius with WAEC grade A1, said in the report and the score line',
+        $wf['exam']['scaled'] === 86 && ($wf['exam']['tier']['name'] ?? '') === 'Super Genius' && $wf['exam']['grade'] === 'A1' && $wf['exam']['boardMinutes'] === 90
+        && str_contains($wf['exam']['scoreText'], 'Super Genius') && count($wf['exam']['tiers']) === 3);
+    $wx = array_column(mlb_exams(['memberId' => 'NGG-ML-D'])['papers'], null, 'id')['waec'];
+    chk('maths lab · the paper card shows the best score\'s title, the WAEC time and the three titles to earn',
+        $wx['best'] === 86 && ($wx['bestTier']['id'] ?? '') === 'super-genius' && $wx['boardMinutes'] === 90 && $wx['options'] === 4
+        && array_column($wx['tiers'], 'name') === ['Genius', 'Super Genius', 'Grandmaster'] && array_column($wx['tiers'], 'at') === [70, 85, 100]);
+    chk('maths lab · titles and grades sit exactly on the owner\'s lines: 69 none, 70 Genius, 84 Genius, 85 Super Genius, 99 Super Genius, 100 Grandmaster; WASSCE bands A1 75+, B2 70–74, C6 50–54, F9 under 40',
+        mlb_waec_tier(69) === null && mlb_waec_tier(70)['name'] === 'Genius' && mlb_waec_tier(84)['name'] === 'Genius' && mlb_waec_tier(85)['name'] === 'Super Genius'
+        && mlb_waec_tier(99)['name'] === 'Super Genius' && mlb_waec_tier(100)['name'] === 'Grandmaster'
+        && mlb_waec_grade(75)['grade'] === 'A1' && mlb_waec_grade(74)['grade'] === 'B2' && mlb_waec_grade(50)['grade'] === 'C6' && mlb_waec_grade(39)['grade'] === 'F9');
+    $ew2 = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'waec']);
+    db_update('mlab_sessions', ['startedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 46 * 60 - MLB_EXAM_GRACE)], ['sessionId' => $ew2['sessionId']]);
+    chk('maths lab · the half time is the server\'s: an answer after 45 minutes is refused', (mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $ew2['sessionId'], 'index' => 0, 'answer' => 0])['error'] ?? '') === 'time_up');
+    db_exec("DELETE FROM mlab_sessions WHERE memberId = 'NGG-ML-D' AND mode = 'exam' AND ref = 'waec'");
     /* Courses lock until their first stage is reached, and say why; enrolling a locked one is refused. */
     $cv = array_column(mlb_home(['memberId' => 'NGG-ML-1'])['courses'], null, 'id');
     $el = mlb_enrol(['memberId' => 'NGG-ML-1', 'courseId' => 'further-maths']);
@@ -39285,8 +39309,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $exp = backend_dispatch('mathslab.start', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'mode' => 'exam', 'paper' => 'phy']);
     $pits = array_column($exp['items'] ?? [], 'comp');
     chk('labs · Physics offers its own timed paper (and refuses a Maths one): 40 four-option questions on 40 different Physics topics, on a 40-minute clock',
-        array_column($ex['papers'] ?? [], 'id') === ['phy'] && ($exs['error'] ?? '') === 'bad_paper' && count($pits) === 40 && count(array_unique($pits)) === 40
+        array_column($ex['papers'] ?? [], 'id') === ['waec', 'phy'] && ($exs['error'] ?? '') === 'bad_paper' && count($pits) === 40 && count(array_unique($pits)) === 40
         && !array_filter($pits, static fn($c) => !str_starts_with($c, 'PH-')) && ($exp['minutes'] ?? 0) === 40 && !array_filter($exp['items'], static fn($it) => $it['kind'] !== 'mcq'));
+    $pw = backend_dispatch('mathslab.start', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'mode' => 'exam', 'paper' => 'waec']);
+    $pwc = array_column($pw['items'] ?? [], 'comp');
+    chk('labs · Physics\' standard exam is the WAEC objective shape: 50 four-option Physics questions on 50 topics, on a 38-minute clock (half of 1¼ h)',
+        count($pwc) === 50 && count(array_unique($pwc)) === 50 && !array_filter($pwc, static fn($c) => !str_starts_with($c, 'PH-')) && ($pw['minutes'] ?? 0) === 38
+        && !array_filter($pw['items'], static fn($it) => $it['kind'] !== 'mcq' || count($it['options']) !== 4));
     db_exec("DELETE FROM mlab_sessions WHERE memberId = 'NGG-PH-1' AND mode = 'exam'");
     $dp = backend_dispatch('mathslab.daily', ['memberId' => 'NGG-PH-1', 'lab' => 'physics']);
     $dm = backend_dispatch('mathslab.daily', ['memberId' => 'NGG-PH-1']);
@@ -39578,9 +39607,15 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $exe = backend_dispatch('mathslab.start', ['memberId' => 'NGG-EN-1', 'lab' => 'english', 'mode' => 'exam', 'paper' => 'eng']);
     $eits = array_column($exe['items'] ?? [], 'comp');
     chk('english lab · the timed English paper: 40 four-option questions on 40 different English topics, on a 40-minute clock, and no other Lab’s paper',
-        array_column($ex['papers'] ?? [], 'id') === ['eng'] && count($eits) === 40 && count(array_unique($eits)) === 40 && !array_filter($eits, static fn($c) => !str_starts_with($c, 'EN-'))
+        array_column($ex['papers'] ?? [], 'id') === ['waec', 'eng'] && count($eits) === 40 && count(array_unique($eits)) === 40 && !array_filter($eits, static fn($c) => !str_starts_with($c, 'EN-'))
         && ($exe['minutes'] ?? 0) === 40 && !array_filter($exe['items'] ?? [], static fn($it) => $it['kind'] !== 'mcq')
         && (backend_dispatch('mathslab.start', ['memberId' => 'NGG-EN-1', 'lab' => 'english', 'mode' => 'exam', 'paper' => 'phy'])['error'] ?? '') === 'bad_paper');
+    $enw = backend_dispatch('mathslab.start', ['memberId' => 'NGG-EN-1', 'lab' => 'english', 'mode' => 'exam', 'paper' => 'waec']);
+    $enc = array_column($enw['items'] ?? [], 'comp');
+    chk('english lab · the standard exam is the WAEC English Paper 1 shape: 80 four-option English questions, every one different, on a 30-minute clock (half of 1 h)',
+        count($enc) === 80 && !array_filter($enc, static fn($c) => !str_starts_with($c, 'EN-')) && ($enw['minutes'] ?? 0) === 30
+        && count(array_unique(array_map(static fn($it) => json_encode([$it['stem'] ?? '', $it['options'] ?? []]), $enw['items']))) === 80
+        && !array_filter($enw['items'], static fn($it) => $it['kind'] !== 'mcq' || count($it['options']) !== 4));
     db_exec("DELETE FROM mlab_sessions WHERE memberId = 'NGG-EN-1' AND mode = 'exam'");
     $de = backend_dispatch('mathslab.daily', ['memberId' => 'NGG-EN-1', 'lab' => 'english']);
     chk('english lab · the Daily Word Challenge comes from the summit band (The Senior Paper)', (mlb_comp((string)($de['item']['comp'] ?? ''))['stage'] ?? 0) === 8 && ($de['name'] ?? '') === 'Daily Word Challenge');
