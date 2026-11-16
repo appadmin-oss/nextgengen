@@ -33556,6 +33556,75 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
 })();
 
+/* ── Division & course matching, checked exhaustively (audit, 14–16 Nov 2026) ──
+   Every keyword, synonym, course name, course pair, course + division word and interest, against every other
+   division. Hand-picked cases missed whole classes of error ("Strategy" filing Media under Business; "Music,
+   Coding" giving nine courses; a division's name proposed as a course); this checks them all, so an edit to the
+   keyword map, the synonyms or the seeded catalogue that brings one back fails here, by name. */
+(function () use ($ROOT) {
+    $prevCat = setting_get('club_catalogue'); $prevMeta = setting_get('club_division_meta');
+    setting_set('club_catalogue', club_catalogue_default(), 'test'); setting_set('club_division_meta', club_division_meta_default(), 'test');
+    $R = dirname($ROOT);
+    $issues = [];
+    $add = function ($cat, $msg) use (&$issues) { $issues[$cat][] = $msg; };
+    $divOfCourse = []; $courses = [];
+    foreach (nggc_divisions() as $d) foreach ($d['courses'] as $c) if ($c !== 'Chess') { $divOfCourse[mb_strtolower($c)] = $d['id']; $courses[] = $c; }
+    $divNames = array_column(nggc_divisions(), 'id', 'name');
+    // The keyword map, read from the source (it is a static inside the function).
+    preg_match('/static \$map = \[(.*?)\];/s', file_get_contents("$R/api/_lib/domain/formation.php"), $m);
+    preg_match_all("/'([^']+)'\s*=>\s*'([^']+)'/", $m[1], $kw, PREG_SET_ORDER);
+    $words = fn($s) => preg_split('/[^\p{L}]+/u', mb_strtolower($s), -1, PREG_SPLIT_NO_EMPTY);
+    // A. A division keyword that is a word of ANOTHER division's course or division name.
+    foreach ($kw as [, $k, $d]) {
+      foreach ($courses as $c) if (in_array($k, $words($c), true) && $divOfCourse[mb_strtolower($c)] !== $d) $add('A keyword vs course', "'$k' → $d, but it is a word of '$c' ({$divOfCourse[mb_strtolower($c)]})");
+      foreach ($divNames as $n => $id) if ($id !== $d && in_array($k, $words($n), true)) $add('A keyword vs division name', "'$k' → $d, but it is a word of '$n' ($id)");
+    }
+    // B. Course-word synonyms: target exists; synonym not another division's keyword or course word.
+    foreach (MEMBER_COURSE_WORDS as $s => $target) {
+      $td = $divOfCourse[mb_strtolower($target)] ?? null;
+      if ($td === null) { $add('B synonym target', "'$s' → '$target', which is not a course in the catalogue"); continue; }
+      $kd = nggc_division_for_track($s);
+      if ($kd !== '' && $kd !== $td) $add('B synonym vs keyword', "'$s' → course '$target' ($td) but keyword → $kd");
+      foreach ($courses as $c) if ($divOfCourse[mb_strtolower($c)] !== $td && in_array($s, $words($c), true)) $add('B synonym vs course', "'$s' → '$target' ($td), but it is a word of '$c' ({$divOfCourse[mb_strtolower($c)]})");
+    }
+    foreach (BROAD_COURSE_WORDS as $s => $target) if (!isset($divOfCourse[mb_strtolower($target)])) $add('B broad target', "'$s' → '$target' not a course");
+    // C. Division-word table agrees with the keyword map.
+    foreach (MEMBER_DIVISION_WORDS as $w => $d) { $kd = nggc_division_for_track($w); if ($kd !== $d) $add('C division words', "MEMBER_DIVISION_WORDS '$w' → $d, keyword map → '" . $kd . "'"); }
+    // D. Strands stay inside their subject's division.
+    foreach (COURSE_STRANDS as $p => $kids) foreach ($kids as $k) if (($divOfCourse[mb_strtolower($k)] ?? '') !== ($divOfCourse[mb_strtolower($p)] ?? '-')) $add('D strands', "'$k' is a strand of '$p' but in another division");
+    // E. Behaviour: each course, synonym, division name as a track.
+    $infer = fn($t) => curriculum_member_courses_infer(['track' => $t])['courses'];
+    foreach ($courses as $c) { $got = $infer($c); if ($got !== [$c]) $add('E course as track', "'$c' → " . json_encode($got)); }
+    foreach (MEMBER_COURSE_WORDS as $s => $t) { $got = $infer($s); if ($got !== [$t]) $add('E synonym as track', "'$s' → " . json_encode($got) . " (expected [$t])"); }
+    foreach ($divNames as $n => $id) { $got = $infer($n); $mj = nggc_division_major($id); if ($got !== [$mj]) $add('E division name as track', "'$n' → " . json_encode($got) . " (expected [$mj])"); }
+    foreach (MEMBER_DIVISION_WORDS as $w => $id) { $got = $infer(ucfirst($w)); $mj = nggc_division_major($id); if ($got !== [$mj]) $add('E division word as track', "'$w' → " . json_encode($got) . " (expected [$mj])"); }
+    // F. Every pair of courses written as "A, B" gives exactly A and B.
+    $n = 0;
+    $strandOf = function ($x, $y) { return in_array($x, course_strands($y), true); };
+    foreach ($courses as $a) foreach ($courses as $b) if ($a !== $b) { $n++; $got = $infer("$a, $b"); sort($got);
+      $want = $strandOf($b, $a) ? [$b] : ($strandOf($a, $b) ? [$a] : [$a, $b]); sort($want);
+      if ($got !== $want) $add('F pair as track', "'$a, $b' → " . json_encode($got) . ' expected ' . json_encode($want)); }
+    // G. A course plus a division word gives the course plus that division's major.
+    foreach ($courses as $c) foreach (array_keys(MEMBER_DIVISION_WORDS) as $w) {
+      $mj = nggc_division_major(MEMBER_DIVISION_WORDS[$w]); $got = $infer("$c, " . ucfirst($w));
+      $want = $divOfCourse[mb_strtolower($c)] === MEMBER_DIVISION_WORDS[$w] ? [$c] : array_values(array_unique([$c, $mj])); sort($got); sort($want);
+      if ($got !== $want) $add('G course + division word', "'$c, $w' → " . json_encode($got) . ' expected ' . json_encode($want));
+    }
+    // H. Interests on the card never bring another division's course or a wall, whatever the track.
+    foreach (array_keys(MEMBER_DIVISION_WORDS) as $w) foreach ($courses as $c) {
+      $r = curriculum_member_courses_infer(['track' => ucfirst($w), 'disciplines' => $c]); $td = MEMBER_DIVISION_WORDS[$w];
+      if (count($r['courses']) !== 1) $add('H interests', "track '$w' + interest '$c' → " . json_encode($r['courses']));
+      foreach ($r['courses'] as $x) if (($divOfCourse[mb_strtolower($x)] ?? $td) !== $td) $add('H interests', "track '$w' + interest '$c' → other division's " . $x);
+    }
+    $cats = ['A keyword vs course', 'A keyword vs division name', 'B synonym target', 'B synonym vs keyword', 'B synonym vs course', 'B broad target',
+             'C division words', 'D strands', 'E course as track', 'E synonym as track', 'E division name as track', 'E division word as track',
+             'F pair as track', 'G course + division word', 'H interests'];
+    foreach ($cats as $c) chk('matching · ' . $c . ': none' . (empty($issues[$c]) ? '' : ' — e.g. ' . $issues[$c][0]), empty($issues[$c]));
+    chk('matching · nothing outside the named checks', !array_diff(array_keys($issues), $cats));
+    if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
+    if ($prevMeta) setting_set('club_division_meta', $prevMeta, 'test');
+})();
+
 /* ── A Tech member's interests never bring another division's courses ── */
 (function () {
     db_insert('members', ['memberId' => 'NGG-TECHMED', 'fullName' => 'Tech Media', 'type' => 'NGG', 'status' => 'active', 'track' => 'Tech', 'disciplines' => 'Media, Photography', 'createdAt' => now_iso()]);
