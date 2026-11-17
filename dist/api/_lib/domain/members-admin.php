@@ -328,6 +328,7 @@ function member_merge_policy(): array {
         'notice_reads'           => 'MOVE',           // who read and acknowledged a notice follows the person
         'journal'                => 'MOVE',
         'assignment_submissions' => 'MOVE',
+        'assignment_notices'     => 'MOVE_UNIQUE',    // who was told what about an assignment; told once is told once
         'mentor_assignments'     => 'MOVE',
         'mentor_supports'        => 'MOVE',
         'circle_links'           => 'MOVE',

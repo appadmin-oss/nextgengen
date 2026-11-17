@@ -38068,6 +38068,157 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM photo_change_requests WHERE requestId = 'PCR-PC-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PC-1'");
 })();
 
+// ── AUDIT-ASG-2026-11-02 START — the assignment audit's fixes (docs/ASSIGNMENTS-AUDIT-2026-11-02.md) ──
+(function () {
+    $now = now_iso();
+    $mk = function ($id, $centre, $track = 'TECH') use ($now) { db_insert('members', ['memberId' => $id, 'fullName' => $id . ' Name', 'email' => strtolower($id) . '@asgx.example', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'member', 'centre' => $centre, 'track' => $track, 'createdAt' => $now, 'updatedAt' => $now]); };
+    $mk('ASGX-A', 'Egbeda'); $mk('ASGX-B', 'egbeda '); $mk('ASGX-C', 'EGBEDA'); $mk('ASGX-FAR', 'Ayobo');
+    db_insert('volunteers', ['volunteerId' => 'VOL-INS-26-ASGX', 'fullName' => 'Ola Instructor', 'email' => 'ola.ins@asgx.example', 'role' => 'instructor', 'centre' => 'Egbeda', 'status' => 'active',
+        'safeguarding' => 'cleared', 'courses' => json_encode(['Coding']), 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now]);
+    $ins = ['requesterId' => 'VOL-INS-26-ASGX', 'ip' => ''];
+    $GLOBALS['__asgx_ins'] = $ins;
+
+    // 1 · A centre typed "egbeda " is the instructor's "Egbeda" on every scope check, not only on the member's side.
+    $aid = staff_assignments_save($ins + ['data' => ['title' => 'Centre case', 'track' => 'Coding', 'instructions' => 'Make a page.', 'status' => 'published', 'proof' => 'text']])['assignmentId'] ?? '';
+    chk('assign audit 1 · a member at "egbeda " can hand it in', !empty(assignment_submit(['memberId' => 'ASGX-B', 'assignmentId' => $aid, 'text' => 'My page.'])['ok']));
+    $subs = staff_assignment_submissions($ins + ['assignmentId' => $aid]);
+    chk('assign audit 1 · …and the instructor scoped to "Egbeda" sees the hand-in', in_array('ASGX-B', array_column($subs['submissions'] ?? [], 'memberId'), true));
+    chk('assign audit 1 · …and lists "EGBEDA" as not yet handed in, not the other centre', in_array('ASGX-C', array_column($subs['missing'] ?? [], 'memberId'), true) && !in_array('ASGX-FAR', array_column($subs['missing'] ?? [], 'memberId'), true));
+    $sid = (string)(db_row("SELECT submissionId FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASGX-B'", [$aid])['submissionId'] ?? '');
+    chk('assign audit 1 · …and can mark it (not out_of_scope)', !empty(staff_assignment_grade($ins + ['submissionId' => $sid, 'grade' => 8, 'feedback' => 'Good.'])['ok']));
+    $aud = staff_assignments_audience($ins + ['track' => 'Coding']);
+    $own = array_filter(assignment_audience(['track' => 'Coding', 'centre' => 'Egbeda']), fn($m) => str_starts_with((string)$m['memberId'], 'ASGX-'));
+    chk('assign audit 1 · the audience preview counts every spelling of the centre', count($own) === 3 && ($aud['count'] ?? 0) === count(assignment_audience(['track' => 'Coding', 'centre' => 'Egbeda'])));
+    $rm = staff_assignments_remind($ins + ['assignmentId' => $aid]);
+    chk('assign audit 1 · a reminder reaches the "EGBEDA" member who has not handed in', ($rm['reminded'] ?? 0) === count($subs['missing'] ?? []) && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'ASGX-C' AND title LIKE 'Reminder:%'"));
+    db_insert('assignments', ['assignmentId' => 'ASG-X-WHOLE', 'title' => 'Club-wide at one centre', 'instructions' => 'x', 'track' => '', 'centre' => 'EGBEDA ', 'status' => 'published', 'points' => 10,
+        'proof' => 'text', 'createdBy' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('assign audit 1 · a whole-Club assignment set for "EGBEDA " is on the Egbeda instructor\'s list', in_array('ASG-X-WHOLE', array_column(staff_assignments_list($ins)['assignments'] ?? [], 'assignmentId'), true));
+    db_exec("DELETE FROM assignments WHERE assignmentId = 'ASG-X-WHOLE'");
+    $GLOBALS['__asgx_aid'] = $aid;
+})();
+
+(function () {
+    // 2 · Work handed in pins an assignment open; a re-publish tells only those not yet told.
+    $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__asgx_aid'];
+    $dr = staff_assignments_status($ins + ['action' => 'draft', 'ids' => [$aid]]);
+    chk('assign audit 2 · back to draft is refused once work is handed in, with a reason', ($dr['results'][0]['error'] ?? '') === 'has_submissions' && ($dr['results'][0]['detail'] ?? '') !== ''
+        && db_row('SELECT status FROM assignments WHERE assignmentId = ?', [$aid])['status'] === 'published');
+    chk('assign audit 2 · …and the same refusal through save', (staff_assignments_save($ins + ['data' => ['assignmentId' => $aid, 'status' => 'draft']])['fieldErrors']['status'] ?? '') !== ''
+        && db_row('SELECT status FROM assignments WHERE assignmentId = ?', [$aid])['status'] === 'published');
+    chk('assign audit 2 · the member still sees their marked work', in_array($aid, array_column(assignment_list_for_member(['memberId' => 'ASGX-B'])['assignments'], 'assignmentId'), true));
+    $cnt = fn($m) => (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = ? AND title LIKE 'New assignment:%'", [$m])['c'];
+    $id2 = staff_assignments_save($ins + ['data' => ['title' => 'Republish', 'track' => 'Coding', 'instructions' => 'Do it.', 'status' => 'published', 'proof' => 'text']])['assignmentId'] ?? '';
+    $before = ['A' => $cnt('ASGX-A'), 'C' => $cnt('ASGX-C')];
+    chk('assign audit 2 · with nothing handed in it can go back to draft', !empty(staff_assignments_status($ins + ['action' => 'draft', 'ids' => [$id2]])['results'][0]['ok'])
+        && db_row('SELECT status FROM assignments WHERE assignmentId = ?', [$id2])['status'] === 'draft');
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'ASGX-NEW', 'fullName' => 'New Joiner', 'email' => 'asgx-new@asgx.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'TECH', 'createdAt' => $now, 'updatedAt' => $now]);
+    staff_assignments_status($ins + ['action' => 'publish', 'ids' => [$id2]]);
+    chk('assign audit 2 · re-published, the members already told are not told again', $cnt('ASGX-A') === $before['A'] && $cnt('ASGX-C') === $before['C']);
+    chk('assign audit 2 · …and a member who joined since is', $cnt('ASGX-NEW') === 1);
+    db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$id2]);
+})();
+
+(function () {
+    // 3 · A lesson's homework is issued once, whoever gets there first, and the hourly tick claims its slot atomically.
+    $now = now_iso(); $today = attendance_today();
+    $prevCur = setting_get('curriculum'); $prevAuto = setting_get(ASG_AUTO_KEY); $prevAt = setting_raw('assignments_auto_at');
+    setting_set('curriculum', ['startDate' => gmdate('Y-m-d', strtotime($today . ' UTC') - 8 * 86400)]);   // week 2
+    setting_set(ASG_AUTO_KEY, ['on' => true]);
+    db_insert('curriculum_units', ['unitId' => 'CU-ASGX-R', 'course' => 'Coding', 'level' => '', 'week' => 2, 'position' => 990, 'title' => 'Race lesson',
+        'body' => "## This week's assignment\n\nWrite a race-free page.", 'status' => 'published', 'version' => 1, 'createdAt' => $now]);
+    // Another run's insert lands between this run's read of what exists and its own insert:
+    // modelled by a row this run's read cannot see (no unitId) holding the lesson's issue key.
+    $planted = true;
+    try { db_insert('assignments', ['assignmentId' => 'ASG-X-RACE', 'title' => 'Week 2: Write a race-free page', 'instructions' => 'x', 'track' => 'Coding', 'centre' => '', 'status' => 'published',
+        'points' => 10, 'proof' => 'any', 'unitId' => '', 'autoKey' => 'CU-ASGX-R', 'createdBy' => 'curriculum', 'createdAt' => $now, 'updatedAt' => $now]); }
+    catch (Throwable $e) { $planted = false; }
+    $n0 = (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'ASGX-A' AND title LIKE '%race-free%'")['c'];
+    $iss = null; try { $iss = assignment_auto_issue($today); } catch (Throwable $e) { $iss = null; }
+    chk('assign audit 3 · the losing run issues nothing: one lesson, one assignment', $planted && is_array($iss) && !in_array('CU-ASGX-R', array_column(db_all("SELECT unitId FROM assignments WHERE createdBy = 'curriculum' AND unitId = 'CU-ASGX-R'"), 'unitId'), true)
+        && (int)db_row("SELECT COUNT(*) c FROM assignments WHERE autoKey = 'CU-ASGX-R'")['c'] === 1);
+    chk('assign audit 3 · …and does not report an issue that never landed', is_array($iss) && count(array_filter($iss['ids'] ?? [], fn($i) => !db_row('SELECT 1 FROM assignments WHERE assignmentId = ?', [$i]))) === 0);
+    chk('assign audit 3 · …and tells nobody a second time', (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'ASGX-A' AND title LIKE '%race-free%'")['c'] === $n0);
+    $dupRefused = false;
+    try { db_insert('assignments', ['assignmentId' => 'ASG-X-RACE2', 'title' => 't', 'status' => 'published', 'autoKey' => 'CU-ASGX-R', 'createdBy' => 'curriculum', 'createdAt' => $now]); } catch (Throwable $e) { $dupRefused = true; }
+    chk('assign audit 3 · the database itself refuses a second issue of one lesson', $dupRefused);
+    db_exec("DELETE FROM assignments WHERE assignmentId IN ('ASG-X-RACE', 'ASG-X-RACE2')");
+    $iss = assignment_auto_issue($today);
+    chk('assign audit 3 · with no rival, the lesson is issued, keyed by its lesson', in_array('CU-ASGX-R', array_column(db_all("SELECT autoKey FROM assignments WHERE createdBy = 'curriculum'"), 'autoKey'), true));
+    // The tick: two page views that both read the same stale stamp — only one may run the issue.
+    db_exec("DELETE FROM settings WHERE settingKey = 'assignments_auto_at'");
+    setting_set('assignments_auto_at', ['at' => time() - 7200]);
+    $seen = setting_raw('assignments_auto_at');
+    $c1 = function_exists('assignment_auto_tick_claim') ? assignment_auto_tick_claim(time(), $seen) : null;
+    $c2 = function_exists('assignment_auto_tick_claim') ? assignment_auto_tick_claim(time(), $seen) : null;
+    chk('assign audit 3 · of two ticks that read the same stamp, exactly one claims the hour', $c1 === true && $c2 === false);
+    // A failure inside the tick is logged, not swallowed.
+    $log = sys_get_temp_dir() . '/ngg-asgx-' . getmypid() . '.log'; @unlink($log);
+    $prevLog = ini_set('error_log', $log);
+    setting_set('assignments_auto_at', ['at' => time() - 7200]);
+    db_exec('ALTER TABLE curriculum_units RENAME TO curriculum_units_asgx');
+    try { assignment_auto_tick(); } finally { db_exec('ALTER TABLE curriculum_units_asgx RENAME TO curriculum_units'); ini_set('error_log', (string)$prevLog); }
+    chk('assign audit 3 · a failed tick leaves a line in the error log', str_contains((string)@file_get_contents($log), '[assignments]'));
+    @unlink($log);
+    db_exec("DELETE FROM assignments WHERE unitId = 'CU-ASGX-R' OR autoKey = 'CU-ASGX-R'"); db_exec("DELETE FROM curriculum_units WHERE unitId = 'CU-ASGX-R'");
+    setting_set('curriculum', $prevCur); setting_set(ASG_AUTO_KEY, $prevAuto);
+    if ($prevAt === null) db_exec("DELETE FROM settings WHERE settingKey = 'assignments_auto_at'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'assignments_auto_at'", [$prevAt]);
+})();
+
+(function () {
+    // 5 · The longest centre and course name save accepts fits the MySQL columns it lands in.
+    $sql = (string)file_get_contents(dirname(__DIR__, 2) . '/db/schema-mysql.sql');
+    $width = function (string $col) use ($sql): int {
+        $w = preg_match('/CREATE TABLE IF NOT EXISTS assignments \((.*?)\) ENGINE/s', $sql, $m) && preg_match('/\b' . $col . ' VARCHAR\((\d+)\)/', $m[1], $c) ? (int)$c[1] : 0;
+        if (preg_match_all('/ALTER TABLE assignments MODIFY COLUMN ' . $col . ' VARCHAR\((\d+)\)/', $sql, $mm)) $w = (int)end($mm[1]);
+        return $w;
+    };
+    chk('assign audit 5 · on MySQL, assignments.centre holds the longest centre name save accepts', defined('ASG_CENTRE_MAX') && $width('centre') >= ASG_CENTRE_MAX);
+    chk('assign audit 5 · …and assignments.track the longest course name', defined('ASG_TRACK_MAX') && $width('track') >= ASG_TRACK_MAX);
+    if (db_driver() === 'mysql') {
+        $now = now_iso();
+        db_insert('members', ['memberId' => 'ASGX-ADM', 'fullName' => 'Asgx Admin', 'email' => 'asgx-adm@asgx.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centre' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+        $long = str_repeat('C', ASG_CENTRE_MAX); $course = str_repeat('T', ASG_TRACK_MAX);
+        $r = null; try { $r = staff_assignments_save(['requesterId' => 'ASGX-ADM', 'viaAdmin' => true, 'data' => ['title' => 'Long names', 'centre' => $long, 'track' => $course, 'status' => 'draft']]); } catch (Throwable $e) { $r = ['ok' => false, 'error' => $e->getMessage()]; }
+        chk('assign audit 5 · strict MySQL stores a full-length centre and course name', !empty($r['ok']) && db_row('SELECT centre, track FROM assignments WHERE assignmentId = ?', [$r['assignmentId'] ?? ''])['centre'] === $long);
+        if (!empty($r['assignmentId'])) db_exec('DELETE FROM assignments WHERE assignmentId = ?', [$r['assignmentId']]);
+    }
+})();
+
+(function () {
+    // 6 · The daily job reminds who has not handed in: once when it is due tomorrow, once when it is overdue.
+    $ins = $GLOBALS['__asgx_ins'];
+    $rem = fn($m) => (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = ? AND title = 'Reminder: Due soon'", [$m])['c'];
+    $id = staff_assignments_save($ins + ['data' => ['title' => 'Due soon', 'track' => 'Coding', 'instructions' => 'Do it.', 'status' => 'published', 'proof' => 'text',
+        'dueAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 20 * 3600)]])['assignmentId'] ?? '';
+    assignment_submit(['memberId' => 'ASGX-B', 'assignmentId' => $id, 'text' => 'Done early.']);
+    $run = fn() => function_exists('assignment_due_reminders') ? assignment_due_reminders() : null;
+    $r1 = $run();
+    chk('assign audit 6 · due tomorrow: those who have not handed in are reminded', is_array($r1) && $rem('ASGX-A') === 1 && $rem('ASGX-C') === 1);
+    chk('assign audit 6 · …not the member who handed in', $rem('ASGX-B') === 0);
+    $run();
+    chk('assign audit 6 · …and only once, however often the job runs', $rem('ASGX-A') === 1);
+    db_exec('UPDATE assignments SET dueAt = ? WHERE assignmentId = ?', [gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 3600), $id]);
+    $run(); $run();
+    chk('assign audit 6 · overdue: one more reminder, once', $rem('ASGX-A') === 2 && $rem('ASGX-B') === 0);
+    $id2 = staff_assignments_save($ins + ['data' => ['title' => 'Draft due', 'track' => 'Coding', 'instructions' => 'x', 'status' => 'draft', 'dueAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3600)]])['assignmentId'] ?? '';
+    $run();
+    chk('assign audit 6 · a draft is never reminded about', !db_row("SELECT 1 FROM notifications WHERE memberId = 'ASGX-A' AND title = 'Reminder: Draft due'"));
+    chk('assign audit 6 · the scheduler runs it', array_key_exists('assign_due', web_cron_jobs()));
+    db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$id]); db_exec("DELETE FROM assignments WHERE assignmentId IN (?, ?)", [$id, $id2]);
+})();
+
+(function () {
+    $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__asgx_aid'];
+    foreach (['assignment_submissions' => 'memberId', 'assignment_notices' => 'memberId', 'notifications' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
+    db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-ASGX'");
+})();
+// ── AUDIT-ASG-2026-11-02 END ──
+
+
 
 /* ── Dues and payment notices (domain/dues-notices.php) ────────────────────
    A family hears what is coming before it is owed, on every channel and to

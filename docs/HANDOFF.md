@@ -7436,3 +7436,24 @@ The third Lab after English (round 7) and Physics (round 8). 57 Maths forms let 
 longest option; all rewritten (wrong-option text only, plus six deliberate right-answer rewordings), and the
 "Why is line k true?" generator evens its option lengths deterministically. Details, numbers and the saved-session
 check in `docs/LABS-AUDIT.md` round 9. PHP suite 7166 / 0 (baseline 7161 / 0; five new checks).
+
+## 17 Nov 2026 — Branch audit: two branches brought in
+
+Owner: "Check all recent branches." Every remote branch updated since late October was compared with this one.
+
+- **`claude/magical-fermi-d97fqw`** (16 Nov), built on this branch, 6 commits not merged here: the standard exam
+  in every Lab, pay ahead by the term, course/division matching fixes. **Merged** (only generated `dist/`
+  conflicted; rebuilt). Its browser suites had never been run: `mathlab-e2e` failed 6 checks that pinned the old
+  card count on the Exams pages; they now pin "the Lab's own papers plus the Standard exam, no other Lab's"
+  (122 / 0). Its HANDOFF-NEXT-AGENT.md (the standard exam, in progress) is now this branch's.
+- **`claude/stoic-hamilton-1f18hh`** (14 Nov) is a separate history frozen at 31 Oct — merging it would delete
+  ~100,000 lines — with 8 commits on top: the assignments audit of 2 November. **Ported** as a patch: the daily
+  due-tomorrow/overdue reminder, `assignment_notices` (re-publish tells only the untold), a lesson's homework
+  issued once (`assignments.autoKey`), centre scope however typed, MySQL widths, the merge policy, the classic
+  dashboard's hand-in panel. Its migrations 216/217 collided with this branch's, so they are **234 and 235**
+  here (target 235; MySQL mirror and `NGG_MYSQL_ROW_FIXUPS` comment renumbered; the audit doc says 234/235).
+- Older branches (vibrant-cray, community-audit, gate-lookup, codex/english-lab-gods, the August audits): their
+  work is already here.
+
+Results: PHP 7239 / 0 (+28 ported checks); assign-desk 34 / 0; mathlab-e2e 122 / 0; build.test 31 / 0;
+labs-client 28 / 0.

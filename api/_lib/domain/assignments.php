@@ -45,6 +45,11 @@ const ASG_POINTS_MAX = 1000;
 const ASG_TEXT_MAX   = 20000;
 const ASG_REMIND_QUIET = 86400;
 const ASG_BULK_MAX   = 500;
+/* The longest centre and course name save keeps — and the widths of
+ * assignments.centre / .track in db/schema-mysql.sql, which must hold them:
+ * strict MySQL refuses a longer value outright (they were 32 and 64). */
+const ASG_CENTRE_MAX = 80;
+const ASG_TRACK_MAX  = 80;
 
 /* ── Who gets it ─────────────────────────────────────────────────────────── */
 
@@ -160,6 +165,27 @@ function assignment_staff_gate(array $p): array {
             'centres' => $g['centres'] ?? null, 'courses' => $g['courses'] ?? null, 'canWhole' => $role === 'admin'];
 }
 
+/**
+ * A centre name compared the way a member's own centre is matched to an
+ * assignment (assignment_matches_member): trimmed and case-folded. A member
+ * whose record says "egbeda " can hand in; the instructor scoped to "Egbeda"
+ * must then see, mark and remind them too. Compared exactly, their hand-in
+ * was invisible on the desk, grading answered out_of_scope and the reminder
+ * skipped them. One key, used by every scope check below.
+ */
+function assignment_centre_key($name): string {
+    return mb_strtolower(trim((string)$name));
+}
+
+/** Is this centre inside the staff member's centre scope? (null scope: every centre.) */
+function assignment_centre_in_scope(array $g, $centre): bool {
+    if ($g['centres'] === null) return true;
+    $k = assignment_centre_key($centre);
+    if ($k === '') return false;
+    foreach ($g['centres'] as $c) if (assignment_centre_key($c) === $k) return true;
+    return false;
+}
+
 function assignment_in_reach(array $g, array $a): bool {
     $course = trim((string)($a['track'] ?? ''));
     $centre = trim((string)($a['centre'] ?? ''));
@@ -167,7 +193,7 @@ function assignment_in_reach(array $g, array $a): bool {
     elseif ($g['courses'] !== null && !in_array(mb_strtolower($course), array_map('mb_strtolower', $g['courses']), true)) return false;
     if ($g['centres'] !== null) {
         if ($centre === '' || $centre === 'All' || $centre === 'Both') return false;   // "every centre" is wider than a scoped reach
-        if (!in_array($centre, $g['centres'], true)) return false;
+        if (!assignment_centre_in_scope($g, $centre)) return false;
     }
     return true;
 }
@@ -185,7 +211,7 @@ function assignment_can_mark(array $g, array $a): bool {
 function assignment_member_in_reach(array $g, string $memberId): bool {
     if ($g['centres'] === null) return true;
     $m = db_row('SELECT centre FROM members WHERE memberId = ?', [$memberId]);
-    return $m && in_array((string)$m['centre'], $g['centres'], true);
+    return $m && assignment_centre_in_scope($g, (string)$m['centre']);
 }
 
 
@@ -394,7 +420,7 @@ function staff_assignments_list(array $p): array {
         if ($status !== '' && in_array($status, ASG_STATUSES, true) && $a['status'] !== $status) continue;
         $reach = assignment_in_reach($g, $a);
         // An instructor also sees the whole-Club ones that land on their learners, read-only.
-        if (!$reach && !assignment_can_mark($g, $a) && !($g['who'] !== 'admin' && trim((string)$a['track']) === '' && (trim((string)$a['centre']) === '' || $g['centres'] === null || in_array($a['centre'], $g['centres'] ?? [], true)))) continue;
+        if (!$reach && !assignment_can_mark($g, $a) && !($g['who'] !== 'admin' && trim((string)$a['track']) === '' && (trim((string)$a['centre']) === '' || assignment_centre_in_scope($g, (string)$a['centre'])))) continue;
         $out[] = assignment_row_public($a, $counts, $reach);
     }
     $courses = $g['courses'] ?? (function_exists('club_courses') ? club_courses() : []);
@@ -440,8 +466,8 @@ function staff_assignments_save(array $p): array {
     $row = [
         'title' => mb_substr(trim((string)($d['title'] ?? ($existing['title'] ?? ''))), 0, 160),
         'instructions' => mb_substr(trim((string)($d['instructions'] ?? ($existing['instructions'] ?? ''))), 0, 8000),
-        'track' => mb_substr(trim((string)($d['track'] ?? ($existing['track'] ?? ''))), 0, 80),
-        'centre' => mb_substr(trim((string)($d['centre'] ?? ($existing['centre'] ?? ''))), 0, 80),
+        'track' => mb_substr(trim((string)($d['track'] ?? ($existing['track'] ?? ''))), 0, ASG_TRACK_MAX),
+        'centre' => mb_substr(trim((string)($d['centre'] ?? ($existing['centre'] ?? ''))), 0, ASG_CENTRE_MAX),
         'sessionId' => mb_substr(trim((string)($d['sessionId'] ?? ($existing['sessionId'] ?? ''))), 0, 40),
         'dueAt' => trim((string)($d['dueAt'] ?? ($existing['dueAt'] ?? ''))),
         'points' => (int)($d['points'] ?? ($existing['points'] ?? 10)),
@@ -474,7 +500,10 @@ function staff_assignments_save(array $p): array {
             if ($row['week'] === 0) $row['week'] = (int)$u['week'];
         }
     }
-    if (!assignment_in_reach($g, $row)) $errors[$row['track'] === '' ? 'track' : ($g['centres'] !== null && !in_array($row['centre'], $g['centres'] ?? [], true) ? 'centre' : 'track')] =
+    // Work handed in pins it open: as a draft it would vanish from the members who did it, marks and all.
+    if ($existing && $row['status'] === 'draft' && (string)$existing['status'] !== 'draft' && assignment_has_submissions($id))
+        $errors['status'] = ASG_DRAFT_REFUSED;
+    if (!assignment_in_reach($g, $row)) $errors[$row['track'] === '' ? 'track' : (!assignment_centre_in_scope($g, $row['centre']) ? 'centre' : 'track')] =
         $row['track'] === '' ? 'Only an admin sets work for the whole Club. Choose your course.' : 'That is outside the courses and centre you teach.';
     if ($row['status'] === 'published' && $row['instructions'] === '') $errors['instructions'] = 'Say what to do before you publish it.';
     if ($errors) return ['ok' => false, 'error' => 'invalid', 'fieldErrors' => $errors];
@@ -501,7 +530,7 @@ function staff_assignments_audience(array $p): array {
     $a = ['track' => trim((string)($p['track'] ?? '')), 'centre' => trim((string)($p['centre'] ?? '')), 'sessionId' => trim((string)($p['sessionId'] ?? ''))];
     if ($a['centre'] === '' && $g['centres'] !== null && count($g['centres']) === 1) $a['centre'] = $g['centres'][0];
     $aud = assignment_audience($a);
-    if ($g['centres'] !== null) $aud = array_values(array_filter($aud, fn($m) => in_array((string)$m['centre'], $g['centres'], true)));
+    if ($g['centres'] !== null) $aud = array_values(array_filter($aud, fn($m) => assignment_centre_in_scope($g, (string)$m['centre'])));
     return ['ok' => true, 'count' => count($aud), 'sample' => array_map(fn($m) => (string)$m['fullName'], array_slice($aud, 0, 6)),
             'centres' => array_count_values(array_map(fn($m) => (string)$m['centre'], $aud))];
 }
@@ -517,7 +546,7 @@ function staff_assignment_submissions(array $p): array {
     $due = assignment_due_ts($a);
     $names = [];
     foreach (db_all('SELECT s.*, m.fullName, m.centre FROM assignment_submissions s LEFT JOIN members m ON m.memberId = s.memberId WHERE s.assignmentId = ? ORDER BY s.submittedAt DESC', [$a['assignmentId']]) as $r) {
-        if ($g['centres'] !== null && !in_array((string)$r['centre'], $g['centres'], true)) continue;
+        if (!assignment_centre_in_scope($g, (string)$r['centre'])) continue;
         $names[] = ['memberId' => $r['memberId'], 'memberName' => $r['fullName'] ?: $r['memberId'], 'centre' => (string)($r['centre'] ?? '')]
             + assignment_public_sub($r) + ['late' => $due && strtotime((string)$r['submittedAt']) > $due];
     }
@@ -526,7 +555,7 @@ function staff_assignment_submissions(array $p): array {
     if ($a['status'] !== 'draft') {
         foreach (assignment_audience($a) as $m) {
             if (isset($handed[$m['memberId']])) continue;
-            if ($g['centres'] !== null && !in_array((string)$m['centre'], $g['centres'], true)) continue;
+            if (!assignment_centre_in_scope($g, (string)$m['centre'])) continue;
             $missing[] = ['memberId' => $m['memberId'], 'memberName' => $m['fullName'], 'centre' => $m['centre']];
         }
     }
@@ -677,16 +706,27 @@ function assignment_auto_issue(?string $today = null): array {
         $d = assignment_draft_from_unit($u);
         $id = 'ASG-' . gmdate('Y') . '-' . rand_hex(4);
         $now = now_iso();
-        db_insert('assignments', ['assignmentId' => $id, 'title' => $d['title'], 'instructions' => $d['instructions'], 'track' => (string)$u['course'], 'centre' => '',
+        /* Keyed by the lesson (autoKey, UNIQUE): a second run that read $have
+         * before this one inserted loses here, inserts nothing and tells nobody. */
+        $won = assignment_auto_insert(['assignmentId' => $id, 'autoKey' => (string)$u['unitId'], 'title' => $d['title'], 'instructions' => $d['instructions'], 'track' => (string)$u['course'], 'centre' => '',
             'sessionId' => assignment_session_id(), 'dueAt' => $due ?: assignment_default_due(), 'points' => 10, 'proof' => in_array($d['proof'], ASG_PROOFS, true) ? $d['proof'] : 'any',
             'attachmentUrl' => '', 'unitId' => (string)$u['unitId'], 'week' => (int)$u['week'], 'steps' => $d['steps'] ? json_encode($d['steps'], JSON_UNESCAPED_UNICODE) : '',
             'status' => 'published', 'createdBy' => 'curriculum', 'createdAt' => $now, 'updatedAt' => $now]);
         $have[(string)$u['unitId']] = true;
+        if (!$won) continue;
         $issued[] = $id;
         notify_assignment_published($id, false);
     }
     if ($issued) audit('assignment.auto_issue', 'curriculum', '', ['issued' => count($issued), 'week' => $week, 'ids' => $issued], '');
     return ['ok' => true, 'issued' => count($issued), 'week' => $week, 'ids' => $issued];
+}
+
+/** Insert an auto-issued assignment unless its lesson is already issued. True only when the row landed. */
+function assignment_auto_insert(array $row): bool {
+    $row = db_centre_mirror('assignments', $row);
+    $verb = db_driver() === 'mysql' ? 'INSERT IGNORE' : 'INSERT OR IGNORE';
+    $cols = array_map('db_ident', array_keys($row));
+    return db_exec($verb . ' INTO assignments (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($row)) === 1;
 }
 
 /** staff.assignments.auto — an admin turns "lessons set their own homework" on or off; on issues this week's now. */
@@ -700,16 +740,37 @@ function staff_assignments_auto(array $p): array {
     return ['ok' => true, 'on' => $on, 'issued' => (int)($r['issued'] ?? 0), 'week' => (int)($r['week'] ?? 0), 'skipped' => (string)($r['skipped'] ?? '')];
 }
 
+const ASG_AUTO_AT_KEY = 'assignments_auto_at';
+
+/**
+ * Claim this hour's issue for one caller. Compare-and-swap on the stored
+ * stamp: the write lands only where the row still holds the value this caller
+ * read ($seen; read now when not given), so two page views that both saw a
+ * stale stamp cannot both go on to issue. Settings are JSON objects
+ * (setting_get reads a bare number as nothing), so the stamp is one too.
+ */
+function assignment_auto_tick_claim(int $now, ?string $seen = null): bool {
+    $seen = func_num_args() >= 2 ? $seen : setting_raw(ASG_AUTO_AT_KEY);
+    $last = (int)((safe_json($seen ?? '') ?: [])['at'] ?? 0);
+    if ($last > $now - 3600) return false;
+    $next = json_encode(['at' => $now]);
+    if ($seen === null) {
+        $verb = db_driver() === 'mysql' ? 'INSERT IGNORE' : 'INSERT OR IGNORE';
+        return db_exec($verb . ' INTO settings (settingKey, settingValue, updatedAt, updatedBy) VALUES (?, ?, ?, ?)', [ASG_AUTO_AT_KEY, $next, now_iso(), 'tick']) === 1;
+    }
+    return db_exec('UPDATE settings SET settingValue = ?, updatedAt = ? WHERE settingKey = ? AND settingValue = ?', [$next, now_iso(), ASG_AUTO_AT_KEY, $seen]) === 1;
+}
+
 /** Run the issue at most once an hour from a page view, so nobody waits for the nightly job. */
 function assignment_auto_tick(): void {
     try {
         if (!assignment_auto_on()) return;
-        // Settings are JSON objects (setting_get reads a bare number as nothing), so the stamp is one too.
-        $last = (int)((setting_get('assignments_auto_at') ?: [])['at'] ?? 0);
-        if ($last > time() - 3600) return;
-        setting_set('assignments_auto_at', ['at' => time()]);
+        if (!assignment_auto_tick_claim(time())) return;
         assignment_auto_issue();
-    } catch (\Throwable $e) {}
+    } catch (\Throwable $e) {
+        // A list view must not fail because homework could not be issued — but nor may the failure vanish.
+        error_log('[assignments] auto-issue tick failed: ' . $e->getMessage());
+    }
 }
 
 function staff_assignments_draft(array $p): array {
@@ -751,14 +812,67 @@ function staff_assignments_remind(array $p): array {
     if ($last > time() - ASG_REMIND_QUIET && empty($p['force'])) return ['ok' => false, 'error' => 'quiet_period', 'detail' => 'They were reminded in the last 24 hours.'];
     $sub = sub_ids_for($a['assignmentId']);
     $targets = array_values(array_filter(assignment_audience($a), fn($m) => !isset($sub[$m['memberId']])
-        && ($g['centres'] === null || in_array((string)$m['centre'], $g['centres'], true))));
-    $due = assignment_due_ts($a);
-    foreach ($targets as $m) push_notification((string)$m['memberId'], ['kind' => 'announcement', 'title' => 'Reminder: ' . $a['title'],
-        'body' => ($due ? ($due < time() ? 'This was due ' . gmdate('D j M', $due) . '. ' : 'Due ' . gmdate('D j M', $due) . '. ') : '') . 'Open your dashboard to hand it in.', 'linkPage' => 'dashboard']);
+        && assignment_centre_in_scope($g, (string)$m['centre'])));
+    foreach ($targets as $m) assignment_remind_push($a, (string)$m['memberId']);
     db_update('assignments', ['remindedAt' => now_iso()], ['id' => $a['id']]);
     audit('assignment.remind', $g['me'], (string)$a['assignmentId'], ['count' => count($targets)], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'reminded' => count($targets)];
 }
+function assignment_has_submissions(string $assignmentId): bool {
+    return (bool)db_row('SELECT 1 FROM assignment_submissions WHERE assignmentId = ? LIMIT 1', [$assignmentId]);
+}
+const ASG_DRAFT_REFUSED = 'Work has been handed in for this one, so it cannot go back to draft — members would lose sight of what they handed in and its mark. Close it instead.';
+
+/**
+ * Claim the right to tell one member one thing about one assignment. True
+ * only for the writer whose row landed (UNIQUE assignmentId, memberId, kind),
+ * so two runs — or a publish, a draft and a publish again — never tell the
+ * same person the same thing twice.
+ */
+function assignment_notice_claim(string $assignmentId, string $memberId, string $kind): bool {
+    $verb = db_driver() === 'mysql' ? 'INSERT IGNORE' : 'INSERT OR IGNORE';
+    return db_exec($verb . ' INTO assignment_notices (assignmentId, memberId, kind, sentAt) VALUES (?, ?, ?, ?)', [$assignmentId, $memberId, $kind, now_iso()]) === 1;
+}
+
+/** The reminder itself — one wording for the desk's button and the daily job. */
+function assignment_remind_push(array $a, string $memberId): void {
+    $due = assignment_due_ts($a);
+    push_notification($memberId, ['kind' => 'announcement', 'title' => 'Reminder: ' . $a['title'],
+        'body' => ($due ? ($due < time() ? 'This was due ' . gmdate('D j M', $due) . '. ' : 'Due ' . gmdate('D j M', $due) . '. ') : '') . 'Open your dashboard to hand it in.', 'linkPage' => 'dashboard']);
+}
+
+const ASG_DUE_SOON_WINDOW = 129600;   // 36 h: a daily run always meets a deadline inside it at least once
+const ASG_OVERDUE_WINDOW  = 604800;   // a week after the deadline it is staff's call, not the job's
+
+/**
+ * The daily job (web-cron 'assign_due'): members who have not handed in a
+ * published assignment are reminded once when it is due within the next day
+ * and a half ('due_soon') and once when it is overdue, for up to a week
+ * ('overdue'). Once per member, assignment and kind — assignment_notices is
+ * the claim — so the job may run as often as it likes. An assignment staff
+ * reminded by hand in the last day waits for the next run.
+ */
+function assignment_due_reminders(?int $now = null): array {
+    $now = $now ?? time();
+    $sent = 0; $touched = [];
+    foreach (db_all("SELECT * FROM assignments WHERE status = 'published' AND COALESCE(dueAt, '') <> ''") as $a) {
+        $due = assignment_due_ts($a);
+        if (!$due) continue;
+        $kind = ($due > $now && $due - $now <= ASG_DUE_SOON_WINDOW) ? 'due_soon' : (($due <= $now && $now - $due <= ASG_OVERDUE_WINDOW) ? 'overdue' : '');
+        if ($kind === '') continue;
+        if ((strtotime((string)($a['remindedAt'] ?? '')) ?: 0) > $now - ASG_REMIND_QUIET) continue;
+        $handed = sub_ids_for((string)$a['assignmentId']);
+        foreach (assignment_audience($a) as $m) {
+            $mid = (string)$m['memberId'];
+            if (isset($handed[$mid]) || !assignment_notice_claim((string)$a['assignmentId'], $mid, $kind)) continue;
+            assignment_remind_push($a, $mid);
+            $sent++; $touched[(string)$a['assignmentId']] = $kind;
+        }
+    }
+    if ($sent) audit('assignment.remind_auto', 'webcron', '', ['count' => $sent, 'assignments' => $touched], '');
+    return ['ok' => true, 'reminded' => $sent, 'assignments' => count($touched)];
+}
+
 function sub_ids_for(string $assignmentId): array {
     return array_flip(array_column(db_all('SELECT memberId FROM assignment_submissions WHERE assignmentId = ?', [$assignmentId]), 'memberId'));
 }
@@ -777,11 +891,12 @@ function staff_assignments_status(array $p): array {
         if (!$a) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'not_found']; continue; }
         if (!assignment_in_reach($g, $a)) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'out_of_scope']; continue; }
         if ($action === 'delete') {
-            if (db_row('SELECT 1 FROM assignment_submissions WHERE assignmentId = ? LIMIT 1', [$id])) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'has_submissions']; continue; }
+            if (assignment_has_submissions($id)) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'has_submissions']; continue; }
             db_exec('DELETE FROM assignments WHERE id = ?', [$a['id']]); $results[] = ['id' => $id, 'ok' => true]; $done++; continue;
         }
         $to = ['publish' => 'published', 'draft' => 'draft', 'close' => 'closed'][$action];
         if ($a['status'] === $to) { $results[] = ['id' => $id, 'ok' => true, 'unchanged' => true]; continue; }
+        if ($to === 'draft' && assignment_has_submissions($id)) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'has_submissions', 'detail' => ASG_DRAFT_REFUSED]; continue; }
         if ($to === 'published' && trim((string)$a['instructions']) === '') { $results[] = ['id' => $id, 'ok' => false, 'error' => 'no_instructions']; continue; }
         $patch = ['status' => $to, 'updatedAt' => now_iso()];
         if ($to === 'published' && trim((string)$a['dueAt']) === '') $patch['dueAt'] = assignment_default_due();
@@ -797,7 +912,11 @@ function notify_assignment_published(string $assignmentId, bool $alsoEmail): int
     global $CONFIG;
     $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [$assignmentId]);
     if (!$a) return 0;
-    $targets = assignment_audience($a);
+    /* Told once: a member who has handed in, or who was told when it was
+     * first published, is not told again when it is re-published. */
+    $handed = sub_ids_for($assignmentId);
+    $targets = array_values(array_filter(assignment_audience($a), fn($m) => !isset($handed[$m['memberId']])
+        && assignment_notice_claim($assignmentId, (string)$m['memberId'], 'published')));
     $due = ($t = assignment_due_ts($a)) ? (' Due ' . gmdate('D j M', $t) . '.') : '';
     foreach ($targets as $m) {
         push_notification($m['memberId'], ['kind' => 'announcement', 'title' => 'New assignment: ' . $a['title'], 'body' => 'Open your dashboard to start.' . $due, 'linkPage' => 'dashboard']);

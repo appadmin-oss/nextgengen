@@ -178,9 +178,9 @@ CREATE TABLE IF NOT EXISTS newsletter (
 CREATE TABLE IF NOT EXISTS assignments (
   id INT AUTO_INCREMENT PRIMARY KEY,
   assignmentId VARCHAR(64) UNIQUE NOT NULL,
-  title VARCHAR(255), instructions TEXT, track VARCHAR(64), sessionId VARCHAR(64),
+  title VARCHAR(255), instructions TEXT, track VARCHAR(80), sessionId VARCHAR(64),
   week INT DEFAULT 0, dueAt VARCHAR(40), points INT DEFAULT 0,
-  attachmentUrl TEXT, proof VARCHAR(16) DEFAULT 'text', centre VARCHAR(32),
+  attachmentUrl TEXT, proof VARCHAR(16) DEFAULT 'text', centre VARCHAR(80),
   status VARCHAR(32) DEFAULT 'draft', createdBy VARCHAR(64),
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   INDEX idx_assign_status (status)
@@ -5288,3 +5288,31 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   KEY idx_wa_phone (phone, direction, createdAt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (233) ON DUPLICATE KEY UPDATE version = version;
+-- ── 234 · Who was told about an assignment, and of what ──
+-- One row per assignment, member and kind; the UNIQUE key is the claim, so a
+-- re-publish tells only those not yet told and a due reminder goes once.
+CREATE TABLE IF NOT EXISTS assignment_notices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  assignmentId VARCHAR(64) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  kind VARCHAR(16) NOT NULL,
+  sentAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_asg_notice (assignmentId, memberId, kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (234) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 235 · A lesson's homework is issued once ──
+-- autoKey = the lesson's unitId on an auto-issued row, NULL on a hand-set one,
+-- so the UNIQUE key binds only what the curriculum issues. The backfill of
+-- existing rows is NGG_MYSQL_ROW_FIXUPS 'assignments.autoKey' (api/_lib/db.php).
+ALTER TABLE assignments ADD COLUMN autoKey VARCHAR(64) DEFAULT NULL;
+CREATE UNIQUE INDEX uq_assign_autokey ON assignments(autoKey);
+-- And the widths save keeps (ASG_CENTRE_MAX / ASG_TRACK_MAX, 80 each): the
+-- columns were 32 and 64, so strict MySQL refused a longer centre or course
+-- name that save accepted. MODIFY, because ADD COLUMN cannot change a width
+-- (see migration 178 above); it is idempotent on a replay.
+ALTER TABLE assignments MODIFY COLUMN centre VARCHAR(80);
+ALTER TABLE assignments MODIFY COLUMN track VARCHAR(80);
+
+INSERT INTO schema_version (version) VALUES (235) ON DUPLICATE KEY UPDATE version = version;

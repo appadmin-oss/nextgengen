@@ -173,7 +173,7 @@ async function journey(who, W, H, tag) {
   // Exam practice: a JAMB-style paper runs on a clock, letters its options A–E, lets a question be left, and reports by area.
   await p.goto(BASE + '/study/lab/exams', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-paper', { timeout: 60000 });
-  chk(tag + ': the Exams page offers a JAMB-style and an SAT-style paper', await p.locator('.mlb-paper').count() === 2);
+  chk(tag + ': the Exams page offers a JAMB-style and an SAT-style paper, and the Standard exam', await p.locator('.mlb-paper').count() === 3 && /Standard exam/.test(await p.locator('.mlb-main').innerText()));
   await p.locator('.mlb-paper.is-jamb .mlb-go').click();
   await p.waitForSelector('.mlb-clock', { timeout: 30000 });
   const clk = await p.locator('.mlb-clock').innerText();
@@ -281,7 +281,8 @@ async function physics(who, W, H, tag) {
   await shot('map');
   await p.goto(BASE + '/study/physics/exams', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-paper', { timeout: 60000 }).catch(() => {});
-  chk(tag + ': the Physics Exams page offers the Physics paper only', await p.locator('.mlb-paper').count() === 1 && /Timed Physics paper/.test(await p.locator('.mlb-paper').innerText()));
+  { const t = await p.locator('.mlb-main').innerText();
+    chk(tag + ': the Physics Exams page offers the Physics paper and the Standard exam, no other Lab\u2019s', await p.locator('.mlb-paper').count() === 2 && /Timed Physics paper/.test(t) && /Standard exam/.test(t) && !/JAMB|SAT|English paper/.test(t)); }
   await p.goto(BASE + '/study/physics/learn/PH-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });
   let remSeen = false, remImg = false, remCover = false;
@@ -346,7 +347,8 @@ async function english(who, W, H, tag) {
   await shot('map');
   await p.goto(BASE + '/study/english/exams', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-paper', { timeout: 60000 }).catch(() => {});
-  chk(tag + ': the English Exams page offers the English paper only', await p.locator('.mlb-paper').count() === 1 && /Timed English paper/.test(await p.locator('.mlb-paper').innerText()));
+  { const t = await p.locator('.mlb-main').innerText();
+    chk(tag + ': the English Exams page offers the English paper and the Standard exam, no other Lab\u2019s', await p.locator('.mlb-paper').count() === 2 && /Timed English paper/.test(t) && /Standard exam/.test(t) && !/JAMB|SAT|Physics paper/.test(t)); }
   await p.goto(BASE + '/study/english/learn/EN-001', { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.mlb-lesson-foot', { timeout: 60000 });
   let remSeen = false, remImg = false, remCover = false;
