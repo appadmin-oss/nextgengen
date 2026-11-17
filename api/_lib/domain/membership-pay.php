@@ -280,9 +280,66 @@ function family_fees_pay(array $p): array {
  * The plan walks the months to come in date order, spending the credit on
  * each charge as it would fall, so "paid ahead to March" is what the accrual
  * will actually do, renewal included.
+ *
+ * ── BY THE MONTH OR BY THE TERM, NEVER MORE THAN A YEAR ─────────────────────
+ * A family chooses months (1, 3, 6, 12) or terms (to the end of this term, the
+ * next, or the one after: a school year). A term is only a way of counting
+ * months: the term's last month is found on the child's centre calendar (its
+ * session windows), else on the default school year (Jan–Apr, May–Aug,
+ * Sep–Dec, as cp_term_bounds uses), and the quote is the same month quote up
+ * to that month. Nothing on the ledger knows about terms.
+ *
+ * No choice reaches past MPAY_ADVANCE_MAX_MONTHS of dues beyond this month,
+ * counting credit already held. Paid-ahead money is not refunded (the child
+ * stays on the programme and the family stays responsible for it), so the cap
+ * is not about refunds: it limits how long money is held against a price that
+ * may change, and a year is a whole school year, which is what families plan
+ * around. Raise the constant to allow more.
+ *
+ * Because dues are charged at the price of the month they fall in, a paid-ahead
+ * family can still owe a difference if dues go up. MPAY_ADVANCE_NOTICE says so
+ * wherever paying ahead is offered — the family account and the /pay page.
  */
 const MPAY_ADVANCE_MONTHS = [1, 3, 6, 12];
+const MPAY_ADVANCE_TERMS = [1, 2, 3];
+const MPAY_ADVANCE_MAX_MONTHS = 12;
 const MPAY_ADVANCE_HORIZON = 36;
+/** Default school terms when a centre's calendar has none: the month each ends in. */
+const MPAY_DEFAULT_TERM_END_MONTHS = [4, 8, 12];
+const MPAY_ADVANCE_NOTICE = 'Dues can change. Paying ahead does not fix today’s price: each month is charged at the dues for that month. '
+    . 'If dues go up before a month you have paid for, the credit runs out sooner and you pay the difference. '
+    . 'If they go down, it lasts longer. Everything you have paid stays on the account and always counts.';
+
+/**
+ * The last month (YYYY-MM) of this term and the terms after it, in order, at
+ * most $n. "This term" is the one holding $today, else the next to start.
+ */
+function membership_term_ends(array $m, string $today, int $n, ?array $cal = null): array {
+    $ends = [];
+    $cal = $cal ?? (function_exists('member_calendar_for') ? member_calendar_for($m) : []);
+    $windows = !empty($cal['enabled']) && (string)($cal['startDate'] ?? '') === '' ? (array)($cal['sessionWindows'] ?? []) : [];
+    if ($windows) {
+        usort($windows, static fn($a, $b) => strcmp((string)$a[0], (string)$b[0]));
+        foreach ($windows as $w) {
+            $end = (string)($w[1] ?? '');
+            if ($end === '' || $end < $today) continue;
+            $key = substr($end, 0, 7);
+            if (!in_array($key, $ends, true)) $ends[] = $key;
+            if (count($ends) >= $n) break;
+        }
+        if ($ends) return $ends;
+    }
+    $y = (int)substr($today, 0, 4); $mo = (int)substr($today, 5, 2);
+    while (count($ends) < $n) {
+        foreach (MPAY_DEFAULT_TERM_END_MONTHS as $e) {
+            if ($y === (int)substr($today, 0, 4) && $e < $mo) continue;
+            $ends[] = sprintf('%04d-%02d', $y, $e);
+            if (count($ends) >= $n) break;
+        }
+        $y++;
+    }
+    return $ends;
+}
 
 /** The charges still to come, in date order: every dues month and renewal not yet on the ledger. */
 function membership_upcoming_charges(array $m, array $cfg, int $months, ?string $asOf = null): array {
@@ -332,13 +389,30 @@ function membership_advance_plan(array $m, ?string $asOf = null): array {
         if ($coming[$i]['kind'] === 'dues') $through = $coming[$i]['key'];
     }
     $rest = array_slice($coming, $i);
+    // The cap is absolute, not per payment: no choice may carry the account past
+    // MPAY_ADVANCE_MAX_MONTHS beyond this month, however much is already ahead.
+    $today = $asOf ?? gmdate('Y-m-d');
+    $capKey = gmdate('Y-m', (int)strtotime(substr($today, 0, 7) . '-01 00:00:00 UTC +' . MPAY_ADVANCE_MAX_MONTHS . ' months'));
     $quotes = [];
     foreach (MPAY_ADVANCE_MONTHS as $n) {
         $q = membership_advance_quote($rest, $left, (int)$bal['payable'], $n);
-        if ($q) $quotes[] = $q;
+        if ($q && $q['through'] <= $capKey) $quotes[] = $q;
+    }
+    // By the term: the dues months up to each term's last month, never past the cap.
+    $termQuotes = [];
+    foreach (membership_term_ends($m, $today, count(MPAY_ADVANCE_TERMS)) as $k => $endKey) {
+        $count = count(array_filter($rest, static fn($c) => $c['kind'] === 'dues' && $c['key'] <= $endKey));
+        if ($count < 1 || $endKey > $capKey) continue;
+        $q = membership_advance_quote($rest, $left, (int)$bal['payable'], $count);
+        if (!$q) continue;
+        $n = $k + 1;
+        $q['terms'] = $n;
+        $q['termsL'] = ['Through this term', 'Through next term', 'Through the term after'][$k];
+        $termQuotes[] = $q;
     }
     return ['credit' => $credit, 'paidThrough' => $through, 'payable' => (int)$bal['payable'],
-        'monthly' => (int)$cfg['monthlyDues'], 'membershipFee' => (int)$cfg['membershipFee'], 'quotes' => $quotes];
+        'monthly' => (int)$cfg['monthlyDues'], 'membershipFee' => (int)$cfg['membershipFee'], 'quotes' => $quotes,
+        'termQuotes' => $termQuotes, 'maxMonths' => MPAY_ADVANCE_MAX_MONTHS, 'capThrough' => $capKey, 'notice' => MPAY_ADVANCE_NOTICE];
 }
 
 /** One priced choice: what is owed today, then n months of dues and any renewal among them, less a part-month credit. */
@@ -369,9 +443,10 @@ function membership_advance_quote(array $rest, int $leftover, int $payable, int 
  * from a figure the page sent; an open balance or advance invoice is replaced
  * so a family never holds two links for overlapping money.
  */
-function membership_advance_invoice(array $m, int $months, string $by): array {
+function membership_advance_invoice(array $m, int $months, string $by, int $termCount = 0): array {
     if (!member_is_ngg($m)) return ['ok' => false, 'error' => 'not_ngg'];
-    if (!in_array($months, MPAY_ADVANCE_MONTHS, true)) return ['ok' => false, 'error' => 'bad_months', 'detail' => 'Choose 1, 3, 6 or 12 months.'];
+    if ($termCount !== 0 && !in_array($termCount, MPAY_ADVANCE_TERMS, true)) return ['ok' => false, 'error' => 'bad_terms', 'detail' => 'Choose this term, 2 terms or 3 terms.'];
+    if ($termCount === 0 && !in_array($months, MPAY_ADVANCE_MONTHS, true)) return ['ok' => false, 'error' => 'bad_months', 'detail' => 'Choose 1, 3, 6 or 12 months.'];
     $cfg = fees_settings();
     if (empty($cfg['enabled'])) return ['ok' => false, 'error' => 'fees_off'];
     $terms = membership_fee_terms();
@@ -383,8 +458,9 @@ function membership_advance_invoice(array $m, int $months, string $by): array {
     }
     $plan = membership_advance_plan($m);
     $q = null;
-    foreach ($plan['quotes'] as $x) if ($x['months'] === $months) $q = $x;
-    if (!$q) return ['ok' => false, 'error' => 'nothing_to_pay', 'detail' => 'There is nothing to pay ahead for that many months.'];
+    if ($termCount !== 0) { foreach ($plan['termQuotes'] as $x) if ($x['terms'] === $termCount) $q = $x; }
+    else { foreach ($plan['quotes'] as $x) if ($x['months'] === $months) $q = $x; }
+    if (!$q) return ['ok' => false, 'error' => 'nothing_to_pay', 'detail' => $termCount !== 0 ? 'There is nothing to pay ahead for that many terms.' : 'There is nothing to pay ahead for that many months.'];
     $open = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose IN ('balance','advance') ORDER BY id DESC", [$mid]);
     foreach ($open as $o) {
         if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [(string)$o['invoiceId']])) return ['ok' => false, 'error' => 'offline_pending'];
@@ -402,7 +478,7 @@ function membership_advance_invoice(array $m, int $months, string $by): array {
         'status' => 'open', 'purpose' => 'advance', 'createdBy' => substr($by, 0, 64), 'createdAt' => now_iso(),
     ];
     $row = doc_invoice_insert($row);
-    audit('membership.advance.invoice', $by, $mid, ['invoiceId' => $row['invoiceId'], 'total' => $q['total'], 'months' => $months, 'through' => $q['through'], 'superseded' => count($open)]);
+    audit('membership.advance.invoice', $by, $mid, ['invoiceId' => $row['invoiceId'], 'total' => $q['total'], 'months' => $q['months'], 'terms' => $termCount, 'through' => $q['through'], 'superseded' => count($open)]);
     return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode($row['payToken']), 'invoiceId' => $row['invoiceId'], 'total' => $q['total'], 'through' => $q['through']];
 }
 
@@ -413,7 +489,7 @@ function family_fees_advance(array $p): array {
     if (!$l) return ['ok' => false, 'error' => 'not_found'];
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$l['memberId']]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
-    return membership_advance_invoice($m, (int)($p['months'] ?? 0), 'guardian:' . $gid);
+    return membership_advance_invoice($m, (int)($p['months'] ?? 0), 'guardian:' . $gid, (int)($p['terms'] ?? 0));
 }
 
 /** The invoice's lines as an email table. */
@@ -553,6 +629,7 @@ function public_membership_invoice(array $p): array {
     return ['ok' => true, 'invoice' => [
         'invoiceId' => (string)$inv['invoiceId'], 'status' => (string)$inv['status'], 'total' => (int)$inv['total'],
         'purpose' => (string)($inv['purpose'] ?? 'joining'),
+        'notice' => (string)($inv['purpose'] ?? '') === 'advance' ? MPAY_ADVANCE_NOTICE : '',
         'currency' => (string)$inv['currency'], 'symbol' => $terms['symbol'], 'startDate' => (string)$inv['startDate'],
         'items' => array_map(static fn($i) => ['label' => (string)$i['label'], 'detail' => (string)($i['detail'] ?? ''), 'amount' => (int)$i['amount']], membership_items($inv)),
         'firstName' => explode(' ', trim((string)($m['fullName'] ?? '')))[0] ?? '', 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? ''),

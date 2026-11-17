@@ -31559,6 +31559,35 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && gmdate('Y-m', strtotime($renewDue)) <= $q3['through']);
     chk('ahead · a choice outside the four is refused', (membership_advance_invoice($m, 2, 'test')['error'] ?? '') === 'bad_months');
 
+    // ── By the term, capped at a year, with the price-change notice ──
+    chk('ahead · default terms end in April, August and December, starting with the term holding today',
+        membership_term_ends([], '2026-11-14', 3, []) === ['2026-12', '2027-04', '2027-08']
+        && membership_term_ends([], '2026-12-31', 3, []) === ['2026-12', '2027-04', '2027-08']
+        && membership_term_ends([], '2027-05-01', 3, []) === ['2027-08', '2027-12', '2028-04']);
+    $calT = ['enabled' => true, 'startDate' => '', 'sessionWindows' => [['2027-01-11', '2027-03-26'], ['2026-09-07', '2026-12-11'], ['2027-04-26', '2027-07-16']]];
+    chk('ahead · a centre calendar\'s session windows are the terms, in date order, finished ones skipped',
+        membership_term_ends([], '2026-11-14', 3, $calT) === ['2026-12', '2027-03', '2027-07']
+        && membership_term_ends([], '2027-02-01', 3, $calT) === ['2027-03', '2027-07']);
+    $tq = $plan['termQuotes'] ?? [];
+    $mByCount = [];
+    foreach ($plan['quotes'] as $x) $mByCount[$x['months']] = $x['total'];
+    $termEnds = membership_term_ends($m, gmdate('Y-m-d'), 3);
+    chk('ahead · the plan prices paying by the term: up to three terms, each to its last month',
+        count($tq) >= 1 && count($tq) <= 3 && $tq[0]['terms'] === 1 && $tq[0]['termsL'] === 'Through this term'
+        && (bool)array_filter($tq, fn($x) => in_array($x['through'], $termEnds, true)) && count(array_filter($tq, fn($x) => !in_array($x['through'], $termEnds, true))) === 0);
+    $consistent = true;
+    foreach ($tq as $x) {
+        $alt = membership_advance_quote(array_values(array_filter(membership_upcoming_charges($m, fees_settings(), MPAY_ADVANCE_HORIZON), fn($c) => true)), 0, $owed, $x['months']);
+        if (!$alt || $alt['total'] !== $x['total']) $consistent = false;
+    }
+    chk('ahead · a term costs exactly the months it spans: the same pricing as paying by the month', $consistent);
+    chk('ahead · nothing is ever quoted past twelve months from this month',
+        ($plan['maxMonths'] ?? 0) === 12 && count(array_filter(array_merge($plan['quotes'], $tq), fn($x) => $x['through'] > $plan['capThrough'])) === 0
+        && $plan['capThrough'] === gmdate('Y-m', strtotime(gmdate('Y-m-01') . ' +12 months')));
+    chk('ahead · the plan carries the notice that a dues change can mean paying the difference',
+        str_contains((string)($plan['notice'] ?? ''), 'pay the difference') && str_contains((string)$plan['notice'], 'Dues can change'));
+    chk('ahead · a number of terms outside the three is refused', (membership_advance_invoice($m, 0, 'test', 4)['error'] ?? '') === 'bad_terms');
+
     // A guardian pays ahead through their own link only.
     db_insert('guardians', ['guardianId' => 'GDN-ADA0000001', 'email' => 'mum.adv@example.com', 'fullName' => 'Mum Ahead', 'status' => 'active', 'createdAt' => $now]);
     db_insert('guardians', ['guardianId' => 'GDN-ADA0000002', 'email' => 'other.adv@example.com', 'fullName' => 'Other', 'status' => 'active', 'createdAt' => $now]);
@@ -31586,6 +31615,21 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('ahead · …and the receipt says paid ahead', (bool)array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains($x['html'], 'is paid ahead')));
     $plan2 = membership_advance_plan($m);
     chk('ahead · the plan now says the month it is paid to, renewal included', $plan2['paidThrough'] === $q3['through'] && $plan2['credit'] === $q3['total'] - $owed);
+    chk('ahead · the year cap counts what is already paid ahead: no choice now reaches past it',
+        count(array_filter(array_merge($plan2['quotes'], $plan2['termQuotes']), fn($x) => $x['through'] > $plan2['capThrough'])) === 0
+        && !array_filter($plan2['quotes'], fn($x) => $x['months'] === 12));
+    if (!empty($plan2['termQuotes'])) {
+        $t1 = $plan2['termQuotes'][0];
+        $ta = backend_dispatch('family.fees.advance', ['guardianId' => 'GDN-ADA0000001', 'linkId' => 'ADV-LINK', 'terms' => $t1['terms']]);
+        $tinv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($ta['invoiceId'] ?? '')]);
+        $tpub = $tinv ? backend_dispatch('public.membership.invoice', ['token' => $tinv['payToken']]) : [];
+        chk('ahead · a guardian pays ahead by the term: one advance invoice at the term\'s price, and the /pay page shows the notice',
+            !empty($ta['ok']) && $tinv && $tinv['purpose'] === 'advance' && (int)$tinv['total'] === $t1['total'] && $ta['through'] === $t1['through']
+            && str_contains((string)($tpub['invoice']['notice'] ?? ''), 'pay the difference'));
+        db_update('membership_invoices', ['status' => 'void', 'voidReason' => 'test'], ['invoiceId' => (string)($ta['invoiceId'] ?? '')]);
+    } else {
+        chk('ahead · paid ahead to ' . $plan2['paidThrough'] . ' leaves no term to pay for, and none is offered', true);
+    }
     $fv = family_fees_view($m);
     chk('ahead · the family view carries the plan', ($fv['ahead']['paidThrough'] ?? '') === $q3['through'] && count($fv['ahead']['quotes'] ?? []) >= 1);
     // The months arrive: the accrual charges them, and the credit meets each one.
@@ -31987,12 +32031,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        reach the division's own shared lessons — filed under either name the division goes by. */
     $u('CMU-DIV', 'AI & Technology'); $u('CMU-BIZ', 'Business');
     $t = $ids('CMC-T');
-    chk('curriculum · an unplaced TECH member is not put on every Technology course', !in_array('CMU-CODE', $t, true) && !in_array('CMU-ROBO', $t, true) && !in_array('CMU-PC', $t, true));
+    chk('curriculum · an unplaced TECH member defaults to Coding, the division\'s major — not every Technology course (14 Nov 2026)', in_array('CMU-CODE', $t, true) && !in_array('CMU-ROBO', $t, true) && !in_array('CMU-PC', $t, true));
     chk('curriculum · …but reaches the division’s shared lessons, under the catalogue’s own division name, and the Club-wide ones', in_array('CMU-DIV', $t, true) && in_array('CMU-ALL', $t, true));
     chk('curriculum · and not another division’s, nor a draft', !in_array('CMU-MUS', $t, true) && !in_array('CMU-VID', $t, true) && !in_array('CMU-DRAFT', $t, true));
     chk('curriculum · a MUSIC member sees Music, not every arts course’s', in_array('CMU-MUS', $ids('CMC-M'), true) && !in_array('CMU-CODE', $ids('CMC-M'), true));
     chk('curriculum · a second faculty on the card does not bring its division: the track decides', in_array('CMU-DIV', $ids('CMC-2'), true) && !in_array('CMU-VID', $ids('CMC-2'), true));
-    chk('curriculum · a member with only a division reaches that division’s shared lessons, not its courses’', in_array('CMU-BIZ', $ids('CMC-D'), true) && !in_array('CMU-FIN', $ids('CMC-D'), true) && !in_array('CMU-CODE', $ids('CMC-D'), true));
+    chk('curriculum · a member with only a division reaches its shared lessons and its major’s, nothing from another division', in_array('CMU-BIZ', $ids('CMC-D'), true) && in_array('CMU-FIN', $ids('CMC-D'), true) && !in_array('CMU-CODE', $ids('CMC-D'), true));
     chk('curriculum · a placed member takes exactly their course', in_array('CMU-CODE', $ids('CMC-X'), true) && !in_array('CMU-ROBO', $ids('CMC-X'), true));
     $u('CMU-PIANO', 'Piano'); $u('CMU-GUIT', 'Guitar'); $mk('CMC-P', 'MUSIC', 'PIANO');
     chk('curriculum · a MUSIC member takes Music’s own lessons, not every instrument’s', in_array('CMU-MUS', $ids('CMC-M'), true) && !in_array('CMU-PIANO', $ids('CMC-M'), true) && !in_array('CMU-GUIT', $ids('CMC-M'), true));
@@ -32011,7 +32055,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         ($pc = curriculum_member_courses(['track' => 'Piano'], $ctxW)) === array_merge(['Piano', 'Music', 'Chess'], CURR_CORE_COURSES));
     chk('courses · an instrument is never read as "the arts": Guitar does not bring the Music division\'s other courses, nor any other division',
         !array_intersect(curriculum_member_courses(['track' => 'Guitar'], $ctxW), ['Video Production', 'Finance', 'Coding', 'Practical Coding']));
-    chk('courses · "Design" names no division: it gets no division\'s courses',
+    chk('courses · "Design" names no division (owner, 15 Nov 2026): it gets no division\'s courses',
         !array_intersect(curriculum_member_courses(['track' => 'Design'], $ctxW), ['Video Production', 'Coding', 'Finance', 'Piano']));
     db_insert('members', ['memberId' => 'CMC-CH', 'fullName' => 'Chooser', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'TECH', 'createdAt' => $now, 'updatedAt' => $now]);
     $up = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'CMC-CH', 'courses' => ['coding', 'Robotics']]]);
@@ -33419,7 +33463,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $mine = $courseNames(cm3_my_channels($id));
         chk("tech member ($id): none of Media's course channels are theirs", !array_intersect($mine, $media));
     }
-    chk('tech member: an unplaced "Tech" member is put in no course\'s channel until placed (one course, not a wall)', $courseNames(cm3_my_channels('NGG-TM-1')) === []);
+    $tm1 = $courseNames(cm3_my_channels('NGG-TM-1'));
+    chk('tech member: an unplaced "Tech" member defaults to Coding, the division\'s major: at most its channel, never a wall of courses', !array_diff($tm1, ['coding']));
     chk('tech member: a member with no course is in the shared channels only, not every course', $courseNames(cm3_my_channels('NGG-TM-3')) === []);
     $tt = member_timetable(['memberId' => 'NGG-TM-2']);
     chk('tech member: "My course" is the chosen one, and the division is its division, not a stale placement', ($tt['courses'] ?? null) === ['Coding'] && stripos((string)($tt['division'] ?? ''), 'Technology') !== false);
@@ -33437,8 +33482,56 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     members_courses_backfill();
     $row = fn($id) => db_row("SELECT * FROM members WHERE memberId = ?", [$id]);
     $st = member_courses_state($row('PL-TECH'));
-    chk('placement: an unplaced Tech child is proposed NO course — not every Technology course — and flagged for a person; the Media on their card is reported, not taken',
-        $st['status'] === 'none' && $st['courses'] === [] && $st['flag'] === 'division_only' && in_array('Graphic Design', $st['dropped'], true) && !in_array('Media', $st['dropped'], true));
+    chk('placement: an unplaced Tech child is proposed Coding, the division\'s major — one course, not every Technology course; the Media on their card is reported and flagged, not taken',
+        $st['status'] === 'unplaced' && $st['courses'] === ['Coding'] && $st['from'] === 'division_major' && $st['flag'] === 'other_division'
+        && in_array('Graphic Design', $st['dropped'], true) && !in_array('Media', $st['dropped'], true));
+    // Every division defaults to its major when the record names the division and no course.
+    $mk('PL-MEDIA', 'Media'); $mk('PL-BIZ', 'Business'); $mk('PL-TECH2', 'Tech'); $mk('PL-DIVONLY', '', '');
+    db_update('members', ['division' => 'Creative & Performing Arts'], ['memberId' => 'PL-DIVONLY']);
+    members_courses_backfill();
+    $prop = fn($id) => member_courses_state($row($id));
+    chk('placement: each division alone proposes its major — Tech → Coding, Media → Video Production, Business → Project Management, Arts → Music — unflagged',
+        $prop('PL-TECH2')['courses'] === ['Coding'] && $prop('PL-TECH2')['flag'] === ''
+        && $prop('PL-MEDIA')['courses'] === ['Video Production'] && $prop('PL-BIZ')['courses'] === ['Project Management']
+        && $prop('PL-DIVONLY')['courses'] === ['Music'] && $prop('PL-DIVONLY')['from'] === 'division_major');
+    chk('placement: a course the record does name still wins over the major', member_courses_state($row('PL-PIANO'))['courses'] === ['Piano']);
+    // Audit, 14 Nov 2026: the same wall through two other doors.
+    chk('placement: a division word inside a list is that division\'s major, never its whole list ("Coding, Media" is two courses, not eight)',
+        curriculum_member_courses_infer(['track' => 'Coding, Media'])['courses'] === ['Coding', 'Video Production']);
+    chk('placement: an umbrella that is one division\'s courses ("Musical Instruments") is that division\'s major, not every instrument',
+        curriculum_member_courses_infer(['track' => 'Musical Instruments'])['courses'] === ['Music']
+        && curriculum_member_courses_infer(['track' => 'Instruments'])['courses'] === ['Music']);
+    chk('divisions: ambiguous words name no division — "Design", "Engineering", "Strategy" (owner, 15 Nov 2026)',
+        nggc_division_for_track('Design') === '' && nggc_division_for_track('Engineering') === '' && nggc_division_for_track('Strategy') === ''
+        && nggc_division_id_for_name('Sound Engineering') === '' && nggc_division_id_for_name('Brand Strategy') === ''
+        && nggc_division_id_for_name('Media & Content Strategy') === 'media' && nggc_division_id_for_name('Technology & Applied Engineering') === 'tech'
+        && nggc_division_for_track('Tech Product Design') === 'tech' && nggc_division_for_track('Graphic Design') === 'media'
+        && nggc_division_for_track('Strategic Thinking') === 'business');
+    chk('placement: two named courses from two divisions stay as written', curriculum_member_courses_infer(['track' => 'Piano, Coding'])['courses'] === ['Piano', 'Coding']);
+    // The major is the catalogue's, editable: change it and the default follows; a course outside the division is never one.
+    $divs = club_divisions();
+    $TECH = 'Technology & Applied Engineering'; $MEDIA = 'Media & Content Strategy';
+    chk('divisions: "Media & Content Strategy" is the Media division only, never Business for its word "Strategy"', nggc_division_id_for_name($MEDIA) === 'media'
+        && nggc_division_major('business') === 'Project Management');
+    chk('divisions: Business\'s course list holds Business\'s courses, not Media\'s', in_array('Project Management', nggc_division_course_list('business'), true)
+        && !in_array('Video Production', nggc_division_course_list('business'), true));
+    chk('divisions: a division renamed in the catalogue keeps its default major by meaning ("AI & Technology" → Coding)',
+        club_division_major('AI & Technology', '', ['Practical Coding', 'Coding', 'Robotics']) === 'Coding');
+    chk('divisions: every division carries a major that is one of its own courses', count($divs) === 4 && !array_filter($divs, fn($d) => !in_array($d['major'], $d['courses'], true))
+        && array_column($divs, 'major', 'name')[$TECH] === 'Coding');
+    $edit = array_map(fn($d) => ['faculty' => $d['name'], 'icon' => $d['icon'], 'short' => $d['short'], 'blurb' => $d['blurb'], 'courses' => $d['courses'],
+        'major' => $d['name'] === $TECH ? 'robotics' : ($d['name'] === $MEDIA ? 'Piano' : $d['major'])], $divs);
+    $set = admin_club_catalogue_set(['requesterId' => $A, 'catalogue' => $edit]);
+    $after = array_column(club_divisions(), 'major', 'name');
+    chk('divisions: staff change a major (catalogue spelling kept); one from another division falls back to the default',
+        !empty($set['ok']) && $after[$TECH] === 'Robotics' && $after[$MEDIA] === 'Video Production');
+    members_courses_backfill();
+    chk('placement: changing a major re-proposes the children placed on it by default, and only them',
+        $prop('PL-TECH2')['courses'] === ['Robotics'] && $prop('PL-BIZ')['courses'] === ['Project Management']);
+    admin_club_catalogue_set(['requesterId' => $A, 'reset' => true]);
+    members_courses_backfill();
+    chk('divisions: resetting restores Coding as Tech\'s major', array_column(club_divisions(), 'major', 'name')[$TECH] === 'Coding' && $prop('PL-TECH2')['courses'] === ['Coding']);
+    db_exec("DELETE FROM members WHERE memberId IN ('PL-MEDIA', 'PL-BIZ', 'PL-TECH2', 'PL-DIVONLY')");
     $mk('PL-INT', '', 'Coding, Robotics');
     members_courses_backfill();
     $si = member_courses_state($row('PL-INT'));
@@ -33451,7 +33544,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $sqlIds = array_column(db_all("SELECT memberId FROM members WHERE centre = 'Placeville' AND $cs", $ca), 'memberId');
     $phpIds = array_values(array_filter(['PL-TECH', 'PL-PIANO', 'PL-NONE', 'PL-CODE'], fn($id) => in_array('coding', array_map('mb_strtolower', curriculum_member_courses($row($id))), true)));
     sort($sqlIds); sort($phpIds);
-    chk('placement: lessons and class lists agree on who takes Coding (one rule, not two)', $sqlIds === $phpIds && in_array('PL-CODE', $sqlIds, true) && !in_array('PL-TECH', $sqlIds, true));
+    chk('placement: lessons and class lists agree on who takes Coding (one rule, not two), the Tech child by default included', $sqlIds === $phpIds && in_array('PL-CODE', $sqlIds, true) && in_array('PL-TECH', $sqlIds, true));
     // A changed record is re-proposed.
     db_update('members', ['track' => 'Coding', 'disciplines' => ''], ['memberId' => 'PL-NONE']); members_courses_backfill();
     chk('placement: when the record changes, the proposal follows', member_courses_state($row('PL-NONE'))['courses'] === ['Coding']);
@@ -33478,11 +33571,80 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
 })();
 
+/* ── Division & course matching, checked exhaustively (audit, 14–16 Nov 2026) ──
+   Every keyword, synonym, course name, course pair, course + division word and interest, against every other
+   division. Hand-picked cases missed whole classes of error ("Strategy" filing Media under Business; "Music,
+   Coding" giving nine courses; a division's name proposed as a course); this checks them all, so an edit to the
+   keyword map, the synonyms or the seeded catalogue that brings one back fails here, by name. */
+(function () use ($ROOT) {
+    $prevCat = setting_get('club_catalogue'); $prevMeta = setting_get('club_division_meta');
+    setting_set('club_catalogue', club_catalogue_default(), 'test'); setting_set('club_division_meta', club_division_meta_default(), 'test');
+    $R = dirname($ROOT);
+    $issues = [];
+    $add = function ($cat, $msg) use (&$issues) { $issues[$cat][] = $msg; };
+    $divOfCourse = []; $courses = [];
+    foreach (nggc_divisions() as $d) foreach ($d['courses'] as $c) if ($c !== 'Chess') { $divOfCourse[mb_strtolower($c)] = $d['id']; $courses[] = $c; }
+    $divNames = array_column(nggc_divisions(), 'id', 'name');
+    // The keyword map, read from the source (it is a static inside the function).
+    preg_match('/static \$map = \[(.*?)\];/s', file_get_contents("$R/api/_lib/domain/formation.php"), $m);
+    preg_match_all("/'([^']+)'\s*=>\s*'([^']+)'/", $m[1], $kw, PREG_SET_ORDER);
+    $words = fn($s) => preg_split('/[^\p{L}]+/u', mb_strtolower($s), -1, PREG_SPLIT_NO_EMPTY);
+    // A. A division keyword that is a word of ANOTHER division's course or division name.
+    foreach ($kw as [, $k, $d]) {
+      foreach ($courses as $c) if (in_array($k, $words($c), true) && $divOfCourse[mb_strtolower($c)] !== $d) $add('A keyword vs course', "'$k' → $d, but it is a word of '$c' ({$divOfCourse[mb_strtolower($c)]})");
+      foreach ($divNames as $n => $id) if ($id !== $d && in_array($k, $words($n), true)) $add('A keyword vs division name', "'$k' → $d, but it is a word of '$n' ($id)");
+    }
+    // B. Course-word synonyms: target exists; synonym not another division's keyword or course word.
+    foreach (MEMBER_COURSE_WORDS as $s => $target) {
+      $td = $divOfCourse[mb_strtolower($target)] ?? null;
+      if ($td === null) { $add('B synonym target', "'$s' → '$target', which is not a course in the catalogue"); continue; }
+      $kd = nggc_division_for_track($s);
+      if ($kd !== '' && $kd !== $td) $add('B synonym vs keyword', "'$s' → course '$target' ($td) but keyword → $kd");
+      foreach ($courses as $c) if ($divOfCourse[mb_strtolower($c)] !== $td && in_array($s, $words($c), true)) $add('B synonym vs course', "'$s' → '$target' ($td), but it is a word of '$c' ({$divOfCourse[mb_strtolower($c)]})");
+    }
+    foreach (BROAD_COURSE_WORDS as $s => $target) if (!isset($divOfCourse[mb_strtolower($target)])) $add('B broad target', "'$s' → '$target' not a course");
+    // C. Division-word table agrees with the keyword map.
+    foreach (MEMBER_DIVISION_WORDS as $w => $d) { $kd = nggc_division_for_track($w); if ($kd !== $d) $add('C division words', "MEMBER_DIVISION_WORDS '$w' → $d, keyword map → '" . $kd . "'"); }
+    // D. Strands stay inside their subject's division.
+    foreach (COURSE_STRANDS as $p => $kids) foreach ($kids as $k) if (($divOfCourse[mb_strtolower($k)] ?? '') !== ($divOfCourse[mb_strtolower($p)] ?? '-')) $add('D strands', "'$k' is a strand of '$p' but in another division");
+    // E. Behaviour: each course, synonym, division name as a track.
+    $infer = fn($t) => curriculum_member_courses_infer(['track' => $t])['courses'];
+    foreach ($courses as $c) { $got = $infer($c); if ($got !== [$c]) $add('E course as track', "'$c' → " . json_encode($got)); }
+    foreach (MEMBER_COURSE_WORDS as $s => $t) { $got = $infer($s); if ($got !== [$t]) $add('E synonym as track', "'$s' → " . json_encode($got) . " (expected [$t])"); }
+    foreach ($divNames as $n => $id) { $got = $infer($n); $mj = nggc_division_major($id); if ($got !== [$mj]) $add('E division name as track', "'$n' → " . json_encode($got) . " (expected [$mj])"); }
+    foreach (MEMBER_DIVISION_WORDS as $w => $id) { $got = $infer(ucfirst($w)); $mj = nggc_division_major($id); if ($got !== [$mj]) $add('E division word as track', "'$w' → " . json_encode($got) . " (expected [$mj])"); }
+    // F. Every pair of courses written as "A, B" gives exactly A and B.
+    $n = 0;
+    $strandOf = function ($x, $y) { return in_array($x, course_strands($y), true); };
+    foreach ($courses as $a) foreach ($courses as $b) if ($a !== $b) { $n++; $got = $infer("$a, $b"); sort($got);
+      $want = $strandOf($b, $a) ? [$b] : ($strandOf($a, $b) ? [$a] : [$a, $b]); sort($want);
+      if ($got !== $want) $add('F pair as track', "'$a, $b' → " . json_encode($got) . ' expected ' . json_encode($want)); }
+    // G. A course plus a division word gives the course plus that division's major.
+    foreach ($courses as $c) foreach (array_keys(MEMBER_DIVISION_WORDS) as $w) {
+      $mj = nggc_division_major(MEMBER_DIVISION_WORDS[$w]); $got = $infer("$c, " . ucfirst($w));
+      $want = $divOfCourse[mb_strtolower($c)] === MEMBER_DIVISION_WORDS[$w] ? [$c] : array_values(array_unique([$c, $mj])); sort($got); sort($want);
+      if ($got !== $want) $add('G course + division word', "'$c, $w' → " . json_encode($got) . ' expected ' . json_encode($want));
+    }
+    // H. Interests on the card never bring another division's course or a wall, whatever the track.
+    foreach (array_keys(MEMBER_DIVISION_WORDS) as $w) foreach ($courses as $c) {
+      $r = curriculum_member_courses_infer(['track' => ucfirst($w), 'disciplines' => $c]); $td = MEMBER_DIVISION_WORDS[$w];
+      if (count($r['courses']) !== 1) $add('H interests', "track '$w' + interest '$c' → " . json_encode($r['courses']));
+      foreach ($r['courses'] as $x) if (($divOfCourse[mb_strtolower($x)] ?? $td) !== $td) $add('H interests', "track '$w' + interest '$c' → other division's " . $x);
+    }
+    $cats = ['A keyword vs course', 'A keyword vs division name', 'B synonym target', 'B synonym vs keyword', 'B synonym vs course', 'B broad target',
+             'C division words', 'D strands', 'E course as track', 'E synonym as track', 'E division name as track', 'E division word as track',
+             'F pair as track', 'G course + division word', 'H interests'];
+    foreach ($cats as $c) chk('matching · ' . $c . ': none' . (empty($issues[$c]) ? '' : ' — e.g. ' . $issues[$c][0]), empty($issues[$c]));
+    chk('matching · nothing outside the named checks', !array_diff(array_keys($issues), $cats));
+    if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
+    if ($prevMeta) setting_set('club_division_meta', $prevMeta, 'test');
+})();
+
 /* ── A Tech member's interests never bring another division's courses ── */
 (function () {
     db_insert('members', ['memberId' => 'NGG-TECHMED', 'fullName' => 'Tech Media', 'type' => 'NGG', 'status' => 'active', 'track' => 'Tech', 'disciplines' => 'Media, Photography', 'createdAt' => now_iso()]);
     $c = array_map('mb_strtolower', curriculum_member_courses(db_row("SELECT * FROM members WHERE memberId = 'NGG-TECHMED'")));
-    chk('courses: a Tech member who also ticked Media gets no Media course — and, until placed, no course at all', !in_array('coding', $c, true) && !in_array('media lab', $c, true) && !in_array('graphic design', $c, true) && !in_array('photography', $c, true));
+    chk('courses: a Tech member who also ticked Media gets no Media course — until placed, Coding, the Tech major', in_array('coding', $c, true) && !in_array('media lab', $c, true) && !in_array('graphic design', $c, true) && !in_array('photography', $c, true));
 })();
 
 /* ── One person, instructor AND mentor; the Academy waived by hand ── */
@@ -39032,8 +39194,32 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('maths lab · a paper refuses an answer after its time, scores out of 100 (JAMB) with every question counted in an area, names the weak areas, leaves the map exactly as it was, and is listed with its score',
         ($late['error'] ?? '') === 'time_up' && $fin['right'] === 20 && $fin['exam']['scaled'] === 50 && $areaTot === 40 && $areaRight === 20 && $fin['exam']['answered'] === 30 && $fin['xp'] === 40
         && json_encode(array_column($am['stages'], 'comps')) === json_encode(array_column($bm['stages'], 'comps')) && $fin['changes'] === []
-        && ($ex['history'][0]['paper'] ?? '') === 'jamb' && $ex['history'][0]['scaled'] === 50 && count($ex['papers']) === 2 && $ex['papers'][0]['best'] === 50
+        && ($ex['history'][0]['paper'] ?? '') === 'jamb' && $ex['history'][0]['scaled'] === 50 && count($ex['papers']) === 3 && $ex['papers'][0]['best'] === 50
         && mlb_exam_report('sat', array_fill(0, 27, ['c' => 'MC-050']), array_fill(0, 27, ['ok' => true, 'a' => '1']), now_iso())['scaled'] === 800);
+    /* The standard exam (owner, 15 Nov 2026): the WAEC objective paper's shape at half the time, with three titles. */
+    $ew = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'waec']);
+    $wits = $ew['items'] ?? [];
+    chk('maths lab · the standard exam is the WAEC Paper 1 shape: 50 four-option questions on 50 topics, on a 45-minute clock (half of WAEC\'s 1½ h)',
+        count($wits) === 50 && ($ew['minutes'] ?? 0) === 45 && !array_filter($wits, static fn($it) => $it['kind'] !== 'mcq' || count($it['options']) !== 4)
+        && count(array_unique(array_column($wits, 'comp'))) === 50 && ($ew['title'] ?? '') === 'Standard exam' && !isset($wits[0]['key']));
+    $wrow = json_decode((string)db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$ew['sessionId']])['items'], true);
+    foreach ($wrow as $i => $x) { $it = mlb_item($x['c'], $x['f'], $x['s']); mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $ew['sessionId'], 'index' => $i, 'answer' => $i < 43 ? $it['key'] : (($it['key'] + 1) % 4), 'ms' => 20000]); }
+    $wf = mlb_finish(['memberId' => 'NGG-ML-D', 'sessionId' => $ew['sessionId']]);
+    chk('maths lab · 43 of 50 (86%) is a Super Genius with WAEC grade A1, said in the report and the score line',
+        $wf['exam']['scaled'] === 86 && ($wf['exam']['tier']['name'] ?? '') === 'Super Genius' && $wf['exam']['grade'] === 'A1' && $wf['exam']['boardMinutes'] === 90
+        && str_contains($wf['exam']['scoreText'], 'Super Genius') && count($wf['exam']['tiers']) === 3);
+    $wx = array_column(mlb_exams(['memberId' => 'NGG-ML-D'])['papers'], null, 'id')['waec'];
+    chk('maths lab · the paper card shows the best score\'s title, the WAEC time and the three titles to earn',
+        $wx['best'] === 86 && ($wx['bestTier']['id'] ?? '') === 'super-genius' && $wx['boardMinutes'] === 90 && $wx['options'] === 4
+        && array_column($wx['tiers'], 'name') === ['Genius', 'Super Genius', 'Grandmaster'] && array_column($wx['tiers'], 'at') === [70, 85, 100]);
+    chk('maths lab · titles and grades sit exactly on the owner\'s lines: 69 none, 70 Genius, 84 Genius, 85 Super Genius, 99 Super Genius, 100 Grandmaster; WASSCE bands A1 75+, B2 70–74, C6 50–54, F9 under 40',
+        mlb_waec_tier(69) === null && mlb_waec_tier(70)['name'] === 'Genius' && mlb_waec_tier(84)['name'] === 'Genius' && mlb_waec_tier(85)['name'] === 'Super Genius'
+        && mlb_waec_tier(99)['name'] === 'Super Genius' && mlb_waec_tier(100)['name'] === 'Grandmaster'
+        && mlb_waec_grade(75)['grade'] === 'A1' && mlb_waec_grade(74)['grade'] === 'B2' && mlb_waec_grade(50)['grade'] === 'C6' && mlb_waec_grade(39)['grade'] === 'F9');
+    $ew2 = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'waec']);
+    db_update('mlab_sessions', ['startedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 46 * 60 - MLB_EXAM_GRACE)], ['sessionId' => $ew2['sessionId']]);
+    chk('maths lab · the half time is the server\'s: an answer after 45 minutes is refused', (mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $ew2['sessionId'], 'index' => 0, 'answer' => 0])['error'] ?? '') === 'time_up');
+    db_exec("DELETE FROM mlab_sessions WHERE memberId = 'NGG-ML-D' AND mode = 'exam' AND ref = 'waec'");
     /* Courses lock until their first stage is reached, and say why; enrolling a locked one is refused. */
     $cv = array_column(mlb_home(['memberId' => 'NGG-ML-1'])['courses'], null, 'id');
     $el = mlb_enrol(['memberId' => 'NGG-ML-1', 'courseId' => 'further-maths']);
@@ -39263,8 +39449,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $exp = backend_dispatch('mathslab.start', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'mode' => 'exam', 'paper' => 'phy']);
     $pits = array_column($exp['items'] ?? [], 'comp');
     chk('labs · Physics offers its own timed paper (and refuses a Maths one): 40 four-option questions on 40 different Physics topics, on a 40-minute clock',
-        array_column($ex['papers'] ?? [], 'id') === ['phy'] && ($exs['error'] ?? '') === 'bad_paper' && count($pits) === 40 && count(array_unique($pits)) === 40
+        array_column($ex['papers'] ?? [], 'id') === ['waec', 'phy'] && ($exs['error'] ?? '') === 'bad_paper' && count($pits) === 40 && count(array_unique($pits)) === 40
         && !array_filter($pits, static fn($c) => !str_starts_with($c, 'PH-')) && ($exp['minutes'] ?? 0) === 40 && !array_filter($exp['items'], static fn($it) => $it['kind'] !== 'mcq'));
+    $pw = backend_dispatch('mathslab.start', ['memberId' => 'NGG-PH-1', 'lab' => 'physics', 'mode' => 'exam', 'paper' => 'waec']);
+    $pwc = array_column($pw['items'] ?? [], 'comp');
+    chk('labs · Physics\' standard exam is the WAEC objective shape: 50 four-option Physics questions on 50 topics, on a 38-minute clock (half of 1¼ h)',
+        count($pwc) === 50 && count(array_unique($pwc)) === 50 && !array_filter($pwc, static fn($c) => !str_starts_with($c, 'PH-')) && ($pw['minutes'] ?? 0) === 38
+        && !array_filter($pw['items'], static fn($it) => $it['kind'] !== 'mcq' || count($it['options']) !== 4));
     db_exec("DELETE FROM mlab_sessions WHERE memberId = 'NGG-PH-1' AND mode = 'exam'");
     $dp = backend_dispatch('mathslab.daily', ['memberId' => 'NGG-PH-1', 'lab' => 'physics']);
     $dm = backend_dispatch('mathslab.daily', ['memberId' => 'NGG-PH-1']);
@@ -39556,9 +39747,15 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $exe = backend_dispatch('mathslab.start', ['memberId' => 'NGG-EN-1', 'lab' => 'english', 'mode' => 'exam', 'paper' => 'eng']);
     $eits = array_column($exe['items'] ?? [], 'comp');
     chk('english lab · the timed English paper: 40 four-option questions on 40 different English topics, on a 40-minute clock, and no other Lab’s paper',
-        array_column($ex['papers'] ?? [], 'id') === ['eng'] && count($eits) === 40 && count(array_unique($eits)) === 40 && !array_filter($eits, static fn($c) => !str_starts_with($c, 'EN-'))
+        array_column($ex['papers'] ?? [], 'id') === ['waec', 'eng'] && count($eits) === 40 && count(array_unique($eits)) === 40 && !array_filter($eits, static fn($c) => !str_starts_with($c, 'EN-'))
         && ($exe['minutes'] ?? 0) === 40 && !array_filter($exe['items'] ?? [], static fn($it) => $it['kind'] !== 'mcq')
         && (backend_dispatch('mathslab.start', ['memberId' => 'NGG-EN-1', 'lab' => 'english', 'mode' => 'exam', 'paper' => 'phy'])['error'] ?? '') === 'bad_paper');
+    $enw = backend_dispatch('mathslab.start', ['memberId' => 'NGG-EN-1', 'lab' => 'english', 'mode' => 'exam', 'paper' => 'waec']);
+    $enc = array_column($enw['items'] ?? [], 'comp');
+    chk('english lab · the standard exam is the WAEC English Paper 1 shape: 80 four-option English questions, every one different, on a 30-minute clock (half of 1 h)',
+        count($enc) === 80 && !array_filter($enc, static fn($c) => !str_starts_with($c, 'EN-')) && ($enw['minutes'] ?? 0) === 30
+        && count(array_unique(array_map(static fn($it) => json_encode([$it['stem'] ?? '', $it['options'] ?? []]), $enw['items']))) === 80
+        && !array_filter($enw['items'], static fn($it) => $it['kind'] !== 'mcq' || count($it['options']) !== 4));
     db_exec("DELETE FROM mlab_sessions WHERE memberId = 'NGG-EN-1' AND mode = 'exam'");
     $de = backend_dispatch('mathslab.daily', ['memberId' => 'NGG-EN-1', 'lab' => 'english']);
     chk('english lab · the Daily Word Challenge comes from the summit band (The Senior Paper)', (mlb_comp((string)($de['item']['comp'] ?? ''))['stage'] ?? 0) === 8 && ($de['name'] ?? '') === 'Daily Word Challenge');

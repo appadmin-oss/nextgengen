@@ -668,7 +668,7 @@ function CrDivisions({ ctx }) {
   const save = async () => {
     setBusy(true); setErr("");
     try {
-      await NGGApi.admin.curriculum.coursesSet(rows.map(r => ({ faculty: r.name, icon: r.icon, short: r.short, blurb: r.blurb, courses: r.courses })));
+      await NGGApi.admin.curriculum.coursesSet(rows.map(r => ({ faculty: r.name, icon: r.icon, short: r.short, blurb: r.blurb, major: r.major, courses: r.courses })));
       ctx.toast("Saved. The join form and new member cards use it now.");
       load();
     } catch (e) { setErr(crErr(e, "Couldn’t save. Your changes are still here.")); }
@@ -701,6 +701,13 @@ function CrDivisions({ ctx }) {
               </span>}
             </div>
             <textarea className="cr-textarea cr-dv-blurb" rows={2} aria-label={"What " + (r.name || "this division") + " is for, as families read it"} value={r.blurb || ""} maxLength={300} disabled={!can} placeholder="For children interested in…" onChange={e => edit(i, { blurb: e.target.value })}/>
+            {r.courses.length > 0 && <label className="cr-dv-major">
+              <span className="cr-hint">Major: a child whose record names only this division starts on it</span>
+              <select className="cr-select" aria-label={"Major course for " + (r.name || "this division")} value={r.courses.indexOf(r.major) >= 0 ? r.major : r.courses[0]} disabled={!can}
+                      onChange={e => edit(i, { major: e.target.value })}>
+                {r.courses.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>}
             <ul className="cr-dv-courses" aria-label={"Courses in " + r.name}>
               {r.courses.map(c => (
                 <li key={c} className="cr-chip">

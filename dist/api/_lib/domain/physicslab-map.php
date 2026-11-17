@@ -202,7 +202,10 @@ function phy_courses(): array {
  * never a copy of a past paper, and no exam body named. The score is out of 100, by area (strand).
  */
 function phy_papers(): array {
-    return ['phy' => ['id' => 'phy', 'title' => 'Timed Physics paper', 'exam' => 'phy', 'n' => 40, 'minutes' => 40, 'stages' => [1, 8], 'typed' => 0,
+    return ['waec' => ['id' => 'waec', 'title' => 'Standard exam', 'exam' => 'waec', 'board' => 'waec', 'n' => 50, 'minutes' => 38, 'boardMinutes' => 75, 'options' => 4,
+                'stages' => [1, 8], 'typed' => 0,
+                'what' => 'The senior school certificate Physics objective paper: 50 questions, A–D, across the whole syllabus, in half the real time — 38 minutes instead of 1¼ hours.'],
+            'phy' => ['id' => 'phy', 'title' => 'Timed Physics paper', 'exam' => 'phy', 'n' => 40, 'minutes' => 40, 'stages' => [1, 8], 'typed' => 0,
         'what' => '40 questions in 40 minutes, from measurement to modern physics — mechanics, heat, waves and light, electricity and the atom. Every paper is new.']];
 }
 

@@ -1194,14 +1194,18 @@ function MlbExams({ go, startPlay }) {
         <p className="mlb-p">Full timed papers in the style of the exams you will sit. Every paper is new: the questions are written by the Lab in the style of past papers, never copied from them. The clock starts when you press Start; when it runs out the paper is handed in.</p></header>
       <div className="mlb-papers">{d.papers.map(p => (
         <section key={p.id} className={"mlb-card mlb-paper is-" + p.id} aria-labelledby={"mlb-paper-" + p.id}>
-          <span className="mlb-paper-i" aria-hidden="true"><i className={"ph-fill " + (p.id === "sat" ? "ph-globe-hemisphere-west" : "ph-exam")}/></span>
-          <h3 id={"mlb-paper-" + p.id} className="mlb-h3">{p.title}</h3>
-          <p className="mlb-meta">{p.n} questions · {p.minutes} minutes{p.best != null ? " · your best: " + p.best + (p.id === "sat" ? " (estimate)" : "/100") : ""}</p>
+          <span className="mlb-paper-i" aria-hidden="true"><i className={"ph-fill " + (p.board === "waec" ? "ph-seal-check" : p.id === "sat" ? "ph-globe-hemisphere-west" : "ph-exam")}/></span>
+          <h3 id={"mlb-paper-" + p.id} className="mlb-h3">{p.title}{p.board === "waec" ? <span className="mlb-chip mlb-waec-chip">Certificate format · half time</span> : null}</h3>
+          <p className="mlb-meta">{p.n} questions · {p.minutes} minutes{p.boardMinutes ? " (the real paper allows " + p.boardMinutes + ")" : ""}{p.best != null ? " · your best: " + p.best + (p.id === "sat" ? " (estimate)" : "/100") : ""}</p>
           <p className="mlb-p">{p.what}</p>
+          {p.tiers ? <ol className="mlb-tiers" aria-label="Titles you can earn">{p.tiers.map(t => (
+            <li key={t.id} className={"is-" + t.id + (p.bestTier && p.bestTier.at >= t.at ? " is-earned" : "")}>
+              <b>{t.name}</b><span>{t.at === 100 ? "100%" : t.at + "% and above"}</span>{p.bestTier && p.bestTier.at >= t.at ? <i className="ph-fill ph-check-circle" aria-label="earned"/> : null}</li>))}</ol> : null}
+          {p.board === "waec" ? <p className="mlb-meta mlb-waec-note">Written by the Lab to the exam’s format and syllabus, never copied from past papers. Every paper is new.</p> : null}
           <button type="button" className="mlb-go" onClick={() => startPlay({ mode: "exam", paper: p.id })}><i className="ph ph-timer" aria-hidden="true"/>Start the paper</button>
         </section>))}</div>
       <section className="mlb-card" aria-labelledby="mlb-exhist-h"><h3 id="mlb-exhist-h" className="mlb-h3">Your papers</h3>
-        {d.history.length ? <ul className="mlb-exhist">{d.history.map((h, k) => <li key={k}><span>{h.title}</span><span className="mlb-meta">{mlbDate(h.at)}</span><b>{h.right}/{h.total}</b><span className="mlb-chip">{h.paper === "sat" ? "≈ " + h.scaled : h.scaled + "/100"}</span></li>)}</ul>
+        {d.history.length ? <ul className="mlb-exhist">{d.history.map((h, k) => <li key={k}><span>{h.title}</span><span className="mlb-meta">{mlbDate(h.at)}</span><b>{h.right}/{h.total}</b><span className="mlb-chip">{h.paper === "sat" ? "≈ " + h.scaled : h.scaled + "/100"}{h.grade ? " · " + h.grade : ""}</span>{h.tier ? <span className={"mlb-chip mlb-tier is-" + h.tier.id}>{h.tier.name}</span> : null}</li>)}</ul>
           : <p className="mlb-p">No papers yet. Your scores will collect here, so you can see yourself improve.</p>}</section>
     </div>
   );
@@ -1646,7 +1650,8 @@ function MlbResult({ res, onDone, go, onAgain, onMini }) {
   /* A paper handed in with questions untouched was told "You finished it" — after 1 of 40. It says
      what happened instead; the time running out is not "early", the child did not choose it. */
   const early = !!(res.exam && res.exam.answered < res.total && !res.exam.overTime);
-  const head = perfect ? "Perfect!" : win ? (kind === "Practice" || kind === "Review" ? "Session complete!" : kind + " passed!") : early ? "Handed in after " + res.exam.answered + " of " + res.total : res.pct >= 60 ? "Good effort!" : "You finished it. Keep going!";
+  const tierWon = res.exam && res.exam.tier ? res.exam.tier.name : "";
+  const head = tierWon ? tierWon + "!" : perfect ? "Perfect!" : win ? (kind === "Practice" || kind === "Review" ? "Session complete!" : kind + " passed!") : early ? "Handed in after " + res.exam.answered + " of " + res.total : res.pct >= 60 ? "Good effort!" : "You finished it. Keep going!";
   const accWord = perfect ? "Flawless" : res.pct >= 85 ? "Amazing" : res.pct >= 70 ? "Great" : res.pct >= 50 ? "Getting there" : "Building up";
   // Under a minute is said in seconds: two seconds read as "1 min".
   const mins = res.secs ? Math.max(1, Math.round(res.secs / 60)) : 0, timeTxt = res.secs && res.secs < 60 ? res.secs + " s" : mins + " min";
@@ -1671,9 +1676,12 @@ function MlbResult({ res, onDone, go, onAgain, onMini }) {
         </ul>
         {lit ? <p className="mlb-res-chips"><span className="mlb-chip is-ok"><i className="ph-fill ph-star" aria-hidden="true"/>{lit} star{lit === 1 ? "" : "s"} lit on your map</span></p> : null}
         {res.exam ? <section className="mlb-exrep" aria-label="Your paper">
-          <p className="mlb-exrep-score"><b>{res.exam.scaled}</b><span>{res.exam.scale}</span></p>
+          <p className="mlb-exrep-score"><b>{res.exam.scaled}</b><span>{res.exam.scale}</span>{res.exam.grade ? <span className="mlb-chip">Grade {res.exam.grade} · {res.exam.gradeWord}</span> : null}</p>
+          {res.exam.board === "waec" ? (res.exam.tier
+            ? <p className={"mlb-tier-won is-" + res.exam.tier.id} role="status"><i className="ph-fill ph-crown" aria-hidden="true"/><span>You are a <b>{res.exam.tier.name}</b>.</span></p>
+            : <p className="mlb-meta" role="status">Score 70% or more to become a Genius, 85% a Super Genius, 100% a Grandmaster.</p>) : null}
           <p className="mlb-meta">{res.exam.answered} of {res.total} answered · {Math.floor(res.exam.usedSecs / 60)} min {res.exam.usedSecs % 60} s of {res.exam.minutes} min{res.exam.overTime ? " · handed in when time ran out" : ""}.
-            {res.exam.paper === "sat" ? " The 200–800 figure is an estimate from your percentage." : ""}</p>
+            {res.exam.paper === "sat" ? " The 200–800 figure is an estimate from your percentage." : ""}{res.exam.boardMinutes ? " The real paper allows " + res.exam.boardMinutes + " min." : ""}</p>
           <ul className="mlb-exareas">{Object.keys(res.exam.areas).map(a => { const x = res.exam.areas[a], pc = Math.round(x.right / Math.max(1, x.total) * 100);
             return <li key={a} className={pc < 60 ? "is-weak" : ""}><span>{a}</span><span className="mlb-meter"><span style={{ width: pc + "%" }}/></span><b>{x.right}/{x.total}</b></li>; })}</ul>
         </section> : null}

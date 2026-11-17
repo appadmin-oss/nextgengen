@@ -312,6 +312,18 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await waitText(fp, /Pay ahead/, 40000);
     const opts = fp.locator('.fp3x-opts button');
     chk('Fees offers paying 1, 3, 6 or 12 months ahead, each priced', await opts.count() === 4 && /₦/.test(await opts.first().innerText()));
+    chk('…with the notice that a dues change can mean paying the difference', /Dues can change/.test(await fp.locator('.fp3x-notice').innerText())
+        && /pay the difference/.test(await fp.locator('.fp3x-notice').innerText()));
+    /* By the term: the same card switches to terms, priced by the server, never past a year. */
+    await fp.locator('.fp3x-mode', { hasText: 'By term' }).click();
+    const tOpts = fp.locator('.fp3x-opts button');
+    const tCount = await tOpts.count();
+    chk('Fees also offers paying by the term: through this term and up to two more, each priced',
+        tCount >= 1 && tCount <= 3 && /Through this term/.test(await tOpts.first().innerText()) && /₦/.test(await tOpts.first().innerText())
+        && (await fp.locator('.fp3x-mode', { hasText: 'By term' }).getAttribute('aria-pressed')) === 'true');
+    await settle(fp);
+    await fp.screenshot({ path: path.join(SHOTS, 'family-pay-ahead-terms-phone.png'), fullPage: true });
+    await fp.locator('.fp3x-mode', { hasText: 'By month' }).click();
     await opts.nth(2).click();
     chk('…choosing one marks it pressed', (await opts.nth(2).getAttribute('aria-pressed')) === 'true');
     await settle(fp);
@@ -324,6 +336,7 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await waitForBoot(fp);   // /pay is a full page load: the app boots again (a minute, cold, in dev) before it can say anything
     await waitText(fp, /Pay ahead for Tobi/, 40000);
     chk('…and the /pay page names it as paying ahead', true);
+    chk('…and repeats the dues-change notice', /pay the difference/.test(await fp.locator('.mpay-notice').innerText()));
 
     await fp.goto(BASE + '/family?view=fees&child=' + tobi, { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
     await waitText(fp, /Paid by transfer or at the desk/, 40000);

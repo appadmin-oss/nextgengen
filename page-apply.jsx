@@ -841,9 +841,13 @@ function ApfCombo({ f, val, pick, touch, shown, inputId, errId, phone }) {
 
 /* A division's icon, by what it is about (the stored icons are emoji, which this form does not use). */
 function apfDivisionIcon(name) {
-  const n = String(name || "").toLowerCase();
-  return /not sure/.test(n) ? "question" : /tech|engineer|cod/.test(n) ? "code" : /media|film|content/.test(n) ? "film-slate"
-    : /art|music|perform|creative/.test(n) ? "music-notes" : /business|admin|operation/.test(n) ? "briefcase" : "squares-four";
+  /* Whole words, not fragments: "art" inside "Smart Technology" or "cod" inside "Decoding" once picked the wrong icon. */
+  const n = String(name || "").toLowerCase(), w = new Set(n.split(/[^a-z]+/).filter(Boolean));
+  const any = list => list.some(x => w.has(x));
+  return /not sure/.test(n) ? "question" : any(["tech", "technology", "coding", "code", "engineering"]) ? "code"
+    : any(["media", "film", "content"]) ? "film-slate"
+    : any(["art", "arts", "music", "performing", "creative"]) ? "music-notes"
+    : any(["business", "administration", "admin", "operations"]) ? "briefcase" : "squares-four";
 }
 
 /** Courses as cards grouped by the Club's divisions, plus "Something else". */

@@ -1253,9 +1253,36 @@ function mlb_daily_answer(array $p): array {
  * The clock is the server's (mlb_answer refuses an answer after the time), a paper never moves
  * the map, and the report breaks the score down by area so the next step is named. */
 const MLB_EXAM_GRACE = 30;
+/* ── The standard exam: the WAEC format at half the time (owner, 15 Nov 2026, voice note) ──
+ * "Let it create the real WAEC [exam] to end with … in half the minutes of WAEC: if WAEC takes two hours,
+ * it should do the same in one hour. Anybody who scores 70% is already a genius, 85% a super genius, 100%
+ * a grandmaster." Every Lab offers one, declared in its papers with board 'waec': the WASSCE objective
+ * paper's shape — its number of questions, four options A–D, the whole syllabus — at half its time.
+ *   Mathematics  Paper 1: 50 questions in 1½ h  → 45 min
+ *   Physics      Paper 1: 50 questions in 1¼ h  → 38 min
+ *   English      Paper 1: 80 questions in 1 h   → 30 min
+ * (WASSCE schemes of examination; researched 16 Nov 2026 — docs/MATH-LAB-PLAN.md §8.3 for Maths.)
+ * The questions are the Lab's own, written in the format, never WAEC's text (MATH-LAB-PLAN §8.2), and the
+ * screen says it is not set or endorsed by WAEC. Only the objective paper: the written papers need a
+ * marker, and a score this Lab cannot mark honestly is not offered. */
+const MLB_WAEC_TIERS = [[100, 'grandmaster', 'Grandmaster'], [85, 'super-genius', 'Super Genius'], [70, 'genius', 'Genius']];
+/** WASSCE grade bands, percentage → grade (MATH-LAB-PLAN §8.3). */
+const MLB_WAEC_GRADES = [[75, 'A1', 'Excellent'], [70, 'B2', 'Very good'], [65, 'B3', 'Good'], [60, 'C4', 'Credit'], [55, 'C5', 'Credit'], [50, 'C6', 'Credit'],
+    [45, 'D7', 'Pass'], [40, 'E8', 'Pass'], [0, 'F9', 'Fail']];
+function mlb_waec_tier(int $pct): ?array {
+    foreach (MLB_WAEC_TIERS as [$at, $id, $name]) if ($pct >= $at) return ['id' => $id, 'name' => $name, 'at' => $at];
+    return null;
+}
+function mlb_waec_grade(int $pct): array {
+    foreach (MLB_WAEC_GRADES as [$at, $g, $w]) if ($pct >= $at) return ['grade' => $g, 'word' => $w];
+    return ['grade' => 'F9', 'word' => 'Fail'];
+}
 const MLB_PAPERS = [
     'jamb' => ['id' => 'jamb', 'title' => 'Timed practice paper', 'exam' => 'jamb', 'n' => 40, 'minutes' => 40, 'stages' => [3, 16], 'typed' => 0,
         'what' => '40 questions, A–E, in 40 minutes: number and numeration, algebra, geometry and trigonometry, statistics and calculus — the senior school syllabus.'],
+    'waec' => ['id' => 'waec', 'title' => 'Standard exam', 'exam' => 'waec', 'board' => 'waec', 'n' => 50, 'minutes' => 45, 'boardMinutes' => 90, 'options' => 4,
+        'stages' => [3, 12], 'typed' => 0,
+        'what' => 'The senior school certificate Mathematics objective paper: 50 questions, A–D, across the whole syllabus, in half the real time — 45 minutes instead of 1½ hours.'],
     'sat'  => ['id' => 'sat', 'title' => 'Timed maths module', 'exam' => 'sat', 'n' => 27, 'minutes' => 43, 'stages' => [3, 12], 'extra' => [94, 98, 104, 111, 147, 166, 167], 'typed' => 7,
         'what' => '27 questions in 43 minutes: algebra, advanced maths, problem-solving and data, geometry and trigonometry. About a quarter need a typed answer.'],
 ];
@@ -1275,6 +1302,8 @@ function mlb_exam_pool(string $paper): array {
             $it = mlb_item($id, $f, 1); $tag = (string)($it['exam'] ?? '');
             if ($tag !== '' && $tag !== $P['exam']) continue;
             $typed = in_array($it['kind'], ['num', 'frac'], true);
+            // A paper with a fixed number of options (WAEC: four, A–D) draws only questions of that shape.
+            if (!empty($P['options']) && $it['kind'] === 'mcq' && count($it['options'] ?? []) !== (int)$P['options']) continue;
             if ($it['kind'] === 'mcq' || ($P['typed'] > 0 && $typed)) $out[] = [$id, (int)$f, $tag === $P['exam'], $typed];
         }
     }
@@ -1294,7 +1323,8 @@ function mlb_exam_pick(string $paper, array $recentSigs = []): array {
             // A form can branch by seed: the item actually drawn must have the paper's shape.
             for ($t = 0; $t < 4; $t++) {
                 $seed = random_int(1, 2000000000); $it = mlb_item($c, $f, $seed);
-                $okShape = $it['kind'] === 'mcq' ? (!$isTyped) : ($isTyped && in_array($it['kind'], ['num', 'frac'], true));
+                $okShape = $it['kind'] === 'mcq' ? (!$isTyped && (empty($P['options']) || count($it['options'] ?? []) === (int)$P['options']))
+                                                 : ($isTyped && in_array($it['kind'], ['num', 'frac'], true));
                 if (!$okShape) continue;
                 // "New every time": a question from a recent paper is rerolled, except on the last try.
                 if ($t < 3 && isset($recentSigs[mlb_item_sig($it)])) continue;
@@ -1322,8 +1352,15 @@ function mlb_exam_report(string $paper, array $items, array $resp, string $start
     $answered = count(array_filter($resp, static fn($r) => ($r['a'] ?? '') !== '' && ($r['a'] ?? null) !== []));
     if ($P['exam'] === 'sat') { $scaled = 200 + (int)(round(600 * $right / $n / 10) * 10); $scoreText = 'About ' . $scaled . ' on a 200–800 scale (an estimate)'; }
     else { $scaled = $pct; $scoreText = $scaled . ' out of 100'; }
+    $std = [];
+    if (($P['board'] ?? '') === 'waec') {
+        $tier = mlb_waec_tier($pct); $g = mlb_waec_grade($pct);
+        $std = ['board' => 'waec', 'tier' => $tier, 'grade' => $g['grade'], 'gradeWord' => $g['word'], 'boardMinutes' => (int)$P['boardMinutes'],
+                'tiers' => array_map(static fn($t) => ['at' => $t[0], 'id' => $t[1], 'name' => $t[2]], array_reverse(MLB_WAEC_TIERS))];
+        $scoreText .= ' · grade ' . $g['grade'] . ($tier ? ' · ' . $tier['name'] : '');
+    }
     return ['paper' => $P['id'], 'title' => $P['title'], 'scaled' => $scaled, 'scale' => $P['exam'] === 'sat' ? '200–800 (estimate)' : 'out of 100', 'scoreText' => $scoreText,
-        'minutes' => (int)$P['minutes'], 'usedSecs' => min($used, $limit + MLB_EXAM_GRACE), 'overTime' => $used > $limit + MLB_EXAM_GRACE, 'answered' => $answered, 'areas' => $areas];
+        'minutes' => (int)$P['minutes'], 'usedSecs' => min($used, $limit + MLB_EXAM_GRACE), 'overTime' => $used > $limit + MLB_EXAM_GRACE, 'answered' => $answered, 'areas' => $areas] + $std;
 }
 /** mathslab.exams — the papers on offer and this member's last papers, newest first. */
 function mlb_exams(array $p): array {
@@ -1333,11 +1370,19 @@ function mlb_exams(array $p): array {
     foreach (db_all("SELECT ref, items, resp, startedAt, finishedAt FROM mlab_sessions WHERE memberId = ? AND lab = ? AND mode = 'exam' AND finishedAt <> '' ORDER BY startedAt DESC LIMIT 20", [(string)$m['memberId'], lab_id()]) as $r) {
         $items = json_decode((string)$r['items'], true) ?: []; $resp = json_decode((string)$r['resp'], true) ?: [];
         $right = count(array_filter($resp, static fn($x) => !empty($x['ok']))); $n = max(1, count($items)); $P = mlb_papers()[(string)$r['ref']] ?? null; if (!$P) continue;
-        $hist[] = ['paper' => $P['id'], 'title' => $P['title'], 'at' => (string)$r['finishedAt'], 'right' => $right, 'total' => count($items), 'pct' => (int)round($right * 100 / $n),
-            'scaled' => $P['exam'] === 'sat' ? 200 + (int)(round(600 * $right / $n / 10) * 10) : (int)round($right * 100 / $n)];
+        $pctH = (int)round($right * 100 / $n);
+        $hist[] = ['paper' => $P['id'], 'title' => $P['title'], 'at' => (string)$r['finishedAt'], 'right' => $right, 'total' => count($items), 'pct' => $pctH,
+            'scaled' => $P['exam'] === 'sat' ? 200 + (int)(round(600 * $right / $n / 10) * 10) : $pctH]
+            + (($P['board'] ?? '') === 'waec' ? ['grade' => mlb_waec_grade($pctH)['grade'], 'tier' => mlb_waec_tier($pctH)] : []);
     }
-    return ['ok' => true, 'papers' => array_values(array_map(static fn($P) => ['id' => $P['id'], 'title' => $P['title'], 'n' => $P['n'], 'minutes' => $P['minutes'], 'what' => $P['what'],
-        'best' => array_reduce($hist, static fn($b, $h) => $h['paper'] === $P['id'] ? max($b, $h['scaled']) : $b, null)], mlb_papers())), 'history' => $hist];
+    return ['ok' => true, 'papers' => array_values(array_map(static function ($P) use ($hist) {
+        $best = array_reduce($hist, static fn($b, $h) => $h['paper'] === $P['id'] ? max($b, $h['scaled']) : $b, null);
+        $out = ['id' => $P['id'], 'title' => $P['title'], 'n' => $P['n'], 'minutes' => $P['minutes'], 'what' => $P['what'], 'best' => $best];
+        if (($P['board'] ?? '') === 'waec') $out += ['board' => 'waec', 'boardMinutes' => (int)$P['boardMinutes'], 'options' => (int)$P['options'],
+            'bestTier' => $best !== null ? mlb_waec_tier((int)$best) : null,
+            'tiers' => array_map(static fn($t) => ['at' => $t[0], 'id' => $t[1], 'name' => $t[2]], array_reverse(MLB_WAEC_TIERS))];
+        return $out;
+    }, mlb_papers())), 'history' => $hist];
 }
 
 /* ── The path, Duolingo's way (owner, 5 Nov 2026: "Improve the map feature. Please research.") ──

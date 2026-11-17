@@ -1977,6 +1977,7 @@ function crCpWhy(r) {
   if (r.flag === "several") return "Their card names more than one course; they take " + ((r.courses || [])[0] || "the first") + " for now. Also named: " + (r.alternatives || []).slice(0, 3).join(", ") + ". Confirm the one they take.";
   if (r.flag === "whole_division") return "A whole division was proposed from “" + (r.track || "their record") + "”. Keep only the courses they take.";
   if (r.flag === "no_match") return "Nothing on their record names a course. Choose theirs.";
+  if (r.status === "unplaced" && r.from === "division_major") return "Only their division is known (“" + (r.track || "their record") + "”), so they start on its major, " + ((r.courses || [])[0] || "its main course") + ". Confirm it, or choose the course they take.";
   if (r.status === "unplaced") return "From their " + (r.from === "interests" ? "interests" : r.from === "division" ? "division" : "track") + ".";
   return r.confirmedAt ? "Placed " + crDate(r.confirmedAt) + "." : "Chosen on their record.";
 }

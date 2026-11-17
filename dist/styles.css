@@ -7535,6 +7535,7 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 .mpay-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
 .mpay-pay { width: 100%; justify-content: center; }
 .mpay-fine { font-size: 13px; color: var(--ink-500); line-height: 1.5; margin: 12px 0 0; }
+.mpay-notice { padding: 10px 12px; border-radius: 10px; background: #fff7e6; border: 1px solid #f2d59b; color: var(--ink-700, #3a3a3f); }
 .mpay-bank { margin-top: 10px; padding: 16px; border-radius: 14px; background: var(--cream-50); border: 1px solid var(--cream-200); font-size: 14px; }
 .mpay-bank dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 16px; margin: 12px 0 0; }
 .mpay-bank dt { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-500); }
@@ -8847,6 +8848,20 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-exrep-score { margin: 0; display: flex; align-items: baseline; gap: 8px; }
 .mlb-exrep-score b { font-size: 32px; font-weight: 800; color: var(--mlb-ink); font-variant-numeric: tabular-nums; }
 .mlb-exrep-score span { font-size: 14px; color: var(--mlb-ink-2); }
+/* ── Labs · the standard exam (WAEC format, half time) and its titles ── */
+.mlb-waec-chip { margin-left: 8px; vertical-align: middle; }
+.mlb-tiers { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.mlb-tiers li { display: grid; gap: 2px; padding: 8px 10px; border-radius: 12px; border: 1px solid #d9dce6; position: relative; }
+.mlb-tiers li b { font-weight: 700; }
+.mlb-tiers li span { font-size: 13px; color: var(--mlb-ink-2); }
+.mlb-tiers li i { position: absolute; top: 8px; right: 8px; color: #1d7a43; }
+.mlb-tiers li.is-earned { background: #fff7e0; border-color: #e0b84a; }
+.mlb-waec-note { margin-top: 4px; }
+.mlb-tier.is-genius, .mlb-tier-won.is-genius { background: #e8f3ff; color: #0b4a8a; }
+.mlb-tier.is-super-genius, .mlb-tier-won.is-super-genius { background: #f3e8ff; color: #5b1f99; }
+.mlb-tier.is-grandmaster, .mlb-tier-won.is-grandmaster { background: #fff1c7; color: #6b4a00; }
+.mlb-tier-won { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; font-size: 17px; margin: 10px 0; }
+.mlb-tier-won i { font-size: 24px; }
 .mlb-exareas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .mlb-exareas li { display: grid; grid-template-columns: minmax(0, 12em) minmax(60px, 1fr) auto; align-items: center; gap: 10px; font-size: 13.5px; color: var(--mlb-ink-2); }
 .mlb-exareas li b { color: var(--mlb-ink); font-variant-numeric: tabular-nums; }
