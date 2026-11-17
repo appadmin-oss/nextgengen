@@ -38928,6 +38928,86 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('maths · visible length counts a fraction as drawn, not as typed', mlb_vis_len('$2y\\frac{dy}{dx}$') === 11 && mlb_vis_len('plain words') === 11);
 })();
 
+/* ── The NGG shop (owner, 17 Nov 2026: "Create a shop for NGG … for souvenirs and mercs"; domain/shop.php) ── */
+(function () {
+    $A = 'NGG-2025-0099'; $now = now_iso();
+    $keepPs = $GLOBALS['CONFIG']['paystack'] ?? null; $keepMock = $GLOBALS['__paystack_mock'] ?? null;
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_shop'];
+    $calls = []; $verify = [];
+    $GLOBALS['__paystack_mock'] = function ($m, $path, $body) use (&$calls, &$verify) {
+        $calls[] = [$m, $path, $body];
+        if ($m === 'POST') return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/x' . count($calls)]];
+        $ref = basename($path); return $verify[$ref] ?? ['status' => true, 'data' => ['status' => 'abandoned']];
+    };
+    chk('shop · closed until staff open it: the page says so and nothing can be priced', public_shop_list([])['open'] === false && (public_shop_quote(['items' => [['productId' => 'x', 'qty' => 1]]])['error'] ?? '') === 'shop_closed');
+    $save = static fn(array $d, string $who = 'NGG-2025-0099') => backend_dispatch('admin.shop.product.save', ['requesterId' => $who, 'data' => $d]);
+    chk('shop · a product is validated whole: a name, a price before it goes on sale, an image that is a real address',
+        ($save(['name' => 'X'])['error'] ?? '') === 'bad_name' && ($save(['name' => 'Free thing', 'price' => 0, 'status' => 'live'])['error'] ?? '') === 'no_price'
+        && ($save(['name' => 'Bad pic', 'price' => 100, 'imageUrl' => 'javascript:alert(1)'])['error'] ?? '') === 'bad_image');
+    chk('shop · the catalogue is content: a plain member cannot write it', ($save(['name' => 'Sneaky cap', 'price' => 100], 'NGG-2025-0001')['error'] ?? '') === 'forbidden');
+    $tee = $save(['name' => 'NGG T-shirt', 'category' => 'Clothing', 'price' => 7500, 'options' => ['S', 'M', 'L', 'S'], 'stock' => ['S' => 2, 'M' => 0, 'L' => 5], 'status' => 'live', 'description' => 'The programme T-shirt.']);
+    $mug = $save(['name' => 'NGG Mug', 'category' => 'Souvenirs', 'price' => 4000, 'status' => 'live']);
+    $draft = $save(['name' => 'Hoodie (coming soon)', 'category' => 'Clothing', 'price' => 15000]);
+    chk('shop · options are de-duplicated and a size with stock 0 is sold out on its own', !empty($tee['ok']) && $tee['product']['options'] === ['S', 'M', 'L'] && $tee['product']['left']['M'] === 0 && !$tee['product']['soldOut']);
+    $T = $tee['productId']; $M = $mug['productId'];
+    $set = static fn(array $d) => backend_dispatch('admin.shop.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => $d]);
+    chk('shop · settings are money (fees): a plain member cannot open the shop', (backend_dispatch('admin.shop.settings.set', ['requesterId' => 'NGG-2025-0001', 'data' => ['enabled' => true]])['error'] ?? '') === 'forbidden');
+    $set(['enabled' => true, 'deliveryOn' => true, 'deliveryFee' => 3000]);
+    $list = public_shop_list([]); $names = array_column($list['products'], 'name');
+    chk('shop · open, it lists what is on sale — never a draft — and collection is at a centre that is a building, never NGG Online',
+        $list['open'] && in_array('NGG T-shirt', $names, true) && in_array('NGG Mug', $names, true) && !in_array('Hoodie (coming soon)', $names, true)
+        && $list['checkout']['centres'] && !in_array('NGG Online', $list['checkout']['centres'], true) && $list['checkout']['deliveryFee'] === 3000);
+    $q = public_shop_quote(['items' => [['productId' => $T, 'option' => 'L', 'qty' => 2, 'price' => 1], ['productId' => $M, 'option' => '', 'qty' => 1]], 'fulfil' => 'deliver']);
+    chk('shop · the server prices the cart from the catalogue — a price sent by the browser is ignored — and adds delivery and Paystack\'s charge',
+        !empty($q['ok']) && $q['subtotal'] === 19000 && $q['delivery'] === 3000 && $q['total'] === 22000 && $q['onlineFee'] === paystack_family_charge(22000));
+    chk('shop · stock is a limit: a sold-out size and more than is left are refused by name',
+        (public_shop_quote(['items' => [['productId' => $T, 'option' => 'M', 'qty' => 1]], 'fulfil' => 'collect'])['detail'] ?? '') === 'NGG T-shirt (M) is sold out.'
+        && (public_shop_quote(['items' => [['productId' => $T, 'option' => 'S', 'qty' => 2], ['productId' => $T, 'option' => 'S', 'qty' => 1]], 'fulfil' => 'collect'])['detail'] ?? '') === 'Only 2 left of NGG T-shirt (S).');
+    chk('shop · an option that is not offered, and a draft product, are refused',
+        (public_shop_quote(['items' => [['productId' => $T, 'option' => 'XXL', 'qty' => 1]], 'fulfil' => 'collect'])['error'] ?? '') === 'bad_option'
+        && (public_shop_quote(['items' => [['productId' => $draft['productId'], 'qty' => 1]], 'fulfil' => 'collect'])['error'] ?? '') === 'not_available');
+    $buyer = ['name' => 'Bola Ade', 'email' => 'bola.shop@example.org', 'phone' => '08031234567'];
+    $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' AND online = 0 AND (programmes LIKE '%ngg%' OR programmes IS NULL) ORDER BY id LIMIT 1")['name'] ?? '');
+    chk('shop · an order cannot be collected at NGG Online, which has no desk', (public_shop_order(['items' => [['productId' => $M, 'qty' => 1]], 'fulfil' => 'collect', 'centre' => 'NGG Online', 'buyer' => $buyer])['error'] ?? '') === 'bad_centre');
+    $calls = [];
+    $o = public_shop_order(['items' => [['productId' => $T, 'option' => 'S', 'qty' => 2], ['productId' => $M, 'qty' => 1]], 'fulfil' => 'collect', 'centre' => $centre, 'buyer' => $buyer]);
+    $row = db_row('SELECT * FROM shop_orders WHERE orderId = ?', [$o['orderId'] ?? '']);
+    $init = $calls[0][2] ?? [];
+    chk('shop · an order is recorded pending and Paystack is opened for exactly the total plus the buyer-borne charge, tagged with this order',
+        !empty($o['ok']) && $row && $row['status'] === 'pending' && (int)$row['total'] === 19000 && $init['amount'] === (19000 + paystack_family_charge(19000)) * 100
+        && ($init['metadata']['orderId'] ?? '') === $o['orderId'] && str_ends_with((string)$init['callback_url'], '/shop/order/' . $row['token']));
+    $left = static fn() => shop_stock(shop_product($T));
+    chk('shop · an unpaid checkout holds no stock back', $left()['S'] === 2);
+    $ref = (string)$row['paystackRef']; $fee = paystack_family_charge(19000);
+    $verify[$ref] = ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => (19000 + $fee) * 100, 'currency' => 'NGN', 'metadata' => ['orderId' => $o['orderId'], 'processingFee' => $fee]]];
+    chk('shop · the return page alone settles nothing without Paystack\'s word: an abandoned reference leaves it pending',
+        public_shop_order_get(['token' => $row['token']])['order']['status'] === 'pending');
+    $g1 = public_shop_order_get(['token' => $row['token'], 'reference' => $ref]);
+    shop_paystack_verify($ref);   // the webhook arriving as well
+    chk('shop · Paystack\'s success pays the order once — the webhook arriving too takes the stock off only once',
+        ($g1['order']['status'] ?? '') === 'paid' && $g1['order']['processingFee'] === $fee && $left()['S'] === 0);
+    $o2 = public_shop_order(['items' => [['productId' => $M, 'qty' => 2]], 'fulfil' => 'deliver', 'address' => '12 Ola Street, Egbeda, Lagos', 'buyer' => $buyer]);
+    $r2 = db_row('SELECT * FROM shop_orders WHERE orderId = ?', [$o2['orderId']]);
+    $verify[$r2['paystackRef']] = ['status' => true, 'data' => ['status' => 'success', 'reference' => $r2['paystackRef'], 'amount' => 100 * 100, 'currency' => 'NGN', 'metadata' => ['orderId' => $o2['orderId'], 'processingFee' => 0]]];
+    chk('shop · a success for the wrong amount pays nothing, and the money is put on the record for a person',
+        (shop_paystack_verify($r2['paystackRef'])['error'] ?? '') === 'payment_mismatch' && db_row('SELECT status FROM shop_orders WHERE orderId = ?', [$o2['orderId']])['status'] === 'pending'
+        && db_row("SELECT 1 FROM unapplied_payments WHERE reference = ?", [$r2['paystackRef']]));
+    $step = static fn(string $to, string $id, string $why = '') => backend_dispatch('admin.shop.order.set', ['requesterId' => 'NGG-2025-0099', 'orderId' => $id, 'status' => $to, 'reason' => $why]);
+    $ol = backend_dispatch('admin.shop.orders', ['requesterId' => 'NGG-2025-0099', 'status' => 'open']);
+    chk('shop · the desk lists the paid orders to hand over, with counts by status', in_array($o['orderId'], array_column($ol['orders'], 'orderId'), true) && ($ol['counts']['paid'] ?? 0) >= 1);
+    chk('shop · steps go forward only: a paid order cannot be marked completed-then-ready', !empty($step('ready', $o['orderId'])['ok']) && !empty($step('completed', $o['orderId'])['ok'])
+        && ($step('ready', $o['orderId'])['error'] ?? '') === 'bad_step');
+    $o3 = public_shop_order(['items' => [['productId' => $T, 'option' => 'L', 'qty' => 3]], 'fulfil' => 'collect', 'centre' => $centre, 'buyer' => $buyer]);
+    $r3 = db_row('SELECT * FROM shop_orders WHERE orderId = ?', [$o3['orderId']]); $fee3 = paystack_family_charge(22500);
+    $verify[$r3['paystackRef']] = ['status' => true, 'data' => ['status' => 'success', 'reference' => $r3['paystackRef'], 'amount' => (22500 + $fee3) * 100, 'currency' => 'NGN', 'metadata' => ['orderId' => $o3['orderId'], 'processingFee' => $fee3]]];
+    shop_paystack_verify($r3['paystackRef']);
+    chk('shop · a paid order is cancelled only with a reason, and its stock goes back', $left()['L'] === 2 && ($step('cancelled', $o3['orderId'])['error'] ?? '') === 'reason_required'
+        && !empty($step('cancelled', $o3['orderId'], 'Out of size L')['ok']) && $left()['L'] === 5 && str_contains((string)db_row('SELECT note FROM shop_orders WHERE orderId = ?', [$o3['orderId']])['note'], 'Refund due'));
+    chk('shop · orders are money: a plain member cannot see them', (backend_dispatch('admin.shop.orders', ['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'forbidden');
+    db_exec("DELETE FROM shop_orders"); db_exec("DELETE FROM shop_products"); db_exec("DELETE FROM settings WHERE settingKey = 'shop'");
+    $GLOBALS['CONFIG']['paystack'] = $keepPs; $GLOBALS['__paystack_mock'] = $keepMock;
+})();
+
 /* ── Online membership, phase 1 (owner, 16–17 Nov 2026; docs/ONLINE-MEMBERS-PLAN.md): the "NGG Online" home, and
    nothing that assumes a building may punish an online member for not walking through a door. ── */
 (function () {

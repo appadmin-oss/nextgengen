@@ -5324,3 +5324,27 @@ ALTER TABLE centres ADD COLUMN online TINYINT NOT NULL DEFAULT 0;
 INSERT IGNORE INTO centres (centreId, name, code, color, status, programmes, online, pageStatus, meetDays, notes, createdAt, updatedAt)
   VALUES ('CTR-ONLINE', 'NGG Online', 'ONL', '#2E6BE6', 'active', 'ngg', 1, 'draft', '', 'Online members: no building, no gate, no meeting days.', NOW(), NOW());
 INSERT INTO schema_version (version) VALUES (236) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 237 · The NGG shop: souvenirs and merchandise (domain/shop.php) ──
+CREATE TABLE IF NOT EXISTS shop_products (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  productId VARCHAR(24) NOT NULL, slug VARCHAR(120) NOT NULL, name VARCHAR(120) NOT NULL,
+  category VARCHAR(32) NOT NULL DEFAULT 'Other', description TEXT, price INT NOT NULL DEFAULT 0,
+  imageUrl VARCHAR(500) NOT NULL DEFAULT '', options TEXT, stock TEXT,
+  status VARCHAR(16) NOT NULL DEFAULT 'draft', sort INT NOT NULL DEFAULT 100,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '', updatedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_product (productId), UNIQUE KEY uq_shop_slug (slug), KEY idx_shop_products_status (status, sort)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_orders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  orderId VARCHAR(32) NOT NULL, token VARCHAR(64) NOT NULL,
+  buyerName VARCHAR(160) NOT NULL DEFAULT '', email VARCHAR(200) NOT NULL DEFAULT '', phone VARCHAR(24) NOT NULL DEFAULT '',
+  items MEDIUMTEXT, subtotal INT NOT NULL DEFAULT 0, delivery INT NOT NULL DEFAULT 0, total INT NOT NULL DEFAULT 0,
+  processingFee INT NOT NULL DEFAULT 0, currency VARCHAR(8) NOT NULL DEFAULT 'NGN',
+  fulfil VARCHAR(16) NOT NULL DEFAULT 'collect', centre VARCHAR(160) NOT NULL DEFAULT '', centreId VARCHAR(48) NOT NULL DEFAULT '', address VARCHAR(400) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'pending', paystackRef VARCHAR(40) NOT NULL DEFAULT '',
+  paidAt VARCHAR(32) NOT NULL DEFAULT '', readyAt VARCHAR(32) NOT NULL DEFAULT '', completedAt VARCHAR(32) NOT NULL DEFAULT '',
+  note VARCHAR(600) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_order (orderId), UNIQUE KEY uq_shop_token (token), KEY idx_shop_orders_status (status, id), KEY idx_shop_orders_ref (paystackRef)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (237) ON DUPLICATE KEY UPDATE version = version;

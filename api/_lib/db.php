@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 236;
+const NGG_SCHEMA_TARGET = 237;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6554,6 +6554,34 @@ function db_migrate(PDO $db): void {
             ALTER TABLE centres ADD COLUMN online INTEGER NOT NULL DEFAULT 0;
             INSERT OR IGNORE INTO centres (centreId, name, code, color, status, programmes, online, pageStatus, meetDays, notes, createdAt, updatedAt)
               VALUES ('CTR-ONLINE', 'NGG Online', 'ONL', '#2E6BE6', 'active', 'ngg', 1, 'draft', '', 'Online members: no building, no gate, no meeting days.', datetime('now'), datetime('now'));
+        ",
+        /* 237 — the NGG shop (domain/shop.php): souvenirs and merchandise. A product keeps its options (sizes)
+           and, when limited, its stock per option ('' = no limit). An order keeps the lines AS CHARGED (name,
+           option, price), so a later price change never rewrites what somebody paid; its private token is the
+           buyer's link, and its Paystack reference settles it once. */
+        237 => "
+            CREATE TABLE IF NOT EXISTS shop_products (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              productId TEXT NOT NULL UNIQUE, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+              category TEXT NOT NULL DEFAULT 'Other', description TEXT NOT NULL DEFAULT '', price INTEGER NOT NULL DEFAULT 0,
+              imageUrl TEXT NOT NULL DEFAULT '', options TEXT NOT NULL DEFAULT '[]', stock TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'draft', sort INTEGER NOT NULL DEFAULT 100,
+              createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', updatedBy TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_products_status ON shop_products(status, sort);
+            CREATE TABLE IF NOT EXISTS shop_orders (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              orderId TEXT NOT NULL UNIQUE, token TEXT NOT NULL UNIQUE,
+              buyerName TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
+              items TEXT NOT NULL DEFAULT '[]', subtotal INTEGER NOT NULL DEFAULT 0, delivery INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
+              processingFee INTEGER NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'NGN',
+              fulfil TEXT NOT NULL DEFAULT 'collect', centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'pending', paystackRef TEXT NOT NULL DEFAULT '',
+              paidAt TEXT NOT NULL DEFAULT '', readyAt TEXT NOT NULL DEFAULT '', completedAt TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_status ON shop_orders(status, id);
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_ref ON shop_orders(paystackRef);
         ",
     ];
 

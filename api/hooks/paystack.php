@@ -9,6 +9,8 @@ $evt = json_decode($raw, true);
 $ref = (string)($evt['data']['reference'] ?? '');
 // A membership payment is settled from Paystack's own verify answer, never from this body.
 if (($evt['event'] ?? '') === 'charge.success' && $ref !== '') {
-    if (strncmp($ref, 'NGGM-', 5) === 0) membership_paystack_verify($ref); else donation_verify($ref);
+    if (strncmp($ref, 'NGGM-', 5) === 0) membership_paystack_verify($ref);
+    elseif (strncmp($ref, 'NGGS-', 5) === 0) shop_paystack_verify($ref);   // the shop (domain/shop.php)
+    else donation_verify($ref);
 }
 http_response_code(200); echo 'ok';

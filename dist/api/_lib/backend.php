@@ -411,6 +411,16 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.club.catalogue.set' => 'admin_club_catalogue_set',
             /* Paying to join (domain/membership-pay.php). Staff ops are `fees`;
                the family reaches only their own invoice, by its private token. */
+            'public.shop.list'                => 'public_shop_list',
+            'public.shop.quote'               => 'public_shop_quote',
+            'public.shop.order'               => 'public_shop_order',
+            'public.shop.order.get'           => 'public_shop_order_get',
+            'admin.shop.products'             => 'admin_shop_products',
+            'admin.shop.product.save'         => 'admin_shop_product_save',
+            'admin.shop.orders'               => 'admin_shop_orders',
+            'admin.shop.order.set'            => 'admin_shop_order_set',
+            'admin.shop.settings'             => 'admin_shop_settings',
+            'admin.shop.settings.set'         => 'admin_shop_settings_set',
             'public.membership.invoice'       => 'public_membership_invoice',
             'public.membership.pay.init'      => 'public_membership_pay_init',
             'public.membership.pay.verify'    => 'public_membership_pay_verify',
