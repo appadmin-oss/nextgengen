@@ -1,4 +1,6 @@
-# HANDOFF — for the next agent (Labs: the standard exam — IN PROGRESS, 16 Nov 2026)
+# HANDOFF — for the next agent (Labs: the standard exam — TODO 1–3 DONE 17 Nov; 4 open)
+
+**17 Nov 2026:** TODO 1 (blueprint), 2 (exam hall) and 3 (report) are done on `claude/finme-dues-training-fees-l54o5j` (this branch was merged into it) — see the last entries of docs/HANDOFF.md. Open: TODO 4, the licence-gated slot. Next owner priority: **online NGG members** (members who never attend a centre) — design in progress.
 
 Branch for this work: `claude/magical-fermi-d97fqw` (built on `claude/finme-dues-training-fees-l54o5j`).
 

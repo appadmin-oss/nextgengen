@@ -4925,19 +4925,22 @@ off as "bad at maths" when a foundation was simply never taught.
   - **Explorer:** the log topics have their own, with sliders for a base and a power.
   - **Typing answers:** a learner can type `log( )` and `ln( )` in an answer, from the keypad or the keyboard. Any base is accepted where the value is the same.
 - **More Labs.** The Physics Lab is the second and the English Lab the third (both below). Each Lab has its own map, questions, climb, certificates and papers, and shares the engine. See `docs/LABS.md` for the developer's how-to.
-- **Exam practice (the Exams tab, `/study/lab/exams`).** Two timed papers, open to every member whatever their stage.
+- **Exam practice (the Exams tab, `/study/lab/exams`).** Three timed papers, open to every member whatever their stage.
   - **The papers:**
 
     | Paper | Questions | Time | Score |
     |---|---|---|---|
     | Timed practice paper | 40, options A–E | 40 minutes | out of 100 |
     | Timed maths module | 27 | 43 minutes | an estimate on a 200–800 scale |
+    | Standard exam | 50, options A–D | 45 minutes (half the real 1½ hours) | out of 100, a grade A1–F9, and a title: Genius 70%+, Super Genius 85%+, Grandmaster 100% |
 
     On the timed maths module about a quarter of the answers are typed. The screen says the 200–800 figure is an estimate.
   - **No exam body is named on screen** (owner, 6 Nov 2026: "Do NOT mention these exam bodies since we'll not be copying their questions"). The papers, bands and courses say what they cover, not whose exam they resemble. A test fails if a name creeps back into anything a learner reads.
   - **New every time:** each paper is drawn fresh from the Lab's own questions, including 40 five-option and 15 typed-or-choice kinds written in the style of the past papers the owner supplied. None is copied from a past paper.
-  - **Timing:** the clock is the server's. At zero the paper is handed in, and late answers are refused. A question can be left blank; it counts as unanswered.
-  - **The report** gives the score, the time used, and the right answers by area (Number, Algebra, Geometry & Measure, …). It names the weak areas to work on.
+  - **The standard exam covers the syllabus in fixed shares and leans hard.** Each area has its share of the 50 questions (Number 20%, Algebra 26%, Geometry & Measure 24%, Graphs & Functions 10%, Statistics & Trigonometry 20% — the syllabus's sections, since no exam body publishes counts per topic), and inside each area about 20% easy, 45% medium and 35% hard. The Physics and English standard exams give each area an equal share.
+  - **It runs like the exam hall** (every paper does): a numbered navigator of all the questions (answered, current, flagged), Previous and Next, a flag to come back to, and any answer can be changed — or rubbed out by pressing it again — until the paper is handed in. Hand in asks first and says how many are unanswered and flagged. Nothing says right or wrong until the end. Keys: A–D (or E) choose, ← → move, F flags.
+  - **Timing:** the clock is the server's. At zero the paper is handed in, and late answers are refused. Each answer is saved as it is chosen (a typed one when the learner moves on), so time running out loses nothing saved. A question left blank counts as unanswered.
+  - **The report** gives the score, the time used, and the right answers by area (Number, Algebra, Geometry & Measure, …). Under it: **what to study next** — each weak area (under 60%) with the topics missed there, each a link to its lesson; the **pace** per question against this paper's allowance and the real exam's; **last time** on the same paper, up or down; and on the standard exam a **predicted grade** from the last three standard exams, always called an estimate.
   - A paper never changes the map. Papers taken are listed with their scores, and the best score shows on each paper's card.
   - The same exam-style questions also turn up in ordinary practice of their topics: an exam-style factor-theorem question is practice for *Remainder theorem and factor theorem*.
 - **Stages 5–7 are deeper.** Each algebra topic used to have one or two

@@ -7457,3 +7457,25 @@ Owner: "Check all recent branches." Every remote branch updated since late Octob
 
 Results: PHP 7239 / 0 (+28 ported checks); assign-desk 34 / 0; mathlab-e2e 122 / 0; build.test 31 / 0;
 labs-client 28 / 0.
+
+## 17 Nov 2026 — Labs standard exam: blueprint, exam hall, report (handoff TODO 1–3)
+
+Continuing the magical-fermi handoff.
+- **1 · Blueprint and difficulty** (`3f102326`): `mlb_exam_quota` gives each strand its share (Maths: the
+  syllabus's sections; elsewhere an even share), `MLB_EXAM_MIX` 20/45/35 by a topic's rank inside its
+  strand, short cells made up from the harder side. Measured: Maths 24/42/34, Physics 16/48/36; English is
+  80 questions on 80 topics, so its mix cannot be steered. No exam body publishes per-topic counts (searched);
+  the weights are the syllabus's and the code says so.
+- **2 · Exam hall** (`9cdd6b28`): `MlbExamHall` — navigator, flags, answers changed or cleared until
+  hand-in, a hand-in that names unanswered/flagged, A–E / arrows / F. Server: exam-mode answers replace
+  earlier ones and an empty answer clears; other modes stay one-shot; nothing marked is returned mid-paper.
+- **3 · Report** (`63e5f88e`): `mlb_exam_insights` — what to study (weak areas' missed topics as lesson
+  links), pace, last paper, predicted grade (standard exam, last three, called an estimate).
+- **Still open:** TODO 4, the licence-gated slot for real past questions (stays off until a licence is
+  recorded). Not started.
+- Results: PHP 7251/0; mathlab-e2e 135/0 (desktop and phone); labs-focus 14/0 (its copied exam block
+  was still pinning the pre-merge card count, now re-pinned).
+
+Also: `docs/CODEX-TEST-BRIEF.md` — standing instructions for a Codex session that runs and broadens the
+suites continuously on `codex/continuous-tests` and logs product defects in `docs/TEST-DEFECTS.md`
+instead of fixing them.
