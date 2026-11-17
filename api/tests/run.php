@@ -1380,6 +1380,27 @@ chk('club apply → member: the parent by name and number, the school and class,
     db_update('applications', ['dob' => gmdate('Y-m-d', strtotime('-11 years')), 'centre' => ''], ['id' => $id3]);
     chk('review fix · a blank centre is asked for, never quietly Egbeda', (backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => $id3])['error'] ?? '') === 'centre_required');
     chk('review fix · marking a child "accepted" without converting is refused (Convert makes the member)', (backend_dispatch('admin.applications.status', ['requesterId' => $A, 'id' => $id3, 'status' => 'accepted'])['error'] ?? '') === 'use_convert');
+    /* A mentor application had the same dead end, and worse: the Inbox's "Accept" set the status and nothing
+       else — no mentor, no email — and the application then left the Inbox (owner, 17 Nov 2026: "she registered
+       yesterday … we couldn't acknowledge it"). Accepting is creating the mentor; a stuck one comes back. */
+    setting_set('mentor_applications_open', '1', 'test');
+    $mApply = static fn(string $em, string $first) => backend_dispatch('public.apply', ['kind' => 'mentor', 'sex' => 'Female', 'firstName' => $first, 'lastName' => 'Mentor', 'email' => $em,
+        'phone' => '08031110' . substr((string)crc32($em), 0, 3), 'dob' => '1988-05-01', 'role' => 'Coding mentor', 'why' => 'I want to help young people learn to build things that matter.']);
+    $mApply('stuck.mentor@example.com', 'Stuck'); $mApply('fresh.mentor@example.com', 'Fresh');
+    $idStuck = (int)db_row("SELECT id FROM applications WHERE email = 'stuck.mentor@example.com'")['id'];
+    $idFresh = (int)db_row("SELECT id FROM applications WHERE email = 'fresh.mentor@example.com'")['id'];
+    db_update('applications', ['status' => 'accepted'], ['id' => $idStuck]);   // what the old Inbox button left behind
+    chk('mentor intake · marking a mentor application "accepted" without creating the mentor is refused (use_convert)',
+        (backend_dispatch('admin.applications.status', ['requesterId' => $A, 'id' => $idFresh, 'status' => 'accepted'])['error'] ?? '') === 'use_convert');
+    $ids = static fn(array $r) => array_map('intval', array_column($r['applications'] ?? [], 'id'));
+    $plain = $ids(backend_dispatch('admin.applications.list', ['requesterId' => $A, 'status' => 'new,reviewing,waitlist']));
+    $unf = $ids(backend_dispatch('admin.applications.list', ['requesterId' => $A, 'status' => 'new,reviewing,waitlist', 'unfinished' => true]));
+    chk('mentor intake · an accepted mentor application with no mentor behind it comes back to the Inbox (and only when asked for)',
+        in_array($idStuck, $unf, true) && in_array($idFresh, $unf, true) && !in_array($idStuck, $plain, true));
+    $cv = backend_dispatch('admin.mentor.application.convert', ['requesterId' => $A, 'id' => $idStuck]);
+    $unf2 = $ids(backend_dispatch('admin.applications.list', ['requesterId' => $A, 'status' => 'new,reviewing,waitlist', 'unfinished' => true]));
+    chk('mentor intake · finishing it makes the mentor (pending checks) and it leaves the Inbox',
+        !empty($cv['ok']) && (string)(db_row('SELECT status FROM mentors WHERE mentorId = ?', [(string)($cv['mentorId'] ?? '')])['status'] ?? '') === 'pending-checks' && !in_array($idStuck, $unf2, true));
     // Waitlist: the family is told, and the application stays reachable.
     db_update('applications', ['centre' => 'Afton'], ['id' => $id3]);
     $GLOBALS['__mail_sink'] = [];

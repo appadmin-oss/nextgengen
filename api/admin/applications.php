@@ -4,7 +4,7 @@ require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'GET') {
-    $res = gs_call('admin.applications.list', ['requesterId' => $s['mid'], 'kind' => $_GET['kind'] ?? '', 'status' => $_GET['status'] ?? '']);
+    $res = gs_call('admin.applications.list', ['requesterId' => $s['mid'], 'kind' => $_GET['kind'] ?? '', 'status' => $_GET['status'] ?? '', 'unfinished' => !empty($_GET['unfinished'])]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $act = (string)($b['action'] ?? '');

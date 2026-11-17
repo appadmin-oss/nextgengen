@@ -184,7 +184,7 @@ const CR_INBOX_SOURCES = {
     async load(ctx) {
       /* New, under review and waitlisted: a waitlisted child stays on the desk
          someone can accept them from, instead of vanishing when "Waitlist" is pressed. */
-      const r = await NGGApi.admin.applications.list({ status: "new,reviewing,waitlist" });
+      const r = await NGGApi.admin.applications.list({ status: "new,reviewing,waitlist", unfinished: 1 });
       return (r.applications || []).filter(a => a.kind !== "volunteer").map(a => {
         const prog = a.program === "summer" ? "Summer School" : "NGG membership";
         const wait = a.status === "waitlist";
@@ -224,6 +224,15 @@ const CR_INBOX_SOURCES = {
               return { text: "Member created · " + x.memberId + tail };
             } },
           wait ? null : tell("waitlist", "Waitlist", "Waitlisted"),
+          tell("rejected", "Reject", "Rejected"),
+          ask,
+        ].filter(Boolean) : a.kind === "mentor" ? [
+          /* A mentor is accepted by MAKING the mentor: the record (pending safeguarding checks) and the
+             welcome email. A bare "accepted" status left the applicant with no next step. */
+          { l: a.status === "accepted" ? "Finish: create the mentor" : "Accept & create mentor", tone: "primary",
+            run: async () => { const x = await NGGApi.admin.mentorship.convertApp(a.id);
+              return { text: x.existed ? a.name + " is already a mentor · " + x.mentorId : "Mentor created · " + x.mentorId + (a.email ? " · welcome emailed to " + a.email : "") }; } },
+          a.status === "accepted" || wait ? null : tell("waitlist", "Waitlist", "Waitlisted"),
           tell("rejected", "Reject", "Rejected"),
           ask,
         ].filter(Boolean) : [

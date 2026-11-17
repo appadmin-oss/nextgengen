@@ -806,7 +806,12 @@ function admin_applications_list(array $p): array {
         /* One status or several ("new,reviewing,waitlist"): a waitlisted child
            stays on a screen someone can act from. */
         $sts = array_values(array_intersect(array_map('trim', explode(',', (string)$p['status'])), APP_STATUSES));
-        if ($sts) { $where[] = 'status IN (' . implode(',', array_fill(0, count($sts), '?')) . ')'; $params = array_merge($params, $sts); }
+        /* `unfinished`: also a mentor application marked accepted with no mentor behind it. The Inbox's
+           "Accept" used to set that status and nothing else — no mentor, no email — and the application
+           then left every screen anyone could finish it from (owner, 17 Nov 2026: "she registered
+           yesterday … we couldn't acknowledge it"). It comes back until somebody finishes it. */
+        $stuck = !empty($p['unfinished']) ? " OR (kind = 'mentor' AND status = 'accepted' AND NOT EXISTS (SELECT 1 FROM mentors m WHERE lower(m.email) = lower(applications.email)))" : '';
+        if ($sts) { $where[] = '(status IN (' . implode(',', array_fill(0, count($sts), '?')) . ')' . $stuck . ')'; $params = array_merge($params, $sts); }
     }
     /* A centre-scoped admin sees their centres' applicants only, filtered
        here, above the cap, never on the drawn page. */
@@ -878,6 +883,8 @@ function admin_applications_set_status(array $p): array {
     /* Accepting a child is Convert: it makes the member. Marking "accepted"
        here left an application nobody could convert any more. */
     if ($status === 'accepted' && (string)$a['kind'] === 'teen') return ['ok' => false, 'error' => 'use_convert', 'message' => 'Use Accept & create member: it makes the member record.'];
+    /* The same for a mentor: "accepted" alone made no mentor and told nobody — a dead end for the applicant. */
+    if ($status === 'accepted' && (string)$a['kind'] === 'mentor') return ['ok' => false, 'error' => 'use_convert', 'message' => 'Use Accept & create mentor: it makes the mentor record and emails them.'];
     if ((string)$a['status'] === $status) return ['ok' => true, 'unchanged' => true, 'told' => []];
     /* A child who is already a member is not waitlisted or declined from here:
        that sent the family a refusal after their welcome, while the member

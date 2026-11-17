@@ -160,6 +160,22 @@ function cleanup() {
     const wantDues = +php(`echo membership_prorate(4000, '${start}', db_row("SELECT * FROM members WHERE memberId = '${inv.memberId}'"))['amount'];`, ['bootstrap']);
     chk('the invoice is the membership fee and the pro-rated first month, from the start date', inv.total === 10000 + wantDues && inv.joinDate === start && inv.disciplines === 'TECH');
 
+    /* A mentor application left "accepted" with no mentor behind it (the old Inbox's Accept did only that):
+       it is back in the Inbox, and finishing it makes the mentor. Owner, 17 Nov 2026: "she registered
+       yesterday … we couldn't acknowledge it". */
+    php(`db_insert('applications', ['kind' => 'mentor', 'name' => 'Ngozi Stuck', 'email' => 'ngozi.stuck@example.org', 'phone' => '08035550101', 'role' => 'Coding mentor', 'why' => 'I want to mentor young coders.', 'status' => 'accepted', 'createdAt' => now_iso()]);`, ['bootstrap']);
+    await P.reload({ waitUntil: 'domcontentloaded' });   // the Inbox loads its list on opening; this one arrived since
+    await P.waitForSelector('.cr-app', { timeout: 60000 });
+    await P.waitForFunction(() => typeof window.__adminSection === 'function', null, { timeout: 30000 });
+    await P.evaluate(() => window.__adminSection('inbox', 'applications'));
+    await P.waitForSelector('.cr-ib-row:has-text("Ngozi Stuck")', { timeout: 20000 });
+    await P.click('.cr-ib-row:has-text("Ngozi Stuck")');
+    chk('a mentor application accepted without a mentor is back in the Inbox, with a Finish action',
+      await P.waitForSelector('.cr-ib-pane button:has-text("Finish: create the mentor")', { timeout: 10000 }).then(() => true, () => false));
+    await P.click('.cr-ib-pane button:has-text("Finish: create the mentor")');
+    chk('finishing it creates the mentor and says the welcome was emailed', await crToast(P, /Mentor created · MEN-[\s\S]*welcome emailed to ngozi\.stuck@example\.org/));
+    chk('…and the mentor exists, pending safeguarding checks', php(`echo db_row("SELECT status FROM mentors WHERE email = 'ngozi.stuck@example.org'")['status'] ?? 'none';`, ['bootstrap']).trim() === 'pending-checks');
+
     await P.evaluate(() => window.__adminSection('membership'));
     await P.waitForSelector('.cr-mp-table', { timeout: 20000 });
     chk('Money → Membership payments lists it, awaiting payment, with the bank details', /Awaiting payment/.test(await P.innerText('.cr-mp-table')) && /GTBank · 0123456789/.test(await P.innerText('.cr-mp-bar')));
