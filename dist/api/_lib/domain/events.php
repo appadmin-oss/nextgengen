@@ -1244,7 +1244,9 @@ function public_programme(array $p): array {
         foreach (programme_catalogue($prog) as $f => $cs) $fac[] = ['faculty' => (string)$f, 'courses' => array_values(array_map('strval', $cs))];
     }
     $centres = array_map(static fn($c) => ['name' => (string)$c['name'], 'slug' => (string)($c['slug'] ?? ''), 'area' => (string)($prog === 'summer' && trim((string)($c['summerArea'] ?? '')) !== '' ? $c['summerArea'] : ($c['area'] ?? ''))],
-        centres_for_programme($prog, 'name, slug, area, summerArea'));
+        /* The form's centres are buildings to attend: NGG Online is a separate choice on the form ("Online"),
+           with its own price, never one more centre in the list (docs/ONLINE-MEMBERS-PLAN.md, phase 2). */
+        array_values(array_filter(centres_for_programme($prog, 'name, slug, area, summerArea'), static fn($c) => !centre_is_online((string)$c['name']))));
     $out = ['ok' => true, 'program' => $prog === 'summer' ? 'summer' : 'anchor', 'faculties' => $fac, 'centres' => $centres];
     // What joining NGG costs, said before anybody applies (nothing is paid until a place is offered).
     if ($prog === 'ngg' && function_exists('membership_fee_terms')) $out['fees'] = membership_fee_terms();

@@ -1105,7 +1105,8 @@ function MemberIDCard(props) {
         h("div", { key: "n", style: { fontWeight: 800, fontSize: 17, lineHeight: 1.15 } }, name),
         h("div", { key: "id", style: { fontFamily: "ui-monospace,Menlo,monospace", fontSize: 12, color: MUT, marginTop: 2 } }, m.memberId || ""),
         h("div", { key: "chips" }, [
-          m.centre ? chip("CACENTRE " + m.centre, "c") : null,
+          /* An online member's home is "NGG Online", not a CACENTRE building: the chip says just that. */
+          m.centre ? chip(/^ngg online$/i.test(String(m.centre).trim()) ? m.centre : "CACENTRE " + m.centre, "c") : null,
           m.track ? chip(m.track, "t") : null,
         ]),
       ]),

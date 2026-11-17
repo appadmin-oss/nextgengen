@@ -3601,7 +3601,7 @@ chk('…and the centre picker gets the catalogue, not a list narrowed to the cen
         db_insert('centres', ['centreId' => $cid, 'name' => $name, 'code' => substr($cid, -3),
             'color' => '#334455', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     }
-    $live = array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name');
+    $live = array_column(db_all("SELECT name FROM centres WHERE status = 'active' AND online = 0 ORDER BY name"), 'name');   // NGG Online is NGG-only: never a Summer School picker's
     // Filter to a centre with NO children in it: derived from the roster, the
     // list would come back empty and the picker would have nothing to move to.
     $one = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'centre' => 'Pickerville A'])['attendance'];
@@ -5889,7 +5889,8 @@ chk('centres: upsert validates, code unique, list works', (function () {
     if (backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Other', 'code' => 'IJ', 'color' => '#111111']])['error'] !== 'code_taken') return false;
     if (backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Bad', 'code' => 'B', 'color' => 'red']])['error'] !== 'bad_color') return false;
     $l = backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099']);
-    return count($l['centres']) === 1 && $l['centres'][0]['code'] === 'IJ';
+    $built = array_values(array_filter($l['centres'], static fn($c) => empty($c['online'])));   // NGG Online (migration 236) is seeded everywhere
+    return count($built) === 1 && $built[0]['code'] === 'IJ';
 })());
 /* One assertion per promise. This was a single conjunction of six, and when
    it failed on MySQL roughly one run in four it said only that something
@@ -15373,7 +15374,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     })());
 
     chk('sex: a child registered through the real route arrives with it stored', (function () use ($ADM) {
-        $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? 'Main');
+        $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' AND online = 0 ORDER BY id LIMIT 1")['name'] ?? 'Main');
         $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'kind' => 'register', 'generate' => true, 'name' => 'Sex desk']);
         $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
             'fullName' => 'Sex Test Child', 'firstName' => 'Sex', 'lastName' => 'Child',
@@ -15391,7 +15392,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         /* The form's own option check runs first — which is right, and is why
            the normaliser exists for the paths that have no dropdown: the desk
            enrolment, the roster edit and the CSV import. */
-        $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? 'Main');
+        $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' AND online = 0 ORDER BY id LIMIT 1")['name'] ?? 'Main');
         $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'kind' => 'register', 'generate' => true, 'name' => 'Sex desk 2']);
         $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
             'fullName' => 'Bad Sex Child', 'firstName' => 'Bad', 'lastName' => 'Child',
@@ -15464,7 +15465,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     })());
 
     chk('grade: a child registered with a class carries the number AND the day it was true', (function () use ($ADM) {
-        $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? 'Main');
+        $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' AND online = 0 ORDER BY id LIMIT 1")['name'] ?? 'Main');
         $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'kind' => 'register', 'generate' => true, 'name' => 'Grade desk']);
         $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
             'fullName' => 'Grade Test Child', 'firstName' => 'Grade', 'lastName' => 'Child',
@@ -36223,7 +36224,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 (function () {
     $ADM = 'NGG-2025-0099';
     db_exec("DELETE FROM applications WHERE email LIKE '%@nggdoor.test'");
-    $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? '');
+    $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' AND online = 0 ORDER BY id LIMIT 1")['name'] ?? '');
     $cat = ngg_volunteer_catalogue();
     $area = array_key_first($cat); $act = $cat[$area][0];
     $base = ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'program' => 'anchor', 'role' => 'mentor', 'sex' => 'Female', 'firstName' => 'Ngozi', 'lastName' => 'Door',
@@ -38925,6 +38926,44 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('maths · a why-question whose right reason stood out by length swaps ONE wrong reason for another argument’s (' . $sw . ' lines)', $sw > 0 && $okSwap);
     chk('maths · …and leaves the options alone when lengths are already even', $okKeep);
     chk('maths · visible length counts a fraction as drawn, not as typed', mlb_vis_len('$2y\\frac{dy}{dx}$') === 11 && mlb_vis_len('plain words') === 11);
+})();
+
+/* ── Online membership, phase 1 (owner, 16–17 Nov 2026; docs/ONLINE-MEMBERS-PLAN.md): the "NGG Online" home, and
+   nothing that assumes a building may punish an online member for not walking through a door. ── */
+(function () {
+    $now = now_iso();
+    $on = db_row("SELECT * FROM centres WHERE centreId = 'CTR-ONLINE'");
+    chk('online · the migration seeds "NGG Online": active, NGG only, marked online, never linked to CACENTRE, never named "Online"',
+        $on && $on['name'] === 'NGG Online' && (int)$on['online'] === 1 && $on['status'] === 'active' && $on['programmes'] === 'ngg' && (string)$on['cacLocationId'] === '' && centre_is_online('ngg online') && !centre_is_online('Online'));
+    $keepPol = setting_raw('policy'); $keepCal = setting_raw('memberProgramme'); $keepCur = setting_raw('policy_member_swept_through');
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true, 'outageBrake' => true, 'member' => ['enabled' => true, 'absenceLimit' => 2, 'latenessCap' => 30,
+        'postSuspensionLateness' => 30, 'fine' => 5000, 'suspensionDays' => 14, 'lateRedline' => '23:59', 'absenceFine' => 1000, 'checkoutRequired' => false]], 'test');
+    member_programme_settings_save(['enabled' => true, 'startDate' => gmdate('Y-m-d', strtotime('-60 days')), 'endDate' => gmdate('Y-m-d', strtotime('+30 days')), 'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'test');
+    $today = attendance_today(); $ago = fn($n) => gmdate('Y-m-d', strtotime($today . ' UTC') - $n * 86400); $d1 = $ago(2);
+    db_insert('centres', ['centreId' => 'CEN-ONX-E', 'name' => 'Onx Egbeda', 'code' => 'OXE', 'status' => 'active', 'createdAt' => $now]);
+    foreach ([['NGG-ONL-1', 'NGG Online'], ['NGG-ONL-2', 'ngg online '], ['NGG-ONL-C', 'Onx Egbeda']] as [$id, $c])
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Online ' . $id, 'email' => strtolower($id) . '@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $c, 'createdAt' => $now, 'updatedAt' => $now]);
+    $cal = member_calendar_for(['centre' => 'NGG Online']); $anyDay = false;
+    for ($k = 0; $k < 14; $k++) if (programme_is_day($ago($k), $cal)) $anyDay = true;
+    chk('online · an online member\'s calendar is on, with no day ever theirs to attend (never "off", which would make every day one)',
+        !empty($cal['enabled']) && !$anyDay && ($cal['weekdaysFrom'] ?? '') === 'online' && programme_is_day($d1, member_calendar_for(['centre' => 'Onx Egbeda'])));
+    db_exec("UPDATE members SET status = 'zz_onl_hold' WHERE status = 'active' AND type = 'NGG' AND memberId NOT LIKE 'NGG-ONL-%'");
+    setting_set('policy_member_swept_through', $ago(3), 'system');
+    policy_sweep_member_absences($d1);
+    $absOn = fn($id) => (bool)db_row("SELECT 1 FROM infractions WHERE personId = ? AND kind = 'absence' AND date = ? AND (voidedAt IS NULL OR voidedAt = '')", [$id, $d1]);
+    chk('online · the nightly sweep never marks an online member absent (however their centre is spelt), while a centre member who stayed away is',
+        !$absOn('NGG-ONL-1') && !$absOn('NGG-ONL-2') && $absOn('NGG-ONL-C'));
+    chk('online · …and NGG Online is never a "held" outage day (nobody is expected at a door there)',
+        !db_row("SELECT 1 FROM attendance_held_days WHERE date = ? AND lower(centre) LIKE 'ngg online%'", [$d1]));
+    db_exec("UPDATE members SET status = 'active' WHERE status = 'zz_onl_hold'");
+    $pub = array_column(public_programme(['program' => 'ngg'])['centres'] ?? [], 'name');
+    chk('online · the join form\'s centres are buildings: NGG Online is not one more centre in that list', $pub && !in_array('NGG Online', $pub, true));
+    $rows = array_column(status_centres(static fn() => true, $today, ['NGG Online' => ['members' => 2, 'present' => 0, 'late' => 0, 'atRisk' => 0]])['rows'] ?? [], null, 'name');
+    $iss = (array)($rows['NGG Online']['issues'] ?? []);
+    chk('online · the status board does not call NGG Online "not mapped", "meeting days not set" or "nobody checked in"',
+        isset($rows['NGG Online']) && !array_intersect($iss, ['not mapped', 'meeting days not set', 'meets today, nobody checked in']));
+    db_exec("DELETE FROM infractions WHERE personId LIKE 'NGG-ONL-%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-ONL-%'"); db_exec("DELETE FROM centres WHERE centreId = 'CEN-ONX-E'");
+    setting_set('policy', (string)$keepPol, 'test'); setting_set('memberProgramme', (string)$keepCal, 'test'); setting_set('policy_member_swept_through', (string)$keepCur, 'system');
 })();
 
 /* ── WhatsApp through Kapso (owner, 14 Nov 2026: every text WhatsApp first, SMS as the fallback; replies into the inbox) ── */

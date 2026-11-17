@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 235;
+const NGG_SCHEMA_TARGET = 236;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6544,6 +6544,16 @@ function db_migrate(PDO $db): void {
              WHERE autoKey IS NULL AND createdBy = 'curriculum' AND COALESCE(unitId, '') <> ''
                AND id = (SELECT MIN(b.id) FROM assignments b WHERE b.createdBy = 'curriculum' AND b.unitId = assignments.unitId);
             CREATE UNIQUE INDEX IF NOT EXISTS uq_assign_autokey ON assignments(autoKey);
+        ",
+        /* 236 — online membership (owner, 16–17 Nov 2026; docs/ONLINE-MEMBERS-PLAN.md). A member who never
+           attends a centre has a real home: "NGG Online", a centres row marked `online`, NGG only, with no
+           CACENTRE link (the sync never touches an unlinked row) and no public page. Seeded here because once
+           CACENTRE runs the list, a centre cannot be added by hand. Its name is never "Online": that word
+           already means "every member" on events. */
+        236 => "
+            ALTER TABLE centres ADD COLUMN online INTEGER NOT NULL DEFAULT 0;
+            INSERT OR IGNORE INTO centres (centreId, name, code, color, status, programmes, online, pageStatus, meetDays, notes, createdAt, updatedAt)
+              VALUES ('CTR-ONLINE', 'NGG Online', 'ONL', '#2E6BE6', 'active', 'ngg', 1, 'draft', '', 'Online members: no building, no gate, no meeting days.', datetime('now'), datetime('now'));
         ",
     ];
 

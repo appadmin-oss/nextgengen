@@ -675,7 +675,10 @@ function attendance_daily_run(?string $today = null, ?int $nowHourLagos = null):
         $centres = [];
         $names = $key === 'club' ? array_column(db_all("SELECT DISTINCT centre FROM members WHERE status = 'active' AND COALESCE(centre,'') <> '' ORDER BY centre"), 'centre')
                                  : array_column(db_all("SELECT DISTINCT s.centre FROM summer_students s JOIN summer_cohorts c ON c.cohortId = s.cohortId AND c.status = 'active' WHERE COALESCE(s.centre,'') <> '' ORDER BY s.centre"), 'centre');
-        foreach ($names as $c) { $d = attendance_day_centre($key, (string)$c, $today); if ($d['expected'] > 0) $centres[(string)$c] = $d; }
+        foreach ($names as $c) {
+            if ($key === 'club' && centre_is_online((string)$c)) continue;   // NGG Online has no register: nobody is expected at a door
+            $d = attendance_day_centre($key, (string)$c, $today); if ($d['expected'] > 0) $centres[(string)$c] = $d;
+        }
         if (!$centres) continue;
         $out[$key] = array_map(static fn($c) => ['expected' => $c['expected'], 'present' => $c['present']], $centres);
         foreach (function_exists('staff_with_cap') ? staff_with_cap($cap) : [] as $st) {

@@ -300,6 +300,11 @@ function member_calendar_for(?array $member, ?array $base = null, ?array $centre
     $cfg = $base ?? member_programme_settings();
     $centre = mb_strtolower(trim((string)($member['centre'] ?? '')));
     if ($centre === '') return $cfg;
+    /* An online member (docs/ONLINE-MEMBERS-PLAN.md) has no meeting days: the calendar stays ON with no
+       weekday and no extra day, so no day is ever theirs to attend — never "off", which would make EVERY
+       day a programme day (programme_is_day). The absence sweep, the outage brake, the at-risk rate and
+       the registers all read this, so none of them can mark an online member absent. */
+    if (centre_is_online($centre)) { $cfg['weekdays'] = []; $cfg['extraDays'] = []; $cfg['weekdaysFrom'] = 'online'; $cfg['online'] = true; return $cfg; }
     if ($centreDays !== null) $days = $centreDays[$centre] ?? [];
     else { $c = db_row('SELECT meetDays FROM centres WHERE lower(name) = ? LIMIT 1', [$centre]); $days = $c ? centre_meet_weekdays((string)$c['meetDays']) : []; }
     if ($days) { $cfg['weekdays'] = $days; $cfg['weekdaysFrom'] = 'centre'; }

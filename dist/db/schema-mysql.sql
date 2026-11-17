@@ -5316,3 +5316,11 @@ ALTER TABLE assignments MODIFY COLUMN centre VARCHAR(80);
 ALTER TABLE assignments MODIFY COLUMN track VARCHAR(80);
 
 INSERT INTO schema_version (version) VALUES (235) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 236 · Online membership: the "NGG Online" home (docs/ONLINE-MEMBERS-PLAN.md) ──
+-- A real centres row marked online, NGG only, never linked to CACENTRE. Never named "Online": that word
+-- means "every member" on events.
+ALTER TABLE centres ADD COLUMN online TINYINT NOT NULL DEFAULT 0;
+INSERT IGNORE INTO centres (centreId, name, code, color, status, programmes, online, pageStatus, meetDays, notes, createdAt, updatedAt)
+  VALUES ('CTR-ONLINE', 'NGG Online', 'ONL', '#2E6BE6', 'active', 'ngg', 1, 'draft', '', 'Online members: no building, no gate, no meeting days.', NOW(), NOW());
+INSERT INTO schema_version (version) VALUES (236) ON DUPLICATE KEY UPDATE version = version;

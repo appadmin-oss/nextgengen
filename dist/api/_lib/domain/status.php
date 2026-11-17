@@ -142,7 +142,7 @@ function status_members(callable $inScope, string $today, bool $withFees): array
 
 /** Centres: what each one has, and what it is missing. */
 function status_centres(callable $inScope, string $today, array $byCentre): array {
-    $centres = array_values(array_filter(db_all("SELECT centreId, name, code, status, capacity, lat, lng, meetDays, meetTime, leadVolunteerId, programmes, pageStatus FROM centres WHERE status = 'active' ORDER BY name"),
+    $centres = array_values(array_filter(db_all("SELECT centreId, name, code, status, capacity, lat, lng, meetDays, meetTime, leadVolunteerId, programmes, pageStatus, online FROM centres WHERE status = 'active' ORDER BY name"),
         static fn($c) => $inScope($c['name'])));
     $classes = [];
     foreach (db_all("SELECT centreId, COUNT(*) c FROM timetable_slots WHERE status = 'active' GROUP BY centreId") as $r) $classes[(string)$r['centreId']] = (int)$r['c'];
@@ -164,11 +164,14 @@ function status_centres(callable $inScope, string $today, array $byCentre): arra
         $lead = $vol[(string)$c['leadVolunteerId']] ?? '';
         $issues = [];
         if ($lead === '' && empty($leadAccounts[$cid])) $issues[] = 'no lead';
+        /* NGG Online has no building: no map pin, no meeting days, no gate, no capacity — none of those is an
+           issue there. A lead and its classes still are. */
+        $isOnline = !empty($c['online']);
         if ($ngg && empty($classes[$cid])) $issues[] = 'no classes on the timetable';
-        if ($c['lat'] === null || $c['lat'] === '') $issues[] = 'not mapped';
-        if ($ngg && $meetsToday && $b['members'] > 0 && $b['present'] === 0) $issues[] = 'meets today, nobody checked in';
-        if ((int)$c['capacity'] > 0 && $b['members'] > (int)$c['capacity']) $issues[] = 'over capacity';
-        if (!$meetDays) $issues[] = 'meeting days not set';
+        if (!$isOnline && ($c['lat'] === null || $c['lat'] === '')) $issues[] = 'not mapped';
+        if (!$isOnline && $ngg && $meetsToday && $b['members'] > 0 && $b['present'] === 0) $issues[] = 'meets today, nobody checked in';
+        if (!$isOnline && (int)$c['capacity'] > 0 && $b['members'] > (int)$c['capacity']) $issues[] = 'over capacity';
+        if (!$isOnline && !$meetDays) $issues[] = 'meeting days not set';
         if ($issues) $issueCount++;
         $rows[] = ['centreId' => $cid, 'name' => $n, 'code' => (string)$c['code'], 'members' => $b['members'], 'presentToday' => $b['present'],
                    'lateToday' => $b['late'], 'atRisk' => $b['atRisk'], 'classes' => $classes[$cid] ?? 0, 'lead' => $lead,
