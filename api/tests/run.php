@@ -39348,6 +39348,19 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && ($ex['history'][0]['paper'] ?? '') === 'jamb' && $ex['history'][0]['scaled'] === 50 && count($ex['papers']) === 3 && $ex['papers'][0]['best'] === 50
         && mlb_exam_report('sat', array_fill(0, 27, ['c' => 'MC-050']), array_fill(0, 27, ['ok' => true, 'a' => '1']), now_iso())['scaled'] === 800);
     /* The standard exam (owner, 15 Nov 2026): the WAEC objective paper's shape at half the time, with three titles. */
+    /* The standard exam's blueprint and difficulty (handoff TODO 1, 17 Nov 2026): each strand its share of the
+       paper, and inside it a mix leaning hard — not a run of algebra because algebra has the most topics. */
+    $Pw = mlb_papers()['waec']; $qw = mlb_exam_quota($Pw, mlb_exam_pool('waec'));
+    chk('maths lab · the standard exam\'s quota adds to the paper, and splits by largest remainder (7 by 1:1:1 is 3, 2, 2)',
+        array_sum(array_map('array_sum', $qw)) === 50 && array_sum(mlb_exam_split(7, ['a' => 1, 'b' => 1, 'c' => 1])) === 7 && max(mlb_exam_split(7, ['a' => 1, 'b' => 1, 'c' => 1])) === 3);
+    $bpS = []; $bpT = []; $bpOk = true;
+    for ($k = 0; $k < 12; $k++) { $pk = mlb_exam_pick('waec'); if (count($pk) !== 50 || count(array_unique(array_column($pk, 'c'))) !== 50) $bpOk = false;
+        foreach ($pk as $x) { $bpS[mlb_exam_strand($x['c'])] = ($bpS[mlb_exam_strand($x['c'])] ?? 0) + 1; $bpT[mlb_exam_tier($Pw, $x['c'])] = ($bpT[mlb_exam_tier($Pw, $x['c'])] ?? 0) + 1; } }
+    $bpNear = true; foreach ($qw as $st => $tiers) if (abs(($bpS[$st] ?? 0) / 12 - array_sum($tiers)) > 1) $bpNear = false;
+    chk('maths lab · every standard exam holds each strand to its blueprint share (Algebra ' . round(($bpS['Algebra'] ?? 0) / 12, 1) . ' of 50, not the ~21 its topic count would give)', $bpOk && $bpNear);
+    chk('maths lab · …and leans hard: at least 30% from the hardest third of each strand, at most 30% from the easiest (' . round(100 * ($bpT['hard'] ?? 0) / 600) . '% / ' . round(100 * ($bpT['easy'] ?? 0) / 600) . '%)',
+        ($bpT['hard'] ?? 0) >= 180 && ($bpT['easy'] ?? 0) <= 180);
+    $jq = mlb_exam_pick('jamb'); chk('maths lab · the other papers draw as before (no blueprint on the JAMB-style paper)', count($jq) === 40 && !isset(mlb_papers()['jamb']['blueprint']));
     $ew = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'waec']);
     $wits = $ew['items'] ?? [];
     chk('maths lab · the standard exam is the WAEC Paper 1 shape: 50 four-option questions on 50 topics, on a 45-minute clock (half of WAEC\'s 1½ h)',

@@ -1282,6 +1282,11 @@ const MLB_PAPERS = [
         'what' => '40 questions, A–E, in 40 minutes: number and numeration, algebra, geometry and trigonometry, statistics and calculus — the senior school syllabus.'],
     'waec' => ['id' => 'waec', 'title' => 'Standard exam', 'exam' => 'waec', 'board' => 'waec', 'n' => 50, 'minutes' => 45, 'boardMinutes' => 90, 'options' => 4,
         'stages' => [3, 12], 'typed' => 0,
+        /* The syllabus's sections mapped onto the Lab's strands: number and numeration; algebraic processes;
+           mensuration with plane geometry; coordinate geometry and graphs; statistics, probability and
+           trigonometry. No body publishes question counts per topic, so these are the sections' weight in the
+           syllabus, not a statistic — and they stop the strand with most topics (algebra, 38) taking half the paper. */
+        'blueprint' => ['Number' => 20, 'Algebra' => 26, 'Geometry & Measure' => 24, 'Graphs & Functions' => 10, 'Statistics & Trigonometry' => 20],
         'what' => 'The senior school certificate Mathematics objective paper: 50 questions, A–D, across the whole syllabus, in half the real time — 45 minutes instead of 1½ hours.'],
     'sat'  => ['id' => 'sat', 'title' => 'Timed maths module', 'exam' => 'sat', 'n' => 27, 'minutes' => 43, 'stages' => [3, 12], 'extra' => [94, 98, 104, 111, 147, 166, 167], 'typed' => 7,
         'what' => '27 questions in 43 minutes: algebra, advanced maths, problem-solving and data, geometry and trigonometry. About a quarter need a typed answer.'],
@@ -1309,6 +1314,42 @@ function mlb_exam_pool(string $paper): array {
     }
     return $cache[$ck] = $out;
 }
+/* ── The standard exam's blueprint and difficulty (owner, 15 Nov 2026: "make the exam feel real and tough") ──
+ * A real paper covers its syllabus in fixed proportions and is not a run of easy questions. Each strand
+ * gets its share of the paper ('blueprint' on the paper; an even share per strand where a Lab names none),
+ * and inside a strand the questions follow MLB_EXAM_MIX, a topic's difficulty being its rank among that
+ * strand's topics in syllabus order: the first third easy, the last third hard. (By stage alone, a Lab whose
+ * strands ARE stages — Physics, English — would have every question of a strand in one tier.) */
+const MLB_EXAM_MIX = ['easy' => 20, 'medium' => 45, 'hard' => 35];
+function mlb_exam_strand(string $c): string { return (string)(mlb_comp($c)['strand'] ?? ''); }
+function mlb_exam_tier(array $P, string $c): string {
+    static $rank = [];
+    $key = lab_id() . '|' . $P['id'];
+    if (!isset($rank[$key])) {
+        $by = []; foreach (mlb_exam_pool($P['id']) as [$t]) $by[mlb_exam_strand($t)][$t] = mlb_num($t);
+        $rank[$key] = [];
+        foreach ($by as $ts) { asort($ts); $k = array_keys($ts); $m = count($k); foreach ($k as $i => $t) $rank[$key][$t] = ($i + 0.5) / max(1, $m); }
+    }
+    $pos = $rank[$key][$c] ?? 0.5;
+    return $pos < 1 / 3 ? 'easy' : ($pos < 2 / 3 ? 'medium' : 'hard');
+}
+/** Split n into whole parts by weight, largest remainder first, so the parts always add to n. */
+function mlb_exam_split(int $n, array $weights): array {
+    $tot = array_sum($weights); if ($tot <= 0) return array_map(static fn() => 0, $weights);
+    $out = []; $rem = [];
+    foreach ($weights as $k => $w) { $x = $n * $w / $tot; $out[$k] = (int)floor($x); $rem[$k] = $x - $out[$k]; }
+    arsort($rem); foreach (array_slice(array_keys($rem), 0, $n - array_sum($out)) as $k) $out[$k]++;
+    return $out;
+}
+/** strand => tier => how many questions: the blueprint over the strands the pool really has, then the mix inside each. */
+function mlb_exam_quota(array $P, array $pool): array {
+    $strands = []; foreach ($pool as [$c]) $strands[mlb_exam_strand($c)] = true;
+    $bp = $P['blueprint'] ?? []; $w = [];
+    foreach (array_keys($strands) as $s) $w[$s] = $bp ? (float)($bp[$s] ?? 0) : 1.0;
+    $out = [];
+    foreach (mlb_exam_split((int)$P['n'], $w) as $s => $k) $out[$s] = mlb_exam_split($k, MLB_EXAM_MIX);
+    return $out;
+}
 /** Draw a paper: its own exam-style forms first (about two thirds), each topic at most once, in syllabus order. */
 function mlb_exam_pick(string $paper, array $recentSigs = []): array {
     $P = mlb_papers()[$paper]; $pool = mlb_exam_pool($paper); shuffle($pool);
@@ -1333,7 +1374,25 @@ function mlb_exam_pick(string $paper, array $recentSigs = []): array {
             }
         }
     };
-    $take(array_values(array_filter($pool, static fn($x) => $x[2])), $own);
+    if (($P['board'] ?? '') === 'waec') {
+        // The standard exam: each strand its share, and inside it the difficulty mix leaning hard.
+        $ownFirst = static fn(array $c) => array_merge(array_values(array_filter($c, static fn($x) => $x[2])), array_values(array_filter($c, static fn($x) => !$x[2])));
+        foreach (mlb_exam_quota($P, $pool) as $strand => $tiers) {
+            foreach ($tiers as $tier => $q) if ($q > 0)
+                $take($ownFirst(array_values(array_filter($pool, static fn($x) => mlb_exam_strand($x[0]) === $strand && mlb_exam_tier($P, $x[0]) === $tier))), count($picked) + $q);
+        }
+        // A cell short of topics gives its places back to its strand, then to the paper.
+        foreach (mlb_exam_quota($P, $pool) as $strand => $tiers) {
+            $want = array_sum($tiers); $have = count(array_filter($picked, static fn($x) => mlb_exam_strand($x['c']) === $strand));
+            if ($have >= $want) continue;
+            $rest = $ownFirst(array_values(array_filter($pool, static fn($x) => mlb_exam_strand($x[0]) === $strand)));
+            $order = ['hard' => 0, 'medium' => 1, 'easy' => 2];   // "tough": a short cell is made up from the harder side
+            usort($rest, static fn($a, $b) => $order[mlb_exam_tier($P, $a[0])] <=> $order[mlb_exam_tier($P, $b[0])]);
+            $take($rest, count($picked) + $want - $have);
+        }
+    } else {
+        $take(array_values(array_filter($pool, static fn($x) => $x[2])), $own);
+    }
     $take(array_values(array_filter($pool, static fn($x) => !$x[2])), $n);
     if (count($picked) < $n) { $used = []; foreach ($picked as $x) $used[$x['c']] = true; $take($pool, $n); }
     // Syllabus order, number first and calculus last, as a paper reads.
