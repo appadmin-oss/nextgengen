@@ -38568,6 +38568,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('seo · aliases and per-record addresses (/q/…, /control) are real pages, never 404', spa_route_for('/q/abc', $routes)['status'] === 200 && spa_route_for('/control/members', $routes)['status'] === 200);
     chk('seo · a filtered view (?post=…) claims no canonical; a tracking parameter keeps it', !str_contains(spa_render($html, spa_route_for('/blog', $routes), 'post=hello'), 'rel="canonical"')
         && str_contains(spa_render($html, spa_route_for('/about', $routes), 'utm_source=x'), 'href="https://next.afrovanguard.org.ng/about"'));
+    $shopOrder = spa_route_for('/shop/order/0123abcd', $routes);
+    chk('seo · the shop is a public page with its own canonical; an order\'s private link (/shop/order/<token>) is noindex and never claims the shop\'s canonical',
+        str_contains(spa_render($html, spa_route_for('/shop', $routes)), 'rel="canonical" href="https://next.afrovanguard.org.ng/shop"')
+        && $shopOrder['status'] === 200 && str_contains(spa_render($html, $shopOrder), 'noindex') && !str_contains(spa_render($html, $shopOrder), 'rel="canonical"'));
     /* SPA_ALIASES is a second list beside pageFromPath() in app.jsx, so it is held to it: every address the
        router accepts by name must be a real page here too. One missing entry and a working link (a scanned
        card, a notice in an email) answers 404 to the browser and to every crawler that follows it. */
@@ -38954,6 +38958,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('shop · settings are money (fees): a plain member cannot open the shop', (backend_dispatch('admin.shop.settings.set', ['requesterId' => 'NGG-2025-0001', 'data' => ['enabled' => true]])['error'] ?? '') === 'forbidden');
     $set(['enabled' => true, 'deliveryOn' => true, 'deliveryFee' => 3000]);
     $list = public_shop_list([]); $names = array_column($list['products'], 'name');
+    chk('shop · checkout tells the page the cart\'s limits, so it offers no more than the quote takes',
+        ($list['checkout']['maxLines'] ?? 0) === SHOP_MAX_LINES && ($list['checkout']['maxQty'] ?? 0) === SHOP_MAX_QTY);
     chk('shop · open, it lists what is on sale — never a draft — and collection is at a centre that is a building, never NGG Online',
         $list['open'] && in_array('NGG T-shirt', $names, true) && in_array('NGG Mug', $names, true) && !in_array('Hoodie (coming soon)', $names, true)
         && $list['checkout']['centres'] && !in_array('NGG Online', $list['checkout']['centres'], true) && $list['checkout']['deliveryFee'] === 3000);
@@ -38982,7 +38988,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $verify[$ref] = ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => (19000 + $fee) * 100, 'currency' => 'NGN', 'metadata' => ['orderId' => $o['orderId'], 'processingFee' => $fee]]];
     chk('shop · the return page alone settles nothing without Paystack\'s word: an abandoned reference leaves it pending',
         public_shop_order_get(['token' => $row['token']])['order']['status'] === 'pending');
+    $GLOBALS['__mail_sink'] = [];
     $g1 = public_shop_order_get(['token' => $row['token'], 'reference' => $ref]);
+    $paidMail = array_values(array_filter($GLOBALS['__mail_sink'], static fn($m) => $m['to'] === 'bola.shop@example.org'))[0]['html'] ?? '';
+    unset($GLOBALS['__mail_sink']);
+    $linesTable = (string)strstr((string)strstr($paidMail, '<table role="presentation" width="100%" cellpadding="4"'), '</table>', true);
+    chk('shop · the paid email lists the lines and the total, and the body the shop writes carries no inline style (owner\'s rule)',
+        $linesTable !== '' && str_contains($linesTable, 'NGG T-shirt (S) × 2') && str_contains($linesTable, '₦' . number_format(19000 + $fee)) && !str_contains($linesTable, 'style='));
     shop_paystack_verify($ref);   // the webhook arriving as well
     chk('shop · Paystack\'s success pays the order once — the webhook arriving too takes the stock off only once',
         ($g1['order']['status'] ?? '') === 'paid' && $g1['order']['processingFee'] === $fee && $left()['S'] === 0);
@@ -39004,6 +39016,11 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('shop · a paid order is cancelled only with a reason, and its stock goes back', $left()['L'] === 2 && ($step('cancelled', $o3['orderId'])['error'] ?? '') === 'reason_required'
         && !empty($step('cancelled', $o3['orderId'], 'Out of size L')['ok']) && $left()['L'] === 5 && str_contains((string)db_row('SELECT note FROM shop_orders WHERE orderId = ?', [$o3['orderId']])['note'], 'Refund due'));
     chk('shop · orders are money: a plain member cannot see them', (backend_dispatch('admin.shop.orders', ['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'forbidden');
+    $pl = backend_dispatch('admin.shop.products', ['requesterId' => 'NGG-2025-0099']); $sl = backend_dispatch('admin.shop.settings', ['requesterId' => 'NGG-2025-0099']);
+    chk('shop · the Control Room is given the bounds the server enforces (price, options, stock, delivery fee, list cap), never types its own',
+        ($pl['bounds']['priceMax'] ?? 0) === SHOP_PRICE_MAX && ($pl['bounds']['optionsMax'] ?? 0) === SHOP_OPTIONS_MAX && ($pl['bounds']['stockMax'] ?? 0) === SHOP_STOCK_MAX
+        && ($sl['bounds']['deliveryFeeMax'] ?? 0) === SHOP_DELIVERY_FEE_MAX && (backend_dispatch('admin.shop.orders', ['requesterId' => 'NGG-2025-0099'])['max'] ?? 0) === SHOP_LIST_MAX
+        && ($set(['deliveryFee' => SHOP_DELIVERY_FEE_MAX + 1])['error'] ?? '') === 'bad_fee');
     db_exec("DELETE FROM shop_orders"); db_exec("DELETE FROM shop_products"); db_exec("DELETE FROM settings WHERE settingKey = 'shop'");
     $GLOBALS['CONFIG']['paystack'] = $keepPs; $GLOBALS['__paystack_mock'] = $keepMock;
 })();

@@ -27,6 +27,8 @@ const SHOP_MAX_QTY = 20;
 const SHOP_PRICE_MAX = 5000000;
 const SHOP_OPTIONS_MAX = 12;
 const SHOP_LIST_MAX = 300;
+const SHOP_STOCK_MAX = 100000;
+const SHOP_DELIVERY_FEE_MAX = 100000;
 const SHOP_DEFAULTS = ['enabled' => false, 'deliveryOn' => false, 'deliveryFee' => 2500,
     'collectNote' => 'Collect it at your centre’s desk on a programme day. Bring the order number.',
     'deliveryNote' => 'Delivered within Lagos in 3–5 working days.'];
@@ -69,7 +71,9 @@ function public_shop_list(array $p): array {
 function shop_checkout_terms(array $s): array {
     return ['currency' => 'NGN', 'symbol' => '₦', 'paystack' => paystack_secret() !== '',
         'deliveryOn' => $s['deliveryOn'], 'deliveryFee' => $s['deliveryOn'] ? max(0, $s['deliveryFee']) : 0,
-        'collectNote' => $s['collectNote'], 'deliveryNote' => $s['deliveryNote'], 'centres' => shop_collection_centres()];
+        'collectNote' => $s['collectNote'], 'deliveryNote' => $s['deliveryNote'], 'centres' => shop_collection_centres(),
+        // The cart's limits, so the page offers no more than the quote will take.
+        'maxLines' => SHOP_MAX_LINES, 'maxQty' => SHOP_MAX_QTY];
 }
 /** Where an order can be collected: the NGG centres that are buildings. */
 function shop_collection_centres(): array {
@@ -254,9 +258,10 @@ function shop_mail_buyer(array $o, string $what): void {
         default => ['', ''],
     };
     if ($subject === '') return;
-    $rows = implode('', array_map(static fn($l) => '<tr><td style="padding:4px 0">' . esc_html($l['name'] . ((string)$l['option'] !== '' ? ' (' . $l['option'] . ')' : '')) . ' × ' . (int)$l['qty'] . '</td><td style="padding:4px 0;text-align:right">₦' . number_format((int)$l['amount']) . '</td></tr>', shop_lines($o)));
+    // The lines table carries no inline styles (owner's rule for email bodies): plain table attributes only.
+    $rows = implode('', array_map(static fn($l) => '<tr><td>' . esc_html($l['name'] . ((string)$l['option'] !== '' ? ' (' . $l['option'] . ')' : '')) . ' × ' . (int)$l['qty'] . '</td><td align="right">₦' . number_format((int)$l['amount']) . '</td></tr>', shop_lines($o)));
     @send_mail((string)$o['email'], $subject, email_template(['title' => $subject, 'intro' => $intro,
-        'bodyHtml' => '<table style="width:100%;border-collapse:collapse;font-size:14px">' . $rows . '<tr><td style="padding-top:8px"><b>Total</b></td><td style="padding-top:8px;text-align:right"><b>₦' . number_format((int)$o['total'] + (int)$o['processingFee']) . '</b></td></tr></table>',
+        'bodyHtml' => '<table role="presentation" width="100%" cellpadding="4" cellspacing="0" border="0">' . $rows . '<tr><td><b>Total</b></td><td align="right"><b>₦' . number_format((int)$o['total'] + (int)$o['processingFee']) . '</b></td></tr></table>',
         'ctaUrl' => shop_order_url($o), 'ctaLabel' => 'See your order']));
 }
 
@@ -269,7 +274,9 @@ function admin_shop_products(array $p): array {
     $sold = [];
     foreach (db_all("SELECT items FROM shop_orders WHERE status IN ('paid','ready','completed') ORDER BY id DESC LIMIT 5000") as $o)
         foreach ((json_decode((string)$o['items'], true) ?: []) as $l) $sold[(string)$l['productId']] = ($sold[(string)$l['productId']] ?? 0) + (int)$l['qty'];
-    return ['ok' => true, 'categories' => SHOP_CATEGORIES, 'products' => array_map(static fn($r) => shop_product_public($r) + ['status' => (string)$r['status'],
+    return ['ok' => true, 'categories' => SHOP_CATEGORIES, 'statuses' => SHOP_PRODUCT_STATUSES,
+        // The bounds the save enforces, so the Control Room states them rather than typing them in.
+        'bounds' => ['priceMax' => SHOP_PRICE_MAX, 'optionsMax' => SHOP_OPTIONS_MAX, 'stockMax' => SHOP_STOCK_MAX], 'products' => array_map(static fn($r) => shop_product_public($r) + ['status' => (string)$r['status'],
         'sort' => (int)$r['sort'], 'sold' => $sold[(string)$r['productId']] ?? 0, 'updatedAt' => (string)$r['updatedAt']], $rows)];
 }
 function shop_slug(string $name, string $except = ''): string {
@@ -300,7 +307,7 @@ function admin_shop_product_save(array $p): array {
     $stockJson = '';
     if (array_key_exists('stock', $d) && $d['stock'] !== null && $d['stock'] !== '') {
         $in = (array)$d['stock']; $st = [];
-        foreach ($opts ?: [''] as $o) { $n = (int)($in[$o] ?? 0); if ($n < 0 || $n > 100000) return ['ok' => false, 'error' => 'bad_stock']; $st[$o] = $n; }
+        foreach ($opts ?: [''] as $o) { $n = (int)($in[$o] ?? 0); if ($n < 0 || $n > SHOP_STOCK_MAX) return ['ok' => false, 'error' => 'bad_stock']; $st[$o] = $n; }
         $stockJson = json_encode($st, JSON_UNESCAPED_UNICODE);
     }
     $row = ['name' => $name, 'category' => $cat, 'price' => $price, 'description' => $desc, 'imageUrl' => $img, 'options' => json_encode($opts, JSON_UNESCAPED_UNICODE),
@@ -336,7 +343,7 @@ function admin_shop_orders(array $p): array {
     $counts = [];
     foreach (db_all('SELECT status, COUNT(*) c FROM shop_orders' . ($scope !== null ? " WHERE fulfil = 'collect' AND centre IN (" . implode(',', array_fill(0, count($scope), '?')) . ')' : '') . ' GROUP BY status', $scope ?? []) as $c)
         $counts[(string)$c['status']] = (int)$c['c'];
-    return ['ok' => true, 'counts' => $counts, 'orders' => array_map(static fn($o) => shop_order_public($o) + ['email' => (string)$o['email'], 'phone' => (string)$o['phone'],
+    return ['ok' => true, 'counts' => $counts, 'max' => SHOP_LIST_MAX, 'orders' => array_map(static fn($o) => shop_order_public($o) + ['email' => (string)$o['email'], 'phone' => (string)$o['phone'],
         'address' => (string)$o['address'], 'createdAt' => (string)$o['createdAt'], 'adminNote' => (string)$o['note'], 'reference' => (string)$o['paystackRef']], $rows)];
 }
 /**
@@ -371,14 +378,15 @@ function admin_shop_order_set(array $p): array {
 }
 function admin_shop_settings(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
-    return ['ok' => true, 'settings' => shop_settings(), 'paystack' => paystack_secret() !== '', 'centres' => shop_collection_centres()];
+    return ['ok' => true, 'settings' => shop_settings(), 'paystack' => paystack_secret() !== '', 'centres' => shop_collection_centres(),
+        'bounds' => ['deliveryFeeMax' => SHOP_DELIVERY_FEE_MAX]];
 }
 function admin_shop_settings_set(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $d = is_array($p['data'] ?? null) ? $p['data'] : []; $cur = shop_settings(); $new = $cur;
     if (array_key_exists('enabled', $d)) $new['enabled'] = !empty($d['enabled']);
     if (array_key_exists('deliveryOn', $d)) $new['deliveryOn'] = !empty($d['deliveryOn']);
-    if (array_key_exists('deliveryFee', $d)) { $f = (int)$d['deliveryFee']; if ($f < 0 || $f > 100000) return ['ok' => false, 'error' => 'bad_fee']; $new['deliveryFee'] = $f; }
+    if (array_key_exists('deliveryFee', $d)) { $f = (int)$d['deliveryFee']; if ($f < 0 || $f > SHOP_DELIVERY_FEE_MAX) return ['ok' => false, 'error' => 'bad_fee']; $new['deliveryFee'] = $f; }
     foreach (['collectNote', 'deliveryNote'] as $k) if (array_key_exists($k, $d)) $new[$k] = trim(mb_substr((string)$d[$k], 0, 300));
     if ($new['enabled'] && !db_row("SELECT 1 FROM shop_products WHERE status = 'live' LIMIT 1")) return ['ok' => false, 'error' => 'nothing_live', 'detail' => 'Put at least one product on sale before opening the shop.'];
     setting_set('shop', $new, (string)$g['requester']['memberId']);

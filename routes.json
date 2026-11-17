@@ -186,6 +186,18 @@
   "index": false
  },
  {
+  "id": "shop",
+  "title": "Shop · Souvenirs and merchandise · NGG",
+  "desc": "NGG T-shirts, caps, mugs and souvenirs. Pay online with Paystack and collect at your centre, or have it delivered.",
+  "index": true
+ },
+ {
+  "id": "shop-order",
+  "title": "Your order · NGG shop",
+  "desc": "",
+  "index": false
+ },
+ {
   "id": "admin",
   "title": "Control Room · NGG",
   "desc": "",

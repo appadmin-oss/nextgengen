@@ -13,7 +13,7 @@
 
 const CR_GROUPS = [
   { h: null, items: ["home", "inbox", "support", "analytics"] },
-  { h: "People", items: ["members", "mentors", "mentorship", "money"] },
+  { h: "People", items: ["members", "mentors", "mentorship", "money", "shop"] },
   { h: "Programme", items: ["checkin", "summer", "learning", "events"] },
   { h: "Publishing", items: ["content", "community", "comms"] },
   { h: "System", items: ["settings", "wifi"] },
@@ -86,6 +86,14 @@ const CR_PAGES = {
     { id: "volpay", label: "Volunteer pay", desc: "What active volunteers earn for each programme day they are present and active, the rules that decide it, and paying each period.", cap: "fees" },
     { id: "conduct", label: "Conduct & fines", desc: "Every rule in one place, uploading fines, the compliance board, the policy and the programme calendars.", cap: ["fees", "people", "summer"] },
     { id: "donations", label: "Donations", desc: "Gifts received through Paystack and bank transfer.", cap: "settings" },
+  ] },
+  /* The NGG shop (domain/shop.php, cr-tab-shop.jsx). Two trusts, as the server
+     has them: orders and the shop's settings are money (`fees`); the catalogue
+     is what NGG shows (`content`). */
+  shop: { label: "Shop", icon: "storefront", tabs: [
+    { id: "shop-orders", label: "Orders", desc: "What people bought in the NGG shop: paid, ready, handed over or cancelled, and the buyer for each.", cap: "fees" },
+    { id: "shop-products", label: "Products", desc: "What the shop sells: price, sizes, stock, picture, and whether it is on sale.", cap: "content" },
+    { id: "shop-settings", label: "Settings", desc: "Open or close the shop, delivery and its fee, and what buyers are told about collecting.", cap: "fees" },
   ] },
   checkin: { label: "Check-in", icon: "qr-code", tabs: [
     { id: "checkin", label: "Desks", desc: "Live gate and desk scanners for today’s session.", cap: "checkin" },

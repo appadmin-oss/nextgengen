@@ -88,6 +88,11 @@ const ROUTES = [
   /* A family's joining invoice, by its private token (/pay/<token>). Own
      chrome, never indexed: the address is a capability, sent by email. */
   { id: "pay",          title: "Complete membership · NGG",                desc: "", chrome: "own", index: false, addressable: false },
+  /* The NGG shop (page-shop.jsx, domain/shop.php). /shop is the catalogue and
+     is public; an order's page (/shop/order/<token>) is the buyer's private
+     link — Paystack returns them to it — so it is never indexed. */
+  { id: "shop",         title: "Shop · Souvenirs and merchandise · NGG",   desc: "NGG T-shirts, caps, mugs and souvenirs. Pay online with Paystack and collect at your centre, or have it delivered." },
+  { id: "shop-order",   title: "Your order · NGG shop",                    desc: "", index: false, addressable: false },
 
   // ── Staff & operational surfaces (own chrome, never indexed) ─────────────
   { id: "admin",        title: "Control Room · NGG",                       desc: "", chrome: "own", index: false },
@@ -328,6 +333,8 @@ function pageFromPath() {
   }
   // A joining invoice: /pay/<token>.
   if (seg === "pay") return "pay";
+  // A shop order, by its private link: /shop/order/<token>. /shop itself is a plain route.
+  if (seg === "shop" && (window.location.pathname || "").replace(/^\/+|\/+$/g, "").split("/")[1] === "order") return "shop-order";
   // Volunteer service certificates: /cert/<certId> — public + printable.
   if (seg === "cert") return "certificate";
   // Official notices: /notice/<id>, and /notice (or /notices) for the list.
@@ -523,6 +530,8 @@ function App() {
     certificate: () => <CertificatePage/>,
     notice:     () => <NoticePage setPage={setPage}/>,
     pay: () => <MembershipPayPage setPage={setPage}/>,
+    shop: () => <ShopPage setPage={setPage}/>,
+    "shop-order": () => <ShopOrderPage setPage={setPage}/>,
     "journal-entry": () => <JournalEntryPage/>,
     legal:      () => <LegalPage setPage={setPage}/>,
   };

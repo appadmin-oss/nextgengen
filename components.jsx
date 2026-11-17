@@ -703,7 +703,7 @@ function TopNav({ page, setPage }) {
       { id: "club",    label: "NGGC",             desc: "Identity society",         icon: "◐" },
       { id: "book",    label: "The Anchor book", desc: "Field manual",              icon: "▢" },
     ]},
-    { id: "stay", kind: "mega", label: "The room", match: ["about","community","blog","media","volunteers","parents","contact","timetable"], items: [
+    { id: "stay", kind: "mega", label: "The room", match: ["about","community","blog","media","volunteers","parents","contact","timetable","shop","shop-order"], items: [
       { id: "about",      label: "About NGGC",      desc: "The 2040 formation brief", icon: "◆", badge: "2040" },
       { id: "community",  label: "Community",        desc: "The movement, live",      icon: "◈" },
       { id: "blog",       label: "The Journal",     desc: "Stories + essays",        icon: "✎" },
@@ -712,6 +712,7 @@ function TopNav({ page, setPage }) {
       { id: "volunteers", label: "Become a mentor", desc: "Volunteer with NGG",      icon: "✚" },
       { id: "parents",    label: "For parents",     desc: "Safeguarding · FAQ",      icon: "♡" },
       { id: "timetable",  label: "Timetable maker", desc: "Design yours, download it", icon: "▦", badge: "FREE" },
+      { id: "shop",       label: "Shop",            desc: "Souvenirs and merchandise", icon: "◇" },
       { id: "contact",    label: "Contact",         desc: "Talk to a human",         icon: "✆" },
     ]},
   ];
@@ -1113,6 +1114,7 @@ function Footer({ setPage, page }) {
         { label: "The Anchor book", page: "book" },
         { label: "The Journal", page: "blog" },
         { label: "Media room", page: "media" },
+        { label: "Shop", page: "shop" },
         { label: "Member dashboard", page: "dashboard", needsAuth: true },
       ],
     },
