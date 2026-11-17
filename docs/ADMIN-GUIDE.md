@@ -5244,3 +5244,75 @@ and did not sign out. A coordinator scoped to two centres only sees those two. S
     own Fees page.
   - Each opens as a page with **Print or save as PDF**; choose "Save as PDF" in the print dialogue. Printing a
     register or a statement is written to the audit log.
+
+## Running the shop (Control Room → Shop, and `/shop`)
+
+*Source: the owner's brief, 17 Nov 2026 ("Create a shop for NGG. To sell souvenirs and mercs"); the server is `api/_lib/domain/shop.php`, the pages `page-shop.jsx` and `src/modules/control/cr-tab-shop.jsx`.*
+
+The shop sells NGG souvenirs and merchandise to anyone, on `/shop`. Buyers pay online through Paystack and collect at their centre's desk, or have it delivered when delivery is on.
+
+### Who owns what
+
+| Part | Capability | Who usually holds it |
+|---|---|---|
+| **Products** (the catalogue: names, prices, sizes, stock, pictures) | `content` | The content team |
+| **Orders** (handing over, cancelling, refunds) | `fees` | The fees desk |
+| **Settings** (open or close the shop, delivery and its fee, the notes buyers read) | `fees` | The fees desk |
+
+`fees` is not part of the admin bundle; it is granted per person in Access & roles. A fees holder who is scoped to centres sees only the orders collected at their centres; deliveries belong to head office.
+
+### Before the first sale
+
+1. Paystack must be set up: Settings → API keys holds the Paystack secret key, and the Paystack webhook points at `/api/hooks/paystack.php`. Without it the shop page shows its products but says it cannot take orders.
+2. Buyers pay Paystack's charge on top of the price, worked out by the same settings as membership payments (Money → Dues & arrears → Amounts → Paying online). They see it before they press Pay.
+3. Collection is offered at every active NGG centre that is a building. NGG Online is never offered.
+
+### Add a product (content)
+
+1. Control Room → Shop → **Products** → **New product**.
+2. Fill in the name, category, price in whole naira and a description.
+3. Picture: paste an `https://` link, or upload a file.
+4. Sizes or options: type them separated by commas (`S, M, L, XL`). Leave the field empty for a product with no options, such as a mug.
+5. Stock: leave **Limited stock** off for no limit. Turn it on and give one number per option, in the same order (`10, 12, 8`). A size at 0 shows as sold out.
+6. Status: **Draft** is seen by staff only. **On sale** shows on `/shop` at once. **Retired** takes it off the page; past orders keep it.
+7. Press **Add product**. If the server refuses, the reason appears under the field concerned (for example, a product cannot go on sale at ₦0).
+
+To change a price or the stock later, open the product from the list and save. A price change never alters an order already placed; each order keeps the prices it was charged.
+
+### Open the shop (fees)
+
+1. Control Room → Shop → **Settings**.
+2. Turn **Shop open** on. The shop refuses to open until at least one product is on sale.
+3. If you deliver, turn **Offer delivery** on and set the **Delivery fee**.
+4. Check the two notes buyers read: **About collecting** and **About delivery**.
+5. Press **Save** in the bar that appears.
+
+To close the shop, turn **Shop open** off and save. `/shop` then says the shop is closed. Orders already paid are still handed over as normal.
+
+### Take an order through to collected (fees)
+
+1. A buyer pays. Paystack confirms it and the order appears under Shop → **Orders** as **Paid**. The buyer receives an email with the order number (`SHP-…`).
+2. Pack the order. Open it from the list to see its items, the buyer and where it goes.
+3. Press **Mark ready**. The buyer is emailed that it is ready to collect at their centre, or on its way.
+4. When the buyer collects it, check the order number they bring against the order. Press **Mark collected** (or **Mark delivered**). This cannot be undone.
+
+Several orders can be marked at once: tick them in the list and use **Mark ready** or **Mark completed**. Each order gets its own answer from the server. If some are refused (an order that is not paid yet, for example), the message says how many and why.
+
+The **Status** filter starts on **To hand over** (paid or ready). **Waiting for payment** orders were opened at Paystack but never paid. They hold no stock back and need no action. The list shows the newest 300 orders for each filter; search by order number, name or email to find an older one.
+
+### Cancel an order and refund it (fees)
+
+1. Open the order and press **Cancel order…**.
+2. For a paid order, write why (at least five characters). The stock goes back, the buyer is emailed that a refund follows, and the order's note reads "Refund due".
+3. Refund the payment in the Paystack dashboard, using the Paystack reference shown on the order.
+
+An unpaid order can be cancelled without a reason; nothing was charged.
+
+### When something is wrong
+
+| You see | It means | Do this |
+|---|---|---|
+| An order's note says "Paid while short of stock" | Two buyers paid for the last item at the same moment | Restock, or cancel the order and refund it |
+| A payment on the unapplied-payments record with an `NGGS-` reference | Paystack reported money that did not match an order, or that reached an order no longer waiting | Check it in Paystack; refund or apply it by hand |
+| "The order changed while you were looking" | Someone else moved the order first | It reloads; look again |
+| The shop page says it can't take orders | Paystack is not set up, or no centre takes collections and delivery is off | See "Before the first sale" |

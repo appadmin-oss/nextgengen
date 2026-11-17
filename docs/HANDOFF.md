@@ -7479,3 +7479,25 @@ Continuing the magical-fermi handoff.
 Also: `docs/CODEX-TEST-BRIEF.md` — standing instructions for a Codex session that runs and broadens the
 suites continuously on `codex/continuous-tests` and logs product defects in `docs/TEST-DEFECTS.md`
 instead of fixing them.
+
+## 17 Nov 2026 — The NGG shop: the pages (branch `claude/ngg-shop-pages`)
+
+Owner, 17 Nov 2026: "Create a shop for NGG. To sell souvenirs and mercs". The server came in `d0f498fa`
+(domain/shop.php, migration 237); this branch adds the pages and changes the server only where noted.
+- **`/shop`** (`page-shop.jsx`, ROUTES `shop`, indexable): catalogue, category filter in the URL, cart kept in
+  localStorage, checkout, and the server's quote (items, delivery, Paystack's charge, total) shown before Pay.
+  Hands off only to `checkout.paystack.com` (`nggPaystackUrlOk`).
+- **`/shop/order/<token>`** (ROUTES `shop-order`, noindex, not addressable; `pageFromPath` and `spa.php` both
+  know it): the return page. It has the server confirm the payment with Paystack, and shows the order number
+  and what happens next.
+- **Control Room → Shop** (`cr-tab-shop.jsx`, one entry in `CR_PAGES`, People group): Orders (`fees`),
+  Products (`content`), Settings (`fees`). The bulk steps use the v2 table bulk, not `runAdminAction`: the
+  latter answers through the v1 toast and dialog, which the v2 shell does not draw. Each order still gets its
+  own verdict from the server, and a partial run is reported as partial.
+- Server changes, each with a check: checkout terms carry `maxLines`/`maxQty`; admin ops carry `bounds`/`max`
+  (`SHOP_STOCK_MAX` and `SHOP_DELIVERY_FEE_MAX` are now named constants); the buyer email's lines table has no
+  inline style; spa.php serves an order link as its own noindex page.
+- `tests/shop.test.js` (in `test:all`) mocks Paystack through the existing `$GLOBALS['__paystack_mock']` seam,
+  loaded with `php -d auto_prepend_file`.
+- **dist/ was not rebuilt here.** esbuild was not installed in the environment. Run `node build.js` and commit
+  dist/ before deploying.
