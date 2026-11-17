@@ -7501,3 +7501,22 @@ Owner, 17 Nov 2026: "Create a shop for NGG. To sell souvenirs and mercs". The se
   loaded with `php -d auto_prepend_file`.
 - **dist/ was not rebuilt here.** esbuild was not installed in the environment. Run `node build.js` and commit
   dist/ before deploying.
+
+## 17 Nov 2026 — Shop upgrade researched, then stopped for a handoff
+
+The owner asked for a massive upgrade of the shop management in NGG and in Africa GATES, with research.
+Africa GATES was attached to this session and its latest branch (`claude/ai-assistance-judges-features-1ka4oz`)
+cloned. Two pieces of work were completed:
+- **Research:** shop management for a small volunteer team — inventory ledger, fulfilment, Paystack
+  refunds, POS, reports, Nigeria-specific points, and a "do not build" list.
+- **Audit:** of the Africa GATES shop.
+
+The owner then said: "Create a handoff for a new agent to continue. Stop!" No upgrade code was written in
+either repository. The Africa GATES worker was stopped before it committed anything, and its branch was
+never pushed.
+
+Everything needed to continue is in two places:
+- `docs/SHOP-MANAGEMENT-PLAN.md`: the research, NGG's build order, the Africa GATES audit and build order,
+  and the environment notes.
+- `HANDOFF-NEXT-AGENT.md`: every open thread, including online membership (the owner's new pricing:
+  no yearly fee, $10 with a mentor, $5 a course with an instructor) and the Labs exam licence slot.
