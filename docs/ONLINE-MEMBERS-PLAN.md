@@ -124,3 +124,25 @@ This is the survey of 17 Nov 2026, kept here so the phases can be checked agains
     Saturday formation, community homework peers
 - **Not filtered**
   - Labs, Learn, curriculum, and Community channels
+
+## Owner decisions, 17 Nov 2026 (later)
+
+> "The online members do not pay the yearly fee. Registration is $10 comes with a mentor... Each course
+> should be $5 with instructor. Upgrade the value of being an online member so the pay is actually worth it."
+
+- **No yearly membership fee** for online members. This replaces the open question above.
+- **$10 registration includes a mentor.** Read with the voice note's "$10 per month, prepaid monthly",
+  this is the monthly online membership, and the mentor is part of it. *To confirm with the owner:* is the
+  $10 a one-off registration or the monthly price?
+- **Each course is $5, with an instructor**, on top of membership. *To confirm:* is that $5 per course,
+  per month, or once per course?
+- **Make it worth paying for.** The value case to build in phase 2 onward:
+  - a named mentor and a monthly 1:1 check-in
+  - a live online Saturday session
+  - an instructor per course, who gives feedback on submitted work
+  - the Labs (Maths, Physics, English) with exams and certificates
+  - verifiable certificates per course
+  - the journal, with mentor replies
+  - Community
+  - a progress report to the family every month
+  - a digital member card
