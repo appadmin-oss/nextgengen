@@ -1,6 +1,6 @@
 {
   "buildId": "172ba4c228",
-  "builtAt": "2026-11-14T17:02:08.987Z",
+  "builtAt": "2026-11-17T08:00:45.663Z",
   "bundle": {
     "file": "app.206341f98c.min.js",
     "bytes": 2341066,
@@ -87,5 +87,5 @@
     "api-client.js": "api-client.3bc8bd7cdd.js",
     "outbox.js": "outbox.042a8c9122.js"
   },
-  "node": "v22.22.0"
+  "node": "v22.23.4"
 }

@@ -123,9 +123,9 @@ function mlb_early_stage1(): array { return [
             $said = implode(', ', range($a, $a + $b - 1));
             return mlb_mcq($r, $who . ' works out $' . $a . ' + ' . $b . '$ by counting on. ' . $who . ' says “' . $said . '” and answers ' . ($a + $b - 1) . '. What went wrong?',
                 $who . ' counted ' . $a . ' as the first step. Counting on starts at ' . ($a + 1) . '.',
-                [['Nothing — ' . ($a + $b - 1) . ' is right', 'Check: $' . $a . ' + ' . $b . ' = ' . ($a + $b) . '$.'],
-                 [$who . ' should have counted on ' . $a . ' from ' . $b, 'Counting on from either number gives the same total. That is not the mistake.'],
-                 [$who . ' counted one step too many', 'The answer is one too SMALL, so a step was lost, not added.']],
+                [['Nothing — ' . $who . ' said ' . $b . ' numbers, so ' . ($a + $b - 1) . ' is right', 'Check: $' . $a . ' + ' . $b . ' = ' . ($a + $b) . '$.'],
+                 [$who . ' should have started at ' . $b . ' and counted on ' . $a . ' instead', 'Counting on from either number gives the same total. That is not the mistake.'],
+                 [$who . ' counted one step too many, so the answer is too big', 'The answer is one too SMALL, so a step was lost, not added.']],
                 ['Counting on ' . $b . ' from ' . $a . ' means saying the NEXT ' . $b . ' numbers: ' . implode(', ', range($a + 1, $a + $b)) . '.', 'So $' . $a . ' + ' . $b . ' = ' . ($a + $b) . '$. Saying ' . $a . ' first made the answer one too small.'],
                 'Say the numbers yourself. Which number should you say first?', 'reasoning', 40); },
         static function (MlbRng $r) { $a = $r->int(3, 9); $b = $r->int(2, min(9, 14 - $a)); $same = $r->int(0, 2) === 0;   // 5 ≤ a + b ≤ 14, so an equal pair always exists
@@ -188,9 +188,9 @@ function mlb_early_stage1(): array { return [
         static function (MlbRng $r) { $th = $r->int(2, 9); $t = $r->int(1, 9); $n = $th * 1000 + $t * 10; $bad = $th * 1000 + $t * 100; [$who] = mlb_early_names($r, 1);
             return mlb_mcq($r, $who . ' writes “' . mlb_words($n) . '” in figures as ' . mlb_p($bad) . '. What went wrong?',
                 'The ' . $t . ' belongs in the tens place. It should be ' . mlb_p($n) . '.',
-                [['Nothing — ' . mlb_p($bad) . ' is right', mlb_p($bad) . ' is “' . mlb_words($bad) . '”.'],
-                 ['It should be ' . mlb_p($th * 100 + $t * 10), 'That has no thousands at all.'],
-                 ['It should be ' . mlb_p($th * 10000 + $t * 10), 'That has too many digits — it is more than ten thousand.']],
+                [['Nothing — the ' . $t . ' is in the right place in ' . mlb_p($bad), mlb_p($bad) . ' is “' . mlb_words($bad) . '”.'],
+                 ['The ' . $th . ' belongs in the hundreds place. It should be ' . mlb_p($th * 100 + $t * 10) . '.', 'That has no thousands at all.'],
+                 ['A zero is missing after the ' . $th . '. It should be ' . mlb_p($th * 10000 + $t * 10) . '.', 'That has too many digits — it is more than ten thousand.']],
                 ['“' . mlb_words($n) . '” is ' . $th . ' thousands, 0 hundreds, ' . $t . ' tens and 0 ones.', 'So it is ' . mlb_p($n) . '. ' . $who . ' put the ' . $t . ' in the hundreds place.'],
                 'Say ' . mlb_p($bad) . ' out loud. Is it the same number?', 'reasoning', 40); },
         static function (MlbRng $r) { $vals = [];
@@ -214,9 +214,9 @@ function mlb_early_stage1(): array { return [
             $said = implode(', ', range($n, $n - $k + 1));
             return mlb_mcq($r, $who . ' counts back ' . $k . ' from ' . $n . ' and says “' . $said . '”. ' . $who . ' answers ' . ($n - $k + 1) . '. What went wrong?',
                 $who . ' counted ' . $n . ' as a step. Counting back ' . $k . ' from ' . $n . ' lands on ' . ($n - $k) . '.',
-                [['Nothing — ' . ($n - $k + 1) . ' is right', 'Check: $' . $n . ' - ' . $k . ' = ' . ($n - $k) . '$.'],
-                 [$who . ' should have counted up', '“Count back” means the numbers go down.'],
-                 [$who . ' counted one step too many', 'The answer is one too BIG, so a step was missed, not added.']],
+                [['Nothing — ' . $who . ' said ' . $k . ' numbers, so ' . ($n - $k + 1) . ' is right', 'Check: $' . $n . ' - ' . $k . ' = ' . ($n - $k) . '$.'],
+                 [$who . ' should have counted up from ' . $n . ' instead of down', '“Count back” means the numbers go down.'],
+                 [$who . ' counted one step too many, so the answer is too small', 'The answer is one too BIG, so a step was missed, not added.']],
                 ['The first step back from ' . $n . ' is ' . ($n - 1) . '.', 'The ' . $k . ' steps are ' . implode(', ', range($n - 1, $n - $k)) . ': you land on ' . ($n - $k) . '.'],
                 'Count back yourself. Which number do you say first?', 'reasoning', 40); },
         static function (MlbRng $r) { $s = $r->int(10, 60); $i = $r->int(0, 4); $k = $r->int(3, 10 - $i);
@@ -327,8 +327,8 @@ function mlb_early_stage1(): array { return [
                 ['The line goes from ' . $start . ' to ' . ($start + 10 * $step) . ' in 10 equal steps, so each mark is ' . $step . '.', 'The arrow is ' . $t . ' marks along: $' . $start . ' + ' . $t . ' \\times ' . $step . ' = ' . $key . '$.'],
                 'How much is one mark worth?', 'procedure', 35, ['diagram' => ['type' => 'numberline', 'start' => $start, 'step' => $step, 'count' => 10, 'arrow' => $t, 'labels' => [0, 10]]]); },
         static function (MlbRng $r) { $T = 10 * $r->int(3, 9); $d1 = $r->int(1, 9); $d2 = $r->int(0, 3) === 0 ? $d1 : $r->int(1, 9); if ($d1 !== $d2 && $d1 === $d2) $d2++;
-            $x = $T - $d1; $y = $T + $d2; $right = $d1 === $d2 ? 'They are the same distance from ' . $T : (string)($d1 < $d2 ? $x : $y);
-            $all = [(string)$x, (string)$y, 'They are the same distance from ' . $T];
+            $x = $T - $d1; $y = $T + $d2; $right = $d1 === $d2 ? 'Neither is closer' : ($d1 < $d2 ? $x : $y) . ' is closer to ' . $T;
+            $all = [$x . ' is closer to ' . $T, $y . ' is closer to ' . $T, 'Neither is closer'];
             return mlb_mcq($r, 'Which number is closer to ' . $T . ': ' . $x . ' or ' . $y . '?', $right,
                 array_map(static fn($o) => [$o, $x . ' is ' . $d1 . ' away from ' . $T . ' and ' . $y . ' is ' . $d2 . ' away.'], array_values(array_filter($all, static fn($o) => $o !== $right))),
                 [$x . ' is ' . $d1 . ' below ' . $T . '. ' . $y . ' is ' . $d2 . ' above it.', $d1 === $d2 ? 'Both are ' . $d1 . ' away.' : ($d1 < $d2 ? $x : $y) . ' is closer.'],
@@ -385,9 +385,9 @@ function mlb_early_stage1(): array { return [
         static function (MlbRng $r) { $th = $r->int(2, 9); $t = $r->int(1, 9); $o = $r->int(1, 9); $n = 1000 * $th + 10 * $t + $o; [$who] = mlb_early_names($r, 1);
             return mlb_mcq($r, $who . ' writes ' . mlb_p($n) . ' as $' . mlb_n(1000 * $th) . ' + ' . (100 * $t) . ' + ' . $o . '$. What went wrong?',
                 'The ' . $t . ' is ' . $t . ' tens: ' . mlb_p($n) . ' $= ' . mlb_n(1000 * $th) . ' + ' . (10 * $t) . ' + ' . $o . '$',
-                [['Nothing — it is right', 'Add it up: $' . mlb_n(1000 * $th) . ' + ' . (100 * $t) . ' + ' . $o . ' = ' . mlb_n(1000 * $th + 100 * $t + $o) . '$, not ' . mlb_p($n) . '.'],
-                 ['It should be $' . $th . ' + ' . $t . ' + ' . $o . '$', 'The ' . $th . ' is ' . $th . ' thousands, not ' . $th . ' ones.'],
-                 ['It should be $' . mlb_n(1000 * $th) . ' + ' . (100 * $t) . ' + ' . (10 * $o) . '$', 'That moves the ' . $o . ' as well. The ' . $o . ' is in the ones place.']],
+                [['Nothing — the three parts add back to ' . mlb_p($n), 'Add it up: $' . mlb_n(1000 * $th) . ' + ' . (100 * $t) . ' + ' . $o . ' = ' . mlb_n(1000 * $th + 100 * $t + $o) . '$, not ' . mlb_p($n) . '.'],
+                 ['The ' . $th . ' is ' . $th . ' ones: it should be $' . $th . ' + ' . $t . ' + ' . $o . '$', 'The ' . $th . ' is ' . $th . ' thousands, not ' . $th . ' ones.'],
+                 ['The ' . $o . ' is ' . $o . ' tens: it should be $' . mlb_n(1000 * $th) . ' + ' . (100 * $t) . ' + ' . (10 * $o) . '$', 'That moves the ' . $o . ' as well. The ' . $o . ' is in the ones place.']],
                 [mlb_p($n) . ' has ' . $th . ' thousands, 0 hundreds, ' . $t . ' tens and ' . $o . ' ones.', 'So it is $' . mlb_n(1000 * $th) . ' + ' . (10 * $t) . ' + ' . $o . '$.'],
                 'Which place is the 0 in?', 'reasoning', 40); },
     ],
@@ -521,9 +521,9 @@ function mlb_early_stage2(): array { return [
                 'Find how many are in one first.', 'application', 40); },
         static function (MlbRng $r) { $k = $r->int(3, 8); $m = $r->int(3, 8); [$who] = mlb_early_names($r, 1);
             return mlb_mcq($r, $who . ' says ' . $k . ' groups of ' . $m . ' is ' . ($k + $m) . '. What went wrong?', $who . ' added ' . $k . ' and ' . $m . ' instead of multiplying',
-                [['Nothing — it is right', $k . ' groups of ' . $m . ' is $' . $k . ' \\times ' . $m . ' = ' . ($k * $m) . '$.'],
-                 [$who . ' multiplied ' . $k . ' by ' . $k, 'That would give ' . ($k * $k) . ', not ' . ($k + $m) . '.'],
-                 [$who . ' counted one group too many', 'One more group would be ' . (($k + 1) * $m) . '.']],
+                [['Nothing — ' . $k . ' groups of ' . $m . ' really is ' . ($k + $m), $k . ' groups of ' . $m . ' is $' . $k . ' \\times ' . $m . ' = ' . ($k * $m) . '$.'],
+                 [$who . ' multiplied ' . $k . ' by ' . $k . ' instead of ' . $k . ' by ' . $m, 'That would give ' . ($k * $k) . ', not ' . ($k + $m) . '.'],
+                 [$who . ' counted one group of ' . $m . ' too many', 'One more group would be ' . (($k + 1) * $m) . '.']],
                 [$k . ' groups of ' . $m . ' means ' . $m . ' added ' . $k . ' times.', 'That is $' . $k . ' \\times ' . $m . ' = ' . ($k * $m) . '$. ' . ($k + $m) . ' is $' . $k . ' + ' . $m . '$.'],
                 'Draw ' . $k . ' groups with ' . $m . ' in each.', 'reasoning', 35); },
         static function (MlbRng $r) { $rows = $r->int(2, 6); do { $cols = $r->int(3, 8); } while ($cols === $rows);
@@ -622,9 +622,9 @@ function mlb_early_stage2(): array { return [
         static function (MlbRng $r) { $d = $r->int(4, 8); $q = $r->int(3, 8); $rem = $r->int(1, $d - 1); $n = $d * $q + $rem; [$who] = mlb_early_names($r, 1);
             return mlb_mcq($r, $who . ' says $' . $n . ' \\div ' . $d . ' = ' . ($q - 1) . '$ remainder ' . ($rem + $d) . '. What is wrong?',
                 'The remainder is bigger than ' . $d . ', so another ' . $d . ' fits: it is ' . $q . ' remainder ' . $rem,
-                [['Nothing — it is right', 'A remainder of ' . ($rem + $d) . ' still holds another ' . $d . '.'],
-                 ['It should be ' . ($q - 1) . ' remainder ' . $rem, 'Check: $' . ($q - 1) . ' \\times ' . $d . ' + ' . $rem . ' = ' . (($q - 1) * $d + $rem) . '$, not ' . $n . '.'],
-                 ['It should be ' . ($q + 1) . ' with no remainder', '$' . ($q + 1) . ' \\times ' . $d . ' = ' . (($q + 1) * $d) . '$, which is too big.']],
+                [['Nothing — any remainder is fine as long as it is smaller than ' . $n, 'A remainder of ' . ($rem + $d) . ' still holds another ' . $d . '.'],
+                 ['The ' . ($q - 1) . ' is right, but the remainder should be ' . $rem . ', not ' . ($rem + $d), 'Check: $' . ($q - 1) . ' \\times ' . $d . ' + ' . $rem . ' = ' . (($q - 1) * $d + $rem) . '$, not ' . $n . '.'],
+                 ['The remainder is too big, so round up: it is ' . ($q + 1) . ' with no remainder', '$' . ($q + 1) . ' \\times ' . $d . ' = ' . (($q + 1) * $d) . '$, which is too big.']],
                 ['A remainder must be less than the number you divide by.', '$' . $q . ' \\times ' . $d . ' = ' . ($q * $d) . '$ and $' . $n . ' - ' . ($q * $d) . ' = ' . $rem . '$.'],
                 'Is the remainder smaller than ' . $d . '?', 'reasoning', 40); },
     ],
@@ -767,9 +767,9 @@ function mlb_early_stage3(): array { return [
         static function (MlbRng $r) { $a = $r->int(4, 12); $b = $r->int(2, $a - 1); [$who] = mlb_early_names($r, 1);
             return mlb_mcq($r, $who . ' says $-' . $a . ' + ' . $b . ' = -' . ($a + $b) . '$. What went wrong?',
                 $who . ' added ' . $a . ' and ' . $b . ' and kept the minus. Moving up ' . $b . ' from $-' . $a . '$ gives $-' . ($a - $b) . '$.',
-                [['Nothing — it is right', 'Adding ' . $b . ' moves UP the number line, towards 0.'],
-                 ['It should be $' . ($a + $b) . '$', 'The start is below zero, and adding ' . $b . ' does not reach 0.'],
-                 ['It should be $' . ($a - $b) . '$', 'Close: the size is ' . ($a - $b) . ', but it is still below zero.']],
+                [['Nothing — adding ' . $b . ' to a negative number makes it more negative', 'Adding ' . $b . ' moves UP the number line, towards 0.'],
+                 ['The minus should go: a negative plus a positive is positive, so it is $' . ($a + $b) . '$', 'The start is below zero, and adding ' . $b . ' does not reach 0.'],
+                 [$who . ' should have subtracted: ' . $a . ' take away ' . $b . ' leaves ' . ($a - $b) . ', so it is $' . ($a - $b) . '$', 'Close: the size is ' . ($a - $b) . ', but it is still below zero.']],
                 ['Start at $-' . $a . '$ and move ' . $b . ' to the right.', 'You land on $-' . ($a - $b) . '$.'],
                 'Does adding a positive number move you up or down?', 'reasoning', 40); },
     ],
@@ -791,9 +791,9 @@ function mlb_early_stage3(): array { return [
             $tex = $div ? '(-' . ($a * $b) . ') \\div (-' . $b . ') = -' . $a : '(-' . $a . ') \\times (-' . $b . ') = -' . ($a * $b);
             $true = $div ? $a : $a * $b;
             return mlb_mcq($r, $who . ' writes $' . $tex . '$. What is wrong?', 'Two negatives give a positive: the answer is ' . $true,
-                [['Nothing — it is right', 'Two negative numbers ' . ($div ? 'divided' : 'multiplied') . ' give a positive answer.'],
-                 ['The answer should be $-' . ($div ? $a * $b * $b : $a + $b) . '$', 'Work out the size first: $' . ($div ? ($a * $b) . ' \\div ' . $b : $a . ' \\times ' . $b) . ' = ' . $true . '$.'],
-                 ['The answer should be 0', 'The negatives do not cancel to zero; they make the answer positive.']],
+                [['Nothing — two negatives ' . ($div ? 'divided' : 'multiplied') . ' stay negative', 'Two negative numbers ' . ($div ? 'divided' : 'multiplied') . ' give a positive answer.'],
+                 [($div ? 'Multiply' : 'Add') . ' the sizes and keep the sign: the answer is $-' . ($div ? $a * $b * $b : $a + $b) . '$', 'Work out the size first: $' . ($div ? ($a * $b) . ' \\div ' . $b : $a . ' \\times ' . $b) . ' = ' . $true . '$.'],
+                 ['The two negatives cancel each other out, so the answer is 0', 'The negatives do not cancel to zero; they make the answer positive.']],
                 ['Same signs give a positive answer.', 'So the answer is $' . $true . '$.'],
                 'Same signs or different signs?', 'reasoning', 35); },
         static function (MlbRng $r) { $c = $r->int(0, 1); $a = $r->int(2, 6); $h = $r->int(3, 8);
@@ -880,9 +880,9 @@ function mlb_early_stage3(): array { return [
             $fr = static fn($p, $q) => '\\frac{' . $p . '}{' . $q . '}';
             return mlb_mcq($r, $who . ' says $' . $fr($a, $b) . ' = ' . $fr($a + $k, $b + $k) . '$ because ' . $k . ' was added to the top and the bottom. What is wrong?',
                 'Adding the same number to top and bottom changes the fraction. Multiply top and bottom instead.',
-                [['Nothing — it is right', '$' . $fr($a, $b) . '$ is about ' . mlb_dec(round($a / $b, 2)) . ' but $' . $fr($a + $k, $b + $k) . '$ is about ' . mlb_dec(round(($a + $k) / ($b + $k), 2)) . '.'],
-                 ['Only the top should change', 'Changing only the top changes the fraction too.'],
-                 [$who . ' should have taken ' . $k . ' away instead', 'Taking away the same number also changes the fraction.']],
+                [['Nothing — doing the same thing to the top and the bottom always keeps a fraction equal', '$' . $fr($a, $b) . '$ is about ' . mlb_dec(round($a / $b, 2)) . ' but $' . $fr($a + $k, $b + $k) . '$ is about ' . mlb_dec(round(($a + $k) / ($b + $k), 2)) . '.'],
+                 ['Only the top should change: the bottom says how many parts the whole is cut into', 'Changing only the top changes the fraction too.'],
+                 [$who . ' should have taken ' . $k . ' away from the top and the bottom instead, to simplify it', 'Taking away the same number also changes the fraction.']],
                 ['Equivalent fractions come from multiplying (or dividing) top and bottom by the same number.', 'For example $' . $fr($a, $b) . ' = ' . $fr(2 * $a, 2 * $b) . '$, but $' . $fr($a, $b) . ' \\ne ' . $fr($a + $k, $b + $k) . '$.'],
                 'Draw both fractions as bars. Are they the same size?', 'reasoning', 40); },
         static function (MlbRng $r) { do { $b = $r->int(3, 9); $a = $r->int(1, $b - 1); } while (mlb_gcd($a, $b) !== 1); $m = $r->int(2, 6);
@@ -925,9 +925,9 @@ function mlb_early_stage3(): array { return [
         static function (MlbRng $r) { $a = $r->int(3, 9); $b = $r->int(11, 10 * $a - 1); if ($b % 10 === 0) $b++; [$who] = mlb_early_names($r, 1);
             return mlb_mcq($r, $who . ' says 0.' . $a . ' is smaller than 0.' . $b . ' because ' . $a . ' is smaller than ' . $b . '. Is ' . $who . ' right?',
                 'No — 0.' . $a . ' is 0.' . $a . '0, which is more than 0.' . $b,
-                [['Yes — ' . $b . ' is bigger than ' . $a, 'The digits after the point are not whole numbers: compare the tenths first.'],
-                 ['Yes — 0.' . $b . ' has more digits', 'More digits does not make a decimal bigger.'],
-                 ['No — they are equal', 'They are different numbers.']],
+                [['Yes — ' . $b . ' hundredths is more than ' . $a . ' tenths', 'The digits after the point are not whole numbers: compare the tenths first.'],
+                 ['Yes — 0.' . $b . ' has more digits, so it is the bigger one', 'More digits does not make a decimal bigger.'],
+                 ['No — 0.' . $a . ' and 0.' . $b . ' are worth the same', 'They are different numbers.']],
                 ['0.' . $a . ' has ' . $a . ' tenths. 0.' . $b . ' has only ' . intdiv($b, 10) . ' tenths.', 'So 0.' . $a . ' is bigger. Writing 0.' . $a . '0 makes it easy to see.'],
                 'Compare the tenths digits.', 'reasoning', 35); },
         static function (MlbRng $r) { $c = $r->int(0, 1); $w = $r->int(1, 9);
@@ -1031,9 +1031,9 @@ function mlb_early_stage4(): array { return [
                 ['The distance is $' . $s1 . ' \\times ' . $t1 . ' = ' . $d . '$ km.', 'At ' . $s2 . ' km/h: $' . $d . ' \\div ' . $s2 . ' = ' . mlb_dec($d / $s2) . '$ hours. Faster means less time.'],
                 'Find the distance first. It does not change.', 'application', 45); },
         static function (MlbRng $r) { $sets = [
-                ['More workers, less time to finish the same job', [['More loaves of bread, more money to pay', 'Both go up together: that is DIRECT proportion.'], ['More hours worked, more pay', 'Both go up together: that is direct proportion.'], ['Taller children, bigger shoe sizes', 'These often go up together, but not in exact proportion.']]],
-                ['A faster car, a shorter time for the same trip', [['A longer trip, more fuel used', 'Both go up together: direct proportion.'], ['More books, a heavier bag', 'Both go up together: direct proportion.'], ['More learners, more chairs needed', 'Both go up together: direct proportion.']]],
-                ['More children sharing a cake, a smaller piece each', [['More eggs, a bigger cake', 'Both go up together: direct proportion.'], ['More days, more water drunk', 'Both go up together: direct proportion.'], ['More pages, a thicker book', 'Both go up together: direct proportion.']]]];
+                ['More workers, less time to finish the same job', [['More loaves of bread, more money to pay', 'Both go up together: that is DIRECT proportion.'], ['More hours worked in a week, more pay', 'Both go up together: that is direct proportion.'], ['Taller children, bigger shoe sizes to buy', 'These often go up together, but not in exact proportion.']]],
+                ['A faster car, a shorter time for the same trip', [['A longer trip in the same car, more fuel used', 'Both go up together: direct proportion.'], ['More books packed in, a heavier school bag', 'Both go up together: direct proportion.'], ['More learners in the hall, more chairs needed', 'Both go up together: direct proportion.']]],
+                ['More children sharing a cake, a smaller piece each', [['More eggs in the mixture, a bigger cake to share', 'Both go up together: direct proportion.'], ['More hot days, more water drunk by the family', 'Both go up together: direct proportion.'], ['More pages in it, a thicker and heavier book', 'Both go up together: direct proportion.']]]];
             [$right, $w] = $r->pick($sets);
             return mlb_mcq($r, 'Which of these is an example of INVERSE proportion?', $right, $w,
                 ['In inverse proportion, when one quantity goes up the other goes down, and their product stays the same.', $right . ': one goes up, the other goes down.'],
@@ -1074,8 +1074,8 @@ function mlb_early_stage4(): array { return [
             [$from, $to, $right, $bad, $fact] = $c === 0 ? ['kg', 'g', $x * 1000, $x * 100, '1 kg = 1,000 g'] : ['m', 'cm', $x * 100, $x * 10, '1 m = 100 cm'];
             return mlb_mcq($r, $who . ' changes ' . mlb_dec($x) . ' ' . $from . ' to ' . $to . ' and gets ' . mlb_p($bad) . ' ' . $to . '. What went wrong?',
                 $who . ' used the wrong factor: ' . $fact . ', so it is ' . mlb_p($right) . ' ' . $to,
-                [['Nothing — it is right', 'Check: ' . $fact . '.'], [$who . ' should have divided', 'A big unit to a small unit makes the number BIGGER: multiply.'],
-                 ['It should be ' . mlb_p($right * 10) . ' ' . $to, 'That multiplies by ten times too much.']],
+                [['Nothing — there are 10 ' . $to . ' in every ' . $from . ', so it is right', 'Check: ' . $fact . '.'], [$who . ' should have divided, because ' . $to . ' are smaller than ' . $from, 'A big unit to a small unit makes the number BIGGER: multiply.'],
+                 ['The method is right but a zero is missing: it is ' . mlb_p($right * 10) . ' ' . $to, 'That multiplies by ten times too much.']],
                 [$fact . '.', '$' . mlb_dec($x) . ' \\times ' . ($c === 0 ? '1{,}000' : '100') . ' = ' . mlb_n($right) . '$ ' . $to . '.'],
                 'How many ' . $to . ' make one ' . $from . '?', 'reasoning', 35); },
     ],
@@ -1158,9 +1158,9 @@ function mlb_early_stage4(): array { return [
             if ($r->int(0, 2) === 0) { $r2 = $t1; $t2 = $r1; if ($r2 === $r1) { $r2++; $t2 = $t1; } }
             $i1 = $P * $r1 * $t1 / 100; $i2 = $P * $r2 * $t2 / 100;
             $A = $r1 . '% for ' . $t1 . ' years'; $B = $r2 . '% for ' . $t2 . ' years';
-            $right = $i1 === $i2 ? 'Both earn the same' : ($i1 > $i2 ? $A : $B);
+            $right = $i1 === $i2 ? 'The same amount' : ($i1 > $i2 ? $A : $B);
             $why = 'Work out both: ₦' . mlb_p($i1) . ' and ₦' . mlb_p($i2) . '.';
-            $wrong = []; foreach ([$A, $B, 'Both earn the same'] as $o) if ($o !== $right) $wrong[] = [$o, $why];
+            $wrong = []; foreach ([$A, $B, 'The same amount'] as $o) if ($o !== $right) $wrong[] = [$o, $why];
             return mlb_mcq($r, '₦' . mlb_p($P) . ' is saved at simple interest. Which earns more interest: ' . $A . ', or ' . $B . '?', $right, $wrong,
                 ['Simple interest is $\\frac{P \\times R \\times T}{100}$, and P is the same, so compare $R \\times T$.', '$' . $r1 . ' \\times ' . $t1 . ' = ' . ($r1 * $t1) . '$ and $' . $r2 . ' \\times ' . $t2 . ' = ' . ($r2 * $t2) . '$. ' . $why],
                 'Compare rate × time for each.', 'reasoning', 40); },
@@ -1204,9 +1204,9 @@ function mlb_early_stage4(): array { return [
         static function (MlbRng $r) { $n = $r->int(3, 6); $p = 50 * $r->int(4, 12); $pay = 1000 * $r->int(3, 5); [$who] = mlb_early_names($r, 1);
             return mlb_mcq($r, $who . ' buys ' . $n . ' notebooks at ₦' . $p . ' each and pays with ₦' . mlb_p($pay) . '. Which plan finds the change?',
                 'Multiply ' . $n . ' by ₦' . $p . ', then take the answer from ₦' . mlb_p($pay),
-                [['Take ₦' . $p . ' from ₦' . mlb_p($pay) . ', then multiply by ' . $n, 'The cost of ALL the notebooks must come off, not one.'],
-                 ['Add ' . $n . ' and ₦' . $p . ', then take it from ₦' . mlb_p($pay), 'Adding the number of notebooks to the price does not give the cost.'],
-                 ['Divide ₦' . mlb_p($pay) . ' by ' . $n, 'That shares the money, it does not find the change.']],
+                [['Take ₦' . $p . ' from ₦' . mlb_p($pay) . ', then multiply what is left by ' . $n, 'The cost of ALL the notebooks must come off, not one.'],
+                 ['Add ' . $n . ' and ₦' . $p . ', then take the answer from ₦' . mlb_p($pay), 'Adding the number of notebooks to the price does not give the cost.'],
+                 ['Divide ₦' . mlb_p($pay) . ' by ' . $n . ', then take ₦' . $p . ' from the answer', 'That shares the money, it does not find the change.']],
                 ['Step 1: the cost is $' . $n . ' \\times ' . $p . ' = ' . ($n * $p) . '$ naira.', 'Step 2: the change is $' . mlb_n($pay) . ' - ' . ($n * $p) . ' = ' . mlb_n($pay - $n * $p) . '$ naira.'],
                 'What do you need to know before you can find the change?', 'concept', 40); },
         static function (MlbRng $r) { [$p, $q] = mlb_early_names($r, 2); $d = 500 * $r->int(1, 6); $small = 500 * $r->int(2, 10); $tot = 2 * $small + $d;

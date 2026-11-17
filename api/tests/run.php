@@ -38552,6 +38552,47 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $longest <= $chance + 0.05 * $n && $shortest <= $chance + 0.05 * $n);
 })();
 
+/* ── The Maths length tell (17 Nov 2026). Maths was the one Lab not yet measured: 57 forms gave the answer away by
+   length (a full explanation beside bare stubs, and "Why is line k true?" reasons of very different lengths). Length is
+   VISIBLE length (mlb_vis_len), since KaTeX draws \frac{dy}{dx} small. Sampled like Physics: a form fails when 30%+ of
+   its distinct questions have a right answer clearly the longest option. ── */
+(function () {
+    lab_use('maths'); $n = 0; $longest = 0; $shortest = 0; $chance = 0.0; $flag = [];
+    foreach (mlb_stages() as $sg) foreach ($sg['comps'] as $c) foreach (array_keys(mlb_forms_of($c)) as $f) {
+        $seen = []; $fq = 0; $fc = 0;
+        for ($sd = 1; $sd <= 30; $sd++) {
+            $it = mlb_item($c, $f, $sd * 7919 + 13);
+            if (!$it || !in_array($it['kind'], ['mcq', 'error'], true) || !is_array($it['options'] ?? null)) continue;
+            $o = array_map(static fn($x) => is_string($x) ? $x : json_encode($x, JSON_UNESCAPED_UNICODE), $it['options']); $k = (int)$it['key'];
+            $h = md5(json_encode([$it['stem'], $o])); if (isset($seen[$h])) continue; $seen[$h] = 1;
+            $l = array_map('mlb_vis_len', $o); $kl = $l[$k]; unset($l[$k]); if (!$l) continue; $mo = max($l); $mn = min($l);
+            $n++; $fq++; $chance += 1 / count($o); if ($kl > $mo) $longest++; if ($kl < $mn) $shortest++;
+            if ($kl > $mo && $kl >= 1.25 * $mo && $kl - $mo >= 4) $fc++;
+        }
+        if ($fq && $fc / $fq >= 0.3) $flag[] = "$c f$f";
+    }
+    $pc = static fn($x) => round(100 * $x / max(1, $n));
+    chk('maths · no form gives its answer away by making it clearly the longest option' . ($flag ? ' (' . implode(', ', array_slice($flag, 0, 6)) . ')' : ''), $flag === []);
+    chk('maths · “pick the longest” is no better than chance (' . $pc($longest) . '% vs ' . $pc($chance) . '%), and “pick the shortest” is not a new tell (' . $pc($shortest) . '%)',
+        $longest <= $chance + 0.05 * $n && $shortest <= $chance + 0.05 * $n);
+    /* The why-question swap: the right reason stays the answer, the swapped-in reason comes from ANOTHER argument
+       and never shares this argument's opening words, and nothing changes when there is no tell to fix. */
+    $why = mlb_why(); $ids = array_keys($why); $sw = 0; $okSwap = true; $okKeep = true;
+    foreach ($ids as $id) { $st = $why[$id][2]; $own = array_column($st, 1);
+        foreach ($st as $k => $line) { $wr = []; foreach ($st as $j => $x) if ($j !== $k) $wr[] = [$x[1], 'w']; $wr = array_slice($wr, 0, 3);
+            $out = mlb_why_even_lengths($id, $line[1], $wr);
+            if ($out === $wr) continue; $sw++;
+            $new = array_values(array_diff(array_column($out, 0), array_column($wr, 0)));
+            if (count($new) !== 1 || in_array($new[0], $own, true) || count($out) !== count($wr)) $okSwap = false;
+        }
+        $even = [[str_repeat('a', 30), 'w'], [str_repeat('b', 30), 'w']];
+        if (mlb_why_even_lengths($id, str_repeat('c', 31), $even) !== $even) $okKeep = false;
+    }
+    chk('maths · a why-question whose right reason stood out by length swaps ONE wrong reason for another argument’s (' . $sw . ' lines)', $sw > 0 && $okSwap);
+    chk('maths · …and leaves the options alone when lengths are already even', $okKeep);
+    chk('maths · visible length counts a fraction as drawn, not as typed', mlb_vis_len('$2y\\frac{dy}{dx}$') === 11 && mlb_vis_len('plain words') === 11);
+})();
+
 /* ── WhatsApp through Kapso (owner, 14 Nov 2026: every text WhatsApp first, SMS as the fallback; replies into the inbox) ── */
 (function () {
     $keepCfg = $GLOBALS['CONFIG']['whatsapp'] ?? null; $keepSms = $GLOBALS['CONFIG']['sms'] ?? null; $keepMock = $GLOBALS['__sms_http_mock'] ?? null;
@@ -38843,7 +38884,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('maths lab · every spot-the-error form puts its mistake on more than one line, and no typed form has one answer for everybody' . ($fixed ? ' (' . implode(', ', $fixed) . ')' : ''), $fixed === []);
     $diag = [];
     for ($sd = 1; $sd <= 80; $sd++) { $it = mlb_item('MC-013', 1, $sd * 31); $diag[$it['options'][$it['key']]] = 1; }
-    chk('maths lab · "what mistake, if any" has more than one right answer — including "nothing, it is right"', count($diag) >= 3 && isset($diag['Nothing — the answer is right']));
+    chk('maths lab · "what mistake, if any" has more than one right answer — including "nothing, it is right"', count($diag) >= 3 && isset($diag['Nothing — every column was worked out correctly, so the answer is right']));
     chk('maths lab · the map holds all 200 competencies (the 170-point framework and the Gods of Maths summit), and the drafted graph is used where written', count(mlb_competencies()) === 200 && mlb_comp('MC-049')['needs'] === ['MC-048', 'MC-045', 'MC-027']);
     // Marking is generous about form, strict about value.
     $e = ['kind' => 'expr', 'key' => '8x-12', 'form' => 'expanded'];

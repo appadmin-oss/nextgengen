@@ -547,8 +547,9 @@ function mlb_forms_upper(): array {
             return mlb_typed('num', 'A tank holds $' . $v1 . '$ litres. It fills steadily and $' . $t . '$ minutes later it holds $' . ($v1 + $rate * $t) . '$ litres. At what rate is it filling, in litres per minute?', (string)$rate,
                 ['A rate of change is the gradient: change in volume ÷ change in time.', '$\\frac{' . ($v1 + $rate * $t) . ' - ' . $v1 . '}{' . $t . '} = ' . $rate . '$ litres per minute.'], 'How much was added, and over how long?', 'application', 40); },
         static function (MlbRng $r) { $hz = $r->int(0, 1) === 1;
-            return mlb_mcq($r, 'What is the gradient of a ' . ($hz ? 'horizontal' : 'vertical') . ' line?', $hz ? '0' : 'It is undefined',
-                [[$hz ? 'It is undefined' : '0', $hz ? 'A horizontal line has no rise: $\\frac{0}{\\text{run}} = 0$.' : 'A vertical line has no run, and you cannot divide by zero.'], ['1', 'A gradient of 1 is a line at 45°.'], ['-1', 'A gradient of −1 slopes down at 45°.']],
+            $Z = '0: the rise is 0 for any run'; $U = 'Undefined: the run is always 0';
+            return mlb_mcq($r, 'What is the gradient of a ' . ($hz ? 'horizontal' : 'vertical') . ' line?', $hz ? $Z : $U,
+                [[$hz ? $U : $Z, $hz ? 'A horizontal line has no rise: $\\frac{0}{\\text{run}} = 0$.' : 'A vertical line has no run, and you cannot divide by zero.'], ['1: the rise equals the run', 'A gradient of 1 is a line at 45°.'], ['−1: it falls as much as it runs', 'A gradient of −1 slopes down at 45°.']],
                 ['Gradient $= \\frac{\\text{rise}}{\\text{run}}$.', $hz ? 'A horizontal line: rise 0, so gradient 0.' : 'A vertical line: run 0, so the gradient is undefined.'], 'Rise over run — which one is zero?', 'concept', 25); },
     ];
     $f['MC-094'] = [
@@ -784,7 +785,7 @@ function mlb_forms_upper(): array {
         static function (MlbRng $r) { do { $a = $r->int(-6, 3); $b = $r->int(-3, 7); } while ($a >= $b); $lt = $r->int(0, 1) === 1;
             $in = '$' . $a . ' < x < ' . $b . '$'; $out = '$x < ' . $a . '$ or $x > ' . $b . '$';
             return mlb_mcq($r, 'Solve $(x' . mlb_sterm(-$a) . ')(x' . mlb_sterm(-$b) . ') ' . ($lt ? '<' : '>') . ' 0$.', $lt ? $in : $out,
-                [[$lt ? $out : $in, 'That is where the product is ' . ($lt ? 'positive' : 'negative') . '. The ∪-shaped graph is BELOW the axis between the roots.'], ['$x < ' . $a . '$', 'Only half of the answer — check both sides of the graph.'], ['$x > ' . $b . '$ only', 'Check the other region too.']],
+                [[$lt ? $out : $in, 'That is where the product is ' . ($lt ? 'positive' : 'negative') . '. The ∪-shaped graph is BELOW the axis between the roots.'], ['$x > ' . $a . '$ or $x < ' . $b . '$', 'That is every number: each $x$ is above ' . $a . ' or below ' . $b . '. Try a value on each side of the roots.'], ['$x > ' . $b . '$ only', 'Check the other region too.']],
                 ['The roots are $' . $a . '$ and $' . $b . '$; $y = (x' . mlb_sterm(-$a) . ')(x' . mlb_sterm(-$b) . ')$ is ∪-shaped.', $lt ? 'It is below zero between the roots: $' . $a . ' < x < ' . $b . '$.' : 'It is above zero outside the roots.'], 'Sketch the parabola through its roots.', 'reasoning', 50); },
         static function (MlbRng $r) { $p = $r->nz(-6, 6); $c = $r->int(-10, 10);
             return mlb_typed('num', 'Find the maximum value of $y = ' . mlb_poly([-1, 2 * $p, $c]) . '$.', (string)($c + $p * $p),
@@ -1209,7 +1210,7 @@ function mlb_forms_upper(): array {
                 ['Difference of two squares: $x^2 - ' . ($a * $a) . ' = (x - ' . abs($a) . ')(x + ' . abs($a) . ')$.', 'Cancel the common factor: $x ' . ($a > 0 ? '+ ' . $a : '- ' . (-$a)) . '$.'], 'Factorise the top, then cancel.', 'procedure', 45); },
         static function (MlbRng $r) { $a = $r->int(1, 5); $b = $r->int(1, 5);
             return mlb_mcq($r, 'What is the correct form of the partial fractions for $\\frac{3x + 1}{(x - ' . $a . ')^2(x + ' . $b . ')}$?', '$\\frac{A}{x - ' . $a . '} + \\frac{B}{(x - ' . $a . ')^2} + \\frac{C}{x + ' . $b . '}$',
-                [['$\\frac{A}{(x - ' . $a . ')^2} + \\frac{C}{x + ' . $b . '}$', 'A repeated factor needs a term for EACH power: $(x - ' . $a . ')$ and $(x - ' . $a . ')^2$.'], ['$\\frac{A}{x - ' . $a . '} + \\frac{C}{x + ' . $b . '}$', 'The square in the denominator must appear in one of the fractions.'], ['$\\frac{Ax + B}{(x - ' . $a . ')^2} + C$', 'The fraction is proper, so there is no whole-number part $C$.']],
+                [['$\\frac{A}{(x - ' . $a . ')^2} + \\frac{C}{x + ' . $b . '}$', 'A repeated factor needs a term for EACH power: $(x - ' . $a . ')$ and $(x - ' . $a . ')^2$.'], ['$\\frac{A}{x - ' . $a . '} + \\frac{B}{x - ' . $a . '} + \\frac{C}{x + ' . $b . '}$', 'Two fractions over the same $x - ' . $a . '$ combine into one: the square must appear in one of the fractions.'], ['$\\frac{A}{x - ' . $a . '} + \\frac{B}{(x - ' . $a . ')^2} + \\frac{Cx + D}{x + ' . $b . '}$', 'The factor $x + ' . $b . '$ is linear, so its numerator is a constant, not $Cx + D$.']],
                 ['A repeated linear factor $(x - ' . $a . ')^2$ gives two terms: $\\frac{A}{x - ' . $a . '}$ and $\\frac{B}{(x - ' . $a . ')^2}$.', 'The other factor gives $\\frac{C}{x + ' . $b . '}$.'], 'One term for each power of a repeated factor.', 'concept', 45); },
         static function (MlbRng $r) { $a = $r->int(1, 5); $b = -$r->int(1, 5); $A = $r->nz(-4, 4); $B = $r->nz(-4, 4); $p = $A + $B; $q = -($A * $b + $B * $a);
             $num = $p * $a + $q;
@@ -1331,7 +1332,7 @@ function mlb_forms_upper(): array {
                 ['Scalars multiply every element; subtraction is element by element.', '$2(' . $A[$i][$j] . ') - 3(' . $B[$i][$j] . ') = ' . (2 * $A[$i][$j] - 3 * $B[$i][$j]) . '$.'], 'Work with the one position only.', 'procedure', 35); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'For two $2 \\times 2$ matrices $A$ and $B$, is $AB$ always equal to $BA$?', 'No — matrix multiplication is not commutative in general',
-                [['Yes, multiplication is always commutative', 'For numbers it is; for matrices the rows of one meet the columns of the other, and swapping changes that.'], ['Yes, because both are 2 × 2', 'Equal sizes make both products exist, but they can still differ.'], ['Only if one is the zero matrix', 'That is one case where they agree, not the rule.']],
+                [['Yes — multiplication is commutative, for matrices as for numbers', 'For numbers it is; for matrices the rows of one meet the columns of the other, and swapping changes that.'], ['Yes — because both are 2 × 2, the two products are the same', 'Equal sizes make both products exist, but they can still differ.'], ['No — they are equal only when one of them is the zero matrix', 'That is one case where they agree, not the only one: the identity matrix agrees with every matrix too.']],
                 ['Try $A = \\begin{pmatrix} 1 & 1 \\\\ 0 & 1 \\end{pmatrix}$, $B = \\begin{pmatrix} 1 & 0 \\\\ 1 & 1 \\end{pmatrix}$: $AB = \\begin{pmatrix} 2 & 1 \\\\ 1 & 1 \\end{pmatrix}$ but $BA = \\begin{pmatrix} 1 & 1 \\\\ 1 & 2 \\end{pmatrix}$.', 'So the order of multiplication matters.'], 'Try a small example both ways.', 'reasoning', 40); },
         static function (MlbRng $r) { $q = [$r->int(2, 9), $r->int(1, 6), $r->int(1, 5)]; $pz = [50 * $r->int(2, 10), 100 * $r->int(1, 8), 200 * $r->int(1, 5)]; $tot = $q[0] * $pz[0] + $q[1] * $pz[1] + $q[2] * $pz[2];
             return mlb_typed('num', 'A shopping list as a row matrix is $Q = \\begin{pmatrix} ' . implode(' & ', $q) . ' \\end{pmatrix}$ (pens, books, bags) and the prices in naira as a column matrix are $P = \\begin{pmatrix} ' . implode(' \\\\ ', $pz) . ' \\end{pmatrix}$. Find $QP$, the total cost.', (string)$tot,
@@ -1394,7 +1395,7 @@ function mlb_forms_upper(): array {
                 ['Areas are multiplied by $|\\det|$: $|' . $d . '| = ' . abs($d) . '$.', '$' . $A . ' \\times ' . abs($d) . ' = ' . ($A * abs($d)) . '\\ \\text{cm}^2$.'], 'The determinant is the area scale factor.', 'application', 45, ['unit' => 'cm²']); },
         static function (MlbRng $r) { $k = $r->int(2, 5);
             return mlb_mcq($r, 'What does the matrix $\\begin{pmatrix} ' . $k . ' & 0 \\\\ 0 & ' . $k . ' \\end{pmatrix}$ do to a shape?', 'An enlargement, scale factor ' . $k . ', centre the origin',
-                [['A stretch parallel to the $x$-axis only', 'Both coordinates are multiplied by ' . $k . ', so it is a stretch in both directions equally.'], ['A rotation', 'A rotation keeps sizes the same; this changes them.'], ['A translation by ' . $k . ' units', 'A matrix multiplies coordinates; it cannot slide a shape.']],
+                [['A stretch, factor ' . $k . ', parallel to the $x$-axis only', 'Both coordinates are multiplied by ' . $k . ', so it is a stretch in both directions equally.'], ['A rotation through ' . $k . ' right angles about the origin', 'A rotation keeps sizes the same; this changes them.'], ['A translation by ' . $k . ' units to the right and ' . $k . ' up', 'A matrix multiplies coordinates; it cannot slide a shape.']],
                 ['$(x, y) \\mapsto (' . $k . 'x, ' . $k . 'y)$.', 'Every length is multiplied by ' . $k . ' from the origin: an enlargement.'], 'What happens to $(x, y)$?', 'reasoning', 30); },
     ];
     $f['MC-136'] = [
@@ -1434,7 +1435,7 @@ function mlb_forms_upper(): array {
                 ['Speed is the magnitude of the velocity vector.', '$\\sqrt{' . ($a * $k) . '^2 + ' . ($b * $k) . '^2} = ' . ($c * $k) . '$ km/h.'], 'Speed is the length of the velocity.', 'application', 45, ['unit' => 'km/h']); },
         static function (MlbRng $r) { $a = $r->int(1, 5); $b = $r->int(1, 5);
             return mlb_mcq($r, 'Is $|\\mathbf{a} + \\mathbf{b}|$ always equal to $|\\mathbf{a}| + |\\mathbf{b}|$?', 'No — only when the vectors point the same way',
-                [['Yes, magnitudes always add', 'Try $\\mathbf{a} = \\begin{pmatrix} ' . $a . ' \\\\ 0 \\end{pmatrix}$, $\\mathbf{b} = \\begin{pmatrix} 0 \\\\ ' . $b . ' \\end{pmatrix}$: $|\\mathbf{a} + \\mathbf{b}| = \\sqrt{' . ($a * $a + $b * $b) . '}$, not ' . ($a + $b) . '.'], ['No — it is always smaller', 'It equals the sum when they point the same way.'], ['Yes, for unit vectors', 'Two unit vectors at right angles add to length $\\sqrt{2}$, not 2.']],
+                [['Yes — magnitudes always add, like numbers', 'Try $\\mathbf{a} = \\begin{pmatrix} ' . $a . ' \\\\ 0 \\end{pmatrix}$, $\\mathbf{b} = \\begin{pmatrix} 0 \\\\ ' . $b . ' \\end{pmatrix}$: $|\\mathbf{a} + \\mathbf{b}| = \\sqrt{' . ($a * $a + $b * $b) . '}$, not ' . ($a + $b) . '.'], ['No — it is always smaller than the two added', 'It equals the sum when they point the same way.'], ['Yes — whenever both are unit vectors', 'Two unit vectors at right angles add to length $\\sqrt{2}$, not 2.']],
                 ['Vectors add head to tail; the result is the third side of a triangle.', 'A triangle\'s third side is shorter than the other two together, unless it is flat (same direction).'], 'Draw the triangle.', 'reasoning', 40); },
     ];
     $f['MC-138'] = [
@@ -1506,7 +1507,7 @@ function mlb_forms_upper(): array {
                 ['Change to radians: $' . $deg . ' \\times \\frac{\\pi}{180} = ' . mlb_rd(deg2rad($deg), 4) . '$ rad.', '$s = r\\theta = ' . $L . ' \\times ' . mlb_rd(deg2rad($deg), 4) . ' \\approx ' . mlb_rd($s, 1) . '$ cm.'], 'Radians first, then $s = r\\theta$.', 'application', 60, ['unit' => 'cm', 'dp' => 1]); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'What is one radian?', 'The angle at the centre when the arc length equals the radius',
-                [['The same as one degree', 'One radian is about $57.3^\\circ$ — much bigger than a degree.'], ['The angle in a full turn', 'A full turn is $2\\pi$ radians.'], ['The angle when the arc equals the diameter', 'Arc equal to the RADIUS, not the diameter.']],
+                [['The same angle as one degree, written in different units', 'One radian is about $57.3^\\circ$ — much bigger than a degree.'], ['The angle at the centre that goes once all the way round', 'A full turn is $2\\pi$ radians.'], ['The angle at the centre when the arc length equals the diameter', 'Arc equal to the RADIUS, not the diameter.']],
                 ['Radians measure angle by arc length: $\\theta = \\frac{s}{r}$.', 'When $s = r$, $\\theta = 1$ radian $\\approx 57.3^\\circ$.'], 'Arc over radius.', 'concept', 30); },
         static function (MlbRng $r) { do { $r1 = $r->int(2, 9); $t1 = $r->pick([0.5, 1, 1.5, 2, 2.5, 3]); $r2 = $r->int(2, 9); $t2 = $r->pick([0.5, 1, 1.5, 2, 2.5, 3]); } while ($r1 === $r2 && $t1 == $t2);
             $s1 = $r1 * $t1; $s2 = $r2 * $t2; $right = abs($s1 - $s2) < 1e-9 ? 'They are the same length' : ($s1 > $s2 ? 'Arc A' : 'Arc B');
@@ -1671,7 +1672,7 @@ function mlb_forms_upper(): array {
                 ['Complete the square: $y = (x' . mlb_sterm(-$h) . ')^2 ' . ($k < 0 ? '- ' . (-$k) : '+ ' . $k) . '$.', 'Vertex $(' . $h . ', ' . $k . ')$.'], 'Complete the square.', 'procedure', 45, ['labels' => ['x', 'y'], 'point' => true]); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'A parabola is the set of points that are…', 'the same distance from a fixed point (focus) and a fixed line (directrix)',
-                [['the same distance from two fixed points', 'That describes the perpendicular bisector (a line), not a parabola.'], ['a fixed distance from one point', 'That is a circle.'], ['a fixed total distance from two points', 'That is an ellipse.']],
+                [['the same distance from two fixed points (A and B) on either side of it', 'That describes the perpendicular bisector (a line), not a parabola.'], ['a fixed distance (the radius) from one fixed point (the centre)', 'That is a circle.'], ['a fixed total distance from two fixed points (the foci), added together', 'That is an ellipse.']],
                 ['Focus–directrix definition: $PS = PM$.', 'Every point on the parabola is as far from the focus as from the directrix.'], 'One point and one line.', 'concept', 30); },
         static function (MlbRng $r) { $f = $r->int(20, 120);
             return mlb_typed('num', 'A satellite dish has the cross-section $y = \\frac{x^2}{' . (4 * $f) . '}$ (cm). The receiver must sit at the focus. How far above the vertex is that, in cm?', (string)$f,
@@ -1713,7 +1714,7 @@ function mlb_forms_upper(): array {
                 ['A polynomial is continuous, so the limit is its value at the point.', '$' . $c[0] . '(' . $k . ')^2 + ' . $c[1] . '(' . $k . ') + ' . $c[2] . ' = ' . ($c[0] * $k * $k + $c[1] * $k + $c[2]) . '$.'], 'Just substitute — nothing breaks.', 'concept', 30); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'What is $\\displaystyle\\lim_{x \\to 0} \\frac{1}{x}$?', 'It does not exist',
-                [['0', 'As $x$ gets closer to 0, $\\frac{1}{x}$ gets LARGER in size, not smaller.'], ['$\\infty$', 'From the left it heads to $-\\infty$ and from the right to $+\\infty$ — they disagree.'], ['1', 'There is no reason for 1.']],
+                [['0, the same as $x$', 'As $x$ gets closer to 0, $\\frac{1}{x}$ gets LARGER in size, not smaller.'], ['$\\infty$ from both sides', 'From the left it heads to $-\\infty$ and from the right to $+\\infty$ — they disagree.'], ['1, since $x$ cancels', 'There is nothing to cancel: $x$ is only on the bottom.']],
                 ['From the right, $\\frac{1}{x} \\to +\\infty$; from the left, $\\to -\\infty$.', 'The two sides do not agree, so the limit does not exist.'], 'Check both sides.', 'reasoning', 40); },
         static function (MlbRng $r) { $k = $r->int(1, 6); $a = $r->int(1, 8);
             return mlb_typed('num', 'A stone falls $s = ' . $k . 't^2$ metres in $t$ seconds. Its average speed from $t = ' . $a . '$ to $t = ' . $a . ' + h$ is $' . (2 * $k * $a) . ' + ' . $k . 'h$ m/s. What is its speed at exactly $t = ' . $a . '$?', (string)(2 * $k * $a),
@@ -1810,7 +1811,7 @@ function mlb_forms_upper(): array {
                 ['$A = \\pi r^2$, so $\\frac{dA}{dt} = 2\\pi r\\frac{dr}{dt}$.', '$2\\pi \\times ' . $rad . ' \\times ' . $dr . ' = ' . (2 * $rad * $dr) . '\\pi$.'], 'Differentiate the area with respect to time.', 'application', 50); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Differentiating with respect to $x$, what is $\\frac{d}{dx}(y^2)$?', '$2y\\frac{dy}{dx}$',
-                [['$2y$', '$y$ depends on $x$, so the chain rule adds a factor $\\frac{dy}{dx}$.'], ['$0$', '$y$ is not a constant.'], ['$2x$', 'It is $y$ being squared, not $x$.']],
+                [['$2y\\frac{dx}{dy}$', 'The chain rule multiplies by $\\frac{dy}{dx}$ — how $y$ changes with $x$ — not its upside-down.'], ['$2\\frac{dy}{dx}$', 'The power rule still gives $2y$ first; then multiply by $\\frac{dy}{dx}$.'], ['$2x\\frac{dy}{dx}$', 'It is $y$ being squared, not $x$.']],
                 ['$\\frac{d}{dx}(y^2) = \\frac{d}{dy}(y^2) \\times \\frac{dy}{dx}$.', '$= 2y\\frac{dy}{dx}$.'], 'Chain rule.', 'reasoning', 30); },
     ];
     $f['MC-157'] = [
@@ -1840,7 +1841,7 @@ function mlb_forms_upper(): array {
                 ['$\\int x^n\\,dx = \\frac{x^{n+1}}{n+1} + C$.', '$\\frac{' . $a . '}{' . ($n + 1) . '}x^{' . ($n + 1) . '} = ' . ($a / ($n + 1)) . 'x^{' . ($n + 1) . '}$.'], 'Up one, divide by the new power.', 'procedure', 40); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Why does an indefinite integral need $+ C$?', 'Many functions have the same derivative, differing only by a constant',
-                [['To make the answer bigger', 'The constant can be any number, including negative.'], ['Because the derivative of $x$ is $C$', 'The derivative of a constant is 0, which is why it is lost.'], ['It is only needed for definite integrals', 'It cancels in definite integrals; it is needed in indefinite ones.']],
+                [['To make the answer a little bigger, to allow for rounding', 'The constant can be any number, including negative, and has nothing to do with rounding.'], ['Because the derivative of $x$ is $C$, so every $x$ leaves a $C$', 'The derivative of a constant is 0, which is why it is lost.'], ['It is only needed for definite integrals, where the limits fix it', 'It cancels in definite integrals; it is needed in indefinite ones.']],
                 ['$x^2$, $x^2 + 5$ and $x^2 - 3$ all have derivative $2x$.', 'So $\\int 2x\\,dx = x^2 + C$ covers them all.'], 'What happens to constants when you differentiate?', 'concept', 30); },
         static function (MlbRng $r) { $n = $r->int(2, 5); $a = ($n + 1) * $r->int(1, 3);
             return mlb_error_of($r, 'Find the first mistake in this working for $\\int ' . $a . 'x^' . $n . '\\,dx$.',
@@ -1881,7 +1882,7 @@ function mlb_forms_upper(): array {
                 ['$\\frac{h}{2}[y_0 + y_' . $n . ' + 2(y_1 + \\dots + y_{' . ($n - 1) . '})]$ with $y = ' . implode(', ', $y) . '$.', '$\\frac{1}{2}[' . ($y[0] + $y[$n]) . ' + 2(' . array_sum(array_slice($y, 1, $n - 1)) . ')] = ' . mlb_dec($T) . '$ (exact: $' . mlb_ftex($n ** 3, 3) . '$).'], 'Ends once, middles twice.', 'procedure', 80); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'The trapezium rule is used on $y = x^2$ between 0 and 2. Is the estimate too big or too small?', 'Too big — the curve bends below the straight tops',
-                [['Too small', 'For a curve that bends upwards (∪), each trapezium\'s top lies ABOVE the curve.'], ['Exactly right', 'Only straight-line graphs are integrated exactly by trapezia.'], ['It cannot be told', 'The shape of the curve tells you.']],
+                [['Too small — the straight tops cut off part of the curve', 'For a curve that bends upwards (∪), each trapezium\'s top lies ABOVE the curve.'], ['Exactly right — the strips cover the whole area under it', 'Only straight-line graphs are integrated exactly by trapezia.'], ['It cannot be told without working out the exact integral', 'The shape of the curve tells you.']],
                 ['$y = x^2$ is convex (bends upwards).', 'Straight chords lie above it, so the trapezia overestimate.'], 'Draw one strip.', 'reasoning', 40); },
     ];
 
@@ -1894,8 +1895,8 @@ function mlb_forms_upper(): array {
             return mlb_typed('num', 'On a velocity–time graph, the velocity changes from $' . $u . '$ m/s to $' . $v . '$ m/s in $' . $t . '$ s. Find the acceleration, in m/s².', mlb_dec(($v - $u) / $t),
                 ['Acceleration is the gradient of a velocity–time graph.', '$\\frac{' . $v . ' - ' . $u . '}{' . $t . '} = ' . mlb_dec(($v - $u) / $t) . '$ m/s².'], 'Change in velocity over time.', 'procedure', 40, ['unit' => 'm/s²']); },
         static function (MlbRng $r) { $c = $r->int(0, 1);
-            return mlb_mcq($r, 'On a velocity–time graph, what does the ' . ($c ? 'gradient' : 'area under the graph') . ' represent?', $c ? 'Acceleration' : 'Displacement (distance travelled)',
-                [[$c ? 'Displacement' : 'Acceleration', $c ? 'Displacement is the AREA under a velocity–time graph.' : 'Acceleration is the GRADIENT of a velocity–time graph.'], ['Speed', 'Speed is read straight off the vertical axis.'], ['Time', 'Time is the horizontal axis.']],
+            return mlb_mcq($r, 'On a velocity–time graph, what does the ' . ($c ? 'gradient' : 'area under the graph') . ' represent?', $c ? 'Acceleration (how fast the velocity changes)' : 'Displacement (distance travelled)',
+                [[$c ? 'Displacement (distance travelled)' : 'Acceleration (how fast the velocity changes)', $c ? 'Displacement is the AREA under a velocity–time graph.' : 'Acceleration is the GRADIENT of a velocity–time graph.'], ['Speed (how fast it is moving at that moment)', 'Speed is read straight off the vertical axis.'], ['Time (how long the whole journey took)', 'Time is the horizontal axis.']],
                 ['Gradient $= \\frac{\\Delta v}{\\Delta t}$ = acceleration; area $= v \\times t$ = displacement.', 'So: ' . ($c ? 'acceleration' : 'displacement') . '.'], 'Units help: m/s × s = m.', 'concept', 30); },
         static function (MlbRng $r) { $v = 2 * $r->int(5, 15); $t = $r->int(2, 8);
             return mlb_typed('num', 'A driver brakes steadily from $' . $v . '$ m/s to a stop in $' . $t . '$ s. How far does the car travel while braking?', (string)($v * $t / 2),
@@ -2015,7 +2016,7 @@ function mlb_forms_upper(): array {
             return mlb_mcq($r, 'What kind of correlation would you expect between ' . $what . '?', $right, $wrong, [$right . ': as one variable changes, the other ' . ($c === 0 ? 'tends to rise.' : ($c === 1 ? 'tends to fall.' : 'shows no pattern.')), 'Correlation describes the trend, not a rule for every point.'], 'As one goes up, what does the other do?', 'concept', 30); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'Across Nigerian cities, ice-cream sales and drownings show strong positive correlation. What can you conclude?', 'They may both be driven by a third factor, such as hot weather',
-                [['Ice cream causes drowning', 'Correlation alone never shows cause.'], ['Drowning causes people to buy ice cream', 'Correlation alone never shows cause, in either direction.'], ['The data must be wrong', 'The correlation can be real without one causing the other.']],
+                [['Eating ice cream causes drowning, so swimmers should avoid it', 'Correlation alone never shows cause.'], ['Drownings make people buy more ice cream in the days after', 'Correlation alone never shows cause, in either direction.'], ['The data must be wrong, because the two things are unrelated', 'The correlation can be real without one causing the other.']],
                 ['Correlation is not causation.', 'Hot weather increases both swimming and ice-cream sales: a confounding variable.'], 'Is there a hidden third variable?', 'reasoning', 40); },
         static function (MlbRng $r) { $a = 10 * $r->int(5, 30); $b = $r->int(2, 12); $x = 5 * $r->int(2, 20);
             return mlb_typed('num', 'A shop finds its weekly sales $S$ (in thousands of naira) fit $S = ' . $a . ' + ' . $b . 'A$, where $A$ is its advertising spend (thousands of naira). Predict sales when $A = ' . $x . '$.', (string)($a + $b * $x),
@@ -2034,7 +2035,7 @@ function mlb_forms_upper(): array {
                 ['Base case: check the first value.', 'The inductive step then carries truth from each case to the next, like dominoes.'], 'Which domino falls first?', 'concept', 30); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'A student checks that $n^2 + n + 41$ is prime for $n = 1, 2, 3, \\dots, 10$ and concludes it is prime for every $n$. What is wrong?', 'Checking examples is not a proof — it fails at $n = 40$',
-                [['Nothing: ten cases is enough', '$40^2 + 40 + 41 = 41^2$, which is not prime.'], ['They should have checked 100 cases', 'No number of cases proves a statement about ALL $n$.'], ['Primes cannot be tested this way', 'Each case can be tested; the error is generalising from them.']],
+                [['Nothing: ten cases in a row is enough to be sure', '$40^2 + 40 + 41 = 41^2$, which is not prime.'], ['They should have checked 100 cases before concluding it', 'No number of cases proves a statement about ALL $n$.'], ['Primes cannot be tested by putting numbers into a formula', 'Each case can be tested; the error is generalising from them.']],
                 ['Examples can disprove a claim, but never prove it for all $n$.', 'Here $n = 40$ gives $41^2$: a counter-example.'], 'Can examples ever prove "for all"?', 'reasoning', 45); },
         static function (MlbRng $r) { $k = $r->int(3, 12);
             return mlb_typed('num', 'In an induction proof of $1 + 2 + \\dots + n = \\frac{n(n+1)}{2}$, you assume the result for $n = ' . $k . '$ and add the next term. What is that next term?', (string)($k + 1),
@@ -2076,7 +2077,7 @@ function mlb_forms_upper(): array {
                 ['Percentage error $= \\frac{|\\text{estimate} - \\text{true}|}{\\text{true}} \\times 100$.', '$\\frac{' . abs($err) . '}{' . $true . '} \\times 100 \\approx ' . mlb_rd(abs($err) / $true * 100, 2) . '\\%$.'], 'Divide by the TRUE value.', 'procedure', 40, ['unit' => '%', 'dp' => 2]); },
         static function (MlbRng $r) {
             return mlb_mcq($r, 'A modeller predicts a city\'s population 200 years ahead with $P = P_0(1.03)^t$. What is the biggest weakness?', 'Assuming the growth rate stays 3% for 200 years',
-                [['Using a power of $t$', 'Exponential models are standard for growth; the problem is the fixed rate.'], ['Rounding the answer', 'Rounding is minor next to the assumption about the rate.'], ['Using today\'s population', 'Starting from known data is correct.']],
+                [['Using a power of $t$ instead of a straight-line model', 'Exponential models are standard for growth; the problem is the fixed rate.'], ['Rounding the answer to the nearest whole person', 'Rounding is minor next to the assumption about the rate.'], ['Starting from today\'s population as the value of $P_0$', 'Starting from known data is correct.']],
                 ['Every model rests on assumptions.', 'Over 200 years, land, resources and policy change the rate: the constant-rate assumption fails.'], 'What does the model assume never changes?', 'reasoning', 40); },
     ];
 

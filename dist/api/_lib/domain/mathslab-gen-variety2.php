@@ -133,9 +133,9 @@ function mlb_forms_variety2(): array {
                 'Write an equation for "spent some, has some left", then undo the spending.', 'application', 40); },
         static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $a = $r->int(3, 15); $b = $r->int($a + 2, 30);
             return mlb_mcq($r, $who . ' solves $x - ' . $a . ' = ' . $b . '$ and writes $x = ' . ($b - $a) . '$. What went wrong?', $a . ' should have been added to both sides, not subtracted',
-                [['Nothing — $x = ' . ($b - $a) . '$ is right', 'Check it: $' . ($b - $a) . ' - ' . $a . ' = ' . ($b - 2 * $a) . '$, not ' . $b . '.'],
-                 ['Both sides should have been divided by ' . $a, 'Dividing undoes multiplying. Here ' . $a . ' is taken away, so adding undoes it.'],
-                 ['The answer should be $x = ' . ($a - $b) . '$', 'Check it: $' . ($a - $b) . ' - ' . $a . ' = ' . (-$b) . '$, not ' . $b . '.']],
+                [['Nothing — taking ' . $a . ' from ' . $b . ' gives $x = ' . ($b - $a) . '$, which is right', 'Check it: $' . ($b - $a) . ' - ' . $a . ' = ' . ($b - 2 * $a) . '$, not ' . $b . '.'],
+                 ['Both sides should have been divided by ' . $a . ' to get $x$ on its own', 'Dividing undoes multiplying. Here ' . $a . ' is taken away, so adding undoes it.'],
+                 ['The subtraction was right but the sign is wrong: $x = ' . ($a - $b) . '$', 'Check it: $' . ($a - $b) . ' - ' . $a . ' = ' . (-$b) . '$, not ' . $b . '.']],
                 ['To undo "take away ' . $a . '", add ' . $a . ' to both sides: $x = ' . $b . ' + ' . $a . ' = ' . ($a + $b) . '$.', 'Check: $' . ($a + $b) . ' - ' . $a . ' = ' . $b . '$. ✓'],
                 'Put ' . ($b - $a) . ' back into the equation. Does it work?', 'reasoning', 40); },
         static function (MlbRng $r) { $k = $r->int(3, 12); $q = $r->int(2, 15);
@@ -733,9 +733,9 @@ function mlb_forms_variety2(): array {
                 'What must $b^2 - 4ac$ be for one repeated root?', 'procedure', 45); },
         static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $b = $r->int(3, 9); $c = $r->int(1, min(9, intdiv($b * $b - 1, 4))); $D = $b * $b - 4 * $c;
             return mlb_mcq($r, 'Solving $x^2 - ' . $b . 'x + ' . $c . ' = 0$, ' . $who . ' writes $x = \\frac{-' . $b . ' \\pm \\sqrt{' . $D . '}}{2}$. What is wrong?', 'Here $b = -' . $b . '$, so $-b = +' . $b . '$: it should be $\\frac{' . $b . ' \\pm \\sqrt{' . $D . '}}{2}$',
-                [['Nothing — it is right', 'Substitute $b = -' . $b . '$ carefully: $-b = -(-' . $b . ') = ' . $b . '$.'],
-                 ['The discriminant should be $' . ($b * $b + 4 * $c) . '$', '$b^2 - 4ac = (-' . $b . ')^2 - 4(1)(' . $c . ') = ' . $D . '$; that part was right.'],
-                 ['The bottom should be 1, not 2', 'The bottom is $2a = 2 \\times 1 = 2$; that part was right.']],
+                [['Nothing — the formula starts with $-b$, and $b$ is ' . $b . ', so it is right', 'Substitute $b = -' . $b . '$ carefully: $-b = -(-' . $b . ') = ' . $b . '$.'],
+                 ['The top starts right, but under the root it should be $' . ($b * $b + 4 * $c) . '$', '$b^2 - 4ac = (-' . $b . ')^2 - 4(1)(' . $c . ') = ' . $D . '$; that part was right.'],
+                 ['The top is right, but the bottom should be $a = 1$, not 2', 'The bottom is $2a = 2 \\times 1 = 2$; that part was right.']],
                 ['Here $a = 1$, $b = -' . $b . '$, $c = ' . $c . '$.', '$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a} = \\frac{' . $b . ' \\pm \\sqrt{' . $D . '}}{2}$.'],
                 'Write down $a$, $b$ and $c$ with their signs before substituting.', 'reasoning', 45); },
     ],
@@ -810,9 +810,9 @@ function mlb_forms_variety2(): array {
                 'The two formulas must give the same value where they join.', 'procedure', 50); },
         static function (MlbRng $r) { $who = $r->pick(MLB_NAMES); $a = $r->nz(-6, 6);
             return mlb_mcq($r, $who . ' says $\\displaystyle\\lim_{x \\to ' . $a . '} \\frac{x^2 - ' . ($a * $a) . '}{x' . mlb_sterm(-$a) . '}$ does not exist, because putting $x = ' . $a . '$ gives $\\frac{0}{0}$. Is ' . $who . ' right?', 'No — $\\frac{0}{0}$ means simplify first; the limit is ' . (2 * $a),
-                [['Yes — $\\frac{0}{0}$ has no value', 'The FUNCTION has no value at $x = ' . $a . '$, but the limit asks what it approaches nearby.'],
-                 ['No — the limit is 0', '$0$ on top and $0$ on the bottom do not make 0: cancel the common factor first.'],
-                 ['No — the limit is 1', 'Two things both approaching 0 need not have a ratio approaching 1: cancel and see.']],
+                [['Yes — $\\frac{0}{0}$ has no value, so neither does the limit', 'The FUNCTION has no value at $x = ' . $a . '$, but the limit asks what it approaches nearby.'],
+                 ['No — the top is 0 at $x = ' . $a . '$, so the limit is 0', '$0$ on top and $0$ on the bottom do not make 0: cancel the common factor first.'],
+                 ['No — the top and bottom are both 0, so they cancel to 1', 'Two things both approaching 0 need not have a ratio approaching 1: cancel and see.']],
                 ['$x^2 - ' . ($a * $a) . ' = (x' . mlb_sterm(-$a) . ')(x' . mlb_sterm($a) . ')$.', 'For $x \\ne ' . $a . '$ the fraction is $x' . mlb_sterm($a) . '$, which approaches $' . (2 * $a) . '$.'],
                 'Factorise the top.', 'reasoning', 45); },
     ],

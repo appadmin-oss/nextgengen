@@ -120,6 +120,17 @@ function mlb_typed(string $kind, string $stem, $key, array $steps, string $hint,
  * Multiple choice. $wrong = [[text, why-it-is-tempting], …] — each wrong option
  * is a named misconception, and the feedback shows its "why" when chosen.
  */
+/**
+ * How long an option LOOKS, not how long its source is: KaTeX draws
+ * `\\frac{dy}{dx}` as a small stacked fraction, not 13 characters. Used to keep a
+ * right answer from giving itself away by length (the Labs' length tell).
+ */
+function mlb_vis_len(string $s): int {
+    $s = preg_replace('/\\\\d?frac\{([^{}]*)\}\{([^{}]*)\}/', '($1)/($2)', $s);
+    $s = preg_replace('/\\\\(displaystyle|left|right|mathbf|text|mathrm|quad|[,;!])/', '', $s);
+    $s = preg_replace('/\\\\[a-zA-Z]+/', 'x', $s);
+    return mb_strlen(trim(str_replace(['$', '{', '}', '^', '_', '\\'], '', $s)));
+}
 function mlb_mcq(MlbRng $r, string $stem, string $right, array $wrong, array $steps, string $hint, string $dim, int $secs, array $x = []): array {
     $opts = [['t' => $right, 'why' => '']];
     $seen = [$right => true];
@@ -190,9 +201,9 @@ function mlb_maths_forms(): array {
         static function (MlbRng $r) { $a = $r->int(3, 9); $b = $r->int(2, 8);
             return mlb_mcq($r, 'Why is $' . $a . ' + ' . $b . '$ the same as $' . $b . ' + ' . $a . '$?',
                 'Putting two groups together gives the same total whichever group you count first',
-                [['Because ' . $a . ' and ' . $b . ' are both small numbers', 'It works for every pair of numbers, large or small.'],
-                 ['It is not — changing the order changes the answer', 'Adding is putting together; the total does not depend on order.'],
-                 ['Because you always add the bigger number first', 'You can add in either order and get the same total.']],
+                [['Because ' . $a . ' and ' . $b . ' are small numbers, and swapping only works for small numbers', 'It works for every pair of numbers, large or small.'],
+                 ['It is not the same — changing the order of the numbers changes the total you get', 'Adding is putting together; the total does not depend on order.'],
+                 ['Because you always start from the bigger number, whichever way the sum is written', 'You can add in either order and get the same total.']],
                 ['Adding means combining two groups.', 'The combined group has the same number of things whichever group you start with, so $' . $a . ' + ' . $b . ' = ' . $b . ' + ' . $a . ' = ' . ($a + $b) . '$.'],
                 'Picture the two groups pushed together.', 'concept', 30); },
     ],
@@ -321,8 +332,8 @@ function mlb_maths_forms(): array {
                digit from the bigger", so the item tested recognising a sentence;
                now the working itself has to be checked. */
             $FLIP = 'Took the smaller digit from the bigger one in each column instead of regrouping';
-            $ADD = 'Added instead of subtracting'; $OK = 'Nothing — the answer is right';
-            $NOREDUCE = 'Exchanged a ten but did not take it away from the tens column';
+            $ADD = 'Added the two numbers together instead of taking the smaller one away'; $OK = 'Nothing — every column was worked out correctly, so the answer is right';
+            $NOREDUCE = 'Exchanged a ten for the ones but did not take it away from the tens column';
             $story = $r->pick(['flip', 'flip', 'ok', 'add', 'noreduce']);
             [$shown, $right, $steps] = [
                 'flip' => [$flip, $FLIP, ['In the ones column, ' . ($a % 10) . ' − ' . ($b % 10) . ' needs an exchange; ' . $who . ' did ' . ($b % 10) . ' − ' . ($a % 10) . ' instead.', 'Regrouping properly gives $' . $a . ' - ' . $b . ' = ' . $true . '$.']],

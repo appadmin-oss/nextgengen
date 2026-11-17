@@ -628,9 +628,41 @@ function mlb_why_justify(string $id, MlbRng $r): array {
     $alien = $other[$r->int(0, count($other) - 1)][1];
     $wrong = array_slice($r->shuffle($wrong), 0, 3);
     if (count($wrong) < 3 && !in_array($alien, array_column($steps, 1), true)) $wrong[] = [$alien, 'That reason belongs to a different argument.'];
+    $wrong = mlb_why_even_lengths($id, $steps[$k][1], $wrong);
     return mlb_mcq($r, 'Why it works: ' . $claim . ' Here is the argument. Why is line ' . ($k + 1) . ' true?', $steps[$k][1], $wrong,
         array_merge(['Line ' . ($k + 1) . ' is true because: ' . $steps[$k][1]], array_map(static fn($s, $i) => ($i + 1) . '. ' . $s[0] . ' — ' . $s[1], $steps, array_keys($steps))),
         'Read the line before it: what does this line use?', 'reasoning', 60, ['lines' => array_column($steps, 0)]);
+}
+
+/**
+ * The length tell (14–17 Nov 2026): a learner who never reads the argument must not
+ * win by picking the longest reason. When the right reason is clearly the longest
+ * (25% and 4+ visible characters longer than every wrong one), the SHORTEST wrong
+ * reason is swapped for the reason from another argument whose length is nearest the
+ * right one's. Deterministic — no random draw — so every stored session replays with
+ * the same stem, answer and key; only that one wrong option's text changes. A
+ * candidate that shares its opening words with any reason in this argument is
+ * skipped, so the swap can never offer a second right answer.
+ */
+function mlb_why_even_lengths(string $id, string $right, array $wrong): array {
+    if (!$wrong) return $wrong;
+    $kl = mlb_vis_len($right); $lens = array_map(static fn($w) => mlb_vis_len($w[0]), $wrong); $mo = max($lens);
+    if (!($kl > $mo && $kl >= 1.25 * $mo && $kl - $mo >= 4)) return $wrong;
+    $own = array_column(mlb_why()[$id][2], 1);
+    $head = static fn(string $t) => mb_strtolower(implode(' ', array_slice(preg_split('/\s+/', trim($t)), 0, 2)));
+    $heads = array_map($head, $own); $taken = array_column($wrong, 0);
+    $best = null; $bd = PHP_INT_MAX;
+    foreach (mlb_why() as $oid => [, , $st]) {
+        if ($oid === $id) continue;
+        foreach (array_column($st, 1) as $t) {
+            if (in_array($t, $own, true) || in_array($t, $taken, true) || in_array($head($t), $heads, true)) continue;
+            $d = abs(mlb_vis_len($t) - $kl); if ($d < $bd) { $bd = $d; $best = $t; }
+        }
+    }
+    if ($best === null) return $wrong;
+    $i = array_keys($lens, min($lens), true)[0];
+    $wrong[$i] = [$best, 'That reason belongs to a different argument.'];
+    return $wrong;
 }
 
 /** "Put the argument in order" — the statements shuffled; the learner orders them (no dragging: move buttons). */

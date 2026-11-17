@@ -148,8 +148,8 @@ function mlb_forms_deep(): array {
                 ['Take ' . $k . ' kg off both pans: ' . $n . ' bags balance ' . ($n * $w) . ' kg.', 'Share between the bags: $' . ($n * $w) . ' \\div ' . $n . ' = ' . $w . '$ kg.'], 'Do the same to both pans.', 'application', 45, ['unit' => 'kg']); },
         static function (MlbRng $r) { $p = $r->int(2, 6); $q = $p + $r->int(1, 4); $m = $r->int(2, 9);
             return mlb_mcq($r, 'Which of these does NOT keep an equation balanced?', 'Adding ' . $p . ' to the left side and ' . $q . ' to the right side',
-                [['Multiplying both sides by $-' . $m . '$', 'Allowed: multiplying both sides by the same number (not zero) keeps them equal.'], ['Subtracting $x$ from both sides', 'Allowed: you may subtract the same thing — even a letter — from both sides.'],
-                 ['Dividing both sides by ' . $m, 'Allowed: dividing both sides by the same non-zero number keeps them equal.']],
+                [['Multiplying every term on both sides by $-' . $m . '$', 'Allowed: multiplying both sides by the same number (not zero) keeps them equal.'], ['Subtracting $x$ from the left side and from the right side', 'Allowed: you may subtract the same thing — even a letter — from both sides.'],
+                 ['Dividing every term on both sides by ' . $m, 'Allowed: dividing both sides by the same non-zero number keeps them equal.']],
                 ['Every move must be done to BOTH sides, by the same amount.', 'Adding ' . $p . ' to one side and ' . $q . ' to the other changes them by different amounts, so they are no longer equal.'],
                 'Which move treats the two sides differently?', 'reasoning', 40); },
         static function (MlbRng $r) { $a = $r->int(2, 7); $x = $r->int(3, 12); $b = $r->int(3, 15); $c = $a * $x + $b;
@@ -287,10 +287,10 @@ function mlb_forms_deep(): array {
         static function (MlbRng $r) { $m = $r->nz(-3, 4); $c = $r->int(-5, 5); $d = $c + $r->nz(-4, 4);
             if ($r->int(0, 2) === 0) { $k = $r->int(2, 4);
                 return mlb_mcq($r, 'How many solutions do $y = ' . mlb_lterm($m, 'x') . mlb_sterm($c) . '$ and $' . $k . 'y = ' . mlb_lterm($k * $m, 'x') . mlb_sterm($k * $c) . '$ have together?', 'Infinitely many',
-                    [['None', 'The second equation is the first multiplied by ' . $k . ': it is the SAME line.'], ['Exactly one', 'Two different lines cross once; these are not different.'], ['Exactly two', 'Two straight lines can never meet in exactly two points.']],
+                    [['None at all', 'The second equation is the first multiplied by ' . $k . ': it is the SAME line.'], ['Exactly one point', 'Two different lines cross once; these are not different.'], ['Exactly two points', 'Two straight lines can never meet in exactly two points.']],
                     ['Divide the second by ' . $k . ': $y = ' . mlb_lterm($m, 'x') . mlb_sterm($c) . '$ — the same line.', 'Every point on it solves both, so there are infinitely many solutions.'], 'Simplify the second equation.', 'challenge', 50); }
-            return mlb_mcq($r, 'How many solutions do $y = ' . mlb_lterm($m, 'x') . mlb_sterm($c) . '$ and $y = ' . mlb_lterm($m, 'x') . mlb_sterm($d) . '$ have together?', 'None',
-                [['Exactly one', 'Lines with the same gradient never cross unless they are the same line.'], ['Infinitely many', 'They would need the same intercept too.'], ['Exactly two', 'Two straight lines can never meet in exactly two points.']],
+            return mlb_mcq($r, 'How many solutions do $y = ' . mlb_lterm($m, 'x') . mlb_sterm($c) . '$ and $y = ' . mlb_lterm($m, 'x') . mlb_sterm($d) . '$ have together?', 'None at all',
+                [['Exactly one point', 'Lines with the same gradient never cross unless they are the same line.'], ['Infinitely many', 'They would need the same intercept too.'], ['Exactly two points', 'Two straight lines can never meet in exactly two points.']],
                 ['Both lines have gradient ' . $m . ', so they are parallel.', 'Their intercepts differ (' . $c . ' and ' . $d . '), so they never meet: no solution.'], 'Compare the gradients.', 'concept', 45); },
         static function (MlbRng $r) { $m = $r->nz(-4, 4); $x = $r->nz(-6, 6); $c = -$m * $x;
             return mlb_typed('num', 'Where does $y = ' . mlb_lterm($m, 'x') . mlb_sterm($c) . '$ cross the $x$-axis? Give the $x$-coordinate.', (string)$x,

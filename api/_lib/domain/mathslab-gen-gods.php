@@ -172,8 +172,8 @@ function mlb_forms_gods(): array {
                 'Count multiples of ' . $p . ', then of ' . ($p * $p) . ', then of ' . ($p ** 3) . '…', 'procedure', 60); },
         static function (MlbRng $r) { $n = 5 * $r->int(10, 60);
             return mlb_mcq($r, 'Why does $' . $n . '!$ end in exactly as many zeros as it has factors of 5?', 'Each zero needs a factor 2 and a factor 5, and there are more 2s than 5s',
-                [['Because only the multiples of 10 make zeros', 'Multiples of 25 give an extra 5 that pairs with a spare 2, so counting multiples of 10 undercounts.'], ['Because 5 is the largest prime below 10', 'Size has nothing to do with it; the scarcer of the factors 2 and 5 decides.'],
-                 ['Because the factors of 2 cancel out', 'Nothing cancels: there are simply more 2s than are needed.']],
+                [['Because only the multiples of 10 make zeros, one zero each', 'Multiples of 25 give an extra 5 that pairs with a spare 2, so counting multiples of 10 undercounts.'], ['Because 5 is the largest prime below 10, so it controls the last digit', 'Size has nothing to do with it; the scarcer of the factors 2 and 5 decides.'],
+                 ['Because the factors of 2 cancel out, leaving only the 5s to count', 'Nothing cancels: there are simply more 2s than are needed.']],
                 ['$10 = 2 \\times 5$, so the number of final zeros is the number of complete $2 \\times 5$ pairs.', 'Every second number gives a 2 but only every fifth gives a 5, so the 5s run out first.'],
                 'What does a final zero need?', 'reasoning', 50); },
         static function (MlbRng $r) { [$m, $f] = $r->pick([[12, [2 => 2, 3 => 1]], [18, [2 => 1, 3 => 2]], [6, [2 => 1, 3 => 1]], [20, [2 => 2, 5 => 1]], [45, [3 => 2, 5 => 1]], [8, [2 => 3]]]); $n = $r->int(20, 80);
@@ -341,7 +341,7 @@ function mlb_forms_gods_19(): array {
                 'Make pigeonholes out of pairs.', 'challenge', 75); },
         static function (MlbRng $r) { $m = $r->int(3, 12);
             return mlb_mcq($r, 'Why must any ' . ($m + 1) . ' whole numbers include two whose difference is divisible by ' . $m . '?', 'Only ' . $m . ' remainders are possible when dividing by ' . $m . ', so two of the numbers share one',
-                [['Because ' . ($m + 1) . ' is bigger than ' . $m, 'True, but the reason needs what the boxes are: the remainders.'], ['Because one of them must be a multiple of ' . $m, 'False: $1, 2, \\dots, ' . ($m - 1) . '$ plus $' . ($m + 1) . '$ contains no multiple of ' . $m . '.'], ['It is not always true', 'It is: two numbers with the same remainder differ by a multiple of ' . $m . '.']],
+                [['Because ' . ($m + 1) . ' numbers are more than ' . $m . ', and more numbers always means a repeat', 'True, but the reason needs what the boxes are: the remainders.'], ['Because one of them must be a multiple of ' . $m . ', and that one makes the difference', 'False: $1, 2, \\dots, ' . ($m - 1) . '$ plus $' . ($m + 1) . '$ contains no multiple of ' . $m . '.'], ['It is not always true: the numbers could all be far apart from each other', 'It is: two numbers with the same remainder differ by a multiple of ' . $m . '.']],
                 ['Put each number in a box labelled by its remainder: $0, 1, \\dots, ' . ($m - 1) . '$ — ' . $m . ' boxes.', ($m + 1) . ' numbers in ' . $m . ' boxes: two share a box, and their difference is a multiple of ' . $m . '.'],
                 'What are the pigeonholes?', 'reasoning', 50); },
         static function (MlbRng $r) { $n = $r->int(5, 25);
@@ -422,7 +422,7 @@ function mlb_forms_gods_19(): array {
     'MC-190' => [
         static function (MlbRng $r) { $n = 2 * $r->int(2, 5);
             return mlb_mcq($r, 'Two opposite corner squares are cut from an ' . $n . ' × ' . $n . ' chessboard. Can the remaining ' . ($n * $n - 2) . ' squares be covered exactly by dominoes (each covering two side-by-side squares)?', 'No — the two removed squares are the same colour, so the colours no longer balance',
-                [['Yes — ' . ($n * $n - 2) . ' is even, so ' . intdiv($n * $n - 2, 2) . ' dominoes fit', 'An even number of squares is necessary but not enough.'], ['Yes, by laying them in rows with one turned at each end', 'Try it: two squares of one colour are always left over.'], ['Only if ' . $n . ' is a multiple of 4', 'The board size does not help: the colour count is wrong for every even size.']],
+                [['Yes — ' . ($n * $n - 2) . ' is even, so exactly ' . intdiv($n * $n - 2, 2) . ' dominoes fit and cover every square', 'An even number of squares is necessary but not enough.'], ['Yes — lay them in rows, turning one domino on its side at each end', 'Try it: two squares of one colour are always left over.'], ['Only if ' . $n . ' is a multiple of 4, so that the rows and columns pair up evenly', 'The board size does not help: the colour count is wrong for every even size.']],
                 ['Every domino covers one black and one white square.', 'Opposite corners have the same colour, so after removing them one colour has 2 more squares than the other — no tiling can exist.'],
                 'Colour the board like a chessboard.', 'reasoning', 60); },
         static function (MlbRng $r) { do { $n = $r->int(5, 20); $k = $r->int(2, min(8, $n - 1)); } while (($n * $k) % 2);
@@ -659,7 +659,7 @@ function mlb_why_gods(): array {
         ['So $ac \\equiv bd \\pmod m$.', 'Two numbers that differ by a multiple of $m$ are congruent.'],
     ]],
     'MC-174' => ['Multiplying all the non-zero remainders by $a$ just shuffles them.', 'If $p$ is prime and $p \\nmid a$, then $a^{p-1} \\equiv 1 \\pmod p$.', [
-        ['The numbers $a, 2a, \\dots, (p - 1)a$ leave different non-zero remainders mod $p$.', 'If $ia \\equiv ja$ then $p$ divides $(i - j)a$, and a prime that divides neither factor cannot divide the product.'],
+        ['The numbers $a, 2a, \\dots, (p - 1)a$ leave different non-zero remainders mod $p$.', 'If $ia \\equiv ja$, the prime $p$ divides $(i - j)a$ but neither factor — impossible.'],
         ['So they are $1, 2, \\dots, p - 1$ in some order.', 'There are $p - 1$ different non-zero remainders and $p - 1$ numbers.'],
         ['Multiplying them all: $a^{p-1}(p - 1)! \\equiv (p - 1)! \\pmod p$.', 'The same remainders multiply to the same product.'],
         ['$p$ does not divide $(p - 1)!$, so it may be cancelled: $a^{p-1} \\equiv 1$.', 'A prime dividing a product of smaller numbers would have to divide one of them.'],

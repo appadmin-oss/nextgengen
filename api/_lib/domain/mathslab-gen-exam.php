@@ -396,7 +396,7 @@ function mlb_forms_exam(): array {
     'MC-050' => [
         static function (MlbRng $r) { [$who, $u, $what, $fix] = $r->pick([['A plumber', 'hour', 'h', 'call-out fee'], ['A taxi', 'kilometre', 'k', 'starting charge'], ['A printer', 'page', 'p', 'set-up fee'], ['A gym', 'month', 'm', 'joining fee']]); $a = 50 * $r->int(2, 20); $b = 100 * $r->int(2, 30);
             return mlb_sat($r, $who . ' charges according to $C = ' . $a . $what . ' + ' . $b . '$, where $C$ is the cost in naira and $' . $what . '$ is the number of ' . $u . 's. What does ' . $a . ' represent?', 'The cost of each additional ' . $u,
-                [['The ' . $fix, 'That is ' . $b . ', the part paid even when $' . $what . ' = 0$.'], ['The total cost', 'The total is $C$; ' . $a . ' is multiplied by $' . $what . '$, so it changes with each ' . $u . '.'], ['The number of ' . $u . 's', 'That is $' . $what . '$ itself.']],
+                [['The ' . $fix . ' paid at the start', 'That is ' . $b . ', the part paid even when $' . $what . ' = 0$.'], ['The total cost, however many ' . $u . 's', 'The total is $C$; ' . $a . ' is multiplied by $' . $what . '$, so it changes with each ' . $u . '.'], ['The number of ' . $u . 's charged for', 'That is $' . $what . '$ itself.']],
                 ['In $C = ' . $a . $what . ' + ' . $b . '$, each extra ' . $u . ' adds ' . $a . ' to $C$.', 'So ' . $a . ' is the cost per ' . $u . ' (the rate), and ' . $b . ' is the ' . $fix . '.'],
                 'What changes when $' . $what . '$ goes up by 1?', 60, 'concept'); },
     ],

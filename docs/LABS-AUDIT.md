@@ -390,3 +390,32 @@ regenerated before and after, and every stem, answer, option count and key posit
 - "Pick the shortest": 11%, still below chance.
 
 **Held by a test.** `run.php` samples every Physics form.
+
+## Round 9 — 17 Nov 2026: the Maths length tell
+
+**Measured.** Maths was the one Lab rounds 7 and 8 had not measured. Every form was sampled (14,779 distinct
+choice questions), by **visible** length: KaTeX draws `\frac{dy}{dx}` as a small stacked fraction, so the source
+length overstates it (`mlb_vis_len`). Overall "pick the longest" was already below chance (16% against 26%), but
+**57 forms** gave their answer away: 9.7% of all questions had a right answer clearly the longest.
+
+- **42 hand-written forms** — mostly "What went wrong?" — had a full explanation as the right answer beside bare
+  stubs ("Nothing — it is right", "It should be 360"). Each wrong option is now a real misconception carrying the
+  reason a learner would give, at comparable length: "Nothing — Chidi said 3 numbers, so 7 is right", "Add the
+  sizes and keep the sign: the answer is $-11$", "$2y\frac{dx}{dy}$" (the chain rule upside down), a partial
+  fraction with $\frac{Cx + D}{x + b}$ over a linear factor.
+- **"Why is line k true?"** (15 topics) offers the argument's other reasons, and some lines' reasons are much
+  longer than the rest. `mlb_why_even_lengths()` now swaps the shortest wrong reason for the reason from another
+  argument nearest the right one's length — only when there is a tell, with no random draw, never with a reason
+  that shares this argument's opening words. One reason (MC-174, Fermat) was ~100 characters and was tightened.
+
+**Saved sessions.** Sessions regenerate their questions from seed. 166,800 seeded questions were snapshotted
+before and after: every stem, option count, key position and worked-line set is identical. The right answer's
+text changed only in six forms where it was reworded on purpose (MC-008, -013, -038, -055, -093, -161); marking
+is by position, so a stored response still marks the same.
+
+**Result.**
+- Forms flagged: 57 → 0. Clearly-longest questions: 9.7% → 0.6%.
+- "Pick the longest": 16% → 10% (chance 26%). "Pick the shortest": 10% → 11%, so no opposite tell.
+
+**Held by a test.** `run.php` samples every Maths form (visible length), checks the why-question swap changes one
+option and only when needed, and pins `mlb_vis_len`. Restoring one form's old stubs makes it fail.

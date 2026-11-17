@@ -7429,3 +7429,10 @@ Checked and NOT faults: the start-up splash in the e2e screenshots is its 0.5 s 
   - "Link a parent" stays, by design: a parent's email alone never links a child.
 - **Not changed, and why:** applying sends three emails (the inbox notice to staff, the programme address, the family's acknowledgement), each to a different reader. Acceptance sends two, and they are now distinct.
 - **Results:** `php api/tests/run.php` 7097 passed, 0 failed. Node suites, run one at a time, all pass: club-apply, membership-pay (36), mfa, shared-email, desk-signin, status-board, labs-client, labs-focus, mathlab-e2e (113), study-tools, ui-smoke (627) and forms-selfreg-ui.
+
+## 17 Nov 2026 — Maths Lab: the length tell (Labs audit round 9)
+
+The third Lab after English (round 7) and Physics (round 8). 57 Maths forms let a guesser win by picking the
+longest option; all rewritten (wrong-option text only, plus six deliberate right-answer rewordings), and the
+"Why is line k true?" generator evens its option lengths deterministically. Details, numbers and the saved-session
+check in `docs/LABS-AUDIT.md` round 9. PHP suite 7166 / 0 (baseline 7161 / 0; five new checks).
