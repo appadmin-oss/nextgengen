@@ -9770,3 +9770,19 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-walk-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .mlb-walk-row .mlb-in { flex: 1 1 200px; font-size: 16px; }
 .mlb-walk-q:focus { outline: none; } .mlb-walk-q:focus-visible { outline: 2px solid #16233f; outline-offset: 2px; border-radius: 6px; }
+
+/* The exam hall (Labs standard exam): a numbered navigator, a flag, and a hand-in that says what is left.
+   Answered is ink, the one being read is outlined, flagged carries the gold corner. The grid wraps by
+   its own width, so it fits a phone and a desk without a media query. */
+.mlb-hall-nav { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 12px; }
+.mlb-hall-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 6px; }
+.mlb-hall-q { position: relative; width: 100%; min-height: 40px; border: 1px solid var(--cr-line-3); border-radius: var(--cr-r-sm); background: var(--cr-bg); color: var(--cr-ink);
+  font: inherit; font-size: 13.5px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.mlb-hall-q:hover { border-color: var(--cr-line-hover); }
+.mlb-hall-q.is-ans { background: var(--cr-ink); border-color: var(--cr-ink); color: var(--cr-on-ink); }
+.mlb-hall-q.is-on { box-shadow: 0 0 0 2px var(--cr-bg), 0 0 0 4px var(--cr-ink); }
+.mlb-hall-q i { position: absolute; top: 2px; right: 3px; font-size: 10px; color: var(--cr-gold); }
+.mlb-hall-acts { flex-wrap: wrap; align-items: center; }
+.mlb-hall-acts .mlb-chipb { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; }
+.mlb-hall-confirm { margin-top: 14px; padding: 16px; border: 1px solid var(--cr-line-3); border-radius: var(--cr-r-lg); background: var(--cr-s1); }
+.mlb-hall-confirm .mlb-p { margin: 6px 0 12px; }

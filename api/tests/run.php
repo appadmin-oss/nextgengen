@@ -39348,6 +39348,25 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && ($ex['history'][0]['paper'] ?? '') === 'jamb' && $ex['history'][0]['scaled'] === 50 && count($ex['papers']) === 3 && $ex['papers'][0]['best'] === 50
         && mlb_exam_report('sat', array_fill(0, 27, ['c' => 'MC-050']), array_fill(0, 27, ['ok' => true, 'a' => '1']), now_iso())['scaled'] === 800);
     /* The standard exam (owner, 15 Nov 2026): the WAEC objective paper's shape at half the time, with three titles. */
+    /* The exam hall (handoff TODO 2): in a paper an answer can be changed or rubbed out until hand-in, and nothing
+       about right or wrong comes back mid-paper; every other mode stays one-shot. */
+    $eh = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'jamb']); $ehRow = json_decode((string)db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$eh['sessionId']])['items'], true);
+    $ehIt = mlb_item($ehRow[0]['c'], $ehRow[0]['f'], $ehRow[0]['s']); $ehWrong = ($ehIt['key'] + 1) % count($ehIt['options']);
+    $a1 = mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $eh['sessionId'], 'index' => 0, 'answer' => $ehWrong, 'ms' => 1000]);
+    $a2 = mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $eh['sessionId'], 'index' => 0, 'answer' => $ehIt['key'], 'ms' => 1000]);
+    $ehResp = json_decode((string)db_row('SELECT resp FROM mlab_sessions WHERE sessionId = ?', [$eh['sessionId']])['resp'], true);
+    chk('maths lab · in a paper an answer can be changed before hand-in, and the last one is what counts', !empty($a1['ok']) && !empty($a2['ok']) && !empty($ehResp[0]['ok']) && $a2['answered'] === 1);
+    chk('maths lab · …and the paper never says right or wrong before it is handed in', !isset($a1['correct']) && !isset($a2['correct']) && !isset($a2['answer']) && !isset($a2['steps']));
+    $a3 = mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $eh['sessionId'], 'index' => 0, 'answer' => '', 'ms' => 0]);
+    $ehResp = json_decode((string)db_row('SELECT resp FROM mlab_sessions WHERE sessionId = ?', [$eh['sessionId']])['resp'], true) ?: [];
+    chk('maths lab · …an answer can be rubbed out, and then counts as unanswered', !empty($a3['cleared']) && $a3['answered'] === 0 && !isset($ehResp[0]));
+    mlb_finish(['memberId' => 'NGG-ML-D', 'sessionId' => $eh['sessionId']]);
+    $a4 = mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $eh['sessionId'], 'index' => 1, 'answer' => 0, 'ms' => 0]);
+    db_insert('members', ['memberId' => 'NGG-ML-HALL', 'fullName' => 'Hall Tester', 'email' => 'hall@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $pr = mlb_start(['memberId' => 'NGG-ML-HALL', 'mode' => 'climb']);   // placement: one answer per question, like practice
+    mlb_answer(['memberId' => 'NGG-ML-HALL', 'sessionId' => $pr['sessionId'], 'index' => 0, 'answer' => '1', 'ms' => 1000]);
+    $a5 = mlb_answer(['memberId' => 'NGG-ML-HALL', 'sessionId' => $pr['sessionId'], 'index' => 0, 'answer' => '2', 'ms' => 1000]);
+    chk('maths lab · once handed in, a paper takes no more answers; outside a paper it stays one answer per question', ($a4['error'] ?? '') === 'finished' && ($a5['error'] ?? '') === 'already_answered');
     /* The standard exam's blueprint and difficulty (handoff TODO 1, 17 Nov 2026): each strand its share of the
        paper, and inside it a mix leaning hard — not a run of algebra because algebra has the most topics. */
     $Pw = mlb_papers()['waec']; $qw = mlb_exam_quota($Pw, mlb_exam_pool('waec'));

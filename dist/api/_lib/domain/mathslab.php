@@ -613,7 +613,15 @@ function mlb_answer(array $p): array {
     // A paper's clock is the server's: an answer after the time (and a short grace for the network) is refused, as the real exam would.
     if ((string)$s['mode'] === 'exam' && time() > strtotime((string)$s['startedAt']) + 60 * (int)(mlb_papers()[(string)$s['ref']]['minutes'] ?? 0) + MLB_EXAM_GRACE) return ['ok' => false, 'error' => 'time_up'];
     $resp = json_decode((string)$s['resp'], true) ?: [];
-    if (isset($resp[$i])) return ['ok' => false, 'error' => 'already_answered'];
+    /* The exam hall (handoff TODO 2): in a paper, as in the real exam, an answer can be changed — or rubbed
+       out — until the paper is handed in or the time is up. It is still marked here, never shown: nothing
+       about right or wrong goes back until the paper is finished. Every other mode stays one-shot. */
+    $isExam = (string)$s['mode'] === 'exam';
+    if ($isExam && ($p['answer'] ?? '') === '') {
+        unset($resp[$i]); db_update('mlab_sessions', ['resp' => json_encode((object)$resp)], ['sessionId' => $s['sessionId']]);
+        return ['ok' => true, 'recorded' => true, 'cleared' => true, 'answered' => count($resp), 'total' => count($items)];
+    }
+    if (isset($resp[$i]) && !$isExam) return ['ok' => false, 'error' => 'already_answered'];
     $x = $items[$i]; $it = mlb_item($x['c'], $x['f'], $x['s']);
     $mk = mlb_mark($it, $p['answer'] ?? '');
     $resp[$i] = ['ok' => $mk['ok'], 'ms' => max(0, (int)($p['ms'] ?? 0)), 'hints' => min(2, max(0, (int)($p['hints'] ?? 0))), 'conf' => (string)($p['conf'] ?? ''),

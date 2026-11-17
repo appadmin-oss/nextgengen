@@ -179,9 +179,28 @@ async function journey(who, W, H, tag) {
   const clk = await p.locator('.mlb-clock').innerText();
   chk(tag + ': the paper shows its clock (40 minutes) and letters its options A–E',
     /^\s*(39|40):\d\d/.test(clk) && (await p.locator('.mlb-opt-l').allInnerTexts()).join('') === 'ABCDE'.slice(0, await p.locator('.mlb-opt').count()), clk);
-  await p.locator('.mlb-opt').first().click(); await p.locator('.mlb-q .mlb-actions .mlb-go').click(); await p.waitForTimeout(500);
-  await p.locator('.mlb-q .mlb-actions .stt-btn:has-text("Leave it")').click(); await p.waitForTimeout(500);
+  /* The exam hall: a navigator of every question, answers changed until hand-in, a flag, and a hand-in that names what is left. */
+  const hallStatus = async () => (await p.locator('.mlb-hall-nav [role="status"]').innerText()).trim();
+  const settle = async re => { for (let k = 0; k < 40 && !re.test(await hallStatus()); k++) await p.waitForTimeout(150); return hallStatus(); };
+  chk(tag + ': the paper has a navigator of all 40 questions', await p.locator('.mlb-hall-q').count() === 40);
+  await p.locator('.mlb-opt').nth(0).click();
+  chk(tag + ': choosing an answer saves it at once (1 of 40 answered), nothing said about right or wrong', /^1 of 40 answered/.test(await settle(/^1 of 40/)) && await p.locator('.mlb-fb').count() === 0);
+  await p.locator('.mlb-hall-acts .mlb-go:has-text("Next")').click();
+  await p.locator('.mlb-opt').nth(1).click(); await settle(/^2 of 40/);
+  await p.locator('.mlb-opt').nth(1).click();
+  chk(tag + ': pressing the chosen answer again rubs it out (back to 1 of 40)', /^1 of 40 answered/.test(await settle(/^1 of 40/)));
+  await p.locator('.mlb-hall-acts .mlb-chipb').click();
+  chk(tag + ': a question can be flagged to come back to, and the navigator says so',
+    await p.locator('.mlb-hall-acts .mlb-chipb').getAttribute('aria-pressed') === 'true' && /flagged/.test(await p.locator('.mlb-hall-q').nth(1).getAttribute('aria-label')) && /1 flagged/.test(await hallStatus()));
+  await p.locator('.mlb-hall-q').nth(0).click();
+  chk(tag + ': going back keeps the answer given', await p.locator('.mlb-opt').nth(0).getAttribute('aria-checked') === 'true');
+  await p.locator('.mlb-opt').nth(2).click(); await p.waitForTimeout(400);
+  chk(tag + ': …and the answer can be changed (still 1 answered)', await p.locator('.mlb-opt').nth(2).getAttribute('aria-checked') === 'true' && /^1 of 40 answered/.test(await settle(/^1 of 40/)));
   await p.locator('.mlb-handin').click();
+  await p.waitForSelector('.mlb-hall-confirm', { timeout: 10000 });
+  const conf = await p.locator('.mlb-hall-confirm').innerText();
+  chk(tag + ': handing in asks first, naming the unanswered and the flagged', /39 unanswered/.test(conf) && /1 flagged/.test(conf), conf.slice(0, 160));
+  await p.locator('.mlb-hall-confirm .mlb-go').click();
   await p.waitForSelector('.mlb-exrep', { timeout: 30000 });
   const rep = await p.locator('.mlb-exrep').innerText();
   chk(tag + ': handing in shows the score out of 100, how many were answered, and the score by area', /out of 100/.test(rep) && /1 of 40 answered/.test(rep) && await p.locator('.mlb-exareas li').count() >= 3, rep.slice(0, 160));

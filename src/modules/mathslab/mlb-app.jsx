@@ -1506,6 +1506,7 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
     NGGApi.member.mathslab.answer(ses.sessionId, i, "", { ms: Date.now() - t0.current }).then(() => { setBusy(false); next(); },
       e => { setBusy(false); if ((e.code || e.message) === "time_up") finish(); else setErr(mlbErr(e)); }); };
   if (exam && left === 0 && !handedIn.current && !busy) setTimeout(() => { if (!handedIn.current) finish(); }, 0);
+  if (exam) { keys.current = null; return <MlbExamHall ses={ses} left={left} finish={finish} busy={busy} onDone={onDone} onErr={setErr}/>; }
   const choice = it.kind === "mcq" || it.kind === "error";
   keys.current = { choice, count: choice ? it.options.length : 0, fb, pick: k => setVal(k), submit, next, letters: lettered };
   return (
@@ -1562,6 +1563,97 @@ function MlbPlayer({ start, onDone, go, onAgain, onMini, onCheck }) {
           : <button type="button" className="mlb-go" disabled={empty || busy} onClick={submit}>{busy ? "Checking…" : practice ? "Check" : last ? "Submit" : "Next"}</button>}
           {exam && !fb ? <button type="button" className="stt-btn" disabled={busy} onClick={skip}>{last ? "Leave it and hand in" : "Leave it, next question"}</button> : null}
           {exam && !last ? <button type="button" className="stt-btn mlb-handin" disabled={busy} onClick={finish}>Hand in now</button> : null}</div>
+      </section>
+    </div>
+  );
+}
+
+/* ── The exam hall (handoff TODO 2, owner 15 Nov 2026: "make the exam feel real") ──
+   A paper is not a quiz. As in the hall: any question in any order (the navigator), a flag on the
+   ones to come back to, an answer changed or rubbed out until the paper is handed in, nothing about
+   right or wrong until the end, and a hand-in that says what is unanswered and flagged first. Every
+   answer is saved to the server as it is chosen (typed ones when you move on), so time running out
+   or a dropped connection loses nothing that was saved; the server keeps the clock. */
+function MlbExamHall({ ses, left, finish, busy, onDone, onErr }) {
+  const n = ses.items.length;
+  const [i, setI] = React.useState(0);
+  const [vals, setVals] = React.useState({});      // index → the answer on screen
+  const [saved, setSaved] = React.useState({});    // index → the answer the server holds
+  const [flags, setFlags] = React.useState({});
+  const [saving, setSaving] = React.useState(false);
+  const [confirm, setConfirm] = React.useState(false);
+  const qRef = React.useRef(null), handRef = React.useRef(null), navRef = React.useRef(null);
+  const it = ses.items[i], choice = it.kind === "mcq" || it.kind === "error";
+  const val = vals[i] === undefined ? "" : vals[i];
+  const isAns = v => v !== undefined && v !== "" && !(Array.isArray(v) && !(v[0] && v[1]));
+  const answered = Object.keys(saved).filter(k => isAns(saved[k])).length;
+  const unanswered = n - answered, flagged = Object.keys(flags).filter(k => flags[k]).length;
+  const timeUp = e => (e && (e.code || e.message)) === "time_up";
+  const save = (k, v) => {
+    if (JSON.stringify(saved[k] === undefined ? "" : saved[k]) === JSON.stringify(v === undefined ? "" : v)) return Promise.resolve(true);
+    setSaving(true);
+    return NGGApi.member.mathslab.answer(ses.sessionId, k, isAns(v) ? v : "", { ms: 0 }).then(() => { setSaving(false); setSaved(s => Object.assign({}, s, { [k]: v })); return true; },
+      e => { setSaving(false); if (timeUp(e)) { finish(); return false; } onErr(mlbErr(e)); return false; });
+  };
+  const goTo = k => { if (k < 0 || k >= n || k === i) return; save(i, vals[i]); setConfirm(false); setI(k); };
+  const pick = k => { const v = vals[i] === k ? "" : k; setVals(s => Object.assign({}, s, { [i]: v })); save(i, v); };   // a second press rubs it out
+  const handIn = () => { save(i, vals[i]).then(ok => { if (ok !== false) finish(); }); };
+  React.useEffect(() => { if (qRef.current) qRef.current.focus({ preventScroll: i === 0 }); }, [i]);
+  React.useEffect(() => { if (confirm && handRef.current) handRef.current.focus(); }, [confirm]);
+  /* Keys, as on a computer-based test: A–D choose (press again to clear), ← → move, F flags. Never while typing. */
+  const keys = React.useRef(null);
+  keys.current = { choice, count: choice ? it.options.length : 0, pick, prev: () => goTo(i - 1), next: () => goTo(i + 1), flag: () => setFlags(f => Object.assign({}, f, { [i]: !f[i] })) };
+  React.useEffect(() => {
+    const on = e => {
+      const k = keys.current; if (!k || e.altKey || e.ctrlKey || e.metaKey) return;
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (k.choice && /^[a-e]$/i.test(e.key) && "abcde".indexOf(e.key.toLowerCase()) < k.count) { e.preventDefault(); k.pick("abcde".indexOf(e.key.toLowerCase())); return; }
+      if (e.key === "ArrowRight") { e.preventDefault(); k.next(); } else if (e.key === "ArrowLeft") { e.preventDefault(); k.prev(); }
+      else if (e.key === "f" || e.key === "F") { e.preventDefault(); k.flag(); }
+    };
+    document.addEventListener("keydown", on); return () => document.removeEventListener("keydown", on);
+  }, []);
+  const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, "0");
+  return (
+    <div className="mlb-play mlb-hall" data-mode="exam">
+      <div className="mlb-playtop"><p className="mlb-eyebrow">{ses.title}</p>
+        <span className={"mlb-clock" + (left <= 300 ? " is-low" : "")} role="timer" aria-label={mm + " minutes " + (left % 60) + " seconds left"}><i className="ph-fill ph-timer" aria-hidden="true"/>{mm}:{ss}</span>
+        <button type="button" className="mlb-back" onClick={onDone}><i className="ph ph-x" aria-hidden="true"/>Leave</button></div>
+      <nav className="mlb-hall-nav" aria-label="Questions" ref={navRef}>
+        <p className="mlb-meta" role="status" aria-live="polite">{answered} of {n} answered{flagged ? " · " + flagged + " flagged" : ""}{saving ? " · saving…" : ""}</p>
+        <ol className="mlb-hall-grid">{ses.items.map((_, k) => {
+          const a = isAns(saved[k]), f = !!flags[k];
+          return <li key={k}><button type="button" className={"mlb-hall-q" + (k === i ? " is-on" : "") + (a ? " is-ans" : "") + (f ? " is-flag" : "")}
+            aria-current={k === i ? "step" : undefined} aria-label={"Question " + (k + 1) + (a ? ", answered" : ", not answered") + (f ? ", flagged" : "")} onClick={() => goTo(k)}>
+            {k + 1}{f ? <i className="ph-fill ph-flag" aria-hidden="true"/> : null}</button></li>; })}</ol>
+      </nav>
+      <section className="mlb-q">
+        <p className="mlb-qn" ref={qRef} tabIndex={-1}>Question {i + 1} of {n}</p>
+        <MlbMath as="p" className="mlb-stem" text={it.stem}/>
+        <MlbDiagram d={it.diagram}/>
+        {it.lines ? <ol className="mlb-lines">{it.lines.map((l, k) => <li key={k}><MlbMath text={l}/></li>)}</ol> : null}
+        {choice ? <div className="mlb-opts" role="radiogroup" aria-label="Choose an answer">{it.options.map((o, k) => (
+          <button key={k} type="button" role="radio" aria-checked={val === k} className={"mlb-opt" + (val === k ? " is-on" : "")} onClick={() => pick(k)}>
+            <span className="mlb-opt-l" aria-hidden="true">{"ABCDE"[k]}</span><MlbMath text={o}/></button>))}</div>
+          : <MlbInput item={it} value={val} onChange={v => setVals(s => Object.assign({}, s, { [i]: v }))} onEnter={() => goTo(i + 1)} disabled={busy}/>}
+        <p className="mlb-meta mlb-keyhint">{choice ? "Press A–" + "ABCDE"[it.options.length - 1] + " to choose (again to clear), ← → to move, F to flag." : "Type your answer (a whole number, a decimal or a fraction such as 7/2). It is saved when you move on."} You can change any answer until you hand in.</p>
+        <div className="mlb-actions mlb-hall-acts">
+          <button type="button" className="stt-btn" disabled={i === 0} onClick={() => goTo(i - 1)}><i className="ph ph-arrow-left" aria-hidden="true"/>Previous</button>
+          <button type="button" className={"mlb-chipb" + (flags[i] ? " is-on" : "")} aria-pressed={!!flags[i]} onClick={() => keys.current.flag()}><i className={(flags[i] ? "ph-fill" : "ph") + " ph-flag"} aria-hidden="true"/>{flags[i] ? "Flagged" : "Flag to come back"}</button>
+          {i < n - 1 ? <button type="button" className="mlb-go" onClick={() => goTo(i + 1)}>Next<i className="ph ph-arrow-right" aria-hidden="true"/></button> : null}
+          <button type="button" className={i < n - 1 ? "stt-btn mlb-handin" : "mlb-go"} disabled={busy} onClick={() => { save(i, vals[i]); setConfirm(true); }}>Hand in…</button>
+        </div>
+        {confirm ? <section className="mlb-hall-confirm" role="alertdialog" aria-labelledby="mlb-hall-ch" aria-describedby="mlb-hall-cd" onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); setConfirm(false); } }}>
+          <h3 id="mlb-hall-ch" className="mlb-h3">Hand in the paper?</h3>
+          <p id="mlb-hall-cd" className="mlb-p">{unanswered ? <><b>{unanswered} unanswered</b> — they count as wrong. </> : "Every question is answered. "}{flagged ? <><b>{flagged} flagged</b> to come back to. </> : null}You cannot change anything after this.{left > 60 ? " " + mm + " min still on the clock." : ""}</p>
+          <div className="mlb-actions">
+            <button type="button" className="mlb-go" ref={handRef} disabled={busy} onClick={handIn}>{busy ? "Handing in…" : "Hand in now"}</button>
+            {unanswered || flagged ? <button type="button" className="stt-btn" onClick={() => { const k = ses.items.findIndex((_, j) => !isAns(saved[j])); const f = Object.keys(flags).map(Number).sort((a, b) => a - b).find(j => flags[j]);
+              setConfirm(false); const to = unanswered ? k : f; if (to !== undefined && to >= 0) goTo(to); }}>{unanswered ? "Go to the first unanswered" : "Go to the first flagged"}</button> : null}
+            <button type="button" className="stt-btn" onClick={() => setConfirm(false)}>Keep working</button>
+          </div>
+        </section> : null}
       </section>
     </div>
   );
