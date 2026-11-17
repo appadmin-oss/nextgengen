@@ -39391,6 +39391,18 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('maths lab · 43 of 50 (86%) is a Super Genius with WAEC grade A1, said in the report and the score line',
         $wf['exam']['scaled'] === 86 && ($wf['exam']['tier']['name'] ?? '') === 'Super Genius' && $wf['exam']['grade'] === 'A1' && $wf['exam']['boardMinutes'] === 90
         && str_contains($wf['exam']['scoreText'], 'Super Genius') && count($wf['exam']['tiers']) === 3);
+    /* The report, made useful (handoff TODO 3): what to study as lesson links, the pace, the last paper, a predicted grade. */
+    chk('maths lab · a paper\'s report gives the pace against the paper\'s and the real exam\'s, and a predicted grade from one paper, called an estimate of one',
+        ($wf['exam']['pace']['allowedPerQ'] ?? 0) === 54 && ($wf['exam']['pace']['boardPerQ'] ?? 0) === 108 && ($wf['exam']['predicted']['grade'] ?? '') === 'A1' && ($wf['exam']['predicted']['basedOn'] ?? 0) === 1 && $wf['exam']['previous'] === null);
+    $ew2 = mlb_start(['memberId' => 'NGG-ML-D', 'mode' => 'exam', 'paper' => 'waec']);
+    $w2 = json_decode((string)db_row('SELECT items FROM mlab_sessions WHERE sessionId = ?', [$ew2['sessionId']])['items'], true);
+    foreach ($w2 as $k => $x) { $it2 = mlb_item($x['c'], $x['f'], $x['s']); mlb_answer(['memberId' => 'NGG-ML-D', 'sessionId' => $ew2['sessionId'], 'index' => $k, 'answer' => ($it2['key'] + 1) % 4, 'ms' => 1000]); }
+    $wf2 = mlb_finish(['memberId' => 'NGG-ML-D', 'sessionId' => $ew2['sessionId']])['exam'];
+    $stT = array_merge(...array_map(static fn($a) => array_column($a['topics'], 'comp'), $wf2['study'] ?: [['topics' => []]]));
+    chk('maths lab · a weak paper names, area by area, the topics missed there (at most four an area, each a real topic of the paper)',
+        count($wf2['study']) >= 3 && !array_filter($wf2['study'], static fn($a) => count($a['topics']) < 1 || count($a['topics']) > 4) && !array_diff($stT, array_column($w2, 'c')));
+    chk('maths lab · …says how it compares with the last paper (86% then, 0% now: down 86)', ($wf2['previous']['pct'] ?? -1) === 86 && ($wf2['previous']['change'] ?? 0) === -86);
+    chk('maths lab · …and predicts from the papers together (two papers, average 43%: E8)', ($wf2['predicted']['basedOn'] ?? 0) === 2 && ($wf2['predicted']['pct'] ?? 0) === 43 && ($wf2['predicted']['grade'] ?? '') === 'E8');
     $wx = array_column(mlb_exams(['memberId' => 'NGG-ML-D'])['papers'], null, 'id')['waec'];
     chk('maths lab · the paper card shows the best score\'s title, the WAEC time and the three titles to earn',
         $wx['best'] === 86 && ($wx['bestTier']['id'] ?? '') === 'super-genius' && $wx['boardMinutes'] === 90 && $wx['options'] === 4

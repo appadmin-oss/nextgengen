@@ -1776,6 +1776,13 @@ function MlbResult({ res, onDone, go, onAgain, onMini }) {
             {res.exam.paper === "sat" ? " The 200–800 figure is an estimate from your percentage." : ""}{res.exam.boardMinutes ? " The real paper allows " + res.exam.boardMinutes + " min." : ""}</p>
           <ul className="mlb-exareas">{Object.keys(res.exam.areas).map(a => { const x = res.exam.areas[a], pc = Math.round(x.right / Math.max(1, x.total) * 100);
             return <li key={a} className={pc < 60 ? "is-weak" : ""}><span>{a}</span><span className="mlb-meter"><span style={{ width: pc + "%" }}/></span><b>{x.right}/{x.total}</b></li>; })}</ul>
+          {res.exam.predicted ? <p className="mlb-exrep-pred"><span className="mlb-chip">Predicted grade {res.exam.predicted.grade} · {res.exam.predicted.word}</span>
+            <span className="mlb-meta">{res.exam.predicted.basedOn > 1 ? "An estimate from your last " + res.exam.predicted.basedOn + " standard exams (average " + res.exam.predicted.pct + "%)." : "An estimate from this one paper. Sit two more and it becomes a trend."}</span></p> : null}
+          {res.exam.previous ? <p className="mlb-meta">Last time on this paper: {res.exam.previous.pct}%. {res.exam.previous.change > 0 ? "Up " + res.exam.previous.change + " points." : res.exam.previous.change < 0 ? "Down " + (-res.exam.previous.change) + " points — one paper is one sitting; look at the areas below." : "The same as last time."}</p> : null}
+          {res.exam.pace ? <p className="mlb-meta">Pace: {res.exam.pace.secsPerQ} s a question answered. This paper allows {res.exam.pace.allowedPerQ} s{res.exam.pace.boardPerQ ? "; the real one, " + res.exam.pace.boardPerQ + " s" : ""}.{res.exam.pace.secsPerQ > res.exam.pace.allowedPerQ ? " You ran slow: practise the areas below against a timer." : ""}</p> : null}
+          {res.exam.study && res.exam.study.length ? <div className="mlb-exstudy"><h3 className="mlb-h3">What to study next</h3>
+            <ul>{res.exam.study.map(a => <li key={a.area}><b>{a.area}</b> <span className="mlb-meta">{a.right} of {a.total}</span>
+              <span className="mlb-exstudy-t">{a.topics.map(t => <button key={t.comp} type="button" className="mlb-link" onClick={() => { onDone(); go({ v: "learn", comp: t.comp }); }}>{t.title}</button>)}</span></li>)}</ul></div> : null}
         </section> : null}
         {res.mini && res.mini.ready && onMini ? <div className="mlb-minioffer" role="note"><i className="ph-fill ph-barbell" aria-hidden="true"/>
           <div><b>You have answered {res.mini.answered} questions today. Brilliant work.</b><span className="mlb-meta">A {res.mini.topics}-question mini review of what you learned earlier will lock it in — it takes about two minutes.</span></div>

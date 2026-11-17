@@ -759,6 +759,7 @@ function mlb_finish(array $p): array {
         $msg = $right === $n ? 'Everything you looked back at held. That is what makes it stick.' : ($n - $right) . ' slipped a little — ' . (($n - $right) === 1 ? 'it is' : 'they are') . ' marked for a quick refresh, so ' . (($n - $right) === 1 ? 'it comes' : 'they come') . ' back soon.';
     } elseif ($mode === 'exam') {
         $exam = mlb_exam_report($ref, $items, $resp, (string)$s['startedAt']);
+        $exam += mlb_exam_insights($mid, $ref, $items, $resp, $exam, (string)$s['sessionId']);
         $xp = mlb_award_xp($mid, 2 * $right);
         $weak = array_slice(array_keys(array_filter($exam['areas'], static fn($a) => $a['total'] > 0 && $a['right'] / $a['total'] < 0.6)), 0, 3);
         $msg = $exam['scoreText'] . '. ' . ($weak ? 'Work on ' . implode(', ', $weak) . ' next — the questions you missed are below, with full working.' : 'Strong across every area. Try another paper: every one is new.');
@@ -1428,6 +1429,41 @@ function mlb_exam_report(string $paper, array $items, array $resp, string $start
     }
     return ['paper' => $P['id'], 'title' => $P['title'], 'scaled' => $scaled, 'scale' => $P['exam'] === 'sat' ? '200–800 (estimate)' : 'out of 100', 'scoreText' => $scoreText,
         'minutes' => (int)$P['minutes'], 'usedSecs' => min($used, $limit + MLB_EXAM_GRACE), 'overTime' => $used > $limit + MLB_EXAM_GRACE, 'answered' => $answered, 'areas' => $areas] + $std;
+}
+/* ── The paper's report, made useful (handoff TODO 3, owner: "effective") ──
+ * A score alone tells a candidate nothing to do. Beside it: the areas under 60% with the very topics
+ * missed there (each a link to its lesson), the pace against the real paper's, this paper against the
+ * last one of the same kind, and — for the standard exam — a predicted grade from the last three papers
+ * (one paper is one sitting; three are a trend), always called an estimate. */
+const MLB_EXAM_WEAK = 0.6;
+function mlb_exam_insights(string $mid, string $ref, array $items, array $resp, array $exam, string $sessionId): array {
+    $P = mlb_papers()[$ref] ?? null; if (!$P) return [];
+    $study = [];
+    foreach ($items as $i => $x) {
+        $a = mlb_comp($x['c'])['strand'] ?? ''; $ar = $exam['areas'][$a] ?? null;
+        if (!$ar || $ar['total'] === 0 || $ar['right'] / $ar['total'] >= MLB_EXAM_WEAK || !empty($resp[$i]['ok'])) continue;
+        $study[$a] = $study[$a] ?? ['area' => $a, 'right' => $ar['right'], 'total' => $ar['total'], 'topics' => []];
+        if (count($study[$a]['topics']) < 4 && !in_array($x['c'], array_column($study[$a]['topics'], 'comp'), true))
+            $study[$a]['topics'][] = ['comp' => $x['c'], 'title' => (string)(mlb_comp($x['c'])['title'] ?? $x['c'])];
+    }
+    uasort($study, static fn($p, $q) => $p['right'] / max(1, $p['total']) <=> $q['right'] / max(1, $q['total']));
+    $n = max(1, count($items)); $ans = max(1, (int)$exam['answered']);
+    $pace = ['secsPerQ' => (int)round($exam['usedSecs'] / $ans), 'allowedPerQ' => (int)round(60 * (int)$P['minutes'] / $n)]
+        + (!empty($P['boardMinutes']) ? ['boardPerQ' => (int)round(60 * (int)$P['boardMinutes'] / $n)] : []);
+    $prev = []; foreach (db_all("SELECT items, resp, finishedAt FROM mlab_sessions WHERE memberId = ? AND lab = ? AND mode = 'exam' AND ref = ? AND finishedAt <> '' AND sessionId <> ? ORDER BY startedAt DESC LIMIT 2",
+        [$mid, lab_id(), $ref, $sessionId]) as $r) {
+        $it = json_decode((string)$r['items'], true) ?: []; $rs = json_decode((string)$r['resp'], true) ?: [];
+        $prev[] = ['pct' => (int)round(100 * count(array_filter($rs, static fn($x) => !empty($x['ok']))) / max(1, count($it))), 'at' => (string)$r['finishedAt']];
+    }
+    $pct = (int)round(100 * count(array_filter($resp, static fn($x) => !empty($x['ok']))) / $n);
+    $out = ['study' => array_values($study), 'pace' => $pace,
+        'previous' => $prev ? ['pct' => $prev[0]['pct'], 'at' => $prev[0]['at'], 'change' => $pct - $prev[0]['pct']] : null];
+    if (($P['board'] ?? '') === 'waec') {
+        $all = array_merge([$pct], array_column($prev, 'pct')); $avg = (int)round(array_sum($all) / count($all));
+        $g = mlb_waec_grade($avg);
+        $out['predicted'] = ['grade' => $g['grade'], 'word' => $g['word'], 'pct' => $avg, 'basedOn' => count($all)];
+    }
+    return $out;
 }
 /** mathslab.exams — the papers on offer and this member's last papers, newest first. */
 function mlb_exams(array $p): array {

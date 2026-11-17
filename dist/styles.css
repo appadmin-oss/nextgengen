@@ -9786,3 +9786,10 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mlb-hall-acts .mlb-chipb { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; }
 .mlb-hall-confirm { margin-top: 14px; padding: 16px; border: 1px solid var(--cr-line-3); border-radius: var(--cr-r-lg); background: var(--cr-s1); }
 .mlb-hall-confirm .mlb-p { margin: 6px 0 12px; }
+
+/* The paper's report: a predicted grade, and what to study next as links to the lessons. */
+.mlb-exrep-pred { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 0; }
+.mlb-exstudy { margin-top: 12px; }
+.mlb-exstudy ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mlb-exstudy li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.mlb-exstudy-t { display: flex; flex-wrap: wrap; gap: 4px 12px; flex-basis: 100%; }
