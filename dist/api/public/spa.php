@@ -35,6 +35,8 @@ function spa_route_for(string $path, array $routes): array {
     $parts = explode('/', trim($path, '/'));
     if ($seg === 'club' && ($parts[1] ?? '') === 'id-cards') return ['route' => $routes['id-cards'] ?? null, 'status' => 200, 'path' => '/club/id-cards'];
     if ($seg === 'join' && ($parts[1] ?? '') === 'volunteer') return ['route' => $routes['ngg-volunteer'] ?? null, 'status' => 200, 'path' => '/join/volunteer'];
+    // A shop order's private link (/shop/order/<token>) is its own noindex page, never the catalogue's canonical.
+    if ($seg === 'shop' && ($parts[1] ?? '') === 'order') return ['route' => $routes['shop-order'] ?? null, 'status' => 200, 'path' => ''];
     if (isset($routes[$seg])) return ['route' => $routes[$seg], 'status' => 200, 'path' => '/' . $seg];
     if (in_array($seg, SPA_ALIASES, true)) return ['route' => null, 'status' => 200, 'path' => ''];
     return ['route' => null, 'status' => 404, 'path' => ''];

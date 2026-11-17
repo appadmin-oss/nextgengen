@@ -1427,6 +1427,15 @@
       photoFraming:      (urls) => request('/public/photo-framing.php' + qs({ u: JSON.stringify(urls) })),
       membershipPay:     (token) => request('/public/membership-pay.php', { body: { action: 'init', token } }),
       membershipVerify:  (token, reference) => request('/public/membership-pay.php', { body: { action: 'verify', token, reference } }),
+      /* The NGG shop (api/public/shop.php, domain/shop.php). The server prices
+         everything: a cart is product ids, options and quantities. */
+      shop: {
+        list:  () => request('/public/shop.php'),
+        quote: (items, fulfil) => request('/public/shop.php', { body: { items, fulfil } }),
+        order: (o) => request('/public/shop.php', { body: Object.assign({ action: 'order' }, o) }),
+        // An order by its private link; with Paystack's reference the server confirms it first.
+        get:   (token, reference) => request('/public/shop.php' + qs({ token, reference: reference || '' })),
+      },
     },
     /* Push notifications (api/auth/push.php). `surface` picks WHICH session
        is read — member, family or admin — never whose; the server takes the
@@ -1893,6 +1902,15 @@
       newsletter:   () => request('/admin/newsletter.php'),
       newsletterSend: (subject, body) => request('/admin/newsletter.php', { body: { subject, body } }),
       donations:    (o) => request('/admin/donations.php' + qs({ export: o && o.export ? 1 : '' })),
+      /* The NGG shop (api/admin/shop.php): the catalogue is `content`; orders and settings are `fees`. */
+      shop: {
+        products:    () => request('/admin/shop.php' + qs({ what: 'products' })),
+        productSave: (data) => request('/admin/shop.php', { body: { action: 'product', data } }),
+        orders:      (f) => request('/admin/shop.php' + qs({ what: 'orders', status: (f && f.status) || '', q: (f && f.q) || '' })),
+        orderSet:    (orderId, status, reason) => request('/admin/shop.php', { body: { action: 'order', orderId, status, reason: reason || '' } }),
+        settings:    () => request('/admin/shop.php' + qs({ what: 'settings' })),
+        settingsSet: (data) => request('/admin/shop.php', { body: { action: 'settings', data } }),
+      },
       comments:     (status) => request('/admin/comments.php' + qs({ status: status || 'pending' })),
       commentModerate: (commentId, act) => request('/admin/comments.php', { body: { commentId, do: act } }),
       promos: {
