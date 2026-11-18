@@ -2068,6 +2068,100 @@ function ImageLightbox({ url, alt, onClose }) {
   );
 }
 
+/* ── The photo quality gate, browser half ───────────────────────────────
+   NGG does not take low-quality photos. These are the rules of
+   api/_lib/domain/photo-quality.php, run here first so a family is told at
+   once and can retake; the server measures again and is the one that decides.
+   PHOTO_QA_RULES must equal PHOTO_QA there (tests/photo-quality.test.js).
+   Exposure is judged on the face zone, so a passport photo on a white wall
+   passes; sharpness is the Crete et al. blur score (0 sharp … 1 blurred). */
+const PHOTO_QA_RULES = { minShort: 600, minLong: 800, workWidth: 600, zone: [0.18, 0.08, 0.82, 0.62], inner: [0.35, 0.20, 0.65, 0.50],
+  minMean: 50, maxMean: 215, maxClipped: 0.30, minStd: 22, maxBlur: 0.58, blurKernel: 9 };
+const PHOTO_QA_WORDS = {
+  too_small: "This photo is too small to print sharply. Use the camera, not a WhatsApp forward or a screenshot.",
+  too_dark: "The face is too dark. Stand facing a window or a light and retake.",
+  too_bright: "The face is washed out. Move out of direct sunlight or away from the flash and retake.",
+  clipped: "Part of the face is pure white or black. Even out the light and retake.",
+  low_contrast: "The photo looks flat or foggy. Wipe the lens and retake in better light.",
+  blurry: "The photo is blurry. Hold the phone steady, tap the face to focus, and retake.",
+  unreadable: "We could not open this photo. Take it again as a JPG or PNG.",
+  unavailable: "We could not check the photo just now. Try again in a minute.",
+};
+/** Crete et al. blur score of a row-major luma array (w × h): the worse axis. */
+function photoQaBlur(L, w, h) {
+  if (w < 12 || h < 12) return 1;
+  const k = PHOTO_QA_RULES.blurKernel, r = k >> 1, B = new Float32Array(w * h), out = [];
+  for (const horiz of [true, false]) {
+    if (horiz) {
+      for (let y = 0; y < h; y++) {
+        const row = y * w; let acc = 0;
+        for (let i = -r; i <= r; i++) acc += L[row + Math.min(w - 1, Math.max(0, i))];
+        for (let x = 0; x < w; x++) { B[row + x] = acc / k; acc += L[row + Math.min(w - 1, x + r + 1)] - L[row + Math.max(0, x - r)]; }
+      }
+    } else {
+      for (let x = 0; x < w; x++) {
+        let acc = 0;
+        for (let i = -r; i <= r; i++) acc += L[Math.min(h - 1, Math.max(0, i)) * w + x];
+        for (let y = 0; y < h; y++) { B[y * w + x] = acc / k; acc += L[Math.min(h - 1, y + r + 1) * w + x] - L[Math.max(0, y - r) * w + x]; }
+      }
+    }
+    const step = horiz ? 1 : w; let sF = 0, sV = 0;
+    for (let y = horiz ? 0 : 1; y < h; y++) for (let x = horiz ? 1 : 0; x < w; x++) {
+      const i = y * w + x, dF = Math.abs(L[i] - L[i - step]), dB = Math.abs(B[i] - B[i - step]);
+      sF += dF; if (dF > dB) sV += dF - dB;
+    }
+    out.push(sF > 0 ? (sF - sV) / sF : 1);
+  }
+  return Math.max(out[0], out[1]);
+}
+/** Measure a canvas already at the working size (600 wide, never enlarged). */
+function photoQaMeasure(canvas) {
+  const w = canvas.width, h = canvas.height, R = PHOTO_QA_RULES;
+  const x0 = Math.floor(w * R.zone[0]), y0 = Math.floor(h * R.zone[1]), x1 = Math.floor(w * R.zone[2]), y1 = Math.floor(h * R.zone[3]);
+  const ix0 = Math.floor(w * R.inner[0]), iy0 = Math.floor(h * R.inner[1]), ix1 = Math.floor(w * R.inner[2]), iy1 = Math.floor(h * R.inner[3]);
+  const zw = x1 - x0, zh = y1 - y0;
+  const d = canvas.getContext("2d", { willReadFrequently: true }).getImageData(x0, y0, zw, zh).data;
+  const L = new Float32Array(zw * zh); let sum = 0, sq = 0, clip = 0, inner = 0;
+  for (let y = 0; y < zh; y++) for (let x = 0; x < zw; x++) {
+    const i = y * zw + x, v = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    L[i] = v; sum += v; sq += v * v;
+    const ax = x + x0, ay = y + y0;
+    if (ax >= ix0 && ax < ix1 && ay >= iy0 && ay < iy1) { inner++; if (v <= 8 || v >= 247) clip++; }
+  }
+  const n = Math.max(1, zw * zh), mean = sum / n;
+  return { mean: Math.round(mean * 10) / 10, std: Math.round(Math.sqrt(Math.max(0, sq / n - mean * mean)) * 10) / 10,
+    clipped: inner ? Math.round(clip / inner * 1000) / 1000 : 0, blur: Math.round(photoQaBlur(L, zw, zh) * 1000) / 1000 };
+}
+/** The issues, in the order a family should fix them. `srcW`/`srcH` are the ORIGINAL's pixels for the part kept. */
+function photoQaJudge(m, srcW, srcH) {
+  const R = PHOTO_QA_RULES, out = [];
+  if (Math.min(srcW, srcH) < R.minShort || Math.max(srcW, srcH) < R.minLong) out.push("too_small");
+  if (m.mean < R.minMean) out.push("too_dark");
+  if (m.mean > R.maxMean) out.push("too_bright");
+  if (m.clipped > R.maxClipped) out.push("clipped");
+  if (m.std < R.minStd) out.push("low_contrast");
+  if (m.blur > R.maxBlur) out.push("blurry");
+  return out;
+}
+/** Judge a chosen file before it is uploaded: { issues, words } (issues empty = it passes here; the server checks again). */
+async function photoQaCheckFile(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const w = img.naturalWidth, h = img.naturalHeight, cw = Math.min(w, PHOTO_QA_RULES.workWidth), ch = Math.max(1, Math.round(h * cw / w));
+    const c = document.createElement("canvas"); c.width = cw; c.height = ch;
+    const g = c.getContext("2d", { willReadFrequently: true }); g.imageSmoothingQuality = "high"; g.drawImage(img, 0, 0, cw, ch);
+    const issues = photoQaJudge(photoQaMeasure(c), w, h);
+    return { issues, words: issues.slice(0, 2).map(i => PHOTO_QA_WORDS[i]).join(" ") };
+  } catch (_) { return { issues: ["unreadable"], words: PHOTO_QA_WORDS.unreadable }; }
+  finally { URL.revokeObjectURL(url); }
+}
+/** The server's refusal (`photo_low_quality`) in the family's words. */
+function photoQaServerWords(e) {
+  const d = (e && e.data) || {}, issues = Array.isArray(d.issues) ? d.issues : [];
+  return issues.length ? issues.slice(0, 2).map(i => PHOTO_QA_WORDS[i] || "").join(" ").trim() : (d.message || PHOTO_QA_WORDS.blurry);
+}
+
 function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   const [mode, setMode] = React.useState("idle"); // idle | camera | link
   const [busy, setBusy] = React.useState(false);

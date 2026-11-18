@@ -1390,7 +1390,11 @@ function mp9PhotoAsk(app, me, s, set) {
       : declined ? "The desk kept your photo" + (r.note ? ": " + r.note : ".") + " You can ask again with another photo."
       : r && r.status === "approved" ? "Your new photo was approved." : "To change it, choose the photo you want. The desk checks it first.",
     canPick: !pending && !draft, pickL: me.photo ? "Ask to change my photo" : "Send my photo",
-    onPick: e => { const f = e.target.files && e.target.files[0]; if (!f) return; set({ phDraft: { busy: true, url: "", local: URL.createObjectURL(f) } });
+    onPick: async e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return;
+      /* NGG does not take low-quality photos: judged here first, so a blurred or tiny one is never sent. */
+      const qa = await photoQaCheckFile(f);
+      if (qa.issues.length) { app.toast(qa.words); return; }
+      set({ phDraft: { busy: true, url: "", local: URL.createObjectURL(f) } });
       NGGApi.uploadOrInline(f, "headshot").then(u => set({ phDraft: { busy: false, url: u.url, local: (app.state.phDraft || {}).local || "" } }))
         .catch(er => { set({ phDraft: null }); app.toast(mp9Err(er)); }); },
     hasDraft: !!draft, draft: draft ? (draft.local || nggPhotoSrc(draft.url)) : "",

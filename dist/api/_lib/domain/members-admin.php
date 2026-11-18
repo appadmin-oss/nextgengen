@@ -289,6 +289,7 @@ function member_merge_policy(): array {
         'member_ledger'          => 'BLOCK',          // money: never combined silently
         'membership_invoices'    => 'BLOCK',          // a joining invoice and its receipt name one member
         'offline_payments'       => 'BLOCK',          // evidence of money paid for one member
+        'mou_agreements'         => 'BLOCK',          // a signed Membership Agreement names one child and their family; never re-addressed
         'documents'              => 'BLOCK',          // an issued invoice, receipt or certificate names one member; it is never re-addressed
         'unapplied_payments'     => 'BLOCK',          // money that arrived for one member, not yet decided
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive

@@ -187,6 +187,13 @@ chk('migrator: idempotent DDL helpers report existence correctly',
         return db_table_exists($db, 'centres') && !db_table_exists($db, 'no_such_table_xyz')
             && db_column_exists($db, 'centres', 'address') && !db_column_exists($db, 'centres', 'no_such_col_xyz'); })());
 
+/* The photo quality gate (domain/photo-quality.php) measures real pixels. The
+   suites below post placeholder photos — 1-px PNGs, Cloudinary URLs this machine
+   cannot fetch — to test everything else about an intake, so the gate is off for
+   them as a fixture. It is switched ON, and proven, in its own section
+   ("photo quality gate"), which restores this setting when it is done. */
+setting_set('photo_quality_gate', 'off', 'test');
+
 // SQLite⇄MySQL parity: every table + column the code relies on in SQLite must
 // also exist in db/schema-mysql.sql, or prod silently lacks a column dev has.
 function ngg_split_top_commas(string $s): array {
@@ -40384,6 +40391,193 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     mlb_set_state('NGG-DOC-1', mlb_stages()[1]['comps'][0], ['state' => 'review']);
     chk('maths lab certificate · an issued certificate stands after a topic slips', ($r2 = backend_dispatch('mathslab.certificate', ['memberId' => 'NGG-DOC-1', 'courseId' => 'number-foundations'])) && !empty($r2['ok']) && $r2['no'] === $mc['no']);
 } finally { if ($__db->inTransaction()) $__db->rollBack(); } })();
+
+
+/* ── The photo quality gate (domain/photo-quality.php) ────────────────────
+   NGG does not take low-quality photos. Proven on a generated portrait-like
+   photo — shapes, a face, eyes, and fine texture — and on copies of it made
+   blurred, too small, too dark, washed out and flat; then through each place a
+   photo can live (inline, the local store, the S3-compatible bucket, Cloudinary)
+   and through the application itself. The real-photo calibration is in
+   docs/PHOTO_QUALITY.md. */
+function qa_test_portrait(int $w = 600, int $h = 800) {
+    mt_srand(7);
+    $im = imagecreatetruecolor($w, $h);
+    for ($y = 0; $y < $h; $y++) imageline($im, 0, $y, $w, $y, imagecolorallocate($im, 200 - (int)($y / $h * 40), 205 - (int)($y / $h * 40), 210));
+    $cx = (int)($w / 2); $cy = (int)($h * 0.38);
+    imagefilledellipse($im, $cx, (int)($h * 0.95), (int)($w * 0.9), (int)($h * 0.6), imagecolorallocate($im, 30, 50, 110));
+    imagefilledellipse($im, $cx, $cy - (int)($h * 0.07), (int)($w * 0.42), (int)($h * 0.3), imagecolorallocate($im, 25, 20, 18));
+    imagefilledellipse($im, $cx, $cy, (int)($w * 0.36), (int)($h * 0.34), imagecolorallocate($im, 150, 100, 70));
+    foreach ([-1, 1] as $sg) { imagefilledellipse($im, $cx + $sg * (int)($w * 0.07), $cy - (int)($h * 0.02), 34, 18, imagecolorallocate($im, 245, 245, 240));
+        imagefilledellipse($im, $cx + $sg * (int)($w * 0.07), $cy - (int)($h * 0.02), 14, 14, imagecolorallocate($im, 20, 15, 10)); }
+    imagefilledrectangle($im, $cx - 40, $cy + (int)($h * 0.09), $cx + 40, $cy + (int)($h * 0.1), imagecolorallocate($im, 90, 40, 35));
+    for ($i = 0; $i < $w * $h / 6; $i++) { $x = mt_rand(0, $w - 1); $y = mt_rand(0, $h - 1); $c = imagecolorat($im, $x, $y); $d = mt_rand(-28, 28);
+        imagesetpixel($im, $x, $y, (max(0, min(255, (($c >> 16) & 255) + $d)) << 16) | (max(0, min(255, (($c >> 8) & 255) + $d)) << 8) | max(0, min(255, ($c & 255) + $d))); }
+    return $im;
+}
+function qa_test_jpeg($im): string { ob_start(); imagejpeg($im, null, 86); return (string)ob_get_clean(); }
+if (function_exists('imagecreatetruecolor')) {
+    $qaPrev = setting_raw('photo_quality_gate');
+    setting_set('photo_quality_gate', 'on', 'test');
+    $good = qa_test_jpeg(qa_test_portrait());
+    $blur = qa_test_portrait(); for ($i = 0; $i < 12; $i++) imagefilter($blur, IMG_FILTER_GAUSSIAN_BLUR); $blur = qa_test_jpeg($blur);
+    $sm = imagecreatetruecolor(300, 400); imagecopyresampled($sm, qa_test_portrait(), 0, 0, 0, 0, 300, 400, 600, 800); $small = qa_test_jpeg($sm);
+    $dk = qa_test_portrait(); imagefilter($dk, IMG_FILTER_BRIGHTNESS, -120); $dark = qa_test_jpeg($dk);
+    $br = qa_test_portrait(); imagefilter($br, IMG_FILTER_BRIGHTNESS, 110); $bright = qa_test_jpeg($br);
+    $fg = qa_test_portrait(); imagefilter($fg, IMG_FILTER_CONTRAST, 75); $foggy = qa_test_jpeg($fg);
+    $iss = fn($b) => photo_qa_bytes($b)['issues'];
+    chk('photo quality · a sharp, well-lit 600 × 800 portrait passes', photo_qa_bytes($good)['ok'] === true);
+    chk('photo quality · a blurred copy of it is refused as blurry, and only that', $iss($blur) === ['blurry']);
+    chk('photo quality · a 300 × 400 copy is refused as too small (nothing is enlarged to pass)', $iss($small) === ['too_small']);
+    chk('photo quality · too dark, washed out, and flat/foggy are each refused for their own reason',
+        in_array('too_dark', $iss($dark), true) && in_array('too_bright', $iss($bright), true) && $iss($foggy) === ['low_contrast']);
+    chk('photo quality · something that is not a photo is unreadable', $iss('not an image') === ['unreadable']);
+    // Wherever it lives: inline, our local store, our S3-compatible bucket, Cloudinary.
+    $b64 = fn($b) => 'data:image/jpeg;base64,' . base64_encode($b);
+    chk('photo quality · inline: the bytes in the request are judged', photo_qa_gate($b64($good)) === null && (photo_qa_gate($b64($blur))['error'] ?? '') === 'photo_low_quality');
+    $st = photo_store_put($b64($blur));
+    chk('photo quality · the local store: a stored blurred photo is read back from disk and refused', !empty($st['ok']) && (photo_qa_gate((string)$st['url'])['issues'] ?? []) === ['blurry']);
+    $keepStore = $GLOBALS['CONFIG']['storage'] ?? null;
+    $GLOBALS['CONFIG']['storage'] = ['endpoint' => 'https://acct.r2.cloudflarestorage.com', 'region' => 'auto', 'bucket' => 'ngg-media', 'access_key' => 'AK', 'secret_key' => 'SK', 'public_base' => 'https://pub-x.r2.dev', 'folder' => 'ngg'];
+    $gets = [];
+    $GLOBALS['__store_http_mock'] = function ($m, $k, $b = '', $x = []) use (&$gets, $good, $dark) { $gets[] = [$m, $k]; return ['code' => 200, 'body' => strpos($k, 'dark') !== false ? $dark : $good]; };
+    chk('photo quality · the S3-compatible bucket: the object is read with a signed GET of its own key, and judged',
+        photo_qa_gate('https://pub-x.r2.dev/ngg/headshot/2026/11/ok.jpg') === null && (photo_qa_gate('https://pub-x.r2.dev/ngg/headshot/2026/11/dark.jpg')['issues'][0] ?? '') === 'too_dark'
+        && $gets[0] === ['GET', 'ngg/headshot/2026/11/ok.jpg']);
+    $GLOBALS['__store_http_mock'] = fn($m, $k, $b = '', $x = []) => ['code' => 503, 'body' => ''];
+    chk('photo quality · a bucket that cannot be read refuses as "unavailable" — never waved through', (photo_qa_gate('https://pub-x.r2.dev/ngg/headshot/x.jpg')['issues'] ?? []) === ['unavailable']);
+    unset($GLOBALS['__store_http_mock']);
+    if ($keepStore === null) unset($GLOBALS['CONFIG']['storage']); else $GLOBALS['CONFIG']['storage'] = $keepStore;
+    $GLOBALS['__photo_qa_fetch_mock'] = fn($u) => strpos($u, 'res.cloudinary.com') !== false ? $small : false;
+    chk('photo quality · Cloudinary: the image is fetched and judged like any other', (photo_qa_gate('https://res.cloudinary.com/ngg/image/upload/v1/headshot/a.jpg')['issues'] ?? []) === ['too_small']);
+    unset($GLOBALS['__photo_qa_fetch_mock']);
+    chk('photo quality · another host is not ours and is never fetched', photo_qa_fetch('https://example.org/a.jpg') === null);
+    // Through the application: refused before anything is written, with the reason.
+    $before = (int)db_row("SELECT COUNT(*) n FROM applications")['n'];
+    $qaApply = fn($photo, $mail) => backend_dispatch('public.apply', ['kind' => 'volunteer', 'referees' => VOLTEST_REFS, 'declaration' => true, 'sex' => 'Female',
+        'role' => 'admin', 'firstName' => 'Qa', 'lastName' => 'Photo', 'email' => $mail, 'phone' => '08052299871', 'dob' => '1990-01-01',
+        'centre' => (string)(db_row("SELECT name FROM centres WHERE status = 'active' AND COALESCE(online, 0) = 0 ORDER BY name LIMIT 1")['name'] ?? 'Egbeda'), 'why' => 'I care.', 'photoUrl' => $photo]);
+    $r = $qaApply($b64($blur), 'qa.blurry@example.org');
+    chk('photo quality · an application with a blurred photo is refused as photo_low_quality, naming the photo and why, and nothing is filed',
+        ($r['error'] ?? '') === 'photo_low_quality' && ($r['field'] ?? '') === 'photo' && $r['issues'] === ['blurry'] && str_contains((string)$r['message'], 'blurry')
+        && (int)db_row("SELECT COUNT(*) n FROM applications")['n'] === $before);
+    chk('photo quality · …and the same application with a sharp photo is filed', !empty($qaApply($b64($good), 'qa.sharp@example.org')['ok']));
+    // The member's own photo-change request and the staff upload hold the same bar.
+    $qm = 'NGG-QA-0001';
+    if (!db_row('SELECT 1 x FROM members WHERE memberId = ?', [$qm])) db_insert('members', ['memberId' => $qm, 'fullName' => 'Qa Member', 'email' => 'qa.m@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('photo quality · a member asking to change their photo to a dark one is refused, and no request is made',
+        (photo_change_request_create(['memberId' => $qm, 'photoUrl' => $b64($dark)])['error'] ?? '') === 'photo_low_quality'
+        && !db_row("SELECT 1 x FROM photo_change_requests WHERE subjectId = ?", [$qm]));
+    chk('photo quality · …and a good one goes through', !empty(photo_change_request_create(['memberId' => $qm, 'photoUrl' => $b64($good)])['ok']));
+    setting_set('photo_quality_gate', 'off', 'test');
+    chk('photo quality · a super-admin can switch the gate off (for a storage outage), and then nothing is measured', photo_qa_gate($b64($blur)) === null);
+    // The browser runs the same rules: its numbers must be these numbers.
+    $cj = (string)file_get_contents(dirname(dirname(__DIR__)) . '/components.jsx');
+    preg_match('/const PHOTO_QA_RULES = \{(.*?)\};/s', $cj, $mm);
+    $js = []; foreach (['minShort', 'minLong', 'workWidth', 'minMean', 'maxMean', 'maxClipped', 'minStd', 'maxBlur', 'blurKernel'] as $k) { preg_match('/\b' . $k . ':\s*([\d.]+)/', $mm[1] ?? '', $x); $js[$k] = isset($x[1]) ? (float)$x[1] : null; }
+    preg_match('/zone:\s*\[([^\]]+)\]/', $mm[1] ?? '', $z); preg_match('/inner:\s*\[([^\]]+)\]/', $mm[1] ?? '', $zi);
+    chk('photo quality · the browser’s PHOTO_QA_RULES are the server’s PHOTO_QA, number for number',
+        array_filter(array_keys($js), fn($k) => (float)PHOTO_QA[$k] !== $js[$k]) === []
+        && array_map('floatval', array_map('trim', explode(',', $z[1] ?? ''))) === array_map('floatval', PHOTO_QA['zone'])
+        && array_map('floatval', array_map('trim', explode(',', $zi[1] ?? ''))) === array_map('floatval', PHOTO_QA['inner']));
+    chk('photo quality · and every issue the server can name has the same words in the browser',
+        array_filter(array_keys(PHOTO_QA_WORDS), fn($k) => strpos($cj, $k . ': "' . PHOTO_QA_WORDS[$k] . '"') === false) === []);
+    setting_set('photo_quality_gate', $qaPrev !== '' && $qaPrev !== null ? $qaPrev : 'off', 'test');
+}
+
+
+/* ── The Membership Agreement (domain/mou.php) ───────────────────────────
+   The MoU signed online: started for an NGG member, read and checked by the
+   family, signed (name + drawn signature), witnessed, countersigned by NGG,
+   and a copy emailed at each stage. Its consents are the consents ledger. */
+if (function_exists('imagecreatetruecolor')) {
+    $sigPng = function (int $seed) { $im = imagecreatetruecolor(320, 100); imagefill($im, 0, 0, imagecolorallocate($im, 255, 255, 255));
+        $ink = imagecolorallocate($im, 17, 19, 26); imagesetthickness($im, 3); mt_srand($seed); $x = 20; $y = 50;
+        for ($i = 0; $i < 14; $i++) { $nx = $x + mt_rand(10, 22); $ny = max(10, min(90, $y + mt_rand(-30, 30))); imageline($im, $x, $y, $nx, $ny, $ink); $x = $nx; $y = $ny; }
+        ob_start(); imagepng($im); return 'data:image/png;base64,' . base64_encode((string)ob_get_clean()); };
+    $blank = (function () { $im = imagecreatetruecolor(320, 100); imagefill($im, 0, 0, imagecolorallocate($im, 255, 255, 255)); ob_start(); imagepng($im); return 'data:image/png;base64,' . base64_encode((string)ob_get_clean()); })();
+    $now = now_iso();
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-MOU-ADM','NGG-MOU-1','NGG-MOU-OUT','SUM-MOU-1')");
+    db_insert('members', ['memberId' => 'NGG-MOU-ADM', 'fullName' => 'Agnes Coordinator', 'email' => 'mou.adm@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-MOU-1', 'fullName' => 'Tobi Adeyemi', 'email' => 'mou.parent@example.org', 'parentEmail' => 'mou.parent@example.org', 'parentPhone' => '08031112222', 'parentName' => 'Kemi Adeyemi',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'dob' => gmdate('Y-m-d', strtotime('-13 years')), 'school' => 'Egbeda High School', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SUM-MOU-1', 'fullName' => 'Summer Child', 'email' => 's.mou@example.org', 'type' => 'Summer', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $GLOBALS['__mail_sink'] = [];
+    $st = admin_mou_start(['requesterId' => 'NGG-MOU-ADM', 'memberIds' => ['NGG-MOU-1', 'SUM-MOU-1']]);
+    $row = db_row("SELECT * FROM mou_agreements WHERE memberId = 'NGG-MOU-1' ORDER BY id DESC LIMIT 1");
+    $inv = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => $x['to'] === 'mou.parent@example.org'));
+    chk('mou · started for an NGG member, refused for a Summer School account, verdict per row', ($st['applied'] ?? 0) === 1 && ($st['results'][1]['error'] ?? '') === 'not_ngg' && $row && $row['status'] === 'awaiting_family');
+    preg_match('#/mou/([A-Za-z0-9_-]+)#', (string)($inv[0]['html'] ?? ''), $tm); $tok = $tm[1] ?? '';
+    chk('mou · the family is emailed a private link; only its hash is stored', $tok !== '' && $row['tokenHash'] === mou_hash($tok) && !str_contains(json_encode($row), $tok));
+    chk('mou · starting again for the same member answers "already", never a second agreement', (admin_mou_start(['requesterId' => 'NGG-MOU-ADM', 'memberIds' => ['NGG-MOU-1']])['results'][0]['unchanged'] ?? false) === true);
+    $g = public_mou_get(['token' => $tok]);
+    chk('mou · the family page carries every clause with a plain-words summary, the five questions, and their details filled in',
+        count($g['sections'] ?? []) === 13 && count($g['quiz'] ?? []) === 5 && ($g['prefill']['family']['email'] ?? '') === 'mou.parent@example.org' && ($g['prefill']['member']['school'] ?? '') === 'Egbeda High School'
+        && array_filter($g['sections'], fn($x) => $x['short'] === '') === []);
+    $txt = json_encode($g['sections'], JSON_UNESCAPED_UNICODE);
+    chk('mou · the money is the fee settings’ own, frozen on the agreement, never a hard-coded figure', !preg_match('/\{[A-Za-z]+\}/', $txt) && str_contains($txt, (json_decode($row['termsJson'], true)['trainingFee'] ?? 'x')));
+    chk('mou · a link that is not one is refused', (public_mou_get(['token' => 'nope'])['error'] ?? '') === 'not_found');
+    $right = []; foreach (mou_quiz() as $q) $right[$q['id']] = $q['a'];
+    $fam = ['fatherName' => '', 'motherName' => 'Kemi Adeyemi', 'guardianName' => '', 'address' => '12 Oremeji Street, Egbeda', 'phone' => '0803 111 2222', 'email' => 'mou.parent@example.org'];
+    $mem = ['address' => '12 Oremeji Street, Egbeda', 'phone' => '', 'age' => '13', 'school' => 'Egbeda High School', 'class' => 'JSS 2', 'department' => 'Tech'];
+    $base = ['token' => $tok, 'answers' => $right, 'family' => $fam, 'member' => $mem, 'trips' => 'declined', 'clientName' => 'Kemi Adeyemi', 'clientRel' => 'Mother', 'clientSignature' => $sigPng(1), 'agree' => true, 'ip' => '10.1.1.1'];
+    $wrong = $right; $wrong['q3'] = 0;
+    chk('mou · the family cannot sign until every question is answered right', (public_mou_sign(['answers' => $wrong] + $base)['error'] ?? '') === 'quiz_incomplete');
+    chk('mou · a blank signature box is not a signature', (public_mou_sign(['clientSignature' => $blank] + $base)['error'] ?? '') === 'bad_signature');
+    chk('mou · a typed name must be a full name', (public_mou_sign(['clientName' => 'Kemi'] + $base)['error'] ?? '') === 'bad_name');
+    chk('mou · the off-site choice must be made, yes or no', (public_mou_sign(['trips' => ''] + $base)['error'] ?? '') === 'trips_required');
+    chk('mou · the witness is somebody else, signing for themselves',
+        (public_mou_sign(['witness' => ['name' => 'Kemi Adeyemi', 'phone' => '08035556666', 'signature' => $sigPng(2)]] + $base)['field'] ?? '') === 'witnessName'
+        && (public_mou_sign(['witness' => ['name' => 'Bayo Ojo', 'phone' => '08035556666', 'signature' => $sigPng(1)]] + $base)['field'] ?? '') === 'witnessSignature');
+    chk('mou · nothing was written by any refusal', db_row("SELECT status FROM mou_agreements WHERE id = ?", [(int)$row['id']])['status'] === 'awaiting_family');
+    $GLOBALS['__mail_sink'] = [];
+    $sg = public_mou_sign(['witness' => ['name' => 'Bayo Ojo', 'phone' => '08035556666', 'signature' => $sigPng(2)]] + $base);
+    $after = db_row("SELECT * FROM mou_agreements WHERE id = ?", [(int)$row['id']]);
+    chk('mou · signed by the family and witnessed at home: it waits on NGG, with the digest of what was signed', !empty($sg['ok']) && $after['status'] === 'awaiting_ngg' && $after['witnessBy'] === 'family' && strlen((string)$after['docHash']) === 64 && $after['clientRel'] === 'Mother');
+    $cons = []; foreach (db_all("SELECT type, status, method, policyVersion FROM consents WHERE studentId = 'NGG-MOU-1' ORDER BY id") as $c) $cons[$c['type']] = $c;
+    chk('mou · its consents are the consents ledger: the six granted, trips declined, method "mou", the agreement’s version',
+        count(array_filter(MOU_CONSENTS_GRANTED, fn($t) => ($cons[$t]['status'] ?? '') === 'granted' && $cons[$t]['method'] === 'mou' && $cons[$t]['policyVersion'] === MOU_POLICY)) === 6 && ($cons['trips']['status'] ?? '') === 'declined');
+    $copy = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => $x['to'] === 'mou.parent@example.org'));
+    chk('mou · the family is emailed their copy at once: every clause, the signatures so far, and the printable link',
+        count($copy) === 1 && str_contains($copy[0]['html'], 'Talent management and earnings') && str_contains($copy[0]['html'], 'Kemi Adeyemi') && str_contains($copy[0]['html'], 'Bayo Ojo') && str_contains($copy[0]['html'], '/api/public/mou.php?doc='));
+    chk('mou · signing twice is refused', (public_mou_sign(['witness' => ['name' => 'Bayo Ojo', 'phone' => '08035556666', 'signature' => $sigPng(2)]] + $base)['error'] ?? '') === 'already_signed');
+    chk('mou · the registration checklist does not count it until NGG countersigns', empty(mou_signed_ids(['NGG-MOU-1'])['NGG-MOU-1']));
+    chk('mou · NGG countersigns with its own signature, never the family’s', (admin_mou_countersign(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $row['mouId'], 'role' => 'Centre coordinator', 'signature' => $sigPng(1)])['field'] ?? '') === 'signature');
+    $GLOBALS['__mail_sink'] = [];
+    $cs = admin_mou_countersign(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $row['mouId'], 'role' => 'Centre coordinator, Egbeda', 'signature' => $sigPng(3)]);
+    $fin = db_row("SELECT * FROM mou_agreements WHERE id = ?", [(int)$row['id']]);
+    $final = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => $x['to'] === 'mou.parent@example.org'));
+    chk('mou · countersigned: signed by all three, the completed copy emailed, and the checklist item done',
+        !empty($cs['ok']) && $fin['status'] === 'signed' && $fin['nggName'] === 'Agnes Coordinator' && count($final) === 1 && str_contains($final[0]['subject'], 'complete') && !empty(mou_signed_ids(['NGG-MOU-1'])['NGG-MOU-1']));
+    preg_match('#mou\.php\?doc=([A-Za-z0-9_-]+)#', $final[0]['html'] ?? '', $dm);
+    $doc = public_mou_doc(['doc' => $dm[1] ?? '']);
+    chk('mou · the printable copy (A4, "Print or save as PDF") has the parties, every clause, three signatures and the fingerprint',
+        !empty($doc['ok']) && str_contains($doc['html'], 'Print or save as PDF') && str_contains($doc['html'], 'Ending the Agreement early') && substr_count($doc['html'], 'class="rp-sign-img"') === 3
+        && str_contains($doc['html'], substr((string)$fin['docHash'], 0, 32)) && str_contains($doc['html'], 'Off-site activities:</b> No'));
+    chk('mou · the old family link reads the signed state; a copy link that is not one is refused', (public_mou_get(['token' => $tok])['status'] ?? '') === 'signed' && empty(public_mou_doc(['doc' => 'nope'])['ok']));
+    // No witness at home: NGG's representative witnesses at the centre.
+    db_insert('members', ['memberId' => 'NGG-MOU-OUT', 'fullName' => 'Ada Okafor', 'email' => 'mou.p2@example.org', 'parentEmail' => 'mou.p2@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $GLOBALS['__mail_sink'] = [];
+    $s2 = mou_start(db_row("SELECT * FROM members WHERE memberId = 'NGG-MOU-OUT'"), 'NGG-MOU-ADM');
+    preg_match('#/mou/([A-Za-z0-9_-]+)#', (string)($GLOBALS['__mail_sink'][0]['html'] ?? ''), $tm2);
+    $r2 = public_mou_sign(['token' => $tm2[1] ?? ''] + array_diff_key($base, ['token' => 1]));
+    $mid = db_row("SELECT * FROM mou_agreements WHERE mouId = ?", [$s2['mouId']]);
+    $ls = admin_mou_list(['requesterId' => 'NGG-MOU-ADM', 'status' => 'awaiting_ngg']);
+    chk('mou · without a witness the desk lists it as needing a witness', !empty($r2['ok']) && (array_values(array_filter($ls['rows'], fn($x) => $x['mouId'] === $s2['mouId']))[0]['needsWitness'] ?? false) === true);
+    admin_mou_countersign(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $s2['mouId'], 'role' => 'Centre coordinator', 'signature' => $sigPng(4)]);
+    $w2 = db_row("SELECT * FROM mou_agreements WHERE mouId = ?", [$s2['mouId']]);
+    chk('mou · …and NGG’s representative witnesses as they countersign, which the copy says', $w2['status'] === 'signed' && $w2['witnessBy'] === 'ngg' && $w2['witnessName'] === 'Agnes Coordinator');
+    // Resend and void.
+    db_exec("DELETE FROM mou_agreements WHERE memberId = 'NGG-MOU-OUT'");
+    $s3 = mou_start(db_row("SELECT * FROM members WHERE memberId = 'NGG-MOU-OUT'"), 'NGG-MOU-ADM');
+    $re = admin_mou_resend(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $s3['mouId']]);
+    preg_match('#/mou/([A-Za-z0-9_-]+)$#', (string)($s3['link'] ?? ''), $o3);
+    chk('mou · a resend makes a fresh link (for WhatsApp too) and the old one stops working', !empty($re['link']) && (public_mou_get(['token' => $o3[1] ?? ''])['error'] ?? '') === 'not_found');
+    chk('mou · withdrawing needs a reason, and keeps the record', (admin_mou_void(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $s3['mouId'], 'reason' => 'x'])['error'] ?? '') === 'reason_required'
+        && !empty(admin_mou_void(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $s3['mouId'], 'reason' => 'Started for the wrong child'])['ok']) && db_row("SELECT status FROM mou_agreements WHERE mouId = ?", [$s3['mouId']])['status'] === 'void');
+    chk('mou · the registration checklist names the agreement as an item from the record', isset(RCL_AUTO['mou']) && function_exists('rcl_verify_mou'));
+    unset($GLOBALS['__mail_sink']);
+}
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

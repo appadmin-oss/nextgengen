@@ -234,6 +234,7 @@ function member_profile_complete(array $p): array {
             if (trim((string)$raw) === '') { $errors[$k] = 'Add a passport photo.'; continue; }
             $u = function_exists('photo_intake_url') ? photo_intake_url((string)$raw) : (string)$raw;
             if ($u === '') { $errors[$k] = 'That photo could not be used. Try another.'; continue; }
+            if (($q = photo_qa_gate($u)) !== null) { $errors[$k] = $q['message']; continue; }   // NGG does not take low-quality photos
             $clean[$k] = $u; continue;
         }
         [$v, $err] = profile_clean($k, $raw);

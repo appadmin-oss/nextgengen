@@ -335,8 +335,12 @@ async function as(memberId, admin, viewport) {
     // ── The photo is changed by asking: the child sends one, the desk decides ──
     await kid.click('button:has-text("Edit profile")');
     await kid.waitForSelector('input[aria-label="Choose the photo you want"]', { timeout: 15000 });
-    const png = await kid.evaluate(() => { const c = document.createElement('canvas'); c.width = 240; c.height = 300; const g = c.getContext('2d'); g.fillStyle = '#3a6'; g.fillRect(0, 0, 240, 300); g.fillStyle = '#fc9'; g.beginPath(); g.arc(120, 130, 60, 0, 7); g.fill(); return c.toDataURL('image/png').split(',')[1]; });
-    await kid.setInputFiles('input[aria-label="Choose the photo you want"]', { name: 'me.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    // A blurred photo is refused before it is sent, in words a child can act on (the photo quality gate).
+    const { testPhoto } = require('./_photo');
+    await kid.setInputFiles('input[aria-label="Choose the photo you want"]', await testPhoto(kid, { blur: 4, name: 'me.jpg' }));
+    chk('Photo: a blurred photo is refused before it is sent, saying why', await kid.waitForFunction(() => /blurry/i.test(document.body.innerText), null, { timeout: 15000 }).then(() => true, () => false)
+      && !(await kid.$('img[alt="The photo you chose"]')));
+    await kid.setInputFiles('input[aria-label="Choose the photo you want"]', await testPhoto(kid, { name: 'me.jpg' }));
     await kid.waitForSelector('img[alt="The photo you chose"]', { timeout: 15000 });
     await kid.fill('input[aria-label="Why you want to change it"]', 'My old one is from last year');
     await kid.waitForFunction(() => { const b = [...document.querySelectorAll('button')].find(x => /Send to the desk/.test(x.textContent)); return b && !b.disabled; }, null, { timeout: 30000 });
