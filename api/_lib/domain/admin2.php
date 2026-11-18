@@ -1138,6 +1138,9 @@ function admin_application_convert(array $p): array {
     $num = (string)($__m['displayId'] ?? '') !== '' ? (string)$__m['displayId'] : $newId;
     $origin = (string)($GLOBALS['CONFIG']['app_origin'] ?? '');
     $steps = [];
+    /* The Membership Agreement (domain/mou.php): started now, its link sent in its own email after this one. */
+    $mou = $type === 'NGG' && function_exists('mou_start') ? mou_start($__m, (string)$g['requester']['memberId'], false) : null;
+    if ($mou && !empty($mou['ok']) && !empty($mou['link'])) $steps[] = '<b>Read and sign the Membership Agreement</b>. It follows this email: about ten minutes on a phone, with a short summary of each part and five quick questions. You receive a copy by email.';
     if ($welcome !== '') $steps[] = '<b>Set a password</b> with the button below (the link works for seven days). After that, ' . esc_html($first) . ' signs in with the member number <b>' . esc_html($num) . '</b> and the password, without waiting on this inbox.';
     if ($invoice && empty($invoice['error'])) $steps[] = '<b>Pay the joining invoice</b> (' . esc_html(fees_money_text((int)$invoice['total'])) . '). It follows this email, with a private link to pay.';
     if ($type === 'NGG') $steps[] = '<b>Parents and guardians:</b> follow ' . esc_html($first) . '’s attendance and progress on the NGG Family app at ' . esc_html($origin) . '/family. Sign in with this email address; ' . esc_html($first) . ' appears for our team to confirm, or ask ' . esc_html($first) . ' for their Anchor Circle code to link at once.';
@@ -1152,13 +1155,17 @@ function admin_application_convert(array $p): array {
             'ctaUrl' => $welcome !== '' ? $welcome : ($origin . '/dashboard'),
             'footNote' => 'Welcome to the movement.',
         ]));
+    if ($mou && !empty($mou['link'])) {
+        $mouTo = mou_send_invite($__m, (string)$mou['link'], false);
+        db_update('mou_agreements', ['sentAt' => $mouTo ? now_iso() : '', 'sentTo' => implode(', ', $mouTo)], ['mouId' => (string)$mou['mouId']]);
+    }
     if ($invoice && empty($invoice['error'])) {
         $sent = membership_invoice_send($ir['invoice'], $__m);
         $invoice['sent'] = !empty($sent['ok']); $invoice['to'] = $sent['to'] ?? '';
     }
     audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id, 'type' => $type, 'start' => $start], (string)($p['ip'] ?? ''));
     if (function_exists('rcl_start_for_new_member')) rcl_start_for_new_member($newId, (string)$g['requester']['memberId']);   // registration checklist (domain/registration-checklist.php)
-    return ['ok' => true, 'memberId' => $newId, 'invoice' => $invoice];
+    return ['ok' => true, 'memberId' => $newId, 'invoice' => $invoice, 'mou' => $mou ? ['mouId' => (string)($mou['mouId'] ?? ''), 'link' => (string)($mou['link'] ?? '')] : null];
 }
 
 /** Correct a pending application's data before converting/approving it. Only

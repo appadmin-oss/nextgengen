@@ -30,23 +30,27 @@ const ORDER = [...buildSrc.match(/const ORDER = \[([\s\S]*?)\];/)[1].matchAll(/'
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'dist', 'build-manifest.json'), 'utf8'));
 const MORE_LIST = new Set((manifest.more && manifest.more.list) || []);
 const isMore = f => MORE_LIST.has(f);
+/* The STUDY bundle (build.js STUDY): the Labs, tools, timetable and Learn, fetched by their own routes. */
+const STUDY_LIST = new Set((manifest.study && manifest.study.list) || []);
+const isStudy = f => STUDY_LIST.has(f);
 const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:"'`\\])\/\/[^\n]*/g, '$1').replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, '""');
 const text = {}, decl = {};
 for (const f of ORDER) {
   const t = strip(fs.readFileSync(path.join(ROOT, f), 'utf8')); text[f] = t;
   decl[f] = new Set([...t.matchAll(/^(?:async\s+)?(?:function\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]));
 }
-const core = ORDER.filter(f => !isMore(f)), more = ORDER.filter(isMore);
+const core = ORDER.filter(f => !isMore(f) && !isStudy(f)), more = ORDER.filter(isMore), study = ORDER.filter(isStudy);
 ok('the split moves the signed-in areas out of what a public visitor loads', more.length >= 30 && core.includes('app.jsx') && core.includes('page-home.jsx'));
 const coreNames = new Set(); core.forEach(f => decl[f].forEach(n => coreNames.add(n)));
 const moreNames = new Set(); more.forEach(f => decl[f].forEach(n => { if (!coreNames.has(n) && n.length >= 4) moreNames.add(n); }));
 /* Names a core file may mention, and why that is safe. */
 const ALLOWED = {
   // app.jsx: the route map, behind thunks; NggChunkGate loads the bundle first (NGG_MORE_ROUTES).
+  MouPage: 'route (/mou/<token>, in NGG_MORE_ROUTES): a family signing link never weighs on a public visitor',
   ControlRoomPage: 'route', IdCardStudioPage: 'route', MentorHome: 'route', InstructorHome: 'route', FamilyPage: 'route', DesignerPage: 'route',
   crPalettePages: 'typeof guard in command.jsx',
   CurriculumEditor: 'staff lesson form, staff routes only; NggChunkGate loads and redraws',
-  Mp9Portal: 'typeof guard; dashboard is in NGG_MORE_ROUTES', mp9Speakable: 'typeof guard', mp9AsgState: 'typeof guard',
+  Mp9Portal: 'typeof guard; dashboard is in NGG_MORE_ROUTES',   // mp9Speakable / mp9AsgState: now borrowed by the study bundle (Learn), behind typeof guards
   Cm3App: 'typeof guard; community is in NGG_MORE_ROUTES', cm3DocUrl: 'inside the community app (community route)',
   SummerAdminPortal: 'summer-admin route (NGG_MORE_ROUTES); the chunk gate loads it first', ClubAdminPortal: 'club-admin route (NGG_MORE_ROUTES); the chunk gate loads it first',
 
@@ -60,6 +64,23 @@ ok('every name the public bundle borrows from the signed-in one is listed with i
   unexplained.map(n => n + ' ← ' + found[n].join(', ')).join('\n      '));
 const stale = Object.keys(ALLOWED).filter(n => !found[n]);
 ok('…and the list names nothing that is no longer borrowed', stale.length === 0, stale.join(', '));
+
+/* The same rule for the STUDY bundle: what the public bundle borrows from it, and why that is safe. */
+ok('the study bundle holds the Labs, tools, timetable and Learn, and the public bundle no longer does', study.length >= 15 && !core.some(f => /mathslab|tools-|timetable|page-learn|chess-engine/.test(f)));
+const studyNames = new Set(); study.forEach(f => decl[f].forEach(n => { if (!coreNames.has(n) && n.length >= 4) studyNames.add(n); }));
+const STUDY_ALLOWED = {
+  NGG_LABS: 'typeof guard in app.jsx (is this /study/<lab>?)', ToolsApp: 'study route; NggChunkGate fetches the study bundle first',
+  TimetableMakerPage: 'timetable route (NGG_STUDY_ROUTES)', LearnPage: 'learn route (NGG_STUDY_ROUTES)',
+  lessonBlockFor: 'typeof guard in components.jsx', LxField: 'inside a check question, drawn only in Learn and the dashboard (study / signed-in routes)',
+  AsdHandIn: 'typeof guard on the dashboard (signed-in: fetches the study bundle too)', LrnExam: 'dashboard (signed-in route: fetches the study bundle too)',
+};
+const sFound = {};
+for (const f of core) for (const n of studyNames) {
+  if (new RegExp('(?<![\\w$.])' + n.replace(/\$/g, '\\$') + '(?![\\w$])').test(text[f])) (sFound[n] = sFound[n] || []).push(f);
+}
+const sUnexplained = Object.keys(sFound).filter(n => !STUDY_ALLOWED[n]);
+ok('every name the public bundle borrows from the study bundle is listed with its reason', sUnexplained.length === 0, sUnexplained.map(n => n + ' ← ' + sFound[n].join(', ')).join('\n      '));
+ok('…and that list names nothing no longer borrowed', Object.keys(STUDY_ALLOWED).every(n => sFound[n]), Object.keys(STUDY_ALLOWED).filter(n => !sFound[n]).join(', '));
 
 /* ── 2. In a browser, against the real build ───────────────────────────── */
 (async () => {
@@ -91,7 +112,8 @@ readfile(${JSON.stringify(dist)} . '/index.html');`);
     await page.waitForFunction(() => typeof pathForPage === 'function' && typeof ROUTES !== 'undefined', null, { timeout: 60000 });
     const routes = await page.evaluate(() => ROUTES.filter(r => r.addressable !== false).map(r => ({ id: r.id, path: pathForPage(r.id) })));
     const needs = await page.evaluate(() => NGG_MORE_ROUTES);
-    const bad = [], leaked = [], missing = [];
+    const studyNeeds = await page.evaluate(() => NGG_STUDY_ROUTES);
+    const bad = [], leaked = [], missing = [], sLeaked = [], sMissing = [];
     for (const r of routes) {
       const p = await ctx.newPage(); const e = [], w = [];
       p.on('pageerror', x => e.push(String(x).slice(0, 160))); p.on('request', x => w.push(x.url()));
@@ -102,12 +124,17 @@ readfile(${JSON.stringify(dist)} . '/index.html');`);
       if (e.length) bad.push(r.id + ': ' + e[0]);
       if (!needs.includes(r.id) && fetched) leaked.push(r.id);
       if (needs.includes(r.id) && !fetched) missing.push(r.id);
+      const sFetched = w.some(u => /app-study\./.test(u));
+      if (!needs.includes(r.id) && !studyNeeds.includes(r.id) && sFetched) sLeaked.push(r.id);
+      if ((needs.includes(r.id) || studyNeeds.includes(r.id)) && !sFetched) sMissing.push(r.id);
       await p.close();
     }
     ok('every route draws from the production build with no error (' + routes.length + ' routes)', bad.length === 0, bad.join('\n      '));
     ok('a public route never downloads the signed-in bundle', leaked.length === 0, 'fetched it: ' + leaked.join(', '));
     ok('…and a signed-in route fetches it before it draws', missing.length === 0, 'did not: ' + missing.join(', '));
-    ok('the home page itself downloaded nothing it does not use', !wire.some(u => /app-more\./.test(u)) && errs.length === 0, errs.join(' | '));
+    ok('a route outside the Labs, tools, timetable and Learn never downloads the study bundle', sLeaked.length === 0, 'fetched it: ' + sLeaked.join(', '));
+    ok('…and those routes (and the signed-in ones) fetch it before they draw', sMissing.length === 0, 'did not: ' + sMissing.join(', '));
+    ok('the home page itself downloaded nothing it does not use', !wire.some(u => /app-(more|study)\./.test(u)) && errs.length === 0, errs.join(' | '));
   } catch (e) {
     ok('browser run', false, String(e && e.stack || e).slice(0, 400));
   } finally {

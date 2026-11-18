@@ -1405,6 +1405,8 @@ function CrMembershipPayments({ ctx }) {
                     <td className="cr-mp-acts">
                       {inv.invoiceUrl && <a className="cr-btn is-sm" href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer" aria-label={"Open invoice " + inv.invoiceId + " to print"}><CrIcon n="file-text"/>Invoice</a>}
                       {inv.status === "paid" && <a className="cr-btn is-sm" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer"><CrIcon n="receipt"/>{inv.receiptNo}</a>}
+                      {inv.status === "paid" && <a className="cr-btn is-sm" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=pdf"} download aria-label={"Download receipt " + inv.receiptNo + " as PDF"}><CrIcon n="file-pdf"/>PDF</a>}
+                      {inv.status === "paid" && <a className="cr-btn is-sm" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=png"} download aria-label={"Download receipt " + inv.receiptNo + " as an image"}><CrIcon n="image"/>Image</a>}
                       {op && op.status === "pending" && <>
                         <a className="cr-btn is-sm" href={NGGApi.admin.membership.evidenceUrl(op.paymentId)} target="_blank" rel="noopener noreferrer"><CrIcon n="file-magnifying-glass"/>Evidence</a>
                         <button type="button" className="cr-btn is-sm is-primary" aria-disabled={op.recordedBy === d.me || undefined} title={op.recordedBy === d.me ? "You recorded it, so someone else verifies it." : ""} onClick={() => verify(inv)}>Verify</button>
@@ -1442,7 +1444,6 @@ const CR_VP_ERR = { amount_required: "Set the amount a volunteer earns each day 
   reason_required: "Say why. It is kept with the day, and the volunteer sees it.", too_many: "Too many volunteers for one payment run.", own_account: "You can’t change your own pay.",
   av_unreachable: "Afrovanguard couldn’t be reached to put its fine back. Nothing was changed; try again." };
 function crVpErr(e, fb) { const c = e && ((e.data && e.data.error) || e.code); return CR_VP_ERR[c] || (e && e.data && e.data.message) || crErr(e, fb); }
-function crVpBank(b) { return b && b.set ? b.bankName + " ••••" + b.last4 + " · " + b.accountName : "No bank details"; }
 const crVpCtx = { current: null };
 
 function crVpForm(d) {

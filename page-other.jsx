@@ -1537,6 +1537,9 @@ function MembershipPayPage({ setPage }) {
               <div className="mpay-done">
                 <p>Paid {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : ""}. Receipt <b>{inv.receiptNo}</b> has been emailed to you.</p>
                 <a className="btn btn-primary" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer">View and print the receipt</a>
+                {/* Drawn on the server (domain/receipt-draw.php): files a phone keeps or shares, with nothing to render. */}
+                <a className="btn btn-ghost" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=pdf"} download>Download PDF</a>
+                <a className="btn btn-ghost" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=png"} download>Download image</a>
                 {inv.invoiceUrl && <a className="btn btn-ghost" href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer">View the invoice</a>}
               </div>
             ) : inv.status === "void" ? (
@@ -4869,8 +4872,15 @@ function QRScanner({ onToken }) {
   const [facing, setFacing] = React.useState("environment");
   const [multiCam, setMultiCam] = React.useState(false);
 
+  const [qrReady, setQrReady] = React.useState(0);   // bumped when jsQR arrives, to start the reader
   React.useEffect(() => {
-    if (typeof window === "undefined" || typeof window.jsQR !== "function") { setState("nolib"); return; }
+    /* jsQR (128 KB) is fetched when a camera reader opens, not by every page. */
+    if (typeof window === "undefined") { setState("nolib"); return; }
+    if (typeof window.jsQR !== "function") {
+      let gone = false;
+      loadVendorAsset("/vendor/jsQR.min.js", "js").then(() => { if (!gone) setQrReady(r => r + 1); }, () => { if (!gone) setState("nolib"); });
+      return () => { gone = true; };
+    }
     let cancelled = false;
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -4914,7 +4924,7 @@ function QRScanner({ onToken }) {
     // Re-runs on `facing`; the cleanup stops the old stream first, because a
     // phone will not hand out both lenses at once.
     return () => { cancelled = true; if (rafRef.current) cancelAnimationFrame(rafRef.current); if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
-  }, [facing]);
+  }, [facing, qrReady]);
 
   const flashing = hit && (Date.now() - hit < 700);
   if (state === "nolib" || state === "denied") {

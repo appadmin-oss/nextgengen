@@ -1423,6 +1423,9 @@
       programme: (program) => request('/public/programme.php' + qs({ program: program === 'summer' ? 'summer' : 'anchor' })),
       testimonials: () => request('/public/testimonials.php'),
       // A family's joining invoice, by its private token (/pay/<token>).
+      // The Membership Agreement by its private link (domain/mou.php).
+      mou:               (token) => request('/public/mou.php' + qs({ token })),
+      mouSign:           (body) => request('/public/mou.php', { body }),
       membershipInvoice: (token) => request('/public/membership-pay.php' + qs({ token })),
       photoFraming:      (urls) => request('/public/photo-framing.php' + qs({ u: JSON.stringify(urls) })),
       membershipPay:     (token) => request('/public/membership-pay.php', { body: { action: 'init', token } }),
@@ -1811,6 +1814,13 @@
         ids:       (o) => request('/admin/courses.php' + qs(Object.assign({ view: 'placement', ids: 1 }, o || {}))),
         health:    (o) => request('/admin/courses.php' + qs(Object.assign({ view: 'health' }, o || {}))),
         set:       (action, memberIds, extra) => request('/admin/courses.php', { body: Object.assign({ action, memberIds }, extra || {}) }),
+      },
+      /* Membership Agreements (domain/mou.php). Capability: people. */
+      mou: {
+        list:   (o) => request('/admin/mou.php' + qs(Object.assign({ view: 'list' }, o || {}))),
+        get:    (mouId) => request('/admin/mou.php' + qs({ view: 'get', mouId })),
+        docUrl: (mouId) => '/api/admin/mou.php' + qs({ view: 'doc', mouId }),
+        act:    (action, body) => request('/admin/mou.php', { body: Object.assign({}, body || {}, { action }) }),
       },
       /* The registration checklist (domain/registration-checklist.php). Capability: people. */
       regcheck: {

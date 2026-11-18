@@ -172,9 +172,8 @@ function apfErr(f, v) {
   if (f.type === "photo") {
     const m = v.photoMeta || {};
     if (!v.photoData && !v.photoUrl) return "Add a passport photo.";
-    if (m.small) return "This photo is too small to print. Take one with the camera instead.";
-    if (m.dark) return "Too dark to see the face. Stand facing a window or light and retake.";
-    if (m.bright) return "Too bright. Move out of direct sunlight and retake.";
+    if (m.serverIssues && m.serverIssues.length) return m.serverIssues.slice(0, 2).map(i => PHOTO_QA_WORDS[i] || "").join(" ").trim();
+    if (m.issues && m.issues.length) return PHOTO_QA_WORDS[m.issues[0]] || PHOTO_QA_WORDS.blurry;
     if (m.faces === 0) return "We couldn’t find a face. Fit the face in the oval and retake.";
     if (m.faces > 1) return "Only one person can be in the photo.";
     return "";
@@ -199,24 +198,28 @@ function apfErr(f, v) {
   return "";
 }
 
-/** Crop to 3:4, export 600 × 800 JPEG, and measure what the ID card rules need. */
+/** Crop to 3:4, keep it at 600 × 800 (never enlarged), and judge it by the photo quality gate
+ *  (photoQa* in components.jsx — the server's rules, run here first). */
 async function apfAnalysePhoto(el, w, h, bias) {
   const r = 3 / 4; let cw = w, ch = h;
   if (w / h > r) cw = Math.round(h * r); else ch = Math.round(w / r);
   const sx = Math.round((w - cw) / 2), sy = Math.round((h - ch) * bias);
-  const c = document.createElement("canvas"); c.width = 600; c.height = 800;
-  c.getContext("2d").drawImage(el, sx, sy, cw, ch, 0, 0, 600, 800);
-  const s = document.createElement("canvas"); s.width = 90; s.height = 120;
-  const sc = s.getContext("2d", { willReadFrequently: true }); sc.drawImage(c, 0, 0, 90, 120);
-  const d = sc.getImageData(0, 0, 90, 120).data, g = new Float32Array(10800); let sum = 0;
-  for (let i = 0; i < g.length; i++) { const L = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]; g[i] = L; sum += L; }
-  const lum = sum / g.length; let ls = 0, lq = 0, n = 0;
-  // Laplacian variance: low means soft. A warning only — phones vary too much to refuse on it.
-  for (let y = 1; y < 119; y++) for (let x = 1; x < 89; x++) { const i = y * 90 + x, l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - 90] - g[i + 90]; ls += l; lq += l * l; n++; }
-  const sharp = lq / n - (ls / n) ** 2;
+  /* 600 × 800 when the original has the pixels; a smaller original keeps its own size and is
+     refused as too small — enlarging it would only hide that it cannot print sharply. */
+  const ow = Math.min(600, cw), oh = Math.round(ow * 4 / 3);
+  const c = document.createElement("canvas"); c.width = ow; c.height = oh;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(el, sx, sy, cw, ch, 0, 0, ow, oh);
+  /* Measured on the JPEG as it will be sent, so the browser and the server judge the same pixels. */
+  const data = c.toDataURL("image/jpeg", 0.86);
+  const back = new Image(); back.src = data; await back.decode();
+  const k = document.createElement("canvas"); k.width = ow; k.height = oh;
+  k.getContext("2d", { willReadFrequently: true }).drawImage(back, 0, 0);
+  const qa = photoQaMeasure(k), issues = photoQaJudge(qa, cw, ch);
   let faces = null;
   if ("FaceDetector" in window) { try { faces = (await new window.FaceDetector({ maxDetectedFaces: 3 }).detect(c)).length; } catch (_) {} }
-  return { data: c.toDataURL("image/jpeg", 0.86), meta: { w: cw, h: ch, lum: Math.round(lum), faces, small: cw < 320, dark: lum < 60, bright: lum > 225, blurry: sharp < 35 } };
+  return { data, meta: Object.assign({ w: cw, h: ch, faces, issues }, qa) };
 }
 function apfDataUrlFile(dataUrl) {
   const [head, b64] = String(dataUrl).split(",");
@@ -245,6 +248,7 @@ function apfServerWhy(e) {
     vision_too_short: "Write at least 40 characters for the vision.",
     bad_phone: "One of the phone numbers isn’t an 11-digit Nigerian number.",
     photo_required: "Add a passport photo.",
+    photo_low_quality: photoQaServerWords(e),
     centre_not_offered: d.detail || "That centre doesn’t run the Club. Choose another on the first step.",
     upstream_unreachable: "We couldn’t reach the server. Your answers are saved here; try again in a moment.",
     bad_dob: "Check the date of birth: it must be a real date.",
@@ -258,7 +262,7 @@ function apfServerWhy(e) {
   };
   const step = ["age_ngv", "bad_age", "bad_dob", "bad_sex", "bad_email", "phone_required"].includes(code) ? 1
     : ["bad_division", "division_required", "course_not_in_division"].includes(code) ? 5
-    : code === "consent_required" || code === "photo_required" ? 6 : code === "centre_not_offered" ? 0
+    : code === "consent_required" || code === "photo_required" || code === "photo_low_quality" ? 6 : code === "centre_not_offered" ? 0
     : d.field && APF_FIELD_STEP[d.field] != null ? APF_FIELD_STEP[d.field] : -1;
   return { text: map[code] || (d.field ? "Something in this section needs another look." : "We couldn’t send the application. Your answers are saved here; try again."), step };
 }
@@ -410,6 +414,11 @@ function ClubApplyPage({ setPage }) {
         const m = (e.data && e.data.message) || (code === "edit_code_wrong" ? "That code is not right. Check the latest email from NGG." : "This child has already applied. We emailed a 6-digit code: enter it to update the application.");
         setCodeAsk({ text: m }); setSendErr(""); if (code === "edit_code_sent") setEditCode("");
         return;
+      }
+      if (code === "photo_low_quality") {
+        // The server measured the photo again and refused it: say why on the photo itself.
+        const iss = (e.data && Array.isArray(e.data.issues)) ? e.data.issues : ["blurry"];
+        set(cur => ({ photoMeta: Object.assign({}, cur.photoMeta || {}, { serverIssues: iss }) }));
       }
       const w = apfServerWhy(e);
       setSendErr(w.text);
@@ -917,9 +926,10 @@ function ApfPhoto({ v, err, W, addPhotoFile, takePhoto }) {
   const check = (t, s, sub) => ({ t: compact ? SHORT[t] || t : t, s, sub });
   const checks = [
     check("One face, looking straight at the camera", !m || m.faces == null ? "idle" : m.faces === 1 ? "ok" : "bad", m && m.faces === 0 ? "No face found" : m && m.faces > 1 ? "More than one face" : ""),
-    check("Good, even light on the face", !m || m.lum == null ? "idle" : m.dark || m.bright ? "bad" : "ok", m && m.dark ? "Too dark" : m && m.bright ? "Too bright" : ""),
-    check("Sharp and in focus", !m || m.lum == null ? "idle" : m.blurry ? "warn" : "ok", m && m.blurry ? "Looks soft. Hold still and retake if you can." : ""),
-    check("Big enough to print", !m || m.lum == null ? "idle" : m.small ? "bad" : "ok", m && m.small ? "Too small" : ""),
+    check("Good, even light on the face", !m || !m.issues ? "idle" : m.issues.some(i => ["too_dark", "too_bright", "clipped", "low_contrast"].includes(i)) ? "bad" : "ok",
+      m && m.issues ? (m.issues.includes("too_dark") ? "Too dark" : m.issues.includes("too_bright") ? "Washed out" : m.issues.includes("clipped") ? "Uneven light" : m.issues.includes("low_contrast") ? "Flat or foggy" : "") : ""),
+    check("Sharp and in focus", !m || !m.issues ? "idle" : m.issues.includes("blurry") ? "bad" : "ok", m && m.issues && m.issues.includes("blurry") ? "Blurry. Hold still, tap the face to focus, retake." : ""),
+    check("Big enough to print", !m || !m.issues ? "idle" : m.issues.includes("too_small") ? "bad" : "ok", m && m.issues && m.issues.includes("too_small") ? "Too small: use the camera" : ""),
   ].concat(compact ? [] : [check("Plain, light background. No hat, sunglasses or filter. Religious head coverings are fine.", "idle", "")]);
   const ICON = { idle: "ph ph-circle", ok: "ph-fill ph-check-circle", warn: "ph-fill ph-warning-circle", bad: "ph-fill ph-x-circle" };
   const pick = (ev, src) => { const fl = ev.target.files && ev.target.files[0]; ev.target.value = ""; if (src === "camera") closeCam(); addPhotoFile(fl, src); };
@@ -928,7 +938,7 @@ function ApfPhoto({ v, err, W, addPhotoFile, takePhoto }) {
       <div className="apf-photo-pv">
         {m ? <>
           <img src={v.photoData || v.photoUrl} alt="Passport photo preview"/>
-          <span className={"apf-photo-badge " + (err ? "is-bad" : m.blurry ? "is-warn" : "is-ok")}><i className={"ph " + (err ? "ph-x" : "ph-check")} aria-hidden="true"/>{err ? "Needs another try" : m.blurry ? "Check sharpness" : "Meets the rules"}</span>
+          <span className={"apf-photo-badge " + (err ? "is-bad" : "is-ok")}><i className={"ph " + (err ? "ph-x" : "ph-check")} aria-hidden="true"/>{err ? "Needs another try" : "Meets the rules"}</span>
         </> : <span className="apf-photo-oval" aria-hidden="true"><i className="ph ph-user"/></span>}
       </div>
       <div className="apf-photo-body">

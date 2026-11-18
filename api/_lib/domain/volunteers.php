@@ -753,6 +753,7 @@ function admin_volunteer_update(array $p): array {
         $row['photoUrl'] = function_exists('photo_intake_url')
             ? photo_intake_url((string)$d['photoUrl'])
             : substr(trim((string)$d['photoUrl']), 0, 512);
+        if ($row['photoUrl'] !== '' && ($q = photo_qa_gate($row['photoUrl'])) !== null) return $q;   // the same bar for everyone's card
     }
     if (array_key_exists('email', $d)) {
         // Stored the way the sign-in door compares it: no spaces, lower case.

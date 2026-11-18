@@ -7325,25 +7325,6 @@ function CmReviewMini({ fen, square }) {
   return <span className="rev-mini" aria-hidden="true">{cells}</span>;
 }
 
-function CmReviewSide({ name, colour, s, engine }) {
-  return (
-    <div className={"rev-side is-" + colour}>
-      <div className="rev-side-h">
-        <span className={"mtg-seat-dot is-" + colour} aria-hidden="true"/>
-        <span className="rev-side-n">{name}</span>
-      </div>
-      <div className="rev-acc" aria-label={name + " played at " + s.accuracy + " percent accuracy"}>
-        <span className="rev-acc-n">{s.accuracy}</span><span className="rev-acc-p">%</span>
-      </div>
-      <div className="rev-acc-l">accuracy</div>
-      <ul className="rev-counts">
-        <li><b>{s.inaccuracies}</b> inaccurac{s.inaccuracies === 1 ? "y" : "ies"}</li>
-        <li><b>{s.mistakes}</b> mistake{s.mistakes === 1 ? "" : "s"}</li>
-        <li className={s.blunders ? "is-bad" : ""}><b>{s.blunders}</b> blunder{s.blunders === 1 ? "" : "s"}</li>
-      </ul>
-    </div>
-  );
-}
 
 function CmGameReview({ m, onBack }) {
   const engine = window.NggChess;
@@ -8886,18 +8867,6 @@ const CM_SLASH = [
   { cmd: "shrug", icon: "🤷", label: "Shrug", hint: "¯\\_(ツ)_/¯" },
 ];
 
-// Monochrome nav icons (sidebar) — currentColor line art, no emoji.
-function cmNavIcon(name) {
-  const P = { fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round" };
-  const wrap = (kids) => <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">{kids}</svg>;
-  if (name === "all") return wrap(<path d="M4 13h4l2 5 4-12 2 6h4" {...P}/>);      // activity pulse
-  if (name === "saved") return wrap(<path d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-4-7 4V4.5a1 1 0 0 1 1-1Z" {...P}/>); // bookmark
-  if (name === "search") return wrap(<><circle cx="11" cy="11" r="7" {...P}/><path d="m20 20-3.5-3.5" {...P}/></>);
-  if (name === "switch") return wrap(<path d="M7 10 12 5l5 5M7 14l5 5 5-5" {...P} strokeWidth={1.7}/>);
-  if (name === "plus") return wrap(<path d="M12 5v14M5 12h14" {...P} strokeWidth={2}/>);
-  if (name === "gear") return wrap(<><circle cx="12" cy="12" r="3" {...P}/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V19a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H1a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H7a1.7 1.7 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V7a1.7 1.7 0 0 0 1.5 1H23a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" {...P} strokeWidth={1.5}/></>);
-  return null;
-}
 
 // Line-SVG icons for the dock (no emoji).
 function cmIcon(name) {
@@ -8910,8 +8879,6 @@ function cmIcon(name) {
   return null;
 }
 
-// Insert text at the caret / wrap the current selection, keeping focus + caret sane.
-function cmTa(ta) { return ta; }
 function cmInsertAt(ta, text, setBody) {
   if (!ta) return;
   const s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
@@ -9423,16 +9390,7 @@ function useCmActions(post, onPatch, onRemove, onStars) {
   return { react, bookmark, vote, star, share, report, del };
 }
 
-/* ---- Genius Star badge/affordance (NGG-native mentor kudos) ---- */
-function CmStar({ post, onStar }) {
-  if (!post.stars && !post.canStar) return null;
-  const cls = "cm-star" + (post.stars ? " has" : "") + (post.starred ? " mine" : "");
-  const label = post.stars ? ("⭐ " + post.stars + (post.canStar ? "" : (post.stars === 1 ? " Genius Star" : " Genius Stars"))) : "⭐ Genius Star";
-  if (post.canStar) return <button className={cls} onClick={onStar} title={post.starred ? "Remove your Genius Star" : "Give a Genius Star"}>{label}</button>;
-  return <span className={cls} title="Recognised by a mentor">{label}</span>;
-}
 
-const CM_REACTIONS = ["👏", "❤️", "🔥", "💡", "🎉", "🙌"];
 
 /* ---- Message body (poll + media, shared by row + thread root) ---- */
 function CmBodyBlock({ post, onVote }) {

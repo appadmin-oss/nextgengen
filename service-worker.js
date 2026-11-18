@@ -37,7 +37,9 @@ const PRECACHE = [
   '/',
   '/index.html',
   '/styles.css',
-  '/styles-app.css',
+  /* The slim sheet public pages use (build.js). The full one comes with the signed-in bundle, when needed:
+     precaching 1.1 MB of Control Room styles in the background of a first visit was data nobody asked for. */
+  '/styles-app-public.css',
   '/data.js',
   '/photos.js',
   '/api-client.js',

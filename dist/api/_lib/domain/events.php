@@ -789,6 +789,10 @@ function public_apply(array $p): array {
     if (in_array($kind, ['teen', 'volunteer'], true) && intake_photo_required() && $photoUrl === '') {
         return ['ok' => false, 'error' => 'photo_required'];
     }
+    /* NGG does not take low-quality photos (domain/photo-quality.php): the
+       pixels are measured here, wherever the photo was stored, before anything
+       is written. The form ran the same rules, but the form is not trusted. */
+    if (in_array($kind, ['teen', 'volunteer'], true) && $photoUrl !== '' && ($q = photo_qa_gate($photoUrl)) !== null) return $q;
 
     /* The Club application (v2026.10) sends the rest of what the old Google
        Form asked, and the typed agreements. Checked as a whole before any

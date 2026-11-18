@@ -94,6 +94,8 @@ const RCL_AUTO = [
                     'fix' => 'Add the parent’s phone or a collector on the member’s record.', 'family' => true],
     'courses'   => ['title' => 'Courses placed', 'help' => 'The member’s courses are confirmed, so lessons, the timetable and class lists include them.',
                     'fix' => 'Confirm or choose them under People → Members → Courses.', 'family' => false],
+    'mou'       => ['title' => 'Membership Agreement signed', 'help' => 'The family read and signed the Membership Agreement (MoU), a witness signed, and NGG countersigned.',
+                    'fix' => 'Send or resend it from Members → Agreements; countersign there once the family has signed.', 'family' => true],
     'fee'       => ['title' => 'Membership fee paid', 'help' => 'The joining invoice is paid.', 'when' => 'fees',
                     'fix' => 'The family pays from the invoice link; an offline payment is recorded under Money → Membership payments.', 'family' => true],
     'idcard'    => ['title' => 'ID card printed', 'help' => 'The member has a printed ID number and a card printed in the ID Card Studio.',
@@ -123,6 +125,7 @@ function rcl_verify_courses(array $m, array $f): bool { return !in_array(trim((s
 function rcl_verify_fee(array $m, array $f): bool {
     return !empty($f['paid'][(string)$m['memberId']]) || trim((string)($m['feesSettledThrough'] ?? '')) !== '';
 }
+function rcl_verify_mou(array $m, array $f): bool { return !empty($f['mou'][(string)$m['memberId']]); }
 function rcl_verify_idcard(array $m, array $f): bool {
     return trim((string)($m['displayId'] ?? '')) !== '' && !empty($f['card'][(string)$m['memberId']]);
 }
@@ -144,7 +147,7 @@ function rcl_auto_applies(string $key): bool {
 
 /** Everything the verifiers need for many members, in grouped reads. */
 function rcl_facts(array $ids): array {
-    $f = ['guardian' => [], 'consents' => [], 'collector' => [], 'paid' => [], 'card' => []];
+    $f = ['guardian' => [], 'consents' => [], 'collector' => [], 'paid' => [], 'card' => [], 'mou' => function_exists('mou_signed_ids') ? mou_signed_ids($ids) : []];
     $ids = array_values(array_unique(array_filter(array_map('strval', $ids))));
     foreach (array_chunk($ids, 400) as $chunk) {
         $ph = implode(',', array_fill(0, count($chunk), '?'));

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 238;
+const NGG_SCHEMA_TARGET = 239;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6643,6 +6643,30 @@ function db_migrate(PDO $db): void {
               status TEXT NOT NULL DEFAULT 'active', used INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '',
               byId TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
             );
+        ",
+        /* 239 — the Membership Agreement (domain/mou.php): the MoU, signed online by the family, a witness and
+           NGG's representative. One row per agreement; a voided one is kept and a new one starts. The figures the
+           family agreed to (termsJson) and a digest of the text they signed (docHash) are frozen on it. Links are
+           stored as hashes only. Signatures are small PNG data URLs. */
+        239 => "
+            CREATE TABLE IF NOT EXISTS mou_agreements (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mouId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, version TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'awaiting_family',
+              tokenHash TEXT NOT NULL DEFAULT '', tokenExp TEXT NOT NULL DEFAULT '', docTokenHash TEXT NOT NULL DEFAULT '',
+              termsJson TEXT NOT NULL DEFAULT '', prefillJson TEXT NOT NULL DEFAULT '', familyJson TEXT NOT NULL DEFAULT '', memberJson TEXT NOT NULL DEFAULT '',
+              tripsChoice TEXT NOT NULL DEFAULT '', quizPassedAt TEXT NOT NULL DEFAULT '', quizAttempts INTEGER NOT NULL DEFAULT 0,
+              sentAt TEXT NOT NULL DEFAULT '', sentTo TEXT NOT NULL DEFAULT '', viewedAt TEXT NOT NULL DEFAULT '',
+              clientName TEXT NOT NULL DEFAULT '', clientRel TEXT NOT NULL DEFAULT '', clientSignature TEXT NOT NULL DEFAULT '', clientSignedAt TEXT NOT NULL DEFAULT '', clientIp TEXT NOT NULL DEFAULT '',
+              witnessName TEXT NOT NULL DEFAULT '', witnessPhone TEXT NOT NULL DEFAULT '', witnessSignature TEXT NOT NULL DEFAULT '', witnessSignedAt TEXT NOT NULL DEFAULT '', witnessBy TEXT NOT NULL DEFAULT '',
+              nggName TEXT NOT NULL DEFAULT '', nggRole TEXT NOT NULL DEFAULT '', nggById TEXT NOT NULL DEFAULT '', nggSignature TEXT NOT NULL DEFAULT '', nggSignedAt TEXT NOT NULL DEFAULT '',
+              docHash TEXT NOT NULL DEFAULT '', familyMailedAt TEXT NOT NULL DEFAULT '', finalMailedAt TEXT NOT NULL DEFAULT '',
+              voidReason TEXT NOT NULL DEFAULT '', voidedAt TEXT NOT NULL DEFAULT '', voidedBy TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mou_member ON mou_agreements(memberId, status);
+            CREATE INDEX IF NOT EXISTS idx_mou_status ON mou_agreements(status);
+            CREATE INDEX IF NOT EXISTS idx_mou_token ON mou_agreements(tokenHash);
+            CREATE INDEX IF NOT EXISTS idx_mou_doc ON mou_agreements(docTokenHash);
         ",
     ];
 

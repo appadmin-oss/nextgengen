@@ -7577,3 +7577,69 @@ sessions, stock-take, codes and reports. HawkScan not run (no `HAWK_API_KEY` her
 Not built (the plan's "do not build" list, and items outside §2): delivery zones, member price, bundles, VAT line.
 Unconfirmed with Paystack: whether bank-transfer/USSD payments refund automatically — a failed refund says so and
 staff pay it back another way.
+
+## 18 Nov 2026 — Photo quality gate; the Membership Agreement signed online
+
+Owner: "NGG registration and onboarding is flawed. Research. We do not take low quality images!", then "Go,
+build the photo gate … photos are also served by S3-compatible storage … add this MoU … parents must read and
+do a very short not-frustrating quiz … refine the MoU, make it standard and professional … merge it with the
+consent features … a copy would always be emailed … whatever clashes between the MoU and website, let the
+website win."
+
+- **Photo gate** (`domain/photo-quality.php`, `photoQa*` in components.jsx; `docs/PHOTO_QUALITY.md`). The apply
+  form used to warn about blur, measured on a 90 × 120 thumbnail, and enlarged a 320 px photo to 600 × 800. Now
+  every problem is a refusal, measured at full size, in the browser and again on the server wherever the photo
+  lives (inline, local store, S3-compatible bucket, Cloudinary). The PHP suite turns the gate off as a fixture
+  for the suites that post placeholder photos, and proves it in its own section. `tests/_photo.js` draws a
+  portrait-like test photo for the browser suites.
+- **Membership Agreement** (`domain/mou.php`, migration 239, `page-mou.jsx` in the signed-in bundle, Members →
+  Agreements in `cr-tab-registration.jsx`). The paper MoU rewritten in plain English (13 clauses; obvious
+  errors corrected; "Talent management" appeared twice and is once). Money is read from the fee settings and
+  frozen (`termsJson`); early termination follows the website's training-place write-down, with the handbook's
+  three months' notice and ₦30,000 inconvenience fee. The handbook's "₦300,000 per remaining year, inflation
+  adjusted" is NOT used: the website's training figure and basis win (owner's rule). Signatures are PNG data URLs
+  on the row; links are stored as hashes. `tests/mou-sign.test.js` (19 checks) and 25 PHP checks.
+- Migration numbering: a parallel session's shop management took 238 on the same branch; the MoU is 239.
+
+## 18 Nov 2026 — Receipts drawn on the server (PDF and PNG)
+
+Owner: "Make receipts downloadable as PDF and image with server drawing instead of browser."
+- `domain/receipt-draw.php`: ONE GD drawing of the frozen receipt (doc_data / doc_org_for — the same data as
+  doc_render_receipt) at 2× A4. The PNG is that drawing cropped to the receipt; the PDF is the same drawing on an
+  A4 page, written by a ~40-line PDF 1.4 writer (catalog, page, DCTDecode image, UTF-16 metadata, xref). No
+  library, no headless browser.
+- Font: Inter (OFL, the site's body font), in `api/_lib/fonts` (blocked from the web by api/.htaccess). The
+  vendored Liberation Sans had neither ₦ nor ẹ/ọ/ṣ. Text is NFC-normalised; a tone mark with no precomposed letter
+  (ọ̀) is placed over its letter, because GD does not shape text.
+- Routes: `document.php?t=…&as=pdf|png` and `receipt.php?t=…&as=pdf|png` (the email link). Buttons on the receipt
+  page, the payment page, the receipt email and Money → Membership payments.
+- Tests: 7 PHP checks; `tests/receipt-download.test.js` (7, through the routes).
+
+## 18 Nov 2026 — Low-end performance: three bundles, slim public CSS, lazy libraries
+
+Owner: "fix the NGG site constantly lagging … must work perfectly on low-end devices … too heavy … Research! How
+does Canva do? How do games do it?" Research and the numbers are in `docs/PERFORMANCE.md`.
+- A third bundle, `app-study` (Labs, tools, timetable, Learn, chess engine, lesson blocks): build.js STUDY,
+  app.jsx NGG_STUDY_ROUTES + nggNeedStudy; the signed-in bundle loads it too. bundle-split.test.js extended.
+- `tools/css-split.js`: public pages get the rules their sources use; the full styles-app.css is swapped in by
+  nggMoreCss() with the signed-in bundle. Phosphor CSS trimmed to the icons named in source.
+- TanStack Table and jsQR load on demand; the 1080 px logo is now 512 px (9.5 KB), `logo-1080.png` kept for print;
+  the service worker precaches the slim sheet; Lite mode adds content-visibility on sections.
+- Home page on an emulated low-end phone: 24.4 s → 16.4 s ready, 4.87 → 3.0 MB.
+
+## 2026-11-18 — Dead code removed, and kept out
+
+Owner: "Remove everything that is irrelevant", then "Please create a test for that".
+
+- `tools/dead-code.js` reads every shipped file's top-level declarations with the vendored Babel parser
+  and flags any name that appears nowhere else in the product (code, PHP, HTML, CSS, tests; docs do not
+  count). It also flags self-hosted font files that nothing names. `node tools/dead-code.js --prune`
+  removes what it finds, re-parsing each file before writing.
+- Removed: ~1,000 lines of retired Control Room panels in `page-admin.jsx` (AdminPhotos, AdminRequests,
+  AdminStaff, AdminApprovals, AdminBehaviour, AdminAttendanceDuty, AdminContact, AdminStatus,
+  AdminComments, AdminNewsletter, AdminEvents, CheckinDesks and their helpers), 22 smaller orphans in
+  other files, and 7 unused report fonts.
+- `tests/dead-code.test.js` (`npm run test:deadcode`, in `test:all`) fails the build when dead code or an
+  orphan font comes back.
+- Kept on purpose, because only a test still uses them: AdminAssessment, AdminTournaments,
+  idsCardsInRange, idsStock. Removing them means deleting their tests too, so that is the owner's call.

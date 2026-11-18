@@ -2811,66 +2811,6 @@ function DashTermSay({ ask, mine, onSaved }) {
   );
 }
 
-/**
- * THE OPENING REVIEW — last week's questions, before today's lesson.
- *
- * The questions belong to the PREVIOUS lesson and are submitted against it,
- * so the attempt lands on the lesson it is about and every report, deadline
- * and completion already knows where to look. Nothing new is stored.
- *
- * It is first on the page and today's teaching waits behind it — but "Skip
- * to today's lesson" is always there, in plain words, because a child who
- * joined late or was away must not be locked out of the lesson by a review
- * of a week they were not here for.
- */
-function DashOpeningReview({ review, onDone, onSkip }) {
-  const [answers, setAnswers] = React.useState({});
-  const [busy, setBusy] = React.useState(false);
-  const [out, setOut] = React.useState(null);
-  const checks = review.checks || [];
-  const answered = checks.every(c => answers[c.checkId] !== undefined && answers[c.checkId] !== "");
-  const verdicts = {}; ((out && out.review) || []).forEach(c => { verdicts[c.checkId] = c; });
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const r = await NGGApi.member.curriculumSubmit(review.unitId, answers);
-      setOut(r);
-      if (r.progress.pending) toast.info("Sent. Your instructor will mark the written answers.", review.title);
-      else toast.success("Review done — " + Math.round(r.progress.score) + " of " + r.progress.maxScore + ".", review.title);
-    } catch (e2) { toast.error(humanizeError(e2.code, e2.code)); }
-    finally { setBusy(false); }
-  };
-  const p = out && out.progress;
-  return (
-    <form className="dash-card cur-review" onSubmit={submit} aria-label={"Review of week " + review.week}>
-      <div className="eyebrow cur-review-eyebrow">BEFORE TODAY&rsquo;S LESSON</div>
-      <h3 className="cur-review-h">What do you still remember?</h3>
-      <p className="cur-review-sub">
-        {checks.length} question{checks.length === 1 ? "" : "s"} from week {review.week}, <b>{review.title}</b>.
-        {review.attempted ? " You have had a go at these before." : " Try them from memory — looking them up does not help you."}
-      </p>
-      {checks.map((c, i) => (
-        <CurCheckField key={c.checkId} c={c} n={i + 1} value={answers[c.checkId]} disabled={!!p}
-                       onChange={v => setAnswers(a => ({ ...a, [c.checkId]: v }))}
-                       verdict={verdicts[c.checkId]} mark={p && p.marks && p.marks[c.checkId]}/>
-      ))}
-      {p
-        ? <div className="cur-review-done" aria-live="polite">
-            <p className="cur-result">
-              {p.pending ? "Your written answers are with your instructor."
-                : Math.round(p.score) + " of " + p.maxScore + ". " + (p.status === "completed" ? "That week is complete." : "Worth going back over before you carry on.")}
-            </p>
-            <button type="button" className="btn btn-primary" onClick={onDone}>Start today&rsquo;s lesson</button>
-          </div>
-        : <div className="cur-review-acts">
-            <button type="submit" className="btn btn-primary" disabled={busy || !answered}>{busy ? "Marking…" : "Check my answers"}</button>
-            <button type="button" className="btn btn-ghost" onClick={onSkip}>Skip to today&rsquo;s lesson</button>
-            {!answered && <span className="cur-note">Answer every question to check them.</span>}
-          </div>}
-    </form>
-  );
-}
 
 function DashCurriculumLesson({ unitId, onBack }) {
   const [d, setD] = React.useState(null);

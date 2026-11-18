@@ -29,7 +29,6 @@ const AN_TONE = { good: "#16a34a", warn: "#f59e0b", bad: "#ef4444", info: "#4C6F
  * folds into "Other" or the chart becomes small multiples. */
 const AN_SERIES = ["#3B5BDB", "#C2410C", "#0E9F6E", "#A21CAF", "#4D7C0F", "#0369A1", "#BE123C", "#6D28D9"];
 const AN_RATE_TONE = (r) => (r >= 80 ? AN_TONE.good : r >= 55 ? AN_TONE.warn : AN_TONE.bad);
-const AN_RATE_LABEL = (r) => (r >= 80 ? "On track" : r >= 55 ? "Watch" : "Needs attention");
 
 function anFmt(n) { return (n === null || n === undefined || n !== n) ? "—" : fmtNum(n); }
 /* Always quoted, and always formula-guarded. The old version quoted only when

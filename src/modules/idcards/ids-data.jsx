@@ -125,11 +125,6 @@ function idsRecordMm(design, kind, program) {
   return [IDS_SIZES.cr80p[2], IDS_SIZES.cr80p[3]];
 }
 function idsSameMm(a, b) { return Math.abs(a[0] - b[0]) <= IDS_SIZE_TOL && Math.abs(a[1] - b[1]) <= IDS_SIZE_TOL; }
-/** The sheet settings that print cards of this size: a named size where one matches, else custom. */
-function idsSizeSettings(mm) {
-  const k = IDS_SIZE_IDS.find(s => s !== "custom" && idsSameMm([IDS_SIZES[s][2], IDS_SIZES[s][3]], mm));
-  return k ? { size: k } : { size: "custom", cw: mm[0], ch: mm[1] };
-}
 function idsMmLabel(mm) { return (+mm[0].toFixed(1)) + " × " + (+mm[1].toFixed(1)) + " mm"; }
 
 /* ── Design Studio faces ──────────────────────────────────────────────────── */

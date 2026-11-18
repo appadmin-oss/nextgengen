@@ -54,6 +54,7 @@ const CR_PAGES = {
     { id: "families", label: "Families", desc: "Parent and guardian accounts connected to members.", cap: "people" },
     { id: "centres", label: "Centres", desc: "Where NGG meets. A centre’s code is the printed ID prefix on Summer School cards (EG-26-001), so it stays once cards are printed.", cap: "people" },
     { id: "idcards", label: "ID cards", desc: "Print queue for member and staff cards.", cap: "people" },
+    { id: "agreements", label: "Agreements", desc: "Membership Agreements (MoU): who has signed, who is waiting, and countersigning as NGG’s representative.", cap: "people" },
     { id: "reg-checklist", label: "Registration", desc: "Every new member’s registration checklist: what is left, who is helping them at their centre, and the items staff add.", cap: "people" },
     { id: "request-log", label: "Request history", desc: "Every request members and parents have raised — open, approved, declined and withdrawn — and who decided it.", cap: "people" },
     { id: "accounts", label: "Accounts", desc: "Who cannot sign in, and why. Ending a membership is not done here.", cap: "people" },

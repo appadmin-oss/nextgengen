@@ -5406,3 +5406,21 @@ CREATE TABLE IF NOT EXISTS shop_codes (
   UNIQUE KEY uq_shop_code (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (238) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 239 · The Membership Agreement (MoU), signed online (domain/mou.php) ──
+CREATE TABLE IF NOT EXISTS mou_agreements (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mouId VARCHAR(32) NOT NULL, memberId VARCHAR(48) NOT NULL, version VARCHAR(16) NOT NULL DEFAULT '', status VARCHAR(20) NOT NULL DEFAULT 'awaiting_family',
+  tokenHash VARCHAR(64) NOT NULL DEFAULT '', tokenExp VARCHAR(32) NOT NULL DEFAULT '', docTokenHash VARCHAR(64) NOT NULL DEFAULT '',
+  termsJson TEXT, prefillJson TEXT, familyJson TEXT, memberJson TEXT,
+  tripsChoice VARCHAR(12) NOT NULL DEFAULT '', quizPassedAt VARCHAR(32) NOT NULL DEFAULT '', quizAttempts INT NOT NULL DEFAULT 0,
+  sentAt VARCHAR(32) NOT NULL DEFAULT '', sentTo VARCHAR(600) NOT NULL DEFAULT '', viewedAt VARCHAR(32) NOT NULL DEFAULT '',
+  clientName VARCHAR(160) NOT NULL DEFAULT '', clientRel VARCHAR(16) NOT NULL DEFAULT '', clientSignature MEDIUMTEXT, clientSignedAt VARCHAR(32) NOT NULL DEFAULT '', clientIp VARCHAR(64) NOT NULL DEFAULT '',
+  witnessName VARCHAR(160) NOT NULL DEFAULT '', witnessPhone VARCHAR(32) NOT NULL DEFAULT '', witnessSignature MEDIUMTEXT, witnessSignedAt VARCHAR(32) NOT NULL DEFAULT '', witnessBy VARCHAR(16) NOT NULL DEFAULT '',
+  nggName VARCHAR(160) NOT NULL DEFAULT '', nggRole VARCHAR(120) NOT NULL DEFAULT '', nggById VARCHAR(48) NOT NULL DEFAULT '', nggSignature MEDIUMTEXT, nggSignedAt VARCHAR(32) NOT NULL DEFAULT '',
+  docHash VARCHAR(64) NOT NULL DEFAULT '', familyMailedAt VARCHAR(32) NOT NULL DEFAULT '', finalMailedAt VARCHAR(32) NOT NULL DEFAULT '',
+  voidReason VARCHAR(400) NOT NULL DEFAULT '', voidedAt VARCHAR(32) NOT NULL DEFAULT '', voidedBy VARCHAR(48) NOT NULL DEFAULT '',
+  createdBy VARCHAR(48) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_mou (mouId), KEY idx_mou_member (memberId, status), KEY idx_mou_status (status), KEY idx_mou_token (tokenHash), KEY idx_mou_doc (docTokenHash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (239) ON DUPLICATE KEY UPDATE version = version;
