@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 237;
+const NGG_SCHEMA_TARGET = 238;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6582,6 +6582,67 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_shop_orders_status ON shop_orders(status, id);
             CREATE INDEX IF NOT EXISTS idx_shop_orders_ref ON shop_orders(paystackRef);
+        ",
+        /* 238 — managing the shop (domain/shop-manage.php; docs/SHOP-MANAGEMENT-PLAN.md §2). Every stock change is a
+           reason-coded row with who and when (shop_stock_moves), and a product's stock is the running sum of them. An
+           order keeps its own timeline (shop_order_events) instead of a growing note. Refunds are records with a
+           status that only Paystack's own answer moves to processed (shop_refunds). Sales at a table are orders of
+           channel 'pos' inside a cash session (shop_cash_sessions). Discount codes are shop_codes. The column names
+           avoid MySQL's reserved words (option, by, float). */
+        238 => "
+            ALTER TABLE shop_products ADD COLUMN lowStock INTEGER NOT NULL DEFAULT -1;
+            ALTER TABLE shop_products ADD COLUMN preorderUntil TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN channel TEXT NOT NULL DEFAULT 'online';
+            ALTER TABLE shop_orders ADD COLUMN payMethod TEXT NOT NULL DEFAULT 'paystack';
+            ALTER TABLE shop_orders ADD COLUMN sessionId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN pickupCode TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN gatewayFee INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shop_orders ADD COLUMN refunded INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shop_orders ADD COLUMN refundState TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN cancelKind TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN cancelledAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN remindedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN tracking TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN discountCode TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN discount INTEGER NOT NULL DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_paid ON shop_orders(paidAt);
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_created ON shop_orders(createdAt);
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_session ON shop_orders(sessionId);
+            CREATE TABLE IF NOT EXISTS shop_stock_moves (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              productId TEXT NOT NULL, variant TEXT NOT NULL DEFAULT '', delta INTEGER NOT NULL DEFAULT 0, balance INTEGER NOT NULL DEFAULT 0,
+              reason TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', orderId TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_moves_product ON shop_stock_moves(productId, id);
+            CREATE TABLE IF NOT EXISTS shop_order_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              orderId TEXT NOT NULL, kind TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_events_order ON shop_order_events(orderId, id);
+            CREATE TABLE IF NOT EXISTS shop_refunds (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              refundId TEXT NOT NULL UNIQUE, orderId TEXT NOT NULL, amount INTEGER NOT NULL DEFAULT 0, method TEXT NOT NULL DEFAULT 'paystack',
+              status TEXT NOT NULL DEFAULT 'pending', gatewayId TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', restock TEXT NOT NULL DEFAULT '[]',
+              byId TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', processedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_refunds_order ON shop_refunds(orderId);
+            CREATE INDEX IF NOT EXISTS idx_shop_refunds_status ON shop_refunds(status);
+            CREATE TABLE IF NOT EXISTS shop_cash_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sessionId TEXT NOT NULL UNIQUE, label TEXT NOT NULL DEFAULT '', centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', openingFloat INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'open', openedBy TEXT NOT NULL DEFAULT '', openedAt TEXT NOT NULL DEFAULT '',
+              closedBy TEXT NOT NULL DEFAULT '', closedAt TEXT NOT NULL DEFAULT '', expected INTEGER NOT NULL DEFAULT 0, counted INTEGER NOT NULL DEFAULT 0,
+              difference INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS shop_codes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              code TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'percent', amount INTEGER NOT NULL DEFAULT 0, maxUses INTEGER NOT NULL DEFAULT 0,
+              perBuyer INTEGER NOT NULL DEFAULT 1, minSpend INTEGER NOT NULL DEFAULT 0, startsAt TEXT NOT NULL DEFAULT '', endsAt TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'active', used INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '',
+              byId TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
         ",
     ];
 

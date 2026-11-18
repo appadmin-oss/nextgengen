@@ -5348,3 +5348,61 @@ CREATE TABLE IF NOT EXISTS shop_orders (
   UNIQUE KEY uq_shop_order (orderId), UNIQUE KEY uq_shop_token (token), KEY idx_shop_orders_status (status, id), KEY idx_shop_orders_ref (paystackRef)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (237) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 238 · Managing the shop (domain/shop-manage.php): the stock ledger, order timelines, refunds, cash sessions, codes ──
+ALTER TABLE shop_products ADD COLUMN lowStock INT NOT NULL DEFAULT -1;
+ALTER TABLE shop_products ADD COLUMN preorderUntil VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN channel VARCHAR(12) NOT NULL DEFAULT 'online';
+ALTER TABLE shop_orders ADD COLUMN payMethod VARCHAR(16) NOT NULL DEFAULT 'paystack';
+ALTER TABLE shop_orders ADD COLUMN sessionId VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN pickupCode VARCHAR(8) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN gatewayFee INT NOT NULL DEFAULT 0;
+ALTER TABLE shop_orders ADD COLUMN refunded INT NOT NULL DEFAULT 0;
+ALTER TABLE shop_orders ADD COLUMN refundState VARCHAR(12) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN cancelKind VARCHAR(12) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN cancelledAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN remindedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN tracking VARCHAR(300) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN discountCode VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN discount INT NOT NULL DEFAULT 0;
+ALTER TABLE shop_orders MODIFY COLUMN note TEXT;
+CREATE INDEX idx_shop_orders_paid ON shop_orders(paidAt);
+CREATE INDEX idx_shop_orders_created ON shop_orders(createdAt);
+CREATE INDEX idx_shop_orders_session ON shop_orders(sessionId);
+CREATE TABLE IF NOT EXISTS shop_stock_moves (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  productId VARCHAR(24) NOT NULL, variant VARCHAR(40) NOT NULL DEFAULT '', delta INT NOT NULL DEFAULT 0, balance INT NOT NULL DEFAULT 0,
+  reason VARCHAR(16) NOT NULL DEFAULT '', note VARCHAR(300) NOT NULL DEFAULT '', orderId VARCHAR(32) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_shop_moves_product (productId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_order_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  orderId VARCHAR(32) NOT NULL, kind VARCHAR(16) NOT NULL DEFAULT '', text VARCHAR(1000) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_shop_events_order (orderId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_refunds (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  refundId VARCHAR(32) NOT NULL, orderId VARCHAR(32) NOT NULL, amount INT NOT NULL DEFAULT 0, method VARCHAR(12) NOT NULL DEFAULT 'paystack',
+  status VARCHAR(12) NOT NULL DEFAULT 'pending', gatewayId VARCHAR(40) NOT NULL DEFAULT '', reason VARCHAR(300) NOT NULL DEFAULT '', restock TEXT,
+  byId VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '', processedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_refund (refundId), KEY idx_shop_refunds_order (orderId), KEY idx_shop_refunds_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_cash_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sessionId VARCHAR(32) NOT NULL, label VARCHAR(80) NOT NULL DEFAULT '', centre VARCHAR(160) NOT NULL DEFAULT '', centreId VARCHAR(48) NOT NULL DEFAULT '', openingFloat INT NOT NULL DEFAULT 0,
+  status VARCHAR(8) NOT NULL DEFAULT 'open', openedBy VARCHAR(64) NOT NULL DEFAULT '', openedAt VARCHAR(32) NOT NULL DEFAULT '',
+  closedBy VARCHAR(64) NOT NULL DEFAULT '', closedAt VARCHAR(32) NOT NULL DEFAULT '', expected INT NOT NULL DEFAULT 0, counted INT NOT NULL DEFAULT 0,
+  difference INT NOT NULL DEFAULT 0, note VARCHAR(300) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_session (sessionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_codes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(32) NOT NULL, kind VARCHAR(8) NOT NULL DEFAULT 'percent', amount INT NOT NULL DEFAULT 0, maxUses INT NOT NULL DEFAULT 0,
+  perBuyer TINYINT NOT NULL DEFAULT 1, minSpend INT NOT NULL DEFAULT 0, startsAt VARCHAR(10) NOT NULL DEFAULT '', endsAt VARCHAR(10) NOT NULL DEFAULT '',
+  status VARCHAR(12) NOT NULL DEFAULT 'active', used INT NOT NULL DEFAULT 0, note VARCHAR(300) NOT NULL DEFAULT '',
+  byId VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (238) ON DUPLICATE KEY UPDATE version = version;

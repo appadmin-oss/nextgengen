@@ -13,4 +13,9 @@ if (($evt['event'] ?? '') === 'charge.success' && $ref !== '') {
     elseif (strncmp($ref, 'NGGS-', 5) === 0) shop_paystack_verify($ref);   // the shop (domain/shop.php)
     else donation_verify($ref);
 }
+// A shop refund moving on (shop-manage.php): the body names the refund; Paystack's own GET says where it is.
+if (strncmp((string)($evt['event'] ?? ''), 'refund.', 7) === 0 && function_exists('shop_refund_event')) {
+    $tref = (string)($evt['data']['transaction_reference'] ?? ($evt['data']['transaction']['reference'] ?? ''));
+    if (strncmp($tref, 'NGGS-', 5) === 0) shop_refund_event(is_array($evt) ? $evt : []);
+}
 http_response_code(200); echo 'ok';
