@@ -7643,3 +7643,20 @@ Owner: "Remove everything that is irrelevant", then "Please create a test for th
   orphan font comes back.
 - Kept on purpose, because only a test still uses them: AdminAssessment, AdminTournaments,
   idsCardsInRange, idsStock. Removing them means deleting their tests too, so that is the owner's call.
+
+## 2026-11-18 — NGG entry steps, the resumption day, follow-ups, the paper MoU
+
+Owner's paper card *NGG ENTRY STEPS* became the registration checklist's structure (docs/ENTRY-STEPS.md):
+
+- Items are grouped by step (`RCL_STEPS`: orientation, payment, documents, online, ID card). Migration 240 adds
+  `reg_checklist_items.step` and three default items: Orientation attended, File handed in, Latest school report card.
+- New automatic item **School timetable on the site** (member_timetables, lessons on ≥3 weekdays).
+- **Resumption = completion.** `reg_checklists.resumedOn` is written the day the last item is done, once; the family,
+  member and supervisor are told. Not the day the member was accepted.
+- **Follow-ups.** Family reminders on day 1/3/7 then weekly, phrased as what to bring and where; a follow-up log
+  (`reg_checklist_followups`) with a required next date; supervisor told when one falls due; centre staff told when a
+  registration stalls 14 days. List filter *Needs a follow-up*.
+- **The MoU is printed, signed in ink and brought to the centre.** `admin.mou.paper` records the checked copy and a
+  readable photograph of the signed page (≥1600 × 1000, read from the file); countersign is refused until then
+  (`paper_first`); the checklist item needs both. A paper-only family is supported (`signedVia = 'paper'`).
+  `NGGApi.uploadDocumentPhoto` keeps the photo at 2000px even without a cloud (the headshot fallback is 1000px).

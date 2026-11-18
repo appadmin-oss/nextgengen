@@ -1701,15 +1701,111 @@ chk('schools: a school the family typed joins the list once their child is accep
     // ── Reminders: once.
     db_insert('guardians', ['guardianId' => 'G-RCL-2', 'email' => 'g-rcl-2@example.org', 'fullName' => 'Papa Rcl', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
     db_insert('guardian_wards', ['linkId' => 'GW-RCL-2', 'guardianId' => 'G-RCL-2', 'memberId' => 'NGG-RCL-M2', 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    // The family's first reminder is on day 1, not the hour the checklist starts.
+    db_exec("UPDATE reg_checklists SET startedAt = ? WHERE memberId IN ('NGG-RCL-M1','NGG-RCL-M2')", [gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 86400)]);
     $t1 = rcl_tick(); $t2 = rcl_tick();
     chk('regcheck reminders: the supervisor and the family are reminded once a week, however often the job runs',
         (int)db_row("SELECT COUNT(*) c FROM reg_checklist_sends WHERE sendKey LIKE 'week:VOL-RCL-A:%'")['c'] === 1
         && (int)db_row("SELECT COUNT(*) c FROM reg_checklist_sends WHERE sendKey LIKE 'family:NGG-RCL-M2:G-RCL-2:%'")['c'] === 1
         && (int)db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['c'] === 1
         && $t1['sent'] >= 2 && $t2['sent'] === 0);
-    chk('regcheck reminders: the family is told only what the family can do', str_contains((string)db_row("SELECT body FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['body'], 'Date of birth')
+    chk('regcheck reminders: the family is told only what the family can do, as what to bring and where', str_contains((string)db_row("SELECT body FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['body'], 'date of birth')
+        && str_contains((string)db_row("SELECT body FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['body'], 'Bring things to Rcl Town')
         && !str_contains((string)db_row("SELECT body FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND kind = 'registration'")['body'], 'ID card printed'));
     chk('regcheck: the web-cron schedules the job', isset(web_cron_jobs()['regcheck']));
+
+    // ── NGG ENTRY STEPS (owner, 18 Nov 2026): the paper card, the resumption day, the follow-ups.
+    $bm = $b('NGG-RCL-M2');
+    $order = array_map(fn($i) => array_search($i['step'], array_keys(RCL_STEPS), true), $bm['items']);
+    chk('entry steps · every item sits in one of the card’s steps, in the card’s order (orientation, payment, documents, online, ID card)',
+        !in_array(false, $order, true) && $order === array_values(array_merge([], (function ($o) { sort($o); return $o; })($order))) && $bm['items'][0]['stepLabel'] !== '');
+    $keys = array_column($bm['items'], 'key');
+    chk('entry steps · the card’s items are on every checklist by default: orientation, the file, the report card, the passport photo, the MoU and the school timetable',
+        in_array('RCI-ORIENTATION', $keys, true) && in_array('RCI-FILE', $keys, true) && in_array('RCI-REPORTCARD', $keys, true)
+        && in_array('auto:photo', $keys, true) && in_array('auto:mou', $keys, true) && in_array('auto:timetable', $keys, true));
+    $ori = db_row("SELECT * FROM reg_checklist_items WHERE itemId = 'RCI-ORIENTATION'");
+    chk('entry steps · orientation is attended at the centre and covers the policies, both fees and the T-shirt; staff may still retire it',
+        $ori && (int)$ori['presence'] === 1 && $ori['step'] === 'orientation' && str_contains($ori['help'], 'commitment fee') && str_contains($ori['help'], 'T-shirt') && $ori['status'] === 'active');
+    chk('entry steps · an item saved with an unknown step is refused, in words', ($save(['title' => 'Something', 'evidence' => 'none', 'step' => 'lectures'])['error'] ?? '') === 'bad_step');
+    // The school timetable must be ON THE SITE: lessons on at least three school days, not a copied NGG session.
+    $tt = fn(array $entries) => json_encode(['settings' => [], 'entries' => $entries]);
+    chk('entry steps · a school timetable counts lessons on school days; a copied NGG session or a weekend study block does not',
+        rcl_timetable_days($tt([['kind' => 'class', 'days' => [1, 2]], ['kind' => 'class', 'days' => [3], 'official' => true], ['kind' => 'study', 'days' => [4, 5]], ['kind' => 'class', 'days' => [6]]])) === 2
+        && rcl_timetable_days($tt([['kind' => 'class', 'days' => [1, 2, 3, 4, 5]]])) === 5 && rcl_timetable_days('not json') === 0);
+    db_insert('member_timetables', ['memberId' => 'NGG-RCL-M2', 'doc' => $tt([['kind' => 'class', 'days' => [1, 3], 'title' => 'Maths', 'start' => '08:00', 'end' => '09:00']]), 'updatedAt' => $now]);
+    $tOpen = !$st('NGG-RCL-M2')['auto:timetable'];
+    db_exec("UPDATE member_timetables SET doc = ? WHERE memberId = 'NGG-RCL-M2'", [$tt([['kind' => 'class', 'days' => [1, 2, 3, 4, 5], 'title' => 'Maths', 'start' => '08:00', 'end' => '09:00']])]);
+    chk('entry steps · the timetable item passes only when the school week is on the site', $tOpen && $st('NGG-RCL-M2')['auto:timetable']);
+
+    // The day it is complete is the day they resume — written once.
+    $D = 'NGG-RCL-DONE';
+    db_insert('members', ['memberId' => $D, 'fullName' => 'Done Rcl', 'email' => 'done.rcl@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Rcl Town',
+        'dob' => '2012-01-01', 'school' => 'Rcl Grammar', 'parentPhone' => '08031112222', 'courses' => '["Chess"]', 'displayId' => '026-977', 'photoUrl' => 'https://res.cloudinary.com/demo/p.jpg', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-RCL-D', 'guardianId' => 'G-RCL-2', 'memberId' => $D, 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (['participation', 'medical', 'data', 'media', 'site_visibility'] as $t) db_insert('consents', ['studentId' => $D, 'type' => $t, 'status' => 'granted', 'method' => 'test', 'actorName' => 'x', 'createdAt' => $now]);
+    db_insert('card_issues', ['runId' => 'RUN-RCL-1', 'subjectType' => 'member', 'subjectId' => $D, 'displayId' => '026-977', 'ok' => 1, 'at' => $now]);
+    db_insert('member_timetables', ['memberId' => $D, 'doc' => $tt([['kind' => 'class', 'days' => [1, 2, 3, 4, 5]]]), 'updatedAt' => $now]);
+    db_insert('mou_agreements', ['mouId' => 'MOU-RCL-D', 'memberId' => $D, 'version' => MOU_VERSION, 'status' => 'signed', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('membership_invoices', ['invoiceId' => 'INV-RCL-D', 'memberId' => $D, 'payToken' => 'pt-rcl-d', 'items' => '[]', 'total' => 1, 'status' => 'paid', 'purpose' => 'joining', 'createdAt' => $now, 'paidAt' => $now]);
+    rcl_start(db_row('SELECT * FROM members WHERE memberId = ?', [$D]), $SU);
+    chk('entry steps · a countersigned MoU is not enough: the inked paper copy must be checked and photographed at the centre', !$st($D)['auto:mou']);
+    db_exec("UPDATE mou_agreements SET paperReceivedAt = ?, paperUrl = 'https://res.cloudinary.com/demo/mou.jpg' WHERE mouId = 'MOU-RCL-D'", [$now]);
+    chk('entry steps · …and with it, the MoU item passes', $st($D)['auto:mou']);
+    $c0 = db_row('SELECT * FROM reg_checklists WHERE memberId = ?', [$D]);
+    chk('entry steps · a new checklist has its first follow-up due in ' . RCL_FIRST_FOLLOWUP . ' days, and has not resumed', $c0['resumedOn'] === '' && $c0['nextFollowUpOn'] === gmdate('Y-m-d', strtotime(attendance_today() . 'T12:00:00Z') + RCL_FIRST_FOLLOWUP * 86400));
+    foreach (rcl_items_active() as $it) db_insert('reg_checklist_state', ['memberId' => $D, 'itemId' => (string)$it['itemId'], 'status' => 'verified', 'at' => $now, 'byId' => 'VOL-RCL-A']);
+    $GLOBALS['__mail_sink'] = [];
+    rcl_refresh([$D]);
+    $c1 = db_row('SELECT * FROM reg_checklists WHERE memberId = ?', [$D]);
+    chk('entry steps · the day the last step is done is the day they resume: resumedOn is today, the follow-up cleared',
+        $c1['status'] === 'done' && $c1['resumedOn'] === attendance_today() && $c1['nextFollowUpOn'] === '');
+    chk('entry steps · the family is told the child resumes, once', (int)db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = 'G-RCL-2' AND refId = ?", [$D . ':resumed'])['c'] === 1
+        && (bool)db_row("SELECT 1 x FROM notifications WHERE memberId = ? AND title LIKE 'You are registered%'", [$D]));
+    db_update('reg_checklist_state', ['status' => 'rejected', 'reason' => 'Blurred'], ['memberId' => $D, 'itemId' => 'RCI-REPORTCARD']);
+    db_exec("UPDATE reg_checklists SET resumedOn = '2026-01-05' WHERE memberId = ?", [$D]);
+    rcl_refresh([$D]);
+    chk('entry steps · an item reopened later does not move the day they resumed', db_row('SELECT status, resumedOn FROM reg_checklists WHERE memberId = ?', [$D]) == ['status' => 'open', 'resumedOn' => '2026-01-05']);
+    db_update('reg_checklist_state', ['status' => 'verified', 'reason' => ''], ['memberId' => $D, 'itemId' => 'RCI-REPORTCARD']);
+    rcl_refresh([$D]);
+    chk('entry steps · …nor does finishing it again: the day they resumed is written once', db_row('SELECT status, resumedOn FROM reg_checklists WHERE memberId = ?', [$D]) == ['status' => 'done', 'resumedOn' => '2026-01-05']);
+    $pg = backend_dispatch('family.regcheck', ['guardianId' => 'G-RCL-2', 'linkId' => 'GW-RCL-2']);
+    chk('entry steps · the family sees the card’s steps and what to bring, in words', count($pg['steps'] ?? []) >= 4 && ($pg['steps'][0]['label'] ?? '') === 'Orientation'
+        && in_array('the child’s date of birth', $pg['bring'] ?? [], true) && ($pg['centre'] ?? '') === 'Rcl Town');
+
+    // Follow-ups: logged with the next day; the cadence; stalled ones reach the centre's staff.
+    $fu = fn(array $x, string $who = 'NGG-2025-0099') => backend_dispatch('admin.regcheck.followup', ['requesterId' => $who, 'memberId' => 'NGG-RCL-M2'] + $x);
+    $tom = gmdate('Y-m-d', strtotime(attendance_today() . 'T12:00:00Z') + 86400);
+    chk('follow-ups · an open registration needs the next day to try', ($fu(['channel' => 'call', 'outcome' => 'no_answer'])['error'] ?? '') === 'next_required'
+        && ($fu(['channel' => 'call', 'outcome' => 'no_answer', 'nextOn' => attendance_today()])['error'] ?? '') === 'next_past'
+        && ($fu(['channel' => 'call', 'outcome' => 'no_answer', 'nextOn' => gmdate('Y-m-d', time() + 90 * 86400)])['error'] ?? '') === 'next_far');
+    chk('follow-ups · how and what happened are from the lists; "they may not continue" needs what they said', ($fu(['channel' => 'pigeon', 'outcome' => 'reached', 'nextOn' => $tom])['error'] ?? '') === 'bad_channel'
+        && ($fu(['channel' => 'call', 'outcome' => 'withdrawing', 'nextOn' => $tom])['error'] ?? '') === 'note_required'
+        && !db_row("SELECT 1 x FROM reg_checklist_followups WHERE memberId = 'NGG-RCL-M2'"));
+    chk('follow-ups · a scoped admin cannot log one outside their centres; nor can a supervisor who is not theirs',
+        ($fu(['channel' => 'call', 'outcome' => 'reached', 'nextOn' => $tom], 'NGG-RCL-SC')['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('member.regcheck.followup', ['requesterId' => 'VOL-RCL-B', 'memberId' => 'NGG-RCL-M2', 'channel' => 'call', 'outcome' => 'reached', 'nextOn' => $tom])['error'] ?? '') === 'not_assigned');
+    $ok = $fu(['channel' => 'whatsapp', 'outcome' => 'promised', 'note' => 'Bringing the report card on Saturday', 'nextOn' => $tom]);
+    chk('follow-ups · logged with who, how, what and the next day; the checklist carries the next day',
+        !empty($ok['ok']) && ($ok['followups'][0]['outcomeLabel'] ?? '') === 'They promised a date' && db_row("SELECT nextFollowUpOn FROM reg_checklists WHERE memberId = 'NGG-RCL-M2'")['nextFollowUpOn'] === $tom
+        && (bool)db_row("SELECT 1 x FROM audit_log WHERE event = 'regcheck.followup' AND subject = 'NGG-RCL-M2'"));
+    db_exec("UPDATE reg_checklists SET nextFollowUpOn = ? WHERE memberId = 'NGG-RCL-M2'", [attendance_today()]);
+    $fl = backend_dispatch('admin.regcheck.list', ['requesterId' => $SU, 'filter' => 'followup', 'q' => 'rcl']);
+    chk('follow-ups · "Needs a follow-up" lists one that is due today, and counts it', in_array('NGG-RCL-M2', array_column($fl['rows'] ?? [], 'memberId'), true) && ($fl['counts']['followup'] ?? 0) >= 1);
+    $tk = rcl_tick();
+    chk('follow-ups · the supervisor is told a follow-up is due today, once', (int)db_row("SELECT COUNT(*) c FROM reg_checklist_sends WHERE sendKey = ?", ['fu-due:VOL-RCL-A:' . attendance_today()])['c'] === 1
+        && rcl_tick()['sent'] === 0);
+    chk('follow-ups · the family cadence is day 1, day 3, day 7, then weekly', rcl_family_stage(gmdate('Y-m-d\TH:i:s\Z', time() - 3600), time(), 'W') === ''
+        && rcl_family_stage(gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 86400), time(), 'W') === 'd1' && rcl_family_stage(gmdate('Y-m-d\TH:i:s\Z', time() - 5 * 86400), time(), 'W') === 'd3'
+        && rcl_family_stage(gmdate('Y-m-d\TH:i:s\Z', time() - 9 * 86400), time(), 'W') === 'd7' && rcl_family_stage(gmdate('Y-m-d\TH:i:s\Z', time() - 20 * 86400), time(), 'W-47') === 'W-47');
+    db_exec("UPDATE reg_checklists SET startedAt = ? WHERE memberId = 'NGG-RCL-M2'", [gmdate('Y-m-d\TH:i:s\Z', time() - 5 * 86400)]);
+    rcl_tick();
+    chk('follow-ups · the next stage reaches the family again, as its own send', (int)db_row("SELECT COUNT(*) c FROM reg_checklist_sends WHERE sendKey = 'family:NGG-RCL-M2:G-RCL-2:d3'")['c'] === 1);
+    db_exec("UPDATE reg_checklists SET lastProgressAt = ? WHERE memberId = 'NGG-RCL-M2'", [gmdate('Y-m-d\TH:i:s\Z', time() - 20 * 86400)]);
+    rcl_tick();
+    chk('follow-ups · a registration with no progress in ' . RCL_STALL_DAYS . ' days reaches the centre’s staff, but not staff scoped elsewhere',
+        (bool)db_row("SELECT 1 x FROM reg_checklist_sends WHERE sendKey = ?", ['stalled:' . $SU . ':' . attendance_today()])
+        && !db_row("SELECT 1 x FROM reg_checklist_sends WHERE sendKey = ?", ['stalled:NGG-RCL-SC:' . attendance_today()]));
+    unset($GLOBALS['__mail_sink']);
 } finally { if ($__db->inTransaction()) $__db->rollBack(); } })();
 
 // ── Contact form ──
@@ -40799,6 +40895,38 @@ if (function_exists('imagecreatetruecolor')) {
         count($copy) === 1 && str_contains($copy[0]['html'], 'Talent management and earnings') && str_contains($copy[0]['html'], 'Kemi Adeyemi') && str_contains($copy[0]['html'], 'Bayo Ojo') && str_contains($copy[0]['html'], '/api/public/mou.php?doc='));
     chk('mou · signing twice is refused', (public_mou_sign(['witness' => ['name' => 'Bayo Ojo', 'phone' => '08035556666', 'signature' => $sigPng(2)]] + $base)['error'] ?? '') === 'already_signed');
     chk('mou · the registration checklist does not count it until NGG countersigns', empty(mou_signed_ids(['NGG-MOU-1'])['NGG-MOU-1']));
+
+    /* THE PAPER COPY (owner, 18 Nov 2026): printed, signed in ink, brought to the centre, checked, and the signed
+       page photographed — before NGG countersigns. The photograph is fetched and measured like any other upload. */
+    $page = function (int $w, int $h) { $im = imagecreatetruecolor($w, $h); imagefill($im, 0, 0, imagecolorallocate($im, 250, 250, 248)); ob_start(); imagejpeg($im, null, 70); return (string)ob_get_clean(); };
+    $bigPage = $page(2000, 1500); $smallPage = $page(900, 700);
+    $GLOBALS['__photo_qa_fetch_mock'] = fn($u) => str_contains($u, 'unfetchable') ? false : (str_contains($u, '.pdf') ? "%PDF-1.4\n%fake" : (str_contains($u, 'small') ? $smallPage : (str_contains($u, 'res.cloudinary.com') ? $bigPage : false)));
+    $allChecks = array_fill_keys(array_keys(MOU_PAPER_CHECKS), true);
+    // What the test passes wins over the defaults (array union keeps the LEFT side's keys).
+    $paper = fn(string $mouId, array $x = []) => admin_mou_paper($x + ['requesterId' => 'NGG-MOU-ADM', 'mouId' => $mouId, 'url' => 'https://res.cloudinary.com/demo/image/upload/v1/evidence/mou-signed.jpg',
+        'mime' => 'image/jpeg', 'bytes' => 300000, 'width' => 2000, 'height' => 1500, 'checks' => $allChecks]);
+    $pr0 = public_mou_print(['token' => $tok]);
+    chk('mou paper · the family prints from their own link: a page to sign in ink, every page carrying the agreement’s number',
+        !empty($pr0['ok']) && str_contains($pr0['html'], 'Sign this copy in ink') && str_contains($pr0['html'], 'class="mou-run"') && str_contains($pr0['html'], (string)$row['mouId']) && str_contains($pr0['html'], 'Egbeda'));
+    chk('mou paper · NGG cannot countersign before the signed paper copy is received', (admin_mou_countersign(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $row['mouId'], 'role' => 'Centre coordinator', 'signature' => $sigPng(3)])['error'] ?? '') === 'paper_first');
+    $lp = admin_mou_list(['requesterId' => 'NGG-MOU-ADM', 'status' => 'paper']);
+    chk('mou paper · the desk lists it under "Paper copy to receive", and counts it', in_array($row['mouId'], array_column($lp['rows'], 'mouId'), true) && ($lp['counts']['paper'] ?? 0) >= 1);
+    $miss = $allChecks; $miss['witness'] = false;
+    chk('mou paper · every check must be true; the one that is not is named, and the copy goes back to the family', ($paper($row['mouId'], ['checks' => $miss])['check'] ?? '') === 'witness');
+    chk('mou paper · no photograph, or a link that is not ours, is refused', ($paper($row['mouId'], ['url' => ''])['error'] ?? '') === 'photo_required'
+        && ($paper($row['mouId'], ['url' => 'https://example.org/x.jpg'])['error'] ?? '') === 'photo_not_ours');
+    chk('mou paper · a PDF is not a photograph (read from its bytes), nor is a file whose name and type disagree when it cannot be read',
+        ($paper($row['mouId'], ['url' => 'https://res.cloudinary.com/demo/raw/upload/v1/a.pdf', 'mime' => 'application/pdf'])['error'] ?? '') === 'photo_type'
+        && ($paper($row['mouId'], ['url' => 'https://res.cloudinary.com/demo/image/upload/v1/unfetchable.jpg', 'mime' => 'image/png'])['error'] ?? '') === 'photo_type');
+    $sm = $paper($row['mouId'], ['url' => 'https://res.cloudinary.com/demo/image/upload/v1/evidence/small.jpg', 'width' => 4000, 'height' => 3000]);
+    chk('mou paper · a photograph too small to read is refused — measured from the file, not the browser’s word', ($sm['error'] ?? '') === 'photo_small' && ($sm['width'] ?? 0) === 900);
+    chk('mou paper · nothing was written by any refusal', (string)db_row("SELECT paperReceivedAt FROM mou_agreements WHERE id = ?", [(int)$row['id']])['paperReceivedAt'] === '');
+    $pp = $paper($row['mouId']);
+    $pa = db_row("SELECT * FROM mou_agreements WHERE id = ?", [(int)$row['id']]);
+    chk('mou paper · received: who, where, when and the photograph are recorded; it can now be countersigned',
+        !empty($pp['ok']) && $pp['canCountersign'] === true && $pa['paperByName'] === 'Agnes Coordinator' && $pa['paperCentre'] === 'Egbeda' && str_contains($pa['paperUrl'], 'mou-signed.jpg') && $pa['signedVia'] === 'online');
+    chk('mou paper · receiving it twice is refused', ($paper($row['mouId'])['error'] ?? '') === 'already_received');
+    chk('mou paper · the family page says the copy is in, but never shows the photograph', !empty(public_mou_get(['token' => $tok])['paper']['at']) && !isset(public_mou_get(['token' => $tok])['paper']['url']));
     chk('mou · NGG countersigns with its own signature, never the family’s', (admin_mou_countersign(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $row['mouId'], 'role' => 'Centre coordinator', 'signature' => $sigPng(1)])['field'] ?? '') === 'signature');
     $GLOBALS['__mail_sink'] = [];
     $cs = admin_mou_countersign(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $row['mouId'], 'role' => 'Centre coordinator, Egbeda', 'signature' => $sigPng(3)]);
@@ -40810,7 +40938,8 @@ if (function_exists('imagecreatetruecolor')) {
     $doc = public_mou_doc(['doc' => $dm[1] ?? '']);
     chk('mou · the printable copy (A4, "Print or save as PDF") has the parties, every clause, three signatures and the fingerprint',
         !empty($doc['ok']) && str_contains($doc['html'], 'Print or save as PDF') && str_contains($doc['html'], 'Ending the Agreement early') && substr_count($doc['html'], 'class="rp-sign-img"') === 3
-        && str_contains($doc['html'], substr((string)$fin['docHash'], 0, 32)) && str_contains($doc['html'], 'Off-site activities:</b> No'));
+        && str_contains($doc['html'], substr((string)$fin['docHash'], 0, 32)) && str_contains($doc['html'], 'Off-site activities:</b> No')
+        && str_contains($doc['html'], 'checked and photographed by Agnes Coordinator') && !str_contains($doc['html'], 'Sign this copy in ink'));
     chk('mou · the old family link reads the signed state; a copy link that is not one is refused', (public_mou_get(['token' => $tok])['status'] ?? '') === 'signed' && empty(public_mou_doc(['doc' => 'nope'])['ok']));
     // No witness at home: NGG's representative witnesses at the centre.
     db_insert('members', ['memberId' => 'NGG-MOU-OUT', 'fullName' => 'Ada Okafor', 'email' => 'mou.p2@example.org', 'parentEmail' => 'mou.p2@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
@@ -40821,9 +40950,28 @@ if (function_exists('imagecreatetruecolor')) {
     $mid = db_row("SELECT * FROM mou_agreements WHERE mouId = ?", [$s2['mouId']]);
     $ls = admin_mou_list(['requesterId' => 'NGG-MOU-ADM', 'status' => 'awaiting_ngg']);
     chk('mou · without a witness the desk lists it as needing a witness', !empty($r2['ok']) && (array_values(array_filter($ls['rows'], fn($x) => $x['mouId'] === $s2['mouId']))[0]['needsWitness'] ?? false) === true);
+    $paper($s2['mouId']);
     admin_mou_countersign(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $s2['mouId'], 'role' => 'Centre coordinator', 'signature' => $sigPng(4)]);
     $w2 = db_row("SELECT * FROM mou_agreements WHERE mouId = ?", [$s2['mouId']]);
     chk('mou · …and NGG’s representative witnesses as they countersign, which the copy says', $w2['status'] === 'signed' && $w2['witnessBy'] === 'ngg' && $w2['witnessName'] === 'Agnes Coordinator');
+    // A family with no phone or data signs on paper only: staff copy what the paper says.
+    db_exec("DELETE FROM mou_agreements WHERE memberId = 'NGG-MOU-OUT'");
+    db_exec("DELETE FROM consents WHERE studentId = 'NGG-MOU-OUT'");
+    $s4 = mou_start(db_row("SELECT * FROM members WHERE memberId = 'NGG-MOU-OUT'"), 'NGG-MOU-ADM', false);
+    $po = ['signerName' => 'Chika Okafor', 'signerRel' => 'Father', 'trips' => 'granted', 'witnessName' => 'Uche Nwosu'];
+    chk('mou paper only · the paper must say who signed, as what, the off-site answer, and a different witness',
+        ($paper($s4['mouId'], ['signerName' => 'Chika'] + $po)['error'] ?? '') === 'bad_name' && ($paper($s4['mouId'], ['signerRel' => ''] + $po)['error'] ?? '') === 'bad_relation'
+        && ($paper($s4['mouId'], ['trips' => ''] + $po)['error'] ?? '') === 'trips_required' && ($paper($s4['mouId'], ['witnessName' => 'Chika Okafor'] + $po)['error'] ?? '') === 'bad_witness');
+    $p4 = $paper($s4['mouId'], $po);
+    $r4 = db_row("SELECT * FROM mou_agreements WHERE mouId = ?", [$s4['mouId']]);
+    $c4 = []; foreach (db_all("SELECT type, status, method FROM consents WHERE studentId = 'NGG-MOU-OUT' ORDER BY id") as $c) $c4[$c['type']] = $c;
+    chk('mou paper only · received: signed on paper, the link retired, its consents in the ledger as "mou_paper", and it waits on NGG',
+        !empty($p4['ok']) && $r4['status'] === 'awaiting_ngg' && $r4['signedVia'] === 'paper' && $r4['clientName'] === 'Chika Okafor' && $r4['tokenHash'] === ''
+        && ($c4['participation']['method'] ?? '') === 'mou_paper' && ($c4['trips']['status'] ?? '') === 'granted');
+    $cs4 = admin_mou_countersign(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $s4['mouId'], 'role' => 'Centre coordinator', 'signature' => $sigPng(5)]);
+    chk('mou paper only · NGG countersigns it, the witness from the paper kept, and the checklist counts it',
+        !empty($cs4['ok']) && db_row("SELECT witnessName FROM mou_agreements WHERE mouId = ?", [$s4['mouId']])['witnessName'] === 'Uche Nwosu' && !empty(mou_signed_ids(['NGG-MOU-OUT'])['NGG-MOU-OUT']));
+    unset($GLOBALS['__photo_qa_fetch_mock']);
     // Resend and void.
     db_exec("DELETE FROM mou_agreements WHERE memberId = 'NGG-MOU-OUT'");
     $s3 = mou_start(db_row("SELECT * FROM members WHERE memberId = 'NGG-MOU-OUT'"), 'NGG-MOU-ADM');

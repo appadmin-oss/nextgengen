@@ -17962,6 +17962,17 @@ button.m9x-ev-sum { cursor: pointer; }
 .rcl-field { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; font-weight: 600; }
 .rcl-field input, .rcl-field textarea { min-height: 44px; padding: 8px 10px; border: 1px solid var(--rcl-line); border-radius: var(--rcl-r-ctl); background: var(--rcl-surface); color: var(--rcl-ink); font: 400 14px var(--rcl-font); }
 .rcl-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.rcl-field select { min-height: 44px; padding: 8px 10px; border: 1px solid var(--rcl-line); border-radius: var(--rcl-r-ctl); background: var(--rcl-surface); color: var(--rcl-ink); font: 400 14px var(--rcl-font); }
+.rcl-field select:focus-visible { outline: 2px solid var(--rcl-ink); outline-offset: 2px; }
+.rcl-card > .rcl-btn { margin-top: 10px; }
+/* The entry steps — the card NGG hands a family, in its order (domain/registration-checklist.php RCL_STEPS). */
+.rcl-steps { list-style: none; margin: 8px 0 10px; padding: 0; display: grid; gap: 6px; }
+.rcl-steps li { display: grid; grid-template-columns: 22px 1fr auto; align-items: baseline; gap: 8px; font-size: 14px; }
+.rcl-steps li > span { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; background: var(--rcl-sink); font-size: 12px; font-weight: 700; }
+.rcl-steps li.is-done > span { background: var(--rcl-ok); color: #fff; }
+.rcl-steps b { font-weight: 600; }
+.rcl-steps small { font-size: 13px; color: var(--rcl-ink-2); }
+.rcl-step { display: inline-block; margin-right: 6px; font-size: 12px; font-weight: 600; color: var(--rcl-ink-2); }
 @container (max-width: 480px) { .rcl-item { grid-template-columns: 24px 1fr; } .rcl-item > .rcl-btn { grid-column: 2; justify-self: start; } }
 
 /* ==========================================================================

@@ -499,6 +499,26 @@ registration checklist; a member accepted from an application gets theirs at
 once. A named **supervisor** at the member's centre helps them through it, and
 the member and their guardians see how far along they are.
 
+**It follows the NGG entry steps** — the card NGG hands a family: *Enquiry ·
+Orientation · Payment · Submit documents · Online registration · ID card · Attend
+lectures.* Every item sits in one step, and the checklist reads in that order.
+Enquiry is behind the family before the checklist exists (the application at
+/join). **Attend lectures is not an item anyone ticks: the day the last item is
+done is the day the member resumes.** That date is recorded once (*Resumed* on
+the member's checklist, and on the list) and never moves, even if an item is
+reopened later; the family, the member and the supervisor are told that day.
+
+| Step | Items on every checklist by default |
+|---|---|
+| Orientation | **Orientation attended** — at the centre, covering the policies, the membership fee, the monthly commitment fee and the NGG T-shirt (a note of who came). |
+| Payment | **Joining fees paid** — the joining invoice (membership fee and first month's commitment fee), while fees are switched on. |
+| Submit documents | **File handed in**; **Passport photograph** (on the record); **Membership Agreement (MoU) handed in** (see below); **Latest school report card** (a photo or scan, dated within 400 days); **School timetable on the site** — the member's school week entered at /timetable, signed in as them, with lessons on at least three school days. |
+| Online registration | Guardian linked, consents, date of birth, school, emergency contact, courses placed. |
+| ID card | **ID card printed** (a proof does not count). |
+
+Orientation, the file and the report card are ordinary items staff added: you
+may change, reorder or retire them like any other. A new item asks for its step.
+
 The checklist has two kinds of item:
 
 - **From the record.** Guardian linked, consents recorded (taking part,
@@ -523,6 +543,7 @@ The checklist has two kinds of item:
 | Add, change, reorder or retire an item | **Add an item** at the top; open an item under **Items staff added** to **Change**, **Move up**, **Move down** or **Retire** it. A retired item leaves every checklist but keeps its history; **Bring it back** restores it. |
 | Start checklists for members who joined before this existed | **Start N checklists** at the top (at most 500 a press; it says how many are left). Nobody is told until a supervisor is assigned. |
 | Help a member yourself | Assign yourself, then use **Show: Mine to help**. Open the member and press **Submit** (or **Check again** for an item from the record). |
+| Chase the ones that are stuck | **Show: Needs a follow-up** — a follow-up is due today, or nothing has moved in 14 days. Open each, call or message the family, then **Log a follow-up**: how, what happened, a note, and the day to try next (required while they are still registering, at most 60 days ahead). Every follow-up is listed on the member, newest first. |
 
 **Who may supervise.** Staff holding `people` whose centres include the
 member's; an NGG mentor at that centre whose screening is recorded; an NGG
@@ -541,10 +562,19 @@ than the item allows, comes from the member's assigned supervisor, and — when
 the item says so — the supervisor checked in at the member's centre that day.
 A refused attempt says why in words, and is kept.
 
-**Who is told.** The supervisor, in the app, when they are assigned and once a
-week while any of their members has items open. The guardians, by email and
-in the family account, once a week, with only the things the family can do
-(consents, the photo, date of birth, school, an emergency contact, the fee).
+**Who is told — the follow-ups.** Nothing waits on somebody remembering.
+- **The family**, by email and in the family account, on day 1, day 3 and
+  day 7 after the checklist starts, then weekly — only while something is
+  needed from them, and in words of what to **bring** and **where** ("the
+  printed Membership Agreement, signed by a parent and a witness … bring
+  things to Egbeda on a meeting day"). It stops the day registration is done.
+- **The supervisor**, in the app, when assigned, once a week while any of
+  their members is open, and on the day a follow-up they logged falls due.
+- **Staff with `people` for that centre**, once a day, when a registration
+  has made no progress in 14 days, or a follow-up is due and nobody is
+  helping. A follow-up logged as *They may not continue* goes to the inbox
+  as a member request, for a person to decide.
+- Every checklist starts with its first follow-up due three days on.
 The member sees "Your registration: 6 of 9 done" on **Me**, with what is left
 and the supervisor's first name; a guardian sees the same on **Today**. Neither
 sees any evidence, or anyone else's.
@@ -5392,7 +5422,21 @@ a storage outage.
   questions (a wrong answer shows what the agreement says; they try again — nobody is locked out), confirms
   their details and the off-site trips choice, and signs: a typed full name and a signature (drawn, or made from
   the typed name). A witness signs on the same screen, or they leave it to NGG. They are emailed their copy at once.
-- **You countersign.** It appears under *To countersign*. Open it, press *Countersign*, give your role and sign.
+- **Then it is printed, signed in ink and brought to the centre.** After signing online the family is shown
+  (and emailed) *Print the agreement to sign*: the printed copy carries the agreement's number and version at the
+  foot of every page and a section to sign in ink — parent or guardian, witness, and NGG. No printer: open the
+  agreement here and press *Print it to sign in ink*.
+- **You receive the paper copy.** It is listed under *Paper copy to receive*. Open it → *Receive the signed copy*,
+  and with the paper in your hand turn on each check: every page there with this agreement's number; a parent or
+  guardian signed and dated it in ink; a witness signed and printed their name; the names match the record;
+  nothing crossed out or added. If one is not true, give it back to the family — do not receive it. Then take a
+  photograph of the signed page with the phone's camera (the whole page filling the picture; at least 1600 × 1000
+  pixels, or it is refused as too small to read). Who received it, where and when are recorded; *See the
+  photograph* opens it later.
+- **A family that cannot sign online** signs the paper only: print it from here, they sign at the centre, and when
+  you receive it you also type what the paper says — who signed (father, mother or guardian), the witness's name
+  and the off-site activities answer. Their consents are recorded from it.
+- **You countersign** — only after the paper copy is received. It appears under *To countersign*. Open it, press *Countersign*, give your role and sign.
   If nobody witnessed it at home, you are the witness too, and the copy says so. The family is emailed the
   completed agreement with a link to the printable copy (*Print or save as PDF*).
 - **Resend** makes a new link and stops the old one; the link is also copied so you can send it by WhatsApp.
@@ -5401,7 +5445,9 @@ a storage outage.
   updates, photos and the website (granted) and off-site trips (as chosen) to the consents ledger.
 - **The money in it is the website's.** The monthly contribution, membership fee and training place are read
   from Money → Amounts on the day the family signs and frozen on that agreement.
-- The registration checklist's item *Membership Agreement signed* is done once NGG has countersigned.
+- The registration checklist's item *Membership Agreement (MoU) handed in* is done once the paper copy is received
+  **and** NGG has countersigned. An agreement countersigned before the paper step existed needs its paper copy
+  received too.
 - A member with a signed agreement cannot be merged without a person deciding: the agreement names one child.
 
 ## Receipts as PDF and image

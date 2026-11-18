@@ -37,6 +37,19 @@ declare(strict_types=1);
  * Electronic signatures: section 93 of the Evidence Act 2011 (Nigeria). The
  * record keeps who signed, when, from which address, and a SHA-256 of the exact
  * text and figures they saw.
+ *
+ * AND ON PAPER (owner, 18 Nov 2026: "the MoU is to be printed, signed and
+ * brought to the centre, for it is to be checked; a photo of where it is signed
+ * must be taken"). Online, the family reads, answers the questions and signs —
+ * that is understanding. The PRINTED copy is then signed in ink by a parent and
+ * a witness and brought to the centre, where staff check it against
+ * MOU_PAPER_CHECKS and photograph the signed page (admin.mou.paper). NGG
+ * countersigns only after that, and the registration checklist's `mou` item
+ * passes only when both are true. A family with no phone or data can sign the
+ * paper alone: staff print it, the family signs at the centre, and the paper
+ * receipt records who signed (signedVia = 'paper'). Every page of the printed
+ * copy carries the agreement's number and version, so the photograph is tied
+ * to exactly the text that was signed.
  */
 
 const MOU_VERSION = '2026.11';
@@ -49,6 +62,19 @@ const MOU_ORG = 'Okun Alimosho, the Alimosho chapter of Ambassadors for Communit
 const MOU_CONTACT = 'next@afrovanguard.org.ng';
 /* The consents of membership this agreement grants (clause 8). Trips stay a choice. */
 const MOU_CONSENTS_GRANTED = ['participation', 'medical', 'data', 'comms', 'media', 'site_visibility'];
+/* What staff check on the signed paper copy, in the order they look. Every one must be true to receive it. */
+const MOU_PAPER_CHECKS = [
+    'pages'     => 'Every page is there, and each carries this agreement’s number',
+    'parent'    => 'A parent or guardian signed and dated it, in ink',
+    'witness'   => 'A witness signed it and printed their name',
+    'names'     => 'The child’s and the parent’s names match the record',
+    'unchanged' => 'Nothing in the text is crossed out or added by hand',
+];
+/* The photograph of the signed page must be readable: an A4 page at about 200 dpi. */
+const MOU_PAPER_MIN_LONG = 1600;
+const MOU_PAPER_MIN_SHORT = 1000;
+const MOU_PAPER_MAX_BYTES = 10485760;
+const MOU_PAPER_EXT = ['jpg' => ['image/jpeg'], 'jpeg' => ['image/jpeg'], 'png' => ['image/png'], 'webp' => ['image/webp']];
 
 /**
  * The agreement, clause by clause. {placeholders} are filled from the fee
@@ -229,8 +255,8 @@ function mou_send_invite(array $m, string $link, bool $reminder): array {
             'eyebrow' => 'Membership Agreement', 'title' => 'One last step for ' . $first,
             'intro' => 'Before ' . $first . ' starts, please read and sign the NGG Membership Agreement.',
             'bodyHtml' => '<p style="margin:0 0 12px">It takes about ten minutes on your phone. Each part of the agreement has a short summary in plain words, then five quick questions to make sure the important parts are clear — you can try again as many times as you like.</p>'
-                . '<p style="margin:0 0 12px">If another adult is with you, they can sign as your witness on the same screen. If not, someone from NGG will witness it at the centre.</p>'
-                . '<p style="margin:0">A copy of the signed agreement is emailed to you.</p>',
+                . '<p style="margin:0 0 12px">When you have signed online, <b>print the agreement, sign it in ink with a witness, and bring it to ' . esc_html((string)($m['centre'] ?? '') ?: 'the centre') . '</b>. NGG checks it there and keeps a photograph of the signed page.</p>'
+                . '<p style="margin:0">A copy of the signed agreement is emailed to you. No printer? NGG can print it for you at the centre.</p>',
             'ctaLabel' => 'Read and sign', 'ctaUrl' => $link,
             'footNote' => 'This link is private to your family and works for ' . MOU_TOKEN_DAYS . ' days. Questions: ' . MOU_CONTACT . '.',
         ]));
@@ -273,7 +299,9 @@ function public_mou_get(array $p): array {
             'org' => MOU_ORG, 'contact' => MOU_CONTACT, 'sections' => mou_terms($fig),
             'quiz' => array_map(static fn($q) => $q, mou_quiz()), 'prefill' => $pre,
             'consents' => ['granted' => MOU_CONSENTS_GRANTED, 'trips' => (string)$r['tripsChoice']],
-            'parties' => mou_parties_public($r), 'quizPassed' => (string)$r['quizPassedAt'] !== ''];
+            'parties' => mou_parties_public($r), 'quizPassed' => (string)$r['quizPassedAt'] !== '',
+            // Where the inked copy stands; never the photograph itself (that is the staff's record).
+            'paper' => ($pp = mou_paper_public($r)) ? array_diff_key($pp, ['url' => 1]) : null];
 }
 
 /** A drawn signature: a PNG data URL that decodes, is a sensible size, and is not blank. */
@@ -356,7 +384,7 @@ function public_mou_sign(array $p): array {
         'familyJson' => json_encode($fam, JSON_UNESCAPED_UNICODE), 'memberJson' => json_encode($mem, JSON_UNESCAPED_UNICODE), 'tripsChoice' => $trips,
         'quizPassedAt' => $now, 'quizAttempts' => max(1, (int)($p['attempts'] ?? 1)),
         'clientName' => $name, 'clientRel' => $rel, 'clientSignature' => $sig, 'clientSignedAt' => $now, 'clientIp' => mb_substr((string)($p['ip'] ?? ''), 0, 64),
-        'docHash' => $digest, 'docTokenHash' => mou_hash($docToken),
+        'docHash' => $digest, 'docTokenHash' => mou_hash($docToken), 'signedVia' => 'online',
     ] + $wit, ['id' => (int)$r['id']]);
     // Clause 8 IS the consents: one ledger, read by the family app, the checklist and the record.
     foreach (array_merge(array_fill_keys(MOU_CONSENTS_GRANTED, 'granted'), ['trips' => $trips]) as $type => $st)
@@ -367,7 +395,9 @@ function public_mou_sign(array $p): array {
         'what' => 'Membership Agreement signed by the family — countersign' . ($wit ? '' : ' and witness')]);
     $row = db_row('SELECT * FROM mou_agreements WHERE id = ?', [(int)$r['id']]);
     $sent = mou_mail_copy($row, $m, $docToken, false, [$fam['email']]);
-    return ['ok' => true, 'status' => 'awaiting_ngg', 'copyTo' => $sent, 'docUrl' => mou_origin() . '/api/public/mou.php?doc=' . $docToken, 'parties' => mou_parties_public($row)];
+    return ['ok' => true, 'status' => 'awaiting_ngg', 'copyTo' => $sent, 'docUrl' => mou_origin() . '/api/public/mou.php?doc=' . $docToken, 'parties' => mou_parties_public($row),
+            // What happens next, said once and plainly: print, sign in ink, bring it in.
+            'next' => ['print' => true, 'centre' => (string)($m['centre'] ?? ''), 'checks' => array_values(MOU_PAPER_CHECKS)]];
 }
 
 /* ── Staff (Control Room → Members → Agreements) ───────────────────────── */
@@ -377,16 +407,23 @@ function mou_row_public(array $r, ?array $m = null): array {
             'centre' => (string)($m['centre'] ?? ''), 'photoUrl' => (string)($m['photoUrl'] ?? ''), 'status' => (string)$r['status'], 'version' => (string)$r['version'],
             'sentAt' => (string)$r['sentAt'], 'sentTo' => (string)$r['sentTo'], 'viewedAt' => (string)$r['viewedAt'], 'createdAt' => (string)$r['createdAt'],
             'quizAttempts' => (int)$r['quizAttempts'], 'tripsChoice' => (string)$r['tripsChoice'], 'parties' => mou_parties_public($r),
-            'needsWitness' => (string)$r['status'] === 'awaiting_ngg' && (string)$r['witnessSignedAt'] === '', 'voidReason' => (string)$r['voidReason']];
+            'needsWitness' => (string)$r['status'] === 'awaiting_ngg' && (string)$r['witnessSignedAt'] === '', 'voidReason' => (string)$r['voidReason'],
+            'signedVia' => (string)($r['signedVia'] ?? ''), 'paper' => mou_paper_public($r)];
+}
+
+/** Where the signed paper copy stands: null until it has been received at a centre. */
+function mou_paper_public(array $r): ?array {
+    if ((string)($r['paperReceivedAt'] ?? '') === '') return null;
+    return ['at' => (string)$r['paperReceivedAt'], 'by' => (string)$r['paperByName'], 'centre' => (string)$r['paperCentre'], 'url' => (string)$r['paperUrl']];
 }
 
 /** admin.mou.list — every agreement in the requester's centres, by state, plus the NGG members with none. */
 function admin_mou_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $scope = admin_centre_names_in_scope($g['requester']);
-    $filter = in_array($p['status'] ?? '', ['awaiting_family', 'awaiting_ngg', 'signed', 'void', 'none', 'all'], true) ? (string)$p['status'] : 'awaiting_ngg';
+    $filter = in_array($p['status'] ?? '', ['awaiting_family', 'paper', 'awaiting_ngg', 'signed', 'void', 'none', 'all'], true) ? (string)$p['status'] : 'awaiting_ngg';
     $q = mb_strtolower(trim((string)($p['q'] ?? '')));
-    $rows = []; $counts = array_fill_keys(['awaiting_family', 'awaiting_ngg', 'signed', 'void', 'none'], 0);
+    $rows = []; $counts = array_fill_keys(['awaiting_family', 'paper', 'awaiting_ngg', 'signed', 'void', 'none'], 0);
     $byMember = [];
     foreach (db_all('SELECT * FROM mou_agreements ORDER BY id') as $r) $byMember[(string)$r['memberId']][] = $r;
     foreach (db_all("SELECT memberId, fullName, displayId, centre, photoUrl, type, status FROM members WHERE type = 'NGG' AND status = 'active' AND COALESCE(role,'member') = 'member' ORDER BY fullName") as $m) {
@@ -395,10 +432,14 @@ function admin_mou_list(array $p): array {
         $live = null; foreach (array_reverse($list) as $r) if ((string)$r['status'] !== 'void') { $live = $r; break; }
         $st = $live ? (string)$live['status'] : 'none';
         $counts[$st]++;
+        // Signed online, the inked copy not yet at the centre: its own queue (it also counts in its status).
+        $needsPaper = $live && in_array($st, ['awaiting_ngg', 'signed'], true) && (string)($live['paperReceivedAt'] ?? '') === '';
+        if ($needsPaper) $counts['paper']++;
         foreach ($list as $r) if ((string)$r['status'] === 'void') $counts['void']++;
         if ($q !== '' && !str_contains(mb_strtolower((string)$m['fullName'] . ' ' . $m['memberId'] . ' ' . $m['displayId']), $q)) continue;
         if ($filter === 'none' && $st === 'none') $rows[] = ['mouId' => '', 'memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'displayId' => (string)$m['displayId'], 'centre' => (string)$m['centre'], 'photoUrl' => (string)$m['photoUrl'], 'status' => 'none'];
         elseif ($filter === 'void') { foreach ($list as $r) if ((string)$r['status'] === 'void') $rows[] = mou_row_public($r, $m); }
+        elseif ($filter === 'paper') { if ($needsPaper) $rows[] = mou_row_public($live, $m); }
         elseif ($live && ($filter === 'all' || $filter === $st)) $rows[] = mou_row_public($live, $m);
         elseif ($filter === 'all' && !$live) $rows[] = ['mouId' => '', 'memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'displayId' => (string)$m['displayId'], 'centre' => (string)$m['centre'], 'photoUrl' => (string)$m['photoUrl'], 'status' => 'none'];
     }
@@ -422,6 +463,7 @@ function admin_mou_get(array $p): array {
         'family' => json_decode((string)$r['familyJson'], true) ?: null, 'member' => json_decode((string)$r['memberJson'], true) ?: null,
         'clientSignature' => (string)$r['clientSignature'], 'witnessSignature' => (string)$r['witnessSignature'], 'nggSignature' => (string)$r['nggSignature'],
         'witnessPhone' => (string)$r['witnessPhone'], 'docHash' => (string)$r['docHash'], 'clientIp' => (string)$r['clientIp'],
+        'paperChecks' => MOU_PAPER_CHECKS, 'paperMinLong' => MOU_PAPER_MIN_LONG,
     ]];
 }
 
@@ -435,6 +477,7 @@ function admin_mou_countersign(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     [$r, $m, $no] = mou_for_admin($g, (string)($p['mouId'] ?? '')); if ($no) return $no;
     if ((string)$r['status'] !== 'awaiting_ngg') return ['ok' => false, 'error' => 'not_awaiting_ngg', 'message' => (string)$r['status'] === 'signed' ? 'Already countersigned.' : 'The family has not signed yet.'];
+    if ((string)($r['paperReceivedAt'] ?? '') === '') return ['ok' => false, 'error' => 'paper_first', 'message' => 'Receive the signed paper copy first: check it and photograph the signed page.'];
     $role = mou_clean((string)($p['role'] ?? ''), 80);
     if (mb_strlen($role) < 3) return ['ok' => false, 'error' => 'bad_role', 'field' => 'role', 'message' => 'Give your role, for example “Centre coordinator, Egbeda”.'];
     $sig = (string)($p['signature'] ?? '');
@@ -456,6 +499,88 @@ function admin_mou_countersign(array $p): array {
     $sent = mou_mail_copy($row, $m, $docToken, true, array_filter([(string)($fam['email'] ?? '')]));
     audit('mou.countersigned', (string)$me['memberId'], (string)$m['memberId'], ['mouId' => (string)$r['mouId'], 'witnessedByNgg' => isset($upd['witnessBy'])], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'status' => 'signed', 'copyTo' => $sent];
+}
+
+/**
+ * admin.mou.paper — the signed paper copy is at the centre. {mouId, url, mime,
+ * width, height, checks{…MOU_PAPER_CHECKS: true}} and, when the family did not
+ * sign online first, what the paper says: {signerName, signerRel, trips,
+ * witnessName}. Everything is checked before anything is written: every check
+ * ticked, a photograph that is ours, an image, and large enough to read.
+ * Records who received it, where and when; NGG can then countersign.
+ */
+function admin_mou_paper(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    [$r, $m, $no] = mou_for_admin($g, (string)($p['mouId'] ?? '')); if ($no) return $no;
+    $st = (string)$r['status'];
+    if ($st === 'void') return ['ok' => false, 'error' => 'void', 'message' => 'This agreement was withdrawn.'];
+    if ((string)($r['paperReceivedAt'] ?? '') !== '') return ['ok' => false, 'error' => 'already_received', 'message' => 'The signed copy was received on ' . mou_when((string)$r['paperReceivedAt']) . '.'];
+    $checks = is_array($p['checks'] ?? null) ? $p['checks'] : [];
+    foreach (MOU_PAPER_CHECKS as $k => $words) if (empty($checks[$k])) return ['ok' => false, 'error' => 'check_failed', 'field' => 'check_' . $k, 'check' => $k,
+        'message' => 'Not yet: “' . $words . '”. Give the copy back to the family to put right, and receive it when it is.'];
+    // The photograph of the signed page.
+    $url = trim((string)($p['url'] ?? ''));
+    if ($url === '') return ['ok' => false, 'error' => 'photo_required', 'field' => 'photo', 'message' => 'Photograph the page where it is signed.'];
+    if (!(function_exists('rcl_url_ours') ? rcl_url_ours($url) : false)) return ['ok' => false, 'error' => 'photo_not_ours', 'field' => 'photo', 'message' => 'Upload the photograph here: a link to somewhere else cannot be checked.'];
+    /* What the file IS. Read from its own bytes wherever this host can fetch it (the bucket, Cloudinary, this
+       site's photo store, whose links carry no extension); from its name and the browser's word otherwise. */
+    $bin = function_exists('photo_qa_fetch') ? photo_qa_fetch($url) : null;
+    $info = $bin !== null ? @getimagesizefromstring($bin) : false;
+    $ext = strtolower((string)pathinfo((string)parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION));
+    $mime = strtolower(trim((string)($p['mime'] ?? '')));
+    if ($info) {
+        if (!in_array((string)$info['mime'], ['image/jpeg', 'image/png', 'image/webp'], true)) return ['ok' => false, 'error' => 'photo_type', 'field' => 'photo', 'message' => 'The photograph must be a JPG, PNG or WebP picture of the page.'];
+        $w = (int)$info[0]; $h = (int)$info[1]; $bytes = strlen((string)$bin);
+    } else {
+        if (!isset(MOU_PAPER_EXT[$ext]) || !in_array($mime, MOU_PAPER_EXT[$ext], true)) return ['ok' => false, 'error' => 'photo_type', 'field' => 'photo', 'message' => 'The photograph must be a JPG, PNG or WebP picture of the page.'];
+        $known = db_row('SELECT bytes FROM media_objects WHERE url = ? LIMIT 1', [$url]);
+        $bytes = $known && (int)$known['bytes'] > 0 ? (int)$known['bytes'] : (int)($p['bytes'] ?? 0);
+        $w = (int)($p['width'] ?? 0); $h = (int)($p['height'] ?? 0);
+    }
+    if ($bytes > MOU_PAPER_MAX_BYTES) return ['ok' => false, 'error' => 'photo_large', 'field' => 'photo', 'message' => 'The photograph is larger than 10 MB.'];
+    if (max($w, $h) < MOU_PAPER_MIN_LONG || min($w, $h) < MOU_PAPER_MIN_SHORT)
+        return ['ok' => false, 'error' => 'photo_small', 'field' => 'photo', 'width' => $w, 'height' => $h,
+                'message' => 'The photograph is too small to read (' . $w . ' × ' . $h . '). Take it with the phone’s camera, the whole page filling the picture: at least ' . MOU_PAPER_MIN_LONG . ' × ' . MOU_PAPER_MIN_SHORT . ' pixels.'];
+    $me = $g['requester']; $now = now_iso();
+    [$centre] = function_exists('rcl_centre') ? rcl_centre((string)($m['centre'] ?? '')) : [(string)($m['centre'] ?? '')];
+    $upd = ['paperUrl' => mb_substr($url, 0, 600), 'paperChecks' => json_encode(array_keys(MOU_PAPER_CHECKS)), 'paperReceivedAt' => $now,
+            'paperReceivedBy' => (string)$me['memberId'], 'paperByName' => mb_substr((string)$me['fullName'], 0, 160), 'paperCentre' => mb_substr((string)$centre, 0, 120), 'updatedAt' => $now];
+    if ($st === 'awaiting_family') {
+        // Signed on paper only: the paper is the signature. What it says is recorded, and the agreement moves on.
+        $name = mou_clean((string)($p['signerName'] ?? ''), 120);
+        $rel = in_array($p['signerRel'] ?? '', ['Father', 'Mother', 'Guardian'], true) ? (string)$p['signerRel'] : '';
+        $trips = (string)($p['trips'] ?? '');
+        $wn = mou_clean((string)($p['witnessName'] ?? ''), 120);
+        if (mb_strlen($name) < 5 || !preg_match('/\S+\s+\S+/u', $name)) return ['ok' => false, 'error' => 'bad_name', 'field' => 'signerName', 'message' => 'Type the name of the parent who signed, as written on the paper.'];
+        if ($rel === '') return ['ok' => false, 'error' => 'bad_relation', 'field' => 'signerRel', 'message' => 'Say whether the father, mother or guardian signed.'];
+        if (!in_array($trips, ['granted', 'declined'], true)) return ['ok' => false, 'error' => 'trips_required', 'field' => 'trips', 'message' => 'Copy the off-site activities answer from the paper (yes or no).'];
+        if (mb_strlen($wn) < 5 || !preg_match('/\S+\s+\S+/u', $wn) || mb_strtolower($wn) === mb_strtolower($name)) return ['ok' => false, 'error' => 'bad_witness', 'field' => 'witnessName', 'message' => 'Type the witness’s full name; it is a different person from the parent.'];
+        $fig = json_decode((string)$r['termsJson'], true) ?: mou_figures();
+        $pre = json_decode((string)$r['prefillJson'], true) ?: mou_prefill($m);
+        $claimed = db_exec("UPDATE mou_agreements SET status = 'awaiting_ngg', updatedAt = ? WHERE id = ? AND status = 'awaiting_family'", [$now, (int)$r['id']]);
+        if (!$claimed) return ['ok' => false, 'error' => 'busy', 'message' => 'The family signed online just now. Open it again.'];
+        $upd += ['signedVia' => 'paper', 'clientName' => $name, 'clientRel' => $rel, 'clientSignedAt' => $now, 'tripsChoice' => $trips,
+                 'familyJson' => json_encode($pre['family'] ?? [], JSON_UNESCAPED_UNICODE), 'memberJson' => json_encode($pre['member'] ?? [], JSON_UNESCAPED_UNICODE),
+                 'witnessName' => $wn, 'witnessSignedAt' => $now, 'witnessBy' => 'family', 'tokenHash' => '',
+                 'docHash' => hash('sha256', json_encode(['v' => (string)$r['version'], 'terms' => mou_terms($fig), 'paper' => true, 'name' => $name], JSON_UNESCAPED_UNICODE))];
+        foreach (array_merge(array_fill_keys(MOU_CONSENTS_GRANTED, 'granted'), ['trips' => $trips]) as $type => $cs)
+            db_insert('consents', ['studentId' => (string)$m['memberId'], 'type' => $type, 'status' => $cs, 'method' => 'mou_paper', 'actorName' => $name,
+                                   'policyVersion' => MOU_POLICY, 'createdAt' => $now]);
+    } elseif (!in_array($st, ['awaiting_ngg', 'signed'], true)) {
+        return ['ok' => false, 'error' => 'bad_state'];
+    }
+    db_update('mou_agreements', $upd, ['id' => (int)$r['id']]);
+    audit('mou.paper_received', (string)$me['memberId'], (string)$m['memberId'], ['mouId' => (string)$r['mouId'], 'via' => $st === 'awaiting_family' ? 'paper' : 'online', 'centre' => $centre, 'width' => $w, 'height' => $h], (string)($p['ip'] ?? ''));
+    if (function_exists('rcl_refresh')) rcl_refresh([(string)$m['memberId']]);
+    $row = db_row('SELECT * FROM mou_agreements WHERE id = ?', [(int)$r['id']]);
+    return ['ok' => true, 'status' => (string)$row['status'], 'paper' => mou_paper_public($row), 'canCountersign' => (string)$row['status'] === 'awaiting_ngg'];
+}
+
+/** public.mou.print — the agreement to print and sign in ink, by the family's own link (before or after signing online). */
+function public_mou_print(array $p): array {
+    [$r, $no] = mou_by_token((string)($p['token'] ?? '')); if ($no) return $no;
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]);
+    return $m ? ['ok' => true, 'html' => mou_document_html($r, $m)] : ['ok' => false, 'error' => 'not_found'];
 }
 
 /** admin.mou.start — start (and send) agreements for members who have none. Per-row verdicts, capped. */
@@ -567,7 +692,33 @@ function mou_document_html(array $r, array $m): string {
         . ((string)$r['docHash'] !== '' ? '<p class="rp-foot-note">Signed electronically under section 93 of the Evidence Act 2011. The family confirmed they read the agreement and answered its questions on ' . $e(mou_when((string)$r['quizPassedAt'])) . '. Fingerprint of the signed text: <code>' . $e(substr((string)$r['docHash'], 0, 32)) . '</code>.</p>' : '')
         . '<p class="rp-foot-note">Afrovanguard · 2 Abolude / Oremeji Street, Bakery Bus Stop, Egbeda, Alimosho, Lagos · +234 903 777 6318 · ' . $e(MOU_CONTACT) . '</p>'
         . '</section>';
+    $o .= mou_ink_section($r, $m);
+    // Every printed page names the agreement and its version, so a photograph of any page is tied to this text.
+    $o .= '<style>.mou-run{display:none}@media print{.mou-run{display:block;position:fixed;bottom:0;left:0;right:0;font:500 8.5pt/1.2 system-ui,sans-serif;color:#3a4150;text-align:center;padding:2mm 0}}</style>'
+        . '<div class="mou-run" aria-hidden="true">NGG Membership Agreement · ' . $e((string)$r['mouId']) . ' · version ' . $e((string)$r['version']) . ' · ' . $e((string)$m['fullName']) . '</div>';
     return preport_document('Membership Agreement — ' . (string)$m['fullName'], '<div class="rp-page rp">' . $o . '</div>');
+}
+
+/**
+ * The part of the printed copy that is signed in INK, and brought to the centre.
+ * Once the paper has been received it says so instead: where, when and by whom.
+ */
+function mou_ink_section(array $r, array $m): string {
+    $e = static fn($s) => esc_html((string)$s);
+    if ((string)$r['status'] === 'void') return '';
+    if ((string)($r['paperReceivedAt'] ?? '') !== '') {
+        return '<section class="rp-sec" aria-labelledby="mou-ink"><h2 id="mou-ink">The signed paper copy</h2>'
+            . '<p>Received at ' . $e((string)$r['paperCentre'] ?: 'the centre') . ' on ' . $e(mou_when((string)$r['paperReceivedAt'])) . ', checked and photographed by ' . $e((string)$r['paperByName']) . '.'
+            . ((string)($r['signedVia'] ?? '') === 'paper' ? ' The family signed on paper only.' : '') . '</p></section>';
+    }
+    $line = static fn(string $label) => '<div class="rp-sign"><span class="rp-over">' . esc_html($label) . '</span>'
+        . '<span class="rp-sign-empty" style="display:block;height:16mm;border-bottom:1px solid #222"></span>'
+        . '<span class="rp-sign-s">Full name: ______________________ &nbsp; Date: ____________</span></div>';
+    return '<section class="rp-sec" aria-labelledby="mou-ink" style="break-inside:avoid"><h2 id="mou-ink">Sign this copy in ink</h2>'
+        . '<p>Print this agreement, sign it in ink, and bring it to <b>' . $e((string)($m['centre'] ?? '') ?: 'the centre') . '</b>. NGG checks every page, photographs this page, and countersigns. '
+        . $e(explode(' ', trim((string)$m['fullName']))[0] ?: 'Your child') . ' starts lectures on the day every entry step is done.</p>'
+        . '<p>Off-site activities (clause 8): &nbsp; ☐ Yes, I give this consent &nbsp; ☐ No</p>'
+        . '<div class="rp-signs">' . $line('Parent or guardian — signature') . $line('Witness — signature') . $line('For NGG — at the centre') . '</div></section>';
 }
 
 /**
@@ -598,7 +749,7 @@ function mou_mail_copy(array $r, array $m, string $docToken, bool $final, array 
     $wSub = (string)$r['witnessBy'] === 'ngg' ? 'Witnessed by NGG' : ((string)$r['witnessName'] !== '' ? 'Witness' : 'NGG witnesses at the centre');
     $body = '<div style="background:#fbf7ec;border-left:4px solid ' . $gold . ';padding:14px 16px;border-radius:6px;margin:0 0 18px;font:400 14px/1.5 Helvetica,Arial,sans-serif;color:' . $ink . '">'
         . ($final ? '<b>Signed by everyone.</b> This is the completed Membership Agreement for ' . esc_html((string)$m['fullName']) . '. Keep this email: it is your copy.'
-                  : '<b>Thank you for signing.</b> This is your copy of ' . esc_html($first) . '’s Membership Agreement. NGG’s representative countersigns next' . ((string)$r['witnessSignedAt'] === '' ? ' and witnesses it at the centre' : '') . ', and you will get the completed copy.')
+                  : '<b>Thank you for signing.</b> One more step: <b>print the agreement (the button below), sign it in ink with a witness, and bring it to ' . esc_html((string)($m['centre'] ?? '') ?: 'the centre') . '</b>. NGG checks it, photographs the signed page and countersigns, and you will get the completed copy. ' . esc_html($first) . ' starts lectures on the day every entry step is done.')
         . '</div>'
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 6px">'
         . '<tr><td style="font:600 10px/1.3 Helvetica,Arial,sans-serif;letter-spacing:1px;text-transform:uppercase;color:' . $mute . ';padding:0 0 6px">Member</td><td style="font:600 10px/1.3 Helvetica,Arial,sans-serif;letter-spacing:1px;text-transform:uppercase;color:' . $mute . ';padding:0 0 6px">Agreement</td></tr>'
@@ -630,7 +781,8 @@ function mou_signed_ids(array $ids): array {
     foreach (array_chunk(array_values(array_unique(array_map('strval', $ids))), 400) as $chunk) {
         if (!$chunk) continue;
         $ph = implode(',', array_fill(0, count($chunk), '?'));
-        foreach (db_all("SELECT DISTINCT memberId FROM mou_agreements WHERE status = 'signed' AND memberId IN ($ph)", $chunk) as $r) $out[(string)$r['memberId']] = true;
+        // Countersigned AND the inked paper copy checked and photographed at a centre.
+        foreach (db_all("SELECT DISTINCT memberId FROM mou_agreements WHERE status = 'signed' AND paperReceivedAt <> '' AND memberId IN ($ph)", $chunk) as $r) $out[(string)$r['memberId']] = true;
     }
     return $out;
 }

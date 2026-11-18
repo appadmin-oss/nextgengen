@@ -71,7 +71,7 @@ function MouPage({ setPage }) {
   if (!d) return <MouShell><div className="mou-card" aria-busy="true"><div className="dash-spinner"/><p className="mou-quiet">Opening the agreement…</p></div></MouShell>;
 
   const first = (d.member || {}).first || "your child";
-  if (done || d.status !== "awaiting_family") return <MouShell><MouDone d={d} done={done} first={first}/></MouShell>;
+  if (done || d.status !== "awaiting_family") return <MouShell><MouDone d={d} done={done} first={first} token={token}/></MouShell>;
 
   const quiz = d.quiz || [];
   const right = quiz.filter(q => ans[q.id] === q.a).length;
@@ -260,22 +260,32 @@ function MouSign({ value, onChange, name, label }) {
   );
 }
 
-function MouDone({ d, done, first }) {
+function MouDone({ d, done, first, token }) {
   const st = done ? done.status : d.status, p = (done && done.parties) || d.parties || {};
+  const paper = d.paper || null;
   const row = (l, x, sub) => <li className={x ? "is-done" : ""}><span className="mou-step-n" aria-hidden="true">{x ? "✓" : "·"}</span><span><b>{l}</b><small>{x ? (x.name + (sub ? " · " + sub : "")) : "Waiting"}</small></span></li>;
+  const centre = (d.member && d.member.centre) || "the centre";
   return (
     <div className="mou-card mou-done">
       <span className="mou-eyebrow">Membership Agreement · {d.member.fullName}</span>
-      <h1 className="mou-h1">{st === "signed" ? "Signed by everyone" : done ? "Thank you — it’s signed" : "Signed — waiting on NGG"}</h1>
-      <p className="mou-lead">{st === "signed" ? "The agreement is complete. Your copy is in your email."
-        : (done && done.copyTo && done.copyTo.length ? "Your copy is on its way to " + done.copyTo.join(", ") + ". " : "") + "NGG’s representative countersigns next, and you’ll get the completed copy by email."}</p>
+      <h1 className="mou-h1">{st === "signed" && paper ? "Signed by everyone" : done ? "Thank you — now print it and sign in ink" : paper ? "Received at the centre" : "Signed online — now the paper copy"}</h1>
+      <p className="mou-lead">{done && done.copyTo && done.copyTo.length ? "Your copy is on its way to " + done.copyTo.join(", ") + ". " : ""}
+        {paper ? "NGG has your signed paper copy. " + (st === "signed" ? "The agreement is complete." : "NGG’s representative countersigns next, and you’ll get the completed copy by email.")
+          : "One more step: print the agreement, sign it in ink with a witness, and bring it to " + centre + ". NGG checks it there and keeps a photograph of the signed page."}</p>
+      {!paper && <ol className="mou-next" aria-label="What to do next">
+        <li><b>Print it.</b> No printer? Ask at {centre} and NGG prints it for you.</li>
+        <li><b>Sign in ink</b> on the last page, with the date. Another adult signs as your witness and prints their name.</li>
+        <li><b>Bring it to {centre}</b> on a meeting day. Every page must be there.</li>
+      </ol>}
+      {!paper && token && <a className="mou-btn" href={NGGApi.public.mouPrintUrl(token)} target="_blank" rel="noopener">Print the agreement to sign</a>}
       <ol className="mou-parties-list">
         {row("Parent or guardian", p.family, p.family && p.family.relation)}
         {row("Witness", p.witness)}
+        <li className={paper ? "is-done" : ""}><span className="mou-step-n" aria-hidden="true">{paper ? "✓" : "·"}</span><span><b>Paper copy at the centre</b><small>{paper ? "Received " + String(paper.at || "").slice(0, 10) + (paper.centre ? " · " + paper.centre : "") : "Waiting"}</small></span></li>
         {row("For NGG", p.ngg, p.ngg && p.ngg.role)}
       </ol>
-      {done && done.docUrl && <a className="mou-btn" href={done.docUrl} target="_blank" rel="noopener">Open my copy (PDF)</a>}
-      <p className="mou-quiet">Welcome to Next Generation Genius, {first}.</p>
+      {done && done.docUrl && <a className="mou-btn-quiet" href={done.docUrl} target="_blank" rel="noopener">Open my copy (PDF)</a>}
+      <p className="mou-quiet">{first} starts lectures on the day every entry step is done. Welcome to Next Generation Genius.</p>
     </div>
   );
 }

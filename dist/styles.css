@@ -9959,6 +9959,8 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mou-error { background: #fbe3e3; color: #9b1c22; border-radius: var(--c-r-sm); padding: 10px 14px; margin: 0; font-weight: 600; }
 .mou-err p { color: var(--ink-700); }
 .mou-done { display: flex; flex-direction: column; gap: 12px; }
+.mou-next { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; line-height: 1.5; }
+.mou-btn-quiet { align-self: flex-start; color: var(--ink-700); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; padding: 10px 0; min-height: 44px; }
 .mou-parties-list { list-style: none; padding: 0; margin: 4px 0; display: flex; flex-direction: column; gap: 8px; }
 .mou-parties-list li { display: flex; gap: 10px; align-items: center; }
 .mou-parties-list li span:last-child { display: flex; flex-direction: column; }
