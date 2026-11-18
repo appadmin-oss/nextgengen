@@ -1444,7 +1444,6 @@ const CR_VP_ERR = { amount_required: "Set the amount a volunteer earns each day 
   reason_required: "Say why. It is kept with the day, and the volunteer sees it.", too_many: "Too many volunteers for one payment run.", own_account: "You can’t change your own pay.",
   av_unreachable: "Afrovanguard couldn’t be reached to put its fine back. Nothing was changed; try again." };
 function crVpErr(e, fb) { const c = e && ((e.data && e.data.error) || e.code); return CR_VP_ERR[c] || (e && e.data && e.data.message) || crErr(e, fb); }
-function crVpBank(b) { return b && b.set ? b.bankName + " ••••" + b.last4 + " · " + b.accountName : "No bank details"; }
 const crVpCtx = { current: null };
 
 function crVpForm(d) {

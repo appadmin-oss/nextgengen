@@ -337,10 +337,6 @@ function useScrollReveal(page) {
   }, [page]);
 }
 
-// In-page anchors that are scroll targets, not routes (skip link, section
-// jumps). They live in the URL hash; the browser scrolls to them and the
-// router leaves the current page untouched.
-const ANCHOR_IDS = ["main", "mentor-apply"];
 
 // Standard path-based routing. "/" → home, "/dashboard" → dashboard, etc.
 // The server (.htaccess SPA fallback) serves index.html for every app path,

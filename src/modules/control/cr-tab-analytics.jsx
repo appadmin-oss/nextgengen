@@ -64,7 +64,6 @@ function crAnStateCell(state, days) {
   const w = CR_AN_WORD[state] || [state || "—", "neutral"];
   return { k: "status", t: w[0] + (days != null && state !== "active" && state !== "ok" ? " · " + crNum(days) + "d" : ""), tone: w[1] };
 }
-function crAnDay(d) { return d ? crDate(d) : ""; }
 
 function crAnStatusBlocks(d, ctx) {
   const parts = CR_AN_PARTS.filter(p => (d.parts || []).indexOf(p[0]) !== -1);

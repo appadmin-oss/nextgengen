@@ -1981,7 +1981,6 @@ function crCpWhy(r) {
   if (r.status === "unplaced") return "From their " + (r.from === "interests" ? "interests" : r.from === "division" ? "division" : "track") + ".";
   return r.confirmedAt ? "Placed " + crDate(r.confirmedAt) + "." : "Chosen on their record.";
 }
-const crCpAll = d => (d.catalogue || []).reduce((a, x) => a.concat(x.courses.filter(c => a.indexOf(c) < 0)), []);
 function crCpOpts(d) { return (d.catalogue || []).reduce((a, x) => a.concat(x.courses.filter(c => !a.some(o => o[0] === c)).map(c => [c, c + " · " + x.division])), []); }
 async function crCpRun(ctx, action, keys, extra, verb) {
   const r = await NGGApi.admin.courses.set(action, keys, extra);

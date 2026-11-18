@@ -1,16 +1,16 @@
 {
-  "buildId": "4631e73e83",
-  "builtAt": "2026-11-18T14:16:19.368Z",
+  "buildId": "8238ad2fe0",
+  "builtAt": "2026-11-18T14:41:34.519Z",
   "bundle": {
-    "file": "app.858b34e987.min.js",
-    "bytes": 1679078,
-    "gzipBytes": 446051,
+    "file": "app.ee25dafd35.min.js",
+    "bytes": 1673522,
+    "gzipBytes": 444705,
     "files": 31
   },
   "more": {
-    "file": "app-more.5536b30bfd.min.js",
-    "bytes": 3922199,
-    "gzipBytes": 1115863,
+    "file": "app-more.d79fc5018e.min.js",
+    "bytes": 3854961,
+    "gzipBytes": 1101709,
     "files": 64,
     "list": [
       "src/modules/idcards/ids-core.jsx",
@@ -80,9 +80,9 @@
     ]
   },
   "study": {
-    "file": "app-study.e13fbe32b5.min.js",
-    "bytes": 705708,
-    "gzipBytes": 199989,
+    "file": "app-study.9c0477397a.min.js",
+    "bytes": 703932,
+    "gzipBytes": 199581,
     "files": 18,
     "list": [
       "chess-engine.jsx",
@@ -106,9 +106,9 @@
     ]
   },
   "assets": {
-    "app.min.js": "app.858b34e987.min.js",
-    "app-more.min.js": "app-more.5536b30bfd.min.js",
-    "app-study.min.js": "app-study.e13fbe32b5.min.js",
+    "app.min.js": "app.ee25dafd35.min.js",
+    "app-more.min.js": "app-more.d79fc5018e.min.js",
+    "app-study.min.js": "app-study.9c0477397a.min.js",
     "styles.css": "styles.f305e4795f.css",
     "styles-app.css": "styles-app.8bcaf3a606.css",
     "data.js": "data.ec97c65376.js",

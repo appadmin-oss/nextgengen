@@ -7626,3 +7626,20 @@ does Canva do? How do games do it?" Research and the numbers are in `docs/PERFOR
 - TanStack Table and jsQR load on demand; the 1080 px logo is now 512 px (9.5 KB), `logo-1080.png` kept for print;
   the service worker precaches the slim sheet; Lite mode adds content-visibility on sections.
 - Home page on an emulated low-end phone: 24.4 s → 16.4 s ready, 4.87 → 3.0 MB.
+
+## 2026-11-18 — Dead code removed, and kept out
+
+Owner: "Remove everything that is irrelevant", then "Please create a test for that".
+
+- `tools/dead-code.js` reads every shipped file's top-level declarations with the vendored Babel parser
+  and flags any name that appears nowhere else in the product (code, PHP, HTML, CSS, tests; docs do not
+  count). It also flags self-hosted font files that nothing names. `node tools/dead-code.js --prune`
+  removes what it finds, re-parsing each file before writing.
+- Removed: ~1,000 lines of retired Control Room panels in `page-admin.jsx` (AdminPhotos, AdminRequests,
+  AdminStaff, AdminApprovals, AdminBehaviour, AdminAttendanceDuty, AdminContact, AdminStatus,
+  AdminComments, AdminNewsletter, AdminEvents, CheckinDesks and their helpers), 22 smaller orphans in
+  other files, and 7 unused report fonts.
+- `tests/dead-code.test.js` (`npm run test:deadcode`, in `test:all`) fails the build when dead code or an
+  orphan font comes back.
+- Kept on purpose, because only a test still uses them: AdminAssessment, AdminTournaments,
+  idsCardsInRange, idsStock. Removing them means deleting their tests too, so that is the owner's call.

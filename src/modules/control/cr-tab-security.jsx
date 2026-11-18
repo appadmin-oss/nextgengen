@@ -20,7 +20,6 @@ const CR_SEC_KINDS = [
   ["team", "Instructors, volunteers & mentors", "An authenticator app or an emailed code"],
   ["guardian", "Guardians", "A family PIN"],
 ];
-const CR_SEC_WHO = { member: "member", team: "volunteer", guardian: "guardian" };
 const CR_SEC_TYPE = { question: "Private question", app: "Authenticator app", email: "Emailed code", pin: "PIN", sms: "Text message" };
 const CR_SEC_POLICY = [["off", "Off"], ["optional", "Optional, with reminders"], ["required", "Required at sign-in"]];
 const CR_SEC_STATE = [["enrolled", "Has a second step"], ["none", "No second step yet"]];
