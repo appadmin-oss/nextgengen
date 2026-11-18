@@ -7600,3 +7600,17 @@ website win."
   adjusted" is NOT used: the website's training figure and basis win (owner's rule). Signatures are PNG data URLs
   on the row; links are stored as hashes. `tests/mou-sign.test.js` (19 checks) and 25 PHP checks.
 - Migration numbering: a parallel session's shop management took 238 on the same branch; the MoU is 239.
+
+## 18 Nov 2026 — Receipts drawn on the server (PDF and PNG)
+
+Owner: "Make receipts downloadable as PDF and image with server drawing instead of browser."
+- `domain/receipt-draw.php`: ONE GD drawing of the frozen receipt (doc_data / doc_org_for — the same data as
+  doc_render_receipt) at 2× A4. The PNG is that drawing cropped to the receipt; the PDF is the same drawing on an
+  A4 page, written by a ~40-line PDF 1.4 writer (catalog, page, DCTDecode image, UTF-16 metadata, xref). No
+  library, no headless browser.
+- Font: Inter (OFL, the site's body font), in `api/_lib/fonts` (blocked from the web by api/.htaccess). The
+  vendored Liberation Sans had neither ₦ nor ẹ/ọ/ṣ. Text is NFC-normalised; a tone mark with no precomposed letter
+  (ọ̀) is placed over its letter, because GD does not shape text.
+- Routes: `document.php?t=…&as=pdf|png` and `receipt.php?t=…&as=pdf|png` (the email link). Buttons on the receipt
+  page, the payment page, the receipt email and Money → Membership payments.
+- Tests: 7 PHP checks; `tests/receipt-download.test.js` (7, through the routes).

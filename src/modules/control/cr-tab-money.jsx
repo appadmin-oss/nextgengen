@@ -1405,6 +1405,8 @@ function CrMembershipPayments({ ctx }) {
                     <td className="cr-mp-acts">
                       {inv.invoiceUrl && <a className="cr-btn is-sm" href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer" aria-label={"Open invoice " + inv.invoiceId + " to print"}><CrIcon n="file-text"/>Invoice</a>}
                       {inv.status === "paid" && <a className="cr-btn is-sm" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer"><CrIcon n="receipt"/>{inv.receiptNo}</a>}
+                      {inv.status === "paid" && <a className="cr-btn is-sm" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=pdf"} download aria-label={"Download receipt " + inv.receiptNo + " as PDF"}><CrIcon n="file-pdf"/>PDF</a>}
+                      {inv.status === "paid" && <a className="cr-btn is-sm" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=png"} download aria-label={"Download receipt " + inv.receiptNo + " as an image"}><CrIcon n="image"/>Image</a>}
                       {op && op.status === "pending" && <>
                         <a className="cr-btn is-sm" href={NGGApi.admin.membership.evidenceUrl(op.paymentId)} target="_blank" rel="noopener noreferrer"><CrIcon n="file-magnifying-glass"/>Evidence</a>
                         <button type="button" className="cr-btn is-sm is-primary" aria-disabled={op.recordedBy === d.me || undefined} title={op.recordedBy === d.me ? "You recorded it, so someone else verifies it." : ""} onClick={() => verify(inv)}>Verify</button>

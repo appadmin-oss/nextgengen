@@ -1537,6 +1537,9 @@ function MembershipPayPage({ setPage }) {
               <div className="mpay-done">
                 <p>Paid {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : ""}. Receipt <b>{inv.receiptNo}</b> has been emailed to you.</p>
                 <a className="btn btn-primary" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer">View and print the receipt</a>
+                {/* Drawn on the server (domain/receipt-draw.php): files a phone keeps or shares, with nothing to render. */}
+                <a className="btn btn-ghost" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=pdf"} download>Download PDF</a>
+                <a className="btn btn-ghost" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=png"} download>Download image</a>
                 {inv.invoiceUrl && <a className="btn btn-ghost" href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer">View the invoice</a>}
               </div>
             ) : inv.status === "void" ? (

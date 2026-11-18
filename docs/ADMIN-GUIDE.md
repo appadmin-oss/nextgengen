@@ -5403,3 +5403,11 @@ a storage outage.
   from Money → Amounts on the day the family signs and frozen on that agreement.
 - The registration checklist's item *Membership Agreement signed* is done once NGG has countersigned.
 - A member with a signed agreement cannot be merged without a person deciding: the agreement names one child.
+
+## Receipts as PDF and image
+
+Every receipt can be downloaded as a **PDF** (A4) or an **image** (PNG), drawn by the server — nothing depends on
+the phone's browser, fonts or printer. You will find *Download PDF* and *Download image* on the receipt page, beside
+*Print*; on the family's payment page after paying; in the receipt email; and in Money → Membership payments
+(*PDF*, *Image* beside each paid invoice's receipt number). The image is the receipt cropped to fit a phone screen —
+the easiest thing to forward on WhatsApp. Both are drawn from the receipt as it was issued, so they always match it.

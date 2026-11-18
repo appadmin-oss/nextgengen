@@ -40836,5 +40836,40 @@ if (function_exists('imagecreatetruecolor')) {
     unset($GLOBALS['__mail_sink']);
 }
 
+
+/* ── Receipts drawn on the server (domain/receipt-draw.php) ───────────────
+   One GD drawing of the frozen receipt makes both files: the PNG (cropped to
+   the receipt) and the A4 PDF (the same drawing on a page). */
+if (receipt_available()) {
+    $rdData = ['no' => 'NGG-RCP-2026-99001', 'invoiceNo' => 'NGG-INV-2026-99001', 'invoiceIssued' => '2026-11-10T09:00:00Z', 'paidAt' => '2026-11-17T14:31:00Z',
+        'member' => ['name' => 'Adébáyọ̀ Oluwaṣeun Ògúnfáyọ̀', 'id' => '026-099', 'centre' => 'Egbeda'], 'payer' => ['name' => 'Mrs Kemi Ògúnfáyọ̀', 'rel' => 'Mother'],
+        'method' => ['icon' => 'card', 'text' => 'Card, via Paystack'], 'ref' => 'T-RD-1',
+        'lines' => [['label' => 'Membership fee', 'detail' => 'NGG Club, first year', 'period' => '2026–27', 'qty' => 1, 'unit' => 1000000, 'kobo' => 1000000],
+                    ['label' => 'Payment processing fee', 'detail' => 'charged by Paystack, our payment provider', 'period' => '', 'qty' => 1, 'unit' => 18800, 'kobo' => 18800]],
+        'vat' => 'exempt', 'balanceAfter' => 2500];
+    $rdDoc = doc_record('receipt', 'NGG-RCP-2026-99001', 'NGG-RD-1', 'rcp:test-rd-1', $rdData);
+    $png = receipt_png($rdDoc);
+    $sz = @getimagesizefromstring($png);
+    chk('receipt drawn · the image is a PNG at twice A4 width, cropped to the receipt (not a whole empty page)', $sz && $sz['mime'] === 'image/png' && $sz[0] === RCPT_W * RCPT_SCALE && $sz[1] > 1400 && $sz[1] <= RCPT_H * RCPT_SCALE);
+    $gim = imagecreatefromstring($png);
+    $at = fn($x, $y) => imagecolorat($gim, $x * RCPT_SCALE, $y * RCPT_SCALE);
+    chk('receipt drawn · the navy "Total paid" band and the gold strip are where the receipt has them', $at(70, 120) === ((RCPT_NAVY[0] << 16) | (RCPT_NAVY[1] << 8) | RCPT_NAVY[2]) && $at(780, 2) === ((RCPT_GOLD[0] << 16) | (RCPT_GOLD[1] << 8) | RCPT_GOLD[2]));
+    // Ink in the amount's place: the total was drawn, in white on the band.
+    $white = 0; for ($x = 85; $x < 300; $x += 2) for ($y = 170; $y < 205; $y += 2) { $c = $at($x, $y); if ((($c >> 16) & 255) > 230 && ($c & 255) > 230) $white++; }
+    chk('receipt drawn · the amount is drawn on the band', $white > 150);
+    chk('receipt drawn · a Yoruba name keeps its letters: ọ and ṣ are kept, and a tone mark with no single letter stays with its letter', receipt_clusters('Adébáyọ̀')[6] === ['ọ', ["\u{0300}"]] && count(receipt_clusters('Oluwaṣeun')) === 9);
+    $pdf = receipt_pdf($rdDoc);
+    $offOk = true;
+    if (preg_match('/startxref\n(\d+)\n%%EOF\n$/', $pdf, $mx) && preg_match_all('/^(\d{10}) 00000 n $/m', substr($pdf, (int)$mx[1]), $offs)) {
+        foreach ($offs[1] as $i => $o) if (!str_starts_with(substr($pdf, (int)$o), ($i + 1) . ' 0 obj')) $offOk = false;
+    } else $offOk = false;
+    chk('receipt drawn · the PDF is a well-formed one-page A4 document: every cross-reference lands on its object',
+        str_starts_with($pdf, '%PDF-1.4') && str_contains($pdf, '/MediaBox [0 0 595.28 841.89]') && str_contains($pdf, '/Count 1') && str_contains($pdf, '/Filter /DCTDecode') && $offOk);
+    chk('receipt drawn · the PDF carries the receipt number and amount as searchable metadata', str_contains($pdf, '/Title <FEFF') && str_contains($pdf, strtoupper(bin2hex(mb_convert_encoding('NGG-RCP-2026-99001', 'UTF-16BE', 'UTF-8')))));
+    $html = doc_render_receipt($rdDoc);
+    chk('receipt drawn · the receipt page offers both files, by its own private link', str_contains($html, 'document.php?t=' . $rdDoc['token'] . '&amp;as=pdf') && str_contains($html, '&amp;as=png') && str_contains($html, 'Download image'));
+    imagedestroy($gim);
+}
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

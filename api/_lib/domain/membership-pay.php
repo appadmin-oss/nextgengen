@@ -587,6 +587,8 @@ function membership_send_receipt(array $inv): array {
         'intro' => 'We have received your payment of ' . fees_money_text((int)$inv['total']) . '. Your support keeps the programme running.',
         'bodyHtml' => membership_items_html($inv, true)
             . '<p style="margin:16px 0 0;font-size:14px"><b>Receipt</b> ' . esc_html($inv['receiptNo']) . ' · <b>Invoice</b> ' . esc_html($inv['invoiceId']) . '</p>'
+            // Files drawn on the server (receipt-draw.php): keep it, or forward it on WhatsApp.
+            . '<p style="margin:8px 0 0;font-size:14px">Download the receipt: <a href="' . esc_html(membership_receipt_url($inv) . '&as=pdf') . '">PDF</a> · <a href="' . esc_html(membership_receipt_url($inv) . '&as=png') . '">image</a></p>'
             . ((string)($inv['purpose'] ?? '') === 'advance'
                 ? '<p style="margin:12px 0 0;font-size:14px">The payment is held on ' . esc_html($first) . '’s account and meets each charge on the day it falls due, so there is nothing more to pay until it is used up. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'
                 : '<p style="margin:12px 0 0;font-size:14px">From next month the commitment fee is ' . esc_html(fees_money_text((int)fees_settings()['monthlyDues'])) . ' a month. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'),
