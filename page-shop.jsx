@@ -303,7 +303,7 @@ function ShopPage({ setPage }) {
                       <tr><th scope="row">Items</th><td>{shopMoney(q.subtotal)}</td></tr>
                       {q.discount > 0 && <tr><th scope="row">Code {q.code}</th><td>−{shopMoney(q.discount)}</td></tr>}
                       {q.delivery > 0 && <tr><th scope="row">Delivery</th><td>{shopMoney(q.delivery)}</td></tr>}
-                      {q.onlineFee > 0 && <tr><th scope="row">Payment processing fee<span>Charged by Paystack, our payment provider</span></th><td>{shopMoney(q.onlineFee)}</td></tr>}
+                      {q.onlineFee > 0 && <tr><th scope="row">Payment processing fee<span>Charged by our payment provider</span></th><td>{shopMoney(q.onlineFee)}</td></tr>}
                     </tbody>
                     <tfoot><tr><th scope="row">Total</th><td>{shopMoney(q.total + (q.onlineFee || 0))}</td></tr></tfoot>
                   </table>
@@ -502,7 +502,7 @@ function ShopOrderPage({ setPage }) {
             {o.discount > 0 && <tr><th scope="row">Code {o.discountCode}</th><td>−{shopMoney(o.discount)}</td></tr>}
             {o.delivery > 0 && <tr><th scope="row">Delivery</th><td>{shopMoney(o.delivery)}</td></tr>}
             {o.refunded > 0 && <tr><th scope="row">Refunded</th><td>−{shopMoney(o.refunded)}</td></tr>}
-            {o.processingFee > 0 && <tr><th scope="row">Payment processing fee<span>Charged by Paystack, our payment provider</span></th><td>{shopMoney(o.processingFee)}</td></tr>}
+            {o.processingFee > 0 && <tr><th scope="row">Payment processing fee<span>Charged by our payment provider</span></th><td>{shopMoney(o.processingFee)}</td></tr>}
           </tbody>
           <tfoot><tr><th scope="row">{o.paidAt ? "Total paid" : "Total"}</th><td>{shopMoney(o.total + (o.processingFee || 0))}</td></tr></tfoot>
         </table>

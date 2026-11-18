@@ -7567,8 +7567,8 @@ Products, Codes, Reports, Settings); public: `page-shop.jsx`.
 - **Codes** (`shop_codes`) and **pre-orders** (`preorderUntil`). Order **timeline** (`shop_order_events`) replaces
   appending to `note`; old notes still show. **Exchanges** split a line at the price charged. The orders list is
   paged on the server with a date range and channel filter.
-- Buyer-facing label "Paystack's charge — not an NGG fee" renamed **"Payment processing fee — Charged by Paystack,
-  our payment provider"** (shop, membership invoice page, receipt), at the owner's request.
+- Buyer-facing label "Paystack's charge — not an NGG fee" renamed **"Payment processing fee — Charged by our payment
+  provider"** (shop, membership invoice page, receipt; provider-neutral, as more providers are coming), at the owner's request.
 
 Tests: PHP suite 7330/0 (baseline 7283) — 47 new `shop ledger/low stock/codes/pickup/refunds/unpaid/pre-order/
 table/exchange/order/lists/report/export/wiring` checks; `tests/shop.test.js` extended to refunds, the till,

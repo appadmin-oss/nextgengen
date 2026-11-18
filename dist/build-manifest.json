@@ -1,16 +1,16 @@
 {
-  "buildId": "716ea01e1e",
-  "builtAt": "2026-11-18T19:30:36.896Z",
+  "buildId": "2a5be88a00",
+  "builtAt": "2026-11-18T19:30:51.667Z",
   "bundle": {
-    "file": "app.ee25dafd35.min.js",
-    "bytes": 1673522,
-    "gzipBytes": 444705,
+    "file": "app.07965b56d5.min.js",
+    "bytes": 1673492,
+    "gzipBytes": 444696,
     "files": 31
   },
   "more": {
-    "file": "app-more.a198a945a7.min.js",
-    "bytes": 3867091,
-    "gzipBytes": 1105170,
+    "file": "app-more.81d8bf64e7.min.js",
+    "bytes": 3867124,
+    "gzipBytes": 1105182,
     "files": 64,
     "list": [
       "src/modules/idcards/ids-core.jsx",
@@ -106,8 +106,8 @@
     ]
   },
   "assets": {
-    "app.min.js": "app.ee25dafd35.min.js",
-    "app-more.min.js": "app-more.a198a945a7.min.js",
+    "app.min.js": "app.07965b56d5.min.js",
+    "app-more.min.js": "app-more.81d8bf64e7.min.js",
     "app-study.min.js": "app-study.9c0477397a.min.js",
     "styles.css": "styles.2eb4ad2a6d.css",
     "styles-app.css": "styles-app.188f0659e4.css",
