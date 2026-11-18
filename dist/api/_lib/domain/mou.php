@@ -670,77 +670,145 @@ function mou_when(string $iso): string {
     return gmdate('j M Y', $t + 3600) . ', ' . gmdate('H:i', $t + 3600) . ' WAT';
 }
 
-/** The A4 document in the report design system (assets/report/report.css). */
+/**
+ * The agreement as a STANDARD printed agreement (owner, 18 Nov 2026: "Make it a standard, easy to understand doc.
+ * This does not look so professional"). The conventions of a written contract, in plain English:
+ *   letterhead · title · date · parties · background (recitals A–C) · key terms · numbered clauses with
+ *   numbered sub-clauses (each opening with one line "In plain words") · Schedule (particulars) ·
+ *   execution page (signature, name, capacity, date for each party) · a record of how it was signed.
+ * Black on white with one navy rule (assets/report/mou.css); every printed page carries the reference
+ * and "Page x of y", so a photograph of any page is tied to this text.
+ */
 function mou_document_html(array $r, array $m): string {
     $e = static fn($s) => esc_html((string)$s);
-    $fig = json_decode((string)$r['termsJson'], true) ?: mou_figures();
+    $fig = (json_decode((string)$r['termsJson'], true) ?: []) + mou_figures();
     $fam = json_decode((string)$r['familyJson'], true) ?: (json_decode((string)$r['prefillJson'], true)['family'] ?? []);
     $mem = json_decode((string)$r['memberJson'], true) ?: (json_decode((string)$r['prefillJson'], true)['member'] ?? []);
     $st = (string)$r['status'];
-    $badge = ['signed' => 'Signed by all parties', 'awaiting_ngg' => 'Signed by the family', 'awaiting_family' => 'Not yet signed', 'void' => 'Withdrawn'][$st] ?? '';
-    $o = dues_doc_head('Membership Agreement', 'Memorandum of Understanding · version ' . (string)$r['version'], $badge, (string)$r['mouId']);
-    $kv = static fn(array $rows) => '<table class="rp-kv"><tbody>' . implode('', array_map(static fn($pair) => '<tr><th scope="row">' . esc_html($pair[0]) . '</th><td>' . esc_html($pair[1] !== '' ? $pair[1] : '—') . '</td><th scope="row">' . esc_html($pair[2]) . '</th><td>' . esc_html($pair[3] !== '' ? $pair[3] : '—') . '</td></tr>', $rows)) . '</tbody></table>';
-    $sch = mou_scholarship($fig + mou_figures());
-    $o .= '<section class="rp-sec" aria-labelledby="mou-award" style="border:1.5px solid #c99a1e;border-radius:6px;padding:12px 16px;background:#fbf6e8;break-inside:avoid">'
-        . '<h2 id="mou-award" style="margin:0 0 4px">NGG Scholarship</h2>'
-        . '<p style="margin:0;font-size:12pt"><b>' . $e((string)$m['fullName']) . '</b> is awarded an NGG scholarship valued at <b style="font-size:14pt">' . $e($sch['value']) . '</b> for three years of training and service at Next Generation Genius.</p>'
-        . '<p style="margin:4px 0 0">NGG funds the scholarship. The family’s contribution is ' . $e($sch['family']) . ' (clause 6). The scholarship is held while this agreement is kept (clause 3).</p></section>';
-    $o .= '<section class="rp-sec" aria-labelledby="mou-p"><h2 id="mou-p">The parties</h2>'
-        . $kv([['Member', (string)$m['fullName'], 'ID number', (string)(($m['displayId'] ?? '') ?: $m['memberId'])],
-               ['Centre', (string)($m['centre'] ?? ''), 'Age', (string)($mem['age'] ?? '')],
-               ['School', (string)($mem['school'] ?? ''), 'Class', (string)($mem['class'] ?? '')],
-               ['Department', (string)($mem['department'] ?? ''), 'Member’s phone', (string)($mem['phone'] ?? '')],
-               ['Father', (string)($fam['fatherName'] ?? ''), 'Mother', (string)($fam['motherName'] ?? '')],
-               ['Guardian', (string)($fam['guardianName'] ?? ''), 'Family phone', (string)($fam['phone'] ?? '')],
-               ['Family email', (string)($fam['email'] ?? ''), 'Home address', (string)($fam['address'] ?? '')]])
-        . '</section>';
-    foreach (mou_terms($fig) as $i => $s) {
-        $o .= '<section class="rp-sec rp-clause" aria-labelledby="mou-' . $e($s['id']) . '"><h2 id="mou-' . $e($s['id']) . '">' . ($i + 1) . '. ' . $e($s['title']) . '</h2>'
-            . '<p class="rp-clause-short"><b>In short:</b> ' . $e($s['short']) . '</p>'
-            . implode('', array_map(static fn($b) => '<p>' . esc_html($b) . '</p>', $s['body']))
-            . ($s['id'] === 'consents' && (string)$r['tripsChoice'] !== '' ? '<p class="rp-clause-short"><b>Off-site activities:</b> ' . ((string)$r['tripsChoice'] === 'granted' ? 'Yes — the Family gives this consent.' : 'No — the Family does not give this consent.') . '</p>' : '')
-            . '</section>';
+    $paper = (string)($r['paperReceivedAt'] ?? '') !== '';
+    $status = ['signed' => $paper ? 'Signed by all parties' : 'Signed online · paper copy outstanding', 'awaiting_ngg' => 'Signed by the Family', 'awaiting_family' => 'For signature', 'void' => 'Withdrawn'][$st] ?? '';
+    $terms = mou_terms($fig);
+    $byId = []; foreach ($terms as $i => $t) $byId[$t['id']] = $i + 1;
+    $sch = mou_scholarship($fig);
+    $first = explode(' ', trim((string)$m['fullName']))[0] ?: 'the Member';
+    $date = static fn(string $iso) => $iso !== '' && ($t = strtotime($iso)) ? gmdate('j F Y', $t + 3600) : '';
+    $line = '<span class="md-blank">____________________</span>';
+    $dash = static fn(string $v) => $v !== '' ? $v : '—';
+    $guardians = array_values(array_filter([(string)($fam['fatherName'] ?? ''), (string)($fam['motherName'] ?? ''), (string)($fam['guardianName'] ?? '')]));
+
+    // Letterhead
+    $o = '<header class="md-head"><div class="md-brand"><img src="/assets/report/logo.png" alt="" width="40" height="40"><div><b>Next Generation Genius</b><span>An Afrovanguard programme</span></div></div>'
+       . '<table class="md-meta"><tbody><tr><th scope="row">Reference</th><td>' . $e($r['mouId']) . '</td></tr><tr><th scope="row">Version</th><td>' . $e($r['version']) . '</td></tr>'
+       . '<tr><th scope="row">Status</th><td>' . $e($status) . '</td></tr></tbody></table></header>';
+    $o .= '<h1>Membership Agreement</h1><p class="md-subtitle">Memorandum of Understanding between NGG and the Family of a Member</p>';
+    $o .= '<p class="md-dated">This Agreement is dated <b>' . ($date((string)$r['clientSignedAt']) !== '' ? $e($date((string)$r['clientSignedAt'])) : $line) . '</b>.</p>';
+
+    // Parties
+    $signer = (string)$r['clientName'] !== '' ? $e($r['clientName']) . ((string)$r['clientRel'] !== '' ? ', the ' . $e(strtolower((string)$r['clientRel'])) . ' of the Member' : '')
+            : ($guardians ? $e(implode(' / ', $guardians)) . ', the parent or guardian signing below' : $line . ', the parent or guardian signing below');
+    $o .= '<h2>Parties</h2><ol class="md-parties">'
+        . '<li><b>' . $e(MOU_ORG) . '</b>, which runs the Next Generation Genius Club ("<b>NGG</b>"); and</li>'
+        . '<li><b>' . $signer . '</b>' . ((string)($fam['address'] ?? '') !== '' ? ', of ' . $e($fam['address']) : '') . ' (the "<b>Family</b>"),</li></ol>'
+        . '<p>in respect of <b>' . $e($m['fullName']) . '</b>, member number ' . $e(($m['displayId'] ?? '') ?: $m['memberId']) . ', of the ' . $e(($m['centre'] ?? '') ?: 'NGG') . ' centre (the "<b>Member</b>").</p>';
+
+    // Background
+    $o .= '<h2>Background</h2><ol class="md-recitals">'
+        . '<li>NGG runs a three-year programme of training and service for young people in Alimosho, Lagos.</li>'
+        . '<li>NGG has awarded the Member an NGG Scholarship valued at <b>' . $e($sch['value']) . '</b> for the three years. NGG funds the Scholarship.</li>'
+        . '<li>The parties wish to record what each of them commits to, so that the Member receives quality training, steady support and clear expectations.</li></ol>';
+
+    // Key terms
+    $kt = [
+        ['Scholarship', $sch['value'] . ' over three years, awarded and funded by NGG', 'provides'],
+        ['Duration', 'Three years: about ' . $fig['trainingMonths'] . ' months of training, then about ' . $fig['serviceMonths'] . ' months of service', 'term'],
+        ['Family contribution', $sch['family'], 'fees'],
+        ['Training place', $fig['trainingFee'] . ', part of the Scholarship and written down as the Member serves; payable only if the Agreement ends early', 'fees'],
+        ['Off-site activities', (string)$r['tripsChoice'] === 'granted' ? 'Consent given' : ((string)$r['tripsChoice'] === 'declined' ? 'Consent not given' : 'The Family chooses in clause ' . ($byId['consents'] ?? 8)), 'consents'],
+        ['Ending early', (string)(array_values(array_filter($terms, static fn($t) => $t['id'] === 'ending'))[0]['short'] ?? ''), 'ending'],
+    ];
+    $o .= '<h2>Key terms</h2><table class="md-kt"><tbody>'
+        . implode('', array_map(static fn($k) => '<tr><th scope="row">' . esc_html($k[0]) . '</th><td>' . esc_html($k[1]) . '</td><td class="md-ref">Clause ' . ($byId[$k[2]] ?? '') . '</td></tr>', $kt))
+        . '</tbody></table><p class="md-small">The key terms summarise the Agreement. If they differ from the clauses, the clauses apply.</p>';
+
+    // Agreed terms
+    $o .= '<h2>Agreed terms</h2>';
+    foreach ($terms as $i => $s) {
+        $n = $i + 1;
+        $o .= '<section class="md-clause" aria-labelledby="md-c' . $n . '"><h3 id="md-c' . $n . '">' . $n . '. ' . $e($s['title']) . '</h3>'
+            . '<p class="md-plain">In plain words: ' . $e($s['short']) . '</p>';
+        foreach (array_values($s['body']) as $j => $b) $o .= '<p class="md-sub"><span>' . $n . '.' . ($j + 1) . '</span><span>' . $e($b) . '</span></p>';
+        if ($s['id'] === 'consents') {
+            $t = (string)$r['tripsChoice'];
+            $box = static fn(bool $on) => '<span class="md-box" aria-hidden="true">' . ($on ? '✓' : '') . '</span>';
+            $o .= '<p class="md-sub"><span>' . $n . '.' . (count($s['body']) + 1) . '</span><span>The Family’s choice on off-site activities:</span></p>'
+                . '<p class="md-choice">' . $box($t === 'granted') . 'Yes, the Family gives this consent &nbsp;&nbsp; ' . $box($t === 'declined') . 'No, the Family does not give this consent</p>';
+        }
+        $o .= '</section>';
     }
-    $sigBox = static function (string $label, string $name, string $sub, string $img, string $at) use ($e): string {
-        return '<div class="rp-sign"><span class="rp-over">' . $e($label) . '</span>'
-            . ($img !== '' ? '<img class="rp-sign-img" src="' . $e($img) . '" alt="Signature of ' . $e($name) . '">' : '<span class="rp-sign-empty">Not yet signed</span>')
-            . '<span class="rp-sign-n">' . $e($name !== '' ? $name : '—') . '</span><span class="rp-sign-s">' . $e($sub) . ($at !== '' ? ' · ' . $e(mou_when($at)) : '') . '</span></div>';
-    };
-    $o .= '<section class="rp-sec" aria-labelledby="mou-s"><h2 id="mou-s">Signatures</h2><div class="rp-signs">'
-        . $sigBox('Parent or guardian (the Family)', (string)$r['clientName'], (string)$r['clientRel'], (string)$r['clientSignature'], (string)$r['clientSignedAt'])
-        . $sigBox('Witness', (string)$r['witnessName'], (string)$r['witnessBy'] === 'ngg' ? 'Witnessed by NGG' : ((string)$r['witnessPhone'] !== '' ? 'Witness' : ''), (string)$r['witnessSignature'], (string)$r['witnessSignedAt'])
-        . $sigBox('For Okun Alimosho (NGG)', (string)$r['nggName'], (string)$r['nggRole'], (string)$r['nggSignature'], (string)$r['nggSignedAt'])
-        . '</div>'
-        . ((string)$r['docHash'] !== '' ? '<p class="rp-foot-note">Signed electronically under section 93 of the Evidence Act 2011. The family confirmed they read the agreement and answered its questions on ' . $e(mou_when((string)$r['quizPassedAt'])) . '. Fingerprint of the signed text: <code>' . $e(substr((string)$r['docHash'], 0, 32)) . '</code>.</p>' : '')
-        . '<p class="rp-foot-note">Afrovanguard · 2 Abolude / Oremeji Street, Bakery Bus Stop, Egbeda, Alimosho, Lagos · +234 903 777 6318 · ' . $e(MOU_CONTACT) . '</p>'
-        . '</section>';
-    $o .= mou_ink_section($r, $m);
-    // Every printed page names the agreement and its version, so a photograph of any page is tied to this text.
-    $o .= '<style>.mou-run{display:none}@media print{.mou-run{display:block;position:fixed;bottom:0;left:0;right:0;font:500 8.5pt/1.2 system-ui,sans-serif;color:#3a4150;text-align:center;padding:2mm 0}}</style>'
-        . '<div class="mou-run" aria-hidden="true">NGG Membership Agreement · ' . $e((string)$r['mouId']) . ' · version ' . $e((string)$r['version']) . ' · ' . $e((string)$m['fullName']) . '</div>';
-    return preport_document('Membership Agreement — ' . (string)$m['fullName'], '<div class="rp-page rp">' . $o . '</div>');
+
+    // Schedule
+    $row = static fn(string $l, string $v) => '<tr><th scope="row">' . esc_html($l) . '</th><td>' . esc_html($v !== '' ? $v : '—') . '</td></tr>';
+    $o .= '<h2>Schedule — Particulars</h2><table class="md-part"><tbody>'
+        . $row('Member', (string)$m['fullName']) . $row('Member number', (string)(($m['displayId'] ?? '') ?: $m['memberId'])) . $row('Centre', (string)($m['centre'] ?? ''))
+        . $row('Age', (string)($mem['age'] ?? '')) . $row('School and class', trim((string)($mem['school'] ?? '') . ((string)($mem['class'] ?? '') !== '' ? ', ' . $mem['class'] : '')))
+        . $row('Department', (string)($mem['department'] ?? '')) . $row('Member’s phone', (string)($mem['phone'] ?? ''))
+        . $row('Father', (string)($fam['fatherName'] ?? '')) . $row('Mother', (string)($fam['motherName'] ?? '')) . $row('Guardian', (string)($fam['guardianName'] ?? ''))
+        . $row('Family phone', (string)($fam['phone'] ?? '')) . $row('Family email', (string)($fam['email'] ?? '')) . $row('Home address', (string)($fam['address'] ?? ''))
+        . '</tbody></table>';
+
+    $o .= mou_execution_html($r, $m, $paper);
+    $o .= '<p class="md-small">Okun Alimosho (Afrovanguard) · 2 Abolude / Oremeji Street, Bakery Bus Stop, Egbeda, Alimosho, Lagos · +234 903 777 6318 · ' . $e(MOU_CONTACT) . '</p>';
+    $o .= '<div class="md-run" aria-hidden="true">NGG Membership Agreement · ' . $e($r['mouId']) . ' · version ' . $e($r['version']) . ' · ' . $e($m['fullName'])
+        . ($paper || $st === 'void' ? '' : ' · Initials: ________') . '</div>';
+    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        . '<title>' . $e('Membership Agreement — ' . (string)$m['fullName']) . '</title>'
+        . '<link rel="stylesheet" href="/assets/report/report.css?v=3"><link rel="stylesheet" href="/assets/report/mou.css?v=1"><script src="/assets/report/report.js?v=3" defer></script></head>'
+        . '<body class="rp-body"><button class="rp-print" type="button" data-print>Print or save as PDF</button><article class="md">' . $o . '</article></body></html>';
 }
 
 /**
- * The part of the printed copy that is signed in INK, and brought to the centre.
- * Once the paper has been received it says so instead: where, when and by whom.
+ * The execution page. Before the inked copy is in, the blocks are lines to sign in ink, and how the Family
+ * signed online is recorded beneath them. Once it is in, each party's signature, name, capacity and date,
+ * and where the paper copy was received.
  */
-function mou_ink_section(array $r, array $m): string {
+function mou_execution_html(array $r, array $m, bool $paper): string {
     $e = static fn($s) => esc_html((string)$s);
-    if ((string)$r['status'] === 'void') return '';
-    if ((string)($r['paperReceivedAt'] ?? '') !== '') {
-        return '<section class="rp-sec" aria-labelledby="mou-ink"><h2 id="mou-ink">The signed paper copy</h2>'
-            . '<p>Received at ' . $e((string)$r['paperCentre'] ?: 'the centre') . ' on ' . $e(mou_when((string)$r['paperReceivedAt'])) . ', checked and photographed by ' . $e((string)$r['paperByName']) . '.'
-            . ((string)($r['signedVia'] ?? '') === 'paper' ? ' The family signed on paper only.' : '') . '</p></section>';
+    $st = (string)$r['status'];
+    if ($st === 'void') return '<section class="md-exec"><h2>Signatures</h2><p>This Agreement was withdrawn on ' . $e(mou_when((string)$r['voidedAt'])) . ': ' . $e($r['voidReason']) . '</p></section>';
+    $ink = !$paper;
+    $block = static function (string $head, string $img, string $name, string $capLabel, string $cap, string $at) use ($e, $ink): string {
+        $sig = !$ink && $img !== '' ? '<img class="md-sig-img" src="' . $e($img) . '" alt="Signature of ' . $e($name) . '">' : (!$ink && $name !== '' ? '<i>Signed in ink on the paper copy</i>' : '');
+        return '<div class="md-sig"><p class="md-sig-h">' . $e($head) . '</p>'
+            . '<p class="md-sig-row is-sig"><span>Signature</span><b>' . $sig . '</b></p>'
+            . '<p class="md-sig-row"><span>Full name</span><b>' . $e($name) . '</b></p>'
+            . '<p class="md-sig-row"><span>' . $e($capLabel) . '</span><b>' . $e($cap) . '</b></p>'
+            . '<p class="md-sig-row"><span>Date</span><b>' . (!$ink && $at !== '' ? $e(gmdate('j F Y', (int)strtotime($at) + 3600)) : '') . '</b></p></div>';
+    };
+    $o = '<section class="md-exec" aria-labelledby="md-exec"><h2 id="md-exec">Signatures</h2>';
+    $o .= $ink
+        ? '<p class="md-exec-note">Sign this page in ink. A witness — another adult, not a party — signs and prints their name. Bring <b>every page</b> to the '
+          . $e(($m['centre'] ?? '') ?: 'NGG') . ' centre: NGG checks it, photographs this page and countersigns. ' . $e(explode(' ', trim((string)$m['fullName']))[0]) . ' starts lectures on the day every entry step is done.</p>'
+        : '<p class="md-exec-note">Signed by the parties on the dates shown.</p>';
+    $o .= '<div class="md-sigs">'
+        . $block('Signed by the parent or guardian, for the Family', (string)$r['clientSignature'], $ink ? (string)$r['clientName'] : (string)$r['clientName'], 'Relationship', (string)$r['clientRel'], (string)$r['clientSignedAt'])
+        . $block('In the presence of the witness', (string)$r['witnessSignature'], $ink && (string)$r['witnessBy'] === 'ngg' ? '' : (string)$r['witnessName'], 'Phone or address', (string)$r['witnessBy'] === 'ngg' ? 'Witnessed by NGG at the centre' : (string)$r['witnessPhone'], (string)$r['witnessSignedAt'])
+        . $block('Signed for and on behalf of NGG', (string)$r['nggSignature'], (string)$r['nggName'], 'Position', (string)$r['nggRole'], (string)$r['nggSignedAt'])
+        . '</div>';
+    // How it was signed: the record that makes the copy checkable.
+    $rec = [];
+    if ((string)$r['clientSignedAt'] !== '') $rec[] = ['The Family', (string)$r['clientName'], (string)($r['signedVia'] ?? '') === 'paper' ? 'On paper, recorded at the centre' : 'Online', mou_when((string)$r['clientSignedAt'])];
+    if ((string)$r['witnessSignedAt'] !== '') $rec[] = ['Witness', (string)$r['witnessName'], (string)$r['witnessBy'] === 'ngg' ? 'By NGG, at countersignature' : 'Online, with the Family', mou_when((string)$r['witnessSignedAt'])];
+    if ($paper) $rec[] = ['Paper copy received', (string)$r['paperByName'], 'Checked and photographed at ' . ((string)$r['paperCentre'] ?: 'the centre'), mou_when((string)$r['paperReceivedAt'])];
+    if ((string)$r['nggSignedAt'] !== '') $rec[] = ['NGG', (string)$r['nggName'], 'Countersigned', mou_when((string)$r['nggSignedAt'])];
+    if ($rec) {
+        $o .= '<h3>Record of signing</h3><table class="md-record"><thead><tr><th scope="col">Party</th><th scope="col">Name</th><th scope="col">How</th><th scope="col">When</th></tr></thead><tbody>'
+            . implode('', array_map(static fn($x) => '<tr><td>' . esc_html($x[0]) . '</td><td>' . esc_html($x[1]) . '</td><td>' . esc_html($x[2]) . '</td><td>' . esc_html($x[3]) . '</td></tr>', $rec)) . '</tbody></table>';
     }
-    $line = static fn(string $label) => '<div class="rp-sign"><span class="rp-over">' . esc_html($label) . '</span>'
-        . '<span class="rp-sign-empty" style="display:block;height:16mm;border-bottom:1px solid #222"></span>'
-        . '<span class="rp-sign-s">Full name: ______________________ &nbsp; Date: ____________</span></div>';
-    return '<section class="rp-sec" aria-labelledby="mou-ink" style="break-inside:avoid"><h2 id="mou-ink">Sign this copy in ink</h2>'
-        . '<p>Print this agreement, sign it in ink, and bring it to <b>' . $e((string)($m['centre'] ?? '') ?: 'the centre') . '</b>. NGG checks every page, photographs this page, and countersigns. '
-        . $e(explode(' ', trim((string)$m['fullName']))[0] ?: 'Your child') . ' starts lectures on the day every entry step is done.</p>'
-        . '<p>Off-site activities (clause 8): &nbsp; ☐ Yes, I give this consent &nbsp; ☐ No</p>'
-        . '<div class="rp-signs">' . $line('Parent or guardian — signature') . $line('Witness — signature') . $line('For NGG — at the centre') . '</div></section>';
+    if ((string)$r['docHash'] !== '')
+        $o .= '<p class="md-small">Electronic signatures are valid under section 93 of the Evidence Act 2011. '
+            . ((string)$r['quizPassedAt'] !== '' ? 'The Family confirmed they had read the Agreement and answered its questions on ' . $e(mou_when((string)$r['quizPassedAt'])) . '. ' : '')
+            . 'Fingerprint of the signed text: <code>' . $e(substr((string)$r['docHash'], 0, 32)) . '</code>.</p>';
+    return $o . '</section>';
 }
 
 /**

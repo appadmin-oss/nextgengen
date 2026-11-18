@@ -40907,7 +40907,8 @@ if (function_exists('imagecreatetruecolor')) {
         'mime' => 'image/jpeg', 'bytes' => 300000, 'width' => 2000, 'height' => 1500, 'checks' => $allChecks]);
     $pr0 = public_mou_print(['token' => $tok]);
     chk('mou paper · the family prints from their own link: a page to sign in ink, every page carrying the agreement’s number',
-        !empty($pr0['ok']) && str_contains($pr0['html'], 'Sign this copy in ink') && str_contains($pr0['html'], 'class="mou-run"') && str_contains($pr0['html'], (string)$row['mouId']) && str_contains($pr0['html'], 'Egbeda'));
+        !empty($pr0['ok']) && str_contains($pr0['html'], 'Sign this page in ink') && str_contains($pr0['html'], 'class="md-run"') && str_contains($pr0['html'], 'Initials:')
+        && str_contains($pr0['html'], (string)$row['mouId']) && str_contains($pr0['html'], 'Egbeda') && !str_contains($pr0['html'], 'class="md-sig-img"'));
     chk('mou paper · NGG cannot countersign before the signed paper copy is received', (admin_mou_countersign(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $row['mouId'], 'role' => 'Centre coordinator', 'signature' => $sigPng(3)])['error'] ?? '') === 'paper_first');
     $lp = admin_mou_list(['requesterId' => 'NGG-MOU-ADM', 'status' => 'paper']);
     chk('mou paper · the desk lists it under "Paper copy to receive", and counts it', in_array($row['mouId'], array_column($lp['rows'], 'mouId'), true) && ($lp['counts']['paper'] ?? 0) >= 1);
@@ -40937,9 +40938,14 @@ if (function_exists('imagecreatetruecolor')) {
     preg_match('#mou\.php\?doc=([A-Za-z0-9_-]+)#', $final[0]['html'] ?? '', $dm);
     $doc = public_mou_doc(['doc' => $dm[1] ?? '']);
     chk('mou · the printable copy (A4, "Print or save as PDF") has the parties, every clause, three signatures and the fingerprint',
-        !empty($doc['ok']) && str_contains($doc['html'], 'Print or save as PDF') && str_contains($doc['html'], 'Ending the Agreement early') && substr_count($doc['html'], 'class="rp-sign-img"') === 3
-        && str_contains($doc['html'], substr((string)$fin['docHash'], 0, 32)) && str_contains($doc['html'], 'Off-site activities:</b> No')
-        && str_contains($doc['html'], 'checked and photographed by Agnes Coordinator') && !str_contains($doc['html'], 'Sign this copy in ink'));
+        !empty($doc['ok']) && str_contains($doc['html'], 'Print or save as PDF') && str_contains($doc['html'], 'Ending the Agreement early') && substr_count($doc['html'], 'class="md-sig-img"') === 3
+        && str_contains($doc['html'], substr((string)$fin['docHash'], 0, 32)) && str_contains($doc['html'], 'Consent not given')
+        && str_contains($doc['html'], 'Checked and photographed at Egbeda') && !str_contains($doc['html'], 'Sign this page in ink'));
+    // A standard agreement: parties, background, key terms, numbered clauses and sub-clauses, a schedule, an execution page.
+    chk('mou · the copy is laid out as a standard agreement: dated, parties, background, key terms, clauses 1–13 with sub-clauses, schedule, signatures',
+        str_contains($doc['html'], 'This Agreement is dated') && str_contains($doc['html'], '<h2>Parties</h2>') && str_contains($doc['html'], '<h2>Background</h2>')
+        && str_contains($doc['html'], '<h2>Key terms</h2>') && str_contains($doc['html'], '>13. ') && str_contains($doc['html'], '<span>12.1</span>')
+        && str_contains($doc['html'], 'Schedule — Particulars') && str_contains($doc['html'], 'Signed for and on behalf of NGG') && str_contains($doc['html'], 'Record of signing'));
     chk('mou · the old family link reads the signed state; a copy link that is not one is refused', (public_mou_get(['token' => $tok])['status'] ?? '') === 'signed' && empty(public_mou_doc(['doc' => 'nope'])['ok']));
     // No witness at home: NGG's representative witnesses at the centre.
     db_insert('members', ['memberId' => 'NGG-MOU-OUT', 'fullName' => 'Ada Okafor', 'email' => 'mou.p2@example.org', 'parentEmail' => 'mou.p2@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
@@ -40993,7 +40999,8 @@ if (function_exists('imagecreatetruecolor')) {
     fees_settings_save(['scholarshipValue' => (int)($feesPrev['scholarshipValue'] ?? 1500000)] + $feesPrev, 'test');
     $docS = mou_document_html(db_row("SELECT * FROM mou_agreements WHERE id = ?", [(int)$row['id']]), db_row("SELECT * FROM members WHERE memberId = 'NGG-MOU-1'"));
     chk('mou scholarship · the printed copy opens with the award: the child, the value, funded by NGG, and the family’s contribution',
-        str_contains($docS, 'NGG Scholarship') && str_contains($docS, 'Tobi Adeyemi</b> is awarded an NGG scholarship valued at') && str_contains($docS, 'NGG funds the scholarship'));
+        str_contains($docS, 'NGG has awarded the Member an NGG Scholarship valued at <b>₦1,500,000</b>') && str_contains($docS, 'NGG funds the Scholarship')
+        && str_contains($docS, '<th scope="row">Scholarship</th>') && str_contains($docS, '<th scope="row">Family contribution</th>'));
     $gS = public_mou_get(['token' => $tok]);
     chk('mou scholarship · the family page carries it too', ($gS['scholarship']['value'] ?? '') !== '' && str_contains($gS['scholarship']['family'] ?? '', 'a month'));
     $oldTerms = json_decode((string)$row['termsJson'], true); unset($oldTerms['scholarshipValue']);

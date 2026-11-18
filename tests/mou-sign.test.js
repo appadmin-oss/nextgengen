@@ -186,7 +186,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const doc = ((final && final.html) || '').match(/\/api\/public\/mou\.php\?doc=[A-Za-z0-9_-]+/);
     const page = await (await browser.newContext()).newPage();
     const resp = await page.goto(BASE + (doc ? doc[0] : '/nope'));
-    chk('the printable copy opens from the email: every clause and three signatures', resp && resp.status() === 200 && (await page.$$('.rp-sign-img')).length === 3 && /Ending the Agreement early/.test(await page.innerText('body')));
+    chk('the printable copy opens from the email: every clause and three signatures', resp && resp.status() === 200 && (await page.$$('.md-sig-img')).length === 3 && /Ending the Agreement early/.test(await page.innerText('body')));
     await page.screenshot({ path: path.join(SHOTS, 'document.png'), fullPage: true });
     chk('no page errors in the Control Room', aerr.length === 0);
     if (aerr.length) console.error(aerr.join('\n'));
