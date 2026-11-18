@@ -702,10 +702,10 @@ class Fp3Portal extends React.Component {
       if (sh === "pay") {
         const fee = w.fees.payFee || 0, net = w.fees.joining ? w.fees.joining.total : w.fees.payable;
         Object.assign(out, { shTitle: w.fees.joining ? "Pay " + first + "’s joining invoice" : "Pay for " + first,
-          shLead: "You’ll go to Paystack to pay by card, bank or USSD, then come straight back here." + (fee ? " Paystack charges " + N(fee) + " for paying online; paying by bank transfer to NGG has no charge." : ""),
-          shGoL: S.busy ? "Opening Paystack…" : "Continue to Paystack", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
+          shLead: "You’ll go to our payment provider to pay by card, bank or USSD, then come straight back here." + (fee ? " Paying online adds a payment processing fee of " + N(fee) + "; paying by bank transfer to NGG has none." : ""),
+          shGoL: S.busy ? "Opening the payment page…" : "Continue to payment", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
         out.payLines = (w.fees.joining ? w.fees.joining.items : w.fees.lines).map(rr => ({ k: rr.label, v: N(rr.amount) }))
-          .concat(fee ? [{ k: "Paystack charge", v: N(fee) }] : []).concat([{ k: "Total", v: N(net + fee) }]);
+          .concat(fee ? [{ k: "Payment processing fee", v: N(fee) }] : []).concat([{ k: "Total", v: N(net + fee) }]);
         out.shGo = () => this.write(() => NGGApi.family.pay(w.linkId), rr => { if (rr && rr.payUrl) window.location.assign(rr.payUrl); else this.setState({ shErr: "The payment page couldn’t be opened. Try again." }); });
       }
       if (sh === "leave") {
