@@ -1527,7 +1527,7 @@ function MembershipPayPage({ setPage }) {
                 {inv.items.map((it, i) => <tr key={i}><td><b>{it.label}</b>{it.detail ? <span>{it.detail}</span> : null}</td><td>{money(it.amount)}</td></tr>)}
               </tbody>
               <tfoot>
-                {inv.status === "paid" && inv.onlineFee > 0 && <tr className="mpay-charge"><td><b>Paystack charge</b><span>For paying online — not an NGG fee</span></td><td>{money(inv.onlineFee)}</td></tr>}
+                {inv.status === "paid" && inv.onlineFee > 0 && <tr className="mpay-charge"><td><b>Payment processing fee</b><span>Charged by Paystack, our payment provider</span></td><td>{money(inv.onlineFee)}</td></tr>}
                 <tr><td>{inv.status === "paid" ? "Total paid" : "Total to pay"}</td><td>{money(inv.total + (inv.status === "paid" ? (inv.onlineFee || 0) : 0))}</td></tr>
               </tfoot>
             </table>

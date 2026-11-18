@@ -9883,3 +9883,10 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .shop-dl dt { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-500); }
 .shop-dl dd { margin: 2px 0 0; font-weight: 700; color: var(--ink-900); overflow-wrap: anywhere; }
 .shop-oacts { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-5); }
+/* Managing the shop (shop-manage.php): a discount code, a pre-order, the pickup code. */
+.shop-code { display: flex; gap: var(--space-2); }
+.shop-code input { flex: 1; min-width: 0; text-transform: uppercase; letter-spacing: 0.06em; }
+.shop-opt { font-weight: 400; color: var(--ink-500); }
+.shop-pre { margin: 0; font-size: 13px; font-weight: 600; color: var(--gold-700); }
+.shop-pickup { margin-top: var(--space-3); background: var(--navy-700); }
+.shop-linkbtn { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }

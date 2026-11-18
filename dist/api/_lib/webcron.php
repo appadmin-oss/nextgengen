@@ -99,6 +99,7 @@ function web_cron_jobs(): array {
     $add('volpay',       3600,   $has('volpay_tick'), false);
     $add('dirpush',      3600,   $has('dirpush_tick'), true);
     $add('photos_bucket', 3600,  $has('photo_store_to_bucket_tick'), true);   // held photos into the bucket, a batch an hour until none are left
+    $add('shop',         3600,   $has('shop_cron_tick'), true);           // shop-manage.php: expire unpaid orders, one reminder, refunds Paystack has not reported, the low-stock digest
     $add('regcheck',     3600,   $has('rcl_tick'), true);                     // registration checklist: recount, remind supervisors and families weekly
     $add('photo_sizes',  600,    $has('photo_variants_tick'), true);          // each bucket photo's sizes, made once by Cloudinary, stored beside it
     // Once: tracks that name courses exactly become chosen courses (curriculum.php).

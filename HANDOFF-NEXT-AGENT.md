@@ -6,9 +6,12 @@ is the permanent log. Never rewrite that one.
 ## Ground rules (the owner's, standing)
 
 **Branch and git**
-- Branch: `claude/finme-dues-training-fees-l54o5j`. No pull request.
+- **The owner, 18 Nov: "Never add Claude/ to my branches again!"** Never create or push a branch whose name
+  starts with `claude/`. Use the owner's `afv/` prefix.
+- Branch: `afv/brave-faraday-pdlh7o` (it carries everything on `claude/finme-dues-training-fees-l54o5j` and
+  more; that older branch is no longer pushed to). No pull request.
 - **Other sessions push to this branch too.** Before you start anything, and again before every push,
-  run `git fetch origin` and `git log HEAD..origin/claude/finme-dues-training-fees-l54o5j`. Never
+  run `git fetch origin` and `git log HEAD..origin/afv/brave-faraday-pdlh7o`. Never
   duplicate work already pushed. It happened on 17 Nov: the shop's pages were built twice in parallel.
   Merge (fast-forward when you can); never force-push.
 - Never commit `api/config.php`: `git add -A && git reset -q api/config.php`.
@@ -36,13 +39,20 @@ is the permanent log. Never rewrite that one.
 - HawkScan cannot run here (no `HAWK_API_KEY`). Say so.
 
 **State at hand-over**
-- PHP suite 7283/0. Schema target 237.
+- PHP suite 7330/0. Schema target 238.
 - Last green browser runs: shop 26/0, mathlab-e2e 135/0, labs-focus 14/0, membership-pay 41/0,
   assign-desk 34/0, club-apply 50/0.
 
 ---
 
-## 1. Shop management upgrade — NGG AND Africa GATES (the owner's latest ask, not started)
+## 1. Shop management upgrade — NGG done (18 Nov); Africa GATES on its own branch
+
+**NGG: done** — all ten items of `docs/SHOP-MANAGEMENT-PLAN.md` §2 (see the 18 Nov entry in `docs/HANDOFF.md`
+and the shop section of `docs/ADMIN-GUIDE.md`). **Africa GATES:** built on `afv/shop-upgrade` in
+appadmin-oss/Africa-GATES (from `claude/ai-assistance-judges-features-1ka4oz`); read that branch's own handoff
+notes for what is finished.
+
+The original brief, kept for context:
 
 Owner, 17 Nov: *"Upgrade the shop massively. Add the Africa GATES repo latest branch and also massively
 upgrade its shop for better and effective management. Research!"*
@@ -51,9 +61,8 @@ upgrade its shop for better and effective management. Research!"*
 anything. It holds the research with sources, the "do not build" list, NGG's current shop and its build
 order (§2), and the Africa GATES audit, its gaps, its build order and its environment notes (§3).
 
-No upgrade code was written in either repository. An agent started on Africa GATES was stopped at the
-owner's request. It had made no commits, and its local branch `claude/shop-management-upgrade` was never
-pushed. Start Africa GATES from its newest branch at the time (§3 says how to find it).
+Still open, outside §2 and never asked for: delivery zones, a member price, bundles, a VAT line. Unconfirmed
+with Paystack: whether bank-transfer and USSD payments refund automatically (a failed refund says so).
 
 ## 2. Online NGG members (the owner's decisions recorded; phase 1 done)
 

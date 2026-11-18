@@ -80,9 +80,12 @@ $GLOBALS['__paystack_mock'] = static function (string $method, string $path, arr
         $o = shop_order_by('paystackRef', $ref);
         if (!$o) return ['status' => false];
         $fee = paystack_family_charge((int)$o['total']);
-        return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => ((int)$o['total'] + $fee) * 100, 'currency' => 'NGN',
+        return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => ((int)$o['total'] + $fee) * 100, 'currency' => 'NGN', 'fees' => 35000,
             'metadata' => ['orderId' => $o['orderId'], 'processingFee' => $fee]]];
     }
+    /* Refunds: accepted as pending; GET answers what the test wrote into the settings row 'e2e_refund_status'. */
+    if ($method === 'POST' && $path === '/refund') return ['status' => true, 'data' => ['id' => 4242, 'status' => 'pending', 'amount' => $body['amount'] ?? 0]];
+    if ($method === 'GET' && str_starts_with($path, '/refund/')) return ['status' => true, 'data' => ['id' => 4242, 'status' => (string)(setting_raw('e2e_refund_status') ?: 'pending')]];
     return ['status' => false];
 };
 `);
@@ -128,7 +131,7 @@ $GLOBALS['__paystack_mock'] = static function (string $method, string $path, arr
     await P.selectOption('#shop-q-PRD-E2E1', '2');
     await P.click('.shop-card >> nth=0 >> button.shop-add');
     await P.waitForSelector('.shop-sum', { timeout: 15000 });
-    chk('the cart shows the server\'s quote before Pay: 2 × ₦8,500, no Paystack charge without Paystack', /₦17,000/.test(await P.innerText('.shop-sum')) && !/Paystack’s charge/.test(await P.innerText('.shop-sum')));
+    chk('the cart shows the server\'s quote before Pay: 2 × ₦8,500, no Paystack charge without Paystack', /₦17,000/.test(await P.innerText('.shop-sum')) && !/Payment processing fee/.test(await P.innerText('.shop-sum')));
     chk('…and with no Paystack it says orders cannot be taken, and Pay is disabled', /can’t take orders/.test(await P.innerText('.shop-checkout')) && await P.isDisabled('.shop-pay'));
     await P.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(P);
     await P.waitForSelector('.shop-line', { timeout: 30000 });
@@ -141,7 +144,7 @@ $GLOBALS['__paystack_mock'] = static function (string $method, string $path, arr
     await P.waitForFunction(() => !document.querySelector('.shop-pay').disabled, null, { timeout: 15000 });
     const sumText = await P.innerText('.shop-sum');
     const q = JSON.parse(php(`echo json_encode(shop_quote([['productId'=>'PRD-E2E1','option'=>'S','qty'=>2]], 'collect'));`, ['bootstrap']));
-    chk('Paystack\'s charge (borne by the buyer) is in the quote, and Pay names the server\'s total', /Paystack’s charge/.test(sumText) === (q.onlineFee > 0)
+    chk('Paystack\'s charge (borne by the buyer) is in the quote, and Pay names the server\'s total', /Payment processing fee/.test(sumText) === (q.onlineFee > 0)
       && (await P.innerText('.shop-pay')).replace(/\s/g, '') === ('Pay₦' + (q.total + q.onlineFee).toLocaleString('en-GB')));
     await P.click('.shop-pay');
     chk('checkout is checked before anything is sent: a name is asked for', /full name/.test(await P.innerText('#shop-f-name-err').catch(() => '')));
@@ -158,6 +161,8 @@ $GLOBALS['__paystack_mock'] = static function (string $method, string $path, arr
     await waitForBoot(P);
     await P.waitForSelector('.shop-onum', { timeout: 30000 });
     chk('the order page confirms with Paystack (through the server) and shows it paid, with the order number to bring', /Paid/.test(await P.innerText('.shop-otitle')) && (await P.innerText('.shop-onum b')) === row.orderId && /Bring this number/.test(await P.innerText('.shop-onum')));
+    const pick = php(`echo db_row("SELECT pickupCode FROM shop_orders WHERE orderId = '${row.orderId}'")['pickupCode'];`);
+    chk('…and the six-digit pickup code the desk will ask for', /^\d{6}$/.test(pick) && (await P.innerText('.shop-pickup b')) === pick);
     chk('…the address loses the reference, and the page is not indexed', new URL(P.url()).search === '' && (await P.getAttribute('meta[name="robots"]', 'content')) === 'noindex, nofollow');
     chk('…the server has it paid and the stock taken off', php(`echo db_row("SELECT status FROM shop_orders WHERE orderId = '${row.orderId}'")['status'];`) === 'paid'
       && JSON.parse(php(`echo db_row("SELECT stock FROM shop_products WHERE productId = 'PRD-E2E1'")['stock'];`)).S === 1);
@@ -171,29 +176,68 @@ $GLOBALS['__paystack_mock'] = static function (string $method, string $path, arr
     await A.goto(BASE + '/control/shop', { waitUntil: 'domcontentloaded' });
     await waitForBoot(A);
     await A.waitForSelector('.cr-app', { timeout: 30000 });
+    await A.waitForSelector('.cr-kpi', { timeout: 30000 });
+    const today = await A.innerText('.cr-app');
+    chk('Shop is in the sidebar, and opens on Today: one order to prepare, and the day\'s sales net of Paystack\'s fee', !!(await A.$('.cr-nav-item:has-text("Shop")')) && /To prepare\s*1/.test(today) && /Sales today/.test(today));
+    if (!/To prepare\s*1/.test(today)) console.error('    (today: ' + today.slice(0, 400).replace(/\s+/g, ' ') + ')');
+    await A.goto(BASE + '/control/shop/shop-orders', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(A);
     await A.waitForSelector('.cr-tbl tbody tr', { timeout: 30000 });
-    const crTop = await A.innerText('.cr-app');
-    chk('Shop is in the sidebar, and opens on Orders with the paid order to hand over', !!(await A.$('.cr-nav-item:has-text("Shop")')) && /Orders/.test(crTop) && new RegExp(row.orderId).test(await A.innerText('.cr-tbl')));
-    if (!/Orders/.test(crTop) || !(await A.$('.cr-nav-item:has-text("Shop")'))) console.error('    (sidebar has Shop: ' + !!(await A.$('.cr-nav-item:has-text("Shop")')) + '; page: ' + crTop.slice(0, 300).replace(/\s+/g, ' ') + ')');
+    chk('Orders lists the paid order to hand over', new RegExp(row.orderId).test(await A.innerText('.cr-tbl')));
     await A.click('.cr-tbl tbody tr >> nth=0');
     await A.waitForSelector('.cr-sheet', { timeout: 10000 });
     chk('the order\'s drawer shows its items and buyer', /NGG T-shirt \(S\) × 2/.test(await A.innerText('.cr-sheet')) && /bola.e2e@example.org/.test(await A.innerText('.cr-sheet')));
     await A.click('.cr-sheet-foot button:has-text("Mark ready")');
-    await A.click('.cr-confirm button:has-text("Mark ready")');
+    await A.waitForSelector('.cr-sheet-foot button[type="submit"]', { timeout: 10000 });
+    await A.click('.cr-sheet-foot button[type="submit"]');
     await A.waitForFunction(id => /ready/i.test((document.querySelector('.cr-toast') || {}).innerText || ''), row.orderId, { timeout: 10000 }).catch(() => {});
     chk('Mark ready: the server has it ready', php(`echo db_row("SELECT status FROM shop_orders WHERE orderId = '${row.orderId}'")['status'];`) === 'ready');
     await A.waitForFunction(() => /Ready/.test((document.querySelector('.cr-tbl') || {}).innerText || ''), null, { timeout: 10000 }).catch(() => {});
     await A.click('.cr-tbl tbody tr >> nth=0');
     await A.waitForSelector('.cr-sheet-foot button:has-text("Mark collected")', { timeout: 10000 });
     await A.click('.cr-sheet-foot button:has-text("Mark collected")');
-    await A.click('.cr-confirm button:has-text("Mark collected")');
-    await A.waitForFunction(() => /completed/i.test((document.querySelector('.cr-toast') || {}).innerText || ''), null, { timeout: 10000 }).catch(() => {});
-    chk('Mark collected: the server has it completed', php(`echo db_row("SELECT status FROM shop_orders WHERE orderId = '${row.orderId}'")['status'];`) === 'completed');
+    await A.waitForSelector('#crf-code', { timeout: 10000 });
+    await A.fill('#crf-code', pick === '123456' ? '654321' : '123456');
+    await A.click('.cr-sheet-foot button[type="submit"]');
+    await A.waitForSelector('#crf-code-err', { timeout: 10000 }).catch(() => {});
+    chk('Mark collected asks for the pickup code, and a wrong one is refused on its field', /does not match/.test(await A.innerText('#crf-code-err').catch(() => ''))
+      && php(`echo db_row("SELECT status FROM shop_orders WHERE orderId = '${row.orderId}'")['status'];`) === 'ready');
+    await A.fill('#crf-code', pick);
+    await A.click('.cr-sheet-foot button[type="submit"]');
+    await A.waitForFunction(() => !document.querySelector('#crf-code'), null, { timeout: 10000 }).catch(() => {});
+    chk('…the right code completes it, and the timeline says the code was checked', php(`echo db_row("SELECT status FROM shop_orders WHERE orderId = '${row.orderId}'")['status'];`) === 'completed'
+      && /pickup code checked/.test(php(`echo db_row("SELECT text FROM shop_order_events WHERE orderId = '${row.orderId}' AND kind = 'completed'")['text'];`)));
+
+    console.log('a refund');
+    await A.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(A);
+    await A.click('.cr-fchip:has-text("Status")').catch(() => {});
+    await A.goto(BASE + '/control/shop/shop-orders/completed', { waitUntil: 'domcontentloaded' }); await waitForBoot(A);
+    await A.waitForSelector('.cr-tbl tbody tr', { timeout: 30000 });
+    await A.click('.cr-tbl tbody tr >> nth=0');
+    await A.waitForSelector('.cr-sheet-foot button:has-text("Refund")', { timeout: 10000 });
+    chk('the drawer shows the order\'s timeline (ordered, paid, ready, collected)', /Ordered online/.test(await A.innerText('.cr-sheet')) && /Paid through Paystack/.test(await A.innerText('.cr-sheet')));
+    await A.click('.cr-sheet-foot button:has-text("Refund")');
+    await A.waitForSelector('#crf-amount', { timeout: 10000 });
+    chk('the refund form suggests the goods and delivery: ₦17,000', (await A.inputValue('#crf-amount')) === '17000');
+    await A.fill('#crf-amount', '8500'); await A.fill('#crf-reason', 'One shirt was faded');
+    await A.fill('#crf-back0', '1');
+    await A.click('.cr-sheet-foot button[type="submit"]');
+    await A.waitForFunction(() => !document.querySelector('#crf-amount'), null, { timeout: 10000 }).catch(() => {});
+    const rf = JSON.parse(php(`echo json_encode(db_row("SELECT * FROM shop_refunds ORDER BY id DESC LIMIT 1"));`) || 'null');
+    chk('a partial refund goes to Paystack and waits as pending; the shirt is back on the shelf', rf && rf.status === 'pending' && +rf.amount === 8500
+      && JSON.parse(php(`echo db_row("SELECT stock FROM shop_products WHERE productId = 'PRD-E2E1'")['stock'];`)).S === 2);
+    php(`setting_set('e2e_refund_status', 'processed', 'test');`, ['bootstrap']);
+    await A.click('.cr-tbl tbody tr >> nth=0');
+    await A.waitForSelector('.cr-sheet button:has-text("Check now")', { timeout: 10000 });
+    await A.click('.cr-sheet button:has-text("Check now")');
+    await A.waitForFunction(() => /Paystack says/.test((document.querySelector('.cr-toast') || {}).innerText || ''), null, { timeout: 10000 }).catch(() => {});
+    chk('"Check now" asks Paystack, and the order shows ₦8,500 refunded', php(`echo db_row("SELECT refunded FROM shop_orders WHERE orderId = '${row.orderId}'")['refunded'];`) === '8500');
+    await A.keyboard.press('Escape');
 
     await A.goto(BASE + '/control/shop/shop-products', { waitUntil: 'domcontentloaded' });
     await waitForBoot(A);
     await A.waitForSelector('.cr-tbl tbody tr', { timeout: 30000 });
-    chk('Products lists the catalogue with stock left and what sold', /S 1 · M 0 · L 5/.test(await A.innerText('.cr-tbl')) && (await A.$$('.cr-tbl tbody tr')).length === 2);
+    chk('Products lists the catalogue with stock left and what sold', /S 2 · M 0 · L 5/.test(await A.innerText('.cr-tbl')) && (await A.$$('.cr-tbl tbody tr')).length === 2);
     await A.click('.cr-btn:has-text("New product")');
     await A.waitForSelector('#crf-name', { timeout: 10000 });
     await A.fill('#crf-name', 'NGG cap'); await A.fill('#crf-price', '0');
@@ -205,6 +249,72 @@ $GLOBALS['__paystack_mock'] = static function (string $method, string $path, arr
     await A.click('.cr-sheet-foot button[type="submit"]');
     await A.waitForFunction(() => !document.querySelector('#crf-name'), null, { timeout: 10000 }).catch(() => {});
     chk('a new product is saved and on sale', php(`echo db_row("SELECT status FROM shop_products WHERE name = 'NGG cap'")['status'] ?? '';`) === 'live');
+
+    console.log('selling at a table');
+    await A.goto(BASE + '/control/shop/shop-sell', { waitUntil: 'domcontentloaded' }); await waitForBoot(A);
+    await A.waitForSelector('.cr-till', { timeout: 30000 });
+    await A.click('.cr-btn:has-text("Open a cash session")');
+    await A.waitForSelector('#crf-label', { timeout: 10000 });
+    await A.fill('#crf-label', 'Open day'); await A.fill('#crf-openingFloat', '2000');
+    await A.click('.cr-sheet-foot button[type="submit"]');
+    await A.waitForFunction(() => /Open day/.test((document.querySelector('#cr-till-sess') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});
+    await A.click('.cr-till-item:has-text("NGG mug") >> button:has-text("Add")');
+    await A.click('.cr-till-item:has-text("NGG mug") >> button:has-text("Add")');
+    chk('the till adds up the sale', /₦8,000/.test(await A.innerText('.cr-till-total')));
+    await A.click('.cr-till-go');
+    await A.waitForSelector('.cr-till-msg', { timeout: 10000 }).catch(() => {});
+    const pos = JSON.parse(php(`echo json_encode(db_row("SELECT * FROM shop_orders WHERE channel = 'pos' ORDER BY id DESC LIMIT 1"));`) || 'null');
+    chk('a cash sale is recorded completed, in the session, and said on screen', pos && pos.status === 'completed' && pos.payMethod === 'cash' && +pos.total === 8000 && pos.sessionId !== '' && /Sold:/.test(await A.innerText('.cr-till-msg')));
+    await A.waitForSelector('.cr-tbl tbody tr', { timeout: 15000 });
+    await A.click('.cr-tbl tbody tr >> nth=0');
+    await A.click('.cr-sheet-foot button:has-text("Close the session")');
+    await A.waitForSelector('#crf-counted', { timeout: 10000 });
+    await A.fill('#crf-counted', '9500');
+    await A.click('.cr-sheet-foot button[type="submit"]');
+    await A.waitForSelector('#crf-note-err', { timeout: 10000 }).catch(() => {});
+    chk('closing a short drawer asks why', /short/.test(await A.innerText('#crf-note-err').catch(() => '')));
+    await A.fill('#crf-note', 'Gave change twice');
+    await A.click('.cr-sheet-foot button[type="submit"]');
+    await A.waitForFunction(() => !document.querySelector('#crf-counted'), null, { timeout: 10000 }).catch(() => {});
+    chk('…and keeps the difference: ₦500 short of the ₦10,000 expected', php(`$s = db_row("SELECT * FROM shop_cash_sessions ORDER BY id DESC LIMIT 1"); echo $s['status'] . ' ' . $s['expected'] . ' ' . $s['difference'];`) === 'closed 10000 -500');
+
+    console.log('stock, codes, reports');
+    await A.goto(BASE + '/control/shop/shop-stock', { waitUntil: 'domcontentloaded' }); await waitForBoot(A);
+    await A.waitForSelector('.cr-tbl tbody tr', { timeout: 30000 });
+    chk('Stock lists each tracked size with its state: M is sold out', /Sold out/.test(await A.innerText('.cr-tbl')) && (await A.$$('.cr-tbl tbody tr')).length === 3);
+    await A.click('.cr-btn:has-text("Stock-take")');
+    await A.waitForSelector('#crf-c0', { timeout: 10000 });
+    const lbl = await A.innerText('label[for="crf-c0"]');
+    await A.fill('#crf-c0', '9');
+    await A.click('.cr-sheet-foot button[type="submit"]');
+    await A.waitForFunction(() => !document.querySelector('#crf-c0'), null, { timeout: 10000 }).catch(() => {});
+    chk('a stock-take records the difference on the ledger as a recount', php(`echo db_row("SELECT COUNT(*) c FROM shop_stock_moves WHERE reason = 'recount'")['c'];`) === '1' && /NGG T-shirt/.test(lbl));
+    await A.goto(BASE + '/control/shop/shop-codes', { waitUntil: 'domcontentloaded' }); await waitForBoot(A);
+    await A.waitForSelector('.cr-btn:has-text("New code")', { timeout: 30000 });
+    await A.click('.cr-btn:has-text("New code")');
+    await A.waitForSelector('#crf-code', { timeout: 10000 });
+    await A.fill('#crf-code', 'openday10'); await A.fill('#crf-amount', '10');
+    await A.click('.cr-sheet-foot button[type="submit"]');
+    await A.waitForFunction(() => !document.querySelector('#crf-code'), null, { timeout: 10000 }).catch(() => {});
+    chk('a discount code is created (in capitals)', php(`echo db_row("SELECT status FROM shop_codes WHERE code = 'OPENDAY10'")['status'] ?? '';`) === 'active');
+    await A.goto(BASE + '/control/shop/shop-reports', { waitUntil: 'domcontentloaded' }); await waitForBoot(A);
+    await A.waitForSelector('.cr-kpi', { timeout: 30000 });
+    const rep = await A.innerText('.cr-app');
+    chk('Reports shows gross, Paystack\'s fees, refunds and net, and sales by product and size', /Gross/.test(rep) && /Paystack’s fees/.test(rep) && /₦350/.test(rep) && /₦8,500/.test(rep) && /NGG mug/.test(rep));
+
+    console.log('the buyer, with a code');
+    await P.goto(BASE + '/shop', { waitUntil: 'domcontentloaded' }); await waitForBoot(P);
+    await P.waitForSelector('.shop-card', { timeout: 30000 });
+    await P.click('.shop-card:has-text("NGG mug") >> button.shop-add');
+    await P.waitForSelector('#shop-f-code', { timeout: 15000 });
+    await P.fill('#shop-f-code', 'openday10');
+    await P.click('.shop-code button:has-text("Apply")');
+    await P.waitForFunction(() => /Code OPENDAY10/.test((document.querySelector('.shop-sum') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});
+    chk('a discount code comes off the goods in the quote, before Pay', /Code OPENDAY10\s*−₦400/.test(await P.innerText('.shop-sum')));
+    await P.fill('#shop-f-code', 'NOPE');
+    await P.click('.shop-code button:has-text("Apply")');
+    await P.waitForFunction(() => /not valid/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    chk('…and a code that does not exist is refused in words', /That code is not valid/.test(await P.innerText('.shop-checkout')));
 
     await A.goto(BASE + '/control/shop/shop-settings', { waitUntil: 'domcontentloaded' });
     await waitForBoot(A);

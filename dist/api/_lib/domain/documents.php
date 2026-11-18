@@ -229,7 +229,7 @@ function doc_lines(array $inv): array {
         $out[] = ['label' => (string)$it['label'], 'detail' => (string)($it['detail'] ?? ''), 'period' => doc_period($it), 'qty' => $qty,
                   'unit' => intdiv($amt * 100, $qty), 'kobo' => $amt * 100];
     }
-    if ((int)($inv['processingFee'] ?? 0) > 0) $out[] = ['label' => 'Paystack charge', 'detail' => 'paid to Paystack for the online payment, not an NGG fee',
+    if ((int)($inv['processingFee'] ?? 0) > 0) $out[] = ['label' => 'Payment processing fee', 'detail' => 'charged by Paystack, our payment provider',
         'period' => '', 'qty' => 1, 'unit' => (int)$inv['processingFee'] * 100, 'kobo' => (int)$inv['processingFee'] * 100, 'gateway' => true];
     return $out;
 }

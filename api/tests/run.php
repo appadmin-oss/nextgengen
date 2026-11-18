@@ -38415,7 +38415,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         ($v['status'] ?? '') === 'paid' && $credit === 7000 && (int)$inv2['processingFee'] === 209 && (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-PF-1'"), $cfg)['payable'] === 0);
     $html = doc_render_receipt(doc_for_receipt($inv2));
     chk('paystack charge: the receipt names it as Paystack’s, and the total is what left the family’s account',
-        str_contains($html, 'Paystack charge') && str_contains($html, fees_money_text(7209, $cfg)));
+        str_contains($html, 'Payment processing fee') && str_contains($html, fees_money_text(7209, $cfg)));
     $after = public_membership_invoice(['token' => $inv2['payToken']])['invoice'] ?? [];
     chk('paystack charge: the paid page shows the charge that was actually taken', ($after['onlineFee'] ?? 0) === 209);
 
@@ -39011,17 +39011,18 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('shop · a success for the wrong amount pays nothing, and the money is put on the record for a person',
         (shop_paystack_verify($r2['paystackRef'])['error'] ?? '') === 'payment_mismatch' && db_row('SELECT status FROM shop_orders WHERE orderId = ?', [$o2['orderId']])['status'] === 'pending'
         && db_row("SELECT 1 FROM unapplied_payments WHERE reference = ?", [$r2['paystackRef']]));
-    $step = static fn(string $to, string $id, string $why = '') => backend_dispatch('admin.shop.order.set', ['requesterId' => 'NGG-2025-0099', 'orderId' => $id, 'status' => $to, 'reason' => $why]);
+    $step = static fn(string $to, string $id, string $why = '', array $x = []) => backend_dispatch('admin.shop.order.set', ['requesterId' => 'NGG-2025-0099', 'orderId' => $id, 'status' => $to, 'reason' => $why] + $x);
     $ol = backend_dispatch('admin.shop.orders', ['requesterId' => 'NGG-2025-0099', 'status' => 'open']);
     chk('shop · the desk lists the paid orders to hand over, with counts by status', in_array($o['orderId'], array_column($ol['orders'], 'orderId'), true) && ($ol['counts']['paid'] ?? 0) >= 1);
-    chk('shop · steps go forward only: a paid order cannot be marked completed-then-ready', !empty($step('ready', $o['orderId'])['ok']) && !empty($step('completed', $o['orderId'])['ok'])
+    $pick = (string)db_row('SELECT pickupCode FROM shop_orders WHERE orderId = ?', [$o['orderId']])['pickupCode'];
+    chk('shop · steps go forward only: a paid order cannot be marked completed-then-ready', !empty($step('ready', $o['orderId'])['ok']) && !empty($step('completed', $o['orderId'], '', ['code' => $pick])['ok'])
         && ($step('ready', $o['orderId'])['error'] ?? '') === 'bad_step');
     $o3 = public_shop_order(['items' => [['productId' => $T, 'option' => 'L', 'qty' => 3]], 'fulfil' => 'collect', 'centre' => $centre, 'buyer' => $buyer]);
     $r3 = db_row('SELECT * FROM shop_orders WHERE orderId = ?', [$o3['orderId']]); $fee3 = paystack_family_charge(22500);
     $verify[$r3['paystackRef']] = ['status' => true, 'data' => ['status' => 'success', 'reference' => $r3['paystackRef'], 'amount' => (22500 + $fee3) * 100, 'currency' => 'NGN', 'metadata' => ['orderId' => $o3['orderId'], 'processingFee' => $fee3]]];
     shop_paystack_verify($r3['paystackRef']);
     chk('shop · a paid order is cancelled only with a reason, and its stock goes back', $left()['L'] === 2 && ($step('cancelled', $o3['orderId'])['error'] ?? '') === 'reason_required'
-        && !empty($step('cancelled', $o3['orderId'], 'Out of size L')['ok']) && $left()['L'] === 5 && str_contains((string)db_row('SELECT note FROM shop_orders WHERE orderId = ?', [$o3['orderId']])['note'], 'Refund due'));
+        && !empty($step('cancelled', $o3['orderId'], 'Out of size L')['ok']) && $left()['L'] === 5 && db_row('SELECT refundState FROM shop_orders WHERE orderId = ?', [$o3['orderId']])['refundState'] === 'due');
     chk('shop · orders are money: a plain member cannot see them', (backend_dispatch('admin.shop.orders', ['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'forbidden');
     $pl = backend_dispatch('admin.shop.products', ['requesterId' => 'NGG-2025-0099']); $sl = backend_dispatch('admin.shop.settings', ['requesterId' => 'NGG-2025-0099']);
     chk('shop · the Control Room is given the bounds the server enforces (price, options, stock, delivery fee, list cap), never types its own',
@@ -39029,6 +39030,262 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && ($sl['bounds']['deliveryFeeMax'] ?? 0) === SHOP_DELIVERY_FEE_MAX && (backend_dispatch('admin.shop.orders', ['requesterId' => 'NGG-2025-0099'])['max'] ?? 0) === SHOP_LIST_MAX
         && ($set(['deliveryFee' => SHOP_DELIVERY_FEE_MAX + 1])['error'] ?? '') === 'bad_fee');
     db_exec("DELETE FROM shop_orders"); db_exec("DELETE FROM shop_products"); db_exec("DELETE FROM settings WHERE settingKey = 'shop'");
+    foreach (['shop_stock_moves', 'shop_order_events', 'shop_refunds', 'shop_cash_sessions', 'shop_codes'] as $t) db_exec("DELETE FROM $t");
+    $GLOBALS['CONFIG']['paystack'] = $keepPs; $GLOBALS['__paystack_mock'] = $keepMock;
+})();
+
+/* ── Managing the shop (owner, 17 Nov 2026: "Upgrade the shop massively … Research!"; docs/SHOP-MANAGEMENT-PLAN.md;
+   domain/shop-manage.php): the stock ledger, low stock, codes, pre-orders, pickup codes, refunds, unpaid orders,
+   table sales and cash sessions, reports, exchanges. ── */
+(function () {
+    $A = 'NGG-2025-0099'; $P = 'NGG-2025-0001';
+    $keepPs = $GLOBALS['CONFIG']['paystack'] ?? null; $keepMock = $GLOBALS['__paystack_mock'] ?? null;
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_shopm'];
+    $calls = []; $verify = []; $refunds = []; $refundSeq = 0; $refundReply = null;
+    $GLOBALS['__paystack_mock'] = function ($m, $path, $body) use (&$calls, &$verify, &$refunds, &$refundSeq, &$refundReply) {
+        $calls[] = [$m, $path, $body];
+        if ($m === 'POST' && $path === '/refund') {
+            if ($refundReply) return $refundReply;
+            $id = (string)(900 + ++$refundSeq); $refunds[$id] = 'pending';
+            return ['status' => true, 'data' => ['id' => (int)$id, 'status' => 'pending', 'amount' => $body['amount']]];
+        }
+        if ($m === 'GET' && str_starts_with($path, '/refund/')) { $id = basename($path); return ['status' => true, 'data' => ['id' => (int)$id, 'status' => $refunds[$id] ?? 'pending']]; }
+        if ($m === 'POST') return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/m' . count($calls)]];
+        $ref = basename($path); return $verify[$ref] ?? ['status' => true, 'data' => ['status' => 'abandoned']];
+    };
+    $op = static fn(string $o, array $a = [], string $who = 'NGG-2025-0099') => backend_dispatch($o, ['requesterId' => $who] + $a);
+    $save = static fn(array $d) => backend_dispatch('admin.shop.product.save', ['requesterId' => 'NGG-2025-0099', 'data' => $d]);
+    $tee = $save(['name' => 'Ledger tee', 'category' => 'Clothing', 'price' => 5000, 'options' => ['S', 'M'], 'stock' => ['S' => 4, 'M' => 2], 'status' => 'live', 'lowStock' => 2]);
+    $cap = $save(['name' => 'Ledger cap', 'category' => 'Accessories', 'price' => 3000, 'status' => 'live']);
+    $T = $tee['productId']; $C = $cap['productId'];
+    $moves = static fn(string $pid, string $v = '') => db_all('SELECT * FROM shop_stock_moves WHERE productId = ? AND variant = ? ORDER BY id', [$pid, $v]);
+    $sumOk = static function (string $pid) use ($moves) {
+        $pr = shop_product($pid); foreach (shop_stock_raw($pr) as $v => $n) if (array_sum(array_column($moves($pid, $v), 'delta')) !== $n) return false; return true;
+    };
+    chk('shop ledger · the opening stock is a "received" row per option, and the count equals the sum of the rows',
+        count($moves($T, 'S')) === 1 && $moves($T, 'S')[0]['reason'] === 'received' && (int)$moves($T, 'S')[0]['delta'] === 4 && $sumOk($T) && $moves($C) === []);
+    $save(['productId' => $T, 'name' => 'Ledger tee', 'category' => 'Clothing', 'price' => 5000, 'options' => ['S', 'M'], 'stock' => ['S' => 6, 'M' => 2], 'status' => 'live', 'lowStock' => 2]);
+    chk('shop ledger · changing a count in the product form writes a "correction" row for the difference only, with who',
+        count($moves($T, 'S')) === 2 && $moves($T, 'S')[1]['reason'] === 'correction' && (int)$moves($T, 'S')[1]['delta'] === 2 && $moves($T, 'S')[1]['byId'] === $A && count($moves($T, 'M')) === 1 && $sumOk($T));
+    $adj = static fn(array $a, string $who = 'NGG-2025-0099') => backend_dispatch('admin.shop.stock.adjust', ['requesterId' => $who, 'productId' => $T] + $a);
+    chk('shop ledger · a hand adjustment needs a reason that fits its sign, a note for a correction, a tracked product, and the content trust',
+        ($adj(['variant' => 'S', 'delta' => -1, 'reason' => 'received'])['error'] ?? '') === 'bad_delta' && ($adj(['variant' => 'S', 'delta' => 1, 'reason' => 'damaged'])['error'] ?? '') === 'bad_delta'
+        && ($adj(['variant' => 'S', 'delta' => 1, 'reason' => 'correction'])['error'] ?? '') === 'note_required' && ($adj(['variant' => 'XL', 'delta' => 1, 'reason' => 'received'])['error'] ?? '') === 'bad_option'
+        && (backend_dispatch('admin.shop.stock.adjust', ['requesterId' => $A, 'productId' => $C, 'variant' => '', 'delta' => 1, 'reason' => 'received'])['error'] ?? '') === 'untracked'
+        && ($adj(['variant' => 'S', 'delta' => 1, 'reason' => 'received'], $P)['error'] ?? '') === 'forbidden'
+        && ($adj(['variant' => 'S', 'delta' => -2, 'reason' => 'damaged', 'note' => 'Torn'])['balance'] ?? null) === 4 && $sumOk($T));
+    $tk = static fn(array $c) => backend_dispatch('admin.shop.stocktake', ['requesterId' => 'NGG-2025-0099', 'counts' => $c, 'note' => 'Friday count']);
+    $bad = $tk([['productId' => $T, 'variant' => 'S', 'counted' => 3], ['productId' => $T, 'variant' => 'XL', 'counted' => 1]]);
+    chk('shop ledger · a stock-take is validated whole: one bad line and nothing at all is changed, with the line named',
+        ($bad['error'] ?? '') === 'invalid' && ($bad['results'][0]['error'] ?? '') === 'bad_option' && shop_stock_raw(shop_product($T))['S'] === 4);
+    $good = $tk([['productId' => $T, 'variant' => 'S', 'counted' => 3], ['productId' => $T, 'variant' => 'M', 'counted' => 2]]);
+    chk('shop ledger · a stock-take posts the differences as "recount" rows and reports what already matched as unchanged',
+        ($good['changed'] ?? 0) === 1 && ($good['unchanged'] ?? 0) === 1 && array_column($moves($T, 'S'), 'reason')[count($moves($T, 'S')) - 1] === 'recount' && shop_stock_raw(shop_product($T))['S'] === 3 && $sumOk($T));
+    $st = $op('admin.shop.stock'); $byV = []; foreach ($st['variants'] as $v) if ($v['productId'] === $T) $byV[$v['variant']] = $v;
+    chk('shop low stock · at or below its line an option is low, at nought it is out, and the panel counts both; a plain member cannot read it',
+        $byV['S']['state'] === 'ok' && $byV['M']['state'] === 'low' && $byV['M']['lowAt'] === 2 && ($st['counts']['low'] ?? 0) >= 1 && ($op('admin.shop.stock', [], $P)['error'] ?? '') === 'forbidden');
+    $set = static fn(array $d) => backend_dispatch('admin.shop.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => $d]);
+    $set(['enabled' => true, 'deliveryOn' => true, 'deliveryFee' => 2000, 'lowStockDefault' => 5]);
+    chk('shop low stock · a product with no line of its own takes the shop default; bad settings are refused by name',
+        shop_low_at(['lowStock' => -1]) === 5 && shop_low_at(['lowStock' => 0]) === null && ($set(['expireHours' => 2])['error'] ?? '') === 'bad_expiry' && ($set(['lowStockDefault' => -3])['error'] ?? '') === 'bad_low_stock');
+    $GLOBALS['__mail_sink'] = []; setting_set('shop_digest_day', '', 'test');
+    $sent = shop_lowstock_digest(true);
+    $digest = array_values(array_filter($GLOBALS['__mail_sink'], static fn($m) => str_contains((string)$m['subject'], 'low on stock')));
+    chk('shop low stock · the digest goes to the staff who keep stock or money, lists the low options, and goes once a day',
+        $sent >= 1 && $digest && str_contains((string)$digest[0]['html'], 'Ledger tee (M)') && shop_lowstock_digest() === 0);
+    unset($GLOBALS['__mail_sink']);
+
+    // Codes.
+    $code = static fn(array $d, string $who = 'NGG-2025-0099') => backend_dispatch('admin.shop.code.save', ['requesterId' => $who, 'data' => $d]);
+    chk('shop codes · a code is money: a plain member cannot make one, and a bad one is refused by name',
+        ($code(['code' => 'FREE', 'kind' => 'percent', 'amount' => 10], $P)['error'] ?? '') === 'forbidden' && ($code(['code' => 'X', 'kind' => 'percent', 'amount' => 10])['error'] ?? '') === 'bad_code_name'
+        && ($code(['code' => 'TOOMUCH', 'kind' => 'percent', 'amount' => 101])['error'] ?? '') === 'bad_amount' && ($code(['code' => 'DATES', 'kind' => 'fixed', 'amount' => 5, 'startsAt' => '2026-12-02', 'endsAt' => '2026-12-01'])['error'] ?? '') === 'bad_date');
+    $code(['code' => 'ngg-10', 'kind' => 'percent', 'amount' => 10, 'minSpend' => 6000, 'perBuyer' => true, 'maxUses' => 2]);
+    $code(['code' => 'ALLOFF', 'kind' => 'percent', 'amount' => 100]);
+    $code(['code' => 'OLD', 'kind' => 'fixed', 'amount' => 500, 'endsAt' => '2020-01-01']);
+    $q = public_shop_quote(['items' => [['productId' => $T, 'option' => 'S', 'qty' => 2]], 'fulfil' => 'deliver', 'code' => 'ngg-10']);
+    chk('shop codes · a code comes off the goods, never the delivery (codes are case-blind)', !empty($q['ok']) && $q['discount'] === 1000 && $q['code'] === 'NGG-10' && $q['total'] === 10000 - 1000 + 2000);
+    chk('shop codes · below the minimum spend, ended, or unknown, a code is refused by name; 100% still leaves ₦100 to pay',
+        (public_shop_quote(['items' => [['productId' => $T, 'option' => 'S', 'qty' => 1]], 'fulfil' => 'collect', 'code' => 'NGG-10'])['error'] ?? '') === 'code_min_spend'
+        && (public_shop_quote(['items' => [['productId' => $T, 'option' => 'S', 'qty' => 1]], 'fulfil' => 'collect', 'code' => 'OLD'])['error'] ?? '') === 'bad_code'
+        && (public_shop_quote(['items' => [['productId' => $T, 'option' => 'S', 'qty' => 1]], 'fulfil' => 'collect', 'code' => 'NOPE'])['error'] ?? '') === 'bad_code'
+        && (public_shop_quote(['items' => [['productId' => $T, 'option' => 'S', 'qty' => 1]], 'fulfil' => 'collect', 'code' => 'ALLOFF'])['total'] ?? 0) === 100);
+
+    // Paying: the pickup code, Paystack's fee as reported, the code counted.
+    $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' AND online = 0 AND (programmes LIKE '%ngg%' OR programmes IS NULL) ORDER BY id LIMIT 1")['name'] ?? '');
+    $buyer = ['name' => 'Ada Obi', 'email' => 'ada.shopm@example.org', 'phone' => '08030000001'];
+    $pay = function (string $oid, ?string $ref = null) use (&$verify) {
+        $r = db_row('SELECT * FROM shop_orders WHERE orderId = ?', [$oid]); $ref = $ref ?? (string)$r['paystackRef']; $fee = paystack_family_charge((int)$r['total']);
+        $verify[$ref] = ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => ((int)$r['total'] + $fee) * 100, 'currency' => 'NGN', 'fees' => 18000, 'metadata' => ['orderId' => $oid, 'processingFee' => $fee]]];
+        return shop_paystack_verify($ref);
+    };
+    $o1 = public_shop_order(['items' => [['productId' => $T, 'option' => 'S', 'qty' => 2]], 'fulfil' => 'collect', 'centre' => $centre, 'buyer' => $buyer, 'code' => 'NGG-10']);
+    $pay($o1['orderId']);
+    $r1 = db_row('SELECT * FROM shop_orders WHERE orderId = ?', [$o1['orderId']]);
+    chk('shop · paid: a six-digit pickup code for a collection, Paystack\'s own fee kept as reported, the code\'s use counted, and the sale on the ledger against the order',
+        $r1['status'] === 'paid' && preg_match('/^\d{6}$/', (string)$r1['pickupCode']) && (int)$r1['gatewayFee'] === 180 && (int)$r1['discount'] === 1000
+        && (int)db_row("SELECT used FROM shop_codes WHERE code = 'NGG-10'")['used'] === 1
+        && (bool)db_row("SELECT 1 FROM shop_stock_moves WHERE orderId = ? AND reason = 'sale' AND delta = -2", [$o1['orderId']]) && $sumOk($T));
+    chk('shop codes · once per buyer: the same email cannot use the code again',
+        (public_shop_quote(['items' => [['productId' => $T, 'option' => 'S', 'qty' => 1], ['productId' => $C, 'qty' => 1]], 'fulfil' => 'collect', 'code' => 'NGG-10', 'buyer' => $buyer])['error'] ?? '') === 'code_already_used');
+    $pub = public_shop_order_get(['token' => $r1['token']])['order'];
+    chk('shop · the buyer\'s order page shows the pickup code while it waits, and the discount', $pub['pickupCode'] === $r1['pickupCode'] && $pub['discount'] === 1000);
+    $set1 = static fn(string $to, array $x = []) => backend_dispatch('admin.shop.order.set', ['requesterId' => 'NGG-2025-0099', 'orderId' => $x['id'], 'status' => $to] + $x);
+    chk('shop pickup · handing a collection over needs the pickup code: none is refused, a wrong one is refused, the right one completes',
+        ($set1('completed', ['id' => $o1['orderId']])['error'] ?? '') === 'code_required' && ($set1('completed', ['id' => $o1['orderId'], 'code' => '000000' === $r1['pickupCode'] ? '111111' : '000000'])['error'] ?? '') === 'bad_code'
+        && !empty($set1('completed', ['id' => $o1['orderId'], 'code' => $r1['pickupCode']])['ok'])
+        && str_contains((string)db_row("SELECT text FROM shop_order_events WHERE orderId = ? AND kind = 'completed'", [$o1['orderId']])['text'], 'pickup code checked'));
+    $o2 = public_shop_order(['items' => [['productId' => $C, 'qty' => 1]], 'fulfil' => 'collect', 'centre' => $centre, 'buyer' => $buyer]); $pay($o2['orderId']);
+    chk('shop pickup · …or without the code, with a reason, which is kept on the timeline',
+        !empty($set1('completed', ['id' => $o2['orderId'], 'reason' => 'Parent showed the email'])['ok'])
+        && str_contains((string)db_row("SELECT text FROM shop_order_events WHERE orderId = ? AND kind = 'completed'", [$o2['orderId']])['text'], 'without the pickup code: Parent showed the email'));
+
+    // Refunds.
+    $calls = [];
+    $rf = static fn(array $a) => backend_dispatch('admin.shop.refund', ['requesterId' => 'NGG-2025-0099', 'orderId' => $a['id']] + $a);
+    $terms = shop_refund_terms(shop_order_by('orderId', $o1['orderId']));
+    chk('shop refunds · the most that can go back is what the buyer was charged; the suggestion is the goods and delivery (not the Paystack charge they bore)',
+        $terms['max'] === (int)$r1['total'] + (int)$r1['processingFee'] && $terms['suggested'] === (int)$r1['total']);
+    chk('shop refunds · refused: a plain member, no reason, more than was charged, restocking more than was bought',
+        (backend_dispatch('admin.shop.refund', ['requesterId' => $P, 'orderId' => $o1['orderId'], 'reason' => 'Faded'])['error'] ?? '') === 'forbidden'
+        && ($rf(['id' => $o1['orderId'], 'reason' => ''])['error'] ?? '') === 'reason_required'
+        && ($rf(['id' => $o1['orderId'], 'reason' => 'Faded', 'amount' => $terms['max'] + 1])['error'] ?? '') === 'bad_amount'
+        && ($rf(['id' => $o1['orderId'], 'reason' => 'Faded', 'restock' => [['i' => 0, 'qty' => 3]]])['error'] ?? '') === 'bad_restock' && $calls === []);
+    $GLOBALS['__mail_sink'] = [];
+    $part = $rf(['id' => $o1['orderId'], 'reason' => 'One shirt faded', 'amount' => 4500, 'restock' => [['i' => 0, 'qty' => 1]]]);
+    $post = $calls[0] ?? [];
+    $ro = db_row('SELECT * FROM shop_orders WHERE orderId = ?', [$o1['orderId']]);
+    chk('shop refunds · a partial refund goes to Paystack for the transaction in kobo, waits as pending, and the restocked shirt is back on the shelf at once',
+        !empty($part['ok']) && $part['status'] === 'pending' && ($post[1] ?? '') === '/refund' && ($post[2]['transaction'] ?? '') === $r1['paystackRef'] && ($post[2]['amount'] ?? 0) === 450000
+        && $ro['refundState'] === 'pending' && (int)$ro['refunded'] === 0 && (bool)db_row("SELECT 1 FROM shop_stock_moves WHERE orderId = ? AND reason = 'refund' AND delta = 1", [$o1['orderId']]) && $sumOk($T));
+    chk('shop refunds · the buyer is not told "refunded" while Paystack still holds it', !array_filter($GLOBALS['__mail_sink'], static fn($m) => str_contains((string)$m['subject'], 'Your refund')));
+    $gid = (string)db_row('SELECT gatewayId FROM shop_refunds WHERE refundId = ?', [$part['refundId']])['gatewayId'];
+    $evt = ['event' => 'refund.processed', 'data' => ['id' => (int)$gid, 'status' => 'processed', 'transaction_reference' => $r1['paystackRef']]];
+    shop_refund_event($evt);
+    chk('shop refunds · a webhook body alone moves nothing: Paystack\'s own answer still says pending', db_row('SELECT status FROM shop_refunds WHERE refundId = ?', [$part['refundId']])['status'] === 'pending');
+    $refunds[$gid] = 'processed';
+    shop_refund_event($evt); shop_refund_event($evt);
+    $ro = db_row('SELECT * FROM shop_orders WHERE orderId = ?', [$o1['orderId']]);
+    $refMails = array_filter($GLOBALS['__mail_sink'], static fn($m) => str_contains((string)$m['subject'], 'Your refund'));
+    chk('shop refunds · processed on Paystack\'s word: the order shows ₦4,500 refunded (partial), the buyer is told once however often the webhook repeats',
+        db_row('SELECT status FROM shop_refunds WHERE refundId = ?', [$part['refundId']])['status'] === 'processed' && (int)$ro['refunded'] === 4500 && $ro['refundState'] === 'partial' && count($refMails) === 1);
+    unset($GLOBALS['__mail_sink']);
+    $t2 = shop_refund_terms(shop_order_by('orderId', $o1['orderId']));
+    chk('shop refunds · what is left to refund and to restock shrinks by what was done', $t2['max'] === $terms['max'] - 4500 && $t2['lines'][0]['returned'] === 1);
+    $f = $rf(['id' => $o1['orderId'], 'reason' => 'Rest of it', 'amount' => 1000]);
+    $refunds[(string)db_row('SELECT gatewayId FROM shop_refunds WHERE refundId = ?', [$f['refundId']])['gatewayId']] = 'failed';
+    db_update('shop_refunds', ['updatedAt' => '2020-01-01T00:00:00Z'], ['refundId' => $f['refundId']]);
+    shop_cron_tick();
+    chk('shop refunds · a refund Paystack fails is found by the hourly sweep, kept as failed, and its money is promised again',
+        db_row('SELECT status FROM shop_refunds WHERE refundId = ?', [$f['refundId']])['status'] === 'failed' && shop_refund_terms(shop_order_by('orderId', $o1['orderId']))['max'] === $t2['max']);
+    $refundReply = ['status' => false, 'message' => 'Transaction has been fully reversed'];
+    chk('shop refunds · Paystack refusing the request records nothing and says why', str_contains((string)($rf(['id' => $o1['orderId'], 'reason' => 'Again', 'amount' => 100])['detail'] ?? ''), 'fully reversed'));
+    $refundReply = null;
+    $o3 = public_shop_order(['items' => [['productId' => $T, 'option' => 'M', 'qty' => 1]], 'fulfil' => 'deliver', 'address' => '4 Aina Street, Ikeja, Lagos', 'buyer' => $buyer]); $pay($o3['orderId']);
+    $c3 = backend_dispatch('admin.shop.order.set', ['requesterId' => $A, 'orderId' => $o3['orderId'], 'status' => 'cancelled', 'reason' => 'Out of stock after all', 'refund' => 'paystack']);
+    chk('shop refunds · cancelling a paid order can refund it through Paystack in the same step: stock back, refund pending, no longer "due"',
+        !empty($c3['ok']) && ($c3['refund']['status'] ?? '') === 'pending' && db_row('SELECT refundState FROM shop_orders WHERE orderId = ?', [$o3['orderId']])['refundState'] === 'pending'
+        && (bool)db_row("SELECT 1 FROM shop_stock_moves WHERE orderId = ? AND reason = 'cancel' AND delta = 1", [$o3['orderId']])
+        && ($rf(['id' => $o3['orderId'], 'reason' => 'Shelf', 'amount' => 1, 'restock' => [['i' => 0, 'qty' => 1]]])['error'] ?? '') === 'bad_restock');
+
+    // Unpaid orders.
+    $o4 = public_shop_order(['items' => [['productId' => $C, 'qty' => 2]], 'fulfil' => 'collect', 'centre' => $centre, 'buyer' => $buyer]);
+    $firstRef = (string)db_row('SELECT paystackRef FROM shop_orders WHERE orderId = ?', [$o4['orderId']])['paystackRef'];
+    $again = public_shop_order_pay(['token' => db_row('SELECT token FROM shop_orders WHERE orderId = ?', [$o4['orderId']])['token']]);
+    $secondRef = (string)db_row('SELECT paystackRef FROM shop_orders WHERE orderId = ?', [$o4['orderId']])['paystackRef'];
+    chk('shop unpaid · the buyer can pay later from the order link: a fresh Paystack reference each time', !empty($again['ok']) && $secondRef !== $firstRef && preg_match('/^NGGS-[A-F0-9]{16}$/', $secondRef));
+    $GLOBALS['__mail_sink'] = [];
+    db_update('shop_orders', ['createdAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 3 * 3600)], ['orderId' => $o4['orderId']]);
+    shop_remind_unpaid(); shop_remind_unpaid();
+    chk('shop unpaid · after two hours the buyer gets one reminder with the link to pay — one, however often the job runs',
+        count(array_filter($GLOBALS['__mail_sink'], static fn($m) => str_contains((string)$m['subject'], 'waiting for payment'))) === 1
+        && ($op('admin.shop.order.remind', ['orderId' => $o4['orderId']])['error'] ?? '') === 'too_soon');
+    unset($GLOBALS['__mail_sink']);
+    db_update('shop_orders', ['createdAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 30 * 3600)], ['orderId' => $o4['orderId']]);
+    $n = shop_expire_pending(); $e4 = db_row('SELECT * FROM shop_orders WHERE orderId = ?', [$o4['orderId']]);
+    chk('shop unpaid · past `expireHours` an unpaid order is cancelled as expired, and says so on its timeline', $n >= 1 && $e4['status'] === 'cancelled' && $e4['cancelKind'] === 'expired'
+        && (bool)db_row("SELECT 1 FROM shop_order_events WHERE orderId = ? AND kind = 'expired'", [$o4['orderId']]));
+    $pay($o4['orderId'], $firstRef);
+    chk('shop unpaid · money that still arrives — even on the first checkout — revives an expired order and pays it, rather than leaving a refund to chase',
+        db_row('SELECT status FROM shop_orders WHERE orderId = ?', [$o4['orderId']])['status'] === 'paid' && (bool)db_row("SELECT 1 FROM shop_order_events WHERE orderId = ? AND kind = 'revived'", [$o4['orderId']]));
+    $o5 = public_shop_order(['items' => [['productId' => $C, 'qty' => 1]], 'fulfil' => 'collect', 'centre' => $centre, 'buyer' => $buyer]);
+    backend_dispatch('admin.shop.order.set', ['requesterId' => $A, 'orderId' => $o5['orderId'], 'status' => 'cancelled', 'reason' => 'Duplicate']);
+    $pay($o5['orderId']);
+    chk('shop unpaid · …but an order staff cancelled stays cancelled, and the money is put on the record for a person',
+        db_row('SELECT status FROM shop_orders WHERE orderId = ?', [$o5['orderId']])['status'] === 'cancelled' && (bool)db_row('SELECT 1 FROM unapplied_payments WHERE invoiceId = ?', [$o5['orderId']]));
+
+    // Pre-orders.
+    $hood = $save(['name' => 'Pre hoodie', 'category' => 'Clothing', 'price' => 12000, 'options' => ['M'], 'stock' => ['M' => 0], 'status' => 'live', 'preorderUntil' => gmdate('Y-m-d', time() + 5 * 86400)]);
+    $pq = public_shop_quote(['items' => [['productId' => $hood['productId'], 'option' => 'M', 'qty' => 3]], 'fulfil' => 'collect']);
+    chk('shop pre-order · until its cut-off a product sells past its stock and is not "sold out"; after it, stock is a limit again',
+        !empty($pq['ok']) && $hood['product']['soldOut'] === false && $hood['product']['preorderUntil'] !== ''
+        && ($save(['productId' => $hood['productId'], 'name' => 'Pre hoodie', 'category' => 'Clothing', 'price' => 12000, 'options' => ['M'], 'stock' => ['M' => 0], 'status' => 'live', 'preorderUntil' => '2020-01-01'])['product']['soldOut'] ?? false) === true
+        && ($save(['name' => 'Bad date', 'price' => 10, 'preorderUntil' => '2026-02-30'])['error'] ?? '') === 'bad_preorder');
+
+    // Table sales and cash sessions.
+    $sale = static fn(array $a, string $who = 'NGG-2025-0099') => backend_dispatch('admin.shop.pos.sale', ['requesterId' => $who] + $a);
+    chk('shop table · cash needs an open session (it goes in a drawer), and a table sale is money', ($sale(['method' => 'cash', 'items' => [['productId' => $C, 'qty' => 1]]])['error'] ?? '') === 'session_required'
+        && ($sale(['method' => 'transfer', 'items' => [['productId' => $C, 'qty' => 1]]], $P)['error'] ?? '') === 'forbidden');
+    $ss = $op('admin.shop.pos.session.open', ['label' => 'Open day', 'centre' => $centre, 'openingFloat' => 5000]); $SID = $ss['session']['sessionId'] ?? '';
+    $mBefore = shop_stock_raw(shop_product($T))['M'];
+    $s1 = $sale(['method' => 'cash', 'sessionId' => $SID, 'items' => [['productId' => $T, 'variant' => 'M', 'qty' => $mBefore + 2], ['productId' => $C, 'qty' => 1]]]);
+    $so = db_row('SELECT * FROM shop_orders WHERE orderId = ?', [$s1['orderId'] ?? '']);
+    chk('shop table · a sale past the recorded stock goes through (a queue is never stalled), below nought, with a warning, as a "pos" row on the ledger',
+        !empty($s1['ok']) && $so['channel'] === 'pos' && $so['status'] === 'completed' && $so['payMethod'] === 'cash' && $s1['warnings'] && shop_stock_raw(shop_product($T))['M'] === -2
+        && shop_stock(shop_product($T))['M'] === 0 && (bool)db_row("SELECT 1 FROM shop_stock_moves WHERE orderId = ? AND reason = 'pos'", [$s1['orderId']]) && $sumOk($T));
+    $sale(['method' => 'pos', 'sessionId' => $SID, 'items' => [['productId' => $C, 'qty' => 1]]]);
+    $cashTotal = (int)$so['total'];
+    $outside = $rf(['id' => $s1['orderId'], 'reason' => 'Changed mind', 'amount' => 3000, 'method' => 'outside']);
+    chk('shop table · a table sale is refunded outside Paystack, at once', !empty($outside['ok']) && $outside['status'] === 'processed'
+        && ($rf(['id' => $s1['orderId'], 'reason' => 'x again', 'amount' => 1, 'method' => 'paystack'])['error'] ?? '') === 'not_paystack');
+    $row = shop_session_row(db_row('SELECT * FROM shop_cash_sessions WHERE sessionId = ?', [$SID]));
+    chk('shop table · the drawer expects the float plus cash taken, less cash paid back; card-terminal sales are counted apart',
+        $row['expected'] === 5000 + $cashTotal - 3000 && $row['byMethod']['pos'] === 3000 && $row['sales'] === 2);
+    $close = static fn(array $a) => backend_dispatch('admin.shop.pos.session.close', ['requesterId' => 'NGG-2025-0099', 'sessionId' => $SID] + $a);
+    chk('shop table · closing a short drawer needs a reason', ($close(['counted' => $row['expected'] - 500])['error'] ?? '') === 'note_required');
+    $cl = $close(['counted' => $row['expected'] - 500, 'note' => 'Change given twice']);
+    chk('shop table · …the closed session holds expected, counted and the difference',
+        ($cl['session']['difference'] ?? 0) === -500 && $cl['session']['status'] === 'closed' && ($sale(['method' => 'cash', 'sessionId' => $SID, 'items' => [['productId' => $C, 'qty' => 1]]])['error'] ?? '') === 'session_closed');
+
+    // Exchange.
+    $o6 = public_shop_order(['items' => [['productId' => $T, 'option' => 'S', 'qty' => 2]], 'fulfil' => 'collect', 'centre' => $centre, 'buyer' => ['name' => 'Kemi', 'email' => 'kemi.x@example.org', 'phone' => '08030000002']]);
+    $pay($o6['orderId']);
+    $sB = shop_stock_raw(shop_product($T));
+    $ex = $op('admin.shop.order.exchange', ['orderId' => $o6['orderId'], 'line' => 0, 'to' => 'M', 'qty' => 1]);
+    $lines = shop_lines(shop_order_by('orderId', $o6['orderId'])); $sA = shop_stock_raw(shop_product($T));
+    chk('shop exchange · the wrong size: one S comes back, one M goes out, the line splits at the price charged, and no money moves',
+        !empty($ex['ok']) && count($lines) === 2 && $lines[0]['qty'] === 1 && $lines[1]['option'] === 'M' && $lines[1]['price'] === 5000
+        && $sA['S'] === $sB['S'] + 1 && $sA['M'] === $sB['M'] - 1 && (int)shop_order_by('orderId', $o6['orderId'])['total'] === 10000 && $sumOk($T));
+
+    // Detail, notes, lists, reports, export.
+    $op('admin.shop.order.note', ['orderId' => $o6['orderId'], 'text' => 'Called the parent']);
+    $det = $op('admin.shop.order.get', ['orderId' => $o6['orderId']]);
+    chk('shop order · the detail is a timeline: created, paid, exchange, the staff note with its author', array_column($det['events'], 'kind') === ['created', 'paid', 'exchange', 'note']
+        && $det['events'][3]['by'] === $A && $det['refundTerms']['max'] > 0);
+    $pg = $op('admin.shop.orders', ['page' => 0, 'pageSize' => 2]);
+    $all = $op('admin.shop.orders', ['page' => 0, 'pageSize' => 100]);
+    chk('shop lists · orders are paged on the server with the true total; a bad sort falls back rather than failing',
+        count($pg['orders']) === 2 && $pg['total'] === count($all['orders']) && $pg['total'] >= 8 && !empty($op('admin.shop.orders', ['sort' => 'DROP TABLE', 'page' => 0])['ok']));
+    $tomorrow = gmdate('Y-m-d', time() + 3600 + 86400);
+    chk('shop lists · a date range and the channel filter apply above the page', $op('admin.shop.orders', ['from' => $tomorrow, 'page' => 0])['total'] === 0
+        && $op('admin.shop.orders', ['channel' => 'pos', 'page' => 0])['total'] === 2);
+    $rep = $op('admin.shop.report', []);
+    $sm = $rep['summary'];
+    chk('shop report · gross, the charge buyers bore, Paystack\'s fees as reported, refunds and net add up; table sales and online are told apart',
+        $sm['net'] === $sm['gross'] + $sm['buyerCharges'] - $sm['gatewayFees'] - $sm['refunds'] && $sm['refunds'] === 4500 + 3000 && $sm['gatewayFees'] >= 180
+        && ($rep['byChannel']['pos'] ?? 0) > 0 && ($rep['byMethod']['cash'] ?? 0) > 0 && $rep['today']['salesToday']['orders'] >= 1);
+    $tees = array_values(array_filter($rep['byProduct'], static fn($r) => $r['productId'] === $T && $r['variant'] === 'S'));
+    chk('shop report · sales by product and size (the print order for a pre-order is this list for one product)', $tees && $tees[0]['qty'] === 3
+        && array_unique(array_column($op('admin.shop.report', ['productId' => $C])['byProduct'], 'productId')) === [$C]);
+    chk('shop report · money: a plain member gets neither the report nor the export', ($op('admin.shop.report', [], $P)['error'] ?? '') === 'forbidden' && ($op('admin.shop.orders.export', [], $P)['error'] ?? '') === 'forbidden');
+    $ex = $op('admin.shop.orders.export', ['channel' => 'online']);
+    chk('shop export · the CSV rows carry the items, the code, the fees and the refunds', $ex['rows'] && isset($ex['rows'][0]['paystackFee'], $ex['rows'][0]['refunded']) && str_contains($ex['rows'][0]['items'], '×'));
+    chk('shop wiring · the webhook routes refund events to the shop, and the hourly job is registered',
+        str_contains((string)file_get_contents(__DIR__ . '/../hooks/paystack.php'), 'shop_refund_event') && isset(web_cron_jobs()['shop']));
+
+    foreach (['shop_orders', 'shop_products', 'shop_stock_moves', 'shop_order_events', 'shop_refunds', 'shop_cash_sessions', 'shop_codes'] as $t) db_exec("DELETE FROM $t");
+    db_exec("DELETE FROM settings WHERE settingKey IN ('shop', 'shop_digest_day')");
+    db_exec("DELETE FROM unapplied_payments WHERE reference LIKE 'NGGS-%'");
     $GLOBALS['CONFIG']['paystack'] = $keepPs; $GLOBALS['__paystack_mock'] = $keepMock;
 })();
 
