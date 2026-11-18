@@ -534,6 +534,193 @@ function crMoOwesBlocks(d, ctx) {
     emptyText: "Nobody is in arrears. Find any account above to see what someone has paid." });
   return out;
 }
+/* ══ Outstanding balances, as a document to send ═══════════════════════════
+   The list a coordinator posts to a parents' group or prints for the desk:
+   every member owing, largest first, fifteen to a part — Member, Centre,
+   Days (since the oldest unpaid charge fell due), Dues, Fines, Payable.
+
+   ONE drawing (crBalDraw) feeds both the PNG parts and the PDF, so the image
+   sent on WhatsApp and the page printed are the same page. The PDF is A4:
+   the page is drawn at A4's proportions and placed edge to edge. The CSV has
+   the same rows and figures, plus what the Dues column is made of.
+
+   Dues + Fines = Payable on every row, by construction: Dues is what is
+   payable that is not a fine (monthly dues, membership, training owed on
+   leaving, adjustments). The CSV splits it so nothing is hidden. */
+const CR_BAL_PER_PART = 15;
+const CR_BAL_W = 772, CR_BAL_H = 1092;          // design units; 772 × 1092 is A4 (1 : 1.4142)
+const CR_BAL_INK = "#111418", CR_BAL_MUTE = "#5f6672", CR_BAL_HAIR = "#e4e6ea", CR_BAL_GOLD = "#e8ac14";
+const CR_BAL_FONT = "NGGBalances";
+const CR_BAL_CENTRE_X = 332, CR_BAL_CENTRE_W = 58;   // the Centre column runs to the "Days" heading (397), less a gap
+
+/** The rows of the document, from admin.fees.arrears: largest payable first, ties by name. */
+function crBalRows(arrears) {
+  return (arrears || []).filter(r => (r.payable || 0) > 0).map(r => {
+    const made = r.made || {}, payable = r.payable || 0;
+    const fines = Math.min(payable, Math.max(0, made.fine || 0));
+    return { memberId: r.memberId, displayId: r.displayId || "", name: r.fullName || r.memberId, centre: r.centre || "",
+      days: r.daysOverdue || 0, oldestDue: r.oldestDue || "", dues: payable - fines, fines, payable,
+      monthly: made.dues || 0, membership: made.membership || 0, training: made.training || 0, other: made.other || 0 };
+  }).sort((a, b) => b.payable - a.payable || a.name.localeCompare(b.name));
+}
+/** Fifteen to a part. An empty list is no parts — there is nothing to send. */
+function crBalParts(rows) {
+  const parts = [];
+  for (let i = 0; i < rows.length; i += CR_BAL_PER_PART) parts.push(rows.slice(i, i + CR_BAL_PER_PART));
+  return parts;
+}
+function crBalDateLabel(d) {
+  try { return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Lagos" }); }
+  catch (_) { return d.toISOString().slice(0, 10); }
+}
+
+/* The house face (Geist, self-hosted for the printed reports), registered for
+   the canvas under its own name. Its latin-ext file is the one that carries ₦.
+   A failed load falls back to the system sans, which also draws ₦. */
+let _crBalFontsP = null;
+function crBalFonts() {
+  if (_crBalFontsP) return _crBalFontsP;
+  _crBalFontsP = (async () => {
+    if (!window.FontFace || !document.fonts) return false;
+    const base = "/assets/report/fonts/geist-";
+    const faces = [];
+    [400, 600, 700].forEach(w => {
+      faces.push(new FontFace(CR_BAL_FONT, "url(" + base + "latin-" + w + "-normal.woff2) format('woff2')", { weight: String(w) }));
+      faces.push(new FontFace(CR_BAL_FONT, "url(" + base + "latin-ext-" + w + "-normal.woff2) format('woff2')", { weight: String(w), unicodeRange: "U+0100-02AF, U+20A6" }));
+    });
+    const got = await Promise.all(faces.map(f => f.load().then(x => { document.fonts.add(x); return true; }, () => false)));
+    return got.every(Boolean);
+  })();
+  return _crBalFontsP;
+}
+function crBalFit(g, s, maxW) {
+  if (g.measureText(s).width <= maxW) return s;
+  let t = s;
+  while (t.length > 1 && g.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+  return t.trimEnd() + "…";
+}
+/**
+ * Draw one part onto a canvas, at `scale` device pixels per design unit.
+ * meta: { index, count, members, total, dateLabel, truncatedOf }
+ */
+function crBalDraw(canvas, rows, meta, scale) {
+  canvas.width = Math.round(CR_BAL_W * scale); canvas.height = Math.round(CR_BAL_H * scale);
+  const g = canvas.getContext("2d");
+  g.setTransform(scale, 0, 0, scale, 0, 0);
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, CR_BAL_W, CR_BAL_H);
+  const F = (w, px) => w + " " + px + "px " + CR_BAL_FONT + ", Geist, Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif";
+  const L = 46, R = CR_BAL_W - 46;
+  const text = (s, x, y, font, color, align) => { g.font = font; g.fillStyle = color; g.textAlign = align || "left"; g.textBaseline = "alphabetic"; g.fillText(s, x, y); };
+
+  // Head: title and part on one line; what it is and how many on the next; the gold rule.
+  text("Outstanding balances", L, 77, F(700, 31), CR_BAL_INK);
+  if (meta.count > 1) text("Part " + (meta.index + 1) + " of " + meta.count, R, 67, F(600, 15), CR_BAL_INK, "right");
+  text("Dues and fines on the account · " + meta.dateLabel, L, 105, F(400, 14.5), CR_BAL_MUTE);
+  text(meta.members + (meta.members === 1 ? " member" : " members"), R, 105, F(400, 14.5), CR_BAL_MUTE, "right");
+  g.fillStyle = CR_BAL_GOLD; g.fillRect(L, 122, R - L, 2.5);
+
+  // Column heads, then the black rule.
+  const C = { centre: CR_BAL_CENTRE_X, daysR: 426, dues: 533, fines: 633, pay: R };
+  const hf = F(400, 12.5);
+  text("Member", L, 184, hf, CR_BAL_MUTE); text("Centre", C.centre, 184, hf, CR_BAL_MUTE); text("Days", 397, 184, hf, CR_BAL_MUTE);
+  text("Dues", C.dues, 184, hf, CR_BAL_MUTE, "right"); text("Fines", C.fines, 184, hf, CR_BAL_MUTE, "right"); text("Payable", C.pay, 184, hf, CR_BAL_MUTE, "right");
+  g.fillStyle = CR_BAL_INK; g.fillRect(L, 202, R - L, 1.25);
+
+  // Rows: 50 units each, a hairline under every one.
+  rows.forEach((r, i) => {
+    const y = 234 + i * 50;
+    g.font = F(400, 17); text(crBalFit(g, r.name, C.centre - L - 18), L, y, F(400, 17), CR_BAL_INK);
+    g.font = F(400, 15.5); text(crBalFit(g, r.centre || "—", CR_BAL_CENTRE_W), C.centre, y, F(400, 15.5), CR_BAL_MUTE);
+    text(r.days + "d", C.daysR, y, F(400, 15.5), CR_BAL_MUTE, "right");
+    text(fmtMoney(r.dues), C.dues, y, F(400, 15.5), CR_BAL_INK, "right");
+    text(fmtMoney(r.fines), C.fines, y, F(400, 15.5), CR_BAL_INK, "right");
+    text(fmtMoney(r.payable), C.pay, y, F(700, 17), CR_BAL_INK, "right");
+    g.fillStyle = CR_BAL_HAIR; g.fillRect(L, y + 19, R - L, 1);
+  });
+
+  // Foot: what "Days" means, and the whole book's total on every part.
+  g.fillStyle = CR_BAL_HAIR; g.fillRect(L, CR_BAL_H - 66, R - L, 1);
+  text("Days: since the oldest unpaid charge fell due." + (meta.truncatedOf ? " The first " + meta.members + " of " + meta.truncatedOf + " owing." : ""),
+    L, CR_BAL_H - 40, F(400, 11.5), CR_BAL_MUTE);
+  text("Total payable " + fmtMoney(meta.total), R, CR_BAL_H - 40, F(600, 12.5), CR_BAL_INK, "right");
+  return canvas;
+}
+function crBalSave(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+function crBalCanvasBlob(canvas) {
+  return new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error("render_failed")), "image/png"));
+}
+
+/** Everyone owing in the operator's centres (the server scopes), fetched whole — not the drawn page. */
+async function crBalLoad(centre) {
+  const arr = await NGGApi.admin.fees.arrears(1000);   // FEES_ARREARS_PAGE_MAX
+  let rows = crBalRows(arr.arrears);
+  if (centre) rows = rows.filter(r => r.centre === centre);
+  return { rows, truncatedOf: !centre && arr.truncated ? arr.matched || 0 : 0 };
+}
+
+/** Build and download one format. Returns a sentence for the toast. */
+async function crBalExport(fmt, centre) {
+  const { rows, truncatedOf } = await crBalLoad(centre);
+  if (!rows.length) throw Object.assign(new Error("empty"), { data: { message: centre ? "Nobody at " + centre + " owes anything." : "Nobody owes anything — there is nothing to download." } });
+  const now = new Date(), stamp = now.toISOString().slice(0, 10);
+  const slug = "outstanding-balances" + (centre ? "-" + centre.toLowerCase().replace(/[^a-z0-9]+/g, "-") : "") + "-" + stamp;
+  const total = rows.reduce((s, r) => s + r.payable, 0);
+  if (fmt === "csv") {
+    crDownloadCsv(slug, ["Member ID", "Printed ID", "Member", "Centre", "Days", "Oldest unpaid due", "Dues", "Fines", "Payable",
+        "Dues: monthly", "Dues: membership", "Dues: training owed", "Dues: other"],
+      rows.map(r => [r.memberId, r.displayId, r.name, r.centre, r.days, r.oldestDue, r.dues, r.fines, r.payable,
+        r.monthly, r.membership, r.training, Math.max(0, r.dues - r.monthly - r.membership - r.training)]));
+    return crPlural(rows.length, "member") + " in the CSV · " + fmtMoney(total) + " payable.";
+  }
+  await crBalFonts();
+  const parts = crBalParts(rows);
+  const meta = i => ({ index: i, count: parts.length, members: rows.length, total, dateLabel: crBalDateLabel(now) + (centre ? " · " + centre : ""), truncatedOf });
+  if (fmt === "pdf") {
+    const jspdf = await loadVendor("jspdf");
+    const doc = new jspdf.jsPDF({ unit: "pt", format: "a4", orientation: "portrait", compress: true });
+    const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
+    parts.forEach((p, i) => {
+      if (i) doc.addPage("a4", "portrait");
+      const c = crBalDraw(document.createElement("canvas"), p, meta(i), 3);   // ~280 dpi on A4
+      doc.addImage(c, "PNG", 0, 0, pw, ph, undefined, "FAST");
+    });
+    doc.setProperties({ title: "Outstanding balances — " + crBalDateLabel(now), subject: "Dues and fines on the account", creator: "NGG Control Room" });
+    crBalSave(doc.output("blob"), slug + ".pdf");
+    return crPlural(parts.length, "page") + " · " + crPlural(rows.length, "member") + " · " + fmtMoney(total) + " payable.";
+  }
+  // Images: one PNG per part, as separate files — the shape they are posted in.
+  for (let i = 0; i < parts.length; i++) {
+    const blob = await crBalCanvasBlob(crBalDraw(document.createElement("canvas"), parts[i], meta(i), 2));
+    crBalSave(blob, slug + (parts.length > 1 ? "-part-" + (i + 1) + "-of-" + parts.length : "") + ".png");
+    if (i < parts.length - 1) await new Promise(r => setTimeout(r, 350));   // browsers drop a burst of downloads
+  }
+  return crPlural(parts.length, "image") + " · " + crPlural(rows.length, "member") + (parts.length > 1 ? ". If the browser asks to allow several downloads, allow it." : ".");
+}
+function crMoBalances(ctx) {
+  const rows = crBalRows(((ctx.data || {}).arr || {}).arrears);
+  const centres = Array.from(new Set(rows.map(r => r.centre).filter(Boolean))).sort();
+  ctx.form({
+    title: "Download outstanding balances", submit: "Download", busyLabel: "Preparing…",
+    intro: "Everyone owing in your centres, largest first, fifteen to a part: member, centre, days since the oldest unpaid charge fell due, dues, fines and what is payable.",
+    values: { fmt: "png", centre: "" },
+    fields: [
+      { id: "fmt", l: "As", type: "chips", req: true, opts: [["png", "Images (PNG)"], ["pdf", "PDF"], ["csv", "CSV"]] },
+      centres.length > 1 ? { id: "centre", l: "Centre", type: "select", ph: "All your centres", opts: centres.map(c => [c, c]) } : null,
+    ].filter(Boolean),
+    onSubmit: async v => {
+      try { return { msg: await crBalExport(v.fmt, v.centre || "") }; }
+      catch (e) { throw Object.assign(new Error((e && e.message) || "failed"), { data: { message: (e && e.data && e.data.message) || crMoErr(e, "Couldn’t prepare the download.") } }); }
+    },
+    done: (v, r) => r.msg,
+  });
+}
+
 /* ══ Transactions: every naira, who keyed it ════════════════════════════════
    The question an auditor asks first — what came in this month, by what
    means, and who keyed it — answered across every account in scope, for a
@@ -927,6 +1114,8 @@ Object.assign(CR_TAB_DEFS, {
       out.push({ l: "Bring charges up to date", icon: "arrows-clockwise", disabled: !d.cfg.enabled, why: "Dues are switched off — nothing is charged.", run: () => crMoAccrue(ctx) });
       /* Everyone owing, in your centres, grouped by centre — the same figures as Who owes, as an A4 document. */
       out.push({ l: "Dues register (PDF)", icon: "file-pdf", disabled: !((d.arr || {}).arrears || []).length, why: "Nobody owes anything to put in a register.", run: () => crMoPrint("register", {}) });
+      /* The balances as images, a PDF or a CSV — to post to families or print for the desk. */
+      out.push({ l: "Download balances", icon: "download-simple", disabled: !((d.arr || {}).arrears || []).length, why: "Nobody owes anything — there is nothing to download.", run: () => crMoBalances(ctx) });
       return out;
     },
     blocks: (d, ctx) => {

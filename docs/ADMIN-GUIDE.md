@@ -5238,6 +5238,13 @@ and did not sign out. A coordinator scoped to two centres only sees those two. S
   - **Money → Dues & arrears → Dues register (PDF)**: every family owing in your centres, grouped by centre, with
     what each balance is made of, how old the oldest unpaid charge is, the last payment, and each centre's total.
     The same figures as "Who owes".
+  - **Money → Dues & arrears → Download balances**: everyone owing in your centres, largest first, as
+    **Images (PNG)**, a **PDF** or a **CSV**. Fifteen members to a part ("Part 1 of 3"): member, centre, **Days**
+    (days since the oldest unpaid charge fell due), dues, fines and payable, with the total payable at the foot
+    of every part. The images are one file per part, ready to post to a parents' group; the PDF is the same
+    pages on A4. **Dues + Fines = Payable** on every row: "Dues" is everything payable that is not a fine
+    (monthly dues, membership, training owed on leaving, adjustments), and the CSV splits it into those parts.
+    Pick a centre in the form to send one centre's list. If the browser asks to allow several downloads, allow it.
   - **A member's account → Statement (PDF)**: every charge and payment with the running balance, what is still owed
     and the balance to pay.
   - Families have the same statement in the family account (Fees → Statement → PDF), and a member has it on their

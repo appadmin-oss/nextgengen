@@ -1,6 +1,6 @@
 {
-  "buildId": "9b79b25bd8",
-  "builtAt": "2026-11-17T19:00:01.777Z",
+  "buildId": "4f9f2dc0bc",
+  "builtAt": "2026-11-18T08:49:06.090Z",
   "bundle": {
     "file": "app.f73cf7e3f8.min.js",
     "bytes": 2376497,
@@ -8,9 +8,9 @@
     "files": 49
   },
   "more": {
-    "file": "app-more.0029c47347.min.js",
-    "bytes": 3847002,
-    "gzipBytes": 1093415,
+    "file": "app-more.c2a2e13c1b.min.js",
+    "bytes": 3854351,
+    "gzipBytes": 1095722,
     "files": 63,
     "list": [
       "src/modules/idcards/ids-core.jsx",
@@ -80,7 +80,7 @@
   },
   "assets": {
     "app.min.js": "app.f73cf7e3f8.min.js",
-    "app-more.min.js": "app-more.0029c47347.min.js",
+    "app-more.min.js": "app-more.c2a2e13c1b.min.js",
     "styles.css": "styles.a089df9dbd.css",
     "styles-app.css": "styles-app.b20b968e57.css",
     "data.js": "data.ec97c65376.js",
@@ -88,5 +88,5 @@
     "api-client.js": "api-client.b70c1f7099.js",
     "outbox.js": "outbox.042a8c9122.js"
   },
-  "node": "v22.23.4"
+  "node": "v22.23.5"
 }

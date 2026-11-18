@@ -7520,3 +7520,17 @@ Everything needed to continue is in two places:
   and the environment notes.
 - `HANDOFF-NEXT-AGENT.md`: every open thread, including online membership (the owner's new pricing:
   no yearly fee, $10 with a mentor, $5 a course with an instructor) and the Labs exam licence slot.
+
+## 18 Nov 2026 — Outstanding balances as images, PDF and CSV
+
+The owner asked to download fines and dues "like this" (three phone screenshots of an "Outstanding balances"
+sheet), as images, PDF and CSV.
+- **Money → Dues & arrears → Download balances** (`crMoBalances` in `cr-tab-money.jsx`): a form picks the format
+  (Images, PDF, CSV) and, with more than one centre owing, a centre. It fetches the whole arrears list
+  (`admin.fees.arrears`, limit 1000), not the drawn page.
+- One drawing, `crBalDraw`, on a canvas in the self-hosted Geist (its latin-ext file carries ₦), feeds both the
+  PNG parts (2×) and the PDF (jsPDF, A4, 3×), so the posted image and the printed page cannot differ. Fifteen
+  rows a part, largest payable first; "Days" is `daysOverdue`; Dues = payable − fines, split in the CSV.
+- `tests/balances-export.test.js` (`npm run test:balances`, in `test:all`): 32 members owing over two centres;
+  checks the three PNGs, the three-page A4 PDF, the CSV rows and sums, the centre filter, and that a centre
+  name is drawn whole (it failed with the first, too-narrow column, and the check was proven against it).
