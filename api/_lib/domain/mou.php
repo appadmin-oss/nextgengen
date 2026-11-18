@@ -91,9 +91,11 @@ function mou_sections(): array {
          'short' => 'Membership lasts 3 years: about {trainingMonths} months of training, then {serviceMonths} months of service. Completing it makes your child an Afrovanguard Ambassador.',
          'body' => ['NGG is a finishing school. The Member will learn and serve at NGG for three (3) years from the date their membership starts: about {trainingMonths} months of training, followed by about {serviceMonths} months of service, in which the Member uses their skills for NGG and mentors younger members.',
                     'On completing the three years satisfactorily, the Member becomes an official Ambassador of Afrovanguard.']],
-        ['id' => 'provides', 'title' => 'What NGG provides',
-         'short' => 'Mentoring, training in your child’s course, preparation for competitions and scholarships, an ID card, and regular reports to you.',
-         'body' => ['NGG will provide: a named mentor; training in the Member’s chosen division and course; preparation for local and international competitions and scholarships; an NGG ID card; a safe, supervised place to learn; and progress reports and updates to the Family through the NGG Family app and by email.']],
+        ['id' => 'provides', 'title' => 'The NGG scholarship: what NGG provides',
+         'short' => 'Your child’s place is an NGG scholarship worth {scholarshipValue} over the three years. NGG funds it: mentoring, training, competition preparation, an ID card and reports to you.',
+         'body' => ['The Member’s place at NGG is a scholarship awarded by NGG, valued at {scholarshipValue} over the three years ("the Scholarship"). NGG funds it. What the Family pays (clause 6) is a contribution towards running the centre; it is not the price of the place.',
+                    'Under the Scholarship NGG will provide: a named mentor; training in the Member’s chosen division and course; preparation for local and international competitions and scholarships; an NGG ID card; a safe, supervised place to learn; and progress reports and updates to the Family through the NGG Family app and by email.',
+                    'The Scholarship is held for as long as the Member and the Family keep the commitments in this Agreement. It is not paid in cash, cannot be exchanged or transferred, and its value is stated so the Family knows what the Member receives. The training place in clause 6 is part of it.']],
         ['id' => 'member', 'title' => 'What the Member commits to',
          'short' => 'Come to every class on time, practise weekly, join the monthly community engagement, carry the ID card, and follow the Membership Policy.',
          'body' => ['The Member will: attend classes, arriving on time as the Membership Policy sets out, and give at least one week’s written notice of any planned absence to ' . MOU_CONTACT . '; attend one practice session a week at the Okun Alimosho office to practise what has been taught; take part in the community engagement exercise held once a month, which is required of every member; carry the NGG ID card at all times; and follow the NGG Membership Policy in the Membership Handbook.']],
@@ -104,7 +106,7 @@ function mou_sections(): array {
         ['id' => 'fees', 'title' => 'Fees and contributions',
          'short' => 'A monthly support contribution of {monthlyDues}{membershipLine}. The training place ({trainingFee}) is written off as your child serves — you only pay it if you end the Agreement early.',
          'body' => ['The Family will pay a monthly support contribution of {monthlyDues}, due at the end of each month, towards the running and maintenance of the CAC Centre.{membershipSentence}',
-                    'The training NGG provides is valued at {trainingFee} ("the training place"). It is not a bill while the Member continues: it is written down as the Member serves, and by the end of the three years it is written down in full. If the Agreement ends early, the part not yet written down becomes payable (clause 12).',
+                    'Within the Scholarship, the training NGG provides is valued at {trainingFee} ("the training place"). It is not a bill while the Member continues: it is written down as the Member serves, and by the end of the three years it is written down in full. If the Agreement ends early, the part not yet written down becomes payable (clause 12).',
                     'Fines under the Membership Policy, and any repair or replacement under clause 10, are added to the Member’s account. The Family can see the account and every payment in the NGG Family app.']],
         ['id' => 'conduct', 'title' => 'Conduct and discipline',
          'short' => 'Rules and fines are in the Membership Policy. Discipline is step by step; a suspension is not the end of membership.',
@@ -170,11 +172,19 @@ function mou_figures(): array {
         'membershipSentence' => $mem > 0 ? ' A membership fee of ' . $money($mem) . ' is due on joining' . ($every > 0 ? ' and every ' . ($every === 12 ? 'year' : $every . ' months') . ' after' : '') . '.' : '',
         'trainingMonths' => (string)(int)($cfg['trainingMonths'] ?? 18),
         'serviceMonths' => (string)(int)($cfg['serviceMonths'] ?? 18),
+        'scholarshipValue' => $money((int)($cfg['scholarshipValue'] ?? 1500000)),
     ];
+}
+
+/** The scholarship as data, for the award panel on the page, the paper and the email. */
+function mou_scholarship(array $fig): array {
+    return ['value' => (string)($fig['scholarshipValue'] ?? mou_figures()['scholarshipValue']), 'years' => 3,
+            'family' => (string)($fig['monthlyDues'] ?? '') . ' a month' . (string)($fig['membershipLine'] ?? '')];
 }
 
 /** The sections with a record's frozen figures filled in. */
 function mou_terms(array $figures): array {
+    $figures += mou_figures();   // a figure added after an agreement was frozen is read from today's settings
     $fill = static fn($s) => strtr($s, array_combine(array_map(static fn($k) => '{' . $k . '}', array_keys($figures)), array_values($figures)));
     return array_map(static fn($s) => ['id' => $s['id'], 'title' => $s['title'], 'short' => $fill($s['short']), 'body' => array_map($fill, $s['body'])], mou_sections());
 }
@@ -220,6 +230,9 @@ function mou_prefill(array $m): array {
  */
 function mou_start(array $m, string $by, bool $send = true): array {
     if (function_exists('member_is_ngg') && !member_is_ngg($m)) return ['ok' => false, 'error' => 'not_ngg', 'message' => 'The Membership Agreement is for NGG members, not Summer School.'];
+    /* Owner, 18 Nov 2026: "the MoU does not apply to online members, the agreement varies". This agreement is the
+       centre's — the CAC Centre contribution, the weekly practice at the office, the inked copy brought in. */
+    if (mou_not_for($m)) return ['ok' => false, 'error' => 'online_member', 'message' => 'This Membership Agreement is for members at a centre. Online members have their own terms.'];
     $cur = mou_current((string)$m['memberId']);
     if ($cur) return ['ok' => true, 'mouId' => (string)$cur['mouId'], 'status' => (string)$cur['status'], 'existed' => true];
     $token = mou_token(); $now = now_iso();
@@ -237,6 +250,9 @@ function mou_start(array $m, string $by, bool $send = true): array {
     return ['ok' => true, 'mouId' => $id, 'status' => 'awaiting_family', 'link' => $link, 'sentTo' => $to];
 }
 
+/** Members this agreement is not for: online members (their centre is an online one). */
+function mou_not_for(array $m): bool { return function_exists('member_is_online') && member_is_online($m); }
+
 /** Everyone the family's link goes to: the member record's parent email and the linked guardians. */
 function mou_family_emails(array $m): array {
     $to = [];
@@ -253,7 +269,7 @@ function mou_send_invite(array $m, string $link, bool $reminder): array {
     foreach ($to as $addr) {
         @send_mail($addr, ($reminder ? 'Reminder: ' : '') . 'Please read and sign ' . $first . '’s NGG Membership Agreement', email_template([
             'eyebrow' => 'Membership Agreement', 'title' => 'One last step for ' . $first,
-            'intro' => 'Before ' . $first . ' starts, please read and sign the NGG Membership Agreement.',
+            'intro' => $first . '’s place at NGG is a scholarship worth ' . mou_figures()['scholarshipValue'] . ', funded by NGG. Before ' . $first . ' starts, please read and sign the Membership Agreement.',
             'bodyHtml' => '<p style="margin:0 0 12px">It takes about ten minutes on your phone. Each part of the agreement has a short summary in plain words, then five quick questions to make sure the important parts are clear — you can try again as many times as you like.</p>'
                 . '<p style="margin:0 0 12px">When you have signed online, <b>print the agreement, sign it in ink with a witness, and bring it to ' . esc_html((string)($m['centre'] ?? '') ?: 'the centre') . '</b>. NGG checks it there and keeps a photograph of the signed page.</p>'
                 . '<p style="margin:0">A copy of the signed agreement is emailed to you. No printer? NGG can print it for you at the centre.</p>',
@@ -296,7 +312,7 @@ function public_mou_get(array $p): array {
     $pre = json_decode((string)$r['prefillJson'], true) ?: mou_prefill($m);
     return ['ok' => true, 'status' => (string)$r['status'], 'version' => (string)$r['version'],
             'member' => ['first' => explode(' ', trim((string)$m['fullName']))[0], 'fullName' => (string)$m['fullName'], 'centre' => (string)($m['centre'] ?? ''), 'displayId' => (string)($m['displayId'] ?? '')],
-            'org' => MOU_ORG, 'contact' => MOU_CONTACT, 'sections' => mou_terms($fig),
+            'org' => MOU_ORG, 'contact' => MOU_CONTACT, 'sections' => mou_terms($fig), 'scholarship' => mou_scholarship($fig + mou_figures()),
             'quiz' => array_map(static fn($q) => $q, mou_quiz()), 'prefill' => $pre,
             'consents' => ['granted' => MOU_CONSENTS_GRANTED, 'trips' => (string)$r['tripsChoice']],
             'parties' => mou_parties_public($r), 'quizPassed' => (string)$r['quizPassedAt'] !== '',
@@ -428,6 +444,7 @@ function admin_mou_list(array $p): array {
     foreach (db_all('SELECT * FROM mou_agreements ORDER BY id') as $r) $byMember[(string)$r['memberId']][] = $r;
     foreach (db_all("SELECT memberId, fullName, displayId, centre, photoUrl, type, status FROM members WHERE type = 'NGG' AND status = 'active' AND COALESCE(role,'member') = 'member' ORDER BY fullName") as $m) {
         if ($scope !== null && !in_array((string)$m['centre'], $scope, true)) continue;
+        if (mou_not_for($m) && empty($byMember[(string)$m['memberId']])) continue;   // online: no agreement to chase
         $list = $byMember[(string)$m['memberId']] ?? [];
         $live = null; foreach (array_reverse($list) as $r) if ((string)$r['status'] !== 'void') { $live = $r; break; }
         $st = $live ? (string)$live['status'] : 'none';
@@ -663,6 +680,11 @@ function mou_document_html(array $r, array $m): string {
     $badge = ['signed' => 'Signed by all parties', 'awaiting_ngg' => 'Signed by the family', 'awaiting_family' => 'Not yet signed', 'void' => 'Withdrawn'][$st] ?? '';
     $o = dues_doc_head('Membership Agreement', 'Memorandum of Understanding · version ' . (string)$r['version'], $badge, (string)$r['mouId']);
     $kv = static fn(array $rows) => '<table class="rp-kv"><tbody>' . implode('', array_map(static fn($pair) => '<tr><th scope="row">' . esc_html($pair[0]) . '</th><td>' . esc_html($pair[1] !== '' ? $pair[1] : '—') . '</td><th scope="row">' . esc_html($pair[2]) . '</th><td>' . esc_html($pair[3] !== '' ? $pair[3] : '—') . '</td></tr>', $rows)) . '</tbody></table>';
+    $sch = mou_scholarship($fig + mou_figures());
+    $o .= '<section class="rp-sec" aria-labelledby="mou-award" style="border:1.5px solid #c99a1e;border-radius:6px;padding:12px 16px;background:#fbf6e8;break-inside:avoid">'
+        . '<h2 id="mou-award" style="margin:0 0 4px">NGG Scholarship</h2>'
+        . '<p style="margin:0;font-size:12pt"><b>' . $e((string)$m['fullName']) . '</b> is awarded an NGG scholarship valued at <b style="font-size:14pt">' . $e($sch['value']) . '</b> for three years of training and service at Next Generation Genius.</p>'
+        . '<p style="margin:4px 0 0">NGG funds the scholarship. The family’s contribution is ' . $e($sch['family']) . ' (clause 6). The scholarship is held while this agreement is kept (clause 3).</p></section>';
     $o .= '<section class="rp-sec" aria-labelledby="mou-p"><h2 id="mou-p">The parties</h2>'
         . $kv([['Member', (string)$m['fullName'], 'ID number', (string)(($m['displayId'] ?? '') ?: $m['memberId'])],
                ['Centre', (string)($m['centre'] ?? ''), 'Age', (string)($mem['age'] ?? '')],
@@ -747,7 +769,12 @@ function mou_mail_copy(array $r, array $m, string $docToken, bool $final, array 
             . '<div style="font:400 12px/1.4 Helvetica,Arial,sans-serif;color:' . $mute . '">' . esc_html(trim($sub . ($at !== '' ? ' · ' . mou_when($at) : ''), ' ·')) . '</div></td>';
     };
     $wSub = (string)$r['witnessBy'] === 'ngg' ? 'Witnessed by NGG' : ((string)$r['witnessName'] !== '' ? 'Witness' : 'NGG witnesses at the centre');
-    $body = '<div style="background:#fbf7ec;border-left:4px solid ' . $gold . ';padding:14px 16px;border-radius:6px;margin:0 0 18px;font:400 14px/1.5 Helvetica,Arial,sans-serif;color:' . $ink . '">'
+    $sch = mou_scholarship($fig + mou_figures());
+    $body = '<div style="border:1px solid ' . $gold . ';padding:12px 16px;border-radius:6px;margin:0 0 12px;font:400 14px/1.5 Helvetica,Arial,sans-serif;color:' . $ink . '">'
+        . '<div style="font:600 10px/1.3 Helvetica,Arial,sans-serif;letter-spacing:1px;text-transform:uppercase;color:' . $mute . '">NGG Scholarship</div>'
+        . '<div style="font:700 20px/1.3 Helvetica,Arial,sans-serif;margin:4px 0">' . esc_html($sch['value']) . '</div>'
+        . esc_html($first) . '’s place is an NGG scholarship for three years, funded by NGG. Your contribution: ' . esc_html($sch['family']) . '.</div>'
+        . '<div style="background:#fbf7ec;border-left:4px solid ' . $gold . ';padding:14px 16px;border-radius:6px;margin:0 0 18px;font:400 14px/1.5 Helvetica,Arial,sans-serif;color:' . $ink . '">'
         . ($final ? '<b>Signed by everyone.</b> This is the completed Membership Agreement for ' . esc_html((string)$m['fullName']) . '. Keep this email: it is your copy.'
                   : '<b>Thank you for signing.</b> One more step: <b>print the agreement (the button below), sign it in ink with a witness, and bring it to ' . esc_html((string)($m['centre'] ?? '') ?: 'the centre') . '</b>. NGG checks it, photographs the signed page and countersigns, and you will get the completed copy. ' . esc_html($first) . ' starts lectures on the day every entry step is done.')
         . '</div>'

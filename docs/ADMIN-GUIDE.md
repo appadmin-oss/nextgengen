@@ -5415,6 +5415,14 @@ a storage outage.
 
 **Members → Agreements.** The Membership Agreement is the MoU, signed online.
 
+- **It is a scholarship.** Clause 3 states that the member's place is an **NGG scholarship** — ₦1,500,000 over the
+  three years by default — funded by NGG, and that what the family pays is a contribution, not the price of the place.
+  The printed copy opens with the award (the child's name, the value, the family's contribution); the family's page
+  and every email carry it too. Change the figure under **Money → Amounts → Scholarship value of an NGG place**. It is
+  stated, never charged, and an agreement keeps the figure it was signed with.
+- **Not for online members.** Members whose centre is an online one have different terms: this agreement is never
+  sent to them, they are not listed under *Not started*, and it is not on their registration checklist.
+
 - **It starts by itself** when you press *Accept & create member* on an NGG application: the family gets the
   welcome email and, after it, a private link to read and sign. For members who joined before, press
   *Send to N members without one* (or select some under *Not started* and choose *Send the agreement*).

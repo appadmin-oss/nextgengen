@@ -1012,6 +1012,8 @@ function crMoAmountsForm(cfg, B, defaults) {
         { id: "trainingMonths", l: "Training months", c: "input", type: "number", im: "numeric", value: String(cfg.trainingMonths), check: int(B.phaseMin, B.phaseMax) },
         { id: "serviceMonths", l: "Service months", c: "input", type: "number", im: "numeric", value: String(cfg.serviceMonths), check: int(B.phaseMin, B.phaseMax),
           help: "Service is what earns the training fee off, a month at a time." },
+        { id: "scholarshipValue", l: "Scholarship value of an NGG place (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.scholarshipValue == null ? 1500000 : cfg.scholarshipValue), check: money,
+          help: "Stated in the Membership Agreement as the scholarship each member is awarded. Never charged. An agreement keeps the figure it was signed with." },
         { id: "balanceCap", l: "Stop charging at (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.balanceCap), check: money,
           help: "A ceiling on one member’s balance; once reached nothing further accrues. 0 means no ceiling — an account that grows past what anyone can pay pushes a family out of the programme." },
       ] },

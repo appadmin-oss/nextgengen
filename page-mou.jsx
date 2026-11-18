@@ -115,6 +115,11 @@ function MouPage({ setPage }) {
 
       {step === 0 && <>
         <p className="mou-parties">Between <b>{d.org}</b> and you, the parent or guardian, for <b>{d.member.fullName}</b>{d.member.centre ? " (" + d.member.centre + ")" : ""}.</p>
+        {d.scholarship && <section className="mou-award" aria-labelledby="mou-award-h">
+          <span className="mou-eyebrow" id="mou-award-h">NGG Scholarship</span>
+          <b className="mou-award-v">{d.scholarship.value}</b>
+          <p>{d.member.first}’s place is a scholarship for three years of training and service, funded by NGG. Your contribution is {d.scholarship.family} (clause 6).</p>
+        </section>}
         <div className="mou-clauses">{(d.sections || []).map((s, i) => <MouClause key={s.id} n={i + 1} s={s}/>)}</div>
         <div className="mou-actions"><button type="button" className="mou-btn" onClick={() => go(1)}>I’ve read it — check my understanding</button></div>
       </>}

@@ -105,3 +105,17 @@ receipt type who signed, the witness and the off-site answer
 `node tests/mou-sign.test.js` — the family is told to print and bring it; the
 Control Room receives the copy with every check and a camera photograph before
 countersigning.
+
+## The scholarship, and online members
+
+Owner, 18 Nov 2026: "The MoU does not apply to online members, the agreement varies. The MoU for the NGG should
+project that it is a scholarship of 1.5 mil."
+
+- **Scholarship.** `fees.scholarshipValue` (default ₦1,500,000, Money → Amounts) is frozen on each agreement with the
+  other figures. Clause 3 is *The NGG scholarship: what NGG provides*; the printed copy opens with an award panel; the
+  family's page and both emails show it. Framing the family's payments as a *contribution* and the place as an
+  *award* is the point: the family sees what their child receives, and clause 12's early-exit figure reads as
+  returning part of a scholarship, not a penalty.
+- **Online members** (`member_is_online`) get no agreement: `mou_start` refuses `online_member`, Agreements skips
+  them, and the checklist's `mou` item does not apply (`RCL_AUTO['mou']['not'] = 'online'`). Their own terms can be
+  added as a second agreement when the programme writes them.

@@ -40981,6 +40981,38 @@ if (function_exists('imagecreatetruecolor')) {
     chk('mou · withdrawing needs a reason, and keeps the record', (admin_mou_void(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $s3['mouId'], 'reason' => 'x'])['error'] ?? '') === 'reason_required'
         && !empty(admin_mou_void(['requesterId' => 'NGG-MOU-ADM', 'mouId' => $s3['mouId'], 'reason' => 'Started for the wrong child'])['ok']) && db_row("SELECT status FROM mou_agreements WHERE mouId = ?", [$s3['mouId']])['status'] === 'void');
     chk('mou · the registration checklist names the agreement as an item from the record', isset(RCL_AUTO['mou']) && function_exists('rcl_verify_mou'));
+
+    /* THE SCHOLARSHIP (owner, 18 Nov 2026: "the MoU should project that it is a scholarship of 1.5 mil"). A setting,
+       never a hard-coded figure; stated in clause 3, on the family's page, on the paper and in the email. */
+    chk('mou scholarship · an NGG place is stated as a scholarship of ₦1,500,000 by default', mou_figures()['scholarshipValue'] === '₦1,500,000');
+    $feesPrev = fees_settings();
+    fees_settings_save(['scholarshipValue' => 1750000] + $feesPrev, 'test');
+    $sc3 = array_values(array_filter(mou_terms(mou_figures()), fn($x) => $x['id'] === 'provides'))[0] ?? [];
+    chk('mou scholarship · the value is the website’s (Money → Amounts): clause 3 says what the setting says',
+        str_contains($sc3['short'] ?? '', '₦1,750,000') && str_contains(implode(' ', $sc3['body'] ?? []), 'not the price of the place') && str_contains($sc3['title'] ?? '', 'scholarship'));
+    fees_settings_save(['scholarshipValue' => (int)($feesPrev['scholarshipValue'] ?? 1500000)] + $feesPrev, 'test');
+    $docS = mou_document_html(db_row("SELECT * FROM mou_agreements WHERE id = ?", [(int)$row['id']]), db_row("SELECT * FROM members WHERE memberId = 'NGG-MOU-1'"));
+    chk('mou scholarship · the printed copy opens with the award: the child, the value, funded by NGG, and the family’s contribution',
+        str_contains($docS, 'NGG Scholarship') && str_contains($docS, 'Tobi Adeyemi</b> is awarded an NGG scholarship valued at') && str_contains($docS, 'NGG funds the scholarship'));
+    $gS = public_mou_get(['token' => $tok]);
+    chk('mou scholarship · the family page carries it too', ($gS['scholarship']['value'] ?? '') !== '' && str_contains($gS['scholarship']['family'] ?? '', 'a month'));
+    $oldTerms = json_decode((string)$row['termsJson'], true); unset($oldTerms['scholarshipValue']);
+    chk('mou scholarship · an agreement frozen before the figure existed still reads a figure, never a {placeholder}',
+        !preg_match('/\{[A-Za-z]+\}/', json_encode(mou_terms($oldTerms), JSON_UNESCAPED_UNICODE)));
+
+    /* ONLINE MEMBERS (owner: "the MoU does not apply to online members, the agreement varies"). */
+    $onl = (string)(db_row('SELECT name FROM centres WHERE online = 1 LIMIT 1')['name'] ?? '');
+    if ($onl === '') { db_insert('centres', ['centreId' => 'CTR-ONL-T', 'name' => 'NGG Online Test', 'code' => 'OT', 'status' => 'active', 'online' => 1, 'createdAt' => $now, 'updatedAt' => $now]); $onl = 'NGG Online Test'; }
+    centre_online_reset();
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-MOU-ONL'");
+    db_insert('members', ['memberId' => 'NGG-MOU-ONL', 'fullName' => 'Online Child', 'email' => 'onl@example.org', 'parentEmail' => 'onl@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $onl, 'createdAt' => $now, 'updatedAt' => $now]);
+    $onm = db_row("SELECT * FROM members WHERE memberId = 'NGG-MOU-ONL'");
+    chk('mou online · an online member is not sent this agreement', (mou_start($onm, 'NGG-MOU-ADM', false)['error'] ?? '') === 'online_member' && !db_row("SELECT 1 x FROM mou_agreements WHERE memberId = 'NGG-MOU-ONL'"));
+    chk('mou online · …is not listed as missing one', !in_array('NGG-MOU-ONL', array_column(admin_mou_list(['requesterId' => 'NGG-MOU-ADM', 'status' => 'none'])['rows'], 'memberId'), true));
+    $onKeys = array_column(rcl_build([$onm])['NGG-MOU-ONL']['items'], 'key');
+    chk('mou online · …and the MoU is not on their registration checklist, while a centre member’s has it',
+        !in_array('auto:mou', $onKeys, true) && in_array('auto:timetable', $onKeys, true)
+        && in_array('auto:mou', array_column(rcl_build([db_row("SELECT * FROM members WHERE memberId = 'NGG-MOU-1'")])['NGG-MOU-1']['items'], 'key'), true));
     unset($GLOBALS['__mail_sink']);
 }
 

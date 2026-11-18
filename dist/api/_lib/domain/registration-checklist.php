@@ -108,7 +108,7 @@ const RCL_AUTO = [
     'photo'     => ['step' => 'documents', 'title' => 'Passport photograph', 'help' => 'A clear passport-style photo of the member is on their record, for the ID card.',
                     'fix' => 'Take the photo at the centre and add it to the member’s record.', 'family' => true,
                     'bring' => 'a clear passport photograph (or we take one at the centre)'],
-    'mou'       => ['step' => 'documents', 'title' => 'Membership Agreement (MoU) handed in', 'help' => 'The family read the agreement online and signed it; the printed copy was signed in ink, brought to the centre, checked, photographed, and countersigned by NGG.',
+    'mou'       => ['step' => 'documents', 'not' => 'online', 'title' => 'Membership Agreement (MoU) handed in', 'help' => 'The family read the agreement online and signed it; the printed copy was signed in ink, brought to the centre, checked, photographed, and countersigned by NGG.',
                     'fix' => 'Members → Agreements: when the family brings the signed paper copy, “Receive the signed copy” (check it and photograph the signed page), then countersign.', 'family' => true,
                     'bring' => 'the printed Membership Agreement, signed by a parent and a witness'],
     'timetable' => ['step' => 'documents', 'title' => 'School timetable on the site', 'help' => 'The member’s school timetable is entered on the site (Timetable, signed in as the member): lessons on at least three school days.',
@@ -183,6 +183,12 @@ function rcl_consent_rules(): array {
 function rcl_auto_applies(string $key): bool {
     $when = RCL_AUTO[$key]['when'] ?? '';
     if ($when === 'fees') return function_exists('membership_fee_terms') && !empty(membership_fee_terms()['enabled']);
+    return true;
+}
+
+/** Does this automatic item apply to THIS member? (`not` => 'online': the MoU is not an online member's agreement.) */
+function rcl_auto_applies_to(string $key, array $m): bool {
+    if ((RCL_AUTO[$key]['not'] ?? '') === 'online' && function_exists('member_is_online') && member_is_online($m)) return false;
     return true;
 }
 
@@ -352,6 +358,7 @@ function rcl_build(array $members): array {
     foreach ($members as $m) {
         $mid = (string)$m['memberId']; $items = [];
         foreach ($auto as $k) {
+            if (!rcl_auto_applies_to($k, $m)) continue;
             $ok = (bool)call_user_func('rcl_verify_' . $k, $m, $facts);
             $items[] = ['key' => 'auto:' . $k, 'kind' => 'auto', 'step' => RCL_AUTO[$k]['step'], 'title' => RCL_AUTO[$k]['title'], 'help' => RCL_AUTO[$k]['help'], 'fix' => RCL_AUTO[$k]['fix'],
                         'family' => !empty(RCL_AUTO[$k]['family']), 'evidence' => 'record', 'presence' => false, 'maxAgeDays' => 0,
@@ -1229,7 +1236,7 @@ function member_regcheck_submit(array $p): array {
 
     if (strncmp($key, 'auto:', 5) === 0) {
         $k = substr($key, 5);
-        if (!isset(RCL_AUTO[$k]) || !rcl_auto_applies($k)) return ['ok' => false, 'error' => 'not_found'];
+        if (!isset(RCL_AUTO[$k]) || !rcl_auto_applies($k) || !rcl_auto_applies_to($k, $m)) return ['ok' => false, 'error' => 'not_found'];
         $ok = (bool)call_user_func('rcl_verify_' . $k, $m, rcl_facts([$mid]));
         $why = $ok ? RCL_AUTO[$k]['title'] . ': the record shows it.' : 'The record does not show it yet. ' . RCL_AUTO[$k]['fix'];
         $record($ok ? 'record_passes' : 'record_fails', $why);
