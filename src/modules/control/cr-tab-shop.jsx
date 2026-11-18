@@ -488,7 +488,10 @@ function crShopCloseSession(ctx, s) {
       { id: "counted", l: "Cash counted (₦)", im: "numeric", req: true, check: v => /^\d+$/.test(String(v)) ? "" : "Enter a whole number." },
       { id: "note", l: "Note", type: "textarea", rows: 2, max: 300, help: "Needed when the count is short or over.", check: (v, all) => /^\d+$/.test(String(all.counted)) && Number(all.counted) !== s.expected && String(v || "").trim().length < 3 ? "The drawer is " + fmtMoney(Math.abs(Number(all.counted) - s.expected)) + (Number(all.counted) < s.expected ? " short" : " over") + ". Say why." : "" },
     ],
-    onSubmit: async v => { const r = await NGGApi.admin.shop.sessionClose({ sessionId: s.sessionId, counted: Number(v.counted), note: String(v.note || "").trim() }); ctx.reload(); return r; },
+    onSubmit: async v => {
+      try { const r = await NGGApi.admin.shop.sessionClose({ sessionId: s.sessionId, counted: Number(v.counted), note: String(v.note || "").trim() }); ctx.reload(); return r; }
+      catch (e) { if (e.code === "note_required") return { fieldErrors: { note: crShopErr(e) } }; if (e.code === "bad_count") return { fieldErrors: { counted: crShopErr(e) } }; throw e; }
+    },
     done: (v, r) => "Closed. " + (r.session.difference === 0 ? "The drawer balances." : "The drawer is " + fmtMoney(Math.abs(r.session.difference)) + (r.session.difference < 0 ? " short." : " over.")),
   });
 }
@@ -545,8 +548,8 @@ function crShopAdjust(ctx, d, v0) {
     onSubmit: async v => {
       const n = Number(v.qty), sign = ["damaged", "giveaway"].includes(v.reason) ? -1 : 1;
       const variant = (tracked[v.productId] || { opts: [""] }).opts.some(o => o !== "") ? v.variant : "";
-      const r = await NGGApi.admin.shop.adjust({ productId: v.productId, variant, reason: v.reason, delta: v.reason === "correction" ? n : sign * Math.abs(n), note: String(v.note || "").trim() });
-      ctx.reload(); return r;
+      try { const r = await NGGApi.admin.shop.adjust({ productId: v.productId, variant, reason: v.reason, delta: v.reason === "correction" ? n : sign * Math.abs(n), note: String(v.note || "").trim() }); ctx.reload(); return r; }
+      catch (e) { if (e.code === "note_required") return { fieldErrors: { note: crShopErr(e) } }; if (e.code === "bad_delta") return { fieldErrors: { qty: crShopErr(e) } }; throw e; }
     },
     done: (v, r) => "Recorded. " + crNum(r.balance) + " left.",
   });
