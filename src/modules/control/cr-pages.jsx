@@ -87,13 +87,19 @@ const CR_PAGES = {
     { id: "conduct", label: "Conduct & fines", desc: "Every rule in one place, uploading fines, the compliance board, the policy and the programme calendars.", cap: ["fees", "people", "summer"] },
     { id: "donations", label: "Donations", desc: "Gifts received through Paystack and bank transfer.", cap: "settings" },
   ] },
-  /* The NGG shop (domain/shop.php, cr-tab-shop.jsx). Two trusts, as the server
-     has them: orders and the shop's settings are money (`fees`); the catalogue
-     is what NGG shows (`content`). */
+  /* The NGG shop (domain/shop.php, domain/shop-manage.php, cr-tab-shop.jsx).
+     Two trusts, as the server has them: orders, refunds, table sales, codes,
+     reports and settings are money (`fees`); the catalogue and stock are what
+     NGG shows and keeps (`content`; stock is readable by `fees` too). */
   shop: { label: "Shop", icon: "storefront", tabs: [
-    { id: "shop-orders", label: "Orders", desc: "What people bought in the NGG shop: paid, ready, handed over or cancelled, and the buyer for each.", cap: "fees" },
-    { id: "shop-products", label: "Products", desc: "What the shop sells: price, sizes, stock, picture, and whether it is on sale.", cap: "content" },
-    { id: "shop-settings", label: "Settings", desc: "Open or close the shop, delivery and its fee, and what buyers are told about collecting.", cap: "fees" },
+    { id: "shop-today", label: "Today", desc: "What needs doing in the shop now: orders to pack, refunds due, low stock, and today’s sales.", cap: "fees" },
+    { id: "shop-orders", label: "Orders", desc: "What people bought in the NGG shop: paid, ready, handed over, cancelled or refunded, each with its timeline.", cap: "fees" },
+    { id: "shop-sell", label: "Sell", desc: "Sell at a table or a centre — cash, transfer or POS terminal — from the same stock, and count the drawer at the end.", cap: "fees" },
+    { id: "shop-stock", label: "Stock", desc: "What is left of every size, what is low, every change with who and why, and the stock-take.", cap: ["content", "fees"] },
+    { id: "shop-products", label: "Products", desc: "What the shop sells: price, sizes, stock, picture, pre-orders, and whether it is on sale.", cap: "content" },
+    { id: "shop-codes", label: "Codes", desc: "Discount codes: how much they take off, how often, and for how long.", cap: "fees" },
+    { id: "shop-reports", label: "Reports", desc: "Sales by product and size, Paystack’s fees, refunds and net, for any dates; the orders as CSV.", cap: "fees" },
+    { id: "shop-settings", label: "Settings", desc: "Open or close the shop, delivery, unpaid orders, low stock, and what buyers are told.", cap: "fees" },
   ] },
   checkin: { label: "Check-in", icon: "qr-code", tabs: [
     { id: "checkin", label: "Desks", desc: "Live gate and desk scanners for today’s session.", cap: "checkin" },

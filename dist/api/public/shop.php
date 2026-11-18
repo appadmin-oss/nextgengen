@@ -9,9 +9,11 @@ if ($method === 'GET') {
                        : gs_call('public.shop.list', []);
 } elseif ($method === 'POST') {
     $b = read_json_body();
-    $op = (string)($b['action'] ?? '') === 'order' ? 'public.shop.order' : 'public.shop.quote';
-    $res = gs_call($op, ['items' => is_array($b['items'] ?? null) ? $b['items'] : [], 'fulfil' => (string)($b['fulfil'] ?? 'collect'),
-        'buyer' => is_array($b['buyer'] ?? null) ? $b['buyer'] : [], 'centre' => (string)($b['centre'] ?? ''), 'address' => (string)($b['address'] ?? ''), 'ip' => client_ip()]);
+    $act = (string)($b['action'] ?? '');
+    $res = $act === 'pay' ? gs_call('public.shop.order.pay', ['token' => (string)($b['token'] ?? ''), 'ip' => client_ip()])
+        : gs_call($act === 'order' ? 'public.shop.order' : 'public.shop.quote', ['items' => is_array($b['items'] ?? null) ? $b['items'] : [], 'fulfil' => (string)($b['fulfil'] ?? 'collect'),
+        'buyer' => is_array($b['buyer'] ?? null) ? $b['buyer'] : [], 'centre' => (string)($b['centre'] ?? ''), 'address' => (string)($b['address'] ?? ''),
+        'code' => (string)($b['code'] ?? ''), 'ip' => client_ip()]);
 } else {
     json_error('method_not_allowed', 405);
 }

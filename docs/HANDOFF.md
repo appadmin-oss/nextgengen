@@ -7534,3 +7534,46 @@ sheet), as images, PDF and CSV.
 - `tests/balances-export.test.js` (`npm run test:balances`, in `test:all`): 32 members owing over two centres;
   checks the three PNGs, the three-page A4 PDF, the CSV rows and sums, the centre filter, and that a centre
   name is drawn whole (it failed with the first, too-narrow column, and the check was proven against it).
+
+## 2026-11-18 — Shop management upgrade (NGG)
+
+Owner, 17 Nov: *"Upgrade the shop massively … for better and effective management. Research!"* Built from
+`docs/SHOP-MANAGEMENT-PLAN.md` §2, all ten items. Server: `api/_lib/domain/shop-manage.php` (new, in the bootstrap
+list) and `shop.php`; migration **238**; Control Room: `cr-tab-shop.jsx` (eight tabs: Today, Orders, Sell, Stock,
+Products, Codes, Reports, Settings); public: `page-shop.jsx`.
+
+- **Stock ledger** (`shop_stock_moves`): every count change is a reason-coded row with who and when; the count is the
+  running result (tests assert sum of rows = count). The product form writes `correction`/`received`; hand
+  adjustments; stock-take validated whole. Counts may go below nought (table sales are never stalled); the public
+  shop clamps to nought (`shop_stock` vs `shop_stock_raw`). Column names avoid MySQL reserved words
+  (`variant`, `byId`, `openingFloat`).
+- **Low stock**: `lowStock` per product (-1 = the shop default), panel, daily digest (webcron job `shop`).
+- **Refunds** (`shop_refunds`): Paystack `POST /refund` in kobo; pending until Paystack's own `GET /refund/:id` says
+  processed/failed — from the signed `refund.*` webhook (`api/hooks/paystack.php`), "Check now", or the hourly
+  sweep. The body of a webhook is never trusted alone (as with charges). "Paid outside" refunds are processed at
+  once. Cap = what was charged (goods + delivery + the buyer-borne fee); suggestion = goods + delivery. Restock at
+  refund time. `refundState`: '' | due | pending | partial | full. Cancelling a paid order can refund in one step.
+- **Pickup code**: six digits at payment for collections; `Collected` needs it or a reason (override on the
+  timeline). Bulk "Mark completed" became "Mark delivered" (collections are refused per row, by design).
+- **Unpaid orders**: expire after `expireHours` (24) as `cancelKind = 'expired'`; one reminder after 2 h; pay later
+  from the order link (`public.shop.order.pay`, a fresh `NGGS-` reference each time — an older checkout still pays,
+  matched by metadata orderId). A payment arriving for an *expired* order revives it; a *staff*-cancelled one stays
+  cancelled and the money goes to unapplied_payments.
+- **Table sales** (`channel = 'pos'`, `payMethod` cash/transfer/pos) and **cash sessions** (`shop_cash_sessions`;
+  in `CENTRE_NAME_TABLES` and `CAC_CENTRE_NAMED_BY`). Cash needs an open session; closing keeps the difference and
+  needs a reason when not zero.
+- **Reports**: today's numbers; gross / buyer-borne fees / Paystack's fees **as reported** (`gatewayFee`, from
+  verify `fees`) / refunds / net; by product and size, method, channel, day; sell-through; stock value; CSV.
+- **Codes** (`shop_codes`) and **pre-orders** (`preorderUntil`). Order **timeline** (`shop_order_events`) replaces
+  appending to `note`; old notes still show. **Exchanges** split a line at the price charged. The orders list is
+  paged on the server with a date range and channel filter.
+- Buyer-facing label "Paystack's charge — not an NGG fee" renamed **"Payment processing fee — Charged by Paystack,
+  our payment provider"** (shop, membership invoice page, receipt), at the owner's request.
+
+Tests: PHP suite 7330/0 (baseline 7283) — 47 new `shop ledger/low stock/codes/pickup/refunds/unpaid/pre-order/
+table/exchange/order/lists/report/export/wiring` checks; `tests/shop.test.js` extended to refunds, the till,
+sessions, stock-take, codes and reports. HawkScan not run (no `HAWK_API_KEY` here).
+
+Not built (the plan's "do not build" list, and items outside §2): delivery zones, member price, bundles, VAT line.
+Unconfirmed with Paystack: whether bank-transfer/USSD payments refund automatically — a failed refund says so and
+staff pay it back another way.

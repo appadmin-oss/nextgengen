@@ -38408,7 +38408,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         ($v['status'] ?? '') === 'paid' && $credit === 7000 && (int)$inv2['processingFee'] === 209 && (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-PF-1'"), $cfg)['payable'] === 0);
     $html = doc_render_receipt(doc_for_receipt($inv2));
     chk('paystack charge: the receipt names it as Paystack’s, and the total is what left the family’s account',
-        str_contains($html, 'Paystack charge') && str_contains($html, fees_money_text(7209, $cfg)));
+        str_contains($html, 'Payment processing fee') && str_contains($html, fees_money_text(7209, $cfg)));
     $after = public_membership_invoice(['token' => $inv2['payToken']])['invoice'] ?? [];
     chk('paystack charge: the paid page shows the charge that was actually taken', ($after['onlineFee'] ?? 0) === 209);
 

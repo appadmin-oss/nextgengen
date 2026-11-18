@@ -5254,24 +5254,29 @@ and did not sign out. A coordinator scoped to two centres only sees those two. S
 
 ## Running the shop (Control Room → Shop, and `/shop`)
 
-*Source: the owner's brief, 17 Nov 2026 ("Create a shop for NGG. To sell souvenirs and mercs"); the server is `api/_lib/domain/shop.php`, the pages `page-shop.jsx` and `src/modules/control/cr-tab-shop.jsx`.*
+*Source: the owner's brief, 17 Nov 2026 ("Create a shop for NGG. To sell souvenirs and mercs"), and the upgrade the same day ("Upgrade the shop massively … for better and effective management"). The server is `api/_lib/domain/shop.php` and `shop-manage.php`; the pages are `page-shop.jsx` and `src/modules/control/cr-tab-shop.jsx`. The research behind it is `docs/SHOP-MANAGEMENT-PLAN.md`.*
 
-The shop sells NGG souvenirs and merchandise to anyone, on `/shop`. Buyers pay online through Paystack and collect at their centre's desk, or have it delivered when delivery is on.
+The shop sells NGG souvenirs and merchandise to anyone, on `/shop`, and at a table at events and centres. Online buyers pay through Paystack and collect at their centre's desk, or have it delivered when delivery is on.
 
 ### Who owns what
 
-| Part | Capability | Who usually holds it |
+| Tab | What it is for | Capability |
 |---|---|---|
-| **Products** (the catalogue: names, prices, sizes, stock, pictures) | `content` | The content team |
-| **Orders** (handing over, cancelling, refunds) | `fees` | The fees desk |
-| **Settings** (open or close the shop, delivery and its fee, the notes buyers read) | `fees` | The fees desk |
+| **Today** | What needs doing now: orders to pack, refunds due, low stock, today's sales | `fees` |
+| **Orders** | Handing over, refunds, exchanges, notes, pick lists, packing slips | `fees` |
+| **Sell** | Selling at a table, and cash sessions | `fees` |
+| **Stock** | What is left, what is low, every change and why, the stock-take | read: `content` or `fees`; change: `content` |
+| **Products** | The catalogue: names, prices, sizes, stock, pictures, pre-orders | `content` |
+| **Codes** | Discount codes | `fees` |
+| **Reports** | Sales by product and size, Paystack's fees, refunds, net; CSV | `fees` |
+| **Settings** | Open or close the shop, delivery, unpaid orders, low stock | `fees` |
 
-`fees` is not part of the admin bundle; it is granted per person in Access & roles. A fees holder who is scoped to centres sees only the orders collected at their centres; deliveries belong to head office.
+`fees` is not part of the admin bundle; it is granted per person in Access & roles. A fees holder who is scoped to centres sees only the orders collected at their centres, and sells only inside a session at one of their centres; deliveries belong to head office.
 
 ### Before the first sale
 
-1. Paystack must be set up: Settings → API keys holds the Paystack secret key, and the Paystack webhook points at `/api/hooks/paystack.php`. Without it the shop page shows its products but says it cannot take orders.
-2. Buyers pay Paystack's charge on top of the price, worked out by the same settings as membership payments (Money → Dues & arrears → Amounts → Paying online). They see it before they press Pay.
+1. Paystack must be set up: Settings → API keys holds the Paystack secret key, and the Paystack webhook points at `/api/hooks/paystack.php`. Payments **and refunds** report back through that one webhook. Without the key the shop page shows its products but says it cannot take orders.
+2. Buyers pay the **payment processing fee** (Paystack's charge) on top of the price, worked out by the same settings as membership payments (Money → Dues & arrears → Amounts → Paying online). They see it before they press Pay.
 3. Collection is offered at every active NGG centre that is a building. NGG Online is never offered.
 
 ### Add a product (content)
@@ -5280,11 +5285,21 @@ The shop sells NGG souvenirs and merchandise to anyone, on `/shop`. Buyers pay o
 2. Fill in the name, category, price in whole naira and a description.
 3. Picture: paste an `https://` link, or upload a file.
 4. Sizes or options: type them separated by commas (`S, M, L, XL`). Leave the field empty for a product with no options, such as a mug.
-5. Stock: leave **Limited stock** off for no limit. Turn it on and give one number per option, in the same order (`10, 12, 8`). A size at 0 shows as sold out.
-6. Status: **Draft** is seen by staff only. **On sale** shows on `/shop` at once. **Retired** takes it off the page; past orders keep it.
-7. Press **Add product**. If the server refuses, the reason appears under the field concerned (for example, a product cannot go on sale at ₦0).
+5. Stock: leave **Limited stock** off for no limit. Turn it on and give one number per option, in the same order (`10, 12, 8`). A size at 0 shows as sold out. **Warn when this many are left** sets the product's low-stock line; empty uses the shop's default, 0 never warns.
+6. **Pre-order until** (optional): until the end of that day the product sells past its stock. Use it to take orders before a print run; Reports gives the counts per size.
+7. Status: **Draft** is seen by staff only (it can still be sold at a table). **On sale** shows on `/shop` at once. **Retired** takes it off the page; past orders keep it.
+8. Press **Add product**. If the server refuses, the reason appears under the field concerned.
 
-To change a price or the stock later, open the product from the list and save. A price change never alters an order already placed; each order keeps the prices it was charged.
+A price change never alters an order already placed; each order keeps the prices it was charged. A count changed in the product form is recorded as a **correction**; for deliveries in, damage and give-aways use **Stock → Adjust stock** so the reason is kept.
+
+### Stock (content)
+
+Every change to a count is kept with its reason, who made it and when: sold online, sold at a table, order cancelled, refund (back on the shelf), exchange, received, damaged, given away, returned to the shelf, correction, stock-take. Open a row in **Stock** to see its history.
+
+- **Adjust stock**: choose the product, size and reason, and how many. Received and returned add; damaged and given away take away; a correction can go either way and needs a note.
+- **Stock-take**: count the shelf and type each number. Each difference is recorded as a stock-take with your name; matching numbers change nothing. If one line is wrong, nothing is saved.
+- A count can go **below nought** when a table sells more than was recorded. That is deliberate (a queue is never stopped for a count); do a stock-take.
+- **Low stock**: a size at or below its line shows as Low; at nought, Sold out. Once a day, after 7 in the morning, the staff who hold `fees` or `content` get one email listing them (Settings → Low stock turns it off).
 
 ### Open the shop (fees)
 
@@ -5292,34 +5307,65 @@ To change a price or the stock later, open the product from the list and save. A
 2. Turn **Shop open** on. The shop refuses to open until at least one product is on sale.
 3. If you deliver, turn **Offer delivery** on and set the **Delivery fee**.
 4. Check the two notes buyers read: **About collecting** and **About delivery**.
-5. Press **Save** in the bar that appears.
+5. **Unpaid orders**: how many hours an unpaid order lives (24 by default, 6 to 168), and whether the buyer gets one reminder after two hours.
+6. Press **Save** in the bar that appears.
 
 To close the shop, turn **Shop open** off and save. `/shop` then says the shop is closed. Orders already paid are still handed over as normal.
 
 ### Take an order through to collected (fees)
 
-1. A buyer pays. Paystack confirms it and the order appears under Shop → **Orders** as **Paid**. The buyer receives an email with the order number (`SHP-…`).
-2. Pack the order. Open it from the list to see its items, the buyer and where it goes.
-3. Press **Mark ready**. The buyer is emailed that it is ready to collect at their centre, or on its way.
-4. When the buyer collects it, check the order number they bring against the order. Press **Mark collected** (or **Mark delivered**). This cannot be undone.
+1. A buyer pays. Paystack confirms it and the order appears under **Orders** as **Paid**. The buyer's email carries the order number (`SHP-…`) and, for a collection, a six-digit **pickup code**.
+2. To pack several orders, tick them and use **Print pick list** (totals per item and size) and **Print packing slips** (one page per order, without the pickup code).
+3. Open the order and press **Mark ready**. For a delivery you can add a **delivery note** (the courier, a waybill number, the day); it goes to the buyer. Several orders can be marked ready at once from the list.
+4. When the buyer collects it, press **Mark collected** and type the **pickup code** they give you. A wrong code is refused. If they have lost it, switch on "They don't have the code" and say how you know the order is theirs; it is kept on the order's timeline.
+5. A delivery is finished with **Mark delivered** (one at a time or several at once; the buyer is emailed). This cannot be undone.
 
-Several orders can be marked at once: tick them in the list and use **Mark ready** or **Mark completed**. Each order gets its own answer from the server. If some are refused (an order that is not paid yet, for example), the message says how many and why.
+Every order has a **timeline**: ordered, paid, ready, collected, refunds, exchanges, reminders, and staff notes (**Add a note…**).
 
-The **Status** filter starts on **To hand over** (paid or ready). **Waiting for payment** orders were opened at Paystack but never paid. They hold no stock back and need no action. The list shows the newest 300 orders for each filter; search by order number, name or email to find an older one.
+**Exchange a size** (the wrong T-shirt): open a paid order, **Exchange a size…**, choose the item, the new size and how many. The old size goes back on the shelf, the new one comes off, and no money moves.
 
-### Cancel an order and refund it (fees)
+**Waiting for payment** orders hold no stock. The buyer can pay later from the link in their email (**Pay now** on the order page); **Send the pay link again** emails it (at most once an hour). An order still unpaid after the hours set in Settings is cancelled by itself; if the money arrives afterwards anyway, the order is paid and opens again.
 
-1. Open the order and press **Cancel order…**.
-2. For a paid order, write why (at least five characters). The stock goes back, the buyer is emailed that a refund follows, and the order's note reads "Refund due".
-3. Refund the payment in the Paystack dashboard, using the Paystack reference shown on the order.
+The list is paged on the server: filter by status (including **Refund due** and **Refunded**), by **Sold** (online or at a table) and by when it was **Ordered**; search by order number, name, email or phone. **Download CSV** gives every order in a date range for the accounts.
 
-An unpaid order can be cancelled without a reason; nothing was charged.
+### Refund an order (fees)
+
+1. Open the order and press **Refund…**.
+2. The amount suggested is the goods and delivery. At most what the buyer was charged can go back. Paystack keeps its processing fee, which the buyer paid on top.
+3. Choose how: **Through Paystack** (for an online order), or **Paid back another way** (cash or a transfer, and every table sale).
+4. Write why. If items come back, type how many of each go **back on the shelf**.
+5. Press **Refund**.
+
+A Paystack refund shows as **Waiting for Paystack** until Paystack confirms it; it can take up to 10 working days to reach the buyer. The buyer is emailed when it is processed. If the webhook is slow, open the order and press **Check now** on the refund; the shop also asks Paystack every hour. A refund Paystack fails says so on the timeline, and the money is still due.
+
+**Cancel order…** on a paid order puts its stock back and offers the refund in the same step: **Refund through Paystack now**, **Paid back another way**, or **Leave it due** (it then shows under the **Refund due** filter and on **Today**). An unpaid order can be cancelled without a reason; nothing was charged.
+
+### Sell at a table (fees)
+
+1. Shop → **Sell** → **Open a cash session**. Name it ("Open day, Egbeda"), choose the centre, and type the cash already in the drawer (the float).
+2. Tap **Add** on each item (choose the size first), adjust the numbers in **This sale**, choose **Cash**, **Bank transfer** or **POS terminal**, and press **Record sale**. The sale is completed at once and comes off the same stock as the online shop. Cash needs an open session; transfers and the terminal do not.
+3. At the end, open the session in the list and press **Close the session…**. Count the drawer. The screen shows what should be there (float + cash taken − cash paid back). If the count is short or over, say why; the difference is kept as counted.
+
+### Discount codes (fees)
+
+Shop → **Codes** → **New code**. A code takes a percentage or an amount off the **goods** (never the delivery), and always leaves at least ₦100 to pay. You can set a minimum spend, a cap on uses, once per buyer (by email), and dates. A code is counted when the order is paid. **Paused** stops it for now; **Archived** retires it.
+
+### Reports (fees)
+
+Shop → **Reports** shows the last 30 days; **Change dates** picks any range of up to a year, and optionally one product (for a pre-order, the counts per size are the print order).
+
+- **Gross**: what orders paid, after discounts, with delivery. **Paystack's fees**: what Paystack kept, as Paystack reported it on each payment. **Refunds**: processed in the range. **Net** = gross + the processing fees buyers paid − Paystack's fees − refunds.
+- By how it was paid, sell-through (sold against sold plus what is left), by day, and by product and size, with **Download by product (CSV)**.
 
 ### When something is wrong
 
 | You see | It means | Do this |
 |---|---|---|
-| An order's note says "Paid while short of stock" | Two buyers paid for the last item at the same moment | Restock, or cancel the order and refund it |
-| A payment on the unapplied-payments record with an `NGGS-` reference | Paystack reported money that did not match an order, or that reached an order no longer waiting | Check it in Paystack; refund or apply it by hand |
+| "Paid while short of stock" on an order's timeline | Two buyers paid for the last item at the same moment | Restock, or refund it |
+| "Sold past the recorded stock" on a table sale | The table sold more than the count said | Do a stock-take |
+| A payment on the unapplied-payments record with an `NGGS-` reference | Paystack reported money that did not match an order, or reached an order staff had cancelled | Check it in Paystack; refund or apply it by hand |
+| A refund stuck at **Waiting for Paystack** | The webhook did not arrive | Press **Check now**; check the webhook address in the Paystack dashboard |
+| A refund marked **Failed** | Paystack could not refund it (some bank-transfer and USSD payments) | Pay it back another way and record it as such |
 | "The order changed while you were looking" | Someone else moved the order first | It reloads; look again |
+| "Allow pop-ups for this site to print" | The browser blocked the print window | Allow pop-ups for the Control Room, then print again |
 | The shop page says it can't take orders | Paystack is not set up, or no centre takes collections and delivery is off | See "Before the first sale" |

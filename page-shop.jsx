@@ -38,7 +38,7 @@ function shopMoney(n) { return fmtMoney(Number(n) || 0); }
 function shopToast(kind, text) { try { if (typeof toast !== "undefined" && toast[kind]) toast[kind](text, "Cart"); } catch (_) {} }
 function shopLineKey(l) { return l.productId + "\u001f" + (l.option || ""); }
 /** What is left of one option, or Infinity when the product has no limit. */
-function shopLeft(p, option) { return p && p.left ? Math.max(0, Number(p.left[option || ""]) || 0) : Infinity; }
+function shopLeft(p, option) { return p && p.left && !p.preorderUntil ? Math.max(0, Number(p.left[option || ""]) || 0) : Infinity; }
 function shopCatFromUrl() { try { return new URLSearchParams(window.location.search).get("cat") || ""; } catch (_) { return ""; } }
 
 /* What the server's refusals mean to a buyer. A refusal that carries its own
@@ -79,6 +79,9 @@ function ShopPage({ setPage }) {
   const [quote, setQuote] = React.useState({ state: "idle", q: null, error: "" });
   const [busy, setBusy] = React.useState(false);
   const [payErr, setPayErr] = React.useState("");
+  /* A discount code: typed, then applied with a button (never on every keystroke), and priced by the quote. */
+  const [codeIn, setCodeIn] = React.useState("");
+  const [code, setCode] = React.useState("");
   const qSeq = React.useRef(0);
 
   const load = React.useCallback(() => {
@@ -110,13 +113,13 @@ function ShopPage({ setPage }) {
 
   /* The quote: the server's price for this cart, now. Asked again whenever the
      cart or the way it reaches the buyer changes. */
-  const cartSig = JSON.stringify(cart) + "|" + fulfil;
+  const cartSig = JSON.stringify(cart) + "|" + fulfil + "|" + code + "|" + (code ? buyer.email.trim().toLowerCase() : "");
   React.useEffect(() => {
     if (list.state !== "ready" || !d.open || !cart.length) { setQuote({ state: "idle", q: null, error: "" }); return; }
     const n = ++qSeq.current;
     setQuote(s => ({ state: "loading", q: s.q, error: "" }));
     const t = setTimeout(() => {
-      NGGApi.public.shop.quote(cart.map(l => ({ productId: l.productId, option: l.option, qty: l.qty })), fulfil).then(
+      NGGApi.public.shop.quote(cart.map(l => ({ productId: l.productId, option: l.option, qty: l.qty })), fulfil, code, buyer.email.trim()).then(
         r => { if (n === qSeq.current) setQuote({ state: "ready", q: r, error: "" }); },
         e => { if (n === qSeq.current) setQuote({ state: "error", q: null, error: shopErrText(e, "Couldn’t price your cart. Try again.") }); });
     }, 250);
@@ -166,7 +169,7 @@ function ShopPage({ setPage }) {
       const r = await NGGApi.public.shop.order({
         items: cart.map(l => ({ productId: l.productId, option: l.option, qty: l.qty })), fulfil,
         buyer: { name: buyer.name.trim(), email: buyer.email.trim(), phone: buyer.phone.trim() },
-        centre: fulfil === "collect" ? buyer.centre : "", address: fulfil === "deliver" ? buyer.address.trim() : "",
+        centre: fulfil === "collect" ? buyer.centre : "", address: fulfil === "deliver" ? buyer.address.trim() : "", code,
       });
       /* Only ever to Paystack's own checkout (nggPaystackUrlOk, page-other.jsx). */
       if (!nggPaystackUrlOk(r.authorizationUrl)) throw Object.assign(new Error("bad_checkout"), { code: "init_failed" });
@@ -175,6 +178,7 @@ function ShopPage({ setPage }) {
     } catch (err) {
       setBusy(false);
       const f = SHOP_FIELD_ERRORS[err && err.code];
+      if (err && /^(bad_code|code_)/.test(err.code || "")) { setCode(""); setFe({ code: shopErrText(err, "That code can’t be used.") }); return; }
       if (f) { setFe({ [f[0]]: shopErrText(err, f[1]) }); setTimeout(() => { const el = document.getElementById("shop-f-" + f[0]); if (el) el.focus(); }, 30); return; }
       setPayErr(shopErrText(err, "Couldn’t place the order. Nothing was charged — try again."));
       /* The catalogue moved under the buyer (sold out, taken off sale, closed): read it again. */
@@ -275,16 +279,31 @@ function ShopPage({ setPage }) {
               )}
               {fulfil === "deliver" && <ShopField id="address" label="Delivery address" type="textarea" value={buyer.address} err={fe.address} onChange={v => setB("address", v)} ac="street-address" help={terms.deliveryNote}/>}
 
+              <div className="shop-field">
+                <label htmlFor="shop-f-code">Discount code <span className="shop-opt">(if you have one)</span></label>
+                <div className="shop-code">
+                  <input id="shop-f-code" value={codeIn} autoCapitalize="characters" autoComplete="off" spellCheck={false} maxLength={24}
+                    aria-invalid={fe.code ? true : undefined} aria-describedby={fe.code ? "shop-f-code-err" : undefined}
+                    onChange={e => { setCodeIn(e.target.value); setFe(f => { const n = Object.assign({}, f); delete n.code; return n; }); }}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); setCode(codeIn.trim().toUpperCase()); } }}/>
+                  {code && code === codeIn.trim().toUpperCase()
+                    ? <button type="button" className="btn btn-ghost" onClick={() => { setCode(""); setCodeIn(""); }}>Remove</button>
+                    : <button type="button" className="btn btn-ghost" disabled={!codeIn.trim()} onClick={() => setCode(codeIn.trim().toUpperCase())}>Apply</button>}
+                </div>
+                {fe.code && <span className="shop-ferr" id="shop-f-code-err">{fe.code}</span>}
+              </div>
+
               <div className="shop-quote" aria-live="polite">
                 <h3 className="shop-quote-h">What you pay</h3>
                 {quote.state === "loading" && !q && <p className="shop-help" role="status">Working out the price…</p>}
-                {quote.state === "error" && <p className="shop-ferr" role="alert">{quote.error}</p>}
+                {quote.state === "error" && <p className="shop-ferr" role="alert">{quote.error}{code && <> <button type="button" className="shop-linkbtn" onClick={() => { setCode(""); setCodeIn(""); }}>Remove the code</button></>}</p>}
                 {q && (
                   <table className={"shop-sum" + (quote.state === "loading" ? " is-stale" : "")}>
                     <tbody>
                       <tr><th scope="row">Items</th><td>{shopMoney(q.subtotal)}</td></tr>
+                      {q.discount > 0 && <tr><th scope="row">Code {q.code}</th><td>−{shopMoney(q.discount)}</td></tr>}
                       {q.delivery > 0 && <tr><th scope="row">Delivery</th><td>{shopMoney(q.delivery)}</td></tr>}
-                      {q.onlineFee > 0 && <tr><th scope="row">Paystack’s charge<span>For paying online — not an NGG fee</span></th><td>{shopMoney(q.onlineFee)}</td></tr>}
+                      {q.onlineFee > 0 && <tr><th scope="row">Payment processing fee<span>Charged by Paystack, our payment provider</span></th><td>{shopMoney(q.onlineFee)}</td></tr>}
                     </tbody>
                     <tfoot><tr><th scope="row">Total</th><td>{shopMoney(q.total + (q.onlineFee || 0))}</td></tr></tfoot>
                   </table>
@@ -352,6 +371,7 @@ function ShopProductCard({ p, maxQty, inCart, onAdd }) {
         <span className="shop-card-cat">{p.category}</span>
         <h3 id={"shop-n-" + p.productId} className="shop-card-n">{p.name}</h3>
         <p className="shop-price">{shopMoney(p.price)}</p>
+        {p.preorderUntil && <p className="shop-pre">Pre-order until {new Date(p.preorderUntil + "T12:00:00Z").toLocaleDateString(NGG_LOCALE, { day: "numeric", month: "long" })}. Made to order; we tell you when it is ready.</p>}
         {p.description && <p className="shop-desc">{p.description}</p>}
         {!p.soldOut && (
           <div className="shop-pick">
@@ -386,7 +406,7 @@ function ShopProductCard({ p, maxQty, inCart, onAdd }) {
    the page never decides that anything is paid. */
 const SHOP_STEPS = [["paid", "Paid"], ["ready", "Ready"], ["completed", "Done"]];
 const SHOP_STATUS_TEXT = {
-  pending: ["Waiting for payment", "We haven’t received the payment for this order. If you paid, refresh this page in a minute — do not pay again. If you didn’t finish paying, order again from the shop: an unpaid order holds nothing back and needs no cancelling."],
+  pending: ["Waiting for payment", "We haven’t received the payment for this order. If you paid, refresh this page in a minute — do not pay again. If you didn’t finish, pay now below. An unpaid order holds nothing back, and it is cancelled if it stays unpaid."],
   paid: ["Paid — thank you", "We are getting your order ready, and we will email you when it is."],
   ready: ["Ready", ""],
   completed: ["Done", ""],
@@ -396,6 +416,16 @@ function ShopOrderPage({ setPage }) {
   const token = decodeURIComponent(((window.location.pathname || "").split("/").filter(Boolean)[2]) || "");
   const [st, setSt] = React.useState({ state: "loading", o: null, e: null });
   const [warn, setWarn] = React.useState("");
+  const [paying, setPaying] = React.useState(false);
+  /* Pay a pending order later: the server checks the stock again and opens a fresh Paystack checkout. */
+  const payNow = async () => {
+    setWarn(""); setPaying(true);
+    try {
+      const r = await NGGApi.public.shop.pay(token);
+      if (!nggPaystackUrlOk(r.authorizationUrl)) throw Object.assign(new Error("bad_checkout"), { code: "init_failed" });
+      window.location.assign(r.authorizationUrl);
+    } catch (e) { setPaying(false); setWarn(shopErrText(e, "Couldn’t open the payment. Try again.")); }
+  };
   const load = React.useCallback(() => {
     let ref = "";
     try { const q = new URLSearchParams(window.location.search); ref = q.get("reference") || q.get("trxref") || ""; } catch (_) {}
@@ -436,7 +466,9 @@ function ShopOrderPage({ setPage }) {
     const next = o.status === "ready"
       ? (collect ? "Your order is ready to collect at " + o.centre + ". Bring the order number to the desk." : "Your order is on its way to you.")
       : o.status === "completed" ? (collect ? "You collected this order. Enjoy it." : "This order was delivered. Enjoy it.")
-      : o.status === "cancelled" ? "This order was cancelled." + (o.paidAt ? " Your payment will be refunded, and NGG will contact you about it." : " Nothing was charged.")
+      : o.status === "cancelled" ? (o.expired && !o.paidAt ? "This order was cancelled because it was not paid in time. Nothing was charged; order again from the shop." : "This order was cancelled." + (o.paidAt
+          ? (o.refundState === "full" ? " Your payment has been refunded." : o.refundState === "pending" ? " Your refund has been started; it reaches you within 10 working days." : " Your payment will be refunded, and NGG will contact you about it.")
+          : " Nothing was charged."))
       : head[1];
     const when = v => v ? new Date(v).toLocaleDateString(NGG_LOCALE, { day: "numeric", month: "long", year: "numeric" }) : "";
     inner = (
@@ -448,6 +480,13 @@ function ShopOrderPage({ setPage }) {
           <b className="shop-mono">{o.orderId}</b>
           {collect && o.status !== "cancelled" && o.status !== "completed" && <em>Bring this number to the desk at {o.centre}.</em>}
         </div>
+        {o.pickupCode && collect && (
+          <div className="shop-onum shop-pickup">
+            <span>Pickup code</span>
+            <b className="shop-mono">{o.pickupCode}</b>
+            <em>The desk asks for it when you collect. Keep it to yourself.</em>
+          </div>
+        )}
         {o.status !== "pending" && o.status !== "cancelled" && (
           <ol className="shop-steps" aria-label="Where your order is">
             {SHOP_STEPS.map((s, i) => <li key={s[0]} className={i <= idx ? "is-done" : ""} aria-current={i === idx ? "step" : undefined}>{s[0] === "completed" ? (collect ? "Collected" : "Delivered") : s[0] === "ready" ? (collect ? "Ready to collect" : "On its way") : s[1]}</li>)}
@@ -456,11 +495,14 @@ function ShopOrderPage({ setPage }) {
         {warn && <div className="shop-err" role="alert">{warn}</div>}
         <p className="shop-next" role="status">{next}</p>
         {o.note && o.status !== "cancelled" && o.status !== "completed" && <p className="shop-help">{o.note}</p>}
+        {o.tracking && o.status === "ready" && !collect && <p className="shop-help">{o.tracking}</p>}
         <table className="shop-sum shop-olines">
           <tbody>
             {o.lines.map((l, i) => <tr key={i}><th scope="row">{l.name}{l.option ? " (" + l.option + ")" : ""} × {l.qty}</th><td>{shopMoney(l.amount)}</td></tr>)}
+            {o.discount > 0 && <tr><th scope="row">Code {o.discountCode}</th><td>−{shopMoney(o.discount)}</td></tr>}
             {o.delivery > 0 && <tr><th scope="row">Delivery</th><td>{shopMoney(o.delivery)}</td></tr>}
-            {o.processingFee > 0 && <tr><th scope="row">Paystack’s charge<span>For paying online — not an NGG fee</span></th><td>{shopMoney(o.processingFee)}</td></tr>}
+            {o.refunded > 0 && <tr><th scope="row">Refunded</th><td>−{shopMoney(o.refunded)}</td></tr>}
+            {o.processingFee > 0 && <tr><th scope="row">Payment processing fee<span>Charged by Paystack, our payment provider</span></th><td>{shopMoney(o.processingFee)}</td></tr>}
           </tbody>
           <tfoot><tr><th scope="row">{o.paidAt ? "Total paid" : "Total"}</th><td>{shopMoney(o.total + (o.processingFee || 0))}</td></tr></tfoot>
         </table>
@@ -472,7 +514,8 @@ function ShopOrderPage({ setPage }) {
           {o.completedAt && <div><dt>{collect ? "Collected" : "Delivered"}</dt><dd>{when(o.completedAt)}</dd></div>}
         </dl>
         <div className="shop-oacts">
-          {o.status === "pending" && <button type="button" className="btn btn-primary" onClick={load}>Refresh</button>}
+          {o.payable && <button type="button" className="btn btn-primary" disabled={paying} onClick={payNow}>{paying ? "Opening Paystack…" : "Pay now"}</button>}
+          {o.status === "pending" && <button type="button" className="btn btn-ghost" onClick={load}>Refresh</button>}
           <button type="button" className="btn btn-ghost" onClick={() => setPage("shop")}>Back to the shop</button>
         </div>
       </>

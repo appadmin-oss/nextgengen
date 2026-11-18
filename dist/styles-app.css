@@ -18175,3 +18175,31 @@ button.m9x-ev-sum { cursor: pointer; }
 .lrn-step-h:focus-visible { outline: 2px solid var(--lrn-accent); outline-offset: 3px; border-radius: 4px; }
 .lrn-step-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
 .lrn-step-done { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--lrn-ok); font-weight: 600; }
+
+/* ── The shop's till (cr-tab-shop.jsx, CrShopTill): goods on the left, the sale on the right; one column when the
+   panel itself is narrow (a container query, never the window's width). ── */
+.cr-till-wrap { container-type: inline-size; }
+.cr-till { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@container (min-width: 760px) { .cr-till { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; } }
+.cr-till-goods { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.cr-till-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cr-till-l { font-size: 13px; font-weight: 600; color: var(--cr-text); }
+.cr-till-opt { font-weight: 400; color: var(--cr-muted-3); }
+.cr-till-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.cr-till-item { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px; border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); background: var(--cr-bg); }
+.cr-till-price { font-variant-numeric: tabular-nums; color: var(--cr-text); }
+.cr-till-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.cr-till-left { font-size: 12.5px; color: var(--cr-muted-3); }
+.cr-till-left.is-out { color: var(--cr-bad-fg); font-weight: 600; }
+.cr-till-cart { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--cr-r-lg); background: var(--cr-s1); min-width: 0; }
+.cr-till-h { margin: 0; font-size: 15px; }
+.cr-till-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cr-till-lines li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; }
+.cr-till-ln { overflow-wrap: anywhere; }
+.cr-till-qty { display: inline-flex; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
+.cr-till-amt { font-variant-numeric: tabular-nums; text-align: right; min-width: 72px; }
+.cr-till-total { display: flex; justify-content: space-between; align-items: baseline; padding-top: 8px; border-top: 1px solid var(--cr-line-2); }
+.cr-till-total b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.cr-till-msg { margin: 0; padding: 8px 10px; border-radius: var(--cr-r); background: var(--cr-ok-bg); color: var(--cr-ok-fg); font-size: 13px; }
+.cr-till-msg.is-bad { background: var(--cr-bad-bg); color: var(--cr-bad-fg); }
+.cr-till-go { width: 100%; height: 44px; }
