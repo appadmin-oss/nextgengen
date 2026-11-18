@@ -39,6 +39,9 @@ Consequences you must respect:
   order because of hoisting.
 - Vendors (Fabric, jsPDF, TanStack Table, Babel) live in `vendor/` and are
   loaded on demand by `loadVendor`. Do not add an npm runtime dependency.
+- **Three production bundles** (docs/PERFORMANCE.md): public (`app`), `app-study` (build.js `STUDY`; routes in
+  `NGG_STUDY_ROUTES`) and `app-more` (build.js `MORE`; `NGG_MORE_ROUTES`). A new heavy, single-purpose area goes
+  in one of the lazy ones, never the public bundle; `tests/bundle-split.test.js` holds the line.
 - **First paint in dev is slow** — Babel compiles ~21 files. Browser tests
   need a generous boot budget; use `waitForBoot` from `tests/_serve.js`
   (60s), never a fixed sleep.

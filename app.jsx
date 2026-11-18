@@ -148,34 +148,77 @@ const NOINDEX_PAGES = ROUTES.filter(r => r.index === false).map(r => r.id);
    and draws again — so a missed route costs a moment's wait, never a crash.
    In dev every file is already loaded (no <meta name="ngg-more">). */
 const NGG_MORE_ROUTES = ["mou", "admin", "summer-admin", "club-admin", "circle", "family", "mentor", "instructor", "id-cards", "designer", "dashboard", "community"];
+/* The STUDY bundle (build.js STUDY): the Labs, study tools, the timetable maker, Learn, the
+   chess engine and lesson blocks — heavy, single-purpose, and opened by few visitors. Tiered
+   loading, as games stream a level: the home page no longer parses them. Its own routes fetch it;
+   the signed-in bundle fetches it too (the dashboard borrows LrnExam, AsdHandIn, LxField). */
+const NGG_STUDY_ROUTES = ["study", "timetable", "learn"];
+let nggStudyPromise = null;
+/** Are the bundles this page needs here? */
+function nggChunksReady(page) { return NGG_MORE_ROUTES.includes(page) ? nggMoreReady() : NGG_STUDY_ROUTES.includes(page) ? nggStudyReady() : true; }
+function nggStudyUrl() { const m = document.querySelector('meta[name="ngg-study"]'); return m ? m.getAttribute("content") : ""; }
+function nggStudyReady() { return !!window.__nggStudyLoaded || !nggStudyUrl(); }
+function nggNeedStudy() {
+  if (nggStudyReady()) return Promise.resolve(true);
+  if (nggStudyPromise) return nggStudyPromise;
+  nggStudyPromise = new Promise((resolve, reject) => {
+    window.__nggStudyReady = () => resolve(true);
+    const el = document.createElement("script");
+    el.src = nggStudyUrl(); el.async = true;
+    el.onerror = () => { nggStudyPromise = null; reject(new Error("chunk_failed")); };
+    el.onload = () => { if (!window.__nggStudyLoaded) { nggStudyPromise = null; reject(new Error("chunk_failed")); } };
+    document.head.appendChild(el);
+  });
+  return nggStudyPromise;
+}
 let nggMorePromise = null;
 function nggMoreUrl() { const m = document.querySelector('meta[name="ngg-more"]'); return m ? m.getAttribute("content") : ""; }
-function nggMoreReady() { return !!window.__nggMoreLoaded || !nggMoreUrl(); }
+function nggMoreReady() { return (!!window.__nggMoreLoaded || !nggMoreUrl()) && nggStudyReady(); }
+/* The full Control Room stylesheet. Public pages hold a slim one (build.js, tools/css-split.js);
+   the full sheet is linked in the SAME place and the slim one removed once it has loaded, so the
+   signed-in areas see exactly the original cascade. Resolves either way: an unstyled moment is
+   better than a page that never opens. */
+function nggMoreCss() {
+  const m = document.querySelector('meta[name="ngg-more-css"]'), slim = document.getElementById("ngg-app-css");
+  if (!m || !slim || document.getElementById("ngg-app-css-full")) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const l = document.createElement("link"); l.rel = "stylesheet"; l.id = "ngg-app-css-full"; l.href = m.getAttribute("content");
+    l.onload = () => { try { slim.remove(); } catch (_) {} resolve(true); };
+    l.onerror = () => resolve(true);
+    slim.after(l);
+  });
+}
 function nggNeedMore() {
-  if (nggMoreReady()) return Promise.resolve(true);
+  if (nggMoreReady()) return nggMoreCss();
   if (nggMorePromise) return nggMorePromise;
-  nggMorePromise = new Promise((resolve, reject) => {
+  nggMorePromise = Promise.all([nggMoreCss(), nggNeedStudy(), (window.__nggMoreLoaded || !nggMoreUrl()) ? true : new Promise((resolve, reject) => {
     window.__nggMoreReady = () => resolve(true);
     const el = document.createElement("script");
     el.src = nggMoreUrl(); el.async = true;
     el.onerror = () => { nggMorePromise = null; reject(new Error("chunk_failed")); };
     el.onload = () => { if (!window.__nggMoreLoaded) { nggMorePromise = null; reject(new Error("chunk_failed")); } };
     document.head.appendChild(el);
-  });
+  })]).then(() => true);
   return nggMorePromise;
 }
 /* Draws a page once what it needs is loaded: a short wait with words, an
    honest error with a retry if the bundle could not be fetched (a dropped
    connection is the commonest case on a phone). */
 class NggChunkGate extends React.Component {
-  constructor(p) { super(p); this.state = { ready: nggMoreReady() || !NGG_MORE_ROUTES.includes(p.page), failed: false, tries: 0 }; }
+  constructor(p) { super(p); this.state = { ready: nggChunksReady(p.page), failed: false, tries: 0 }; }
   /* Only a name the signed-in bundle defines is this gate's business; any
      other error is thrown on, up to the app's own handling. */
-  static getDerivedStateFromError(e) { return e && e.name === "ReferenceError" && !nggMoreReady() ? { ready: false, failed: false } : { fatal: e }; }
+  static getDerivedStateFromError(e) { return e && e.name === "ReferenceError" && !nggMoreReady() ? { ready: false, failed: false, caught: true } : { fatal: e }; }
   componentDidCatch(e) { if (e && e.name === "ReferenceError" && !nggMoreReady()) this.load(); }
   componentDidMount() { if (!this.state.ready) this.load(); }
-  componentDidUpdate(prev) { if (prev.page !== this.props.page && !nggMoreReady() && NGG_MORE_ROUTES.includes(this.props.page)) { this.setState({ ready: false }); this.load(); } }
-  load() { nggNeedMore().then(() => this.setState({ ready: true, failed: false }), () => this.setState({ failed: true })); }
+  componentDidUpdate(prev) { if (prev.page !== this.props.page && !nggChunksReady(this.props.page)) { this.setState({ ready: false }); this.load(); } }
+  /* What this page needs: a signed-in route both bundles, a study route the study bundle; after a
+     ReferenceError (a name a bundle defines), everything. */
+  load() {
+    const p = this.props.page;
+    const need = NGG_STUDY_ROUTES.includes(p) && !NGG_MORE_ROUTES.includes(p) && !this.state.caught ? nggNeedStudy() : nggNeedMore();
+    need.then(() => this.setState({ ready: true, failed: false }), () => this.setState({ failed: true }));
+  }
   render() {
     if (this.state.fatal) throw this.state.fatal;
     if (this.state.failed) return (

@@ -9967,3 +9967,12 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mou-parties-list li:not(.is-done) .mou-step-n { background: var(--cream-100); }
 .mou-foot { text-align: center; color: var(--ink-500); font-size: 13px; }
 .mou-foot a { color: var(--navy-700); }
+
+/* Lite (low-end phones): don't render what is off screen (web.dev, content-visibility — "skip an
+   element's rendering work, including layout and painting, until it is needed"). Only in Lite:
+   it clips anything a section paints outside itself, which the full design sometimes does; Lite
+   draws without those effects. The intrinsic size keeps the scrollbar honest while a section waits. */
+html[data-lite="on"] .section, html[data-lite="on"] .prefooter, html[data-lite="on"] footer.footer {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 720px;
+}

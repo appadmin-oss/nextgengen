@@ -128,8 +128,13 @@ process.on('exit', cleanup);
     ok('index.html references only the fingerprinted names',
       ENTRIES.every(f => html.includes(man.assets[f]))
       && !/(?:src|href)="(?:\.\/)?(app\.min\.js|styles\.css|styles-app\.css|data\.js|photos\.js|api-client\.js|outbox\.js)"/.test(html));
+    /* The worker precaches the SLIM public sheet (build.js, tools/css-split.js): the full Control Room sheet
+       comes with the signed-in bundle, so a first visit does not fetch 1.1 MB of it in the background. */
+    const SW_ENTRIES = ENTRIES.map(f => f === 'styles-app.css' ? 'styles-app-public.css' : f);
     ok('the service worker precaches the fingerprinted names, not the plain ones',
-      ENTRIES.every(f => sw.includes("'/" + man.assets[f] + "'")));
+      SW_ENTRIES.every(f => sw.includes("'/" + man.assets[f] + "'")));
+    ok('…and not the full Control Room stylesheet, which public visitors never need',
+      !sw.includes("'/" + man.assets['styles-app.css'] + "'") && !sw.includes("'/styles-app.css'"));
     // The journal shell is the one other page that loads the shared client. It
     // was the gap: left plain, it would be the single surface still able to run
     // a stale api-client.js.

@@ -7614,3 +7614,15 @@ Owner: "Make receipts downloadable as PDF and image with server drawing instead 
 - Routes: `document.php?t=…&as=pdf|png` and `receipt.php?t=…&as=pdf|png` (the email link). Buttons on the receipt
   page, the payment page, the receipt email and Money → Membership payments.
 - Tests: 7 PHP checks; `tests/receipt-download.test.js` (7, through the routes).
+
+## 18 Nov 2026 — Low-end performance: three bundles, slim public CSS, lazy libraries
+
+Owner: "fix the NGG site constantly lagging … must work perfectly on low-end devices … too heavy … Research! How
+does Canva do? How do games do it?" Research and the numbers are in `docs/PERFORMANCE.md`.
+- A third bundle, `app-study` (Labs, tools, timetable, Learn, chess engine, lesson blocks): build.js STUDY,
+  app.jsx NGG_STUDY_ROUTES + nggNeedStudy; the signed-in bundle loads it too. bundle-split.test.js extended.
+- `tools/css-split.js`: public pages get the rules their sources use; the full styles-app.css is swapped in by
+  nggMoreCss() with the signed-in bundle. Phosphor CSS trimmed to the icons named in source.
+- TanStack Table and jsQR load on demand; the 1080 px logo is now 512 px (9.5 KB), `logo-1080.png` kept for print;
+  the service worker precaches the slim sheet; Lite mode adds content-visibility on sections.
+- Home page on an emulated low-end phone: 24.4 s → 16.4 s ready, 4.87 → 3.0 MB.

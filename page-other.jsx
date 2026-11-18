@@ -4872,8 +4872,15 @@ function QRScanner({ onToken }) {
   const [facing, setFacing] = React.useState("environment");
   const [multiCam, setMultiCam] = React.useState(false);
 
+  const [qrReady, setQrReady] = React.useState(0);   // bumped when jsQR arrives, to start the reader
   React.useEffect(() => {
-    if (typeof window === "undefined" || typeof window.jsQR !== "function") { setState("nolib"); return; }
+    /* jsQR (128 KB) is fetched when a camera reader opens, not by every page. */
+    if (typeof window === "undefined") { setState("nolib"); return; }
+    if (typeof window.jsQR !== "function") {
+      let gone = false;
+      loadVendorAsset("/vendor/jsQR.min.js", "js").then(() => { if (!gone) setQrReady(r => r + 1); }, () => { if (!gone) setState("nolib"); });
+      return () => { gone = true; };
+    }
     let cancelled = false;
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -4917,7 +4924,7 @@ function QRScanner({ onToken }) {
     // Re-runs on `facing`; the cleanup stops the old stream first, because a
     // phone will not hand out both lenses at once.
     return () => { cancelled = true; if (rafRef.current) cancelAnimationFrame(rafRef.current); if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
-  }, [facing]);
+  }, [facing, qrReady]);
 
   const flashing = hit && (Date.now() - hit < 700);
   if (state === "nolib" || state === "denied") {

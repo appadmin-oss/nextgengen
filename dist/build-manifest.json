@@ -1,11 +1,11 @@
 {
-  "buildId": "cb204e904a",
-  "builtAt": "2026-11-18T13:43:34.418Z",
+  "buildId": "4631e73e83",
+  "builtAt": "2026-11-18T14:16:19.368Z",
   "bundle": {
-    "file": "app.93d3b8003c.min.js",
-    "bytes": 2384037,
-    "gzipBytes": 644675,
-    "files": 49
+    "file": "app.858b34e987.min.js",
+    "bytes": 1679078,
+    "gzipBytes": 446051,
+    "files": 31
   },
   "more": {
     "file": "app-more.5536b30bfd.min.js",
@@ -79,15 +79,44 @@
       "page-admin.jsx"
     ]
   },
+  "study": {
+    "file": "app-study.e13fbe32b5.min.js",
+    "bytes": 705708,
+    "gzipBytes": 199989,
+    "files": 18,
+    "list": [
+      "chess-engine.jsx",
+      "lesson-blocks.jsx",
+      "lesson-editor.jsx",
+      "src/modules/learn/assign-desk.jsx",
+      "src/modules/tools/tools-core.jsx",
+      "src/modules/tools/tools-more.jsx",
+      "src/modules/tools/tools-labs.jsx",
+      "src/modules/mathslab/phy-visuals.jsx",
+      "src/modules/mathslab/eng-speak.jsx",
+      "src/modules/mathslab/mlb-app.jsx",
+      "src/modules/timetable/tt-core.jsx",
+      "src/modules/timetable/tt-poster.jsx",
+      "src/modules/timetable/tt-ui.jsx",
+      "src/modules/timetable/tt-views.jsx",
+      "src/modules/timetable/tt-layers.jsx",
+      "src/modules/timetable/tt-app.jsx",
+      "src/modules/learn/lrn-exam.jsx",
+      "page-learn.jsx"
+    ]
+  },
   "assets": {
-    "app.min.js": "app.93d3b8003c.min.js",
+    "app.min.js": "app.858b34e987.min.js",
     "app-more.min.js": "app-more.5536b30bfd.min.js",
-    "styles.css": "styles.e7105c7be4.css",
+    "app-study.min.js": "app-study.e13fbe32b5.min.js",
+    "styles.css": "styles.f305e4795f.css",
     "styles-app.css": "styles-app.8bcaf3a606.css",
     "data.js": "data.ec97c65376.js",
     "photos.js": "photos.36b0b4ea72.js",
     "api-client.js": "api-client.44feffc12b.js",
-    "outbox.js": "outbox.042a8c9122.js"
+    "outbox.js": "outbox.042a8c9122.js",
+    "styles-app-public.css": "styles-app-public.2499395664.css",
+    "phosphor.css": "phosphor-used.37d82d13fc.css"
   },
   "node": "v22.23.5"
 }

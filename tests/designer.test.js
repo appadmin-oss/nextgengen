@@ -147,7 +147,7 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     },
   } }), public: deep({}) });
 </script>
-<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script>
+<script src="/dist/app.min.js"></script><script src="/dist/app-study.min.js"></script><script src="/dist/app-more.min.js"></script>
 <script>
   /* AFTER the bundle: auth.jsx assigns window.useAuth as it loads, so a stub set
      before it is simply overwritten — the page then renders "staff sign-in

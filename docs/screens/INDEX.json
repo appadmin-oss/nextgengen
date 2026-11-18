@@ -142,11 +142,11 @@
   {
     "name": "27-roster-import",
     "label": "Importing the members workbook without a shell — the dry run, before anything is written",
-    "kb": 110
+    "kb": 128
   },
   {
     "name": "28-id-preflight",
     "label": "Printing member IDs — what is missing across the selection, before the run",
-    "kb": 64
+    "kb": 80
   }
 ]
