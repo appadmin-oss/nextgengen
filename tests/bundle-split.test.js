@@ -43,6 +43,7 @@ const moreNames = new Set(); more.forEach(f => decl[f].forEach(n => { if (!coreN
 /* Names a core file may mention, and why that is safe. */
 const ALLOWED = {
   // app.jsx: the route map, behind thunks; NggChunkGate loads the bundle first (NGG_MORE_ROUTES).
+  MouPage: 'route (/mou/<token>, in NGG_MORE_ROUTES): a family signing link never weighs on a public visitor',
   ControlRoomPage: 'route', IdCardStudioPage: 'route', MentorHome: 'route', InstructorHome: 'route', FamilyPage: 'route', DesignerPage: 'route',
   crPalettePages: 'typeof guard in command.jsx',
   CurriculumEditor: 'staff lesson form, staff routes only; NggChunkGate loads and redraws',

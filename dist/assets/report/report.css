@@ -147,6 +147,19 @@ body { font-family: var(--font-body); color: var(--ink); font-size: var(--fs-bod
   .rp-mentor-l { border-right: 0; border-bottom: 1px solid var(--rule-soft); }
   .rp-sign { grid-template-columns: 1fr; gap: 32px; }
 }
+/* The Membership Agreement (domain/mou.php): clauses with their "In short" line, and the three signatures. */
+.rp-clause p { margin: 0 0 8px; color: var(--ink-2); }
+.rp-clause .rp-clause-short { background: var(--fill-amber); border-left: 3px solid var(--ngg-amber); padding: 8px 12px; color: var(--ink); border-radius: 0 var(--radius-tag) var(--radius-tag) 0; }
+.rp-signs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.rp-sign { border: 1px solid var(--rule); border-radius: var(--radius-tile); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; min-height: 120px; break-inside: avoid; }
+.rp-sign-img { width: 100%; height: 64px; object-fit: contain; object-position: left center; border-bottom: 1px solid var(--rule); }
+.rp-sign-empty { height: 64px; display: flex; align-items: center; color: var(--muted); font-style: italic; border-bottom: 1px dashed var(--rule); }
+.rp-sign-n { font-weight: 600; }
+.rp-sign-s { color: var(--muted); font-size: var(--fs-label); }
+.rp-foot-note { color: var(--muted); font-size: var(--fs-label); margin: 10px 0 0; }
+.rp-foot-note code { font-size: 11px; }
+@media (max-width: 640px) { .rp-signs { grid-template-columns: 1fr; } }
+
 @media print {
   .rp-print { display: none; }
   body.rp-body { background: var(--white); padding: 0; }

@@ -88,6 +88,8 @@ const ROUTES = [
   /* A family's joining invoice, by its private token (/pay/<token>). Own
      chrome, never indexed: the address is a capability, sent by email. */
   { id: "pay",          title: "Complete membership · NGG",                desc: "", chrome: "own", index: false, addressable: false },
+  /* The Membership Agreement, by the family's private link (/mou/<token>, page-mou.jsx, domain/mou.php). */
+  { id: "mou",          title: "Membership Agreement · NGG",               desc: "", chrome: "own", index: false, addressable: false },
   /* The NGG shop (page-shop.jsx, domain/shop.php). /shop is the catalogue and
      is public; an order's page (/shop/order/<token>) is the buyer's private
      link — Paystack returns them to it — so it is never indexed. */
@@ -145,7 +147,7 @@ const NOINDEX_PAGES = ROUTES.filter(r => r.index === false).map(r => r.id);
    caught by NggChunkGate — a ReferenceError while drawing loads the bundle
    and draws again — so a missed route costs a moment's wait, never a crash.
    In dev every file is already loaded (no <meta name="ngg-more">). */
-const NGG_MORE_ROUTES = ["admin", "summer-admin", "club-admin", "circle", "family", "mentor", "instructor", "id-cards", "designer", "dashboard", "community"];
+const NGG_MORE_ROUTES = ["mou", "admin", "summer-admin", "club-admin", "circle", "family", "mentor", "instructor", "id-cards", "designer", "dashboard", "community"];
 let nggMorePromise = null;
 function nggMoreUrl() { const m = document.querySelector('meta[name="ngg-more"]'); return m ? m.getAttribute("content") : ""; }
 function nggMoreReady() { return !!window.__nggMoreLoaded || !nggMoreUrl(); }
@@ -333,6 +335,8 @@ function pageFromPath() {
   }
   // A joining invoice: /pay/<token>.
   if (seg === "pay") return "pay";
+  // The Membership Agreement: /mou/<token>.
+  if (seg === "mou") return "mou";
   // A shop order, by its private link: /shop/order/<token>. /shop itself is a plain route.
   if (seg === "shop" && (window.location.pathname || "").replace(/^\/+|\/+$/g, "").split("/")[1] === "order") return "shop-order";
   // Volunteer service certificates: /cert/<certId> — public + printable.
@@ -530,6 +534,7 @@ function App() {
     certificate: () => <CertificatePage/>,
     notice:     () => <NoticePage setPage={setPage}/>,
     pay: () => <MembershipPayPage setPage={setPage}/>,
+    mou: () => <MouPage setPage={setPage}/>,
     shop: () => <ShopPage setPage={setPage}/>,
     "shop-order": () => <ShopOrderPage setPage={setPage}/>,
     "journal-entry": () => <JournalEntryPage/>,

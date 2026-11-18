@@ -252,3 +252,129 @@ Object.assign(CR_TAB_DEFS, {
     },
   },
 });
+
+/* ── Agreements (members/agreements) ──────────────────────────────────────
+   The Membership Agreement (MoU, domain/mou.php): every NGG member in your
+   centres by where their agreement stands. The family signs on their own
+   phone; here staff send or resend the link (and copy it for WhatsApp),
+   countersign as NGG's representative — witnessing too, when nobody did at
+   home — open the printable copy, or withdraw one started in error. */
+const CR_MOU_FILTERS = [["awaiting_ngg", "To countersign"], ["awaiting_family", "Waiting on the family"], ["none", "Not started"], ["signed", "Signed"], ["void", "Withdrawn"], ["all", "Everyone"]];
+const CR_MOU_STATE = { awaiting_ngg: ["To countersign", "warn"], awaiting_family: ["With the family", "neutral"], signed: ["Signed", "ok"], void: ["Withdrawn", "bad"], none: ["Not started", "bad"] };
+const crMouCtx = { current: null };
+function crMouWhen(iso) { return iso ? crDate(String(iso).slice(0, 10)) : ""; }
+
+async function crMouCopyLink(ctx, link) {
+  try { await navigator.clipboard.writeText(link); ctx.toast("Link copied. Paste it into WhatsApp or a text to the family."); }
+  catch (_) { window.prompt("Copy the family’s link:", link); }
+}
+
+async function crMouOpen(ctx, mouId) {
+  let r;
+  try { r = (await NGGApi.admin.mou.get(mouId)).mou; } catch (e) { ctx.toast(crErr(e, "Couldn’t open that agreement."), null, true); return; }
+  const P = r.parties || {}, st = CR_MOU_STATE[r.status] || ["", "neutral"];
+  const who = (x, sub) => x ? x.name + (sub ? " · " + sub : "") + " · " + crMouWhen(x.at) : "Not yet";
+  const fam = r.family || {};
+  ctx.drawer({
+    title: r.fullName, sub: [r.displayId || r.memberId, r.centre, st[0]].filter(Boolean).join(" · "), name: r.fullName,
+    sections: [
+      { h: "Signatures", text: "Family: " + who(P.family, P.family && P.family.relation) + "\nWitness: " + (r.needsWitness ? "Nobody at home — you witness when you countersign" : who(P.witness)) + "\nNGG: " + who(P.ngg, P.ngg && P.ngg.role) },
+      r.family ? { h: "The family", text: [fam.fatherName && "Father: " + fam.fatherName, fam.motherName && "Mother: " + fam.motherName, fam.guardianName && "Guardian: " + fam.guardianName, fam.phone, fam.email, fam.address].filter(Boolean).join("\n") } : null,
+      { h: "Sent", text: r.sentAt ? "Emailed " + crMouWhen(r.sentAt) + " to " + (r.sentTo || "—") + (r.viewedAt ? ". Opened " + crMouWhen(r.viewedAt) + "." : ". Not opened yet.") : "Not emailed — no address on the record. Copy the link and send it." },
+      r.status === "awaiting_ngg" || r.status === "signed" ? { h: "The check", text: "Answered the five questions" + (r.quizAttempts > 1 ? " (" + r.quizAttempts + " tries)" : "") + ". Off-site activities: " + (r.tripsChoice === "granted" ? "yes" : "no") + "." } : null,
+      r.voidReason ? { h: "Withdrawn", text: r.voidReason } : null,
+    ].filter(Boolean),
+    actions: [
+      r.status === "awaiting_ngg" ? { l: "Countersign", primary: true, run: () => { ctx.closeDrawer(); crMouCountersign(ctx, r); } } : null,
+      r.status !== "void" && r.status !== "awaiting_family" ? { l: "Open the copy (PDF)", run: () => window.open(NGGApi.admin.mou.docUrl(r.mouId), "_blank", "noopener") } : null,
+      r.status === "awaiting_family" ? { l: "Resend to the family", primary: true, run: async () => {
+        try { const x = await NGGApi.admin.mou.act("resend", { mouId: r.mouId }); ctx.closeDrawer(); ctx.toast((x.sentTo || []).length ? "Sent to " + x.sentTo.join(", ") + ". The old link no longer works." : "No email on the record — copy the link instead.");
+          crMouCopyLink(ctx, x.link); ctx.reload(); }
+        catch (e) { ctx.toast(crErr(e), null, true); } } } : null,
+      r.status !== "void" && r.status !== "signed" ? { l: "Withdraw", run: () => { ctx.closeDrawer(); crMouVoid(ctx, r); } } : null,
+    ].filter(Boolean),
+  });
+}
+
+function crMouCountersign(ctx, r) {
+  const me = (ctx.me || {}).name || "";
+  ctx.form({
+    title: "Countersign · " + r.fullName, submit: "Countersign", busyLabel: "Signing…",
+    intro: "You sign for Okun Alimosho (NGG)" + (r.needsWitness ? ", and as the witness: nobody witnessed the family’s signature at home." : ".") + " The family is emailed the completed copy.",
+    values: { role: "", signature: "" },
+    fields: [
+      { id: "role", l: "Your role", req: true, max: 80, ph: "Centre coordinator, Egbeda" },
+      { id: "signature", l: "Your signature", type: "signature", req: true, name: me, help: "Draw it, or sign with your name." },
+    ],
+    onSubmit: async v => { const x = await NGGApi.admin.mou.act("countersign", { mouId: r.mouId, role: v.role.trim(), signature: v.signature }); await ctx.reload(); return x; },
+    done: (v, x) => "Signed by all parties. Copy emailed to " + ((x.copyTo || []).join(", ") || "the family") + ".",
+  });
+}
+
+function crMouVoid(ctx, r) {
+  ctx.form({
+    title: "Withdraw the agreement · " + r.fullName, submit: "Withdraw", busyLabel: "Withdrawing…",
+    intro: "The record is kept. Its link stops working, and a new agreement can be started.",
+    fields: [{ id: "reason", l: "Why", type: "textarea", req: true, max: 300, check: v => String(v || "").trim().length < 10 ? "Say why, in at least ten characters." : "" }],
+    onSubmit: async v => { const x = await NGGApi.admin.mou.act("void", { mouId: r.mouId, reason: v.reason.trim() }); await ctx.reload(); return x; },
+    done: () => "Withdrawn.",
+  });
+}
+
+async function crMouStart(ctx, ids) {
+  const n = ids.length;   // read before the confirm
+  if (!(await ctx.confirm({ title: "Send " + crPlural(n, "agreement") + "?", body: "Each family is emailed a private link to read and sign the Membership Agreement. At most " + (ctx.data.max || 200) + " in one go.", cta: "Send " + crPlural(n, "agreement") }))) return;
+  try { const r = await NGGApi.admin.mou.act("start", { memberIds: ids }); ctx.toast(crRclSummary(r, "sent").text, null, crRclSummary(r, "sent").bad); ctx.reload(); }
+  catch (e) { ctx.toast(crErr(e), null, true); }
+}
+
+function crMouServer(ctx) {
+  return {
+    fetch: async ({ q, filters, page, pageSize }) => {
+      const r = await NGGApi.admin.mou.list({ status: filters.status || "awaiting_ngg", q: q || "" });
+      const rows = r.rows || [];
+      return { total: rows.length, rows: rows.slice(page * pageSize, page * pageSize + pageSize).map(x => ({ key: x.memberId + (x.mouId ? ":" + x.mouId : ""), memberId: x.memberId,
+        open: x.mouId ? () => crMouOpen(crMouCtx.current || ctx, x.mouId) : null, cells: [
+          { k: "person", t: x.fullName, s: [x.displayId || x.memberId, x.centre].filter(Boolean).join(" · "), photo: x.photoUrl || null },
+          { k: "status", t: (CR_MOU_STATE[x.status] || ["—"])[0] + (x.needsWitness ? " · needs a witness" : ""), tone: (CR_MOU_STATE[x.status] || [0, "neutral"])[1] },
+          { k: "text", t: x.parties && x.parties.family ? x.parties.family.name : "—", s: x.parties && x.parties.family ? crMouWhen(x.parties.family.at) : "" },
+          { k: "text", t: x.sentAt ? crMouWhen(x.sentAt) : x.mouId ? "Not emailed" : "—", s: x.viewedAt ? "Opened" : "" },
+        ] })) };
+    },
+  };
+}
+
+Object.assign(CR_TAB_DEFS, {
+  "agreements": {
+    skeleton: ["kpis", "table"],
+    load: async ctx => {
+      const r = await NGGApi.admin.mou.list({ status: "awaiting_ngg" });
+      return { counts: r.counts || {}, max: r.max || 200, server: crMouServer(ctx) };
+    },
+    actions: (d, ctx) => [
+      { l: d.counts.none ? "Send to " + crPlural(d.counts.none, "member") + " without one" : "Everyone has one", icon: "paper-plane-tilt", primary: !d.counts.awaiting_ngg, disabled: !d.counts.none,
+        why: d.counts.none ? "" : "Every NGG member in your centres has an agreement.",
+        run: async () => { const r = await NGGApi.admin.mou.list({ status: "none" }); crMouStart(ctx, (r.rows || []).map(x => x.memberId).slice(0, d.max)); } },
+    ],
+    blocks: (d, ctx) => {
+      crMouCtx.current = ctx;
+      const c = d.counts;
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "To countersign", v: crNum(c.awaiting_ngg || 0), tone: c.awaiting_ngg ? "down" : "flat", s: "Signed by the family" },
+          { l: "With the family", v: crNum(c.awaiting_family || 0), tone: "flat" },
+          { l: "Signed", v: crNum(c.signed || 0), tone: "up" },
+          { l: "Not started", v: crNum(c.none || 0), tone: c.none ? "down" : "flat" },
+        ] },
+        c.awaiting_ngg ? { type: "note", span: 6, icon: "signature", tone: "warn", text: crPlural(c.awaiting_ngg, "family has", "families have") + " signed and " + (c.awaiting_ngg === 1 ? "is" : "are") + " waiting on NGG’s countersignature.", sub: "Open one to countersign. If nobody witnessed it at home, you witness it as you sign." } : null,
+        { type: "table", span: 6, title: "Membership Agreements", sub: "The family signs on their phone from the emailed link. Open a row to resend, countersign or print.", server: d.server,
+          cols: [{ l: "Member" }, { l: "Where it stands", sort: false }, { l: "Family signed", sort: false }, { l: "Sent", sort: false }],
+          search: "Name or ID",
+          filtersInit: { status: c.awaiting_ngg ? "awaiting_ngg" : c.none ? "none" : "all" },
+          filters: [{ id: "status", l: "Show", opts: CR_MOU_FILTERS.map(f => ({ v: f[0], l: f[1], n: f[0] === "all" ? undefined : c[f[0]] })) }],
+          bulk: [{ l: "Send the agreement", max: d.max, run: keys => { crMouStart(ctx, keys.map(k => String(k).split(":")[0])); return false; } }],
+          emptyText: "Nobody here. Change “Show” to see the others." },
+      ].filter(Boolean);
+    },
+  },
+});

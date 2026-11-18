@@ -1,17 +1,17 @@
 {
-  "buildId": "aae8a722bb",
-  "builtAt": "2026-11-18T13:17:02.326Z",
+  "buildId": "d5241ebc94",
+  "builtAt": "2026-11-18T13:29:40.119Z",
   "bundle": {
-    "file": "app.e11dff9b94.min.js",
-    "bytes": 2383578,
-    "gzipBytes": 644583,
+    "file": "app.89fac24738.min.js",
+    "bytes": 2383743,
+    "gzipBytes": 644616,
     "files": 49
   },
   "more": {
-    "file": "app-more.759b3c9bd4.min.js",
-    "bytes": 3897385,
-    "gzipBytes": 1108976,
-    "files": 63,
+    "file": "app-more.811135a84e.min.js",
+    "bytes": 3921689,
+    "gzipBytes": 1115759,
+    "files": 64,
     "list": [
       "src/modules/idcards/ids-core.jsx",
       "src/modules/idcards/ids-ui.jsx",
@@ -49,6 +49,7 @@
       "src/modules/control/cr-shell.jsx",
       "src/modules/control/cr-gate.jsx",
       "src/modules/control/cr-app.jsx",
+      "page-mou.jsx",
       "src/modules/mentor15/mp15-view.jsx",
       "src/modules/mentor15/mp15-registration.jsx",
       "src/modules/mentor15/mp15-class.jsx",
@@ -79,9 +80,9 @@
     ]
   },
   "assets": {
-    "app.min.js": "app.e11dff9b94.min.js",
-    "app-more.min.js": "app-more.759b3c9bd4.min.js",
-    "styles.css": "styles.928c7e9b00.css",
+    "app.min.js": "app.89fac24738.min.js",
+    "app-more.min.js": "app-more.811135a84e.min.js",
+    "styles.css": "styles.e7105c7be4.css",
     "styles-app.css": "styles-app.8bcaf3a606.css",
     "data.js": "data.ec97c65376.js",
     "photos.js": "photos.36b0b4ea72.js",

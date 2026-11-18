@@ -5369,3 +5369,37 @@ Shop → **Reports** shows the last 30 days; **Change dates** picks any range of
 | "The order changed while you were looking" | Someone else moved the order first | It reloads; look again |
 | "Allow pop-ups for this site to print" | The browser blocked the print window | Allow pop-ups for the Control Room, then print again |
 | The shop page says it can't take orders | Paystack is not set up, or no centre takes collections and delivery is off | See "Before the first sale" |
+
+
+## Photos: the quality gate
+
+NGG does not take low-quality photos. A photo that is too small (under 600 × 800), too dark, washed out,
+unevenly lit, flat or blurry is refused where it comes in — the application, a guardian's retake, a member's
+"change my photo", the profile, a volunteer's record and a staff upload — with the reason in plain words
+("The photo is blurry. Hold the phone steady, tap the face to focus, and retake."). The family sees it at once,
+before anything is sent; the server checks the photo again wherever it is stored.
+How it decides is in `docs/PHOTO_QUALITY.md`. A super-admin can switch it off (`photo_quality_gate` = off) during
+a storage outage.
+
+## Membership Agreements (MoU)
+
+**Members → Agreements.** The Membership Agreement is the MoU, signed online.
+
+- **It starts by itself** when you press *Accept & create member* on an NGG application: the family gets the
+  welcome email and, after it, a private link to read and sign. For members who joined before, press
+  *Send to N members without one* (or select some under *Not started* and choose *Send the agreement*).
+- **The family** reads each part as a short summary with the full wording a tap away, answers five quick
+  questions (a wrong answer shows what the agreement says; they try again — nobody is locked out), confirms
+  their details and the off-site trips choice, and signs: a typed full name and a signature (drawn, or made from
+  the typed name). A witness signs on the same screen, or they leave it to NGG. They are emailed their copy at once.
+- **You countersign.** It appears under *To countersign*. Open it, press *Countersign*, give your role and sign.
+  If nobody witnessed it at home, you are the witness too, and the copy says so. The family is emailed the
+  completed agreement with a link to the printable copy (*Print or save as PDF*).
+- **Resend** makes a new link and stops the old one; the link is also copied so you can send it by WhatsApp.
+  **Withdraw** (with a reason) keeps the record and lets you start a new one.
+- **Its consents are the member's consents.** Signing writes taking part, emergency medical care, records,
+  updates, photos and the website (granted) and off-site trips (as chosen) to the consents ledger.
+- **The money in it is the website's.** The monthly contribution, membership fee and training place are read
+  from Money → Amounts on the day the family signs and frozen on that agreement.
+- The registration checklist's item *Membership Agreement signed* is done once NGG has countersigned.
+- A member with a signed agreement cannot be merged without a person deciding: the agreement names one child.

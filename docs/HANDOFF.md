@@ -7577,3 +7577,26 @@ sessions, stock-take, codes and reports. HawkScan not run (no `HAWK_API_KEY` her
 Not built (the plan's "do not build" list, and items outside §2): delivery zones, member price, bundles, VAT line.
 Unconfirmed with Paystack: whether bank-transfer/USSD payments refund automatically — a failed refund says so and
 staff pay it back another way.
+
+## 18 Nov 2026 — Photo quality gate; the Membership Agreement signed online
+
+Owner: "NGG registration and onboarding is flawed. Research. We do not take low quality images!", then "Go,
+build the photo gate … photos are also served by S3-compatible storage … add this MoU … parents must read and
+do a very short not-frustrating quiz … refine the MoU, make it standard and professional … merge it with the
+consent features … a copy would always be emailed … whatever clashes between the MoU and website, let the
+website win."
+
+- **Photo gate** (`domain/photo-quality.php`, `photoQa*` in components.jsx; `docs/PHOTO_QUALITY.md`). The apply
+  form used to warn about blur, measured on a 90 × 120 thumbnail, and enlarged a 320 px photo to 600 × 800. Now
+  every problem is a refusal, measured at full size, in the browser and again on the server wherever the photo
+  lives (inline, local store, S3-compatible bucket, Cloudinary). The PHP suite turns the gate off as a fixture
+  for the suites that post placeholder photos, and proves it in its own section. `tests/_photo.js` draws a
+  portrait-like test photo for the browser suites.
+- **Membership Agreement** (`domain/mou.php`, migration 239, `page-mou.jsx` in the signed-in bundle, Members →
+  Agreements in `cr-tab-registration.jsx`). The paper MoU rewritten in plain English (13 clauses; obvious
+  errors corrected; "Talent management" appeared twice and is once). Money is read from the fee settings and
+  frozen (`termsJson`); early termination follows the website's training-place write-down, with the handbook's
+  three months' notice and ₦30,000 inconvenience fee. The handbook's "₦300,000 per remaining year, inflation
+  adjusted" is NOT used: the website's training figure and basis win (owner's rule). Signatures are PNG data URLs
+  on the row; links are stored as hashes. `tests/mou-sign.test.js` (19 checks) and 25 PHP checks.
+- Migration numbering: a parallel session's shop management took 238 on the same branch; the MoU is 239.

@@ -101,6 +101,7 @@ const ORDER = [
   'page-other.jsx',
   'page-shop.jsx',
   'page-apply.jsx',
+  'page-mou.jsx',
   'page-centres.jsx',
   'src/modules/timetable/tt-core.jsx',
   'src/modules/timetable/tt-poster.jsx',
@@ -233,7 +234,7 @@ const MORE = [
   /^src\/modules\/mentor15\/(?!mp15-formation\.jsx$)/, /^src\/modules\/instructor6\//,
   /^src\/modules\/member9\//, /^src\/modules\/club3\//, /^src\/modules\/summer3\//,
   /^src\/modules\/community3\//, /^src\/modules\/family3\//, /^page-family\.jsx$/,
-  /^page-analytics\.jsx$/, /^page-designer\.jsx$/, /^page-portals\.jsx$/,
+  /^page-analytics\.jsx$/, /^page-designer\.jsx$/, /^page-portals\.jsx$/, /^page-mou\.jsx$/,
 ];
 const isMore = (f) => MORE.some((re) => re.test(f));
 

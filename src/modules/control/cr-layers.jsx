@@ -144,6 +144,15 @@ function CrFormSheet({ f, phone, onClose, toast }) {
           {x.help && <span className="cr-ff-help">{x.help}</span>}
         </div>
       );
+    } else if (x.type === "signature") {
+      /* A signature: drawn, or made from a typed name (x.nameFrom) — nothing requires a drag (MouSign, page-mou.jsx). */
+      return (
+        <div key={x.id} className="cr-ff" id={id}>
+          <MouSign value={v || ""} onChange={s => set(x.id, s)} name={x.name || vals[x.nameFrom] || ""} label={x.l}/>
+          {x.help && !err && <span className="cr-ff-help">{x.help}</span>}
+          {err && <span className="cr-ff-err" id={id + "-err"}><CrIcon n="warning-circle"/>{err}</span>}
+        </div>
+      );
     } else if (x.type === "file") {
       control = <input id={id} type="file" accept={x.accept} aria-invalid={err ? true : undefined} aria-describedby={desc} onChange={e => set(x.id, e.target.files && e.target.files[0] ? e.target.files[0] : "")}/>;
     } else {
