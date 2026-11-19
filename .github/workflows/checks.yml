@@ -34,11 +34,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: npm
+          node-version: '22'
 
+      # No lock file is committed (package-lock.json is ignored), so this installs
+      # from package.json; the only dependencies are the build and test tools.
       - name: Install
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build
         run: node build.js
