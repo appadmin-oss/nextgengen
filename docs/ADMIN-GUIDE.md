@@ -2038,6 +2038,34 @@ homework is not set for Year 1 members.
   mark an every-centre assignment for their course, but only their own
   centre's hand-ins. Whole-Club work is admin-only.
 
+**Getting work marked, and getting it back in (from 19 Nov 2026).**
+
+- **Instructors are told what is waiting.** Their Today, the duty pop-up and
+  the daily duties email say "N hand-ins to mark — oldest X days", counting
+  only hand-ins they can actually open and mark (their courses, their
+  centre). It turns urgent once the oldest has waited **7 days**, and then
+  the lead mentor of their centre is nudged once (Mentorship → nudges, rule
+  `J:handinsOverdue`); with no lead mentor the nudge waits on the centre's
+  list. The Control Room overview shows **time to mark** — the median and
+  slowest-tenth hours from hand-in to mark over 90 days.
+- **Returned work is open work.** **Return for changes** now asks for a
+  **hand in again by** date (three days if left alone; it cannot be in the
+  past). Until it is handed in again it is back on the member's Today and in
+  their duties email, the desk's **Remind** reaches them, and the hourly
+  reminder job reminds them before and after that date, just like work never
+  handed in.
+- **Families see the week's homework.** In the family account, each child's
+  Today shows **This week's homework**: what is due this week or still owed
+  — to do, overdue, handed in, marked, or sent back — with the mark and the
+  feedback once it is marked. The child's own answer is not shown.
+- **Families are told when it is overdue.** When work is overdue (or
+  returned work is past its new date), the guardians on the family account
+  who take alerts get one message per piece of work per child — in the
+  family inbox, by email, and on WhatsApp where it is set up (falling back to
+  text). With no family account, the parent email on the record gets it.
+  Nothing goes between 21:00 and 07:00; it waits for the morning. The message
+  names the child's first name, the work and its date, nothing else.
+
 ### How the training fee works (from 29 Oct 2026)
 
 The training fee is the cost of a member's place: **₦300,000 for the three
